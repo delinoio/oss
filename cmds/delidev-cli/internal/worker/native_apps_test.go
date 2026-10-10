@@ -3,9 +3,11 @@ package worker
 
 import (
 	"context"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
@@ -95,4 +97,67 @@ func TestSessionNativeAppsWorkerNeverPublishesForeignInventory(t *testing.T) {
 	if err == nil || value.InventoryID != "" {
 		t.Fatal("foreign source snapshot published")
 	}
+}
+
+func TestSessionNativeAppsCleanupJoinsOriginalReadBeforeNativeRemoval(t *testing.T) {
+	scope, inventory := workerNativeAppsFixture()
+	device, instance := domain.NewID(), domain.NewID()
+	reader := &nativeAppsReaderFixture{inventory: inventory, enter: make(chan struct{}), release: make(chan struct{})}
+	registry := &nativeAppsRegistry{}
+	cleanup, err := registry.register(scope, device, instance, reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	readDone := make(chan error, 1)
+	go func() {
+		_, err := registry.read(ctx, workspace.NativeAppsReadRequest{Scope: scope, WorkerDeviceID: device, WorkerInstanceID: instance})
+		readDone <- err
+	}()
+	select {
+	case <-reader.enter:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	cleanupDone := make(chan struct{})
+	go func() { cleanup(); close(cleanupDone) }()
+	// Observe the explicit registry fence before releasing the original read.
+	for {
+		registry.mu.Lock()
+		retained := registry.owners[scope.SessionID] != nil
+		registry.mu.Unlock()
+		if !retained {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		default:
+			runtime.Gosched()
+		}
+	}
+	select {
+	case <-cleanupDone:
+		t.Fatal("native cleanup did not join the original pending read")
+	default:
+	}
+	if _, err := registry.read(ctx, workspace.NativeAppsReadRequest{Scope: scope, WorkerDeviceID: device, WorkerInstanceID: instance}); err == nil {
+		t.Fatal("removed reader borrowed cleanup authority")
+	}
+	close(reader.release)
+	select {
+	case err := <-readDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	select {
+	case <-cleanupDone:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	cleanup()
 }
