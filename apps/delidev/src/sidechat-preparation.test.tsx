@@ -14,7 +14,7 @@ import { SessionTabBar } from "./session-tab-bar";
 import { SidechatAuthoring } from "./sidechat-authoring";
 import { SessionToolMenu } from "./session-tool-menu";
 
-async function fixture(options: { lost?: boolean; hidden?: boolean; stale?: boolean } = {}) {
+async function fixture(options: { lost?: boolean; hidden?: boolean; stale?: boolean; runnerError?: boolean } = {}) {
  const machineId = newRequestId(), sourceId = newRequestId();
  const source = create(ResourceSchema, { kind: EntityKind.SESSION, id: sourceId, revision: 8n, schemaVersion: 1, documentJson: encode({ name: "Original", machine_id: machineId, workspace: "worktree", archive: "active", recovery: "none", outcome: "succeeded", initial_execution: { configuration: { harness: "codex", subscription: true } }, execution: { native_turn_id: "original-turn", cleanup_verified: true } }) });
  const machine = create(ResourceSchema, { kind: EntityKind.MACHINE, id: machineId, revision: 1n, schemaVersion: 1, documentJson: encode({ worker_capabilities: ["codex-read-only-sidechat-v1", "managed-codex-sidechat-v1", "managed-codex-subscriptions-v1"] }) });
@@ -23,7 +23,8 @@ async function fixture(options: { lost?: boolean; hidden?: boolean; stale?: bool
  const child = (parent = sourceId, overlay = true) => create(ResourceSchema, { kind: EntityKind.SESSION, id: childId, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Verified Sidechat", fork: { source_session_id: parent, ...(overlay ? { sidechat_parent_snapshot: { original: true } } : {}) } }) });
  let result: { job: ReturnType<typeof job>; session?: ReturnType<typeof child> } = { job: job("claimed") };
  const fork = vi.fn(async request => { if (options.lost && fork.mock.calls.length === 1) throw new ConnectError("Lost original response", Code.Unavailable); return { job: job("claimed") }; });
- const observe = vi.fn((_request: { jobId: string }) => result), read = vi.fn(request => ({ resource: request.kind === EntityKind.MACHINE ? machine : options.stale ? { ...source, revision: 9n } : source }));
+ let runnerError = options.runnerError;
+ const observe = vi.fn((_request: { jobId: string }) => result), read = vi.fn(request => { if (runnerError && request.kind === EntityKind.MACHINE) throw new ConnectError("Original Runner read unavailable", Code.Unavailable); return { resource: request.kind === EntityKind.MACHINE ? machine : options.stale ? { ...source, revision: 9n } : source }; });
  const transport = createRouterTransport(router => {
   router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.NATIVE_SIDECHAT_V1, SystemCapability.MANAGED_CODEX_SIDECHAT_V1] }) });
   router.service(ResourceService, { getResource: read }); router.service(SessionService, { forkSession: fork, getSessionFork: observe });
@@ -41,7 +42,7 @@ async function fixture(options: { lost?: boolean; hidden?: boolean; stale?: bool
  const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionTabsProvider><SessionForkProvider openSession={navigate}><Workspace active={active}/><SessionForkAction source={source} action={SessionCreationAction.Sidechat}/></SessionForkProvider></SessionTabsProvider></MutationIntents></QueryClientProvider></TransportProvider>;
  const rendered = render(view());
  await waitFor(() => expect(client.isFetching()).toBe(0));
- return { sourceId, childId, fork, observe, read, client, navigate, store: () => store, rendered, view, job, child, setResult: (value: typeof result) => { result = value; } };
+ return { sourceId, childId, fork, observe, read, client, navigate, store: () => store, rendered, view, job, child, setRunnerHealthy: () => { runnerError = false; }, setResult: (value: typeof result) => { result = value; } };
 }
 
 it("only explicit flat menu activation creates one original request and focuses the editable draft", async () => {
@@ -109,4 +110,19 @@ it("fresh source revision mismatch retains draft without admitting creation", as
  const f = await fixture({ stale: true }); fireEvent.click(screen.getByRole("menuitem", { name: "Open Sidechat" }));
  await screen.findByText(/The source changed/);
  expect(f.fork).not.toHaveBeenCalled(); expect(screen.getByRole("textbox", { name: "Message" })).toHaveProperty("disabled", false);
+});
+
+
+it("Runner read retry only reinspects original metadata without creating Sidechat", async () => {
+ const f = await fixture({ runnerError: true }); expect(f.fork).not.toHaveBeenCalled();
+ f.setRunnerHealthy(); fireEvent.click(screen.getByRole("menuitem", { name: "Recheck original fork Runner" }));
+ await screen.findByRole("menuitem", { name: "Open Sidechat" }); expect(f.fork).not.toHaveBeenCalled(); expect(f.observe).not.toHaveBeenCalled(); expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+});
+
+it("confirmed failure retains the editable draft until explicit guarded discard", async () => {
+ const f = await fixture(); fireEvent.click(screen.getByRole("menuitem", { name: "Open Sidechat" })); await waitFor(() => expect(f.observe).toHaveBeenCalled());
+ const input = screen.getByRole("textbox", { name: "Message" }); fireEvent.change(input, { target: { value: "Failed but retained" } });
+ f.setResult({ job: f.job("failed") }); await act(async () => { await f.client.invalidateQueries(); });
+ await screen.findByText(/Sidechat preparation did not complete/); expect(input).toHaveProperty("value", "Failed but retained"); expect(input).toHaveProperty("disabled", false);
+ fireEvent.click(screen.getByRole("button", { name: "Discard Sidechat draft" })); expect(f.store().snapshot(f.sourceId).tabs.some(tab => tab.kind === SessionTabKind.PendingSidechat)).toBe(false); expect(f.fork).toHaveBeenCalledTimes(1);
 });
