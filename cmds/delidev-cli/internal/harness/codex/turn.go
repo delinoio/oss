@@ -70,6 +70,8 @@ type inputAttempt struct {
 }
 
 type executionState struct {
+	safety              map[domain.ID]map[MetadataKind]retainedSafety
+	safetyBytes         int
 	autoReviews         map[domain.ID]domain.AutoReviewState
 	autoReviewPayloads  map[string][32]byte
 	autoReviewActions   map[string][32]byte

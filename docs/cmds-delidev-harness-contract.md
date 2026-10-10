@@ -47,9 +47,27 @@ the advisory `normalModelSlug` without selecting a model. Response-usage
 `usageMetadata.metadata` stays opaque and excluded from publication, cost and
 logs; original counters and amount-evidence classification remain unchanged.
 The installed schema also declares scoped `model/verification` notifications.
-Accept only a required empty verification array bound to the original known root
-turn as discarded metadata. Populated verification remains a private extension;
-the empty observation cannot establish model eligibility or account readiness.
+Decode the pinned verification, safety-buffering, moderation and reroute schemas
+against the original known root thread/turn. Verification uses the closed
+`trustedAccessForCyber` value (including empty arrays); reroute uses the closed
+`highRiskCyberActivity` reason. Buffering keeps bounded native model, use-case,
+reason, visibility and nullable faster-model descriptors privately; its string
+arrays are not invented enums. Moderation retains required JSON privately, with
+64 KiB per observation and 1 MiB retained safety evidence per original execution.
+Typed private descriptors are excluded from generic serialization and public
+logs; metadata publication grants no account readiness, entitlement, availability,
+permissions, input, response or tool authority. Neither buffering visibility nor
+faster-model advice selects a model. Exact terminal replays remain late evidence;
+unknown variants, missing/foreign turns and changed terminal payloads fail closed.
+A native reroute retains original from/to/reason evidence, pins the from-model to
+the selected original model, and pauses fresh sends for original-execution
+reconciliation. Do not reverse native safety, rewrite effective settings, adopt
+fasterModel or attribute different actual-model execution/usage to selected-model
+success. The Worker retains its recovery fence and cannot publish terminal success
+from a rerouted execution. Normal metadata preserves original completion and usage.
+These private observations add no RPC, migration, safety override or fallback.
+The schema source is [Codex 0.162.0 v2](https://github.com/openai/codex/tree/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server-protocol/schema/json/v2);
+source inspection and fixtures do not establish native/account acceptance.
 Managed ChatGPT execution also consumes the original root's passive
 `mcpServer/startupStatus/updated` notifications for the built-in `codex_apps`
 connector. Validate the closed starting/ready/failed/cancelled states, nullable

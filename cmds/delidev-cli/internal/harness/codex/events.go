@@ -150,6 +150,7 @@ type Message struct {
 }
 
 type Event struct {
+	Safety           *SafetyObservation `json:"-"`
 	AutoReview       *domain.AutoReviewObservation
 	ImageGeneration  *ImageGeneration `json:"-"`
 	Compaction       *CompactionObservation

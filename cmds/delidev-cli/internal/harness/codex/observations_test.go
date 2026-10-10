@@ -45,7 +45,7 @@ func TestEmptyModelVerificationPreservesOriginalTurnAndAuthority(t *testing.T) {
 	}
 	params["verifications"] = []string{"trustedAccessForCyber"}
 	event, err = observeFixture(c, "model/verification", params)
-	if err != nil || event.Kind != NativeExtensionEvent || event.ExtensionStage != validationVerification {
+	if err != nil || event.Kind != MetadataEvent || event.Metadata != ModelVerificationObserved || event.Safety == nil {
 		t.Fatal("populated verification gained product authority", err)
 	}
 	params["threadId"], params["verifications"] = domain.NewID(), []string{}
