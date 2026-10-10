@@ -59,9 +59,10 @@ type turnOperation struct {
 }
 
 type trackedTurn struct {
-	Turn   Turn
-	Mode   domain.SessionMode
-	Inputs []domain.ID
+	diagnostics *nativeDiagnostics
+	Turn        Turn
+	Mode        domain.SessionMode
+	Inputs      []domain.ID
 }
 type inputAttempt struct {
 	SkillDigest [32]byte

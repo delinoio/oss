@@ -60,6 +60,32 @@ and [event mapping](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2
 keep this status separate from tool execution and authentication. Other server
 names, API profiles, unscoped/foreign observations, OAuth completions, MCP event
 streams and tool calls retain their existing private adapter boundaries.
+Native `error`, `modelProvider/authRecoveryStarted` and
+`modelProvider/authRecoveryCompleted` notifications are bounded private telemetry
+on the original known active root turn. Authentication observations must match
+the independently validated original provider. Required fields, closed error
+union tags and HTTP/turn-kind payloads, private misalignment/continuation shapes,
+text bounds and strict unknown/duplicate-field checks follow the observed
+[error schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/ErrorNotification.json)
+and [authentication-recovery schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/AuthRecoveryNotification.json).
+The native catalog's forward-open error union does not activate unknown variants.
+Misalignment error-type text remains a private open classification, and retained
+steer text is never submitted as input.
+
+Retain the latest retrying and nonretrying errors separately, alongside the latest
+original-provider recovery start/completion observations. `willRetry` describes
+native behavior only: Go does not retry or resend accepted input. Nonretrying
+errors cannot establish success, definite no-send, a terminal failure or credit
+routing. Only the original native terminal turn proves its actual outcome, under
+the existing history/publication and independent credential/process cleanup
+boundaries. Content-free metadata is discarded by the Worker and cannot settle
+an input or become public progress. Native text, descriptors and error payloads
+remain absent from public logs and generic serialization. Lost/uncertain terminal
+evidence retains original recovery without resend. Authentication completion
+cannot clear that uncertainty or authorize login, refresh, account replacement,
+configuration changes or another input. Foreign/unknown scope and terminal replay
+fences remain unchanged. No RPC, capability allocation or migration is added.
+
 The original execution process's notification-only `skills/changed` accepts
 exactly a required empty object as discarded process metadata. Its native cache
 invalidation signal never causes `skills/list`, package enumeration, catalog

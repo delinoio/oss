@@ -17,6 +17,7 @@ type eventValidationStage string
 
 const (
 	validationOther          eventValidationStage = "other"
+	validationError          eventValidationStage = "turn-error"
 	validationSettings       eventValidationStage = "thread-settings"
 	validationItem           eventValidationStage = "message-item"
 	validationUsage          eventValidationStage = "response-usage"
@@ -42,6 +43,8 @@ const (
 // Log a closed classification instead of untrusted native method or content.
 func validationStage(method string) eventValidationStage {
 	switch method {
+	case "error":
+		return validationError
 	case "thread/settings/updated":
 		return validationSettings
 	case "item/started", "item/completed":

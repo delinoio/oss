@@ -82,6 +82,8 @@ func (c *Client) metadata(kind MetadataKind) Event {
 
 func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 	switch native.Method {
+	case "error", "modelProvider/authRecoveryStarted", "modelProvider/authRecoveryCompleted":
+		return c.observeNativeDiagnosticLocked(native)
 	case "skills/changed":
 		// The original process invalidated its own cache. Discard this passive
 		// notification without enumerating packages or changing selected input.

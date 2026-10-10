@@ -181,6 +181,9 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 		return true, nil
 	case codex.MetadataEvent:
 		switch event.Metadata {
+		case codex.NativeDiagnosticObserved:
+			// Native error/auth telemetry never grants retry or account authority.
+			return true, nil
 		case codex.AutoReviewReplayChecked, codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable, codex.RawSupplementDiscarded, codex.NativeGoalAbsent, codex.ModelVerificationAbsent, codex.CodexAppsStartupObserved, codex.SkillsChangedDiscarded:
 			// These validated observations grant no new product authority.
 			return true, nil
