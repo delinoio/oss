@@ -205,3 +205,23 @@ test("custom theme save waits for the positively committed native map identity",
  await act(async()=>pending.resolve({theme,revision:revision+1,problem:null,preferences:sorted}));
  expect(screen.queryByRole("textbox",{name:"Theme name"})).toBeNull();expect(screen.getAllByText("Confirmed theme").length).toBeGreaterThan(0);
 });
+
+test("Appearance descriptions preserve named controls and separate disclosure choices", async () => {
+  scheme(false); const value = fixture();
+  const { container } = render(<AppearanceProvider bridge={value.bridge}><AppearanceSettings /></AppearanceProvider>);
+  await waitFor(() => expect((screen.getByRole("radio", { name: "System" }) as HTMLInputElement).matches(":disabled")).toBe(false));
+  for (const control of container.querySelectorAll<HTMLInputElement | HTMLSelectElement>(".appearance-row input, .appearance-row select")) {
+    expect(control.getAttribute("aria-label")).toBeTruthy();
+    const description = document.getElementById(control.getAttribute("aria-describedby")!);
+    expect(description?.textContent?.trim()).toBeTruthy();
+  }
+  const grouped = container.querySelector(".appearance-disclosure-controls")!;
+  expect(within(grouped as HTMLElement).getAllByRole("combobox")).toHaveLength(3);
+  for (const name of ["Tool details default", "Reasoning default", "Compaction history default"]) {
+    expect(within(grouped as HTMLElement).getByRole("combobox", { name })).toBeTruthy();
+  }
+  for (const name of ["Markdown", "Mermaid diagrams", "SVG visualizations", "Automatic table charts"]) {
+    expect((screen.getByRole("checkbox", { name }) as HTMLInputElement).matches(":disabled")).toBe(true);
+  }
+  expect(value.bridge.update).not.toHaveBeenCalled();
+});
