@@ -8,6 +8,8 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
+- Source-specific reasoning presentation must follow the owning desktop contract. Keep indexed summary/content and ordered original observations separate; do not route another native source through the Codex presentation exception or synthesize unavailable reasoning.
+
 ## Owning contracts
 
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)

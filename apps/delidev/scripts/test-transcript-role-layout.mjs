@@ -40,7 +40,7 @@ try {
     await page.emulateMedia({ colorScheme: "dark" });
     process.stdout.write(JSON.stringify({ operation: "transcript-role-case", language, theme, ...size }) + "\n");
     await page.setViewportSize(size);
-    await page.goto(`${origin}/?language=${language}&theme=${theme}&zoom=${size.zoom ?? 1}&workspace=${cases % 2 ? "worktree" : "general-chat"}`);
+    await page.goto(`${origin}/?language=${language}&theme=${theme}&zoom=${size.zoom ?? 1}&reasoning=true&workspace=${cases % 2 ? "worktree" : "general-chat"}`);
     await page.locator(".message-user").first().waitFor();
     const transcript = page.locator(".transcript");
     assert.equal(await transcript.locator(".message-user").count(), 2);
@@ -67,7 +67,7 @@ try {
           assert.equal(row.radius, "12px"); assert.equal(row.padding, "12px");
           assert.equal(row.color, "rgb(255, 255, 255)");
           assert.notEqual(row.background, "rgba(0, 0, 0, 0)");
-        } else if (row.role.includes("message-assistant") || row.role.includes("message-claude-assistant") && row.background === "rgba(0, 0, 0, 0)") {
+        } else if (row.role.includes("message-codex-reasoning") || row.role.includes("message-assistant") || row.role.includes("message-claude-assistant") && row.background === "rgba(0, 0, 0, 0)") {
           assert(Math.abs(row.left - m.left) <= 1, "Assistant is left-aligned");
           assert.equal(row.border, "0px"); assert.equal(row.padding, "0px"); assert.equal(row.radius, "0px");
           assert.equal(row.background, "rgba(0, 0, 0, 0)");
@@ -77,6 +77,20 @@ try {
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "No horizontal page overflow");
     };
     await assertGeometry();
+    const reasoning = transcript.locator(".message-codex-reasoning"), reasoningSummary = reasoning.locator("summary");
+    await reasoning.scrollIntoViewIfNeeded();
+    assert.equal(await reasoning.locator("details").evaluate(node=>node.open),false);
+    const summaryStyle = await reasoningSummary.evaluate(node=>{const style=getComputedStyle(node);return {height:node.getBoundingClientRect().height/(parseFloat(getComputedStyle(document.body).zoom)||1),border:style.borderTopWidth,background:style.backgroundColor,radius:style.borderRadius};});
+    assert.equal(summaryStyle.height,36);assert.equal(summaryStyle.border,"0px");assert.equal(summaryStyle.background,"rgba(0, 0, 0, 0)");assert.equal(summaryStyle.radius,"0px");
+    assert.equal(await reasoning.locator(".codex-reasoning-summary").evaluate(node=>getComputedStyle(node).textOverflow),"ellipsis");
+    const sourceSummary = await reasoning.locator(".codex-reasoning-summary").textContent();
+    await reasoningSummary.focus();await page.keyboard.press("Enter");assert.equal(await reasoning.locator("details").evaluate(node=>node.open),true);
+    assert.equal(await reasoningSummary.evaluate(node=>getComputedStyle(node).outlineStyle),"solid");
+    assert.equal(await reasoning.locator(".codex-reasoning-summary").textContent(),sourceSummary);
+    assert.equal(await reasoning.locator(".codex-reasoning-body section").count(),3);
+    assert.equal(await reasoning.locator(".codex-reasoning-body").evaluate(node=>getComputedStyle(node).borderLeftWidth),"1px");
+    assert.equal(await reasoning.locator("script,a").count(),0);
+    await assertGeometry();await page.keyboard.press("Enter");
     const info = page.locator(".session-information");
     await info.waitFor();
     const cardGeometry = () => page.evaluate(() => {

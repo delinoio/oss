@@ -58,6 +58,7 @@ import { NativeClaudeInterruption } from "./native-claude-interruption";
 import { NativeContextCompaction } from "./native-context-compaction";
 import { NativeClaudeProgress } from "./native-claude-progress";
 import { NativeClaudeTool } from "./native-claude-tool";
+import { codexReasoning, CodexReasoningDisclosure } from "./codex-reasoning";
 import { NativeReasoning } from "./native-reasoning";
 import { SessionContext } from "./session-context";
 import { SessionBudget } from "./session-budget";
@@ -217,6 +218,8 @@ export const TranscriptItem = memo(function TranscriptItem({ resource, active = 
       <NativeClaudeMessage content={valid ? data.claude : undefined} state={text(data.state)} />
     </article>;
   }
+  const reasoning = codexReasoning(data);
+  if (reasoning) return <CodexReasoningDisclosure value={reasoning} state={text(data.state)} previousContext={Number(data.context_revision ?? 0) < contextRevision} />;
   const tool = object(data.tool);
   const toolStarted = object(tool.started);
   const toolCompleted = object(tool.completed);

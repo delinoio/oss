@@ -22,6 +22,7 @@ if (args.get("zoom") === "2") document.body.style.zoom = "2";
 let session = create(ResourceSchema, { id: transcriptSessionId, sessionId: transcriptSessionId, kind: EntityKind.SESSION, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Synthetic conversation", workspace: args.get("workspace") ?? "general-chat", archive: "active", outcome: "stopped", dispatch: "blocked", recovery: "none" }) });
 const data = transcriptRoleFixtures();
 const historical = [...Object.values(data), { role: "tool", state: "complete", text: "Original tool card" }, { ...data.grokUser, native_id: "foreign" }, { ...data.claude, claude: { invalid: true } }].map((value, index) => transcriptResource(value, index + 2));
+if (args.get("reasoning") === "true") historical.push(transcriptResource({role:"artifact",state:"complete",text:"",artifact:{started:{kind:"reasoning",text:"",summary:["Initial summary"],content:["Initial 한글\n  source"]},completed:{kind:"reasoning",text:"",summary:["  Final 한글🙂 ".repeat(40)+"\n<script>inert()</script>"],content:["Final Unicode🙂\n  exact whitespace"]},deltas:[{sequence:2,delta:{kind:"reasoning-summary",index:3,text:"  supplied delta\n"}}]}},88));
 const timingMode = args.get("timing");
 const timingIds = { execution: newRequestId(), input: newRequestId(), job: newRequestId(), steer: newRequestId() };
 const timingStart = "2026-10-09T10:00:00.123Z";

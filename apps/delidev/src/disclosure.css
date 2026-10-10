@@ -18,3 +18,14 @@
 .disclosure-header .sidebar-project-title { white-space: normal; overflow: visible; text-overflow: clip; }
 
 .disclosure > .disclosure-native-content { display: contents; }
+
+/* Only Codex indexed reasoning uses the approved text-only disclosure surface. */
+article.message.message-codex-reasoning { min-width: 0; background: transparent; border: 0; border-radius: 0; box-shadow: none; padding: 0; }
+.disclosure.codex-reasoning > .disclosure-header { min-height: 36px; height: 36px; padding: 0; background: transparent; border: 0; border-radius: 0; box-shadow: none; color: var(--muted); font-size: 14px; font-weight: 400; }
+.disclosure.codex-reasoning > .disclosure-header:hover { background: transparent; }
+.codex-reasoning-summary { display: block; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.codex-reasoning-body { min-width: 0; margin: 4px 0 0 6px; padding-left: 20px; border-left: 1px solid var(--border-subtle); }
+.codex-reasoning-body section { min-width: 0; margin: 0 0 16px; }
+.codex-reasoning-body h3 { margin: 0 0 6px; color: var(--muted); font-size: 12px; font-weight: 500; }
+.codex-reasoning-body pre { min-width: 0; max-width: 100%; margin: 4px 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal; }
+.codex-reasoning-body small { color: var(--muted); }
