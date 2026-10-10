@@ -212,12 +212,26 @@ func provisionManagedCloneRemotes(ctx context.Context, git Git, path, url string
 			}
 		}
 	}
-	if symbolic, err := git.run(ctx, path, "symbolic-ref", "--quiet", "refs/remotes/"+primary+"/HEAD"); err == nil && strings.HasPrefix(string(symbolic), primaryPrefix) {
-		for _, remote := range remotes[1:] {
-			alias := "refs/remotes/" + remote + "/" + strings.TrimPrefix(strings.TrimSpace(string(symbolic)), primaryPrefix)
-			if _, err := git.run(ctx, path, "symbolic-ref", "refs/remotes/"+remote+"/HEAD", alias); err != nil {
-				return err
-			}
+	symbolic, exit, err := git.runCommand(ctx, path, "symbolic-ref", "--quiet", primaryPrefix+"HEAD")
+	if err != nil {
+		// Only a joined, positively observed non-symbolic status is absence.
+		// runCommand leaves cancellation and cleanup uncertainty without a status.
+		if exit == 1 && domain.SafeError(err).Cause == "git_exit" {
+			return nil
+		}
+		return err
+	}
+	target := strings.TrimSuffix(string(symbolic), "\n")
+	if !strings.HasPrefix(target, primaryPrefix) || target == primaryPrefix || target == primaryPrefix+"HEAD" {
+		return ResultUncertain()
+	}
+	if _, err := git.run(ctx, path, "check-ref-format", target); err != nil {
+		return err
+	}
+	for _, remote := range remotes[1:] {
+		alias := "refs/remotes/" + remote + "/" + strings.TrimPrefix(target, primaryPrefix)
+		if _, err := git.run(ctx, path, "symbolic-ref", "refs/remotes/"+remote+"/HEAD", alias); err != nil {
+			return err
 		}
 	}
 	return nil

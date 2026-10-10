@@ -248,7 +248,14 @@ Follow the root and parent instructions and cmds-delidev-workspace-contract.md.
 - Managed Worktree clones use the restricted clone Git profile for remote URL
   changes, inspection, PR preparation and automatic fetches. Add every configured
   preferred/base/starting remote name against the one pinned repository URL and
-  mirror initial tracking refs without stale fallback. Validate Git's effective
+  mirror initial tracking refs without stale fallback. Primary symbolic HEAD
+  observation tolerates only a positively observed non-symbolic exit status 1.
+  Fatal status, launch, cancellation, deadline, output and original-process
+  cleanup failures retain their classification and block readiness. A successful
+  target must be a valid reference within the primary remote namespace before
+  alias HEAD publication; foreign, malformed or self-referential targets fail.
+  These failures do not repeat clone/fetch or grant cleanup/recovery authority.
+  Validate Git's effective
   source URL before networking, isolate `insteadOf` rules, and retain only the
   configured credential-helper and SSH settings in the restricted environment.
   When Windows adds the command-local `core.longpaths` setting, append it to
