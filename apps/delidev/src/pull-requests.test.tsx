@@ -72,7 +72,7 @@ it("keeps repository refresh in the single title row with original fetching and 
   value.defer(new Promise<void>(resolve => { release = resolve; }));
   render(<App transport={value.transport} />);
   const pane = await open();
-  const refresh = pane.getByRole("button", { name: "Refresh", exact: true }) as HTMLButtonElement;
+  const refresh = pane.getByRole("button", { name: "Refresh" }) as HTMLButtonElement;
   const title = pane.getByRole("heading", { name: "Pull requests", level: 2 });
   expect(title.parentElement).toBe(refresh.closest(".pr-sidebar-title"));
   expect(pane.queryByRole("heading", { name: "Repositories" })).toBeNull();
