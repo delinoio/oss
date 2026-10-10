@@ -73,3 +73,12 @@ func TestCodexStrictReviewReplayCannotRelaxForeignOrRecoveryFences(t *testing.T)
 		})
 	}
 }
+
+func TestCodexUnscopedStrictReviewReplayIsHarmlessForCurrentTurn(t *testing.T) {
+	c, rpc := codexTerminalStatusFixture(t)
+	before := len(rpc.events)
+	replay := codex.Event{Kind: codex.MetadataEvent, ThreadID: c.thread, Metadata: codex.StrictReviewReplayChecked, Correlated: true}
+	if handled, err := c.PublishCore(context.Background(), replay); !handled || err != nil || c.blocked || len(rpc.events) != before {
+		t.Fatal("historical replay blocked or changed the current turn", handled, err)
+	}
+}

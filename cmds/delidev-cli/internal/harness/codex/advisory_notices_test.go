@@ -201,6 +201,26 @@ func TestStrictReviewNoticeReplayAndRecoveryRemainIndependent(t *testing.T) {
 	}
 }
 
+func TestStrictReviewReplayAfterSuccessorTurnIsUnscoped(t *testing.T) {
+	c, originalTurn := advisoryFixture()
+	params := map[string]any{"threadId": c.thread, "turnId": originalTurn, "startedAtMs": 23}
+	first, err := observeFixture(c, "autoApprovalReview/strictReviewRequired", params)
+	if err != nil || first.Kind != NoticeEvent {
+		t.Fatal("original strict-review notice failed", first, err)
+	}
+	if _, err := observeFixture(c, "turn/completed", map[string]any{"threadId": c.thread, "turn": fixtureTurn(originalTurn, TurnCompleted)}); err != nil {
+		t.Fatal("original turn did not complete", err)
+	}
+	successorTurn := domain.NewID()
+	c.execution.active = successorTurn
+	c.execution.turns[successorTurn] = trackedTurn{Turn: Turn{ID: successorTurn, Status: TurnRunning}, Mode: domain.PlanMode}
+
+	replay, err := observeFixture(c, "autoApprovalReview/strictReviewRequired", params)
+	if err != nil || replay.Kind != MetadataEvent || replay.Metadata != StrictReviewReplayChecked || replay.TurnID != "" {
+		t.Fatal("historical replay retained a foreign turn scope", replay, err)
+	}
+}
+
 func TestDeprecationOptionalDetailsStayPrivate(t *testing.T) {
 	for _, details := range []string{"absent", "null", "text"} {
 		t.Run(details, func(t *testing.T) {

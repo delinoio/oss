@@ -66,9 +66,7 @@ func (c *Client) observeAdvisoryNoticeLocked(native nativewire.Event) (Event, er
 		}
 		key := strictReviewNoticeKey{Turn: p.TurnID, StartedAtMS: *p.StartedAtMS}
 		if c.execution.strictReviewNotices[key] {
-			event := c.metadata(StrictReviewReplayChecked)
-			event.TurnID = p.TurnID
-			return event, nil
+			return c.metadata(StrictReviewReplayChecked), nil
 		}
 		if turn.Turn.Status.terminal() || p.TurnID != c.execution.active || len(c.execution.strictReviewNotices) >= maxTrackedTurns {
 			return Event{}, incompatible()
