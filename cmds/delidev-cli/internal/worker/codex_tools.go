@@ -76,10 +76,19 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 		}
 		switch event.Kind {
 		case codex.ToolOutputEvent:
-			if retained.Kind != domain.CommandTool {
+			outputKind := domain.CommandTool
+			if event.ToolOutputKind == codex.PatchTool {
+				outputKind = domain.PatchTool
+			} else if event.ToolOutputKind != "" && event.ToolOutputKind != codex.CommandTool {
+				return publicationUncertain()
+			}
+			if retained.Kind != outputKind {
 				return publicationUncertain()
 			}
 			kind, update.Delta = domain.ExecutionToolOutput, &event.TextDelta
+			if outputKind == domain.PatchTool {
+				update.OutputKind = outputKind
+			}
 		case codex.ToolInputEvent:
 			if retained.Kind != domain.CommandTool || event.ToolInput == nil {
 				return publicationUncertain()

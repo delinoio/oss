@@ -89,6 +89,25 @@ log classification. Same-name server requests remain unsupported. See the
 [official warning schema](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server-protocol/schema/json/v2/WindowsWorldWritableWarningNotification.json)
 and [setup completion schema](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server-protocol/schema/json/v2/WindowsSandboxSetupCompletedNotification.json).
 
+Issue #2402 accepts notification-only `fs/changed` through a strict private
+`watchId`/`changedPaths` envelope. Require a nonempty watch ID of at most 1024
+UTF-8 bytes and a non-null array of at most 1000 absolute paths, each at most
+4096 UTF-8 bytes without NUL. Empty arrays are valid; retain the original path
+order and bytes during validation. Unknown or duplicate fields, missing/null
+required fields and malformed or oversized payloads fail with the closed
+`filesystem-watch` diagnostic classification, without native methods, watch IDs
+or paths in logs.
+
+This adapter owns no `fs/watch` operation. All valid unsolicited or foreign watch
+notifications become discarded metadata, with no file access, cache refresh,
+watch creation, input resend or product publication. A same-name server request
+retains its unsupported request boundary. A future watch consumer requires its
+own successful original watch receipt, exact native connection and canonical
+selected-workspace root; notification arrival grants no such ownership. Original
+turn/settings/account, terminal results, receipts and independent recovery and
+cleanup remain unchanged. The [official notification schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/FsChangedNotification.json)
+defines this passive envelope separately from explicit filesystem operations.
+
 Unsupported native families log only a closed classification, never a raw method
 or payload. The installed scripted thread smoke rejects private extensions so
 parser-level success cannot conceal an unsupported Worker event family.
@@ -903,7 +922,7 @@ The native server composition test now rejects every unhandled event in its simp
 ### Codex native command and patch observations
 The private native event adapter now recognizes command/file-change item start/completion, command output deltas, native terminal-input observations and patch updates from the pinned `0.151.0` schema. It preserves command/source/cwd, advisory parsed actions, optional process/plugin metadata, unavailable exit/duration/output fields, native completion/failure/decline, exact file operations/diffs and optional move destinations. Native aggregate output remains separate from streamed output because its native truncation semantics can differ. Tool failure does not itself set the whole turn's outcome.
 
-These are typed observations only. Native tool/process IDs and paths do not authorize product terminal/file access, execute commands or broaden permissions. Source omission uses the pinned protocol's explicit `agent` default; explicit null/unknown source fails. Required/malformed/cross-kind fields, invalid lifecycle status, unknown turn ownership, count/text limits and wrong patch metadata fail validation. Foreign-thread observations stay private and JSON-excluded. Deprecated file-change textual-output notifications and other event families retain the explicit unsupported boundary.
+These are typed observations only. Native tool/process IDs and paths do not authorize product terminal/file access, execute commands or broaden permissions. Source omission uses the pinned protocol's explicit `agent` default; explicit null/unknown source fails. Required/malformed/cross-kind fields, invalid lifecycle status, unknown turn ownership, count/text limits and wrong patch metadata fail validation. Foreign-thread observations stay private and JSON-excluded. The retained deprecated `item/fileChange/outputDelta` method admits only closed original thread/turn/item/delta fields as inert patch-tool text. The adapter marks its patch provenance explicitly; Worker and server match it to the original started patch before durable publication. Command output remains separately typed, including its historical omitted-provenance compatibility. Text cannot prove patch application, completion, turn success or cleanup. Modern patch updates and terminal native snapshots remain independent. This compatibility path does not claim current native emission or broaden managed Fork history eligibility. Other event families retain their explicit unsupported boundary.
 
 The Worker now publishes these tool observations through its existing synchronized outbox into dedicated `tool` transcript records. Start/completion snapshots, observed command output, input observations and patch revisions remain distinct, carry stable native/product identity and share the message completion gate. `output: null` means no streamed output was observed; the installed profile can report a short command only through its final aggregate. No output is invented from that aggregate. File paths/process IDs remain observations and grant no terminal, filesystem or permission authority.
 

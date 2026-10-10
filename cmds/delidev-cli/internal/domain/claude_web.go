@@ -2,9 +2,14 @@ package domain
 
 import (
 	"encoding/json"
+	"regexp"
 	"slices"
 	"time"
 )
+
+// Match the desktop timestamp grammar before Go parsing, which otherwise accepts
+// comma fractions, extra precision and out-of-range numeric offsets.
+var claudeWebTimestamp = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,9})?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$`)
 
 type ClaudeWebName string
 type ClaudeWebDocumentSource string
@@ -99,6 +104,9 @@ func (w ClaudeWebBlock) Validate(kind ClaudeTextKind) error {
 		return invalidClaudeContent()
 	}
 	if f.RetrievedAt != nil {
+		if !claudeWebTimestamp.MatchString(*f.RetrievedAt) {
+			return invalidClaudeContent()
+		}
 		if _, err := time.Parse(time.RFC3339Nano, *f.RetrievedAt); err != nil {
 			return invalidClaudeContent()
 		}

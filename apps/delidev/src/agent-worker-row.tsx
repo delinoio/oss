@@ -2,18 +2,19 @@
 import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclosure";
 import { useId, useState } from "react";
-import { supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
-import { document, items, object, resourceName, text } from "./documents";
+import { decodeResourceDocument, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
+import { items, object, resourceName, text } from "./documents";
 import { copy, LocalizedText, useLocale } from "./localization";
 import { Harness } from "./configuration-fields";
 import { workerHarnessNames } from "./worker-harness-picker";
 
 import { HarnessMark, knownHarness as projectedHarness } from "./harness-mark";
+import { configuredEffort } from "./configured-effort";
 import "./agent-worker-row.css";
 
 export function AgentWorkerRow({ row, edit, preview, remove }: { row: Resource; edit: () => void; preview: () => void; remove: () => void }) {
   useLocale();
-  const data = document(row), supported = supportsResourceSchema(row);
+  const decoded = decodeResourceDocument(row), data = decoded ?? {}, supported = supportsResourceSchema(row);
   const [expanded, expand] = useState(false), region = useId();
   const routes = supported ? items(data.routes).map(object) : [];
   const modelIDs = routes.map(route => text(object(route.model).native_id));
@@ -43,7 +44,7 @@ export function AgentWorkerRow({ row, edit, preview, remove }: { row: Resource; 
       <div className="settings-agent-text">
       <div className="settings-agent-heading"><h3>{name}</h3>{supported && harness ? <span>{knownHarness ? workerHarnessNames[harness as Harness] : harness}</span> : null}</div>
       {text(data.health) ? <p><LocalizedText id="settings.status_ae149d" components={{ s0: <>{text(data.health)}</> }} /></p> : null}
-      {supported ? <div className="agent-model-summary"><span>{copy("agent-worker-row.configuredModel")}</span>{model(0)}{accountCount(0)}{modelIDs.length > 1 ? <DisclosureButton density={DisclosureDensity.Settings} type="button" aria-expanded={expanded} aria-controls={region} onClick={() => expand(value => !value)}>{copy("agent-worker-row.moreModels", { count: modelIDs.length - 1 })}</DisclosureButton> : null}</div> : null}
+      {supported ? <div className="agent-model-summary"><span>{copy("agent-worker-row.configuredModel")}</span>{model(0)}{accountCount(0)}{decoded ? <span className="agent-reasoning-effort"><span aria-hidden="true">·</span><span>{copy("agent-worker-row.reasoningEffort")}</span><span className="agent-reasoning-effort-value">{configuredEffort(data.effort, copy("reasoning-effort.nativeDefault"), copy("agent-worker-row.effortUnavailable"))}</span></span> : null}{modelIDs.length > 1 ? <DisclosureButton density={DisclosureDensity.Settings} type="button" aria-expanded={expanded} aria-controls={region} onClick={() => expand(value => !value)}>{copy("agent-worker-row.moreModels", { count: modelIDs.length - 1 })}</DisclosureButton> : null}</div> : null}
       {supported && modelIDs.length > 1 ? <DisclosureContent id={region} role="region" hidden={!expanded} aria-label={copy("agent-worker-row.configuredModels")}><ol className="agent-model-routes">{modelIDs.map((id, index) => <li key={index}>{model(index)}{accountCount(index)}</li>)}</ol></DisclosureContent> : null}
       {!supported && [1, 2, 3].includes(row.schemaVersion) ? <span className="agent-route-account-count">{copy("agent-worker-row.accountCountUnavailable")}</span> : null}
       {data.reconfiguration_required === true ? <p role="status">{copy("settings.reconfigurationRequired_a84a37")}</p> : null}

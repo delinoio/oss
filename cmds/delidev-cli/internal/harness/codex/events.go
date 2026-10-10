@@ -33,6 +33,7 @@ const (
 	validationGateway        eventValidationStage = "account-gateway"
 	validationSkills         eventValidationStage = "skills-inventory"
 	validationWindowsSandbox eventValidationStage = "windows-sandbox"
+	validationFilesystem     eventValidationStage = "filesystem-watch"
 	validationMCP            eventValidationStage = "mcp-startup"
 	validationHook           eventValidationStage = "native-hook"
 	validationThreadMetadata eventValidationStage = "thread-metadata"
@@ -75,6 +76,8 @@ func validationStage(method string) eventValidationStage {
 		return validationSkills
 	case "windows/worldWritableWarning", "windowsSandbox/setupCompleted":
 		return validationWindowsSandbox
+	case "fs/changed":
+		return validationFilesystem
 	case "mcpServer/startupStatus/updated", "mcpServer/event/stream/notification", "mcpServer/oauthLogin/completed":
 		return validationMCP
 	case "hook/started", "hook/completed":
@@ -175,6 +178,7 @@ type Event struct {
 	ResponseUsage    *domain.NativeResponseUsage
 	Notice           domain.NativeNotice
 	WindowsWarning   *WindowsWarning
+	ToolOutputKind   ToolKind
 	Tool             *Tool
 	ToolInput        *ToolInput
 	Artifact         *Artifact
@@ -423,7 +427,7 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 		return c.observeMessageLocked(native)
 	case "thread/tokenUsage/updated":
 		return c.observeUsageLocked(native)
-	case "item/commandExecution/outputDelta", "item/commandExecution/terminalInteraction", "item/fileChange/patchUpdated":
+	case "item/commandExecution/outputDelta", "item/fileChange/outputDelta", "item/commandExecution/terminalInteraction", "item/fileChange/patchUpdated":
 		return c.observeToolUpdateLocked(native)
 	default:
 		return c.observeMetadataLocked(native)
