@@ -118,6 +118,13 @@ func (g Git) readDiff(ctx context.Context, request ReadRequest, manifest Manifes
 		if err != nil || base != value.BaseCommit {
 			return result, domain.Fail(domain.Conflict, "The selected base changed during comparison.", "Refresh after the local reference update finishes.")
 		}
+		freshState, freshHead, err := g.localHEAD(ctx, repo.Path)
+		if err != nil {
+			return result, err
+		}
+		if freshState != headState || freshHead != head {
+			return result, domain.Fail(domain.Conflict, "The Git HEAD changed while checking the selected base.", "Refresh after the local checkout or commit update finishes.")
+		}
 	}
 	value.Revision = value.Digest()
 	result.Diff = &value

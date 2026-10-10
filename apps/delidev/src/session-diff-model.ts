@@ -8,7 +8,7 @@ export const referenceKey = (ref: BaseReference) => JSON.stringify([ref.type, re
 export const referenceLabel = (ref: BaseReference) => ref.type === "remote-branch" ? `${ref.remote}/${ref.name}` : ref.name;
 export function readReference(value: unknown): BaseReference | undefined {
   const v = object(value);
-  if (!exact(v, ["type", "name", ...(v.remote !== undefined ? ["remote"] : [])]) || !["local-branch", "remote-branch", "commit"].includes(String(v.type)) || typeof v.name !== "string" || !v.name || v.name.startsWith("-") || /[\r\n\0\uD800-\uDFFF]/u.test(v.name) || new TextEncoder().encode(v.name).length > 1024 || (v.type === "remote-branch" ? typeof v.remote !== "string" || !v.remote || !/^[A-Za-z0-9_.-]+$/.test(v.remote) || v.remote.startsWith("-") : v.remote !== undefined)) return;
+  if (!exact(v, ["type", "name", ...(v.remote !== undefined ? ["remote"] : [])]) || !["local-branch", "remote-branch", "commit"].includes(String(v.type)) || typeof v.name !== "string" || !v.name || v.name.startsWith("-") || /[\r\n\0\uD800-\uDFFF]/u.test(v.name) || new TextEncoder().encode(v.name).length > 1024 || (v.type === "remote-branch" ? typeof v.remote !== "string" || !v.remote || new TextEncoder().encode(v.remote).length > 256 || /[\u0000-\u0020\u007F\\:~^?*\[\/\uD800-\uDFFF]/u.test(v.remote) || v.remote === "@" || v.remote.startsWith("-") || v.remote.startsWith(".") || v.remote.endsWith(".") || v.remote.endsWith(".lock") || v.remote.includes("..") || v.remote.includes("@{") : v.remote !== undefined)) return;
   return v as BaseReference;
 }
 export type DiffChoice = { reference: BaseReference; available: boolean; configured: boolean };
