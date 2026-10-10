@@ -41,7 +41,6 @@ export function Icon({ name, className = "" }: { name: string; className?: strin
   useLocale();
   const common = { "aria-hidden": true as const, className: `sidebar-icon ${className}`, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
   switch (name) {
-    case "sidebar-toggle": return <svg {...common}><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>;
     case "sessions": return <svg {...common}><path d="M4 10.5 12 4l8 6.5V20H4z"/><path d="M9 20v-6h6v6"/></svg>;
     case "pull-requests": return <svg {...common}><circle cx="6" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M6 8v10a4 4 0 0 0 4 4M18 16V8a4 4 0 0 0-4-4h-2"/><path d="m12 2-2 2 2 2"/></svg>;
     case "usage": return <svg {...common}><path d="M4 20V12M10 20V5M16 20v-9M22 20V8"/></svg>;
@@ -275,8 +274,8 @@ function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], e
   </section>;
 }
 
-export function Sidebar({ collapsed = false, paneId, toggleRef, compactFocusRef, openCommandMenu, surface, selectedSessionId, selectedSessionActivation = 0, serverPresentation, connectionReady = true, homeActive = true, navigate, navigateHeader = navigate, openSession, newSession, newGeneralChat, newProject, projectSelectionBlocked = false, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
-  collapsed?: boolean; paneId?: string; toggleRef?: RefObject<HTMLButtonElement | null>; compactFocusRef?: RefObject<HTMLButtonElement | null>; openCommandMenu?: () => void; surface: Surface; selectedSessionId: string; selectedSessionActivation?: number; serverPresentation?: ServerPresentation; connectionReady?: boolean; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string, sidechatParent?:string, name?:string) => void; newSession: (projectId?: string) => void; newGeneralChat: () => void; newProject: () => void; projectSelectionBlocked?: boolean; openSettings: (destination?: SettingsNavigationEntry) => void;
+export function Sidebar({ collapsed = false, paneId, compactFocusRef, openCommandMenu, surface, selectedSessionId, selectedSessionActivation = 0, serverPresentation, connectionReady = true, homeActive = true, navigate, navigateHeader = navigate, openSession, newSession, newGeneralChat, newProject, projectSelectionBlocked = false, openSettings, setContextTarget = () => undefined, drawerOpen = false, setDrawerOpen = () => undefined }: {
+  collapsed?: boolean; paneId?: string; compactFocusRef?: RefObject<HTMLButtonElement | null>; openCommandMenu?: () => void; surface: Surface; selectedSessionId: string; selectedSessionActivation?: number; serverPresentation?: ServerPresentation; connectionReady?: boolean; homeActive?: boolean; navigate: (surface: Surface) => void; navigateHeader?: (surface: Surface.Inbox | Surface.Search) => void; openSession: (id: string, sidechatParent?:string, name?:string) => void; newSession: (projectId?: string) => void; newGeneralChat: () => void; newProject: () => void; projectSelectionBlocked?: boolean; openSettings: (destination?: SettingsNavigationEntry) => void;
   setContextTarget?: (target: HTMLElement | null) => void; drawerOpen?: boolean; setDrawerOpen?: (open: boolean) => void;
 }) {
   const disclosureContentId3 = useId();
@@ -340,9 +339,10 @@ export function Sidebar({ collapsed = false, paneId, toggleRef, compactFocusRef,
   useLayoutEffect(() => {
     const element = drawer.current;
     if (!element) return;
+    const railTarget = () => rail.current?.querySelector<HTMLButtonElement>("button[aria-current='page']") ?? rail.current?.querySelector<HTMLButtonElement>("button");
     const hidden = compact ? !drawerOpen : collapsed;
     if (hidden && element.contains(document.activeElement)) {
-      (compact ? compactFocusRef : toggleRef)?.current?.focus({ preventScroll: true });
+      (compact ? compactFocusRef?.current : railTarget())?.focus({ preventScroll: true });
     }
     element.hidden = hidden;
     element.inert = hidden;
@@ -367,10 +367,10 @@ export function Sidebar({ collapsed = false, paneId, toggleRef, compactFocusRef,
       else element.setAttribute("open", "");
       if (wasModal) {
         setDrawerOpen(false);
-        requestAnimationFrame(() => (collapsed ? toggleRef?.current : drawer.current?.querySelector<HTMLElement>("[aria-current='page']") ?? rail.current?.querySelector<HTMLElement>("[aria-current='page']"))?.focus());
+        requestAnimationFrame(() => (collapsed ? railTarget() : drawer.current?.querySelector<HTMLElement>("[aria-current='page']") ?? railTarget())?.focus({ preventScroll: true }));
       }
     }
-  }, [compact, drawerOpen, collapsed, setDrawerOpen, toggleRef, compactFocusRef]);
+  }, [compact, drawerOpen, collapsed, setDrawerOpen, compactFocusRef]);
   useLayoutEffect(() => {
     const container = list.current;
     const target = sessionNavigation ? Surface.Sessions : surface;

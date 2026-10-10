@@ -3454,12 +3454,13 @@ The Time range fieldset offers equal-width 24 hours, 7 days and 30 days buttons 
 Refresh reads the captured interval again; choosing the same preset captures a new interval. Manual date edits immediately clear the indicator while retaining the last valid selection during the existing 300ms validation delay. Reset and newly consumed Usage entries clear the indicator; Reset retains server-relative default bounds. Navigation preserves mounted drafts and active-only reads. The localized helper says the rolling range ends when selected. Keep semantic selected/focus styling, wrapping controls, independent filter scrolling and the fixed Reset footer. No polling, new wire fields, aggregation or native/account authority is added.
 ## Persistent context-pane collapse (issue #2053)
 
-At widths of at least 760px, the 40px icon button at the beginning of the main
-shell and logical primary+B toggle only the context pane. The 52px rail and its
-navigation/subscription actions remain available. Collapse releases the pane's
-288px (256px through 1100px) grid track. The localized button shares typed
-shortcut/help/ARIA declarations and controls the original mounted pane. It has
-visible focus and `aria-expanded`; it remains available across page changes.
+At widths of at least 760px, logical primary+B toggles only the context pane.
+Issue #2533 removes the wide shell button and its complete 64px occupied row,
+including margins, with no replacement control or spacer. The existing header
+and content flow upward while retaining their own padding and scroll roots.
+The 52px rail and navigation/subscription actions remain available. Collapse
+releases the pane's 288px (256px through 1100px) grid track. Keep localized
+shortcut Help, ordinary-input admission and existing exclusions across surfaces.
 
 Keep Sidebar, portals, filters, scroll snapshots, selected resources, drafts and
 pending/uncertain controllers mounted. Set the hidden pane's `hidden`, `inert`
@@ -3467,13 +3468,14 @@ and `aria-hidden` boundaries explicitly; closing a nonmodal dialog alone does no
 hide its CSS flex layout. Suspend Home navigation polling, hover timers,
 sidebar selectors, repository/schedule navigation refresh and continuation through
 existing activity gates. Main content observation keeps its independent owner.
-Before hiding a focused pane descendant, focus the persistent toggle. Preserve
+Before hiding a focused pane descendant, focus the current rail navigation button,
+falling back to the first rail navigation button. Preserve
 composer focus/caret/selection otherwise; expansion never steals focus.
 
-Below 760px retain the purpose-named compact opener and modal drawer. Hide the
-wide toggle and deactivate primary+B. Drawer opening/closing never saves the
+Below 760px retain the purpose-named compact opener and modal drawer. Deactivate
+primary+B. Drawer opening/closing never saves the
 wide preference. On return to wide layout, reapply the committed choice, retire
-any modal drawer and use a visible toggle/rail fallback for focus. Search initial
+any modal drawer and use the same visible rail fallback for a collapsed pane. Search initial
 focus cannot target a hidden pane; explicit Search focus may request the original
 pane opening and waits for visible committed presentation.
 

@@ -940,3 +940,40 @@ it("keeps the drawer close affordance outside the compact Home header and creati
   const header = value.container.querySelector(".sidebar-header")!;
   expect(header.nextElementSibling?.className).toBe("sidebar-drawer-close");
 });
+
+it.each([Surface.Usage, Surface.Inbox])("moves hidden-pane focus to current or first rail navigation (%s)", surface => {
+ const value = mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [] }), props: { surface } });
+ const pane = value.container.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")!;
+ const rail = value.container.querySelector(".sidebar-rail")!;
+ const target = rail.querySelector<HTMLButtonElement>("button[aria-current='page']") ?? rail.querySelector<HTMLButtonElement>("button")!;
+ pane.querySelector<HTMLButtonElement>("button")!.focus();
+ value.setProps({ collapsed: true });
+ expect(document.activeElement).toBe(target);
+ expect(pane.hidden).toBe(true);
+ expect(pane.inert).toBe(true);
+ expect(pane.getAttribute("aria-hidden")).toBe("true");
+ value.setProps({ collapsed: false });
+ expect(document.activeElement).toBe(target);
+});
+it("preserves an outside composer's focus and selection while collapsing", () => {
+ const value = mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [] }) });
+ const composer = document.createElement("textarea"); composer.value = "Retained draft"; document.body.append(composer);
+ try {
+  composer.focus(); composer.setSelectionRange(2, 8);
+  value.setProps({ collapsed: true });
+  expect(document.activeElement).toBe(composer);
+  expect([composer.selectionStart, composer.selectionEnd]).toEqual([2, 8]);
+  expect(composer.value).toBe("Retained draft");
+ } finally { composer.remove(); }
+});
+
+it("keeps a committed collapsed startup pane mounted and inert without a shell control", () => {
+ const value = mountSidebar({ projects: () => ({ resources: [] }), sessions: () => ({ sessions: [] }), props: { collapsed: true } });
+ const pane = value.container.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")!;
+ expect(pane.hidden).toBe(true);
+ expect(pane.inert).toBe(true);
+ expect(value.container.querySelector(".sidebar-wide-toggle")).toBeNull();
+ value.setProps({ collapsed: false });
+ expect(value.container.querySelector(".sidebar-pane-dialog")).toBe(pane);
+ expect(pane.hidden).toBe(false);
+});
