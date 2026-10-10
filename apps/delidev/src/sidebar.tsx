@@ -67,9 +67,9 @@ export function Icon({ name, className = "" }: { name: string; className?: strin
   }
 }
 
-function SidebarButton({ label, icon, current, onClick, className = "" }: { label: string; icon: string; current?: boolean; onClick: (event: MouseEvent<HTMLButtonElement>) => void; className?: string }) {
+function SidebarButton({ label, icon, current, onClick, className = "", shortcutAria }: { label: string; icon: string; current?: boolean; onClick: (event: MouseEvent<HTMLButtonElement>) => void; className?: string; shortcutAria?: string }) {
   useLocale();
-  return <button type="button" aria-label={label} aria-current={current ? "page" : undefined} className={`sidebar-rail-button ${className}`} onClick={onClick}>
+  return <button type="button" aria-label={label} aria-keyshortcuts={shortcutAria} aria-current={current ? "page" : undefined} className={`sidebar-rail-button ${className}`} onClick={onClick}>
     <Icon name={icon} /><span className="sidebar-rail-tooltip" aria-hidden="true">{label}</span>
   </button>;
 }
@@ -452,6 +452,7 @@ export function Sidebar({ collapsed = false, paneId, toggleRef, compactFocusRef,
   const openShortcutHelp = useShortcutHelp();
   const commandAria = useGlobalShortcutAria(ShortcutId.CommandMenu);
   const helpAria = useGlobalShortcutAria(ShortcutId.Help);
+  const settingsAria = useGlobalShortcutAria(ShortcutId.OpenSettings);
   const newSessionAria = useGlobalShortcutAria(ShortcutId.NewSession);
   const chooseSession = (id: string, parent?:string, name?:string) => { if(parent)openSession(id,parent,name);else openSession(id); setDrawerOpen(false); };
   const chooseNewSession = (projectId?: string) => { newSession(projectId); setDrawerOpen(false); };
@@ -465,7 +466,7 @@ export function Sidebar({ collapsed = false, paneId, toggleRef, compactFocusRef,
       <SubscriptionRail enabled={connectionReady && !drawerOpen} manage={openSettings} focusFallback={() => rail.current?.querySelector<HTMLButtonElement>(".sidebar-rail-button")?.focus()} />
       <button type="button" className="sidebar-rail-button" aria-label={copy("command-menu.title")} aria-keyshortcuts={commandAria} aria-haspopup="dialog" onClick={openCommandMenu}><Icon name="search" /><span className="sidebar-rail-tooltip" aria-hidden="true">{copy("command-menu.title")} <kbd>{commandAria.startsWith("Meta") ? "⌘ K" : "Ctrl K"}</kbd></span></button>
       <button type="button" className="sidebar-rail-button" aria-label={copy("shortcuts.title")} aria-keyshortcuts={helpAria} aria-haspopup="dialog" onClick={openShortcutHelp}><Icon name="help" /><span className="sidebar-rail-tooltip" aria-hidden="true">{copy("shortcuts.title")}</span></button>
-      <SidebarButton label={copy("sidebar.settings_74a883")} icon="settings" current={surface === Surface.Settings} onClick={(event) => { event.currentTarget.focus(); openSettings(); }} />
+      <SidebarButton label={copy("sidebar.settings_74a883")} shortcutAria={settingsAria} icon="settings" current={surface === Surface.Settings} onClick={(event) => { event.currentTarget.focus(); openSettings(); }} />
     </nav>
     <dialog id={paneId} ref={drawer} role={compact ? "dialog" : "region"} className={`sidebar-pane-dialog${compact && drawerOpen ? " is-drawer" : ""}`} aria-label={compact ? copy("sidebar.delidevNavigation_a550af") : undefined} onCancel={(event) => { event.preventDefault(); setDrawerOpen(false); }} onClose={() => { modalDrawer.current = false; }}>
     <div className={`sidebar-pane${sessionNavigation ? " is-home" : ""}`}>

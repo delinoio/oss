@@ -166,6 +166,7 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
     pendingFocusDestination.current = destination;
   };
   const sidebarShortcuts = useShortcuts([
+    { id: ShortcutId.OpenSettings, scope: ShortcutScope.Global, label: "shortcuts.openSettings", bindings: globalShortcutBindings[ShortcutId.OpenSettings], input: ShortcutInput.Allow, active: connectionReady, run: () => openSettings() },
     { id: ShortcutId.ToggleSidebar, scope: ShortcutScope.Global, label: "sidebar-preference.toggle", bindings: globalShortcutBindings[ShortcutId.ToggleSidebar], input: ShortcutInput.Allow, active: wideSidebar, enabled: !sidebarPreference.operation && !sidebarPreference.snapshot.problem, run: toggleSidebar },
     { id: ShortcutId.CommandMenu, scope: ShortcutScope.Global, label: "command-menu.title", bindings: globalShortcutBindings[ShortcutId.CommandMenu], input: ShortcutInput.Allow, run: toggleCommandMenu },
     { id: ShortcutId.Help, scope: ShortcutScope.Global, label: "shortcuts.help", bindings: globalShortcutBindings[ShortcutId.Help], helpKeydown: holdHelp },

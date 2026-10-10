@@ -104,3 +104,18 @@ it("shows fixed New Window N and permits saving former T without changing native
  fireEvent.keyDown(screen.getByRole("button",{name:"Ordinary action"}),{key:"n",ctrlKey:true});expect(run).toHaveBeenCalledOnce();
  expect(screen.getByText("New Window").closest("div")?.querySelector("dd")?.textContent).toBe("Ctrl + N");
 });
+
+
+it("shows fixed localized Open Settings without capture controls or preference writes", async () => {
+ const value=fixture();render(<Owner bridge={value.bridge}/>);
+ await screen.findByText("Open Settings");
+ expect(screen.queryByRole("button",{name:"Capture shortcut for Open Settings"})).toBeNull();
+ await act(()=>i18n.changeLanguage(SupportedLanguage.Korean));
+ expect(screen.getByText("설정 열기")).toBeTruthy();
+ await act(()=>i18n.changeLanguage(SupportedLanguage.English));
+ fireEvent.click(screen.getByRole("button",{name:"Capture shortcut for New session"}));
+ await screen.findByRole("button",{name:"Cancel capture"});
+ fireEvent.keyDown(document.activeElement!,{key:",",ctrlKey:true});
+ expect(screen.getByRole("button",{name:"Cancel capture"})).toBeTruthy();
+ expect(value.bridge.update).not.toHaveBeenCalled();expect(value.state().overrides).toEqual({});
+});

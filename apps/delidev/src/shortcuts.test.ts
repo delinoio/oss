@@ -82,3 +82,23 @@ it("admits only the numeric tab definitions from terminal input and consumes onc
  const other=definition({input:ShortcutInput.Allow});expect(dispatch([tab,other],{key:"1"},input).defaultPrevented).toBe(true);expect(tab.run).toHaveBeenCalledTimes(1);
  dispatch([tab,other],{key:"1",repeat:true},input);dispatch([tab,other],{key:"1",isComposing:true},input);dispatch([tab,other],{key:"1",shiftKey:true},input);dispatch([tab,other],{},input);expect(tab.run).toHaveBeenCalledTimes(1);expect(other.run).not.toHaveBeenCalled();input.remove();
 });
+
+
+it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])("opens Settings from text fields only with exact renderer primary+comma (%s)", platform => {
+  const input = document.createElement("textarea"); document.body.append(input);
+  const run = vi.fn(), binding = globalShortcutBindings[ShortcutId.OpenSettings][0];
+  const item = definition({ id: ShortcutId.OpenSettings, label: "shortcuts.openSettings", input: ShortcutInput.Allow, bindings: [binding], run });
+  const primary = platform === ShortcutPlatform.Mac ? { metaKey: true } : { ctrlKey: true };
+  const send = (extra: KeyboardEventInit = {}, handled = false) => {
+    const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: ",", ...primary, ...extra });
+    if (handled) event.preventDefault();
+    input.addEventListener("keydown", () => dispatchShortcut(event, [item], Surface.Sessions, platform), { once: true }); input.dispatchEvent(event);
+  };
+  send(); expect(run).toHaveBeenCalledOnce();
+  for (const extra of [{ metaKey: false, ctrlKey: false }, { metaKey: platform !== ShortcutPlatform.Mac, ctrlKey: platform === ShortcutPlatform.Mac }, { shiftKey: true }, { altKey: true }, { repeat: true }, { isComposing: true }]) send(extra);
+  send({}, true); expect(run).toHaveBeenCalledOnce();
+  expect(bindingAria(binding, platform)).toBe(platform === ShortcutPlatform.Mac ? "Meta+," : "Control+,");
+  input.setAttribute("hidden", ""); send(); input.removeAttribute("hidden");
+  input.setAttribute("data-shortcuts", "passthrough"); send();
+  expect(run).toHaveBeenCalledOnce(); input.remove();
+});

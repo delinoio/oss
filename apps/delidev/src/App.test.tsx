@@ -1528,3 +1528,26 @@ it("compact navigation never changes the retained wide collapse choice or dispat
   act(() => resize(false)); expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeTruthy();
   expect(document.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")!.hidden).toBe(true); expectNoNavigationWrites(value);
 }, fullShellTimeoutMs);
+
+
+it.each(["MacIntel", "Win32", "Linux x86_64"])("opens Settings with the fixed local shortcut and preserves the active visit (%s)", async platform => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
+  const primary = platform === "MacIntel" ? { metaKey: true } : { ctrlKey: true };
+  const value = fixture(); render(<App transport={value.transport} />);
+  const button = await screen.findByRole("button", { name: "Settings" });
+  expect(button.getAttribute("aria-keyshortcuts")).toBe(platform === "MacIntel" ? "Meta+," : "Control+,");
+  fireEvent.keyDown(document.body, { key: ",", ...primary });
+  await screen.findByRole("heading", { level: 1, name: "AI Subscription" });
+  fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
+  const category = screen.getByRole("button", { name: "Instructions" }); category.focus();
+  fireEvent.keyDown(category, { key: ",", ...primary });
+  expect(screen.getByRole("heading", { level: 1, name: "Instructions" })).toBeTruthy(); expect(document.activeElement).toBe(category);
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  const help = screen.getByRole("button", { name: "Keyboard shortcuts" }); help.focus(); fireEvent.click(help);
+  expect(within(screen.getByRole("dialog", { name: "Keyboard shortcuts" })).getByText("Open Settings")).toBeTruthy();
+  fireEvent.keyDown(screen.getByRole("button", { name: "Close keyboard shortcuts" }), { key: ",", ...primary });
+  expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+  await screen.findByRole("heading", { level: 1, name: "AI Subscription" });
+  expect(document.activeElement).not.toBe(help);
+  expect(value.saveConfiguration).not.toHaveBeenCalled(); expect(value.creates).not.toHaveBeenCalled();
+}, fullShellTimeoutMs);
