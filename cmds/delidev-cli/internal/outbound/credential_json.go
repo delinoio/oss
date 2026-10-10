@@ -3,7 +3,8 @@ package outbound
 
 import (
 	"bytes"
-	"encoding/json"
+	"unicode/utf16"
+	"unicode/utf8"
 )
 
 // Decode only one JSON escape and a bounded matching suffix at a time. Offsets
@@ -13,6 +14,7 @@ type credentialJSONGuard struct {
 	patterns, short [][]byte
 	inside          bool
 	position        int64
+	escapeStorage   [12]byte
 	escape          []byte
 	escapeStart     int64
 	decoded         []byte
@@ -59,15 +61,13 @@ func (g *credentialJSONGuard) feed(b byte, offset int64) {
 		if len(g.escape) == 6 {
 			// A high surrogate may combine with the next \uXXXX. Delay only this
 			// fixed-size escape until that choice is known, including split reads.
-			var value string
-			if json.Unmarshal(append(append([]byte{'"'}, g.escape...), '"'), &value) != nil {
+			value, valid := jsonEscapeUnit(g.escape)
+			if !valid {
 				g.invalidEscape()
 				return
 			}
-			if g.escape[1] == 'u' && g.escape[2] == 'D' || g.escape[1] == 'u' && g.escape[2] == 'd' {
-				if g.escape[3] == '8' || g.escape[3] == '9' || g.escape[3] == 'a' || g.escape[3] == 'A' || g.escape[3] == 'b' || g.escape[3] == 'B' {
-					return
-				}
+			if value >= 0xd800 && value <= 0xdbff {
+				return
 			}
 			g.completeEscape(6)
 			return
@@ -91,7 +91,8 @@ func (g *credentialJSONGuard) feed(b byte, offset int64) {
 	}
 	switch b {
 	case '\\':
-		g.escape = []byte{'\\'}
+		g.escape = g.escapeStorage[:1]
+		g.escape[0] = '\\'
 		g.escapeStart = offset
 	case '"':
 		g.failed = containsCredentialForms(g.decoded, true, g.previous, g.hasPrevious, g.patterns, g.short)
@@ -108,24 +109,92 @@ func (g *credentialJSONGuard) invalidEscape() {
 	g.resetString()
 }
 func (g *credentialJSONGuard) completeEscape(count int) {
-	encoded := append(append([]byte{'"'}, g.escape[:count]...), '"')
-	var value string
-	if json.Unmarshal(encoded, &value) != nil {
-		clear(encoded)
-		g.invalidEscape()
-		return
+	var decoded [8]byte
+	value := decoded[:0]
+	if count == 2 {
+		var b byte
+		switch g.escape[1] {
+		case '"', '\\', '/':
+			b = g.escape[1]
+		case 'b':
+			b = '\b'
+		case 'f':
+			b = '\f'
+		case 'n':
+			b = '\n'
+		case 'r':
+			b = '\r'
+		case 't':
+			b = '\t'
+		default:
+			g.invalidEscape()
+			return
+		}
+		value = append(value, b)
+	} else {
+		first, valid := jsonEscapeUnit(g.escape[:6])
+		if !valid {
+			g.invalidEscape()
+			return
+		}
+		if count == 12 {
+			second, valid := jsonEscapeUnit(g.escape[6:12])
+			if !valid {
+				g.invalidEscape()
+				return
+			}
+			if second >= 0xdc00 && second <= 0xdfff {
+				value = utf8.AppendRune(value, utf16.DecodeRune(first, second))
+			} else {
+				value = utf8.AppendRune(value, utf8.RuneError)
+				value = utf8.AppendRune(value, jsonEscapeRune(second))
+			}
+		} else {
+			value = utf8.AppendRune(value, jsonEscapeRune(first))
+		}
 	}
-	clear(encoded)
-	tail := append([]byte(nil), g.escape[count:]...)
+	// A delayed high surrogate can leave at most one following escape in the
+	// reusable buffer. Copy that fixed tail before recursive feed reuses it.
+	var tail [6]byte
+	n := copy(tail[:], g.escape[count:])
 	start := g.escapeStart
 	clear(g.escape)
 	g.escape = nil
-	g.appendDecoded([]byte(value), start)
-	for i, b := range tail {
+	g.appendDecoded(value, start)
+	clear(decoded[:])
+	for i, b := range tail[:n] {
 		g.feed(b, start+int64(count+i))
 	}
-	clear(tail)
+	clear(tail[:])
 }
+
+func jsonEscapeUnit(raw []byte) (rune, bool) {
+	if len(raw) != 6 || raw[0] != '\\' || raw[1] != 'u' {
+		return 0, false
+	}
+	var value rune
+	for _, b := range raw[2:] {
+		value <<= 4
+		switch {
+		case b >= '0' && b <= '9':
+			value += rune(b - '0')
+		case b >= 'a' && b <= 'f':
+			value += rune(b - 'a' + 10)
+		case b >= 'A' && b <= 'F':
+			value += rune(b - 'A' + 10)
+		default:
+			return 0, false
+		}
+	}
+	return value, true
+}
+func jsonEscapeRune(value rune) rune {
+	if utf16.IsSurrogate(value) {
+		return utf8.RuneError
+	}
+	return value
+}
+
 func (g *credentialJSONGuard) appendDecoded(value []byte, offset int64) {
 	for _, b := range value {
 		g.decoded = append(g.decoded, b)
