@@ -98,9 +98,9 @@ jobs:
       - uses: actions/setup-java@v5
         if: matrix.platform == 'android'
         with: { distribution: temurin, java-version: "21" }
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
         if: matrix.platform == 'android'
-        with: { packages: platform-tools }
+        with: { packages: platform-tools, cmdline-tools-version: "16111833" }
       - name: Install bounded native targets
         shell: bash
         run: |
@@ -108,7 +108,7 @@ jobs:
             brew install xcodegen
             rustup target add aarch64-apple-ios-sim
           else
-            sdkmanager 'platforms;android-37' 'build-tools;36.0.0' 'ndk;29.0.14206865'
+            sdkmanager 'platforms;android-37.0' 'build-tools;36.0.0' 'ndk;29.0.14206865'
             echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
             rustup target add x86_64-linux-android
           fi
@@ -147,14 +147,14 @@ jobs:
       - uses: actions/setup-java@v5
         if: inputs.target == 'both'
         with: { distribution: temurin, java-version: "21" }
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
         if: inputs.target == 'both'
-        with: { packages: platform-tools }
+        with: { packages: platform-tools, cmdline-tools-version: "16111833" }
       - run: |
           brew install xcodegen
           rustup target add aarch64-apple-ios
           if [ '${{ inputs.target }}' = both ]; then
-            sdkmanager 'platforms;android-37' 'build-tools;36.0.0' 'ndk;29.0.14206865'
+            sdkmanager 'platforms;android-37.0' 'build-tools;36.0.0' 'ndk;29.0.14206865'
             echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
             rustup target add aarch64-linux-android armv7-linux-androideabi
           fi

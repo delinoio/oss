@@ -242,7 +242,8 @@ build/code, minimum platform and exact native architectures are checked against
 actual signed artifacts. Bundletool 1.18.3 uses its recorded official SHA-256;
 the app does not import DevHud release authority. Native/signing/upload tasks
 have no shared caches. Hosted runners need Xcode with the iOS SDK, XcodeGen,
-Android API 37/build-tools 36/NDK 29.0.14206865, JDK 21 and the declared Rust targets.
+Android API 37.0 (`platforms;android-37.0`), command-line tools 16111833,
+build-tools 36/NDK 29.0.14206865, JDK 21 and the declared Rust targets.
 Account/provisioning setup and hosted signing acceptance are owner work.
 
 ## Future Live Procedure

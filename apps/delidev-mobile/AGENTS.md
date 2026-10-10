@@ -24,3 +24,5 @@
 - Beta target defaults to both platforms. Explicit iOS-only candidates use schema 2 and require no Android code or credentials; preserve schema-1 both-platform candidates and exact target-bound provenance. Serialize all beta workflow runs without canceling original submissions.
 
 - Direct iOS Cargo builds must pass the configured minimum system version to the Swift linker; do not rely on its iOS 13 fallback or a warm local build.
+
+- Android beta build hosts install the exact SDK package `platforms;android-37.0` with command-line tools 16111833; the integer-only `android-37` package is absent from the official inventory. This build SDK does not alter the API 31 runtime minimum.

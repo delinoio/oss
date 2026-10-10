@@ -101,5 +101,6 @@ test("Android setup excludes the retired tools package", () => {
   for (const job of [workflow.jobs.checks, workflow.jobs.package]) {
     const setup = job.steps.find(step => step.uses?.startsWith("android-actions/setup-android@"));
     assert.equal(setup.with.packages, "platform-tools");
+    assert.equal(setup.with["cmdline-tools-version"], "16111833");
   }
 });
