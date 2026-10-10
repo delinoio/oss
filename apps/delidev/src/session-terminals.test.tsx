@@ -12,8 +12,8 @@ import { MutationIntents, useRetainedMutation } from "./mutation";
 import { SessionTabsProvider, useSessionTabsStore } from "./session-tabs";
 import { SessionTerminals } from "./session-terminals";
 
-// Component tests use a text fixture; real parser/WebGL/CSP acceptance runs in
-// the external Chrome fixture. This adapter exercises input ownership only.
+// Component tests use a text fixture; real WTerm/Ghostty parser and CSP checks runs in
+// the external Chromium fixture. This adapter exercises input ownership only.
 vi.mock("./terminal-emulator", () => ({ openTerminalScreen: (host: HTMLElement, input: (bytes: Uint8Array) => void) => {
   const output = document.createElement("pre"), field = document.createElement("textarea");
   field.setAttribute("aria-label", "Terminal input"); field.disabled = true;

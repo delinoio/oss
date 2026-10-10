@@ -1,0 +1,5 @@
+{
+  "terminal.keyboardExitHint": "Press Escape, then Tab to move focus out of the terminal, or Shift+Tab to move focus backward.",
+  "terminal.outputAnnouncement": "Terminal output",
+  "terminal.outputAnnouncementLimit": "Output announcements paused because there is too much output. Type in the terminal to resume."
+}

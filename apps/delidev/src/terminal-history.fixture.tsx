@@ -27,7 +27,7 @@ const transport=createRouterTransport(router=>{
    if(request.action===TerminalAction.INPUT)await new Promise<void>(resolve=>{inputRelease=resolve;});else await pause(30);
    terminal=create(ResourceSchema,{...terminal,revision:terminal.revision+1n});return {terminal};},
   watchTerminalOutput:async function*(request,context){metrics.watches++;metrics.requests.push({epoch:request.epoch,afterSequence:request.afterSequence.toString()});
-   try {yield {epoch:newRequestId(),sequence:1n,data:new TextEncoder().encode(Array.from({length:80},(_,index)=>`unchanged synthetic line ${index}\r\n`).join("")),terminal};
+   try {yield {epoch:newRequestId(),sequence:1n,data:new TextEncoder().encode(Array.from({length:80},(_,index)=>`\x1b[31;44;4;9munchanged synthetic line ${index}\x1b[0m\r\n`).join("")),terminal};
     if(closed)return;
     await new Promise<void>(resolve=>{if(context.signal.aborted)resolve();else context.signal.addEventListener("abort",()=>resolve(),{once:true});});
    }finally{metrics.watchClosed++;}
@@ -35,6 +35,6 @@ const transport=createRouterTransport(router=>{
  });
 });
 Object.assign(window,{__terminalHistoryFixture:{metrics,releaseInput:()=>{inputRelease?.();inputRelease=undefined;}}});
-const observer=new MutationObserver(changes=>{for(const change of changes)for(const [nodes,key] of [[change.addedNodes,"screens"],[change.removedNodes,"removedScreens"]] as const)for(const node of nodes)if(node instanceof Element)metrics[key]+=Number(node.matches(".xterm"))+node.querySelectorAll(".xterm").length;});
+const observer=new MutationObserver(changes=>{for(const change of changes)for(const [nodes,key] of [[change.addedNodes,"screens"],[change.removedNodes,"removedScreens"]] as const)for(const node of nodes)if(node instanceof Element)metrics[key]+=Number(node.matches(".wterm"))+node.querySelectorAll(".wterm").length;});
 observer.observe(document.body,{subtree:true,childList:true});
 createRoot(document.getElementById("root")!).render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><TransportProvider transport={transport}><MutationIntents><section className="session-workspace terminal-open terminal-history-fixture"><div className="session-content"><div className="session-upper-content"/><div className="session-terminal-slot"><SessionTerminals session={session} close={()=>{}} /></div></div></section></MutationIntents></TransportProvider></QueryClientProvider>);

@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-import { Terminal } from "@xterm/xterm";
-import { WebglAddon } from "@xterm/addon-webgl";
-import { FitAddon } from "@xterm/addon-fit";
-import { binaryInput } from "./terminal-input-queue";
-import "@xterm/xterm/css/xterm.css";
+import { WTerm } from "@wterm/dom";
+import { GhosttyCore } from "@wterm/ghostty";
+import { copy, i18n } from "./localization";
+import "@wterm/dom/css";
 import "./terminal-dock.css";
 
 export interface TerminalScreen {
@@ -13,31 +12,73 @@ export interface TerminalScreen {
   dispose(): void;
 }
 export function openTerminalScreen(host: HTMLElement, input: (bytes: Uint8Array) => void, resized: (rows: number, columns: number) => void, unavailable: () => void, tabShortcut?: (event: KeyboardEvent) => boolean): TerminalScreen {
-  const terminal = new Terminal({ allowProposedApi: true, scrollback: 5000, fontSize: 14, fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace", screenReaderMode: true, logLevel: "off", disableStdin: true, linkHandler: { activate: () => {}, hover: () => {}, leave: () => {} }, theme: { background: "#14191f", foreground: "#e5e9f0", cursor: "#e5e9f0", black: "#222a33", red: "#ef8181", green: "#8bd49c", yellow: "#e8c77a", blue: "#80b7ef", magenta: "#c4a0e8", cyan: "#7fd0d0", white: "#e5e9f0", brightBlack: "#778390", brightRed: "#ffa0a0", brightGreen: "#a9e9b5", brightYellow: "#ffe1a2", brightBlue: "#acd2ff", brightMagenta: "#e2baff", brightCyan: "#a5eeee", brightWhite: "#ffffff" } });
-  terminal.attachCustomKeyEventHandler(event => !tabShortcut?.(event));
-  const webgl = new WebglAddon(), fit = new FitAddon();
-  let alive = true, writable = false;
-  const pending = new Set<() => void>();
-  const subscriptions = [terminal.parser.registerOscHandler(52, () => true), terminal.parser.registerOscHandler(8, () => true), terminal.onData(value => { if (writable) input(new TextEncoder().encode(value)); }), terminal.onBinary(value => { if (writable) input(binaryInput(value)); }), webgl.onContextLoss(() => { writable = false; terminal.options.disableStdin = true; unavailable(); })];
-  const measure = () => {
-    if (!alive || !host.clientWidth || !host.clientHeight) return;
-    try { const dimensions = fit.proposeDimensions(); if (!dimensions) return;
-      const rows = Math.min(500, Math.max(1, dimensions.rows)), columns = Math.min(1000, Math.max(1, dimensions.cols));
-      if (terminal.rows !== rows || terminal.cols !== columns) terminal.resize(columns, rows);
-      resized(rows, columns);
-    } catch { writable = false; terminal.options.disableStdin = true; unavailable(); }
+  let disposed = false, failed = false, writable = false, focusPending = false;
+  let terminal: WTerm | undefined, core: GhosttyCore | undefined;
+  let cancel!: () => void;
+  const cancelled = new Promise<void>(resolve => { cancel = resolve; });
+  const localize = () => {
+    host.setAttribute("data-terminal-keyboard-hint", copy("terminal.keyboardExitHint"));
+    host.setAttribute("data-terminal-output-label", copy("terminal.outputAnnouncement"));
+    host.setAttribute("data-terminal-output-limit", copy("terminal.outputAnnouncementLimit"));
+    terminal?.localize();
   };
-  // Intercept the browser paste once. xterm owns bracketed-paste framing and
-  // the callback atomically admits or rejects the complete emitted byte string.
-  const paste = (event: ClipboardEvent) => { event.preventDefault(); event.stopImmediatePropagation(); if (writable) terminal.paste(event.clipboardData?.getData("text/plain") ?? ""); };
-  host.addEventListener("paste", paste, true);
+  const measure = () => {
+    if (disposed || failed || !terminal) return;
+    try {
+      const size = terminal.measureDimensions();
+      if (!size) return;
+      if (size.rows !== terminal.rows || size.cols !== terminal.cols) terminal.resize(size.cols, size.rows);
+      resized(size.rows, size.cols);
+    } catch { fail(); }
+  };
+  const paste = (event: ClipboardEvent) => {
+    event.preventDefault(); event.stopImmediatePropagation();
+    if (!disposed && !failed && writable) terminal?.paste(event.clipboardData?.getData("text/plain") ?? "");
+  };
+  const shortcut = (event: KeyboardEvent) => { if (!disposed && tabShortcut?.(event)) { event.preventDefault(); event.stopImmediatePropagation(); } };
   const observer = new ResizeObserver(measure);
-  try { terminal.loadAddon(webgl); terminal.loadAddon(fit); terminal.open(host); observer.observe(host); measure(); }
-  catch (error) { alive = false; observer.disconnect(); host.removeEventListener("paste", paste, true); terminal.dispose(); for (const subscription of subscriptions) subscription.dispose(); throw error; }
+  const cleanup = () => {
+    observer.disconnect(); host.removeEventListener("paste", paste, true); host.removeEventListener("keydown", shortcut, true); i18n.off("languageChanged", localize);
+    const renderer = terminal; terminal = undefined;
+    const ownedCore = core; core = undefined;
+    try { renderer?.destroy(); } catch { /* Keep the independent core disposal owned. */ }
+    try { ownedCore?.dispose(); } catch { /* Renderer remains unavailable. */ }
+  };
+  const fail = () => {
+    if (disposed || failed) return;
+    failed = true; writable = false; focusPending = false; cancel();
+    cleanup(); console.warn("terminal-renderer", { stage: "unavailable" }); unavailable();
+  };
+  localize(); i18n.on("languageChanged", localize);
+  host.addEventListener("paste", paste, true); host.addEventListener("keydown", shortcut, true);
+  const ready = (async () => {
+    // CI explicitly regenerates this asset from pinned source; the bundler emits
+    // a hashed same-origin URL. Never use a CDN or a runtime compiler.
+    const loaded = await GhosttyCore.load({ wasmPath: new URL("../.terminal-assets/ghostty-vt.wasm", import.meta.url).href, scrollbackLimit: 5000, imageStorageLimit: 0 });
+    if (disposed || failed) { loaded.dispose(); return; }
+    core = loaded;
+    terminal = new WTerm(host, { core, autoResize: false, autoFocus: false, inputEnabled: false, announceOutput: true, debug: false,
+      onData: value => { if (!disposed && !failed && writable) input(new TextEncoder().encode(value)); },
+      onBinary: bytes => { if (!disposed && !failed && writable) input(bytes); }, onError: fail,
+    });
+    await terminal.init();
+    if (disposed || failed) { cleanup(); return; }
+    terminal.setInputEnabled(writable); observer.observe(host); measure();
+    if (focusPending && writable) { focusPending = false; terminal.focus(); }
+  })().catch(() => { fail(); });
+  let writes = Promise.resolve();
   return {
-    write(bytes, gap) { return new Promise(resolve => { if (!alive) { resolve(); return; } if (gap) terminal.reset(); const settled = () => { pending.delete(settled); resolve(); }; pending.add(settled); terminal.write(bytes, settled); }); },
-    enabled(value) { writable = alive && value; terminal.options.disableStdin = !writable; },
-    focus() { if (alive) terminal.focus(); },
-    dispose() { if (!alive) return; alive = false; writable = false; observer.disconnect(); host.removeEventListener("paste", paste, true); for (const subscription of subscriptions) subscription.dispose(); /* Dispose the terminal first: addon disposal must never install the patched DOM fallback. */ terminal.dispose(); for (const settled of pending) settled(); }
+    write(bytes, gap) {
+      const output = bytes.slice();
+      writes = writes.then(async () => {
+        await Promise.race([ready, cancelled]);
+        if (disposed || failed || !terminal) return;
+        try { if (gap) terminal.reset(); terminal.write(output); } catch { fail(); }
+      });
+      return writes;
+    },
+    enabled(value) { writable = !disposed && !failed && value; if (!writable) focusPending = false; terminal?.setInputEnabled(writable); },
+    focus() { if (disposed || failed) return; if (terminal && writable) terminal.focus(); else focusPending = true; },
+    dispose() { if (disposed) return; disposed = true; writable = false; focusPending = false; cancel(); cleanup(); },
   };
 }

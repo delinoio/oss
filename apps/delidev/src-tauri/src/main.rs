@@ -1402,6 +1402,7 @@ fn saved_csp(policy: &str, origin: &str) -> Result<String, NativeFailure> {
     directives.insert(
         "connect-src".into(),
         CspDirectiveSources::List(vec![
+            "'self'".to_owned(),
             "ipc:".to_owned(),
             "http://ipc.localhost".to_owned(),
             origin.to_owned(),
@@ -1415,6 +1416,7 @@ fn local_csp(policy: Csp, endpoint: &str, development: bool) -> Result<Csp, Nati
     }
     let mut directives: HashMap<String, CspDirectiveSources> = policy.into();
     let mut sources = vec![
+        "'self'".to_owned(),
         "ipc:".to_owned(),
         "http://ipc.localhost".to_owned(),
         endpoint.to_owned(),
@@ -2279,6 +2281,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn terminal_wasm_csp_preserves_script_and_selected_connection_fences() {
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let policy = config["app"]["security"]["csp"].as_str().unwrap();
+        for rewritten in [
+            saved_csp(policy, "https://selected.example.test").unwrap(),
+            local_csp(
+                Csp::Policy(policy.to_owned()),
+                "http://127.0.0.1:43219",
+                false,
+            )
+            .unwrap()
+            .to_string(),
+        ] {
+            let directives: HashMap<String, CspDirectiveSources> = Csp::Policy(rewritten).into();
+            let scripts: Vec<String> = directives["script-src"].clone().into();
+            assert_eq!(scripts, vec!["'self'", "'wasm-unsafe-eval'"]);
+            let styles: Vec<String> = directives["style-src"].clone().into();
+            assert_eq!(styles, vec!["'self'"]);
+            let connections: Vec<String> = directives["connect-src"].clone().into();
+            assert_eq!(connections.len(), 4);
+            assert_eq!(
+                &connections[..3],
+                &["'self'", "ipc:", "http://ipc.localhost"]
+            );
+        }
+    }
+
+    #[test]
     fn local_csp_has_only_the_selected_runtime_origin() {
         for endpoint in ["http://127.0.0.1:51234", "http://127.0.0.1:62345"] {
             let original = Csp::Policy(
@@ -2289,7 +2320,10 @@ mod tests {
             let policy = local_csp(Csp::from(map), endpoint, false).unwrap();
             let directives: HashMap<String, CspDirectiveSources> = policy.into();
             let sources: Vec<String> = directives["connect-src"].clone().into();
-            assert_eq!(sources, vec!["ipc:", "http://ipc.localhost", endpoint]);
+            assert_eq!(
+                sources,
+                vec!["'self'", "ipc:", "http://ipc.localhost", endpoint]
+            );
             let scripts: Vec<String> = directives["script-src"].clone().into();
             assert_eq!(scripts, vec!["'self'"]);
         }
@@ -2562,6 +2596,7 @@ mod tests {
         assert_eq!(
             sources,
             vec![
+                "'self'",
                 "ipc:",
                 "http://ipc.localhost",
                 "https://selected.example.test"

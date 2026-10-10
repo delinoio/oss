@@ -1892,6 +1892,8 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Rebuild pinned Ghostty WASM from source
+        run: pnpm --dir apps/delidev prepare:terminal:source
       - name: Build runner-owned Go fixture executable
         if: ${{ matrix.phase != 'checks' }}
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:delidev:fixture
@@ -1903,6 +1905,15 @@ jobs:
           TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
           FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['delidev-frontend'] }}
         run: node scripts/ci/run-affected.mjs delidev-desktop ci:${{ matrix.phase }}
+
+      - name: Verify selected terminal under production CSP
+        if: ${{ matrix.phase == 'checks' }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/terminal-browser"
+          printf '%s\n' '{"private":true}' > "$RUNNER_TEMP/terminal-browser/package.json"
+          pnpm --dir "$RUNNER_TEMP/terminal-browser" add --ignore-scripts --save-exact playwright@1.64.0
+          pnpm --dir "$RUNNER_TEMP/terminal-browser" exec playwright install --with-deps chromium
+          DELIDEV_LAYOUT_PLAYWRIGHT_MODULE="$RUNNER_TEMP/terminal-browser/node_modules/playwright/index.mjs" node apps/delidev/scripts/test-terminal-history-layout.mjs
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}

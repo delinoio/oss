@@ -215,3 +215,6 @@ tmp/
 # Repository development environment (always local and never committed)
 /.infisical.json
 /.dev-environment/
+
+# Explicitly prepared, untracked terminal WASM asset
+/apps/delidev/.terminal-assets/

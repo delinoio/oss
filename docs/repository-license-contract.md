@@ -8,7 +8,7 @@ Delino-owned source in this repository is Apache-2.0 licensed. The root `LICENSE
 
 The imported VoidZero fspy, materialized-artifact and vt crates keep their original MIT text, copyright notices and explicit MIT Cargo metadata. The vendored Microsoft Detours source keeps its separate MIT notices. Bundled Noto Sans KR fonts keep their OFL terms. A repository-wide default does not relicense these works. Retain their notices in any distribution that carries their bytes, including pnport's fspy companion.
 
-The DeliDev terminal bundles xterm.js 6.0.0, WebGL addon 0.19.0 and Fit addon 0.11.0 under their original MIT terms. Preserve the three original license files and modification notice in `apps/delidev/public/terminal-notices`; frontend distributions copy this public notice directory with their bundled bytes.
+The DeliDev terminal bundles @wterm/dom, @wterm/core and @wterm/ghostty 0.5.4 under Apache-2.0, with Ghostty 1.3.1, Zig 0.15.2 runtime code, Wuffs and uucode 0.2.0/Unicode support under their original MIT, dual MIT/Apache-2.0 and Unicode terms. Preserve the complete original license texts, copyright notices and modification notice in `apps/delidev/public/terminal-notices`; frontend distributions copy this public notice directory with the hashed, digest-pinned WASM asset. Repository licensing does not replace these original terms.
 
 The retained local DeliDev subscription provider and former Agent Worker harness marks (OpenAI, Claude, Grok and OpenCode) are imported from LobeHub/lobe-icons at revision `329f378cbd1a88f45b60cd096b9111ce16f3ea39` under MIT. Keep their existing bytes, original license and source/modification notice in `apps/delidev/public/subscription-marks`; frontend distributions copy those notices with the marks.
 

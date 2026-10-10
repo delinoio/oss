@@ -1,3 +1,5 @@
+- The terminal adapter uses only public WTerm/Ghostty methods, serializes original bytes through one readiness task, and cancels late focus/input/publication on disposal. Gap reset clears both screens/history/parser/selection/query/announcement state without changing native ownership. Disable automatic engine focus/resize and every input channel during unavailable recovery; retain localized text inspection/copy and inert OSC52/OSC8. Measure bounded dimensions before engine/queue resize and preserve the original input-before-resize controller.
+
 - Project first-prompt history follows the sessions/storage/desktop/protocol/client contracts for issue #1828. Preserve immutable project-owned text with empty session IDs, atomic 100-entry acceptance order, actor-bound confirmed clear receipts, scoped byte-bounded reads and text-only boundary recall. System 48 / EntityKind 35 add no Worker capability or migration. Session deletion preserves history; project deletion removes it, managed backups capture it and portable exports exclude it. Never log prompt text.
 
 

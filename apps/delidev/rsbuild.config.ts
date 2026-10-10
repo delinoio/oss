@@ -6,5 +6,6 @@ export default defineConfig({
   source: { entry: { index: "./src/main.tsx", "tray-status": "./src/tray-status-main.tsx" } },
   html: { template: "./index.html" },
   server: { host: "127.0.0.1", port: 46311, strictPort: true },
+  tools: { rspack: { module: { rules: [{ test: /\.wasm$/, type: "asset/resource", generator: { filename: "static/wasm/[name].[contenthash].wasm" } }] } } },
   output: { assetPrefix: "./", sourceMap: false, cleanDistPath: true },
 });

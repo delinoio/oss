@@ -977,22 +977,44 @@ presentation Close. Details owns the future-creation shell override, Worker/shel
 state/cleanup and refresh/reattach/Close actions. Retain the accepted creation
 and explicit selection beyond the bounded 50-record history payload window.
 
-Pin xterm 6.0.0, WebGL addon 0.19.0 and Fit addon 0.11.0 with their MIT notices.
-Static CSS preserves the dark 14px monospace palette through tokens in all
-three shared theme palettes. Shared outward focus and terminal text/selection/
-control-border contrast remain audited in both application themes.
-The narrow package patch removes Viewport dynamic stylesheet insertion and
-makes the DOM renderer fallback fail closed; its source and ESM changes route
-both package entrypoints to the same patched ESM on repository Node24. Load
-WebGL before opening, dispose Terminal before addon teardown, and leave
-production style-src self unchanged. Renderer failure or context loss disables
-input and offers explicit original reattachment/Close. Do not install clipboard,
-web-link or attach addons; consume OSC 52/OSC 8 and keep detected links inert.
-Screen-reader output remains enabled and xterm diagnostic logging stays off.
+Pin `@wterm/dom`, `@wterm/core` and `@wterm/ghostty` 0.5.4. Each renderer
+owns one Ghostty core with 5000 history lines and zero image storage. Keep the
+synchronous `TerminalScreen` factory and one asynchronous initialization task;
+serialize original byte writes through readiness and successful parsing. Fence
+late completion/focus and independently dispose both renderer and supplied core
+on failure or teardown. Renderer failure disables input and offers original
+reattachment/Close; it never creates or closes a native shell.
+
+Version-pinned package patches own coordinated reset, disabled input, optional
+automatic focus, inert hyperlinks, localized output/hint accessibility and
+bounded measurement. Application code uses only public methods. Disable engine
+automatic focus/resize and raw diagnostics. Construct full and incremental rows
+with DOM nodes and validated CSSOM properties; retain static CSS, the dark 14px
+monospace palette, semantic theme tokens, scrollbars, selection and focus.
+Keep production `style-src 'self'`. Add only `'wasm-unsafe-eval'` to the script
+policy and `'self'` to the fetch policy; retain exact original connection-origin
+rewriting and forbid JavaScript eval, inline production scripts/styles, remote
+modules, CDN loading and runtime compilers. Explicit preparation copies the
+exported, digest-pinned WASM into ignored local assets; bundling emits its hashed
+same-origin URL with `application/wasm`. CI rebuilds the pinned source with its
+exact Zig/dependency hashes and compares the output before browser checks.
+Frontend distributions retain the complete terminal component notices.
+
+Disabled input suppresses keyboard/composition, paste, mouse/focus reports and
+parser-generated replies while allowing text inspection/copy. Intercept paste
+once and retain original normalization, framing and atomic queue admission.
+Consume OSC 52 without clipboard reads/writes or replies and keep OSC 8 inert
+without anchors or keyboard/context-menu navigation. Leave title, working
+directory and shell callbacks disconnected. Diagnostics expose stable categories
+and lifecycle stages only. Accessible output and input guidance follow the active
+English/Korean locale. No search controls, shell indicators, graphics, engine
+selector or fallback are introduced. Browser fixtures, compilation and packaging
+remain distinct from installed macOS/Windows/Linux acceptance and issue #2525.
 
 Pass ordered Uint8Array output directly to the emulator with exact bigint
 cursors and epoch checks. Keep at most 5000 scrollback lines. Explicit gaps reset
-the parser and screen before retained suffix bytes; gap/connection/error notices
+the parser, both screens, history, selection and pending renderer/query/announcement
+state before retained suffix bytes, preserving dimensions and focus ownership; gap/connection/error notices
 remain outside native bytes. Reattachment recovers only the available bounded
 ring and never claims a full-screen application snapshot.
 

@@ -1,3 +1,5 @@
+- DeliDev frontend CI explicitly rebuilds the 0.5.4 Ghostty WASM from immutable wterm source with pinned Zig/dependency hashes and compares the exported artifact before checks. The checks phase also runs the selected renderer history/CSP browser fixture with isolated pinned Playwright. Preserve source/digest/notice verification and distinguish browser/package evidence from installed-platform acceptance.
+
 - Known subscription model suggestions follow `docs/cmds-delidev-catalog-contract.md#known-subscription-model-suggestions`. PR #1370 established System capability 35 and the advisory declarations on main before activation. Keep bounded read-only owner/client metadata, explicit server outbound routing, joined cache refresh and review-only daily PRs separate from account/native/execution authority. Preserve atomic native-ID Worker saves and saved revision/history checks; no database migration.
 
 # Workflow contracts

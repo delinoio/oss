@@ -1,0 +1,5 @@
+{
+  "terminal.keyboardExitHint": "Escape를 누른 다음 Tab을 눌러 터미널 밖으로 이동하거나 Shift+Tab으로 이전 위치로 이동하세요.",
+  "terminal.outputAnnouncement": "터미널 출력",
+  "terminal.outputAnnouncementLimit": "출력이 너무 많아 출력 알림을 일시 중지했습니다. 터미널에 입력하면 다시 시작합니다."
+}
