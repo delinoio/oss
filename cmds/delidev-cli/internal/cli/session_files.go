@@ -30,6 +30,7 @@ func sessionFiles(ctx context.Context, c client, args []string) (any, error) {
 	id := f.String("id", "", "session UUID")
 	repo, path, page := new(string), new(string), new(string)
 	comparison := new(string)
+	baseType, baseName, baseRemote := new(string), new(string), new(string)
 	if query.Operation != domain.WorkspaceRoots {
 		repo = f.String("repository-id", "", "prepared repository UUID; omit for General Chat")
 		path = f.String("path", ".", "relative slash path within the selected workspace")
@@ -38,7 +39,10 @@ func sessionFiles(ctx context.Context, c client, args []string) (any, error) {
 		page = f.String("page-token", "", "next page from the same directory observation")
 	}
 	if query.Operation == domain.WorkspaceGitDiff {
-		comparison = f.String("comparison", string(domain.DiffWorkingTree), "working-tree, staged, or Worktree creation comparison")
+		comparison = f.String("comparison", string(domain.DiffWorkingTree), "branch, working-tree, staged, or Worktree creation comparison")
+		baseType = f.String("base-type", "", "branch base: local-branch, remote-branch, or commit")
+		baseName = f.String("base-name", "", "exact locally available branch or commit")
+		baseRemote = f.String("base-remote", "", "remote for a remote-branch base")
 	}
 	if err := parse(f, args[1:]); err != nil {
 		return nil, err
@@ -48,8 +52,31 @@ func sessionFiles(ctx context.Context, c client, args []string) (any, error) {
 	}
 	query.RepositoryID, query.Path, query.PageToken = domain.ID(*repo), *path, *page
 	query.Comparison = domain.WorkspaceDiffComparison(*comparison)
+	query.BaseRef = domain.Reference{Type: domain.ReferenceType(*baseType), Name: *baseName, Remote: *baseRemote}
 	if err := query.Validate(); err != nil {
 		return nil, err
+	}
+	if query.Comparison == domain.DiffBranch {
+		optionsQuery := domain.WorkspaceReadQuery{Operation: domain.WorkspaceGitDiffOptions, RepositoryID: query.RepositoryID, Path: "."}
+		optsRaw, _ := json.Marshal(optionsQuery)
+		response, err := c.sessions.ReadSessionWorkspace(ctx, request(c, &pb.ReadSessionWorkspaceRequest{SessionId: *id, QueryJson: optsRaw}))
+		if err != nil {
+			return nil, rpc.ClientError(err)
+		}
+		var options domain.WorkspaceReadResult
+		if err := domain.Decode(response.Msg.DocumentJson, &options); err != nil {
+			return nil, err
+		}
+		if err := options.Validate(optionsQuery); err != nil {
+			return nil, err
+		}
+		available := false
+		for _, choice := range options.DiffOptions.Choices {
+			available = available || choice.Reference == query.BaseRef && choice.Available
+		}
+		if !available {
+			return nil, domain.Fail(domain.Unavailable, "The requested branch base is unavailable locally.", "Choose an available base after updating the original server and Worker.")
+		}
 	}
 	raw, _ := json.Marshal(query)
 	if args[0] == "review-context" {
