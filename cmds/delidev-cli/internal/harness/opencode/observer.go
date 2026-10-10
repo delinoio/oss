@@ -139,6 +139,7 @@ type inputObserver struct {
 	contextBaseInventory []HistoryMessage
 	contextPruned        []NativePrunedPart
 	snapshotJoining      bool
+	reconciliationText   map[string]string
 }
 
 func observerProblem() *domain.Error {

@@ -8,7 +8,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it } from "vitest";
-import { BudgetState, SessionService, ConfigurationService, EntityKind, ResourceService, ScheduleService, newRequestId } from "@delinoio/delidev-api-client";
+import { type GetSessionBudgetResponse, BudgetState, SessionService, ConfigurationService, EntityKind, ResourceService, ScheduleService, newRequestId } from "@delinoio/delidev-api-client";
 import { SessionBudget } from "./session-budget";
 import { Schedules } from "./schedules";
 import { NewSession, NewSessionKind } from "./new-session";
@@ -134,18 +134,36 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
     expect(created && document(created)).toMatchObject({ workspace: "local", name: "New session", estimated_cost_budget: { currency: "USD", threshold: "0.000000000000001" } });
   });
   cleanup();
-  const budgetSession = (await createClient(ResourceService, transport).getResource({ kind: EntityKind.SESSION, id: createdSessionId })).resource!;
+  const resources = createClient(ResourceService, transport);
+  await waitFor(async () => {
+    const session = (await resources.getResource({ kind: EntityKind.SESSION, id: createdSessionId })).resource!;
+    expect(document(session)).toMatchObject({ dispatch: "blocked", problem: { code: "unavailable", message: "The first execution is waiting for its workspace, Runner Device or account." } });
+  });
+  const budgetSession = (await resources.getResource({ kind: EntityKind.SESSION, id: createdSessionId })).resource!;
   expect(document(budgetSession).estimated_cost_budget).toEqual({ currency: "USD", threshold: "0.000000000000001" });
   const budgetClient = createClient(SessionService, transport);
   expect((await budgetClient.getSessionBudget({ sessionId: budgetSession.id })).view).toMatchObject({ state: BudgetState.ALLOW_INCOMPLETE, selectedCurrency: { knownAmount: "" } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={scheduleClient}><MutationIntents><SessionBudget resource={budgetSession} changed={() => {}} blocked={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
   await screen.findByText(/Known lifetime subtotal: Unavailable/);
-  fireEvent.click(screen.getByRole("button", { name: "Edit session budget" }));
+  const editCurrentBudget = async () => {
+    await scheduleClient.invalidateQueries();
+    await waitFor(async () => {
+      const current = (await budgetClient.getSessionBudget({ sessionId: budgetSession.id })).view!;
+      const observed = scheduleClient.getQueryCache().getAll().map(query => {
+        const view = (query.state.data as GetSessionBudgetResponse | undefined)?.view;
+        return { id: view?.session?.id, revision: view?.session?.revision.toString() };
+      });
+      expect(observed).toContainEqual({ id: budgetSession.id, revision: current.session!.revision.toString() });
+      expect(screen.getByRole("button", { name: "Edit session budget" }).matches(":disabled")).toBe(false);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Edit session budget" }));
+  };
+  await editCurrentBudget();
   change("Estimated-cost threshold", "12.345678901234567");
   fireEvent.click(screen.getByRole("button", { name: "Save session budget" }));
   await screen.findByText(/Threshold: USD 12.345678901234567/);
   expect((await budgetClient.getSessionBudget({ sessionId: budgetSession.id })).view?.budget?.threshold).toBe("12.345678901234567");
-  fireEvent.click(screen.getByRole("button", { name: "Edit session budget" }));
+  await editCurrentBudget();
   fireEvent.click(screen.getByRole("checkbox", { name: "Enable estimated-cost budget" }));
   fireEvent.click(screen.getByRole("button", { name: "Save session budget" }));
   await screen.findByText("No estimated-cost budget is configured.");
