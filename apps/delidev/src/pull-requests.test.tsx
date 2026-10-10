@@ -254,6 +254,54 @@ it.each([Code.PermissionDenied, Code.Unavailable])("distinguishes catalog failur
   expect(value.query).toHaveBeenCalledTimes(1);
 });
 
+it.each([Code.PermissionDenied, Code.Unavailable])("retains cached empty repository guidance with refresh failure %s and explicit recovery", async (code) => {
+  const value = fixture([]); render(<App transport={value.transport} />);
+  const pane = await open();
+  const empty = await pane.findByText("No repositories on this page.");
+  const refresh = pane.getByRole("button", { name: "Refresh" }) as HTMLButtonElement;
+  value.fail(code); fireEvent.click(refresh);
+  await pane.findByText("Refresh failed. Showing the previous repository page.");
+  expect(pane.getByText("No repositories on this page.")).toBe(empty);
+  expect(empty.closest(".sidebar-repository-empty")?.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
+  await waitFor(() => expect(refresh.disabled).toBe(false));
+  expect(pane.queryByRole("button", { name: "Load more Repositories" })).toBeNull();
+  value.fail(); fireEvent.click(refresh);
+  await waitFor(() => expect(pane.queryByText("Refresh failed. Showing the previous repository page.")).toBeNull());
+  expect(pane.getByText("No repositories on this page.")).toBe(empty);
+  expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.REPOSITORY).map(([request]) => request.filter?.pageToken)).toEqual(["", "", ""]);
+  expect(value.get).not.toHaveBeenCalled();
+  expect(value.query).not.toHaveBeenCalled();
+  expect(value.mutation).not.toHaveBeenCalled();
+});
+
+it("retains the original repository cursor and selected drafts after failed refresh and successful paging", async () => {
+  const value = fixture();
+  const next = repository("Next repository"); next.id = newRequestId();
+  const read = value.list.getMockImplementation()!;
+  value.list.mockImplementation(async (request) => {
+    const page = await read(request);
+    return request.filter?.kind === EntityKind.REPOSITORY && request.filter.pageToken ? { resources: [next] } : page;
+  });
+  render(<App transport={value.transport} />); const pane = await open(); await choose(value.rows[0]);
+  const selected = pane.getByRole("button", { name: `Example repository. Repository ID: ${repositoryId}` });
+  fireEvent.click(pane.getByRole("radio", { name: "Closed" }));
+  fireEvent.change(pane.getByLabelText("Search title and body"), { target: { value: "retained draft" } });
+  value.fail(Code.Unavailable); fireEvent.click(pane.getByRole("button", { name: "Refresh" }));
+  await pane.findByText("Refresh failed. Showing the previous repository page.");
+  expect(pane.getByRole("button", { name: `Example repository. Repository ID: ${repositoryId}` })).toBe(selected);
+  expect(pane.queryByText("No repositories on this page.")).toBeNull();
+  value.fail(); fireEvent.click(pane.getByRole("button", { name: "Refresh" }));
+  await waitFor(() => expect(pane.queryByText("Refresh failed. Showing the previous repository page.")).toBeNull());
+  fireEvent.click(pane.getByRole("button", { name: "Load more Repositories" }));
+  await pane.findByRole("button", { name: `Next repository. Repository ID: ${next.id}` });
+  expect(selected.getAttribute("aria-pressed")).toBe("true");
+  expect((pane.getByRole("radio", { name: "Closed" }) as HTMLInputElement).checked).toBe(true);
+  expect((pane.getByLabelText("Search title and body") as HTMLInputElement).value).toBe("retained draft");
+  expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.REPOSITORY).map(([request]) => request.filter?.pageToken)).toEqual(["", "", "", "repository-next"]);
+  expect(value.get).toHaveBeenCalledTimes(1);
+  expect(value.mutation).not.toHaveBeenCalled();
+});
+
 it.each(["schema", "integration_id", "github_owner", "github_name"])("keeps unconfigured %s guidance and existing plain-search validation", async (missing) => {
   const row = repository();
   if (missing === "schema") row.schemaVersion = 2;
