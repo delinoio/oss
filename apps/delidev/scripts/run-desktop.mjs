@@ -1,5 +1,6 @@
 import { tauriCommand } from "../../../scripts/tauri-cli.mjs";
 import { basename, join, resolve } from "node:path";
+import { createDiagnosticFilter } from "./desktop-diagnostics.mjs";
 import { homedir } from "node:os";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -59,8 +60,24 @@ export async function runDesktop(args, {
   identityFor = async (options, command) => inspectDevelopmentIdentity(readSigningIdentity(), options, command),
   publish = publishDevelopmentBundle,
   lock = () => acquireNativeBuildLock(root),
+  stdout = chunk => process.stdout.write(chunk),
+  stderr = chunk => process.stderr.write(chunk),
   log = entry => process.stderr.write(`${JSON.stringify(entry)}\n`),
 } = {}) {
+  const forwarded = args[0] === "--" ? args.slice(1) : args;
+  const diagnosticRun = async (executable, argv, options, lifecycle) => {
+    const output = createDiagnosticFilter(forwarded, stdout);
+    const errors = createDiagnosticFilter(forwarded, stderr);
+    try {
+      return await run(executable, argv, { ...options, stdio: ["inherit", "pipe", "pipe"] }, {
+        ...lifecycle, onStdout: output.write, onStderr: errors.write,
+        onOutputIncomplete: () => report("diagnostics-incomplete", { code: "output-drain-timeout" }),
+      });
+    } finally {
+      output.end();
+      errors.end();
+    }
+  };
   let stage = "prepare";
   let release;
   const report = (state, fields = {}) => log({ operation: "desktop_development", stage, state, ...fields });
@@ -82,7 +99,7 @@ export async function runDesktop(args, {
       stage = "prepare";
     }
     report("started");
-    const prepared = await run(process.execPath, [pnpm, "build:native"], options, lifecycle);
+    const prepared = await diagnosticRun(process.execPath, [pnpm, "build:native"], options, lifecycle);
     if (prepared.code !== 0 || prepared.signal !== null) {
       report("failed", prepared);
       return prepared;
@@ -92,11 +109,10 @@ export async function runDesktop(args, {
     const credits = platform === "darwin" ? creditsFor(selected, env) : undefined;
     // pnpm callers may include one explicit separator. Every remaining token is
     // an application argument, never a Tauri/config/Cargo override.
-    const forwarded = args[0] === "--" ? args.slice(1) : args;
     report("started");
     const cliArguments = desktopArguments(platform, forwarded, credits);
     const invocation = platform === "darwin" ? tauriCommand(cliArguments) : ["cargo", cliArguments];
-    let result = await run(...invocation, options, lifecycle);
+    let result = await diagnosticRun(...invocation, options, lifecycle);
     if (platform === "darwin" && result.code === 0 && result.signal === null) {
       stage = "sign-and-publish";
       report("started");
@@ -108,7 +124,7 @@ export async function runDesktop(args, {
       report("started");
       // An interrupted launcher may leave its Go server alive. Signal only the
       // original desktop child; never group-kill its crash-surviving sidecar.
-      result = await run(executable, forwarded, { ...options, detached: true }, { terminateProcessTree: false });
+      result = await diagnosticRun(executable, forwarded, { ...options, detached: true }, { terminateProcessTree: false });
     }
     report(result.code === 0 && result.signal === null ? "exited" : "failed", result);
     return result;
@@ -120,7 +136,13 @@ export async function runDesktop(args, {
     }
     return { code: 1, signal: null };
   } finally {
-    release?.();
+    try {
+      release?.();
+    } catch {
+      // Lock cleanup can fail after a child outcome is already known. Keep that
+      // outcome and expose uncertainty without serializing private error paths.
+      report("cleanup-uncertain", { code: "build-lock-release-failed" });
+    }
   }
 }
 

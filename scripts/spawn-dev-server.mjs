@@ -178,7 +178,7 @@ export async function spawnDevServer(
   command,
   args,
   options,
-  { terminateProcessTree = false } = {},
+  { terminateProcessTree = false, onStdout, onStderr, onOutputIncomplete } = {},
 ) {
   const managePosixProcessGroup = process.platform !== "win32" && terminateProcessTree;
   const child = spawn(
@@ -186,6 +186,8 @@ export async function spawnDevServer(
     args,
     managePosixProcessGroup ? { ...options, detached: true } : options,
   );
+  if (onStdout) child.stdout?.on("data", onStdout);
+  if (onStderr) child.stderr?.on("data", onStderr);
   const signalHandlers = new Map();
   let forwardedSignal = null;
   const terminationPromises = [];
@@ -228,7 +230,28 @@ export async function spawnDevServer(
     });
 
     child.once("exit", (code, signal) => {
-      resolve({ code, signal });
+      if (!onStdout && !onStderr) {
+        resolve({ code, signal });
+        return;
+      }
+      // Descendants can intentionally survive the desktop child and retain its
+      // pipe descriptors. Drain available diagnostics without making their
+      // lifetime the launcher exit gate.
+      const streams = [onStdout && child.stdout, onStderr && child.stderr].filter(Boolean);
+      let remaining = streams.filter(stream => !stream.readableEnded).length;
+      const finish = () => {
+        clearTimeout(deadline);
+        for (const stream of streams) stream.destroy();
+        resolve({ code, signal });
+      };
+      const deadline = setTimeout(() => {
+        onOutputIncomplete?.();
+        finish();
+      }, 100);
+      for (const stream of streams) {
+        if (!stream.readableEnded) stream.once("end", () => { if (--remaining === 0) finish(); });
+      }
+      if (remaining === 0) finish();
     });
   });
 
