@@ -53,7 +53,7 @@ function NewComment({ sessionId, diff, saved, close }: { sessionId: string; diff
   useLocale();
   const [filePath, setFilePath] = useState<string>(), [kind, setKind] = useState(AnchorKind.File), [side, setSide] = useState(ReviewSide.New);
   const [start, setStart] = useState("1"), [end, setEnd] = useState("1"), [body, setBody] = useState("");
-  const query = { operation: "git-diff", repository_id: diff.repository_id, comparison: diff.comparison, path: diff.path };
+  const query = { operation: "git-diff", repository_id: diff.repository_id, comparison: diff.comparison, path: diff.path, ...(diff.base_ref ? {base_ref:diff.base_ref} : {}) };
   const context = useQuery(SessionQuery.readSessionReviewContext, { sessionId, queryJson: encode(query) }, { ...workspaceReadOptions, select: (r) => readReviewContext(r.documentJson, diff) });
   const mutation = useRetainedMutation(`review:create:${sessionId}`, SessionQuery.createLocalReviewComment, (r) => { saved(r.comment ? copy("local-reviews.extra.22c97ed3217b") : copy("local-reviews.extra.29ba3bbaf8fc")); close(); });
   const blocked = mutation.busy || mutation.uncertain;

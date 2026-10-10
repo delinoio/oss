@@ -14,6 +14,16 @@ Codex `0.151.0` API and Claude `2.1.236` API now publish the bounded original ch
 
 `machine discover --protocol` binds a non-inference native validation request to the same durable machine discovery generation as its executable selections. Detected installations receive a protocol observation with `verified`, `unsupported` or `failed` state. Missing/denied installations do not claim a handshake. An ordinary version-only discovery cannot publish native protocol observations. Only locally supported installed-version profiles can report verified; raw remote errors are reconstructed into safe diagnostics by the server. Current handshake observations never populate execution capabilities or authorize an account.
 
+### Codex private thread lifecycle and metadata
+
+The original execution process consumes the pinned closed notification envelopes for thread name, attachment created/deleted, queue, project created/updated/deleted, nullable thread project, environment connection/disconnection, prediction and read-state revisions. Validate bounds, duplicate/unknown fields, required nullable fields and each exact union before discarding descriptors. Prediction completed text may be absent, null or a bounded string; failed has no text field. Read state permits absent/null first-unread, thread-start or an exact native turn position and requires the opaque revision. Prediction source turns must belong to the original root execution. Foreign threads retain their unsupported boundary; already owned child notifications retain the existing child observation and content-free supplement routing.
+
+These private process/root observations never rewrite product names, project bindings, input queues, search, unread state, environment selection or attachment byte ownership. Do not fetch an external project/environment, import attachments or submit prediction text. The Worker accepts only content-free closed metadata kinds and publishes no product event for them. Existing recovery fences remain active.
+
+Unexpected original-root archived, deleted or closed notifications retain the original turn, pause sends and require reconciliation. Unarchived does not clear recovery or authorize reopening. This adapter has no thread archive/delete/close mutation owner; process closure and cleanup remain independently reconciled through the original process owner. Native lifecycle loss is neither turn success nor product deletion evidence.
+
+Deprecated thread-compacted requires the exact original turn's manual compaction owner or canonical ContextCompaction/history record. Thread-reverted requires the existing durable Revert send claim or independently verified Revert continuation while no input/compaction is active or pending. A subsequent original input or compaction ends that supplement scope without changing the durable history proof. Discard these content-free supplements without adding transcript entries, acknowledging a mutation, completing an item/turn, changing history, creating a successor checkpoint or proving cleanup. Unowned supplements retain recovery. Original compaction and Revert responses, canonical items, complete history and private rollout verification remain authoritative under the [compaction contract](cmds-delidev-compaction-contract.md). No goal or Revert mutation authority is added.
+
 ### Direct startup and native attribution
 
 [Direct startup](cmds-delidev-execution-startup-contract.md) supersedes numeric
@@ -91,6 +101,38 @@ selected-workspace root; notification arrival grants no such ownership. Original
 turn/settings/account, terminal results, receipts and independent recovery and
 cleanup remain unchanged. The [official notification schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/FsChangedNotification.json)
 defines this passive envelope separately from explicit filesystem operations.
+
+### Codex native error and authentication recovery observations
+
+Notification-only `error`, `modelProvider/authRecoveryStarted` and
+`modelProvider/authRecoveryCompleted` use the closed native envelopes from the
+[error schema](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server-protocol/schema/json/v2/ErrorNotification.json)
+and [authentication recovery schema](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server-protocol/schema/json/v2/AuthRecoveryNotification.json).
+Require the original process connection, root thread and known active running
+turn. Authentication-recovery provider names are matched through a closed
+canonical mapping from the immutable effective provider key: managed `openai`
+uses the native display name `OpenAI`. The wire display name and provider key
+remain separate identities. Paused, interrupted, uncertain, foreign, unknown
+or terminal turns cannot gain current observation authority. Preserve frame limits, exact field names and bounded
+private text; reject unknown error union variants, mixed/extra fields and invalid
+nullable HTTP status or misalignment shapes. Private misalignment instructions
+never become a new user input or continuation action.
+
+Retain only fixed-size per-turn retry/nonretry and recovery phase telemetry,
+separate from terminal evidence. `willRetry` describes the original native
+process's retry; DeliDev sends no retry or replacement input. An error emits only
+the existing bounded native-warning notice, with private diagnostics discarded.
+Authentication recovery phases are consumed as private metadata without product
+publication, login, credential refresh, account replacement or changed readiness.
+Structured diagnostics contain only original owner identity, closed phase and
+retry boolean; no native error/provider prose or private paths are logged.
+
+Only the independently observed original terminal turn reports success or actual
+failure. Missing or uncertain terminal evidence retains original recovery without
+resend or definite no-send inference. Terminal replay cannot produce another
+result. Original history, receipts, account ownership and independent cleanup
+remain unchanged; no public RPC, allocation or migration is introduced. Synthetic
+adapter/Worker fixtures establish this boundary without native/account acceptance.
 
 Unsupported native families log only a closed classification, never a raw method
 or payload. The installed scripted thread smoke rejects private extensions so

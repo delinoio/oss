@@ -292,10 +292,8 @@ Instruction-file updates in this requirement apply only to changes in developmen
 ## Native process ownership
 Worker Git operations run through the [owned process contract](cmds-delidev-process-contract.md), with the accepted job or session UUID as owner. A canceled or failed Git operation cannot authorize workspace rollback until its owned descendants are proven stopped. Uncertain process ownership retains the cleanup-pending manifest; retry cleanup reconciles that owner's indexed native process scopes before removing owned files.
 
-
 ### Closed execution inspection
 `Manager.InspectClosedExecution` now holds the existing session lock while independently checking one exact current closed version-2 job/execution claim, the original accepted/local manifest bytes and the continuation workspace identity digest. It requires both original execution-job and preparation/Git owner indexes before read-only Git checks, so those checks cannot recreate missing process evidence. It reconciles those indexed owners, rechecks the unchanged claim and returns an inspection handle. Closing that handle only releases the lock; it does not create or rewrite cleanup evidence, advance to a successor, fetch, reset files or launch a harness. Agent commits/branches and dirty results remain intact under the same owned repository identity. A retired predecessor, active claim, absent process index, changed workspace or live competing lease stays uncertain. Callers acquire the original publisher lock first and must independently validate native completion and server authority. This private inspection is a building block for execution recovery, not a public Resume or recovery operation.
-
 
 ### Multi-repository native execution
 `Manifest.WorkspaceRoots` returns a fresh ordered path list for every prepared repository (or the isolated General Chat cwd), independently of the designated primary path. The Codex runner now consumes all multi-repository paths as native runtime roots after the original manifest and owned workspace lease are checked. Its working directory remains the project's primary repository even when that repository is not first in order. No common parent, source checkout or additional unmanaged path becomes a substitute root.
@@ -304,7 +302,6 @@ First claim, continuation and completed-execution inspection already validate ev
 
 ### Local Git identity
 Each Local prepared repository includes `local_identity_digest`: a canonical SHA-256 digest of its repository UUID and canonical common/admin Git directory paths, captured during read-only preparation. Ready-result validation requires this proof for Local and rejects it on managed Worktree records. Local paths remain exactly their configured canonical original checkout paths with `owned=false`; they need not be under the private workspace root. First/continuation/closed inspection reject missing or redirected Git metadata and changed worktree registration while permitting current commits and branch selections. Independent Local sessions explicitly share checkouts; their per-session journals and process claims remain independent, and removing managed metadata never removes a shared source tree. Existing Local preparation records without the digest cannot acquire native authority. The original-journal preparation recovery path now supports ready Local inspection and explicit partial metadata cleanup; native snapshots and additional fork profiles remain separate pending boundaries; bounded same-account Codex forks retain their independently validated copy and cleanup ownership.
-
 
 ### Unborn Local checkouts
 `PreparedRepository.local_head` is a closed optional enum: omission denotes the existing committed-HEAD encoding; `unborn` explicitly records preparation before the first commit. Committed entries retain equal canonical base/starting commit IDs and their exact commit starting reference. Unborn entries require both commit strings and the starting reference to be empty, preserving the configured base metadata without resolving it. Unknown states, a missing marker with empty commits, fabricated commits and unborn Worktree results are rejected. The omitted field preserves existing committed manifest/checkpoint bytes; no SQLite migration or silent metadata upgrade occurs.
@@ -330,7 +327,6 @@ The [file explorer contract](cmds-delidev-files-contract.md) adds bounded reads 
 
 Grok first-text Stop, including after acknowledged input acceptance but before any output, follows the same independent execution-lease completion barrier. Original native interruption or completion racing Stop, joined native cleanup and an acknowledged terminal do not repair or replace a missing/changed workspace claim. The ordinary runner closes and verifies its original lease before retaining version-1 report output; failure preserves the original native terminal and recovery ownership. Neither stopped text nor a raced success supplies a continuation checkpoint or additional filesystem authority.
 
-
 ### Explicit original PR Worktree preparation
 
 The internal accepted repository spec and prepared manifest may carry one copied `pr_target` from the integration contract. It must belong to that exact local repository UUID, name exact base/head commit references, explicitly enable fetch and use Worktree mode. Ordinary preparation remains unchanged when absent; Local/General Chat and multiple PR targets cannot acquire this profile. Result publication and partial recovery compare the original complete target and both immutable commits. Existing first-execution/continuation ownership binds these same original request/manifest bytes.
@@ -342,7 +338,6 @@ Validate all fully qualified native branch names before networking, then indepen
 The existing journal and process owner govern cancellation and rollback; original fetch descendants must be joined before cleanup. A ready identical retry and ready recovery perform no new fetch. This proves original preparation only: the manual PR fix profile below separately supplies fresh PR/Worker Git preflight and direct native-harness commit/push integration. Preparation does not change branches, merge/rebase, push or convey Git authority to an isolated AI runtime. Older ordinary manifests omit the additive field without changing their bytes.
 
 Native command references: [Git fetch](https://git-scm.com/docs/git-fetch), [remote URL expansion](https://git-scm.com/docs/git-remote), [exact remote refs](https://git-scm.com/docs/git-ls-remote), [native ref validation](https://git-scm.com/docs/git-check-ref-format).
-
 
 ### First PR execution preflight
 
@@ -370,13 +365,11 @@ Only the original unchanged checking record can finish. After successful workspa
 
 An exact rejected request returns its retained original result without inspecting Git or repeating network reads, including after Manager replacement. Contradictory execution claims, job process scopes or runtimes block that replay. Restoring operands cannot revive that execution identity, and the original job cannot acquire a different execution identity. A fresh pair additionally checks the bounded same-session history: every prior record must be a valid original rejection; checking, passed, malformed or foreign records block another first execution. Retain at most 10,000 original startup records without eviction. Passed followed by interruption before claim publication stays uncertain rather than retryable. Structured settlement logs expose only IDs, phase and safe code. Include these records with future coordinated session backup/deletion. Explicit metadata-only inspection follows the sessions contract.
 
-
 ### Assignment-bound startup rejection reports
 
 The Worker may report `pr-startup-rejected` only from the live private rejection error and the unchanged original `journalStarted` assignment. Independently read the original rejected phase and retained manifest under the session lock, with bounded metadata-only cleanup time even after cancellation. Compare exact phase bytes/digest and original preparation/manifest/target digests; require no native claim, execution scope/runtime, prior Worker output or publisher directory. No Git or native process runs during this read. A reconstructed generic error, missing operation journal or borrowed proof remains recovery-required.
 
 The version-1 envelope binds server/device/instance/machine, original input/account/connection/configuration and exact assignment revision/body/input digests. Encode its unsigned assignment revision as a decimal JSON string. It contains no path, prompt, repository title or credential. Before acceptance the server independently compares the authenticated Worker, retained assignment, current claimed job/session/input, pure preparation/manifest/phase proof and absence of an execution grant/native publication. Its proof validation checks remote paths against the selected Worker OS, not the server host OS; only Worker-local preparation applies host filesystem path rules. Contradictory or incomplete evidence follows ordinary uncertainty. The accepted transaction and retained-store verification are defined in the sessions contract; neither grants another dispatch or native completion.
-
 
 Explicit startup recovery reuses `ReadPRStartupRejection` under the original session lock; it never calls preparation, first-execution claim, process cleanup or Git. The separate Worker/server comparison must bind the original job journal and assignment/device before accepting this proof. A read cannot convert checking/passed/missing phase records to rejection, create a new record, repair a changed manifest or grant native eligibility.
 
@@ -500,7 +493,7 @@ Every new Worktree uses `remote-clone` with an immutable URL, empty checkout and
 
 Reuse immediate Clone's argv/credential-free transport restrictions, empty template/null hooks, disabled recursive submodules/LFS smudging and ten-minute deadline. Clone full history once per session/repository, with no shared cache. Persist the manifest and exclusive root/native commitment before Git; publish readiness only after all repositories resolve and detach. Identical completed requests reuse the original result, while loss/restart requires the original job and manifest recovery; interrupted/unconfirmed requests cannot repeat cloning. Process uncertainty preserves owned files. Replacement directories or missing native proof never authorize cleanup.
 
-Managed clones use independent `.git` directories. Execution and continuation leases, preparation recovery, snapshot/restore and permanent deletion validate that ownership. Restore uses its existing independently synchronized publication proof rather than adopting old inode commitments. Fork derives `independent-fork` from a new managed or Local source only through the original closed parent: copy the complete Git objects without local optimization/hard links, pin parent HEAD/index/dirty files and set the original remote URL. Its child lifetime remains independent of parent cleanup. Sidechat continues to own metadata only and blocks parent removal until its own joined cleanup. Legacy accepted linked worktrees and original Local lifetimes remain unchanged.
+Managed clones use independent `.git` directories. Execution and continuation leases, preparation recovery, snapshot/restore and permanent deletion validate that ownership. Restore uses its existing independently synchronized publication proof rather than adopting old inode commitments. Fork derives `independent-fork` from a new managed or Local source only through the original closed parent: copy the complete bounded Git object/ref/reflog inventory into a fresh owned Git directory, pin parent HEAD/index/dirty files and set the original remote URL. Transport cloning is not a complete inventory copy: unreachable and reflog-only objects must survive as independent bytes. Common administration is copied with only the selected linked-worktree administration overlaid; unrelated worktree registrations and their external pointers are excluded. No hardlinks, alternates, promisor objects or external config includes can replace this copy. Its child lifetime remains independent of parent cleanup. Sidechat continues to own metadata only and blocks parent removal until its own joined cleanup. Legacy accepted linked worktrees and original Local lifetimes remain unchanged.
 
 ## Remote starting-branch discovery
 System 51 and Worker 27 independently negotiate `REPOSITORY_BRANCH_DISCOVERY_V1`.
@@ -560,3 +553,26 @@ missing earlier observation. Callbacks carry no paths, remote URLs or Git output
 Worker reporting is nonblocking and independently joined; shutdown closes callback admission and drains accepted reports for at most one aggregate 1.5-second reporting deadline before cancellation and join; it changes neither
 Git deadlines, original journals, leases, return values nor cleanup ownership.
 See the [startup contract](cmds-delidev-execution-startup-contract.md#operational-startup-progress).
+
+## Complete independent Fork inventory
+
+Independent Fork uses one aggregate 256 MiB/100,000-entry copy allowance across
+all selected worktree files, indexes and Git stores, with reserved config/HEAD
+normalization headroom. Source roots and common/selected administration identities,
+full file inventories and digests are frozen before preparation and compared
+before Ready and across the native Fork boundary. Source inventory growth,
+ref/reflog changes, missing objects or incomplete copying prevent Ready. Linked
+worktree `logs/HEAD` overlays only that selected private history; common branch
+reflogs and nonstandard refs retain their exact bytes. The detached child HEAD
+is the immutable selected fork-point commit; setting it does not append or
+replace the copied history. Git configuration relocates only the child's
+worktree location and retained remote URL. Original repositories are unchanged.
+
+Fresh child root and Git-directory identities are journaled before copying.
+Each copied regular file has independent storage and synchronized publication;
+Git fsck validates the complete local object and index closure before readiness.
+All byte/entry limits also bound source rechecks. A source change uses the
+existing original cleanup and recovery ownership; a foreign directory or
+unproved process cleanup remains uncertain. Sidechat keeps metadata-only parent
+references. Original Local sharing and legacy accepted linked-worktree lifetimes
+keep their existing ownership boundaries.

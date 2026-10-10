@@ -296,7 +296,7 @@ func verifyIndependentDirectory(repo PreparedRepository, ready bool) error {
 	return nil
 }
 
-func (m *Manager) prepareIndependentRepository(ctx context.Context, git Git, root string, spec RepositorySpec, manifest *Manifest, write func() error) (PreparedRepository, *forkCopy, error) {
+func (m *Manager) prepareIndependentRepository(ctx context.Context, git Git, root string, spec RepositorySpec, manifest *Manifest, write func() error, forkBudget *snapshotCopyBudget, snapshot *ForkSnapshot) (PreparedRepository, *forkCopy, error) {
 	prepared := PreparedRepository{ID: spec.ID, SourceKind: spec.SourceKind, RemoteURL: spec.RemoteURL, Path: filepath.Join(root, string(spec.ID)), Owned: true, Base: spec.Base, Starting: spec.Starting, PRTarget: spec.PRTarget}
 	prepared.Source = prepared.Path
 	manifest.Repositories = append(manifest.Repositories, prepared)
@@ -320,15 +320,15 @@ func (m *Manager) prepareIndependentRepository(ctx context.Context, git Git, roo
 	if remote == "" {
 		remote = "origin"
 	}
-	if spec.SourceKind == IndependentForkSource {
-		source = spec.Checkout
-	}
 	// One deadline covers source validation, cloning, remote/ref preparation,
 	// optional PR fetches, resolution and final checkout. Individual Git
 	// commands keep their shorter launch timeout, but cannot extend this
 	// repository-level budget by starting a fresh ten-minute window.
 	bounded, cancel := context.WithTimeout(ctx, RepositoryCloneTimeout)
 	defer cancel()
+	if spec.SourceKind == IndependentForkSource {
+		return m.prepareForkGitInventory(bounded, git, spec, manifest, write, forkBudget, snapshot)
+	}
 	if spec.SourceKind == RemoteCloneSource {
 		if err := git.validateManagedCloneSource(bounded, root, source); err != nil {
 			return *entry, nil, err
@@ -338,7 +338,7 @@ func (m *Manager) prepareIndependentRepository(ctx context.Context, git Git, roo
 	if err != nil {
 		return *entry, nil, err
 	}
-	_, err = clone.run(bounded, root, cloneArguments(source, prepared.Path, filepath.Join(m.Root, "empty-hooks"), remote, true, spec.SourceKind == IndependentForkSource)...)
+	_, err = clone.run(bounded, root, cloneArguments(source, prepared.Path, filepath.Join(m.Root, "empty-hooks"), remote, true, false)...)
 	if err != nil {
 		return *entry, nil, err
 	}
@@ -350,11 +350,6 @@ func (m *Manager) prepareIndependentRepository(ctx context.Context, git Git, roo
 		return *entry, nil, ResultUncertain()
 	}
 	startupProgress(ctx, domain.StartupWorkspaceClone, domain.StartupProgressCompleted)
-	if spec.SourceKind == IndependentForkSource {
-		if _, err := clone.run(bounded, prepared.Path, "remote", "set-url", remote, spec.RemoteURL); err != nil {
-			return *entry, nil, err
-		}
-	}
 	if err := provisionManagedCloneRemotes(bounded, clone, prepared.Path, spec.RemoteURL, spec, remote); err != nil {
 		return *entry, nil, err
 	}
@@ -398,25 +393,13 @@ func (m *Manager) prepareIndependentRepository(ctx context.Context, git Git, roo
 	}
 	startupProgress(ctx, domain.StartupWorkspaceReference, domain.StartupProgressCompleted)
 	startupProgress(ctx, domain.StartupWorkspaceCheckout, domain.StartupProgressRunning)
-	if spec.SourceKind == IndependentForkSource {
-		if _, err := clone.run(bounded, prepared.Path, "update-ref", "--no-deref", "HEAD", entry.StartingCommit); err != nil {
-			return *entry, nil, err
-		}
-	} else if _, err := clone.run(bounded, prepared.Path, "checkout", "--detach", "--no-recurse-submodules", entry.StartingCommit); err != nil {
+	if _, err := clone.run(bounded, prepared.Path, "checkout", "--detach", "--no-recurse-submodules", entry.StartingCommit); err != nil {
 		return *entry, nil, err
-	}
-	var copy *forkCopy
-	if spec.SourceKind == IndependentForkSource {
-		copied, err := copyForkRepository(bounded, clone, spec.Checkout, prepared.Path, entry.StartingCommit)
-		if err != nil {
-			return *entry, nil, err
-		}
-		copy = &copied
 	}
 	if err := verifyIndependentDirectory(*entry, true); err != nil {
 		return *entry, nil, err
 	}
 	startupProgress(ctx, domain.StartupWorkspaceCheckout, domain.StartupProgressCompleted)
 	m.Logger.InfoContext(ctx, "workspace_clone_ready", "session_id", manifest.SessionID, "repository_id", spec.ID)
-	return *entry, copy, nil
+	return *entry, nil, nil
 }

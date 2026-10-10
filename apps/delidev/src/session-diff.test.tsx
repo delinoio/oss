@@ -15,42 +15,45 @@ function fixture(worktree = true) {
   const read = vi.fn(async (request: { queryJson: Uint8Array }) => {
     const q = JSON.parse(new TextDecoder().decode(request.queryJson));
     if (q.operation === "roots") return reply({ roots: [{ repository_id: other, name: "Other", primary: false }, { repository_id: primary, name: "Primary", primary: true }] });
-    return reply({ diff: { comparison: q.comparison, repository_id: q.repository_id, path: q.path, base: "commit", base_object: "a".repeat(40), head_commit: "a".repeat(40), patch: "+<script>doNotRun()</script>\n", untracked: ["new.txt"], revision: "b".repeat(64) } });
+    if (q.operation === "git-diff-options") return reply({ diff_options: {version:1,repository_id:q.repository_id,choices:[{reference:{type:"local-branch",name:"main"},available:true,configured:false}],default:{type:"local-branch",name:"main"}} });
+    return reply({ diff: { comparison: q.comparison, repository_id: q.repository_id, path: q.path, base: "commit", base_object: "a".repeat(40), head_commit: "a".repeat(40), patch: "+<script>doNotRun()</script>\n", untracked: ["new.txt"], revision: "b".repeat(64), ...(q.comparison === "branch" ? {base_ref:q.base_ref,base_commit:"a".repeat(40),merge_base:"a".repeat(40)} : {}) } });
   });
+  const readContext = vi.fn(async (_request: {queryJson:Uint8Array}): Promise<{documentJson:Uint8Array}> => {throw new ConnectError("unsupported context",Code.Unimplemented);});
   const deleteLocalReviewComment = vi.fn((_request: DeleteLocalReviewCommentRequest): Promise<{ id: string; requestId: string }> => new Promise(() => {}));
-  const transport = createRouterTransport((router) => { router.service(SessionService, { readSessionWorkspace: read, deleteLocalReviewComment }); router.service(ResourceService, { listResources: () => ({ resources: [] }) }); });
+  const transport = createRouterTransport((router) => { router.service(SessionService, { readSessionWorkspace: read, readSessionReviewContext:readContext, deleteLocalReviewComment }); router.service(ResourceService, { listResources: () => ({ resources: [] }) }); });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   function SeedPendingDeletion() { const mutation = useRetainedMutation(`review:delete:${sessionId}:comment`, SessionQuery.deleteLocalReviewComment); useEffect(() => { void mutation.send({ sessionId, mutation: { id: "comment", expectedRevision: 1n, requestId: newRequestId() } }); }, []); return null; }
   function View({ seed = false }: { seed?: boolean } = {}) {
     const [open, setOpen] = useState(true), [draft, setDraft] = useState("unsent input");
     return <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents>{seed ? <SeedPendingDeletion /> : null}<label>Draft<input value={draft} onChange={(e) => setDraft(e.target.value)} /></label>{open ? <SessionDiff sessionId={sessionId} worktree={worktree} close={() => setOpen(false)} /> : null}</MutationIntents></QueryClientProvider></TransportProvider>;
   }
-  return { View, sessionId, transport, primary, other, read, client, reply, deleteLocalReviewComment };
+  return { View, sessionId, transport, primary, other, read, client, reply, deleteLocalReviewComment, readContext };
 }
 
-it("compares the selected repository and creation commit with inert patch text", async () => {
+it("compares the selected repository and negotiated branch base with inert patch text", async () => {
   const f = fixture(); const { container } = render(<f.View />);
   await screen.findByText("+<script>doNotRun()</script>");
   expect(container.querySelector("script, iframe, a")).toBeNull();
-  expect(JSON.parse(new TextDecoder().decode(f.read.mock.calls[1][0].queryJson))).toMatchObject({ operation: "git-diff", repository_id: f.primary, comparison: "creation", path: "." });
+  expect(JSON.parse(new TextDecoder().decode(f.read.mock.calls[2][0].queryJson))).toMatchObject({ operation: "git-diff", repository_id: f.primary, comparison: "branch", base_ref:{type:"local-branch",name:"main"}, path: "." });
   expect(screen.getByText("new.txt")).toBeTruthy();
   fireEvent.change(screen.getByLabelText("Comparison"), { target: { value: "staged" } });
   await waitFor(() => expect(JSON.parse(new TextDecoder().decode(f.read.mock.calls.at(-1)![0].queryJson)).comparison).toBe("staged"));
+  fireEvent.click(screen.getByRole("button", {name:"Diff options"}));
   fireEvent.change(screen.getByLabelText("Relative diff path"), { target: { value: "src/file.ts" } });
   fireEvent.click(screen.getByRole("button", { name: "Compare path" }));
   await waitFor(() => expect(JSON.parse(new TextDecoder().decode(f.read.mock.calls.at(-1)![0].queryJson)).path).toBe("src/file.ts"));
   fireEvent.change(screen.getByLabelText("Diff repository"), { target: { value: f.other } });
-  await waitFor(() => expect(JSON.parse(new TextDecoder().decode(f.read.mock.calls.at(-1)![0].queryJson))).toMatchObject({ repository_id: f.other, comparison: "creation", path: "." }));
+  await waitFor(() => expect(JSON.parse(new TextDecoder().decode(f.read.mock.calls.at(-1)![0].queryJson))).toMatchObject({ repository_id: f.other, comparison: "branch", path: "." }));
 });
 
 it("keeps Local comparisons tied to Git and preserves drafts while discarding closed observations", async () => {
   const f = fixture(false); render(<f.View />);
   await screen.findByRole("region", { name: "Git comparison" });
-  expect(screen.queryByRole("option", { name: "Working tree against creation commit" })).toBeNull();
-  expect((screen.getByLabelText("Comparison") as HTMLSelectElement).value).toBe("working-tree");
+  expect(screen.queryByRole("option", { name: "Since session creation" })).toBeNull();
+  expect((screen.getByLabelText("Comparison") as HTMLSelectElement).value).toBe("branch");
   f.read.mockRejectedValueOnce(new ConnectError("Worker unavailable", Code.Unavailable));
   fireEvent.click(screen.getByRole("button", { name: "Refresh diff" }));
-  await screen.findByText("Refresh failed. The previous comparison is shown below.");
+  await screen.findByText("Refresh failed. The previous observation is stale and shown below.");
   fireEvent.keyDown(screen.getByRole("complementary", { name: "Session Git diff" }), { key: "Escape" });
   expect(screen.queryByRole("complementary")).toBeNull();
   expect((screen.getByLabelText("Draft") as HTMLInputElement).value).toBe("unsent input");
@@ -81,6 +84,7 @@ it("refreshes only review resources after recovered deletion", async () => {
   f.deleteLocalReviewComment.mockRejectedValueOnce(new ConnectError("Response lost", Code.Unavailable));
   render(<f.View seed />);
   await screen.findByRole("button", { name: "Retry original comment deletion" });
+  await screen.findByText("+<script>doNotRun()</script>");
   const readsBeforeRetry = f.read.mock.calls.length;
   f.deleteLocalReviewComment.mockImplementation(async (request: DeleteLocalReviewCommentRequest) => ({ id: request.mutation?.id ?? "", requestId: request.mutation?.requestId ?? "" }));
   fireEvent.click(screen.getByRole("button", { name: "Retry original comment deletion" }));
@@ -105,7 +109,7 @@ it.each(["foreign", "mixed", "truncated", "revision", "untracked", "head", "extr
   const f = fixture(); const original = f.read.getMockImplementation()!;
   f.read.mockImplementation(async (request) => {
     const r = await original(request), q = JSON.parse(new TextDecoder().decode(request.queryJson));
-    if(q.operation === "roots") return r;
+    if(q.operation !== "git-diff") return r;
     const value = JSON.parse(new TextDecoder().decode(r.documentJson));
     if(change === "foreign") value.diff.repository_id = newRequestId();
     if(change === "mixed") value.text = "file content";
@@ -121,8 +125,46 @@ it.each(["foreign", "mixed", "truncated", "revision", "untracked", "head", "extr
   expect(screen.queryByRole("region", { name: "Git comparison" })).toBeNull();
 });
 
-it("keeps the Diff entry byte-free and opens explicit repository/comparison/path identity",async()=>{
+it("automatically observes the Diff entry and opens explicit base-aware descriptors",async()=>{
  const f=fixture();const open=vi.fn();render(<TransportProvider transport={f.transport}><QueryClientProvider client={f.client}><MutationIntents><SessionDiff sessionId={f.sessionId} worktree close={()=>{}} openComparison={open}/></MutationIntents></QueryClientProvider></TransportProvider>);
- await screen.findByLabelText("Diff repository");expect(f.read.mock.calls.every(([request])=>JSON.parse(new TextDecoder().decode(request.queryJson)).operation==="roots")).toBe(true);
- fireEvent.change(screen.getByLabelText("Relative diff path"),{target:{value:"src/file.ts"}});fireEvent.click(screen.getByRole("button",{name:"Compare path"}));expect(open).toHaveBeenLastCalledWith({repository:f.primary,comparison:"creation",path:"src/file.ts"});fireEvent.change(screen.getByLabelText("Diff repository"),{target:{value:f.other}});expect(open).toHaveBeenLastCalledWith({repository:f.other,comparison:"creation",path:"."});
+ await screen.findByText("+<script>doNotRun()</script>");expect(f.read.mock.calls.some(([request])=>JSON.parse(new TextDecoder().decode(request.queryJson)).operation==="git-diff-options")).toBe(true);fireEvent.click(screen.getByRole("button",{name:"Diff options"}));
+ fireEvent.change(screen.getByLabelText("Relative diff path"),{target:{value:"src/file.ts"}});fireEvent.click(screen.getByRole("button",{name:"Compare path"}));expect(open).toHaveBeenLastCalledWith({repository:f.primary,comparison:"branch",path:"src/file.ts",base_ref:{type:"local-branch",name:"main"}});fireEvent.change(screen.getByLabelText("Diff repository"),{target:{value:f.other}});expect(open).toHaveBeenLastCalledWith({repository:f.other,comparison:"branch",path:"."});
+});
+
+it("negotiates options before branch fields and preserves legacy comparisons on old peers", async () => {
+ const f=fixture(),original=f.read.getMockImplementation()!;
+ f.read.mockImplementation(async request=>{const q=JSON.parse(new TextDecoder().decode(request.queryJson));if(q.operation==="git-diff-options")throw new ConnectError("old query",Code.InvalidArgument);return original(request);});
+ render(<f.View/>);await screen.findByText(/Branch comparison is unavailable/);
+ expect(f.read.mock.calls.every(([request])=>{const q=JSON.parse(new TextDecoder().decode(request.queryJson));return !q.base_ref && q.comparison!=="branch";})).toBe(true);
+ fireEvent.change(screen.getByLabelText("Comparison"),{target:{value:"working-tree"}});
+ await screen.findByText("+<script>doNotRun()</script>");
+ const q=JSON.parse(new TextDecoder().decode(f.read.mock.calls.at(-1)![0].queryJson));expect(q.comparison).toBe("working-tree");expect(q.base_ref).toBeUndefined();
+});
+
+it("keeps a missing saved base unavailable until an explicit local selection", async()=>{
+ const f=fixture(),original=f.read.getMockImplementation()!;
+ f.read.mockImplementation(async request=>{const q=JSON.parse(new TextDecoder().decode(request.queryJson));if(q.operation==="git-diff-options")return f.reply({diff_options:{version:1,repository_id:q.repository_id,choices:[{reference:{type:"local-branch",name:"missing"},configured:true,available:false},{reference:{type:"local-branch",name:"other"},configured:false,available:true}]}});return original(request);});
+ render(<f.View/>);await screen.findByText(/No available default base/);
+ expect(f.read.mock.calls).toHaveLength(2);
+ fireEvent.change(screen.getByLabelText("Base"),{target:{value:JSON.stringify(["local-branch","other",undefined])}});
+ await screen.findByText("+<script>doNotRun()</script>");
+ const q=JSON.parse(new TextDecoder().decode(f.read.mock.calls.at(-1)![0].queryJson));expect(q.base_ref).toEqual({type:"local-branch",name:"other"});
+});
+
+it("applies the path explicitly and closes overflow before the pane with focus return",async()=>{
+ const f=fixture();render(<f.View/>);await screen.findByText("+<script>doNotRun()</script>");
+ const trigger=screen.getByRole("button",{name:"Diff options"});fireEvent.click(trigger);
+ const reads=f.read.mock.calls.length;fireEvent.change(screen.getByLabelText("Relative diff path"),{target:{value:"src"}});expect(f.read).toHaveBeenCalledTimes(reads);
+ fireEvent.keyDown(screen.getByRole("dialog",{name:"Diff options"}),{key:"Escape"});
+ expect(screen.queryByRole("dialog")).toBeNull();expect(document.activeElement).toBe(trigger);expect(screen.getByRole("complementary")).toBeTruthy();
+});
+
+it("renders validated ordinary coordinates and keeps unsupported patches inert",async()=>{
+ const f=fixture(),original=f.read.getMockImplementation()!;
+ const patch="diff --git a/file.txt b/file.txt\nindex aaaaaaa..bbbbbbb 100644\n--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-old\n+<script>new</script>\n";
+ f.read.mockImplementation(async request=>{const r=await original(request),v=JSON.parse(new TextDecoder().decode(r.documentJson));if(v.diff)v.diff.patch=patch;return {documentJson:encode(v)};});
+ f.readContext.mockImplementation(async request=>{const r=await f.read(request),v=JSON.parse(new TextDecoder().decode(r.documentJson));return {documentJson:encode({diff:v.diff,files:[{path:"file.txt",kind:"text",digest:"c".repeat(64),lines:[{old:1,text:"old",newline:true,hunk:1},{new:1,text:"<script>new</script>",newline:true,hunk:1}]}]})};});
+ const view=render(<f.View/>);await screen.findByRole("table",{name:"file.txt"});
+ expect(view.container.querySelector("script")).toBeNull();expect(view.container.querySelectorAll(".diff-added")).toHaveLength(1);expect(view.container.querySelectorAll(".diff-removed")).toHaveLength(1);
+ expect([...view.container.querySelectorAll(".diff-line-number")].map(node=>node.textContent)).toEqual(["1","","","1"]);
 });

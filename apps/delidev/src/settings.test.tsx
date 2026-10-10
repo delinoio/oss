@@ -515,7 +515,7 @@ it("keeps repository save acknowledgment separate from completed Worker validati
   const repository = resource(EntityKind.REPOSITORY, { name: "Repository", remote_url: "https://github.com/fixture/repo.git", checkouts: [{ machine_id: newRequestId(), path: "/owned/checkout" }], base: {}, starting: {}, auto_fetch: true });
   const job = resource(EntityKind.JOB, { type: "save-repository", state: "queued" });
   const value = fixture([repository, job]), saved = vi.fn();
-  value.save.mockResolvedValue({ job });
+  value.save.mockImplementation(async request => ({ job, requestId: input(request).mutation.requestId }));
   render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={saved} cancel={() => {}} />));
   await waitFor(() => expect((screen.getByRole("button", { name: "Save Repository" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
@@ -531,6 +531,45 @@ it("keeps repository save acknowledgment separate from completed Worker validati
   await act(async () => { await value.client.invalidateQueries(); });
   fireEvent.click(await screen.findByRole("button", { name: "Done" }));
   expect(saved).toHaveBeenCalledTimes(1);
+});
+
+it.each(["failed", "canceled"] as const)("freshly reviews a %s repository save before returning to its retained draft", async state => {
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", remote_url: "https://github.com/fixture/repo.git" });
+  const job = resource(EntityKind.JOB, { type: "save-repository", state: "queued" });
+  const resources = [repository, job];
+  let repositoryReads = 0;
+  const value = fixture(resources, { readResource: id => {
+    if (id === repository.id) repositoryReads += 1;
+    return { resource: resources.find(row => row.id === id) };
+  } });
+  const saved = vi.fn();
+  value.save.mockImplementation(async request => {
+    const requestId = input(request).mutation.requestId;
+    return { job, requestId };
+  });
+  render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={saved} cancel={() => {}} />));
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Retained draft" } });
+  const initialSave = await screen.findByRole("button", { name: "Save Repository" }) as HTMLButtonElement;
+  await waitFor(() => expect(initialSave.disabled).toBe(false));
+  fireEvent.click(initialSave);
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
+  const previousRepositoryReads = repositoryReads;
+
+  resources[1] = create(ResourceSchema, { ...job, revision: 2n, documentJson: encode({ type: "save-repository", state }) });
+  await act(async () => { await value.client.invalidateQueries(); });
+  const review = await screen.findByRole("button", { name: "Read and review repository settings" });
+  await waitFor(() => expect(repositoryReads).toBeGreaterThan(previousRepositoryReads));
+  expect(screen.getByText("Repository · revision 1")).toBeTruthy();
+  expect(saved).not.toHaveBeenCalled();
+
+  fireEvent.click(review);
+  expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Retained draft");
+  const save = screen.getByRole("button", { name: "Save Repository" }) as HTMLButtonElement;
+  await waitFor(() => expect(save.disabled).toBe(false));
+  fireEvent.click(save);
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
+  expect(saved).not.toHaveBeenCalled();
 });
 
 it("keeps repository saving blocked and offers a retry when the capability check fails", async () => {

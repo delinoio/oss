@@ -17,6 +17,14 @@ import (
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
+// Notifications drive progress; this tick retains time-based safety checks.
+func (s *Service) terminalSafetyInterval() time.Duration {
+	if s.terminalWatchInterval > 0 {
+		return s.terminalWatchInterval
+	}
+	return 100 * time.Millisecond
+}
+
 type terminalReceipt struct {
 	Kind       store.TerminalReceiptKind `json:"receipt_kind,omitempty"`
 	TerminalID domain.ID                 `json:"terminal_id"`
@@ -341,11 +349,14 @@ func (s *Service) WatchTerminals(ctx context.Context, req *connect.Request[pb.Wa
 		}
 		return stream.Send(message)
 	}
-	ticker := time.NewTicker(100 * time.Millisecond)
+	ticker := time.NewTicker(s.terminalSafetyInterval())
 	defer ticker.Stop()
 	seen := map[domain.ID]domain.ID{}
 	nextHeartbeat := time.Time{}
 	for {
+		// Capture before reading so a commit between snapshot and wait closes
+		// this exact channel rather than becoming a missed notification.
+		changed := s.Store.Changed()
 		var assignments []terminal.Assignment
 		err := s.Store.Read(ctx, func(tx *store.Tx) error {
 			if err := terminalMachine(tx, machine, instance); err != nil {
@@ -408,11 +419,14 @@ func (s *Service) WatchTerminals(ctx context.Context, req *connect.Request[pb.Wa
 			}
 			nextHeartbeat = time.Now().Add(10 * time.Second)
 		}
+		waitStarted := time.Now()
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-primary.Done:
 			return nil
+		case <-changed:
+			s.logger.DebugContext(ctx, "terminal_watch_woken", "stage", "assignments", "cause", "store_changed", "wait_ms", time.Since(waitStarted).Milliseconds())
 		case <-ticker.C:
 		}
 	}

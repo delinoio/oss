@@ -48,6 +48,16 @@ Responses presents Known tokens, Input, Output and Recorded responses as four co
 
 Native accounting presents independent Grok, Claude and OpenCode source rows. Supported empty sources start collapsed with record count, unavailable evidence and the warning that no records does not establish zero usage or cost; populated sources start expanded. User disclosure choices survive subsequent snapshots and navigation. Missing, duplicate, unknown or unsupported source/profile evidence retains update guidance. Source definitions and historical native prices remain separate disclosures; no native source totals are summed. Cost evidence retains server-computed historical currencies, versions, category coverage and unpriced evidence, unavailable actual cost and the existing revision-checked current-model pricing controller.
 
+The Usage sidebar places a noninteractive timezone chip below its heading and
+above Time range. It shows the complete pinned selection timezone with a localized
+accessible label, including while usage is loading, empty or unavailable. Use
+12px muted text, 2px vertical and 8px horizontal padding, a 1px semantic border,
+6px corners and a subtle surface; keep 8px title-to-chip and 16px chip-to-fieldset
+spacing. Long IANA names wrap within the sidebar inset without truncation or
+horizontal overflow. The chip adds no keyboard stop or action. Device timezone
+detection, UTC fallback, date conversion, applied-result timezone, presets, query
+ownership, retained drafts and Reset retain their existing behavior.
+
 The existing context pane groups Time range, Scope and Source in an independently scrolling body with Reset fixed below it. Automatic filters retain their existing atomic/date-validation ownership and never close the drawer. Scoped semantic light/dark styling uses a 1280px body, 24px desktop padding, 16px gaps, 12px table cells, 8px corners and at least 40px new controls. Narrow layouts stack cards and use the shared drawer with internal table scrolling. Full inert identities and exact decimal values remain available in English and Korean, including effective 200% viewport layouts. Browser fixtures prove synthetic layout and keyboard behavior only, not packaged or native acceptance.
 
 ### API Keys summary presentation
@@ -351,7 +361,7 @@ Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-
 
 ## Automatic desktop filter application
 
-Token Usage applies Session, Project, Account, Provider, Subscription service, Model and General Chat changes immediately as one validated snapshot. Provider/service and General Chat/project exclusions change atomically. From/Until edits wait for 300ms without further date input; a selection change cancels that wait and validates the latest complete snapshot immediately. Invalid ranges issue no summary query and preserve the last valid applied conditions and results. Date errors appear after the wait; valid corrections apply automatically. No Apply button remains. Activity, Inbox and Search retain explicit application.
+Token Usage applies Session, Project, Account, Provider, Subscription service, Model and General Chat changes immediately as one validated snapshot. Provider/service and General Chat/project exclusions change atomically. From/Until edits wait for 300ms without further date input; a selection change cancels that wait and validates the latest complete snapshot immediately. Invalid ranges issue no summary query and preserve the last valid applied conditions and results. Date errors appear after the wait; valid corrections apply automatically. No Apply button remains. Inbox and Search retain explicit application. Activity is retired under the [retirement contract](cmds-delidev-activity-contract.md) and has no active filters or summary query.
 
 Keep the applied IANA zone fixed until Reset or a new Usage entry. An unchanged endpoint retains its original millisecond instant, including the later occurrence of a DST fold; convert only edited endpoints with the existing gap rejection and earlier-fold rule. Empty endpoints retain server defaults. Exact query identity prevents duplicate identical-key reads or late responses replacing a newer result. New-key loading/errors do not present another range's data as current; same-key Refresh errors retain stale values.
 

@@ -6,6 +6,7 @@ import { expect, it, vi } from "vitest";
 import { EntityKind, EventAction, InboxService, NotificationPreferencesSchema, ResourceSchema, ResourceService, SessionService, SessionQuery, SystemService, WatchEventsResponseSchema, newRequestId, type RemoveQueuedInputRequest, type WatchEventsResponse } from "@delinoio/delidev-api-client";
 import { App } from "./App";
 import { encode } from "./documents";
+import { i18n } from "./localization";
 
 it("retains the original removal in SessionView after streamed tombstone and resnapshot", async () => {
   const makeSession = (name: string) => { const id = newRequestId(); return create(ResourceSchema, { id, sessionId: id, kind: EntityKind.SESSION, schemaVersion: 1, revision: 1n, documentJson: encode({ name, workspace: "general-chat", outcome: "stopped", archive: "active", dispatch: "paused", recovery: "clear" }) }); };
@@ -99,6 +100,43 @@ it("shows one retained retry for an image-rejected live arrival outside queue pa
   await act(async () => { for (const channel of channels) if (channel.sessionId === original.id) { channel.events.push(create(WatchEventsResponseSchema, { id: newRequestId(), cursor: newRequestId(), entityId: input.id, kind: EntityKind.QUEUE, sessionId: original.id, revision: 2n, action: EventAction.UPDATED })); channel.notify(); } });
   await waitFor(() => expect(screen.queryByRole("button", { name: "Remove input" })).toBeNull());
   expect(screen.getAllByText("Original removable input").length).toBeGreaterThan(0);
+  expect(screen.getByText("1 input rejected because images are unsupported")).toBeDefined();
   expect(screen.queryByRole("region", { name: "Pending input actions" })).toBeNull();
   expect(screen.getAllByRole("button", { name: "Retry the same removal" })).toHaveLength(1);
 }, 15000);
+
+
+it.each([
+  { locale: "en", valid: true, waiting: false, label: "1 input rejected because images are unsupported" },
+  { locale: "en", valid: true, waiting: true, label: "1 input rejected because images are unsupported" },
+  { locale: "ko", valid: true, waiting: true, label: "이미지 지원 문제로 거부된 입력 1개" },
+  { locale: "en", valid: false, waiting: false, label: "1 input rejected because images are unsupported" },
+])("counts only validated retained image rejection ($locale, proof=$valid, waiting=$waiting)", async ({ locale, valid, waiting, label }) => {
+  await i18n.changeLanguage(locale);
+  try {
+    const id = newRequestId(), inputId = newRequestId(), execution = newRequestId(), job = newRequestId();
+    const session = create(ResourceSchema, { id, sessionId: id, kind: EntityKind.SESSION, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Image rejection count", workspace: "general-chat", outcome: "not-started", archive: "active", dispatch: "paused", recovery: "none", initial_execution: { id: execution, input_id: inputId }, startup: { job_id: job, execution_id: execution, failure: { state: 2, phase: 5, harness: "codex", problem_code: "unsupported", correlation_id: job, input_delivery: 1, cleanup: valid ? 1 : 0, failure_kind: 1 } } }) });
+    const rejected = create(ResourceSchema, { id: inputId, sessionId: id, kind: EntityKind.QUEUE, schemaVersion: 1, revision: 1n, documentJson: encode({ prompt: "Original rejected prompt", delivery: "rejected-before-start", execution_id: execution, sequence: 1, mode: "plan" }) });
+    const queued = create(ResourceSchema, { id: newRequestId(), sessionId: id, kind: EntityKind.QUEUE, schemaVersion: 1, revision: 1n, documentJson: encode({ prompt: "Independent waiting prompt", delivery: "queued", sequence: 2, mode: "plan" }) });
+    const rows = waiting ? [rejected, queued] : [rejected];
+    const transport = createRouterTransport(router => {
+      router.service(SystemService, { getStatus: () => ({ capabilities: [] }) });
+      router.service(SessionService, { listSessions: () => ({ sessions: [session] }), listQueue: () => ({ inputs: rows }) });
+      router.service(ResourceService, { getResource: request => ({ resource: [session, ...rows].find(row => row.id === request.id) }), getSnapshot: () => ({ resources: [session], cursor: newRequestId() }), listResources: () => ({ resources: [] }), async *watchEvents(_request, context) { await new Promise<void>(resolve => { if (context.signal.aborted) resolve(); else context.signal.addEventListener("abort", () => resolve(), { once: true }); }); } });
+      router.service(InboxService, { listInbox: () => ({ entries: [] }), getNotificationPreferences: () => ({ preferences: create(NotificationPreferencesSchema, { revision: 1n }) }) });
+    });
+    const view = render(<App transport={transport} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Image rejection count/ }));
+    if (valid) {
+      expect(await screen.findByText(label)).toBeDefined();
+      expect(screen.getByText("Original rejected prompt")).toBeDefined();
+      expect(screen.getByText("Original rejected prompt").closest("details")).toBeNull();
+    } else {
+      await screen.findByRole("textbox", { name: "Message" });
+      expect(screen.queryByText(label)).toBeNull();
+      expect(screen.queryByText("Original rejected prompt")).toBeNull();
+    }
+    if (waiting) expect(await screen.findByText("Independent waiting prompt")).toBeDefined();
+    view.unmount();
+  } finally { await i18n.changeLanguage("en"); }
+});

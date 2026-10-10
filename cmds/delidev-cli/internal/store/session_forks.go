@@ -87,8 +87,46 @@ func (t *Tx) DirectSidechatQuestion(session domain.ID) (Record, domain.QueuedInp
 }
 
 // Reserve within existing job and deletion envelopes before any native effect.
-// The bounded margin covers one fresh Fork and one exact question execution.
+// Reserve Fork, execution, recovery, one startup retry and its recovery.
+// Later explicit attempts must independently recheck this same retained history.
 func (t *Tx) CheckSidechatRetryCapacity(child Record, parent Record, actor domain.Principal) error {
+	return t.checkExecutionCapacity(child, parent, actor, 5)
+}
+
+// CheckExecutionRecoveryCapacity reserves one retained recovery inspection.
+func (t *Tx) CheckExecutionRecoveryCapacity(session Record) error {
+	return t.checkExecutionAttemptCapacity(session, 1)
+}
+
+// CheckExecutionStartupRetryCapacity reserves execution and its recovery.
+func (t *Tx) CheckExecutionStartupRetryCapacity(session Record) error {
+	return t.checkExecutionAttemptCapacity(session, 2)
+}
+
+func (t *Tx) checkExecutionAttemptCapacity(record Record, reserve int) error {
+	session, err := Decode[domain.Session](record)
+	if err != nil {
+		return err
+	}
+	parent := record
+	if session.IsSidechat() {
+		parent, err = t.Get(domain.SessionKind, session.Fork.SourceSessionID)
+		if err != nil {
+			return err
+		}
+	}
+	actor, _ := domain.PrincipalFrom(t.ctx)
+	return t.checkExecutionCapacity(record, parent, actor, reserve)
+}
+
+func (t *Tx) checkExecutionCapacity(child Record, parent Record, actor domain.Principal, reserve int) error {
+	var count int
+	if err := t.tx.QueryRowContext(t.ctx, `SELECT COUNT(*) FROM entities WHERE kind='job' AND session_id=?`, child.ID).Scan(&count); err != nil {
+		return storageError(err)
+	}
+	if count+reserve > domain.MaxSessionDeletionJobs {
+		return domain.Fail(domain.ResourceExhausted, "Session execution history is full.", "Retain every earlier generation and use confirmed permanent cleanup.")
+	}
 	server := domain.NewID()
 	planFor := func(r Record) (SessionDeletion, error) {
 		return t.planSessionDeletion(SessionDeletion{Version: 1, ID: domain.NewID(), SessionID: r.ID, ServerID: server, RequestID: domain.NewID(), Actor: actor, ExpectedRevision: r.Revision, Revision: 1, AcceptedAt: r.CreatedAt})
@@ -112,16 +150,16 @@ func (t *Tx) CheckSidechatRetryCapacity(child Record, parent Record, actor domai
 		}
 		plan.Dependents = append(plan.Dependents, dependent)
 	}
+	// New attempts retain only fixed-size ownership IDs/digests. Eight KiB
+	// per job covers its copy, a distinct Worker envelope and Fork reference;
+	// retries reuse existing input/snapshot ownership, never raw native content.
+	return checkDeletionHeadroom(plan, reserve)
+}
+
+func checkDeletionHeadroom(plan SessionDeletion, reserve int) error {
 	raw, err := json.Marshal(plan)
-	if err != nil || len(raw)+16384 > domain.MaxSessionDeletionBytes {
-		return domain.Fail(domain.ResourceExhausted, "Sidechat retry history reached its deletion bound.", "Retain every earlier generation; delete settled Sidechats through confirmed cleanup.")
-	}
-	var count int
-	if err := t.tx.QueryRowContext(t.ctx, `SELECT COUNT(*) FROM entities WHERE kind='job' AND session_id=?`, child.ID).Scan(&count); err != nil {
-		return storageError(err)
-	}
-	if count+2 > 4096 {
-		return domain.Fail(domain.ResourceExhausted, "Sidechat execution history is full.", "Retain every earlier generation and use confirmed permanent cleanup.")
+	if err != nil || len(raw)+reserve*8192 > domain.MaxSessionDeletionBytes {
+		return domain.Fail(domain.ResourceExhausted, "Session history reached its deletion bound.", "Retain every earlier assignment and use confirmed permanent cleanup.")
 	}
 	return nil
 }

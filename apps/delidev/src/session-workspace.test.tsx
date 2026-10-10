@@ -19,7 +19,7 @@ vi.mock("./terminal-emulator", () => ({ openTerminalScreen: (host: HTMLElement) 
  return { write: async () => {}, enabled: () => {}, focus: () => field.focus(), dispose: () => host.replaceChildren() };
 } }));
 
-function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: Record<string, unknown> = {}, queueInputs: (id: string) => ReturnType<typeof create<typeof ResourceSchema>>[] = () => [], terminalMode: boolean | number = false, snapshotGate?: Promise<void>) {
+function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: Record<string, unknown> = {}, queueInputs: (id: string) => ReturnType<typeof create<typeof ResourceSchema>>[] = () => [], terminalMode: boolean | number = false, snapshotGate?: Promise<void>, files = false) {
   const id = newRequestId();
   const session = create(ResourceSchema, { id, sessionId: id, kind: EntityKind.SESSION, revision: 7n, schemaVersion: 1, documentJson: encode({
     name: "Original session", workspace: "general-chat", outcome: "stopped", archive: "active", dispatch: "blocked", recovery: "none",
@@ -58,7 +58,11 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: R
       yield { epoch: "fixture-epoch", sequence: 0n, terminal, heartbeat: true };
       await terminalHeld.get(terminal.id); if (!context.signal.aborted) yield { epoch: "fixture-epoch", sequence: 0n, terminal: create(ResourceSchema, { ...terminal, revision: 2n, documentJson: encode({ state: "exited", cleanup_verified: true }) }), heartbeat: true };
     } });
-    router.service(SessionService, { listQueue, getSessionBudget: budget, enqueueInput: enqueue, renameSession: rename, controlSession: control, recoverSessionExecution: recover });
+    router.service(SessionService, { readSessionWorkspace: async request => {
+      if (!files) throw new ConnectError("Fixture workspace unavailable",Code.Unimplemented);
+      const query=JSON.parse(new TextDecoder().decode(request.queryJson));
+      return {documentJson:encode({size:"0",binary:false,truncated:false,...(query.operation==="roots"?{roots:[{repository_id:id,name:"Original",primary:true}]}:query.operation==="directory"?{entries:[{name:"note.txt",kind:"file",size:"4"}]}:{size:"4",text:"safe"})})};
+    }, listQueue, getSessionBudget: budget, enqueueInput: enqueue, renameSession: rename, controlSession: control, recoverSessionExecution: recover });
     router.service(ResourceService, {
       getSnapshot: async () => { await snapshotGate; return { resources: [session], cursor: "original-snapshot" }; },
       getResource,
@@ -522,4 +526,24 @@ it("keeps evicted waiting payload restoration reachable even after all current v
  const input=await screen.findByLabelText("Session name"); await waitFor(()=>expect(input).toHaveProperty("value","Original session"));
  fireEvent.change(input,{target:{value:"Receipt name"}});fireEvent.click(screen.getByRole("button",{name:"Save"}));
  await screen.findByRole("heading",{name:"Receipt name"});expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+
+it("returns selected shared File close to retained Files and preserves inactive close selection",async()=>{
+ const pendingFrames: FrameRequestCallback[]=[];
+ const requestFrame=vi.spyOn(window,"requestAnimationFrame").mockImplementation(callback=>{pendingFrames.push(callback);return pendingFrames.length;});
+ const f=fixture(undefined,false,{},undefined,false,undefined,true);render(f.view());await screen.findByRole("heading",{name:"Original session"});
+ fireEvent.click(screen.getByRole("button",{name:"Open tool"}));fireEvent.click(screen.getByRole("menuitem",{name:"Files"}));
+ const row=await screen.findByRole("treeitem",{name:"note.txt 4 bytes"});
+ fireEvent.click(screen.getByRole("button",{name:"Open tool"}));fireEvent.click(screen.getByRole("menuitem",{name:"Diagnostics"}));
+ fireEvent.click(screen.getByRole("tab",{name:"Files"}));row.focus();fireEvent.keyDown(row,{key:"Enter"});
+ const preview=await screen.findByRole("heading",{name:"note.txt"});
+ for(const callback of pendingFrames.splice(0))callback(0);
+ expect(preview).toBe(document.activeElement);requestFrame.mockRestore();
+ fireEvent.click(screen.getByRole("button",{name:"Close note.txt tab"}));
+ await waitFor(()=>expect(document.activeElement).toBe(row));expect(screen.getByRole("tab",{name:"Files"}).getAttribute("aria-selected")).toBe("true");
+ fireEvent.click(row);await screen.findByRole("heading",{name:"note.txt"});
+ const diagnostics=screen.getByRole("tab",{name:"Diagnostics"});diagnostics.focus();fireEvent.click(diagnostics);
+ fireEvent.click(screen.getByRole("button",{name:"Close note.txt tab"}));
+ expect(diagnostics.getAttribute("aria-selected")).toBe("true");expect(document.activeElement).toBe(diagnostics);
 });

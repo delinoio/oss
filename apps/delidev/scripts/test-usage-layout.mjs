@@ -70,7 +70,7 @@ try {
   });
   await new Promise(done => server.listen(0, "127.0.0.1", done));
   browser = await chromium.launch({ headless: true, ...(process.env.DELIDEV_LAYOUT_BROWSER_CHANNEL ? { channel: process.env.DELIDEV_LAYOUT_BROWSER_CHANNEL } : {}) });
-  const page = await browser.newPage();
+  const page = await browser.newPage({ timezoneId: "America/Argentina/Rio_Gallegos" });
   page.on("pageerror", error => failures.push(error.message));
   const origin = `http://127.0.0.1:${server.address().port}`;
   // 720x450 is the effective content viewport of 1440x900 at 200% zoom.
@@ -124,6 +124,12 @@ try {
     assert.equal(await sources.nth(0).locator("details").first().evaluate(node => node.open), true, context);
     const opener = page.locator(".sidebar-context-trigger"); if (await opener.isVisible()) { await page.locator("#main").evaluate(node=>node.scrollTop=0); await opener.focus(); await opener.press("Enter"); }
     const pane = page.locator(".usage-sidebar");
+    const zone = pane.locator(".usage-timezone-chip");
+    assert.equal(await zone.locator('[aria-hidden="true"]').textContent(), "America/Argentina/Rio_Gallegos", context);
+    assert.equal(await zone.locator('.usage-sr-only').textContent(), language === "ko" ? "시간대: America/Argentina/Rio_Gallegos" : "Timezone: America/Argentina/Rio_Gallegos", context);
+    const zoneGeometry = await zone.evaluate(node => ({ width: node.getBoundingClientRect().width, available: node.parentElement.clientWidth, overflow: node.scrollWidth > node.clientWidth + 1, size: getComputedStyle(node).fontSize, padding: getComputedStyle(node).padding, radius: getComputedStyle(node).borderRadius, tabIndex: node.tabIndex, headingGap: node.getBoundingClientRect().top - node.previousElementSibling.getBoundingClientRect().bottom, fieldsetGap: node.nextElementSibling.getBoundingClientRect().top - node.getBoundingClientRect().bottom }));
+    assert(zoneGeometry.width <= zoneGeometry.available && !zoneGeometry.overflow && zoneGeometry.size === "12px" && zoneGeometry.padding === "2px 8px" && zoneGeometry.radius === "6px" && zoneGeometry.tabIndex === -1 && Math.abs(zoneGeometry.headingGap - 8) <= 1 && Math.abs(zoneGeometry.fieldsetGap - 16) <= 1, `${context}: timezone chip ${JSON.stringify(zoneGeometry)}`);
+
     assert.equal(await pane.getByRole("button", { name: /Apply filters|필터 적용/ }).count(), 0, context);
     const presets = pane.locator(".usage-range-presets button");
     assert.deepEqual(await presets.allTextContents(), language === "ko" ? ["24시간", "7일", "30일"] : ["24 hours", "7 days", "30 days"], context);

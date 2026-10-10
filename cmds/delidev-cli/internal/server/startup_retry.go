@@ -88,6 +88,9 @@ func queueExecutionStartupRetry(tx *store.Tx, sr store.Record, session domain.Se
 	if err != nil || instance.Validate() != nil || time.Since(seen) > domain.WorkerConnectionTimeout || seen.After(time.Now().UTC().Add(time.Second)) {
 		return store.Record{}, domain.Fail(domain.Unavailable, "The original Runner Device is disconnected.", "Reconnect it before retrying this attempt.")
 	}
+	if err := tx.CheckExecutionStartupRetryCapacity(sr); err != nil {
+		return store.Record{}, err
+	}
 	input.Retry = &domain.ExecutionStartupRetry{JobID: previous.ID, ExecutionID: input.ExecutionID, InputID: input.InputID}
 	input.ExecutionID, input.ThreadRequestID, input.TurnRequestID = domain.NewID(), domain.NewID(), domain.NewID()
 	input.InputID, err = appendSessionInput(tx, sr.ID, &session, input.Input)

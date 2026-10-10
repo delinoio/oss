@@ -18,6 +18,7 @@ type ReviewAnchor struct {
 	Selection    ReviewSelection         `json:"selection"`
 	FileDigest   string                  `json:"file_digest"`
 	Context      string                  `json:"context"`
+	BaseRef      Reference               `json:"base_ref,omitzero"`
 }
 
 func (s ReviewSelection) Validate() error {
@@ -44,7 +45,7 @@ func (v WorkspaceDiff) ReviewAnchor(selection ReviewSelection) (ReviewAnchor, er
 	if err != nil {
 		return ReviewAnchor{}, err
 	}
-	anchor := ReviewAnchor{RepositoryID: v.RepositoryID, Comparison: v.Comparison, QueryPath: v.Path, DiffRevision: v.Revision, Selection: selection}
+	anchor := ReviewAnchor{RepositoryID: v.RepositoryID, Comparison: v.Comparison, QueryPath: v.Path, DiffRevision: v.Revision, Selection: selection, BaseRef: v.BaseRef}
 	for _, file := range files {
 		if file.Path != selection.Path {
 			continue
@@ -87,7 +88,7 @@ func (v WorkspaceDiff) ReviewAnchor(selection ReviewSelection) (ReviewAnchor, er
 }
 
 func (a ReviewAnchor) Matches(v WorkspaceDiff) bool {
-	if a.RepositoryID != v.RepositoryID || a.Comparison != v.Comparison || a.QueryPath != v.Path || a.DiffRevision != v.Revision {
+	if a.RepositoryID != v.RepositoryID || a.Comparison != v.Comparison || a.QueryPath != v.Path || a.DiffRevision != v.Revision || a.BaseRef != v.BaseRef {
 		return false
 	}
 	current, err := v.ReviewAnchor(a.Selection)

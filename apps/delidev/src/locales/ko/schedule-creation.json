@@ -48,7 +48,7 @@
   "schedule-creation.skipTheNewOccurrence_e30b7e": "새 실행 건너뛰기",
   "schedule-creation.waitInFifoOrderForConfirmed_f1ce8e": "확인된 정리를 FIFO 순서로 기다림",
   "schedule-creation.enableFutureScheduledRuns_d1eab6": "향후 예약 실행 활성화",
-  "schedule-creation.schedulesArePausedOnCreationUnless_4c9799": "향후 실행을 활성화하지 않으면 일정은 일시 중지 상태로 생성됩니다.",
+  "schedule-creation.schedulesArePausedOnCreationUnless_4c9799": "새 일정은 향후 실행이 기본으로 활성화됩니다. 일시 중지 상태로 만들려면 이 옵션의 체크를 해제하세요.",
   "schedule-creation.theServerContinuesSchedulingWhenThe_116ec3": "데스크톱을 닫아도 서버는 예약 실행을 계속합니다. 오프라인 중 예정 시각은 건너뜀으로 기록하며 누락된 실행을 몰아서 실행하지 않습니다.",
   "schedule-creation.enabledOnCreation_f6e986": "생성 시 활성화",
   "schedule-creation.pausedOnCreation_484218": "생성 시 일시 중지",
@@ -73,5 +73,7 @@
   "schedule-creation.completed": "완료",
   "schedule-creation.current": "현재",
   "schedule-creation.future": "예정",
-  "schedule-creation.repeat": "반복"
+  "schedule-creation.repeat": "반복",
+  "schedule-creation.nameUnavailable": "이름을 사용할 수 없음",
+  "schedule-creation.repositoryOrdinal": "저장소 {{number}}"
 }

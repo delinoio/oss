@@ -180,8 +180,11 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 		c.children = next
 		return true, nil
 	case codex.MetadataEvent:
+		if (event.Metadata == codex.AuthRecoveryStartedObserved || event.Metadata == codex.AuthRecoveryCompletedObserved) && (c.finished || event.TurnID != c.turn) {
+			return false, publicationUncertain()
+		}
 		switch event.Metadata {
-		case codex.AutoReviewReplayChecked, codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable, codex.RawSupplementDiscarded, codex.NativeGoalAbsent, codex.ModelVerificationAbsent, codex.CodexAppsStartupObserved, codex.SkillsChangedDiscarded, codex.FilesystemChangedDiscarded:
+		case codex.AutoReviewReplayChecked, codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable, codex.RawSupplementDiscarded, codex.NativeGoalAbsent, codex.ModelVerificationAbsent, codex.CodexAppsStartupObserved, codex.SkillsChangedDiscarded, codex.FilesystemChangedDiscarded, codex.AuthRecoveryStartedObserved, codex.AuthRecoveryCompletedObserved, codex.ThreadMetadataDiscarded, codex.ThreadContextSupplementDiscarded:
 			// These validated observations grant no new product authority.
 			return true, nil
 		default:
@@ -198,6 +201,9 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 		}
 		return true, c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionResponseUsageObserved, ObservationID: domain.NewID(), ResponseUsage: event.ResponseUsage})
 	case codex.NoticeEvent:
+		if event.NativeError != nil && (event.TurnID != c.turn || event.Notice != domain.NativeWarning) {
+			return false, publicationUncertain()
+		}
 		return true, c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionNoticeObserved, Notice: event.Notice})
 	case codex.TurnStartedEvent:
 		if event.Turn == nil || event.Turn.ID != c.turn || event.Turn.Status != codex.TurnRunning {

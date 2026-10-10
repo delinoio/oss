@@ -11,6 +11,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ## Owning contracts
 
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)
+- [Shared sidebar scroll ownership](../../../docs/apps-delidev-desktop-contract.md#sidebar-scroll-boundaries)
 - [DeliDev Diagnostics Presentation](../../../docs/apps-delidev-diagnostics-contract.md)
 - [DeliDev parallel browser QA](../../../docs/apps-delidev-qa-contract.md)
 - [DeliDev AI Subscription Settings](../../../docs/apps-delidev-subscription-settings-contract.md)
@@ -38,7 +39,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - [DeliDev retained conversation search](../../../docs/cmds-delidev-search-contract.md)
 - [DeliDev automatic session titles](../../../docs/cmds-delidev-session-titles-contract.md)
 - [DeliDev session acceptance and input queue contract](../../../docs/cmds-delidev-sessions-contract.md)
-- [DeliDev native read-only Sidechat](../../../docs/cmds-delidev-sidechat-contract.md)
+- [DeliDev native read-only Sidechat](../../../docs/cmds-delidev-sidechat-contract.md#direct-desktop-preparation)
 - [DeliDev storage operations](../../../docs/cmds-delidev-storage-contract.md)
 - [DeliDev native subagent observations](../../../docs/cmds-delidev-subagents-contract.md)
 - [DeliDev native subscriptions](../../../docs/cmds-delidev-subscription-contract.md)

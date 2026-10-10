@@ -48,7 +48,7 @@
   "schedule-creation.skipTheNewOccurrence_e30b7e": "Skip the new occurrence",
   "schedule-creation.waitInFifoOrderForConfirmed_f1ce8e": "Wait in FIFO order for confirmed cleanup",
   "schedule-creation.enableFutureScheduledRuns_d1eab6": "Enable future scheduled runs",
-  "schedule-creation.schedulesArePausedOnCreationUnless_4c9799": "Schedules are paused on creation unless future runs are enabled.",
+  "schedule-creation.schedulesArePausedOnCreationUnless_4c9799": "New schedules enable future runs by default. Uncheck this option to create a paused schedule.",
   "schedule-creation.theServerContinuesSchedulingWhenThe_116ec3": "The server continues scheduling when the desktop closes. Offline due times are recorded as skipped; no missed-run burst is created.",
   "schedule-creation.enabledOnCreation_f6e986": "Enabled on creation",
   "schedule-creation.pausedOnCreation_484218": "Paused on creation",
@@ -73,5 +73,7 @@
   "schedule-creation.completed": "Completed",
   "schedule-creation.current": "Current",
   "schedule-creation.future": "Upcoming",
-  "schedule-creation.repeat": "Repeat"
+  "schedule-creation.repeat": "Repeat",
+  "schedule-creation.nameUnavailable": "Name unavailable",
+  "schedule-creation.repositoryOrdinal": "Repository {{number}}"
 }

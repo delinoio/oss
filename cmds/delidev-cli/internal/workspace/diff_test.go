@@ -170,3 +170,90 @@ func TestWorkspaceDiffUnbornAndBoundedResults(t *testing.T) {
 		t.Fatal("oversized diff silently truncated", err)
 	}
 }
+
+func TestWorkspaceBranchDiffUsesMergeBaseAndLocalOptions(t *testing.T) {
+	m, input, manifest := localExecutionFixture(t)
+	root := manifest.PrimaryPath
+	base := gitTest(t, root, "rev-parse", "HEAD")
+	gitTest(t, root, "branch", "review-base", base)
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("committed branch change\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	gitTest(t, root, "add", "tracked.txt")
+	gitTest(t, root, "commit", "-m", "branch change")
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("live branch change\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	q := diffRequest(input, manifest, domain.DiffBranch, ".")
+	q.Query.BaseRef = domain.Reference{Type: domain.LocalBranch, Name: "review-base"}
+	result, err := m.ReadWorkspace(context.Background(), q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	diff := result.Diff
+	if diff.BaseCommit != base || diff.MergeBase != base || diff.BaseObject != base || diff.HeadCommit == base || !strings.Contains(diff.Patch, "-base") || !strings.Contains(diff.Patch, "+live branch change") {
+		t.Fatal("branch observation lost merge-base scope", diff)
+	}
+	optionsRequest := workspaceReadFixture(input, manifest, domain.WorkspaceGitDiffOptions, ".")
+	options, err := m.ReadWorkspace(context.Background(), optionsRequest)
+	if err != nil || options.DiffOptions == nil {
+		t.Fatal("local options unavailable", err)
+	}
+	if options.DiffOptions.Default != (domain.Reference{}) {
+		t.Fatal("manifest Base/Starting or Local HEAD became an explicit default", options.DiffOptions)
+	}
+	found := false
+	for _, choice := range options.DiffOptions.Choices {
+		if choice.Reference == q.Query.BaseRef && choice.Available {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("complete local branch inventory omitted base", options.DiffOptions)
+	}
+	q.Query.BaseRef.Name = "missing"
+	if _, err := m.ReadWorkspace(context.Background(), q); err == nil || domain.SafeError(err).Code != domain.Unavailable {
+		t.Fatal("missing local base substituted", err)
+	}
+}
+
+func TestWorkspaceDiffOptionsKeepsSavedMissingBaseWithoutFallback(t *testing.T) {
+	root, err := filepath.EvalSymlinks(repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gitTest(t, root, "branch", "configured-base")
+	input, _ := requestFor(root)
+	input.Type = domain.Local
+	input.Repositories[0].Base = domain.Reference{Type: domain.LocalBranch, Name: "configured-base"}
+	m := manager(t)
+	manifest, err := m.Prepare(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := workspaceReadFixture(input, manifest, domain.WorkspaceGitDiffOptions, ".")
+	r, err := m.ReadWorkspace(context.Background(), q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.DiffOptions.Default != input.Repositories[0].Base {
+		t.Fatal("saved base lost", r.DiffOptions)
+	}
+	gitTest(t, root, "branch", "-D", "configured-base")
+	r, err = m.ReadWorkspace(context.Background(), q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.DiffOptions.Default != (domain.Reference{}) {
+		t.Fatal("missing saved base substituted", r.DiffOptions)
+	}
+	found := false
+	for _, choice := range r.DiffOptions.Choices {
+		if choice.Reference == input.Repositories[0].Base {
+			found = choice.Configured && !choice.Available
+		}
+	}
+	if !found {
+		t.Fatal("missing configured reference disappeared", r.DiffOptions)
+	}
+}

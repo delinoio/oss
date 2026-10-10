@@ -30,6 +30,19 @@ Users retain explicit account connection, installation and executable-path edits
 
 ## Interfaces and Contracts
 
+### Native routing and active steering
+
+Version-4 execution assignments use their original startup selection and epoch-bound
+execution grant, without an Installation document or a numeric version gate.
+A non-direct Codex API route must accept its original pre-ready tunnel observation
+so that the actual process can initialize. That observation grants no inference;
+the original validated ready startup still gates provider requests.
+Steering additionally requires that original ready startup and the existing
+account, execution, native-turn and queued-input ownership checks. Missing, failed
+or foreign startup proof cannot steer an active turn. Versions 1–3 retain their
+existing installation version and protocol checks. Neither route reporting nor
+steering discovers a harness, replaces a process or replays input.
+
 ### Main-first allocation closure
 
 Under the feature, the originating change reserved System `EXECUTION_STARTUP_V1 = 43` and Worker
@@ -276,7 +289,7 @@ ExecutionStartupObservation field 11 carries the closed ExecutionStartupFailureK
 
 The Worker retains an exclusive synchronized metadata-only claim bound to the original authenticated server/device/instance, immutable assignment revision/digest, execution/input/request and input digest. Classification requires that unchanged claim plus separately confirmed process, workspace and protected credential cleanup. Missing, changed or uncertain evidence retains claimed/uncertain delivery and original recovery. It never retries by observation.
 
-The server accepts IMAGE_INPUT_REJECTED only for Failed/Input/Codex/Unsupported/NotSent/confirmed cleanup, original nonempty images, the unchanged ready process identity and native thread without an acknowledged turn, and the exact claimed queue execution/request/full input. Keep original public mutation receipts and assignment revisions. Normal finalization retains the original prompt, skill bindings and ordered image references as rejected, frees pending capacity and pauses without recovery. Explicit retry retains existing original-selection ownership checks. Desktop guidance identifies image support requirements, preserves visible original rejected input/images and never substitutes attachments or starts another send.
+The server accepts IMAGE_INPUT_REJECTED only for Failed/Input/Codex/Unsupported/NotSent/confirmed cleanup, original nonempty images, the unchanged ready process identity and native thread without an acknowledged turn, and the exact claimed queue execution/request/full input. Keep original public mutation receipts and assignment revisions. Normal finalization retains the original prompt, skill bindings and ordered image references as rejected, frees pending capacity and pauses without recovery. Explicit retry retains existing original-selection ownership checks. Desktop guidance identifies a new session with an explicitly image-capable Agent Worker and Runner Device, or a new text-only session, as the path for changing input or selection. Original-session retry keeps its original input and assignment; queued text continues to block that retry. Preserve visible original rejected input/images and never substitute attachments or start another send automatically.
 
 ## Operational startup progress
 System `SESSION_STARTUP_PROGRESS_V1 = 74` and Worker
