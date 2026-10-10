@@ -17,7 +17,9 @@ func TestStorageRecoveryLargeDispatchAndAcknowledgementRemainExact(t *testing.T)
 	original := workspace.StorageRequest{Version: 1, OperationID: domain.NewID(), Action: workspace.StoragePreview, Preparation: workspace.PrepareRequest{SessionID: domain.NewID(), MachineID: domain.NewID(), ForkSourcePath: "/" + strings.Repeat("metadata", 80_000)}}
 	input := original
 	input.OperationID, input.Action = domain.NewID(), workspace.StorageRecover
-	input.Recovery = &workspace.StorageRecovery{Original: original, Claims: []workspace.StorageJournalClaim{{JobID: original.OperationID, InstanceID: domain.NewID(), Revision: 2, AssignmentDigest: strings.Repeat("a", 64)}}}
+	instanceID, assignmentDigest := domain.NewID(), strings.Repeat("a", 64)
+	claim := workspace.StorageJournalClaim{JobID: original.OperationID, InstanceID: instanceID, Revision: 2, AssignmentDigest: assignmentDigest}
+	input.Recovery = &workspace.StorageRecovery{Original: original, Claims: []workspace.StorageJournalClaim{claim}, InstanceID: instanceID, Revision: claim.Revision, AssignmentDigest: assignmentDigest}
 	raw, _ := json.Marshal(input)
 	job := domain.Job{Type: domain.WorkspaceStorageJob, State: domain.JobClaimed, MachineID: original.Preparation.MachineID, InstanceID: domain.NewID(), Input: raw, AcceptedAt: time.Now().UTC()}
 	document, _ := json.Marshal(job)

@@ -73,24 +73,7 @@ func (r StorageRequest) Validate() error {
 		return ResultUncertain()
 	}
 	if r.Action == StorageRecover {
-		if r.Recovery == nil || r.Recovery.Original.Action == StorageRecover || r.Recovery.Original.Validate() != nil || r.Recovery.InstanceID.Validate() != nil || r.Recovery.Revision == 0 || !digestValid(r.Recovery.AssignmentDigest) || r.Recovery.Original.Preparation.SessionID != r.Preparation.SessionID || r.SnapshotID != r.Recovery.Original.SnapshotID {
-			return ResultUncertain()
-		}
-		if len(r.Recovery.Claims) < 1 || len(r.Recovery.Claims) > MaxStorageRecoveryClaims {
-			return ResultUncertain()
-		}
-		first := r.Recovery.Claims[0]
-		if first.InstanceID != r.Recovery.InstanceID || first.Revision != r.Recovery.Revision || first.AssignmentDigest != r.Recovery.AssignmentDigest {
-			return ResultUncertain()
-		}
-		ids := []domain.ID{}
-		for _, claim := range r.Recovery.Claims {
-			if claim.JobID.Validate() != nil || claim.InstanceID.Validate() != nil || claim.Revision == 0 || !digestValid(claim.AssignmentDigest) {
-				return ResultUncertain()
-			}
-			ids = append(ids, claim.JobID)
-		}
-		if domain.UniqueIDs(ids) != nil {
+		if r.Recovery == nil || r.Recovery.Original.Validate() != nil || r.validateRecoveryMetadata() != nil {
 			return ResultUncertain()
 		}
 		return nil
@@ -108,6 +91,40 @@ func (r StorageRequest) Validate() error {
 		return ResultUncertain()
 	}
 	if (r.Action == StorageInspect || r.Action == StorageRestore || r.Action == StorageDelete) && !digestValid(r.SnapshotDigest) {
+		return ResultUncertain()
+	}
+	return nil
+}
+
+// validateRecoveryMetadata checks the closed, self-contained recovery
+// envelope without interpreting Worker filesystem evidence on the server OS.
+// Restore uses it to reject malformed historical metadata without acquiring
+// the native or contextual authority required to execute a recovery request.
+func (r StorageRequest) validateRecoveryMetadata() error {
+	if r.Version != 1 || r.Action != StorageRecover || r.OperationID.Validate() != nil || r.Preparation.SessionID.Validate() != nil || r.Recovery == nil {
+		return ResultUncertain()
+	}
+	recovery := r.Recovery
+	original := recovery.Original
+	if !original.Action.Valid() || original.Action == StorageRecover || original.OperationID.Validate() != nil || original.Preparation.SessionID.Validate() != nil || original.Preparation.SessionID != r.Preparation.SessionID || r.SnapshotID != original.SnapshotID || recovery.InstanceID.Validate() != nil || recovery.Revision == 0 || !digestValid(recovery.AssignmentDigest) {
+		return ResultUncertain()
+	}
+	originalRaw, err := json.Marshal(original)
+	if err != nil || len(originalRaw) > 1<<20 || len(recovery.Claims) < 1 || len(recovery.Claims) > MaxStorageRecoveryClaims {
+		return ResultUncertain()
+	}
+	first := recovery.Claims[0]
+	if first.InstanceID != recovery.InstanceID || first.Revision != recovery.Revision || first.AssignmentDigest != recovery.AssignmentDigest {
+		return ResultUncertain()
+	}
+	ids := make([]domain.ID, 0, len(recovery.Claims))
+	for _, claim := range recovery.Claims {
+		if claim.JobID.Validate() != nil || claim.InstanceID.Validate() != nil || claim.Revision == 0 || !digestValid(claim.AssignmentDigest) {
+			return ResultUncertain()
+		}
+		ids = append(ids, claim.JobID)
+	}
+	if domain.UniqueIDs(ids) != nil {
 		return ResultUncertain()
 	}
 	return nil

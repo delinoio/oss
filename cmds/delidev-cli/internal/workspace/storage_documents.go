@@ -32,17 +32,37 @@ func DecodeStorageRequest(raw []byte, target *StorageRequest) error {
 	return nil
 }
 
-// Only typed recovery jobs may exceed the ordinary entity bound. Full contextual
+// Only typed recovery jobs may exceed the ordinary entity bound. Every
+// workspace job input stays closed-decoded at either outer size; full contextual
 // request/native ownership validation remains mandatory at admission and use.
 func DecodeStorageJob(raw []byte, target *domain.Job) error {
 	if err := domain.DecodeWithLimit(raw, target, MaxStorageRecoveryJobBytes); err != nil {
 		return err
 	}
+	if target.Type != domain.WorkspaceStorageJob {
+		if len(raw) <= 1<<20 {
+			return nil
+		}
+		return ResultUncertain()
+	}
+	var input StorageRequest
+	if err := DecodeStorageRequest(target.Input, &input); err != nil {
+		if len(raw) > 1<<20 {
+			return ResultUncertain()
+		}
+		return err
+	}
+	if input.Action == StorageRecover {
+		if input.validateRecoveryMetadata() != nil {
+			return ResultUncertain()
+		}
+	} else if input.Recovery != nil {
+		return ResultUncertain()
+	}
 	if len(raw) <= 1<<20 {
 		return nil
 	}
-	var input StorageRequest
-	if target.Type != domain.WorkspaceStorageJob || target.Validate() != nil || DecodeStorageRequest(target.Input, &input) != nil || input.Action != StorageRecover || input.Recovery == nil {
+	if target.Validate() != nil || input.Action != StorageRecover || input.Recovery == nil {
 		return ResultUncertain()
 	}
 	return nil
@@ -50,7 +70,7 @@ func DecodeStorageJob(raw []byte, target *domain.Job) error {
 
 func StorageJobDocumentLimit(job domain.Job) int {
 	var input StorageRequest
-	if job.Type == domain.WorkspaceStorageJob && DecodeStorageRequest(job.Input, &input) == nil && input.Action == StorageRecover && input.Recovery != nil {
+	if job.Type == domain.WorkspaceStorageJob && DecodeStorageRequest(job.Input, &input) == nil && input.validateRecoveryMetadata() == nil {
 		return MaxStorageRecoveryJobBytes
 	}
 	return 1 << 20

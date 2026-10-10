@@ -19,8 +19,18 @@ import (
 
 func historyRecoveryInput(t *testing.T, size int) json.RawMessage {
 	t.Helper()
-	original := workspace.StorageRequest{Version: 1, Action: workspace.StorageInspect, Manifest: workspace.Manifest{PrimaryPath: strings.Repeat("x", size)}}
-	input := workspace.StorageRequest{Version: 1, Action: workspace.StorageRecover, Manifest: original.Manifest, Recovery: &workspace.StorageRecovery{Original: original, Claims: []workspace.StorageJournalClaim{{JobID: domain.NewID(), InstanceID: domain.NewID(), Revision: 1}}}}
+	original := workspace.StorageRequest{
+		Version: 1, OperationID: domain.NewID(), Action: workspace.StorageInspect,
+		Preparation: workspace.PrepareRequest{SessionID: domain.NewID()}, SnapshotID: domain.NewID(),
+		Manifest: workspace.Manifest{PrimaryPath: strings.Repeat("x", size)},
+	}
+	instanceID, assignmentDigest := domain.NewID(), strings.Repeat("ab", 32)
+	claim := workspace.StorageJournalClaim{JobID: domain.NewID(), InstanceID: instanceID, Revision: 1, AssignmentDigest: assignmentDigest}
+	input := workspace.StorageRequest{
+		Version: 1, OperationID: domain.NewID(), Action: workspace.StorageRecover,
+		Preparation: original.Preparation, Manifest: original.Manifest, SnapshotID: original.SnapshotID,
+		Recovery: &workspace.StorageRecovery{Original: original, Claims: []workspace.StorageJournalClaim{claim}, InstanceID: instanceID, Revision: claim.Revision, AssignmentDigest: assignmentDigest},
+	}
 	raw, err := json.Marshal(input)
 	if err != nil {
 		t.Fatal(err)
@@ -89,6 +99,7 @@ func TestBackupRestoreSupportedTypedJobHistory(t *testing.T) {
 		{"compaction-large", domain.CompactSessionJob, 2 << 20, false},
 		{"compaction-queued", domain.CompactSessionJob, 2 << 20, true},
 		{"compaction-near-input-limit", domain.CompactSessionJob, domain.MaxCompactionInputBytes - 128, true},
+		{"storage-recovery-small", domain.WorkspaceStorageJob, 512, false},
 		{"storage-recovery-large", domain.WorkspaceStorageJob, 600 << 10, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -191,7 +202,7 @@ func TestBackupRestoreSupportedTypedJobHistory(t *testing.T) {
 }
 
 func TestRestoreJobTransformationRejectsUnsupportedDocumentsBeforePublication(t *testing.T) {
-	for _, mode := range []string{"ordinary-size", "compaction-size", "compaction-input-size", "compaction-input-malformed", "compaction-input-unknown", "compaction-input-foreign", "compaction-invalid-state", "recovery-size", "unknown", "duplicate", "utf8"} {
+	for _, mode := range []string{"ordinary-size", "compaction-size", "compaction-input-size", "compaction-input-malformed", "compaction-input-unknown", "compaction-input-foreign", "compaction-invalid-state", "recovery-size", "workspace-input-unknown", "workspace-invalid-recovery-metadata", "unknown", "duplicate", "utf8"} {
 		t.Run(mode, func(t *testing.T) {
 			s, root, ctx, in, session := restoreFixture(t)
 			id := domain.NewID()
@@ -255,6 +266,20 @@ func TestRestoreJobTransformationRejectsUnsupportedDocumentsBeforePublication(t 
 			case "recovery-size":
 				job.Type = domain.WorkspaceStorageJob
 				job.Input = historyRecoveryInput(t, 2<<20)
+				raw, _ = json.Marshal(job)
+			case "workspace-input-unknown", "workspace-invalid-recovery-metadata":
+				job.Type = domain.WorkspaceStorageJob
+				job.Input = historyRecoveryInput(t, 512)
+				var input workspace.StorageRequest
+				if err := workspace.DecodeStorageRequest(job.Input, &input); err != nil {
+					t.Fatal("invalid recovery fixture", err)
+				}
+				if mode == "workspace-input-unknown" {
+					job.Input = append(job.Input[:len(job.Input)-1], []byte(`,"unknown":true}`)...)
+				} else {
+					input.Recovery.Revision = 0
+					job.Input, _ = json.Marshal(input)
+				}
 				raw, _ = json.Marshal(job)
 			case "unknown":
 				raw = append(raw[:len(raw)-1], []byte(`,"unknown":true}`)...)
