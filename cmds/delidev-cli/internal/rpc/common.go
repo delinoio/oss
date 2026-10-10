@@ -47,17 +47,19 @@ func Resource(record store.Record) *pb.Resource {
 			}
 		}
 	}
-	if record.Kind == domain.InteractionKind {
-		// The once-only policy decision is server-owned durable provenance.
-		// Keep the original schema-1 native controller document compatible with
-		// Workers that do not own project-settings configuration support.
+	if record.Kind == domain.InteractionKind || record.Kind == domain.SessionKind {
+		// Keep private native authority outside the unchanged public resource
+		// schemas. Typed Apps RPCs expose selection metadata separately.
 		var fields map[string]json.RawMessage
 		if json.Unmarshal(document, &fields) == nil {
-			if _, exists := fields["plan_approval_policy"]; exists {
+			delete(fields, "native_apps")
+			delete(fields, "native_apps_observation")
+			delete(fields, "native_apps_read")
+			if record.Kind == domain.InteractionKind {
 				delete(fields, "plan_approval_policy")
-				if raw, err := json.Marshal(fields); err == nil {
-					document = raw
-				}
+			}
+			if raw, err := json.Marshal(fields); err == nil {
+				document = raw
 			}
 		}
 	}

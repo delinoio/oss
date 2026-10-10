@@ -13293,6 +13293,340 @@
       "member": "replayed",
       "number": 2,
       "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_SESSION_NATIVE_APPS_V1",
+      "number": 97
+    },
+    {
+      "issue": 2003,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_SESSION_NATIVE_APPS_V1",
+      "number": 65
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "ReadSessionAppsRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "ReadSessionAppsRequest",
+      "member": "session_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "ReadSessionAppsRequest",
+      "member": "force_refresh",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "NativeAppDiscovery",
+      "member": "id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "NativeAppDiscovery",
+      "member": "name",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "NativeAppDiscovery",
+      "member": "accessible",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "NativeAppDiscovery",
+      "member": "enabled",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "NativeAppInstalled",
+      "member": "id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "NativeAppInstalled",
+      "member": "enabled",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "NativeAppInstalled",
+      "member": "callable",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "SessionNativeAppScope",
+      "member": "session_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "SessionNativeAppScope",
+      "member": "machine_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "SessionNativeAppScope",
+      "member": "original_account_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "SessionNativeAppScope",
+      "member": "original_connection_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "SessionNativeAppScope",
+      "member": "configuration_digest",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "SessionNativeAppSelection",
+      "member": "scope",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "SessionNativeAppSelection",
+      "member": "inventory_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "SessionNativeAppSelection",
+      "member": "revision",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "SessionNativeAppSelection",
+      "member": "app_ids",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "ReadSessionAppsResponse",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "ReadSessionAppsResponse",
+      "member": "session_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "ReadSessionAppsResponse",
+      "member": "original_account_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "ReadSessionAppsResponse",
+      "member": "original_connection_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "ReadSessionAppsResponse",
+      "member": "configuration_digest",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "ReadSessionAppsResponse",
+      "member": "inventory_id",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "ReadSessionAppsResponse",
+      "member": "discovered",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "ReadSessionAppsResponse",
+      "member": "installed",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "ReadSessionAppsResponse",
+      "member": "complete",
+      "number": 9,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "ReadSessionAppsResponse",
+      "member": "observed_at",
+      "number": 10,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "ReadSessionAppsResponse",
+      "member": "selection",
+      "number": 11,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "UpdateSessionAppsRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "UpdateSessionAppsRequest",
+      "member": "session_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "UpdateSessionAppsRequest",
+      "member": "original_account_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "UpdateSessionAppsRequest",
+      "member": "original_connection_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "UpdateSessionAppsRequest",
+      "member": "configuration_digest",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "UpdateSessionAppsRequest",
+      "member": "inventory_id",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "UpdateSessionAppsRequest",
+      "member": "selected_app_ids",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "UpdateSessionAppsResponse",
+      "member": "receipt",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "UpdateSessionAppsResponse",
+      "member": "selection",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2003,
+      "kind": "message",
+      "declaration": "UpdateSessionAppsResponse",
+      "member": "replayed",
+      "number": 3,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [
@@ -13527,6 +13861,24 @@
       "method": "SetAutomaticResetCreditConsent",
       "input": "SetAutomaticResetCreditConsentRequest",
       "output": "SetAutomaticResetCreditConsentResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2003,
+      "service": "SessionNativeAppsService",
+      "method": "ReadSessionApps",
+      "input": "ReadSessionAppsRequest",
+      "output": "ReadSessionAppsResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2003,
+      "service": "SessionNativeAppsService",
+      "method": "UpdateSessionApps",
+      "input": "UpdateSessionAppsRequest",
+      "output": "UpdateSessionAppsResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

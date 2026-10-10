@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+import { create } from "@bufbuild/protobuf";
+import { expect,it } from "vitest";
+import { ReadSessionAppsResponseSchema,SessionNativeAppScopeSchema } from "./gen/delidev/v1/session_native_apps_pb.js";
+import { sessionNativeAppViews } from "./session-native-apps.js";
+const ids=[1,2,3,4,5,6].map(n=>`01960000-0000-7000-8000-${n.toString().padStart(12,"0")}`);
+const scope=create(SessionNativeAppScopeSchema,{sessionId:ids[0],machineId:ids[1],originalAccountId:ids[2],originalConnectionId:ids[3],configurationDigest:"a".repeat(64)});
+const fixture=()=>create(ReadSessionAppsResponseSchema,{requestId:ids[4],sessionId:scope.sessionId,originalAccountId:scope.originalAccountId,originalConnectionId:scope.originalConnectionId,configurationDigest:scope.configurationDigest,inventoryId:ids[5],observedAt:"2026-10-10T00:00:00Z",complete:true,discovered:[{id:"available",name:"Available",accessible:true,enabled:true},{id:"callable",name:"Callable",accessible:true,enabled:true}],installed:[{id:"callable",enabled:true,callable:true}],selection:{scope:{...scope},inventoryId:ids[5],revision:1n,appIds:["available","callable"]}});
+it("keeps discovery, installation, selection and callability independent",()=>{const rows=sessionNativeAppViews(fixture(),scope,ids[4])!;expect(rows[0]).toMatchObject({selected:true,installed:false,callable:false});expect(rows[1]).toMatchObject({selected:true,installed:true,callable:true});});
+it("rejects foreign account, stale request, incomplete and contradictory observations",()=>{const v=fixture();v.originalAccountId=ids[1];expect(sessionNativeAppViews(v,scope,ids[4])).toBeUndefined();expect(sessionNativeAppViews(fixture(),scope,ids[0])).toBeUndefined();const a=fixture();a.complete=false;expect(sessionNativeAppViews(a,scope,ids[4])).toBeUndefined();const b=fixture();b.installed[0].enabled=false;expect(sessionNativeAppViews(b,scope,ids[4])).toBeUndefined();});
+it("rejects foreign selections and duplicate identities",()=>{const v=fixture();v.selection!.scope!.originalConnectionId=ids[1];expect(sessionNativeAppViews(v,scope,ids[4])).toBeUndefined();const a=fixture();a.discovered.push(a.discovered[0]);expect(sessionNativeAppViews(a,scope,ids[4])).toBeUndefined();});

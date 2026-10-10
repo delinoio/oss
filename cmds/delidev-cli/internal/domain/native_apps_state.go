@@ -3,11 +3,20 @@ package domain
 
 import "time"
 
-const SessionNativeAppsV1 = "session-native-apps-v1"
+const SessionNativeAppsV1 WorkerCapability = "session-native-apps-v1"
 
 // NativeAppsObservation retains only a bounded, original Worker inventory.
 // Product reads cannot manufacture selection authority from client-supplied IDs.
+type NativeAppsReadState struct {
+	RequestID    ID             `json:"request_id"`
+	CompletionID ID             `json:"completion_id"`
+	Scope        NativeAppScope `json:"scope"`
+	Actor        Principal      `json:"actor"`
+	ForceRefresh bool           `json:"force_refresh"`
+}
+
 type NativeAppsObservation struct {
+	RequestID        ID                 `json:"request_id"`
 	Inventory        NativeAppInventory `json:"inventory"`
 	Actor            Principal          `json:"actor"`
 	WorkerDeviceID   ID                 `json:"worker_device_id"`

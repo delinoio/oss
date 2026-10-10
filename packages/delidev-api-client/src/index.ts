@@ -67,3 +67,4 @@ export * as AttachmentQuery from "./gen/delidev/v1/attachments-AttachmentService
 
 export * from "./gen/delidev/v1/session_native_apps_pb.js";
 export * as SessionNativeAppsQuery from "./gen/delidev/v1/session_native_apps-SessionNativeAppsService_connectquery.js";
+export * from "./session-native-apps.js";

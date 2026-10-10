@@ -332,6 +332,17 @@ func checkedExecutionAssignment(tx *store.Tx, sr store.Record, session domain.Se
 	input.Version, input.Startup, input.Installation = 4, selection, domain.Installation{}
 	input.NativeImageGeneration = input.Configuration.Harness == domain.Codex && input.Configuration.Subscription && input.Configuration.SidechatPolicy == "" && slices.Contains(machine.WorkerCapabilities, domain.NativeImageGenerationV1)
 	input.Preparation, input.Manifest = job.Input, job.Output
+	// Freeze only the original scope; account switches, Fork and Sidechat never
+	// inherit connector authority from another configuration generation.
+	input.NativeApps = nil
+	if session.NativeApps != nil && domain.ValidateNativeAppsAssignment(input, *session.NativeApps) == nil {
+		if !slices.Contains(machine.WorkerCapabilities, domain.SessionNativeAppsV1) {
+			return empty, domain.NativeAppsUnavailable()
+		}
+		frozen := *session.NativeApps
+		frozen.AppIDs = slices.Clone(session.NativeApps.AppIDs)
+		input.NativeApps = &frozen
+	}
 	return input, input.Validate()
 }
 

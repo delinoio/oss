@@ -84,6 +84,8 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 	capabilities := make([]domain.WorkerCapability, 0, len(req.Msg.Capabilities))
 	for _, capability := range req.Msg.Capabilities {
 		switch capability {
+		case pb.WorkerCapability_WORKER_CAPABILITY_SESSION_NATIVE_APPS_V1:
+			capabilities = append(capabilities, domain.SessionNativeAppsV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1:
 			capabilities = append(capabilities, domain.InlineModelExecutionV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1:
