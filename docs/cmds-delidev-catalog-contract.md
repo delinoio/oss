@@ -276,10 +276,11 @@ and 1 MiB body limit. Redirects, ambient proxies and route fallback are
 forbidden; server shutdown cancels and joins the request and maintenance owner.
 
 Known metadata is separate from native discovery, credential/account entitlement,
-readiness and canonical saved-model authority. Known selections use the existing
-atomic Worker native-ID save. Saved selections retain exact model ID/revision
-checks. Removal from recommendations never removes saved models, configurations
-or immutable historical execution attribution. API endpoint discovery is unchanged.
+readiness and execution authority. The [desktop autocomplete contract](apps-delidev-desktop-contract.md#known-subscription-model-autocomplete) preserves the complete current advisory selection, keyboard, typed-input, failure, exact-ID and validation ownership boundaries. Known selections retain an exact native ID until the existing atomic Worker save.
+
+The former independent Model registry used source-scoped saved search/pagination,
+Saved-over-Known precedence for the same service/native ID and exact saved Model
+ID/revision checks. The [inline Worker model amendment](#inline-worker-models-and-endpoint-only-completion-reservation) supersedes that reader and separate Model authority, while retaining original source/Account/Worker revision checks, atomic receipts and immutable history. Do not restore Saved merging or registry writes in the current wizard. Recommendation removal never removes saved configurations, pricing history or immutable historical execution attribution. API completion follows its independently bounded original endpoint read; known metadata cannot replace endpoint, credential or installed-native evidence.
 
 The collector uses the revision-pinned official Codex `models-manager/models.json`
 (public visibility and nonempty subscription plans), official Codex retirement
