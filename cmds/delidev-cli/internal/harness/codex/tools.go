@@ -114,12 +114,15 @@ func (c *Client) observeToolUpdateLocked(native nativewire.Event) (Event, error)
 	result := Event{ThreadID: c.thread, TurnID: params.TurnID, ItemID: params.ItemID, Correlated: known, Late: turn.Turn.Status.terminal()}
 	allowed := []string{"threadId", "turnId", "itemId"}
 	switch native.Method {
-	case "item/commandExecution/outputDelta":
+	case "item/commandExecution/outputDelta", "item/fileChange/outputDelta":
 		allowed = append(allowed, "delta")
 		if params.Delta == nil || domain.Text(*params.Delta, "native command output", nativewire.MaxFrame, false) != nil {
 			return Event{}, incompatible()
 		}
-		result.Kind, result.TextDelta = ToolOutputEvent, *params.Delta
+		result.Kind, result.TextDelta, result.ToolOutputKind = ToolOutputEvent, *params.Delta, CommandTool
+		if native.Method == "item/fileChange/outputDelta" {
+			result.ToolOutputKind = PatchTool
+		}
 	case "item/fileChange/patchUpdated":
 		allowed = append(allowed, "changes")
 		changes, err := decodeFileChanges(params.Changes)

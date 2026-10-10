@@ -115,7 +115,12 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 			tool.Completed = update.Snapshot
 			value.State = domain.MessageComplete
 		case domain.ExecutionToolOutput:
-			if tool.Started.Kind != domain.CommandTool {
+			outputKind := update.OutputKind
+			if outputKind == "" {
+				// Historical omitted provenance admits only command output.
+				outputKind = domain.CommandTool
+			}
+			if tool.Started.Kind != outputKind {
 				return executionEventConflict()
 			}
 			output := ""

@@ -447,6 +447,22 @@ subsequent new executions/messages/response usage use the advanced context
 revision. A new Fork or compaction requires a completed execution in that current
 context; a historical removed turn is not a fresh source boundary.
 
+A confirmed pre-send failure is a separate closed output, never a successful
+Revert or compaction checkpoint. The original Worker must prove that the Revert
+claim callback was never entered, so neither an intent write nor `thread/revert`
+was attempted. Join the original native process, API proxy, workspace lease and
+protected-account cleanup before reporting that exact job/action/execution/input
+digest, context revision and native thread with its safe failure code. The server
+matches these original facts and refuses any remaining protected subscription
+lease or recovery requirement. It records the failed job and releases only that
+context-job fence, leaving context revision, prior checkpoint, transcript and
+historical execution unchanged; dispatch stays paused. Cancellation cannot
+create native uncertainty when this complete positive no-send proof exists.
+Any callback attempt, including a failed intent write, stays uncertain. A generic
+error, missing report or unjoined cleanup is never positive no-send evidence.
+Fresh explicit admission remains separate; this outcome never resends, creates
+an intent or grants a successor checkpoint. Ordinary compaction is unchanged.
+
 Uncertain acknowledgment blocks new input. Explicit original execution recovery
 may observe only the exact original Revert intent, original claim/journal,
 registration/send claims, joined original process/workspace cleanup, and proved
