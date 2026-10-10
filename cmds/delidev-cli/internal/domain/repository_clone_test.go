@@ -34,7 +34,7 @@ func TestRepositoryCloneIdentityAcrossTransport(t *testing.T) {
 
 func TestRepositoryCloneSourceIdentity(t *testing.T) {
 	var identity string
-	for _, value := range []string{"https://github.com/owner/repo.git", "ssh://git@github.com/owner/repo.git", "git@github.com:owner/repo.git"} {
+	for _, value := range []string{"https://github.com/owner/repo.git", "ssh://git@github.com/owner/repo.git", "git@github.com:owner/repo.git", "https://github.com/Owner/Repo", "ssh://git@github.com/OWNER/REPO.git"} {
 		got, err := RepositoryCloneSourceIdentity(value)
 		if err != nil {
 			t.Fatal(value, err)
@@ -55,6 +55,10 @@ func TestRepositoryCloneSourceIdentity(t *testing.T) {
 		}
 	}
 	for _, values := range [][2]string{
+		{"https://git.example.com/team/repo", "https://git.example.com/team/repo.git"},
+		{"ssh://git@git.example.com/team/repo", "ssh://git@git.example.com/team/repo.git"},
+		{"git@git.example.com:team/repo", "git@git.example.com:team/repo.git"},
+		{"https://git.example.com/team/repo", "https://git.example.com/team/repo/"},
 		{"alice@git.example.com:team/repo.git", "bob@git.example.com:team/repo.git"},
 		{"git.example.com:team/repo.git", "git.example.com:/team/repo.git"},
 		{"https://git.example.com/team/repo.git", "ssh://git@git.example.com/team/repo.git"},

@@ -436,7 +436,7 @@ func TestConfigurationImportRejectsManagedPresetCollisionsAtPreviewAndApply(t *t
 }
 
 func TestConfigurationImportRepositoryValidationCommitsAllOrNothing(t *testing.T) {
-	for _, outcome := range []string{"success", "failure", "canonical-path", "stale-settings", "revoked-client", "retired-identity"} {
+	for _, outcome := range []string{"success", "failure", "canonical-path", "stale-settings", "revoked-client", "retired-identity", "missing-source-proof", "changed-source-proof"} {
 		t.Run(outcome, func(t *testing.T) {
 			s, _ := newDoctorFixture(t)
 			selection := transferSelection()
@@ -444,7 +444,7 @@ func TestConfigurationImportRepositoryValidationCommitsAllOrNothing(t *testing.T
 			targets := []domain.ID{domain.NewID(), domain.NewID()}
 			repository := domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "Both checkouts", AutoFetch: true}
 			for i, source := range sources {
-				doctorPut(t, s, domain.MachineKind, targets[i], 0, domain.Machine{Name: "target", OS: "linux", Architecture: "amd64"})
+				doctorPut(t, s, domain.MachineKind, targets[i], 0, domain.Machine{Name: "target", OS: "linux", Architecture: "amd64", WorkerCapabilities: []domain.WorkerCapability{domain.RepositoryInspectionMetadataV1}})
 				selection.Bundle.Machines = append(selection.Bundle.Machines, domain.ConfigurationMachine{ID: source, Name: "source", OS: "linux", Architecture: "amd64"})
 				selection.Machines = append(selection.Machines, domain.ConfigurationMachineBinding{SourceID: source, TargetID: targets[i]})
 				repository.Checkouts = append(repository.Checkouts, domain.Checkout{MachineID: source, Path: "/untrusted/old"})
@@ -503,8 +503,9 @@ func TestConfigurationImportRepositoryValidationCommitsAllOrNothing(t *testing.T
 					if err := domain.Decode(job.Input, &input); err != nil {
 						t.Fatal(err)
 					}
-					if input.ExpectedRemoteIdentity != "" {
-						t.Fatal("legacy Worker received the post-capability source identity")
+					identity, err := domain.RepositoryCloneSourceIdentity(repository.RemoteURL)
+					if err != nil || input.ExpectedRemoteIdentity != identity {
+						t.Fatal("original source proof was not bound")
 					}
 				}
 				finishTransferTest(t, s, report.JobID, outcome, settingsID, settings)
@@ -549,6 +550,17 @@ func finishTransferTest(t *testing.T, s *Service, parentID domain.ID, outcome st
 				return nil, err
 			}
 			job.State = domain.JobSucceeded
+			if outcome == "missing-source-proof" || outcome == "changed-source-proof" {
+				var original domain.RepositoryInspectionInput
+				if err := domain.Decode(job.Input, &original); err != nil {
+					return nil, err
+				}
+				original.ExpectedRemoteIdentity = ""
+				if outcome == "changed-source-proof" {
+					original.ExpectedRemoteIdentity, _ = domain.RepositoryCloneSourceIdentity("https://other.invalid/team/repo")
+				}
+				job.Input, _ = json.Marshal(original)
+			}
 			root := "/target/checkout"
 			if outcome == "canonical-path" {
 				root = "/different/canonical"

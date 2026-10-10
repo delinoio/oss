@@ -74,6 +74,7 @@ func saveRepository(ctx context.Context, s *store.Store, input ConfigurationMuta
 			// The identity field was added after the original inspection input.
 			// Keep it omitted for older Workers so their strict decoder retains the
 			// legacy inspection path; newer Workers enforce the source binding.
+			// A missing original proof cannot authorize source-bound publication.
 			if repository.RemoteURL != "" && slices.Contains(machine.WorkerCapabilities, domain.RepositoryInspectionMetadataV1) {
 				identity, err = domain.RepositoryCloneSourceIdentity(repository.RemoteURL)
 				if err != nil {
@@ -140,6 +141,10 @@ func finishRepositorySave(tx *store.Tx, parentID domain.ID) error {
 			}
 			switch child.State {
 			case domain.JobSucceeded:
+				if err := validateRepositoryInspectionSource(child, input.Repository.RemoteURL); err != nil {
+					problem = domain.SafeError(err)
+					break
+				}
 				var result workspace.Inspection
 				if err := domain.Decode(child.Output, &result); err != nil {
 					return err
@@ -217,4 +222,18 @@ func finishRepositorySave(tx *store.Tx, parentID domain.ID) error {
 	}
 	_, err = tx.PutJob(record.ID, record.Revision, "", "", parent)
 	return err
+}
+
+// An accepted opaque proof is immutable. Legacy omission or a historical
+// suffix-collapsing generic digest cannot be upgraded from current source data.
+func validateRepositoryInspectionSource(job domain.Job, source string) error {
+	if source == "" {
+		return nil
+	}
+	var input domain.RepositoryInspectionInput
+	expected, err := domain.RepositoryCloneSourceIdentity(source)
+	if err != nil || domain.Decode(job.Input, &input) != nil || input.ExpectedRemoteIdentity != expected {
+		return domain.Fail(domain.RecoveryRequired, "The original repository source proof is missing or changed.", "Preserve the accepted operation and explicitly validate the original source in a new request.")
+	}
+	return nil
 }

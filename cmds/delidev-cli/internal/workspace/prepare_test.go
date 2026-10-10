@@ -311,3 +311,23 @@ func TestWorkerParentAliasUsesCanonicalOwnershipPaths(t *testing.T) {
 		t.Fatal("aliased worktree registration survived rollback", worktrees)
 	}
 }
+
+func TestValidateRemoteIdentityKeepsGenericSuffixExact(t *testing.T) {
+	root := repository(t)
+	gitTest(t, root, "remote", "add", "origin", "https://generic.invalid/team/repo.git")
+	g := Git{ProcessRoot: filepath.Join(t.TempDir(), "processes"), OwnerID: domain.NewID()}
+	inspection, err := g.Inspect(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, source := range []string{"https://generic.invalid/team/repo", "https://generic.invalid/team/repo.git"} {
+		expected, err := domain.RepositoryCloneSourceIdentity(source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = g.ValidateRemoteIdentity(context.Background(), inspection, "origin", expected)
+		if (err == nil) != (strings.HasSuffix(source, ".git")) {
+			t.Fatal("generic source suffix boundary lost")
+		}
+	}
+}

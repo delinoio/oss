@@ -142,8 +142,8 @@ func (s *Service) ApplyConfigurationImport(ctx context.Context, req *connect.Req
 					pending.Inspections = append(pending.Inspections, configurationImportInspection{ID: childID, RepositoryID: change.ID, MachineID: checkout.MachineID, Path: checkout.Path})
 					identity := ""
 					// Preserve the legacy inspection input for older Workers. The
-					// source identity is advisory only when the Worker negotiated
-					// support for the post-capability field.
+					// post-capability field is omitted without negotiated support.
+					// Omission cannot establish source authority at final publication.
 					if repository.RemoteURL != "" && slices.Contains(machine.WorkerCapabilities, domain.RepositoryInspectionMetadataV1) {
 						identity, err = domain.RepositoryCloneSourceIdentity(repository.RemoteURL)
 						if err != nil {
@@ -267,6 +267,23 @@ func finishConfigurationImport(tx *store.Tx, record store.Record, parent domain.
 		}
 		switch child.State {
 		case domain.JobSucceeded:
+			sourceFound := false
+			for _, change := range pending.Plan.Changes {
+				if change.Kind == domain.RepositoryKind && change.ID == expected.RepositoryID {
+					value, err := portableValue(change.Kind, change.After, true)
+					if err != nil {
+						return err
+					}
+					if err := validateRepositoryInspectionSource(child, value.(*domain.Repository).RemoteURL); err != nil {
+						problem = domain.SafeError(err)
+					}
+					sourceFound = true
+					break
+				}
+			}
+			if !sourceFound {
+				return transferInvalid()
+			}
 			var inspection workspace.Inspection
 			if err := domain.Decode(child.Output, &inspection); err != nil {
 				return err

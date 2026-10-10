@@ -394,3 +394,17 @@ func TestManagedCloneForkFromLocalPreservesOriginalFolder(t *testing.T) {
 		t.Fatal("child deletion changed original Local folder")
 	}
 }
+
+func TestManagedCloneRejectsGenericSuffixRewriteWithoutNetwork(t *testing.T) {
+	root := t.TempDir()
+	config := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(config, []byte("[url \"https://generic.invalid/team/repo.git\"]\n\tinsteadOf = https://generic.invalid/team/repo\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", config)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	g := Git{ProcessRoot: filepath.Join(t.TempDir(), "processes"), OwnerID: domain.NewID()}
+	if err := g.validateManagedCloneSource(context.Background(), root, "https://generic.invalid/team/repo"); domain.SafeError(err).Code != domain.InvalidArgument {
+		t.Fatal("generic suffix rewrite accepted", err)
+	}
+}

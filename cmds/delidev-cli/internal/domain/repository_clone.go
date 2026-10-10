@@ -160,20 +160,22 @@ func RepositoryCloneSourceIdentity(value string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	repositoryPath := strings.TrimSuffix(parsed.Path, "/")
-	repositoryPath = strings.TrimSuffix(repositoryPath, ".git")
+	repositoryPath := parsed.Path
 	if repositoryPath == "" {
 		return "", cloneInvalidURL()
 	}
 	identity := []string{strings.ToLower(parsed.Host)}
-	if strings.EqualFold(parsed.Host, "github.com") {
+	if parsed.GitHubOwner != "" {
 		// GitHub documents HTTPS, ssh://git@github.com and SCP-style SSH as
 		// equivalent access forms for one owner/repository namespace.
 		// GitHub repository names are case-insensitive. Normalize only this
 		// established provider namespace; generic hosts retain their exact path.
-		repositoryPath = strings.ToLower(strings.TrimPrefix(repositoryPath, "/"))
+		repositoryPath = strings.ToLower(strings.TrimPrefix(strings.TrimSuffix(strings.TrimSuffix(repositoryPath, "/"), ".git"), "/"))
 	} else {
-		identity = append(identity, string(parsed.Transport), parsed.SSHUser, repositoryPath)
+		// Historical generic digests discarded .git and cannot prove which
+		// original path was accepted. Domain-separate exact-path proofs so an
+		// old ambiguous digest cannot be reinterpreted as new source authority.
+		identity = append(identity, "generic-exact-path-v1", string(parsed.Transport), parsed.SSHUser, repositoryPath)
 	}
 	if len(identity) == 1 {
 		identity = append(identity, repositoryPath)
