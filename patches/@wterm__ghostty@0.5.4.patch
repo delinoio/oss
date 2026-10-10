@@ -1,0 +1,51 @@
+diff --git a/dist/ghostty-core.d.ts b/dist/ghostty-core.d.ts
+index e10d82010dba2128a7d7162dcb1c3cf4378d5f06..498992787e1869d77bf38bf874a0ea3b416b7a32 100644
+--- a/dist/ghostty-core.d.ts
++++ b/dist/ghostty-core.d.ts
+@@ -60,6 +60,7 @@ export declare class GhosttyCore implements TerminalCore {
+      */
+     static load(options?: GhosttyOptions): Promise<GhosttyCore>;
+     init(cols: number, rows: number): void;
++    reset(): void;
+     resize(cols: number, rows: number): void;
+     getColorOverrides(): TerminalColorOverrides;
+     writeString(str: string, afterChunk?: () => void): void;
+diff --git a/dist/ghostty-core.js b/dist/ghostty-core.js
+index 5b7efca914623d6eb0e40846ef9ccc6d9a4840a5..005a904b2a1dd61dbfb41909cf266afd7e653990 100644
+--- a/dist/ghostty-core.js
++++ b/dist/ghostty-core.js
+@@ -138,7 +138,7 @@ export class GhosttyCore {
+         const scrollback = this._options.scrollbackLimit ?? 10000;
+         this.termPtr = this.wasm.exports.init(cols, rows, scrollback, this._foregroundRgb, this._backgroundRgb, imageStorageLimit(this._options));
+         if (this.termPtr === 0)
+-            return;
++            throw new Error("DELIDEV_TERMINAL_CORE_UNAVAILABLE");
+         if (this._themeColors)
+             this.setThemeColors(this._themeColors);
+         if (this._graphemeBufPtr !== 0)
+@@ -152,6 +152,9 @@ export class GhosttyCore {
+         this._allocViewportBuffer();
+         this._invalidate();
+     }
++    reset() {
++        if (!this._disposed) this.init(this._cols, this._rows);
++    }
+     resize(cols, rows) {
+         if (this._disposed || this.termPtr === 0)
+             return;
+diff --git a/dist/wasm-bindings.js b/dist/wasm-bindings.js
+index 20d056624ab36a1d669bef399e5177bfe38e8be6..e2ef92d6048116dfcd175c31162eed8a550117ab 100644
+--- a/dist/wasm-bindings.js
++++ b/dist/wasm-bindings.js
+@@ -110,9 +110,8 @@ export async function loadGhosttyWasm(wasmUrl) {
+     let wasmMemory;
+     const instance = await WebAssembly.instantiate(module, {
+         env: {
+-            log(ptr, len) {
+-                const text = new TextDecoder().decode(new Uint8Array(wasmMemory.buffer, ptr, len));
+-                console.log("[ghostty-vt]", text);
++            // DeliDev terminal content never enters browser diagnostics.
++            log() {
+             },
+         },
+     });

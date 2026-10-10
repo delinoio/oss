@@ -58,7 +58,8 @@
       "ws@>=8.0.0 <8.21.0": "8.21.3"
     },
     "patchedDependencies": {
-      "@xterm/xterm@6.0.0": "patches/@xterm__xterm@6.0.0.patch"
+      "@wterm/dom@0.5.4": "patches/@wterm__dom@0.5.4.patch",
+      "@wterm/ghostty@0.5.4": "patches/@wterm__ghostty@0.5.4.patch"
     }
   },
   "devDependencies": {

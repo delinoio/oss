@@ -35,6 +35,6 @@ const transport=createRouterTransport(router=>{
  });
 });
 Object.assign(window,{__terminalHistoryFixture:{metrics,releaseInput:()=>{inputRelease?.();inputRelease=undefined;}}});
-const observer=new MutationObserver(changes=>{for(const change of changes)for(const [nodes,key] of [[change.addedNodes,"screens"],[change.removedNodes,"removedScreens"]] as const)for(const node of nodes)if(node instanceof Element)metrics[key]+=Number(node.matches(".xterm"))+node.querySelectorAll(".xterm").length;});
+const observer=new MutationObserver(changes=>{for(const change of changes)for(const [nodes,key] of [[change.addedNodes,"screens"],[change.removedNodes,"removedScreens"]] as const)for(const node of nodes)if(node instanceof Element)metrics[key]+=Number(node.matches(".wterm"))+node.querySelectorAll(".wterm").length;});
 observer.observe(document.body,{subtree:true,childList:true});
 createRoot(document.getElementById("root")!).render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><TransportProvider transport={transport}><MutationIntents><section className="session-workspace terminal-open terminal-history-fixture"><div className="session-content"><div className="session-upper-content"/><div className="session-terminal-slot"><SessionTerminals session={session} close={()=>{}} /></div></div></section></MutationIntents></TransportProvider></QueryClientProvider>);

@@ -399,7 +399,7 @@ bytes, split UTF-8, reattachment gaps and Stop/Archive/deletion barriers.
 
 Keep executed checks and retained fixtures distinct from native Windows/Linux,
 real remote Worker, native desktop visual and release acceptance. The desktop
-provides the pinned WebGL terminal emulator described by the desktop contract,
+provides the pinned WTerm DOM renderer and Ghostty core described by the desktop contract,
 with bounded scrollback, exact original byte/cursor order, atomic input admission
 and serial retained input/resize controls. Its accepted creation and explicit
 selection survive bounded history payload eviction. Hiding or tab departure

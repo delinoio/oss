@@ -25,14 +25,15 @@
 .terminal-view { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
 .terminal-view > :not(.terminal-screen) { flex: none; margin: 0; padding: 4px 8px; font-size: 12px; overflow-wrap: anywhere; }
 .terminal-screen { flex: 1; min-height: 80px; min-width: 0; padding: 8px; overflow: hidden; }
-.terminal-screen .xterm { height: 100%; }
+.terminal-screen .wterm { height: 100%; min-height: 0; padding: 0; border-radius: 0; box-shadow: none; --term-font-family: ui-monospace, SFMono-Regular, Consolas, monospace; --term-font-size: 14px; --term-fg: #e5e9f0; --term-bg: #14191f; --term-cursor: #e5e9f0; --term-selection-bg: var(--terminal-selection); scrollbar-color: var(--terminal-scrollbar) transparent; }
 .terminal-view footer { color: var(--terminal-muted); }
-/* The pinned Viewport patch removes dynamic stylesheet insertion. Scrollbar
-   palette stays static under production style-src self; only upstream bounded
-   cell/canvas/textarea geometry uses element.style properties. */
-.terminal-screen .xterm .xterm-scrollable-element > .scrollbar > .slider { background: var(--terminal-scrollbar); }
-.terminal-screen .xterm .xterm-scrollable-element > .scrollbar > .slider:hover { background: var(--terminal-scrollbar-hover); }
-.terminal-screen .xterm .xterm-scrollable-element > .scrollbar > .slider.active { background: var(--terminal-scrollbar-active); }
+/* Keep scrollbar colors in static CSS under production style-src self.
+   The renderer uses validated CSSOM assignments for bounded cell geometry. */
+.terminal-screen .wterm ::selection { background: var(--terminal-selection); }
+.terminal-screen .wterm::-webkit-scrollbar { width: 10px; }
+.terminal-screen .wterm::-webkit-scrollbar-thumb { background: var(--terminal-scrollbar); }
+.terminal-screen .wterm::-webkit-scrollbar-thumb:hover { background: var(--terminal-scrollbar-hover); }
+.terminal-screen .wterm::-webkit-scrollbar-thumb:active { background: var(--terminal-scrollbar-active); }
 /* Shared problem components inherit the dock's fixed dark palette rather than
    mixing light warning backgrounds with terminal foreground text. */
 .terminal-dock .problem { color: var(--terminal-foreground); background: var(--terminal-background); border-color: var(--terminal-border); }

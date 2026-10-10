@@ -4,7 +4,7 @@ import { lstat, readFile, realpath } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { QaError } from "./processes.mjs";
 
-const types = { ".html": "text/html; charset=utf-8", ".js": "application/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2" };
+const types = { ".wasm": "application/wasm", ".html": "text/html; charset=utf-8", ".js": "application/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2" };
 async function body(request) {
   const chunks = []; let size = 0;
   for await (const chunk of request) { size += chunk.length; if (size > 140_000) throw new QaError("request-too-large"); chunks.push(chunk); }
@@ -49,7 +49,7 @@ export async function createHost(assets, environment) {
       if (request.method !== "GET") throw new QaError("invalid-request");
       const file = resolve(assets, `.${decodeURIComponent(url.pathname === "/" ? "/index.html" : url.pathname)}`);
       if (!file.startsWith(`${assets}${sep}`) || !(await lstat(file)).isFile() || await realpath(file) !== file) throw new QaError("asset-unavailable");
-      response.setHeader("Content-Security-Policy", `default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self' ${environment.endpoint || "'none'"}; frame-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`);
+      response.setHeader("Content-Security-Policy", `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self' ${environment.endpoint || "'none'"}; frame-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`);
       response.writeHead(200, { "Content-Type": types[extname(file)] ?? "application/octet-stream" }); response.end(await readFile(file));
     } catch (error) { send(error.code === "control-busy" ? 409 : error.code === "origin-rejected" ? 403 : 503, { code: error instanceof QaError ? error.code : "host-request-failed" }); }
   });

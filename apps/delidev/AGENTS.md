@@ -22,4 +22,6 @@
 - [DeliDev GitHub Integration Profiles](../../docs/cmds-delidev-integrations-contract.md)
 - [OpenCode Go subscription contract](../../docs/cmds-delidev-opencode-go-subscription-contract.md)
 - [DeliDev native read-only Sidechat](../../docs/cmds-delidev-sidechat-contract.md)
+- [Repository dependency security](../../docs/repository-dependency-security-contract.md)
+- [Repository license ownership](../../docs/repository-license-contract.md)
 - [Repository Workflow Contract](../../docs/repository-workflow-contract.md)

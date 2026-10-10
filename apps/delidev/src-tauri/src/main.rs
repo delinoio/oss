@@ -1402,6 +1402,7 @@ fn saved_csp(policy: &str, origin: &str) -> Result<String, NativeFailure> {
     directives.insert(
         "connect-src".into(),
         CspDirectiveSources::List(vec![
+            "'self'".to_owned(),
             "ipc:".to_owned(),
             "http://ipc.localhost".to_owned(),
             origin.to_owned(),
@@ -1415,6 +1416,7 @@ fn local_csp(policy: Csp, endpoint: &str, development: bool) -> Result<Csp, Nati
     }
     let mut directives: HashMap<String, CspDirectiveSources> = policy.into();
     let mut sources = vec![
+        "'self'".to_owned(),
         "ipc:".to_owned(),
         "http://ipc.localhost".to_owned(),
         endpoint.to_owned(),
@@ -2285,7 +2287,10 @@ mod tests {
             let policy = local_csp(Csp::from(map), endpoint, false).unwrap();
             let directives: HashMap<String, CspDirectiveSources> = policy.into();
             let sources: Vec<String> = directives["connect-src"].clone().into();
-            assert_eq!(sources, vec!["ipc:", "http://ipc.localhost", endpoint]);
+            assert_eq!(
+                sources,
+                vec!["'self'", "ipc:", "http://ipc.localhost", endpoint]
+            );
             let scripts: Vec<String> = directives["script-src"].clone().into();
             assert_eq!(scripts, vec!["'self'"]);
         }
@@ -2558,6 +2563,7 @@ mod tests {
         assert_eq!(
             sources,
             vec![
+                "'self'",
                 "ipc:",
                 "http://ipc.localhost",
                 "https://selected.example.test"

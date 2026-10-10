@@ -32,9 +32,12 @@ overrides:
   ws@>=8.0.0 <8.21.0: 8.21.3
 
 patchedDependencies:
-  '@xterm/xterm@6.0.0':
-    hash: 89ed179f11a7ae19cf570fc63d34a19d4e97b41447de04d2e85887cac50a4f1d
-    path: patches/@xterm__xterm@6.0.0.patch
+  '@wterm/dom@0.5.4':
+    hash: 2e4540b17102d1028951a4a60acdf6fe63a395966e7365a5d493a724a052add7
+    path: patches/@wterm__dom@0.5.4.patch
+  '@wterm/ghostty@0.5.4':
+    hash: 473604acb71a45cdecc86a49c046476011a2ca1c542951bee75b02c4d5101d05
+    path: patches/@wterm__ghostty@0.5.4.patch
 
 importers:
 
@@ -140,15 +143,12 @@ importers:
       '@tauri-apps/api':
         specifier: 2.11.1
         version: 2.11.1
-      '@xterm/addon-fit':
-        specifier: 0.11.0
-        version: 0.11.0
-      '@xterm/addon-webgl':
-        specifier: 0.19.0
-        version: 0.19.0
-      '@xterm/xterm':
-        specifier: 6.0.0
-        version: 6.0.0(patch_hash=89ed179f11a7ae19cf570fc63d34a19d4e97b41447de04d2e85887cac50a4f1d)
+      '@wterm/dom':
+        specifier: 0.5.4
+        version: 0.5.4(patch_hash=2e4540b17102d1028951a4a60acdf6fe63a395966e7365a5d493a724a052add7)
+      '@wterm/ghostty':
+        specifier: 0.5.4
+        version: 0.5.4(patch_hash=473604acb71a45cdecc86a49c046476011a2ca1c542951bee75b02c4d5101d05)
       cmdk:
         specifier: 1.1.1
         version: 1.1.1(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -1646,14 +1646,14 @@ packages:
   '@vitest/utils@4.1.11':
     resolution: {integrity: sha512-zTCVGpyFsGWBhllOyKlTw/vnr6D9qxsfSDyfbyZmTyjHw5N/VuvzHpHoQjm2ZJzn4RJgx5w4r7V0er69CmLgPQ==}
 
-  '@xterm/addon-fit@0.11.0':
-    resolution: {integrity: sha512-jYcgT6xtVYhnhgxh3QgYDnnNMYTcf8ElbxxFzX0IZo+vabQqSPAjC3c1wJrKB5E19VwQei89QCiZZP86DCPF7g==}
+  '@wterm/core@0.5.4':
+    resolution: {integrity: sha512-yIhbn27ELHDjEDtduDIycHWEEaobJGhqR+WqKgCoSPYReCIrR+skJS67PBk3Wp6+yLImfQ3Fv1CJ4hLXKLa7Fg==}
 
-  '@xterm/addon-webgl@0.19.0':
-    resolution: {integrity: sha512-b3fMOsyLVuCeNJWxolACEUED0vm7qC0cy4wRvf3oURSzDTYVQiGPhTnhWZwIHdvC48Y+oLhvYXnY4XDXPoJo6A==}
+  '@wterm/dom@0.5.4':
+    resolution: {integrity: sha512-9zxZq52BFpBtVEkBEbZF5a+9dX+eIADQdlTRq6YgGxHP/G/aDXyRja+tebQtAYqx9KY8qJVm20vNOhQxwBe/FQ==}
 
-  '@xterm/xterm@6.0.0':
-    resolution: {integrity: sha512-TQwDdQGtwwDt+2cgKDLn0IRaSxYu1tSUjgKarSDkUM0ZNiSRXFpjxEsvc/Zgc5kq5omJ+V0a8/kIM2WD3sMOYg==}
+  '@wterm/ghostty@0.5.4':
+    resolution: {integrity: sha512-W6wlGhHiGf/2tF/uZo8qHtaYqA3Ebf+6VhdPidiWuqEU37Kj+YSkuXCXP/qORSD0roec/5Z16qYRyF5HsC9XJg==}
 
   abab@2.0.6:
     resolution: {integrity: sha512-j2afSsaIENvHZN2B8GOpF566vZ5WVk5opAiMTvWgaQT8DkbOqsTfvNAvHoRGU2zzP8cPoqys+xHTRDWW8L+/BA==}
@@ -4554,11 +4554,15 @@ snapshots:
       convert-source-map: 2.0.0
       tinyrainbow: 3.1.1
 
-  '@xterm/addon-fit@0.11.0': {}
+  '@wterm/core@0.5.4': {}
 
-  '@xterm/addon-webgl@0.19.0': {}
+  '@wterm/dom@0.5.4(patch_hash=2e4540b17102d1028951a4a60acdf6fe63a395966e7365a5d493a724a052add7)':
+    dependencies:
+      '@wterm/core': 0.5.4
 
-  '@xterm/xterm@6.0.0(patch_hash=89ed179f11a7ae19cf570fc63d34a19d4e97b41447de04d2e85887cac50a4f1d)': {}
+  '@wterm/ghostty@0.5.4(patch_hash=473604acb71a45cdecc86a49c046476011a2ca1c542951bee75b02c4d5101d05)':
+    dependencies:
+      '@wterm/core': 0.5.4
 
   abab@2.0.6: {}
 

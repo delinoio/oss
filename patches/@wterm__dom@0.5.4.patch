@@ -1,0 +1,535 @@
+diff --git a/dist/history-selection.js b/dist/history-selection.js
+index 508987f0a5e881a2ddec1747c06ff726caf4ef70..a1a3e6b02b16041cc6c0a45ed68b1ac206e92630 100644
+--- a/dist/history-selection.js
++++ b/dist/history-selection.js
+@@ -56,9 +56,15 @@ export class HistorySelection {
+         this.onSelectionChange();
+         return this.text;
+     }
++    setLabels(labels) { this.labels = labels; this.setStatus(this.statusKind || ""); }
++    setStatus(kind) {
++        this.statusKind = kind;
++        const defaults = { pending: "Selecting terminal text…", failed: "Unable to select all text. Select a smaller range to copy.", changed: "Terminal changed. Select all again to copy." };
++        this.status.textContent = kind ? (this.labels?.[kind] || defaults[kind]) : "";
++    }
+     select() {
+         this.claim();
+-        this.status.textContent = "Selecting terminal text…";
++        this.setStatus("pending");
+         return new Promise((resolve) => {
+             this.resolve = resolve;
+         });
+@@ -117,7 +123,7 @@ export class HistorySelection {
+                         this.scan = null;
+                         this.text = next.value;
+                         this.element.classList.add("term-select-all");
+-                        this.status.textContent = "";
++                        this.setStatus("");
+                         const resolve = this.resolve;
+                         this.resolve = null;
+                         resolve?.(true);
+@@ -130,8 +136,7 @@ export class HistorySelection {
+             }
+             catch {
+                 this.clear();
+-                this.status.textContent =
+-                    "Unable to select all text. Select a smaller range to copy.";
++                this.setStatus("failed");
+             }
+         };
+         this.timer = setTimeout(tick, 0);
+@@ -148,7 +153,7 @@ export class HistorySelection {
+         this.rectangle = null;
+         this.clearDecorations();
+         this.element.classList.remove("term-select-all");
+-        this.status.textContent = message;
++        this.setStatus(message);
+         if (owners.get(this.element.ownerDocument) === this)
+             owners.delete(this.element.ownerDocument);
+         const resolve = this.resolve;
+@@ -158,7 +163,7 @@ export class HistorySelection {
+     invalidate() {
+         if (!this.active)
+             return;
+-        this.clear(this.pending ? "Terminal changed. Select all again to copy." : "");
++        this.clear(this.pending ? "changed" : "");
+     }
+     destroy() {
+         this.clear();
+diff --git a/dist/input-accessibility.js b/dist/input-accessibility.js
+index f7a80178ddb648bfaf2e007dbf9300fe60ac80be..3cc04805b268abdf329c641a97d7634a86ac0757 100644
+--- a/dist/input-accessibility.js
++++ b/dist/input-accessibility.js
+@@ -17,7 +17,7 @@ export class InputAccessibility {
+             this.hint.id = `wterm-input-help-${++nextHintId}`;
+         } while (host.getRootNode().querySelector(`#${this.hint.id}`));
+         this.hint.hidden = true;
+-        this.hint.textContent = KEYBOARD_EXIT_HINT;
++        this.hint.textContent = host.dataset.terminalExitHint || KEYBOARD_EXIT_HINT;
+         host.append(this.hint);
+         this.tabIndex = host.getAttribute("tabindex");
+         this.defaultRole = !host.hasAttribute("role");
+@@ -37,13 +37,14 @@ export class InputAccessibility {
+                 this.input.removeAttribute(attribute);
+         }
+         if (!this.input.hasAttribute("aria-label"))
+-            this.input.setAttribute("aria-label", "Terminal");
++            this.input.setAttribute("aria-label", this.host.dataset.terminalLabel || "Terminal");
+         // Described-by references take precedence over aria-description. Append
+         // instructions to both paths, preserving the host's own description.
++        this.hint.textContent = this.host.dataset.terminalExitHint || KEYBOARD_EXIT_HINT;
+         const describedBy = this.input.getAttribute("aria-describedby");
+         if (describedBy)
+             this.input.setAttribute("aria-describedby", `${describedBy} ${this.hint.id}`);
+-        this.input.setAttribute("aria-description", [this.input.getAttribute("aria-description"), KEYBOARD_EXIT_HINT]
++        this.input.setAttribute("aria-description", [this.input.getAttribute("aria-description"), this.host.dataset.terminalExitHint || KEYBOARD_EXIT_HINT]
+             .filter(Boolean)
+             .join(" "));
+         this.input.setAttribute("tabindex", this.tabIndex ?? "0");
+@@ -55,7 +56,7 @@ export class InputAccessibility {
+             this.host.setAttribute("tabindex", "-1");
+         this.observer.observe(this.host, {
+             attributes: true,
+-            attributeFilter: [...LABEL_ATTRIBUTES, "tabindex"],
++            attributeFilter: [...LABEL_ATTRIBUTES, "tabindex", "data-terminal-exit-hint", "data-terminal-label"],
+         });
+     }
+     destroy() {
+diff --git a/dist/input.js b/dist/input.js
+index 73bdd5a9d80279abd9dca374515b0b551e879449..64812387768cc4c1fe9c3e79f759d98630ee1f78 100644
+--- a/dist/input.js
++++ b/dist/input.js
+@@ -95,8 +95,9 @@ export class InputHandler {
+         this.deliveredKeys = new Set();
+         this.tabExitArmed = false;
+         this.element = element;
+-        this.onData = onData;
+-        this.onBinary = onBinary;
++        this.enabled = true;
++        this.onData = (...args) => { if (this.enabled) onData(...args); };
++        this.onBinary = (...args) => { if (this.enabled) onBinary?.(...args); };
+         this.getBridge = getBridge;
+         this.getCellSize = getCellSize;
+         this.prepareComposition = prepareComposition;
+@@ -104,6 +105,7 @@ export class InputHandler {
+             element.ownerDocument.defaultView?.matchMedia?.("(pointer: coarse)")
+                 .matches ?? false;
+         this.textarea = document.createElement("textarea");
++        this.textarea.className = "term-input";
+         this.textarea.setAttribute("autocapitalize", "off");
+         this.textarea.setAttribute("autocomplete", "off");
+         this.textarea.setAttribute("autocorrect", "off");
+@@ -426,12 +428,12 @@ export class InputHandler {
+         this.sendPaste(text);
+     }
+     sendPaste(text) {
++        if (!this.enabled) return;
++        text = text.replace(/\r?\n/g, "\r");
+         this.selectionActions?.clearSelection();
+         const bridge = this.getBridge();
+         if (bridge && bridge.bracketedPaste()) {
+-            // Strip ESC bytes so clipboard payloads cannot inject \x1b[201~ to
+-            // break out of bracketed paste mode and smuggle commands to the PTY.
+-            const safe = text.replace(/\x1b/g, "");
++            const safe = text; // Preserve DeliDev original paste control bytes.
+             this.onData("\x1b[200~" + safe + "\x1b[201~");
+         }
+         else {
+@@ -439,6 +441,7 @@ export class InputHandler {
+         }
+     }
+     handleCompositionStart() {
++        if (!this.enabled) return;
+         this.tabExitArmed = false;
+         this.prepareComposition();
+         this.composing = true;
+@@ -455,6 +458,7 @@ export class InputHandler {
+         s.caretColor = "var(--term-fg, currentColor)";
+     }
+     handleCompositionEnd(e) {
++        if (!this.enabled) { this.textarea.value = ""; return; }
+         this.composing = false;
+         this.hideComposition();
+         this.resetInputValue();
+diff --git a/dist/output-announcements.js b/dist/output-announcements.js
+index 6c60c89e373eb9c8969c01c2aab70dc4db2cfff4..714f1d10560a83cac6de62871ddf20ce84ca63db 100644
+--- a/dist/output-announcements.js
++++ b/dist/output-announcements.js
+@@ -37,6 +37,7 @@ export class OutputAnnouncements {
+         host.ownerDocument.defaultView?.addEventListener("blur", this.reset);
+         host.ownerDocument.defaultView?.addEventListener("focus", this.reset);
+     }
++    setLabel(label) { if (this.live) this.live.setAttribute("aria-label", label); }
+     setEnabled(enabled) {
+         if (enabled === !!this.live)
+             return;
+@@ -44,7 +45,7 @@ export class OutputAnnouncements {
+             this.live = this.host.ownerDocument.createElement("div");
+             this.live.className = "term-announcements";
+             this.live.setAttribute("role", "log");
+-            this.live.setAttribute("aria-label", "Terminal output");
++            this.live.setAttribute("aria-label", this.host.dataset.terminalOutputLabel || "Terminal output");
+             this.live.setAttribute("aria-live", "polite");
+             this.live.setAttribute("aria-relevant", "additions");
+             this.live.setAttribute("aria-atomic", "false");
+@@ -192,7 +193,7 @@ export class OutputAnnouncements {
+     limit() {
+         this.paused = true;
+         this.previous = null;
+-        this.publish(LIMIT_MESSAGE);
++        this.publish(this.host.dataset.terminalLimitMessage || LIMIT_MESSAGE);
+     }
+     destroy() {
+         this.setEnabled(false);
+diff --git a/dist/renderer.js b/dist/renderer.js
+index 688ad09a7ea32990d94b751642fb496c3999f1c5..afd19b26715dc28c6a1b4d71b3ad0b9de12894fa 100644
+--- a/dist/renderer.js
++++ b/dist/renderer.js
+@@ -101,7 +101,7 @@ function columnStyle(columns) {
+ function appendRun(parent, text, style) {
+     const span = document.createElement("span");
+     if (style)
+-        span.style.cssText = style;
++        applyCellStyle(span, style);
+     span.textContent = text;
+     parent.appendChild(span);
+ }
+@@ -115,20 +115,38 @@ function escapeHTML(text) {
+ // CSS applies one decoration style/color to every line on an element. Keep
+ // the strike on its own inline element so colored/curly underlines do not
+ // change it. The cell span still owns geometry and the text appears only once.
++// DeliDev: create nodes and apply only generated declarations through CSSOM.
++// No HTML/style-attribute parsing is permitted by production style-src self.
++function applyCellStyle(node, style) {
++    const allowed = /^(?:color|background|font-weight|opacity|font-style|text-decoration(?:-style|-skip-ink|-color)?|visibility|--term-(?:cell-fg|cell-bg|span-cols))$/;
++    for (const declaration of style.split(";")) {
++        const separator = declaration.indexOf(":");
++        if (separator < 0) continue;
++        const property = declaration.slice(0, separator);
++        const value = declaration.slice(separator + 1);
++        if (allowed.test(property) && !/[{};]|url\s*\(/i.test(value))
++            node.style.setProperty(property, value);
++    }
++}
+ function cellSpanPart(className, style, text) {
+-    let content = escapeHTML(text);
+     const flat = !style.includes("text-decoration:underline line-through;");
+-    if (!flat) {
+-        style = style.replace("text-decoration:underline line-through;", "text-decoration:underline;");
+-        content = `<span style="text-decoration:line-through solid currentColor;">${content}</span>`;
+-    }
+-    const classAttr = className ? ` class="${className}"` : "";
+-    const styleAttr = style ? ` style="${style}"` : "";
+-    const opening = `<span${classAttr}${styleAttr}>`;
+     return {
+-        html: `${opening}${content}</span>`,
+-        opening: flat ? opening : undefined,
++        html: JSON.stringify([className, style, text]),
++        opening: flat ? JSON.stringify([className, style]) : undefined,
+         text: flat ? text : undefined,
++        create: () => {
++            const span = document.createElement("span");
++            span.className = className;
++            applyCellStyle(span, flat ? style : style.replace("text-decoration:underline line-through;", "text-decoration:underline;"));
++            if (flat) span.textContent = text;
++            else {
++                const strike = document.createElement("span");
++                strike.style.textDecoration = "line-through solid currentColor";
++                strike.textContent = text;
++                span.appendChild(strike);
++            }
++            return span;
++        },
+     };
+ }
+ function safeLinkHref(uri) {
+@@ -364,7 +382,7 @@ export class Renderer {
+     setup(cols, rows) {
+         this.cols = cols;
+         this.rows = rows;
+-        this.container.innerHTML = "";
++        this.container.replaceChildren();
+         this.rowText = new WeakMap();
+         this.rowParts = new WeakMap();
+         this.rowBackground = new WeakMap();
+@@ -399,7 +417,6 @@ export class Renderer {
+         // Each part is one direct child: a cell span, text run, or complete link.
+         // Keeping their boundaries lets a redraw preserve unchanged Unicode cells.
+         const parts = [];
+-        let linkHtml = "";
+         const content = {
+             text: "",
+             specialCells: [],
+@@ -424,25 +441,10 @@ export class Renderer {
+         let runStart = 0;
+         let runLinkKey = "";
+         let runLinkUri;
+-        let outputLinkKey = "";
+         let rowBackground;
+         let uniformBackground = lineLen >= this.cols;
+-        const appendContent = (content, linkKey, uri) => {
+-            const href = safeLinkHref(uri);
+-            const nextLinkKey = href ? linkKey : "";
+-            if (nextLinkKey !== outputLinkKey) {
+-                if (outputLinkKey)
+-                    parts.push({ html: linkHtml + "</a>" });
+-                if (nextLinkKey) {
+-                    linkHtml = `<a class="term-link" href="${escapeHTML(href)}" target="_blank" rel="noopener noreferrer">`;
+-                }
+-                outputLinkKey = nextLinkKey;
+-            }
+-            if (outputLinkKey)
+-                linkHtml += content.html;
+-            else
+-                parts.push(content);
+-        };
++        // DeliDev keeps OSC 8 text inert: never construct an anchor or href.
++        const appendContent = (content) => parts.push(content);
+         const flushRun = (endCol) => {
+             if (!runText)
+                 return;
+@@ -606,8 +608,6 @@ export class Renderer {
+             }
+         }
+         flushRun(this.cols);
+-        if (outputLinkKey)
+-            parts.push({ html: linkHtml + "</a>" });
+         this.updateRowParts(rowEl, parts);
+         this.rowText.set(rowEl, content);
+         const bgCss = uniformBackground && rowBackground !== DEFAULT_BG_CSS
+@@ -666,7 +666,7 @@ export class Renderer {
+         const replaced = Math.max(oldEnd - start, newEnd - start);
+         // Parsing the whole row is cheaper when there is little to retain.
+         if (retained < replaced) {
+-            row.innerHTML = parts.map((part) => part.html).join("");
++            row.replaceChildren(...parts.map((part) => part.create()));
+         }
+         else {
+             // Replace only the changed middle, retaining the native text nodes and
+@@ -675,12 +675,9 @@ export class Renderer {
+             range.setStart(row, start);
+             range.setEnd(row, oldEnd);
+             range.deleteContents();
+-            const html = parts
+-                .slice(start, newEnd)
+-                .map((part) => part.html)
+-                .join("");
+-            if (html)
+-                range.insertNode(range.createContextualFragment(html));
++            const fragment = row.ownerDocument.createDocumentFragment();
++            for (const part of parts.slice(start, newEnd)) fragment.appendChild(part.create());
++            range.insertNode(fragment);
+         }
+         this.rowParts.set(row, parts);
+     }
+@@ -1017,7 +1014,7 @@ export class Renderer {
+         this.painted = false;
+         this.selection?.dispose();
+         this.graphics.destroy();
+-        this.container.innerHTML = "";
++        this.container.replaceChildren();
+         this.rowEls = [];
+         this._scrollbackRowEls = [];
+     }
+diff --git a/dist/wterm.d.ts b/dist/wterm.d.ts
+index 89edbe3f40171ca2ee37f28cdada70082e436b19..81451f5e5a5c6df9a155c1d1dc6054290ebdfbdf 100644
+--- a/dist/wterm.d.ts
++++ b/dist/wterm.d.ts
+@@ -11,6 +11,8 @@ export interface WTermOptions {
+     core?: TerminalCore;
+     wasmUrl?: string;
+     autoResize?: boolean;
++    autoFocus?: boolean;
++    inputEnabled?: boolean;
+     /** Maximum rendered Kitty image width in CSS pixels. */
+     maxImageWidth?: number;
+     /** Maximum rendered Kitty image height in CSS pixels. */
+@@ -22,6 +24,8 @@ export interface WTermOptions {
+     /** Suspend painting for an inactive pane while continuing to parse output. */
+     renderingPaused?: boolean;
+     debug?: boolean;
++    /** Content-free notification of an asynchronous rendering failure. */
++    onError?: () => void;
+     onData?: (data: string) => void;
+     /** Raw input bytes, used by X10 mouse reports. */
+     onBinary?: (data: Uint8Array) => void;
+@@ -100,6 +104,11 @@ export declare class WTerm {
+     /** Apply host colors without writing terminal input or restarting the session. */
+     setThemeColors(colors: TerminalThemeColors): void;
+     write(data: string | Uint8Array): void;
++    setAccessibility(labels: {label: string; exitHint: string; outputLabel: string; limitMessage: string; selectionPending?: string; selectionFailed?: string; selectionChanged?: string}): void;
++    setInputEnabled(enabled: boolean): void;
++    paste(text: string): void;
++    reset(): void;
++    measureDimensions(): { cols: number; rows: number } | null;
+     /** Fit the grid to the current element and font metrics. */
+     fit(): void;
+     private _measureGridSize;
+diff --git a/dist/wterm.js b/dist/wterm.js
+index d7be2e26454351f261d2697b6eb9fcc64f3e0c77..cd657f66baab0cab9ff2214de4ae085a920872bf 100644
+--- a/dist/wterm.js
++++ b/dist/wterm.js
+@@ -43,7 +43,10 @@ export class WTerm {
+         this.cols = options.cols || 80;
+         this.rows = options.rows || 24;
+         this.autoResize = options.autoResize !== false;
++        this._autoFocus = options.autoFocus !== false;
++        this._inputEnabled = options.inputEnabled !== false;
+         this._debugEnabled = options.debug ?? false;
++        this.onError = options.onError ?? null;
+         this._renderingPaused = options.renderingPaused ?? false;
+         this.onData = options.onData || null;
+         this.onBinary = options.onBinary || null;
+@@ -282,11 +285,10 @@ export class WTerm {
+                     this._historySelection.clear();
+                 },
+             });
+-            this._setupResizeObserver();
+-            if (!this.autoResize) {
+-                this._lockHeight();
+-            }
+-            this.input.focus();
++            this.setInputEnabled(this._inputEnabled);
++            if (this.autoResize) this._setupResizeObserver();
++            // The host owns geometry when automatic resize is disabled.
++            if (this._autoFocus) this.input.focus();
+             this._initialRender();
+             if (this.cols !== initialCols || this.rows !== initialRows)
+                 this.onResize?.(this.cols, this.rows);
+@@ -419,7 +421,7 @@ export class WTerm {
+         drain();
+         for (const query of windowSizeQueries) {
+             try {
+-                this.onData?.(this._windowSizeResponse(query));
++                if (this._inputEnabled) this.onData?.(this._windowSizeResponse(query));
+             }
+             catch (error) {
+                 recordDeliveryError(error);
+@@ -428,6 +430,48 @@ export class WTerm {
+         if (hasDeliveryError)
+             throw deliveryError;
+     }
++    /** DeliDev public compatibility controls; never reach through private fields. */
++    setAccessibility(labels) {
++        this.element.dataset.terminalLabel = labels.label;
++        this.element.dataset.terminalExitHint = labels.exitHint;
++        this.element.dataset.terminalOutputLabel = labels.outputLabel;
++        this.element.dataset.terminalLimitMessage = labels.limitMessage;
++        this.input?.accessibility.sync();
++        this._outputAnnouncements.setLabel(labels.outputLabel);
++        this._historySelection.setLabels({ pending: labels.selectionPending, failed: labels.selectionFailed, changed: labels.selectionChanged });
++    }
++    setInputEnabled(enabled) {
++        this._inputEnabled = enabled && !this._destroyed;
++        if (this.input) {
++            this.input.enabled = this._inputEnabled;
++            this.input.textarea.readOnly = !this._inputEnabled;
++            this.input.textarea.value = "";
++            this.input.composing = false;
++            this.input.recentCompositionCommit = null;
++        }
++    }
++    paste(text) { if (this._inputEnabled) this.input?.sendPaste(text); }
++    measureDimensions() { return this._measureGridSize(); }
++    reset() {
++        if (!this.bridge || this._destroyed) return;
++        this._cancelScheduledRender();
++        this._cancelSynchronizedOutputFallback();
++        this._textCapture.cancel();
++        this._rectangleDrag.cancel();
++        this.clearSelection();
++        this.clearSearch();
++        this._historySelection.invalidate();
++        this._outputAnnouncements.invalidate();
++        this._windowSizeQueryState = 0;
++        this._synchronizedOutputState = "idle";
++        this._synchronizedOutputGeneration = 0;
++        this._scrollbackDiscardedCount = 0;
++        this._pendingResizeScrollTop = null;
++        this.bridge.reset();
++        this._setupRenderer();
++        this._initialRender();
++        this._outputAnnouncements.reset();
++    }
+     /** Fit the grid to the current element and font metrics. */
+     fit() {
+         if (!this.bridge || this._destroyed)
+@@ -459,11 +503,13 @@ export class WTerm {
+             scrollbarHeight;
+         if (width <= 0 || height <= 0)
+             return null;
+-        const cols = Math.max(1, Math.floor(width / measured.charWidth));
+-        const rows = Math.max(1, Math.floor(height / measured.rowHeight));
++        const cols = Math.min(1000, Math.max(1, Math.floor(width / measured.charWidth)));
++        const rows = Math.min(500, Math.max(1, Math.floor(height / measured.rowHeight)));
+         return { cols, rows };
+     }
+     resize(cols, rows) {
++        cols = Math.min(1000, Math.max(1, Math.floor(cols)));
++        rows = Math.min(500, Math.max(1, Math.floor(rows)));
+         if (!this.bridge || this._destroyed)
+             return;
+         this._textCapture.cancel();
+@@ -689,7 +735,10 @@ export class WTerm {
+                     return;
+                 const mark = document.createElement("div");
+                 mark.className = `term-search-match${selected ? " term-search-active" : ""}`;
+-                mark.style.cssText = `left:${start * this._charWidth}px;top:${element.offsetTop}px;width:${(end - start) * this._charWidth}px;height:${rect.height}px`;
++                mark.style.left = `${start * this._charWidth}px`;
++                mark.style.top = `${element.offsetTop}px`;
++                mark.style.width = `${(end - start) * this._charWidth}px`;
++                mark.style.height = `${rect.height}px`;
+                 fragment.appendChild(mark);
+             };
+             for (let i = low; i < matches.length && matches[i].start.row <= row; i++) {
+@@ -728,7 +777,7 @@ export class WTerm {
+             return;
+         this.rafId = requestAnimationFrame(() => {
+             this.rafId = null;
+-            this._doRender();
++            try { this._doRender(); } catch { this.setInputEnabled(false); this.onError?.(); }
+         });
+     }
+     _cancelScheduledRender() {
+@@ -772,9 +821,11 @@ export class WTerm {
+             }
+             this._synchronizedOutputTimer = null;
+             this._synchronizedOutputState = "passthrough";
+-            this._setupRendererIfNeeded();
+-            this._cancelScheduledRender();
+-            this._doRender();
++            try {
++                this._setupRendererIfNeeded();
++                this._cancelScheduledRender();
++                this._doRender();
++            } catch { this.setInputEnabled(false); this.onError?.(); }
+         }, SYNCHRONIZED_OUTPUT_TIMEOUT_MS);
+     }
+     _cancelSynchronizedOutputFallback() {
+@@ -897,7 +948,7 @@ export class WTerm {
+         let hasError = false;
+         while ((response = this.bridge.getResponse()) !== null) {
+             try {
+-                if (this.onData)
++                if (this._inputEnabled && this.onData)
+                     this.onData(response);
+             }
+             catch (error) {
+@@ -1068,6 +1119,8 @@ export class WTerm {
+             this.resizeObserver.observe(this.element);
+     }
+     destroy() {
++        if (this._destroyed) return;
++        this.setInputEnabled(false);
+         this._destroyed = true;
+         this._textCapture.cancel();
+         this._historySelection.destroy();
+@@ -1093,7 +1146,7 @@ export class WTerm {
+         this.element.ownerDocument.removeEventListener("keyup", this._onModifierChange);
+         this.element.ownerDocument.defaultView?.removeEventListener("blur", this._onWindowBlur);
+         this.element.classList.remove("link-modifier-active");
+-        this.element.innerHTML = "";
++        this.element.replaceChildren();
+         if (this.debug &&
+             globalThis.__wterm === this) {
+             delete globalThis.__wterm;

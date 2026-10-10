@@ -46,5 +46,11 @@
   "session-terminals.attached": "Attached",
   "session-terminals.detached": "Detached",
   "session-terminals.exited": "Exited",
-  "session-terminals.emptyInventory": "No session terminals. Create one explicitly with +."
+  "session-terminals.emptyInventory": "No session terminals. Create one explicitly with +.",
+  "session-terminals.keyboardExitHint": "Press Escape, then Tab to leave the terminal, or Shift+Tab to move focus backward.",
+  "session-terminals.outputAnnouncements": "Terminal output announcements",
+  "session-terminals.outputAnnouncementsPaused": "Output announcements paused because there is too much output. Type in the terminal to resume.",
+  "session-terminals.selectionPending": "Selecting terminal text…",
+  "session-terminals.selectionFailed": "Unable to select all text. Select a smaller range to copy.",
+  "session-terminals.selectionChanged": "Terminal changed. Select all again to copy."
 }
