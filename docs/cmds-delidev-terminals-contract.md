@@ -71,6 +71,17 @@ product receipts return current records instead of replaying native operations.
   authority. Replacement Workers may claim only explicit close reconciliation
   on the same original device, never redispatch an earlier native operation.
 
+Terminal assignment and metadata watchers capture the store's post-commit
+notification before each authorized read. Output observers capture one
+service-wide constant-memory broadcast under the output mutex before copying
+retained frames. Only an authorized, validated new frame closes and replaces
+that broadcast; exact retries and rejected frames do not signal progress.
+Every wake reauthorizes through the original read/dispatch rules. Keep the
+100 ms safety tick, 10-second heartbeat and uncertain-close eligibility delay.
+Notifications do not change serialized controls, receipts, cursors, gaps,
+retention or joined shutdown. Content-free debug stages and wait durations
+separate notification delivery from native/storage costs; never log bytes.
+
 The CLI exposes `delidev session terminal create|list|inspect|input|resize|output|reattach|close`.
 `--id` targets the session for create/list and the terminal for other operations.
 Mutations use the common durable `--request-id` and `--revision`; creation also

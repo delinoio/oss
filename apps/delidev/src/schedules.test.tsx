@@ -40,8 +40,10 @@ function fixture() {
   return { schedule, machine, resources, definition, occurrence, save, run, control, remove, discovery, view, client, list, get, project, agent, repositoryId };
 }
 
-it("sends only the editable schedule definition and retries its exact original revision", async () => {
+it.each([false, true])("preserves saved enabled=%s while editing and retrying its exact original revision", async (enabled) => {
   const value = fixture();
+  value.definition.enabled = enabled;
+  value.schedule.documentJson = encode({ ...document(value.schedule), definition: value.definition });
   value.save.mockRejectedValueOnce(new ConnectError("ack lost", Code.Unavailable));
   render(value.view(<ScheduleEditor initial={value.schedule} active saved={() => {}} cancel={() => {}} />));
   fireEvent.change(screen.getByLabelText("Scheduled prompt"), { target: { value: "Updated prompt" } });
@@ -154,18 +156,21 @@ function createRequest(value: ReturnType<typeof fixture>) {
   return value.save.mock.calls[0][0] as { definitionJson: Uint8Array; mutation: { id: string; requestId: string; expectedRevision: bigint }; schemaVersion: number; localWorkerToken: string };
 }
 
-it("creates a paused strict definition with explicit resources and the original defaults", async () => {
+it("creates an enabled strict definition with explicit resources and the original defaults", async () => {
   const value = fixture(), saved = vi.fn();
   render(value.view(<ScheduleEditor active saved={saved} cancel={() => {}} />));
   expect(screen.getByLabelText("Schedule name")).toBe(globalThis.document.activeElement);
   await fillCreation(value);
   expect(screen.getByRole("button", { name: /Starting reference overrides/ }).getAttribute("aria-expanded")).toBe("false");
   expect(screen.getByLabelText("Project").getAttribute("aria-required")).toBe("true");
-  goStep(2); expect((screen.getByRole("checkbox", { name: "Enable future scheduled runs" }) as HTMLInputElement).checked).toBe(false);
-  goStep(3); fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
+  goStep(2); expect((screen.getByRole("checkbox", { name: "Enable future scheduled runs" }) as HTMLInputElement).checked).toBe(true);
+  goStep(3);
+  expect(globalThis.document.querySelector(".schedule-creation-review")!.textContent).toContain("Enabled on creation");
+  expect(globalThis.document.querySelector(".schedule-creation-footer")!.textContent).toContain("Enabled on creation");
+  fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
   await waitFor(() => expect(saved).toHaveBeenCalledOnce());
   const request = createRequest(value);
-  expect(JSON.parse(new TextDecoder().decode(request.definitionJson))).toEqual({ name: "Morning review", prompt: "Review project changes", enabled: false, project_id: value.project.id, agent_id: value.agent.id, machine_id: value.machine.id, workspace: "worktree", mode: "execute", cron: "0 9 * * 1-5", timezone: "UTC", overlap: "overlap", starting: [] });
+  expect(JSON.parse(new TextDecoder().decode(request.definitionJson))).toEqual({ name: "Morning review", prompt: "Review project changes", enabled: true, project_id: value.project.id, agent_id: value.agent.id, machine_id: value.machine.id, workspace: "worktree", mode: "execute", cron: "0 9 * * 1-5", timezone: "UTC", overlap: "overlap", starting: [] });
   expect(request.mutation).toMatchObject({ id: "", expectedRevision: 0n }); expect(request.schemaVersion).toBe(1);
   expect(request.mutation.requestId).toMatch(/^[0-9a-f-]{36}$/); expect(request.localWorkerToken).toBe("");
 });
@@ -178,7 +183,7 @@ it.each([["daily", "07:05", undefined, "5 7 * * *"], ["weekdays", "18:30", undef
   goStep(3); fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
   await waitFor(() => expect(value.save).toHaveBeenCalledOnce());
   const definition = JSON.parse(new TextDecoder().decode(createRequest(value).definitionJson));
-  expect(definition).toMatchObject({ cron, timezone: "Asia/Seoul", enabled: false, mode: "execute", overlap: "overlap" });
+  expect(definition).toMatchObject({ cron, timezone: "Asia/Seoul", enabled: true, mode: "execute", overlap: "overlap" });
   expect(Object.keys(definition).sort()).toEqual(["name", "prompt", "enabled", "project_id", "agent_id", "machine_id", "workspace", "mode", "cron", "timezone", "overlap", "starting"].sort());
 });
 
@@ -239,11 +244,12 @@ it("keeps complete reference drafts mounted behind the disclosure and clears the
   expect(document(value.project)).toMatchObject({ base: { name: "main" } });
 });
 
-it("locks creation during fresh Local proof and retains identical bytes/token on uncertain retry", async () => {
+it.each([true, false])("locks enabled=%s creation during fresh Local proof and retains identical bytes/token on uncertain retry", async (enabled) => {
   const value = fixture(); let resolveProof!: (proof: { machineId: string; token: string }) => void;
   const read = vi.fn().mockImplementationOnce(() => new Promise((resolve) => { resolveProof = resolve; })).mockResolvedValue({ machineId: value.machine.id, token: "a".repeat(42) + "A" });
   value.save.mockRejectedValueOnce(new ConnectError("ack lost", Code.Unavailable));
   const rendered = render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} readLocalWorker={read} />)); await fillCreation(value);
+  if (!enabled) { goStep(2); fireEvent.click(screen.getByRole("checkbox", { name: "Enable future scheduled runs" })); goStep(1); }
   fireEvent.click(screen.getByRole("radio", { name: "Local computer" }));
   expect((screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(true); expect(screen.getByLabelText("Scheduled prompt").closest("fieldset")!.disabled).toBe(true);
   resolveProof({ machineId: value.machine.id, token: "a".repeat(42) + "A" });
@@ -257,6 +263,7 @@ it("locks creation during fresh Local proof and retains identical bytes/token on
   fireEvent.click(screen.getByRole("button", { name: "Retry the same schedule" })); await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
   expect(value.save.mock.calls[0][0]).toEqual(value.save.mock.calls[1][0]); expect(read).toHaveBeenCalledTimes(2);
   expect(createRequest(value).localWorkerToken).toBe("a".repeat(42) + "A");
+  expect(JSON.parse(new TextDecoder().decode(createRequest(value).definitionJson)).enabled).toBe(enabled);
 });
 
 it.each(["changed", "malformed", "rejected"])("refuses %s Local submission proof without machine fallback", async (failure) => {
@@ -387,15 +394,38 @@ it("allows the focused step heading to scroll into view on Next, Back and Review
   expect(value.save).not.toHaveBeenCalled();
 });
 
-it("keeps paused or enabled creation intent visible in the persistent footer on every step", async () => {
-  const value = fixture(); render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />));
+it("preserves an opted-out draft through navigation and submits paused creation intent", async () => {
+  const value = fixture(), rendered = render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />));
   const footer = globalThis.document.querySelector(".schedule-creation-footer")!;
-  expect(footer.textContent).toContain("Paused on creation"); await fillCreation(value);
-  expect(footer.textContent).toContain("Paused on creation"); goStep(2);
-  fireEvent.click(screen.getByRole("checkbox", { name: "Enable future scheduled runs" })); expect(footer.textContent).toContain("Enabled on creation");
-  goStep(3); expect(footer.textContent).toContain("Enabled on creation");
-  fireEvent.click(screen.getByRole("button", { name: "Edit task" })); expect(footer.textContent).toContain("Enabled on creation");
-  expect(footer.textContent).toContain("1 of 4"); expect(value.save).not.toHaveBeenCalled();
+  expect(footer.textContent).toContain("Enabled on creation"); await fillCreation(value);
+  goStep(2);
+  fireEvent.click(screen.getByRole("checkbox", { name: "Enable future scheduled runs" }));
+  expect(footer.textContent).toContain("Paused on creation");
+  goStep(1); goStep(2);
+  expect((screen.getByRole("checkbox", { name: "Enable future scheduled runs" }) as HTMLInputElement).checked).toBe(false);
+  rendered.rerender(value.view(<ScheduleEditor active={false} saved={() => {}} cancel={() => {}} />));
+  rendered.rerender(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />));
+  goStep(3);
+  expect(globalThis.document.querySelector(".schedule-creation-review")!.textContent).toContain("Paused on creation");
+  fireEvent.click(screen.getByRole("button", { name: "Edit task" }));
+  expect(footer.textContent).toContain("Paused on creation");
+  expect(footer.textContent).toContain("1 of 4");
+  goStep(3); fireEvent.click(screen.getByRole("button", { name: "Create schedule" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledOnce());
+  expect(JSON.parse(new TextDecoder().decode(createRequest(value).definitionJson)).enabled).toBe(false);
+});
+
+it("starts checked again after canceling an opted-out draft without saving", async () => {
+  const value = fixture(); render(value.view(<Schedules active open={() => {}} />));
+  fireEvent.click(screen.getByRole("button", { name: "New schedule" }));
+  await fillCreation(value); goStep(2);
+  fireEvent.click(screen.getByRole("checkbox", { name: "Enable future scheduled runs" }));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(value.save).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "New schedule" }));
+  await fillCreation(value); goStep(2);
+  expect((screen.getByRole("checkbox", { name: "Enable future scheduled runs" }) as HTMLInputElement).checked).toBe(true);
+  expect(value.save).not.toHaveBeenCalled();
 });
 
 it.each([
@@ -560,4 +590,19 @@ it("keeps same-named Review selections distinct by their original identity", asy
   expect(review.textContent).toContain("Selected project"); expect(review.outerHTML).not.toContain(selectedId);
   fireEvent.click(screen.getByRole("button", { name: "Create schedule" })); await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   expect(JSON.parse(new TextDecoder().decode(createRequest(value).definitionJson))).toMatchObject({ project_id: selectedId });
+});
+
+it.each([
+  ["en", "New schedules enable future runs by default. Uncheck this option to create a paused schedule."],
+  ["ko", "새 일정은 향후 실행이 기본으로 활성화됩니다. 일시 중지 상태로 만들려면 이 옵션의 체크를 해제하세요."],
+])("explains the enabled creation default in %s without changing an opted-out draft", async (language, guidance) => {
+  const value = fixture(); render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />));
+  await fillCreation(value); goStep(2);
+  const option = screen.getByRole("checkbox", { name: "Enable future scheduled runs" }) as HTMLInputElement;
+  expect(option.checked).toBe(true);
+  fireEvent.click(option);
+  await act(async () => { await i18n.changeLanguage(language); });
+  expect(screen.getByText(guidance)).toBeTruthy();
+  expect(option.checked).toBe(false);
+  expect(value.save).not.toHaveBeenCalled();
 });

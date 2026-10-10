@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { globalShortcutBindings, ShortcutId, ShortcutInput, ShortcutPlatform, ShortcutScope, type ShortcutBinding, type ShortcutDefinition } from "./shortcuts";
+import { primaryShortcutKey, globalShortcutBindings, ShortcutId, ShortcutInput, ShortcutPlatform, ShortcutScope, type ShortcutBinding, type ShortcutDefinition } from "./shortcuts";
 import { Surface } from "./surface";
 import type { MessageKey } from "./localization";
 
@@ -74,6 +74,6 @@ export function parseShortcutOverrides(value: unknown): ShortcutOverrides {
 }
 export function captureShortcut(event: KeyboardEvent, platform: ShortcutPlatform): ShortcutChord | undefined {
   if (event.isComposing || event.keyCode === 229 || event.repeat || event.altKey || event.getModifierState("AltGraph") || event.metaKey !== (platform === ShortcutPlatform.Mac) || event.ctrlKey !== (platform === ShortcutPlatform.Other)) return;
-  const chord = { key: event.key === "Enter" ? "Enter" : event.key.toLowerCase(), shift: event.shiftKey };
+  const chord = { key: primaryShortcutKey(event), shift: event.shiftKey };
   return validShortcutChord(chord) ? chord : undefined;
 }

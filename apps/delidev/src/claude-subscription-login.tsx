@@ -1,3 +1,4 @@
+import "./wizard-presentation.css";
 import { useRunnerRemediation } from "./runner-remediation";
 import { claudeRunnerObservation, validRunnerObservation, type RunnerObservation } from "./runner-observation";
 import { Failure, Problem, InlineRemediation } from "./ui";
@@ -808,11 +809,11 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
       isEntityId(d.correlationId);
   return (
     <section
-      className="subscription-account-create subscription-onboarding"
+      className="subscription-account-create subscription-onboarding desktop-wizard"
       aria-label={copy("claude-subscription.title")}
     >
       <ol
-        className="subscription-onboarding-steps"
+        className="subscription-onboarding-steps wizard-progress"
         aria-label={copy("claude-subscription.steps")}
       >
         {(
@@ -822,8 +823,8 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
             "claude-subscription.accountName",
           ] as const
         ).map((key, index) => (
-          <li key={key} aria-current={step === index ? "step" : undefined}>
-            {index ? <span aria-hidden="true">→ </span> : null}
+          <li key={key} data-completed={index < step} aria-current={step === index ? "step" : undefined}>
+            <span className="wizard-step-number" aria-hidden="true">{index + 1}</span>
             {copy(key)}
           </li>
         ))}

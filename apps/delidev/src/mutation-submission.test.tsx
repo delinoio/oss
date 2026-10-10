@@ -80,3 +80,24 @@ it("does not mistake an accepted receipt presentation failure for a rejected req
  fireEvent.click(screen.getByRole("button", { name: "Retry fixture" }));
  expect(calls).toBe(1);
 });
+
+it("shares existing repository saves across nested Settings registries and preserves original uncertain retry and admitted job lock", async () => {
+ const { ConfigurationQuery, ConfigurationService, EntityKind } = await import("@delinoio/delidev-api-client");
+ const id = newRequestId(), requestId = newRequestId(), jobId = newRequestId();
+ const requests: unknown[] = [];
+ const transport = createRouterTransport(router => router.service(ConfigurationService, { saveConfiguration: async request => {
+  requests.push(request);
+  if (requests.length === 1) throw new ConnectError("Uncertain receipt", Code.Unavailable);
+  return { requestId: request.mutation?.requestId, job: { id: jobId, kind: EntityKind.JOB, schemaVersion: 1, revision: 1n, documentJson: new TextEncoder().encode(JSON.stringify({ state: "queued" })) } };
+ } }));
+ function Sender({ label }: { label: string }) {
+  const mutation = useRetainedMutation(`configuration:${EntityKind.REPOSITORY}:${id}`, ConfigurationQuery.saveConfiguration);
+  return <><button onClick={() => void mutation.send({ kind: EntityKind.REPOSITORY, schemaVersion: 1, mutation: { id, expectedRevision: 1n, requestId }, documentJson: new TextEncoder().encode(label) })}>{label}</button><button onClick={mutation.retry}>Retry {label}</button><p>{label}: {mutation.uncertain ? "uncertain" : mutation.busy ? "locked" : "ready"}</p></>;
+ }
+ render(<TransportProvider transport={transport}><QueryClientProvider client={new QueryClient()}><MutationIntents><Sender label="Inline" /><MutationIntents><Sender label="Settings" /></MutationIntents></MutationIntents></QueryClientProvider></TransportProvider>);
+ fireEvent.click(screen.getByRole("button", { name: "Inline" })); await screen.findByText("Settings: uncertain");
+ fireEvent.click(screen.getByRole("button", { name: "Settings" })); expect(requests).toHaveLength(1);
+ fireEvent.click(screen.getByRole("button", { name: "Retry Settings" })); await screen.findByText("Inline: locked");
+ expect(requests).toHaveLength(2); expect(requests[1]).toEqual(requests[0]);
+ fireEvent.click(screen.getByRole("button", { name: "Settings" })); fireEvent.click(screen.getByRole("button", { name: "Retry Inline" })); expect(requests).toHaveLength(2);
+});
