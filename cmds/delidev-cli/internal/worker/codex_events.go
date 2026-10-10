@@ -133,7 +133,7 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 			c.blocked = true
 		}
 	}()
-	if c.blocked || c.finished && event.Kind != codex.SubagentEvent && event.Kind != codex.MetadataEvent && event.Kind != codex.ThreadStatusEvent || c.publisher == nil || c.thread == "" || c.turn == "" {
+	if c.blocked || c.finished && event.Kind != codex.CurrentTimeRepliedEvent && event.Kind != codex.SubagentEvent && event.Kind != codex.MetadataEvent && event.Kind != codex.ThreadStatusEvent || c.publisher == nil || c.thread == "" || c.turn == "" {
 		return false, publicationUncertain()
 	}
 	if event.Kind == codex.LateTurnResponseEvent && event.Action == codex.SteerTurnAction {
@@ -152,6 +152,13 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 			return true, c.publishLateSteer(ctx, accepted, event)
 		}
 		return false, publicationUncertain()
+	}
+	if event.Kind == codex.CurrentTimeRepliedEvent {
+		// A technical clock reply neither acknowledges input nor publishes progress.
+		if !event.Correlated || event.Late || event.ThreadID != c.thread || event.TurnID != "" || event.Problem != nil {
+			return false, publicationUncertain()
+		}
+		return true, nil
 	}
 	if event.Kind == codex.NativeExtensionEvent || event.Kind == codex.LateTurnResponseEvent {
 		return false, nil

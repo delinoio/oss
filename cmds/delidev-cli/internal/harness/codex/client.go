@@ -24,6 +24,8 @@ import (
 const SupportedVersion = domain.CodexProtocolVersion
 
 type Config struct {
+	// CurrentTimeClock is the executing Worker clock; nil uses time.Now.
+	CurrentTimeClock      func() time.Time `json:"-"`
 	ManagedForkHistory    bool
 	OrdinaryTools         executionenv.Ordinary `json:"-"`
 	RevertHistory         bool                  `json:"-"`
@@ -44,6 +46,7 @@ type Config struct {
 	ManagedAuthentication bool
 }
 type Client struct {
+	currentTimeClock   func() time.Time
 	managedForkHistory bool
 	quotaUsed          atomic.Bool
 	skillsRoot         string
@@ -264,7 +267,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if config.Process.Logger != nil {
 		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version)
 	}
-	client = &Client{imageGeneration: config.EnableImageGeneration, revertHistory: config.RevertHistory, managedForkHistory: config.ManagedForkHistory, home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
+	client = &Client{currentTimeClock: config.CurrentTimeClock, imageGeneration: config.EnableImageGeneration, revertHistory: config.RevertHistory, managedForkHistory: config.ManagedForkHistory, home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
 	phase = profilePhase
 	if err := client.verifyLifecyclePlugins(ctx); err != nil {
 		return nil, err

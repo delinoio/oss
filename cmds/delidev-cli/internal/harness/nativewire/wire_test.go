@@ -70,6 +70,9 @@ func init() {
 		case "delayed":
 			time.Sleep(200 * time.Millisecond)
 			write(map[string]any{"id": request.ID, "result": map[string]bool{"accepted": true}})
+		case "current-time":
+			write(map[string]any{"id": 7, "method": "currentTime/read", "params": map[string]string{"threadId": "original-root"}})
+			write(map[string]any{"id": request.ID, "result": map[string]bool{"accepted": true}})
 		case "interactions":
 			write(map[string]any{"id": 7, "method": "approval", "params": map[string]string{"command": "private-command"}})
 			write(map[string]any{"method": "progress", "params": map[string]int{"step": 1}, "emittedAtMs": int64(1790213339000)})

@@ -187,6 +187,13 @@ func init() {
 			if strings.HasPrefix(mode, "models-") && modelFixture(request.ID, request.Method, request.Params, mode, write) {
 				continue
 			}
+			if request.Method == "" && mode == "thread-turn-current-time" {
+				if string(request.ID) != "17" || os.WriteFile(os.Getenv("DELIDEV_CODEX_CAPTURE")+".current-time", request.Result, 0600) != nil {
+					os.Exit(34)
+				}
+				threads.notify("skills/changed", map[string]any{})
+				continue
+			}
 			if request.Method == "" && mode == "thread-turn-approvals" {
 				if !threads.approvalReply(request.ID, request.Result) {
 					os.Exit(34)

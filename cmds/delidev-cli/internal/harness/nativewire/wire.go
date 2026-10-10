@@ -66,6 +66,7 @@ type pending struct {
 	abandoned bool
 }
 type incoming struct {
+	method   string
 	token    domain.ID
 	replying bool
 }
@@ -562,7 +563,7 @@ func (c *Connection) receive(raw []byte) error {
 				return domain.Fail(domain.ResourceExhausted, "Too many pending native interactions.", "Resolve or cancel existing native interactions before resuming.")
 			}
 			event.Kind, event.ID, event.Token = ServerRequest, message.ID, domain.NewID()
-			c.incoming[key] = incoming{token: event.Token}
+			c.incoming[key] = incoming{token: event.Token, method: event.Method}
 		}
 		return c.queueLocked(event)
 	}

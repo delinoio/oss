@@ -79,6 +79,29 @@ Unknown fields, immutable history and managed-account recovery fences remain
 strict. Event validation logs retain only closed stages, original owner and safe
 code, without raw native methods or payloads.
 
+### Codex original current-time service
+
+The private adapter consumes observed `currentTime/read` server requests only for
+the exact original executing root thread and retained native connection/request
+token. Strict bounded params contain only `threadId`; notification, foreign,
+unknown/duplicate fields and replaced requests gain no successful reply.
+Nativewire claims the exact pending arrival before sampling the executing Worker
+clock once. The same native request ID receives exactly `currentTimeAt` as whole
+Unix seconds through the original correlated reply pipe. No desktop clock,
+emission timestamp, stored observation or external service supplies this value.
+
+A successful reply is a closed technical event with no input acknowledgment,
+human interaction, progress, account or completion authority. Duplicate and
+already answered arrivals cannot sample or send again. A failed/uncertain write
+retains its original claim and execution recovery; Stop/replacement and native
+cleanup keep their existing independent fences. Logs include only the closed
+service kind and delivery classification. This consumes an emitted experimental
+request without enabling an external-clock configuration or numeric native
+version gate. The [official params and response](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/src/protocol/v2/current_time.rs)
+and [emitting provider](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server/src/current_time.rs)
+are the pinned private source; generated-schema availability is not inferred.
+No public RPC, allocation or migration is added.
+
 ### Codex model observation profile
 
 The [native model contract](cmds-delidev-native-models-contract.md) owns the separate

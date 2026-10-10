@@ -88,6 +88,7 @@ func validationStage(method string) eventValidationStage {
 }
 
 const (
+	CurrentTimeRepliedEvent       EventKind = "current-time-replied"
 	AutoReviewEvent               EventKind = "auto-review"
 	CompactionEvent               EventKind = "compaction"
 	SubagentEvent                 EventKind = "subagent"
@@ -244,7 +245,13 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	}
 	native := *c.pendingEvent
 	c.pendingEvent = nil
-	event, err := c.observeEventLocked(native)
+	var event Event
+	var err error
+	if native.Kind == nativewire.ServerRequest && native.Method == "currentTime/read" {
+		event, err = c.replyCurrentTimeLocked(ctx, native)
+	} else {
+		event, err = c.observeEventLocked(native)
+	}
 	if err != nil {
 		c.problem = turnUncertain()
 		if c.execution != nil {
