@@ -9,18 +9,25 @@ import (
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
 )
 
 func TestThreadLifecycleLossPreservesOriginalExecutionAndCleanup(t *testing.T) {
 	for _, method := range []string{"thread/archived", "thread/deleted", "thread/closed"} {
 		t.Run(method, func(t *testing.T) {
 			c, turn := observationClient()
+			c.mode = ThreadProtocol
+			direct := true
+			c.execution.thread.DirectInput = &direct
+			if c.eligibleTurnLocked(false) != nil {
+				t.Fatal("fixture lacks original send authority")
+			}
 			before := c.execution.thread
 			_, err := observeFixture(c, method, map[string]any{"threadId": c.thread})
 			if domain.SafeError(err).Code != domain.RecoveryRequired || c.problem == nil || !c.execution.paused || c.execution.active != turn || !reflect.DeepEqual(before, c.execution.thread) {
 				t.Fatal("lifecycle loss changed product/native success", err)
 			}
-			if c.eligibleTurnLocked(false) == nil {
+			if domain.SafeError(c.eligibleTurnLocked(false)).Code != domain.RecoveryRequired {
 				t.Fatal("lifecycle loss allowed another send")
 			}
 			e, err := observeFixture(c, "thread/unarchived", map[string]any{"threadId": c.thread})
@@ -259,5 +266,29 @@ func TestThreadRevertedSupplementAfterOriginalClaimRetainsProofAndRecovery(t *te
 				t.Fatal("canonical Revert proof changed")
 			}
 		})
+	}
+}
+
+func TestThreadMetadataRejectsBoundsDuplicateAndNestedFields(t *testing.T) {
+	c, turn := observationClient()
+	fixtures := []struct {
+		method string
+		params any
+	}{
+		{"thread/name/updated", map[string]any{"threadId": c.thread, "threadName": strings.Repeat("n", 4097)}},
+		{"thread/environment/connected", map[string]any{"threadId": c.thread, "environmentId": strings.Repeat("e", 1025)}},
+		{"thread/readState/changed", map[string]any{"threadId": c.thread, "readState": map[string]any{"revision": strings.Repeat("r", 1025)}}},
+		{"thread/readState/changed", map[string]any{"threadId": c.thread, "readState": map[string]any{"revision": "revision", "firstUnread": map[string]any{"type": "threadStart", "extra": true}}}},
+		{"thread/prediction/updated", map[string]any{"threadId": c.thread, "sourceTurnId": turn, "result": map[string]any{"type": "completed", "extra": true}}},
+		{"thread/prediction/updated", map[string]any{"threadId": c.thread, "sourceTurnId": turn, "result": map[string]any{"type": "completed", "text": strings.Repeat("p", 1<<20)}}},
+	}
+	for _, f := range fixtures {
+		if _, err := observeFixture(c, f.method, f.params); err == nil {
+			t.Fatal("malformed private metadata accepted", f.method)
+		}
+	}
+	raw := json.RawMessage(`{"threadId":"` + string(c.thread) + `","threadName":"first","threadName":"second"}`)
+	if _, err := c.observeMetadataLocked(nativewire.Event{Kind: nativewire.Notification, Method: "thread/name/updated", Params: raw}); err == nil {
+		t.Fatal("duplicate private field accepted")
 	}
 }
