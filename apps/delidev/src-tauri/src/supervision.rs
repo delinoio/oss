@@ -169,14 +169,20 @@ impl Supervision {
         result
     }
 
-    pub fn adopt(&self, connection: &Connection) {
+    pub fn adopt(
+        &self,
+        connection: &Connection,
+        recheck_authority: impl FnOnce() -> crate::Result<()>,
+    ) -> crate::Result<()> {
+        recheck_authority()?;
         let mut value = self.shared.value.lock().unwrap_or_else(|e| e.into_inner());
         if value.exit {
-            return;
+            return Ok(());
         }
         value.launch = Some(Ok(connection.clone()));
         value.generation = value.generation.wrapping_add(1);
         self.shared.wake.notify_all();
+        Ok(())
     }
 
     pub fn request_stop(&self) {
@@ -255,6 +261,78 @@ fn backoff(attempts: u32, jitter: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_supervision() -> (tempfile::TempDir, Supervision) {
+        let temporary = tempfile::tempdir().unwrap();
+        let connector = Arc::new(
+            Connector::new(
+                temporary.path().join("unused-delidev"),
+                temporary.path().join("state"),
+            )
+            .unwrap(),
+        );
+        let shared = Arc::new(State {
+            value: Mutex::new(Shared {
+                launch: None,
+                status: LocalServerStatus::default(),
+                generation: 0,
+                exit: false,
+            }),
+            wake: Condvar::new(),
+        });
+        (
+            temporary,
+            Supervision {
+                connector,
+                shared,
+                task: Mutex::new(None),
+            },
+        )
+    }
+
+    fn connection() -> Connection {
+        Connection {
+            endpoint: "http://127.0.0.1:46310".into(),
+            server_id: "server".into(),
+            device_id: "device".into(),
+            token: "fixture-token".into(),
+            keychain_access_required: false,
+            keychain_access_skipped: false,
+            runtime_generation: None,
+            runtime_key: None,
+        }
+    }
+
+    #[test]
+    fn rejected_authority_does_not_replace_the_supervised_connection() {
+        let (_temporary, supervision) = test_supervision();
+        let connection = connection();
+
+        assert!(matches!(
+            supervision.adopt(&connection, || Err(NativeFailure::InvalidEvidence)),
+            Err(NativeFailure::InvalidEvidence)
+        ));
+
+        let state = supervision.shared.value.lock().unwrap();
+        assert!(state.launch.is_none());
+        assert_eq!(state.generation, 0);
+    }
+
+    #[test]
+    fn verified_authority_adopts_the_supervised_connection() {
+        let (_temporary, supervision) = test_supervision();
+        let connection = connection();
+
+        assert!(supervision.adopt(&connection, || Ok(())).is_ok());
+
+        let state = supervision.shared.value.lock().unwrap();
+        assert_eq!(state.generation, 1);
+        assert_eq!(
+            state.launch.as_ref().unwrap().as_ref().unwrap().server_id,
+            connection.server_id
+        );
+    }
+
     #[test]
     fn failures_back_off_without_restarting_stopped_or_incompatible_servers() {
         let mut attempts = 0;

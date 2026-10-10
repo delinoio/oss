@@ -435,15 +435,18 @@ async fn connect_local(
         if !valid_local_runtime(&connection.endpoint) {
             return Err(NativeFailure::Incompatible);
         }
-        supervision.adopt(&connection);
         Ok(connection)
     }
     .await;
     if let Ok(connection) = &result {
         original_authority.local_revision =
             adopt_local(&response_window, &original_authority, connection)?;
+        supervision.adopt(connection, || {
+            recheck_authority(&response_window, &original_authority)
+        })?;
+    } else {
+        recheck_authority(&response_window, &original_authority)?;
     }
-    recheck_authority(&response_window, &original_authority)?;
     result
 }
 
@@ -488,15 +491,18 @@ async fn recover_local_registration(
         if !valid_local_runtime(&connection.endpoint) {
             return Err(NativeFailure::Incompatible);
         }
-        supervision.adopt(&connection);
         Ok(connection)
     }
     .await;
     if let Ok(connection) = &result {
         original_authority.local_revision =
             adopt_local(&response_window, &original_authority, connection)?;
+        supervision.adopt(connection, || {
+            recheck_authority(&response_window, &original_authority)
+        })?;
+    } else {
+        recheck_authority(&response_window, &original_authority)?;
     }
-    recheck_authority(&response_window, &original_authority)?;
     result
 }
 
