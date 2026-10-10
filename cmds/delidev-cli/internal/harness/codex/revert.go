@@ -78,6 +78,8 @@ func (c *Client) RevertThread(ctx context.Context, action domain.ID, source Cont
 	if err := claim(intent); err != nil {
 		return result, err
 	}
+	// Retain only original claim identity for content-free deprecated supplements.
+	state.revertClaim = action
 	response, err := c.wire.Call(ctx, action, "thread/revert", struct {
 		Thread domain.ID `json:"threadId"`
 		Before domain.ID `json:"beforeTurnId"`
@@ -198,7 +200,7 @@ type RevertIntent struct {
 }
 
 func (c *Client) ReconcileRevert(ctx context.Context, intent RevertIntent) (CompactedCheckpoint, error) {
-	if !c.revertHistory || intent.Version != 1 || intent.ActionID.Validate() != nil || intent.BeforeTurnID.Validate() != nil || intent.Source.validate(ResumeAfterTerminal) != nil || intent.ExpectedHistory == nil || len(intent.ExpectedHistory) > maxForkTurns || c.thread != intent.Source.ThreadID || c.execution == nil || !sameEffectiveSettings(c.execution.settings, intent.Source.Effective) {
+	if !c.revertHistory || intent.Version != 1 || intent.ActionID.Validate() != nil || intent.BeforeTurnID.Validate() != nil || intent.Source.validate(ResumeAfterTerminal) != nil || intent.ExpectedHistory == nil || len(intent.ExpectedHistory) > maxForkTurns || c.thread != intent.Source.ThreadID || c.execution == nil || c.execution.thread.SessionID != intent.Source.SessionID || !sameEffectiveSettings(c.execution.settings, intent.Source.Effective) {
 		return CompactedCheckpoint{}, compactionUncertain()
 	}
 	if err := c.acquireControl(ctx); err != nil {
@@ -208,6 +210,8 @@ func (c *Client) ReconcileRevert(ctx context.Context, intent RevertIntent) (Comp
 	if c.problem != nil || c.execution.active != "" || len(c.execution.pending) != 0 || c.execution.interactions.blocksInput() || len(c.subagents) != 0 || c.checkNativeStateLocked(ctx, true) != nil || c.noForkWorkLocked(ctx, c.thread) != nil {
 		return CompactedCheckpoint{}, compactionUncertain()
 	}
+	// This is the existing original durable intent, not a new mutation claim.
+	c.execution.revertClaim = intent.ActionID
 	history, err := c.contextTurnsLocked(ctx, "asc", nil, true)
 	if err != nil || !slices.EqualFunc(history, intent.ExpectedHistory, equivalentForkJSON) {
 		return CompactedCheckpoint{}, compactionUncertain()

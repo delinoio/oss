@@ -93,6 +93,39 @@ Join owned descendants and private runtime removal before publication. No host
 login, execution grant, provider endpoint, thread creation or inference is used.
 Managed subscriptions remain unsupported until their protected lifecycle exists.
 
+### Codex private lifecycle metadata — issue #2390
+
+The original bound native process accepts the pinned closed thread name,
+attachment, project, queue, environment, prediction and read-state notification
+schemas as private observations. Thread-scoped notifications must match the
+original root; process-scoped `project/changed` grants no product project
+binding. Retain only closed discarded classifications. Never publish descriptor,
+name, prediction or revision content, fetch external metadata, replace product
+configuration or unread state, import attachments, submit predictions or dispatch
+queued inputs. Nullable project/prediction/read positions and optional names
+retain their exact native validation semantics. Unknown fields, variants,
+malformed bounds, foreign roots and independently owned children remain fenced.
+
+Unexpected original-root archive, deletion or closure latches recovery and
+pauses native sends without changing the original input or turn outcome. The
+Worker consumes that typed loss by blocking further publication; it creates no
+terminal result, product deletion or cleanup proof. Unarchive, later passive
+metadata and even an independently observed native turn completion cannot clear
+that fence. Explicit original cleanup remains separately required.
+
+Deprecated `thread/compacted` and `thread/reverted` are content-free supplements
+only. Compaction requires the original claimed manual operation's known turn or
+an already observed original canonical context item or verified retained context
+record; unowned supplements retain
+recovery. Revert requires the original same-process mutation claim, retained
+only after its durable callback succeeds, or the validated original durable
+intent used by read-only reconciliation. Supplements do not acknowledge a wire
+send, bind a new operation/turn, append a context record, establish a retained
+prefix/checkpoint, complete a turn or prove cleanup. Original canonical lifecycle,
+whole-history checks and independent result receipts remain authoritative. These
+observations add no archive/delete/reopen/Revert mutation or execution authority,
+protocol allocation or database migration.
+
 ### Codex automatic title profile
 Automatic titles reuse the successful original execution executable path/hash with the native Responses profile. Worker attachment performs no title probe; the actual auxiliary process validates its protocol. For each title, a separate private Codex runtime validates effective provider/model, zero request/stream retries, ephemeral credentials, read-only sandbox and approval-never settings before sending the single first-message request. The title run accepts no tool, interaction or auxiliary native event; it rejects malformed/oversized/multiline output without repair. The 30-second inference and 4 KiB raw-text bounds apply, and process cleanup plus private runtime removal must finish before success publication. See the [automatic title contract](cmds-delidev-session-titles-contract.md) for assignment ownership and evidence limits.
 

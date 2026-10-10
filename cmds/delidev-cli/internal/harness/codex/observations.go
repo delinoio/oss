@@ -11,16 +11,20 @@ import (
 type MetadataKind string
 
 const (
-	AutoReviewReplayChecked  MetadataKind = "auto-review-replay-checked"
-	ThreadIdentityChecked    MetadataKind = "thread-identity-checked"
-	ThreadSettingsChecked    MetadataKind = "thread-settings-checked"
-	RemoteControlDisabled    MetadataKind = "remote-control-disabled"
-	QuotaUnavailable         MetadataKind = "quota-unavailable"
-	RawSupplementDiscarded   MetadataKind = "raw-supplement-discarded"
-	NativeGoalAbsent         MetadataKind = "native-goal-absent"
-	ModelVerificationAbsent  MetadataKind = "model-verification-absent"
-	CodexAppsStartupObserved MetadataKind = "codex-apps-startup-observed"
-	SkillsChangedDiscarded   MetadataKind = "skills-changed-discarded"
+	AutoReviewReplayChecked            MetadataKind = "auto-review-replay-checked"
+	ThreadIdentityChecked              MetadataKind = "thread-identity-checked"
+	ThreadSettingsChecked              MetadataKind = "thread-settings-checked"
+	RemoteControlDisabled              MetadataKind = "remote-control-disabled"
+	QuotaUnavailable                   MetadataKind = "quota-unavailable"
+	RawSupplementDiscarded             MetadataKind = "raw-supplement-discarded"
+	NativeGoalAbsent                   MetadataKind = "native-goal-absent"
+	ModelVerificationAbsent            MetadataKind = "model-verification-absent"
+	CodexAppsStartupObserved           MetadataKind = "codex-apps-startup-observed"
+	SkillsChangedDiscarded             MetadataKind = "skills-changed-discarded"
+	NativeThreadMetadataDiscarded      MetadataKind = "native-thread-metadata-discarded"
+	NativeProjectMetadataDiscarded     MetadataKind = "native-project-metadata-discarded"
+	NativeLifecycleSupplementDiscarded MetadataKind = "native-lifecycle-supplement-discarded"
+	NativeThreadLifecycleLost          MetadataKind = "native-thread-lifecycle-lost"
 )
 
 type nativeMCPStartupState string
@@ -81,6 +85,9 @@ func (c *Client) metadata(kind MetadataKind) Event {
 }
 
 func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
+	if lifecycleMetadataMethod(native.Method) {
+		return c.observeLifecycleMetadataLocked(native)
+	}
 	switch native.Method {
 	case "skills/changed":
 		// The original process invalidated its own cache. Discard this passive

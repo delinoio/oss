@@ -76,7 +76,7 @@ func validationStage(method string) eventValidationStage {
 		return validationMCP
 	case "hook/started", "hook/completed":
 		return validationHook
-	case "thread/name/updated", "thread/attachment/updated", "thread/environment/connected", "thread/environment/disconnected", "thread/project/updated":
+	case "thread/name/updated", "thread/attachment/updated", "thread/environment/connected", "thread/environment/disconnected", "thread/project/updated", "project/changed", "thread/archived", "thread/deleted", "thread/unarchived", "thread/closed", "thread/readState/changed", "thread/prediction/updated", "thread/compacted", "thread/reverted":
 		return validationThreadMetadata
 	case "thread/status/changed":
 		return validationStatus
@@ -254,6 +254,14 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 			c.logger.WarnContext(ctx, "Codex native event validation failed", "owner_id", c.ownerID, "stage", validationStage(native.Method), "code", c.problem.Code)
 		}
 		return Event{}, c.problem
+	}
+	if event.Kind == MetadataEvent && c.logger != nil {
+		switch event.Metadata {
+		case NativeThreadLifecycleLost:
+			c.logger.WarnContext(ctx, "Codex native thread lifecycle fenced", "owner_id", c.ownerID, "code", domain.RecoveryRequired)
+		case NativeThreadMetadataDiscarded, NativeProjectMetadataDiscarded, NativeLifecycleSupplementDiscarded:
+			c.logger.DebugContext(ctx, "Codex private lifecycle metadata discarded", "owner_id", c.ownerID, "kind", event.Metadata)
+		}
 	}
 	if event.Kind == QuestionAcceptedEvent && c.logger != nil {
 		c.logger.InfoContext(ctx, "Codex native question acceptance observed", "owner_id", c.ownerID, "interaction_id", event.InteractionState.ID, "response_id", event.InteractionState.ResponseID, "turn_id", event.TurnID)

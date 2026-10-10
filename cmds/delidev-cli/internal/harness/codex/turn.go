@@ -73,6 +73,7 @@ type executionState struct {
 	autoReviews         map[domain.ID]domain.AutoReviewState
 	autoReviewPayloads  map[string][32]byte
 	autoReviewActions   map[string][32]byte
+	revertClaim         domain.ID
 	contextBase         *ContinuationContextCheckpoint
 	contextOrder        []ContextRecord
 	compaction          *manualCompaction
