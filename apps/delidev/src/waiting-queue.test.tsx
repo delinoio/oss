@@ -56,3 +56,24 @@ it("retains movement when the response has no original acknowledgement",async()=
  expect(f.move.mock.calls[1][0]).toEqual(original);
  await waitFor(()=>expect(screen.queryByRole("button",{name:"Retry the same movement"})).toBeNull());
 });
+
+it("has no resting end-drop strip and keeps final-position dropping within the list",async()=>{
+ const f=fixture();const view=render(f.view());await screen.findByText("Third");
+ expect(view.container.querySelector(".queue-drop-end")).toBeNull();
+ const sentinel=view.container.querySelector(".queue-compact-list > .sidebar-continuation")!;expect(sentinel.childNodes).toHaveLength(0);
+ const handle=within(screen.getByText("First").closest("article")!).getByRole("button",{name:"Move waiting input"});
+ fireEvent.dragStart(handle,{dataTransfer:{setData:vi.fn()}});
+ const end=view.container.querySelector(".queue-drop-end")!;expect(end).toBeTruthy();fireEvent.dragOver(end);expect(end.classList.contains("queue-insertion")).toBe(true);
+ fireEvent.drop(end);await waitFor(()=>expect(f.move).toHaveBeenCalledOnce());
+ expect(f.move.mock.calls[0][0]).toMatchObject({mutation:{id:f.rows[0].id,expectedRevision:3n},expectedQueueGeneration:9007199254740993n,beforeInputId:"",beforeInputRevision:0n});
+ expect(view.container.querySelector(".queue-drop-end")).toBeNull();
+});
+
+it("retains continuation, failed reads and retry content instead of treating them as empty terminal observers",async()=>{
+ const f=fixture();f.read.mockResolvedValueOnce({inputs:f.rows.slice(0,1),nextPageToken:"next",currentQueueGeneration:9007199254740993n,waitingCount:3});
+ f.read.mockRejectedValueOnce(new ConnectError("Queue page unavailable",Code.Unavailable));
+ const view=render(f.view());await screen.findByText("First");
+ fireEvent.click(screen.getByRole("button",{name:"Load more Queue pages"}));await waitFor(()=>expect(f.read).toHaveBeenCalledTimes(2));
+ const sentinel=view.container.querySelector(".queue-compact-list > .sidebar-continuation")!;await waitFor(()=>expect(sentinel.childNodes.length).toBeGreaterThan(0));
+ expect(within(sentinel).getByRole("button",{name:"Retry"})).toBeTruthy();expect(view.container.querySelector(".queue-drop-end")).toBeNull();
+});

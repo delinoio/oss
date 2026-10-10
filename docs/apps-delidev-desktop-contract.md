@@ -3682,7 +3682,7 @@ original input and preserves its revision, UTF-8 bound, skills and images.
 More/Edit remains available for inspection during read-only, pending or
 uncertain states; Save and other mutations retain their original locks.
 Attachments and editors may grow rows; narrow rows wrap their actions. Keep
-Agent requests separate and the existing short-height scrolling budget.
+Agent requests separate and the existing short-height scrolling budget. Issue #2516 keeps settled list insets balanced: inactive end-drop targets reserve no height and an empty final-page continuation observer adds none. Active final-position drops overlap the last 8px within the existing list footprint; visible continuation/loading/error/retry content retains its original height and authority. Normal unwrapped handle, prompt and actions share a center within 1 CSS pixel; editors, attachments and wrapping may still grow rows.
 
 Hide the ordinary surface and its gap only after a successful current complete
 read with all relevant payloads resident establishes no waiting inputs. Failed

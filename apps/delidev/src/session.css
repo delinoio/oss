@@ -330,7 +330,10 @@
 .queue-drag-handle { flex: 0 0 24px; cursor: grab; padding: 4px; color: var(--muted); touch-action: none; }
 .queue-drag-handle:disabled { cursor: default; }
 .queue-insertion { border-top: 2px solid var(--accent); }
-.queue-drop-end { min-height: 8px; }
+/* The terminal drag target overlaps the existing row footprint; neither it nor
+   an empty pagination observer adds bottom-only resting space. */
+.queue-compact-list > .queue-drop-end { position: sticky; bottom: 0; height: 8px; margin-top: -8px; box-sizing: border-box; }
+.queue-compact-list > .sidebar-continuation:empty { min-height: 0; margin: 0; padding: 0; }
 
 .session-information-section { padding:12px 0; border-bottom:1px solid var(--border-subtle); }
 .session-information-section > h3, .session-diagnostics h3, .session-diagnostics h4, .session-information-section h3, .session-information-section h4 { margin:0 0 8px; font-size:12px; font-weight:600; color:var(--muted); }
