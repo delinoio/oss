@@ -102,6 +102,30 @@ turn/settings/account, terminal results, receipts and independent recovery and
 cleanup remain unchanged. The [official notification schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/FsChangedNotification.json)
 defines this passive envelope separately from explicit filesystem operations.
 
+Notification-only `fuzzyFileSearch/sessionUpdated` and
+`fuzzyFileSearch/sessionCompleted` use a separate closed private search envelope.
+Updated payloads require `sessionId`, `query` and a non-null `files` array;
+completed payloads require only `sessionId`. File results preserve the official
+`root`, `path`, `match_type`, `file_name`, uint32 `score` and optional nullable
+uint32 `indices` fields. Camel-case aliases are not part of this wire profile.
+Validate original result order and distinguish omitted, null and empty indices.
+Empty result lists and queries remain valid. Bound session IDs to 1024 UTF-8
+bytes, queries/result strings to 4096 bytes, files to 1000 and each index list to
+4096 entries, within the unchanged generic document bound. Reject unknown or
+duplicate keys, missing/null required fields, invalid match types and unsigned
+integer overflow using the closed `fuzzy-search-session` diagnostic classification.
+
+This adapter admits no fuzzy-search request or query generation. All valid search
+sessions, stale queries and completion-before-update notifications are validated
+then discarded without reading paths, creating conversation indexes or publishing
+product results. They cannot answer a same-name server request, accept input,
+alter settings or replace terminal/cleanup proof. Any future result consumer must
+independently prove its original connection, admitted search session and query
+generation. The [official updated schema](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server-protocol/schema/json/FuzzyFileSearchSessionUpdatedNotification.json)
+and [completed schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/FuzzyFileSearchSessionCompletedNotification.json)
+define the exact private wire fields. Native queries, paths and identifiers never
+enter public events or diagnostics. No protocol allocation or migration is added.
+
 ### Codex native error and authentication recovery observations
 
 Notification-only `error`, `modelProvider/authRecoveryStarted` and

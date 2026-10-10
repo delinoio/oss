@@ -25,6 +25,7 @@ const (
 	CodexAppsStartupObserved         MetadataKind = "codex-apps-startup-observed"
 	SkillsChangedDiscarded           MetadataKind = "skills-changed-discarded"
 	FilesystemChangedDiscarded       MetadataKind = "filesystem-changed-discarded"
+	FuzzySearchSessionDiscarded      MetadataKind = "fuzzy-search-session-discarded"
 	ThreadMetadataDiscarded          MetadataKind = "thread-metadata-discarded"
 	ThreadContextSupplementDiscarded MetadataKind = "thread-context-supplement-discarded"
 )
@@ -113,6 +114,8 @@ func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 		// authorize file access, cache refresh or a replacement native operation.
 		// Validate the original ordered paths privately, then discard the payload.
 		return c.metadata(FilesystemChangedDiscarded), nil
+	case "fuzzyFileSearch/sessionUpdated", "fuzzyFileSearch/sessionCompleted":
+		return c.observeFuzzySearchSessionLocked(native)
 	case "skills/changed":
 		// The original process invalidated its own cache. Discard this passive
 		// notification without enumerating packages or changing selected input.

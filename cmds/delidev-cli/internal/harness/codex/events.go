@@ -34,6 +34,7 @@ const (
 	validationGateway        eventValidationStage = "account-gateway"
 	validationSkills         eventValidationStage = "skills-inventory"
 	validationFilesystem     eventValidationStage = "filesystem-watch"
+	validationFuzzySearch    eventValidationStage = "fuzzy-search-session"
 	validationMCP            eventValidationStage = "mcp-startup"
 	validationHook           eventValidationStage = "native-hook"
 	validationThreadMetadata eventValidationStage = "thread-metadata"
@@ -78,6 +79,8 @@ func validationStage(method string) eventValidationStage {
 		return validationSkills
 	case "fs/changed":
 		return validationFilesystem
+	case "fuzzyFileSearch/sessionUpdated", "fuzzyFileSearch/sessionCompleted":
+		return validationFuzzySearch
 	case "mcpServer/startupStatus/updated", "mcpServer/event/stream/notification", "mcpServer/oauthLogin/completed":
 		return validationMCP
 	case "hook/started", "hook/completed":
