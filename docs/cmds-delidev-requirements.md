@@ -1,3 +1,27 @@
+## Explicit owner amendment: Activity retirement (#1977)
+
+Issue #1977 retires the Activity product. This amendment supersedes only the
+historical Activity product requirements below, including its desktop destination
+and filtering, CLI command, unified chronological projection and new Activity
+record publication. The original issue #964 requirements snapshot remains
+unchanged; generic references to execution or provider-account activity do not
+require an Activity product surface.
+
+Preserve independent Sessions, Inbox, Search, Settings, Usage, schedule history,
+PR handling and shared shell/server controls with their original authority and
+lifetimes. Retain `ActivityService.ListActivity` and generated compatibility
+exports with their original protocol numbers. Authorized owners and current
+paired clients receive typed `UNSUPPORTED` with Connect `Unimplemented`, safe
+retirement guidance and correlation information. Missing, invalid or revoked
+credentials and Worker actors retain their authentication/permission refusal;
+retired filters and cursors cause no product-source reads.
+
+Legacy Activity metadata retains its validators, original identities and
+dependent deletion/backup cleanup. Retirement adds no purge, backfill, protocol
+allocation, migration or execution authority. Follow the [Activity retirement
+contract](cmds-delidev-activity-contract.md) and [desktop
+contract](apps-delidev-desktop-contract.md) for current behavior.
+
 ## Explicit owner amendment: app-owned sidecar Quit (2026-10-06)
 
 Normal desktop Quit stops only server processes directly admitted by that host, including explicit Start and automatic recovery. After 35 seconds without confirmed exit, force only the retained original child and observe its exit; do not claim native/session cleanup. Title-bar close-to-tray and independent CLI/service/remote servers/Workers retain their lifetimes. Desktop crash/forced termination terminates its single resident CLI and owned server through platform containment. This supersedes prior desktop-exit server preservation only for app-owned sidecars; original durable data, recovery and all other ownership remain intact. See the [desktop shutdown boundary](apps-delidev-desktop-contract.md#app-owned-sidecar-shutdown) and CLI contract. The historical issue snapshot below is unchanged.
