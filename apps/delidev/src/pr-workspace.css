@@ -5,7 +5,9 @@
 .pr-workspace-compact { display: block; overflow: hidden; }
 .pr-workspace-compact > div { height: 100%; }
 .pr-workspace [hidden] { display: none; }
-.pr-workspace-row { border-inline-start: 2px solid #9f83d9; margin-block: 8px; }
+.pr-workspace-row { position: relative; margin-block: 8px; }
+.pr-workspace-row[data-stack=true] { border-inline-start: 2px solid #9f83d9; }
+.pr-workspace-row[data-stack=true]:not([data-depth="0"])::before { content: ""; position: absolute; inset-inline-start: -12px; top: -8px; width: 10px; height: calc(50% + 8px); border-inline-start: 2px solid #9f83d9; border-bottom: 2px solid #9f83d9; pointer-events: none; }
 .pr-workspace-select { display: flex; flex-direction: column; align-items: stretch; text-align: start; width: 100%; padding: 12px; gap: 8px; white-space: normal; overflow-wrap: anywhere; }
 .pr-workspace-select strong, .pr-workspace h2, .pr-workspace h3, .pr-workspace p, .pr-workspace dd, .pr-workspace code { overflow-wrap: anywhere; white-space: normal; }
 .pr-workspace-select strong { font-size: 1em; line-height: 1.5; }
