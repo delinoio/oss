@@ -11,6 +11,7 @@ import (
 )
 
 type appsController struct {
+	calls    map[string]trackedAppCall
 	original domain.CodexAppConfiguration
 	current  domain.CodexAppConfiguration
 	version  string

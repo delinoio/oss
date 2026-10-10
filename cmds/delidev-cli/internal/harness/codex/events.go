@@ -534,6 +534,8 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 	}
 	message := &Message{}
 	switch kind {
+	case "mcpToolCall":
+		return c.observeCodexAppCallLocked(native, params.TurnID, params.Item)
 	case "imageGeneration":
 		return c.observeImageGeneration(native, params.TurnID, params.Item)
 	case "contextCompaction":

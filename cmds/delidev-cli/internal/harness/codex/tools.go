@@ -18,6 +18,7 @@ const (
 	CommandTool   ToolKind = "command-execution"
 	PatchTool     ToolKind = "file-change"
 	ImageViewTool ToolKind = "image-view"
+	CodexAppTool  ToolKind = "codex-app"
 
 	ToolRunning   ToolStatus = "inProgress"
 	ToolCompleted ToolStatus = "completed"
@@ -72,6 +73,7 @@ type FileChange struct {
 // work or imply that an entire turn succeeded. Native aggregate output may be
 // truncated independently from streamed deltas, so retain both observations.
 type Tool struct {
+	CodexApp  *domain.CodexAppCallObservation
 	ID        string
 	Kind      ToolKind
 	Status    ToolStatus
