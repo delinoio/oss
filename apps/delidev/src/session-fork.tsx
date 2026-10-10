@@ -30,7 +30,7 @@ export function SessionForkAction({ source, forkOnly = false, disabled = false, 
   const runner = document(machine.data?.resource);
   const forkSupported = openCode ? status.data?.capabilities.includes(SystemCapability.OPENCODE_GENERAL_CHAT_FORK_V1) && ["darwin", "linux"].includes(text(runner.os)) && Array.isArray(runner.worker_capabilities) && runner.worker_capabilities.includes("opencode-general-chat-fork-v1") : status.data?.capabilities.includes(SystemCapability.CODEX_SESSION_FORK_V1);
   const profile = useOpenCodeForkProfile(source, active && Boolean(show) && openCode && Boolean(settled(source)) && Boolean(forkSupported));
-  const managed = object(object(document(source).initial_execution).configuration).subscription === true;
+  const managed = sourceHarness(source) === "codex" && object(object(document(source).initial_execution).configuration).subscription === true;
   const managedSupported = status.data?.capabilities.includes(SystemCapability.MANAGED_CODEX_SIDECHAT_V1) && Array.isArray(runner.worker_capabilities) && runner.worker_capabilities.includes("managed-codex-sidechat-v1") && runner.worker_capabilities.includes("managed-codex-subscriptions-v1");
   const managedForkSupported = status.data?.capabilities.includes(SystemCapability.MANAGED_CODEX_FORK_V1) && Array.isArray(runner.worker_capabilities) && runner.worker_capabilities.includes("managed-codex-fork-v1") && runner.worker_capabilities.includes("managed-codex-subscriptions-v1");
   const supported = forkSupported && (!managed || managedForkSupported);
