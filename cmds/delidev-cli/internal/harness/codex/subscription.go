@@ -144,6 +144,16 @@ func (c *Client) verifyManagedConfig(ctx context.Context, cwd string) (returned 
 			return incompatible()
 		}
 	}
+	if c.nativeApps != nil {
+		if validateNativeAppsPolicies(result.Config["apps"], *c.nativeApps) != nil {
+			return domain.NativeAppsUnavailable()
+		}
+		var features map[string]json.RawMessage
+		var apps, elicitation bool
+		if json.Unmarshal(result.Config["features"], &features) != nil || json.Unmarshal(features["apps"], &apps) != nil || !apps || json.Unmarshal(features["tool_call_mcp_elicitation"], &elicitation) != nil || elicitation {
+			return domain.NativeAppsUnavailable()
+		}
+	}
 	if c.imageGeneration {
 		var features map[string]json.RawMessage
 		var enabled bool

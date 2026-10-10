@@ -387,6 +387,10 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 		c.problem = threadUncertain()
 		return result, c.problem
 	}
+	if !c.nativeAppsSettingsAllowed(*effective) {
+		c.problem = threadUncertain()
+		return result, c.problem
+	}
 	if c.sidechat != "" && !sidechatEffective(*effective) {
 		c.problem = threadUncertain()
 		return result, c.problem

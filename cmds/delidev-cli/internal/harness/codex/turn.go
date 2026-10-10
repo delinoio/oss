@@ -254,6 +254,9 @@ func (c *Client) StartTurn(ctx context.Context, requestID, inputID domain.ID, in
 		return result, err
 	}
 	s := state.settings
+	if err := c.verifyNativeAppsSettings(ctx, s); err != nil {
+		return result, err
+	}
 	if err := c.verifySidechat(ctx, s.Cwd, c.thread); err != nil {
 		return result, err
 	}
@@ -332,6 +335,9 @@ func (c *Client) Steer(ctx context.Context, requestID, inputID, expectedTurnID d
 		return result, domain.Fail(domain.ResourceExhausted, "Native Steer tracking reached its bound.", "Keep further input queued until terminal history and owned cleanup can be verified; no input was truncated or sent.")
 	}
 	if err := c.checkNativeStateLocked(ctx, false); err != nil {
+		return result, err
+	}
+	if err := c.verifyNativeAppsSettings(ctx, state.settings); err != nil {
 		return result, err
 	}
 	if err := c.verifySidechat(ctx, state.settings.Cwd, c.thread); err != nil {

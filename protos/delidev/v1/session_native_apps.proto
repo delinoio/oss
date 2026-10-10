@@ -1,0 +1,68 @@
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+package delidev.v1;
+import "delidev/v1/common.proto";
+option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
+
+// Product clients select integrations. Only the original native agent owns tool
+// calls; this service exposes no direct connector-call or credential operation.
+service SessionNativeAppsService {
+  rpc ReadSessionApps(ReadSessionAppsRequest) returns (ReadSessionAppsResponse);
+  rpc UpdateSessionApps(UpdateSessionAppsRequest) returns (UpdateSessionAppsResponse);
+}
+message ReadSessionAppsRequest {
+  string request_id = 1;
+  string session_id = 2;
+  bool force_refresh = 3;
+}
+message NativeAppDiscovery {
+  string id = 1;
+  string name = 2;
+  bool accessible = 3;
+  bool enabled = 4;
+}
+message NativeAppInstalled {
+  string id = 1;
+  bool enabled = 2;
+  bool callable = 3;
+}
+message SessionNativeAppScope {
+  string session_id = 1;
+  string machine_id = 2;
+  string original_account_id = 3;
+  string original_connection_id = 4;
+  string configuration_digest = 5;
+}
+message SessionNativeAppSelection {
+  SessionNativeAppScope scope = 1;
+  string inventory_id = 2;
+  uint64 revision = 3;
+  repeated string app_ids = 4;
+}
+message ReadSessionAppsResponse {
+  string request_id = 1;
+  string session_id = 2;
+  string original_account_id = 3;
+  string original_connection_id = 4;
+  string configuration_digest = 5;
+  string inventory_id = 6;
+  repeated NativeAppDiscovery discovered = 7;
+  repeated NativeAppInstalled installed = 8;
+  bool complete = 9;
+  string observed_at = 10;
+  SessionNativeAppSelection selection = 11;
+}
+message UpdateSessionAppsRequest {
+  Mutation mutation = 1;
+  string session_id = 2;
+  string original_account_id = 3;
+  string original_connection_id = 4;
+  string configuration_digest = 5;
+  string inventory_id = 6;
+  repeated string selected_app_ids = 7;
+}
+message UpdateSessionAppsResponse {
+  Resource receipt = 1;
+  SessionNativeAppSelection selection = 2;
+  bool replayed = 3;
+}

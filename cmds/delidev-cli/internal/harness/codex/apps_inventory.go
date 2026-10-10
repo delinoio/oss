@@ -179,3 +179,19 @@ func readAppsInventory(ctx context.Context, scope domain.NativeAppScope, thread 
 	}
 	return result, nil
 }
+
+// ReadNativeApps observes only this original exclusive account process and
+// loaded ordinary thread. It grants no selection or connector execution right.
+func (c *Client) ReadNativeApps(ctx context.Context, scope domain.NativeAppScope, force bool) (domain.NativeAppInventory, error) {
+	if err := c.acquireControl(ctx); err != nil {
+		return domain.NativeAppInventory{}, err
+	}
+	defer func() { <-c.control }()
+	if c.nativeApps == nil || c.nativeApps.Scope != scope || c.managedHome == "" || c.mode != ThreadProtocol || c.sidechat != "" || c.version != "0.162.0" || c.problem != nil || c.thread.Validate() != nil || c.execution == nil || !c.nativeAppsSettingsAllowed(c.execution.settings) {
+		return domain.NativeAppInventory{}, domain.NativeAppsUnavailable()
+	}
+	if err := c.verifyManagedConfig(ctx, c.execution.settings.Cwd); err != nil {
+		return domain.NativeAppInventory{}, err
+	}
+	return readAppsInventory(ctx, scope, c.thread, force, c.wire.Call)
+}
