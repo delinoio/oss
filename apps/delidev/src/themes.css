@@ -194,6 +194,7 @@
 :root[data-density="compact"] .message { padding: 12px 16px; }
 :root[data-status-presentation="minimal"] .session-heading-line .connection { font-size: 12px; padding: 0; border: 0; background: transparent; }
 :root[data-session-accent="false"] .session-workspace .message-user { background: var(--surface-selected); color: var(--text); }
+:root[data-session-accent="false"] .session-workspace .message-user :focus-visible { outline-color: var(--focus); }
 :root[data-color-assistance="true"] .connection.is-live { text-decoration: underline; text-decoration-style: double; }
 :root[data-color-assistance="true"] .notice, :root[data-color-assistance="true"] [role="alert"] { border-inline-start: 3px double currentColor; }
 :root[data-show-time="false"] .transcript time { display: none; }
