@@ -436,7 +436,7 @@ func TestConfigurationImportRejectsManagedPresetCollisionsAtPreviewAndApply(t *t
 }
 
 func TestConfigurationImportRepositoryValidationCommitsAllOrNothing(t *testing.T) {
-	for _, outcome := range []string{"success", "failure", "canonical-path", "stale-settings", "revoked-client", "retired-identity", "provider-disabled"} {
+	for _, outcome := range []string{"success", "generic-source", "failure", "canonical-path", "stale-settings", "revoked-client", "retired-identity", "provider-disabled"} {
 		t.Run(outcome, func(t *testing.T) {
 			s, _ := newDoctorFixture(t)
 			selection := transferSelection()
@@ -457,8 +457,15 @@ func TestConfigurationImportRepositoryValidationCommitsAllOrNothing(t *testing.T
 			sources := []domain.ID{domain.NewID(), domain.NewID()}
 			targets := []domain.ID{domain.NewID(), domain.NewID()}
 			repository := domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "Both checkouts", AutoFetch: true}
+			if outcome == "generic-source" {
+				repository.RemoteURL = "https://generic.invalid/team/repo.git"
+			}
 			for i, source := range sources {
-				doctorPut(t, s, domain.MachineKind, targets[i], 0, domain.Machine{Name: "target", OS: "linux", Architecture: "amd64"})
+				machine := domain.Machine{Name: "target", OS: "linux", Architecture: "amd64"}
+				if outcome == "generic-source" {
+					machine.WorkerCapabilities = []domain.WorkerCapability{domain.RepositoryInspectionMetadataV1}
+				}
+				doctorPut(t, s, domain.MachineKind, targets[i], 0, machine)
 				selection.Bundle.Machines = append(selection.Bundle.Machines, domain.ConfigurationMachine{ID: source, Name: "source", OS: "linux", Architecture: "amd64"})
 				selection.Machines = append(selection.Machines, domain.ConfigurationMachineBinding{SourceID: source, TargetID: targets[i]})
 				repository.Checkouts = append(repository.Checkouts, domain.Checkout{MachineID: source, Path: "/untrusted/old"})
@@ -517,7 +524,13 @@ func TestConfigurationImportRepositoryValidationCommitsAllOrNothing(t *testing.T
 					if err := domain.Decode(job.Input, &input); err != nil {
 						t.Fatal(err)
 					}
-					if input.ExpectedRemoteIdentity != "" {
+					if outcome == "generic-source" {
+						expected, err := domain.RepositoryCloneSourceIdentity(repository.RemoteURL)
+						other, otherErr := domain.RepositoryCloneSourceIdentity("https://generic.invalid/team/repo")
+						if err != nil || otherErr != nil || input.ExpectedRemoteIdentity != expected || expected == other {
+							t.Fatal("import lost exact generic source binding", err, otherErr)
+						}
+					} else if input.ExpectedRemoteIdentity != "" {
 						t.Fatal("legacy Worker received the post-capability source identity")
 					}
 				}
@@ -601,7 +614,7 @@ func finishTransferTest(t *testing.T, s *Service, parentID domain.ID, outcome st
 	if err != nil {
 		t.Fatal(err)
 	}
-	if outcome == "success" {
+	if outcome == "success" || outcome == "generic-source" {
 		if job.State != domain.JobSucceeded || len(rows) != 1 {
 			t.Fatal("not applied", job.State)
 		}

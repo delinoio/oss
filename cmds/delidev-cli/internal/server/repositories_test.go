@@ -318,3 +318,55 @@ func TestRepositoryTombstonesFenceAdmissionAndSettleOriginalChild(t *testing.T) 
 		})
 	}
 }
+
+func TestRepositorySaveBindsExactGenericGitSuffix(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(ctx, filepath.Join(t.TempDir(), "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	machine := domain.NewID()
+	_, err = db.Mutate(ctx, domain.NewID(), "fixture.machine", nil, func(tx *store.Tx) (any, error) {
+		return tx.Put(domain.MachineKind, machine, 0, "", "", domain.Machine{Name: "fixture", OS: "linux", Architecture: "amd64", Version: "0.1.0", WorkerCapabilities: []domain.WorkerCapability{domain.RepositoryInspectionMetadataV1}})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	identities := []string{}
+	for _, source := range []string{"https://generic.invalid/team/repo", "https://generic.invalid/team/repo.git"} {
+		raw, _ := json.Marshal(domain.Repository{RemoteURL: source, Name: "repo", Checkouts: []domain.Checkout{{MachineID: machine, Path: "/tmp/repo"}}})
+		result, err := SaveConfiguration(ctx, db, ConfigurationMutation{RequestID: domain.NewID(), Kind: domain.RepositoryKind, Document: raw})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var parent store.Record
+		if err := domain.Decode(result.Data, &parent); err != nil {
+			t.Fatal(err)
+		}
+		var children []store.Record
+		if err := db.Read(ctx, func(tx *store.Tx) error {
+			var err error
+			children, err = tx.Jobs("", parent.ID, "", "", 10)
+			return err
+		}); err != nil || len(children) != 1 {
+			t.Fatal("inspection child missing", err)
+		}
+		job, err := store.Decode[domain.Job](children[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		var input domain.RepositoryInspectionInput
+		if err := domain.Decode(job.Input, &input); err != nil {
+			t.Fatal(err)
+		}
+		expected, err := domain.RepositoryCloneSourceIdentity(source)
+		if err != nil || input.ExpectedRemoteIdentity != expected {
+			t.Fatal("save lost exact source binding", err)
+		}
+		identities = append(identities, input.ExpectedRemoteIdentity)
+	}
+	if identities[0] == identities[1] {
+		t.Fatal("save merged distinct generic source proofs")
+	}
+}

@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 package domain
 
-import "testing"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"strings"
+	"testing"
+)
 
 func TestRepositoryCloneURLs(t *testing.T) {
 	for _, value := range []string{"https://github.com/owner/repo.git", "ssh://git@github.com/owner/repo.git", "git@github.com:owner/repo.git", "github.com:owner/repo.git", "https://git.example.com:8443/team/repo", "ssh://user@host:2222/team/repo", "https://[::1]/repo"} {
@@ -55,6 +60,10 @@ func TestRepositoryCloneSourceIdentity(t *testing.T) {
 		}
 	}
 	for _, values := range [][2]string{
+		{"https://generic.invalid/team/repo", "https://generic.invalid/team/repo.git"},
+		{"ssh://git@generic.invalid/team/repo", "ssh://git@generic.invalid/team/repo.git"},
+		{"git@generic.invalid:team/repo", "git@generic.invalid:team/repo.git"},
+		{"git@generic.invalid:/team/repo", "git@generic.invalid:/team/repo.git"},
 		{"alice@git.example.com:team/repo.git", "bob@git.example.com:team/repo.git"},
 		{"git.example.com:team/repo.git", "git.example.com:/team/repo.git"},
 		{"https://git.example.com/team/repo.git", "ssh://git@git.example.com/team/repo.git"},
@@ -74,6 +83,7 @@ func TestRepositoryCloneSourceIdentity(t *testing.T) {
 	for _, values := range [][2]string{
 		{"ssh://git@git.example.com/team/repo.git", "git@git.example.com:/team/repo.git"},
 		{"https://github.com/owner/repo.git", "git@github.com:Owner/Repo.git"},
+		{"https://github.com/Owner/Repo", "ssh://git@github.com/owner/repo.git"},
 	} {
 		left, err := RepositoryCloneSourceIdentity(values[0])
 		if err != nil {
@@ -104,5 +114,28 @@ func TestRepositoryCloneDirectory(t *testing.T) {
 		if ValidateRepositoryCloneDirectory(value) == nil {
 			t.Fatal(value)
 		}
+	}
+}
+
+func TestRepositoryCloneSourceIdentityRefusesRetainedAmbiguousGenericProof(t *testing.T) {
+	legacy := sha256.Sum256([]byte(strings.Join([]string{"generic.invalid", "https", "", "/team/repo"}, "\x00")))
+	for _, source := range []string{"https://generic.invalid/team/repo", "https://generic.invalid/team/repo.git"} {
+		identity, err := RepositoryCloneSourceIdentity(source)
+		if err != nil || identity == hex.EncodeToString(legacy[:]) {
+			t.Fatal("ambiguous retained generic proof became current authority", err)
+		}
+	}
+	legacyGitHub := sha256.Sum256([]byte("github.com\x00owner/repo"))
+	identity, err := RepositoryCloneSourceIdentity("https://github.com/Owner/Repo.git")
+	if err != nil || identity != hex.EncodeToString(legacyGitHub[:]) {
+		t.Fatal("established GitHub identity changed", err)
+	}
+	input := RepositoryBranchesInput{ProjectID: NewID(), ProjectRevision: 1, RepositoryID: NewID(), RepositoryRevision: 1, MachineID: NewID(), MachineRevision: 1, Source: "https://generic.invalid/team/repo.git", SourceIdentity: hex.EncodeToString(legacy[:]), Remote: "origin"}
+	if input.Validate() == nil {
+		t.Fatal("retained branch request silently converted its source proof")
+	}
+	input.SourceIdentity, err = RepositoryCloneSourceIdentity(input.Source)
+	if err != nil || input.Validate() != nil {
+		t.Fatal("fresh exact source proof rejected", err)
 	}
 }

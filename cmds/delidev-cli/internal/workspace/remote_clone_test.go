@@ -394,3 +394,23 @@ func TestManagedCloneForkFromLocalPreservesOriginalFolder(t *testing.T) {
 		t.Fatal("child deletion changed original Local folder")
 	}
 }
+
+func TestManagedCloneRejectsGenericGitSuffixRewriteBeforeNetwork(t *testing.T) {
+	m, input, marker := managedCloneFixture(t)
+	input.Repositories[0].RemoteURL = "https://generic.invalid/team/repo"
+	config := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(config, []byte("[url \"https://generic.invalid/team/repo.git\"]\n\tinsteadOf = https://generic.invalid/team/repo\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", config)
+	var logs bytes.Buffer
+	m.Logger = slog.New(slog.NewJSONHandler(&logs, nil))
+	_, err := m.Prepare(context.Background(), input)
+	problem := domain.SafeError(err)
+	if problem.Code != domain.InvalidArgument || strings.Contains(problem.Error(), "generic.invalid") || strings.Contains(logs.String(), "generic.invalid") {
+		t.Fatal("changed suffix admitted or private source exposed", problem)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("network-capable clone started before suffix rewrite validation")
+	}
+}

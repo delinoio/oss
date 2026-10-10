@@ -2,6 +2,8 @@ package workspace
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"log/slog"
 	"os"
@@ -309,5 +311,37 @@ func TestWorkerParentAliasUsesCanonicalOwnershipPaths(t *testing.T) {
 	}
 	if worktrees := gitTest(t, root, "worktree", "list", "--porcelain"); strings.Count(worktrees, "worktree ") != 1 {
 		t.Fatal("aliased worktree registration survived rollback", worktrees)
+	}
+}
+
+func TestValidateRemoteIdentityPreservesGenericGitSuffixAndRetainedProof(t *testing.T) {
+	root := repository(t)
+	gitTest(t, root, "remote", "add", "origin", "https://generic.invalid/team/repo.git")
+	g := Git{ProcessRoot: filepath.Join(t.TempDir(), "processes"), OwnerID: domain.NewID()}
+	inspection, err := g.Inspect(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exact, err := domain.RepositoryCloneSourceIdentity("https://generic.invalid/team/repo.git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := g.ValidateRemoteIdentity(context.Background(), inspection, "", exact); err != nil {
+		t.Fatal(err)
+	}
+	other, err := domain.RepositoryCloneSourceIdentity("https://generic.invalid/team/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := sha256.Sum256([]byte("generic.invalid\x00https\x00\x00/team/repo"))
+	for _, expected := range []string{other, hex.EncodeToString(legacy[:])} {
+		problem := domain.SafeError(g.ValidateRemoteIdentity(context.Background(), inspection, "", expected))
+		if problem.Code != domain.InvalidArgument || strings.Contains(problem.Error(), "generic.invalid") {
+			t.Fatal("different or retained ambiguous source admitted or exposed", problem)
+		}
+	}
+	gitTest(t, root, "remote", "set-url", "origin", "https://generic.invalid/team/repo")
+	if err := g.ValidateRemoteIdentity(context.Background(), inspection, "", hex.EncodeToString(legacy[:])); domain.SafeError(err).Code != domain.InvalidArgument {
+		t.Fatal("ambiguous retained suffix proof admitted unsuffixed repository", err)
 	}
 }

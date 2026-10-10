@@ -161,7 +161,6 @@ func RepositoryCloneSourceIdentity(value string) (string, error) {
 		return "", err
 	}
 	repositoryPath := strings.TrimSuffix(parsed.Path, "/")
-	repositoryPath = strings.TrimSuffix(repositoryPath, ".git")
 	if repositoryPath == "" {
 		return "", cloneInvalidURL()
 	}
@@ -171,9 +170,12 @@ func RepositoryCloneSourceIdentity(value string) (string, error) {
 		// equivalent access forms for one owner/repository namespace.
 		// GitHub repository names are case-insensitive. Normalize only this
 		// established provider namespace; generic hosts retain their exact path.
-		repositoryPath = strings.ToLower(strings.TrimPrefix(repositoryPath, "/"))
+		repositoryPath = strings.ToLower(strings.TrimSuffix(strings.TrimPrefix(repositoryPath, "/"), ".git"))
 	} else {
-		identity = append(identity, string(parsed.Transport), parsed.SSHUser, repositoryPath)
+		// Earlier digests collapsed generic .git suffixes. Use a new namespace
+		// so an ambiguous retained proof cannot authorize the other path. Never
+		// convert old accepted job proofs; fresh save/import derives this identity.
+		identity = append(identity, "generic-path-v2", string(parsed.Transport), parsed.SSHUser, repositoryPath)
 	}
 	if len(identity) == 1 {
 		identity = append(identity, repositoryPath)
