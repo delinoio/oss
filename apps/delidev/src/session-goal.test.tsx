@@ -114,3 +114,13 @@ it("keeps an unsent edit through an explicit native READ admission", async () =>
   expect((screen.getByLabelText("Objective") as HTMLTextAreaElement).value).toBe("Unsent original draft");
   expect(f.write.mock.calls[0][0].action).toBe(NativeGoalAction.READ);
 });
+
+it("keeps stopped or recovery state readable while native controls are disabled", async () => {
+ const f = fixture(); render(f.render());
+ await screen.findByText("The last native observation reported no goal.");
+ f.setGoal({ enabled: true, source_execution_id: f.execution, source_native_thread_id: f.thread, observation: null, action_id: newRequestId(), action_state: "uncertain", problem_code: "recovery_required" });
+ await f.client.invalidateQueries({ refetchType: "active" });
+ expect((screen.getByRole("button", { name: "Clear native goal" }) as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(screen.getByRole("button", { name: "Reload saved goal state" }));
+ expect(f.write).not.toHaveBeenCalled();
+});

@@ -82,3 +82,18 @@ func TestGoalRootIdentityIsOriginalPerTurnMetadata(t *testing.T) {
 		t.Fatal("legacy nullable root rejected")
 	}
 }
+
+func TestGoalHistoryContentDoesNotReclassifyGoalFreeInputs(t *testing.T) {
+	input := domain.NewID()
+	turn := map[string]any{"id": domain.NewID(), "rootTurnId": nil, "itemsView": "full", "status": "completed", "error": nil, "items": []any{map[string]any{"type": "userMessage", "id": "original-input", "clientId": input, "content": []any{}}}}
+	raw, _ := json.Marshal(turn)
+	if nativeGoalHistoryContent(raw) {
+		t.Fatal("ordinary input became goal-bearing")
+	}
+	item := turn["items"].([]any)[0].(map[string]any)
+	item["clientId"] = nil
+	raw, _ = json.Marshal(turn)
+	if !nativeGoalHistoryContent(raw) {
+		t.Fatal("source-owned native annotation lost")
+	}
+}
