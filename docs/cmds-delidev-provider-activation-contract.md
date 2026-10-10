@@ -2,7 +2,7 @@
 
 ## Scope and ownership
 
-Issue #1046 adds server-owned activation for API providers. Go owns provider identity, availability, model-filter semantics and execution admission. The Connect API, CLI and desktop are clients of that authority. This feature does not own the Settings shell geometry (#1045) or account-menu/two-step connection flow; those surfaces consume this provider state.
+The feature adds server-owned activation for API providers. Go owns provider identity, availability, model-filter semantics and execution admission. The Connect API, CLI and desktop are clients of that authority. This feature does not own the Settings shell geometry or account-menu/two-step connection flow; those surfaces consume this provider state.
 
 ## Provider identity and compatibility
 
@@ -54,6 +54,10 @@ Tests cover fresh hosted defaults, one-time migration and rollback, legacy omitt
 
 Automated fixtures do not establish real desktop layout/keyboard, real provider account or inference acceptance. Record native/manual evidence separately in pull requests, issues and CI logs/artifacts; do not claim provider readiness from a UI or protocol fixture.
 
+## cmds/delidev-cli/internal/store constraints
+
+- DeliDev API provider activation follows `cmds-delidev-provider-activation-contract.md`. Seed only the six hosted presets On during fresh database creation and the one-time existing-database migration; preserve saved Off state and provider identity without creating accounts, keys or models. Keep the three local presets virtual Off until activation and custom providers independent. Preserve missing-enabled legacy semantics, immutable managed preset identity, unique preset activation across writes/imports, metadata-only structured logs, and transaction-order admission. Version signed provider inventory cursor scopes whenever key encoding or ordering changes so old cursors expire instead of being reinterpreted. Never revoke a committed current-turn grant when a provider is turned Off.
+
 ## References
 
 - [Project index](project-delidev.md)
@@ -67,7 +71,7 @@ Automated fixtures do not establish real desktop layout/keyboard, real provider 
 - [Connect protocol](protos-delidev-v1-contract.md)
 - [TypeScript client](packages-delidev-api-client-contract.md)
 
-## Additional hosted providers (#1148)
+## Additional hosted providers
 
 The allocation ledger assigns `ProviderPresetId` 10–35 in the issue's
 published table order for 26 additional fixed hosted services. Existing 0–9

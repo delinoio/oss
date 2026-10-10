@@ -38,6 +38,8 @@ Uses workspace Rspress and the default theme through `public-docs`. The async-co
 ## Change Triggers
 Update this contract, project index, docs catalog, relevant AGENTS, public guidance and release/CI references whenever routes, ports, ownership, installers or aggregation behavior changes. After consolidated publication is verified, operators decommission the former standalone Pages project and DNS record without adding redirects.
 
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+
 ## References
 - [Project](project-async-commit-hook.md)
 - [Local UI](apps-async-commit-hook-contract.md)

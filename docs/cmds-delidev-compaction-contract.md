@@ -6,8 +6,8 @@
 
 ## Status and ownership
 
-This is the common boundary for issues #1093 (Claude), #1202 (Codex) and
-#1203 (OpenCode). Claude owns its implemented settled-boundary product profile.
+This is the common boundary for the feature (Claude), (Codex) and
+ (OpenCode). Claude owns its implemented settled-boundary product profile.
 Codex implements its independently negotiated settled-boundary product profile.
 OpenCode implements its independently negotiated settled-boundary product profile.
 A reservation never advertises support or enables dispatch. Each complete native
@@ -25,7 +25,7 @@ Go and TypeScript bindings must be regenerated together when activated.
 ## Shared reservations
 
 `protos/delidev/allocations.json` reserves these existing-declaration additions
-under issue #1203 with #1093 and #1202 as shared consumers:
+for this feature with as shared consumers:
 
 | Declaration | Member | Number |
 | --- | --- | --- |
@@ -46,7 +46,7 @@ as permitted by the structure contract.
 
 The existing `CompactSessionRequest.mutation = 1` and response `job = 1`,
 `request_id = 2`, `replayed = 3` assignments are recorded in the immutable
-baseline. They were introduced by merged PR #1221 and retain their current wire
+baseline. They were introduced by merged the originating change and retain their current wire
 meanings. The two additional fields above are reserved only; the active RPC and
 generated bindings do not yet contain them. The current native profiles still
 use the original revision-bound mutation and job receipt, so their implementation
@@ -59,7 +59,7 @@ its current `session` and original `job` together under current authorization,
 including receipt replay. Existing `request_id` already identifies the original
 action; it must remain equal to the accepted action ID rather than the Worker
 job ID. These reservations add no capability, native command authority or
-migration and do not establish issue #1203 acceptance.
+migration and do not establish the feature acceptance.
 
 The existing schema-24 entities, jobs, receipts and cancellation tables provide
 the generic durable storage boundary. Compaction allocates no migration and leaves
@@ -117,11 +117,11 @@ Do not manually rewrite native database rows to manufacture acceptance proof.
 Native context counters preserve measured zero and nullable unavailable values.
 Usage retains original provenance and coverage; inherited or overlapping sources
 cannot become duplicate charges or fabricated exact totals. Coordination with
-the usage work does not imply completion of issue #1099.
+the usage work does not imply completion of the feature.
 
 ## Pinned OpenCode profile and acceptance
 
-Issue #1203 uses OpenCode `1.18.32` and its existing owned API profile. Its native
+The feature uses OpenCode `1.18.32` and its existing owned API profile. Its native
 summarize operation must select the original provider/model explicitly and use
 `auto=false` once for manual actions. Automatic parts/events require separate
 original-session/input/message/part proof. The pinned native implementation owns
@@ -382,7 +382,7 @@ Source assignment/completion, account/connection/configuration, manifest/prepara
 
 ## Latest native-reported Codex context snapshot
 
-Issue #1959 extends the existing authorized context JSON with optional
+The feature extends the existing authorized context JSON with optional
 `native_context`; `current_tokens` remains null. The Codex root's retained
 last-request total is an exact nonnegative decimal string, separate from
 cumulative usage, response accounting, cache breakdowns and model limits.
@@ -412,8 +412,7 @@ range, source/status enums and original provenance; old absent-field replies
 remain readable. Fixture/build checks do not establish installed-native, account
 or platform acceptance.
 
-## Conversation Revert and edit — issue #2045
-
+## Conversation Revert and edit
 Revert is a separate owner/client operation under System 62 and Worker 36. Its
 closed version-4 context action shares the existing durable context-job storage,
 workspace lease, account lease and independent cleanup fences. It is not a
@@ -477,3 +476,95 @@ the context again. It never sends Revert again, changes targets or retries nativ
 input. Missing
 intent, mismatched history, changed ownership or cleanup uncertainty remains
 quarantined. Ordinary context jobs keep their existing recovery restrictions.
+
+## Project requirements
+
+- Conversation Revert follows `cmds-delidev-compaction-contract.md#conversation-revert-and-edit--issue-2045`. Record complete System 62 / Worker 36 declarations with implementation. Preserve one exact original turn/prompt mutation, authoritative paged retained-prefix proof, independent cleanup, immutable prior context/history/usage and original account/Worker. Restore prompt text only as an unsent guarded draft; files and existing Fork/Sidechat snapshots stay unchanged. Uncertainty permits only explicit observation of the exact original intent and cleanup, never a second native send or new target. No migration.
+
+## cmds/delidev-cli constraints
+
+Native session compaction for the feature follows the planned shared boundary in `cmds-delidev-compaction-contract.md`. Its allocation records may be included with implementation in the same feature PR. Preserve original transcript/outcome, once-only native claims and independent history/cleanup verification; native acknowledgment never grants a successor checkpoint.
+
+## cmds/delidev-cli/internal/apiproxy constraints
+
+- Only manual Codex context actions enable completed HTTP response usage observation. Run reflection guards before handing an original hashed response/counter projection to persistence. Preserve nullable integer splits; do not collect ordinary native responses twice, infer native turn identity or log response bodies. Original request diagnostics anchor this observation even when Stop wins after submission. Follow `cmds-delidev-compaction-contract.md`.
+
+## cmds/delidev-cli/internal/domain constraints
+
+- Claude continuation candidates require a correlated non-aborted successful or failed root outcome, unchanged permission and settled original input/callback/task/compaction facts. A `background_requested` terminal is ineligible even without a tracked background-task event. Failed predecessors require explicit Resume intent; a candidate never substitutes for independently verified native history and cleanup.
+
+- Native compaction context and versioned action/results follow `cmds-delidev-compaction-contract.md`. Keep automatic context metadata outside input/content/accounting, preserve ordered item ownership and reject open boundaries at terminal/continuation. Version-2 Codex results cannot borrow Claude's version-1 lifecycle or failed-command Resume authority; domain shape validation alone grants no reserved capability or native send.
+
+- The closed compaction-http response source accepts nullable nonnegative integer splits only with original compaction source-turn ownership and an absent unobserved action turn. Ordinary native response/event/result inventories cannot claim this Go-relay source. Preserve the version-2 Codex manual result union and independent legacy Claude version-1 fields. Follow `cmds-delidev-compaction-contract.md`.
+
+- OpenCode manual compaction uses closed version-3 input/results independently of Claude v1 and Codex v2. Require original session/input/part/summary/event identities, once-only original step usage and separate acknowledgment, lifecycle, history and cleanup proof; no mixed harness fields or failed-action Resume authority.
+
+- Compaction retains immutable original execution and restore inputs through one strict 3 MiB input/4 MiB job decoder. Store reads, server scope/settlement, Worker dispatch and original cleanup use those same typed bounds. Worker Connect receive capacity covers the finite serialized job; ordinary jobs retain their 1 MiB contract. Follow `cmds-delidev-compaction-contract.md`.
+
+- Active pricing retains the closed compaction HTTP source's nullable counters through immutable response estimates. Price only available components under the original selected basis; missing cache splits remain unavailable and ordinary native response validation remains unchanged.
+
+- Revert failures before the native claim follow the Conversation Revert contract. Only a closed original no-claim/no-send result after independent native/proxy/workspace/protected-account cleanup can settle that failed context job without changing prior context/history. Callback entry, failed intent persistence, lost responses, generic errors and incomplete cleanup retain uncertainty; ordinary compaction and original observation recovery remain unchanged.
+
+## cmds/delidev-cli/internal/harness/codex constraints
+
+- Native compaction follows `cmds-delidev-compaction-contract.md`. Claim the original manual request before the native wire, keep acknowledgment/lifecycle/history/cleanup separate, and block ordinary input while that private action owns the connection. Automatic context items require original active-turn ownership and ordered completion. Preserve live and durable replay-position IDs separately, complete history digests and original input provenance across repeated actions; private adapter success alone grants no reserved product capability. Never reconstruct native history, resend uncertainty or fabricate resumed raw-response usage.
+
+## cmds/delidev-cli/internal/harness/opencode constraints
+
+- Original compaction observations join the accepted input with native compaction user/part, summary assistant, independently emitted completion event and marked continuation under the compaction contract. Preserve complete private current inventory and immutable conversation history across replacement. Permit only independently validated native completed-tool pruning markers; never change canonical output or manufacture lifecycle after transport loss. The auxiliary summary task's late context-user metadata is a separate read proof, never input/settlement authority. Manual summarize synchronizes one action-bound claim before a bounded asynchronous original request, joins HTTP lifetime at cleanup and retains uncertainty without resend; its private controller grants no product capability.
+
+- Retained manual compaction inspection pins the final original action/history digest against unchanged ordinary lineage and every inherited context record. Native acknowledgment, context lifecycle, full history and joined cleanup remain independent; no checkpoint or auxiliary read can reconstruct missing native arrivals or command authority.
+
+## cmds/delidev-cli/internal/server constraints
+
+- Forwarding and other late Archive completions must preserve unresolved `compaction_job_id` ownership; conversation cleanup or forwarding cleanup alone cannot release a manual action.
+
+- A valid late native-checkpoint report cannot release a canceled claimed compaction. Retain that observed native result on the uncertain job, original ownership and prior checkpoint; require recovery and leave Archive pending. Only the separately verified Revert pre-send failure with complete no-claim/no-send and cleanup proof can settle its failed canceled action. Cancellation cannot grant successor dispatch.
+
+- Compaction acceptance and execution credential publication require present workspace storage. Pending, uncertain or stored workspaces cannot grant native compaction authority.
+
+- Codex manual compaction requires independent System/Worker profiles, original successful child-free ready boundaries and exact source ownership. Managed authentication uses the original exclusive lease. Finish validates the closed native result union; cancellation or lost ownership cannot grant a successor checkpoint. Go relay observations alone retain original manual HTTP response usage with genuine source-turn ownership, independent of native success. Follow `cmds-delidev-compaction-contract.md`.
+
+- OpenCode manual compaction requires common and independent Worker support, an exact ready successful child-free source and original accepted v2 completion. Validate the closed v3 native result and atomically retain only genuine summary step-finish accounting under the action; cancellation preserves uncertain ownership and never grants a successor checkpoint.
+
+- Session context projects retained compaction jobs through the typed 3 MiB input decoder used by admission and settlement, preserving action state even for large original assignments.
+
+- Conversation Revert follows `cmds-delidev-compaction-contract.md#conversation-revert-and-edit--issue-2045`. Record complete System 62 / Worker 36 declarations with implementation. Preserve one exact original turn/prompt mutation, authoritative paged retained-prefix proof, independent cleanup, immutable prior context/history/usage and original account/Worker. Restore prompt text only as an unsent guarded draft; files and existing Fork/Sidechat snapshots stay unchanged. Uncertainty permits only explicit observation of the exact original intent and cleanup, never a second native send or new target. Verified explicit recovery may settle the canceled original action once without erasing its durable cancellation; ordinary late canceled reports remain quarantined and receipt replay never advances context again. No migration.
+
+## cmds/delidev-cli/internal/store constraints
+
+- Explicit Claude manual compaction uses its own once-claimed action identity and native command lifecycle, fresh applied settings and final idle. It cannot acknowledge conversation input or fabricate the missing local-command result input/terminal fields. Preserve failed compact status even when the outer native result says success, match the original private diagnostic, and require explicit Resume after a settled failure without erasing prior conversation failures. Validate structured command fragments without scraping human output for outcome, keep late callbacks on their original owner, and keep public action publication separate from private lifecycle evidence. Manual history must independently bind command echo/output to the action, original prior conversation and native meta parent. A successful summary may leave the raw selected branch only through that exact manual-action proof and preserved-tail relink. Failed diagnostics keep their original envelope UUID with the native local-command storage representation and exact text digest; never manufacture an assistant record or infer outcome from stdout/stderr tags. Report action, diagnostic, unforwarded caveat and conversation counts separately.
+
+- Manual Codex HTTP response accounting preserves a separate genuine source turn and absent action turn. Keep original action ownership, native response digest deduplication and immutable price snapshots; nullable splits remain unavailable. Separate missing-compaction coverage from ordinary missing-execution coverage without changing historical conversation SQL purposes or adding an empty migration. Follow `cmds-delidev-compaction-contract.md`.
+
+- Compaction retains immutable original execution and restore inputs through one strict 3 MiB input/4 MiB job decoder. Store reads, private backup-restore Job transformation, server scope/settlement, Worker dispatch and original cleanup use those same typed bounds. Restore uses the owning closed Job decoder, including typed workspace recovery history, while retaining generic document and aggregate transformation limits. Worker Connect receive capacity covers the finite serialized job; ordinary jobs retain their 1 MiB contract. Follow `cmds-delidev-compaction-contract.md`.
+
+- Compaction HTTP pricing uses the same source-aware nullable estimate for publication and historical verification. A configured price cannot reject an otherwise valid original sparse observation or fill absent token splits; replay/restart retains the original basis and estimate.
+
+## cmds/delidev-cli/internal/worker constraints
+
+- Claude compaction boundaries and original anchored synthetic summaries never acknowledge product input or replace usage/terminal facts. Pending summaries block progress and later inputs. Compacted history must separately prove exact native boundary/summary metadata, original logical conversation provenance and the prior-context relinking order; retain active versus compacted messages without rewriting native files. Only byte-equivalent prior-chain records apart from the verified bounded native slug may repeat before a proved boundary, including native batched writes outside preserved context. Keep repeat/message counts distinct, bound aggregate reconciliation work and preserve unknown summary forms, manual actions, child compaction and Resume as separate required evidence.
+
+- OpenCode native parts retain distinct text/reasoning/tool/file/step/snapshot/patch/agent/retry/compaction/subtask families with original part/session/message identity and private payloads. Tool pending raw arguments, applied input, approval, running state, completed result and error are separate facts. File attachments must keep their original parent and unique identities, never recursive tools. Decoding references cannot fetch/open/reapply them or grant snapshot/undo/child/retry authority. Preserve explicit flags, source coordinate units and overlapping usage observations; ordered original call/state ownership still requires its dedicated observer before publication or continuation.
+
+- Claude session progress retains original native event/turn identity and pre-acceptance chronology without consuming input queue accounting. Preserve explicit nullable status/permission/compaction facts and exact uint64 thinking estimates, separate from provider usage and outcome. Binding/progress/content share one ordered outbox with original receipt-only retries. Keep initial settings immutable and native permission changes sticky without revoking the current accepted response relay; future input requires independent configuration reconciliation. Desktop disclosure must validate complete nonmixed records, show prior-execution ownership and preserve exact strings. Tool/task progress and continuation remain separately proved integrations; root API retry uses the exact original publication contract below.
+
+- Public Claude compaction preserves original boundary/anchored summary identities, exact unsigned context counters and optional native references through the shared receipt-ordered outbox. Neither observation accepts input or replaces original transcript/usage/outcome. Commit pending summary ownership only after acknowledgment, independently join its exact native/product boundary on the server, and require closure before terminal/continuation. Retain actual native compacted-history proofs for v2 and comparison-only recovery; a closed public flag or manual trigger cannot grant manual-command authority. Reject mixed payloads, explicit null optional native fields and foreign/overlapping summaries; render original context inertly.
+
+- Compaction registration and send claims are create-once private files. Existing complete or partial claims always require recovery, including when the outer job journal is missing; no identical retry, replacement write or concurrent loser may gain another native send.
+
+- Compaction checkpoint v2 pins the canonical registration and command claim digests. Before native restoration, require both private original claims and their exact action, execution, registration-request and credential-digest join. Preserve unproven v1 files for recovery; never synthesize or upgrade missing claims.
+
+- Codex continuation after native compaction retains complete inherited context lineage in the original private checkpoint. Pin original rollout bytes before replacement, independently verify full native history after Resume and preserve ordinary input/terminal provenance. A last-action reference, idle state or successful native HTTP response cannot replace original process/workspace cleanup, durable command claims or complete context proof. Keep raw context, paths and credentials outside public resources and validation logs.
+
+- Codex manual compaction synchronizes original registration/send claims before one native request, verifies the complete original private checkpoint and every repeated action, and joins quota observers, native process, proxy and workspace before retention. Successors restore the original action journal and complete history rather than borrowing the preceding ordinary checkpoint. Unknown acknowledgment/cleanup never permits another send. Follow `cmds-delidev-compaction-contract.md`.
+
+- Public OpenCode manual compaction negotiates independent Worker capability 14 after original pinned installation verification. Synchronize original registration/command/native Resume/summarize claims, validate every previous accepted action and ordinary source journal, and join native HTTP/event/process/workspace cleanup before retention. Successors restore the last accepted native snapshot while preserving ordinary report ownership; no uncertain send replay.
+
+## cmds/delidev-cli/internal/workspace constraints
+
+- Claimed removal accepts only immutable directory permissions or the exact writable native mode authorized by an original durable directory-mode transition. Retain that transition through journal compaction, partial recovery and failure; check directory identity and permissions again before unlink. Preserve retained-writer permission changes as unresolved recovery.
+
+Removal journals use newline-framed records. Validate the complete prefix before atomically discarding an unterminated final append; malformed complete records remain uncertain and unchanged. Retain per-entry removed receipts through compaction. Recovery accepts an absent entry only with its own durable renamed/removal proof, and rejects reappearing settled entries. Legacy cleared records grant no missing-entry authority.
+
+Compact settled removal proof to one original inventory path per entry, without generated private-path repetition. Admit these projection records only through validated atomic compaction, and validate membership in the unchanged original intent. Successful recovered cleanup must emit its original canonical source/preview digest.

@@ -1,123 +1,33 @@
-- Project first-prompt history follows the sessions/storage/desktop/protocol/client contracts for issue #1828. Preserve immutable project-owned text with empty session IDs, atomic 100-entry acceptance order, actor-bound confirmed clear receipts, scoped byte-bounded reads and text-only boundary recall. System 48 / EntityKind 35 add no Worker capability or migration. Session deletion preserves history; project deletion removes it, managed backups capture it and portable exports exclude it. Never log prompt text.
+# packages/delidev-api-client working instructions
 
-- OAuth format selection activates only the main-established PR #1657 ProviderInventory capability 8 and Start/attempt fields 4/7. Follow `docs/cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations`: bind the original explicit Bearer profile without changing the authentication adapter, retain omitted legacy receipt bytes and original recovery/cleanup authority, and keep unaccepted provider registrations disabled. Common manual/OAuth UI explicitly selects multiple formats or displays a sole profile; no migration or native change.
-- Key-preserving API format changes follow `docs/cmds-delidev-accounts-contract.md#connected-api-format-changes` after main reservation PR #1666. Capability 9 owns the atomic format/preferences RPC; preserve capability 7 and OAuth reservation 8, bounded server-owned generations sharing the original protected key, immutable original execution/continuation profiles, explicit current validation, all-generation cleanup and portable exclusions. Observation-only edits rebase protected fields/revision while retaining drafts; editable conflicts block saves. No migration, native change or format conversion.
+- Follow the root instruction-update policy and the nearest parent instructions.
+- This file covers `packages/delidev-api-client/` and its descendants unless a more specific instruction file applies.
+- Read the owning contracts below before changing behavior, including affected cross-domain consumers.
 
-- Per-key API formats follow the catalog/protocol contracts and PR #1646 allocations. Negotiate ProviderInventory capability 7, retain closed API format/authentication enums and schema-3 API family checks independently of ordered-source Agents, and preserve original request bytes. Portable v4 accepts existing v1–3 semantics; no Worker wire change or client-side format conversion is authorized.
-
-- Failed subscription cleanup follows `docs/cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations` after main reservation PR #1614 (System 41). Preserve server-owned complete batches, original actor/login/revision, shared vault/reference deletion checks, atomic result/tombstone receipts, joined shutdown and restore quarantine. Terminal failures require a new explicit batch; status/restart never relaunches login or callbacks. No database migration or Rust/native change.
-
-- Agent Worker wizard saving follows the catalog/protocol contracts: derive one current account source, require at least one account, preserve ordered routing, resolve exact model identity and write model plus Worker in one receipt transaction. Bind source-scoped list cursors before pagination. Preserve canonical metadata/history and legacy accountless APIs; capability 33 is configuration support, never native readiness.
-# DeliDev delidev-api-client ownership
-
-- Historical import, generated-path and aggregate-reflection preservation rules below apply only before complete protocol-2/baseline-32 reset activation under `docs/cmds-delidev-structure-contract.md#pre-release-compatibility-reset`. Reservations alone retain all pre-reset behavior and grant no reset support. At complete activation, use canonical generated service modules and package-root exports and retire only the historical import/reflection facades. The current reset is complete. Preserve numeric allocation ownership, current adapters, capabilities, authentication/refusals and tool-generated outputs; a legacy name alone does not identify removable compatibility code.
-
-- Repository listing/Clone use generated IntegrationQuery/WorkerQuery under the protocol/client contracts, with independent System 31/32 / Worker 18 negotiation. Preserve explicit profile revision/generation/page, transient fresh local proof and identical uncertain request bytes. No PAT read model, client-side Git, persistent draft or frontend registration follow-up is permitted.
-
-- Buf generates service-specific files. Before complete reset activation, `scripts/delidev/proto-compat.mjs` generates historical TypeScript import facades; keep both package-root exports and legacy `./gen/*` paths working and regenerate facades through `pnpm proto:generate`, never by hand. After complete activation, that tool retires historical facades; retain canonical generated service paths and package-root exports under the reset contract.
+## Development and validation
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
-- Generated ActivityQuery retains the typed PR metadata and PR_HANDLING_V1 capability under the activity contract. Keep exact source revisions and version references; source inspection is an explicit disposable read, and attempt success cannot become verified handling.
+## Owning contracts
 
-- DeliDev generated user-service queries retain exact bigint revisions and original requests; capability support is separate from native manager availability and cleanup. Keep private native identities and credentials off the service wire, and follow `docs/cmds-delidev-user-services-contract.md`.
-
-- Backup job observation uses owner/client `GetBackupCreation` and `GetBackupDeletion` independently of bounded history pages. Keep accepted IDs and exact revisions through navigation, refresh inventory after observed completion, and never replay a mutation to poll status. Follow `docs/cmds-delidev-storage-contract.md`.
-
-- Managed backup deletion uses existing durable jobs/receipts and schema-24 indexing, plus immutable synchronized `backup-deletions/` intents outside SQLite before unlink. Preserve exact inspected revision/metadata/hash, original actor/request identity, startup obligation reconstruction, creation-replay suppression, bounded pending retries and source preservation on mismatch. Never evict deletion obligations or equate logical image bytes with reclaimed disk space; follow `docs/cmds-delidev-storage-contract.md`.
-
-- DeliDev portable configuration uses generated ConfigurationQuery export/preview/apply bindings. Keep original document bytes and exact request identities under `docs/cmds-delidev-configuration-transfer-contract.md`; client parsing never becomes authorization, validation or numeric reserialization authority.
-
-- DeliDev workspace file queries use generated `SessionQuery.readSessionWorkspace`; no client filesystem or duplicated authorization logic. Keep file contents in bounded nonpersistent view caches, preserve exact decimal size strings, and render them as inert text under `docs/cmds-delidev-files-contract.md`.
-
-- `packages/delidev-api-client` owns the private generated TypeScript/Connect Query bindings and bounded read-only synchronization helpers. Follow `docs/packages-delidev-api-client-contract.md`. Generate all descriptors from `delidev.v1`; never duplicate Go product validation or add implicit startup/mutation retry.
-
-- Generated DeliDev UsageQuery exposes the additive explicit granularity/timezone fields and optional same-snapshot daily/model analytics. Preserve exact decimal counter strings and server-supplied Other groups; the client must not recreate aggregates or rank results locally. Follow `docs/packages-delidev-api-client-contract.md`.
-
-- DeliDev `SessionQuery.readSessionReviewContext` carries authoritative Worker diff coordinates with original side/range/text/newline facts. Clients cannot manufacture line anchors for binary, mode-only, symbolic-link or submodule changes. Keep observations bounded and nonpersistent under `docs/cmds-delidev-files-contract.md`.
-
-- DeliDev generated SessionQuery local review mutations preserve exact decimal revisions, original anchor/context and immutable submitted snapshots. Retain exact uncertain wire requests across panel navigation; current Resource refresh cannot silently update a selected revision. Use the dedicated owner/client operations under `docs/cmds-delidev-files-contract.md`.
-
-- DeliDev generated IntegrationQuery follows `docs/cmds-delidev-integrations-contract.md`; write-only PATs never enter query keys/read models and pending revision strings remain exact. Generate all service descriptors from the canonical proto.
-
-- DeliDev IntegrationQuery includes the generated repository access read. Consumers preserve its exact scope and decimal revision and independently validate observations; endpoint availability is not future authorization or semantic CI/rules evidence.
-
-- DeliDev IntegrationQuery includes generated repository content queries. Keep strict query/scope validation, exact decimal IDs with original API identity source, explicit search/page limits and nullable mergeability; no query cache or content response may carry saved PATs.
-
-- DeliDev retained PR feedback uses generated IntegrationQuery refresh/list/dismissal bindings. Preserve exact remote numeric strings, resource revisions and original content-version/request identities. No implicit collection, mutation retry, handling inference or browser persistence is allowed; follow the integration contract.
-
-- DeliDev IntegrationQuery exposes generated retained remediation-history and explicit allowance-resumption bindings. Preserve exact numeric PR IDs and original set/revision/request identity without persistence, implicit mutation retry or execution inference; follow the integration/client contracts.
-
-- DeliDev provider and model settings follow `docs/cmds-delidev-provider-activation-contract.md`: capability-gate against ProviderInventory, derive exact counts from the server, paginate custom providers, filter model reads/selections server-side to enabled API providers, and preserve explicit Off references. Do not add a client-side activation/eligibility source.
-
-- DeliDev session forwards follow `docs/cmds-delidev-forwarding-contract.md`: preserve explicit loopback port selection, original client/Worker/device/instance ownership, negotiated capabilities and bounded ordered opaque traffic. Native claims precede sockets and receipt replay grants no new lifetime. Keep Stop independent from Archive, gate every Archive completion on both original cleanup outcomes, and retain positive private cleanup receipts through offline reporting without redialing or recreating listeners. Worker credentials receive only their original forwarding peer endpoints.
-
-- Before complete reset activation, preserve legacy generated-path reflection exports as well as declaration imports. Generate the aggregate descriptor view in the compatibility pass, retain original declaration order and canonical TypeScript object identity, and cover both direct enumeration and registry construction in compatibility tests. Complete activation retires those historical aggregate views under the reset contract; current service declarations retain their original identity and numeric ownership.
-
-- Generated SessionQuery permanent-deletion acceptance/status and Worker cleanup queries preserve original UUIDs, BigInt revisions, pending removal and unknown reclaimed bytes. Generate through the canonical split schema and compatibility pass; no client-side ownership decisions or automatic mutation replay. Follow `docs/cmds-delidev-storage-contract.md`.
-- WorkspaceStorageQuery exposes generated owner/client storage request, inspection and cancellation operations. Preserve exact session/job revisions, original receipts and separate observed native outcomes without implicit mutation retry or cleanup inference.
-
-- TerminalQuery and WorkerQuery expose the generated session terminal operations. Preserve exact bigint cursors/revisions, original bytes, explicit output gaps and request identities without persistence or native side-effect retries; follow the terminal contract.
-
-- Export generated PullRequestFixQuery and its typed profile from the additive PR-fix service. Preserve original request bytes/revisions and facade declaration identity; native Git authority remains Worker-local.
-
-- Native subagent observations follow `docs/cmds-delidev-subagents-contract.md`. Validate original bounded ownership and complete batches before atomic publication; preserve exact receipts, source coverage, requested versus observed models and nullable non-additive usage. Live/unavailable children retain independent cleanup obligations after parent completion. Observation never grants child control or unproved continuation.
-- DeliDev API clients export the generated SubscriptionService and closed managed Codex capability/action types. Keep authentication bundles out of Query keys, persistence, synchronization, errors and ordinary resource models. Public clients cannot invoke the protected Worker lane. Follow `docs/cmds-delidev-subscription-contract.md` and retain generation freshness checks.
-- DeliDev API clients export the generated SubscriptionService and closed managed Codex capability/action types. Keep authentication bundles out of Query keys, persistence, synchronization, errors and ordinary resource models. Public clients cannot invoke the protected Worker lane. Follow `docs/cmds-delidev-subscription-contract.md` and retain generation freshness checks.
-
-- Generated NetworkQuery follows `docs/cmds-delidev-network-contract.md`, retaining exact revisions and write-only credential input outside query caches. Preserve service-specific exports; legacy generated paths/reflection are retained only before complete reset activation under the exception above. Signed Worker metadata never proves native installation or encrypted credential transfer.
-
-- Codex Fork uses owner/client-only `SessionService.ForkSession` and `GetSessionFork`, typed `ForkWorkspace`, and allocation-ledger capability `CODEX_SESSION_FORK_V1 = 13`. Local proof is write-only; exact job/child observation cannot replay native creation. Preserve split service ownership and generated compatibility exports under `docs/cmds-delidev-forks-contract.md`.
-
-- Managed database restore follows `docs/cmds-delidev-storage-contract.md`: exact inspected image/live revision and actor-bound external receipts, exclusive settled ownership, immutable current safety/deletion authority, paused/quarantined historical work, and pre-open journal recovery. Preserve typed publication-versus-startup outcomes; uncertain retries never republish or revive native claims.
-
-- Generated `SessionQuery.switchSessionAccount` preserves the exact session revision, UUID-v7 receipt and explicitly selected account. Gate availability with the typed System capability, retain uncertain requests without automatic mutation retries, and leave stopped-session compatibility/authorization in Go.
-
-- Native context and manual compaction use the generated SessionService declarations and closed SessionContextCapability values in `docs/cmds-delidev-claude-compaction-contract.md`. Preserve raw bounded observation JSON, exact uint64 mutation revisions and UUID-v7 retry identity; never infer utilization or action success from an outer envelope.
-
-- Generated UsageQuery consumers verify the NATIVE_UNITS_V1 echo before interpreting native accounting, preserve decimal totals and distinct unit kinds, and keep legacy response fields separate. Grok pricing and budget contribution remain unavailable.
-
-- Generated BrowserQuery bindings expose only the metadata/cleanup contract in `docs/cmds-delidev-browser-contract.md`. Keep browser URLs, tabs and native paths out of product RPCs and React Query server state; local native presentation is independently authorized and generation-bound.
-
-- Generated NativeModelQuery bindings retain exact bigint revisions, original mutation identities and immutable observation cursors under `docs/cmds-delidev-native-models-contract.md`. Keep canonical registration a separate explicit save and advisory metadata outside any client authorization/readiness engine.
-
-- Generated SessionQuery request diagnostics keeps optional metadata, original identity and exact bigint revision/latency under the diagnostics contract. Never infer requests from time proximity or resend a request from a diagnostic receipt.
-
-- `configuration-identity.ts` owns bounded schema-family read negotiation and closed JSON/wire service identity mappings. Preserve API-only v1, recognize only owning v2 families and keep retired original documents inert. It grants no mutation, native support or credential authority; synchronization preserves exact revisions and full snapshot/event atomicity under the client contract.
-
-- Worker network bootstrap/status uses canonical generated NetworkQuery/WorkerQuery declarations. Preserve exact uint64 generations and original request identity. Ciphertext export is a mutation result, never persistent query state; credentials/private keys/decrypted derivatives cannot enter query keys or read projections. Public desired/effective/native states remain independent and grant no execution or observed route use.
-
-- OpenCode Fork independently negotiates System 26 / Worker 15 through the existing SessionQuery fork operations. Preserve exact native turn identities and inherited provenance; preparation grants no child control, effective settings or additive usage. Follow `docs/cmds-delidev-forks-contract.md`.
-
-- OAuth generated bindings retain independent capability 5, field 9 and the closed enums/RPCs under the OAuth contract. Keep code out of cached query/mutation variables and preserve exact original completion identity for code-free local recovery; never add automatic exchange retry.
-
-- Provider presentation identity/order comes from the closed 35-ID mapping in provider-presets.ts; keep the original six, added 26 and local three order consistent with server inventory. This mapping never replaces authenticated availability, account counts or capability negotiation.
-
-- Export independent server-login capability 30, typed progress state/name/generation and write-only original callback messages. URLs, callback bytes and unsaved suggested names stay outside shared caches/persistence/logs. Preserve API, Worker protected-lane and quota authorization; generate outputs from reconciled schemas.
-
-- Subscription diagnostic bindings are generated from main-established protocol allocations. Preserve missing diagnostics separately from an empty detected version; metadata never grants callback/login replay or automatic retry authority.
-
-- Agent Worker ordered source routes follow the catalog, desktop, protocol and sessions contracts. Main reservation PR #1371 owns System capability 36 and SaveAgentWorkerRequest.route_models field 5; preserve capability 35. Keep schema-3 routes exclusive with legacy fields, all models/accounts referenced and saved atomically, per-source routing state updated only with a successful first claim, confirmed-exhaustion-only fallback and observed-recovery preference for later new sessions. Preserve immutable executions, old-client write protection and portable v1/v2/v3 compatibility; add no SQLite migration.
-
-- Remote repository clients negotiate generated System 37 before saves/imports and preserve Worker 19 independent managed-clone gates. Retain original request bytes and source-kind/URL identity, optional checkout semantics and legacy immutable records under the protocol/workspace contracts.
-
-- Native Claude generated bindings expose System 38 / Worker 20 and closed method/diagnostic/profile metadata. Never place original login URLs or approval-code bytes in query caches, persistent mutation state or logs. Submit is initiating-owner/client-only; protected Take is original-Worker-only. Capability metadata grants no native login or cross-device execution.
-- Inline Worker models and endpoint-only completion follow the allocation amendment in `docs/cmds-delidev-catalog-contract.md`. Record System 42 / Worker 22 and the complete endpoint/identity/pricing declarations in the owning feature PR. Compose complete DB 32 / protocol 2 reset with Worker schema 4 and portable bundle 4, removing independent Models/persistent API catalogs while preserving exact inline settings, pricing history and native/account authority. Earlier DBs and backups are unsupported. The owner waives earlier DB retention, permitting an explicit reset of its DB/sidecars without conversion; protected credentials and native ownership retain their original cleanup authority. Reservation-only changes grant no support.
-
-- Standalone GitHub repository access inspection is retired. Preserve the allocated RPC and messages for older clients; authenticated owner/paired-client calls return typed Unsupported/Connect Unimplemented with safe guidance and correlation. The endpoint performs no store, vault, admission or outbound work. Browse and PR operations retain their independent selected-profile/generation/revision checks. Follow `docs/cmds-delidev-integrations-contract.md#retired-standalone-repository-access-inspection`.
-
-- Managed ChatGPT Sidechat follows issue #1829 and `docs/cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat--issue-1829`. Compose System 47 / Worker 26 with original Sidechat 27/16 and protected Worker 3. Freeze original generation/actor/source/instance; use the exact claimed Fork EXECUTE lease and server-owned Finish receipt before publication. Recheck managed authentication plus read-only enforcement before Fork/input/Steer/compaction. Preserve joined process/plaintext cleanup, original account/history, uncertainty and dependent deletion. Independent subscription Fork stays unsupported; no migration/new login. Fixtures do not establish native/account/platform acceptance.
-
-- Issue #1859 remote starting branches uses System 51 / Worker 27 under the workspace, desktop and protocol contracts. Freeze configured source and project/repository/machine revisions; only the original authenticated selected Worker owns read-only native Git discovery. Retain complete 10,000-branch/8 MiB inventory bounds with feature-only job/journal/receipt/transport headroom, protected native Git credentials, safe logs and joined process cleanup. Discovery grants no checkout/preparation/execution authority or migration. Creation preserves saved/manual starting references, independent overrides, comparison base, Local proof and exact uncertain retries; older peers retain manual flows.
-
-- `decodeResourceDocument` in `configuration-identity.ts` owns shared document/schema reads: ordinary resources retain 1 MiB, with only schema-1 `compact-session` Jobs and `workspace-storage` Jobs whose input action is `recover` bounded to 4 MiB. Desktop/receipt and synchronization consumers share this rule without changing aggregate cache limits or original identity checks. Decoding grants no operation or native authority; follow the client, compaction and storage contracts.
-
-- Project behavior settings follow `docs/cmds-delidev-catalog-contract.md#project-behavior-settings-issue-1965`: System 52, schema-2 Project/Settings and portable v5 preserve continuous typed inheritance, explicit project context, source-route/Agent and repository precedence, all three fetch gates, immutable snapshots and first-publication durable plan response decisions. Previously pending plans stay manual; uncertainty never permits resend. Preserve v1–4 imports and reject destructive legacy writes. No SQLite migration or Worker capability is added.
-
-- Issues #2054/#2057 follow `docs/cmds-delidev-catalog-contract.md#new-session-defaults-and-literal-branch-prefixes--issues-2054-and-2057`: System 56/Worker 38, schema-3 Project/Settings and portable v6 preserve capability52, schema1/2 reads and v1–5 imports. Reject destructive legacy writes. Resolve creation Plan defaults until explicit checkbox edit; freeze pending/uncertain mode and exact requests. Preserve literal `delidev/` default, absent inheritance/empty disable, exact UTF-8 ref validation, original source revisions and legacy execution omission bytes. Compose bounded shared prefix instructions in Execute only through existing four-harness channels, never in Plan/read-only Sidechat or shell interpolation. Preserve all native/account/workspace/history/cleanup authority; no migration or numeric native gate.
-
-- Issue #2097 OpenCode Go/Go Plus follows `docs/cmds-delidev-opencode-go-subscription-contract.md`. Preserve identity 4, System 54 and Worker 28 with System 52 Project behavior ownership. Only the exact OpenCode key-backed service may use the fixed Go Chat Completions profile and original accepted native-session header. Reuse protected AccountAPI receipts, joined revocation and confirmed independent cleanup; no native login, quota authority, paid connection validation or migration. Retain category-owned exact uncertain requests and immutable continuation/Fork attribution.
-
-- Sidechat same-question retry follows `docs/cmds-delidev-sidechat-contract.md#same-question-retry--issue-2061`: System 57 / Worker 31 compose original 27/16 and managed 47/26/3. Preserve one direct text-only question, exact actor/revision/turn receipts, immutable child/snapshots, original metadata-only workspace reference, captured Worker/native authority, atomic current-answer publication and all-generation joined cleanup within existing bounds. Never replay uncertain native work, create another child or add a migration.
-
-- Current protocol-2 imports use canonical generated service modules and package-root exports. Retire historical aggregate/query facades. The shared parser supports only schema-4 inline Agent routes and rejects Model resources, ambiguous source identities and older/mixed Agent layouts; preserve all currently activated unrelated Project/Settings/API-profile schemas.
+- [API account browser OAuth](../../docs/cmds-delidev-account-oauth-contract.md)
+- [DeliDev account lifecycle](../../docs/cmds-delidev-accounts-contract.md)
+- [DeliDev protected account browser](../../docs/cmds-delidev-browser-contract.md)
+- [DeliDev provider and model catalog](../../docs/cmds-delidev-catalog-contract.md)
+- [DeliDev Claude native context and manual compaction contract](../../docs/cmds-delidev-claude-compaction-contract.md)
+- [DeliDev Portable Configuration](../../docs/cmds-delidev-configuration-transfer-contract.md)
+- [DeliDev Session Files and Git Comparisons](../../docs/cmds-delidev-files-contract.md)
+- [DeliDev same-account native session forks](../../docs/cmds-delidev-forks-contract.md)
+- [DeliDev Session Development-Server Forwarding](../../docs/cmds-delidev-forwarding-contract.md)
+- [DeliDev GitHub Integration Profiles](../../docs/cmds-delidev-integrations-contract.md)
+- [DeliDev native Codex model observations](../../docs/cmds-delidev-native-models-contract.md)
+- [DeliDev explicit outbound network contract](../../docs/cmds-delidev-network-contract.md)
+- [OpenCode Go subscription contract](../../docs/cmds-delidev-opencode-go-subscription-contract.md)
+- [DeliDev API provider activation](../../docs/cmds-delidev-provider-activation-contract.md)
+- [DeliDev native read-only Sidechat](../../docs/cmds-delidev-sidechat-contract.md)
+- [DeliDev storage operations](../../docs/cmds-delidev-storage-contract.md)
+- [DeliDev source ownership and compatibility](../../docs/cmds-delidev-structure-contract.md)
+- [DeliDev native subagent observations](../../docs/cmds-delidev-subagents-contract.md)
+- [DeliDev native subscriptions](../../docs/cmds-delidev-subscription-contract.md)
+- [DeliDev current-user service contract](../../docs/cmds-delidev-user-services-contract.md)
+- [DeliDev TypeScript client](../../docs/packages-delidev-api-client-contract.md)

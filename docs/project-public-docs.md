@@ -29,6 +29,10 @@ Provide the Rspress-based public documentation site for user-facing product and 
 - Public-docs build and route-validation caches include all eight canonical installer sources through package-local external inputs. Generated installer bytes must equal the current source; inherited build dependencies, outputs, and tool inputs remain intact. These cache inputs do not invalidate unrelated workspace tasks. The app-domain contract owns the disposable cache regression boundary.
 - Package-local `pnpm dev` and root `pnpm dev:public-docs` bind to loopback on fixed port `46302`, reject host overrides, preflight that exact port, and fail on conflicts without automatic remapping.
 
+## Project requirements
+
+- `public-docs` -> `apps/public-docs`, `packages/docs-site-switcher`
+
 ## Change Policy
 - Update this index and `docs/apps-public-docs-foundation.md` in the same change for navigation, runtime, or publishing workflow updates.
 - Keep `apps/public-docs` route/content behavior aligned with contract documents.

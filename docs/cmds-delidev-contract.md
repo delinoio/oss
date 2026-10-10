@@ -123,6 +123,128 @@ The read-only `doctor` CLI and System RPC expose version-2 storage, retained Wor
 
 `session terminal create|list|inspect|input|resize|output|reattach|close` exposes the [Worker-owned terminal contract](cmds-delidev-terminals-contract.md). Mutations retain UUID-v7 receipts and revisions, input preserves original bytes, and JSON output frames retain Base64 bytes with exact decimal sequence cursors. Views disconnect independently from native ownership; Agent Stop preserves terminals and Archive joins their original process cleanup.
 
+### Command integration
+
+- `cmds/delidev-cli`: DeliDev CLI, server, and execution Worker; follow scoped AGENTS and `cmds-delidev-contract.md`. Product operations require authenticated Connect and an explicitly started server.
+
+### cmds/delidev-cli constraints
+
+- Subscription cleanup includes fully disconnected service-native accounts without synthetic login IDs. Explicit failed initial ChatGPT deletion uses the shared durable cleanup controller, preserves the original public deletion revision/receipt while checkpoint revisions advance, and never retries a terminal attempt without fresh explicit confirmation. Retain original actor/native/vault/reference checks; no new RPC, protocol allocation or migration. Follow the subscription and account contracts.
+
+- API accounts resolve their selected protocol/URL/authentication through the common provider resolver in every configuration, inspection, routing, execution, title and proxy flow. Follow the catalog/account/protocol contracts and the originating change recorded allocations. Preserve schema-3 API families, portable v4 with v1–3 imports, original defaults and connection pins, account-referenced profile immutability and keyless cleanup proofs; add no migration or format conversion.
+
+- Trusted main DeliDev desktops automatically pair/start the fixed local Worker after authenticated local connection and own one joined native supervision task. Fresh launch or explicit Start may reopen ordinary stopped intent; ensure/retry preserve Stop, pending admission and updater ownership. Share current-user Worker service admission without manager writes. Retain original native child/control handles before readiness, recover only confirmed original exits (including fresh-launch durable generation/scope/desktop-client/PID/kernel-birth proof for newly recorded controllers), and stop only app-owned children on normal Quit under the existing 35-second grace. Preserve borrowed CLI/service Workers, saved connections, crash/EOF survival and all native execution uncertainty. Follow the desktop, CLI and user-service contracts; no protocol allocation or database migration.
+
+- macOS protected credential access allows OS-owned Keychain authentication in the server user's session for reads, writes, deletion, background work and Doctor. Set process interaction once during framework initialization and retain the default per-query allow policy; never toggle it per request. Preserve exact references, executable verification, mutation reconciliation and typed cancellation/denial. Never collect Keychain passwords or use plaintext fallback. Linux/Windows stay noninteractive. Automatic native fixtures suppress UI only inside isolated test processes and use temporary Keychains; interactive acceptance is separate. Follow the credential and diagnostics contracts.
+
+Record implementation status and validation results in pull requests, issues and CI logs/artifacts under the root DeliDev validation policy. Do not add repository evidence documents. Update instructions only when their rules or ownership change, not merely to record another validation run.
+
+- Codex child ownership requires the original sender/receiver spawn evidence or a complete validated state-DB-only descendant read. A child `thread/started` notification may refine only an already proved exact parent relationship; unmatched starts remain discarded metadata and cannot allocate a product child or cleanup obligation.
+
+- Every Codex child collaboration, metadata notification and descendant-history snapshot publishes only output, observed model and usage actually supplied by that source. Retain last available values separately for later ownership comparisons; current-source omission cannot copy prior telemetry into an immutable receipt.
+
+- Fork workspace preparation validates every repository's manifest eligibility and the complete derived request before creating a child process index or launching Git. Definite manifest rejection must leave no new unpublished child scope; native HEAD/ownership failures retain their recovery classification and process evidence.
+
+- Network bootstrap and native routing additionally read `internal/workernetwork/AGENTS.md`, `internal/nativeproxy/AGENTS.md` and `internal/outbound/AGENTS.md`. Go owns protected recipient/cache publication, authenticated generation admission and original runtime tunnel claims; native hosts grant only bounded OS/file presentation. Follow the network contract and keep capability reservations separate from product activation.
+
+- Agent Worker ordered source routes follow the catalog, desktop, protocol and sessions contracts. Main reservation the originating change owns System capability 36 and SaveAgentWorkerRequest.route_models field 5; preserve capability 35. Keep schema-3 routes exclusive with legacy fields, all models/accounts referenced and saved atomically, per-source routing state updated only with a successful first claim, confirmed-exhaustion-only fallback and observed-recovery preference for later new sessions. Preserve immutable executions, old-client write protection and portable v1/v2/v3 compatibility; add no SQLite migration.
+
+- Repository saves/imports require credential-free remote_url and allow empty checkouts. Gate remote managed preparation at acceptance/assignment with Worker 19, pin source kind and URL, and preserve explicit Local authentication, immutable historical preparation and no automatic conversion. Follow the workspace/transfer/protocol contracts.
+
+- Protected `AccountLogin` read failures omit private subscription generation/reference IDs from vault logs, including Doctor reads through an existing vault. Preserve safe operation/owner/purpose/error classification and independent API original-reference diagnostics; do not change exact reads or native/mutation ownership. Follow the credential and diagnostics contracts.
+
+- New server-service TLS references are captured as absolute paths in the original CLI/server startup cwd. Historical relative specs cannot Start/run; preserve inspect/Stop/Remove and original receipts for explicit reinstall, never reinterpret or copy credential files. Follow the current-user service contract; no migration.
+
+- Native generated images in the feature follow the image-input contract. Record System 61/Worker 35 with complete activation, preserve actual managed OpenAI provider/auth proof, original call order and usage limits, metadata-only server references and durable original Worker byte ownership. No custom generation bridge, backend-ID/usage fabrication or migration; independent Fork owners and unpublished output intents survive cleanup until their original ownership is settled.
+
+- Native generated images in the feature follow the image-input contract. Record System 61/Worker 35 with complete activation, preserve actual managed OpenAI provider/auth proof, original call order and usage limits, metadata-only server references and durable original Worker byte ownership. No custom generation bridge, backend-ID/usage fabrication or migration; independent Fork owners and unpublished output intents survive cleanup until their original ownership is settled. Freeze image-generation admission in original assignments and all-generation deletion work; require original Worker 35 support before a first cleanup acknowledgment without rewriting completed receipts. Read-only Sidechat may consume bounded original image-bearing history while generation remains disabled.
+
+- Waiting input movement follows the sessions, storage, protocol and desktop contracts. Preserve System 75, original actor/revision/generation receipts, private dispatch order with unchanged public acceptance sequence, every claim's effective head and exact uint64/bigint generation. Freeze explicit Fork image sets at admission and retain original Worker byte/deletion ownership; legacy jobs retain their verified cutoff. No Worker allocation, public rank or migration.
+
+- ChatGPT/Codex paid-credit observations use independent System 76 / Worker 51 and the subscription contract. Preserve exact bounded decimal strings, per-bucket original timestamps, null/zero/unlimited distinction, sparse/failure retention, protected generation and reflection fences. No balance aggregation, currency conversion, purchase/consumption authority or SQLite migration.
+
+### cmds/delidev-cli/internal/cli constraints
+
+- Worker-local execution journals must precede side effects, persist outcomes before reports, and reuse exact report request identities after a lost response. Do not repeat an interrupted operation merely because its completion record is missing. Pairing/device files are private; ordinary CLI output may contain their paths and public identities, never their contents.
+
+- Bounded CLI job waits retain the latest accepted job and return a typed nonzero failure on timeout, cancellation or uncertainty; never report those states as completed work.
+
+- Claude interrupted-denial cleanup requires its original callback/result/command/idle profile before accepting the pinned CLI's exact EOF exit code 1. Keep ordinary EOF completion at code 0, reject every other exit and pending/trailing/partial protocol state, and join forced cleanup after failed EOF without granting proof. The cleanup classification retains absent native input-result identity and cannot grant history, continuation or Worker publication authority alone.
+
+- Public remediation history and explicit allowance resumption follow the integration/protocol contracts. Keep stable remote PR ownership, newest-first original records, a complete bounded revision fingerprint and 1 MiB pages; binding/uncertainty changes must invalidate cursors even without a set revision change. Owner/client resumption advances only the original allowance baseline, preserves lifetime counts/history, refuses active/uncertain ownership and uses current-state reference receipts. RPC/CLI parity must not require a PAT, create Worker jobs or override session pause/Archive.
+
+- Explicit local desktop recovery follows the desktop and CLI contracts: only original local owner authority may replace a positively verified revoked fixed-scope client. Preserve its original request/revision, archived private files and candidate pairing journal; gate partial publication with stable recovery/pairing locks, reject lost/altered evidence, and never turn bootstrap, supervision, inspection or a lost receipt into a fresh registration. Keep owner secrets out of IPC and retain all server/session/Worker state. The desktop hides and independently guards current-client revocation; other-device/owner administration remains available.
+
+- Common parsing, authenticated clients, document input, and output envelopes belong to `arguments.go`, `client.go`, `document.go`, and `output.go`. Command-family dispatch belongs in `dispatch_<family>.go`; preserve request ID propagation and the generic resource fallback. Helpers that allocate mutation IDs must update the options owned by the emitting dispatcher, preserving their validation order. OAuth original-only recovery must check the explicit ID before allocation; read-only commands never allocate one.
+
+- Authenticated update check/get/worker-request/cancel preserve original request/revision receipts and capability negotiation. Closed native update helpers select only fixed paired scopes and original server/window generations, independently verify signed bytes and persist offline installation outcomes. Worker replacement helpers retain both binaries and exact lifecycle proof, never a generic executable or shell capability.
+
+- Explicit detached starts select and independently verify the signed installed Worker controller before native version admission. A stale bundled CLI must not reserve its version and spawn a different version. Preserve the original registration and generation-bound Stop; ambiguous outcomes remain inspect-only.
+
+- New local Worker registration intents pin the literal `This computer` name before grant issuance. Legacy outer intents without a name retain `DeliDev local Worker`; preserve pending machine bytes, completed/custom names, original receipts and credentials. Client names remain `DeliDev desktop`. Saved-profile registration follows the same rule in the connections contract; no protocol allocation or migration.
+
+### cmds/delidev-cli/internal/domain constraints
+
+- Recheck WAL/SHM/journal absence before publishing an inspection, including when opened main-file identity and bytes remain unchanged throughout the private copy.
+
+- Follow `project-delidev.md`, `cmds-delidev-contract.md`, `protos-delidev-v1-contract.md`, and the complete feature requirements snapshot.
+
+- Missing vault identity recovery may remove only validated initial-pin atomic scratch in an otherwise empty root under its exclusive lock; preserve all populated-vault evidence.
+
+- Git remote HEAD inspection treats only documented symbolic-ref status 1 as an unavailable default; propagate all ownership, timeout, launch and other exit failures.
+
+- Apply bounded cross-frame secret reflection checks to SSE field names, comments and metadata values as well as decoded JSON field names, string deltas and exact numeric spellings before delivering any original frame bytes. Unknown or colonless fields cannot bypass these checks; repeated JSON enclosing keys cannot reset a nested key-fragment match.
+
+- Coherent resource snapshots share the binary/JSON aggregate byte bound and must fail with explicit narrower-scope guidance before serialization, returning no partial resources or cursor on overflow.
+
+- Required CI contexts retain original suite/lifecycle/output and separately labeled workflow aggregate metadata. Independently validate complete bounded check/status proof and repeated observations. Per-result versions exclude required flags, App display names and workflow-wide attempt/update changes: partial reruns cannot make unchanged old CheckRuns eligible again. Keep original output inert and out of logs; follow the integration contract.
+
+- Private artifact decoding may use only its explicit owning byte bound with the same strict UTF-8, duplicate-key, unknown-field and single-document validation; public command JSON retains the fixed 1 MiB bound.
+
+- Retain original Grok request JSON bytes alongside the typed observation for byte-based proposal digests. Bound both within the existing public event limit; neither representation grants native, filesystem or response authority.
+
+- Compare complete Grok request-ID values for original interaction/reply ownership, including the kind and decimal spelling. Normalized namespace keys retain duplicate-detection compatibility but cannot establish exact request identity.
+
+- New OpenCode known/declared context snapshots pin closed `native-v1` policy before the first digest. Omitted historical policy keeps its original initializer/checkpoint bytes; policy validation rejects unknown values and grants no observed native capacity.
+
+- Private skill preparation actions and proofs are closed metadata on the existing read lane. Preserve original server/request/Worker instance scope digests and opaque snapshot identities; they grant no public RPC or migration.
+
+### cmds/delidev-cli/internal/server constraints
+
+- Normal desktop Quit's launch/retry/ensure modes share Go admission and run newly admitted servers in their original child. Preserve control-pipe ownership before readiness and SIGPIPE suppression only in the host command; EOF grants no Stop, and lost desktop delivery cannot terminate an admitted server. Retain close-to-tray, borrowed CLI/service/remote lifetimes, original-generation suppression and forced-exit/native-cleanup uncertainty.
+
+- The executable is `delidev`; ordinary commands cannot implicitly start the server. Server/sidecar behavior is identical. Local detached TLS readiness may trust only the explicitly configured certificate, with exact peer matching, certificate validity/server-use checks and authenticated status. Wildcard binds dial matching loopback; ordinary/remote clients retain standard hostname and CA verification. Release the completed child startup lifecycle lock before serving any HTTP request, so authenticated readiness already permits immediate reuse and explicit Stop even while startup logging or maintenance setup is delayed.
+
+- Live permission acceptance requires a unique original thread/turn/call/arrival and possible delivery of its exact owner response. Hash immutable sent bytes using pinned effective entries precedence, including present empty entries; never combine deprecated mirrors or reinterpret filesystem paths/globs. Require exact core output permissions, scope and strict-review meaning. Publish only content-free claim-bound evidence for a permissions approval, decrement unconfirmed accounting once, and preserve closure, transport, cleanup and unrelated recovery independently. Generic command/file completion, request resolution and missing history remain insufficient. Validation logs use closed stages without grants, paths, raw output or digests.
+
+- Generic resource pagination must fit both binary and JSON Connect encodings and resume after the last returned record when the byte budget truncates a count-bounded page.
+
+- Applicable PR rules use the current base ref and complete active-only endpoint inventory with checked page metadata, exact ruleset/App numbers, original-policy digests and repeated inventory plus PR binding. Preserve unknown sources and explicit zero App IDs, aggregate without overwriting independent rulesets, and fail on partial/mixed/changed data. Never infer evaluated-commit/result or remediation authority from a rule read; follow the integration contract.
+
+- Required CI inspection uses only the fixed read-only CI GraphQL documents, current REST-bound PR identity and complete repeatedly checked rule/rollup inventories. Match active rules, exact context/App, PR-specific required flags and verified head/test-merge operands. Pinned workflows additionally require the integration contract's immutable original source and independently attributed current-attempt proof; unsupported or unavailable enrichment cannot erase ordinary observations. Preserve Actions event provenance, same-name Check/status separation, unknown App-bound statuses/queues/future rules and terminal-only failure classification. Recompute before publication; observations never substitute for fresh remediation authorization. Follow the integration contract.
+
+- The private execution-dispatch entry point establishes server-owner context before retained PR-history reads. Public RPCs and store boundaries still validate their authenticated actor; ordinary dispatch must not depend on ticker-provided context.
+
+- Verified settled failed Claude completions retain the original failed job/outcome, confirmed cleanup and paused dispatch without next-input intent. Explicit Resume and exact receipt replay use existing fresh-ownership/FIFO gates; lost-report recovery is comparison-only and must preserve the original failure diagnostic on both the session and execution job, plus the pause.
+
+- Finish's error guard owns recovery publication only through its committed ownership mutation and final required vault cleanup. Clear it before response-resource reads so presentation cancellation cannot fence settled state. Failed or unconfirmed final cleanup still retains recovery; accepted receipt replay never clears it.
+
+- Confirmed pre-native execution failure may release its lease only with cleanup confirmation, no refresh/success claim and a protected byte-identical return of the original immutable vault bundle. Preserve that generation, connection, health and independently queued lifecycle operation; cleanup alone cannot establish this outcome. Uncertain failed execution/refresh retains blocked original vault material and ownership for recovery.
+
+- A new Claude child requires an original `claude-task` observation with task metadata and the verified Agent/Task parent tool. Content/history can update only already retained exact child ownership, including nested children; task metadata copied onto another source cannot create ownership. Reject the whole batch before publication.
+
+- Native route observation is monotonic for each immutable claimed runtime: once accepted-target traffic proves Observed, later Failed or Unverified socket reports cannot erase that proof. Distinct runtimes retain independent observations.
+
+- Exchange code/verifier and returned printable-ASCII keys remain owned, zeroizable byte buffers through JSON encoding/decoding. Transport cancellation after a valid key is returned does not discard it: settle under independent bounded original-actor authority, honoring serialized business cancellation before sealing. Expired awaiting attempts with no claimed credential cleanup do not block managed restore; exchanging/saving/recovery and cleanup obligations remain blocking.
+
+- Selected skill preparation must journal the exact original mutation identity before dispatch and retain its unique live claim through mutation. Joined reconciliation removes only after positive original receipt absence; unknown outcomes and replacement Workers retain original ownership.
+
+- Managed Codex installation diagnostics must describe the actual verification refusal and preserve every admission predicate and error classification. Bounded version metadata grants no exact/minimum-version requirement; never invent a fixed native version in the safe message.
+
+- Automatic PR fixes select complete eligible originals by the actual `PRFixPrompt` UTF-8 bound, including JSON/wrapper/context. Preserve 50-row pages, 100 selected originals, once-per-kind observations and original policy/set/head/version fences. Skip unfit originals without handling them; later fitting work remains reachable. All-unfit fails ResourceExhausted without an empty attempt; atomic/manual formatting remains authoritative. Follow the integration contract.
+
+- Loopback RPC authority accepts canonical portless 127.0.0.1, localhost and [::1] for normalized default-port client origins, plus valid explicit-port loopback authorities. Preserve malformed/numeric-alias/foreign-host rejection, exact CORS, authentication and listener ownership under the connections contract.
+
 ## Storage
 The server exclusively locks its private data scope, owns SQLite with foreign keys/WAL/transactions, and refuses corrupt/newer state. A failed first initialization closes SQLite and removes only the database/sidecars created by that attempt before releasing the scope lock; pre-existing databases and orphaned sidecars are preserved for recovery. Mutations and events commit together. Request receipts survive restart. Consistent backups include committed WAL state and acknowledge success only after the validated file and its renamed directory entry are synchronized; exact retries also synchronize an already published backup directory entry; destructive migrations require a backup. Migration backups use private `.pending` targets and publish a `.sqlite` name only after validation and file synchronization, then synchronize the directory before migrating. Schema v3 adds indexed model identity/search and deletion suppressions. Schema v4 adds session visibility and unique ordered queue indexes, with synchronized pre-migration backups and transactional rollback from v1/v2/v3 on conflicting legacy identities/order. Schema v5 adds separate durable job cancellations, migrating v1-v4 with private synchronized backups while preserving claimed assignment revisions/digests. Schema v6 retains immutable claimed envelopes, recovers legacy uncertainty from exact original claim receipts when available, and rejects contradictory evidence without changing the original data. Schema v7 adds immutable execution credential digest bindings and scoped native-reference ownership, with synchronized backup and transactional migration from v1-v6. Schema v8 adds unique native-message identity/state indexes for ordered core-event publication. Schema v9 adds execution-scoped native-request uniqueness and bounded open-question indexes, preserving prior transcripts through a synchronized backup. Schema v10 adds independent inbox source/read-state indexes and atomically backfills retained questions plus each legacy session's available native terminal progress, preserving original records and a synchronized backup. Schema v11 adds durable calendars/occurrences and observed Worker lease continuity. Schema v12 adds tombstone-bound final project restrictions for existing execution snapshots, without rewriting sessions or rerunning schema-11 schedule migration. Schema v13 adds retained transcript search; schema v14 adds the [exact response usage ledger](cmds-delidev-usage-contract.md), preserving original attribution and deduplication without backfilling cumulative snapshots. Schema v15 adds immutable price versions and transactionally retained response estimates, leaving preexisting/unpriced history explicitly unavailable; pricing RPC/CLI and historical estimate aggregation are implemented, with desktop pricing/estimate presentation integrated. Schema v16 retains transactionally updated session lifetime currency subtotals and backup-first migration from original historical estimates; optional session budgets gate fresh turns/Resume before any input claim. Restore validates integrity/schema and deletion tombstones before replacement. Secrets are excluded from SQLite, transcripts, snapshots, and ordinary output. Worker-owned workspaces/snapshots and local retained-content search deliberately override cloud file/search defaults.
 
@@ -160,6 +282,8 @@ Connect Go/protobuf, modernc SQLite, UUID v7, native Git, and installed Codex/Cl
 
 ## Change Triggers
 Update this document, the project/protocol contracts, validation records in pull requests, issues and CI logs/artifacts, and scoped AGENTS when ownership or behavior changes. Preserve the normative requirements snapshot and record any subsequent owner amendments explicitly.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - [Project](project-delidev.md)
@@ -244,7 +368,7 @@ Server and paired Worker scopes expose explicit native service install/status/st
 
 ## Authenticated development-server forwarding
 
-Issue #1089 follows the [session forwarding contract](cmds-delidev-forwarding-contract.md). Additive `ForwardService` start/get/stop, one-shot claim, streaming traffic and original cleanup RPCs plus `WorkerService.WatchForwardRequests` preserve authenticated client/session/Worker ownership and typed `SESSION_FORWARDING_V1` capabilities. Generated Go/TypeScript descriptors and `ForwardQuery` expose the shared API. The CLI owns an explicit loopback listener and returns its exact endpoint. Stop preserves forwards; Archive/deletion/revocation close them, and every Archive completion requires independently confirmed original cleanup. Receipt replay and reconnect cannot recreate a claimed native lifetime. Model API endpoints remain server-relative. Generic schema-24 entities/receipts retain metadata without traffic or a relational migration.
+The feature follows the [session forwarding contract](cmds-delidev-forwarding-contract.md). Additive `ForwardService` start/get/stop, one-shot claim, streaming traffic and original cleanup RPCs plus `WorkerService.WatchForwardRequests` preserve authenticated client/session/Worker ownership and typed `SESSION_FORWARDING_V1` capabilities. Generated Go/TypeScript descriptors and `ForwardQuery` expose the shared API. The CLI owns an explicit loopback listener and returns its exact endpoint. Stop preserves forwards; Archive/deletion/revocation close them, and every Archive completion requires independently confirmed original cleanup. Receipt replay and reconnect cannot recreate a claimed native lifetime. Model API endpoints remain server-relative. Generic schema-24 entities/receipts retain metadata without traffic or a relational migration.
 
 ## Preserved project-index implementation notes
 
@@ -253,6 +377,8 @@ The following source-backed notes were relocated from the project index at `12b3
 - `protos/gen/go/delidev/v1`: generated Go messages and Connect bindings.
 
 Keep command, protocol, evidence, and scoped AGENTS contracts synchronized with each implementation increment. Preserve the complete normative requirements even when individual acceptance items remain in progress. Generated bindings are tool-owned. Never claim the project complete while required CLI/server/Worker acceptance items remain unimplemented or unverified.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 Unix output-pipe setup failures persist pre-launch completion so an exited supervisor does not require reboot recovery for a command that never started.
 

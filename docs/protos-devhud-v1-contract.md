@@ -32,6 +32,32 @@ Diagnostics schema version 1 carries a required client UUID v7, up to 32 unique 
 
 `ReplaceSettings` validates the complete supported body schema, matching envelope version, expected digest shape, and recursive non-secret boundary before persistence; invalid snapshots return `InvalidArgument` without reaching storage. Settings schema version 7 synchronizes only bounded local-agent IDs and explicit GitHub profile references; device-local shortcut bindings and repository prompts are rejected. R2 profiles carry an exact Cloudflare account ID rather than endpoint authority. Local executable paths, detected versions, enablement consent, health, clone/cache state, credentials, prompts sent to an agent, and agent output are not protocol fields and must be rejected if injected into a settings body.
 
+### Protocol integration
+
+- API account protocol selection follows the catalog/account/protocol contracts. Record ProviderInventory capability 7, inventory profile field 10, account-list protocol field 5 and the complete closed API protocol/authentication/profile declarations in the owning feature PR. Reservations grant no credential or inference authority and add no database migration. Preserve original defaults, disconnect/confirmed cleanup before protocol changes, immutable executions and keyless cleanup proofs.
+
+- Keep protobuf package names, enum identifiers, compatibility, and generated-client rules stable and documented before implementation.
+
+- `protos/devhud/v1`: implemented versioned DevHud Connect RPC schemas.
+
+- `protos/gen/go/devhud/v1`: committed, tool-owned Go messages and Connect server bindings generated from `protos/devhud/v1`.
+
+- Keep package `devhud.v1`, UUID v7 service-owned identifiers, typed Connect errors, revision conflicts, and the service/RPC list aligned with `protos-devhud-v1-contract.md`.
+
+- Administrative and user upload-list RPCs use the shared bounded page-size, opaque-token, deterministic-order pagination contract documented in `protos-devhud-v1-contract.md`; user results are owner-scoped and user-search tokens include normalized query scope.
+
+- Keep the explicit AdminService RPC names and FinalizeUpload validation boundary aligned with the protocol contract; schemas must not permit direct-upload callers to bypass ownership, quota, content, replay, or staging cleanup checks. Keep `GetBootstrap` unauthenticated, publish platform-keyed Logto client IDs including `admin` and its exact redirect URI, and preserve the per-RPC auth/role matrix.
+
+- Upload messages also carry the server-owned submission ID, expected checksum as 32 raw bytes, and staging version/generation; finalization enforces the cross-group 10-image cap and 4096×4096/16,777,216-pixel pre-decode limits. The R2 header uses standard Base64 of those bytes, and API correlation IDs use the exposed `x-devhud-correlation-id` response header.
+
+- Settings snapshots are at most 1 MiB of RFC 8785 canonical JSON bytes and use exact monotonic revisions: expected revision zero creates revision one, each successful replacement increments once, and stale writes return the typed conflict detail. Successful responses and errors carry correlation metadata mirrored to `x-devhud-correlation-id`.
+
+- `CreateUploadTarget` remains an explicit oneof for new submission, new group, or existing group ownership. Reservation IDs, immutable nonzero staging generations, expected checksum/size, and observed ETag are required finalization bindings.
+
+- Crash diagnostics are typed, user-previewed, and redacted, with an explicit browser platform, browser-only unknown architecture, exact native Tauri/browser-empty and desktop CEF/mobile-browser-empty revisions, 256-byte build/code identifier ceilings, a 4 KiB summary, and a 32 KiB stack ceiling. Administrator mutation reasons are required, capped at 4 KiB of well-formed UTF-8, and reject credential and local-path patterns before persistence; audit responses expose only previously validated reasons. Administrator message graphs use a metadata-only upload projection and must not reach settings bodies, secrets, DOM, screenshots, public or signed asset locators, Deck results, agent output, or local paths.
+
+- CI must validate schema formatting, lint, compatibility, and generated-client freshness through package/root commands and the committed Turbo binary. Generated Go and TypeScript outputs are deterministic cacheable products and must never be edited by hand.
+
 ## Storage
 
 The protocol defines representations only. Persistence and retention belong to the API contract; generated clients must not add a second storage or secret policy.
@@ -57,6 +83,8 @@ Consumed by `servers/devhud-api` and `packages/devhud-api-client`; used by the a
 ## Change Triggers
 
 Update the project index, server/client/admin/app contracts, `protos/AGENTS.md`, and CI generation/compatibility rules for any service, message, enum, revision, error, or field change.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 

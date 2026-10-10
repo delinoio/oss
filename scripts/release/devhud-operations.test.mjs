@@ -208,8 +208,7 @@ test("operations contract preserves high-risk CEF, rollback, retention, and reda
 test("Chrome operations and support retain explicit availability and exposure boundaries", () => {
   const controller = readFileSync(`${root}/docs/servers-devhud-release-controller-contract.md`, "utf8");
   const project = readFileSync(`${root}/docs/project-devhud.md`, "utf8");
-  const agents = readFileSync(`${root}/AGENTS.md`, "utf8");
-  for (const text of [operations, support, controller, project, agents]) {
+  for (const text of [operations, support, controller, project]) {
     assert.match(text, /`PUBLISHED`/u);
     assert.match(text, /100 percent|equal to 100/u);
     assert.match(text, /unknown or missing|unknown, or missing/u);

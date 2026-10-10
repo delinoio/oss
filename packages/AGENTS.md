@@ -1,151 +1,27 @@
-### Instructions for `packages/`
+# packages working instructions
+
+- Follow the root instruction-update policy and the nearest parent instructions.
+- This file covers `packages/` and its descendants unless a more specific instruction file applies.
+- Read the owning contracts below before changing behavior, including affected cross-domain consumers.
+
+## Development and validation
 
 - Follow root `AGENTS.md` and the owning project/domain contracts.
 
-- Public npm packages generated here declare Apache-2.0 and include the complete license; preserve bundled third-party notices.
-
-- Generated packages must have a canonical source contract, reproducible generation, freshness checks, and no implicit secret or persistence policy.
-
-### Scope in This Domain
-
-- `packages/clibox`: private source workspace generating the public `@delino/clibox` launcher and eight native npm packages.
-
-- `packages/devhud-api-client`: implemented generated TypeScript DevHud API client, Connect Query bindings, and safe handwritten wire helpers.
-
-- `packages/docs-site-switcher`: shared accessible documentation site selector used by the consolidated Public Docs root and all seven project content sections. Follow `docs/packages-docs-site-switcher-contract.md`; keep its fixed site registry, enum IDs, keyboard behavior, focus management, and active-route semantics synchronized across consumers.
-
-### DevHud Rules
-
-- Keep generated bootstrap types aligned with the `desktop`/`ios`/`android`/`admin` Logto client keys, native callback, and exact admin redirect defined by the protocol and server contracts.
-
-- Generate only from `protos/devhud/v1`; use `@connectrpc/connect-query` and preserve package `devhud.v1`, stable enums, typed errors, and revision conflicts.
-
-- Generated clients must expose the explicit AdminService RPC names and `AccountService.RestoreAccount` defined by the protocol contract, including upload-finalization validation fields.
-
-- Generated administrative and user-upload-list clients must preserve the shared bounded page-size, opaque-token, deterministic-order pagination contract defined by the protocol, including query/user scope.
-
-- Keep `docs/packages-devhud-api-client-contract.md` and `docs/project-devhud.md` synchronized with schema, transport, or generated API changes.
-
-- Generated upload clients must preserve submission-scoped groups, expected 32-byte raw checksum/version fields, immutable finalization semantics, and correlation-ID response metadata.
-
-- Keep committed output under `src/gen` tool-owned and reproducible. Public exports use per-service namespaces such as `UploadQuery` and `AdminQuery` so same-named RPCs do not collide; do not handwrite generated messages or service descriptors.
-
-- Handwritten helpers may validate canonical UUID v7 values, checksums, bounded pagination, RFC 8785 settings bytes without a UTF-8 BOM, bounded NUL-free sensitive-content-safe administrator reasons, required crash client/related correlations, duration, browser-only unknown architecture, explicit browser and native platform revision rules, NUL-free 256-byte crash identifiers, redacted crash details, and typed Connect errors, but must not add persistence, implicit authentication, or another business transport.
-
-- The API client must retain package-local typecheck, lint, unit, and build commands for affected CI execution. Its generated output is cacheable only when derived from the committed schemas and lockfile.
-
-### async-commit-hook
-
-- `packages/async-commit-hook-api-client` owns `@delinoio/async-commit-hook-api-client`, generated exclusively from `async_commit_hook.v1`. Follow `docs/packages-async-commit-hook-api-client-contract.md`; no client-side duplicate gate logic or persistence.
-
-### DeliDev
-
-- Bind each transport to one explicit HTTPS or exact HTTP loopback origin and fresh caller-owned credentials. Disable redirects/cookies/cache; never store credentials, documents or cursors in browser storage, logs or query keys. Identity changes cancel all old requests and discard their caches.
-
-- Apply coherent complete snapshots before their cursors, then fetch changed resources by identity/revision. Advance replay only after consumption, resnapshot on typed gaps, preserve retained state on disconnect, and bound memory/backoff. Resource streams cannot emit native notifications or execute work. The real temporary Go-server fixture is uncached and uses only test-owned credentials/processes.
-
-### clibox Rules
-
-- clibox macOS archives reuse verified npm binary bytes, retain full Apache-2.0/NOTICE and imported MIT notices, and feed the macOS-only Homebrew Formula. Verify public source, all asset digests/signatures and both native tested Formulae before tap-only bot publication; preserve GNU archive format and npm-independent release guards. See the clibox distribution contract.
-
-- Keep the npm README and `apps/public-docs/docs/clibox` aligned with user-facing command and installation behavior; link to `https://oss.delino.io/clibox`. The shared documentation selector uses clean same-origin paths on production and the consolidated development server, including clibox and pnport as destinations.
-
-- Native and installed npm commands must share the canonical `run env`, `port list`, and `hash compute` names, quiet/PID output separation, stdout dash selector, force validation, and numeric owned-operation cancellation (130/143); validate the migration in installed consumer smoke tests without launcher-side argument rewriting.
-
-- Native and installed npm smoke tests must exercise `system cpus` in default, logical, JSON, and quiet forms across all eight targets. The launcher forwards it unchanged and never computes or substitutes a CPU count.
-
-- Native and installed npm commands must also share the five `run with-*` wrappers for rate admission, lock ownership, service readiness, retries, and timeouts. The launcher remains a literal argv/stdio/signal forwarder: it must not parse wrapper options, own local state, make readiness requests, or introduce a shell.
-
-- Follow `docs/packages-clibox-distribution-contract.md`. Keep the source workspace private, with no unpublished platform dependencies; generate public manifests and exact optional dependencies during packaging only.
-
-- Preserve platform/libc/version checks, literal native argv execution, inherited stdio, and signal/exit propagation. No runtime downloads, install hooks, public JavaScript API, or system binary fallback.
-
-- Windows console Ctrl+C/Break reaches both launcher and native child. Await native cleanup and numeric completion instead of forwarding these events with Node's forceful kill API; preserve explicit Unix signal forwarding. Keep Unix acknowledgement credit scoped to one pending grace attempt; discard unsolicited credit and disable suppression for the launch after an unacknowledged fallback or overlapping SIGINT. After fallback, retain forwarding even when terminal delivery is duplicated; native cleanup may then skip grace. Integration fixtures must prove fallback before accepting short grace and confirm owned cleanup. Cancel owned grace timers on exit/error. Cover both policies with unit fixtures and isolated Windows console integration.
-
-- Keep tests runnable with Node built-ins, and smoke-test npm/pnpm consumer tarball installs with scripts disabled, including missing-subcommand help on stderr with exit code 2, native JSON readiness, environment execution with literal empty argv/exit propagation and dotenv list/merge plus YAML normalization with reference resolution, literal value preservation, idempotence, and silent file publication. Consumer smoke builds must use release mode so TLS-enabled debug binaries do not exceed bounded archive inspection. Run Rust command/process/adapter/readiness tests on Linux, macOS, and Windows through the existing clibox CI matrix. Build/package/release tasks are package-owned; native integration and publication tasks are not Turbo-cacheable.
-
-- Installed consumer smoke tests must also exercise the seven issue #917 commands as well as help/version across the existing eight target artifacts. Run Rust command/process/adapter tests on Linux, macOS and Windows through the existing clibox CI matrix. Keep command documentation consistent between native and npm distributions without exposing release internals.
-
-- Default consumer smoke builds must use Cargo's stripped release profile within the bounded archive reader; an explicit `--binary` must use the supplied native artifact without rebuilding or changing it.
-
-- Preserve all eight artifacts, native readiness tests, and Alpine consumer checks when TLS dependencies change. musl uses target-native C compilation for statically linked ring and pinned self-contained `rust-lld` for final linking; no dynamic OpenSSL runtime dependency. Keep user-facing wait usage, limits, output, cancellation, and troubleshooting in the npm README.
-
-- Validate complete artifact inventories and source identity before publication. Confirm all native dependencies before the main package and reject conflicting existing integrity. Allow at most 121 registry readback checks with ten-second delays and 30-second request timeouts after each successful upload, log pending confirmations, and never repeat that write during polling.
-
-- Accept LF and CRLF source manifests. Pack launcher text, README, and license as canonical UTF-8/LF and verify their exact canonical bytes across build/assembly operating systems; native executable bytes must never be normalized.
-
-- Require archive execute bits for Unix native binaries and the npm bin shim; Windows PE payloads must remain valid when packed from NTFS without POSIX execute bits. Pin Node's release-build architecture to the selected Rust target.
-
-- Finalize the executable header mode during tarball creation before recording integrity, independent of host filesystem permissions. Artifact verification must never repair or rewrite downloaded tarballs.
-
-- Build both Linux musl targets with the pinned Rust toolchain's `rust-lld` and self-contained runtime objects. Keep native-host and Alpine consumer execution gates; adding C dependencies requires revisiting this toolchain contract.
-
-- clibox GNU npm and GitHub Release archives must contain the same verified AlmaLinux 9/glibc 2.34 binaries. Its separately guarded GitHub publisher validates the complete nine-tarball input, exact tag/commit and source version, preserves immutable assets and reuses verified signatures before stable APT/DNF publication. The npm enable flag gates only npm. Neither publisher may query crates.io or require Cargo registry publication. Include all six clibox crate directories and affected fspy interception sources in package test inputs and native CI selection. Installed package smoke must check the fspy command family on every target before its first release.
-
-- clibox GitHub publication must discover drafts through every release-list page and establish a unique same-tag candidate before writes. Failed, malformed, repeated or incomplete discovery cannot authorize draft creation. Pin the numeric release ID, verify draft source/channel ownership and existing bytes/signatures, upload only missing assets, and recheck uniqueness plus the pinned verified inventory immediately before publication. Complete public releases remain read-only.
-
-### pnport Rules
-
-- The owner-authorized 2026-10-05 repair release in `docs/project-pnport.md` permits exactly stable 0.1.2 after the failed 0.1.1 candidate is repaired and all retained four-native candidate gates pass. Keep 0.1.1 and published tags/bytes immutable. Require `pnportReleaseReady: true` and exact `pnportReleaseVersion: "0.1.2"`; preserve the earlier disclosed initialization/SIGHUP, clibox watch and full-acceptance limits without claiming fixes or skipped passes. No new candidate failure is waived. Keep issue #958 and Windows 0.2.0 acceptance open; preserve final-tag dry-run, fresh native validation, integrity/signing, native-before-launcher and immutable-retry gates. Later versions need separate reviewed authorization.
-
-- pnport cache conformance separates network preparation from offline runs. Pin Yarn/Vitest/Vite; use default Vitest cache settings and verify readiness plus native dependency reads/cache writes in inline/split forms twice. Fresh temporary fixture installs must create their lockfiles under `CI=true`; confine the immutable-install override to those preparation calls. Run the prepared Vitest bin through the supplied packaged CLI's `run --` path so its workers share the matching native view. Each native host validates its packaged CLI with its matching companion. Source-only cache support must not be attributed to immutable published versions.
-
-- pnport tag pushes perform credential-free dry runs only. Actual publication requires an explicit `Release pnport` dispatch at the same final tag with `dry_run=false` after its successful dry run. Before publication outputs/write authority, verify the latest exact-tag/revision first-party push run and its complete successful native/assembly jobs with all publication jobs skipped; missing, failed, pending or untrusted records block. All npm/GitHub/Homebrew jobs require the manual event and retain complete fresh native verification.
-
-
-- The owner-authorized 2026-10-04 amendment in `docs/project-pnport.md` permits exactly stable 0.1.0 publication with the recorded macOS initialization/SIGHUP failures, separate root clibox watch failure and full-acceptance review deferred. This version-specific exception takes precedence over earlier full-acceptance prerequisites; it does not establish a cause fix or passing skipped checks. Require `pnportReleaseReady: true` plus an exact `pnportReleaseVersion` match; version coordination preserves both fields. Retain all final four-native candidate execution/install/TypeScript/benchmark, integrity, signing, native-before-launcher and immutable-retry gates. New failures still block publication. Keep #958 open, preserve Windows 0.2.0 and immutable 0.1.0-next.1, and disclose unresolved user-facing limits. Remove the stable unreleased notice only after verified publication.
-
-- pnport 0.1.0 requires macOS 15+. The launcher and POSIX installer must reject earlier macOS hosts before binary lookup/download or execution. Keep the four-target registry and the macOS 15 native matrix aligned without altering other projects' platform floors.
-
-- Source-bound native evidence must include both installed process lifecycle and installed native conformance gates. The four-host CI/candidate workflow runs them against the absolute packaged executable and matching adjacent companion before recording evidence or benchmarks; reject assemblies missing either gate.
-
-- Private `packages/pnport` generates @delino/pnport and four exact-version macOS/glibc Linux native packages for 0.1.0; Windows x64/arm64 remains planned for 0.2.0 with preferUnplugged. Follow `docs/packages-pnport-distribution-contract.md`; no install hooks, runtime downloads, compilation or unrelated PATH fallback. All four execution/install gates precede publication. Stable publication additionally requires reviewed full release acceptance, except for the exact 0.1.0 and 0.1.2 amendments above. The explicitly authorized experimental `0.1.0-next.N` source version may use npm next and signed GitHub prerelease artifacts while stable readiness stays false; require exact `pnportPreviewVersion`, preserve latest, reject next downgrades, and exclude Homebrew. CI/release matrices and exact artifact inventories derive from the package-owned target registry. All five pnport npm latest tags now point to stable 0.1.2. The temporary first-name bootstrap exception is removed: preview inspection rejects every non-stable latest, including `0.0.0-stage`, and preserves stable latest plus the immutable next channel. Do not delete historical placeholder versions or mutate published package bytes.
-
-- Package each native executable with the adjacent interception library from the same build. Verify exact inventories, executable mode, source revision, versions, checksums and existing remote integrity before publishing all four optional packages ahead of the launcher. Homebrew retries must reject older versions instead of downgrading the tap. Direct installers must search all GitHub Releases pages for the highest stable pnport version. Installer changes must select the four-host native CI matrix on main, and installation smoke must run the public launcher on each host. Keep generated `dist` untracked and remove it from final worktrees.
-- pnport macOS packages require private companion ABI format 3, matching constructor launch leases and native process-registration admission; reject format 1/2 companions during package inspection and before CLI user launch. Linux/Windows retain their independent format 1 companion. This private protocol change does not alter CLI commands or doctor JSON v1.
-
-- pnport native TypeScript conformance pins Yarn and the official compiler in its fixture and lockfile. Keep networked preparation separate from execution, disable Turbo caching for both conformance commands, and record the actual OS/architecture and compiler digest. The corrected official `typescript` package exposes `tsc`; never silently substitute it for an older `native-preview` package's `tsgo` command or rewrite its signature.
-- pnport native TypeScript conformance must retain two different peer-provider contexts for the same ZIP-backed consumer bytes. Inspect generated graph data without evaluating the loader, retain positive builds and wrong-peer/unvirtualized negative controls in both inline and split modes, and bind numeric evidence to distinct locator/provider digests and the shared archive digest.
-- pnport inline/split conformance must verify automatic Node `pnpapi` access, caller preloads that read `pnpapi` and ZIP-backed dependencies in their preserved relative order, fresh Node spawns, and selected-loader restoration after environment replacement, alongside explicit-preload compatibility. Emit typed outcomes and the Node version without input paths or streams; focused probes do not establish full platform or tool acceptance.
-- pnport Node probes must verify selected relative ESM loader deduplication, binding across inherited cwd changes, replacement options resolved against a descendant's final cwd, and preservation of unrelated relative loaders.
-- pnport Node probes must verify the same directory-change guarantees for selected relative CommonJS preloads, using native filenames and preserving unrelated relative preloads.
-- pnport Node probes must verify caller ESM loaders importing PnP-only dependencies during initialization, their preserved registration order, and automatic selected-loader ordering after descendant option replacement.
-- pnport Node probe failures expose only the case identifier, a closed failure class and an integer or null exit code. Never emit child streams, spawn errors, parsed child values or causes, including invalid JSON, unexpected fields and cache-clean failures. Retain canary tests for these failure paths.
-
-- Run the pnport TypeScript conformance suite on glibc Linux as well as macOS. Linux checks the official native compiler's static ELF machine and runs inline/split builds offline; record Docker architecture and tracing limitations without counting emulated amd64 as native x64 release evidence.
-
-- pnport offline benchmarks use already prepared synthetic TypeScript fixtures, a native executable with an explicit declared build revision, and a new private output directory. Repeat identical filesystem and compiler workloads at least five times for each cold/warm cache condition; reset compiler incremental state in both conditions. Record tool/source/artifact/fixture identities, median and range, instrumented filesystem calls/read bytes, sampled descendant RSS with its limits, and inode-aware cache disk bytes. Never publish raw process inventories, child output or environment values. Development measurements do not open the release gate or replace minimum-OS/four-target acceptance.
-
-### React Forge Rules
-
-- Figma sessions follow `docs/packages-react-forge-figma-contract.md`: local React rendering, explicit remote publication, credential-free receipts, official MCP, shared rate admission and reconciliation before uncertain-write retries. Isolate these exceptions from Office/PDF. CI uses fake MCP and synthetic credentials.
-
-- `packages/react-forge` owns the private source workspace that generates the public `@delino/react-forge` npm package and six native packages, real React reconciler, format components, one-shot `react-forge` TSX CLI and local session-based stdio MCP server. Follow `docs/packages-react-forge-mcp-contract.md` for MCP execution, retained state and transport isolation. Package imports and workspace task filters use the scoped npm name; the directory, project ID and executable keep `react-forge`. Follow `docs/packages-react-forge-contract.md` and all requirements from #968. Pin React 19.2.8 and react-reconciler 0.33.0; support Node.js 24 on macOS, Windows and glibc Linux, each with x64 and arm64. Enforce the native host restriction in build/loading code, not workspace manifest `os`/`cpu` fields: pnpm emits platform warnings on unrelated commands and corrupts binary protocol stdout.
-
-- Sessions are memory-only. Serialize mutations, reject invalid latest renders and overlapping targets, pin export revisions, serialize file exports sharing a directory identity in invocation order across sessions, support cancellation without timeouts, and clean resources on dispose without deleting exports. Keep callbacks and component code outside native computations. Reject exports to an imported document's tracked source or canonical aliases even with explicit overwrite; require a separate output path because fingerprint-then-rename cannot protect external saves.
-
-- Imported-source protection must conservatively reject case aliases on Windows/macOS and Unicode normalization aliases on macOS, including after the original source has been removed.
-
-- Internal docs, examples, messages and troubleshooting are English; public npm publication follows `docs/packages-react-forge-release-contract.md`, with no runtime downloads. Tests must exercise installed/workspace CLI and asynchronous React behavior, not manually invoked components.
-
-- Keep the public `https://oss.delino.io/react-forge/` guides and npm README aligned with released library, CLI, MCP, format, Figma, and platform behavior. Public guide ownership and validation follow `docs/apps-react-forge-docs-foundation.md`.
-
-- Treat the external `0.0.1` npm packages only as name reservations. The `0.1.0` source tag failed before registry publication and remains immutable. Patch version `0.1.1` is the first functional release of all seven packages through the exact-tag OIDC workflow. After a failed React Forge release, fix the cause and bump the patch version rather than rerunning or moving its tag. Publish only a complete verified seven-package candidate through the configured Trusted Publishers.
-
-- React Forge native/system-font build, integration, rendering and benchmark tasks must remain uncached. Use package-owned scripts and record test renderer/font provenance without bundling system fonts. Retain actual packed-consumer CLI coverage. Fonts/assets participate in immutable revision snapshots; disposal owns in-flight mounts and mutations.
-
-- Keep the ROAM travel IR example's reusable React source, local image assets, generation prompts and provenance together. Resolve its assets relative to the task module, retain explicit fictional-metric labels and calculation consistency, and keep exported decks/previews untracked. The example must run without network access or image-generation/conversion tools and must generate successfully on all six native CI hosts with their installed fonts.
-
-- Word list components must carry stable list-instance identity into the native model. Separate numbered lists restart independently; items within a list share numbering, and imported numbering definitions remain untouched.
-
-- React Forge GLB/FBX scene and animation sessions follow `docs/packages-react-forge-scene-contract.md`; preserve the shared React, atomic export and MCP lifecycle while keeping the 3D model independent from Office/PDF.
-
-- React Forge `/sfx` adds generation-only WAV sessions under `docs/packages-react-forge-sfx-contract.md`; preserve original procedural-example provenance, expose synthesis limits, and distinguish this unreleased extension from npm `0.1.1`.
-
-## Scoped DeliDev ownership
-
-Read the relevant owner before changing its behavior, including cross-domain consumers:
-
-- `packages/delidev-api-client/AGENTS.md`
-
-Record implementation status and validation results in pull requests, issues and CI logs/artifacts under the root DeliDev validation policy. Do not add repository evidence documents. Update instructions only when their rules or ownership change, not merely to record another validation run.
+## Owning contracts
+
+- [React Forge public documentation](../docs/apps-react-forge-docs-foundation.md)
+- [DeliDev source ownership and compatibility](../docs/cmds-delidev-structure-contract.md)
+- [async-commit-hook API client contract](../docs/packages-async-commit-hook-api-client-contract.md)
+- [clibox npm and native distribution](../docs/packages-clibox-distribution-contract.md)
+- [packages-devhud-api-client-contract](../docs/packages-devhud-api-client-contract.md)
+- [packages-docs-site-switcher-contract](../docs/packages-docs-site-switcher-contract.md)
+- [pnport npm and native distribution](../docs/packages-pnport-distribution-contract.md)
+- [React Forge Node Contract](../docs/packages-react-forge-contract.md)
+- [React Forge Figma Contract](../docs/packages-react-forge-figma-contract.md)
+- [React Forge MCP Contract](../docs/packages-react-forge-mcp-contract.md)
+- [React Forge npm Release Contract](../docs/packages-react-forge-release-contract.md)
+- [React Forge 3D scenes and animation](../docs/packages-react-forge-scene-contract.md)
+- [React Forge SFX contract](../docs/packages-react-forge-sfx-contract.md)
+- [Project: devhud](../docs/project-devhud.md)
+- [pnport](../docs/project-pnport.md)

@@ -6,7 +6,7 @@ PR validation executes package-owned Turbo leaves through `ci:check`, preserving
 
 DevHud is a coordinated desktop and mobile developer utility. V1 contains the desktop-only RealQA capture and GitHub issue workflow, the desktop/mobile Deck pull-request monitor, and native one-Deck home-screen widgets. The deterministic bilingual frontend, complete guest/Logto identity and synchronized Settings boundary, direct-client GitHub.com issue/pull-request provider and credential setup, desktop RealQA capture/editor/encrypted drafts/direct official and BYO R2 uploads/issue submission, populated Deck surfaces, pinned Tauri CEF desktop host, target-isolated Tauri iOS/Android system-webview hosts, WidgetKit/AppWidgetProvider targets, administrator SPA, versioned protocol, generated client, and Bootstrap/Settings/Upload/Account/Admin API services are implemented. Deck preserves readable narrow-layout result statuses, logical configuration heading hierarchy, a privacy confirmation bound to its opening Deck, and restored focus after closing the initiating mobile deletion settings. Desktop updater approvals restore focus after the dismissal/status DOM commit, including when a native event removes the opening button. The host foundation exposes composed product states and a closed mobile-native bridge. Remaining populated product surfaces and the other planned domains remain documentation-first contracts.
 
-Issue [#815](https://github.com/delinoio/oss/issues/815) is the current product contract. It supersedes closed historical DevHud issues #729, #755, and #757; those issues are historical context only and must not supply architecture or scope.
+This contract is the current product contract. It supersedes closed historical DevHud requirements; those issues are historical context only and must not supply architecture or scope.
 
 Official uploads return a header-bound 15-minute direct-R2 PUT and a separate 24-hour staging deadline, use 256-bit opaque identifiers, and publish exactly `<configured-public-base>/<opaque-id>.png`. One-use is an application reservation/key/finalization invariant; finalization conditionally validates the recorded generation and ETag after reading only a 33-byte PNG prefix, never an API upload body. The committed exact R2 CORS and 300-public-GET/IP/minute Cloudflare artifacts are operator-applied and production-startup validated. The bilingual removal marker is embedded; owner deletion, administrator hooks, and account purge replace origin bytes before purge/revalidation. The sweeper owns staging expiry and deferred cleanup.
 
@@ -196,13 +196,17 @@ Chrome capture rechecks the configured origin's Chrome-valid scheme-and-host opt
 
 - Desktop Deck configuration remains sticky in a viewport-bounded vertical scroll area, so short windows retain access to editor, widget, save, and delete controls. Result-row status badges respond to the available workspace track and move below details before constrained sidebars or enlarged text can clip them.
 
+## Project requirements
+
+- `devhud` -> `apps/devhud` (shared shell, identity/settings/diagnostics, direct-client GitHub.com provider/setup and RealQA issue submission, desktop RealQA capture/editor/encrypted drafts/direct official and BYO R2 uploads, populated Deck surface, desktop/mobile hosts, production WidgetKit/AppWidgetProvider Deck widgets, and desktop Native Messaging listener implemented; other populated product surfaces planned), `apps/devhud-chrome-extension` (implemented), `apps/devhud-admin` (implemented), `servers/devhud-api` (Bootstrap/Settings/Upload/Account/Admin/Diagnostics and embedded administrator assets implemented), `protos/devhud/v1` (implemented), `packages/devhud-api-client` (implemented), `crates/devhud-native-messaging-host` (implemented)
+
 ## Change Policy
 
 Update this index, affected domain contracts, `docs/README.md`, and applicable root/domain `AGENTS.md` files together when ownership, identifiers, interfaces, platform support, persistence, security, release, or exclusions change. Do not add runtime code before the documentation-first contracts are updated.
 
-## References
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
-- [Issue #815](https://github.com/delinoio/oss/issues/815)
+## References
 - [Repository environment contract](repository-environment-contract.md)
 - [Repository defaults](repository-defaults.md)
 - [Project index template](project-template.md)

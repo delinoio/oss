@@ -16,7 +16,7 @@ Authorized owners and paired clients; original paired Workers; release maintaine
 
 Authenticated owner/client checks and exact candidate/revision acceptance use InstallationService and `delidev update`. Only stable `delidev-v<semver>` GitHub Releases in `delinoio/oss` supply manifests. A signed manifest covers the complete six-target desktop and six-target Worker inventory, source revision, protocol, byte lengths and SHA-256. Native installation requires a trusted-window confirmation. Worker installation waits for joined active execution, auxiliary, terminal and forwarding ownership. Neither path replaces a live server or a harness.
 
-Independent System capabilities 28 (signed updates), 29 (SSH setup) and Worker capability 17 are reserved under issue #964 in the owning feature PR. Update and SSH metadata use EntityKind 33/34. Reservations alone grant no capability. Shared reservations reached main first; complete independent feature PRs merge after their implemented dependencies.
+Independent System capabilities 28 (signed updates), 29 (SSH setup) and Worker capability 17 are reserved for this feature in the owning feature PR. Update and SSH metadata use EntityKind 33/34. Reservations alone grant no capability. Shared reservations reached main first; complete independent feature PRs merge after their implemented dependencies.
 
 Checks retain an original signed candidate under its request ID. Worker acceptance fences new job, terminal, forward, subscription and workspace-read ownership while original cleanup continues. Idle admission covers claimed/uncertain jobs, both forwarding peers, terminal process cleanup, subscription leases and external deletion obligations. Automatic checks run after 30 seconds and then daily; a retained canceled/failed/uncertain attempt prevents automatic resubmission of that release. Pending projections filter matching scope before bounding, so completed history cannot hide live obligations.
 
@@ -48,6 +48,14 @@ server checks or confirmation. Validate actual generated manifests and resolved
 permissions against the existing OAuth control; those fixtures establish ACL
 behavior, separately from real native installation acceptance.
 
+### cmds/delidev-cli constraints
+
+- Signed updates and SSH Worker setup follow `cmds-delidev-updates-contract.md` and `cmds-delidev-ssh-setup-contract.md`. Preserve compiled release authority, exact confirmed host identity, protected credentials, original registration/workspaces, once-only remote effects and joined Worker replacement. Never replace live server/harness binaries or treat fixtures as installed-platform acceptance.
+
+### cmds/delidev-cli/internal/updates constraints
+
+Follow `cmds-delidev-updates-contract.md` and parent instructions. The compiled public root is the sole release authority. Test roots stay private to tests. Authenticate the original complete manifest again before download; never trust retained typed metadata independently. Fixed repository/tag/asset identity, bounded canonical JSON, strict signatures and full target inventory precede file publication. Download and reverify content through exact size/hash and private regular-file identity checks. Logs contain typed outcomes and original operation IDs only.
+
 ## Storage
 
 Private bounded candidates retain the original signed manifest and downloaded digest. UUID-v7 receipts bind original actor, server, target, component and revision. Dedicated Worker generation binaries preserve the previous working binary and existing device/workspace scope. A replacement does not modify a shared CLI/server executable. Unknown installation outcomes retain recovery state and cannot claim rollback.
@@ -75,6 +83,8 @@ GitHub Releases, Go crypto/ed25519, SHA-256 and RFC 8785 canonicalization; Rust 
 ## Change Triggers
 
 Update the project index, allocation ledger and affected domain AGENTS when authority, protocol ownership, supported targets, release namespace, credential lifecycle or installation policy changes.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 

@@ -6,7 +6,7 @@
 
 ## Failed subscription cleanup reservations
 
-System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 41` and all batch/status/result declarations were reserved on main by PR #1614 before activation. System 38 belongs to Claude and 39/40 to Grok. The reservation itself granted no cleanup, login or deletion authority.
+System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 41` and all batch/status/result declarations were reserved on main by the originating change before activation. System 38 belongs to Claude and 39/40 to Grok. The reservation itself granted no cleanup, login or deletion authority.
 
 One explicit owner/paired-client `CleanupFailedSubscriptions(request_id)` admits a server-owned durable job and freezes every candidate account ID, revision, original initial ChatGPT server LOGIN and deletion request UUID in account child jobs. Receipt replay binds the original actor and server and returns the same current job. Only one batch can be pending per server. Admission scans the complete bounded server inventory; frontend account pages never select work. Failed, canceled, expired, unsupported and interrupted initial logins qualify, including credential-cleanup-confirmed failures. The same explicit batch also selects disconnected subscription Accounts for every supported service, including metadata-only accounts and completed logout accounts. Version-2 private child jobs distinguish original failed LOGIN cleanup from disconnected configuration deletion; version-1 children retain their original LOGIN-only meaning. Disconnected targets have no invented operation ID and must retain no active login, native process, generation, identity commitment, active Worker ownership, lease, recovery, removal or active observation. A completed Worker logout may retain its historical owner-machine routing hint; it grants no active authority without a generation, lease, pending action or recovery, and does not bypass protected-reference checks. Connected accounts, restored generations and independent Worker/native/observation ownership are excluded.
 
@@ -18,7 +18,7 @@ Confirmed deletion, tombstone/browser obligations, the existing configuration re
 
 ## Native Claude subscriptions
 
-PR #1612 established System `CLAUDE_SUBSCRIPTIONS_V1 = 38`, Worker
+The originating change established System `CLAUDE_SUBSCRIPTIONS_V1 = 38`, Worker
 `NATIVE_CLAUDE_SUBSCRIPTIONS_V1 = 20` and the complete protocol allocation
 closure on main at `8a698d04d51f9db3a041b909edf85a7811f09ff3` before feature
 implementation. The server advertises 38 for the existing SubscriptionService's
@@ -109,13 +109,13 @@ Follow the desktop, protocol, harness, storage and structure contracts.
 
 ## Scope
 
-Issue #1095 implements dedicated Codex subscription login, refresh, execution and logout in `cmds/delidev-cli`, `protos/delidev/v1/subscription.proto` and the generated DeliDev clients. The server owns authorization, encrypted credentials, generations and exclusive account leases. An explicitly selected paired Worker owns execution processes and its private authentication files. The independently negotiated server login lane owns browser login, authentication refresh and logout without a Worker. The complete product requirements remain in [issue #964's snapshot](cmds-delidev-requirements.md).
+The feature implements dedicated Codex subscription login, refresh, execution and logout in `cmds/delidev-cli`, `protos/delidev/v1/subscription.proto` and the generated DeliDev clients. The server owns authorization, encrypted credentials, generations and exclusive account leases. An explicitly selected paired Worker owns execution processes and its private authentication files. The independently negotiated server login lane owns browser login, authentication refresh and logout without a Worker. The complete product requirements remain in [the feature's snapshot](cmds-delidev-requirements.md).
 
-Existing-login import, externally supplied token bundles, internal-only `chatgptAuthTokens` and concurrent use of one managed Codex bundle are excluded. Claude follows its independently negotiated device-owned lane above. Desktop login controls and native-owner quota/reset-credit operations are implemented together in the subscription lifecycle feature PR. Full native recovery and real-account/platform acceptance remain separately identified; fixtures cannot establish them. This implementation does not complete issue #964 or claim a release.
+Existing-login import, externally supplied token bundles, internal-only `chatgptAuthTokens` and concurrent use of one managed Codex bundle are excluded. Claude follows its independently negotiated device-owned lane above. Desktop login controls and native-owner quota/reset-credit operations are implemented together in the subscription lifecycle feature PR. Full native recovery and real-account/platform acceptance remain separately identified; fixtures cannot establish them. This implementation does not complete the feature or claim a release.
 
 ## Runtime and Language
 
-Go owns server and Worker business logic. The native profile pins installed Codex `0.151.0`; DeliDev never installs it. The managed profile uses the official app-server protocol, a fresh private `CODEX_HOME`, file-backed native authentication and the built-in OpenAI provider. API execution and discovery retain their existing ephemeral credential profile. Independent native Fork uses the API profile or the separately negotiated protected managed profile under issue #1979 in the Fork contract. Managed ChatGPT Sidechat uses its separately negotiated protected Fork lease under the Sidechat contract. Source inspection cannot grant credentials; the exact claimed Sidechat job owns protected Take, joined native/plaintext cleanup and original-account write-back before publication.
+Go owns server and Worker business logic. The native profile pins installed Codex `0.151.0`; DeliDev never installs it. The managed profile uses the official app-server protocol, a fresh private `CODEX_HOME`, file-backed native authentication and the built-in OpenAI provider. API execution and discovery retain their existing ephemeral credential profile. Independent native Fork uses the API profile or the separately negotiated protected managed profile for this feature in the Fork contract. Managed ChatGPT Sidechat uses its separately negotiated protected Fork lease under the Sidechat contract. Source inspection cannot grant credentials; the exact claimed Sidechat job owns protected Take, joined native/plaintext cleanup and original-account write-back before publication.
 
 ## Users and Operators
 
@@ -127,7 +127,7 @@ Execution admission requires that selected Worker's negotiated managed capabilit
 
 Subscription accounts use schema 2 with required closed `subscription_service: "chatgpt" | "claude" | "grok"` and no `provider_id`. Native models use schema 2 with `source_kind: "subscription"`, the same service and no API Provider. Services map exactly to Codex, Claude Code and Grok Build; a model's single compatible harness must match its service. API accounts/models keep their existing schema-1 provider identity and forbid subscription fields. Neither service metadata nor model registration grants native login, quota or execution support.
 
-The historical provider-bound shape used `native-subscription`, `subscription` authentication, an empty endpoint and optional `subscription_harness: "codex"`. Migration 28 retires every legacy subscription account and those providers/models without inferring a service from any field or display name. That shape is retained only as read-only historical metadata under the [storage contract](cmds-delidev-storage-contract.md#subscription-retirement-issue-1235). New native-subscription Providers and edits that replace service/account/model identity are rejected.
+The historical provider-bound shape used `native-subscription`, `subscription` authentication, an empty endpoint and optional `subscription_harness: "codex"`. Migration 28 retires every legacy subscription account and those providers/models without inferring a service from any field or display name. That shape is retained only as read-only historical metadata under the [storage contract](cmds-delidev-storage-contract.md#subscription-retirement). New native-subscription Providers and edits that replace service/account/model identity are rejected.
 
 Managed Codex lifecycle and execution select an independent ChatGPT account. Go rechecks its original generation/connection/lease and matching immutable service model at every authority boundary without loading an API Provider. Publication-only registrations expose no API relay path; independent service identity does not grant an upstream API operation. Immutable snapshots and new native response/diagnostic records carry the selected service instead of a fabricated Provider ID. Historical provider-bound snapshots and usage retain original bytes and attribution; retired selections cannot resume or silently reroute.
 
@@ -170,7 +170,7 @@ The pinned native login-completed envelope includes nullable `onboardingEntrypoi
 
 ## Server browser login and account naming
 
-System `SERVER_SUBSCRIPTION_LOGIN_V1 = 30` activates the shared reservations established on main by PR #1332. It is independent of service-account inventory capability 17 and Worker capabilities. An authenticated owner or paired client can omit `machine_id` for ChatGPT login, authentication refresh or logout. The server must have the verified Codex 0.151.0 installation. No Worker registration, startup or selection is required. Claude requires the explicit Runner lane under capability 38; Grok remains unsupported. API authentication, execution selection and existing quota authority do not change.
+System `SERVER_SUBSCRIPTION_LOGIN_V1 = 30` activates the shared reservations established on main by the originating change. It is independent of service-account inventory capability 17 and Worker capabilities. An authenticated owner or paired client can omit `machine_id` for ChatGPT login, authentication refresh or logout. The server must have the verified Codex 0.151.0 installation. No Worker registration, startup or selection is required. Claude requires the explicit Runner lane under capability 38; Grok remains unsupported. API authentication, execution selection and existing quota authority do not change.
 
 Go records the original actor, operation, server epoch, bounded lifetime, finish identity and closed progress state in optional server-owned `server_operation` metadata. Accepted request replay returns the original receipt without another native launch. Claiming requires the original queued pending operation and no Worker credential lease; `native_started` is an exclusive credential fence. An existing execution lease retains ownership while queued refresh/logout waits. Cancellation is serialized with final publication. Successful native completion, joined process closure, final-file comparison, private-runtime removal, vault staging and old-reference cleanup precede confirmed success. Uncertain cleanup and previous-epoch operations retain recovery ownership and cannot relaunch or redistribute credentials. Optional JSON metadata requires no database migration and does not alter migrations 26–30.
 
@@ -197,6 +197,144 @@ Codex 0.151.0 can send `/cancel` to an occupied preferred port 1455 before using
 Typed progress separates preparing, waiting, succeeded, canceled, expired, unsupported, failed and recovery-required. Successful login exposes its exact current generation and one transient name suggestion, chosen from email, provided display name, then ChatGPT within the existing 256-byte UTF-8 alias bound. Native login success remains the authentication evidence; JWT identity claims only project consistent identity. Suggestions belong to the original actor/operation/generation, expire with its lifetime and remain only in memory until the user explicitly saves a name. They never enter resources, receipts or logs. Refresh/logout cannot suggest names.
 
 Settings Add account is an explicit event that creates a default service-named account and immediately requests browser login. Mount, Strict Mode, polling and reconnect cannot repeat creation/login. Only confirmed original success advances to editable name entry. Save uses the current revision and changes only the alias while preserving server-owned bytes; a conflict retains the draft for a fresh explicit save. Later and navigation retain accepted default-name metadata and authentication. Navigation discards the Settings presentation/native callback receiver and rejects late continuations without business cancellation. Only Cancel login requests cancellation.
+
+### Project requirements
+
+- Failed subscription cleanup follows `cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations` after main reservation the originating change (System 41). Preserve server-owned complete batches, original actor/login/revision, shared vault/reference deletion checks, atomic result/tombstone receipts, joined shutdown and restore quarantine. Terminal failures require a new explicit batch; status/restart never relaunches login or callbacks. No database migration or Rust/native change.
+
+- The feature server quota uses System 46 and the separate optional server quota owner under `cmds-delidev-subscription-contract.md#server-owned-chatgpt-quota--issue-1728`. The owner explicitly permits allocation and activation in one complete batch PR without the prior main merge under the shared allocation workflow; existing allocation ownership and migration dependencies remain unchanged. Preserve original actor/epoch/connection/generation, once-only claims, confirmed native/file/reference cleanup, joined shutdown and strict Worker/reset-credit ownership. No new RPC, Worker capability, migration or Rust/native change. Real-account/installed-native/remote/platform acceptance is owner-performed and nonblocking for this batch; fixtures establish no such acceptance.
+
+- Server quota V2 follows the feature and `cmds-delidev-subscription-contract.md#server-owned-chatgpt-quota-v2--issue-1854`: record and activate System 50 in the complete feature PR, preserving 18/46/49. Omitted-machine manual/batch/maintenance quota uses a separate server access-token-only native profile even during Execute. Refuse token refresh, retain captured protected references through rotation, and keep quota cleanup uncertainty independent of execution leases. Preserve explicit Worker/reset-credit semantics, lifecycle/deletion/restore fences and joined shutdown; no RPC, Worker allocation or migration. Real native/account/remote/platform acceptance is owner-assigned and nonblocking for this batch.
+
+### cmds/delidev-cli/internal/cli constraints
+
+- `account list` accepts optional closed `--account-type api|subscription` and `--provider-id UUID` selectors through the list-only Connect request. Preserve the unfiltered default for existing callers; filters are applied before SQL pagination and bound to cursors. Snapshots and event streams must not inherit them.
+
+- Generic JSON configuration selects schema 2 only for service-native subscription accounts/models or retired Agent repair, preserving API schema 1 and the version-1 result envelope. Subscription list requests never combine a Provider selector. Follow the independent subscription identity and portable bundle contracts.
+
+- Subscription login/refresh/logout may omit --machine-id only after capability 30 negotiation. Explicit machine selection retains the Worker lane; no CLI account command implicitly starts server/Worker. Device-code auth remains an explicit CLI alternative, never browser fallback. Dedicated original login-progress output may show transient original state/name/generation; operational logs must not contain it.
+
+- Server-owned ChatGPT reset credits follow the feature under the subscription contract. System 49 separately negotiates omitted-machine consumption through the settled original server credential generation; active executions and explicit machines retain the Worker lane. Preserve immutable actor/epoch/connection/generation/inventory/key/selection, once-only durable sends, explicit same-key reconciliation after confirmed native/file cleanup, independent quota outcomes, cross-domain ownership fences and joined shutdown. No new RPC, Worker/entity allocation or migration. Keep fixture/build checks separate from real native/account/platform acceptance.
+
+### cmds/delidev-cli/internal/domain constraints
+
+- Optional Account.subscription state contains only server-owned generation references, identity commitments and actor/lease fences. Configuration cannot manufacture or replace it; historical accounts omit it unchanged. Keep closed action/phase/capability values under `cmds-delidev-subscription-contract.md`.
+
+- A restored managed subscription may retain a valid historical generation without a connection only while recovery-required. This is quarantined evidence; ordinary usable generations still require subscription-authenticated connections. Follow the storage and subscription contracts.
+
+- Keep service-native subscription identity closed to ChatGPT/Claude/Grok and its exact harness; OpenCode Go is the separate closed key-backed OpenCode identity under its owning contract. API Provider identity remains separate. Match complete account/model identity in routing and immutable snapshots; retired Agents require explicit reconfiguration before resolution.
+
+- Native subscription observations preserve sparse quota fields, authoritative credit counts and original generation-bound operation keys under the subscription contract. Only fresh positive native evidence may clear exhaustion; typed failure/reset outcomes cannot grant recovery.
+
+- Subscription server_operation is optional server-owned closed metadata. A machine-less pending claim is valid only for its exact server operation/actor; native_started requires no Worker lease and the original generation. Active/recovery ownership retains pending authority. Terminal metadata grants no credential use. Keep APIs, immutable historical service attribution and real migrations unchanged.
+
+- Claude subscription optional ownership pairs native profile and owner machine, with original operation/actor/epoch/lifetime, once-only code claim/consumption and closed safe diagnostics. Usable generations require native identity commitment and subscription connection. Metadata grants no credentials; preserve account/model/harness matching, historical identity and no migration under the subscription/storage contracts.
+
+- The feature reference pricing uses validated exact ModelIdentity (one API Provider UUID or SubscriptionService plus native ID). Collector rates are exact bounded decimals; missing and zero remain distinct. Identity/reference metadata grants no account or execution support. Follow the catalog, usage and network contracts.
+
+- Paid-credit observations retain original ChatGPT quota ownership under System 76 / Worker 51. Project only bounded per-bucket flags, nullable exact decimal strings and original successful timestamps; omit sparse balances, reject malformed/reflected values and preserve last-good evidence. Capability omission grants no support, generation replacement clears balances, and configuration saves grant no observation or spending authority. Follow the subscription contract; no migration.
+
+### cmds/delidev-cli/internal/harness/claude constraints
+
+- Original installed Claude Code 2.1.236 owns subscription OAuth and automatic renewal through private account-specific configuration and secure storage. Use official auth login --claudeai, auth status and auth logout; never inspect auth files, personal profiles or external tokens.
+
+- Validate the original closed CLI URL without reconstruction and accept one bounded readline approval input. Join the original login process and descendants before independent subscription status confirmation. Clear URL/code/native identity buffers after their bounded use; retain only safe structured diagnostics.
+
+- Keep native subscription initialization distinct from API/discovery authentication. Reconstruct environment paths; no API key, relay bearer/base URL or host-managed/imported auth enters subscription execution. Existing permission/model/effort, original input/history/continuation and Stop proofs remain mandatory.
+
+### cmds/delidev-cli/internal/harness/codex constraints
+
+- Accept the installed Codex 0.159.2 observation fields in thread Start/Resume/read, settings notifications, empty agent-message questions and quota/response-usage metadata under the harness contract. Discard private observations without replacing immutable effective settings, enabling plugins/environments/Daybreak or inferring billing cost. Populated questions remain a private extension. Keep unknown-field rejection, original history and managed-account recovery fences. Event failure logs use closed validation stages, never raw methods or payloads.
+
+- Follow the parent and repository instructions. Managed authentication is a separate explicitly leased profile under `cmds-delidev-subscription-contract.md`. Require native login completion, file-backed ChatGPT authentication and the official built-in provider; reject inherited overrides, API keys and external tokens. Successful account/read alone never proves refresh. API execution/discovery retain their ephemeral profile.
+
+- Discovery and subscription lifecycle processes pin `features.plugins=false` before launch and verify disabled plugins through the complete bounded normalized native feature inventory before granting a client. Missing, enabled, malformed or incomplete observations reject the profile and join the original native owner. Thread execution retains its independent feature policy. Keep disposable runtime cleanup bounds unchanged; disabling downloads cannot recover prior failed accounts or establish real-account acceptance.
+
+- Private quota reads accept optional nullable `ordinaryUsageAllowed` booleans, `accountId` strings and opaque `rateLimitUpsell` JSON from the official Codex response. Discard these fields before projection; they grant no identity, routing, recovery or consumption authority. Preserve strict unknown-field, typed-field, duplicate-key and envelope-bound checks.
+
+- Pinned native quota/reset-credit adapters omit unit parameters where the original protocol requires it, project bounded sparse metadata and preserve the official idempotency key and closed outcomes. Exclude display/billing fields and credential reflection; native updated notifications cannot grant authentication or execution authority.
+
+- Server quota V2 follows the feature and `cmds-delidev-subscription-contract.md#server-owned-chatgpt-quota-v2--issue-1854`: record and activate System 50 in the complete feature PR, preserving 18/46/49. Omitted-machine manual/batch/maintenance quota uses a separate server access-token-only native profile even during Execute. Require and discard only the original external-token login’s closed success completion with no managed login ID, error or onboarding payload before reading quota; this metadata grants no renewal authority. Refuse token refresh, retain captured protected references through rotation, and keep quota cleanup uncertainty independent of execution leases. Preserve explicit Worker/reset-credit semantics, lifecycle/deletion/restore fences and joined shutdown; no RPC, Worker allocation or migration. Real native/account/remote/platform acceptance is owner-assigned and nonblocking for this batch.
+
+- Quota privacy checks reject exact original bucket and reset-credit IDs against protected raw values and complete Base64 forms at every length. Strip only the adapter-owned final window suffix; retain long substring checks without short-word substring rejection. Worker reads/updates and server-owned quota reads share `ValidateQuotaSecrets` before publication under the subscription contract.
+
+### cmds/delidev-cli/internal/knownmodels constraints
+
+- Never read subscription credentials, run harnesses, create resources or infer account/readiness authority. Log only catalog version/date and stable failure codes. Fixtures use isolated temporary state and injected transports.
+
+### cmds/delidev-cli/internal/server constraints
+
+- Subscription cleanup includes fully disconnected service-native accounts without synthetic login IDs. Explicit failed initial ChatGPT deletion uses the shared durable cleanup controller, preserves the original public deletion revision/receipt while checkpoint revisions advance, and never retries a terminal attempt without fresh explicit confirmation. Retain original actor/native/vault/reference checks; no new RPC, protocol allocation or migration. Follow the subscription and account contracts.
+
+- Managed Codex subscriptions follow `cmds-delidev-subscription-contract.md`. Keep explicit provider selection, a separately authorized Worker lane, one durable per-account login/refresh/execution/logout lease, original actor/revision/generation fences and immutable latest-bundle write-back. Never redistribute a Take receipt or uncertain generation, expose bundles in records/logs, grant API relay authority from subscription registration, or delete unresolved ownership.
+
+- Require the selected Worker's negotiated managed Codex capability before claiming subscription execution or consuming its queued input. Ordinary native installation discovery does not establish managed authentication support.
+
+- Initiator revocation must atomically settle its still-queued subscription lifecycle operations without granting a lease or changing credential generations. Preserve accepted logout revocation, independent active leases and all claimed/native ownership; only a fresh authorized request may replace the canceled queued operation. Successful native write-back must preserve logout-revoked health until a fresh authorized logout completes cleanup.
+
+- Lost subscription ownership must reject progress reads and publication and purge the in-memory URL/device-code presentation under the account gate. Retain the original pending operation, lease and recovery evidence; cache invalidation never proves native cleanup or grants a retry.
+
+- Recovery-required subscription ownership rejects every new Finish before vault staging/deletion and at the final transaction. An already accepted Finish receipt may replay read-only without changing a later retained lease, pending operation or recovery fence.
+
+- Quota/reset-credit capabilities 18/19 and Worker observation capability 8 follow the subscription contract. Queue complete server-side refresh batches, persist original send claims before native work and retain uncertain consumption for explicit same-key reconciliation. Publish account recovery and its deduplicated account-scoped Inbox record atomically; never grant a second active credential writer.
+
+- Quota maintenance checks due eligibility read-only before mutation and rechecks it transactionally. If every candidate was concurrently queued, roll back the empty batch; do not emit recurring no-op receipts or change signals.
+
+- Joined successful native-owner cleanup settles unpublished quota reads as failed while preserving last observed values and future read/execution admission. Retain original-key uncertainty only for possible reset-credit consumption.
+
+- Independent subscription capability 30 admits omitted-machine login/refresh/logout under the subscription contract. Original actor/epoch/request/lifetime and native_started metadata form a disjoint exclusive credential fence; Worker leases cannot coexist. Reuse verified isolated Codex, joined process/file cleanup and protected generations. Claim callback forwarding durably before fixed loopback HTTP, reject foreign/duplicate/late state and never retry uncertain delivery. Restart retains recovery without relaunch. Suggestions stay original-success-bound and memory-only until explicit name Save; logs retain only opaque IDs/actions/codes.
+
+- Subscription browser callbacks permit only the exact registered localhost and 127.0.0.1 port-1457 `/auth/callback` addresses under the subscription contract. Retain the original URL/state/Host; forwarding always connects to fixed IPv4 loopback and never substitutes one accepted spelling for another. Reject duplicate query fields and malformed state. Log URL rejection with only its fixed classification and original operation reference. Preserve prior recovery fences.
+
+- Server subscription failures retain actual Codex version and the first safe native failure separately from cleanup/recovery. Login logs use original operation correlation without account identifiers. Publish diagnostics only to the original authenticated actor/operation and preserve uncertain ownership without resending work. Follow the subscription and protocol contracts.
+
+- Subscription cleanup failures log only closed native-process/auth-file/runtime stage and reason enums, the original operation reference and bounded inventory counters/limits. Preserve the public recovery classification, auth-file comparison, original process joins, directory identity, symlink refusal and existing 2,048-file/64 MiB limits. Runtime diagnostics contain no paths, native output, file content or credentials; they cannot clear existing recovery fences.
+
+- Claude subscription business logic belongs in claude_subscriptions.go under System 38. Bind original owner/client operation and Worker/device/instance/lease, claim codes before memory retention and consumption before once-only release. Idle progress/code polling is read-only. Cancel/revocation/expiry wins before connection publication; wrong Runner fails before input consumption. Retain uncertain ownership and admit original cleanup-only recovery without login/code replay. No Claude bundles, credential files, raw identity, URL/code persistence or quota inference.
+
+- `desktop_credentials.go` owns read-only startup Keychain checking for app-owned macOS servers. Page current connected API accounts, resolve immutable selected profiles, skip keyless/disconnected/removal/subscription ownership, and read exact current references. OAuth reads bypass refresh/exchange/cleanup. Clear returned buffers even on failure, recheck original client authorization, retain original attempt on observation and join canceled native work before vault closure. Only explicit predecessor-bound Retry may replace terminal failure; never change account health/revisions/receipts or send provider HTTP. Follow the desktop/credential contracts.
+
+- The feature active Execute quota admission uses only the original initialized native process under its exact account/connection/generation/lease/revision/epoch/Worker/device/instance and initiating-actor proofs. Explicit, omitted-machine, Refresh all and maintenance share eligibility without saved discovery/version gates. Preserve strict idle quota and reset-credit/reconciliation discovery checks; registry absence grants no new native owner. Follow the subscription contract; no allocation or migration.
+
+- Server quota V2 follows the feature and `cmds-delidev-subscription-contract.md#server-owned-chatgpt-quota-v2--issue-1854`: record and activate System 50 in the complete feature PR, preserving 18/46/49. Omitted-machine manual/batch/maintenance quota uses a separate server access-token-only native profile even during Execute. Refuse token refresh, retain captured protected references through rotation until confirmed native cleanup and checked exact obsolete-reference retirement before terminal publication, and keep quota cleanup uncertainty independent of execution leases. Preserve explicit Worker/reset-credit semantics, lifecycle/deletion/restore fences and joined shutdown; no RPC, Worker allocation or migration. Real native/account/remote/platform acceptance is owner-assigned and nonblocking for this batch.
+
+- Server subscription maintenance initializes the shared vault and reads the exact original `AccountLogin` generation under `accountGate`, sharing API account synchronization and cancellation. Release the gate before native work; retain retryable open failures and the original operation/cleanup owner. Follow the credential contract.
+
+A fresh subscription lifecycle Take may return Canceled with exact cause `subscription_take_not_admitted` only inside its rolled-back admission transaction after original account/Worker/instance/installation/update fences when the queued original is absent, replaced or canceled. Replay, claimed/recovery state, wrong action/machine and post-commit errors never carry this proof. No lease, bundle or native authority is granted. Claude rejects a stale queued replacement claim after original current-Worker/update/revision/action and recovery/lease fences, before replacement-owned profile/machine checks. Keep matching-operation profile/machine validation and the original canceled retired-profile proof; never adopt or cancel the replacement.
+
+- Automatic reset credits use actor/connection/generation-bound typed consent and atomic durable episode admission under System 77. Require the original failed Execute job/native thread/turn and active Worker 52 credential lease; reject idle adoption, free-text authority and restart replay. Logout/generation replacement clear consent. Preserve original same-key explicit reconciliation and cleanup; follow the subscription contract.
+
+### cmds/delidev-cli/internal/store constraints
+
+- A single-account subscription cleanup child reserves its original public configuration deletion request/revision before the final receipt exists. Both mutation and replay check that immutable command through the existing job parent index; admission rejects already used public IDs transactionally. Preserve ordinary batch and restored-job semantics; no migration. Follow the subscription/account contracts.
+
+- The feature reserves migration 28 for service-native subscription identity and legacy configuration retirement. Keep versions 26 and 27 in their existing order and implement both real predecessors before activating 28. Reservations use one original `pr` or owning `issue`; retain that provenance after an implementation PR exists. The planned reset is backup-first and atomic, preserves historical bytes/attribution and configured-empty deny-all restrictions, and refuses unsettled native ownership or cleanup without inferring a service.
+
+- Migration 28 follows real 26/27, backs up first and atomically retires original provider-bound subscriptions without inference. Preserve original record bytes in history-only storage and forbid live Get/admission fallback. Keep tombstones/receipt redaction, configured-empty deny-all, surviving ordered weights and affected Schedule reset. Refuse unsettled original native/protected/browser ownership; only a private historical restore candidate has the explicit no-current-authority migration exemption.
+
+- Worker update admission and idle checks run under the claim transaction, including original terminal/forward/subscription/deletion ownership. Filter matching pending/signed scopes before applying query bounds. Preserve current installation metadata across managed restore, and never release uncertain update fences through history pagination or restored receipts.
+
+### cmds/delidev-cli/internal/worker constraints
+
+- OpenCode event subscriptions must precede the original input claim and consume the owned native connected record before sending. Preserve arrival order and original JSON event IDs without treating them as SSE replay cursors. Retain bounded private native bodies for separate typed observers; transport recognition grants no completion, interaction, usage or publication authority. Do not ignore unknown frames, silently evict identity history or infer EOF/idle as completed work. Reopen only through the harness contract's once-only same-process native event reconciliation: verify original process/authentication/effective configuration, retain all input/reply/publication claims, consume listener readiness before bounded repeated reads, and publish no partial result on uncertainty. Keep private read proofs separate from native event identities; only positive original reply evidence can resolve delivery. Stop, Archive, revocation and owned closure must cancel/join the cycle, and recovered terminal/history/cleanup remain separate boundaries. Stream failure blocks new input and cancels pending mutations without releasing their durable claims; retain prior valid observations and join the reader/watchdog on closure.
+
+- The internal OpenCode owned API interface must retain original initializer settings and claims, validate input before consuming subscription authority, and serialize event dequeue with typed observation. Canceling only a waiting consumer must leave the original stream, queued arrivals and observer usable; actual subscription loss, owner cancellation, EOF and bounded-capacity failures still require reconciliation. Bind an unobserved retained in-memory input only to its original stream/root for inspection or cleanup, never as restart/replay authority. Keep native interruption, owned Stop intent, explicit recovery and generic joined Close separate; closure alone cannot publish successful input or synthesize a Stop receipt. Real Worker/native claim integration with fixture relay authority does not prove public dispatch, account registration or publication.
+
+- Managed Codex subscriptions use only the selected installed Codex 0.151.0 and a fresh private file-authentication profile under the protected lease. Journal original claims before native work, never retry uncertain delivery, verify native identity and independent last_refresh/token changes, join native cleanup and save the final bundle before another grant. Accept all four Codex permission modes for API and subscription execution; default omits the sandbox override and full-access may expose managed authentication files to native tools. Reject non-canonical or workspace-overlapping `CODEX_HOME` paths before writing `auth.json`; preserve original identity, cleanup and recovery proofs without claiming unrestricted same-user isolation. Keep recovery evidence and synthetic test credentials isolated; follow `cmds-delidev-subscription-contract.md`.
+
+- Codex thread publication and checkpoint retention/read must compare the exact provider selected by the immutable accepted authentication profile: built-in OpenAI for managed subscriptions and the existing relay provider for API execution. Copy private checkpoint comparison flags only from that accepted configuration; do not infer a profile from a native observation or widen uncertain-lease recovery.
+
+- Close and join the managed subscription lane after uncertain delivery/completion so the server retains lost leases as recovery-required. A durably acknowledged operation failure must not interrupt unrelated accounts on that lane.
+
+- Quota/credit observation dispatch shares the original active Codex process through a joined account-owner registry. Idle observations use one short exclusive lease. Preserve official operation keys after uncertainty; quota/read and credit/consume do not perform inference or substitute for authentication refresh. Join registry users before closing the native process.
+
+- Idle quota/reset-credit observation publication failure does not itself imply credential-owner recovery. Collect the unchanged valid native bundle and independently join native/file cleanup before completing the short credential lease; retain original operation uncertainty/key for explicit credit reconciliation. Failed bundle/native/file validation still fences ownership.
+
+- Claude subscription Worker 20 requires verified original Claude Code 2.1.236 and joined empty-profile cleanup. Persist original lease/process/code claims before native effects; use one canonical private account profile and scoped secure storage, original-machine owner and exclusive lock. Official login/status/logout owns auth; raw identity stays local and the original keyed commitment is pinned in private profile ownership before later status comparison or execution input. Original recovery joins process journals and confirms logout/status plus bounded owned-profile removal before reporting cleanup. Execution reuses stream-json/history with no API auth injection or auth-file checkpoints. Never replay uncertain Take/login/code or claim actual platform acceptance from fixtures.
+
+Subscription lifecycle Take treats only Canceled with exact cause `subscription_take_not_admitted` as an operation-local no-grant refusal. Retire its original private claim without Finish, retry or native launch; preserve other accounts on the joined lane. Execute, ordinary Canceled, RecoveryRequired, unknown delivery and uncertain Finish retain existing lane/recovery fences.
+
+- Automatic reset credits use Worker 52 only with verified managed Codex. Publish the closed failed-turn marker after original execution progress, claim and consume through the same retained native lease, and fence/join its observer before native cleanup. No idle process, restart, Sidechat or Fork may adopt automatic spending. Preserve explicit reconciliation and original uncertainty under the subscription contract.
 
 ## Storage
 
@@ -242,7 +380,7 @@ Server cleanup failures additionally emit `server_subscription_cleanup_failed` w
 
 Run `go test -race ./cmds/delidev-cli/...`, `go vet ./cmds/delidev-cli/...`, `pnpm proto:check`, and the API client's tests/typecheck. Generate bindings through pinned root Buf tooling. Controlled native-process fixtures cover browser/device progress, completion, cancellation, file rotation, unchanged refresh evidence, logout and symlink refusal. Real loopback Connect/SQLite fixtures cover lease races, protected-channel authorization, generation fencing, lost write-back, cancellation, identity uniqueness, independent accounts, API relay denial and secret-free outputs/database files.
 
-These fixtures do not authenticate real accounts, execute hosted inference or establish installed-Codex/desktop/Windows/Linux/release acceptance. Record actual executed checks, source revisions and unresolved limits in issue #1095, its pull requests and CI logs/artifacts.
+These fixtures do not authenticate real accounts, execute hosted inference or establish installed-Codex/desktop/Windows/Linux/release acceptance. Record actual executed checks, source revisions and unresolved limits in the feature, its pull requests and CI logs/artifacts.
 
 Lifecycle fixtures verify normalized plugin disablement before any login request, rejection of incomplete observations, unchanged thread feature policy and sequential independent account login without changing the first saved configuration or protected generation. Cleanup fixtures preserve exact file/byte limits, identity/symlink refusal, auth-file equality and secret-free failure counters. The opt-in installed empty-home logout smoke waits for asynchronous startup work, rejects plugin cache creation and checks joined private-runtime removal after native closure. It uses no browser, real account credentials, OAuth completion or inference.
 
@@ -254,7 +392,9 @@ Reuse authenticated Connect, the server vault, current Worker discovery, owned p
 
 ## Change Triggers
 
-Update the account/harness/session/protocol/client contracts and affected scoped `AGENTS.md` owners when the native profile, public operations, generations or recovery boundaries change. Record implementation status and validation in issue #1095, its pull requests and CI logs/artifacts; do not add repository evidence documents. Update the project index only for ownership, domain catalog or cross-domain invariant changes.
+Update the account/harness/session/protocol/client contracts and affected scoped `AGENTS.md` owners when the native profile, public operations, generations or recovery boundaries change. Record implementation status and validation in the feature, its pull requests and CI logs/artifacts; do not add repository evidence documents. Update the project index only for ownership, domain catalog or cross-domain invariant changes.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 
@@ -270,8 +410,7 @@ Update the account/harness/session/protocol/client contracts and affected scoped
 - [Codex 0.159.2 account response profile](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server-protocol/src/protocol/v2/account.rs)
 
 
-## Native quota and reset credits — issues #1096 and #1104
-
+## Native quota and reset credits
 System capabilities 18 (`SUBSCRIPTION_QUOTA_V1`) and 19
 (`SUBSCRIPTION_RESET_CREDITS_V1`) negotiate the two product operations separately.
 Worker capability 8 retains the verified managed Codex profile for fresh idle native-owner admission. Active original Execute quota reads use the initialized execution protocol as described below. The
@@ -357,11 +496,10 @@ Codex sign-in attempts share the harness contract's minimum SemVer `0.151.0`, wi
 
 Missing executables report discovery with no detected version. Invalid or lower versions report version validation; newer versions run actual initialization. Keep the first native failure when cancellation, process cleanup or protected-file cleanup subsequently fails; the independent recovery state and cleanup result remain authoritative. A cleanup-only failure uses cleanup phase. Persist metadata through restart and transient presentation disposal without login URLs, device codes, credentials, identity, paths or raw output. Success clears failure metadata. Logs retain bounded version/phase/code/operation correlation and separate original outcome from cleanup/recovery, without account identifiers. No diagnostic may trigger login replay, callback resend or automatic retry.
 
-## Server-owned ChatGPT quota — issue #1728
-
+## Server-owned ChatGPT quota
 System `SERVER_SUBSCRIPTION_QUOTA_V1 = 46` separately negotiates quota reads for idle server-owned ChatGPT accounts. For this issue, the owner's explicit batch instruction permits allocation and activation in one complete feature PR without a prior main reservation merge. This exception changes no other allocation, migration or native authority rule.
 
-The existing QUOTA request can omit `machine_id` under capability 46. Explicit machines retain capability 18 and the strict Worker claim/receipt lane. An active execution uses its original Worker process and lease, including an omitted-machine request resolved to that original lease. Worker reset-credit consumption retains capability 19 and original Worker ownership. The separately negotiated server lane is defined under issue #1809 below. Authentication success or capability 30 alone grants no server quota authority.
+The existing QUOTA request can omit `machine_id` under capability 46. Explicit machines retain capability 18 and the strict Worker claim/receipt lane. An active execution uses its original Worker process and lease, including an omitted-machine request resolved to that original lease. Worker reset-credit consumption retains capability 19 and original Worker ownership. The separately negotiated server lane is defined for this feature below. Authentication success or capability 30 alone grants no server quota authority.
 
 Optional `server_quota_generation` records eligibility only after successful original server login/authentication refresh and final protected-reference cleanup. First observation, complete Refresh all and five-minute maintenance derive eligible accounts on the server. A previous settled server generation can become eligible at startup only from its original successful non-native-active owner, valid current protected reference and confirmed reference cleanup. Missing, restored or uncertain evidence grants no eligibility. No SQLite migration or credential format conversion occurs.
 
@@ -373,12 +511,11 @@ Successful projection shares sparse-window merging, minimum remaining fractions 
 
 The owner will perform real-account, installed-native, remote and platform acceptance separately. This batch's automated fixture/build validation does not establish those results; that skipped acceptance is nonblocking for this feature PR under the owner's explicit instruction.
 
-Managed ChatGPT Sidechat follows [issue #1829’s protected Fork profile](cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat--issue-1829). EXECUTE Take admits only its exact claimed original Fork job. Protected Finish writes a metadata-only original-job receipt after actor/source/lease rechecks; that receipt gates child publication. Independent managed Fork follows the separate System 53 / Worker 29 profile in the Fork contract and uses the same original-job receipt lifecycle.
+Managed ChatGPT Sidechat follows [the feature’s protected Fork profile](cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat). EXECUTE Take admits only its exact claimed original Fork job. Protected Finish writes a metadata-only original-job receipt after actor/source/lease rechecks; that receipt gates child publication. Independent managed Fork follows the separate System 53 / Worker 29 profile in the Fork contract and uses the same original-job receipt lifecycle.
 
 Managed subscription installation refusal describes missing verified Codex installation evidence, not an exact or minimum native version. Existing bounded version metadata, detected state, path, protocol, observation and capability predicates remain authoritative. Safe guidance directs the user to the selected Runner Device’s installed Codex and protocol verification without exposing native paths or output.
 
-## Server-owned ChatGPT reset credits — issue #1809
-
+## Server-owned ChatGPT reset credits
 Managed Sidechat admission rejects an active original server-credit owner before
 creating a Fork job. Protected Take and Finish retain their original account,
 credential generation and independent cleanup fences.
@@ -437,8 +574,7 @@ Fixture/build/package evidence remains separate from installed-native,
 real-account, remote-machine and platform acceptance. Record revision, commands,
 results and unresolved limits in PRs, issues and CI artifacts.
 
-## Server-owned ChatGPT quota V2 — issue #1854
-
+## Server-owned ChatGPT quota V2
 System `SERVER_SUBSCRIPTION_QUOTA_V2 = 50` expands omitted-machine QUOTA, Refresh all and five-minute maintenance to the selected server, independent of Worker registration, connectivity, verified installation, retained Worker ownership or an active Execute lease. Record allocation, declarations, generated bindings and complete activation together in the owning feature PR under the allocation workflow. Preserve System 18, 46 and 49 and explicit-machine legacy QUOTA/reset-credit semantics. No Worker capability, RPC, credential conversion or SQLite migration is added. Clients require capability 50 before issuing the expanded omitted-machine or batch request; older servers receive compatibility guidance without an automatic Worker fallback.
 
 V2 uses a separate quota-only native profile. Go reads the exact sealed AccountLogin generation, validates the original account/user commitment and supplies only access token, account and plan to official `account/login/start` external `chatgptAuthTokens` authentication. The native process uses ephemeral authentication, disabled plugins and the official provider, receives no ID or refresh token and writes no managed auth.json. Refuse every external-token refresh callback with one fixed safe error; rejected/expired access tokens fail the observation without renewing credentials. Native initialization includes bounded configuration and readiness reads and is not claimed to emit only the quota HTTP request. Validate and discard the pinned external login’s once-only `account/login/completed` success notification (`loginId`/`error`/`onboardingEntrypoint` null or omitted, typed `success: true`) before the quota request; failed, foreign, malformed and unknown completion fields fail closed. This private completion metadata grants no managed-login, callback or renewal authority. Use one bounded `account/rateLimits/read`, existing strict sparse projection and explicit server network routing. Unsupported server profiles fail with server guidance and never select a Worker.
@@ -449,17 +585,15 @@ Access-only quota can coexist with an original Execute credential writer. Its du
 
 Preserve last-success quota windows/timestamps on failures, truthful pending/failed/stale status, observed-recovery deduplication and bounded private reflection checks. Log only closed phases/errors/cleanup and operation identities, excluding authentication, user/account identities, quota values and native bodies. Synthetic protocol/ownership fixtures and build checks remain distinct from real native/account/remote/platform acceptance, which the owner performs separately and has explicitly made nonblocking for this batch.
 
-## OpenCode Go subscriptions — issue #2097
-
+## OpenCode Go subscriptions
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.
 
-Independent managed Fork now follows the separately negotiated System 53 / Worker 29 profile in [the Fork contract](cmds-delidev-forks-contract.md#managed-chatgpt-independent-fork--issue-1979). It reuses the exact accepted Fork EXECUTE lease and durable Finish receipt, including original generation, actor, cleanup and uncertainty checks. Legacy internal Sidechat-named receipt storage also serves this independent profile without changing existing receipt bytes or requiring a migration.
+Independent managed Fork now follows the separately negotiated System 53 / Worker 29 profile in [the Fork contract](cmds-delidev-forks-contract.md#managed-chatgpt-independent-fork). It reuses the exact accepted Fork EXECUTE lease and durable Finish receipt, including original generation, actor, cleanup and uncertainty checks. Legacy internal Sidechat-named receipt storage also serves this independent profile without changing existing receipt bytes or requiring a migration.
 
-## Situation quota exhaustion notifications (#2055)
+## Situation quota exhaustion notifications
 Only ChatGPT quota observations can publish this metadata-only operational Inbox kind. The original connection must move from complete fresh known usable evidence to explicitly confirmed exhausted evidence in a strictly ordered successful observation. Unknown/sparse/stale/failed observations, credit reset, reconnect, import and restore cannot establish that transition. Notification preference and display claims do not alter per-account quota recovery consent or start recovery. Follow `cmds-delidev-inbox-contract.md`; native/account acceptance remains independently recorded.
 
-## Automatic reset-credit consent — issue #2123
-
+## Automatic reset-credit consent
 System `AUTOMATIC_RESET_CREDIT_CONSENT_V1 = 77` owns the closed
 `SetAutomaticResetCreditConsent` revision-checked mutation. Worker
 `CODEX_QUOTA_BLOCK_V1 = 52` owns bounded original failed-turn quota markers.
@@ -504,8 +638,7 @@ contract. Consumption outcomes and quota recovery remain separate.
 The approved Settings confirmation uses the existing task lifetime, retained
 mutation, theme tokens and English/Korean copy. Closing Settings does not revoke
 accepted server processing. No consumption resumes a failed session automatically.
-## Paid-credit observations — issue #2124
-
+## Paid-credit observations
 System `SUBSCRIPTION_PAID_CREDITS_V1 = 76` and Worker `SUBSCRIPTION_PAID_CREDITS_V1 = 51` independently negotiate the narrow ChatGPT/Codex paid-credit projection. Reuse authenticated original quota reads, leases, connection/credential generations, actor checks, joined native cleanup and existing refresh actions. No RPC, purchase, consumption action or SQLite migration is added. An older Worker omits these fields; the server rejects a paid-credit publication from a Worker without capability 51.
 
 Each native bucket owns its exact bounded ID, required hasCredits/unlimited flags, nullable balance and successful observation timestamp. Accept nonnegative plain decimal strings of at most 64 bytes without numeric conversion. Explicit null is unknown, zero is a real value, and unlimited takes presentation precedence. Never sum buckets or infer balance from quota, reset credits, plan type or hasCredits. Omitted credits/balance fields retain the last successful bucket and its timestamp; failed, malformed or reflected reads retain evidence without refreshing it. Credential-generation replacement clears observations. Ordinary configuration saves and legacy clients cannot replace protected subscription observations. Original identity/token reflection checks include paid bucket IDs and exact balance strings, including short/encoded secrets. Raw responses, unrelated billing/display text and credentials remain private.

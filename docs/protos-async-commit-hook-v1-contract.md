@@ -14,6 +14,30 @@ Typed v1 services expose repositories/worktrees/branches, changes/commits, runs/
 
 `RerunResponse.run_id` is a durable acceptance receipt. Its additive optional `startup_diagnostic` reports post-acceptance runner startup failure while preserving a successful Connect response. The diagnostic uses `startup-failed`, a safe message and recovery hint. Pre-acceptance failures remain Connect errors with no receipt. Omitted diagnostics retain the existing successful-start response.
 
+### Protocol integration
+
+- `protos/async_commit_hook/v1` owns package `async_commit_hook.v1`; follow `protos-async-commit-hook-v1-contract.md`. Generate Go bindings and the isolated ach TypeScript client reproducibly. No arbitrary command or filesystem endpoint.
+
+- RerunResponse carries the accepted run_id even when startup fails, with an optional startup_diagnostic; pre-acceptance errors remain Connect errors.
+
+- Its run-list detached filter must distinguish an empty stored branch from omitted filtering and participate in cursor scope.
+
+- async-commit-hook run lists carry optional check_count totals and omit check arrays/diagnostics; GetRun retains complete detail. Preserve older-response count fallback in clients.
+
+- async-commit-hook repository lists use cursor/limit requests and next_cursor responses, page across worktrees (maximum 50), and bound display fields to 4 KiB; one repository can span pages.
+
+- async-commit-hook branch lists accept cursor/limit and return next_cursor; default/max 50 refs and 128 KiB raw records per page, with 64 KiB per-record rejection. Cursors bind the worktree and raw lexical ref.
+
+- async-commit-hook branch labels are display-only when Branch.id or Worktree.branch_id is present. Preserve additive branch_id fields, bounded worktree scope, legacy omission and exact-byte run filtering.
+
+- async-commit-hook Pair is a deprecated v1 compatibility tombstone returning Unimplemented. All active RPCs require the same local UI origin and API version header; no pairing/authentication messages are newly introduced.
+
+- Additive GetUsageSummary daily/model analytics use `UsageTimeGranularity`, an explicit IANA timezone, and optional response analytics; omitted/UNSPECIFIED fields preserve the existing summary behavior. DAY analytics are present even when empty and contain exact same-snapshot UsageTotals with chronological clipped day bounds, complete sorted model identities, and server-owned Other aggregation. Regenerate Go and TypeScript/Connect Query output from the canonical schema and preserve encoded response-size limits.
+
+- OpenCode `turn-finished` requires original completed user and finalized-assistant usage evidence in addition to current execution/sequence checks. Preserve terminal inbox receipts, independent cleanup/job reporting and authoritative late Stop/recovery state. Terminal publication alone cannot enable continuation or claim process closure.
+
+- OpenCode original question/permission request JSON uses a disjoint `opencode` payload, original `que_`/`per_` identities and observed tool-part/assistant/call ownership. Preserve ordered matrices without synthetic question IDs, optional native flags and exact permission scope/metadata. Commit original request uniqueness and unread inbox atomically, preserve independent read state and block tool/root completion with pending requests. Proposal publication cannot authorize Codex response encoding, response delivery or public execution. The separate direct-response union uses original ordered answer matrices and one-request `once` permissions through existing response/claim RPCs; bounded native reply evidence binds proposal/event/request/body digest to the current response claim and confirmed exact-body HTTP delivery before independent native closure. Keep reply content out of metadata, and reject missing/mixed proofs or unsupported cascade policies.
+
 ## Storage
 All results stay on the local machine. New stores do not create browser/pairing tables. Existing tables and results are preserved but legacy credentials are never consulted. The deprecated Pair RPC remains a wire-compatible tombstone returning Unimplemented (pairing-removed), without side effects.
 

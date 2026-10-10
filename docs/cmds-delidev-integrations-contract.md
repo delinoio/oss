@@ -2,7 +2,7 @@
 
 ## Scope
 
-`cmds/delidev-cli/internal/integrations/github`, the domain integration model, server IntegrationService/SessionService handlers and CLI integration commands own named server-side GitHub.com PAT profiles and stable session PR associations. Profile metadata, direct native credential generations, authenticated identity inspection, PR/issue list/search/detail, immutable PR diff, head Checks, commit statuses, complete applicable active PR-base rules, bounded required-CI evaluation, complete published PR feedback, fresh reviewer identity/permission and original App observations, persisted server/repository remediation policies, durable session links, official token forms and closed local browser opening are implemented. HEADGREEN merge-queue, remaining workflow profiles and App-bound-status evaluation and provider-resolved transitions remain separate required issue #964 work; manual/automatic fixes and verified local handling are implemented below; head observations and endpoint access cannot stand in for them.
+`cmds/delidev-cli/internal/integrations/github`, the domain integration model, server IntegrationService/SessionService handlers and CLI integration commands own named server-side GitHub.com PAT profiles and stable session PR associations. Profile metadata, direct native credential generations, authenticated identity inspection, PR/issue list/search/detail, immutable PR diff, head Checks, commit statuses, complete applicable active PR-base rules, bounded required-CI evaluation, complete published PR feedback, fresh reviewer identity/permission and original App observations, persisted server/repository remediation policies, durable session links, official token forms and closed local browser opening are implemented. HEADGREEN merge-queue, remaining workflow profiles and App-bound-status evaluation and provider-resolved transitions remain separate required the feature work; manual/automatic fixes and verified local handling are implemented below; head observations and endpoint access cannot stand in for them.
 
 ## Runtime and Language
 
@@ -52,7 +52,7 @@ A creation opening pins the first admitted token-first or metadata-first control
 
 Manage separates Connect a token, identity validation and confirmed deletion. The password input is empty, autocomplete-off, spellcheck-off and bounded to 512 visible ASCII characters; an empty/invalid value cannot submit. Stored tokens are never rendered, recovered or revealed. The complete verified official-form guidance appears in an informational native disclosure, initially expanded without a connection and collapsed with a connection. Collapsing preserves its current Classic selection/status; only the existing explicit official-form button requests its revision-bound URL. Preserve all repository-selection, owner, permission, expiry, organization-approval and broad Classic-scope caveats.
 
-The selected server owns OS token storage. Existing original requests/revisions, transient PAT bytes/cache clearing, reentry-only uncertain replacement retries, typed failures, delete confirmation and pending cleanup guards remain unchanged. Category/reflow retention and inactive PAT clearing operate within the shared opening; Close/Escape/navigation disposal follows issue #1138 and cannot restore abandoned drafts/requests. No API/schema, authority, credential storage, polling or migration change is introduced. Record component checks separately from native visual/keyboard acceptance in pull requests, issues and CI logs/artifacts.
+The selected server owns OS token storage. Existing original requests/revisions, transient PAT bytes/cache clearing, reentry-only uncertain replacement retries, typed failures, delete confirmation and pending cleanup guards remain unchanged. Category/reflow retention and inactive PAT clearing operate within the shared opening; Close/Escape/navigation disposal follows the feature and cannot restore abandoned drafts/requests. No API/schema, authority, credential storage, polling or migration change is introduced. Record component checks separately from native visual/keyboard acceptance in pull requests, issues and CI logs/artifacts.
 
 ## Retired Standalone Repository Access Inspection
 
@@ -137,7 +137,7 @@ The domain independently recomputes the entire classification from retained evid
 
 ### Stable ALLGREEN merge queue entries
 
-Issue #1105 adds a `merge-queue` evaluated-commit source to the existing authenticated CI query, CLI, desktop and retained evidence. The fixed GraphQL document reads the original PR's queue entry, queue/repository node IDs, configuration strategy, exact entry head/base commits, position and native state. It separately inventories the complete ordered queue membership and entry-head rollup, each bounded to five pages / 500 entries or contexts with independent advancing cursors. Missing entry or configuration/commit evidence remains Unknown; malformed, inaccessible, incomplete or changed reads publish no successful CI assessment.
+The feature adds a `merge-queue` evaluated-commit source to the existing authenticated CI query, CLI, desktop and retained evidence. The fixed GraphQL document reads the original PR's queue entry, queue/repository node IDs, configuration strategy, exact entry head/base commits, position and native state. It separately inventories the complete ordered queue membership and entry-head rollup, each bounded to five pages / 500 entries or contexts with independent advancing cursors. Missing entry or configuration/commit evidence remains Unknown; malformed, inaccessible, incomplete or changed reads publish no successful CI assessment.
 
 Require identical complete queue and check projections across repeated reads, bracket them with unchanged complete active requirements, then reread queue/check inventories after the final rule read and recheck the ordinary PR identity/head/base. Changed/reordered/removed entries, including changes before an unchanged target position, invalidate the observation. These are bounded live observations rather than a transactional provider snapshot; later remediation revalidates anew.
 
@@ -149,13 +149,13 @@ Retained queue failures preserve the original complete proof, evaluated source, 
 
 Each required-CI context retains independently validated native evidence. CheckRuns carry their original suite node, nullable start/completion timestamps and nullable title/summary/text. Commit statuses retain original creation/update timestamps and nullable description. A present Actions workflow carries its stable node, run number, observed current attempt and creation/update timestamps. All fields come from the same fixed GraphQL document and repeated inventory; absent requested fields, malformed dates/counts, mixed check/status proof and changing output/lifecycle are rejected. Each output field is bounded at 64 KiB and the complete CI observation at 512 KiB, retaining existing 1 MiB upstream/wire boundaries. Oversize evidence is never truncated into a usable result.
 
-`CIContext.Version()` hashes original result identity, context, commit, state, stable App identity, suite/lifecycle and exact output. Required flags and App slugs are applicability/presentation rather than new content. GitHub's workflow `runAttempt` describes the current aggregate workflow, including partial reruns; it does not independently assign every retained CheckRun to that attempt. Label it separately and exclude aggregate attempt/update metadata from per-result versions. A new result ID, native result lifecycle or edited output produces a new version; workflow-only reruns cannot resurrect the same dismissed original check. Execution still needs fresh applicable rules and a verified evaluated commit; durable version-specific handling remains separate work.
+`CIContext.Version` hashes original result identity, context, commit, state, stable App identity, suite/lifecycle and exact output. Required flags and App slugs are applicability/presentation rather than new content. GitHub's workflow `runAttempt` describes the current aggregate workflow, including partial reruns; it does not independently assign every retained CheckRun to that attempt. Label it separately and exclude aggregate attempt/update metadata from per-result versions. A new result ID, native result lifecycle or edited output produces a new version; workflow-only reruns cannot resurrect the same dismissed original check. Execution still needs fresh applicable rules and a verified evaluated commit; durable version-specific handling remains separate work.
 
 Desktop validates these closed evidence families, renders timestamps/output inertly and labels the workflow-attempt limitation. Original output/identities/timestamps never enter business logs. Provider output is not a downloaded job-log archive or permission to execute its contents.
 
 ## Pinned Required Workflows
 
-Issue #1106 adds a bounded required-workflow profile to the existing authenticated `ci` query and equivalent CLI/desktop operation. Workflow rules retain every exact numeric source repository ID, path, optional SHA/ref, optional creation flag and unknown-parameter marker. The original policy digest still covers every provider field. Only an explicit immutable source SHA is supported; refs are retained without resolution. Enrichment starts only for known-source, known-parameter rules containing an explicit SHA when the open, unmerged PR has an available mergeable test-merge rollup with contexts and is outside the merge queue. Unusable references remain Unknown without source-repository lookups, including in mixed rule inventories. Historical workflow rules without this additive projection remain Unknown, and original status-check proofs and per-result versions remain compatible.
+The feature adds a bounded required-workflow profile to the existing authenticated `ci` query and equivalent CLI/desktop operation. Workflow rules retain every exact numeric source repository ID, path, optional SHA/ref, optional creation flag and unknown-parameter marker. The original policy digest still covers every provider field. Only an explicit immutable source SHA is supported; refs are retained without resolution. Enrichment starts only for known-source, known-parameter rules containing an explicit SHA when the open, unmerged PR has an available mergeable test-merge rollup with contexts and is outside the merge queue. Unusable references remain Unknown without source-repository lookups, including in mixed rule inventories. Historical workflow rules without this additive projection remain Unknown, and original status-check proofs and per-result versions remain compatible.
 
 The adapter uses a second fixed read-only GraphQL document to enumerate **all** check suites on the independently parent-verified current PR test-merge commit. It checks original PR operands, ordered parents, exact suite commits, complete totals and independent advancing cursors, including competing runs absent from the latest rollup. An unbound suite is excluded only with a positively identified non-Actions App; absent or malformed App identity cannot prove it unrelated. At most five pages / 500 suites are admitted; source/run enrichment additionally bounds the observation to 32 distinct required source repositories and 32 workflow runs. Exceeding either enrichment bound produces Unknown rather than a partial proof. The existing cancellable repository-query deadline bounds the entire operation. Each optional enrichment has its own three-second budget capped at one quarter of the owning query's remaining time, reserving time for the ordinary repeated CI, rules and PR brackets. A budget expiry joins the canceled reads and makes the whole optional inventory unavailable; explicit parent cancellation still cancels the query.
 
@@ -165,7 +165,7 @@ For every collected original run, read its current native REST identity, event, 
 
 Repeat the entire enriched CI observation inside the existing identical-rule/REST-PR brackets. Drift between two complete inventories rejects publication. If either optional inventory is unavailable, drop both workflow projections before comparing the repeated ordinary observations; retain workflow Unknown without erasing ordinary status-check evidence. The final CI inventory after the final rules read also rechecks any retained workflow proof within the same optional budget. A complete changed final inventory rejects publication; an unavailable final optional inventory drops the workflow family while the complete ordinary observation must still agree. ALLGREEN entry selection never borrows test-merge workflow proof: pinned workflow requirements remain Unknown in the queue, preserving independently assessed entry status-check rows. Before admitting optional proof, size the complete CI envelope with its rules and recomputed result, including attributed result IDs, against the existing 512 KiB evidence limit. Oversized proof is dropped as a whole, preserving the ordinary observation without truncating run/job inventories. Source bodies, output, paths, URLs, native identities and tokens never enter business logs; diagnostics contain only the operation, typed failure code and bounded run/unverified-source counts. The additive JSON evidence uses existing generated authenticated Connect operations and capabilities; it adds no mutation, storage migration, Worker authority or GitHub side effect. Durable CI collection still independently recomputes the complete overall assessment and retains only original current terminal CheckRun versions.
 
-Desktop validates the additive source, run, attempt, job and requirement-reference families before rendering inert numeric identity/path/SHA/run facts. It recomputes each workflow requirement from aggregate/current-job lifecycle and derives the complete headline state/reason in original rule order, preserving unsupported-rule precedence and rejecting stale failure headlines after rows become pending or Unknown. Aggregate workflow metadata remains separately labeled: only the independent current-attempt job evidence proves attribution. Full issue #964 remediation, mutable source-ref resolution, target/queue workflows and code-scanning merge protection remain separate work.
+Desktop validates the additive source, run, attempt, job and requirement-reference families before rendering inert numeric identity/path/SHA/run facts. It recomputes each workflow requirement from aggregate/current-job lifecycle and derives the complete headline state/reason in original rule order, preserving unsupported-rule precedence and rejecting stale failure headlines after rows become pending or Unknown. Aggregate workflow metadata remains separately labeled: only the independent current-attempt job evidence proves attribution. Full the feature remediation, mutable source-ref resolution, target/queue workflows and code-scanning merge protection remain separate work.
 
 ## Published PR Feedback
 
@@ -220,6 +220,71 @@ Reference-only actor-bound receipts return current retained metadata on exact li
 CLI uses `session pr link --id SESSION --repository-id ID --number N`, `session pr list --id SESSION [--limit N --page-token TOKEN]`, `session pr get --id SESSION --association-id ID` and `session pr unlink --id SESSION --association-id ID --revision N`. All mutation commands preserve the global original `--request-id`. Link processing is bounded to 40 seconds and CLI context/header limits allow 45. CLI validates exact response ownership, original query selection and full-precision identities/revisions.
 
 The desktop session exposes an explicit PR associations panel, with scoped pages, inert historical identities/title, project-restricted named repository choices, canonical decimal number entry, link/unlink and explicit refresh. The main conversation remains mounted. Validate complete retained pages and mutation acknowledgments, preserve original uncertain mutation bytes across navigation, and never silently retry using new IDs or selections. Closing drops association queries; ordinary configuration selectors retain their existing connection-scoped cache policy. A link alone grants no automatic-fix eligibility. Only an independently enabled effective policy admits the bounded background observations described below.
+
+### cmds/delidev-cli/internal/cli constraints
+
+- Standalone GitHub repository access inspection is retired. Preserve the allocated RPC and messages for older clients; authenticated owner/paired-client calls return typed Unsupported/Connect Unimplemented with safe guidance and correlation. The endpoint performs no store, vault, admission or outbound work. Browse and PR operations retain their independent selected-profile/generation/revision checks. Follow `cmds-delidev-integrations-contract.md#retired-standalone-repository-access-inspection`.
+
+### cmds/delidev-cli/internal/domain constraints
+
+- GitHub draft form URLs may omit an undeclared fine-grained owner while retaining the closed read-only prefills. Saved-profile form URLs and profile validation still require that owner. The native presentation validator admits only the exact canonical draft or saved form, rejecting empty explicit parameters, extra/duplicate query parameters and write permissions. Follow the integration contract; URL preparation grants no repository access.
+
+- Pinned required workflows follow `cmds-delidev-integrations-contract.md`: require explicit source SHA, original numeric repository/path identity, the current ordered-parent test merge, complete suite/current-attempt job inventories and native PR requiredness. Preserve Unknown for missing, competing, stale or unsupported evidence and retain historical status-check proof/version compatibility. Observation cannot authorize execution.
+
+- ALLGREEN merge-queue CI follows `cmds-delidev-integrations-contract.md`. Select only the exact entry head after complete stable PR/queue/entry/configuration/rules/check inventories. Recheck the complete CI inventory after the final rules read even when the initial observation is not queued, so entry into the queue invalidates earlier PR-commit evidence. Actions results require original `merge_group` and matching workflow suite/commit; HEADGREEN, absent proof and queue state never establish failure. Fresh remediation must match original queue/entry identity; retain historical proofs without current authority after removal.
+
+### cmds/delidev-cli/internal/integrations/github constraints
+
+- Repository picker inventory reads only the fixed, independently constructed `/user/repos` Metadata endpoint with bounded page/size inputs. Validate complete pages and exact numeric/node/owner/name identities before constructing GitHub.com clone URLs; never execute returned URLs or project temporary clone tokens. Provider paging supplies only a verified next page number, never a URL to follow. Preserve the original PAT generation's server cancellation/join and post-read revision checks when the RPC is activated with its recorded allocations.
+
+- Pinned required workflows use numeric-ID rename resolution, the original run/file relationship and explicit immutable SHA. Bound and repeat complete current-test-merge suite and exact-attempt job inventories inside the existing rule/PR brackets. Keep inaccessible, changed, incomplete, competing and unsupported evidence Unknown without erasing ordinary status-check observations. Never match display names or nested reusable workflows, resolve mutable refs, fetch returned source URLs or log protected/native evidence.
+
+- Enrich only known-source, known-parameter rules with an explicit SHA when the open, unmerged PR can evaluate current test-merge contexts. Skip unusable rule-source lookups even in mixed inventories; preserve their Unknown requirement rows.
+
+- Admit optional workflow proof only after sizing the complete rules/result CI envelope against `MaxCIEvidenceBytes`. Oversized proof remains wholly unavailable; preserve ordinary check observations and never publish a truncated run/job inventory.
+
+### cmds/delidev-cli/internal/server constraints
+
+- Use private temporary state/accounts/repositories in tests. Never access user logins, redeem credits, publish to GitHub, or invoke inference from ordinary tests.
+
+- Repository GitHub access follows the integration contract: derive the exact configured owner/repository/profile/generation, bound and join reads outside locks, and recheck authorization and repository revision before response. Keep all eight endpoint states independent; absent head evidence cannot invent Checks/statuses, and availability cannot imply successful CI, satisfied rules, reviewer identity or future authorization. No fallback token, response URL authority, access persistence or inspection receipt.
+
+- Official GitHub form preparation is a current profile/revision-bound owner/client metadata read, without PAT access or server-side browser launch. Keep verified canonical prefills and explicit classic public/private choices; explain manual fine-grained repository selection and unavailable Checks prefill. Local presentation accepts only closed canonical GitHub form/PR/issue URLs, with no shell, inherited credential environment, arbitrary browser command or output-pipe inheritance. Bound/join dispatch and preserve uncertainty without automatic retry.
+
+- `PrepareGitHubTokenForm` is the independent capability-34 owner/paired-client draft read. Permit an empty fine-grained owner only there, omit `target_name` and echo the original request/kind/owner/access. Preserve explicit-owner callers, closed prefills and saved-profile owner/revision checks. Desktop shortcuts use public Classic or selected-repositories Fine grained access; add no allocation, receipt, credential effect or migration.
+
+- Repository metadata support is independently advertised and accepted for this feature. Reject all unknown/duplicate capabilities and validate optional GitHub maps against current negotiated Machine support, inspected remote keys, existing identity validators and the 128-remote/1 MiB bounds. Preserve strict input decoding, atomic repository saves and legacy omission; omit the opaque source identity from save and configuration-import inspections assigned to Workers without `RepositoryInspectionMetadataV1`.
+
+- Repository inspection enrichment presence, including explicit null, cannot bypass capability validation; a present `github_repositories` must be a non-null validated map.
+
+### cmds/delidev-cli/internal/store constraints
+
+- GitHub profile lifecycle follows `cmds-delidev-integrations-contract.md`. Only dedicated owner/client RPCs write connection state. Persist denial before native replacement/deletion, bind receipts to actor and original generation, join canceled inspections before cleanup, preserve current-state replay and decimal pending revisions, and never infer repository access from `/user`. Keep HTTPS outside gates/transactions and PATs outside SQLite, reads, logs and Worker credentials.
+
+- Retained ALLGREEN queue failures bind the original queue and entry nodes to the complete CI proof. Deduplicate by evaluated source, queue/entry identity and original native result, so replacement entries retain separate proofs even when their commit/check result is reused. Preserve legacy plain-node records and local decisions without rewriting original evidence. Preserve non-queue history, clear current membership on removal, and require fresh matching queue/entry evidence before another remediation attempt. Follow `cmds-delidev-integrations-contract.md`; no queue state alone creates failure evidence.
+
+### cmds/delidev-cli/internal/worker constraints
+
+- GitHub PR/issue queries follow the integration contract: fix repository/kind/search authority, distinguish issue-API and PR-API numeric identities, validate complete bounded projections, retain null mergeability and deleted authors, and treat pagination URLs only as checked metadata. Preserve empty filtered issue pages, search incompleteness/1,000-result limits and exact decimal values; no content read grants remediation, system Git or native opening authority.
+
+- PR detail preserves the original head repository separately from its base, including explicit provider unavailability and historical unobserved data. Validate exact repository identity namespaces and closed GitHub transport metadata, and recheck source identity alongside immutable commits after observation reads. Never substitute the base for a missing fork or treat a non-secret Git target snapshot as Worker execution/authentication authority; follow the integration contract.
+
+- Explicit PR Worktree preparation follows the workspace/integration contracts. Bind one original PR target to exact base/head commit references, validate native branch grammar and canonical selected GitHub transports, and recheck remote heads and URL expansion around object fetch. Do not update user refs, FETCH_HEAD, remotes, tags or unrelated working data; disable implicit pruning/maintenance/submodule fetch. Preserve target provenance through publication, partial cleanup and ordinary execution ownership. Preparation uses only Worker Git authentication and does not grant push, live-branch resumption or controller authority.
+
+- Before manual PR Git capability publication, every privileged fetch/push and post-native proof, revalidate the complete original lease's workspace administration and companion repository identities. Current commits may advance; replacement directories, symlinks or Git administration cannot borrow native authentication or handled proof. Follow `cmds-delidev-integrations-contract.md` and the workspace contract.
+
+- Manual push verification independently reconciles the original native owner before its first Git observation while retaining the active execution lease. Native client exit or a later lease Close cannot substitute for that preceding descendant-cleanup barrier; missing process evidence leaves proof uncertain. Follow `cmds-delidev-integrations-contract.md` and the workspace contract.
+
+- The PR Git bridge retains shared command ownership through the actual sandboxed local child, using a fresh bounded grant and authenticated completion after child exit. Parallel commands cannot validate or claim push before that completion. Completion has separate admission capacity; missing, cancelled or lost completion poisons the capability and cannot grant another command, clean bridge closure or push replay. The handshake sequences local calls; it never substitutes for independent descendant cleanup. Follow `cmds-delidev-integrations-contract.md` and the workspace contract.
+
+### cmds/delidev-cli/internal/workspace constraints
+
+- Local repository saves bind each configured checkout to the server's opaque
+  source identity. The Worker computes that identity from the selected effective
+  remote without returning the raw URL; GitHub transport forms normalize only
+  within their established namespace, while generic SSH user/path namespaces
+  remain distinct. A mismatch fails the save before the checkout can become
+  Local execution authority.
 
 ## Storage
 
@@ -276,6 +341,8 @@ The credential package owns native storage and immutable generation markers. Exi
 ## Change Triggers
 
 Update this document, the credential/protocol/client/desktop contracts, the project index, validation records in pull requests, issues and CI logs/artifacts and scoped AGENTS files when lifecycle, token retention, authority, retry or GitHub capability boundaries change. New GitHub queries/forms/remediation require their own complete permission and real-environment evidence.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 
@@ -342,7 +409,7 @@ The internal new-workspace planner requires the policy's explicit Agent/machine 
 The separate private Worker matching read now observes the actual prepared Local/Worktree path against current original PR head/branch/remotes and clean state, retaining exclusive request-bound metadata without fetching or changing native execution ownership. The server rechecks original candidate revision, current project scope and stable association after the read; pause, Archive, unlink or changed activity invalidates it. See the [workspace matching contract](cmds-delidev-workspace-contract.md#current-native-matching-for-an-existing-pr-session). This is current candidate evidence only: selecting/coalescing the newest eligible session and fresh execution-time Git/API authorization remain controller responsibilities.
 
 
-## Manual PR fix execution (issue #1081)
+## Manual PR fix execution
 
 Every immutable remediation job independently requires Codex Execute mode and
 explicit workspace-write or full-access permission. Dispatch resolves the current
@@ -396,7 +463,7 @@ consumers accept their known profile alongside additive unknown entries.
 ### Explicit outbound routing
 All production GitHub identity, repository access and content/rules/check/reviewer adapters use the shared server-selected outbound transport under [the network contract](cmds-delidev-network-contract.md). The fixed official GitHub origin, PAT scope, destination TLS and redirect refusal remain unchanged. Worker profiles cannot alter this route.
 
-## Bounded automatic PR remediation (issue #1082)
+## Bounded automatic PR remediation
 
 The server starts and joins an automatic coordinator independently of ordinary
 execution dispatch. It scans retained session PR associations in bounded pages;

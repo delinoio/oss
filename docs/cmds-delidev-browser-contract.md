@@ -2,7 +2,7 @@
 
 ## Scope
 
-Issue #1087 implements the session browser boundary required by issue #964.
+The feature implements the session browser boundary required by the feature.
 Go owns profile registration, current authorization, exact receipts and durable
 per-device account-removal obligations. `cmds/delidev-cli/internal/domain/browser.go`,
 `internal/store/browser.go`, `internal/server/browser.go`, `internal/cli/dispatch_browser.go` and `internal/cli/browser.go`
@@ -188,6 +188,26 @@ accepted addresses, retaining the exact generation/reservation/removal checks.
 Hide/Resize remain independent of pending storage. The worker joins after
 runtime return and before any directory purge.
 
+### cmds/delidev-cli constraints
+
+- Browser ownership and cleanup follow `cmds-delidev-browser-contract.md`. Keep bounded non-secret profile metadata on the original paired-client Device document with independent UUID-v7 identity/revision, exact authorization and receipts. Account deletion atomically marks every device obligation; session deletion and Archive retain profiles. Service-owned browser messages avoid reserved shared enum numbers and SQLite migrations; never persist browsing content or paths.
+
+### cmds/delidev-cli/internal/domain constraints
+
+- Protected browser records contain only canonical server/device/account/profile IDs, monotonic revisions and closed cleanup state. Keep browsing data and paths outside Device metadata and product documents; follow `cmds-delidev-browser-contract.md`.
+
+### cmds/delidev-cli/internal/server constraints
+
+- BrowserService profile operations require the original paired client, current transaction-time authority and exact UUID/revision receipts. Owner/Worker credentials cannot substitute a browser device; owner/client cleanup counts remain independent of account configuration removal. Confirmation attests to separately completed native cleanup and cannot replay native work. Follow `cmds-delidev-browser-contract.md`.
+
+### cmds/delidev-cli/internal/store constraints
+
+- Protected browser registration and account deletion compose through bounded paired-client Device metadata without a browser-specific migration. Register one account profile per server/device, publish Device events and actor-bound receipts atomically, and mark all offline/revoked device obligations before account deletion. Session erasure and Archive preserve shared profiles. Follow `cmds-delidev-browser-contract.md`.
+
+### Protocol integration
+
+- DeliDev BrowserService follows `cmds-delidev-browser-contract.md`: use its own typed profile/state/capability declarations, exact original mutation identities and metadata-only payloads. Preserve all existing numeric allocations and migration reservations; generated compatibility exports must reproduce.
+
 ## Storage
 
 Browser profile metadata extends the existing paired-client `Device` JSON
@@ -368,6 +388,8 @@ Update this contract and the scoped desktop/CLI/protocol/client AGENTS files whe
 ownership, bounds, native lifetime, cleanup acknowledgments or wire semantics
 change. Keep the project and docs catalogs linked. Shared numeric or migration
 allocations must still follow the source-structure contract in the owning feature PR.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 

@@ -11,7 +11,7 @@ operations. It does not activate an unsupported operation or account family.
 
 The owner approved removal of manual Worker inspection, separate execution
 probes, `--version` subprocesses and version-number admission gates on
-2026-10-07. PR #1645 established the complete protocol reservation on main at
+2026-10-07. The originating change established the complete protocol reservation on main at
 `03429673f2976ab52b98c613f9d3cc1ff4c41d84` before implementation. The active
 schemas use those exact numbers; the prior reservation itself granted no execution
 or credential authority.
@@ -32,9 +32,9 @@ Users retain explicit account connection, installation and executable-path edits
 
 ### Main-first allocation closure
 
-Under issue #964, PR #1645 reserved System `EXECUTION_STARTUP_V1 = 43` and Worker
+Under the feature, the originating change reserved System `EXECUTION_STARTUP_V1 = 43` and Worker
 `EXECUTION_STARTUP_V1 = 23`. Preserve System 42 and Worker 22 for the separate
-inline-model proposal in PR #1642, including while that reservation is pending.
+inline-model proposal in the originating change, including while that reservation is pending.
 The ledger preserves these declaration reservations with `newDeclaration: true`:
 
 | Declaration | Fields or enum members in numeric order |
@@ -105,7 +105,7 @@ operation retains its own capability, protocol and original-executable checks.
 
 Remove the first-session prerequisite checklist and required inspection controls
 from ordinary execution. Preserve optional explicit diagnostics and path editing.
-Show an immediate session-owned failure summary with a concrete corrective action. Issue #1699 keeps available safe cause metadata and the original session/Runner controls in the owning surface; required setup does not navigate to another category. Preserve the single original controller, task draft and exact Runner identity. Unsupported installation or remote administration uses concrete manual steps and a supported explicit recheck, without new repair authority.
+Show an immediate session-owned failure summary with a concrete corrective action. The feature keeps available safe cause metadata and the original session/Runner controls in the owning surface; required setup does not navigate to another category. Preserve the single original controller, task draft and exact Runner identity. Unsupported installation or remote administration uses concrete manual steps and a supported explicit recheck, without new repair authority.
 Optional details expose phase, observed version, stable code, original log/
 correlation reference, input delivery and independent cleanup classification.
 Copy only validated metadata; opening or copying details performs no inspection.
@@ -135,6 +135,56 @@ Keep the existing sidebar, composer, semantic color tokens and information drawe
 Support contained keyboard navigation, Escape, opener restoration, narrow
 overlays, long-value wrapping and 200% zoom. Missing setup links directly to its
 own settings; normal successful execution shows no prerequisite or ready score.
+
+### Project requirements
+
+- DeliDev direct execution follows `cmds-delidev-execution-startup-contract.md`. The originating change established System 43, Worker 23 and the complete closed startup-report allocation on main before implementation; preserve separate inline-model ownership 42/22. Negotiate v4 assignments without manual inspection, execution probes or numeric version gates. Validate the original actual process before input/inference; preserve account/Worker/history, protected credentials, revisions and independent cleanup. Retry only explicit positive no-send/cleanup proof; uncertainty requires original recovery. No SQLite migration.
+
+### cmds/delidev-cli constraints
+
+- Direct execution follows `cmds-delidev-execution-startup-contract.md`: no inspection, separate execution probe or numeric version admission gate. Initialize the original process once and validate actual protocol/settings before input. Versions are optional observed metadata; preserve original executable/account/Worker/history and independent cleanup authority. Explicit optional diagnostics remain separate.
+
+### cmds/delidev-cli/internal/cli constraints
+
+- Local automatic recovery uses `server ensure` only with valid running lifecycle intent and the original configuration digest. Serialize controllers and native startup/stop barriers separately, reject superseded startup generations and malformed intent, and persist stop suppression before acknowledging StopServer. Offline owner stop may suppress restart but cannot claim shutdown or cleanup. Paired client/Worker scopes cannot start or supervise a server; explicit stop receipts stay bound to their original server process epoch. An absent endpoint cannot prove final database cleanup: detached startup must join original store-lock release before changing lifecycle intent or spawning, with bounded cancellable waiting and no termination authority.
+
+- `server desktop-launch` is the fresh-main-host intentional Start boundary; desktop-retry cannot clear stopped intent and desktop-status is read-only readiness. Hold native-service control admission before startup/lifecycle/store locks through detached spawn, and recheck before intent publication and spawn. Automatic/desktop modes share a 35-second aggregate admission/controller/ownership/readiness deadline below the native 40-second envelope; check cancellation before admission and side effects, retaining truthful uncertainty after publication. Registered scopes may provide compatible live reuse but cannot admit a detached competitor or service mutation. Preserve malformed/private evidence and prior cleanup barriers.
+
+- The feature local startup conflicts use closed private desktop `startup_conflict` metadata for positively observed ownership versus transient admission. Preserve legacy errors and original owners/data; do not infer a lock subtype from text, automatically stop/adopt/replace/remap or add RPC/migration authority. Follow the desktop contract's local startup conflict guidance.
+
+### cmds/delidev-cli/internal/domain constraints
+
+- Direct startup follows `cmds-delidev-execution-startup-contract.md`. Validate negotiated v4 immutable selections, bounded closed observations and explicit source-bound retry references. Read historical v1/v2/v3 without rewriting attribution. Optional version metadata grants no numeric admission authority; retain native root lineage independently of the initial selection and separate no-send proof from cleanup uncertainty.
+
+- Startup presence retains the original closed Machine JSON shape for legacy strict readers. Read the original Machine lease and then existing System.GetOverview.observed_at on the same authenticated transport and original generation; compare only server-clock timestamps. Cancel on source/lifetime changes, fail closed on missing/failed/malformed reads and preserve the original instance, 60-second lease, revisions, storage, portable exclusions and execution authority.
+
+### cmds/delidev-cli/internal/harness/codex constraints
+
+- Direct startup validates the actual original process without a numeric version gate or separate pre-probe under `cmds-delidev-execution-startup-contract.md`. Retain only actual optional version metadata and preserve exact original executable/protocol/history ownership. Keep the first safe failure phase and version separate from cleanup/recovery; exclude native text, paths and credentials from logs.
+
+### cmds/delidev-cli/internal/harness/opencode constraints
+
+- Direct startup validates the actual original owned API and effective settings without numeric version admission or a separate execution probe under `cmds-delidev-execution-startup-contract.md`. Versions remain optional observed metadata. Preserve strict native shapes, original executable identity, account/Worker/history, once-only mutations and independently joined cleanup; no supported feature or platform is inferred from a version.
+
+### cmds/delidev-cli/internal/server constraints
+
+- Direct startup follows `cmds-delidev-execution-startup-contract.md`. Require Worker 23 for new v4 jobs without installation inspection. Reports bind the exact claimed revision and original machine/device/instance/server epoch. Block relay inference and input publication until actual readiness; preserve fresh account/credential/budget/Stop authority. Only positive no-send/cleanup proof admits explicit same-selection Resume retry. Current startup lives in session JSON and terminal original job JSON; no migration or assignment rewrite.
+
+- Keep process startup/shutdown in `server_startup.go`, HTTP authorization in `server_http.go`, Connect registration in `server_routes.go`, and system status/capability responses in `server_status.go`. New service behavior belongs in its service file; preserve middleware and registration order.
+
+### cmds/delidev-cli/internal/worker constraints
+
+- Direct startup follows `cmds-delidev-execution-startup-contract.md`: attach with implemented capabilities without native probes, resolve the selected executable without a version child, and initialize the actual original process before input. Durably report ready/failure against its assignment; unknown acknowledgment cannot authorize a send. Reuse and rehash original private executable identity for continuation/Fork/Compaction/recovery/title. Preserve first failure and independent cleanup facts; never automatically retry uncertainty.
+
+- Preserve Codex's pinned approval-start source compatibility only for unchanged command/cwd and the same execution/thread/turn/item with an intervening ordinary command approval and no later callback ID. The `agent` to `exec-startup` transition preserves both native observations; it does not prove response acceptance. Reject other source substitutions and remove the rule after validating a replacement profile with stable source reporting.
+
+- Create process scope directories exclusively. Before any native startup attempt, a failed controller creation may remove and synchronize only its original empty directory; preserve replaced/nonempty scopes and report cleanup uncertainty. Never apply this shortcut after native startup is attempted.
+
+- Codex completion retains the original accepted assignment before direct startup resolves executable/version metadata on a local copy. Preserve its exact digest and independent original startup journal; never normalize mutated runtime evidence into accepted input. Log checkpoint retention failure using closed stages and error codes only.
+
+### cmds/delidev-cli/internal/workspace constraints
+
+- Direct startup retry follows `cmds-delidev-execution-startup-contract.md`. Under the original session lock, advance only the exact closed failed claim or the immutable original continuation/compaction predecessor when failure occurred before workspace admission. First-attempt absence requires no retained execution history. Server-confirmed no-send/cleanup proof grants no foreign adoption or filesystem deletion.
 
 ## Storage
 
@@ -204,6 +254,8 @@ and subscription contracts, the project index and applicable scoped/root AGENTS.
 Preserve historical declaration numbers and evidence boundaries. Update the
 runtime contracts only with the complete implementation and its actual results.
 
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+
 ## Desktop inline remediation
 
 The conversation presents the original closed startup classification, safe cause and supported next actions beside the failure. Optional metadata disclosures do not hide the cause or make diagnostics required. Exact Runner setup presents the retained original machine controller in the owning task, without automatic inspection or changed selection. Session recovery exposes the original SessionTools confirmation and retained request through the same conversation; narrow layouts may open its original Info drawer from a local recovery action. Presentation moves neither cancel nor recreate owned requests. Retry continues to require the original explicit positive no-send and confirmed cleanup proof; malformed or uncertain evidence remains blocked pending original recovery.
@@ -219,16 +271,14 @@ The conversation presents the original closed startup classification, safe cause
 - [Diagnostics](cmds-delidev-diagnostics-contract.md)
 - [Repository defaults](repository-defaults.md)
 
-## Positive image rejection before input — issue #2048
-
+## Positive image rejection before input
 ExecutionStartupObservation field 11 carries the closed ExecutionStartupFailureKind enum: zero UNSPECIFIED is omitted, and IMAGE_INPUT_REJECTED is one. This optional classification adds no capability or migration and preserves legacy observation bytes and generic behavior. A generic Unsupported error does not prove image provenance. Only the original Codex image-preparation branch before turn/start may issue an opaque proof bound to the original request, input and complete ordered input digest. Successful sends, turn transport failures, acknowledgments and attachment-resolution failures carry no such proof.
 
 The Worker retains an exclusive synchronized metadata-only claim bound to the original authenticated server/device/instance, immutable assignment revision/digest, execution/input/request and input digest. Classification requires that unchanged claim plus separately confirmed process, workspace and protected credential cleanup. Missing, changed or uncertain evidence retains claimed/uncertain delivery and original recovery. It never retries by observation.
 
 The server accepts IMAGE_INPUT_REJECTED only for Failed/Input/Codex/Unsupported/NotSent/confirmed cleanup, original nonempty images, the unchanged ready process identity and native thread without an acknowledged turn, and the exact claimed queue execution/request/full input. Keep original public mutation receipts and assignment revisions. Normal finalization retains the original prompt, skill bindings and ordered image references as rejected, frees pending capacity and pauses without recovery. Explicit retry retains existing original-selection ownership checks. Desktop guidance identifies image support requirements, preserves visible original rejected input/images and never substitutes attachments or starts another send.
 
-## Operational startup progress — issue #2120
-
+## Operational startup progress
 System `SESSION_STARTUP_PROGRESS_V1 = 74` and Worker
 `SESSION_STARTUP_PROGRESS_V1 = 50` own the separately negotiated
 `ReportSessionStartupProgress` RPC. System 43/Worker 23 and all original startup

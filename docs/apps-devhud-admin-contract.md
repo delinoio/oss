@@ -52,6 +52,8 @@ Uses `packages/devhud-api-client` and `protos/devhud/v1`; production assets are 
 
 Update the project index, server/protocol/client contracts, `apps/AGENTS.md`, and root/domain rules when administrator roles, routes, mutations, audit fields, or disclosure boundaries change.
 
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+
 ## References
 
 - [DevHud project index](project-devhud.md)

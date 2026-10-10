@@ -21,7 +21,7 @@ private runtime. Separate accounts can run independently.
 
 ## Interfaces and Contracts
 
-Record these issue #964 allocations in the owning feature PR:
+Record these the feature allocations in the owning feature PR:
 
 - System `GROK_SUBSCRIPTION_LOGIN_V1 = 39`.
 - System `GROK_SUBSCRIPTION_EXECUTION_V1 = 40`.
@@ -68,6 +68,10 @@ authority without canceling an accepted server operation.
 Quota/reset credit/pricing, enterprise SSO, external identity providers, imported
 user login, account switching, cross-Worker resume, Fork, Sidechat and manual
 compaction are excluded.
+
+### Project requirements
+
+- DeliDev Grok Build subscription support follows `cmds-delidev-grok-subscription-contract.md`. Record System 39/40, Worker 21, progress field 10 and the new Grok diagnostic declarations in the owning feature PR. Reservations grant no login, native execution or migration. Preserve existing capability ownership, server-owned OAuth/protected credentials, original account leases and same-account/Worker history; verify the exact 1.0.46 profile before activation.
 
 ## Storage
 
@@ -131,6 +135,8 @@ and device login. A complete feature PR may include the allocation records. Use
 Changes to capability ownership, OAuth authority, bundle identity, lease cleanup,
 native history or UI lifetime require updates to this contract, the project index,
 protocol/structure/desktop/subscription contracts and applicable AGENTS files.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 

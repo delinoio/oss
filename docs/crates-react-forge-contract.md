@@ -20,6 +20,60 @@ Limits: Office input/output and PDF output 256 MiB; expanded Office 512 MiB; 10,
 
 React Forge defaults to system font discovery/fallback with explicit caller fonts. Check new content for missing glyphs, CJK, RTL/mixed direction and color emoji; report typed actionable failures instead of missing/replaced glyphs. Honor embedding permissions and never require untouched opaque content to be rendered. Do not change existing Forge's bundled default font policy.
 
+### Rust component integration
+
+- Follow `crates-react-forge-contract.md` and the complete feature requirements. `forge-package` owns shared bounded OOXML preservation; `forge-document` owns shared text/style, asset and chart primitives; `forge-docx`, `forge-xlsx`, and `forge-pdf` own independent models and engines. `react-forge-node` is only the private N-API adapter.
+
+- System discovery and caller fonts apply to React Forge only. Presentation inspection must not require font setup before the caller can register fonts. Check newly rendered content without rendering untouched opaque source. Keep all packages unpublished.
+
+- Emoji fallback must prefer supported color families on complete emoji graphemes before general text families, including with caller fonts only. Preserve ordinary digits/spacing and explicit text presentation selectors; do not globally prioritize emoji fonts for all text.
+
+- Keep React Forge font shaping and PDF tagging operation-owned. `TextLayout` injection and explicit `FontEmbedding` selection must preserve existing Forge API defaults. Office font references do not imply embedded caller fonts. PDF subset embedding must enforce licensing flags, and repeated visual table headers must remain pagination artifacts outside the logical reading order.
+
+- React Forge preserving PPTX updates must restore source-digest-bound node and image identities across independent native imports. External packages without Forge metadata must support no-op byte preservation and repeated mounted edits.
+
+- React Forge resource tests must cover accepted boundaries as well as over-limit rejection. Preserve iterative XML preflight and bounded-stack handling for valid deep XML until the upstream recursive parser has a proven safe stack bound.
+
+- Word drawing replacement owns only supported inline content; foreign paragraph/run attributes and surrounding bookmark/field/revision markers must stay opaque. Validate extension namespaces before exposing a chart as editable.
+
+- Spreadsheet rule editability requires modeled attributes on every rule and nested threshold/color element; unsupported precedence or rendering properties remain opaque even without extension namespaces.
+
+- DOCX text backgrounds use native run shading; paragraph defaults must be materialized on text runs with explicit run overrides retained.
+
+- React Forge must retain six native macOS/Windows/glibc Linux x64/arm64 targets. Enable all system-font tests in its prepared host matrix and validate Windows cancellation in an isolated real console, never by treating Node process.kill as a console event.
+
+- Presentation text editability must validate paragraph/run semantics as well as body geometry, including table-cell text. Preserve unmodeled fields, links, bullets, defaults and extensions as opaque content.
+
+- Imported PPTX update envelopes must contain replacements and source identity, not a serialized copy of untouched Office content. Apply the React-tree input ceiling to authored work without making successfully imported large documents unexportable.
+
+- Imported DOCX mounted measurements must use source section/cell flow constraints. Preserve unknown width as unavailable geometry while retaining safe edits; never substitute a default page width for ambiguous source layout.
+
+- pnport macOS multi-group ownership must use native process-birth admission and kernel audit-token signals. Treat inventory and preload registration files only as discovery requests; authenticate accepted recovery records and registration outcomes with a per-run Ed25519 signing key shared solely by the supervisor and same-image guardian. Inject only the pinned public verification key, strip caller-supplied copies before restoring it through exec environment replacement, and require matching verified acknowledgements before group/session changes. Before publishing a signed admission, publish its complete native identity in a fixed-size shared mapping backed by an unlinked private file, inherited solely by the authenticated same-image guardian. The supervisor mapping is read-only; retain decoded versions in supervisor-owned memory and drain all bounded completed slots before guardian-loss recovery. Deletion of writable journal files must never erase historical ancestry. A release/acquire publication count exposes only complete immutable slots; a partial final slot never grants ownership. The retained mapping survives guardian exit and accommodates every bounded version without socket backpressure or a stopped supervisor acknowledgement. Bound slots to 1,024-byte payloads and history to 65,536 versions; failed replication closes new admission while proven cleanup authority remains available. Never expose the descriptor to user children or obtain authority from an incomplete copy. Invalid journal content still fails foreground recovery before tty transfer; private admitted history remains available for shutdown. Changed/exited images receive signed terminal responses rather than leaving native callers waiting. Retain the initially captured setpgid target birth through admission so exit between the preliminary check and registration also preserves native ESRCH instead of recording an injection failure. Prove descendant-selected tty foreground through admitted native births before restoring it to the caller, including authenticated parent recovery after guardian loss before or during the foreground query. After a job actually claimed the tty, restoration may also reclaim its currently verified empty foreground group using a fresh native signal-zero existence probe and unchanged-foreground comparison; this grants no signalling authority and never displaces a live unrelated group or gives an unclaimed background job foreground ownership. Darwin retains the empty foreground group object and reserves its PGID until the tty releases its reference. Preserve historical admitted image versions for reparented children, termination of all observed owned births before any SIGCONT, younger-descendant-before-parent ordering, the five-second grace and the original group reservation until final cleanup. Keep stable readiness closed until native detached, orphan, stop and owner-crash acceptance passes.
+
+- pnport macOS abrupt-owner-loss tests must distinguish native orphan-group SIGHUP/SIGCONT from pnport termination requests with an unvirtualized native control. Preserve exact cancellation-signal assertions, termination-before-resume ordering, bounded complete cleanup, independent-group survival and the five-second unresponsive grace; forced OS termination cannot promise which native handler runs first.
+
+- pnport native shutdown must not abandon an already proven birth because accepted-journal publication fails. Retain native shutdown authority in memory, keep new image admission closed, attempt bounded cleanup and report the infrastructure failure. Ownership directories follow private cache-directory validation. Retain only the closed failure stage and optional numeric native error in owner records and debug logs; never native error text or identities.
+
+- pnport constructor-lease and pending-abandonment unit controls must isolate exact open-description lifetime assertions from concurrent test forks, while leaving the parent suite parallel. Retain an explicit inherited pre-exec descriptor control so an initializing lease is never mislabeled abandoned.
+
+- pnport macOS unit fixtures resolve their prebuilt injection companion from the same Cargo profile for the legacy `deps` and pinned nightly `build/pnport/<unit-hash>/out` layouts. Keep this lookup test-only and retain the production adjacent-companion, native architecture and ABI-marker checks.
+
+- Test pnport parent-error precedence over later namespace conflicts directly against the shared resolver. Native prefix-error controls use a valid namespace; runtime conflict children separately verify fatal detection because supervisor shutdown can precede their assertions.
+
+- pnport root missing-entry rejection rechecks current entry/readiness and native failure records at the rejection boundary. Log only closed deadline actions and state flags; passing later runs does not establish the cause of intermittent startup failures. Native signal-marker fixtures must block concurrent handled termination signals until the first handler completes its marker and exit.
+
+- pnport new-group terminal fixtures must verify native foreground placement before issuing explicit Ctrl+Z. Do not rely on an incidental background-read SIGTTIN that can disappear when supervisor placement wins scheduling; retain the independent background-read control.
+
+- clibox min-repro selects staged root executables through the same verified observed alias/identity mapping as required inputs. Preserve original Unix argv zero, literal arguments, external executable handling and required source/link verification.
+
+- clibox port termination consumes every original private socket observation before public endpoint deduplication. Retain one signal per PID, birth checks, original socket matching and the shared verification deadline; replacement sockets grant no authority.
+
+- clibox assetcov human reports share the complete covered/uncovered list formatter on all platforms. Preserve native path display, JSON, quiet/explicit-file publication, thresholds and child status.
+
+- clibox min-repro retains cancellation through final report encoding, commit and success return. Preserve committed bundles/reports; remove only unpublished report staging and retain prior destinations on pre-commit cancellation.
+
+- clibox Windows run env and wrappers expand supported executable dollar references against the prepared child environment before native PATH/PATHEXT lookup. Preserve literal argument conversion, parent-only assignment values and deferred workload resolution after wrapper admission.
+
 ## Storage
 Memory-only native operations and explicit local files; no database/cache/recovery archive. Local storage is an explicit R2 exception. File publication belongs to the session's revision/cancellation boundary, with same-filesystem temporary output and truthful publication results.
 
@@ -35,7 +89,7 @@ Run root `cargo test` after required generated app prerequisites, plus targeted 
 DOCX paragraph and run backgrounds emit RGB run shading (`w:shd`), with paragraph defaults inherited into runs and explicit run colors taking precedence ([Open XML shading](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.shading?view=openxml-3.0.1)). The DOCX engine has structural tests for rich text, headings, lists, sections, headers/footers, page breaks, merged cells, images and native bar/line/pie charts with editable embedded workbooks. Its python-docx 1.2.0 fixture verifies supported paragraph/cell edits and exact preservation of unselected parts and XML, plus opaque-equation refusal. The complementary renderer evidence and reproduction commands are recorded in [validation](packages-react-forge-validation.md).
 
 ## Dependencies and Integrations
-Forge foundation from PR #967 is a repository dependency. Shared extraction must retain its regression coverage. All new crates remain unpublished. Native output is generated, untracked and rebuilt explicitly.
+Forge foundation from the originating change is a repository dependency. Shared extraction must retain its regression coverage. All new crates remain unpublished. Native output is generated, untracked and rebuilt explicitly.
 
 ## Change Triggers
 Update the Node contract, project index, Forge foundation when shared behavior changes, relevant ownership rules and evidence in the same change.
@@ -75,7 +129,7 @@ XML preflight enforces the published depth before parsing. Valid XML with at lea
 
 Word regions with foreign paragraph/run attributes or bookmark/field/revision markers around drawings remain opaque. Drawing and chart replacements reject foreign extension namespaces instead of dropping them; selected cell wrapper attributes remain byte-preserved. Ordinary external paragraphs, cells, images and native chart families retain positive edit coverage.
 
-The 0.9.0 font stack includes upstream CoreText enumeration and macOS CJK fallback repairs ([enumeration](https://github.com/linebender/parley/pull/536), [CJK fallback](https://github.com/linebender/parley/pull/598)). This avoids missing system fonts outside legacy Library/Fonts scans and unsupported PingFangUI outlines on macOS 15. Swash 0.2.10 remains an explicit name-table decoder for legacy Macintosh font names; it no longer relies on a Parley re-export.
+The 0.9.0 font stack includes upstream CoreText enumeration and macOS CJK fallback repairs (enumeration, CJK fallback). This avoids missing system fonts outside legacy Library/Fonts scans and unsupported PingFangUI outlines on macOS 15. Swash 0.2.10 remains an explicit name-table decoder for legacy Macintosh font names; it no longer relies on a Parley re-export.
 
 React Forge native targets cover macOS/Windows/glibc Linux on x64 and arm64. Parley/Fontique select CoreText, DirectWrite or Fontconfig system discovery. Caller fonts and typed missing-glyph/color/embedding errors apply identically on every target. Dedicated native-host CI enables the non-macOS system-font tests after installing fonts; ordinary Cargo runs may omit those environment-dependent fixtures. Windows console integration requires the built Node workspace and explicitly enabled isolated-console test.
 

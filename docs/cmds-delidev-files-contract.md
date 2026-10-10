@@ -2,7 +2,7 @@
 
 ## Scope
 
-`cmds/delidev-cli/internal/{domain,workspace,worker,server,cli}` owns read-only session workspace browsing, Git comparisons and durable local reviews. `apps/delidev` presents the same product operations in the session's right application area. This contract implements file browsing, bounded Git comparisons and durable local review comments/submissions for issue #964; terminal, browser, file editing and downloads remain separate capabilities.
+`cmds/delidev-cli/internal/{domain,workspace,worker,server,cli}` owns read-only session workspace browsing, Git comparisons and durable local reviews. `apps/delidev` presents the same product operations in the session's right application area. This contract implements file browsing, bounded Git comparisons and durable local review comments/submissions for the feature; terminal, browser, file editing and downloads remain separate capabilities.
 
 ## Runtime and Language
 
@@ -49,6 +49,18 @@ The parser requires matching no-rename file identities, portable paths within th
 
 A review selection identifies one file or up to 20 visible consecutive lines on one side in one hunk. The domain anchor binds repository, comparison, query path, exact diff revision, selected file/side/range, SHA-256 of the original file patch and at most 8 KiB of exact selected context. Validation never silently relocates a comment: a changed comparison or context does not match the retained anchor. These coordinates establish original location evidence for the separately authorized durable comment and grouped submission operations below.
 
+### cmds/delidev-cli/internal/cli constraints
+
+- DeliDev local review coordinates are derived only from the original bounded Worker Git diff through `ReadSessionReviewContext` and `session review-context`. Preserve exact path/side/range/context/revision and final-newline facts; binary/non-line or ambiguous changes cannot invent line anchors. Follow `cmds-delidev-files-contract.md`; read-only coordinates grant no comment submission or execution authority.
+
+- Installed-harness local-review acceptance uses the explicit private native CLI fixture in `cmds-delidev-files-contract.md`. Prove original selected context, ordinary input ownership, preserved native history, actual native file writes, refreshed Worker diff and receipt-only replay independently. Keep fixture-authored initial changes, native-owned resulting writes, loopback scripted responses and actual hosted-account inference distinct; ordinary tests must continue to skip native discovery/execution without opt-in.
+
+### cmds/delidev-cli/internal/worker constraints
+
+- Session file observations follow `cmds-delidev-files-contract.md`. Keep the outbound read stream separate from the single unresolved durable execution job; bind it to the current primary stream, fresh Worker instance and device, with one bounded observation per machine. Revalidate session/preparation and client/Worker authority before returning content. Only accepted manifests select roots; anchor reads with `os.Root`, reject unsupported paths/links/special files, bound enumeration/previews and isolate read-only Git process ownership from preparation/execution journals. File contents never enter persistence, transcript, receipts or logs.
+
+- DeliDev local reviews follow `cmds-delidev-files-contract.md`. Creation independently rereads the original Worker comparison and derives context server-side; edits never reanchor. Recheck preparation, authorization, selected record revisions, Archive and capacity at commit. Grouped submission atomically retains original snapshots/links plus one ordinary queued input; stale consent never substitutes for an unavailable read. Exact accepted retries remain read-only after comment deletion. Keep bodies/context out of receipts/logs; no implicit Steer, resolution, GitHub publication or unsupported native execution.
+
 ## Storage
 
 Original accepted preparation and Worker manifests select roots. File contents and observation requests/results remain in memory; no database, event, receipt, transcript, search, disk cache or synced setting retains them. Client query caches have no persistence and are removed when the explorer closes or changes session. Navigation preserves the session and unsent composer input. The desktop keeps accepted safe directory metadata, per-directory cursors and expansion only for the open session/repository/connection scope. All Files roots, tree pages and previews share a serial observation owner, including cancellation settlement. Once dispatched, a read-only Files RPC completes under the original server deadline and authorization checks; client cancellation fences publication instead of aborting Connect early. Queued canceled reads never dispatch. This exception changes no business mutation, native execution or protected-resource cancellation authority. Collapsing fences late descendant results; explicit parent-first Refresh checks the root and expanded directories. Only a complete authoritative parent range proves that a child disappeared. Back restores accepted tree metadata, scroll and focus without reading and discards preview bytes; closing or replacing the scope discards its metadata as well. These presentation lifetimes do not change Worker observation admission, handle anchoring, 100-entry pages, digest cursors, exact sizes or the 64KiB preview bound.
@@ -72,6 +84,8 @@ Uses native Git comparisons, the existing preparation manifest, authenticated Co
 ## Change Triggers
 
 Update the project index, protocol/client/desktop contracts and relevant scoped AGENTS when authority, bounds, paths or presentation change.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 

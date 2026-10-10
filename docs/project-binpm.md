@@ -88,12 +88,18 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - `binpm env --shell` supports `bash`, `zsh`, `fish`, `powershell`, and `pwsh`; `PowerShell` is accepted case-insensitively, `pwsh` renders PowerShell syntax with its own setup profile target for PowerShell 7, `--shell` may be omitted for best-effort inference from `SHELL` or `ComSpec`, and `cmd` is accepted only to return an explicit deferred-shell diagnostic with current-session and persistent user-PATH guidance for cmd.exe.
 - Global install output, `binpm doctor`, and plain `binpm env` output must remain non-mutating. Global install output and `binpm doctor` must guide users to add `~/.binpm/bin` to `PATH` when it is absent, while keeping shell profile modification opt-in only. `binpm env --global` prints only the global PATH command suitable for manual profile setup; `binpm env --local` prints only the project-local current-session command. `binpm env setup --shell <bash|zsh|fish|powershell|pwsh> [--dry-run]` is the explicit opt-in workflow that previews and appends only the global bin PATH line to a supported shell profile, tells PowerShell 7 users to pass `--shell pwsh`, refuses ambiguous profile targets, and prints rollback guidance. Local sync output must show `install scope: local` and `install mode: local manifest sync` before mutation. Local add output must point to `binpm x <cmd>` and optional `binpm env` usage. The guidance must not imply that project-local `.binpm/bin` entries should be persisted in shell profiles.
 
+## Project requirements
+
+- `binpm` -> `crates/binpm`, `apps/public-docs/docs/binpm`
+
 ## Change Policy
 - Update this index and `docs/crates-binpm-foundation.md` together when CLI shape, local manifest or lockfile format, target selection, storage layout, cache behavior, security behavior, release distribution, installer behavior, or heuristic scoring changes.
 - Update this index and `docs/apps-binpm-docs-foundation.md` in the same change for the binpm content path, route, theme repository-link surface, toolchain, validation, production URL, or publication contract.
 - Update root `AGENTS.md`, `apps/AGENTS.md`, and `crates/AGENTS.md` when `binpm` ownership, planned path status, or repository policy boundaries change.
 - Keep `crates/binpm` as an explicit Rust workspace member while runtime implementation continues.
 - Keep `.github/workflows/release-binpm.yml`, `scripts/install/binpm.sh`, `scripts/install/binpm.ps1`, `crates/binpm/Cargo.toml`, `scripts/release/update-homebrew.sh`, and `packaging/homebrew/templates/binpm.rb.tmpl` synchronized with binpm release asset names and signing contracts.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - `docs/project-template.md`

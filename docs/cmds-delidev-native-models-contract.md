@@ -2,7 +2,7 @@
 
 ## Scope
 
-[Issue #1206](https://github.com/delinoio/oss/issues/1206) requires an explicit,
+The feature requires an explicit,
 Worker-, installed-version- and selected-account-scoped native model observation
 flow. The API-account path exposes durable observation controls and explicit
 registration preparation. Managed-subscription observation remains typed unsupported
@@ -91,6 +91,23 @@ publication. Account revocation/disconnection, installation replacement,
 cancellation or ownership loss fences stale results. Exact receipt replay after
 restart returns the original operation without another native launch.
 
+### cmds/delidev-cli/internal/domain constraints
+
+- Native observation JSON preserves decimal uint64 revisions, distinct picker/executable IDs and bounded closed advisory metadata under `cmds-delidev-native-models-contract.md`. Reject the entire observation on duplicate identity, malformed metadata, secret reflection or missing confirmed cleanup; detected Codex executable digests never grant readiness.
+
+### cmds/delidev-cli/internal/server constraints
+
+- NativeModelService is owner/client-only under `cmds-delidev-native-models-contract.md`. Atomically bind accepted jobs/receipts to original machine/account/connection/install/actor scope; recheck that scope and cancellation at publication. Only the original assigned Worker may report. Keep immutable observations separate from canonical models/readiness and retain last success after failure.
+
+### cmds/delidev-cli/internal/store constraints
+
+- Native model observations reuse generic immutable jobs and receipts without a migration under `cmds-delidev-native-models-contract.md`. Last-success lookup binds the original machine/account, installation generation/digest, connection and hidden policy; failed output cannot replace successful observations or modify canonical models.
+ - Native model observations reuse generic immutable jobs and receipts without a migration under `cmds-delidev-native-models-contract.md`. Last-success lookup binds the original machine/account, installation generation/digest, connection and hidden policy; failed output cannot replace successful observations or modify canonical models.
+
+### cmds/delidev-cli/internal/worker constraints
+
+- Native model discovery uses the original durable job journal and one isolated Codex runtime under `cmds-delidev-native-models-contract.md`. Pin executable bytes, collect every bounded page, and confirm process/file cleanup before reporting success; reconnect or receipt replay cannot relaunch a claimed observation.
+
 ## Storage
 
 The server retains accepted operations and immutable complete observations
@@ -126,7 +143,7 @@ includes none/minimal/low/medium/high/xhigh/max/ultra/persistent; unknown
 model-defined efforts remain unsupported until reviewed. Join owned process/file
 cleanup before treating the operation as complete.
 
-Subscription discovery depends on [issue #1095](https://github.com/delinoio/oss/issues/1095)'s
+Subscription discovery depends on the feature's
 exclusive account lease and protected bundle transfer, refresh writeback and
 cleanup boundary. Until that complete boundary is available, report typed
 unsupported. When enabled, serialize discovery with the account's other native
@@ -161,7 +178,7 @@ with the following issue acceptance scenarios:
    launch.
 4. Explicitly register one observed entry and assert one manual model, idempotent
    save and preservation of existing entries after a later discovery failure.
-5. Once #1095 is available, serialize discovery behind another account operation.
+5. Once is available, serialize discovery behind another account operation.
    Exercise cached fallback, refresh writeback and cleanup failure without false
    readiness or release of stale credentials.
 
@@ -173,7 +190,7 @@ pull requests, issues and CI logs/artifacts.
 
 The existing account, catalog, native harness, owned process, storage and Connect
 contracts remain authoritative. The API path activates its main-established
-reservations; managed-subscription support additionally requires #1095.
+reservations; managed-subscription support additionally requires .
 Regenerate Go and TypeScript bindings from reconciled schemas when activation
 changes the protocol. Never edit generated outputs or activate a reserved
 capability solely because its number exists in the ledger.
@@ -186,6 +203,8 @@ registration semantics or paging bounds change. Keep scoped AGENTS rules aligned
 with ownership/policy changes and the project index aligned with its domain links
 and cross-domain invariants. Record new shared numbers and migration versions
 with implementation in the owning feature PR under the structure contract.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 

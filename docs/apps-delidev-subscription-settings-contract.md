@@ -2,11 +2,11 @@
 
 ## Scope
 
-Issue #1143 owns the compact AI Subscription presentation; #1235 composes its independent service identity in `subscription-accounts.tsx`, `subscription-settings.tsx` and `subscription-catalog.ts`. The shared Settings application screen, 17 categories, stable `subscription-accounts` category ID and short AI Subscription label remain authoritative under [the desktop contract](apps-delidev-desktop-contract.md). The category description is “Manage your subscriptions and connect more accounts.” Managed Codex login/cancel/refresh/logout uses authenticated SubscriptionService and the independent server credential owner. Native quota and reset-credit operations belong to #1096/#1104; Claude lifecycle uses its independent capability 38 and original Runner; unsupported Grok lifecycle remains explicit. Account preferences, native authentication, quota observation and real-account/platform acceptance remain independent.
+The feature owns the compact AI Subscription presentation; composes its independent service identity in `subscription-accounts.tsx`, `subscription-settings.tsx` and `subscription-catalog.ts`. The shared Settings application screen, 17 categories, stable `subscription-accounts` category ID and short AI Subscription label remain authoritative under [the desktop contract](apps-delidev-desktop-contract.md). The category description is “Manage your subscriptions and connect more accounts.” Managed Codex login/cancel/refresh/logout uses authenticated SubscriptionService and the independent server credential owner. Native quota and reset-credit operations belong to ; Claude lifecycle uses its independent capability 38 and original Runner; unsupported Grok lifecycle remains explicit. Account preferences, native authentication, quota observation and real-account/platform acceptance remain independent.
 
 ## Runtime and Language
 
-React/TypeScript presentation follows the shared issue #1256 Settings body contract: system font, semantic light/dark tokens, left-aligned 1040px maximum column, 32px/24px/compact padding, 40px controls and 8px corners. Flat divided rows preserve the 40px provider mark, alias, separate connection state, up to two ordered quota windows and Refresh/Disconnect/ellipsis controls. Your subscriptions precedes Connect a subscription. Issue #2122 removes the final Advanced settings disclosure, explanation and container in every locale/read state; finish with ordinary page padding and no replacement panel. Account menus retain preferences and lifecycle controls. Successful empty inventory uses the shared 160px-minimum horizontal icon/help region. Container queries retain wrapping identity/actions/quotas; service choices are flat ChatGPT/For Codex, Claude/For Claude Code and Grok/For Grok Build rows. Negotiated service-account support enables explicit Add account; unsupported servers retain disabled Coming soon controls. Shared context-pane/drawer navigation and all original lifecycle/metadata guards remain intact.
+React/TypeScript presentation follows the shared the feature Settings body contract: system font, semantic light/dark tokens, left-aligned 1040px maximum column, 32px/24px/compact padding, 40px controls and 8px corners. Flat divided rows preserve the 40px provider mark, alias, separate connection state, up to two ordered quota windows and Refresh/Disconnect/ellipsis controls. Your subscriptions precedes Connect a subscription. The feature removes the final Advanced settings disclosure, explanation and container in every locale/read state; finish with ordinary page padding and no replacement panel. Account menus retain preferences and lifecycle controls. Successful empty inventory uses the shared 160px-minimum horizontal icon/help region. Container queries retain wrapping identity/actions/quotas; service choices are flat ChatGPT/For Codex, Claude/For Claude Code and Grok/For Grok Build rows. Negotiated service-account support enables explicit Add account; unsupported servers retain disabled Coming soon controls. Shared context-pane/drawer navigation and all original lifecycle/metadata guards remain intact.
 
 ## Users and Operators
 
@@ -60,6 +60,10 @@ Closing sign-in disposes its task controller, local callback/listener authority,
 
 ChatGPT deletion uses the same task disposal even though its generated clients bypass the mutation registry. Closing disposes pending checks, local logout/deletion retry presentation and automatic follow-up authority; it never cancels an accepted logout or deletion. A late logout acknowledgment or cleanup observation cannot start configuration deletion after close. A reopened deletion requires fresh account observation and explicit current confirmation. A matching successful configuration-deletion acknowledgment delivered while the task is active invokes the existing completion callback once and closes immediately. Retire a confirmed-deleted account-row opener before inventory refresh and use the shared visible category title fallback; other connected visible openers remain valid. Independent browser cleanup and offline acknowledgments do not delay closure. Top-level deletion tasks use header X/Escape as the sole dismissal action and focus the named header close control for destructive confirmation. Standalone forms and distinct nested task steps retain Keep account and Back to subscriptions with their original departure callbacks. Category/Settings departure also disposes every nested task. The shared task shell owns modal geometry while this controller is hosted in Settings.
 
+### apps/delidev/src constraints
+
+- AI Subscription follows `apps-delidev-subscription-settings-contract.md`: `subscription-accounts.tsx` owns System capability 17, complete bounded schema-v2 service-account pages, explicit service-only creation and managed Codex login/cancel/authentication-refresh/logout. No search, Provider inventory/preset/filter/configuration/discovery requests are permitted from that category. Keep default-off recovery notifications, explicit current-revision logout confirmation, exact uncertain requests, original-operation transient login progress and Settings disposal without native cancellation/replay. Service enum alone selects local branding; never infer masked identity or quota recovery. `subscription-settings.tsx` retains compact rows, separate quota windows and pure callback presentation. API account workflows retain their independent Provider gates. Preserve the original SVG licenses/notices and distinguish fixtures/builds from real native/account/platform acceptance.
+
 ## Storage
 
 All presentation state belongs to the active Settings category. Category filters and Advanced state survive task opening/closing, reflow, same-category reselection and same-identity reconnect. Account details retains its exact selected ID and latest valid metadata projection through row payload eviction, reflow, locale/theme changes and same-identity reconnect. An open task retains its drafts, confirmations and exact retry presentation across reflow and reconnect. Any task dismissal disposes that task state and its nested lifetime. Category departure or leaving Settings disposes all category and task state under the desktop contract. Accepted server/Worker effects continue; category disposal guards late continuations and leaves sibling QueryClient workflows and session drafts intact.
@@ -84,6 +88,8 @@ Use the existing React/TypeScript, Rsbuild, React Query and generated Connect Qu
 
 Update this contract, the desktop contract, project index and owning frontend AGENTS rules when hierarchy, lifetime, identity, quota or action-authority boundaries change. Keep the docs catalog current for ownership changes. Imported mark changes require pinned source/modification notices and the repository license contract to stay synchronized. A future wire change must update its protocol and API-client contracts alongside generated sources.
 
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+
 ## References
 
 - [Project index](project-delidev.md)
@@ -93,7 +99,7 @@ Update this contract, the desktop contract, project index and owning frontend AG
 - [Protocol](protos-delidev-v1-contract.md)
 - [API client](packages-delidev-api-client-contract.md)
 
-Native quota and reset-credit controls follow the [managed subscription contract](cmds-delidev-subscription-contract.md#native-quota-and-reset-credits--issues-1096-and-1104). Refresh-all invokes one server-owned complete operation; current account settings expose separate quota refresh, default-off observed-recovery notifications and revision/generation-bound credit confirmation. Retained uncertain requests and original-key reconciliation belong to the current Settings visit and never implicitly run after disposal.
+Native quota and reset-credit controls follow the [managed subscription contract](cmds-delidev-subscription-contract.md#native-quota-and-reset-credits). Refresh-all invokes one server-owned complete operation; current account settings expose separate quota refresh, default-off observed-recovery notifications and revision/generation-bound credit confirmation. Retained uncertain requests and original-key reconciliation belong to the current Settings visit and never implicitly run after disposal.
 
 Quota row refresh selects the active execution lease machine, falling back to the retained native owner only when no lease exists. Other active lease kinds disable that action. Recovery Inbox details show the account and quota observation time without terminal content; read-state changes grant no quota, session or execution authority.
 
@@ -103,7 +109,7 @@ Row quota refresh remains unavailable while a lifecycle operation, removal/recov
 
 Retain the existing login-first hierarchy, Back action, theme and account lifetime. A ChatGPT native failed/unsupported/expired/recovery result shows `ChatGPT sign-in failed` as `role="status"`, followed by an ordinary `role="alert"` explanation and compact version, optional legacy minimum version, failed step, error code and optional opaque reference. Reconstruct explanations from closed metadata; never render server/native raw text. An empty detected version shows `Not detected`; an absent or invalid diagnostic shows `Not reported`. Keep independent recovery/cleanup uncertainty visible. Guidance explains the original failed step locally, including concrete installation, credential-access or permission prerequisites when supported evidence identifies them. Original inspection, cleanup and explicit retry controls remain in the owning sign-in task; Connections remains optional.
 
-The approved 1280×800 preview illustrates initialization failure; it is not observed failure evidence for Codex 0.159.2. Preserve natural wrapping on narrow screens, the departure footer and existing controls. Failure may present existing owner-controlled inspection, cleanup and explicit retry actions locally under issue #1699; it adds no new repair capability, copy action, automatic focus movement, browser/device-code fallback or automatic retry. Grok retains its existing unsupported message; Claude account onboarding and management follow below. Confirmed naming keeps its original once-only focus behavior. Original Settings lifetime, late-callback suppression and once-only mutations remain unchanged.
+The approved 1280×800 preview illustrates initialization failure; it is not observed failure evidence for Codex 0.159.2. Preserve natural wrapping on narrow screens, the departure footer and existing controls. Failure may present existing owner-controlled inspection, cleanup and explicit retry actions locally for this feature; it adds no new repair capability, copy action, automatic focus movement, browser/device-code fallback or automatic retry. Grok retains its existing unsupported message; Claude account onboarding and management follow below. Confirmed naming keeps its original once-only focus behavior. Original Settings lifetime, late-callback suppression and once-only mutations remain unchanged.
 
 ## Claude account onboarding and management
 
@@ -180,9 +186,9 @@ AI Subscription exposes no account-storage inspection reader, toolbar, row slot,
 
 ### Read-only quota rail
 
-The desktop contract's issue #1694 rail independently reads saved subscription resources and uses the same service-native connection projection. It does not mount this category's login, cleanup or quota operation controllers. Fresh blocking-window aggregation determines its conservative remaining badge; the detail popover may show saved stale values only with explicit state labels. Manage subscriptions enters this existing category without targeted account mutation or automatic quota observation.
+The desktop contract's the feature rail independently reads saved subscription resources and uses the same service-native connection projection. It does not mount this category's login, cleanup or quota operation controllers. Fresh blocking-window aggregation determines its conservative remaining badge; the detail popover may show saved stale values only with explicit state labels. Manage subscriptions enters this existing category without targeted account mutation or automatic quota observation.
 
-## Inline failure ownership (issue #1699)
+## Inline failure ownership
 
 Subscription onboarding, management and deletion preserve typed safe causes and original recovery actions in their current task. API/OAuth failures retain selected provider/account/profile, original request and once-only exchange authority; native authorization and immutable referenced profiles remain independent. Cleanup uncertainty never permits replacement login, logout or deletion. Terminal attempts retain fresh explicit confirmation where required.
 
@@ -191,11 +197,11 @@ Claude selection retains bounded original machine observations and the typed inv
 
 ## Server quota controls
 
-Capability 46 enables row and detailed Refresh for eligible server-owned ChatGPT accounts without a Runner Device. Send the existing QUOTA request with omitted machine and exact account revision, connection and credential generation. Active executions use their original Worker machine. Keep queued, sending and uncertain server observations disabled, preserve retained values and last-success times after failures, and show explicit server-update guidance when the capability is absent. Worker reset-credit consumption retains its original Runner Device. Capability 49 separately allows eligible server-owned accounts to review and confirm available exact or count-only next credits without a Runner. Preserve revision, connection, generation, inventory and original owner selector. Zero/unknown inventory and pending ownership cannot enable consumption. Original-operation reconciliation requires confirmed native/file cleanup and preserves its key and selection. No mount, reconnect or presentation callback sends an unsupported quota request. Follow the [subscription server quota contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-quota--issue-1728).
+Capability 46 enables row and detailed Refresh for eligible server-owned ChatGPT accounts without a Runner Device. Send the existing QUOTA request with omitted machine and exact account revision, connection and credential generation. Active executions use their original Worker machine. Keep queued, sending and uncertain server observations disabled, preserve retained values and last-success times after failures, and show explicit server-update guidance when the capability is absent. Worker reset-credit consumption retains its original Runner Device. Capability 49 separately allows eligible server-owned accounts to review and confirm available exact or count-only next credits without a Runner. Preserve revision, connection, generation, inventory and original owner selector. Zero/unknown inventory and pending ownership cannot enable consumption. Original-operation reconciliation requires confirmed native/file cleanup and preserves its key and selection. No mount, reconnect or presentation callback sends an unsupported quota request. Follow the [subscription server quota contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-quota).
 
 Subscription and API quota bars share the displayed integer remaining percentage: 0% uses danger-text, 50% warning-text and 100% success-text. Intermediate values interpolate the adjacent semantic tokens in sRGB. Each fill is uniform; retained stale and failed observations use the same percentage color while their original labels and timestamps remain independent. Numeric values, empty zero fills and invalid-value suppression remain unchanged. Theme changes add no observation or account operation.
 
-### Quota reset countdown presentation (issue #1826)
+### Quota reset countdown presentation
 
 All subscription quota windows, including Details-only additional windows, use
 the desktop quota-countdown mode for future validated reset instants. Preserve
@@ -205,11 +211,11 @@ wording without restoring quota or requesting refresh. Invalid or missing reset
 evidence keeps its original presentation. Shared presentation scheduling grants
 no account, login, cleanup or reset-credit authority.
 
-## Account details dialog (issue #1824)
+## Account details dialog
 
 Both the ellipsis Account details action and the additional quota-window entry open the same category-owned Form dialog. Keep Health, Account enablement, Service status and Exhaustion, and show only quota windows after the first two in their original order. The background row keeps its first two windows. Retain one metadata-only safe projection, including its original ID/revision and service; never retain Resource documents or row operation callbacks for presentation. Existing accepted inventory updates may replace it only at a nondecreasing revision. Reached identities distinguish bounded payload eviction from confirmed account removal. Removal, authorization loss and category/Settings departure close the dialog without reads or effects.
 
-Use the shared approximately 12% black backdrop (`--backdrop: #0000001f`), inert background, scrolling body, fixed header/footer, semantic themes and 40px controls. Header X and native Escape dismiss; there is no duplicate footer Close action. Preserve mounted inventory and scroll. Restore the opening control, or the visible subscriptions heading when virtualization removes that control. A metadata handoff preserves the original opener through the replacement task and never restores into a disposed category.
+Use the shared approximately 12% black backdrop (`--backdrop: f`), inert background, scrolling body, fixed header/footer, semantic themes and 40px controls. Header X and native Escape dismiss; there is no duplicate footer Close action. Preserve mounted inventory and scroll. Restore the opening control, or the visible subscriptions heading when virtualization removes that control. A metadata handoff preserves the original opener through the replacement task and never restores into a disposed category.
 
 Manage metadata alone occupies the footer. Close details before handing the exact selected identity once to the existing management controller under current category, cleanup, connection and mutation guards. This works after payload eviction: the management task's existing Resource reader validates the exact account ID/service and minimum revision before lifecycle controls appear. The minimum revision is the greater of the retained valid presentation revision and current reached identity revision; a stale inventory update cannot lower that proof. Presentation snapshots grant no account authority. Failed, missing or stale reads remain unavailable under that original guard. Opening and closing details add no Resource read, inventory refresh, mutation or polling; closing the separate management task retains its existing explicit inventory refresh behavior. Locale changes, reconnect and rerenders never replay the handoff.
 
@@ -217,8 +223,7 @@ English/Korean strings and shared keyboard focus containment remain unchanged. R
 
 The saved quota rail popover reports each retained window’s actual observation state and timestamp. It does not display a generic failed-operation warning merely because saved details are open. Saved-read failures and incomplete aggregate evidence retain their owning explanations; Recheck reads saved resources without starting quota collection or proving recovery.
 
-### Compact reset-credit presentation — issue #1855
-
+### Compact reset-credit presentation
 The account-management reset-credit section shows the authoritative available
 count and one Use action. Details start collapsed. Use expands exact-credit
 selection and focuses its heading; it never automatically selects or consumes a
@@ -259,16 +264,13 @@ Browser fixtures cover 640px/320px sections, both languages/themes and 200% zoom
 they grant no installed-native, real-account or platform acceptance. Add no RPC,
 allocation, migration, persistent preference or native behavior.
 
-## Server quota V2 negotiation — issue #1854
-
+## Server quota V2 negotiation
 Individual row/detail Refresh and Refresh all require System 50 and send an omitted machine selector even when the account retains Worker ownership or an Execute lease. The selected server owns five-minute quota maintenance. An absent or disconnected Runner Device does not disable this quota lane; lifecycle/recovery/removal and independent quota/reset-credit obligations still fence competing work. Older servers receive update guidance and no expanded request. Preserve exact retained mutation bytes, last-success evidence, failed/stale status and observed-recovery preferences. Reset-credit confirmation keeps its original idle server versus explicit Worker ownership and is not widened by quota availability. No broad settings redesign is introduced.
 
-## OpenCode Go subscriptions — issue #2097
-
+## OpenCode Go subscriptions
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.
 
-## Paid-credit observations — issue #2124
-
+## Paid-credit observations
 System `SUBSCRIPTION_PAID_CREDITS_V1 = 76` and Worker `SUBSCRIPTION_PAID_CREDITS_V1 = 51` independently negotiate the narrow ChatGPT/Codex paid-credit projection. Reuse authenticated original quota reads, leases, connection/credential generations, actor checks, joined native cleanup and existing refresh actions. No RPC, purchase, consumption action or SQLite migration is added. An older Worker omits these fields; the server rejects a paid-credit publication from a Worker without capability 51.
 
 Each native bucket owns its exact bounded ID, required hasCredits/unlimited flags, nullable balance and successful observation timestamp. Accept nonnegative plain decimal strings of at most 64 bytes without numeric conversion. Explicit null is unknown, zero is a real value, and unlimited takes presentation precedence. Never sum buckets or infer balance from quota, reset credits, plan type or hasCredits. Omitted credits/balance fields retain the last successful bucket and its timestamp; failed, malformed or reflected reads retain evidence without refreshing it. Credential-generation replacement clears observations. Ordinary configuration saves and legacy clients cannot replace protected subscription observations. Original identity/token reflection checks include paid bucket IDs and exact balance strings, including short/encoded secrets. Raw responses, unrelated billing/display text and credentials remain private.

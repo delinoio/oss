@@ -17,6 +17,22 @@
 - Feature flags must remain minimal and opt-in by default.
 - Public interfaces must remain compatible with derive output from `serde-feather-macros`.
 
+### Project requirements
+
+`serde-feather` is a two-component project with fixed mapping:
+
+- `Core` -> `crates/serde-feather`
+
+### Rust component integration
+
+- `crates/serde-feather`: Size-first serde runtime-facing core crate.
+
+- `crates/rustia`: Serde-based LLM JSON runtime crate.
+
+- Keep binary-size-first defaults: minimal default features and no convenience dependencies by default.
+
+- `serde-feather` core crate changes must update `crates-serde-feather-core-foundation.md` and `project-serde-feather.md`.
+
 ## Storage
 - No persistent internal storage contract.
 - Runtime buffer handling and serialization formats must remain deterministic.

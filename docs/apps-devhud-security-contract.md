@@ -67,6 +67,8 @@ Changes to this boundary require generated protobuf freshness, Go format/vet/uni
 
 Update this contract, `docs/project-devhud.md`, the affected domain contract, applicable `AGENTS.md`, generated schemas/artifacts, migrations, and adversarial tests whenever a trust boundary, authority, storage class, retention rule, renderer/native command, origin, credential flow, updater path, or diagnostic field changes.
 
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+
 ## References
 
 - [DevHud project index](project-devhud.md)

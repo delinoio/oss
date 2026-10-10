@@ -25,6 +25,10 @@ These commands use the normal versioned JSON/error/exit contract and reject `--s
 
 Profile endpoints must be unambiguous HTTP loopback or HTTPS origins: no userinfo, path beyond `/`, query (including empty `?`), fragment, escaped path, zone, alternate numeric host, noncanonical IP/port or non-ASCII/noncanonical DNS hostname. Use lowercase ASCII/punycode DNS labels and a canonical IP representation. This stricter new-profile boundary lets the desktop derive one exact CSP origin without granting URL-normalization aliases. It does not widen ordinary endpoint rules or silently rewrite an existing grant.
 
+### cmds/delidev-cli/internal/worker constraints
+
+- Saved client profiles follow `cmds-delidev-connections-contract.md`. Pin the original grant/profile/device, retry only retained pairing ownership, never adopt missing/damaged credentials or another server, and keep metadata output secret-free. Verify exact authority/version through read-only authenticated status without local/remote startup. Saved-profile origins must remain unambiguous for native CSP selection.
+
 ## Storage
 Under the explicitly selected local data root, `connections.lock` serializes profile pairing and display-name edits and each `connections/<profile-id>/connection.json` is an atomically written private intent. It retains the original single-use/expiring client grant until an explicit removal marker atomically clears its code. This file is private input state, never product metadata. Its paired device lives in that profile's `client` subdirectory using the existing `device.json`, pairing lock and pending journal.
 
@@ -50,6 +54,8 @@ Uses the existing System/Device Connect services, private filesystem primitives 
 
 ## Change Triggers
 Update this contract, scoped CLI/desktop AGENTS, project index and evidence whenever profile lifecycle, endpoint rules, credential persistence/removal, native selection or per-server cache ownership changes.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - [DeliDev project](project-delidev.md)

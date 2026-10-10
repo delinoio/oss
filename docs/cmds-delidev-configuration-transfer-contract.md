@@ -25,7 +25,7 @@ accounts cannot be reused or reconnected by import. No SQLite migration is added
 
 ## Scope
 
-`cmds/delidev-cli` owns portable configuration validation, consistent export, change previews and atomic import. `apps/delidev` presents these owner/client operations through generated Connect Query bindings. Version 2 covers the eight existing editable configuration kinds: providers, models, account preferences, instruction templates, Agent Workers, repositories, projects and server preferences. Schedules, historical pricing versions, device-specific notification preferences, integration authentication and Worker installation settings are separate contracts, not silently included in this format. This increment does not complete the remaining issue #964 requirements.
+`cmds/delidev-cli` owns portable configuration validation, consistent export, change previews and atomic import. `apps/delidev` presents these owner/client operations through generated Connect Query bindings. Version 2 covers the eight existing editable configuration kinds: providers, models, account preferences, instruction templates, Agent Workers, repositories, projects and server preferences. Schedules, historical pricing versions, device-specific notification preferences, integration authentication and Worker installation settings are separate contracts, not silently included in this format. This increment does not complete the remaining the feature requirements.
 
 ## Runtime and Language
 
@@ -54,6 +54,10 @@ CLI:
 
 Without `--output`, export/preview use the ordinary versioned JSON result envelope. With `--output`, they create a new owner-only file containing the directly consumable document and synchronize it and its directory; they never overwrite a file or follow an existing link. A failed/uncertain write preserves the selected path for inspection. Configuration stdin cannot share stdin with an authentication token.
 
+### cmds/delidev-cli/internal/worker constraints
+
+- Portable configuration follows `cmds-delidev-configuration-transfer-contract.md`. Export only the closed supported configuration schema; never serialize protected/runtime authority. Import uses explicit machine/checkout remapping, fresh disconnected accounts, exact unchanged reuse or revision-bound singleton settings replacement, an actor/server-bound signed read-only preview, and atomic all-repository validation/publication. Preserve original instructions and native options; reject conflicts without partial writes. Terminal import jobs discard staged configuration copies, and exact reference-only receipt replay never creates another import.
+
 ## Storage
 
 Imports with no new repositories publish all entries, metadata events, the completed coordinator job and its receipt in one transaction. Imports with new repositories first create only an `import-configuration` coordinator and ordinary read-only repository-inspection jobs. The server does not open Worker paths. Every selected checkout must report the exact canonical path shown in the preview; a differently resolved path requires a new explicit preview. Reuse of identical existing repository configuration does not claim a new live inspection.
@@ -70,7 +74,7 @@ Preview tokens grant only the exact reviewed import to the same currently authen
 
 ## Desktop
 
-Settings includes Import / Export, presented as a shared left-aligned 1040px maximum column with flat Export and Import sections and 720px form bounds under issue #1256, always-visible labeled file/JSON inputs and a noninteractive state-derived Load / Map / Review & apply indicator. Mapping, complete review, uncertain retry and result panels remain below the original inputs; the full scope/exclusion guidance and responsive presentation are owned by the desktop contract. Exports are selectable for copying; imports accept a bounded UTF-8 file or pasted JSON. The client displays source machines, requires explicit target selections and target checkout paths, and offers create/reuse choices plus explicit server-preference replacement. It displays the complete exact change document before the separate apply action. Editing the document or mappings invalidates the preview. Forms remain mounted across responsive changes, same-category reselection and same-identity reconnect within the active category, and pending requests retain their original wire bytes and request identity there. Category departure or leaving Settings discards the document, mappings, preview, client waits and retry presentation without implicit apply/replay or server job cancellation; fresh reads may observe already accepted server effects. An acknowledged malformed result remains blocked for inspection rather than permitting a replacement mutation. Job reads distinguish accepted/pending validation, completed application and unchanged-configuration failure. No Web Storage or persistent cache is used.
+Settings includes Import / Export, presented as a shared left-aligned 1040px maximum column with flat Export and Import sections and 720px form bounds for this feature, always-visible labeled file/JSON inputs and a noninteractive state-derived Load / Map / Review & apply indicator. Mapping, complete review, uncertain retry and result panels remain below the original inputs; the full scope/exclusion guidance and responsive presentation are owned by the desktop contract. Exports are selectable for copying; imports accept a bounded UTF-8 file or pasted JSON. The client displays source machines, requires explicit target selections and target checkout paths, and offers create/reuse choices plus explicit server-preference replacement. It displays the complete exact change document before the separate apply action. Editing the document or mappings invalidates the preview. Forms remain mounted across responsive changes, same-category reselection and same-identity reconnect within the active category, and pending requests retain their original wire bytes and request identity there. Category departure or leaving Settings discards the document, mappings, preview, client waits and retry presentation without implicit apply/replay or server job cancellation; fresh reads may observe already accepted server effects. An acknowledged malformed result remains blocked for inspection rather than permitting a replacement mutation. Job reads distinguish accepted/pending validation, completed application and unchanged-configuration failure. No Web Storage or persistent cache is used.
 
 ## Logging
 
@@ -87,6 +91,8 @@ Uses existing configuration validation, SQLite transactions, durable Worker jobs
 ## Change Triggers
 
 Update this contract, project/catalog links and scoped AGENTS for new portable kinds, trust state, remapping rules, application semantics or bounds. Additional portable surfaces require explicit schemas and their own authentication/revision/activation semantics; never infer them from ordinary resource serialization.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 
@@ -125,10 +131,10 @@ On complete current-only reset and inline-model activation, the reserved portabl
 
 Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.
 
-## Project behavior settings (issue #1965)
+## Project behavior settings
 
-Follow [project behavior settings](cmds-delidev-catalog-contract.md#project-behavior-settings-issue-1965) for schema-2 documents, continuous inheritance, explicit original project context, policy precedence, first-publication durable plan decisions and portable version 5. Preserve the original domain authority and uncertainty rules; no SQLite migration is introduced.
+Follow [project behavior settings](cmds-delidev-catalog-contract.md#project-behavior-settings) for schema-2 documents, continuous inheritance, explicit original project context, policy precedence, first-publication durable plan decisions and portable version 5. Preserve the original domain authority and uncertainty rules; no SQLite migration is introduced.
 
 ## New-session defaults and branch prefix declarations
 
-Follow [issues #2054 and #2057](cmds-delidev-catalog-contract.md#new-session-defaults-and-literal-branch-prefixes--issues-2054-and-2057) for System 56, Worker 38, schema-3 Project/Settings and portable version 6. Preserve capability 52, schema-1/2 reads and v1–5 imports; reject destructive old-client writes. Automatic creation mode yields only to an explicit checkbox edit. New immutable prefix declarations preserve original source revisions and legacy omission bytes. Shared Execute instructions remain literal, bounded, and absent in Plan/read-only Sidechat; existing native/account/Worker/workspace/recovery/cleanup ownership remains authoritative. No migration, native version gate, branch interception or automatic branch creation is introduced.
+Follow [the feature](cmds-delidev-catalog-contract.md#new-session-defaults-and-literal-branch-prefixes) for System 56, Worker 38, schema-3 Project/Settings and portable version 6. Preserve capability 52, schema-1/2 reads and v1–5 imports; reject destructive old-client writes. Automatic creation mode yields only to an explicit checkbox edit. New immutable prefix declarations preserve original source revisions and legacy omission bytes. Shared Execute instructions remain literal, bounded, and absent in Plan/read-only Sidechat; existing native/account/Worker/workspace/recovery/cleanup ownership remains authoritative. No migration, native version gate, branch interception or automatic branch creation is introduced.

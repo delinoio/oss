@@ -93,6 +93,114 @@ Late agent/title/recovery writes use the same central barrier. Session/terminal
 storage deletion rejects unconfirmed terminal cleanup. Viewing/disconnecting
 does not create or close a shell, and unknown ownership never permits PID cleanup.
 
+### cmds/delidev-cli/internal/cli constraints
+
+- Question response controls carry metadata only for the one active Worker assignment. Bound/deduplicate controls per stream and keep cancellation/heartbeats live while an execution waits. Claim replies only for the exact queued interaction revision, response, job and current Worker device/instance; reference-only receipts must recheck live authority before returning non-secret content on retry. Native closure or lost Worker ownership after a claim retains response uncertainty and pauses further sends without fabricating native acceptance/closure. The Worker must retain a metadata-only claim identity before RPC, synchronize send intent before its one native attempt, and journal delivery before the ordered outbox publication. Join response controllers before native cleanup returns. Existing journals, duplicate controls and lost acknowledgments never authorize a resend. Public response CLI validation reads the original question and uses the shared strict answer schema; answers enter only through a file or stdin, independently of credential input.
+
+- Explicit pre-native PR recovery uses the existing execution-recovery RPC/CLI boundary and the sessions contract. Bind the original paired device at first Worker claim; keep it immutable and verify it before report receipt replay. Require unchanged original assignment, positive phase, retained manifest and absent native grant/history, even after a replacement process attaches. Never infer old device identity or missing phase proof, rerun Git/native work, rewrite original journals, fabricate a completion or permit resend. A successful inspection separately settles the original rejected input and pending Archive while preserving pause and charged remediation accounting.
+
+- `session diagnostics` uses authenticated SessionService with exact session/execution IDs and bounded original page cursors. Preserve unavailable metadata and precise counters without native side effects or implicit retry.
+
+- Signed Worker controller selection and update/rollback handoffs retain the original `GH_CONFIG_DIR` selector through the shared bounded environment allowlist. Preserve caller cwd and existing OS session selectors; never forward gh token variables or transfer credential files. Follow the ordinary execution GitHub CLI context in the harness contract.
+
+### cmds/delidev-cli/internal/domain constraints
+
+- Preserve historical session `start_preparation` phase/discovery-job metadata from earlier development builds through strict typed decoding and session saves. This compatibility field grants no inspection, execution or retry authority; current direct startup remains authoritative. Follow the startup contract; add no migration or conversion.
+
+- Automatic PR source revisions remain exact canonical decimal strings. Explicit session Stop/Archive/Restore retain server-owned automation suppression, cleared only by successful explicit Resume. Keep a failed automatic queue paused; replacement requires the original profile, settled failure and independently confirmed cleanup under the integration/session contracts.
+
+- Native skill bindings contain opaque original Worker/inventory/package/snapshot identifiers and content digests. Retain them in immutable initial and queued inputs; plain text tokens grant no package authority and bound Steer is unsupported.
+
+- The feature native Claude web publication uses the closed original `web` block union under the sessions/harness contracts. Preserve exact call input fragments, original ID/name/caller and result/source/error metadata, bounded immutable copies, private encrypted/binary bodies and independent citations/usage. Reject foreign/duplicate/local/code-execution ownership. Public web histories remain ineligible for the separately unsupported native checkpoint/continuation profile; no allocation or migration.
+
+- Server-owned per-turn timing follows the feature and the sessions/protocol contracts. Keep optional typed UTC acceptance/end observations in Session progress and primary-user Messages only; reject Worker-injected timing and omit it from native assignment/checkpoint/digest projections. Legacy omission grants no elapsed, outcome or execution authority.
+
+### cmds/delidev-cli/internal/server constraints
+
+- Execution progress and private completion checkpoints must preserve every accepted same-turn input in delivery order, with the primary input first, distinct UUIDs and canonical SHA-256 digests. Recheck each retained queue record's session/execution/mode/request/digest before continuation. Bind the original complete image input for continuation, compaction and recovery; copy ordered attachments and skills into successor and Fork-child assignments. Original execution/startup authority must compare every SessionInput component, including skill bindings and attachment references. An absent legacy list represents only its single original input, never reconstructed Steer history. Bound accepted inputs to 4,095 and checkpoint files to 1 MiB without truncation; missing, reordered or extra input evidence cannot authorize continuation. Public Steer acceptance/control/delivery uses its separately validated durable claim and publication paths; private checkpoint primitives never independently grant send authority.
+
+- Optional manual-fix preflight cannot replace ordinary dispatch lifecycle/error precedence when no queued input exists. The ordinary claim transaction remains authoritative for active, paused, archived and empty states.
+
+- A changed-prerequisite conflict before automatic PR claim may cancel only the original unclaimed bound input through ordinary queue removal. Never release claimed/native or uncertain ownership through preflight cancellation; retain source/session controls before selecting independently eligible replacement work.
+
+### cmds/delidev-cli/internal/skills constraints
+
+- Follow `cmds-delidev-sessions-contract.md#explicit-native-skills` and the storage contract. Import only bounded selected packages; inventories expose opaque metadata and expire independently from accepted copies.
+
+- Synchronize original preparation intent, all file claims and native root identity before copied bytes. Publish snapshot metadata last. Exact prepared retries retain the original proof across delivery reconnect; ordinary inventory scope remains current-instance-bound.
+
+### cmds/delidev-cli/internal/sshsetup constraints
+
+Install each command's child-context cancellation before session creation. Close and join the owned transport on expiry, keep cancellation active through session cleanup, and join the callback before returning. Preserve typed cancellation errors and Stage/Setup recovery requirements after potentially sent effects; never replay effects automatically.
+
+### cmds/delidev-cli/internal/store constraints
+
+- Optional session budgets use exact lifetime currency subtotals from original immutable response estimates. Update totals atomically with first publication; migration validates historical evidence without repricing. Gate initial/FIFO/Resume acceptance before input or routing consumption at known subtotal >= threshold, preserve queues and accepted work, and allow incomplete below-threshold evidence only with explicit non-compliance wording. Budget edits have actor-bound exact receipts and never Resume or clear unrelated recovery.
+
+- OpenCode native message decoding must preserve original message/session/parent identity and independent finish, completion timestamp, error and summary facts; idle can precede final error metadata and cannot complete an input by itself. Keep native paths, instructions, tool selections, structured output and diagnostic content private. Preserve absent totals, reported counters and exact native decimal cost without summing overlapping observations or claiming charges. Classify native errors without retaining their diagnostic text/headers/body in serialized observations, and never turn retryability into retry authority. Original plain-input storage must reject additional native system/tool/format/variant context even when the general message decoder recognizes it.
+
+- Permanent session erasure removes PR activity through each original remediation attempt source, including reservation records without row-level session binding. Redact the validated shared attempt and its index without emitting a new business activity transition; preserve unrelated PR history, original reservation provenance and lifetime counters.
+
+- A paused discovery session may authorize replacement only through its exact indexed finished automatic failure and matching execution with confirmed cleanup. Keep its old queue paused and reject explicit Stop, Archive, recovery or changed completion proof before admission and final claim; do not infer authority from a generic failed session.
+
+### cmds/delidev-cli/internal/worker constraints
+
+- Grok's initial prompt queue binding preserves the exact original text and native UUID-v4 through queued, running and cleared observations. Reject replacements, partial/null running metadata, repeated transitions and a premature clear without changing prior evidence. Queue clearing is never native turn completion, cancellation or cleanup authority; it must remain separate from correlated terminal observations and durable input ownership.
+
+- Grok's private first-text controller must revalidate owned configuration, persist the original encoded-input digest before its single native call, and bind the original queued prompt before publishing acceptance. Failures after the claim never permit replay. Read notifications concurrently with the original RPC; require ordered text, cleared queue and matching RPC/turn/prompt/counter completion before success. Bound all observations, validate passive metadata without granting command/tool authority, and join native-lifetime cancellation with blocked publication. Root-turn completion does not prove auxiliary history or process cleanup; public Worker dispatch still requires its independent durable composition.
+
+- Grok successful-text cleanup must retain independent idle and original-prompt last-summary observations, then synchronize one original closure claim before `session/close`. Require both the exact native closed outcome and original residency-removal event before recording closure binding and joining process cleanup. Never replace this sequence with a delay, force-kill, `session/load` mutation or repeated close after uncertainty. This closes the successful native session only; retained-history validation, interrupted-input Stop and completion reporting need their own evidence.
+
+- Grok original Write replies require an immutable original proposal/arrival and a once-only owner/input/session/prompt/response claim synchronized before native reply. Preserve request namespaces through digests and distinguish delivery, native resolution, tool outcome and root termination. Never infer rejection from failure text or borrow user Stop: `PermissionRejected` retains reported usage and requires matching original RPC/turn/prompt context, cleared queue and idle before cleanup/publication. File reply records follow the four original Worker input stages, remain bounded and unique, and exclude plain-text Stop/close claims. Unknown/failed/uncertain delivery cannot be retried or recreated by inspection; remembered-policy restoration, public outbox/response integration and tool-history restoration need independent composition.
+
+- Grok remembered file edits derive only from an original advertised `allow-edits-session` reply whose durable claim, delivery, native resolution and approving Write completion have all been observed. Bind later unrequested Writes to that exact arrival within the same live original input; neither pending/resolved events nor a once-only approval can create or replace this policy. Explicit later requests still require their own replies. Read-only journals, checkpoints and process replacement never reconstruct remembered permission authority without a separate native restoration profile.
+
+- Grok initial Plan selection is a separate original pre-input mutation. Bind the immutable Plan assignment to a once-only `session/set_mode` claim, exact acknowledgment and independent original mode event before any input. Preserve prior command-event ordering without granting advertised commands, and join mode persistence with native lifetime. Default assignments cannot acquire Plan claims or silently downgrade Plan input. Version-2 Plan journals retain both mode stages between creation and input, with unchanged 128-response/256 KiB bounds; read-only reconciliation never restores selection or response authority. Plan question mode must match its original live binding. Initial Plan selection does not establish plan artifacts, tool-driven transitions, file permission, Stop or history continuation.
+
+- Claude original-input lifecycle validation is separate from transport, publication and cleanup. Preserve exact queued/started/replayed/result identities and launch settings, reject case aliases/duplicate or foreign core events, and latch uncertainty without accepting a later apparent success. A native success subtype can contain an API error; classify the closed terminal reason and error bit independently. Missing result input identity produces an uncorrelated session failure, never inferred original-input completion, and retains prior acceptance. Assistant provider request IDs remain private diagnostic data and cannot acknowledge control. Every still-private message/tool/usage/interaction family needs its own adapter before public dispatch; the core observer grants no send, resume or process-cleanup authority.
+
+- Follow `cmds-delidev-sessions-contract.md` for session acceptance and ordered input. Accepting a session/input is not native execution. Keep sequence/mode stable, atomically update queue accounting/events/receipts, store reference-only receipts, and retain removal tombstones. Restore stays paused; outcome, archive and recovery are independent. Never claim native Stop/Archive cleanup from metadata transitions or accept Local based on a caller-supplied machine ID. Public first dispatch must freeze snapshot/routing and queue its exact immutable job atomically after current readiness checks; later-turn execution requires its own continuation boundary.
+
+- Native core-event publication must retain the exact Worker outbox request before RPC, preserve contiguous execution sequences and stable native/product message identity, and atomically update input acceptance, queue capacity, transcript/state/events and reference-only receipts. Never replace pending publication after an uncertain acknowledgment or resend native input during event replay. Native terminal events revoke inference but do not prove process cleanup or completed Archive. Preserve pause/recovery and earlier failure. Unknown/rich extensions require dedicated typed adapters; an unhandled result cannot be silently ignored by production dispatch.
+
+- A reported execution-claim publication failure before lease issuance may roll back only that attempt's empty private process owner and exact new claim, restoring the prior closed claim for continuation. Hold the session lock; retain history, workspace and all unexpected ownership evidence. Never apply this rollback to a returned lease or crash-recovered active claim.
+
+- Claude API runs explicitly request native session-state events. Only the original validated post-continuation idle event establishes the observed run boundary; it cannot grant cleanup, persisted-history or new-input authority. Automatic task-notification turns retain a distinct native init identity and explicit original result origin, never accept product input or overwrite its terminal outcome, and keep failed continuation evidence through idle. Preserve exact tool/callback ownership and reject unknown origins, changed settings, premature idle and autonomous wakeups outside the owned run. Session-wide ownership transfer remains separate.
+
+- Claude live API sessions serialize observed runs and re-read applied settings before each explicitly claimed input. Require native idle, settled original/automatic outcomes and no unresolved tasks/content/callbacks; failed settled runs require explicit terminal-resume intent. Retain process-wide native identities and original parent-tool callback owners across runs, reset per-run notification eligibility, and never let a late echo acknowledge a new input. Unknown events and uncertain sends latch recovery. Keep replies usable during pending reads, let Close interrupt blocked native controls, and block new input after an observed native permission change until its separate configuration adapter verifies authority. Live continuation is not persisted-history recovery or public dispatch.
+
+- Claude retained transcript reads derive fixed main/child filenames from original session/task ownership, use an opened private canonical home and verify every file/ancestor identity before returning bounded cancellable observations. Pin directory identity/mode/ownership independently of unrelated entry size/mtime changes; file and paired-sidecar metadata remain exact. Never create/repair missing state, follow links, accept special files or accept changed paired files. Native Unix 0644 sidecars may be read only behind the checked owner-only home with owner-matching, non-shared-writable descendants and single-link files; Windows must retain strict owner-only descendant ACLs because traversal privileges bypass ancestor ACLs. Preserve native permissions and exact bytes, keep filesystem errors/paths/content out of structured logs, and require independent exclusive leases plus confirmed process cleanup before checkpoint use. Reading transcripts does not prove auxiliary completeness or grant Resume.
+
+- Claude closed root-session handoff is an opaque single-use in-memory capability produced only after settled original lifecycle, immutable session-owned event proofs, bounded clean native EOF exit, joined process cleanup and exact retained-file verification. Forced Stop cleanup alone cannot prove native persistence completion; trailing/partial events, nonzero exits and EOF timeout keep uncertainty. Preserve historical identities/failures, require fresh never-used owner/credential on the original relay, recheck history before/after native initialization and compare applied settings/instructions without rewriting files. Discovery/fresh launches remain empty-runtime-only. Native `mode: normal` history metadata is not a permission change. Allow only separately proved settled root inline-text Read, synchronous Bash and Write/Edit tools plus their exactly echoed allowed tool approvals; reject other tool, child, callback and unproved auxiliary replacement histories until their own profile is reconciled. Manual replacement requires the independently pinned original-prefix contract. Never serialize the live handoff itself, treat it as crash recovery or bypass independent Worker/account/workspace authorization. A separate explicit versioned evidence export requires the independently pinned checkpoint contract.
+
+- Execution completion must distinguish DeliDev UUID-v7 object IDs from exact harness-owned native identities. Select native format validation from the immutable assignment; preserve Codex UUID-v7, Claude’s supplied UUID-v7 session/original UUID-v4-or-v7 turn and OpenCode’s original ses_ session/msg_ input identity without normalization or generated surrogates. OpenCode turn ownership is its claimed original input message, never a later assistant successor or fabricated UUID; format checks alone cannot establish that ownership. Existing context-free completion/recovery readers remain explicitly Codex-only. Unsupported identity profiles grant no adapter capability, and the public publication gate stays separate from this type support. Preserve existing stored JSON representation when extending native identity validation.
+
+- OpenCode stored history inspection must bind the original settled live observer, separately stored input and complete ordered message/part payloads. Serialize against original event consumption, bound pagination under the same native session and use only validated cursor headers, never Link URLs or event IDs. Check native idle/pending state around reads, reject missing/extra/reordered/changed data without partial proof, and retain metadata digests without private content. Ordinary history comparison cannot reconstruct missing live evidence, prove response acceptance/cleanup, charge overlapping usage or authorize continuation/replacement. The separate same-process reconciliation may retain verified current snapshots without fabricating native arrivals; unknown or unsettled histories remain recovery-required.
+
+- The original OpenCode binding coordinator owns one fresh journal and must acknowledge session publication before allowing the native first-input claim. Closed or failed writers cannot regain authority from unchanged files. Close original native resources before the coordinator and shared publisher; retained journals never grant a replacement runtime. The server accepts pinned first-session/default Build/Plan binding, stored-input acceptance and separately integrated original text-part publication; late original facts preserve Stop/recovery and cannot restore relay access.
+
+- OpenCode queued Plan/Execute changes use the native per-input Build/Plan selector in the same original session. Require the preceding agent from the immutable predecessor assignment and compare its complete settings digest before staging or historical reads; only that selector may differ from the newly requested profile. Model/account/permission/instruction/relay authority stays fixed. Validate both old and new observations against their own queued modes and preserve original progress. Native transition reminders remain native output, never injected DeliDev prompts or a synthetic execution approval.
+
+- OpenCode tool-proof version 3 retains direct confirmed Read `always` claims and exact original ordered allowance patterns under the independently verified default Build/Plan policies and empty base session permission list. Keep the original native acceptance order and the exact already-applied prefix. The durable predecessor resume claim owns one native PATCH append of only the unapplied suffix after complete historical validation; validate its response and fresh metadata, then recompare the entire history before input. Never replay a lost/uncertain append, rewrite predecessor files, re-send original approval, interpret wildcard patterns or widen another permission. Keep immutable configuration distinct from restored native session permission metadata in both session reads and live notifications. Other remembered permissions and unsupported auxiliary state remain gated; automatic Read cascades use the separate original-policy proof below.
+
+- OpenCode tool-proof version 4 preserves original automatic Read policy closures separately from direct replies. Require the original proposal/reply event identities, same-input/session/tool ownership, completed eligible Read and every observed source’s confirmed direct Read `always` acceptance. Retain canonical bounded source context without inventing a direct target response, exact wildcard-rule attribution or additional allowances. Copy full lineage metadata without changing predecessor slices; old proof/report versions cannot be promoted. Native restoration materializes only the existing original direct allowance suffix, while completed-report recovery remains read-only.
+
+- Claude root interruption follows the dedicated native harness contract: claim the exact original owner/session/accepted-input/native-turn/request before one interrupt control, require an empty native remaining queue, and preserve acknowledgment, result correlation, idle and owned cleanup separately. Original partial text with explicit aborted metadata and the native interruption context never becomes completed output or another accepted input. Missing native result input IDs remain missing even after a claimed Stop. Keep errors and one-shot claims latched, preserve normal completion races, and block new input/replies/compaction/checkpoint handoff until their separate stopped-history profile exists.
+
+- Claude response transmission follows the sessions contract: preserve original question text/string keys and unchanged-input allow/explicit denial, synchronize exact native ownership/digest intent before one pipe write, and replay only original publication receipts. Keep native echo separate from semantic acceptance, closure and recovery. Interruption-coupled root denial uses only its dedicated context/result composition. Do not enable edited inputs or remembered permission updates before their dedicated native composition. Preserve exact failed-tool non-execution metadata without granting executed-tool history.
+
+- Claude callback settlement follows the sessions contract: require the once-only original response claim, possible delivery, exact native echo and separately retained original tool result. Validate exact structured question answers or explicit permission-rule denial independently. Drain original result receipts before atomic acceptance/closure, consume only the matching unconfirmed count and release Worker reply content after closure. Never promote cancellation, tool/root success, Inbox read state or recovery. Plan acceptance additionally binds unchanged original plan text/artifact to a nondelegated, unedited native result with no pending leader approval; interruption-coupled denial additionally requires its separate original context and uncorrelated session-result publication.
+
+- Post-EOF Claude history retention requires the original controller's dedicated correlated non-aborted original-input EOF marker and exact owner/session/input/turn. Generic Finish, forced Close, interrupted denial or absent process state cannot grant it. Share existing transcript/permission/task/tool gates, mint only one opaque handoff and retain mismatch uncertainty without new native I/O. Public checkpoints and continuation still require their own immutable Worker/report authority.
+
+- PR remediation coordination follows the integration contract. Keep one active/uncertain attempt per stable remote PR and bind immutable problem versions, policy and queue content. Charge automatic attempts only with the ordinary execution claim and fresh kind-specific gate in one transaction; all FIFO/Resume claims share the queue-commit invariant. Preserve lifetime counts across heads, sessions and restarts, retain limit cause and explicit resumption provenance, and never reset counts through manual work or ordinary policy edits. Only original verified native completion plus owned cleanup, or the separately verified original positive pre-native rejection, releases a running attempt; completion alone cannot prove Git push or handle evidence. Keep the public controller and Worker Git authority separate until their full integration is verified.
+
+- First execution of an explicit PR-prepared Worktree must recheck actual clean detached HEAD, worktree-local remote configuration and original live base/head refs while holding its session lock and before publishing execution ownership. Keep this check read-only, credential-scoped to Worker Git, bounded and fsmonitor-free; preserve modified/ignored/untracked files and original manifest on failure. Successful preparation, recovery or native read is not push authorization. Ordinary continuations do not inherit fresh remediation authority from historical preparation.
+
+### cmds/delidev-cli/internal/workspace constraints
+
+- Snapshot creation/cleanup holds one Worker-wide cross-process publication gate through capacity admission and durable publication. Reject at 4,096 retained snapshots before staging; independent session locks cannot reserve the final global slot. A busy publication gate returns conflict without creating output or touching source.
+
 ## Storage
 ### First-execution transaction primitive
 `Tx.ClaimInitialExecution` is an internal transaction primitive used by the public first-dispatch coordinator. It requires exact current session/input revisions, transient `dispatch=ready`, no previous execution/snapshot, active archive visibility, no recovery, a successful matching preparation job, and the earliest queued input. The coordinator validates the exact selected configuration and creates its immutable Worker job in the same transaction; any failure rolls back ready state, snapshot, input ownership, routing and job. A database claim alone grants no native capability or API relay credential.
@@ -279,6 +387,8 @@ Uses `ResourceService` for individual reads/snapshots/events and the existing co
 
 ## Change Triggers
 Update this document, project index, protocol contract, CLI contract, validation records in pull requests, issues and CI logs/artifacts and scoped AGENTS whenever acceptance, lifecycle, origin proof, delivery/retry, migration or execution integration changes. Preserve the complete requirements and distinguish fixtures from actual native evidence.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - [Project](project-delidev.md)
@@ -482,7 +592,7 @@ The public first dispatcher now accepts pinned Claude Code `2.1.236` API Execute
 
 The actual Worker holds the original execution lease, checks the selected canonical executable, creates an exclusive private runtime, retains digest-only registration intent and obtains a fresh exact scoped relay. It synchronizes the original input intent before native transmission. The joined reader publishes native initialization, pre-acceptance progress, exact user replay, ordered supported provider content, usage, tools, callbacks, direct replies/echoes/settlement and correlated result-command-idle facts through the original durable outbox. Closed or unsupported response streams fail explicitly; unknown native observations retain recovery rather than being dropped. Control failures cancel the owned native lifetime and every control goroutine is joined before returning.
 
-Correlated ordinary completion joins clean EOF and workspace closure, then uses the durable version-1 Worker result/report path. It stays paused and cannot authorize FIFO or Resume from native history alone. Targeted Stop before original input acceptance contains the original process and retains uncertainty. Accepted streaming Stop/Archive now uses the separately validated native interruption profile below; interrupted-denial cleanup, continuation/history recovery, pending-tool and richer native event families remain required. Those missing families are explicit implementation limits, not exclusions from issue #964.
+Correlated ordinary completion joins clean EOF and workspace closure, then uses the durable version-1 Worker result/report path. It stays paused and cannot authorize FIFO or Resume from native history alone. Targeted Stop before original input acceptance contains the original process and retains uncertainty. Accepted streaming Stop/Archive now uses the separately validated native interruption profile below; interrupted-denial cleanup, continuation/history recovery, pending-tool and richer native event families remain required. Those missing families are explicit implementation limits, not exclusions from the feature.
 
 ### Original Claude streaming Stop and Archive
 After acknowledged original input publication, targeted Stop/Archive joins response controls, synchronizes one original interrupt claim into the immutable binding journal and gives the same native controller a bounded 15-second grace under the Worker stream lifetime. Stream loss/revocation still cancels that lifetime immediately. Failed claims, unsupported pending work or raced completion remain uncertain, with original owned containment available independently; no native retry or replacement input is authorized.
@@ -519,7 +629,7 @@ The separately verified original answered-question profile also extends Claude F
 The separate public command/file-edit profile also permits completed synchronous Bash, Write and Edit history with original accepted tool permissions when native Claude requested them. Server acceptance independently rechecks original allow/claim/delivery/echo/result/settlement ownership and keeps tool approval distinct from question acceptance. An eligible root outcome and the private native checkpoint remain independently necessary; failed root outcomes require the verified settled-failure profile below. Restoring native conversation history cannot reissue a command/file mutation/approval or overwrite later workspace changes; unsupported auxiliary, failed tool, denied and permission-transition histories remain gated.
 
 ### Verified settled failed Claude input
-Issue #1102 extends the successful-root profiles above to a correlated original failed input with the same independently eligible inline content, Read, answered Question, synchronous Bash/Write/Edit and completed inline-task history. The Worker requires acknowledged terminal/content/result/callback publications, unchanged permission, the original controller's clean input EOF, joined native cleanup and independently completed workspace ownership before retaining its immutable checkpoint. The server independently rechecks original terminal classification, input acceptance, complete indexed history and settled callbacks before accepting the version-2 failed completion. Aborted streaming/tools, Stop, denial/interruption, changed permissions, unsettled callbacks and unproved child/background histories remain excluded, even when their terminal error bit classifies them as failed. A `background_requested` terminal is excluded independently of tracked background-task events.
+The feature extends the successful-root profiles above to a correlated original failed input with the same independently eligible inline content, Read, answered Question, synchronous Bash/Write/Edit and completed inline-task history. The Worker requires acknowledged terminal/content/result/callback publications, unchanged permission, the original controller's clean input EOF, joined native cleanup and independently completed workspace ownership before retaining its immutable checkpoint. The server independently rechecks original terminal classification, input acceptance, complete indexed history and settled callbacks before accepting the version-2 failed completion. Aborted streaming/tools, Stop, denial/interruption, changed permissions, unsettled callbacks and unproved child/background histories remain excluded, even when their terminal error bit classifies them as failed. A `background_requested` terminal is excluded independently of tracked background-task events.
 
 A verified failed completion keeps the original failed outcome and failed job, confirmed cleanup, paused dispatch and no next-execution intent. It never starts FIFO automatically. The existing authenticated `ControlSession` Resume operation and equivalent `session resume` CLI explicitly authorize only the oldest new queued input, with fresh execution/job/native-request/process/relay authority and the original immutable account/configuration/history. An empty-queue Resume retains explicit intent under the existing readiness gate. Exact Resume receipt replay cannot claim another input or undo a later Stop. The Worker compares the original checkpoint and native settings/history again before launch and input; missing or altered evidence blocks continuation without reconstruction, input replay, tool replay or workspace rollback. Historical accepted version-1 reports remain paused and cannot be promoted retroactively.
 
@@ -606,7 +716,7 @@ Fresh initial/continuation/Resume admission and first durable execution registra
 
 ## Authenticated development-server forwarding
 
-Issue #1089 follows the [session forwarding contract](cmds-delidev-forwarding-contract.md). Additive `ForwardService` start/get/stop, one-shot claim, streaming traffic and original cleanup RPCs plus `WorkerService.WatchForwardRequests` preserve authenticated client/session/Worker ownership and typed `SESSION_FORWARDING_V1` capabilities. Generated Go/TypeScript descriptors and `ForwardQuery` expose the shared API. The CLI owns an explicit loopback listener and returns its exact endpoint. Stop preserves forwards; Archive/deletion/revocation close them, and every Archive completion requires independently confirmed original cleanup. Receipt replay and reconnect cannot recreate a claimed native lifetime. Model API endpoints remain server-relative. Generic schema-24 entities/receipts retain metadata without traffic or a relational migration.
+The feature follows the [session forwarding contract](cmds-delidev-forwarding-contract.md). Additive `ForwardService` start/get/stop, one-shot claim, streaming traffic and original cleanup RPCs plus `WorkerService.WatchForwardRequests` preserve authenticated client/session/Worker ownership and typed `SESSION_FORWARDING_V1` capabilities. Generated Go/TypeScript descriptors and `ForwardQuery` expose the shared API. The CLI owns an explicit loopback listener and returns its exact endpoint. Stop preserves forwards; Archive/deletion/revocation close them, and every Archive completion requires independently confirmed original cleanup. Receipt replay and reconnect cannot recreate a claimed native lifetime. Model API endpoints remain server-relative. Generic schema-24 entities/receipts retain metadata without traffic or a relational migration.
 
 ## Preserved project-index implementation notes
 
@@ -614,15 +724,15 @@ The following source-backed notes were relocated from the project index at `12b3
 
 Uncertain question/approval response delivery now automatically inspects the original native conversation and exact retained turn/input scope after retaining the original delivery observation. Already observed exact live proof uses its original queued durable publication; history/closure alone never manufactures acceptance or permits a resend. Native pause and earlier recovery remain independent. Lost-event historical reconstruction and safe surviving-process reattachment remain required.
 
-Issue #1089 adds authenticated explicit session/Worker development-server forwarding through owner/client Connect RPC and the Go CLI. A client-owned loopback listener carries bounded ordered opaque TCP bytes through a separately joined outbound Worker lane. Agent Stop preserves forwards; Archive/revocation close them, with independent original peer cleanup and receipt-only reconnect behavior. See the [forwarding contract](cmds-delidev-forwarding-contract.md); real remote/platform/release acceptance remains separate from temporary loopback fixtures.
+The feature adds authenticated explicit session/Worker development-server forwarding through owner/client Connect RPC and the Go CLI. A client-owned loopback listener carries bounded ordered opaque TCP bytes through a separately joined outbound Worker lane. Agent Stop preserves forwards; Archive/revocation close them, with independent original peer cleanup and receipt-only reconnect behavior. See the [forwarding contract](cmds-delidev-forwarding-contract.md); real remote/platform/release acceptance remains separate from temporary loopback fixtures.
 
 The private server execution-dispatch coordinator establishes its own server-owner context before reading retained PR input ownership. Ordinary initial and continuation dispatch therefore share the same actor boundary regardless of the internal caller. This does not grant any public RPC or paired Worker owner authority; their authorization remains independently enforced.
 
 An empty queue supplies no manual-fix candidate and skips only the optional PR preflight. The ordinary claim transaction still decides lifecycle and empty-input errors, rejecting already active work before emptiness and preserving pause, Archive, routing and original assignment state.
 
-### Grok public original tool interactions (issue #1091)
+### Grok public original tool interactions
 
-The [original-tool harness profile](cmds-delidev-harness-contract.md#grok-public-original-tools-questions-and-plan-issue-1091)
+The [original-tool harness profile](cmds-delidev-harness-contract.md#grok-public-original-tools-questions-and-plan)
 extends first dispatch to the verified Execute/Plan General Chat inputs. Initial
 Plan requires its original native mode claim before input; native tools then
 publish immutable ordered observations and original Write/question/Plan requests
@@ -639,7 +749,7 @@ Stop evidence retain paused recovery. Existing first-text history/Stop continue 
 use their separate original profiles; repositories and continuation stay gated.
 Tool completion remains version 1, with no automatic next input.
 
-## Same-account Codex fork boundary (#1092)
+## Same-account Codex fork boundary
 
 The [fork contract](cmds-delidev-forks-contract.md) adds a separate durable Worker
 operation for a completed source turn. A source reservation prevents concurrent
@@ -652,7 +762,7 @@ workspace result advances routing or authorizes provider inference. Local sharin
 is limited to user-owned Local source checkouts; parent-owned managed worktrees
 require an independent child copy so permanent parent deletion cannot remove its files.
 
-### Windows OpenCode General Chat (issue #1205)
+### Windows OpenCode General Chat
 
 The existing first-dispatch and FIFO/Resume APIs admit the pinned Windows global
 profile under the same immutable account/model/settings and owned-workspace
@@ -662,7 +772,7 @@ native checkpoint version 2 and read-only completed-report recovery. Existing
 Worker/report version 2 and public schemas/commands stay unchanged. Missing or
 changed root evidence refuses replacement without consuming another native
 input; recovery never starts native work and stays paused until explicit Resume.
-The [harness contract](cmds-delidev-harness-contract.md#windows-opencode-general-chat-root-profile-issue-1205)
+The [harness contract](cmds-delidev-harness-contract.md#windows-opencode-general-chat-root-profile)
 owns exact root, isolation, Plan-policy, version-1 compatibility and native-evidence
 requirements.
 
@@ -688,7 +798,7 @@ session after that separately settled automatic failure only when original nativ
 cleanup is confirmed and active/recovery/Archive ownership is absent; it never
 resumes the old failed queue. Its current source link and latest attempt session
 still enforce user controls. Historical and manual pauses remain ineligible.
-See the [integration contract](cmds-delidev-integrations-contract.md#bounded-automatic-pr-remediation-issue-1082).
+See the [integration contract](cmds-delidev-integrations-contract.md#bounded-automatic-pr-remediation).
 
 ## Ordered account source first execution
 
@@ -704,7 +814,7 @@ Usage and costs continue to use the actual immutable selected account/model.
 
 ## Explicit native skills
 
-Issue #1748 adds `$` skill selection to project-session and General Chat creation
+The feature adds `$` skill selection to project-session and General Chat creation
 and existing follow-up composers. A selected token carries an opaque inventory,
 package revision and original paired Worker identity separately from text.
 Manually typed tokens remain plain text. Editing a selected token removes its
@@ -769,10 +879,10 @@ remain in the queue's retained cleanup references. Queue edits preserve their
 original revision, actor and complete request identity through exact retries.
 
 The owner explicitly authorized declarations and activation together for the
-2026-10-08 fixed QA batch. This exception applies only to issue #1748's System 44,
+2026-10-08 fixed QA batch. This exception applies only to the feature's System 44,
 Worker 24 and typed session request field 4. It does not waive original authority,
-immutable input, cleanup or compatibility checks and does not create a general
-exception to main-first allocation policy. The owner retains real-account,
+immutable input, cleanup or compatibility checks. Current feature allocation delivery
+follows the [shared allocation workflow](cmds-delidev-structure-contract.md#allocation-workflow). The owner retains real-account,
 installed-native, remote-environment and cross-platform acceptance. Scripted
 transport/package tests establish local implementation evidence only.
 
@@ -788,7 +898,7 @@ Read preflight
 checks before new package preparation; the original acceptance transaction checks
 again atomically. Existing references are never evicted to make room.
 
-## Project first-prompt history (issue #1828)
+## Project first-prompt history
 
 Public `CreateSession` appends the exact nonblank first prompt for accepted MANUAL or EXTERNAL_CLI project sessions. The original receipt transaction appends and prunes immutable project-owned entities to the latest 100 entries. Durable server event sequence determines acceptance order. Replay, rejection and rollback add nothing. Image-only, General Chat, follow-up, schedule, remediation, Fork and Sidechat flows add nothing. Text history includes no attachments, typed skill bindings or execution choices. Source-session deletion and queue edits retain original history. No backfill runs.
 
@@ -796,20 +906,18 @@ Public `CreateSession` appends the exact nonblank first prompt for accepted MANU
 
 OpenCode lost-report recovery checks a child-owned immutable closed creation proof before admitting inspection work. Verified Fork publication atomically retains the expected creation request, child ID, original accepted output digest and digest binding of the complete original Fork boundary (including accepted input digest, native checkpoint/runtime, Worker and selection). This retains no source prompt or protected native content and survives independent parent purge. Changed valid creation UUIDs, checkpoint/runtime/selection or proof ownership reject before admission. Older seeds without that proof must compare any recorded marker against the exact retained completed original Fork input/output; absence remains recovery-required. The proof is trusted server-owned publication metadata, never authority derived from a later mutable marker; no RPC, allocation or migration.
 
-## Project behavior settings (issue #1965)
+## Project behavior settings
 
-Follow [project behavior settings](cmds-delidev-catalog-contract.md#project-behavior-settings-issue-1965) for schema-2 documents, continuous inheritance, explicit original project context, policy precedence, first-publication durable plan decisions and portable version 5. Preserve the original domain authority and uncertainty rules; no SQLite migration is introduced.
+Follow [project behavior settings](cmds-delidev-catalog-contract.md#project-behavior-settings) for schema-2 documents, continuous inheritance, explicit original project context, policy precedence, first-publication durable plan decisions and portable version 5. Preserve the original domain authority and uncertainty rules; no SQLite migration is introduced.
 
 ## New-session defaults and branch prefix declarations
 
-Follow [issues #2054 and #2057](cmds-delidev-catalog-contract.md#new-session-defaults-and-literal-branch-prefixes--issues-2054-and-2057) for System 56, Worker 38, schema-3 Project/Settings and portable version 6. Preserve capability 52, schema-1/2 reads and v1–5 imports; reject destructive old-client writes. Automatic creation mode yields only to an explicit checkbox edit. New immutable prefix declarations preserve original source revisions and legacy omission bytes. Shared Execute instructions remain literal, bounded, and absent in Plan/read-only Sidechat; existing native/account/Worker/workspace/recovery/cleanup ownership remains authoritative. No migration, native version gate, branch interception or automatic branch creation is introduced.
+Follow [the feature](cmds-delidev-catalog-contract.md#new-session-defaults-and-literal-branch-prefixes) for System 56, Worker 38, schema-3 Project/Settings and portable version 6. Preserve capability 52, schema-1/2 reads and v1–5 imports; reject destructive old-client writes. Automatic creation mode yields only to an explicit checkbox edit. New immutable prefix declarations preserve original source revisions and legacy omission bytes. Shared Execute instructions remain literal, bounded, and absent in Plan/read-only Sidechat; existing native/account/Worker/workspace/recovery/cleanup ownership remains authoritative. No migration, native version gate, branch interception or automatic branch creation is introduced.
 
-## Immutable approval reviewer — issue #1980
+## Immutable approval reviewer
+The original Codex execution freezes its optional reviewer and bounded API reviewer model allowance. Agent edits never rewrite it. Resume and ordinary Fork require original effective reviewer proof and current Worker capability 30; mismatch cannot retry input or silently use User review. Unsettled observed reviews block terminal success, continuation and manual compaction independently of approvals, tool outcomes and cleanup. Sidechat overlays User/read-only/never and removes the additional reviewer model allowance, retaining its parent snapshot/account and independent cleanup ownership. Follow the [harness reviewer contract](cmds-delidev-harness-contract.md#codex-ai-approval-reviewer).
 
-The original Codex execution freezes its optional reviewer and bounded API reviewer model allowance. Agent edits never rewrite it. Resume and ordinary Fork require original effective reviewer proof and current Worker capability 30; mismatch cannot retry input or silently use User review. Unsettled observed reviews block terminal success, continuation and manual compaction independently of approvals, tool outcomes and cleanup. Sidechat overlays User/read-only/never and removes the additional reviewer model allowance, retaining its parent snapshot/account and independent cleanup ownership. Follow the [harness reviewer contract](cmds-delidev-harness-contract.md#codex-ai-approval-reviewer--issue-1980).
-
-### Claude native web-tool publication — issues #2015 and #2016
-
+### Claude native web-tool publication
 Original root provider messages retain closed `server_tool_use`, `web_search_tool_result` and `web_fetch_tool_result` blocks in their existing ordered `claude.blocks` union. Each block has empty generic text and a separate `web` document with the original native call ID, closed search/fetch name and omitted-versus-explicit-direct caller observation. Server tools never become local `role=tool` calls, permission callbacks, tasks, user results or HTTP requests. Other server families, including code execution, remain unsupported by this publication profile.
 
 Calls retain exact initial JSON and ordered input fragments. At native completion, the assembled input must match the original native input and the closed one-field search `query` or fetch `url` shape. Results must follow the original stopped call block in the same provider message, match its original name/ID and occur once. Server acceptance independently rejects native identity reuse across provider messages and local tools in the original session/thread/turn. The existing accepted input, immutable account/configuration, authenticated Worker, sequence and atomic event/receipt gates apply unchanged. A lost acknowledgment retries only the exact pending publication; it cannot run another search or fetch.
@@ -822,17 +930,15 @@ The existing native checkpoint boundary excludes server-tool histories. Both Wor
 
 ## Same-question Sidechat retry
 
-Same-question Sidechat retry follows [the Sidechat contract](cmds-delidev-sidechat-contract.md#same-question-retry--issue-2061). Preserve original ForkOrigin, exactly one direct text-only question and actor/revision-bound captured parent turns. Generated retry inputs do not count as new direct questions. Fresh native Fork history and the existing child workspace predecessor have separate ownership. Atomic successful completion selects the current answer; earlier jobs, answers, usage and findings retain their original identities. Stop/Archive, recovery and deletion fence every original generation; never infer a fresh retry from observation or lost acknowledgement.
+Same-question Sidechat retry follows [the Sidechat contract](cmds-delidev-sidechat-contract.md#same-question-retry). Preserve original ForkOrigin, exactly one direct text-only question and actor/revision-bound captured parent turns. Generated retry inputs do not count as new direct questions. Fresh native Fork history and the existing child workspace predecessor have separate ownership. Atomic successful completion selects the current answer; earlier jobs, answers, usage and findings retain their original identities. Stop/Archive, recovery and deletion fence every original generation; never infer a fresh retry from observation or lost acknowledgement.
 
-### Codex image-view publication — issue #2017
-
-Compose the [closed image-view observation profile](cmds-delidev-harness-contract.md#codex-image-view-observations--issue-2017) with existing tool publication. Store only original Worker-owned observation metadata: opaque tool/reference ID, machine, immutable manifest digest, selected repository/root and relative location. The original immutable execution supplies account, connection, thread, turn and generation attribution. Reject duplicate native item identities and changed lifecycle references atomically, preserving earlier evidence and receipts. Completed native observations do not prove root success or independent cleanup.
+### Codex image-view publication
+Compose the [closed image-view observation profile](cmds-delidev-harness-contract.md#codex-image-view-observations) with existing tool publication. Store only original Worker-owned observation metadata: opaque tool/reference ID, machine, immutable manifest digest, selected repository/root and relative location. The original immutable execution supplies account, connection, thread, turn and generation attribution. Reject duplicate native item identities and changed lifecycle references atomically, preserving earlier evidence and receipts. Completed native observations do not prove root success or independent cleanup.
 
 The reference is not an ImageUpload or ImageAttachment. Existing byte reads require their independent claimed-upload authority and cannot accept this tool reference. No server image bytes, source paths, inferred image inputs, new file reads or new deletion obligations are created. Ordinary historical replay, Archive and retained Fork history preserve the original metadata; native/history checkpoints remain immutable. Metadata deletion follows existing joined session deletion, while original Local/source files and independently owned workspace cleanup retain their prior authority.
 
-## Revert context revisions — issue #2045
-
-Follow the [Revert contract](cmds-delidev-compaction-contract.md#conversation-revert-and-edit--issue-2045).
+## Revert context revisions
+Follow the [Revert contract](cmds-delidev-compaction-contract.md#conversation-revert-and-edit).
 The session advances a context revision only with the verified original native
 Revert and cleanup result. Its version-4 context job and explicit Revert
 checkpoint are separate from historical execution progress. Preserve original
@@ -842,7 +948,7 @@ to the exact historical predecessor and independently validated replacement
 history. Success, failure and Stop outcomes remain attributed to that predecessor.
 Manual Resume and one fresh input do not replay an old turn. Original Fork and
 Sidechat snapshots retain their own lifetimes and contexts.
-## Accepted-turn elapsed observations (issue #2052)
+## Accepted-turn elapsed observations
 
 The server captures `turn_timing.accepted_at` once from the UTC clock of the original validated primary-input acceptance transaction. Queuing, preparation, READY/thread binding and pre-send rejection capture no accepted-turn timing. Matching success, failure or confirmed interruption captures `terminal_at` once in the original terminal publication transaction. Exact actor-bound receipt replay retains both original observations. Tool work and approval/user waits remain inside this interval; provider/native elapsed values and usage remain independent.
 
@@ -850,8 +956,7 @@ Session progress and every original primary-input user Message carry the same ac
 
 Timing is server-owned display metadata only. Worker publication documents cannot supply it. Strip it from native assignments, continuation/Fork/compaction projections, checkpoints and native digest inputs, including older closed Worker documents. It grants no execution, outcome, cleanup, recovery, permission or continuation authority. No RPC, allocation, migration or native adapter changes are added.
 
-## Waiting input dispatch order — issue #2142
-
+## Waiting input dispatch order
 Owner/client `MoveQueuedInput` changes private waiting order in the same receipt transaction as its session event. It binds the selected input revision, explicit queue generation (including zero), original session and optional anchor revision. Empty anchor means the end; its revision must be zero. Self-anchors and malformed requests are invalid; foreign scopes are denied; changed revisions, delivery or generation conflict. A current-position move records an exact receipt without changing order, generation or session revision. Original actor receipts are checked before current-state fences and never execute a movement again after claim, removal or restart.
 
 Every claim, including the independent first-execution transaction primitive, uses the same effective waiting head. Membership changes append new waiting inputs and increment generation for enqueue, claim, Steer, removal and return to waiting. Text/content edits do not change order generation. Public acceptance sequence, content revisions, prompts, mode, skills, images, existing assignment shapes and immutable execution ownership remain unchanged. Movement grants no new dispatch or native authority.

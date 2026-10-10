@@ -33,3 +33,21 @@ Use the consolidated `pnpm dev:public-docs` loopback server on port `46302` and 
 ## Change policy
 
 Update the public guides, this contract, the React Forge and public-docs project indexes, the site-selector contract, and relevant `AGENTS.md` rules together when routes, supported interfaces, availability, or validation claims change. Generated `dist` is ignored and removed from the final worktree.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+
+## Project requirements
+
+- React Forge public guides are owned by `apps/public-docs/docs/react-forge` at `https://oss.delino.io/react-forge/`; follow `apps-react-forge-docs-foundation.md` and keep the package README linked to them. Describe released user behavior and preserve each format's evidence limits without publishing repository internals or misstating availability.
+
+## Application integration
+
+- `apps/public-docs/docs/react-forge` owns the eighteen English public guides at `https://oss.delino.io/react-forge/`. Follow `apps-react-forge-docs-foundation.md`; expose every stable route in the grouped React Forge sidebar and React Forge as a peer in the shared site selector.
+
+## Package integration
+
+- Keep the public `https://oss.delino.io/react-forge/` guides and npm README aligned with released library, CLI, MCP, format, Figma, and platform behavior. Public guide ownership and validation follow `apps-react-forge-docs-foundation.md`.
+
+## packages/react-forge constraints
+
+- Keep the npm README linked to `https://oss.delino.io/react-forge/` and synchronize released user-facing behavior with `apps/public-docs/docs/react-forge` under `apps-react-forge-docs-foundation.md`.

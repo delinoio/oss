@@ -20,7 +20,7 @@ The first release is a full supported release, not a preview. There is no fixed 
 - Repository contracts establish Go as the default language, UUID v7 for new persisted entities, Rspack-family frontend tooling, Cloudflare Pages for static hosting, structured logging, and documentation-first project onboarding.
 - Relevant contracts: `AGENTS.md`, `cmds/AGENTS.md`, `apps/AGENTS.md`, `docs/repository-defaults.md`, and the project/domain documentation templates.
 - Searches for `async-commit-hook`, `local CI`, and `commit hook` found no duplicate issue.
-- Issue #893, Runmoor, manages ephemeral GitHub Actions runners and is a separate product with no required integration.
+- The feature, Runmoor, manages ephemeral GitHub Actions runners and is a separate product with no required integration.
 - The repository currently has no `PRD` label.
 
 ## Current Gap
@@ -274,6 +274,8 @@ Documentation-first implementation:
 - Document the new development command and fixed port without changing the existing root DevHud workflow.
 - Keep internal architecture and repository operations in `docs/`; publish user workflows, installation, configuration, CLI/MCP/skill guidance, privacy, compatibility, and troubleshooting under `/docs`.
 - Generate required `dist` output for validation but never track it, and remove generated repository-owned `dist` directories from the final worktree.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## Acceptance Criteria
 

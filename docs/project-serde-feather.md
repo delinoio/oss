@@ -19,6 +19,10 @@ Provide a size-first serialization contract split between runtime core and deriv
 - Derive macro names remain stable: `FeatherSerialize`, `FeatherDeserialize`.
 - Runtime and macro crates must preserve explicit boundary separation.
 
+## Project requirements
+
+- `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
+
 ## Change Policy
 - Any derive surface or runtime behavior update must modify this index and the relevant component docs.
 - Workspace boundary changes must remain synchronized with crate ownership contracts.

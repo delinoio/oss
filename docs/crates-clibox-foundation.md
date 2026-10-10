@@ -1,9 +1,9 @@
 # clibox Rust foundation
 
 ## Scope
-`crates/clibox` owns the Rust executable. Its private companion crates own configuration processing (`crates/clibox-config`), OS utilities (`crates/clibox-system`), offline transformations (`crates/clibox-transform`), readiness waits (`crates/clibox-wait`), and file-access workflows (`crates/clibox-fspy`). All six are explicit workspace members with `publish = false`; distribution uses npm, GitHub Release archives, and APT/DNF rather than crates.io. Issue [#916](https://github.com/delinoio/oss/issues/916) extends the original help/version foundation with six OS utilities. Issue [#917](https://github.com/delinoio/oss/issues/917) adds seven text/time/Base64/hash utilities alongside them. Issue [#919](https://github.com/delinoio/oss/issues/919) adds stateless TCP, HTTP, and file readiness waits. Issue [#971](https://github.com/delinoio/oss/issues/971) adds the source CLI's seven fspy workflows under [their dedicated contract](crates-clibox-fspy-contract.md).
+`crates/clibox` owns the Rust executable. Its private companion crates own configuration processing (`crates/clibox-config`), OS utilities (`crates/clibox-system`), offline transformations (`crates/clibox-transform`), readiness waits (`crates/clibox-wait`), and file-access workflows (`crates/clibox-fspy`). All six are explicit workspace members with `publish = false`; distribution uses npm, GitHub Release archives, and APT/DNF rather than crates.io. This contract extends the original help/version foundation with six OS utilities. This contract adds seven text/time/Base64/hash utilities alongside them. This contract adds stateless TCP, HTTP, and file readiness waits. This contract adds the source CLI's seven fspy workflows under [their dedicated contract](crates-clibox-fspy-contract.md).
 
-Issue [#920](https://github.com/delinoio/oss/issues/920) adds three local dotenv/YAML configuration commands. Issue [#951](https://github.com/delinoio/oss/issues/951) adds portable CPU counts.
+This contract adds three local dotenv/YAML configuration commands. This contract adds portable CPU counts.
 
 ### Crate boundaries
 - `clibox` owns the process entrypoint, logging/panic initialization, static redacted parser diagnostics, and root command composition. It depends directly on the five companion crates through path dependencies.
@@ -56,9 +56,9 @@ clibox dotenv merge FILE... [--output FILE] [--force]
 clibox yaml normalize [--input FILE] [--output FILE | --in-place] [--force]
 ```
 
-### CPU counts (#951)
+### CPU counts
 
-`clibox-system` owns enum-backed kinds and private OS adapters. `available` delegates directly to `std::thread::available_parallelism()` without adjustment or fallback. It is an estimate of suitable parallelism rather than idle CPUs, physical cores, or guaranteed capacity; document standard-library affinity, cgroup, VM, and Windows processor-group limits. `logical` returns online logical CPUs visible to the current OS/VM, without clibox affinity or quota reductions. Linux glibc and musl read `/sys/devices/system/cpu/online` and count ordered nonoverlapping CPU-list entries/ranges with checked arithmetic and no per-CPU allocation. macOS queries `hw.logicalcpu` with `sysctlbyname`; Windows passes `ALL_PROCESSOR_GROUPS` to `GetActiveProcessorCount`. Missing, malformed, empty, zero, or overflowing results fail without substituting `1` or another mode. Neither mode interprets `OMP_*`.
+`clibox-system` owns enum-backed kinds and private OS adapters. `available` delegates directly to `std::thread::available_parallelism` without adjustment or fallback. It is an estimate of suitable parallelism rather than idle CPUs, physical cores, or guaranteed capacity; document standard-library affinity, cgroup, VM, and Windows processor-group limits. `logical` returns online logical CPUs visible to the current OS/VM, without clibox affinity or quota reductions. Linux glibc and musl read `/sys/devices/system/cpu/online` and count ordered nonoverlapping CPU-list entries/ranges with checked arithmetic and no per-CPU allocation. macOS queries `hw.logicalcpu` with `sysctlbyname`; Windows passes `ALL_PROCESSOR_GROUPS` to `GetActiveProcessorCount`. Missing, malformed, empty, zero, or overflowing results fail without substituting `1` or another mode. Neither mode interprets `OMP_*`.
 
 The default output is a positive decimal integer and one LF. JSON is exactly one compact `{"kind":"available|logical","count":N}` object and one LF; quiet queries without stdout. The two output flags conflict. Invalid kinds/options, positional arguments, and flag conflicts fail before querying. No stdin, external utility, network, file output, history, configuration, monitoring, elevation, retries, or fixed timeout is added. Each invocation queries only its selected mode and observations may change between invocations. Runtime query or output failure exits 1, invalid CLI exits 2, handled Ctrl+C/Windows Ctrl+Break exits 130, and handled Unix SIGTERM exits 143. Query failure produces no stdout; output failure may leave partial stdout. Failed diagnostics do not replace operation status. Shared `clibox-system` cancellation checks the query wait and the publication boundary; no other family installs signal handlers. Redacted debug events include operation, kind, backend, and completion/failure classification only, while existing `Failure` codes distinguish permission, unavailable backend, invalid enumeration, and output I/O failures.
 
@@ -90,7 +90,7 @@ Input must be valid NUL-free UTF-8 of at most 16 MiB (16,777,216 bytes); invalid
 
 Linux copy supplies text through stdin and returns after setup while the tool owns clipboard data in the background until replacement/session termination. It must not wait for the owner process's lifetime or keep the CLI foregrounded. Tool diagnostics are captured or suppressed, never relayed verbatim. Because wl-copy buffers stdin in a temporary file, clibox supplies a private verified tmpfs-backed directory and removes it after setup or failure; no clipboard bytes are written to persistent storage. Missing writable tmpfs is an unsupported capability reported before copy. Existing desktop clipboard managers remain outside clibox's retention control. Images, rich text, binary content, alternate selections, history, sync, and file options are excluded.
 
-### Configuration commands (#920)
+### Configuration commands
 - `dotenv list [--input FILE] [--output FILE] [--force]` reads only the current directory's `.env` by default; `--input -` selects stdin. It validates all records and lists unique ASCII identifier keys in case-sensitive lexical order, without values.
 - `dotenv merge FILE... [--output FILE] [--force]` requires one or more ordered inputs and permits stdin (`-`) once. Last assignment within a file and later files win, including empty values. The Node.js dotenv baseline supports optional `export`, comments, whitespace, and multiline single/double quotes. An assignment key may itself be `export`, including whitespace before `=` (`export =enabled`); recognize the optional prefix only when an immediate ASCII space and another assignment key follow. Tabs may occur after that space or as ordinary assignment whitespace, but `export` immediately followed by a tab and another key is invalid. Invalid records are errors even when overwritten. Winning value tokens retain quotes, escapes, literal variable/shell references, and internal line endings; generated assignments use `KEY=token` and LF.
 - `yaml normalize [--input FILE] [--output FILE | --in-place] [--force]` defaults to stdin. In-place requires an explicit regular input file and authorizes its replacement. Other existing destinations require force; force without file output is a CLI error. Relative paths use the invocation directory; explicit file input never reads stdin.
@@ -103,9 +103,9 @@ Linux copy supplies text through stdin and returns after setup while the tool ow
 
 Resolved YAML mappings share persistent ordered-tree branches and key strings across merge versions. Incremental byte/line totals and depth frequencies avoid rescanning every inherited key. Structural diffs skip shared branches when merging repeated or nearly identical operands, retaining earlier-operand and explicit-key precedence. Per-entry byte/line contributions saturate above the output ceiling, while their u64 aggregate remains exact for subtraction; replacing an oversized value therefore restores the correct small result and depth. A long shadowed merge-chain process fixture must complete under a 256 MiB Linux child address-space limit.
 
-Configuration, transformations, readiness waits, and system utilities share the root CLI but have separate private runtimes. The private `config_command` module owns configuration argument shapes and jobs, while `cli` composes all command families. Configuration publication stays in `config_publication`, with full validation before bounded output and private staging. Streaming transformations retain the separate `publication` module and supervisor-owned staging from the issue #917 contract below. `config_runtime` bounds processing and returns numeric cancellation statuses after publication cleanup; `runtime` returns numeric cancellation for owned work and preserves child signal behavior for system utilities. The Tokio wait runtime separately owns readiness cancellation and final JSON; the transformation supervisor returns numeric 130/143 for handled interruption. Only the selected command family's signal handlers are installed per invocation.
+Configuration, transformations, readiness waits, and system utilities share the root CLI but have separate private runtimes. The private `config_command` module owns configuration argument shapes and jobs, while `cli` composes all command families. Configuration publication stays in `config_publication`, with full validation before bounded output and private staging. Streaming transformations retain the separate `publication` module and supervisor-owned staging from the previous feature contract below. `config_runtime` bounds processing and returns numeric cancellation statuses after publication cleanup; `runtime` returns numeric cancellation for owned work and preserves child signal behavior for system utilities. The Tokio wait runtime separately owns readiness cancellation and final JSON; the transformation supervisor returns numeric 130/143 for handled interruption. Only the selected command family's signal handlers are installed per invocation.
 
-### Readiness commands (#919)
+### Readiness commands
 
 ### Polling and deadlines
 The first check starts immediately. Overall waiting is unlimited by default; `--timeout 0` explicitly means unlimited. Durations accept nonnegative integers suffixed `ms`, `s`, `m`, or `h`; bare `0` is accepted only for timeout. Interval and attempt timeout must be positive. Fractions, negative values, millisecond arithmetic overflow, and unrepresentable monotonic deadlines fail validation.
@@ -201,15 +201,135 @@ A scanner adapter validates YAML 1.2 directives and resolves all document-local 
 
 A public library API remains excluded. From the next release, macOS x64/arm64 Homebrew installation uses the same verified native binaries as npm, following the distribution contract; it requires neither Node.js nor Rust. Public guides use the existing `public-docs` workspace and deployment. GNU Linux GitHub Release archives and stable APT/DNF packages use the release contract below.
 
+## Project requirements
+
+- Repository tooling consumes the published prebuilt through the exact root `clibox-prebuilt` npm alias and lockfile, independently of the private source workspace. Invoke `pnpm exec clibox` directly from the repository root. Verify the installed version in the `setup-clibox` workflow action; do not add a repository launcher, compile Rust, or download at command runtime. Keep public installers and minimal toolchain bootstraps independent, and preserve existing data formats, secret handling, and stronger readiness/lifecycle checks.
+
+- clibox CLI consistency uses canonical `run env`, `port list`, and `hash compute` without old-name aliases. Report `--quiet` suppresses stdout; PID selection is only `port list --pids`. File-output commands interpret `--output -` as stdout and `./-` as a literal dash file; `--force` requires real file output or `--in-place`. Keep short/long help, static redacted migration guidance, numeric owned-operation cancellation (130/143), filtered-error visibility, and native/npm behavior synchronized.
+
+- The executable crate and installed command are `clibox`; the public npm entry point is `@delino/clibox`. Keep the Cargo manifest/lock, private npm source manifest, executable version, and all nine generated npm packages at the same exact version.
+
+- The npm launcher supports Node.js 22+, macOS/Windows x64 and arm64, and Linux x64/arm64 with separate glibc/musl packages. It resolves only the matching exact-version `@delino/clibox-*` optional dependency and has no shell, PATH fallback, install script, runtime download, or Rust compilation fallback.
+
+- Generate public npm packages from the private source workspace under ignored `dist` or temporary directories. Ordinary workspace installation must not resolve unpublished clibox dependencies. Never track generated tarballs or binaries.
+
+- clibox implements `run env`, `port list`, `port kill`, `open`, and text `clipboard copy`/`paste` alongside help/version. Preserve child argv/signal compatibility, revalidated port-owner termination with one shared five-second wait, explicit-app-only waiting, 16 MiB NUL-free UTF-8 clipboard validation and Linux background clipboard ownership. Use current-user/session authority without persistence, elevation, automatic retries or sensitive diagnostic values.
+
+- The seven offline text/time/Base64/hash commands specified by the feature coexist with the previous feature OS utilities. Preserve enum-backed modes, redacted stderr diagnostics, cancellable processing with numeric 130/143 for handled transformation cancellation, permission-preserving atomic file publication, and bundled timezone data. Keep OS-command signal propagation separate from transformation publication supervision. All six clibox crates must remain `publish = false`. Release Project validates the exact release source and pushes `clibox@v<version>` without waiting for main CI, requiring or injecting a Cargo registry token or publishing to crates.io. npm and GitHub publishers must not depend on a crates.io version. The same verified npm GNU binaries also produce two signed Linux GitHub Release archives and stable APT/DNF packages; Homebrew distributes the same verified macOS x64/arm64 binaries through `delinoio/tap/clibox` from the next release. Require source-bound signed archives, both native Homebrew installation gates, and a fresh tap-only bot token after verification; reject downgrades and changed same-version Formulae. The npm publication flag controls npm only.
+
+- The CLI provides help/version and `wait tcp`, `wait http`, and `wait file` for this feature, alongside the utilities, the seven offline transformations, and the configuration commands. Waits are stateless, use immediate nonoverlapping polling and monotonic deadlines, support handled cancellation, and expose only redacted human/quiet/JSON results. The GNU binaries also feed the stable native repository described above.
+
+- The feature adds `run with-rate-limit`, `run with-lock`, `run with-service`, `run with-retry`, and `run with-timeout`. Reuse the existing environment execution grammar without a shell; preserve companion-crate independence and keep supervision in the system command family. Local lock/bucket state is the sole clibox application state: it is private, versioned, hashed, same-user/same-machine only, atomically published under OS-owned locks, and fails closed on unsafe storage, corruption, or configuration mismatch. Preserve redacted lifecycle tracing, bounded owned-process cleanup, external-service non-ownership, literal stdin/argv behavior, native child statuses, and 124/75/0/2/1/130/143 wrapper outcomes across native and installed npm launches.
+
+- Preserve the feature's `dotenv list`, `dotenv merge`, and `yaml normalize` contracts: offline Rust processing, exact value/precision preservation, independent 64 MiB input/output limits, 128 YAML collection levels, atomic permission-preserving file publication, handled cancellation, and strictly redacted stderr diagnostics.
+
+- HTTPS uses OS trust with Rustls/ring and no implicit proxies, credentials, redirects, custom CA overrides, or body reads. Keep parser and dependency errors redacted even under `RUST_LOG=trace`. musl crypto compilation uses `musl-tools`/target-specific `CC=musl-gcc`, while final linking remains pinned self-contained `rust-lld`; no dynamic OpenSSL dependency is permitted.
+
+- `release-clibox.yml` runs native unit/process tests and validates all eight native targets and the full nine-package set before publication. Publish and verify platform packages before the main package; reuse only identical registry integrity on retries. Dry runs are secret-free and non-publishing.
+
+- `CLIBOX_NPM_PUBLISH_ENABLED=true` and an exact first-party Trusted Publisher on all nine packages are required for npm OIDC/provenance publication. Only the separately guarded npm `publish` and GitHub `publish-release` jobs receive `id-token: write`; the latter uses it solely for Sigstore signing. The npm job must explicitly install the pinned OIDC-capable npm version before validating support and publishing, independent of Node's bundled npm.
+
+- Keep `project-clibox.md`, the clibox domain contracts, root/domain AGENTS rules, release versioning, CI selection/aggregation, and distribution fixtures synchronized.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+
+- The owner-authorized 2026-10-05 repair release in `project-pnport.md` permits exactly stable 0.1.2 after the failed 0.1.1 candidate is repaired and all retained four-native candidate gates pass. Keep 0.1.1 and published tags/bytes immutable. Require `pnportReleaseReady: true` and exact `pnportReleaseVersion: "0.1.2"`; preserve the earlier disclosed initialization/SIGHUP, clibox watch and full-acceptance limits without claiming fixes or skipped passes. No new candidate failure is waived. Keep the feature and Windows 0.2.0 acceptance open; preserve final-tag dry-run, fresh native validation, integrity/signing, native-before-launcher and immutable-retry gates. Later versions need separate reviewed authorization.
+
+- The owner-authorized 2026-10-04 amendment in `project-pnport.md` permits exactly stable 0.1.0 publication with the recorded macOS initialization/SIGHUP failures, separate root clibox watch failure and full-acceptance review deferred. This version-specific exception takes precedence over earlier full-acceptance prerequisites; it does not establish a cause fix or passing skipped checks. Require `pnportReleaseReady: true` plus an exact `pnportReleaseVersion` match; version coordination preserves both fields. Retain all final four-native candidate execution/install/TypeScript/benchmark, integrity, signing, native-before-launcher and immutable-retry gates. New failures still block publication. Keep open, preserve Windows 0.2.0 and immutable 0.1.0-next.1, and disclose unresolved user-facing limits. Remove the stable unreleased notice only after verified publication.
+
+## Rust component integration
+
+- `crates/clibox`: non-publishable Rust executable distributed through npm and native packages.
+
+- clibox Unix nested-wrapper ownership must prove bounded ancestry within the same process group through matching native executables and supported Node launchers to the matching outer owner; unknown or unavailable evidence fails closed. Preserve Linux/macOS deep-chain cleanup regressions and follow `crates-clibox-foundation.md`.
+
+- clibox Linux port enumeration retains unmatched selected socket rows with null owners and a static port-scoped identity-unverifiable error. Preserve complete-empty success, original birth/socket checks, unknown-owner no-signal behavior and independently verified targets.
+
+- `crates/clibox-config`, `crates/clibox-system`, `crates/clibox-transform`, `crates/clibox-wait`: non-publishable clibox command-family implementations.
+
+- Keep clibox execution wrappers in `clibox-system` and their `run` command family independent of the other clibox companion crates. Reuse only the system environment planner, preserve literal child invocation semantics, and use native process groups/Windows Job Objects plus bounded cleanup for owned descendants. Unix ownership is limited to the wrapper process group, so daemonizing workloads or managed services that create another session/process group are unsupported and must be documented as self-managed. Lock/rate coordination may retain only documented private hashed local state and must fail closed on unsafe state.
+
+- clibox `run with-service` must retry temporary closed/truncated/reset HTTP connections within its existing readiness budgets, while keeping TLS, permission, local-resource and invalid-protocol faults terminal. Readiness logs expose only closed classifications and state flags. Loopback server fixtures must read complete request headers in an explicit blocking stream before replying, and retain managed-service shutdown-output and timeout checks.
+
+- The manual `Release Project` coordinator validates the exact version commit and publishes only the selected registry-eligible CLI crate without waiting for main CI. clibox skips registry publication and retains release-source validation before tagging. After registry publication succeeds, it pushes only that crate’s exact version tag with `delino-release-bot`. It may recover a missing remote tag after an already-published crate, but must reject a conflicting tag. There is no main-push workspace publisher.
+
+- Custom clibox time input retains the greatest precision of compatible consumed fractional fields, including repeated undotted fields and trailing zeros. Optional absent fields do not reduce precision; keep Chrono parsing and consistency checks authoritative and explicit coarser output unchanged.
+
+- macOS fbreak must own terminal SIGHUP before setup/launch and route it to control-loss cancellation through bounded owned-process cleanup. Keep hangup registration command-specific, reject queued admissions during cancellation, preserve cleanup-failure precedence, and retain real controlling-PTY loss regressions for held reads, root admission and concurrent owned callers.
+
+- YAML structural sharing uses `imbl` with `RcK`, preserving ordered-map diffing, bounded expansion accounting, and single-threaded reference sharing. Keep the panic-safe chunk dependency and the long shadowed-merge/resource-limit fixtures when updating collections.
+
+- Concurrent publication fixtures must preserve fail-closed destination validation: a Unix handle unlinked by another successful replacement may return `UnsafeDestination`. Require at least one successful writer, one complete successful payload, and clean staging; retain deterministic zero-link rejection coverage.
+
+- Preserve clap's generated missing-subcommand help for `run`, `port`, `clipboard`, `system`, `wait`, `text`, `time`, `base64`, `hash`, `dotenv`, and `yaml` on stderr with exit code 2; keep root no-argument and explicit help output successful on stdout. Only generated help/version may bypass static redacted parser diagnostics.
+
+- Keep `system cpus` in `clibox-system`: default `available` delegates unchanged to Rust's parallelism estimate, and `logical` counts online CPUs through the private Linux/macOS/Windows adapters without affinity or quota adjustments. The selected query alone runs, zero/malformed/unavailable results fail without fallback, and integer/JSON/quiet outputs remain exact and cancellable. Keep all diagnostics classified and redacted; never invoke external CPU tools or create persistent state.
+
+- Preserve the six the feature OS utilities, seven the feature text/time/Base64/hash transformations, three the feature readiness waits, and the feature's dotenv/YAML contracts, compatible root help/version, Rust 2021 edition, Apache-2.0 license, and Cargo/npm exact version synchronization in `crates-clibox-foundation.md`. Keep OS adapters private and mockable, diagnostics redacted (including parser/tool failures), and stdout dedicated to results.
+
+- Keep dotenv value tokens literal, validate every record, and count diagnostic columns by Unicode scalar value without changing byte-based limits; YAML must retain scalar precision, resolve document-local references/merges, reject invalid graphs and repeated document version directives, sort mappings, and be byte-idempotent, including escaped BMP noncharacters in keys and values. Bound raw input and final serialized output independently to 64 MiB and collection depth to 128 before excessive expansion. Validate all merge operands, but account for escaped scalar sizes without allocating encoded copies or charging shadowed values to the final output budget.
+
+- Retain structural sharing for merged YAML mappings and incremental size/line/depth summaries; never copy or rescan every inherited key for each merge version. Preserve exact sub-limit metrics and recover them after shadowing oversized values.
+
+- Dotenv `export` is also a valid assignment key, including with whitespace before `=`. The optional prefix requires an immediate ASCII space, following Node's baseline; tabs remain valid ordinary assignment whitespace. Distinguish the key from the prefix without weakening identifier validation or literal value preservation.
+
+- Preserve native/npm and musl distribution without runtime downloads or application state. Configuration commands must not access the network or execute shells. Further domain commands require their own contract-backed implementation.
+
+- In-place YAML reads must open without following the final link/reparse point, validate regular-file and single-link status on that handle, and read from that same handle. Never validate a pathname and reopen it for input; ordinary non-in-place reads may still follow links.
+
+- Install signal handlers only for the selected command family: private configuration runtime cancellation returns numeric 130/143 after cleanup, the Tokio readiness runtime returns numeric cancellation with final JSON, the utility runtime returns numeric 130/143 for owned operations while preserving delegated child status/Unix signals, and the transformation supervisor returns numeric 130/143 after cleaning unpublished output.
+
+- Keep transformations offline and in Rust, binary input streaming for Base64/hash, timezone rules bundled and pinned, and publication restricted to completed output with preserved access permissions. Unix transformation output stays in a same-filesystem owner-only staging directory (effective mode 0700) through processing and atomic publication. On macOS, clear inherited ACLs before content writes and retain handle-based cleanup after copying restrictive final ACLs. Recheck the destination at publication: copy current destination permissions when it exists, or preserve direct-parent mode/ACL inheritance for new output on Linux and macOS with an empty metadata probe that never contains transformed bytes. Replacement must not require reading the existing output contents; request only metadata/security access and still fail if permissions cannot be preserved. Reject linked replacement destinations and sanitize parser/dependency/runtime errors before stderr. No input content, patterns, replacements, digests, argv, or paths belong in diagnostics. OS-command signals and transformation cancellation retain their distinct exit/publication contracts behind one command tree.
+
+- Keep configuration publication in `clibox-config::config_publication` and streaming transformation publication in `clibox-transform::publication`: their result validation, staging ownership, permissions, and cancellation lifecycles follow their respective contracts. Do not route one command family through the other family's publication or signal handlers.
+
+- Wait command kinds, HTTP methods, outcomes, and error classifications use enums. Poll immediately, delay only after unsuccessful attempts, clip all work/delays to monotonic deadlines, and cancel without target mutation or service termination.
+
+- Let every resolved TCP address attempt finish within the shared deadline until any succeeds; preserve terminal errors only for an all-address failure instead of discarding other addresses on one destination's error.
+
+- Use Rust networking and metadata only. HTTP verifies OS trust/hostname, completes at headers, disables proxies/credentials/redirects/client retries and custom CA overrides; file readiness follows symlinks but requires a regular file.
+
+- Enable HTTP/2 explicitly and advertise both h2 and HTTP/1.1 in the preconfigured TLS client's ALPN; preserve headers-only readiness for either negotiated protocol.
+
+- Preserve usable OS trust roots when other entries fail loading or parsing; fail trust initialization only when no usable roots remain, and expose counts rather than individual loader errors or certificate data.
+
+- Keep one in-flight HTTP client/native trust initialization across attempt timeouts; retries await the retained result and cancellation must not wait for an uninterruptible OS trust call.
+
+- Wait results and all authored parser/runtime/tracing diagnostics must omit input locators, credentials, bodies, raw argv, and dependency errors. Static diagnostics survive quiet/log filtering; dependency log targets remain disabled even with detailed `RUST_LOG`. Respect `NO_COLOR` and TTY-only color.
+
+- Keep injected-clock, loopback/TLS, filesystem, privacy, and native signal tests. Trust fixtures must never modify user certificate stores. Preserve standalone runtime behavior and document crypto build-tool changes across the eight-target matrix.
+
+- npm cancellation integration must use a disposable Windows console, clear inherited Ctrl+C-ignore state only there, and verify native readiness waits return exit 130 with one final cancelled/interrupted JSON result during file polling, TCP polling, and a pending HTTP response-header read. Exercise both Ctrl+C and Ctrl+Break in native waits and through the Node launcher. Also verify configuration exit 130 and transformation cleanup/exit 130 through the Node launcher. Repository CI provides Node for this npm-source-dependent integration.
+
+- Delayed TCP readiness fixtures must retain a bound socket until listening starts; never release and reacquire ephemeral ports while parallel fixtures can reuse them.
+
+- Managed-service HTTP timeout fixtures must serve until the command exits, explicitly normalize accepted sockets to blocking mode with bounded reads/writes, consume complete bounded request headers, and declare connection closure. Retain one deliberate closure after complete headers to prove temporary transport failures remain retryable, then continue unsuccessful responses. Permit cancellation of the final probe without masking fixture I/O failures.
+
+- Cross-command tests must account for Windows `run env` variable conversion, including numeric `$1` references, separately from direct transformation capture parsing and literal npm launcher forwarding.
+
+- Checksum generation with explicit file output must rebase relative inputs against the manifest directory, resolving symlink parents before rebasing; preserve absolute inputs and stdout filename behavior.
+
+- Windows transformation publication must retain temporary-file rename/cleanup access before copying permissions, replace read-only destinations without clearing their attributes, and leave originals unchanged on cancellation or failed publication. Apply temporary access attributes before the original DACL so denied attribute writes do not block an otherwise authorized replacement. Unsupported filesystem rename capabilities fail closed.
+
+- Windows DACL fixtures must probe attribute-write permission with a fresh handle requesting exactly FILE_WRITE_ATTRIBUTES, including allowed controls and checks after cancellation and publication. Reapplying unchanged attributes is not an access-denial probe.
+
+- clibox GNU release builds use the shared pinned AlmaLinux 9/glibc 2.34 boundary for npm and stable APT/DNF distribution; preserve the existing musl targets and optional user-installed desktop tools.
+
+## packaging/homebrew constraints
+
+- Select clibox's architecture-specific `url` and `sha256` with `Hardware::CPU.arm?` conditionals; Homebrew's `on_arm`/`on_intel` blocks do not permit those source declarations. Keep rendered Formula lines within the strict audit limit and validate both branch selections in release fixtures.
+
 ## Change Triggers
 Update the project index, both domain contracts, relevant root/domain AGENTS rules, native/npm READMEs, CLI help, tests, and applicable release workflows together when command behavior, privacy, naming, versions, platforms, dependencies, or publication changes.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - [Project index](project-clibox.md)
 - [npm distribution](packages-clibox-distribution-contract.md)
 - [Repository defaults](repository-defaults.md)
 
-## Issue #917 command contract
+## The feature command contract
 
 ### Command interfaces
 
@@ -334,7 +454,7 @@ clibox hash verify --check CHECKSUM_FILE
 - Add no automatic retries or fixed execution timeout. Support interruption of input reading and processing; cancellation does not reverse completed output publication.
 - Use structured `tracing` diagnostics on stderr, defaulting to warnings/errors with `RUST_LOG` for detail. Honor `NO_COLOR` and use color only on a TTY.
 - Logs and diagnostics must omit input content, digests, patterns, replacements, raw argv, and paths, including those embedded in dependency errors. Explicit verification-result filenames are command output, not diagnostic logs.
-- Preserve existing help/version and the implemented #916 interfaces, launcher argv/signal forwarding, exact version synchronization, script-free installation, eight target packages, and release boundaries.
+- Preserve existing help/version and the implemented interfaces, launcher argv/signal forwarding, exact version synchronization, script-free installation, eight target packages, and release boundaries.
 - No service SLO, telemetry dashboard, or additional compliance gate is required. Rollback uses an earlier pinned package version and does not restore overwritten files.
 
 
@@ -358,7 +478,7 @@ The managed-service readiness-timeout fixture bounds CLI startup and service-tra
 
 Windows protected-DACL fixtures compare owner/group, ACEs and protection state and probe effective attribute-write access by opening a fresh handle requesting exactly `FILE_WRITE_ATTRIBUTES`. Check both allowed and denied cases before publication, after cancellation and after replacement. Reapplying unchanged attributes through `SetFileAttributesW` can succeed without proving that access is allowed, so it must not be used as a denial assertion.
 
-## Issue #953 execution-wrapper contract
+## The feature execution-wrapper contract
 
 `clibox run` is a command group. With no subcommand it renders its command help to stderr and exits 2; explicit help succeeds on stdout. Its five subcommands accept wrapper options before one literal workload using the `run env` grammar:
 
@@ -386,7 +506,7 @@ Root wrappers put owned Unix children in a process group and Windows children in
 The Unix npm launcher credits a terminal acknowledgement only while one current SIGINT grace attempt is pending. Kernel terminal delivery to Node and the native handler has no guaranteed scheduling order: an ACK before that window is unsolicited, and an ACK after its timer expires is late. The first unacknowledged fallback or overlapping attempt permanently disables suppression for that launch. Later SIGINTs are forwarded even if this duplicates terminal delivery and skips native cleanup grace. Integration fixtures must record that fallback before accepting short grace and still confirm owned cleanup; deterministic timer fixtures separately require an early current ACK to suppress forwarding.
 
 
-### Deep nested Unix ownership regression gate (#1002)
+### Deep nested Unix ownership regression gate
 
 The bounded ancestry proof accepts three or four consecutive native clibox wrappers and mixed Node/native launcher chains only while every intermediary remains in the inherited process group and is identified by its executable path. It must reach the matching outer native wrapper outside that group before selecting direct-child ownership. Unknown executables, unavailable metadata, changed groups, and exhausted ancestry bounds continue to fail closed. Workloads that deliberately create a process group or session remain outside the cleanup contract.
 

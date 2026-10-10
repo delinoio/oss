@@ -2,7 +2,7 @@
 
 ## OAuth API format selection reservations
 
-Reservation PR #1657 established the issue #964 allocations on main before
+The reservation change established the previous feature allocations on main before
 implementation: ProviderInventory `ACCOUNT_OAUTH_API_PROTOCOL_V1 = 8`,
 `StartAccountOAuthRequest.api_protocol = 4` and
 `AccountOAuthAttempt.api_protocol = 7`.
@@ -49,16 +49,16 @@ and retain an explicit API-key alternative. Google project binding and Baseten
 server-owned device authorization remain independent and unchanged.
 
 
-## General API OAuth reservations (issue #964)
+## General API OAuth reservations
 
 The approved extension covers direct ordinary API credentials only: OpenRouter
 PKCE to an API key, Hugging Face PKCE to OAuth tokens, Google Gemini PKCE to OAuth
 tokens with an explicit quota/billing project, and Baseten device authorization
 to OAuth tokens. Coding subscriptions and flows that broker or separately create
 API keys are outside this extension. Other providers retain API-key or Keyless
-connections. Existing OpenRouter behavior and its issue #1146 ownership remain.
+connections. Existing OpenRouter behavior and its the feature ownership remain.
 
-Record these issue #964 reservations in the owning feature PR:
+Record these the feature reservations in the owning feature PR:
 
 - `ProviderInventoryCapability.ACCOUNT_OAUTH_V1 = 6`; preserve OpenRouter-only 5.
 - `ProviderConnectionMethod.OAUTH_DEVICE = 4`; preserve values 0–3.
@@ -178,20 +178,20 @@ the general API is documented, but the DeliDev client and actual compatible
 inference path still require service acceptance before capability advertisement.
 Fixture checks, desktop builds and public registration are distinct evidence.
 
-## OpenRouter account OAuth PKCE (issue #1146)
+## OpenRouter account OAuth PKCE
 
 ## Status and ownership
 
-[Issue #1146](https://github.com/delinoio/oss/issues/1146) owns the server/CLI
+The feature owns the server/CLI
 attempt lifecycle, protected credential coordination, native browser/callback
 infrastructure and desktop waiting/completion flow below. Reservations alone
 grant no RPC/exchange or callback authority. The complete Go/CLI/native/desktop
 lifecycle implements real migration 29 after real 26–28. Shared reservations
 reached main first; independent feature PRs merge in dependency order. Scripted
 fixtures and builds remain separate from real-provider and platform acceptance.
-The direct-action picker prerequisite #1145 is already on main. Compose the
+The direct-action picker prerequisite is already on main. Compose the
 UI with the current AI API Keys terminology and compact presentation
-from #1135/#1237 and fresh Settings lifetime from #1138.
+from and fresh Settings lifetime from .
 
 Go remains the business and credential owner; native Rust owns only the closed
 trusted-window browser/listener infrastructure. The typed client and desktop
@@ -256,10 +256,12 @@ Advertise capability 5 only together with the implemented product lifecycle.
 - A deliberate OpenRouter provider/Add-account action enters the waiting screen and opens the default browser exactly once, after the destination category mounts. Consume that typed non-secret entry once. Ordinary mount, restoration, polling and Strict Mode replay must not start/reopen OAuth. Card heading `Connect OpenRouter`; subheading `Complete sign-in in your browser`; copy `Approve access on OpenRouter. DeliDev will finish connecting automatically.`; spinner/status `Waiting for authorization…`.
 - Provide `Open browser again` for the same live attempt, `Cancel`, `Back to providers`, and `Use an API key instead`. Explicit cancel/back/fallback uses the dedicated cancellation outcome before abandoning a live flow; fallback opens the preserved manual form. Do not start another account/manual save while an earlier outcome remains uncertain.
 - During exchange/save/connection, show distinct progress and disable flow-local actions that could duplicate or discard the write. Settings category navigation stays available and disposes only local presentation/callback authority. Success offers Edit account through the existing metadata editor, Manage account and Done. Validation/discovery remain explicit. Error/expiry/open-failure offers deliberate restart or manual fallback; expired/restarted flows never reuse prior callbacks.
-- Leaving the account category or closing Settings/window disposes local listener/forwarding authority, clears local waits and rejects late callbacks, focus/navigation and new completion from that opening. Consistent with #1138, category departure or Close does not implicitly send business Cancel or undo already accepted server work; accepted saves may finish and be observed later. Reopening starts fresh, with no automatic authentication/replay.
+- Leaving the account category or closing Settings/window disposes local listener/forwarding authority, clears local waits and rejects late callbacks, focus/navigation and new completion from that opening. Consistent with , category departure or Close does not implicitly send business Cancel or undo already accepted server work; accepted saves may finish and be observed later. Reopening starts fresh, with no automatic authentication/replay.
 - Keep the approved 760px/20px/12px-radius card, existing colors/font and surrounding Settings. Waiting row uses a subtle bordered background; actions are neutral outlined controls, fallback a blue text action. Footer: `Your credential will be stored securely on the selected server.` and `You can validate your account after connecting.`. No key/name input in the waiting state, search/radios/Continue, ready/verified claim, provider code/URL display or logo.
-- Use accessible button names, polite live progress, safe alerts, heading focus on deliberate transitions, original-provider focus on return, current issue #1236 Settings page/child-dialog Escape and containment rules, and responsive wrapping/200% zoom. Avoid focus changes from disposable polling/late results. The category-owned OAuth controller uses direct authenticated write-only completion so transient code bytes never enter React Query mutation/query caches; clear its native and renderer byte buffers on every outcome.
+- Use accessible button names, polite live progress, safe alerts, heading focus on deliberate transitions, original-provider focus on return, current the feature Settings page/child-dialog Escape and containment rules, and responsive wrapping/200% zoom. Avoid focus changes from disposable polling/late results. The category-owned OAuth controller uses direct authenticated write-only completion so transient code bytes never enter React Query mutation/query caches; clear its native and renderer byte buffers on every outcome.
 - Structured logs cover stable lifecycle stage/outcome/error/correlation and non-secret attempt/account IDs only; no code/verifier/key/URL, provider response body, email or browser contents. Update requirement/account/credential/storage/desktop/protocol/client contracts and applicable AGENTS with the implementation. Record implementation and validation evidence in the owning PR, issue and CI logs/artifacts under the root policy; do not add repository evidence documents.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 
 ## Acceptance criteria and verification
@@ -280,7 +282,7 @@ Advertise capability 5 only together with the implemented product lifecycle.
 4. **Vault/SQLite recovery:** stage without an account row; fail native Put, account save, connect commit and cleanup in turn. Assert exact reserved ref/cleanup survives; missing plaintext remains recovery-required; sealed-key recovery uses original IDs and account revision with zero HTTP. Tombstone/replacement/deletion cannot resurrect an old connection.
 5. **Cancel race:** coordinate cancellation immediately before/after final connection commit and during in-flight exchange. Cancel-first blocks publication and retains cleanup; connect-first reports connected with no implicit disconnect. A provider-side minted key is not falsely described as revoked. Lost cancel acknowledgment permits exact cancel retry only.
 6. **Authority/eligibility:** use wrong actor, Worker credential, revoked paired client, stale/off provider, custom copy named OpenRouter and official-looking URL without managed provenance. Assert denial before side effects/publication. Change selected server/window generation during pending callback; reject old completion.
-7. **Native/lifetime/UI:** exercise owned localhost callback over both loopback families, wrong Host/path/method, oversized/duplicate callback and malicious authorization destination. Assert no wildcard listener/generic opener and cleanup on cancel/expiry/close/exit. Reopen browser explicitly using same attempt. Close/reopen Settings under #1138/Strict Mode; late callbacks do not start new completion, update/focus old state or reopen browser. Already accepted server saves remain observable. Test open failure, expiry, manual fallback and old-server manual behavior.
+7. **Native/lifetime/UI:** exercise owned localhost callback over both loopback families, wrong Host/path/method, oversized/duplicate callback and malicious authorization destination. Assert no wildcard listener/generic opener and cleanup on cancel/expiry/close/exit. Reopen browser explicitly using same attempt. Close/reopen Settings under /Strict Mode; late callbacks do not start new completion, update/focus old state or reopen browser. Already accepted server saves remain observable. Test open failure, expiry, manual fallback and old-server manual behavior.
 8. **CLI/remote:** start headless with no callback, read code via stdin, complete/status/cancel through the same service; assert no secret argv/output and no implicit server start. Run desktop callback forwarding against a remote fixture server and verify native callback is local to the client while vault is server-owned.
 9. **Storage:** test fresh schema 29 and backup-first 25-to-29 success/rollback after real migrations 26–28, copied awaiting/claimed database images opened in a new process, preserved old state/receipts/default deletions, orphan staging/cleanup restart. Inspect DB/backup/receipt/status/log/native event fixtures for absence of verifier/code/key/URLs. No copied backup can reacquire exchange authority.
 10. **Required checks:** run `go test ./...`, race tests and vet in `cmds/delidev-cli`; protobuf lint/breaking/generated freshness and typed-client checks; `pnpm test` in `apps/delidev`; root `cargo test` after native Rust changes. Prepare required generated dist/assets and LFS hydration first, remove generated dist afterward. Validate approved viewports/keyboard and actual browser callback on supported native hosts; record fixture versus real provider/platform evidence separately without using user credentials in automation.
@@ -288,8 +290,70 @@ Advertise capability 5 only together with the implemented product lifecycle.
 
 ## Out of scope
 
-Subscription/Codex/Claude login; embedded browser/account-profile work (#1087/#1095); OAuth for custom or other providers; new providers; generic opener/renderer networking; inference, automatic validation/discovery; provider management-key/revocation automation; backup restore; saved-account preference migration; feature flags; implementing related naming/Settings-reset work.
+Subscription/Codex/Claude login; embedded browser/account-profile work ; OAuth for custom or other providers; new providers; generic opener/renderer networking; inference, automatic validation/discovery; provider management-key/revocation automation; backup restore; saved-account preference migration; feature flags; implementing related naming/Settings-reset work.
 
+
+## Project requirements
+
+- OAuth API format selection follows `cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations`: record ProviderInventory 8 and Start/attempt api_protocol fields 4/7 in the owning feature PR. Reuse the existing ApiProtocol enum; preserve original default/receipt compatibility, provider OAuth eligibility, once-only exchange, protected credentials, immutable selected profiles and confirmed cleanup. No database migration or native change. Reservations alone activate no support.
+
+- The feature's OpenRouter OAuth follows `cmds-delidev-account-oauth-contract.md`. Record inventory capability 5, entry field 9, the two closed enum reservations and private migration 29 in the owning feature PR. Activate 29 only after real migrations 26–28; preserve their existing order. Reservations grant no OAuth capability or exchange authority. Go owns once-only exchange and protected credentials; native callbacks retain trusted-window/server/lifetime authority. Keep open until the complete implementation and acceptance are satisfied.
+
+- General API browser OAuth follows `cmds-delidev-account-oauth-contract.md`. Preserve OpenRouter capability 5 and original receipt/headless behavior. Hugging Face, Gemini and Baseten require capability 6, exact enabled managed presets, and independently accepted compiled DeliDev public/native registrations plus actual ordinary API compatibility; pending registrations grant no feature advertisement. Go owns token exchange, Device polling, protected token generations and once-only refresh. Private migration 31 follows the real 26–30 chain and cannot expose tokens through SQLite or portable state. Gemini quota headers bind only to their immutable Google connection. Baseten Start owns a joined Device job without native callbacks; uncertain results and restart cannot dispatch again. Keep implementation, fixtures/builds and real account/native/platform acceptance distinct.
+
+## cmds/delidev-cli/internal/apiproxy constraints
+
+- Execution leases can return a protected credential and its original Google quota project together. Attach x-goog-user-project only after exact managed Gemini and official destination checks; downstream headers cannot supply billing authority. Preserve original execution/connection cancellation and secret clearing. Follow `cmds-delidev-account-oauth-contract.md`.
+
+## cmds/delidev-cli/internal/cli constraints
+
+- OAuth format selection activates only the main-established the originating change ProviderInventory capability 8 and Start/attempt fields 4/7. Follow `cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations`: bind the original explicit Bearer profile without changing the authentication adapter, retain omitted legacy receipt bytes and original recovery/cleanup authority, and keep unaccepted provider registrations disabled. Common manual/OAuth UI explicitly selects multiple formats or displays a sole profile; no migration or native change.
+
+- Explicit `account oauth start|complete|status|cancel` follows the OAuth contract. Start defaults to headless mode; completion accepts exact bounded code stdin only, without trimming or secret argv. Code-free `--recover` requires the original completion request/revision and never exchanges. CLI product operations never implicitly start a server.
+
+- Only OpenRouter permits headless OAuth Start. New PKCE profiles require --callback-url; --callback-stdin reads bounded write-only protobuf JSON code/state bytes, excludes mutation identity, and clears buffers. CLI flags retain original mutation/recovery authority. Never add secret argv or implicit server startup. Follow `cmds-delidev-account-oauth-contract.md`.
+
+- Device OAuth Start begins the Go-owned approval job; CLI Status only observes it. Do not poll a provider from the CLI. Use the Status completion receipt and original revision 1 only for explicit already protected code-free recovery; preserve OpenRouter headless and other PKCE callback requirements.
+
+- CLI OAuth completion and public update checks use 35-second outer/response-header limits. Account validation and provider discovery use 50 seconds for optional OAuth refresh, independent settlement and provider inspection. Shorter caller contexts always win; preserve original request IDs/code-free recovery, ordinary reads/streams/native commands, upstream deadlines and no automatic retry.
+
+## cmds/delidev-cli/internal/domain constraints
+
+- OAuth attempt metadata uses closed states, unique original identities, exact revision/lifetime and keyed comparison commitments. Validate exact UTF-8 authorization-code bytes without trimming and only the canonical owned localhost callback. Keep this private domain outside resources, synchronization and portable configuration under the OAuth contract.
+
+## cmds/delidev-cli/internal/harness/codex constraints
+
+- API provider `model_catalog_url` and `gateway_oauth` permit only omission or exact JSON null in ordinary, title and owned-proxy profiles. Reject populated values, unknown fields and duplicate keys before input. Preserve endpoint/token binding, transport and shell/proxy isolation, title retry restrictions and original cleanup/recovery fences. This compatibility boundary grants no catalog or gateway OAuth authority; diagnostics must not expose native configuration or credentials.
+
+- Managed ChatGPT may discard only the original root's built-in codex_apps MCP startup status through its closed typed passive profile. Retain private errors/descriptors, unknown-field/state/reason rejection and other server/API/unscoped/OAuth/event-stream/tool boundaries. Connector status never changes account health, enables tools or grants input/authentication authority.
+
+## cmds/delidev-cli/internal/providers constraints
+
+- oauth_clients.json contains only compiled DeliDev public registration/ordinary API acceptance metadata, shared with native. Pending/unverified profiles cannot advertise support. Never copy other applications client IDs or accept user-selected OAuth authorities. Follow `cmds-delidev-account-oauth-contract.md`.
+
+- OAuth Google inspection uses the server-resolved connection quota project, Bearer access token and fixed Google destination. Preserve API-key inspection separately, refuse foreign provider/project combinations and never forward downstream quota headers. Follow `cmds-delidev-account-oauth-contract.md`.
+
+- Baseten OAuth activation also requires an exact provider-approved compiled HTTPS approval URI. Keep the pending URI empty until registration evidence exists; never guess its browser path or reuse the official CLI client ID. Scope metadata and accepted registration do not substitute for actual inference token compatibility.
+
+## cmds/delidev-cli/internal/server constraints
+
+- OAuth follows `cmds-delidev-account-oauth-contract.md`: commit original actor/provider/revision/code-HMAC dispatch before HTTP outside account/SQLite gates. Seal the reserved immutable reference, reuse configuration admission and shared connection commit, and atomically publish the connected private outcome. Serialize cancellation with staging/final publication. Restart/status never exchange; explicit original code-free recovery can finish only protected local material. Preserve orphan cleanup and provider-side uncertainty without logging content or URLs.
+
+- OAuth secret responses use byte-backed JSON parsing with duplicate-key checks at every object depth. Credentials never pass through string-backed domain readers or scalar Decoder tokens.
+
+## cmds/delidev-cli/internal/store constraints
+
+- The feature reserves migration 29 for private metadata-only OAuth attempts after real migrations 26–28. Record the reservation in the owning feature PR. Follow `cmds-delidev-account-oauth-contract.md`: retain original actor/provider/process/request and reserved-account identities, durable once-only HTTP dispatch, protected references and unresolved cleanup without an account foreign key or cascade. Verifier, authorization code, API key and callback/authorization URLs never enter SQLite, receipts or backup images. Copied/restarted metadata cannot grant another exchange; this prerequisite adds no executable migration.
+
+- Real OAuth migration 29 follows implemented 26–28, backup-first and transactional. The private bounded table retains original once-only identities, actor/provider/process scope and staging/cleanup without secret or browser content. No account foreign key, public projection or cascading deletion may erase recovery. Unresolved attempts block restore; candidates retain the current attempt table rather than historical exchange authority. Follow the OAuth/storage contracts.
+
+- General API OAuth reserves private migration 31 for this feature after real 26–30. Preserve OpenRouter attempt and protected-reference authority. Authentication profiles, token-generation references, once-only refresh claims and cleanup are metadata only; access/refresh tokens and device codes belong to the Vault. Reservations cannot activate storage or provider support. Follow `cmds-delidev-account-oauth-contract.md`.
+
+- Real migration 31 follows real 26–30 and its main-established reservation. Keep token-generation/profile/refresh/cleanup metadata private, bounded and revision-checked without account cascade. Restore retains current metadata and refuses unsettled claims. Tokens remain only in Vault; retirement follows confirmed protected cleanup. Follow `cmds-delidev-account-oauth-contract.md`.
+
+## cmds/delidev-cli/internal/worker constraints
+
+- Claude Code discovery uses only its pinned stream-json initialization profile in a fresh private bare runtime, with no inherited credentials, OAuth/keychain access, project extensions, persistent sessions or prompts. Accept one exact correlated control response with no token, explicit closed permission/remote-control state and bounded typed descriptors; reject unknown/duplicate/trailing output. Bound and join both streams and the input writer, preserve cleanup uncertainty, and publish only the handshake outcome. Recheck cancellation before releasing the prepared native start barrier; a concurrent deadline/Resume failure keeps its typed context classification instead of exposing an operating-system transport error, with cleanup uncertainty still authoritative. Model/agent advertisements cannot grant account readiness or execution; Claude session execution and subscription login require their separate adapters.
 
 ## References
 

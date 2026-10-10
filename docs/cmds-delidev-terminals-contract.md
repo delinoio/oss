@@ -2,7 +2,7 @@
 
 ## Scope
 
-Issue #1088 adds interactive terminals owned by the session's execution Worker.
+The feature adds interactive terminals owned by the session's execution Worker.
 Canonical code lives in `cmds/delidev-cli/internal/{terminal,process,worker,server,store,cli}`,
 the additive `TerminalService` and Worker messages in `protos/delidev/v1`, the
 generated API client, and `apps/delidev/src/session-terminals.tsx`. This contract
@@ -33,7 +33,7 @@ These independent enum spaces preserve the merged user-service system value 3.
 Desktop history reads, polling, manual refresh and selection wait for advertised
 system terminal support. Unknown or unsupported status shows its capability
 notice without terminal requests or cached terminal errors.
-The explicit Terminals toolbar/menu gesture (#2112) resolves a complete authenticated bounded inventory after capability success. Reuse the remembered starting/running terminal without close intent, otherwise the first eligible terminal in retained inventory order. If none is reusable, create exactly one only when all retained ownership is independently cleanup-verified (including an empty inventory), using the gesture's original session/revision, future shell override and 24×80 dimensions. Coalesce pending activations; read failures, incomplete/malformed pages and unsettled ownership never authorize creation. Read Retry alone cannot repeat the gesture. Uncertain creation retains only explicit same-request recovery; confirmed rejection requires a fresh gesture. Departure cancels unsent intent while accepted/uncertain mutation ownership survives. + remains explicit additional creation. Mount, reconnect, polling, tab selection and exit remain read-only. Explicit
+The explicit Terminals toolbar/menu gesture resolves a complete authenticated bounded inventory after capability success. Reuse the remembered starting/running terminal without close intent, otherwise the first eligible terminal in retained inventory order. If none is reusable, create exactly one only when all retained ownership is independently cleanup-verified (including an empty inventory), using the gesture's original session/revision, future shell override and 24×80 dimensions. Coalesce pending activations; read failures, incomplete/malformed pages and unsettled ownership never authorize creation. Read Retry alone cannot repeat the gesture. Uncertain creation retains only explicit same-request recovery; confirmed rejection requires a fresh gesture. Departure cancels unsent intent while accepted/uncertain mutation ownership survives. + remains explicit additional creation. Mount, reconnect, polling, tab selection and exit remain read-only. Explicit
 creation/selection opens a full-pane tab by original terminal ID while retaining
 conversation authoring and original mutation controllers. Presentation Close or
 inactive selection releases only the client attachment; it never closes the shell
@@ -124,6 +124,138 @@ the original owned process evidence and can never replay creation, input or
 resize. Uncertain or offline terminal ownership keeps deletion pending. Direct terminal deletion refuses unconfirmed
 ownership. Close joins the original process tree and output machinery before
 reporting cleanup. Missing/changed ownership never authorizes PID termination.
+
+### cmds/delidev-cli/internal/apiproxy constraints
+
+- Retain OpenCode tool-call frames through the validated terminal DONE marker, independently of finish_reason. Malformed/truncated streams, repeated calls or cancellation discard all buffered executable frames; preserve their original order only after terminal validation.
+
+### cmds/delidev-cli/internal/cli constraints
+
+- Session terminals follow `cmds-delidev-terminals-contract.md`: native side effects require original durable claims, exact Worker/process/workspace ownership and independent joined cleanup. Preserve client reattachment, bounded ordered bytes and explicit gaps without another shell; Agent Stop preserves terminals while every Archive/deletion boundary waits for their cleanup. Parsed output/reattach `--follow` streams retain caller cancellation/deadlines without the ordinary 30-second command limit; non-follow observations retain that limit. Never use PID absence as termination authority.
+
+### cmds/delidev-cli/internal/domain constraints
+
+- Session terminal records and closed action/state enums follow `cmds-delidev-terminals-contract.md`; keep native cleanup independent of observed exit and retain exact original operation identities. Pending input bytes belong only to accepted private dispatch; public resources retain operation/state metadata while omitting those bytes.
+
+- Explicit stopped Codex API account selection follows the sessions/proxy contracts. Require exact terminal/cleanup/checkpoint evidence and current eligibility from the original candidate snapshot; retain revisioned selection history, pause until explicit Resume and never reroute automatically. Preserve original usage/assignments and read the predecessor checkpoint under its complete original account/connection pair while creating a fresh successor grant. Explicitly switching away and back after reconnection must retain the original checkpoint connection independently of the fresh selected connection. Missing or account-bound history cannot switch; every switched relay request independently rejects remote history references.
+
+- Grok public tool, interaction and terminal documents follow the pinned the feature harness/protocol contracts. Keep original request namespaces and lexical numeric IDs through the Grok-only decimal identity, nullable question data, exact decimal uint64 counters and exclusive response/terminal families. Original native Plan decisions cannot be converted to common Plan approval. Null/mixed/foreign response fields must fail before a native encoder or side effect.
+
+- Repository-inspection metadata uses the independent `repository-inspection-metadata-v1` Worker capability. Validate/deduplicate it alongside titles/forwarding/terminals without changing existing values or the closed inspection input. Follow the workspace/protocol contracts.
+
+- A terminal workspace-storage job may retain one immutable `storage_reconciled_by` reference established only while settling an uncertain original through successful explicit recovery. It authorizes no native replay; verify original device/instance, immutable assignment and the successful recovery claim before acknowledging a stale original report.
+
+### cmds/delidev-cli/internal/harness/codex constraints
+
+- Legacy `item/fileChange/outputDelta` is bounded inert patch-tool output with explicit original patch provenance, separate from patch updates and terminal status. Preserve exact thread/turn/item ownership, strict fields and receipt replay; text grants no file/action/completion authority or broader managed Fork history profile. Follow the harness tool contract.
+
+### cmds/delidev-cli/internal/harness/opencode constraints
+
+- Foreground child success/error projections require the same closed native message/part predicate: completion time, ended text/reasoning and terminal tools. Unfinished histories retain running partial telemetry; only the independent original verified Stop/joined-scope cleanup source may interrupt an unfinished abort. Missing/busy status never supplies settlement.
+
+### cmds/delidev-cli/internal/server constraints
+
+- Workspace storage admission requires independently verified cleanup for every session terminal, including exited, closed and uncertain records. Terminal creation, input/resize acceptance and non-close dispatch/claim receipts require present storage in their owning transaction; original close claims and cleanup reports remain available to reconcile retained owners.
+
+- Session terminals follow `cmds-delidev-terminals-contract.md`: native side effects require original durable claims, exact Worker/process/workspace ownership and independent joined cleanup. Public terminal resource projections must omit pending input bytes, including mutation/receipt responses, generic reads/snapshots and output metadata. Preserve exact bytes only in authenticated original Worker watch/claim dispatch. Accept the shared 64 KiB terminal result JSON envelope, including both valid escaped 4,096-byte paths. Reject unknown/disallowed failure codes and contradictory running problems; persist only the validated classification plus server-owned diagnostic text, stripping remote cause/correlation data while retaining exact original receipt identity. Preserve client reattachment, bounded ordered bytes and explicit gaps without another shell; fresh cursorless attachment to an empty ring exposes unknown prior retention as a gap; loss-only gap notifications retain the acknowledged cursor and never replay retained bytes; each attachment reports the monotonic persisted loss flag once independently of later metadata revisions, while fresh attachment observes that retained fact anew; Agent Stop preserves terminals while every Archive/deletion boundary waits for their cleanup. Never use PID absence as termination authority. Replacement terminal report retries may acknowledge only an exact already-committed receipt under the same current paired device/machine and live terminal-capable Worker lease; return no resource content and never mutate absent receipts. Original instance authority remains mandatory for new reports.
+
+- An accepted uncertain terminal close atomically replaces only its finished close operation with a fresh close identity. Exact report and deletion receipt retries preserve that next intent; original result facts and cleanup barriers remain authoritative. Stream dispatch waits ten seconds after the latest uncertain terminal write, including reconnects, without granting shell creation, input, resize or cross-device authority. Follow `cmds-delidev-terminals-contract.md`.
+
+- Request diagnostics follow the diagnostics contract. Publish native-input projections with original Worker events; proxy observations belong only to the original joined lease. Initial/send claims recheck authority, terminal settlement preserves original provenance after Stop/revocation, and reads remain owner/client-only. A send claim does not establish provider acceptance.
+
+- Storage admission reserves eight total original-group recovery attempts, counting canceled and failed accepted attempts as retained deletion obligations. Native uncertainty claims have their separate eight-member bound. Terminal attempts do not reset the reservation count or strand an earlier still-supported successor. Exact request replay consumes no additional attempt; exhausting the finite recovery-attempt bound preserves evidence and returns explicit resource guidance.
+
+- New workspace file, diff, PR and terminal reads require present storage through the shared transactional workspace read scope; pending, uncertain and stored sessions cannot publish a new read. Original admitted result/cleanup authority remains independently validated.
+
+- OpenCode automatic context progress must match the original execution harness and native part identity. Apply started before completed atomically, retain the canonical conversation and refuse terminal/continuation with an open boundary. Native context users and summaries grant no new input or inferred current token count.
+
+- The feature captures acceptance/end UTC once in the original validated primary-input/terminal publication transactions and receipts. Steer cannot reset timing. Atomically update every original primary-user part through bounded indexed selection; reject changed ownership/acceptance and preserve late-user, legacy and inherited Fork attribution. READY, pre-send rejection and queue/startup time cannot fabricate accepted timing. Strip display timing from every native job/checkpoint/digest projection.
+
+- The feature / the originating change owns `CreateTerminalRequest.creation_mode` field 5, optional original-session candidate `preferred_terminal_id` field 6, and closed `TerminalCreationMode` values 0/1. Resolve every toolbar reuse-or-create in the original authenticated receipt transaction; inventory grants only a preference, never final selection. Revalidate the preferred candidate within the same session/current Worker instance before first-eligible fallback; preserve unspecified explicit additional creation and +, fields 1–4, existing capabilities, current Worker/workspace/revision checks and independent cleanup. Pending input/resize permits inspection reuse; close intent does not. Follow the terminal/protocol contracts; no migration or new native authority.
+
+### cmds/delidev-cli/internal/skills constraints
+
+- Preparation and cleanup share one original snapshot lock. Verify complete original root and resource ownership before removal, observe absence, and retain compact exact-ID terminal tombstones outside active staging capacity. Never adopt replacement, changed or unlisted bytes.
+
+### cmds/delidev-cli/internal/store constraints
+
+- Managed creation and pre-migration publication share the 8 GiB inspection/deletion bound. Reject oversized copies before publication, preserve the live database and settle durable size-limit failures terminally.
+
+- The Worker must synchronize immutable native continuation evidence after owned cleanup and before its completion journal/report. Version-2 completion binds the exact checkpoint file digest; version-1 terminal history cannot be silently upgraded. Keep native path/default context private, exclude prompt/instruction/answer/output/credential contents, and match exact assignment-input/configuration/account/connection/runtime/terminal/input ownership on read. Missing, altered, linked, oversized or contradictory evidence must neither be rebuilt nor authorize input. A checkpoint cannot resolve a lost server report or semantic interaction uncertainty. Include retained checkpoint files in the session's coordinated backup/deletion boundary when implemented.
+
+- OpenCode live Stop claims one original abort and immediately blocks answers without retrying after claim/HTTP uncertainty. Require separate native interruption, original terminal/idle/storage and fresh pending/status observations; normal completion racing Stop must remain normal completion. Pinned native tool effects can remain pending after abort, so retain them until original owned process/journal cleanup and joined event closure, never synthesize rejection/answers. Cleanup preserves missing earlier acceptance and cannot grant history/continuation authority. Already-buffered late original acceptance must still satisfy its original claim/body checks and cannot repeat an answer or cleanup. Pre-assistant scheduling and failed native observation use the separate original owned-stop intent because native abort can race runner setup; that path performs no HTTP or acknowledgment reconstruction and must retain recovery after verified owner cleanup.
+
+- OpenCode Worker checkpoint envelopes bind the original live claim journal, assignment/configuration/account/connection, acknowledged terminal sequence, input mode/prompt digest and native closed checkpoint. Recheck exact publication and mutation ownership around native inspection and synchronized storage. Keep the bounded 9 MiB envelope in its existing private job directory outside the inventoried native runtime; preserve conflicting files and report recovery without replay or fabricated server cleanup acceptance. Read-only inspection requires independent original references and an exact file digest. Version-1 reporting remains paused and cannot be upgraded from this file into continuation/recovery authority. Include the envelope and complete runtime in future coordinated backup/deletion.
+
+- Schema-v19 PR CI/conflict evidence follows the integration contract. Preserve original v18 bytes/receipts during index migration. Select CI problems only from complete recomputed required/evaluated terminal failure; bind each version to immutable shared original proof and never use workflow-wide attempts to resurrect unchanged results. Conflict transitions preserve dedup through unknown reads and restart, while verified resolution or changed refs/commits permits a new version. Collection families remain independent, with legacy feedback receipt compatibility; no storage or local Dismiss grants execution.
+
+- Session terminals follow `cmds-delidev-terminals-contract.md`: accepted pending input is private dispatch data, never public resource content; preserve its exact bytes for original Worker claims while the common RPC projection omits them. Native side effects require original durable claims, exact Worker/process/workspace ownership and independent joined cleanup. Preserve client reattachment, bounded ordered bytes and explicit gaps without another shell; Agent Stop preserves terminals while every Archive/deletion boundary waits for their cleanup. Only the expected live-terminal recovery result may defer Archive completion; propagate lookup, decoding and history-bound failures to roll back the report receipt and preserve exact retry. Never use PID absence as termination authority.
+
+- Permanent deletion requests original terminal closes atomically, preserves their cleanup reports and exact close identities, and blocks workspace-removal dispatch plus final purge until independently joined terminal cleanup. Follow `cmds-delidev-terminals-contract.md`; accepted deletion cannot reopen native terminal authority.
+
+- Validate subagent native/product/execution ownership and original Claude parent-tool claims with one bounded complete-batch query before writes. Include retained terminal claims from earlier executions even when proposed native/product IDs are fresh. Do not rescan large source-coverage JSON separately for every child; preserve cross-execution conflict detection without a schema migration.
+
+- Terminal report receipts retain only their closed kind and original terminal/machine/device UUIDs after entity or session purge, rebuilding that allowlist rather than preserving arbitrary result fields. This metadata proves an exact accepted report acknowledgement and grants no resource resurrection, new claim or native operation; ordinary deleted receipt content remains redacted. Follow `cmds-delidev-terminals-contract.md`.
+
+- Proxy diagnostics retain metadata before credential lookup. Only the first in-progress, unsent metadata revision may acquire guarded request settings and the safe caller request ID; send claims and terminal/later revisions preserve them exactly. Follow the diagnostics contract.
+
+- Backup creation settlement rechecks the original irreversible deletion index in its terminal job transaction. Pending or completed deletion wins with the existing RecoveryRequired failure; deletion after committed success preserves history. Never replay a terminal creation to recreate an image; follow the storage contract.
+
+- The feature uses the single existing mutation UTC clock after receipt lookup and bounded indexed original primary-user selection for atomic terminal timing. Verify session/execution/input/thread/turn and original acceptance before writes; rollback all changed-owner records with the original terminal publication. Keep contents/indexes and exact receipt timestamps unchanged; no legacy backfill or migration.
+
+### cmds/delidev-cli/internal/worker constraints
+
+- Grok text/terminal parsing preserves original session, native prompt and event identities and requires the prompt result plus independent turn/prompt completion observations to agree. Preserve each native stop reason, integer counters and singleton model provenance without combining streamed context estimates, primary-turn usage or unreported auxiliary requests. Missing/foreign/rich native data remains unsupported, never fabricated or silently published. Parser/native-fixture success cannot replace the durable input, interaction, publication, Stop or history controller.
+
+- Grok closed-text history comparison must derive its authority from the original controller after acknowledged native close and joined cleanup. Retain input/chunk/terminal/usage facts before publication callbacks, pin the original home, anchor bounded reads and reject links, shared writes, replacement and changed original records. Native file modes may be readable only beneath the verified private Unix home; Windows keeps strict per-entry ACLs. Preserve first returned file digests, never repair or replay from inspection, and do not treat partial text/history comparison as native continuation or public completion authority.
+
+- Grok stopped-text comparisons must come from the same original controller after its reader and Stop writer join. Retain independent interrupted or raced-success terminal facts and original input/output/chunk digests before callbacks; zero chunks require an interrupted terminal and SHA-256 of empty output, never a zero-output success; return deep copies only after unchanged configuration, terminal/idle/cleanup and original claim checks. Failed publication or missing facts cannot create comparison authority. No stopped observation supplies successful native history, continuation, public reporting or another native operation by itself.
+
+- Native tool observations are data, never permission or product terminal/file authority. Keep command aggregate output distinct from streamed deltas, preserve unavailable native counters and advisory parse/source/plugin metadata, and distinguish tool failure/decline from whole-turn outcome. Validate closed command/patch unions, lifecycle/thread/turn ownership and bounded content. Publish supported command/patch observations through the same durable outbox and native-item identity/completion index as text messages. Retain start/completion snapshots, sequenced patch/input observations and nullable streamed output; never infer a missing stream from aggregate output. Bounds must reject intact updates without consuming sequence or changing prior evidence. Remaining typed tools without dedicated publication stay explicitly unhandled; never drop them or claim full execution support from parser fixtures.
+
+- A resumed Codex binding remains input-blocked until its exact latest terminal turn and ordered original input digests match the preceding accepted execution. Compare complete original effective defaults/permissions and current idle metadata; never fall back to an older turn, switch history modes, recreate a thread or resend prior input. Failed/interrupted outcomes require coordinator-authorized explicit Resume after independent cleanup and interaction reconciliation. Preserve unrelated recovery/pause, reject incomplete/oversized history intact and publish no historical content as new events. Native checkpoint verification is private; public later-turn jobs compose immutable ownership, all-history queued-input/native-turn deduplication, current account authority and a fresh scoped relay credential.
+
+- Claude task edges, background membership, tool return, original-input result and native-run completion are independent. Preserve original task/tool/child ownership, terminal patch versus notification vocabulary, and known pending work after root completion; an empty background set never finishes tasks or authorizes another input. Forwarded child snapshots/context must retain original blocks and metadata without synthetic stream events/indices or root acceptance. Validate all child tools before ownership publication, retain active owned child callbacks after a root result, and reject terminal transitions that abandon observed descendants. Status, summaries, permissions and retry metadata are observations, never authority. Session-wide transfer and synthetic continuation/run boundaries require separate reconciliation before public dispatch.
+
+- Native Claude bare transport can omit the first user record or persist it after its answer. Never grant Resume from a successful terminal or last-prompt metadata; original ordered transcript proof must pass before another process can send input. Keep bare discovery separate from full API execution evidence. Manual compaction caveats may attach only to the exact prior conversation or the same proved successful summary, with matching original preserved tail; neither form permits arbitrary detached history.
+
+- Claude Worker-private checkpoint retention binds the original job/session/machine/history runtime, assignment/configuration digests, account/connection, input/native identity and acknowledged terminal to the consumed native closed capability. Keep its canonical outer file bounded to 9 MiB with the inner 8 MiB bound; reject mismatched original outcomes, same-turn Steer and changed ordered workspace roots. Read only the original fixed runtime file using the independently accepted version-2 completion hash and immutable configuration, then independently validate native bytes/history and terminal classification. Never create missing runtime state, derive comparison authority from that file or promote private persistence evidence into public Worker dispatch/recovery. Original conversation outcome, manual/automatic failure and explicit Resume remain independent.
+
+- OpenCode terminal composition must consume the original stream and only its separately verified same-process reconciliation, block unimplemented native families and compare every stored message/part with completed supported projections. Require the original live API's settled terminal/idle state, stored-history proof and original creation/input journal plus exact live product-authorized response claims. Keep native registry notifications ancillary, and preserve unfinished step-start evidence after native errors without inventing step usage. Terminal publication requires original input/final usage records on the server; exact receipt replay cannot grant cleanup, completion reporting, Stop authority or continuation.
+
+- OpenCode terminal API errors retain owned typed HTTP status classification: 401 authentication, 403 permission and 429 exhaustion; other/missing statuses stay unavailable. Native error evidence takes precedence over finish text, without retaining provider names, response diagnostics or retry authority. Failed turns cannot invent assistant text or completed-step usage, erase missing totals, or imply original process cleanup.
+
+- Original OpenCode stopped-history cleanup uses its separate live Stop boundary. Require the exact sent claim, independent terminal/idle and either native interruption or confirmed abort HTTP; normal completion racing Stop stays normal. Compare every stored message/part and remaining pending proposal against the original observer before joined owner cleanup. Only known interrupted tool requests may remain pending; absent inventories cannot imply acceptance/rejection. Never convert owner-only, uncertain-reply, failed or earlier ordinary cleanup into fresh stopped-history proof, and never grant Worker publication or continuation from this native proof alone.
+
+- Claude native `thinking_tokens` progress preserves separate exact unsigned estimated total/delta counters after original acceptance. These estimates cannot create provider usage, billing, a message identity or terminal evidence; reject missing/null/foreign/mixed shapes.
+
+- Claude input terminal publication requires the separately correlated original result, command closure and native idle, acknowledged original transcript/result usage and no unsettled work/responses. Native idle has no input identity; do not fill it in or promote uncorrelated interruption/API failure. Preserve exact subtype/reason/error, original outcome and prior Stop/recovery. Clean original-controller EOF and completed workspace lease remain separate from terminal publication. EOF failure must join forced cleanup without minting completion. The original version-1 public completion stays paused; only the separately verified continuation profiles below may retain v2 proof. Never enable FIFO through an unproved checkpoint, failed outcome or permission change. Desktop terminal disclosure independently validates ownership/classification and keeps cleanup unconfirmed until the accepted report.
+
+- Claude interrupted-denial completion requires original settled callback/context/session-result records, separate cancelled-command/idle envelopes and the independently joined original native error-exit cleanup before stopped terminal publication. Preserve absent native input correlation, replay only the exact outbox receipt and never repeat cleanup after lost acknowledgment. Server/desktop must validate original references and reject mixed Stop/input-terminal authority. The version-1 report confirms workspace cleanup independently; keep prior recovery, active history ownership and paused dispatch until a separately verified recovery profile exists.
+
+- Retire workspace removal inventories only after the matching terminal server acknowledgment and durable reported Worker journal; failed recovery and uncertain reports preserve predecessor intent. Synchronize the acknowledgment-bound retirement receipt, including the exact result digest, before transitioning the original journal to reported. Startup may finish that transition only from matching persisted proof. Retain a bounded metadata-only retirement receipt for interrupted cleanup and retry it at startup without native replay.
+
+- Session terminals follow `cmds-delidev-terminals-contract.md`: native side effects require original durable claims, exact Worker/process/workspace ownership and independent joined cleanup. Synchronize the private terminal-process root and original owner index before recording a creation start intent, so a pre-native crash can reconcile its retained empty index without inferring cleanup from missing ownership. Preserve client reattachment, bounded ordered bytes and explicit gaps without another shell; Agent Stop preserves terminals while every Archive/deletion boundary waits for their cleanup. Every terminal journal reader and writer shares the 68 KiB envelope limit around the shared 64 KiB terminal report, including room for valid report bytes and ownership metadata; reject oversized writes before replacing retained evidence. Failed/timed-out controls preserve the process-tree reconciliation problem whenever cleanup is unconfirmed; only independently verified cleanup permits the control problem to replace it. Never use PID absence as termination authority.
+
+- Shutdown must synchronize conservative loss for every live terminal, then cancel every terminal before waiting. Join distinct terminal owners concurrently with a shared 25-second reconciliation budget inside the native service's 30-second grace, retaining independent native bounds, complete goroutine joins and uncertainty whenever cleanup cannot be proved. Follow `cmds-delidev-terminals-contract.md` and the user-service contract.
+
+- A claimed close retains its exact displaced pending-operation ID in terminal-bound private metadata through uncertain reports. Only an acknowledged independently verified cleanup may retire the matching prepared, result-less journal by direct lookup. Preserve claimed/started/finished, foreign and malformed evidence; failed claim RPCs grant no removal authority. Follow `cmds-delidev-terminals-contract.md`.
+
+- Confirmed terminal reports synchronize a reported phase before local retirement. Only independently verified cleanup may retire completed scopes, the empty original owner index, its released recovery lock and shutdown observation. Retain original evidence for uncertainty or unacknowledged results; retry interrupted acknowledged retirement locally without replaying any RPC or native operation. A replacement may retry only the exact finished original report identity/bytes to read an already committed receipt; absent receipts grant no report or native authority. Synchronize its acknowledgement before retirement. Scan journals in bounded 4,096-entry batches with retained directory position so a backlog cannot suppress all later retirement work. Follow `cmds-delidev-terminals-contract.md`.
+
+- A fresh close assignment following an accepted uncertain close is a separate original-owner reconciliation attempt. Never rewrite or reuse the previous operation's immutable finished result; retain its exact acknowledgement retry and unconfirmed process evidence. Follow `cmds-delidev-terminals-contract.md`.
+
+- Advertise process-owned terminal and forwarding capabilities on every preliminary attach, including reconnect. Implemented capability advertisement does not wait for native or title probing and cannot withdraw access to existing shells. Follow the terminal, forwarding and direct-startup contracts; Worker attachment performs no native profile probes.
+
+- Explicit stopped Codex API account selection follows the sessions/proxy contracts. Require exact terminal/cleanup/checkpoint evidence and current eligibility from the original candidate snapshot; retain revisioned selection history, pause until explicit Resume and never reroute automatically. Preserve original usage/assignments and read the predecessor checkpoint under its original account scope while creating a fresh successor grant. Missing or account-bound history cannot switch; every switched relay request independently rejects remote history references.
+
+- Terminal replacement recovery may adopt only the original exact close operation after a fresh authenticated server claim. Preserve original journal identity and finished result bytes, with separately synchronized current-instance close claim/report receipts. Retrying interrupted close grants only original-owner reconciliation, never create/input/resize replay; auxiliary reports require confirmed current-instance close authority. Missing or changed native ownership remains uncertain. Follow `cmds-delidev-terminals-contract.md`.
+
+- Capture the final managed execution bundle and native identity once while the native wire is still open, before terminal Close. Earlier exits may use the same bounded read before their deferred Close; never query a closed wire or retry a failed capture. After joined native cleanup, require the retained auth file to match the captured bytes before removal and protected write-back.
+
+- Terminal shutdown synchronizes original terminal/instance-bound output loss before cancellation and retains the joined outcome. Replacement close claims may carry that loss, but must independently reconcile original process ownership; shutdown observations grant no create/input/resize or spontaneous report authority. Missing shutdown observations conservatively mark output loss for terminals that may have run; only the original positive pre-native or joined creation proof can exclude that loss.
+
+- OpenCode automatic context records stay outside canonical input/summary text while every genuine new step-finish source retains once-only accounting. Publish only original frozen lifecycle facts, require all context boundaries closed at terminal and independently compare complete native inventory across replacement. Preserve known/declared model context in immutable configuration without inventing unavailable limits. Manual product admission and negotiated support retain their independent original action/report gates.
 
 ## Storage
 
@@ -280,8 +412,8 @@ or retire uncertain original controls. Older restored history cannot revive a
 presentation tombstone; stream completion and lookup failure are not exit proof.
 
 Byte-stream consumers
-retain all native control bytes. Record source revisions, commands, results and unresolved limits in PR #1226,
-issue #1088 and CI logs/artifacts under the root validation policy. Historical
+retain all native control bytes. Record source revisions, commands, results and unresolved limits in the originating change,
+The feature and CI logs/artifacts under the root validation policy. Historical
 validation remains available at its original Git revisions; do not add repository
 evidence documents.
 
@@ -301,6 +433,8 @@ desktop contracts, validation records in PR/issues/CI and scoped `AGENTS.md` whe
 ownership, limits, shell selection, native replay, cleanup or presentation
 contracts change. Generate all Go/TypeScript/Connect Query bindings together.
 
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+
 ## References
 
 - [Project index](project-delidev.md)
@@ -310,19 +444,19 @@ contracts change. Generate all Go/TypeScript/Connect Query bindings together.
 - [Protocol](protos-delidev-v1-contract.md)
 - [API client](packages-delidev-api-client-contract.md)
 - [Desktop](apps-delidev-desktop-contract.md)
-- [PR validation](https://github.com/delinoio/oss/pull/1226)
+- PR validation
 - [Historical issue validation](https://github.com/delinoio/oss/tree/a7a47662bdabdc652da97ce7d01449a008663b0a/docs/evidence/delidev/issue-1088)
 - [Frozen historical ledger](https://github.com/delinoio/oss/blob/a7a47662bdabdc652da97ce7d01449a008663b0a/docs/cmds-delidev-evidence.md)
 - [Repository defaults](repository-defaults.md)
-- [Issue #1088](https://github.com/delinoio/oss/issues/1088)
+- The feature
 
 - [Microsoft pseudoconsole creation and teardown](https://learn.microsoft.com/en-us/windows/console/creating-a-pseudoconsole-session)
 - [Go PTY package API](https://pkg.go.dev/github.com/creack/pty)
 
-## Atomic toolbar terminal admission — issue #2112 / PR #2260
+## Atomic toolbar terminal admission — the feature / the originating change
 
 `CreateTerminalRequest.preferred_terminal_id = 6` records the optional original
-session candidate preference under the same #2112 / PR #2260 ownership. Every
+session candidate preference under the same / the originating change ownership. Every
 toolbar gesture uses atomic admission after complete inventory inspection;
 inventory alone cannot select a terminal. Admission prefers that ID only if it
 remains eligible in the same original session and current Worker instance, then

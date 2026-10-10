@@ -15,8 +15,8 @@ is added.
 
 ## Key-preserving API format change reservations
 
-PR #1666 established the complete reservations on main before activation.
-Issue #964 owns ProviderInventory capability
+The originating change established the complete reservations on main before activation.
+The feature owns ProviderInventory capability
 `ACCOUNT_API_FORMAT_CHANGE_V1 = 9` separately from capability 7 and OAuth
 reservation 8. The owner/client `AccountService.ChangeAccountApiFormat` RPC
 uses request fields mutation 1, api_protocol 2, alias 3, enabled 4,
@@ -41,7 +41,7 @@ unchanged; capability 9 owns the dedicated extension.
 
 ## OAuth API format selection reservations
 
-Reservation PR #1657 established the issue #964 allocations on main before
+The reservation change established the previous feature allocations on main before
 implementation: ProviderInventory `ACCOUNT_OAUTH_API_PROTOCOL_V1 = 8`,
 `StartAccountOAuthRequest.api_protocol = 4` and
 `AccountOAuthAttempt.api_protocol = 7`.
@@ -90,7 +90,7 @@ server-owned device authorization remain independent and unchanged.
 
 ## API account format selection
 
-Reservation PR #1646 established the complete issue #964 allocation closure on
+The reservation change established the complete feature allocation closure on
 main before implementation: ProviderInventory capability 7, profile field 10,
 account-list protocol field 5 and the closed API protocol/authentication/profile
 declarations. The [catalog contract](cmds-delidev-catalog-contract.md#api-account-format-selection)
@@ -104,12 +104,12 @@ Worker assignment extension is introduced.
 
 ## Direct execution startup allocation and activation
 
-PR #1645 established the complete [startup allocation](cmds-delidev-execution-startup-contract.md)
+The originating change established the complete [startup allocation](cmds-delidev-execution-startup-contract.md)
 on main at `03429673f2976ab52b98c613f9d3cc1ff4c41d84` before implementation.
 Runtime activation uses System 43, Worker 23, ReportExecutionStartup request/response,
 ExecutionStartupObservation and the four closed startup enums with their original
 ledger field/member numbers. Preserve separate System 42 and Worker 22 ownership
-for PR #1642. Negotiation permits private v4 direct assignments without inspection;
+for the originating change. Negotiation permits private v4 direct assignments without inspection;
 the original process still proves protocol/settings and fresh account authority.
 Reports bind claimed revision, original machine/device/instance/server epoch and
 durable exact receipts. Ready/failure metadata uses existing session/terminal job
@@ -117,7 +117,7 @@ JSON; no assignment rewrite, credential grant or SQLite migration is added.
 
 ## Failed subscription cleanup reservations
 
-System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 41` and all batch/status/result declarations were reserved on main by PR #1614 before activation. System 38 belongs to Claude and 39/40 to Grok. The reservation itself granted no cleanup, login or deletion authority.
+System `FAILED_SUBSCRIPTION_CLEANUP_V1 = 41` and all batch/status/result declarations were reserved on main by the originating change before activation. System 38 belongs to Claude and 39/40 to Grok. The reservation itself granted no cleanup, login or deletion authority.
 
 One explicit owner/paired-client `CleanupFailedSubscriptions(request_id)` admits a server-owned durable job and freezes every candidate account ID, revision, original initial ChatGPT server LOGIN and deletion request UUID in account child jobs. Receipt replay binds the original actor and server and returns the same current job. Only one batch can be pending per server. Admission scans the complete bounded server inventory; frontend account pages never select work. Failed, canceled, expired, unsupported and interrupted initial logins qualify, including credential-cleanup-confirmed failures. The same explicit batch also selects disconnected subscription Accounts for every supported service, including metadata-only accounts and completed logout accounts. Version-2 private child jobs distinguish original failed LOGIN cleanup from disconnected configuration deletion; version-1 children retain their original LOGIN-only meaning. Disconnected targets have no invented operation ID and must retain no active login, native process, generation, identity commitment, active Worker ownership, lease, recovery, removal or active observation. A completed Worker logout may retain its historical owner-machine routing hint; it grants no active authority without a generation, lease, pending action or recovery, and does not bypass protected-reference checks. Connected accounts, restored generations and independent Worker/native/observation ownership are excluded.
 
@@ -131,7 +131,7 @@ Confirmed deletion, tombstone/browser obligations, the existing configuration re
 
 The [Grok subscription contract](cmds-delidev-grok-subscription-contract.md)
 reserves System login 39, System execution 40, Worker managed execution 21 and
-progress diagnostic field 10 under issue #964. The ledger also owns the new
+progress diagnostic field 10 for this feature. The ledger also owns the new
 GrokDiagnostic fields 1–7 and closed GrokDiagnosticPhase values 0–11. Record
 the complete closure in the owning feature PR. Codex field 7 and existing
 System 30/35/36/37 and Worker 19 ownership
@@ -141,7 +141,7 @@ remain unchanged. Reservations activate nothing and add no migration.
 
 ## Native Claude subscription allocations
 
-PR #1612 established System `CLAUDE_SUBSCRIPTIONS_V1 = 38` and Worker
+The originating change established System `CLAUDE_SUBSCRIPTIONS_V1 = 38` and Worker
 `NATIVE_CLAUDE_SUBSCRIPTIONS_V1 = 20`, with the complete closure in
 `allocations.json`, on main before this activation. Preserve every
 existing field, Codex bundle assignment and independent capability.
@@ -175,7 +175,7 @@ structure contracts; the main reservation alone granted no support.
 
 ## Agent Worker account source routes
 
-PR #1371 established System `AGENT_WORKER_SOURCE_ROUTES_V1 = 36` and
+The originating change established System `AGENT_WORKER_SOURCE_ROUTES_V1 = 36` and
 `SaveAgentWorkerRequest.route_models = 5` on main before implementation. The
 active repeated field reuses `AgentWorkerModelSelection`, aligned with ordered
 Agent schema-3 routes and exclusive with the legacy singular model. The existing
@@ -192,14 +192,14 @@ initial-execution JSON under the [catalog contract](cmds-delidev-catalog-contrac
 
 ## Known subscription model allocation and activation
 
-Issue #964 reserves System capability `KNOWN_SUBSCRIPTION_MODELS_V1 = 35`
+The feature reserves System capability `KNOWN_SUBSCRIPTION_MODELS_V1 = 35`
 and `ProviderService.ListKnownSubscriptionModels` declarations for a public,
 advisory subscription catalog. The closed catalog-source enum reserves
 UNSPECIFIED 0, BUNDLED 1, CACHE 2 and ONLINE 3. `KnownSubscriptionModel`
 reserves native ID/display name/order/minimum harness version/retirement date
 fields 1–5. The request reserves subscription service field 1; the response
 reserves subscription service/models/catalog version/updated at/source fields 1–5.
-These allocations reached main in PR #1370 before dependent activation. The
+These allocations reached main in the originating change before dependent activation. The
 complete feature activates capability 35 and the owner/client read-only RPC in
 provider.proto; generated bindings use the normal compatibility pipeline.
 Reservations alone grant no feature support. The active advisory read grants no
@@ -210,7 +210,7 @@ migration is introduced. Follow the catalog, desktop and network contracts.
 
 ## GitHub token-first onboarding reservations
 
-Issue #964 reserves `SystemCapability.GITHUB_TOKEN_ONBOARDING_V1 = 34` for
+The feature reserves `SystemCapability.GITHUB_TOKEN_ONBOARDING_V1 = 34` for
 profile-independent token identity inspection and official token-form preparation.
 `GitHubTokenKind` reserves UNSPECIFIED 0, FINE_GRAINED 1 and CLASSIC 2.
 `GitHubTokenIdentityState` reserves UNSPECIFIED 0, VERIFIED 1, INVALID_TOKEN 2,
@@ -238,7 +238,7 @@ No protocol field, enum, capability or migration is added.
 
 ## Agent Worker wizard
 
-PR #1351 established the issue #964 allocations on main before implementation.
+The originating change established the previous feature allocations on main before implementation.
 System `AGENT_WORKER_WIZARD_V1 = 33` advertises source-scoped account/model lists
 and atomic `ConfigurationService.SaveAgentWorker`. `ListResourcesRequest` field
 4 and `SearchModelsRequest` field 7 select a closed subscription service. Reject
@@ -265,11 +265,11 @@ and [desktop contract](apps-delidev-desktop-contract.md#agent-worker-wizard).
 
 ### Remote repositories
 
-Main reservation PR #1377 established System `REMOTE_REPOSITORIES_V1 = 37` and Worker `REMOTE_WORKSPACE_CLONE_V1 = 19` before activation. System 31/32 and Worker 18 retain their separate immediate Local Clone and GitHub metadata contracts. Capability 37 permits credential-free URL registration with no checkout, Worker or local proof. Clients must verify it before repository saves/imports. Worker 19 permits managed session clones; acceptance and assignment independently require it on the selected machine.
+Main reservation the originating change established System `REMOTE_REPOSITORIES_V1 = 37` and Worker `REMOTE_WORKSPACE_CLONE_V1 = 19` before activation. System 31/32 and Worker 18 retain their separate immediate Local Clone and GitHub metadata contracts. Capability 37 permits credential-free URL registration with no checkout, Worker or local proof. Clients must verify it before repository saves/imports. Worker 19 permits managed session clones; acceptance and assignment independently require it on the selected machine.
 
 Schema-1 Repository JSON adds required `remote_url` for explicit saves/imports and permits an empty `checkouts` list. Historical omitted URLs and original accepted preparations remain readable without conversion, extraction, migration or rewrite. Each new preparation binds `source_kind` (`remote-clone`, `local-checkout` or an internally derived `independent-fork`) and `remote_url` in the immutable request digest. Legacy omitted source kinds keep their existing linked-checkout contract. Ready managed repositories bind SHA-256 native directory commitments; these are ownership metadata, never raw native identities. The ordered complete result must match the original source kind and URL. Unknown kinds grant no execution or deletion authority.
 
-PR #1355 activates main-established System `REPOSITORY_CLONE_V1 = 31` and
+The originating change activates main-established System `REPOSITORY_CLONE_V1 = 31` and
 `GITHUB_REPOSITORY_PICKER_V1 = 32`, Worker `REPOSITORY_CLONE_V1 = 18`, and
 `ListGitHubRepositoriesRequest`/`Response`, `RepositoryCloneGitHubSelection`,
 `CloneRepositoryRequest`/`Response` fields in the allocation ledger. These
@@ -281,7 +281,7 @@ enter its assignment. System 31/32 and Worker 18 retain that separate authority.
 
 ## Metadata-only request diagnostics
 
-Issue #1103 adds owner/paired-client `SessionService.ListRequestDiagnostics` and `SystemCapability.REQUEST_DIAGNOSTICS_V1`, with additive generated Go/TypeScript/Connect Query bindings. Typed source/state/operation enums distinguish native input publications from individual proxy HTTP send claims. Optional settings, latency, HTTP status/attempt and completion time preserve unavailable versus measured zero/false. Exact uint64 revisions/durations remain precise. Original opaque IDs are bounded validated projections, never arbitrary native JSON. Signed pages bind session, optional exact execution and page size (default 50, maximum 100). Worker credentials cannot read this product surface. See the [diagnostics contract](cmds-delidev-diagnostics-contract.md) for immutable attribution, publication, secret filtering, retention and evidence limits; this is not another usage source.
+The feature adds owner/paired-client `SessionService.ListRequestDiagnostics` and `SystemCapability.REQUEST_DIAGNOSTICS_V1`, with additive generated Go/TypeScript/Connect Query bindings. Typed source/state/operation enums distinguish native input publications from individual proxy HTTP send claims. Optional settings, latency, HTTP status/attempt and completion time preserve unavailable versus measured zero/false. Exact uint64 revisions/durations remain precise. Original opaque IDs are bounded validated projections, never arbitrary native JSON. Signed pages bind session, optional exact execution and page size (default 50, maximum 100). Worker credentials cannot read this product surface. See the [diagnostics contract](cmds-delidev-diagnostics-contract.md) for immutable attribution, publication, secret filtering, retention and evidence limits; this is not another usage source.
 
 
 Source schemas are service-specific under `protos/delidev/v1`; shared types have
@@ -290,7 +290,7 @@ names and numbers remain unchanged. `protos/delidev/allocations.json` records ma
 assignments and pending reservations without advertising unimplemented support.
 See the [structure contract](cmds-delidev-structure-contract.md).
 
-Issue #1146's [OpenRouter OAuth contract](cmds-delidev-account-oauth-contract.md)
+The feature's [OpenRouter OAuth contract](cmds-delidev-account-oauth-contract.md)
 reserves inventory capability `OPENROUTER_OAUTH_PKCE_V1 = 5` independently of the
 four existing account-flow gates, and `ProviderInventoryEntry.connection_method = 9`.
 The new closed `ProviderConnectionMethod` enum declares UNSPECIFIED 0,
@@ -310,15 +310,15 @@ retain manual connection without an OAuth badge.
 
 The [planned shared compaction contract](cmds-delidev-compaction-contract.md)
 reserves `EntityKind` 32, `SystemCapability` 15, `WorkerCapability` 5 and
-`SessionChange.compaction_job` 9 for issues #1093, #1202 and #1203. These are
+`SessionChange.compaction_job` 9 for the feature. These are
 ledger reservations only: no schema declaration, generated binding, RPC or
 capability advertisement is activated by the reservation change. The owning
 issue is recorded directly when no implementation PR exists yet.
 
-The additional shared RPC closure records PR #1221's existing
+The additional shared RPC closure records the originating change's existing
 `CompactSessionRequest` and `CompactSessionResponse` assignments in the immutable
 baseline, then reserves `CompactSessionRequest.expected_execution_id = 2` and
-`CompactSessionResponse.session = 4` under issue #1203 with #1093/#1202 as shared
+`CompactSessionResponse.session = 4` for this feature with as shared
 consumers. Record these allocations with active fields and generated bindings
 in the owning feature PR. The expected execution must join the exact original source
 at acceptance and remain part of the actor-bound receipt identity. The response
@@ -327,7 +327,7 @@ reference-only replay; its existing `request_id` remains the original action ID.
 Current native compaction support does not imply these additional fields exist.
 The reservation change adds no capability or migration.
 
-Issue #1206's [native Codex model observation contract](cmds-delidev-native-models-contract.md)
+The feature's [native Codex model observation contract](cmds-delidev-native-models-contract.md)
 activates main-established server capability 16 and Worker capability 7.
 `native_models.proto` owns the owner/client-only NativeModelService acceptance,
 status, immutable bounded page and cancellation operations. Request receipts bind
@@ -337,7 +337,7 @@ omit executable paths and full observations. Generate service-specific Go and
 Connect Query bindings. Before complete protocol-2/baseline-32 reset activation,
 also generate the historical facades. At the current complete activation, retain the
 service-specific bindings and omit the retired historical import/reflection
-facades. Subscription support remains typed unsupported until #1095 supplies its
+facades. Subscription support remains typed unsupported until supplies its
 protected lifecycle.
 
 ## Server-owned subscription login reservations
@@ -345,7 +345,7 @@ protected lifecycle.
 The Codex forward-version amendment reserves
 `GetSubscriptionProgressResponse.diagnostic = 7`, the new `CodexDiagnostic`
 message fields detected version 1, minimum version 2, phase 3, stable error code
-4, safe message 5, guidance 6 and correlation ID 7 under issue #964.
+4, safe message 5, guidance 6 and correlation ID 7 for this feature.
 `CodexDiagnosticPhase` reserves UNSPECIFIED 0, DISCOVERY 1, VERSION 2, PROFILE 3,
 RUNTIME 4, LAUNCH 5, INITIALIZE 6, CONFIRM 7, LOGIN 8, MODELS 9, EXECUTION 10,
 HISTORY 11 and CLEANUP 12. Record these allocations in the owning feature PR.
@@ -354,7 +354,7 @@ diagnostic response or capability support and add no migration. Diagnostics
 must exclude paths, credentials, login URLs, identities and raw native content.
 
 The owner-approved login-first amendment reserves independent System capability
-`SERVER_SUBSCRIPTION_LOGIN_V1 = 30` under issue #964. Progress fields 4–6 reserve
+`SERVER_SUBSCRIPTION_LOGIN_V1 = 30` for this feature. Progress fields 4–6 reserve
 `state`, `suggested_name` and `generation`. The closed `SubscriptionLoginState`
 enum reserves UNSPECIFIED 0, PREPARING 1, WAITING 2, SUCCEEDED 3, CANCELED 4,
 EXPIRED 5, UNSUPPORTED 6, RECOVERY_REQUIRED 7 and FAILED 8.
@@ -369,7 +369,7 @@ original Worker authority.
 
 ## Scope
 
-Issue #1235 reserves `SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1 = 17`
+The feature reserves `SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1 = 17`
 under its owning issue identity. This independent capability will negotiate
 service-bearing subscription Accounts/native Models and retired-reference
 projections at resource schema version 2; unchanged API resources remain version
@@ -448,7 +448,7 @@ Native question and terminal publication also atomically create a distinct unrea
 
 ### Repository-inspection metadata compatibility
 
-Issue #1142 appends `WorkerCapability.REPOSITORY_INSPECTION_METADATA_V1 = 6` without renumbering existing values and `AttachWorkerResponse.supported_worker_capabilities = 3`. Main reserves Worker values 3, 4 and 5 for other features; the issue's historical proposed value 3 is superseded by the immutable allocation ledger. The server advertises metadata support independently of native title/forwarding/terminal support. The initial Worker attachment stays unchanged. The existing second attachment requests metadata only after server support is observed; the retained negotiation profile/request identity includes that support state, and enrichment activates only if the returned Machine confirms acceptance. Unknown and duplicate capabilities are rejected together, including duplicates in three-capability lists; a replacement/legacy Worker cannot inherit acceptance from an earlier process.
+The feature appends `WorkerCapability.REPOSITORY_INSPECTION_METADATA_V1 = 6` without renumbering existing values and `AttachWorkerResponse.supported_worker_capabilities = 3`. Main reserves Worker values 3, 4 and 5 for other features; the issue's historical proposed value 3 is superseded by the immutable allocation ledger. The server advertises metadata support independently of native title/forwarding/terminal support. The initial Worker attachment stays unchanged. The existing second attachment requests metadata only after server support is observed; the retained negotiation profile/request identity includes that support state, and enrichment activates only if the returned Machine confirms acceptance. Unknown and duplicate capabilities are rejected together, including duplicates in three-capability lists; a replacement/legacy Worker cannot inherit acceptance from an earlier process.
 
 `InspectRepositoryRequest`, inspection JSON inputs and queued input bytes are unchanged. The optional result map `github_repositories` is remote → `{owner, name}` only, validated against the inspected remotes and existing GitHub validators under the 128-remote/1 MiB bounds. Results with unnegotiated, foreign, invalid or unknown/raw-URL fields are rejected. Enrichment field presence requires negotiation and a non-null map; explicit JSON null is not legacy omission. No new inspection RPC or database migration is introduced. Omitted metadata preserves existing inspection/CLI consumers; an unrelated legacy Machine decoder rejecting new capability identifiers is outside that guarantee. Go and TypeScript bindings are generated from the canonical service-specific schema, activating only the pre-established main allocations.
 
@@ -496,6 +496,299 @@ capability value `2`. User services retain system capability value `3`.
 Terminals use the main-reserved additive entity value `31`, system capability value
 `14` and Worker capability value `4`; no feature may reinterpret another's wire
 values. Regenerate all bindings from this combined canonical schema.
+
+### cmds/delidev-cli constraints
+
+- Machine Get/List/Snapshot heartbeat observations follow `protos-delidev-v1-contract.md#machine-heartbeat-read-projection`: use the exact current Worker lease, preserve stored Machine bytes/revisions and durable events/receipts, and keep portable runtime exclusion. Missing/malformed leases remain unknown; no attachment-time fallback or new authority.
+
+### Protocol integration
+
+- DeliDev remote-first repositories record System 37 `REMOTE_REPOSITORIES_V1` and Worker 19 `REMOTE_WORKSPACE_CLONE_V1` in the owning feature PR. Preserve System 31/32 and Worker 18 as the separate immediate-clone/listing boundary; reservations alone grant no support or Git authority.
+
+- Agent Worker ordered source routes follow the catalog, desktop, protocol and sessions contracts. Main reservation the originating change owns System capability 36 and SaveAgentWorkerRequest.route_models field 5; preserve capability 35. Keep schema-3 routes exclusive with legacy fields, all models/accounts referenced and saved atomically, per-source routing state updated only with a successful first claim, confirmed-exhaustion-only fallback and observed-recovery preference for later new sessions. Preserve immutable executions, old-client write protection and portable v1/v2/v3 compatibility; add no SQLite migration.
+
+Record implementation status and validation results in pull requests, issues and CI logs/artifacts under the root DeliDev validation policy. Do not add repository evidence documents. Update instructions only when their rules or ownership change, not merely to record another validation run.
+
+- Remote repositories activate the main-established System 37 / Worker 19 allocations; retain System 31/32 and Worker 18 immediate Local Clone/metadata meanings. Source-kind enums and pinned URL JSON remain additive and historical omitted fields are never rewritten. Regenerate bindings from reconciled schemas.
+
+- Native Claude subscriptions activate only the main-established the originating change allocation closure (System 38 / Worker 20). Keep existing Codex fields and independent capabilities unchanged, generated parity, write-only once-only code and original Worker ownership under the subscription/protocol contracts. No database migration.
+
+### protos/delidev constraints
+
+- Project first-prompt history follows the sessions/storage/desktop/protocol/client contracts for the feature. Preserve immutable project-owned text with empty session IDs, atomic 100-entry acceptance order, actor-bound confirmed clear receipts, scoped byte-bounded reads and text-only boundary recall. System 48 / EntityKind 35 add no Worker capability or migration. Session deletion preserves history; project deletion removes it, managed backups capture it and portable exports exclude it. Never log prompt text.
+
+- The feature image inputs follow `cmds-delidev-image-input-contract.md`. The owner permits declarations and complete activation in the same feature PR for System 45, Worker 25 and creation/enqueue attachments field 5 only. Preserve metadata-only server storage, authenticated Worker byte ownership, ordered immutable claims, original native image proofs and durable independent cleanup; no migration. Real-account, installed-native, remote-machine and platform acceptance remain owner-assigned and nonblocking for this feature.
+
+- Key-preserving API format changes follow `cmds-delidev-catalog-contract.md#key-preserving-api-format-change-reservations`: the originating change established ProviderInventory 9 and the complete ChangeAccountApiFormat RPC declarations on main before activation. Preserve capability 7, OAuth reservation 8, protected shared key references, original execution/continuation generations, new-format validation, immutable referenced profiles and all-generation explicit cleanup. No SQLite migration or native change. Reservation-only changes activate no support.
+
+- OAuth API format selection follows `cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations`: record ProviderInventory 8 and Start/attempt api_protocol fields 4/7 in the owning feature PR. Reuse the existing ApiProtocol enum; preserve original default/receipt compatibility, provider OAuth eligibility, once-only exchange, protected credentials, immutable selected profiles and confirmed cleanup. No database migration or native change. Reservations alone activate no support.
+
+- DeliDev direct execution follows `cmds-delidev-execution-startup-contract.md`. The originating change established System 43, Worker 23 and the complete closed startup-report allocation on main before implementation; preserve separate inline-model ownership 42/22. Negotiate v4 assignments without manual inspection, execution probes or numeric version gates. Validate the original actual process before input/inference; preserve account/Worker/history, protected credentials, revisions and independent cleanup. Retry only explicit positive no-send/cleanup proof; uncertainty requires original recovery. No SQLite migration.
+
+- Failed subscription cleanup follows `cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations` after main reservation the originating change (System 41). Preserve server-owned complete batches, original actor/login/revision, shared vault/reference deletion checks, atomic result/tombstone receipts, joined shutdown and restore quarantine. Terminal failures require a new explicit batch; status/restart never relaunches login or callbacks. No database migration or Rust/native change.
+
+- DeliDev Grok Build subscription support follows `cmds-delidev-grok-subscription-contract.md`. Record System 39/40, Worker 21, progress field 10 and the new Grok diagnostic declarations in the owning feature PR. Reservations grant no login, native execution or migration. Preserve existing capability ownership, server-owned OAuth/protected credentials, original account leases and same-account/Worker history; verify the exact 1.0.46 profile before activation.
+
+- Known subscription model suggestions follow `cmds-delidev-catalog-contract.md#known-subscription-model-suggestions`. The originating change established System capability 35 and the advisory declarations on main before activation. Keep bounded read-only owner/client metadata, explicit server outbound routing, joined cache refresh and review-only daily PRs separate from account/native/execution authority. Preserve atomic native-ID Worker saves and saved revision/history checks; no database migration.
+
+- GitHub token-first onboarding for this feature reserves System capability 34, the new `GitHubTokenKind` / `GitHubTokenIdentityState` enums and `InspectGitHubToken` / `PrepareGitHubTokenForm` request/response and identity declarations. Record these reservations in the owning feature PR. Reservations grant no token inspection, credential retention or browser authority and require no migration. Follow the integration and protocol contracts.
+
+- General API OAuth follows `cmds-delidev-account-oauth-contract.md`. Record the feature's inventory capability 6, device method 4, closed flow enum, Google options and additive Start/Complete fields in the owning feature PR. Preserve OpenRouter capability 5 and existing wire assignments. Reservations grant no OAuth support; new providers require registered DeliDev public/native apps, real API compatibility and native/server support before advertisement.
+
+- Agent Worker wizard allocations reached main in the originating change before activation.
+  Capability 33 owns list-only source filters and typed atomic SaveAgentWorker.
+  Keep source filters out of shared snapshots/events, bind them into cursors,
+  reuse the existing save acknowledgement and preserve legacy APIs/storage.
+  Configured compatibility grants no native/account readiness; no migration is added.
+
+- Repository addition for this feature reserves System capabilities 31/32 and Worker capability 18 plus the five new listing/clone messages in `allocations.json`. Record reservations in the owning feature PR. Reservations grant no GitHub read or filesystem write; preserve server-only PATs, Worker-owned Git authentication and existing Local checkout deletion ownership. Follow the structure and protocol contracts.
+
+- Codex forward-version diagnostics reserve progress field 7 and the new `CodexDiagnostic` / `CodexDiagnosticPhase` declarations for this feature. Record their ledger reservations in the owning feature PR; reservation-only changes grant no version or runtime support. Keep diagnostics bounded and content-free under the protocol contract.
+
+- The server-owned subscription login amendment reserves System capability 30, progress fields 4–6, the closed `SubscriptionLoginState` enum and `ForwardSubscriptionCallback` message fields for this feature. Record these reservations in the owning feature PR; they grant no native login or callback authority. Preserve explicit-machine Worker operations and their original leases.
+
+- `ListSessionDeletionWorkRequest.original_session_id = 4` and `original_job_id = 5` inspect only the original retiring assignment under current Worker authority. They are exclusive with pagination and do not bypass independent descendant or terminal cleanup. Follow the Sidechat contract and original allocation ownership.
+
+- The feature reserves independent System capability 27, Worker capability 16, `ForkSessionRequest.purpose = 6` and the closed `ForkPurpose` enum for Sidechat. Follow `cmds-delidev-sidechat-contract.md`; record missing numbers with their declarations in the owning feature PR and activate only the complete native read-only, workspace-reference and dependent-cleanup boundary. Preserve ordinary omitted-purpose Fork bytes and all existing capability values.
+
+- The feature activates only its recorded `ProviderPresetId` 10–35 additions after real migration 30 and complete fixed inspection profiles. Preserve 0–9 and generated Go/TypeScript parity, provider inventory gates and service-native subscription separation; preset visibility grants no harness/protocol/account authority.
+
+- The feature reserves `ProviderInventoryCapability.OPENROUTER_OAUTH_PKCE_V1 = 5`, `ProviderInventoryEntry.connection_method = 9` and the exclusively owned `ProviderConnectionMethod` / `AccountOAuthState` enums in `allocations.json`. Wholly new messages and enums reserve declaration ownership with `newDeclaration: true`; preserve existing member provenance and each enum's zero UNSPECIFIED value; do not add planned declarations to the active baseline. Record reservations in the owning feature PR and keep them out of active schemas/advertisements until complete support exists. Follow `cmds-delidev-account-oauth-contract.md`; OAuth remains independent of the four existing inventory gates and cannot be inferred from names or copied URLs.
+
+- The feature reserves `SYSTEM_CAPABILITY_SUBSCRIPTION_SERVICE_ACCOUNTS_V1 = 17` under its owning issue identity. Record this allocation and storage migration 28 in the owning feature PR. The reservation does not change schemas, generated clients or advertised support; preserve the independent capability boundary from API provider inventory.
+
+- Use service-specific schema files and preserve the compatibility `delidev.proto` import. Shared numeric additions must match `allocations.json`; reservations do not advertise support. Run the normal generated-source pipeline and never hand-edit generated output. The exact declaration-relocation map preserves FILE compatibility checks without suppressing semantic changes.
+
+- The feature share the native-compaction reservations and planned boundary in `cmds-delidev-compaction-contract.md`. Record the reservation change in the owning feature PR. Keep one `CompactSession` owner/client operation, separate action/job identity and profile-specific native proof; reserved capabilities cannot advertise an unimplemented endpoint or native profile.
+
+- The feature reserves `CompactSessionRequest.expected_execution_id = 2` and `CompactSessionResponse.session = 4` with as shared consumers. Preserve the originating change's existing request/response wire assignments in the immutable baseline. Record these additions in the owning feature PR; dependent implementation must bind the exact source execution into admission/actor-bound receipts and join current session/original job under one authorized read. Existing response `request_id` remains the original action ID. Reservations grant no additional capability or migration.
+
+- Allocation provenance uses exactly one original `pr` or owning `issue` when an implementation PR does not yet exist; record other issue consumers in `sharedIssues`. Preserve immutable numbers and identities when the implementation PR is later created.
+
+- The feature reserves `SYSTEM_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1 = 16` and `WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1 = 7` without activating either. Follow `cmds-delidev-native-models-contract.md`; record reservations in the owning feature PR, preserve native observations separately from explicit manual registration, and keep subscription discovery typed unsupported until 's exclusive managed-account boundary is available.
+
+- Preserve original Activity ownership: ActivityKind 7–10, ActivityEntry.pull_request 15 and ListActivityResponse.capabilities 3 remain allocated legacy declarations. Retirement grants no live support and never reuses these numbers.
+
+- DeliDev system capabilities retain wire values `AUTOMATIC_TITLES_V1 = 1`, `SESSION_FORWARDING_V1 = 2`, and `USER_SERVICES_V1 = 3`. Never reuse a merged capability number for another meaning; advertise independent capabilities together and regenerate Go/TypeScript from the schema.
+
+- DeliDev current-user service RPCs are owner/paired-client-only and server-computer-scoped. Preserve closed kind/action/state enums, exact revisions, UUID-v7 installation/request identity and original receipt-only retry; expose no caller paths, executable/PID/birth identity or credentials. Stop acceptance cannot imply joined cleanup. Follow `cmds-delidev-user-services-contract.md` and regenerate Go/TypeScript together.
+
+- Backup job observation uses owner/client `GetBackupCreation` and `GetBackupDeletion` independently of bounded history pages. Keep accepted IDs and exact revisions through navigation, refresh inventory after observed completion, and never replay a mutation to poll status. Follow `cmds-delidev-storage-contract.md`.
+
+- Managed backup deletion uses existing durable jobs/receipts and schema-24 indexing, plus immutable synchronized `backup-deletions/` intents outside SQLite before unlink. Preserve exact inspected revision/metadata/hash, original actor/request identity, startup obligation reconstruction, creation-replay suppression, bounded pending retries and source preservation on mismatch. Never evict deletion obligations or equate logical image bytes with reclaimed disk space; follow `cmds-delidev-storage-contract.md`.
+
+- DeliDev managed backup operations follow `cmds-delidev-storage-contract.md`. Keep owner/client-only authorization, bounded metadata pagination, exact creation retries and source-preserving integrity inspection. Inspection must read an identity-checked private copy, reject sidecars/foreign server identity, recheck authorization after I/O and never imply restoration or credential/Worker recovery. Preserve exact byte counts and clear stale success after failed reinspection.
+
+- DeliDev account `provider_id`, `account_type` and capability-7 `api_protocol` are additive selectors on `ListResourcesRequest` only. Keep them out of shared `Filter`, snapshots and event streams; bind all selectors into the signed resource-page cursor. Retain unspecified account type/protocol as historical behavior. The originating change established inventory capability 7, inventory profiles field 10, account protocol field 5 and the closed API protocol/authentication/profile declarations on main before activation. Preserve schema-3 API family checks independently of ordered-source Agents and keep the Worker assignment unchanged.
+
+- DeliDev ConfigurationService export/preview/apply follows `cmds-delidev-configuration-transfer-contract.md`. Versioned bounded JSON excludes credentials and runtime evidence. Signed previews bind actor/server/exact before/after plan; import mutation receipts are reference-only and never replay side effects. Worker credentials cannot invoke these owner/client operations.
+
+- DeliDev `ReadSessionWorkspace` is owner/client-only. `WatchWorkspaceReads`/`ReportWorkspaceRead` are current owning-Worker-only observation APIs bound to the primary stream; they never claim durable jobs, refresh execution leases, create receipts or persist file bodies. Preserve the closed query/result schemas, exact relative-root selection, per-machine bound, deadline and late/duplicate/foreign result rejection in `cmds-delidev-files-contract.md`.
+
+- DeliDev's private `pr_candidate` workspace read follows the workspace/protocol contracts. Require an exclusive zero file query and a closed 4 KiB metadata result bound to the original complete request and current Worker stream. Public file results and private matching proof cannot substitute for one another; no matching read grants execution, Git writes or startup-rejection authority.
+
+- DeliDev inbox notification operations are owner/paired-client-only and derive the preference/delivery scope from the authenticated principal. Candidate batches contain only original inbox/session UUIDs and closed notification kinds. A fresh durable claim may grant one OS presentation; exact receipt replay, reconnect or another claim request never repeats that grant. Submitted, denied, failed and uncertain reports cannot modify inbox read state or native response authority. Preserve client-bound expected preference revisions and current-state receipt reads; see `cmds-delidev-inbox-contract.md`.
+
+- DeliDev `SystemService.GetOverview` is owner/paired-client-only. Preserve exact uint64 ownership/request/Worker counts, observation time and server UTC usage boundaries; no resource bodies, credentials, native identities or paths enter this presentation response. Worker-compatible `GetStatus` stays separate. Connected Workers require independently sampled stream presence plus current database authorization and a fresh lease; observations never authorize execution or cleanup.
+
+- DeliDev automatic titles add an opt-in session name mode and typed server capability independently of the typed Worker capability. Keep `WatchAuxiliaryWork` isolated from ordinary `WatchWork`, preserve exact current generated Go/TypeScript bindings, and follow `cmds-delidev-session-titles-contract.md` for compatibility and ownership rules.
+
+- `protos/delidev/v1` and `protos/gen/go/delidev/v1`: DeliDev authenticated Connect schemas and tool-owned Go bindings; follow `protos-delidev-v1-contract.md`. Account credentials are bounded write-only inputs; an accepted disconnect with failed cleanup returns the current account and a sanitized typed cleanup problem, preserving its original retry identity. Account validation returns the accepted sanitized non-inference observation with current account metadata; replay cannot repeat provider requests or grant readiness from an old connection.
+
+- DeliDev `ProviderService` is owner/client-only: catalog discovery returns an accepted observation and current account metadata; search cursors bind filters and the catalog event epoch; resolution returns canonical identities without treating display preferences as execution permissions. Model provenance and account catalog observations remain server-owned.
+
+- DeliDev `SessionService` is owner/client-only and follows `cmds-delidev-sessions-contract.md`: creation/input acceptance is durable but does not establish native execution; reference-only receipt retries return current records. Preserve queue mode/order, expected revisions, removal tombstones and signed scope-bound pages. Clients cannot write lifecycle/delivery state through configuration, and Restore never resumes dispatch.
+
+- DeliDev workspace preparation uses the current `SessionChange.workspace_job` and revision-checked `PrepareSessionWorkspace`. Worker cancellation is an immutable-job-scoped control, including pre-cancellation on reconnect; it must never mutate claimed assignment revisions or cancel unrelated work. Preserve session/job atomic publication, unknown native ownership and pending Archive visibility until completion is proven.
+
+- DeliDev `RecoverSessionWorkspace` is an owner/client revision-checked operation with explicit partial-cleanup selection and current `SessionChange.recovery_job`. Recovery jobs bind the original claimed identity/revision/digest and cannot create execution authority. Keep malformed/mismatched proof uncertain and publish confirmed recovery plus the original preparation outcome atomically.
+
+- DeliDev `RegisterExecution` is restricted to the owning current Worker and exact claimed job revision. Accept a SHA-256 digest only; never send raw execution tokens or upstream keys in RPC replies, jobs or receipts. Exact retries must recheck live ownership and server epoch before returning the fixed relative proxy path.
+
+- DeliDev `PublishExecution` accepts closed typed core events only from the owning Worker and exact claimed job revision. Preserve contiguous sequences, immutable native identity bindings, reference-only receipts and atomic acceptance/transcript publication. Replaying an event cannot send native input, repeat queue accounting, clear recovery or claim owned cleanup. Never carry raw native extensions or diagnostics in this envelope.
+
+- DeliDev execution usage/notice publications carry only typed counters with an immutable observation ID or a closed generic notice kind. Derive attribution from the accepted execution assignment, preserve nullable native fields, and never turn cumulative samples into charges or native diagnostics into product payloads.
+
+- DeliDev `WatchWork.question_response` is a metadata-only control for its active immutable assignment, independent of job order and mutually exclusive with other stream forms. `ClaimQuestionResponse` is owning-Worker-only and binds the original interaction revision, response, job, instance and device. Return the non-secret original response only after current authority validation, including on reference-only receipt replay. A claim is not native delivery or semantic acceptance; closure/lost ownership preserves uncertainty. Never carry answer content in stream controls or claim receipts.
+
+- DeliDev `InteractionService.RespondQuestion` is owner/paired-client-only. Bind the response UUID to the mutation request ID and validate the original question revision/content plus current execution authority before queued acceptance. Reference-only receipt identity includes the actor and canonical answers; exact retries return current interaction state after closure without requeuing or native resend. Workers cannot invoke owner acceptance, secret questions cannot use ordinary answer fields, and native encoded-size bounds apply before persistence.
+
+- DeliDev `InboxService` is owner/paired-client-only. Get/list join current original interaction and session state in one authorized transaction. List cursors bind all selection filters and the inbox event epoch, with complete joined-document byte bounds. Read-state mutations use the inbox entry revision, explicit closed read/unread enum and actor-bound reference-only receipts; replay returns current state without reapplying old marks. Reading or marking cannot change question revisions, response authority or execution, and Worker credentials cannot invoke these operations.
+
+- DeliDev `SessionChange.execution_job` joins the current immutable execution assignment in the same read transaction as session/input/preparation references, including exact receipt replay. First Resume requires current readiness; later FIFO/Resume requires the exact accepted predecessor, version-2 completion/checkpoint proof, unchanged initial snapshot, explicit stopped-account selection history and fresh execution ownership. Retain ordered accepted-input identity/digest evidence in predecessor progress without prompt contents. Restore and old control receipts never implicitly resume or cancel new work. Public Steer uses its dedicated revision-checked RPC and durable Worker control; a private native inspection helper never independently grants that authority.
+
+- DeliDev `SteerQueuedInput` is owner/client-only and binds selected queue revision plus exact active execution/turn, with actor-bound reference-only receipts. `WatchWork.steer_input` carries only active job/attempt/revision metadata and excludes every other stream form. `ClaimSteerInput` is owning-Worker-only and rechecks current authority before returning original input, including receipt replay. `steer-observed` publications bind original claim/native scope, preserve uncertainty and one separate later native resolution, and commit queue eligibility/capacity and ordered input evidence exactly once. No prompt belongs in controls, claim receipts or delivery evidence; no receipt grants automatic resend authority.
+
+- DeliDev execution interaction JSON supports distinct `user-question` and `native-approval` request graphs. Approval observations bind the immutable harness/version and retain original command/file/permission scopes without response authority. Keep publication, original resource/index, inbox and cursor atomic; `RespondQuestion` and question delivery controls cannot service approvals. Existing authenticated resource/inbox reads expose the original typed payload and independent closure/read state.
+
+- DeliDev approval responses use owner/client `RespondApproval`, Worker-only `ClaimApprovalResponse` and metadata-only `WatchWork.approval_response`, with original revision/content validation and current authority on receipt replay. Preserve the separate question and approval fields, mutually exclusive stream forms and shared bounded response identities. Approval delivery events contain claim-bound metadata only; closure and terminal cleanup cannot fabricate exact native approval acceptance or clear its recovery gate.
+
+- DeliDev `RecoverSessionExecution` is owner/client-only, with exact session revision/execution and actor-bound reference-only receipts. Keep `SessionChange.execution_recovery_job` separate from preparation recovery. Recovery jobs/results bind the original retained assignment/report/checkpoint but cannot grant execution or old-Worker authority. Current Worker result ownership and coordinator facts must be rechecked before atomic paused reconciliation; retries cannot requeue native input or clear missing acceptance.
+
+- DeliDev `CreateSessionRequest.local_worker_token` is write-only secondary paired Worker authentication for explicit Local creation, never ordinary document content. Owner/client authentication remains mandatory, transaction-time revocation checks derive immutable origin machine/device IDs, and non-Local creation rejects the field. Tokens cannot enter response resources, jobs, receipts, events or logs. Preserve original provenance across client changes and revalidate it for dispatch/Resume.
+
+- DeliDev `ScheduleService` is owner/client-only. Strict definition writes cannot supply timer, origin, creator or occurrence state. Preserve actor-bound reference-only receipts, write-only secondary Local authentication, retained origin for unchanged Local selection, exact revision checks and signed filter/epoch-bound pages. Pause/delete never remove accepted work; manual Run now shares cron overlap acceptance, and history remains readable after configuration deletion. Resume cannot clear a disabling problem without reconfiguration.
+
+- DeliDev Project/Agent `DeleteConfiguration` preserves independent retained sessions, snapshots and occurrences while atomically disabling matching schedules. Keep final project selection restrictions private and tombstone-bound for established executions; deleted configuration cannot authorize fresh selection or first dispatch. Current account/Worker/native authority and typed recovery errors remain unchanged.
+
+- DeliDev `SearchService` is owner/paired-client-only. Search current retained message resources, including Archive, with literal Unicode queries and original-execution account filters. Keep query contents out of logs and readable cursor payloads; bind actor/filter/source epoch, recheck revocation transactionally, reject unknown enum values and bound both wire encodings without truncating source messages. Search grants no response or execution authority.
+
+- Activity retirement preserves all existing RPC/field/enum numbers and generated clients. ListActivity remains authenticated owner/client-only Unsupported/Unimplemented compatibility with no product dependency; original missing/revoked/Worker refusals remain.
+
+- DeliDev schema generation includes `packages/delidev-api-client/src/gen` TypeScript/Connect Query output. Keep root freshness, Turbo source/output tracking and the shared protocol CI client/real-Go-server checks synchronized; never handwrite generated descriptors or move business authority into the client.
+
+- DeliDev `UsageService.GetUsageSummary` exposes bounded owner/client-only exact-response subtotals with original attribution, decimal-string counters, separate measured/unavailable counts and explicit coverage/cost enums. No native response digest, thread/turn identity or prompt enters the aggregate. Current labels are optional; reads recheck authorization and never return partial totals after capacity failure.
+
+- DeliDev pricing RPCs are owner/client-only with actor-bound exact receipts and independent pricing revisions. Keep nullable decimal rates, immutable historical source/date/currency/mode/exclusions, separate per-currency amounts and category evidence. A retry returns its accepted version without reselecting it, and estimates never establish actual spend or complete native telemetry.
+
+- DeliDev SessionService budget reads/writes are owner/client-only, revision-bound and transactionally authorized. Keep optional decimal-string budgets, explicit oneof removal, exact actor-bound current-state receipts, lifetime per-currency evidence and incomplete coverage. The typed budget_reached failed precondition cannot consume pending input or cancel accepted execution.
+
+- DeliDev normalized OpenCode text and plain-text reasoning JSON keeps the original part ID and an immutable native_parent_id message owner, separately from the original input turn. Other current profiles omit/reject that field; preserve historical Codex encoding and unchanged protobuf envelopes. The reasoning-text artifact profile retains null summary/content arrays and index-free suffixes with exact monotonic completion. These profiles cannot grant other rich-event, terminal or continuation authority.
+
+- DeliDev `tool-updated` supports the pinned OpenCode Read, Shell, Todo and closed builtin JSON profiles defined in the protocol contract. Retain optional native_parent_id, original call identity, pending proposal, immutable applied input/start, ordered intermediate snapshots and separate success/error completion. Builtin input/metadata JSON strings preserve exact native fields and numeric spelling. Other harness profiles reject these additions; historical Codex JSON and protobuf envelopes remain unchanged. No path or typed native payload grants file access or native execution authority.
+
+- DeliDev `opencode-usage-observed` is a separate pinned native observation profile with original source/parent identity, decimal-string categories, nullable total and unpriced estimate. Keep it mutually exclusive with Codex usage/response payloads, derive attribution at publication and retain each source once. It cannot feed the exact response ledger, pricing or budgets; preserve existing protobuf envelopes and historical Codex JSON.
+
+- DeliDev `ReadSessionReviewContext` is owner/client-only and interprets the existing authenticated Worker Git observation. It accepts no client patch and returns at most 1 MiB of exact diff plus validated file/line coordinates. Preserve absent side numbers and non-line file-only anchors under `cmds-delidev-files-contract.md`.
+
+- DeliDev local review mutations are owner/paired-client-only dedicated SessionService methods. Bind actor/session/exact request and expected revisions; create anchors only from the original Worker read. Commit grouped snapshots, comment links and one ordinary input atomically. Read-only receipt replay cannot recreate deleted data or enqueue twice. Follow `cmds-delidev-files-contract.md`; generated Go and TypeScript sources remain tool-owned.
+
+- DeliDev IntegrationService is owner/client-only under `cmds-delidev-integrations-contract.md`. Keep PATs bounded and write-only, definitions closed, mutations actor/revision/request-bound, pending revisions exact and accepted replay current-state-only. Generic configuration and Worker credentials cannot alter or invoke profile connection state.
+
+- DeliDev QueryRepositoryIntegration is a versioned owner/client-only read under the integration contract. Derive profile/generation from the repository, validate strict list/search/detail and PR-only diff/checks/statuses queries, keep exact numeric namespaces and explicit partial results, and expose no mutation receipt or arbitrary API URL. PR observations require one original PR detail and its exclusive head-bound family; native unknown states and independent Checks/statuses never imply evaluated-commit or remediation authority.
+
+- DeliDev LinkSessionPullRequest/UnlinkSessionPullRequest are owner/client metadata mutations under the integration contract. Inputs cannot supply stable remote identity or access evidence; the server resolves/rechecks them. Preserve exact actor-bound retries, association revision ownership, archived retention and deletion tombstones without session execution authority. ResourceService supplies scoped historical association reads/events.
+
+- DeliDev GitHub token forms are read-only, profile/revision-bound non-secret configurations with a closed access enum. Keep credential storage, remote API authority and local OS dispatch outside the response; regenerate all bindings after schema edits.
+
+- DeliDev retained PR feedback collection/list/dismissal are dedicated owner/client IntegrationService operations. Accept no caller-supplied remote evidence; bind mutations to actor/original request and dismissal to exact revision/content version. History uses stable remote numeric identities and signed page-size/set-revision-bound cursors. Reference-only replay cannot fetch GitHub, recreate deleted state or start execution; follow the integration contract.
+
+- DeliDev PR problem collection has a closed kind enum. Unspecified and explicit feedback preserve the original receipt family; CI/conflict remain separate request identities. Unknown kinds fail before remote reads. All kinds use the same stable PR history and version-local Dismiss, without granting execution or borrowing another kind’s prerequisites.
+
+- DeliDev original PR startup rejection/recovery uses the existing ReportWork and RecoverSessionExecution envelopes under the sessions/protocol contracts. Keep exclusive metadata-only rejection proof separate from native completion and bind original paired device/assignment before current Worker inspection. Decimal-string rejection revisions retain uint64 precision. Neither an accepted rejection nor inspection/receipt replay can resend the input, fabricate native progress or Resume; no protobuf change is implied by these additive job/resource JSON profiles.
+
+- DeliDev remediation history/resumption are owner/client IntegrationService operations under the integration contract. Lists bind stable remote numeric identities, normalized page size and every original attempt revision in their signed cursor. Resume targets the exact retained set mutation, advances only explicit allowance provenance and returns current state on replay; no execution or remote-evidence payload is accepted. Regenerate Go and TypeScript/Connect Query outputs together.
+
+- Before complete protocol-2/baseline-32 reset activation, DeliDev `RequestBackup`, `GetBackupCreation` and `ListBackupCreations` expose typed durable creation observations without changing legacy synchronous `CreateBackup`; reservations alone do not change that pre-reset behavior. At complete activation, the historical `CreateBackup` declaration preserves numeric provenance and returns `Unsupported` after authorization without a receipt, backup file or current job. Reserved image IDs are not publication proof; retain pending/succeeded/failed enum states, exact request IDs and revisions, bounded actor-bound cursors, and decimal-safe uint64 values. Follow `cmds-delidev-structure-contract.md#pre-release-compatibility-reset` and `cmds-delidev-storage-contract.md`.
+
+- DeliDev provider activation follows `cmds-delidev-provider-activation-contract.md`: provider inventory is owner/client-only and capability-bearing; provider ID scopes only account list pages; the optional enabled-provider model filter remains additive and cursor-bound. Generate all Go and TypeScript bindings from the canonical proto.
+
+- DeliDev session forwards follow `cmds-delidev-forwarding-contract.md`: preserve explicit loopback port selection, original client/Worker/device/instance ownership, negotiated capabilities and bounded ordered opaque traffic. Native claims precede sockets and receipt replay grants no new lifetime. Keep Stop independent from Archive, gate every Archive completion on both original cleanup outcomes, and retain positive private cleanup receipts through offline reporting without redialing or recreating listeners. Worker credentials receive only their original forwarding peer endpoints.
+
+- Before complete protocol-2/baseline-32 reset activation, generated legacy Go and TypeScript descriptor exports retain aggregate reflection contents from every compiled public import of `delidev.proto`. The declaration relocation manifest preserves historical ownership/order and breaking-check compatibility, not the current service inventory. During this pre-reset period, pin the complete 358-declaration historical prefix in both languages against the fixed protocol testdata snapshot from `54187b780d48e94a49763e87fc140f449869d9f4`; do not derive expected order from the editable manifest. Additive declarations follow the prefix. At the current complete activation, the reset retires these historical aggregate exports; protocol 2 uses canonical split schemas without the retired monolithic import or aggregate descriptors/queries. Reservations alone do not change the pre-reset behavior or activate the reset. In both periods, do not register duplicate runtime symbols or commit a serialized aggregate that creates a new per-feature merge hotspot.
+
+- Permanent deletion adds owner/client SessionService acceptance/status and independent owning-Worker cleanup RPCs. Shared job/state messages belong to common.proto; exclusive request/response types belong to their service file. Preserve `PERMANENT_SESSION_DELETION_V1 = 9` from allocations.json alongside merged capabilities, exact uint64 revisions, pending acknowledgements and unknown reclaimed bytes. Follow `cmds-delidev-storage-contract.md` and regenerate bindings.
+
+- WorkspaceStorageService is owner/client-only and observes accepted original jobs separately. Worker results use existing immutable job claims. WORKSPACE_STORAGE_V1 uses the main-reserved SystemCapability value 11; retain values 1, 2 and 3 and regenerate service-specific Go/TypeScript bindings.
+
+- Session terminals use the main-established wire allocations: EntityKind 31, SystemCapability 14 and WorkerCapability 4. Keep TerminalService declarations in `terminal.proto`, Worker-only methods on WorkerService, actor/revision/request ownership and additive generation/legacy compatibility under `cmds-delidev-terminals-contract.md`.
+
+- PullRequestFixService is an additive independently owned `pr_fix.proto` service with typed profile capability and original selection JSON. Existing wire numbers remain unchanged. Preserve the service-specific generated exports and authenticated owner/client scope. Historical facade/reflection compatibility applies only before complete protocol-2/baseline-32 reset activation; active protocol 2 retains canonical split descriptors without restoring retired aggregate facades. Worker Git execution is not API publishing.
+
+- Native subagent observations follow `cmds-delidev-subagents-contract.md`. Validate original bounded ownership and complete batches before atomic publication; preserve exact receipts, source coverage, requested versus observed models and nullable non-additive usage. Live/unavailable children retain independent cleanup obligations after parent completion. Observation never grants child control or unproved continuation.
+
+- DeliDev SubscriptionService separates owner/client Request/Cancel/Progress from current machine/device/instance-bound Watch/Take/PublishProgress/Finish. Keep secret bundles bounded to 64 KiB and restricted to the protected Take/Finish messages, the closed subscription action/capability enums and generation/lease revision fences; never move bundles into jobs, resources, receipts or ordinary outputs. Follow `cmds-delidev-subscription-contract.md`.
+
+- The existing protected execution Finish shape distinguishes confirmed pre-native failure through false success/refresh, true cleanup and a byte-identical return of the original immutable bundle. The server must verify all facts before preserving the original generation and releasing that lease. No new wire number, owner import endpoint, public secret response or cleanup-only release is introduced.
+
+- NetworkService owns `v1/network.proto` and generated bindings under `cmds-delidev-network-contract.md`. Activate only the pre-reserved EntityKind 28/29 and SystemCapability 6 values. Owner/client operations keep credentials write-only, revisions exact and server/Worker desired generations separate; Worker metadata exports carry no secrets or native application proof.
+
+- Codex Fork uses owner/client-only `SessionService.ForkSession` and `GetSessionFork`, typed `ForkWorkspace`, and allocation-ledger capability `CODEX_SESSION_FORK_V1 = 13`. Local proof is write-only; exact job/child observation cannot replay native creation. Preserve split service ownership and generated compatibility exports under `cmds-delidev-forks-contract.md`.
+
+- Managed database restore follows `cmds-delidev-storage-contract.md`: exact inspected image/live revision and actor-bound external receipts, exclusive settled ownership, immutable current safety/deletion authority, paused/quarantined historical work, and pre-open journal recovery. Preserve typed publication-versus-startup outcomes; uncertain retries never republish or revive native claims.
+
+- Managed restore uses reserved `MANAGED_BACKUP_RESTORE_V1 = 7`. Preserve existing capabilities 1/2/3 and generate owner/client restore RPCs, presence-aware revision inputs and typed receipt states from `system.proto`.
+
+- `SwitchSessionAccount` is an additive owner/client-only SessionService mutation with exact actor/revision/request receipts and the typed stopped-Codex-account-switch capability (System wire value 5, established by `allocations.json`). It selects future execution without rewriting history or starting native work; follow the sessions contract and regenerate Go/TypeScript/Connect Query bindings.
+
+- The feature reserves repository-inspection metadata Worker value 6 and attachment-response support field 3, retaining provenance from closed the originating change whose Worker value was 5. Main owns value 5 for native compaction. Reservation kinds must match the existing baseline declaration kind, including message-field additions. The dependent implementation activates only these main-established values through negotiated server support and Machine acceptance; no other reservation advertises support. Follow the protocol and structure contracts.
+
+- Native context/manual compaction declarations live in `session.proto` under `cmds-delidev-claude-compaction-contract.md`. Preserve owner/client mutation/read separation, revision/request-bound jobs and the distinct closed session-context capability enum. Regenerate Go/TypeScript/Connect Query together; observations never grant usage or cleanup authority.
+
+- The reserved native accounting capability is 4, usage request/response accounting_profile fields are 11/12 and UsageTotals.accounting is 8. Use the service-specific usage/system schemas and generated compatibility views; preserve distinct CodexResponse/GrokClosedInput kinds and legacy omission. Unknown profiles fail; native source proofs remain private and Grok costs unavailable.
+
+- NativeModelService owns additive `native_models.proto` under `cmds-delidev-native-models-contract.md`, activating only main-established System 16 and Worker 7. Owner/client operations preserve exact revisions/receipts and immutable bounded pages; private executable assignments stay Worker-only. Before complete protocol-2/baseline-32 reset activation, regenerate Go/TypeScript with compatibility facades and historical reflection. At the current complete activation, generate canonical split service bindings and descriptors without the retired historical aggregate facades.
+
+- Remaining DeliDev features use the complete allocation closure in `allocations.json`. Declaration ownership and later field/member ownership are independent; preserve every original issue/PR and existing main number. The expanded allocation check covers new message fields and closed enum values without activating schemas or capabilities. Follow the structure contract and merge independent complete implementations in dependency order.
+
+- Service-native subscription attribution uses the reserved closed SubscriptionServiceIdentity enum and additive usage/pricing/diagnostic fields. Keep it distinct from the SubscriptionService RPC name; activate independent capability 17 with real migration 28, preserving API schema 1 and subscription/retired projection schema 2.
+
+- Subscription observation declarations retain the quota/reset-credit allocations for the feature. Owner/client request/reconcile and Worker-only claim/publication lanes remain independent. Generate both bindings from the reconciled schema; reservations alone cannot advertise capability.
+
+- Worker network/control declarations use the established System 20/21 and Worker 9/10 reservations, original recipient/attachment fields and closed native-route states. Owner encrypted export/status remains distinct from original-instance Worker synchronization/reporting. Regenerate both languages. Before complete protocol-2/baseline-32 reset activation, include compatibility facades; at the current complete activation, generate canonical split bindings without the retired historical facades. Reservations do not advertise product support or native acceptance.
+
+- System 20/21 activate authenticated encrypted bootstrap/control status and the owned Codex API/title route implementation. Worker 9/10 remain independently negotiated; unsupported peers receive explicit update guidance and no Direct fallback. Public support never substitutes for platform/account acceptance.
+
+- Codex child configuration follows the feature and `cmds-delidev-subagents-contract.md`: preserve omitted defaults, map the exact model/effort/numeric concurrency keys, freeze canonical child model identity before the first digest and revalidate that original model under the same parent account. Require System capability 22 and Worker capability 11. Relay requests narrow to the original parent/child model set with model-specific diagnostics and native response ownership; no independent child account, requested-to-observed substitution or later Agent/catalog rewrite is permitted.
+
+- Codex/OpenCode compaction retains the existing shared operation and independent negotiated System/Worker/context profiles under `cmds-delidev-compaction-contract.md`. Record shared/native allocations in the owning feature PR, preserve original Claude numbering and result semantics, and never advertise a reserved or incomplete native profile.
+
+- Codex compaction activates only its reconciled common 15/5, independent 24/13 and SessionContext 3/4 reservations. OpenCode independently activates 25/14/5/6 through its original version-3 result and complete durable/manual ownership profile. GetUsageSummaryResponse field 14 exposes missing manual-action response coverage separately; preserve generated Go/TypeScript parity and allocation provenance. Follow `cmds-delidev-compaction-contract.md`.
+
+- The feature activates independent System 26 and Worker 15 only for the pinned Unix plain-text General Chat OpenCode Fork profile. Preserve full original native fork/relocation/history/cleanup proof, closed mapped child identities and explicit inherited canonical provenance without input/accounting authority. Codex Fork support grants no OpenCode authority; native preparation cannot publish effective model/agent selection.
+
+- OAuth AccountService schemas retain capability 5, entry field 9 and the original closed enum allocations. Completion code is write-only bytes; responses never contain keys, verifiers or URLs outside live Start. Reservations do not grant product authority; regenerate bindings from reconciled sources and preserve owner/client-only execution under the OAuth contract.
+
+- Each OAuth RPC has its own standard-named response schema. The ten reserved `ACCOUNT_OAUTH_STATE_*` names retain their original allocation spelling with value-local Buf acronym-prefix comments; do not broaden lint exceptions or rename their contract to accommodate acronym splitting.
+
+- Signed updates and SSH Worker setup follow `cmds-delidev-updates-contract.md` and `cmds-delidev-ssh-setup-contract.md`. Preserve compiled release authority, exact confirmed host identity, protected credentials, original registration/workspaces, once-only remote effects and joined Worker replacement. Never replace live server/harness binaries or treat fixtures as installed-platform acceptance.
+
+- `PollWorkerUpdateRequest.original_update_id = 2` is a Worker-only exact original observation under the current device/instance. It grants no idle admission, claim, report or installation and must not substitute another pending/latest update.
+
+- Capability 30 and the the originating change main-established server subscription reservations are now implemented: omitted machine_id selects the independent server lane, progress fields 4–6 bind closed state/transient name/current generation, and ForwardSubscriptionCallback is an original-owner once-only write-only relay. Preserve the original explicit-machine Worker lane and regenerate both bindings from reconciled sources; no reservation alone grants support.
+
+- Active GitHub onboarding capability 34 and its reserved enums/messages expose owner/client read-only inspection and draft form preparation. Keep PATs write-only, states closed and identity success exclusive of failure metadata; preparation echoes exact declared owner/kind/access and canonical URL. No receipt, credential generation, profile mutation or migration is introduced by these reads. Regenerate all bindings and preserve the existing profile/revision form contract.
+
+- The owner-approved pre-release reset records `AttachWorkerRequest.protocol_version = 10` and DeliDev protocol 2 in the complete feature PR. Follow `cmds-delidev-structure-contract.md#pre-release-compatibility-reset`. On complete activation, remove historical import/reflection facades and DeliDev-only backward compatibility while retaining allocation history, external adapters and current execution profiles. Reservations activate no schema or Worker admission.
+
+- Native Claude subscription declarations activate the the originating change main-established System 38 / Worker 20 closure. Preserve all Codex bundle assignments and independent capabilities. SubmitSubscriptionLoginCode is initiating-owner/client write-only bytes; TakeSubscriptionLoginCode is original Worker/device/instance/lease-only once-only delivery after durable consumption. Claude Take/Finish carry profile/identity metadata and forbid bundle bytes. Progress methods/diagnostics are closed and safe. Regenerate both bindings from reconciled schemas; no migration or reservation-only authority.
+
+- Native Claude subscriptions reserve System `CLAUDE_SUBSCRIPTIONS_V1 = 38`, Worker `NATIVE_CLAUDE_SUBSCRIPTIONS_V1 = 20` and their complete login-code/progress/native-identity declarations in `allocations.json` with implementation in the owning feature PR. Preserve existing Codex bundle fields and capabilities. Claude's planned protected lane carries only original operation input and metadata, never subscription tokens. Reservations activate no schema, generated output, runtime capability or migration.
+
+- Inline Worker models and endpoint-only completion follow the allocation amendment in `cmds-delidev-catalog-contract.md`. Record System 42 / Worker 22 and the complete endpoint/identity/pricing declarations in the owning feature PR. Compose complete DB 32 / protocol 2 reset with Worker schema 4 and portable bundle 4, removing independent Models/persistent API catalogs while preserving exact inline settings, pricing history and native/account authority. Earlier DBs and backups are unsupported. The owner waives earlier DB retention, permitting an explicit reset of its DB/sidecars without conversion; protected credentials and native ownership retain their original cleanup authority. Reservation-only changes grant no support.
+
+- The feature owns System 44, Worker 24, complete closed skill declarations, SkillService.ListSkills and selected-skill request field 4. The owner explicitly authorized declarations and activation in one feature change for this issue. Current feature allocation delivery follows the shared allocation workflow. Retain immutable wire assignments in allocations.json, including closed RPC input/output and stream profiles; validate these profiles through the repository compatibility checks. Use the presence-carrying SkillSelectionList field 4 on Create, Enqueue and Edit: omission must not erase bound queued inputs, explicit empty clears bindings, and explicit nonempty retains or prepares immutable snapshots.
+
+- The feature server quota uses System 46 and the separate optional server quota owner under `cmds-delidev-subscription-contract.md#server-owned-chatgpt-quota--issue-1728`. The owner explicitly permits allocation and activation in one complete batch PR without the prior main merge under the shared allocation workflow; existing allocation ownership and migration dependencies remain unchanged. Preserve original actor/epoch/connection/generation, once-only claims, confirmed native/file/reference cleanup, joined shutdown and strict Worker/reset-credit ownership. No new RPC, Worker capability, migration or Rust/native change. Real-account/installed-native/remote/platform acceptance is owner-performed and nonblocking for this batch; fixtures establish no such acceptance.
+
+- Managed ChatGPT Sidechat follows the feature and `cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat--issue-1829`. Compose System 47 / Worker 26 with original Sidechat 27/16 and protected Worker 3. Freeze original generation/actor/source/instance; use the exact claimed Fork EXECUTE lease and server-owned Finish receipt before publication. Recheck managed authentication plus read-only enforcement before Fork/input/Steer/compaction. Preserve joined process/plaintext cleanup, original account/history, uncertainty and dependent deletion. Independent subscription Fork stays unsupported; no migration/new login. Fixtures do not establish native/account/platform acceptance.
+
+- Server-owned ChatGPT reset credits follow the feature under the subscription contract. System 49 separately negotiates omitted-machine consumption through the settled original server credential generation; active executions and explicit machines retain the Worker lane. Preserve immutable actor/epoch/connection/generation/inventory/key/selection, once-only durable sends, explicit same-key reconciliation after confirmed native/file cleanup, independent quota outcomes, cross-domain ownership fences and joined shutdown. No new RPC, Worker/entity allocation or migration. Keep fixture/build checks separate from real native/account/platform acceptance.
+
+- The feature remote starting branches uses System 51 / Worker 27 under the workspace, desktop and protocol contracts. Freeze configured source and project/repository/machine revisions; only the original authenticated selected Worker owns read-only native Git discovery. Retain complete 10,000-branch/8 MiB inventory bounds with feature-only job/journal/receipt/transport headroom, protected native Git credentials, safe logs and joined process cleanup. Discovery grants no checkout/preparation/execution authority or migration. Creation preserves saved/manual starting references, independent overrides, comparison base, Local proof and exact uncertain retries; older peers retain manual flows.
+
+- Server quota V2 follows the feature and `cmds-delidev-subscription-contract.md#server-owned-chatgpt-quota-v2--issue-1854`: record and activate System 50 in the complete feature PR, preserving 18/46/49. Omitted-machine manual/batch/maintenance quota uses a separate server access-token-only native profile even during Execute. Refuse token refresh, retain captured protected references through rotation, and keep quota cleanup uncertainty independent of execution leases. Preserve explicit Worker/reset-credit semantics, lifecycle/deletion/restore fences and joined shutdown; no RPC, Worker allocation or migration. Real native/account/remote/platform acceptance is owner-assigned and nonblocking for this batch.
+
+- Project behavior settings follow `cmds-delidev-catalog-contract.md#project-behavior-settings-issue-1965`: System 52, schema-2 Project/Settings and portable v5 preserve continuous typed inheritance, explicit project context, source-route/Agent and repository precedence, all three fetch gates, immutable snapshots and first-publication durable plan response decisions. Previously pending plans stay manual; uncertainty never permits resend. Preserve v1–4 imports and reject destructive legacy writes. No SQLite migration or Worker capability is added.
+
+- The feature follow `cmds-delidev-catalog-contract.md#new-session-defaults-and-literal-branch-prefixes--issues-2054-and-2057`: System 56/Worker 38, schema-3 Project/Settings and portable v6 preserve capability52, schema1/2 reads and v1–5 imports. Reject destructive legacy writes. Resolve creation Plan defaults until explicit checkbox edit; freeze pending/uncertain mode and exact requests. Preserve literal `delidev/` default, absent inheritance/empty disable, exact UTF-8 ref validation, original source revisions and legacy execution omission bytes. Compose bounded shared prefix instructions in Execute only through existing four-harness channels, never in Plan/read-only Sidechat or shell interpolation. Preserve all native/account/workspace/history/cleanup authority; no migration or numeric native gate.
+
+- The feature OpenCode Go/Go Plus follows `cmds-delidev-opencode-go-subscription-contract.md`. Preserve identity 4, System 54 and Worker 28 with System 52 Project behavior ownership. Only the exact OpenCode key-backed service may use the fixed Go Chat Completions profile and original accepted native-session header. Reuse protected AccountAPI receipts, joined revocation and confirmed independent cleanup; no native login, quota authority, paid connection validation or migration. Retain category-owned exact uncertain requests and immutable continuation/Fork attribution.
+
+- Sidechat same-question retry follows `cmds-delidev-sidechat-contract.md#same-question-retry--issue-2061`: System 57 / Worker 31 compose original 27/16 and managed 47/26/3. Preserve one direct text-only question, exact actor/revision/turn receipts, immutable child/snapshots, original metadata-only workspace reference, captured Worker/native authority, atomic current-answer publication and all-generation joined cleanup within existing bounds. Never replay uncertain native work, create another child or add a migration.
+
+- The feature owns ExecutionStartupObservation.failure_kind field 11 and the closed ExecutionStartupFailureKind UNSPECIFIED=0 / IMAGE_INPUT_REJECTED=1 declarations and allocation records in one complete feature change. Zero preserves legacy bytes; no capability, RPC or migration is added. Unknown/mixed provenance fails closed under the direct startup and image-input contracts.
+
+- The feature owns System capability 80 and the complete authenticated read-only
+  Inbox unread-count RPC with its closed count/time response. Record the
+  allocation in the owning complete feature and regenerate tool-owned bindings
+  from the reconciled schemas. Before complete protocol-2/baseline-32 reset
+  activation, also generate legacy facades; at the current complete activation, use the
+  canonical split bindings without the retired facades. No notification
+  authority, content disclosure or migration is implied by this aggregate
+  capability.
+
+- Current protocol 2 uses canonical split schemas without the retired monolithic public import or aggregate descriptors/queries. Preserve immutable field/capability ownership and do not reinterpret obsolete Model UUID fields. Record complete source-identity, endpoint, price-policy/provenance and refresh declaration closure before regeneration; retain original new-message ownership when adds fields.
+
+- Protocol-2 token pricing mode changes retain `SetTokenPricingModeRequest.expected_revision = 6` for the original displayed active price, independent of policy field 3 and Provider field 5. Check all three before mutation and preserve exact accepted/uncertain retries. Zero means unavailable active pricing; a mode change cannot freeze an unseen automatically published basis. Preserve System 42 / Worker 22 and all existing declarations; no migration or new capability.
+
+- The feature / the originating change owns `CreateTerminalRequest.creation_mode` field 5 and closed `TerminalCreationMode` values 0/1. Resolve toolbar reuse-or-create in the original authenticated receipt transaction; preserve unspecified explicit additional creation and +, fields 1–4, existing capabilities, current Worker/workspace/revision checks and independent cleanup. Pending input/resize permits inspection reuse; close intent does not. Follow the terminal/protocol contracts; no migration or new native authority.
+
+- The feature descriptive startup progress follows the startup/workspace/process/desktop/protocol contracts. Preserve original claimed job/device/instance/revision/server epoch, bounded applicable operation summaries, exact receipt replay and independent leases/native input/cleanup. Completion requires actual successful operations; telemetry is nonblocking, joined, metadata-only and grants no execution authority. System 74 / Worker 50 preserve System 43 / Worker 23 and all existing startup fields. Old peers retain coarse progress; keep original failures, controls, drafts, focus and availability precedence. No migration or native-host change.
+
+- Waiting input movement follows the sessions, storage, protocol and desktop contracts. Preserve System 75, original actor/revision/generation receipts, private dispatch order with unchanged public acceptance sequence, every claim's effective head and exact uint64/bigint generation. Freeze explicit Fork image sets at admission and retain original Worker byte/deletion ownership; legacy jobs retain their verified cutoff. No Worker allocation, public rank or migration.
+
+- ChatGPT/Codex paid-credit observations use independent System 76 / Worker 51 and the subscription contract. Preserve exact bounded decimal strings, per-bucket original timestamps, null/zero/unlimited distinction, sparse/failure retention, protected generation and reflection fences. No balance aggregation, currency conversion, purchase/consumption authority or SQLite migration.
 
 ## Storage
 Protocol messages never authorize clients to access SQLite. Credentials are write-only inputs to protected storage. Entity reads, snapshots, search, usage, diagnostics, and events contain no authentication material.
@@ -792,7 +1085,7 @@ System capability wire values retain `AUTOMATIC_TITLES_V1 = 1`, `SESSION_FORWARD
 
 ## Authenticated development-server forwarding
 
-Issue #1089 follows the [session forwarding contract](cmds-delidev-forwarding-contract.md). Additive `ForwardService` start/get/stop, one-shot claim, streaming traffic and original cleanup RPCs plus `WorkerService.WatchForwardRequests` preserve authenticated client/session/Worker ownership and typed `SESSION_FORWARDING_V1` capabilities. Generated Go/TypeScript descriptors and `ForwardQuery` expose the shared API. The CLI owns an explicit loopback listener and returns its exact endpoint. Stop preserves forwards; Archive/deletion/revocation close them, and every Archive completion requires independently confirmed original cleanup. Receipt replay and reconnect cannot recreate a claimed native lifetime. Model API endpoints remain server-relative. Generic schema-24 entities/receipts retain metadata without traffic or a relational migration.
+The feature follows the [session forwarding contract](cmds-delidev-forwarding-contract.md). Additive `ForwardService` start/get/stop, one-shot claim, streaming traffic and original cleanup RPCs plus `WorkerService.WatchForwardRequests` preserve authenticated client/session/Worker ownership and typed `SESSION_FORWARDING_V1` capabilities. Generated Go/TypeScript descriptors and `ForwardQuery` expose the shared API. The CLI owns an explicit loopback listener and returns its exact endpoint. Stop preserves forwards; Archive/deletion/revocation close them, and every Archive completion requires independently confirmed original cleanup. Receipt replay and reconnect cannot recreate a claimed native lifetime. Model API endpoints remain server-relative. Generic schema-24 entities/receipts retain metadata without traffic or a relational migration.
 
 
 ### Permanent session deletion
@@ -828,7 +1121,7 @@ the existing 512 KiB public event bound; native request bytes also consume the
 existing reducer aggregate bound. Missing historical bytes remain readable
 evidence but cannot authorize a new request or reply through re-serialization.
 
-Issue #1091 adds typed `grok-tool-observed`/`grok_tool`, exclusive `Interaction.grok`, question/approval response `input.grok`, native current-mode/order/response aggregate progress and the exclusive `grok_tools_terminal` Resource JSON variants. Original method/request-kind/arrival and exact decimal uint64 counters survive without float conversion. Grok numeric request IDs add `{kind: "decimal", decimal: "<original integer spelling>"}` within Resource JSON, preserving the native 19-digit optional-minus grammar and `-0` without narrowing; historical text/signed-number identities remain unchanged. Each interaction references its immutable earlier observation and original native proposal; Plan additionally binds original entry/Write/content digest/revision. Follow the harness contract for complete independent validation, bounds and evidence limits.
+The feature adds typed `grok-tool-observed`/`grok_tool`, exclusive `Interaction.grok`, question/approval response `input.grok`, native current-mode/order/response aggregate progress and the exclusive `grok_tools_terminal` Resource JSON variants. Original method/request-kind/arrival and exact decimal uint64 counters survive without float conversion. Grok numeric request IDs add `{kind: "decimal", decimal: "<original integer spelling>"}` within Resource JSON, preserving the native 19-digit optional-minus grammar and `-0` without narrowing; historical text/signed-number identities remain unchanged. Each interaction references its immutable earlier observation and original native proposal; Plan additionally binds original entry/Write/content digest/revision. Follow the harness contract for complete independent validation, bounds and evidence limits.
 
 Existing `RespondQuestion`, `RespondApproval`, owning-Worker response claims, metadata-only controls, delivery publications and exact receipt replay carry these variants. Accepted original tool results create the server-derived `native-grok-tool-result` evidence; a Worker cannot assert it through generic acceptance publication. Native Plan uses the original approval request and adds no common Plan gate. No protobuf service, generated binding, relational schema migration or Worker permission expansion is required. CLI `interaction respond` and `interaction approve` accept the same exclusive `{"grok": ...}` document through file/stdin after reading and validating the original interaction; credential stdin remains separate. Historical missing variants preserve existing bytes and do not gain this profile's authority.
 
@@ -847,13 +1140,13 @@ representation for another or grant a reply to a changed request.
 
 ## Repository inspection metadata allocation prerequisite
 
-Closed, unmerged PR #1193 implemented repository metadata using Worker value 5 and attachment-response field 3. Main now reserves Worker values 3, 4 and 5 for other owners, including native compaction from issue #1203 at value 5. Issue #1142's replacement therefore reserves `WorkerCapability.REPOSITORY_INSPECTION_METADATA_V1 = 6` and `AttachWorkerResponse.supported_worker_capabilities = 3`, retaining original-PR provenance. The original issue's proposed value 3 and the old branch's value 5 cannot replace existing main reservations.
+Closed, unmerged the originating change implemented repository metadata using Worker value 5 and attachment-response field 3. Main now reserves Worker values 3, 4 and 5 for other owners, including native compaction from the feature at value 5. The feature's replacement therefore reserves `WorkerCapability.REPOSITORY_INSPECTION_METADATA_V1 = 6` and `AttachWorkerResponse.supported_worker_capabilities = 3`, retaining original-PR provenance. The original issue's proposed value 3 and the old branch's value 5 cannot replace existing main reservations.
 
 Each reservation uses the kind of its existing declaration (`enum` or `message`); a message-field addition is recorded as `message`, not a separate field declaration kind. The allocation check validates this against the baseline declaration.
 
-PR #1214 established these allocations on main before the dependent implementation. Repository registration now activates only Worker value 6 and response field 3 under the compatibility contract above; the other reserved values retain their owners. No database migration is required.
+The originating change established these allocations on main before the dependent implementation. Repository registration now activates only Worker value 6 and response field 3 under the compatibility contract above; the other reserved values retain their owners. No database migration is required.
 
-Issue #1100 adds explicit `UsageAccountingProfile.NATIVE_UNITS_V1` negotiation, advertised by `SystemCapability.NATIVE_ACCOUNTING_V1` and echoed by GetUsageSummary. Its additive UsageTotals.accounting entries have distinct AccountingUnitKind, exact decimal supplied totals and measured/unavailable unit counts. Legacy fields remain response-only. GrokClosedInput cost enums remain unavailable; Codex estimated costs remain in the existing estimate graph. Native source references stay private. Unknown profiles fail; owner/client authorization and both encoded byte bounds remain unchanged. Follow the [usage contract](cmds-delidev-usage-contract.md).
+The feature adds explicit `UsageAccountingProfile.NATIVE_UNITS_V1` negotiation, advertised by `SystemCapability.NATIVE_ACCOUNTING_V1` and echoed by GetUsageSummary. Its additive UsageTotals.accounting entries have distinct AccountingUnitKind, exact decimal supplied totals and measured/unavailable unit counts. Legacy fields remain response-only. GrokClosedInput cost enums remain unavailable; Codex estimated costs remain in the existing estimate graph. Native source references stay private. Unknown profiles fail; owner/client authorization and both encoded byte bounds remain unchanged. Follow the [usage contract](cmds-delidev-usage-contract.md).
 
 ## Managed Codex subscriptions
 
@@ -862,7 +1155,7 @@ The additive `subscription.proto` defines owner/client RequestSubscription, Canc
 
 [Protected browser ownership and cleanup](cmds-delidev-browser-contract.md) use the service-owned `BrowserService`, typed profile/state/capability models and generated `BrowserQuery` descriptors. Existing shared enum/field numbers and future migration reservations remain unchanged. Browser messages carry ownership metadata only, never native paths or browsing content.
 
-## Codex session forks (#1092)
+## Codex session forks
 
 `SessionService.ForkSession` accepts owner/paired-client mutation identity, exact
 source revision/native turn, child name and closed `ForkWorkspace`. The dedicated
@@ -883,11 +1176,11 @@ Grok meanings. See the usage contract for source-specific counts and pricing.
 
 Activate the main-reserved `SUBSCRIPTION_SERVICE_ACCOUNTS_V1 = 17` only with real storage migration 28 after 26/27 and complete service-native configuration authority. The closed `SubscriptionServiceIdentity` enum preserves independent ChatGPT/Claude/Grok values; it is separate from the existing `SubscriptionService` RPC declaration. Reserved additive usage selection/group/model/pricing and request diagnostic fields retain the service without a fabricated provider. API-only documents remain schema 1; subscription Account/native Model and retired metadata projections use schema 2. Older clients receive explicit schema/support guidance. Bindings regenerate from the reconciled service-specific schemas.
 
-Issue #1208 activates the previously reserved `SystemCapability.OPENCODE_FOREGROUND_SUBAGENTS_V1 = 23` and `WorkerCapability.OPENCODE_FOREGROUND_SUBAGENTS_V1 = 12`. The existing ordered publication and session-owned resource/CLI/client boundary carries closed original task/child proof. Generated bindings come from the reconciled schema. The capability grants no child input/control, continuation or cleanup shortcut.
+The feature activates the previously reserved `SystemCapability.OPENCODE_FOREGROUND_SUBAGENTS_V1 = 23` and `WorkerCapability.OPENCODE_FOREGROUND_SUBAGENTS_V1 = 12`. The existing ordered publication and session-owned resource/CLI/client boundary carries closed original task/child proof. Generated bindings come from the reconciled schema. The capability grants no child input/control, continuation or cleanup shortcut.
 
 ## OpenCode native context profile
 
-The integrated #1203 implementation activates independent System capability 25,
+The integrated implementation activates independent System capability 25,
 Worker capability 14 and SessionContext capabilities 5/6 using their original
 allocation-ledger reservations. Common compaction support does not imply an
 OpenCode installation or send authority. Existing CompactSession/GetSessionContext
@@ -896,7 +1189,7 @@ version-3 OpenCode action/result JSON. Legacy Claude and Codex versions remain
 unchanged. Generated Go and TypeScript bindings come from the reconciled schema.
 The compaction contract owns original native/source/claim/report/cleanup proof.
 
-## OpenCode General Chat fork reservation (#1210)
+## OpenCode General Chat fork reservation
 
 System capability 26 and Worker capability 15 independently activate the
 Unix plain-text General Chat profile through existing authenticated `ForkSession`,
@@ -916,17 +1209,17 @@ replay or filesystem authority.
 
 ## Independent server subscription login
 
-Main-established capability 30 and PR #1332's reserved declarations activate the independent server lifecycle. Omitted `RequestSubscription.machine_id` selects this capability; explicit machine requests retain original Worker authority. `GetSubscriptionProgressResponse` adds typed state 4, transient suggested_name 5 and original successful generation 6. The closed SubscriptionLoginState values 0–8 separate all native outcomes; unknown values grant no UI transition. `ForwardSubscriptionCallback` carries account_id 1, operation_id 2 and write-only bounded callback_query bytes 3, returning accepted 1. Only the authenticated original owner/client may claim one original state-bound native callback; no Worker, receipt replay or uncertain delivery grants another send. Callback bytes, authorization URLs and unsaved suggestions never enter persisted records or logs. Follow the subscription contract; regenerate Go, TypeScript and Connect Query outputs together.
+Main-established capability 30 and the originating change's reserved declarations activate the independent server lifecycle. Omitted `RequestSubscription.machine_id` selects this capability; explicit machine requests retain original Worker authority. `GetSubscriptionProgressResponse` adds typed state 4, transient suggested_name 5 and original successful generation 6. The closed SubscriptionLoginState values 0–8 separate all native outcomes; unknown values grant no UI transition. `ForwardSubscriptionCallback` carries account_id 1, operation_id 2 and write-only bounded callback_query bytes 3, returning accepted 1. Only the authenticated original owner/client may claim one original state-bound native callback; no Worker, receipt replay or uncertain delivery grants another send. Callback bytes, authorization URLs and unsaved suggestions never enter persisted records or logs. Follow the subscription contract; regenerate Go, TypeScript and Connect Query outputs together.
 
 ### Codex diagnostic activation
 
 The existing schema-v2 account JSON may retain optional server-owned `server_operation.cleanup_phase` with closed `native-confirmed` or `credentials-confirmed` values for failed initial server login cleanup. Omitted legacy metadata remains unchanged. This checkpoint grants no authentication, callback or configuration-deletion authority; the subscription contract defines its original-owner and cleanup requirements. No protobuf field, capability, generated declaration or database migration is added.
 
-PR #1336 established the diagnostic allocations on main at `82d8859e98485458ccf8708225c0c6694d9cfab5`. The optional `GetSubscriptionProgressResponse.diagnostic` field 7 now uses those exact declarations: detected version 1, minimum version 2, closed phase 3, stable code 4, safe message 5, guidance 6 and correlation ID 7. An empty detected version means no verified version; absent diagnostic means the server did not report metadata. Native failure attribution never grants account, callback or retry authority. Preserve original actor/operation ownership and terminal read authorization; older clients can ignore the additive field. Regenerate Go and TypeScript bindings from the reconciled schema. No migration or capability number is added.
+The originating change established the diagnostic allocations on main at `82d8859e98485458ccf8708225c0c6694d9cfab5`. The optional `GetSubscriptionProgressResponse.diagnostic` field 7 now uses those exact declarations: detected version 1, minimum version 2, closed phase 3, stable code 4, safe message 5, guidance 6 and correlation ID 7. An empty detected version means no verified version; absent diagnostic means the server did not report metadata. Native failure attribution never grants account, callback or retry authority. Preserve original actor/operation ownership and terminal read authorization; older clients can ignore the additive field. Regenerate Go and TypeScript bindings from the reconciled schema. No migration or capability number is added.
 
 ## General API OAuth extension
 
-Main-established issue #964 allocations add inventory capability 6, device
+Main-established the feature allocations add inventory capability 6, device
 connection method 4, closed flow PKCE/DEVICE, Google project options and original
 completion state. Preserve capability 5 and historical OpenRouter receipt input.
 Declare the reserved additive fields before generation; reservations alone grant
@@ -956,7 +1249,7 @@ Record System 42, Worker 22, ModelIdentity, EndpointModel, ListEndpointModels, t
 
 Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.
 
-## Explicit native skill selection (#1748)
+## Explicit native skill selection
 
 System `NATIVE_SKILLS_V1 = 44` and Worker `NATIVE_SKILLS_V1 = 24` own this independent
 profile. `SkillService.ListSkills` returns bounded opaque selections with exact
@@ -973,34 +1266,33 @@ migration is required. The narrow owner-authorized simultaneous declaration and
 activation exception is defined in the sessions contract's Explicit native skills
 section; remaining allocation policy is unchanged.
 
-The allocation ledger retains the complete #1748 enum/message field closure and the SkillService.ListSkills input/output and nonstreaming profile. The repository descriptor checks enforce numeric ownership and closed RPC method profiles.
+The allocation ledger retains the complete enum/message field closure and the SkillService.ListSkills input/output and nonstreaming profile. The repository descriptor checks enforce numeric ownership and closed RPC method profiles.
 ## Image input declarations
 
-Issue #1746 owns `AttachmentService`, its closed image/transfer/upload declarations, System 45, Worker 25 and typed creation/enqueue/queued-edit attachment field 5. Follow the [image input contract](cmds-delidev-image-input-contract.md). The owner permits these declarations and complete activation in the same feature PR. Byte chunks remain bounded at 256 KiB outside generic resource and assignment JSON; old peers retain text-only behavior. No migration is added.
+The feature owns `AttachmentService`, its closed image/transfer/upload declarations, System 45, Worker 25 and typed creation/enqueue/queued-edit attachment field 5. Follow the [image input contract](cmds-delidev-image-input-contract.md). The owner permits these declarations and complete activation in the same feature PR. Byte chunks remain bounded at 256 KiB outside generic resource and assignment JSON; old peers retain text-only behavior. No migration is added.
 
 The image input allocation ledger includes every AttachmentService method with its exact request, response and streaming profile. Queued edits preserve original accepted references; explicit typed references must match the complete ordered original selection. Omission retains old-client text edits.
-## Issue #1728 batch allocation exception
+## The feature batch allocation exception
 
-The owner explicitly permits System `SERVER_SUBSCRIPTION_QUOTA_V1 = 46` allocation, declaration, generated bindings and activation in the same complete feature PR for issue #1728. This narrow exception waives only the prior main reservation merge. Existing QUOTA and Refresh all RPCs retain their allocations; no new RPC, Worker capability, migration or native change is introduced. Follow the [server quota ownership contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-quota--issue-1728). Capabilities 18, 19 and 30 retain independent ownership.
+The owner explicitly permits System `SERVER_SUBSCRIPTION_QUOTA_V1 = 46` allocation, declaration, generated bindings and activation in the same complete feature PR for the feature. The original batch approval waived the prior main reservation merge; current feature delivery follows the [shared allocation workflow](cmds-delidev-structure-contract.md#allocation-workflow). Existing QUOTA and Refresh all RPCs retain their allocations; no new RPC, Worker capability, migration or native change is introduced. Follow the [server quota ownership contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-quota). Capabilities 18, 19 and 30 retain independent ownership.
 
-Managed ChatGPT/Codex Sidechat (issue #1829) composes System 47, Worker 26,
+Managed ChatGPT/Codex Sidechat composes System 47, Worker 26,
 existing Sidechat 27/16 and managed authentication Worker 3. The session detail
 action menu exposes Open Sidechat only for the original eligible completed
 source and negotiated Runner. Independent subscription Fork remains unsupported.
-See [managed Sidechat](cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat--issue-1829)
+See [managed Sidechat](cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat)
 for protected lease/Finish publication, read-only continuation and dependent
 cleanup ownership. No new RPC or SQLite migration is added.
 
 ## Project prompt history allocation
 
-Issue #1828 owns System `PROJECT_PROMPT_HISTORY_V1 = 48`, EntityKind `PROJECT_PROMPT_HISTORY = 35` and complete closed ConfigurationService `ListProjectPromptHistory` / `ClearProjectPromptHistory` declarations in `protos/delidev/allocations.json`. The complete owning feature PR records declarations and activation together under the allocation workflow. Existing ownership remains unchanged. No Worker capability, native change or SQLite migration is added. Allocations alone grant no support.
+The feature owns System `PROJECT_PROMPT_HISTORY_V1 = 48`, EntityKind `PROJECT_PROMPT_HISTORY = 35` and complete closed ConfigurationService `ListProjectPromptHistory` / `ClearProjectPromptHistory` declarations in `protos/delidev/allocations.json`. The complete owning feature PR records declarations and activation together under the allocation workflow. Existing ownership remains unchanged. No Worker capability, native change or SQLite migration is added. Allocations alone grant no support.
 
 ## Server-owned reset-credit allocation closure
 
-Issue #1809 records System `SERVER_SUBSCRIPTION_RESET_CREDITS_V1 = 49` with complete implementation in the owning feature PR. Reuse the owner/client observation and reconciliation RPCs. Preserve System 19/30/46, existing allocations and separate Worker ownership; add no Worker/entity allocation or database migration. Follow the [server-credit contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-reset-credits--issue-1809).
+The feature records System `SERVER_SUBSCRIPTION_RESET_CREDITS_V1 = 49` with complete implementation in the owning feature PR. Reuse the owner/client observation and reconciliation RPCs. Preserve System 19/30/46, existing allocations and separate Worker ownership; add no Worker/entity allocation or database migration. Follow the [server-credit contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-reset-credits).
 
-## Remote branch discovery allocation — issue #1859
-
+## Remote branch discovery allocation
 Record System 51 / Worker 27 `REPOSITORY_BRANCH_DISCOVERY_V1`, the closed
 `DiscoverRepositoryBranchesRequest`/`Response` fields and WorkerService method in
 the owning complete feature PR. System 50 retains separate server-quota ownership.
@@ -1013,35 +1305,31 @@ contract, with project/repository/machine revision fences and original Worker
 authority. No migration, checkout authority or Git credential persistence is
 added.
 
-## Server quota V2 allocation — issue #1854
-
+## Server quota V2 allocation
 System `SERVER_SUBSCRIPTION_QUOTA_V2 = 50` is recorded and activated in the complete owning feature PR. Collision-check `allocations.json` and preserve 18/46/49. Reuse RequestSubscriptionObservation and RefreshAllSubscriptionQuotas: omitted-machine QUOTA selects the server even during Execute; explicit-machine legacy semantics remain unchanged. No Worker capability, field, RPC or migration is allocated. Declaration alone grants no native/account/platform acceptance.
 
-## Project behavior settings (issue #1965)
+## Project behavior settings
 
-Follow [project behavior settings](cmds-delidev-catalog-contract.md#project-behavior-settings-issue-1965) for schema-2 documents, continuous inheritance, explicit original project context, policy precedence, first-publication durable plan decisions and portable version 5. Preserve the original domain authority and uncertainty rules; no SQLite migration is introduced.
+Follow [project behavior settings](cmds-delidev-catalog-contract.md#project-behavior-settings) for schema-2 documents, continuous inheritance, explicit original project context, policy precedence, first-publication durable plan decisions and portable version 5. Preserve the original domain authority and uncertainty rules; no SQLite migration is introduced.
 
 ## New-session defaults and branch prefix declarations
 
-Follow [issues #2054 and #2057](cmds-delidev-catalog-contract.md#new-session-defaults-and-literal-branch-prefixes--issues-2054-and-2057) for System 56, Worker 38, schema-3 Project/Settings and portable version 6. Preserve capability 52, schema-1/2 reads and v1–5 imports; reject destructive old-client writes. Automatic creation mode yields only to an explicit checkbox edit. New immutable prefix declarations preserve original source revisions and legacy omission bytes. Shared Execute instructions remain literal, bounded, and absent in Plan/read-only Sidechat; existing native/account/Worker/workspace/recovery/cleanup ownership remains authoritative. No migration, native version gate, branch interception or automatic branch creation is introduced.
+Follow [the feature](cmds-delidev-catalog-contract.md#new-session-defaults-and-literal-branch-prefixes) for System 56, Worker 38, schema-3 Project/Settings and portable version 6. Preserve capability 52, schema-1/2 reads and v1–5 imports; reject destructive old-client writes. Automatic creation mode yields only to an explicit checkbox edit. New immutable prefix declarations preserve original source revisions and legacy omission bytes. Shared Execute instructions remain literal, bounded, and absent in Plan/read-only Sidechat; existing native/account/Worker/workspace/recovery/cleanup ownership remains authoritative. No migration, native version gate, branch interception or automatic branch creation is introduced.
 
-## Codex approval reviewer allocation — issue #1980
-
+## Codex approval reviewer allocation
 The complete owning feature records System `CODEX_APPROVAL_REVIEW_V1 = 55` and Worker `CODEX_APPROVAL_REVIEW_V1 = 30`, preserving all existing numbers and owners. System capability enables the separate Configure picker; Worker capability independently gates immutable reviewer execution, original checkpoint/fork/continuation and typed lifecycle observations. Existing closed Agent options/settings JSON adds optional `approvals_reviewer`; absent historical documents are unchanged. Existing progress documents add exclusive `codex-auto-review` metadata, and usage/diagnostic documents retain closed builtin/unknown reviewer attribution. No new RPC, protobuf payload field, enum authority outside these capabilities or SQLite migration is required. Declarations alone grant no account/native support; follow the harness, proxy and usage contracts.
 
-## OpenCode Go subscriptions — issue #2097
-
+## OpenCode Go subscriptions
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.
 
 ## Same-question Sidechat retry
 
-Issue #2061 owns System `SIDECHAT_QUESTION_RETRY_V1 = 57`, Worker `SIDECHAT_QUESTION_RETRY_V1 = 31`, and closed authenticated SessionService `RetrySidechatQuestion` / `GetSidechatQuestionRetry` declarations. The mutation receipt binds actor, child/question revisions and captured parent revision/native turn; the metadata-only observation can name the original receipt. Implemented negotiation composes original API Sidechat 27/16 and managed 47/26 plus protected Worker 3. Old peers receive unavailable guidance. Preserve canonical allocations and regenerate bindings from reconciled sources. JSON generation ownership is additive with no migration; follow [the Sidechat contract](cmds-delidev-sidechat-contract.md#same-question-retry--issue-2061).
+The feature owns System `SIDECHAT_QUESTION_RETRY_V1 = 57`, Worker `SIDECHAT_QUESTION_RETRY_V1 = 31`, and closed authenticated SessionService `RetrySidechatQuestion` / `GetSidechatQuestionRetry` declarations. The mutation receipt binds actor, child/question revisions and captured parent revision/native turn; the metadata-only observation can name the original receipt. Implemented negotiation composes original API Sidechat 27/16 and managed 47/26 plus protected Worker 3. Old peers receive unavailable guidance. Preserve canonical allocations and regenerate bindings from reconciled sources. JSON generation ownership is additive with no migration; follow [the Sidechat contract](cmds-delidev-sidechat-contract.md#same-question-retry).
 
-## Situation notifications (#2055)
+## Situation notifications
 System 58 advertises complete granular per-client preferences and typed operational Inbox/candidate projection. Closed wire additions are recorded in `protos/delidev/allocations.json`: separate question/approval and operational kinds, complete twelve-value situation preferences, opt-in preference initialization, opaque machine/occurrence references, and an exclusive optional-bool changes shape with an original expected revision for exact partial CLI retries. Existing combined booleans and omission bytes preserve legacy receipt compatibility. A granular generation rejects destructive legacy writes. No Worker capability, RPC or database migration is allocated. Follow the Inbox and storage contracts for initialization/checkpoint and claim authority; declarations alone grant no native acceptance.
 
-## Conversation Revert allocation — issue #2045
-
+## Conversation Revert allocation
 The owning complete feature records System `CODEX_SESSION_REVERT_V1 = 62`,
 Worker `CODEX_SESSION_REVERT_V1 = 36`, the complete `SessionService.RevertSession`
 RPC and its request/response declarations in `protos/delidev/allocations.json`.
@@ -1051,14 +1339,13 @@ replayed 3. Preserve all existing numbers and regenerate bindings. Reuse the
 closed context-job version 4 and exact observation-only recovery version 2; no
 new job kind or database migration is allocated. Capabilities grant only the
 implemented product operation, never native/account/platform acceptance.
-## Image rejection startup metadata — issue #2048
-
+## Image rejection startup metadata
 ExecutionStartupObservation.failure_kind is field 11. ExecutionStartupFailureKind owns UNSPECIFIED=0 and IMAGE_INPUT_REJECTED=1, recorded in allocations.json in the complete feature change. Zero remains omitted with legacy wire and JSON compatibility. Nonzero provenance requires the complete Failed/Input/Codex/Unsupported/NotSent/confirmed-cleanup profile and original authenticated claim, ready-process and native-thread checks under the direct startup and image-input contracts. Unknown or mixed values fail closed. No capability, RPC or migration is added.
-## Server-owned turn timing JSON (issue #2052)
+## Server-owned turn timing JSON
 
 Authenticated Session progress and primary-user Message resources may include optional `turn_timing` with UTC `accepted_at` and optional `terminal_at`. Go owns capture in the original acceptance/terminal transactions and exact receipt replay. This additive resource metadata changes no protobuf declaration, RPC, capability or allocation. Closed Worker execution event/update documents reject injected timing. Native assignment, continuation/Fork/compaction and checkpoint/digest projections retain their prior closed shapes without timing. Historical omission is unavailable display evidence, never a synthesized zero or changed native outcome.
 
-Issue #2123 adds System 77 `AUTOMATIC_RESET_CREDIT_CONSENT_V1`, Worker 52
+The feature adds System 77 `AUTOMATIC_RESET_CREDIT_CONSENT_V1`, Worker 52
 `CODEX_QUOTA_BLOCK_V1` and `SetAutomaticResetCreditConsent`. Its request contains
 Mutation (1), connection ID (2), generation ID (3), enabled (4) and confirmed (5);
 the response contains Account Resource (1) and replayed (2). The existing bounded
@@ -1067,7 +1354,7 @@ marker and session/execution/native identities; it cannot carry native error tex
 or add a native action. Follow the subscription contract for actor/generation,
 original lease and once-only admission. No migration is added.
 
-## Unread Inbox count allocation (issue #2143)
+## Unread Inbox count allocation
 
 The complete feature owns System `UNREAD_INBOX_COUNT_V1 = 80`,
 `InboxService.GetUnreadInboxCount`, the empty request and response fields
@@ -1082,13 +1369,13 @@ servers remain explicitly unavailable without an aggregate fallback.
 
 ## Protocol-2 inline source activation
 
-Protocol 2 preserves the `delidev.v1` package and all original numeric ownership. System42/Worker22 identify inline source models separately from direct startup43/23. Exact `ModelIdentity` values use Provider UUID or service plus native ID; obsolete Model UUID fields are not reinterpreted as source keys. Current endpoint and price RPC declarations activate the original #964 reservations; price mode, freshness/provenance and refresh fields retain their recorded owning issue. The legacy monolithic public import and aggregate Go/TypeScript/query facades are retired. Current canonical split descriptors register once. `SetTokenPricingModeRequest.expected_revision = 6` carries the original displayed active price revision, independently of existing policy field 3 and Provider field 5. Check all three atomically before changing policy; zero means that the original active price was unavailable. Preserve these exact values in accepted and uncertain-retry receipts. Breaking comparison projects only the empty retired import file out of its baseline and preserves all other FILE checks plus original declaration semantics.
+Protocol 2 preserves the `delidev.v1` package and all original numeric ownership. System42/Worker22 identify inline source models separately from direct startup43/23. Exact `ModelIdentity` values use Provider UUID or service plus native ID; obsolete Model UUID fields are not reinterpreted as source keys. Current endpoint and price RPC declarations activate the original reservations; price mode, freshness/provenance and refresh fields retain their recorded owning issue. The legacy monolithic public import and aggregate Go/TypeScript/query facades are retired. Current canonical split descriptors register once. `SetTokenPricingModeRequest.expected_revision = 6` carries the original displayed active price revision, independently of existing policy field 3 and Provider field 5. Check all three atomically before changing policy; zero means that the original active price was unavailable. Preserve these exact values in accepted and uncertain-retry receipts. Breaking comparison projects only the empty retired import file out of its baseline and preserves all other FILE checks plus original declaration semantics.
 
 
-## Atomic toolbar terminal admission — issue #2112 / PR #2260
+## Atomic toolbar terminal admission — the feature / the originating change
 
 `CreateTerminalRequest.preferred_terminal_id = 6` records the optional original
-session candidate preference under the same #2112 / PR #2260 ownership. Every
+session candidate preference under the same / the originating change ownership. Every
 toolbar gesture uses atomic admission after complete inventory inspection;
 inventory alone cannot select a terminal. Admission prefers that ID only if it
 remains eligible in the same original session and current Worker instance, then
@@ -1109,27 +1396,24 @@ or closed with independent cleanup verified and no pending operation before
 creation. Concurrent clients receive the same newly accepted terminal. Exact
 request replay retains actor-bound receipts without dispatching another shell.
 No capability, migration or native protocol change is added.
-## Session startup progress — issue #2120
-
+## Session startup progress
 System 74 / Worker 50 and the complete `ReportSessionStartupProgress` closed
 request/response and workspace-operation/progress-state enum profiles are
 allocated and activated together. Preserve System 43/Worker 23 and all
 `ExecutionStartupObservation` fields. Descriptive negotiation grants no native,
 account, input, cleanup or execution support. Original authenticated
 assignment/revision and bounded Session-summary ownership follow the
-[startup contract](cmds-delidev-execution-startup-contract.md#operational-startup-progress--issue-2120).
+[startup contract](cmds-delidev-execution-startup-contract.md#operational-startup-progress).
 Regenerate bindings from reconciled sources; no migration is introduced.
 
-## Waiting queue order — issue #2142
-
+## Waiting queue order
 System capability `WAITING_QUEUE_ORDER_V1 = 75` owns the owner/client `MoveQueuedInput` and `ListWaitingQueue` declarations. Preserve all older numbers, especially System 53 managed Fork and System 54 OpenCode Go; no Worker capability or database migration is added. Movement fields are mutation 1, session 2, optional expected queue generation 3, before-input ID 4 and before-input revision 5. Presence of generation is required; zero is valid. Response fields are SessionChange 1 and current queue generation 2. Waiting list request fields are session 1, page size 2 and opaque page token 3; response fields are resources 1, next token 2, current generation 3 and exact waiting count 4. Existing Queue JSON and legacy ListQueue remain compatible. Allocation declarations alone grant no execution/native authority.
 
-## Paid-credit observations — issue #2124
-
+## Paid-credit observations
 System `SUBSCRIPTION_PAID_CREDITS_V1 = 76` and Worker `SUBSCRIPTION_PAID_CREDITS_V1 = 51` independently negotiate the narrow ChatGPT/Codex paid-credit projection. Reuse authenticated original quota reads, leases, connection/credential generations, actor checks, joined native cleanup and existing refresh actions. No RPC, purchase, consumption action or SQLite migration is added. An older Worker omits these fields; the server rejects a paid-credit publication from a Worker without capability 51.
 
 Each native bucket owns its exact bounded ID, required hasCredits/unlimited flags, nullable balance and successful observation timestamp. Accept nonnegative plain decimal strings of at most 64 bytes without numeric conversion. Explicit null is unknown, zero is a real value, and unlimited takes presentation precedence. Never sum buckets or infer balance from quota, reset credits, plan type or hasCredits. Omitted credits/balance fields retain the last successful bucket and its timestamp; failed, malformed or reflected reads retain evidence without refreshing it. Credential-generation replacement clears observations. Ordinary configuration saves and legacy clients cannot replace protected subscription observations. Original identity/token reflection checks include paid bucket IDs and exact balance strings, including short/encoded secrets. Raw responses, unrelated billing/display text and credentials remain private.
 
 Account rows show one exact balance or a localized multi-bucket count. Manage subscription shows the read-only Paid credits card above Quota, with separate bucket labels and retained stale/error timestamps. Keep loading, unavailable/update, unknown, zero, positive and unlimited states distinct. Use existing theme tokens, wrapping rows, parent scrolling, keyboard/dismissal ownership and EN/KO strings. Presentation grants no account, execution, native or platform acceptance.
 
-The reconciled `CreateTerminalRequest` baseline retains original fields 1–4. Issue #2138 records their unchanged reset provenance as existing declarations; its records do not reclassify this original message as new. Issue #2112 owns creation intent field 5, original candidate field 6 and the closed creation-mode values. Preserve all member numbers and ownership.
+The reconciled `CreateTerminalRequest` baseline retains original fields 1–4. The feature records their unchanged reset provenance as existing declarations; its records do not reclassify this original message as new. The feature owns creation intent field 5, original candidate field 6 and the closed creation-mode values. Preserve all member numbers and ownership.

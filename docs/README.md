@@ -13,12 +13,19 @@ Each project must have one project index document and one or more domain contrac
 - Repository configuration, stable root development commands, local development modes, environment ownership, startup-generation integrity, and secret classification are defined in `docs/repository-environment-contract.md`.
 - Project and domain contracts must document deviations from those defaults when a different language, ID format, search backend, build toolchain, static-site deployment platform, or file storage/access pattern is chosen.
 
+## Instruction Update Policy
+
+Instruction files contain development procedures, directory ownership and contract navigation only. Ordinary feature additions, bug fixes, tests and behavior-contract changes do not by themselves require an `AGENTS.md` update. Update those files only when development procedures, directory ownership or repository/domain development rules change. Feature requirements belong in the owning contract and must not be duplicated in instruction files. Do not add issue-specific feature paragraphs to `AGENTS.md`.
+
+Record new implementation status, validation results and unresolved limits in pull requests, issues and CI logs/artifacts. Include the source revision, commands, results and unperformed checks. Distinguish fixtures, builds and packaging from actual native/account/platform acceptance. Exclude secrets, user state and raw native content. Preserve existing validation records.
+
 ## Documentation Editing Rules
+- Do not add issue or pull-request links or identifying numbers to repository instruction files or documentation. Describe requirements directly and link to the owning repository-local contracts. Domain, service and technical-documentation links remain allowed; record issue/PR traceability in pull requests, issues or CI records instead.
 - DeliDev implementation status and validation results belong in pull requests, issues and CI logs/artifacts; do not add repository evidence documents. Project indexes route to domain contracts, and validation-only records do not require changes to project indexes or AGENTS files. See [source ownership](cmds-delidev-structure-contract.md).
 - These rules apply to documentation authoring and editing work, not general conversational summaries.
 - Do not arbitrarily omit, delete, or simplify requested or source-backed content during documentation edits unless the user explicitly asks for that outcome.
 - If documentation content, scope, or intent is ambiguous, ask the user before deciding what to remove, merge, or reinterpret.
-- If a documentation change affects repository or domain policy boundaries, update or create the relevant `AGENTS.md` file in the same change when needed.
+- Update or create the relevant `AGENTS.md` in the same change only when development procedures, directory ownership or repository/domain development rules change; follow the [instruction-update policy](#instruction-update-policy).
 - `docs/` remains the internal source of truth for contracts, architecture notes, repo-local paths, and implementation details. Public documentation is owned and built by `apps/public-docs`; the project content roots are `apps/public-docs/docs/{runmoor,nodeup,binpm,async-commit-hook,clibox,pnport,react-forge}`. Those pages must curate from these contracts without documenting repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
 
 ## Naming Rules
@@ -93,7 +100,7 @@ Each project must have one project index document and one or more domain contrac
 - [Automatic session titles](cmds-delidev-session-titles-contract.md)
 - [Retained inbox and read-state contract](cmds-delidev-inbox-contract.md)
 - [Schedules and durable occurrences](cmds-delidev-schedules-contract.md)
-- [Complete issue #964 requirements](cmds-delidev-requirements.md)
+- [Complete feature requirements](cmds-delidev-requirements.md)
 
 ### React Forge
 - [Project index](project-react-forge.md)
@@ -124,7 +131,7 @@ Each project must have one project index document and one or more domain contrac
 ### clibox
 - `docs/project-clibox.md`
 - `docs/crates-clibox-foundation.md` (five private Rust crates: CLI composition, configuration, OS utilities, offline transformations, and TCP/HTTP/file readiness; npm/native distribution only)
-- `docs/crates-clibox-fspy-contract.md` (issue #971 file-access workflows and observation requirements; implementation in progress)
+- `docs/crates-clibox-fspy-contract.md` (file-access workflows and observation requirements; implementation in progress)
 - `docs/packages-clibox-distribution-contract.md` (npm, signed native archives, Linux packages and macOS Homebrew publication)
 - `docs/apps-clibox-docs-foundation.md` (`apps/public-docs/docs/clibox`, canonical URL `https://oss.delino.io/clibox`, thirteen user-guide routes including the source-only fspy guide)
 
@@ -194,7 +201,7 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 - [Project index](project-pnport.md)
 - [Rust foundation](crates-pnport-foundation.md)
 - [fspy source fork and licensing](crates-fspy-vendor-contract.md)
-- [Complete issue #958 requirements and staged 0.1.0/0.2.0 releases](crates-pnport-requirements.md)
+- [Complete feature requirements and staged 0.1.0/0.2.0 releases](crates-pnport-requirements.md)
 - [npm/native distribution](packages-pnport-distribution-contract.md)
 - [Public documentation](apps-pnport-docs-foundation.md) (ten guides under `/pnport`, with 0.1.0 marked unreleased)
 

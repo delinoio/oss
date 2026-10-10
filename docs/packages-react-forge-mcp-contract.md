@@ -1,7 +1,7 @@
 # React Forge MCP Contract
 
 ## Scope
-`packages/react-forge/src/mcp` owns the React Forge stdio server, shared Node execution process, TSX loader and session registry. The private source workspace assembles these modules into the public npm package. The explicit MCP follow-up supersedes the original issue #968 exclusion of a new MCP interface. Existing Forge MCP, React Forge library and one-shot CLI behavior remain supported.
+`packages/react-forge/src/mcp` owns the React Forge stdio server, shared Node execution process, TSX loader and session registry. The private source workspace assembles these modules into the public npm package. The explicit MCP follow-up supersedes the original the feature exclusion of a new MCP interface. Existing Forge MCP, React Forge library and one-shot CLI behavior remain supported.
 
 ## Runtime and Language
 Use the existing Node.js 24, React 19.2.8 and six-host native inventory. TypeScript owns MCP and React execution; validated native computations remain in the existing Rust workers. All sessions share one execution process and canonical React/React Forge imports, including Figma's per-authentication rate admission and per-file publication queues. Authenticated Figma retains its existing macOS Keychain boundary; this extension does not claim new Figma authentication platforms.
@@ -30,7 +30,7 @@ Inline imports and tool-relative paths resolve against the fixed working directo
 
 The synchronous MCP load hook must provide source bytes for resolved file-backed CommonJS modules when the `tsx` hook chain would otherwise return an undefined source. This includes the running package's `react/jsx-runtime` and its CommonJS implementation. Keep the resolved URL and CommonJS format so React identity and ordinary caller dependency resolution remain intact; remove the direct-read workaround only when the supported Node/`tsx` hook chain supplies valid sources itself.
 
-`DocumentSession.snapshot({ signal })` settles React roots, pending mounts and registered assets, pins the existing model/font revision and returns the corresponding inspection captured at that boundary without generating or publishing output. The synchronous `inspect()` remains available. A snapshot is not native layout certification; measure/export still perform native validation. Later React commits can invalidate an earlier measurement revision.
+`DocumentSession.snapshot({ signal })` settles React roots, pending mounts and registered assets, pins the existing model/font revision and returns the corresponding inspection captured at that boundary without generating or publishing output. The synchronous `inspect` remains available. A snapshot is not native layout certification; measure/export still perform native validation. Later React commits can invalidate an earlier measurement revision.
 
 Successful results contain `structuredContent` and equivalent JSON text. Failures use `isError` and existing `ForgeError` codes/context; Figma publication failures additionally include their original receipt. The receipt's status is authoritative: for example a remote setter error can have code `remote` and status `partial`. A saved receipt is not a `.fig` file. Each result identifies the applicable session/format/revision when available. Geometry and successful publication results retain their pinned revision.
 
@@ -42,6 +42,26 @@ Generated PDF paragraph targets expose their rendered text to inspection after t
 Calls on one session execute in admission order. Request cancellation reaches its AbortSignal but never releases the queue before the callback actually settles. Independent sessions may progress concurrently. No callback-wide transaction or rollback is promised: completed renders, file writes and remote batches remain completed when subsequent code fails. Built-in export/publish retain atomic local publication, original-source protection, revision pinning, and truthful partial/unknown Figma results. Execute never automatically exports or publishes, but trusted caller code may explicitly do either.
 
 EOF, transport close, SIGINT/SIGTERM and Windows SIGBREAK stop admission, abort active requests and dispose sessions. Shutdown alone has a five-second grace period, after which the parent terminates and reaps the execution child. Unix exit codes remain 130/143 and Windows Ctrl+C/Ctrl+Break use 130. Ordinary operations have no automatic timeout. A synchronous loop can prevent cooperative cancellation; the parent remains able to handle protocol traffic and terminate the execution process on shutdown. Forceful host termination cannot guarantee cleanup. Worker loss ends the server with status 1, invalidates all memory sessions, and reports `unknown_outcome` for outstanding requests when the transport is still available; it never restarts or retries writes. Clients must inspect exported files or remote state before retrying uncertain work.
+
+### Project requirements
+
+- React Forge exposes a local session-based stdio MCP server through `react-forge mcp`; follow `packages-react-forge-mcp-contract.md`. Keep execution output isolated from protocol stdout, share the existing engine and Figma scheduling across sessions, and preserve explicit export/publication and cancellation outcomes.
+
+### Package integration
+
+- `packages/react-forge` owns the private source workspace that generates the public `@delino/react-forge` npm package and six native packages, real React reconciler, format components, one-shot `react-forge` TSX CLI and local session-based stdio MCP server. Follow `packages-react-forge-mcp-contract.md` for MCP execution, retained state and transport isolation. Package imports and workspace task filters use the scoped npm name; the directory, project ID and executable keep `react-forge`. Follow `packages-react-forge-contract.md` and all requirements from . Pin React 19.2.8 and react-reconciler 0.33.0; support Node.js 24 on macOS, Windows and glibc Linux, each with x64 and arm64. Enforce the native host restriction in build/loading code, not workspace manifest `os`/`cpu` fields: pnpm emits platform warnings on unrelated commands and corrupts binary protocol stdout.
+
+### packages/react-forge constraints
+
+- Keep official SDK transport separate from the pure native planner. Serialize image admission and validation against the aggregate session budget. Bound both input code and returned structure; the remote MCP text envelope can truncate large otherwise-successful responses.
+
+- Ordinary affected PR/main CI validates four Windows/Linux native hosts; manual CI and the exact-tag release validate all six, including both Darwin hosts. Keep native, installed CLI/MCP, render, example, and benchmark validation in the shared host script so release failures block candidate assembly and publication.
+
+- Follow `packages-react-forge-mcp-contract.md` for stdio MCP. Keep one shared execution process and canonical React/React Forge module identities; never forward task stdout/stderr to protocol or operational logs. Preserve per-session call order until cancelled callbacks actually settle, bound entry plus data to 16 MiB, retain Figma receipts on partial/unknown outcomes, and never retry writes automatically. Five-second forced cleanup applies only to server shutdown, never normal operations.
+
+- Keep automatic JSX and `React.createElement` rendering working through real stdio MCP calls, with generated PDF paragraph text visible in settled inspection and higher revisions after updates. Preserve ordinary caller dependency resolution and safe error redaction.
+
+- MCP cancellation fixtures must install abort waiters before publishing readiness and handle signals that are already aborted; exercise late continuation without widening timeouts to hide missed cancellation.
 
 ## Storage
 Sessions, state Maps and source text are memory-only. Node's evaluated module cache lives until the execution process exits; closing a document releases its owned session resources but is not an ESM module-cache eviction guarantee. Explicit exports/receipts use the existing local-file exception to R2 storage. No recovery database or revision archive is added. Disposal never deletes exported files or remote content. Imported sources and canonical aliases remain protected even when overwrite is true.
@@ -70,6 +90,8 @@ Reuse pinned `@modelcontextprotocol/sdk`, `tsx` and the existing native engines.
 
 ## Change Triggers
 Keep this contract, Node/Figma contracts, original requirements follow-up, project/docs indexes, relevant AGENTS rules, README, tool descriptions and installed-consumer tests synchronized when interfaces or boundaries change.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - [Project](project-react-forge.md).

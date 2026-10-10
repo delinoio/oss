@@ -2,11 +2,11 @@
 
 ## Scope
 
-Issue #1090 adds the initial read-only macOS WidgetKit extension under
+The feature adds the initial read-only macOS WidgetKit extension under
 `apps/delidev/macos-widget`, the desktop's `widget_host` presentation adapter,
 and native preparation/verification scripts. Other OS widgets, production
 signing/publication and continuous background-refresh guarantees are excluded.
-Issue #1410 moves persistence and shutdown joins off the native UI loop without
+The feature moves persistence and shutdown joins off the native UI loop without
 changing widget refresh scheduling or the protected Swift storage format.
 
 ## Runtime and Language
@@ -106,6 +106,16 @@ in DeliDev rather than treating a partial view as complete inventory.
 
 English/Korean presentation follows [the localization contract](apps-delidev-localization-contract.md). The independent device Language controller and protected preference stay above connection and Settings visit ownership. Preserve stable category/enum/RPC values, drafts, focus, exact operation identities and original technical evidence. Native/widget catalogs generate typed resources during preparation, tests and packaging; widget language publication never advances server observation timestamps. App body language follows the saved device choice; OS-owned standard UI and widget gallery/selection guidance follow native localization. Fixture/build/package results remain distinct from actual platform and provisioned WidgetKit acceptance.
 
+### apps/delidev constraints
+
+- Widget persistence follows the feature and `apps-delidev-widget-contract.md`: use the process-owned bounded FIFO worker, recheck original window/scope/revision and oldest-ready ownership before storage, and never hold tray/window/queue locks across disk I/O. Quit closes admission on the UI loop and joins all presentation tasks plus final stale publication on its tracked worker. Native Exit performs no storage or task joins; fixtures remain separate from native/platform acceptance.
+
+### apps/delidev/scripts constraints
+
+- The macOS status widget follows `apps-delidev-widget-contract.md`. Keep macOS 13-compatible explicit per-instance saved-server selection, metadata-only owner-private atomic snapshots, native scope/revision ownership, exact token/per-currency estimate strings and truthful last-success/stale state. No credentials, endpoints, prompts, conversation text, networking or agent actions enter the extensions. Prepare and embed both sandboxed extensions with the exact bundle/App Group entitlements; ad-hoc compilation/signature evidence is separate from provisioned installation and WidgetKit interaction acceptance. Native Swift tests use isolated temporary state only.
+
+- Localization checks run in `pnpm test` and verify source catalogs, typed/generated freshness and stable identity/predicate boundaries. Widget tests include offscreen SwiftUI render fixtures for English/Korean, all three sizes and observed/unselected/offline/stale/storage/language failures. Optional layout output contains synthetic data only; keep it outside tracked source and distinguish it from installed WidgetKit or CEF acceptance.
+
 ## Storage
 
 The OS entitlement API resolves the App Group, never a renderer-selected path.
@@ -186,6 +196,8 @@ privacy, storage schema, selection, lifecycle, embedding or supported platforms
 change. Record fixture/build results separately from signed installation,
 Notification Center/widget-gallery interactions and real-server/provider evidence.
 
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+
 ## References
 
 - [Project](project-delidev.md)
@@ -194,7 +206,7 @@ Notification Center/widget-gallery interactions and real-server/provider evidenc
 - [Requirements](cmds-delidev-requirements.md)
 - [Repository defaults](repository-defaults.md)
 
-### Quota reset countdowns (issue #1826)
+### Quota reset countdowns
 
 The large widget's existing reset labels use localized elapsed-duration
 countdowns calculated when an entry renders. Strict reset validation rejects

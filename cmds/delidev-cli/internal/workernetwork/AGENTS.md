@@ -1,9 +1,11 @@
-# DeliDev encrypted Worker network ownership
+# cmds/delidev-cli/internal/workernetwork working instructions
 
-- Follow `docs/cmds-delidev-network-contract.md` and parent instructions. This package owns bounded X25519-only transfer and the protected derivative cache, not authoritative profile editing, pairing admission or native execution.
-- Import requires the separately obtained ciphertext digest plus independently selected exact server, endpoint, machine, device, pairing and original recipient/key identity. Encryption alone cannot authenticate an export.
-- Keep recipient private keys and derivative contents in the existing OS-key-wrapped credential Vault. Ordinary metadata contains public recipient/reference, scope, generation and ciphertext digest only. No plaintext fallback, key regeneration after uncertain publication, ambient route discovery, older-profile fallback or offline readiness.
-- Preserve atomic complete cache publication and monotonic generation; same-generation conflicting authority is recovery-required. Native runtimes retain independent bounded Go copies while new control attempts adopt the newly reconciled cache.
-- Tests inject isolated protected stores and temporary state. Never read user credentials or access real proxy infrastructure.
+- Follow the root instruction-update policy and the nearest parent instructions.
+- This file covers `cmds/delidev-cli/internal/workernetwork/` and its descendants unless a more specific instruction file applies.
+- Read the owning contracts below before changing behavior, including affected cross-domain consumers.
 
-- Same-generation import reconciliation retries obsolete protected-derivative enumeration/deletion after current cache publication; retain the committed current reference through cleanup failure. Transferred bundle issuance allows at most 30 seconds of clock skew between hosts while enforcing the original absolute expiry and five-minute lifetime.
+## Owning contracts
+
+- [DeliDev protected credential storage](../../../../docs/cmds-delidev-credentials-contract.md)
+- [DeliDev explicit outbound network contract](../../../../docs/cmds-delidev-network-contract.md)
+- [DeliDev storage operations](../../../../docs/cmds-delidev-storage-contract.md)

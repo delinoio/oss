@@ -20,6 +20,32 @@ Handwritten helpers enforce canonical UUID-v7 text, 32 raw checksum bytes, the d
 
 The generated `QuotaKind` includes `QUOTA_KIND_CRASH_REPORTS`, and `mapDevHudError` classifies a matching `ResourceExhausted` plus `QuotaFailure` detail as `quotaExceeded` while preserving its limit and observed count.
 
+### Package integration
+
+- `packages/devhud-api-client`: implemented generated TypeScript DevHud API client, Connect Query bindings, and safe handwritten wire helpers.
+
+- Keep generated bootstrap types aligned with the `desktop`/`ios`/`android`/`admin` Logto client keys, native callback, and exact admin redirect defined by the protocol and server contracts.
+
+- Generate only from `protos/devhud/v1`; use `@connectrpc/connect-query` and preserve package `devhud.v1`, stable enums, typed errors, and revision conflicts.
+
+- Generated clients must expose the explicit AdminService RPC names and `AccountService.RestoreAccount` defined by the protocol contract, including upload-finalization validation fields.
+
+- Generated administrative and user-upload-list clients must preserve the shared bounded page-size, opaque-token, deterministic-order pagination contract defined by the protocol, including query/user scope.
+
+- Keep `packages-devhud-api-client-contract.md` and `project-devhud.md` synchronized with schema, transport, or generated API changes.
+
+- Generated upload clients must preserve submission-scoped groups, expected 32-byte raw checksum/version fields, immutable finalization semantics, and correlation-ID response metadata.
+
+- Keep committed output under `src/gen` tool-owned and reproducible. Public exports use per-service namespaces such as `UploadQuery` and `AdminQuery` so same-named RPCs do not collide; do not handwrite generated messages or service descriptors.
+
+- Handwritten helpers may validate canonical UUID v7 values, checksums, bounded pagination, RFC 8785 settings bytes without a UTF-8 BOM, bounded NUL-free sensitive-content-safe administrator reasons, required crash client/related correlations, duration, browser-only unknown architecture, explicit browser and native platform revision rules, NUL-free 256-byte crash identifiers, redacted crash details, and typed Connect errors, but must not add persistence, implicit authentication, or another business transport.
+
+- The API client must retain package-local typecheck, lint, unit, and build commands for affected CI execution. Its generated output is cacheable only when derived from the committed schemas and lockfile.
+
+- Windows console Ctrl+C/Break reaches both launcher and native child. Await native cleanup and numeric completion instead of forwarding these events with Node's forceful kill API; preserve explicit Unix signal forwarding. Keep Unix acknowledgement credit scoped to one pending grace attempt; discard unsolicited credit and disable suppression for the launch after an unacknowledged fallback or overlapping SIGINT. After fallback, retain forwarding even when terminal delivery is duplicated; native cleanup may then skip grace. Integration fixtures must prove fallback before accepting short grace and confirm owned cleanup. Cancel owned grace timers on exit/error. Cover both policies with unit fixtures and isolated Windows console integration.
+
+- Keep the ROAM travel IR example's reusable React source, local image assets, generation prompts and provenance together. Resolve its assets relative to the task module, retain explicit fictional-metric labels and calculation consistency, and keep exported decks/previews untracked. The example must run without network access or image-generation/conversion tools and must generate successfully on all six native CI hosts with their installed fonts.
+
 ## Storage
 
 Generated upload types preserve the server-owned `submission_id`, cross-group 10-image limit, signed expected checksum as 32 raw bytes, staging version/generation, immutable conditional-finalization fields, the 15-minute signed PUT `expires_at`, the independent 24-hour `staging_expires_at`, and the `x-devhud-correlation-id` response metadata used by integrators. Clients set the returned `Content-Type` and standard-Base64 checksum headers, upload the declared byte length directly to R2, and never send image bodies through a Connect message.
@@ -47,6 +73,8 @@ Generated from `protos/devhud/v1`; consumed by the DevHud and admin apps; target
 ## Change Triggers
 
 Update the project index, protocol/server/app/admin contracts, `packages/AGENTS.md`, and generation CI whenever schemas, package API, transport, or error behavior changes.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 

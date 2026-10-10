@@ -1,6 +1,6 @@
 # React Forge Complete Requirements
 
-Source: issue #968, retrieved 2026-09-24. This preserves the complete original issue scope and is not a claim of completed implementation. The later public npm distribution decision supersedes only this issue's private-package and publication exclusions; see `packages-react-forge-release-contract.md`. See the project and domain contracts for ownership and validation evidence.
+Source: the feature, retrieved 2026-09-24. This preserves the complete original issue scope and is not a claim of completed implementation. The later public npm distribution decision supersedes only this issue's private-package and publication exclusions; see `packages-react-forge-release-contract.md`. See the project and domain contracts for ownership and validation evidence.
 
 ## Summary
 
@@ -8,17 +8,19 @@ Create **React Forge**, an internal Node.js library and TSX CLI for generating P
 
 Support persistent React sessions, including state updates and asynchronous rendering. Support importing existing PPTX, DOCX, and XLSX files, inspecting editable regions, and mounting React subtrees into those regions while preserving unrelated content.
 
-The issue originally limited support to **Node.js 24, React 19.2.8, and macOS arm64**. The explicit 2026-09-24 follow-up on PR #970 expands the supported platform scope to **macOS, Windows and glibc Linux on x64 and arm64**, with the same Node and React versions. This follow-up supersedes the original platform exclusion; the other issue requirements remain in force. Deliver all agreed capabilities before closing this issue. There is no fixed deadline, public release, or feature flag.
+The issue originally limited support to **Node.js 24, React 19.2.8, and macOS arm64**. The explicit 2026-09-24 follow-up on the originating change expands the supported platform scope to **macOS, Windows and glibc Linux on x64 and arm64**, with the same Node and React versions. This follow-up supersedes the original platform exclusion; the other issue requirements remain in force. Deliver all agreed capabilities before closing this issue. There is no fixed deadline, public release, or feature flag.
 
 ## Evidence
 
-- Foundation: [PR #967](https://github.com/delinoio/oss/pull/967), inspected at commit `72efa39abc3a8009f83d9eb6e17954f788606b82`.
+- Foundation: the feature, inspected at commit `72efa39abc3a8009f83d9eb6e17954f788606b82`.
 - That PR provides a Rust presentation model, validation, layout, PPTX generation, preservation-aware editing, and a CLI/MCP interface.
 - It does not provide a React renderer or DOCX, XLSX, and PDF engines.
 - Primary users are repository developers writing Node.js/TypeScript document-generation and editing tasks.
 - Repository contracts require internal documentation in `docs/`, synchronized ownership rules in relevant `AGENTS.md` files, generated-output cleanup, and appropriate Rust and Node validation.
 - Searches for `forge` and `"react-forge"` found no existing GitHub issue.
 - No repository issue template or `PRD` label currently exists.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## Current Gap
 
@@ -32,7 +34,7 @@ The existing presentation engine also does not cover word-processing documents, 
 
 - Introduce the stable project identifier `react-forge` and product name **React Forge**.
 - Own the private TypeScript library and CLI in `packages/react-forge`, with a dedicated N-API adapter in `crates/react-forge-node`.
-- Reuse the Forge implementation from #967 as repository dependencies. Extend the Rust engine family for DOCX, XLSX, PDF, and reusable package-preservation functionality.
+- Reuse the Forge implementation from as repository dependencies. Extend the Rust engine family for DOCX, XLSX, PDF, and reusable package-preservation functionality.
 - Preserve the existing Forge CLI/MCP interfaces, supported editing boundaries, and default font behavior. New React Forge behavior must not silently change those consumers.
 - Execute React components and reconciliation in JavaScript. Pass validated, serializable document data to Rust for document processing and export.
 - Keep JavaScript values, component functions, Hooks, and callbacks outside native worker computations.
@@ -46,7 +48,7 @@ The existing presentation engine also does not cover word-processing documents, 
 
 | Format | Required capabilities |
 |---|---|
-| PPTX | #967’s rich text, lists, PNG/JPEG images, shapes, merged tables, editable bar charts, connectors, and row/column/canvas layouts. |
+| PPTX | ’s rich text, lists, PNG/JPEG images, shapes, merged tables, editable bar charts, connectors, and row/column/canvas layouts. |
 | DOCX | Rich paragraphs, headings, lists, tables and merged cells, images, hyperlinks, sections, page breaks, headers/footers, and editable 2D bar, line, and pie charts. |
 | XLSX | Multiple worksheets; text, numeric, date, and Boolean cells; formulas; formatting; merges; row/column dimensions; freeze panes; autofilters; hyperlinks; and editable 2D bar, line, and pie charts. |
 | PDF | Independent document authoring with pages, text, images, shapes, tables, links, flow layout, automatic pagination, and semantic tagging. |
@@ -69,7 +71,7 @@ PDF output is independent of Office authoring. Office-to-PDF conversion and PDF 
 - Reject overlapping mounted regions and edits that would damage unsupported elements or unresolved references.
 - Support structural updates in newly authored documents. Imported structural edits remain subject to the preservation boundary.
 - Preserve unsupported conditional-formatting and validation extensions without exposing them as editable supported rules.
-- Retain #967’s package restrictions, including rejection of encrypted, signed, macro-enabled, legacy, and unsupported Strict OOXML packages.
+- Retain ’s package restrictions, including rejection of encrypted, signed, macro-enabled, legacy, and unsupported Strict OOXML packages.
 - Required positive fixtures must demonstrate supported edits in externally authored documents; preservation errors must not substitute for implementing the agreed supported cases.
 
 ### React support and document sessions
@@ -242,6 +244,8 @@ This additive approved scope does not remove the original document requirements.
 
 Deliver original reusable TSX audio-product examples (headphones, DAC/amplifier, stand and combined studio), deterministic geometry/texture source and provenance. Validate actual exports using Khronos Validator, independent ufbx, pinned Blender 4.5 LTS empty-scene imports and 2048-pixel front/back/oblique/detail renders without material/mesh repair, plus interactive local GLB viewing. Inspect and correct visual faults, record versions/hashes/observations, and state unexecuted hosts honestly. Extend CLI/MCP, installation consumers, six-platform engine CI and Linux visual CI. Run root Rust tests, relevant Clippy, package build/typecheck/lint/tests/example checks and public-doc tests; update contracts/AGENTS and remove generated dist. Scene import/editing, animation, rigging, refraction, transmission and advanced coatings are excluded. Full details are in `packages-react-forge-scene-contract.md`.
 
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+
 ### CI scope follow-up (2026-09-26)
 
 The explicit request for this PR authorizes removing all React Forge scene CI.
@@ -289,3 +293,6 @@ README and public guides together; preserve static release history and identify
 animation as unreleased. Existing-file import, automatic rigging/weights, IK,
 retargeting, physics, clip blending/playback runtime, Unity/Unreal acceptance and
 npm publication are excluded. Looping belongs to consumers.
+
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.

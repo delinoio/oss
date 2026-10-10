@@ -24,7 +24,7 @@ Run trusted repository checks asynchronously against committed source, with dura
 - [Release and recovery contract](cmds-async-commit-hook-release-contract.md)
 
 ## Cross-Domain Invariants
-Issue #897 is normative, with explicit owner amendments on 2026-09-19: actual six-target machine validation is excluded from this implementation, and public releases/deployments are prepared but not executed. Cross-compilation and local automated integration remain required. Never label an untested platform as integration-validated.
+The feature is normative, with explicit owner amendments on 2026-09-19: actual six-target machine validation is excluded from this implementation, and public releases/deployments are prepared but not executed. Cross-compilation and local automated integration remain required. Never label an untested platform as integration-validated.
 
 Configuration, local storage, CLI JSON and API contracts start at version 1. Product IDs are UUID v7; commits retain Git object IDs. A successful commit or query is not successful validation. All clients use the same exact-commit, compatible-context, latest-accepted-attempt gate. Reading never acknowledges a run. Retention never resurrects an older success.
 
@@ -41,8 +41,10 @@ Primary public installation instructions follow the downloaded installers' lates
 ## Change Policy
 Update the owning domain contract, the relevant requirements or release contract, and relevant AGENTS.md alongside interface, ownership, security or lifecycle changes. Generate protocol sources; never edit generated output. Public documentation describes supported user workflows, not repository internals.
 
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+
 ## References
-- https://github.com/delinoio/oss/issues/897
+- The related change
 - [Repository defaults](repository-defaults.md)
 - [Project template](project-template.md)
 

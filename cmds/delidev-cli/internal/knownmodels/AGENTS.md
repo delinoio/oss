@@ -1,7 +1,12 @@
-# Known subscription model metadata
+# cmds/delidev-cli/internal/knownmodels working instructions
 
-- Follow the catalog and network contracts in `docs/` and parent ownership rules.
-- Schema 1 contains all three nonempty bounded services and source provenance. Reject invalid, ambiguous or partial data before atomic publication. Filter definite retirement dates only from new recommendations.
-- Fetch only the compiled repository-main HTTPS URL through the server outbound route. Keep 15-second/1 MiB limits, 24-hour success/one-hour failure scheduling, private atomic cache and joined shutdown.
-- On restart, restore a cache only when its reviewed date is newer than the bundled catalog or its date and semantic version exactly match; an equal-date version mismatch is ambiguous, so prefer the bundle and refresh immediately.
-- Never read subscription credentials, run harnesses, create resources or infer account/readiness authority. Log only catalog version/date and stable failure codes. Fixtures use isolated temporary state and injected transports.
+- Follow the root instruction-update policy and the nearest parent instructions.
+- This file covers `cmds/delidev-cli/internal/knownmodels/` and its descendants unless a more specific instruction file applies.
+- Read the owning contracts below before changing behavior, including affected cross-domain consumers.
+
+## Owning contracts
+
+- [DeliDev provider and model catalog](../../../../docs/cmds-delidev-catalog-contract.md)
+- [DeliDev explicit outbound network contract](../../../../docs/cmds-delidev-network-contract.md)
+- [DeliDev native subscriptions](../../../../docs/cmds-delidev-subscription-contract.md)
+- [DeliDev current-user service contract](../../../../docs/cmds-delidev-user-services-contract.md)

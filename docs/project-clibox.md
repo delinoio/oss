@@ -1,7 +1,7 @@
 # Project: clibox
 
 ## Goal
-Provide a Rust CLI that JavaScript projects can pin through npm and their lockfiles. Issue #916 defines cross-platform environment execution, local port inspection/termination, resource opening, and text clipboard commands; issue #917 adds offline text replacement, time formatting/arithmetic, Base64 transformation, and hash generation/verification. Issue #919 adds stateless TCP, HTTP, and regular-file readiness waits. Issue #920 adds local configuration commands to list dotenv keys, merge dotenv layers, and normalize YAML references. Issue #951 adds portable CPU counts. Issue #953 adds local execution wrappers for rate limits, locks, HTTP service readiness, retries, and runtime/idle timeouts. Issue #1002 extends bounded Unix cleanup ownership across deeply nested native and mixed Node/native wrapper chains. Issue #971 adds seven file-access workflows in source; they are not part of the published 0.2.0 packages. All command sets coexist with help/version in the source CLI.
+Provide a Rust CLI that JavaScript projects can pin through npm and their lockfiles. The feature defines cross-platform environment execution, local port inspection/termination, resource opening, and text clipboard commands; the feature adds offline text replacement, time formatting/arithmetic, Base64 transformation, and hash generation/verification. The feature adds stateless TCP, HTTP, and regular-file readiness waits. The feature adds local configuration commands to list dotenv keys, merge dotenv layers, and normalize YAML references. The feature adds portable CPU counts. The feature adds local execution wrappers for rate limits, locks, HTTP service readiness, retries, and runtime/idle timeouts. The feature extends bounded Unix cleanup ownership across deeply nested native and mixed Node/native wrapper chains. The feature adds seven file-access workflows in source; they are not part of the published 0.2.0 packages. All command sets coexist with help/version in the source CLI.
 
 ## Project ID
 `clibox`
@@ -12,7 +12,7 @@ Provide a Rust CLI that JavaScript projects can pin through npm and their lockfi
 - `crates/clibox-system`: OS command definitions, runtime, errors, and adapters.
 - `crates/clibox-transform`: offline command definitions, transformations, cancellation, and atomic publication.
 - `crates/clibox-wait`: readiness command definitions, validation, probes, polling, and reporting.
-- `crates/clibox-fspy`: private file-access records, native capture backends, and seven issue #971 workflow handlers connected to the source CLI.
+- `crates/clibox-fspy`: private file-access records, native capture backends, and seven the feature workflow handlers connected to the source CLI.
 - `packages/clibox`: private source workspace for the public npm launcher, platform packages, packaging, and publication tooling.
 - `apps/public-docs/docs/clibox`: English public guides published at `https://oss.delino.io/clibox`.
 
@@ -41,14 +41,20 @@ Provide a Rust CLI that JavaScript projects can pin through npm and their lockfi
 - Nested Unix execution wrappers retain root process-group cleanup ownership across bounded chains of native clibox wrappers and supported Node launchers; unknown or unprovable intermediaries fail closed. See the detailed process contract and Linux/macOS regressions in `docs/crates-clibox-foundation.md`.
 - Network checks run in Rust without external utilities. HTTPS verifies OS trust and hostname, negotiates HTTP/2 or HTTP/1.1, disables proxies/authentication/redirects, and finishes at response headers. Files are observed through metadata only.
 - All commands except named run locks and rate buckets remain stateless. Those two controls retain only private, hashed, local same-user coordination state; they add no synchronized settings, telemetry, service, queue, or cross-machine coordination. No other persistent application state, remote telemetry, or public library API is added.
-- The seven issue #917 commands share redacted diagnostics, cancellable processing, and permission-preserving atomic file publication. Unix transformation bytes stay in owner-only same-filesystem staging until publication; macOS clears inherited ACLs before content writes, and Linux/macOS new output retains the destination parent's mode/ACL inheritance. Timezone data is bundled identically across platform artifacts of a version. Owned operations return numeric 130 for Ctrl+C/Windows Ctrl+Break and 143 for Unix SIGTERM; `run env` preserves delegated child status and Unix signal identity.
+- The seven the feature commands share redacted diagnostics, cancellable processing, and permission-preserving atomic file publication. Unix transformation bytes stay in owner-only same-filesystem staging until publication; macOS clears inherited ACLs before content writes, and Linux/macOS new output retains the destination parent's mode/ACL inheritance. Timezone data is bundled identically across platform artifacts of a version. Owned operations return numeric 130 for Ctrl+C/Windows Ctrl+Break and 143 for Unix SIGTERM; `run env` preserves delegated child status and Unix signal identity.
 - Automated local fixtures and Linux/macOS/Windows process CI are the completion gate. All eight artifact checks and Alpine consumers remain required; musl crypto compilation uses target-native `musl-gcc` while final linking retains pinned self-contained `rust-lld`.
 - Automated parser, process, OS-adapter, and distribution tests are the completion gate. Real GUI, clipboard persistence, and application-wait verification remain follow-up work.
 - Linux/macOS/Windows process tests and installed npm/pnpm smoke tests cover all three configuration commands and environment execution. Eight-target and Alpine release gates remain unchanged.
 - Public guides are owned by the consolidated `public-docs` site under `/clibox`; no standalone documentation workspace or deployment is added. From the next release, Homebrew distributes verified macOS x64/arm64 prebuilt archives through `delinoio/tap/clibox`, with no Node.js or Rust prerequisite; Linux Homebrew is excluded. The two GNU Linux binaries also ship as signed GitHub Release archives and stable APT/DNF packages under [the Linux package contract](repository-linux-packages-contract.md).
 
+## Project requirements
+
+- `clibox` -> `crates/clibox`, `crates/clibox-config`, `crates/clibox-fspy`, `crates/clibox-system`, `crates/clibox-transform`, `crates/clibox-wait`, `packages/clibox`, `apps/public-docs/docs/clibox`
+
 ## Change Policy
 Update the relevant domain contracts, this index, relevant AGENTS files, version synchronization, platform fixtures, and release workflows together when these boundaries change.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - [Repository defaults](repository-defaults.md)

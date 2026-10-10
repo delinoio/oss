@@ -1,7 +1,7 @@
 # DeliDev schedules and occurrence contract
 
 ## Scope
-Issue #964 requires server-owned recurring execution, schedule CRUD/pause/resume, next-run inspection, Run now, occurrence history, Overlap/Skip/Wait, offline skipping and reference-deletion disabling. This contract preserves that complete boundary. The calendar/domain/storage primitives, server coordinator and owner/client ScheduleService/CLI are implemented. The coordinator accepts independent sessions through the ordinary input/workspace path, reconciles accepted Wait work and records offline/overlap/capacity history. Referenced Project/Agent configuration deletion atomically disables affected schedules without making retained sessions depend on selectable configuration. Installed macOS Codex evidence covers manual Run now through native Worktree Execute and Local Plan, continuation and retained history. Actual wall-clock cron native acceptance is also verified for macOS Codex Worktree Execute; the remaining harness/platform matrix remains open.
+The feature requires server-owned recurring execution, schedule CRUD/pause/resume, next-run inspection, Run now, occurrence history, Overlap/Skip/Wait, offline skipping and reference-deletion disabling. This contract preserves that complete boundary. The calendar/domain/storage primitives, server coordinator and owner/client ScheduleService/CLI are implemented. The coordinator accepts independent sessions through the ordinary input/workspace path, reconciles accepted Wait work and records offline/overlap/capacity history. Referenced Project/Agent configuration deletion atomically disables affected schedules without making retained sessions depend on selectable configuration. Installed macOS Codex evidence covers manual Run now through native Worktree Execute and Local Plan, continuation and retained history. Actual wall-clock cron native acceptance is also verified for macOS Codex Worktree Execute; the remaining harness/platform matrix remains open.
 
 ## Runtime and Language
 Go, the existing server-owned SQLite database, and `github.com/robfig/cron/v3` at the existing pinned version `v3.0.1`, now a direct dependency. Go's bundled IANA timezone data is linked for platforms without a system timezone database. Native Git or harness processes are never launched by domain validation or database primitives.
@@ -50,6 +50,22 @@ An enabled prompt/selection edit with unchanged cron/timezone preserves the publ
 
 Lists default to 50 records and allow at most 200, additionally bounded by the existing aggregate resource-byte ceiling. Enabled filters are explicit `all`, `true` or `false`. History is schedule-scoped and ordered by immutable acceptance sequence; each occurrence exposes its original selection, current retained occurrence outcome and owned session identity. Inspecting the independent session returns its latest state, which may change after terminal occurrence history. Next-run inspection reports enabled state, timezone, resource/configuration revisions, nullable next UTC instant and any disabling problem without changing state.
 
+### cmds/delidev-cli/internal/server constraints
+
+- Automatic API validation follows the provider/catalog/account contracts: share explicit receipt/publication logic, schedule current-connection validation independently of permitted discovery, validate first and reread the confirmed revision. Preserve automatic-only account/provider-enabled fences and cancellation, catalog-only discovery disablement, bounds, selected profiles and joined shutdown. Unknown public authentication remains unsupported; no inference, protocol, migration or reserved model activation.
+
+- Dedicated provider inventory, model search and schedule/history pages measure their complete protobuf and protobuf-JSON response within 4 MiB, including metadata and cursors. Resume after the last returned entry; include only represented model providers, deduplicated. Preserve exact documents, filter/epoch binding, authorization and count bounds. A single unfit entry fails with correlated ResourceExhausted rather than an empty nonadvancing page. Follow the catalog, schedule and protocol contracts.
+
+### cmds/delidev-cli/internal/store constraints
+
+- Follow `cmds-delidev-schedules-contract.md` for schedules. Keep editable selections separate from server-owned timer/origin/configuration revisions and immutable accepted occurrence selections. Atomically allocate ordered occurrences with timer progress and independent cron-instant uniqueness; preserve FIFO Wait/history across restart and configuration deletion, without evicting accepted work at capacity. Only derived occurrence ownership may create `SCHEDULED` session provenance. A later Worker reconnect, expired lease or backward clock step cannot prove availability at an earlier due instant. The bounded server coordinator must join before storage/vault closure, sample acceptance time inside its transaction and roll back every job/session/timer write on storage failure. Skip/Wait inspect current sessions, including resumed historical runs; terminal events or response-summary counters never replace exact owned cleanup and settled original delivery records. Derive terminal occurrence state from the retained session outcome and validate its job against native progress, preserving Stop/Archive when native success arrives later. ScheduleService is owner/client-only, uses strict definition-only writes and actor-bound reference receipts, and joins current records on replay. Local creation/relocation requires independently authenticated Worker provenance; unchanged Local edits retain and revalidate the original origin. Preserve signed scope/epoch-bound pages, revision-checked controls and history after configuration deletion. Project/Agent configuration deletion atomically disables matching schedules without rewriting accepted work; a disabling problem requires valid reconfiguration before resume/Run now. Keep installed manual and actual cron timer evidence separate; neither implies other-platform, other-harness or hosted-account acceptance.
+
+- Account-inspection candidates retain independently persisted validation/catalog completion and Retry-After schedules. Include validation for discovery-disabled enabled providers; preserve enabled/connected/removal filters, bounded UUID pagination and catalog-only legacy candidates. No schema or migration change.
+
+### cmds/delidev-cli/internal/worker constraints
+
+- Reset Worker schedule availability on each exclusive server-store open, preserve instance recovery identity, and require fresh current-process observation without backdating reconnects.
+
 ## Storage
 SQLite schema 11 adds unique `(schedule_id, sequence)` and cron `(schedule_id, due_at)` indexes, bounded due/pending/history lookup indexes, and session source-link lookup. `AppendScheduleOccurrence` validates the original resource revision/configuration, immutable selection/origin/policy, exact due instant and next calendar step, then writes timer/sequence and occurrence within one transaction. Existing mutation receipts provide durable request replay. An independently detected duplicate cron instant rolls back the timer and sequence even if the timer had been rewound. Occurrence updates preserve original selection bytes and session ownership.
 
@@ -79,6 +95,8 @@ The scheduling coordinator uses the existing session/input/workspace preparation
 ## Change Triggers
 Update this contract, the command and protocol contracts, project/catalog entries, scoped AGENTS and validation records in pull requests, issues and CI logs/artifacts when coordinator execution, lifecycle APIs, recurrence semantics, retention, limits or native scheduled execution change. Passing private primitive tests is not complete schedule acceptance.
 
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+
 ## References
 - [Complete requirements](cmds-delidev-requirements.md)
 - [Sessions](cmds-delidev-sessions-contract.md)
@@ -90,5 +108,5 @@ Opening the exclusive server store invalidates persisted Worker availability int
 
 Schedule and occurrence pages measure the complete protobuf and protobuf-JSON response, including cursor/envelope, against the existing 4 MiB aggregate bound. A byte-limited page resumes strictly after the last returned row with its original filter epoch and occurrence acceptance ordering. Complete documents are never truncated.
 
-## Situation notification publication (#2055)
+## Situation notification publication
 The original occurrence transaction publishes one metadata-only operational Inbox record for selection failure, confirmed preparation failure before any InitialExecution, and server-offline/Worker-offline skips, including retained restart misses. Existing wait/overlap/capacity, pause, deletion and explicit Stop remain independent. Post-start execution failures retain the ordinary execution outcome and cannot become Schedule start alerts. Follow `cmds-delidev-inbox-contract.md` for future-only client checkpoints, durable claims and fresh read-only original-occurrence activation.

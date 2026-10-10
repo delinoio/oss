@@ -116,3 +116,23 @@ docs tests and assembled installed-consumer checks. Remove generated `dist`.
 
 Keep this contract, project/native/session/MCP docs, scoped ownership rules,
 capabilities, example, public guide and validation evidence synchronized.
+
+## Project requirements
+
+- React Forge SFX follows `packages-react-forge-sfx-contract.md`: bounded offline procedural WAV generation, native worker synthesis, and zombie-game gunshot acceptance. It is available in npm `0.2.0`; keep generated audio untracked and distinguish package availability from perceptual/game-engine validation.
+
+## Application integration
+
+- React Forge `/formats/sfx/` and `/formats/sprite/` document availability from npm `0.2.0`. Preserve each article's scope and evidence limits, including the absence of game-engine listening and importer compatibility claims.
+
+## Rust component integration
+
+- `forge-sfx` owns independent bounded procedural game-audio synthesis and PCM16 WAV encoding under `packages-react-forge-sfx-contract.md`. Validate before allocation, check cooperative cancellation during synthesis/encoding, and keep devices, files, networking and callbacks outside the engine. Add its tests and Clippy to the six-host React Forge gates.
+
+## Package integration
+
+- React Forge `/sfx` adds generation-only WAV sessions under `packages-react-forge-sfx-contract.md`; preserve original procedural-example provenance, expose synthesis limits, and distinguish this unreleased extension from npm `0.1.1`.
+
+## packages/react-forge constraints
+
+- Follow `packages-react-forge-sfx-contract.md` for `Format.Wav` and `/sfx`. Keep bounded procedural synthesis in `forge-sfx`, preserve shared revision/cancellation/atomic-publication behavior, and exercise the original zombie-game gunshot through workspace and installed CLI/MCP. Keep generated audio outside source and mark SFX unreleased until published.

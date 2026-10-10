@@ -2,7 +2,7 @@
 
 ## Scope
 
-Issue #1093 owns the authenticated native-context read and manual compaction action
+The feature owns the authenticated native-context read and manual compaction action
 for Claude Code 2.1.236 API sessions. Implementation belongs to feature-owned
 `session_compaction.go` files in `internal/domain`, `internal/server`,
 `internal/worker`, and `internal/cli` under `cmds/delidev-cli`, plus the context
@@ -11,8 +11,8 @@ in `protos/delidev/v1/session.proto`; generated Go, TypeScript and Connect Query
 bindings follow the canonical pipeline. Existing automatic compaction publication
 and native manual-action/history validation remain independent owners.
 
-The shared-compaction reservation PR #1215 landed on main at `574c1a92c` with
-identifiers and a common contract for issues #1093, #1202 and #1203. This Claude implementation adds
+The shared-compaction reservation the originating change landed on main at `574c1a92c` with
+identifiers and a common contract for the feature. This Claude implementation adds
 no existing-message field or shared enum member, consumes none of that PR's
 reserved numbers, and introduces no migration. Its session-owned context enum
 does not advertise support for another harness. Before any later shared activation,
@@ -97,6 +97,34 @@ Worker revocation releases canceled undispatched action ownership without invent
 native recovery, preserves the preceding checkpoint and leaves FIFO paused. Claimed
 actions retain recovery-required ownership. Account disconnect cancels both ordinary
 execution and manual-action jobs.
+
+### cmds/delidev-cli/internal/cli constraints
+
+- Provide `session context --id` and `session compact --id --revision` through the authenticated Connect APIs in `cmds-delidev-claude-compaction-contract.md`. Context is read-only; compaction retains the supplied UUID-v7 request identity and returns the durable job without claiming native success.
+
+### cmds/delidev-cli/internal/domain constraints
+
+- Manual compaction follows `cmds-delidev-claude-compaction-contract.md`. Keep its distinct action/job/reference and original compact status separate from conversation input/outcome and usage; validate exact immutable restore assignments, native provenance, missing versus zero measurements and explicit Resume after failure.
+
+- Permanent-deletion copies for manual compaction retain a distinct original action UUID, never a replacement conversation execution ID. Reject missing, malformed or mixed action ownership; existing deletion plans retain their exact bytes and digest. Follow `cmds-delidev-claude-compaction-contract.md`.
+
+### cmds/delidev-cli/internal/server constraints
+
+- Native context and manual compaction follow `cmds-delidev-claude-compaction-contract.md`. Owner/client-only acceptance atomically pauses FIFO and retains one revision/request-bound job; reference-only receipt replay must support compaction. Preserve prior outcomes, exact native result/cleanup and queued versus claimed cancellation, including account disconnect. Worker revocation releases canceled undispatched compaction ownership while keeping FIFO paused and the preceding checkpoint intact; claimed jobs retain native uncertainty. Context reads cannot infer current utilization or expose private assignment paths.
+
+- Manual-compaction mutation receipts bind the original owner/client principal as well as session/revision/request. Recheck authorization before replay; another authorized client cannot reuse the accepted receipt. Keep credentials outside its digest input under `cmds-delidev-claude-compaction-contract.md`.
+
+### cmds/delidev-cli/internal/store constraints
+
+- Manual-compaction deletion plans derive the original action UUID from its immutable claimed assignment. Include every original owning Worker before purge; ordinary execution IDs cannot identify action runtimes or checkpoints. Follow `cmds-delidev-claude-compaction-contract.md`.
+
+- Manual compaction uses additive session/job JSON and existing atomic events/receipts under `cmds-delidev-claude-compaction-contract.md`. Preserve original execution history and schema versions. Account cancellation inventories must include action assignments by their exact original account; queued cancellation is distinct from claimed native cleanup. Every Archive completion remains pending while a distinct compaction claim owns cleanup.
+
+### cmds/delidev-cli/internal/worker constraints
+
+- Include original manual-compaction runtimes and action checkpoints in the same deletion/removal and completed-proof inventory. Join original job, native/process and workspace ownership, preserve unrelated action checkpoints and never remove a replacement merely from an earlier completed receipt. Follow `cmds-delidev-claude-compaction-contract.md`.
+
+- Public manual compaction follows `cmds-delidev-claude-compaction-contract.md`. Restore only the independently pinned cleaned predecessor, advance the exact workspace lease, create and validate the private root/jobs/action-job scope before either registration or command journaling, synchronize one command claim and never resend interrupted starts. Join native/workspace cleanup before exclusive atomic checkpoint retention; replacement validates original journals, exact assignment revision/instance, ownership and digests and keeps failed status Resume-only. Uncertainty logs use only a closed action phase and stable code.
 
 ## Storage
 
@@ -193,6 +221,8 @@ native support, wire projection, checkpoint ownership, cancellation or accountin
 meaning changes. Shared enum allocation and schema migrations remain separately
 governed; never use another unmerged feature's reserved numeric identity.
 
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+
 ## References
 
 - [DeliDev project](project-delidev.md)
@@ -202,4 +232,4 @@ governed; never use another unmerged feature's reserved numeric identity.
 - [Usage semantics](cmds-delidev-usage-contract.md)
 - [Feature ownership](cmds-delidev-structure-contract.md)
 - [Repository defaults](repository-defaults.md)
-- [Issue #1093](https://github.com/delinoio/oss/issues/1093)
+- The feature

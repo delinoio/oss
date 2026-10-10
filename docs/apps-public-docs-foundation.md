@@ -37,6 +37,52 @@
 - Rust CLI/crate product pages may omit repo-local installer script flows from public guidance even when those installers remain supported by release/runtime contracts elsewhere in the repository.
 - Breaking navigation changes require explicit migration notes.
 
+### Application integration
+
+- Keep app-specific contracts synchronized in the project index doc (`docs/project-*.md`) and relevant app-domain contract docs (`docs/apps-*.md`) in the same change.
+
+- Public documentation content must not expose repository-internal implementation details. Use `docs/` as the internal source of truth, then curate `apps/public-docs/docs` around user-facing behavior, supported workflows, stable public interfaces, and explicitly contracted maintainer-facing paths.
+
+- Follow Toss Design Guidelines for frontend UX/UI decisions across web and mobile apps.
+
+- For new static sites under `apps/`, default to Rsbuild/Rspress-style toolchains and Cloudflare Pages deployment unless a project contract documents a different platform.
+
+- Prefer Rspack-family build tools for app build pipelines when they fit the runtime and deployment target.
+
+- Documentation development uses `pnpm dev:public-docs` and the consolidated fixed loopback port `46302`; package-local project docs are no longer separate workspaces. The wrapper must prevent CLI address overrides, forward termination signals to its child server, wait for it to exit, and fail with actionable conflict guidance instead of remapping the port.
+
+- App file upload/download flows should default to Cloudflare R2 plus signed URLs unless the app contract documents a different storage or access pattern.
+
+- If a form has a single critical input, that input must receive focus when the form is shown.
+
+- Dialog UIs must support closing with the `Esc` key.
+
+- `public-docs` must remain Rspress-based and use Cloudflare Pages static output unless its project contract documents a replacement.
+
+- `public-docs` production is `https://oss.delino.io`, served by the Cloudflare Pages `public-docs` project from `main`; build at the repository root with the repository's Node and pnpm versions and publish only `apps/public-docs/doc_build`.
+
+- Rspress routes, navigation, and sidebar in `apps/public-docs/rspress.config.ts` must stay aligned with `apps-public-docs-foundation.md`.
+
+- Public route exemptions in shared validators must come from one explicit project-route catalog; allow complete stable routes only, never arbitrary descendants of a project prefix.
+
+- `public-docs` must use clean URLs, write production output to `apps/public-docs/doc_build`, and validate stable route artifacts plus generated internal `.html` links through `pnpm --filter public-docs test`.
+
+- Do not add legacy handoff pages, aliases, or redirects for the consolidated project subpaths. Operators decommission the former standalone Pages projects and DNS records only after the consolidated deployment, route, switcher, and installer checks pass.
+
+- `public-docs` must curate repository contracts into public guidance and must not document repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
+
+- When user-facing documentation behavior changes, update related `apps/public-docs` pages in the same change set.
+
+- If frontend code changes in this domain, run `pnpm test` before finishing.
+
+- If `apps/public-docs` changes, run `pnpm --filter public-docs test` before finishing.
+
+- Update relevant docs in `docs/` for every behavior, structure, or interface change.
+
+- Only the shared package registration page may show its exact contracted `/etc/apt`, `/etc/yum.repos.d` and `/usr/share/keyrings` installation paths; never broaden unrelated public filesystem-path exceptions.
+
+- Public native-package registration examples must spell out the complete repository configuration with a quoted heredoc, preserving APT Signed-By and both DNF signature checks. Do not bootstrap trust by installing an unverified configuration file downloaded from package storage.
+
 ## Storage
 - Source docs are versioned in-repo.
 - Build artifacts are generated in `apps/public-docs/doc_build`, including the seven project subpaths, and the complete tree is published through the single `public-docs` Cloudflare Pages project.

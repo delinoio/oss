@@ -95,6 +95,56 @@
 - Script-safe stdout guidance must map structured automation to `--output json`, newline-delimited runtime lists to `nodeup toolchain list --quiet`, completion redirection to `nodeup completions <shell> >file`, and log-free human output to setting `RUST_LOG=off` before `nodeup <command>` only when stderr also needs to stay quiet after a logging filter was set elsewhere. Logs must remain on stderr when enabled so quiet runtime identifiers and completion scripts keep stdout parseable.
 - Tracing logs must be written to stderr when enabled so stdout remains reserved for command results, JSON payloads, quiet runtime identifiers, delegated command stdout, and raw completion scripts. Management `--output json`, `nodeup toolchain list --quiet`, and `nodeup completions <shell>` keep tracing logs off by default so JSON stdout, JSON stderr payloads, quiet runtime identifiers, and completion scripts remain parseable unless `RUST_LOG` explicitly enables tracing.
 
+### Project requirements
+
+- `apps/public-docs/docs/nodeup` is the Rspress content root for `nodeup` and is built by the existing `apps/public-docs` workspace.
+
+- The canonical production URL for `nodeup` documentation is `https://oss.delino.io/nodeup`.
+
+- The consolidated build must publish direct-installer entrypoints at `https://oss.delino.io/nodeup/install.sh` and `https://oss.delino.io/nodeup/install.ps1`.
+
+- The Nodeup section must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in top-level social links and in the document-page footer.
+
+- `nodeup shim setup` is the stable idempotent setup/repair command for managed `node`, `npm`, `npx`, `yarn`, and `pnpm` shims.
+
+- `nodeup shim setup` PATH activation remains non-mutating by default; output must provide shell- and OS-aware activation and verification guidance when the shim directory is not active.
+
+- `nodeup self uninstall` removes Nodeup-owned data, cache, and config roots only; binary, managed shims, and shell profile/PATH cleanup remain manual and must be separated from removed data in human and JSON output with shell- and OS-aware follow-up guidance.
+
+### Rust component integration
+
+- `crates/nodeup`: Rust-based Node.js version manager.
+
+- Preserve rustup-like shim behavior: symlink strategy plus executable-name dispatch.
+
+- Keep `nodeup shim setup` as the stable idempotent setup/repair command for managed `node`, `npm`, `npx`, `yarn`, and `pnpm` shims.
+
+- Keep `nodeup shim setup` PATH activation non-mutating by default while reporting shell- and OS-aware activation and verification guidance.
+
+- Keep Windows shim setup documented and implemented as copied `.exe` aliases with adjacent Nodeup ownership marker files because symlink privileges are not guaranteed and stale copies must be repairable without replacing unrelated executables.
+
+- Keep `nodeup self uninstall` scoped to Nodeup-owned data, cache, and config roots; binary, shim, and shell profile/PATH cleanup must remain manual, separated from removed data, and visible in human and JSON output with shell- and OS-aware follow-up guidance.
+
+- Keep channel and command identifiers stable and documented.
+
+- Record storage and download behavior in project docs whenever changed.
+
+- Keep direct installers and `cargo-binstall` metadata aligned with release asset names, checksum-verification contracts, and install docs. Nodeup direct installers must verify `SHA256SUMS` without requiring `cosign` or artifact Sigstore sidecars, and `cargo-binstall` must stay first-party-asset-only with `quick-install` and `compile` fallbacks disabled.
+
+- Keep unsupported x86 host handling aligned across direct installers, runtime installation, shim dispatch, JSON diagnostics, and Nodeup docs.
+
+- Keep `nodeup update` exact-version selector messaging aligned across human output, JSON diagnostics, CLI help, crate README, `apps/public-docs/docs/nodeup`, `project-nodeup.md`, and `crates-nodeup-foundation.md`: exact versions are immutable pins reported with stable `skipped-exact-version` status, and output must point users who intended to move pins toward installing or selecting a newer exact runtime.
+
+- Keep Nodeup script-safe output guidance aligned across CLI help, crate README, `apps/public-docs/docs/nodeup`, `project-nodeup.md`, and `crates-nodeup-foundation.md`: `--output json` for structured automation, `nodeup toolchain list --quiet` for raw runtime identifiers, `nodeup completions <shell> >file` for completion redirection, default Nodeup logging off for those script-safe forms, and `RUST_LOG=off` only when scripts also require quiet stderr after a logging filter was set elsewhere.
+
+- Keep Nodeup tracing logs on stderr when enabled so stdout remains parseable for command results, JSON payloads, quiet runtime identifiers, delegated command stdout, and raw completion scripts.
+
+- Keep Nodeup human output color precedence stable as `--color` > `NODEUP_COLOR` > `NO_COLOR` > stream-aware `auto`, and keep `nodeup show color` reporting effective human stdout, human stderr, and log color decisions, ignored invalid `NODEUP_COLOR`/`NODEUP_LOG_COLOR` values, and `NO_COLOR` overrides by Nodeup-specific color environment variables.
+
+- Keep invalid `NODEUP_COLOR` and `NODEUP_LOG_COLOR` values noticeable on stderr for human-mode commands without writing warnings to JSON stdout or adding ANSI styling to JSON payloads.
+
+- Keep checksum mismatch and runtime download diagnostics for mirror overrides explicit about sanitized release index and download-base source details. URL diagnostics must strip credentials, query strings, and fragments, and hints must tell users to verify that `NODEUP_INDEX_URL` and `NODEUP_DOWNLOAD_BASE_URL` point to matching Node.js release data.
+
 ## Storage
 - Maintains local version metadata, installation roots, and shim state.
 - Downloaded runtime artifacts must follow deterministic path resolution.
@@ -142,6 +192,8 @@
 ## Change Triggers
 - Update `docs/project-nodeup.md` with this file when dispatch, storage, or channel contracts change.
 - Update `crates/AGENTS.md` and root `AGENTS.md` when ownership or policy contracts change.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - `docs/project-nodeup.md`

@@ -1,7 +1,7 @@
 # DeliDev Session Development-Server Forwarding
 
 ## Scope
-`cmds/delidev-cli/internal/forwarding`, the server/Worker forwarding handlers and `session forward` CLI own issue #1089's authenticated session-bound TCP forwarding. The Go client owns a local listener; the execution Worker owns outbound connections to one explicitly selected Worker-loopback development port. This is independent of agent execution and the server-relative model API relay.
+`cmds/delidev-cli/internal/forwarding`, the server/Worker forwarding handlers and `session forward` CLI own the feature's authenticated session-bound TCP forwarding. The Go client owns a local listener; the execution Worker owns outbound connections to one explicitly selected Worker-loopback development port. This is independent of agent execution and the server-relative model API relay.
 
 ## Runtime and Language
 Go owns durable control, authorization, bounded traffic relay, private cleanup receipts and native TCP handles. Connect server streams plus bounded unary frames use the existing authenticated outbound Worker connection. No inbound Worker listener, WebSocket product transport or hosted public tunnel is introduced.
@@ -27,6 +27,10 @@ The server owner or an authorized paired client can create a forward for a curre
 - Typed server and Worker `SESSION_FORWARDING_V1` capabilities gate availability independently of automatic-title capability. Older Workers retain their existing primary behavior and cannot forward without negotiation.
 - Managed database replacement requires every current forward to be stopped with both independent original peer cleanup flags. Restored historical forwards pass through Stop without reopening sockets or manufacturing cleanup; an unknown historical claimed lifetime stays stopping. Server capability wire value 2 remains forwarding, published user services retain value 3, and managed backup restore uses reserved value 7.
 
+### cmds/delidev-cli/internal/worker constraints
+
+- DeliDev session forwards follow `cmds-delidev-forwarding-contract.md`: preserve explicit loopback port selection, original client/Worker/device/instance ownership, negotiated capabilities and bounded ordered opaque traffic. Native claims precede sockets and receipt replay grants no new lifetime. Keep Stop independent from Archive, gate every Archive completion on both original cleanup outcomes, and retain positive private cleanup receipts through offline reporting without redialing or recreating listeners. Worker credentials receive only their original forwarding peer endpoints.
+
 ## Storage
 Forward resources use the existing schema-24 generic entity, session, revision, event and receipt storage; no relational migration or destructive schema change is needed. Each record retains only ownership, ports, endpoint, state and cleanup flags. Actor-bound receipts store references, not traffic. Existing records are preserved.
 
@@ -46,6 +50,8 @@ The existing authenticated primary Worker stream and connection lease remain man
 
 ## Change Triggers
 Update this contract, the project index, protocol/client contracts, validation records in pull requests, issues and CI logs/artifacts and relevant command/protocol/package `AGENTS.md` when ownership, cleanup, bounds, capabilities, CLI shapes or wire schemas change.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - [DeliDev project](project-delidev.md)

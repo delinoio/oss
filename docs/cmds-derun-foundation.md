@@ -41,6 +41,14 @@
   - `session_id is required`
   - `cursor is required`
 
+### Command integration
+
+- `cmds/derun`: Go tool for AI coding-agent workflow orchestration.
+
+- Update `project-derun.md` and `cmds-derun-foundation.md` whenever derun command contracts change.
+
+- Derun Linux amd64 and arm64 assets must remain available consistently through native packages, the direct shell installer and the prebuilt Homebrew formula.
+
 ## Storage
 - Uses transient run outputs and temporary process metadata.
 - Any persisted execution traces must define retention and redaction behavior.
@@ -65,6 +73,8 @@
 ## Change Triggers
 - Update `docs/project-derun.md` with this file when command shape or output contracts change.
 - Update `cmds/AGENTS.md` and root `AGENTS.md` when policy or ownership contracts change.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - `docs/project-derun.md`

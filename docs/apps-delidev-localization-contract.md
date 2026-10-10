@@ -123,9 +123,13 @@ reads/replaces the server snapshot nor advances any observation/success time.
 WidgetKit timeline reload is best effort. Three sizes retain bounded truthful
 presentation and disclose extra records in DeliDev.
 
+### apps/delidev constraints
+
+- English/Korean desktop, native and widget presentation follows `apps-delidev-localization-contract.md`. Keep the device Language controller above connection/Settings visits, use bundled typed catalogs, preserve exact machine values, user/native content, draft/focus/query/request lifetimes and original server details, and never replay work on language change. Protect independent `language.json` and App Group preference storage with revision/atomic-write/uncertainty rules. Generate Swift/native resources from reconciled source catalogs during preparation/tests/packaging, and keep real platform/WidgetKit acceptance separate from fixtures and builds.
+
 ## Storage
 
-Native `app_config_dir()/language.json` contains only `{ "version": 1,
+Native `app_config_dir/language.json` contains only `{ "version": 1,
 "language": "system" | "en" | "ko" }`, separate from `appearance.json`.
 Bound reads to 4 KiB. Preserve malformed, linked, oversized or unsupported-version
 files. Use owner-private same-directory exclusive staging, synchronized atomic
@@ -201,6 +205,8 @@ scoped app/src/native/scripts AGENTS when languages, preference ownership,
 storage, native interfaces, catalog generation or presentation boundaries change.
 Validation-only updates belong in PRs/issues/CI and do not change ownership docs.
 
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+
 ## References
 
 - [DeliDev project](project-delidev.md)
@@ -214,7 +220,7 @@ Validation-only updates belong in PRs/issues/CI and do not change ownership docs
 
 ## Timestamp presentation
 
-Issue #1736 adds the shared timestamp and device-date-format ownership described
+The feature adds the shared timestamp and device-date-format ownership described
 in the desktop contract. English and Korean relative labels use floored elapsed
 units below 24 hours. Computer-local absolute labels follow the selected closed
 date preset; System follows the application language. Exact source timestamp
@@ -223,7 +229,7 @@ authority through localization. UTC backup and exact standalone PR-card labels
 retain their explicit modes. Catalog interpolation uses inert React timestamp
 slots so locale and display-clock updates do not stringify or remount them.
 
-Issue #1826 adds complete localized quota-reset countdown sentences to the
+The feature adds complete localized quota-reset countdown sentences to the
 React and native source catalogs. The existing generator produces Rust keys and
 Swift catalogs. Days mean 24 elapsed hours. Floor day/hour, hour/minute or minute
 units, omit a zero trailing unit and retain English singular/plural and Korean
@@ -232,11 +238,11 @@ source strings, device date preferences and successful observation times remain
 unchanged. Expiry returns to the surface's original timestamp/fallback and cannot
 prove quota recovery.
 
-Settings search (issue #1869) indexes only bundled category/target label and static help keys in the current display language. NFC-normalized case-insensitive all-token matching retains visit-scoped query and focus while locale changes recompute results. No cross-language aliases, resource/private/native content, query persistence or logging is permitted. Localization cannot restart category/native controllers or repeat a consumed search focus target.
+Settings search indexes only bundled category/target label and static help keys in the current display language. NFC-normalized case-insensitive all-token matching retains visit-scoped query and focus while locale changes recompute results. No cross-language aliases, resource/private/native content, query persistence or logging is permitted. Localization cannot restart category/native controllers or repeat a consumed search focus target.
 
 ### Auxiliary tray status localization
 
-Issue #1967 uses the separate `tray-status` bundled entry and English/Korean
+The feature uses the separate `tray-status` bundled entry and English/Korean
 catalog. Retained native snapshots project the committed resolved language,
 semantic theme and date format without mounting writable device controllers.
 Preference changes update the same panel and selection without a product read or
@@ -257,9 +263,9 @@ device-local shortcut preference contract; no captured content enters logs.
 
 ## Command menu
 
-Issue #1957 adds Command menu / 명령 메뉴, localized groups, input hint, Close and no-results guidance. Reuse current-language navigation, creation and shared Settings labels/help/breadcrumbs. NFC normalization supports Korean composed/decomposed input; never add cross-language aliases or dynamic resource content. Locale changes retain the palette query/input focus and update matches. The fixed primary+K action shares the typed Help/ARIA catalog and remains outside editable shortcut preferences.
+The feature adds Command menu / 명령 메뉴, localized groups, input hint, Close and no-results guidance. Reuse current-language navigation, creation and shared Settings labels/help/breadcrumbs. NFC normalization supports Korean composed/decomposed input; never add cross-language aliases or dynamic resource content. Locale changes retain the palette query/input focus and update matches. The fixed primary+K action shares the typed Help/ARIA catalog and remains outside editable shortcut preferences.
 
-## Device styling localization (issue #2025)
+## Device styling localization
 
 Bundled Appearance labels cover theme libraries, custom editor/import validation,
 composer/status/display/image controls and read-only unavailable-renderer help in

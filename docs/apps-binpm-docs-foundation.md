@@ -32,6 +32,42 @@
 - Content must curate those internal contracts into public guidance and must not document repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
 - This app is a documentation surface only. It must not expand binpm runtime behavior, release automation, package-manager backend scope, checksum discovery, signature verification, or global update behavior without corresponding updates to `docs/project-binpm.md` and `docs/crates-binpm-foundation.md`.
 
+### Application integration
+
+- `binpm-docs` must remain Rspress-based unless `project-binpm.md` and `apps-binpm-docs-foundation.md` document a replacement.
+
+- The binpm content section is built directly by `public-docs`; it has no standalone production deployment.
+
+- `binpm-docs` has canonical production URL `https://oss.delino.io/binpm`.
+
+- Rspress routes and navigation in `apps/public-docs/rspress.config.ts` must stay aligned with `apps-binpm-docs-foundation.md`.
+
+- `binpm-docs` must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in top-level social links and in the document-page footer.
+
+- `binpm-docs` top-level navigation must include all stable docs routes so the mobile site navigation exposes the same stable route set as the documentation sidebar.
+
+- `binpm-docs` must provide a skip-to-content link, expose user-facing accessible names for search, repository, theme, mobile navigation, sidebar, page-outline, permalink, and code-copy controls, keep closed mobile navigation drawers out of the focus order, keep decorative heading permalink markers out of accessible heading names, and support closing mobile drawers with `Esc`.
+
+- `binpm-docs` must expose the Rspress search overlay as an accessible modal dialog with a role and accessible name, contained keyboard focus while open, a named focusable close button, `Esc` close behavior, focus return to the search trigger, and unchanged search result navigation.
+
+- Stable `binpm-docs` route IDs are `/`, `/installation`, `/getting-started`, `/commands`, `/local-tooling`, `/cache-and-verification`, `/releases`, `/troubleshooting`, and `/reference`.
+
+- `binpm-docs` must keep Rspress clean URLs enabled and validate that stable route IDs have build output artifacts and generated internal links do not use `.html` suffixes.
+
+- `binpm-docs` content must not infer behavior, status, or page contents from the live canonical site; repository contracts are the source of truth.
+
+- `binpm-docs` must not document repository-internal implementation details from those source contracts unless the detail is itself a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
+
+- binpm direct-installer guidance must include copy-pasteable latest remote POSIX and PowerShell commands that use the canonical subpath URLs `https://oss.delino.io/binpm/install.sh` and `https://oss.delino.io/binpm/install.ps1`, preserve current and tag- or commit-pinned first-party `delinoio/oss` raw GitHub examples, keep `scripts/install/binpm.sh` and `scripts/install/binpm.ps1` visible for maintainer workflows, describe checksum verification through `SHA256SUMS`, and distinguish binpm release artifact verification from package verification for tools installed by binpm.
+
+- binpm installation and release guidance must describe Homebrew as prebuilt-only, describe disabled `cargo-binstall` quick-install and compile fallbacks, and distinguish first-party binpm release platforms from broader third-party target parsing support.
+
+- When binpm source, target, local tooling, cache, verification, install, execution, release distribution, installer, diagnostic, or output behavior changes, update related `apps/public-docs/docs/binpm` pages in the same change set.
+
+- Nodeup installation guidance must include an install-method chooser near the top of the installation page and briefly explain when to use Homebrew, direct installers, `cargo-binstall`, and binpm.
+
+- If `apps/public-docs/docs/binpm` or `apps/public-docs/docs/nodeup` changes, run `pnpm --filter public-docs test` before finishing.
+
 ## Storage
 - Source documentation is versioned in-repo under `apps/public-docs/docs/binpm`.
 - Build artifacts are generated into `apps/public-docs/doc_build` and are not source-controlled.
@@ -67,6 +103,8 @@
 - Update `docs/project-binpm.md`, this file, and `apps/AGENTS.md` when the content path, route IDs, theme repository-link surface, validation commands, toolchain, output directory, or publication target changes.
 - Update `docs/crates-binpm-foundation.md` and the relevant app pages when binpm runtime, source, target, local tooling, cache, verification, install, execution, release distribution, installer, diagnostic, or output behavior changes.
 - Update `docs/README.md` when adding, renaming, or removing this domain contract.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - `docs/project-binpm.md`

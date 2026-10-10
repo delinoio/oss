@@ -52,6 +52,8 @@ Integrates with the Native Messaging host, DevHud local IPC, configured URL mapp
 
 Update the project index, app/native-host contracts, `apps/AGENTS.md`, and root/domain ownership rules when extension permissions, message schema, pairing, packaging, or privacy boundaries change.
 
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+
 ## References
 
 - [DevHud project index](project-devhud.md)

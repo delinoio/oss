@@ -1,7 +1,7 @@
 # DeliDev current-user service contract
 
 ## Scope
-Issue #1086 adds optional native server and Worker registrations. Go owns `cmds/delidev-cli/internal/userservice`, the CLI infrastructure boundary, and authenticated `SystemService` operations. This is separate from Worker job, workspace and native harness process ownership. The complete product requirements remain in [requirements](cmds-delidev-requirements.md).
+The feature adds optional native server and Worker registrations. Go owns `cmds/delidev-cli/internal/userservice`, the CLI infrastructure boundary, and authenticated `SystemService` operations. This is separate from Worker job, workspace and native harness process ownership. The complete product requirements remain in [requirements](cmds-delidev-requirements.md).
 
 ## Runtime and Language
 The installed Go `delidev` executable is registered directly. macOS uses the current user's GUI LaunchAgents domain; Linux uses the existing `systemd --user` manager; Windows uses Task Scheduler with the current SID, `InteractiveToken`, `LeastPrivilege` and `IgnoreNew`. No system service, password, elevation, pre-login execution, linger enablement or logout-survival guarantee is introduced.
@@ -26,6 +26,38 @@ Ordinary server/Worker Stop remains authoritative. The service wrapper observes 
 
 Authenticated native service control holds the selected server's original lifecycle gate through retained intent and native effects. Managed database restore holds that same gate through publication and old-epoch stop intent, so either operation refuses overlap instead of allowing a service request to cross replacement. Ordinary product Stop remains authoritative after restore: the service wrapper suppresses login registration after joined server exit and never turns restoration into implicit Start.
 
+### cmds/delidev-cli constraints
+
+- Current-user service completion follows `cmds-delidev-user-services-contract.md`: join the product controller and intent observer, acquire the bounded state gate independently of their canceled context, then atomically publish positive completion while retaining runtime ownership. Status readers and completion publication must share this gate, including Windows permission inspection.
+
+### cmds/delidev-cli/internal/cli constraints
+
+- Manual remediation capabilities/fix commands use generated authenticated PullRequestFixService with the same closed original selection and receipt semantics as desktop. Preserve exact revisions/request IDs; reject foreign acknowledgments and avoid authentication/document stdin sharing. Never publish with the server lookup PAT or silently select another harness.
+
+- machine ssh uses authenticated InstallationService and write-only bounded stdin. The native-only worker ssh-setup helper verifies the signed artifact identity, journals original pairing/start admission and never repeats missing progress or replaces registration/workspaces.
+
+### cmds/delidev-cli/internal/domain constraints
+
+- Service status observations hold the state gate against controller admission, probe the runtime lock before reading completion, and retain an acquired runtime lock through that observation. Preserve incomplete controller evidence as uncertain; an earlier journal snapshot cannot establish cleanup after lock release.
+
+- EntityKind update and ssh_setup are installation metadata owned by Go InstallationService. Worker version admission requires the original compiled-authority release and exact registration; reservations alone never advertise installation support.
+
+### cmds/delidev-cli/internal/knownmodels constraints
+
+- Schema 1 contains all three nonempty bounded services and source provenance. Reject invalid, ambiguous or partial data before atomic publication. Filter definite retirement dates only from new recommendations.
+
+### cmds/delidev-cli/internal/server constraints
+
+- Keep ActivityService registered only as authenticated retirement compatibility: owner/client receive Unsupported/Unimplemented with safe correlation guidance, even for malformed filters or legacy cursors. Preserve missing/revoked/Worker refusals; access no store, vault, admission, native or outbound dependency.
+
+- Authenticated user-service native control and managed restore share the original lifecycle gate through intent and native effects. Replacement must refuse unfinished control and synchronize stopped lifecycle intent before atomic database publication; any uncertain post-close outcome ends the old server epoch.
+
+- Signed updates use InstallationService and joined daily maintenance. Fence new native claims while original work/cleanup drains, bind once-only update claims/reports to the original device/current instance, and retain unknown outcomes. Signed historical version admission never bypasses live-controller leases; only an active original claim with closed predecessor streams can hand off. SSH first pairing selects the exact server-compatible signed release, and remote targets require a reachable TLS endpoint before credential staging.
+
+### cmds/delidev-cli/internal/worker constraints
+
+- Optional current-user server/Worker services follow `cmds-delidev-user-services-contract.md`. Keep stopped installation, existing foreground exclusivity, current-user/executable/definition/process-birth ownership, durable Stop before native disable, bounded native attempts, actor/revision-bound no-replay receipts, and independently confirmed controller cleanup before removal. Preserve all data/authentication/native session evidence; no system services, passwords, linger or foreign registration replacement.
+
 ## Storage
 Private per-kind atomic JSON records retain the installation's canonical scope identity, executable file identity/SHA-256, user identity and safe configuration references, exact revision, desired state, and up to 1,024 original request claims with matching metadata-only events. A single synchronized replacement publishes intent/event/receipt acceptance atomically. State and control locks serialize bounded publication and native writes. Completed receipts cannot repeat native effects; incomplete claims preserve uncertainty, including after client loss. A separate per-installation runtime record retains the original process birth and UUID-v7 instance/start identities, with positive completion published only after the product controller joins. Removed registrations retain all historical records.
 
@@ -42,7 +74,7 @@ Windows process image observation resolves the Win32 path with the same canonica
 
 A missing native user session leaves positively owned Stop suppression durable but returns unavailable without native control or shutdown claims. Native writes are bounded and cancellable. An unknown or failed native outcome retains the original claim; reconnect cannot blindly replay it. Authorization is rechecked after bounded admission/native observation immediately before intent publication and again before each native side effect, so a client revoked during inspection cannot publish Stop suppression. Product RPCs return only service kind/ID/revision/state, desired state, login enablement and independent controller-cleanup confirmation; no executable, private path, PID, birth identity or credential is exposed. Service completion never implies native session cleanup or grants Resume.
 
-### Desktop launch admission (owner amendment #1137)
+### Desktop launch admission (owner amendment )
 
 Opening a fresh main desktop process is intentional local Start only for an ordinary scope. A native server registration retains independent ownership: launch may reuse a compatible authenticated live server, but cannot clear its desired state, start its service manager, repair/remove registration or spawn a detached competitor. Stopped and unresolved registrations remain blocked; malformed evidence is preserved. The desktop advanced Start capability uses the same admission boundary, including after an earlier launch failure, so it cannot bypass a retained registration. Ordinary explicit CLI Start retains its separate semantics.
 
@@ -67,6 +99,8 @@ Reuse the existing protected-file locks, process-birth observation primitives, f
 
 ## Change Triggers
 Update this document, the project and CLI/protocol/client contracts, validation records in pull requests, issues and CI logs/artifacts, and scoped AGENTS whenever registration ownership, authorization, native definitions, intent/receipt semantics, cleanup proof, command shape or platform support changes.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - [Microsoft process image observation](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-queryfullprocessimagenamew)

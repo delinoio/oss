@@ -62,3 +62,9 @@ main-only saves and native/mobile routing. `pnpm ci:contracts` and package-owned
 DevHud/DeliDev tests include these boundaries.
 
 CEF AppImage build helpers are prepared by `scripts/appimage-tools.mjs` for DevHud and DeliDev using the existing canonical pins in `apps/devhud/cef-pins.json`. The helper verifies the sharun executable, anylinux C source, and original MIT license before exposing them to the bundler. Native compilation receives the caller-owned environment. DeliDev retains its credential-free build environment and cleans private helper staging while holding its native package lock. These helper inputs are distinct from the published Tauri CLI release.
+
+## Project requirements
+
+- Shared dependency executables follow `repository-prebuilt-dependencies-contract.md`. Use the locked public Tauri CLI through `scripts/tauri-cli.mjs`; never compile a CLI wrapper in consumers or fall back to source in CI. New source/recipe versions require six-host public release verification before updating both consumer locks.
+
+- DevHud and DeliDev CEF AppImage packaging must share verified helper preparation through `scripts/appimage-tools.mjs` and the canonical DevHud runtime pins. Preserve each caller’s environment restrictions and private staging cleanup; follow `repository-prebuilt-dependencies-contract.md`.
