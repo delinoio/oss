@@ -30,7 +30,7 @@ func TestClaudeConfigurationOriginalSourcesAndSecretExclusion(t *testing.T) {
 	nativeFixtureFile(t, project, ".claude/rules/safety.md", "---\npaths: [\"src/**\"]\n---\nKeep exact rule.\n")
 	nativeFixtureFile(t, project, "CLAUDE.local.md", "Local instructions.\n")
 	nativeFixtureFile(t, project, ".claude/skills/example/SKILL.md", "# Exact skill\n")
-	nativeFixtureFile(t, project, ".claude/plugins/example/plugin.json", `{"name":"fixture","version":"1"}`)
+	nativeFixtureFile(t, project, ".claude/plugins/example/plugin.json", `{"name":"fixture","version":"1","author":{"name":"Fixture author"}}`)
 	nativeFixtureFile(t, project, ".mcp.json", `{"mcpServers":{"safe":{"command":"fixture"},"private":{"headers":{"Authorization":"secret"}}}}`)
 	snapshot, e := readClaudeConfigurationSources(context.Background(), user, project)
 	if e != nil {
@@ -47,6 +47,9 @@ func TestClaudeConfigurationOriginalSourcesAndSecretExclusion(t *testing.T) {
 		seen[string(entry.Source)+":"+entry.Name] = true
 		if entry.Activation != domain.NativeConfigurationDisabled {
 			t.Fatal("implicit activation")
+		}
+		if entry.Kind == domain.NativeConfigurationPlugin && !entry.Supported {
+			t.Fatal("ordinary plugin author mistaken for credentials")
 		}
 		if entry.Name == "safety.md" && entry.Files[0].Contents != "---\npaths: [\"src/**\"]\n---\nKeep exact rule.\n" {
 			t.Fatal("rule lost exact contents")

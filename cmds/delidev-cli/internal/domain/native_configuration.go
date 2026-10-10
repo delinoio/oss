@@ -268,7 +268,7 @@ func NativeConfigurationJSONSafe(raw []byte) bool {
 		case map[string]any:
 			for k, v := range t {
 				lower := strings.ToLower(k)
-				if lower == "env" || lower == "headers" || lower == "key" || strings.Contains(lower, "apikey") || strings.Contains(lower, "api_key") || strings.Contains(lower, "privatekey") || strings.Contains(lower, "private_key") || strings.Contains(lower, "token") || strings.Contains(lower, "password") || strings.Contains(lower, "secret") || strings.Contains(lower, "credential") || strings.Contains(lower, "auth") {
+				if lower == "env" || lower == "headers" || lower == "key" || strings.Contains(lower, "apikey") || strings.Contains(lower, "api_key") || strings.Contains(lower, "privatekey") || strings.Contains(lower, "private_key") || strings.Contains(lower, "token") || strings.Contains(lower, "password") || strings.Contains(lower, "secret") || strings.Contains(lower, "credential") || (strings.Contains(lower, "auth") && lower != "author" && lower != "authors") {
 					if m, ok := v.(map[string]any); !ok || len(m) != 0 {
 						return false
 					}
