@@ -560,3 +560,16 @@ missing earlier observation. Callbacks carry no paths, remote URLs or Git output
 Worker reporting is nonblocking and independently joined; shutdown closes callback admission and drains accepted reports for at most one aggregate 1.5-second reporting deadline before cancellation and join; it changes neither
 Git deadlines, original journals, leases, return values nor cleanup ownership.
 See the [startup contract](cmds-delidev-execution-startup-contract.md#operational-startup-progress).
+
+### Closed-owner working-directory selection
+
+A closed-execution inspection can select an existing directory relative to an
+original prepared repository, or the original General Chat root. The selection
+holds anchored identities for every path component and rechecks the canonical
+path before native effects and publication. Reject absolute or parent-relative
+input, missing/non-directory entries, internal or escaped symbolic links, and
+same-name replacements. A released inspection cannot authorize selection or
+verification. Selecting a directory does not mutate the preparation manifest,
+primary path, root inventory, repository source or execution cleanup claim.
+This private filesystem check supplies no native settings, instruction reload,
+trust, historical continuation or fresh-input authority.

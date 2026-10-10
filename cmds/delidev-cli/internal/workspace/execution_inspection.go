@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
@@ -18,15 +19,17 @@ import (
 // checks retained completion evidence. Closing only releases the lock; unlike
 // an execution lease it cannot create, advance or rewrite a cleanup claim.
 type ClosedExecutionInspection struct {
-	once    sync.Once
-	release func() error
-	err     error
-	cwd     string
+	once     sync.Once
+	release  func() error
+	err      error
+	cwd      string
+	manifest Manifest
+	closed   atomic.Bool
 }
 
 func (i *ClosedExecutionInspection) WorkingDirectory() string { return i.cwd }
 func (i *ClosedExecutionInspection) Close() error {
-	i.once.Do(func() { i.err = i.release() })
+	i.once.Do(func() { i.closed.Store(true); i.err = i.release() })
 	return i.err
 }
 
@@ -101,5 +104,40 @@ func (m *Manager) InspectClosedExecution(ctx context.Context, expected Execution
 		return nil, domain.SafeError(err)
 	}
 	m.Logger.InfoContext(ctx, "workspace_closed_execution_inspected", "session_id", input.SessionID, "job_id", expected.JobID, "execution_id", expected.ExecutionID)
-	return &ClosedExecutionInspection{release: lock.Close, cwd: retained.PrimaryPath}, nil
+	return &ClosedExecutionInspection{release: lock.Close, cwd: retained.PrimaryPath, manifest: retained}, nil
+}
+
+// SelectDirectory derives its only root from the manifest already verified under
+// this inspection's original closed-owner lock. Callers cannot add root authority.
+func (i *ClosedExecutionInspection) SelectDirectory(repository domain.ID, relative string) (*DirectorySelection, error) {
+	if i.closed.Load() {
+		return nil, directoryChanged()
+	}
+	root := i.manifest.PrimaryPath
+	if len(i.manifest.Repositories) == 0 {
+		if repository != "" {
+			return nil, directoryChanged()
+		}
+	} else {
+		root = ""
+		for _, prepared := range i.manifest.Repositories {
+			if prepared.ID == repository {
+				root = prepared.Path
+				break
+			}
+		}
+		if root == "" {
+			return nil, directoryChanged()
+		}
+	}
+	selection, err := selectDirectory(root, relative)
+	if err != nil {
+		return nil, err
+	}
+	selection.ownerAlive = func() bool { return !i.closed.Load() }
+	if err := selection.Verify(); err != nil {
+		_ = selection.Close()
+		return nil, err
+	}
+	return selection, nil
 }
