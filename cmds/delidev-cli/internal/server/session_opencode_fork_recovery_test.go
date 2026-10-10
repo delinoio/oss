@@ -302,16 +302,16 @@ func TestNativeRecoveryClaimVersionDescribesOperation(t *testing.T) {
 	for _, version := range []uint32{1, 2, 3, 4} {
 		input := domain.ExecutionJobInput{Version: version}
 		if nativeRecoveryClaimVersion(input) != 1 {
-			t.Fatal("first claim version changed")
+			t.Fatalf("first assignment version %d must use native claim 1", version)
 		}
 		input.Continuation = &domain.ExecutionContinuation{}
 		if nativeRecoveryClaimVersion(input) != 2 {
-			t.Fatal("continuation assignment version became native claim")
+			t.Fatalf("continuation assignment version %d must use native claim 2", version)
 		}
 		input.Continuation = nil
 		input.Fork = &domain.ForkExecution{}
 		if nativeRecoveryClaimVersion(input) != 2 {
-			t.Fatal("Fork assignment version became native claim")
+			t.Fatalf("Fork assignment version %d must use native claim 2", version)
 		}
 	}
 }
