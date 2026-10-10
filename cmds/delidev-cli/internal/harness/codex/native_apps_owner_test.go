@@ -144,3 +144,29 @@ func TestSessionNativeAppsOriginalPreapprovalFailureGrantsNoEffect(t *testing.T)
 		t.Fatal("duplicate terminal observation accepted")
 	}
 }
+
+func TestSessionNativeAppsUnselectedOrUnsupportedCallCannotReadOriginalInventory(t *testing.T) {
+	for _, scenario := range []string{"unselected", "unknown-version", "unsupported-version"} {
+		t.Run(scenario, func(t *testing.T) {
+			c, turn, source := sessionNativeAppsOwnerFixture(t)
+			calls := 0
+			original := c.nativeAppsCaller
+			c.nativeAppsCaller = func(ctx context.Context, id domain.ID, method string, params any) (nativewire.Response, error) {
+				calls++
+				return original(ctx, id, method, params)
+			}
+			switch scenario {
+			case "unselected":
+				source.AppID = "foreign"
+			case "unknown-version":
+				c.version = ""
+			case "unsupported-version":
+				c.version = "0.161.0"
+			}
+			event := Event{Kind: ToolStartedEvent, TurnID: turn, Correlated: true, Tool: &Tool{Kind: NativeAppsTool, NativeApps: source}}
+			if c.enrichNativeAppsEventLocked(context.Background(), &event) == nil || calls != 0 || len(c.nativeAppCalls) != 0 {
+				t.Fatal("foreign or unsupported original call borrowed native read authority")
+			}
+		})
+	}
+}

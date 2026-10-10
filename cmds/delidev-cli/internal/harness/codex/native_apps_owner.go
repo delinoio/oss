@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
+	"slices"
 	"strings"
 )
 
@@ -24,7 +25,7 @@ type ownedNativeAppCall struct {
 func (c *Client) enrichNativeAppsEventLocked(ctx context.Context, event *Event) error {
 	if event.Tool != nil && event.Tool.Kind == NativeAppsTool {
 		source := event.Tool.NativeApps
-		if source == nil || c.nativeApps == nil || c.nativeApps.Validate() != nil || !event.Correlated || event.Late {
+		if source == nil || c.nativeApps == nil || c.nativeApps.Validate() != nil || c.version != "0.162.0" || !slices.Contains(c.nativeApps.AppIDs, source.AppID) || !event.Correlated || event.Late {
 			return incompatible()
 		}
 		if c.nativeAppCalls == nil {
