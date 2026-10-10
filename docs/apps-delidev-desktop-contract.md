@@ -3199,7 +3199,7 @@ Saving repository configuration acknowledges a durable asynchronous job. The UI 
 ### Worker discovery and schedules
 Execution-Worker settings show platform, last observation, exact selected/resolved harness paths, version and native-protocol outcomes. Refreshing without path edits retains current selections; explicit editing replaces all four paths, with empty paths meaning Worker PATH. Original revisions and uncertain requests are retained. A checkbox separately authorizes native protocol validation without login/inference. Track the accepted discovery job before reporting completion; never install a harness or turn detection into execution readiness.
 
-Schedules have a dedicated desktop surface that remains mounted across navigation. Creation/editing sends only the strict editable definition: prompt, project, Agent, Worker, input mode, cron, explicit IANA timezone, overlap policy and optional per-repository starting overrides. Defaults are paused Worktree schedules. The server alone computes next UTC due times, skips offline instants, applies overlap/skip/FIFO wait and resolves execution authority. Existing Local definitions can be edited with their unchanged authenticated Worker; new/relocated Local schedules require fresh private proof from this computer's paired Worker through the native boundary. The UI never accepts a supplied UUID as origin proof.
+Schedules have a dedicated desktop surface that remains mounted across navigation. Creation/editing sends only the strict editable definition: prompt, project, Agent, Worker, input mode, cron, explicit IANA timezone, overlap policy and optional per-repository starting overrides. Fresh desktop schedules enable future runs by default and use Worktree. Existing saved schedules retain their enabled or paused state during editing. The server alone computes next UTC due times, skips offline instants, applies overlap/skip/FIFO wait and resolves execution authority. Existing Local definitions can be edited with their unchanged authenticated Worker; new/relocated Local schedules require fresh private proof from this computer's paired Worker through the native boundary. The UI never accepts a supplied UUID as origin proof.
 
 Pause/resume changes future scheduling only. Run now explicitly confirms one independent occurrence, works while paused under ordinary server eligibility, and retains the original request after uncertain acknowledgment without enabling the future timer. Accepted occurrences are shown independently from native execution and current session state. Delete confirms future configuration removal, while the independent paginated history remains visible, refreshable and accessible by retained schedule ID. Every configuration/control mutation uses its captured revision, and stale edits preserve their draft. History and status reads do not replay side effects.
 
@@ -3253,7 +3253,7 @@ focus. Changing Project or selecting Local clears overrides. Local omits this
 read/form path and explains shared checkouts without fetch or starting overrides.
 
 Frequency is an internal enum, never a definition field: Daily, Weekdays,
-Weekly, Custom cron. Defaults remain paused, Worktree, Execute, Overlap,
+Weekly, Custom cron. Fresh creation defaults are enabled, Worktree, Execute, Overlap,
 Weekdays 09:00, `0 9 * * 1-5` and explicit `UTC`. Preset Time is required
 minute-resolution `HH:mm`; Weekly additionally selects exactly one weekday,
 first Monday, retained when leaving/returning. For valid hour `h` and minute `m`,
@@ -3276,7 +3276,12 @@ absolute next-UTC authority.
 
 Retain Overlap independent sessions, Skip new occurrences while prior work is
 active, and FIFO Wait until confirmed cleanup. **Enable future scheduled runs**
-is unchecked by default with paused-creation guidance. Explain continued server
+is checked by default. Explain that unchecking creates a paused schedule. Preserve
+the actual draft choice through Back/Next, Review Edit, inactive navigation,
+Settings and same-identity reconnect. Cancel performs no save; the next fresh
+creation starts checked. Never apply the fresh default to an existing draft,
+saved definition or retained uncertain request. Server and CLI omission
+semantics remain unchanged. Explain continued server
 scheduling after desktop closure and skipped offline due instants without a
 catch-up burst. The action row shows Paused/Enabled on creation plus workspace
 and mode, secondary Cancel and primary Create schedule. Cancel ends creation and
