@@ -88,6 +88,7 @@ const (
 	HarnessDiscoveryJob           JobType = "harness-discovery"
 	ExecuteSessionJob             JobType = "execute-session"
 	CompactSessionJob             JobType = "compact-session"
+	ChangeSessionDirectoryJob     JobType = "change-session-directory"
 	ForkSessionJob                JobType = "fork-session"
 	GenerateSessionTitleJob       JobType = "generate-session-title"
 )
@@ -167,7 +168,7 @@ const (
 )
 
 func (j Job) Validate() error {
-	if !slices.Contains([]JobType{ImageAttachmentJob, CleanupFailedSubscriptionsJob, CleanupFailedSubscriptionJob, NativeModelsJob, CreateBackupJob, DeleteBackupJob, CloneRepositoryJob, DiscoverRepositoryBranchesJob, InspectRepositoryJob, SaveRepositoryJob, ImportConfigurationJob, PrepareWorkspaceJob, WorkspaceStorageJob, RecoverWorkspaceJob, RecoverExecutionJob, HarnessDiscoveryJob, ExecuteSessionJob, CompactSessionJob, ForkSessionJob, GenerateSessionTitleJob}, j.Type) {
+	if !slices.Contains([]JobType{ImageAttachmentJob, CleanupFailedSubscriptionsJob, CleanupFailedSubscriptionJob, NativeModelsJob, CreateBackupJob, DeleteBackupJob, CloneRepositoryJob, DiscoverRepositoryBranchesJob, InspectRepositoryJob, SaveRepositoryJob, ImportConfigurationJob, PrepareWorkspaceJob, WorkspaceStorageJob, RecoverWorkspaceJob, RecoverExecutionJob, HarnessDiscoveryJob, ExecuteSessionJob, CompactSessionJob, ChangeSessionDirectoryJob, ForkSessionJob, GenerateSessionTitleJob}, j.Type) {
 		return Fail(InvalidArgument, "Unknown Worker job type.", "Use a supported product operation.")
 	}
 	if !slices.Contains([]JobState{JobQueued, JobClaimed, JobSucceeded, JobFailed, JobUncertain, JobCanceled}, j.State) {
@@ -199,7 +200,7 @@ func (j Job) Validate() error {
 	// compaction envelope needs room for two copies plus its bounded metadata.
 	// Keep this exception until compaction stores the source assignment by
 	// reference; the larger cap is still finite and applies only to this job.
-	if j.Type == CompactSessionJob {
+	if j.Type == CompactSessionJob || j.Type == ChangeSessionDirectoryJob {
 		maxInput = maxCompactionJobInputBytes
 	} else if j.Type == WorkspaceStorageJob {
 		maxInput = MaxStorageRecoveryInputBytes

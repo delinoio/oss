@@ -25,6 +25,7 @@ type SystemCapability int32
 
 const (
 	SystemCapability_SYSTEM_CAPABILITY_UNSPECIFIED                       SystemCapability = 0
+	SystemCapability_SYSTEM_CAPABILITY_SESSION_DIRECTORY_V1              SystemCapability = 95
 	SystemCapability_SYSTEM_CAPABILITY_AUTOMATIC_RESET_CREDIT_CONSENT_V1 SystemCapability = 77
 	SystemCapability_SYSTEM_CAPABILITY_UNREAD_INBOX_COUNT_V1             SystemCapability = 80
 	SystemCapability_SYSTEM_CAPABILITY_INLINE_WORKER_MODELS_V1           SystemCapability = 42
@@ -100,6 +101,7 @@ const (
 var (
 	SystemCapability_name = map[int32]string{
 		0:  "SYSTEM_CAPABILITY_UNSPECIFIED",
+		95: "SYSTEM_CAPABILITY_SESSION_DIRECTORY_V1",
 		77: "SYSTEM_CAPABILITY_AUTOMATIC_RESET_CREDIT_CONSENT_V1",
 		80: "SYSTEM_CAPABILITY_UNREAD_INBOX_COUNT_V1",
 		42: "SYSTEM_CAPABILITY_INLINE_WORKER_MODELS_V1",
@@ -166,6 +168,7 @@ var (
 	}
 	SystemCapability_value = map[string]int32{
 		"SYSTEM_CAPABILITY_UNSPECIFIED":                          0,
+		"SYSTEM_CAPABILITY_SESSION_DIRECTORY_V1":                 95,
 		"SYSTEM_CAPABILITY_AUTOMATIC_RESET_CREDIT_CONSENT_V1":    77,
 		"SYSTEM_CAPABILITY_UNREAD_INBOX_COUNT_V1":                80,
 		"SYSTEM_CAPABILITY_INLINE_WORKER_MODELS_V1":              42,
@@ -2993,9 +2996,10 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"V\n" +
 	"\x18GetBackupRestoreResponse\x12:\n" +
-	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xb6\x18\n" +
+	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xe2\x18\n" +
 	"\x10SystemCapability\x12!\n" +
-	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x127\n" +
+	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x12*\n" +
+	"&SYSTEM_CAPABILITY_SESSION_DIRECTORY_V1\x10_\x127\n" +
 	"3SYSTEM_CAPABILITY_AUTOMATIC_RESET_CREDIT_CONSENT_V1\x10M\x12+\n" +
 	"'SYSTEM_CAPABILITY_UNREAD_INBOX_COUNT_V1\x10P\x12-\n" +
 	")SYSTEM_CAPABILITY_INLINE_WORKER_MODELS_V1\x10*\x121\n" +

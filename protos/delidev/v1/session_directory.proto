@@ -1,0 +1,45 @@
+syntax = "proto3";
+package delidev.v1;
+
+import "delidev/v1/common.proto";
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
+
+// Explicit directory changes retain the original settled native execution.
+// Reading an operation never repeats its native side effects.
+service SessionDirectoryService {
+  rpc ChangeSessionDirectory(ChangeSessionDirectoryRequest) returns (ChangeSessionDirectoryResponse);
+  rpc GetSessionDirectoryOperation(GetSessionDirectoryOperationRequest) returns (GetSessionDirectoryOperationResponse);
+}
+
+message ChangeSessionDirectoryRequest {
+  Mutation mutation = 1;
+  string repository_id = 2;
+  string relative_path = 3;
+}
+message GetSessionDirectoryOperationRequest {
+  string session_id = 1;
+  string request_id = 2;
+}
+// Typed metadata identifies the immutable generation, never an absolute root.
+message SessionDirectoryGeneration {
+  string generation_id = 1;
+  string job_id = 2;
+  string request_id = 3;
+  string source_execution_id = 4;
+  string repository_id = 5;
+  string relative_path = 6;
+  string previous_generation_id = 7;
+}
+message SessionDirectoryOperation {
+  string request_id = 1;
+  string session_id = 2;
+  Resource job = 3;
+  SessionDirectoryGeneration generation = 4;
+}
+message ChangeSessionDirectoryResponse {
+  SessionDirectoryOperation operation = 1;
+}
+message GetSessionDirectoryOperationResponse {
+  SessionDirectoryOperation operation = 1;
+}

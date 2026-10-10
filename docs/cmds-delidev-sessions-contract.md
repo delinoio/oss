@@ -964,3 +964,20 @@ Every claim, including the independent first-execution transaction primitive, us
 `ListWaitingQueue` reads dispatch order, exact uint64 generation, exact waiting count and bounded payloads from one transaction. Defaults are 50 inputs, maximum 200 and 3 MiB per payload page. Signed tokens bind server, session, generation and last reached input position. Membership/order changes return CursorExpired and require a fresh first page. Legacy ListQueue keeps its acceptance-history order and cursor meaning. Generation stays exact in Go uint64 and desktop bigint, including values above JavaScript's safe integer range.
 
 At each new Fork admission, freeze the source's already accepted image references in `fork-image-snapshot:<job-id>`, including an explicit empty set. Bind original source/child/execution/turn and immutable job-input digest. Independent inheritance and read-only Sidechat use this frozen set and recheck original image/Worker claims; later acceptance cannot enlarge it. Existing pre-cutover jobs without a snapshot retain the old verified history cutoff. Missing new snapshots require recovery. Retire snapshot metadata only after both original job and dependent child are retired; retain independent child deletion ownership and all original native/workspace restrictions.
+
+## Settled session directory generations
+
+A directory transition is an explicit metadata action on the original settled
+Codex root session. It is not input, a new execution, workspace preparation or
+an inference grant. Retain the exact accepted assignment, version-2 completion,
+ordered accepted-input publication, original history root and previous immutable
+directory generation. The selected repository and canonical relative directory
+must remain beneath the original prepared roots; the Worker owns canonical
+filesystem, configuration, trust and instruction verification.
+
+Pending or uncertain transitions fence competing session writers. Promote a new
+immutable generation only after original Worker/process/account ownership and
+verified native continuation and cleanup. Preserve all historical assignments
+and checkpoints. A successor execution carries the current generation separately
+from its original history. Lost receipts are recovered by reading the original
+operation; lack of a receipt never permits repeating a native transition.

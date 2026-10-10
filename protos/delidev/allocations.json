@@ -13293,6 +13293,164 @@
       "member": "replayed",
       "number": 2,
       "newDeclaration": true
+    },
+    {
+      "issue": 2046,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_SESSION_DIRECTORY_V1",
+      "number": 95
+    },
+    {
+      "issue": 2046,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_SESSION_DIRECTORY_V1",
+      "number": 63
+    },
+    {
+      "issue": 2046,
+      "kind": "message",
+      "declaration": "ChangeSessionDirectoryRequest",
+      "member": "mutation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2046,
+      "kind": "message",
+      "declaration": "ChangeSessionDirectoryRequest",
+      "member": "repository_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2046,
+      "kind": "message",
+      "declaration": "ChangeSessionDirectoryRequest",
+      "member": "relative_path",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2046,
+      "kind": "message",
+      "declaration": "GetSessionDirectoryOperationRequest",
+      "member": "session_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2046,
+      "kind": "message",
+      "declaration": "GetSessionDirectoryOperationRequest",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2046,
+      "kind": "message",
+      "declaration": "SessionDirectoryGeneration",
+      "member": "generation_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2046,
+      "kind": "message",
+      "declaration": "SessionDirectoryGeneration",
+      "member": "job_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2046,
+      "kind": "message",
+      "declaration": "SessionDirectoryGeneration",
+      "member": "request_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2046,
+      "kind": "message",
+      "declaration": "SessionDirectoryGeneration",
+      "member": "source_execution_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2046,
+      "kind": "message",
+      "declaration": "SessionDirectoryGeneration",
+      "member": "repository_id",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2046,
+      "kind": "message",
+      "declaration": "SessionDirectoryGeneration",
+      "member": "relative_path",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2046,
+      "kind": "message",
+      "declaration": "SessionDirectoryGeneration",
+      "member": "previous_generation_id",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2046,
+      "kind": "message",
+      "declaration": "SessionDirectoryOperation",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2046,
+      "kind": "message",
+      "declaration": "SessionDirectoryOperation",
+      "member": "session_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2046,
+      "kind": "message",
+      "declaration": "SessionDirectoryOperation",
+      "member": "job",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2046,
+      "kind": "message",
+      "declaration": "SessionDirectoryOperation",
+      "member": "generation",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2046,
+      "kind": "message",
+      "declaration": "ChangeSessionDirectoryResponse",
+      "member": "operation",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2046,
+      "kind": "message",
+      "declaration": "GetSessionDirectoryOperationResponse",
+      "member": "operation",
+      "number": 1,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [
@@ -13527,6 +13685,24 @@
       "method": "SetAutomaticResetCreditConsent",
       "input": "SetAutomaticResetCreditConsentRequest",
       "output": "SetAutomaticResetCreditConsentResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2046,
+      "service": "SessionDirectoryService",
+      "method": "ChangeSessionDirectory",
+      "input": "ChangeSessionDirectoryRequest",
+      "output": "ChangeSessionDirectoryResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2046,
+      "service": "SessionDirectoryService",
+      "method": "GetSessionDirectoryOperation",
+      "input": "GetSessionDirectoryOperationRequest",
+      "output": "GetSessionDirectoryOperationResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

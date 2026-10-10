@@ -11,6 +11,7 @@ import (
 // arrives separately through an authenticated digest-only grant registration;
 // upstream credentials and raw execution tokens never belong in this document.
 type ExecutionJobInput struct {
+	Directory           *SessionDirectoryRef       `json:"directory,omitempty"`
 	SidechatRetry       *SidechatRetryExecution    `json:"sidechat_retry,omitempty"`
 	ContextRevision     uint64                     `json:"context_revision,omitempty"`
 	Retry               *ExecutionStartupRetry     `json:"retry,omitempty"`
@@ -91,6 +92,9 @@ func (c ExecutionCompletion) ValidateForHarness(harness Harness) error {
 }
 
 func (i ExecutionJobInput) Validate() error {
+	if i.Directory != nil && (i.Directory.Validate() != nil || i.Configuration.Harness != Codex || i.Continuation == nil || i.Fork != nil || i.Retry != nil || i.SidechatRetry != nil || i.Configuration.SidechatPolicy != "") {
+		return DirectoryUncertain()
+	}
 	if i.SidechatRetry != nil && i.SidechatRetry.Validate(i) != nil {
 		return SidechatUnavailable()
 	}

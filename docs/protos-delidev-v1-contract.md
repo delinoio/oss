@@ -1417,3 +1417,19 @@ Each native bucket owns its exact bounded ID, required hasCredits/unlimited flag
 Account rows show one exact balance or a localized multi-bucket count. Manage subscription shows the read-only Paid credits card above Quota, with separate bucket labels and retained stale/error timestamps. Keep loading, unavailable/update, unknown, zero, positive and unlimited states distinct. Use existing theme tokens, wrapping rows, parent scrolling, keyboard/dismissal ownership and EN/KO strings. Presentation grants no account, execution, native or platform acceptance.
 
 The reconciled `CreateTerminalRequest` baseline retains original fields 1–4. The feature records their unchanged reset provenance as existing declarations; its records do not reclassify this original message as new. The feature owns creation intent field 5, original candidate field 6 and the closed creation-mode values. Preserve all member numbers and ownership.
+
+## Session directory namespace
+
+`SessionDirectoryService` reserves `ChangeSessionDirectory` and read-only
+`GetSessionDirectoryOperation`. System `SESSION_DIRECTORY_V1 = 95` and Worker
+`SESSION_DIRECTORY_V1 = 63` remain unadvertised until full owner integration.
+Change request fields are mutation 1, repository_id 2 and relative_path 3;
+operation reads bind session_id 1 and request_id 2. Generation fields retain
+ generation_id 1, job_id 2, request_id 3, source_execution_id 4, repository_id 5,
+relative_path 6 and previous_generation_id 7. Operation fields are request_id 1,
+session_id 2, job 3 and generation 4; each response uses operation 1.
+
+These typed identities do not grant new roots or expose absolute filesystem
+paths, credentials, instructions or native configuration. Preserve original
+mutation receipts and immutable Worker-private generation proofs under the
+[session lifecycle contract](cmds-delidev-sessions-contract.md#settled-session-directory-generations).
