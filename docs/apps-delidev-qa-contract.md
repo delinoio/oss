@@ -269,6 +269,15 @@ the external artifacts directory. `test:qa` runs the Go/host/lifecycle integrati
 tests; ordinary `pnpm test` also verifies that the built release frontend excludes
 the QA entry and host markers. No validation record is added to this repository.
 
+Repository-registration failures record only the original page ordinal (1 or 2),
+a closed registration action and a constructor-based timeout/assertion/unknown
+class in `registrationFailures`. Parallel pages retain their own first failure;
+successful actions and all existing real Worker assertions remain unchanged.
+Do not record selectors, error messages/stacks, credentials, private checkout
+paths or native content in this diagnostic projection. The original error still
+fails the run; a diagnostic record does not establish a repaired fixture or
+browser acceptance.
+
 ## Dependencies and Integrations
 
 Reuse the ordinary CLI, Go server/Worker, protected-storage ownership, generated

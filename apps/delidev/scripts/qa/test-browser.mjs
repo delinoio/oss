@@ -6,18 +6,20 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createClient } from "@connectrpc/connect";
 import { QaRun } from "./run.mjs";
+import { RegistrationStep, registrationDiagnostics } from "./browser-registration-diagnostics.mjs";
 import { document } from "./environment.mjs";
 import { list } from "./cleanup.mjs";
 import { until } from "./processes.mjs";
 
 const module = process.env.DELIDEV_QA_PLAYWRIGHT_MODULE;
-const { chromium } = await import(module ? pathToFileURL(resolve(module)).href : "playwright");
+const { chromium, errors } = await import(module ? pathToFileURL(resolve(module)).href : "playwright");
 const screenshotPolicy = process.env.DELIDEV_QA_SCREENSHOTS ?? "enabled";
 assert(["enabled", "disabled"].includes(screenshotPolicy), "Invalid QA screenshot policy");
 const screenshotsEnabled = screenshotPolicy === "enabled";
 const run = new QaRun({ workers: 2 });
 let browser, stage = "startup", passed = false;
 const checks = [];
+const registration = registrationDiagnostics(errors.TimeoutError);
 try {
   await run.start();
   browser = await chromium.launch({ headless: true, channel: process.env.DELIDEV_QA_BROWSER_CHANNEL ?? "chrome" });
@@ -36,21 +38,25 @@ try {
   stage = "worker-repository-registration";
   await Promise.all(pages.map(async (page, index) => {
     const environment = run.environments[index], path = join(environment.root, "browser-git-fixture");
-    await mkdir(path);
-    await run.processes.run("git", ["init", "--initial-branch=main", path]);
-    await run.processes.run("git", ["-C", path, "-c", "user.name=QA", "-c", "user.email=qa@example.invalid", "commit", "--allow-empty", "-m", "Browser QA fixture"]);
-    await run.processes.run("git", ["-C", path, "remote", "add", "origin", "https://github.com/fixture/browser-git-fixture.git"]);
-    await category(page, "Repositories"); await page.getByRole("button", { name: "Add repository", exact: true }).click();
-    await page.getByRole("textbox", { name: "Git URL", exact: true }).fill("https://github.com/fixture/browser-git-fixture.git");
-    await page.getByRole("button", { name: "Connect a Local folder (optional)", exact: true }).click();
-    assert(await page.getByRole("button", { name: "Choose folder", exact: true }).isDisabled());
-    await page.getByRole("button", { name: "Enter a path…", exact: true }).click();
-    await page.getByLabel("Absolute checkout path", { exact: true }).fill(path);
-    await page.getByRole("button", { name: "Inspect folder", exact: true }).click();
-    await page.getByRole("region", { name: "Repository detected" }).waitFor({ timeout: 30_000 });
-    await page.getByRole("dialog", { name: "Add repository", exact: true }).getByRole("button", { name: "Add repository", exact: true }).click();
-    await until(async () => (await list(environment, run.api.EntityKind.REPOSITORY)).length === 1);
-    await page.getByRole("button", { name: "Edit browser-git-fixture", exact: true }).waitFor({ timeout: 30_000 });
+    const step = (substage, operation) => registration.step(index + 1, substage, operation);
+    await step(RegistrationStep.GitFixture, async () => {
+      await mkdir(path);
+      await run.processes.run("git", ["init", "--initial-branch=main", path]);
+      await run.processes.run("git", ["-C", path, "-c", "user.name=QA", "-c", "user.email=qa@example.invalid", "commit", "--allow-empty", "-m", "Browser QA fixture"]);
+      await run.processes.run("git", ["-C", path, "remote", "add", "origin", "https://github.com/fixture/browser-git-fixture.git"]);
+    });
+    await step(RegistrationStep.OpenRepositories, () => category(page, "Repositories"));
+    await step(RegistrationStep.OpenDialog, () => page.getByRole("button", { name: "Add repository", exact: true }).click());
+    await step(RegistrationStep.FillURL, () => page.getByRole("textbox", { name: "Git URL", exact: true }).fill("https://github.com/fixture/browser-git-fixture.git"));
+    await step(RegistrationStep.OpenLocalFolder, () => page.getByRole("button", { name: "Connect a Local folder (optional)", exact: true }).click());
+    await step(RegistrationStep.NativePickerDisabled, async () => assert(await page.getByRole("button", { name: "Choose folder", exact: true }).isDisabled()));
+    await step(RegistrationStep.OpenManualPath, () => page.getByRole("button", { name: "Enter a path…", exact: true }).click());
+    await step(RegistrationStep.FillPath, () => page.getByLabel("Absolute checkout path", { exact: true }).fill(path));
+    await step(RegistrationStep.Inspect, () => page.getByRole("button", { name: "Inspect folder", exact: true }).click());
+    await step(RegistrationStep.ObserveInspection, () => page.getByRole("region", { name: "Repository detected" }).waitFor({ timeout: 30_000 }));
+    await step(RegistrationStep.Save, () => page.getByRole("dialog", { name: "Add repository", exact: true }).getByRole("button", { name: "Add repository", exact: true }).click());
+    await step(RegistrationStep.ObserveResource, () => until(async () => (await list(environment, run.api.EntityKind.REPOSITORY)).length === 1));
+    await step(RegistrationStep.ObserveRow, () => page.getByRole("button", { name: "Edit browser-git-fixture", exact: true }).waitFor({ timeout: 30_000 }));
   }));
   checks.push("real-worker-git-inspection-and-save");
 
@@ -191,7 +197,7 @@ try {
 } finally {
   if (screenshotsEnabled && !passed && browser && run.artifacts) await Promise.all(browser.contexts()[0].pages().map((page, index) => page.screenshot({ path: join(run.artifacts, "screenshots", `failed-worker-${index + 1}.png`) }).catch(() => {})));
   await browser?.close(); const cleanup = await run.close();
-  const record = { operation: "qa-browser-validation", command: "pnpm test:qa:browser", result: passed ? "passed" : "failed", stage, source: run.source, checks, cleanup: cleanup.environments, nativeAcceptance: "not-performed", accountAcceptance: "not-performed", screenshots: screenshotPolicy };
+  const record = { operation: "qa-browser-validation", command: "pnpm test:qa:browser", result: passed ? "passed" : "failed", stage, source: run.source, checks, registrationFailures: registration.records(), cleanup: cleanup.environments, nativeAcceptance: "not-performed", accountAcceptance: "not-performed", screenshots: screenshotPolicy };
   if (run.artifacts) await writeFile(join(run.artifacts, "browser-validation.json"), JSON.stringify(record, null, 2), { mode: 0o600 });
   console.log(JSON.stringify({ ...record, artifacts: run.artifacts }));
   if (passed) assert(cleanup.environments.every(environment => environment.state === "deleted"), "Original environment cleanup remains unconfirmed");
