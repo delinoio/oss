@@ -76,6 +76,7 @@ try {
     assert.deepEqual(spacing.groupMargins, spacing.headings.map((_, index) => index ? '8px' : '0px'));
     const stationarySearch = await dialog.locator('.command-menu-search').boundingBox();
     await page.keyboard.press('End');
+    await page.waitForFunction(() => document.querySelector('.command-menu [cmdk-list]')?.scrollTop > 0);
     assert((await dialog.locator('[cmdk-list]').evaluate(node => node.scrollTop)) > 0, 'Offscreen keyboard selection scrolls the result list');
     assert.deepEqual(await dialog.locator('.command-menu-search').boundingBox(), stationarySearch);
     const order=await dialog.locator('[cmdk-item]').evaluateAll(nodes=>nodes.map(node=>node.dataset.value));assert.equal(order.length,new Set(order).size);assert.deepEqual(order.slice(0,7),['sessions','pull-requests','usage','schedules','inbox','search','settings'].map(id=>`navigate:${id}`));
