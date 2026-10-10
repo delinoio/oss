@@ -6,6 +6,19 @@ use crate::language::{SupportedLanguage, active};
 mod keys;
 pub use keys::Message;
 
+/// Initial startup presentation only; this choice grants no owner-control
+/// authority.
+pub fn initial_startup_message(failure: crate::NativeFailure) -> Message {
+    match failure {
+        crate::NativeFailure::Busy
+        | crate::NativeFailure::ServiceManaged
+        | crate::NativeFailure::OwnershipConflict
+        | crate::NativeFailure::StartupConflict => Message::StartupConflict,
+        crate::NativeFailure::Incompatible => Message::StartupIncompatible,
+        _ => Message::StartupUnavailable,
+    }
+}
+
 fn catalog(language: SupportedLanguage) -> &'static BTreeMap<String, String> {
     static ENGLISH: OnceLock<BTreeMap<String, String>> = OnceLock::new();
     static KOREAN: OnceLock<BTreeMap<String, String>> = OnceLock::new();
@@ -142,6 +155,27 @@ pub fn number(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn initial_startup_selector_preserves_guidance_in_both_catalogs() {
+        use crate::NativeFailure;
+        for (failure, expected) in [
+            (NativeFailure::OwnershipConflict, Message::StartupConflict),
+            (NativeFailure::StartupConflict, Message::StartupConflict),
+            (NativeFailure::Busy, Message::StartupConflict),
+            (NativeFailure::ServiceManaged, Message::StartupConflict),
+            (NativeFailure::Incompatible, Message::StartupIncompatible),
+            (NativeFailure::SidecarFailed, Message::StartupUnavailable),
+        ] {
+            let message = initial_startup_message(failure);
+            assert_eq!(message.key(), expected.key());
+            for language in [SupportedLanguage::English, SupportedLanguage::Korean] {
+                let guidance = text_in(message, language);
+                assert_eq!(guidance, text_in(expected, language));
+                assert!(!guidance.contains("private secret path"));
+                assert!(!guidance.contains("{{"));
+            }
+        }
+    }
     #[test]
     fn catalogs_and_exact_numbers_keep_data_separate() {
         assert_eq!(
