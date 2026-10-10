@@ -6,7 +6,7 @@ import { Comparison, type BaseReference } from "./session-diff-model";
 export enum SessionTabKind {
   Conversation = "conversation", Files = "files", File = "file", Diff = "diff",
   Comparison = "comparison", Terminals = "terminals", Terminal = "terminal",
-  Browser = "browser", Page = "page", Diagnostics = "diagnostics", Sidechat = "sidechat",
+  Browser = "browser", Page = "page", Diagnostics = "diagnostics", Sidechat = "sidechat", PendingSidechat = "pending-sidechat",
 }
 export type SessionTab =
   | { kind: SessionTabKind.Conversation | SessionTabKind.Files | SessionTabKind.Diff | SessionTabKind.Terminals | SessionTabKind.Browser | SessionTabKind.Diagnostics }
@@ -14,7 +14,8 @@ export type SessionTab =
   | { kind: SessionTabKind.Comparison; repository: string; comparison: Comparison; path: string; base_ref?: BaseReference }
   | { kind: SessionTabKind.Terminal; id: string }
   | { kind: SessionTabKind.Page; profile: string; id: string; title: string; label?: string }
-  | { kind: SessionTabKind.Sidechat; id: string; name: string };
+  | { kind: SessionTabKind.Sidechat; id: string; name: string }
+  | { kind: SessionTabKind.PendingSidechat; requestId: string; name: string };
 export const conversationTab: SessionTab = { kind: SessionTabKind.Conversation };
 export function sessionTabKey(tab: SessionTab): string {
   switch (tab.kind) {
@@ -22,6 +23,7 @@ export function sessionTabKey(tab: SessionTab): string {
     case SessionTabKind.Comparison: return JSON.stringify([tab.kind, tab.repository, tab.comparison, tab.path, ...(tab.base_ref ? [tab.base_ref.type, tab.base_ref.name, tab.base_ref.remote] : [])]);
     case SessionTabKind.Terminal:
     case SessionTabKind.Sidechat: return JSON.stringify([tab.kind, tab.id]);
+    case SessionTabKind.PendingSidechat: return JSON.stringify([tab.kind, tab.requestId]);
     case SessionTabKind.Page: return JSON.stringify([tab.kind, tab.profile, tab.id]);
     default: return tab.kind;
   }
@@ -91,6 +93,23 @@ export class SessionTabsStore {
     this.close(id, key);
     if (next) this.open(id, { kind: SessionTabKind.Terminal, id: next });
     return this.snapshot(id).selected;
+  }
+  // Authoring is connection-owned, never part of a descriptor or Session RPC ID.
+  private childDrafts = new Map<string, { text: string; start: number; end: number; focus: boolean }>();
+  childDraft(id: string) { return this.childDrafts.get(id); }
+  takeChildFocus(id: string) { this.childDrafts.delete(id); }
+  publishSidechat(parent: string, requestId: string, tab: SidechatTab, draft: { text: string; start: number; end: number; focus: boolean }) {
+    const previous = this.snapshot(parent);
+    const key = sessionTabKey({ kind: SessionTabKind.PendingSidechat, requestId, name: "" });
+    const index = previous.tabs.findIndex(value => sessionTabKey(value) === key);
+    this.childDrafts.set(tab.id, draft);
+    this.parents.set(tab.id, parent);
+    const children = this.children.get(parent) ?? new Map<string, SidechatTab>();
+    children.set(tab.id, tab); this.children.set(parent, children);
+    // Publication cannot reopen closed presentation or select a background result.
+    if (index < 0) return;
+    const tabs = [...previous.tabs]; tabs[index] = tab;
+    this.publish(parent, { tabs, selected: previous.selected === key ? sessionTabKey(tab) : previous.selected });
   }
   // Child controllers survive presentation close and retain their original parent.
   sidechats(parent: string) { return [...(this.children.get(parent)?.values() ?? [])]; }

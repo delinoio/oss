@@ -26,5 +26,12 @@
   "session-fork.extra.a00fb0c50741": "Accepted",
   "session-fork.retryCapability": "Retry fork capability read",
   "session-fork.retryRunnerRead": "Recheck original fork Runner",
-  "session-fork.retryProfileRead": "Recheck original fork profile"
+  "session-fork.retryProfileRead": "Recheck original fork profile",
+  "session-fork.preparingSidechat": "Preparing Sidechat",
+  "session-fork.sidechatDraftOnly": "Write your question while preparation completes. Sending and conversation tools become available after the original child is verified.",
+  "session-fork.discardSidechat": "Discard Sidechat draft",
+  "session-fork.sidechatPreparationFailed": "Sidechat preparation did not complete. Your draft is retained. Discard it only when the original operation is confirmed finished.",
+  "session-fork.sidechatSourceChanged": "The original turn changed or is unavailable. Keep this draft or discard it before opening Sidechat at the current completed turn.",
+  "session-fork.sidechatStatusUnverified": "Sidechat could not be verified. Keep the original operation and recheck its status.",
+  "session-fork.retrySameSidechatRequest": "Retry original Sidechat request"
 }
