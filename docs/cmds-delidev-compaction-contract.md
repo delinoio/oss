@@ -454,6 +454,10 @@ protected-account Finish/no-live-lease state. A private cleanup receipt cannot
 replace those independent checks. Recovery resumes an observation process with
 no execution grant or materialized credentials, compares the entire retained
 prefix, joins that observer and publishes only the original action checkpoint.
-It never sends Revert again, changes targets or retries native input. Missing
+Verified explicit recovery may settle an originally canceled Revert once. Keep
+its durable cancellation record and use the recovery-specific finalization path;
+ordinary late canceled reports remain quarantined. Receipt replay cannot advance
+the context again. It never sends Revert again, changes targets or retries native
+input. Missing
 intent, mismatched history, changed ownership or cleanup uncertainty remains
 quarantined. Ordinary context jobs keep their existing recovery restrictions.

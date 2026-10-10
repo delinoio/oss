@@ -64,6 +64,7 @@ import {
   tls,
 } from "./platform";
 import { en, ko, type Labels } from "./localization";
+import { validateSessionName } from "./session-name";
 import { presentForeground } from "./notifications";
 import { RequestResponse } from "./interaction";
 const owner = new ProtectedState(storage);
@@ -148,13 +149,29 @@ function Modal({
     </dialog>
   );
 }
+interface ConversationDraft {
+  prompt: string;
+  mode: string;
+}
 export function App({ state = owner }: { state?: ProtectedState }) {
   const [loaded, setLoaded] = useState(false),
     [failed, setFailed] = useState(false),
     [revision, setRevision] = useState(0),
     [tab, setTab] = useState("sessions"),
+    [conversation, setConversation] = useState<{
+      profileId: string;
+      id: string;
+      draft: ConversationDraft;
+    }>(),
     [active, setActive] = useState(document.visibilityState === "visible");
-  const changed = () => setRevision((v) => v + 1);
+  // Composer drafts belong to the original profile/session, outside tab presentation.
+  const drafts = useRef(new Map<string, Map<string, ConversationDraft>>());
+  const changed = () => {
+    for (const id of drafts.current.keys())
+      if (!state.state.profiles.some((profile) => profile.id === id))
+        drafts.current.delete(id);
+    setRevision((v) => v + 1);
+  };
   useEffect(() => {
     void state
       .load()
@@ -205,6 +222,28 @@ export function App({ state = owner }: { state?: ProtectedState }) {
               id={profile.id}
               active={active}
               tab={tab}
+              sessionId={
+                conversation?.profileId === profile.id ? conversation.id : ""
+              }
+              open={(id) => {
+                let profileDrafts = drafts.current.get(profile.id);
+                if (!profileDrafts) {
+                  profileDrafts = new Map();
+                  drafts.current.set(profile.id, profileDrafts);
+                }
+                let draft = profileDrafts.get(id);
+                if (!draft) {
+                  draft = { prompt: "", mode: "execute" };
+                  profileDrafts.set(id, draft);
+                }
+                setConversation({ profileId: profile.id, id, draft });
+              }}
+              back={() => setConversation(undefined)}
+              draft={
+                conversation?.profileId === profile.id
+                  ? conversation.draft
+                  : undefined
+              }
               changed={changed}
             />
           ) : (
@@ -216,7 +255,10 @@ export function App({ state = owner }: { state?: ProtectedState }) {
             <button
               key={name}
               aria-current={tab === name ? "page" : undefined}
-              onClick={() => setTab(name)}
+              onClick={() => {
+                setConversation(undefined);
+                setTab(name);
+              }}
             >
               {c[name]}
             </button>
@@ -588,17 +630,24 @@ function Connected({
   id,
   active,
   tab,
+  sessionId,
+  open,
+  back,
+  draft,
   changed,
 }: {
   state: ProtectedState;
   id: string;
   active: boolean;
   tab: string;
+  sessionId: string;
+  open: (id: string) => void;
+  back: () => void;
+  draft?: ConversationDraft;
   changed: () => void;
 }) {
   const c = useCopy(),
     [status, setStatus] = useState(Status.Connecting),
-    [sessionId, setSessionId] = useState(""),
     [creation, setCreation] = useState(false),
     [project, setProject] = useState(""),
     [busy, setBusy] = useState(false),
@@ -773,22 +822,24 @@ function Connected({
               enabled={enabled}
               busy={busy || !!pending}
               mutate={mutate}
-              open={setSessionId}
+              open={open}
             />
-          ) : sessionId ? (
+          ) : sessionId && draft ? (
             <Conversation
+              key={sessionId}
               id={sessionId}
+              draft={draft}
               enabled={enabled}
               busy={busy || !!pending}
               mutate={mutate}
-              back={() => setSessionId("")}
+              back={back}
             />
           ) : (
             <Sessions
               enabled={enabled}
               project={project}
               setProject={setProject}
-              open={setSessionId}
+              open={open}
               create={() => setCreation(true)}
             />
           )}
@@ -1045,7 +1096,9 @@ export function NewSession({
   const retainedMode = useRef("execute");
   if (enabled && modeReady) retainedMode.current = manualMode ?? automaticMode;
   const mode = enabled ? manualMode ?? automaticMode : retainedMode.current;
+  const sessionName = validateSessionName(title, c.newSession);
   const valid =
+    sessionName.valid &&
     modeReady &&
     enabled &&
     agent &&
@@ -1062,7 +1115,7 @@ export function NewSession({
             create(CreateSessionRequestSchema, {
               requestId: uuid(),
               documentJson: documentBytes({
-                name: title.trim() || c.newSession,
+                name: sessionName.name,
                 agent_id: agent,
                 machine_id: runner,
                 ...(workspace === "worktree" ? { project_id: project } : {}),
@@ -1112,11 +1165,13 @@ export function NewSession({
         <label>
           {c.title}
           <input
-            maxLength={256}
+            aria-invalid={!sessionName.valid}
+            aria-describedby={!sessionName.valid ? "session-name-guidance" : undefined}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
           />
         </label>
+        {!sessionName.valid ? <p id="session-name-guidance" role="alert">{c.sessionNameTooLarge}</p> : null}
         <label>
           {c.mode}
           <select value={mode} onChange={(e) => setMode(e.target.value)}>
@@ -1141,6 +1196,7 @@ export function NewSession({
 }
 function Conversation({
   id,
+  draft,
   enabled,
   busy,
   mutate,
@@ -1151,13 +1207,14 @@ function Conversation({
   busy: boolean;
   mutate: Mutate;
   back: () => void;
+  draft: ConversationDraft;
 }) {
   const transport = useTransport();
   const c = useCopy(),
     [page, setPage] = useState(""),
     [history, setHistory] = useState<Resource[]>([]),
-    [prompt, setPrompt] = useState(""),
-    [mode, setMode] = useState("execute"),
+    [prompt, setPrompt] = useState(draft.prompt),
+    [mode, setMode] = useState(draft.mode),
     [confirmation, setConfirmation] = useState<SessionAction>();
   const session = useQuery(
     ResourceQuery.getResource,
@@ -1303,12 +1360,21 @@ function Conversation({
             {c.prompt}
             <textarea
               value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
+              onChange={(e) => {
+                draft.prompt = e.target.value;
+                setPrompt(e.target.value);
+              }}
             />
           </label>
           <label>
             {c.mode}
-            <select value={mode} onChange={(e) => setMode(e.target.value)}>
+            <select
+              value={mode}
+              onChange={(e) => {
+                draft.mode = e.target.value;
+                setMode(e.target.value);
+              }}
+            >
               <option value="execute">{c.execute}</option>
               <option value="plan">{c.plan}</option>
             </select>

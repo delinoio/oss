@@ -20,6 +20,27 @@ afterEach(async()=>{cleanup();vi.useRealTimers();await i18n.changeLanguage("en")
 
 it.each([undefined,null,{}, {accepted_at:"bad"},{accepted_at:"2026-02-30T00:00:00Z"},{accepted_at:"2026-10-09T10:00:00+00:00"},{accepted_at:start,terminal_at:null},{accepted_at:start,terminal_at:"2026-10-09T10:00:00.122Z"},{accepted_at:start,provider_elapsed_ms:12}])("marks missing/malformed/inverted timing unavailable %j",timing=>{expect(retainedTurnTiming(timing)).toBeUndefined();const p=view(query([[message({turn_timing:timing})]]),undefined,{current:undefined});const {container}=render(<ToolTurnTranscript {...p}/>);expect(container.querySelector(".turn-time")?.textContent).toContain("Time unavailable");expect(container.textContent).not.toContain("Elapsed · 0s");});
 
+it.each(["", ".1", ".123", ".1234", ".123456", ".123456789"])("accepts Go UTC fractional precision %s before millisecond conversion", fraction => {
+ const accepted_at=`2026-10-09T10:00:00${fraction}Z`, terminal_at=`2026-10-09T10:00:12${fraction}Z`;
+ const accepted=Date.parse("2026-10-09T10:00:00Z")+Number((fraction.slice(1)+"000").slice(0,3));
+ expect(retainedTurnTiming({accepted_at})).toEqual({accepted});
+ expect(retainedTurnTiming({accepted_at,terminal_at})).toEqual({accepted,terminal:accepted+12000});
+ expect(currentTurn(session({turn_timing:{accepted_at}}),sessionId)?.timing).toEqual({accepted});
+ expect(messageTurn(message({turn_timing:{accepted_at,terminal_at}}),sessionId)?.timing).toEqual({accepted,terminal:accepted+12000});
+});
+
+it("retains strict UTC shape, calendar validation and original nanosecond interval ordering",()=>{
+ for (const accepted_at of ["2026-10-09T10:00:00.1234567890Z","2026-02-30T10:00:00.123456789Z","2026-10-09T25:00:00.123456Z","2026-10-09T10:00:00.123456+00:00","2026-10-09T10:00:00.Z"]) expect(retainedTurnTiming({accepted_at})).toBeUndefined();
+ const accepted_at="2026-10-09T10:00:00.123456789Z";
+ expect(retainedTurnTiming({accepted_at,terminal_at:"2026-10-09T10:00:00.123456788Z"})).toBeUndefined();
+ expect(retainedTurnTiming({accepted_at,terminal_at:"2026-10-09T10:00:00.123Z"})).toBeUndefined();
+ expect(retainedTurnTiming({accepted_at,terminal_at:accepted_at})).toEqual({accepted:Date.parse(accepted_at),terminal:Date.parse(accepted_at)});
+ expect(retainedTurnTiming({accepted_at:"2026-10-09T10:00:00.123Z",terminal_at:accepted_at})).toEqual({accepted:Date.parse(accepted_at),terminal:Date.parse(accepted_at)});
+ expect(retainedTurnTiming({accepted_at,unknown:true})).toBeUndefined();
+ expect(retainedTurnTiming(undefined)).toBeUndefined();
+ expect(retainedTurnTiming({accepted_at:"1970-01-01T00:00:00Z",terminal_at:"1970-01-01T00:00:00.000000000Z"})).toEqual({accepted:0,terminal:0});
+});
+
 it("starts before the first message, advances through waits and moves one display to the original primary user",()=>{
  vi.useFakeTimers();vi.setSystemTime(new Date(start));const p=view(),renderer=vi.fn(p.render);const {container,rerender}=render(<ToolTurnTranscript {...p} render={renderer}/>);
  expect(container.querySelectorAll(".turn-time")).toHaveLength(1);expect(container.textContent).toContain("In progress · 0s");expect(vi.getTimerCount()).toBe(1);

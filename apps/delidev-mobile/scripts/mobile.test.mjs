@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { androidManifest, iosBuildScript, execution } from "./mobile.mjs";
+import { androidManifest, iosBuildScript, execution, iosEnvironment } from "./mobile.mjs";
 test("mobile generated overlays prohibit cleartext and backups and retain keyboard resize", () => {
   const m = androidManifest(
     '<uses-permission android:name="android.permission.INTERNET" />\n<application\n android:usesCleartextTraffic="${usesCleartextTraffic}"><activity android:launchMode="singleTask"/></application>',
@@ -25,4 +25,8 @@ test("all four native targets remain actual mobile build commands", () => {
     iosBuildScript("script: cargo tauri ios xcode-script"),
     /test -s/,
   );
+});
+
+test("direct Cargo builds retain the app iOS minimum for the Swift bridge", () => {
+  assert.deepEqual(iosEnvironment(), { IPHONEOS_DEPLOYMENT_TARGET: "18.0" });
 });
