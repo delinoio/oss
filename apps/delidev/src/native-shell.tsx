@@ -97,14 +97,14 @@ export function NativeShell({ tool, state }: { tool: Record<string, unknown>; st
     {latest.error !== undefined ? <section aria-label={copy("native-shell.shellError_662943")}><pre><code>{latest.error}</code></pre></section> : null}
     {latest.truncated === true ? <p>{copy("native-shell.theNativeShellResultIsTruncated_e8b1dd")}</p> : null}
     {latest.interrupted === true ? <p><LocalizedText id="native-shell.nativeInterruption_edde92" components={{ s0: <>{copy("native-shell.observed_64fa8a")}</> }} /></p> : null}
-    <Disclosure><DisclosureSummary>{copy("session.commandDetails")}</DisclosureSummary>
+    <Disclosure data-tool-detail="command-details"><DisclosureSummary>{copy("session.commandDetails")}</DisclosureSummary>
       <Arguments input={latest.input}/>
       {latest.title !== undefined ? <p>{latest.title}</p> : null}
-      {latest.preview !== undefined ? <Disclosure><DisclosureSummary>{copy("native-shell.latestNativeOutputPreview_b55362")}</DisclosureSummary><pre>{latest.preview}</pre></Disclosure> : null}
+      {latest.preview !== undefined ? <Disclosure data-tool-detail="shell-preview"><DisclosureSummary>{copy("native-shell.latestNativeOutputPreview_b55362")}</DisclosureSummary><pre>{latest.preview}</pre></Disclosure> : null}
       {latest.truncated === false ? <p>{copy("native-shell.theNativeShellResultIsNot_9537c3")}</p> : null}
       {latest.outputPath !== undefined ? <p><LocalizedText id="native-shell.nativeSavedOutputPath_6ce1ca" components={{ s0: <br/>, s1: <code>{latest.outputPath}</code> }}/></p> : null}
       {latest.interrupted === false ? <p><LocalizedText id="native-shell.nativeInterruption_edde92" components={{ s0: <>{copy("native-shell.notObserved_1d3efc")}</> }}/></p> : null}
-      <Disclosure><DisclosureSummary>{copy("native-shell.originalProposalAndObservations_8d63b6")}</DisclosureSummary><ol>{snapshots.map((item,index)=><li key={index}><Disclosure><DisclosureSummary>{labels[item.status]}</DisclosureSummary><Arguments input={item.input}/>{item.raw !== undefined ? <pre>{item.raw}</pre> : null}{item.preview !== undefined ? <pre>{item.preview}</pre> : null}</Disclosure></li>)}</ol></Disclosure>
+      <Disclosure data-tool-detail="shell-observations"><DisclosureSummary>{copy("native-shell.originalProposalAndObservations_8d63b6")}</DisclosureSummary><ol>{snapshots.map((item,index)=><li key={index}><Disclosure data-tool-detail={`shell-observation-${index}`}><DisclosureSummary>{labels[item.status]}</DisclosureSummary><Arguments input={item.input}/>{item.raw !== undefined ? <pre>{item.raw}</pre> : null}{item.preview !== undefined ? <pre>{item.preview}</pre> : null}</Disclosure></li>)}</ol></Disclosure>
     </Disclosure>
   </section>;
   return <Disclosure>

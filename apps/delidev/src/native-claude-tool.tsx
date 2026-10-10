@@ -55,8 +55,10 @@ export function validatedClaudeTool(content: unknown, state: string, id: string,
 export function claudeCommand(retained: NonNullable<ReturnType<typeof validatedClaudeTool>>): string | undefined {
   if (retained.reference.name !== "Bash") return;
   // Full validation precedes parsing; streamed fragments never supply commands.
-  const input = object(JSON.parse(retained.proposal?.applied ?? retained.initial_input));
-  return typeof input.command === "string" ? input.command : undefined;
+  const applied = retained.proposal ? object(JSON.parse(retained.proposal.applied)).command : undefined;
+  if (typeof applied === "string") return applied;
+  const initial = object(JSON.parse(retained.initial_input)).command;
+  return typeof initial === "string" ? initial : undefined;
 }
 
 export function NativeClaudeTool({ content, state, id, native, parent }: { content: unknown; state: string; id: string; native: string; parent: string }) {
@@ -73,13 +75,13 @@ export function NativeClaudeTool({ content, state, id, native, parent }: { conte
       {result.blocks !== null ? <ol aria-label={copy("native-claude-tool.toolResultBlocks_7800be")}>{result.blocks.map((b,index)=><li key={index}><pre><code>{b.text}</code></pre></li>)}</ol> : null}
       {result.text === null && result.blocks === null ? <p>{copy("session.commandOutputUnavailable")}</p> : null}
     </section> : <p>{copy("native-claude-tool.noToolResultHasBeenObserved_39f5c0")}</p>}
-    <Disclosure><DisclosureSummary>{copy("session.commandDetails")}</DisclosureSummary>
+    <Disclosure key="command-details" data-tool-detail="command-details"><DisclosureSummary>{copy("session.commandDetails")}</DisclosureSummary>
       <pre><code>{claudeCommand(retained)}</code></pre>
       <p><LocalizedText id="native-claude-tool.providerBlockCaller_c07946" components={{ s0: <>{retained.index+1}</>, s1: <>{retained.caller === null ? copy("native-claude-tool.notReported_adadfa") : copy("native-claude-tool.direct_002c7c")}</> }} /></p>
-      <Disclosure><DisclosureSummary>{copy("native-claude-tool.initialInput_f6c601")}</DisclosureSummary><pre>{retained.initial_input}</pre></Disclosure>
-      {retained.input_delta !== null ? <Disclosure><DisclosureSummary>{copy("native-claude-tool.streamedInput_bafbd1")}</DisclosureSummary><pre>{retained.input_delta}</pre></Disclosure> : null}
-      {retained.proposal ? <><Disclosure><DisclosureSummary>{copy("native-claude-tool.originalProposedInput_0ecc84")}</DisclosureSummary><pre>{retained.proposal.proposed}</pre></Disclosure><Disclosure><DisclosureSummary>{copy("native-claude-tool.nativeAppliedInput_6397df")}</DisclosureSummary><pre>{retained.proposal.applied}</pre></Disclosure></> : null}
-      {result?.structured !== null && result?.structured !== undefined ? <Disclosure><DisclosureSummary>{copy("native-claude-tool.structuredNativeResult_762fc2")}</DisclosureSummary><pre>{result.structured}</pre></Disclosure> : null}
+      <Disclosure key="claude-initial" data-tool-detail="claude-initial"><DisclosureSummary>{copy("native-claude-tool.initialInput_f6c601")}</DisclosureSummary><pre>{retained.initial_input}</pre></Disclosure>
+      {retained.input_delta !== null ? <Disclosure key="claude-streamed" data-tool-detail="claude-streamed"><DisclosureSummary>{copy("native-claude-tool.streamedInput_bafbd1")}</DisclosureSummary><pre>{retained.input_delta}</pre></Disclosure> : null}
+      {retained.proposal ? <><Disclosure key="claude-proposed" data-tool-detail="claude-proposed"><DisclosureSummary>{copy("native-claude-tool.originalProposedInput_0ecc84")}</DisclosureSummary><pre>{retained.proposal.proposed}</pre></Disclosure><Disclosure key="claude-applied" data-tool-detail="claude-applied"><DisclosureSummary>{copy("native-claude-tool.nativeAppliedInput_6397df")}</DisclosureSummary><pre>{retained.proposal.applied}</pre></Disclosure></> : null}
+      {result?.structured !== null && result?.structured !== undefined ? <Disclosure key="claude-structured" data-tool-detail="claude-structured"><DisclosureSummary>{copy("native-claude-tool.structuredNativeResult_762fc2")}</DisclosureSummary><pre>{result.structured}</pre></Disclosure> : null}
       <p>{copy("native-claude-tool.proposalCompletionDoesNotEstablishApproval_0d9759")}</p>
     </Disclosure>
   </section>;

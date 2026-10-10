@@ -37,11 +37,11 @@ export function GroupedCodexCommand({tool}: {tool:Record<string,unknown>}) {
   return <section data-command-presentation>
     {output !== undefined ? <pre className="tool-command-output"><code>{output}</code></pre> : <p>{copy("session.commandOutputUnavailable")}</p>}
     {typeof command.exit_code === "number" ? <p><LocalizedText id="native-shell.nativeExitCode_991101" components={{s0:<>{command.exit_code}</>}}/></p> : null}
-    <Disclosure><DisclosureSummary>{copy("session.commandDetails")}</DisclosureSummary>
+    <Disclosure data-tool-detail="command-details"><DisclosureSummary>{copy("session.commandDetails")}</DisclosureSummary>
       <pre><code>{command.command as string}</code></pre>
       {typeof command.cwd === "string" ? <p><LocalizedText id="session.directory_369f13" components={{s0:<>{command.cwd}</>}}/></p> : null}
-      {typeof aggregate === "string" && typeof tool.output === "string" ? <Disclosure><DisclosureSummary>{copy("session.streamedObservations_589dae")}</DisclosureSummary><pre>{tool.output}</pre></Disclosure> : null}
-      <Disclosure><DisclosureSummary>{copy("native-shell.originalProposalAndObservations_8d63b6")}</DisclosureSummary><pre>{JSON.stringify(tool,null,2)}</pre></Disclosure>
+      {typeof aggregate === "string" && typeof tool.output === "string" ? <Disclosure data-tool-detail="codex-stream"><DisclosureSummary>{copy("session.streamedObservations_589dae")}</DisclosureSummary><pre>{tool.output}</pre></Disclosure> : null}
+      <Disclosure data-tool-detail="codex-observations"><DisclosureSummary>{copy("native-shell.originalProposalAndObservations_8d63b6")}</DisclosureSummary><pre>{JSON.stringify(tool,null,2)}</pre></Disclosure>
     </Disclosure>
   </section>;
 }

@@ -13,7 +13,7 @@ import { GroupedTool } from "./tool-entry-context";
 import { toolCommandPreview } from "./tool-command";
 import "./tool-turn-transcript.css";
 
-interface Choices { groups: Map<string, boolean>; entries: Map<string, boolean>; details: Map<string, boolean[]> }
+interface Choices { groups: Map<string, boolean>; entries: Map<string, boolean>; details: Map<string, Map<string, boolean>> }
 function ToolEntry({ active, row, payload, token, query, choices, changed, render }: { active: boolean; row: ConversationProjection; payload?: Resource; token?: string; query: PayloadWindowQuery<ConversationProjection, Resource>; choices: Choices; changed: () => void; render: (row: Resource) => ReactNode }) {
   const preferences=useAppearancePreferences();
   if(!choices.entries.has(row.id))choices.entries.set(row.id,preferences.tool_disclosure===DisclosureDefault.Expanded);
@@ -25,12 +25,17 @@ function ToolEntry({ active, row, payload, token, query, choices, changed, rende
     const details = [...node.current?.querySelectorAll<HTMLDetailsElement>("details") ?? []];
     // The compact entry replaces only the original primary presentation toggle.
     // Its validated renderer and all nested output/argument disclosures survive.
-    const remember = () => choices.details.set(row.id, [...node.current?.querySelectorAll<HTMLDetailsElement>("details") ?? []].map(detail => detail.open));
+    const key = (detail: HTMLDetailsElement, index: number) => detail.dataset.toolDetail ?? String(index);
+    const remember = () => {
+      const retained = choices.details.get(row.id) ?? new Map<string, boolean>();
+      [...node.current?.querySelectorAll<HTMLDetailsElement>("details") ?? []].forEach((detail,index)=>retained.set(key(detail,index),detail.open));
+      choices.details.set(row.id,retained);
+    };
     const element = node.current;
     element?.addEventListener("toggle", remember, true);
-    details.forEach((detail, index) => { if (index === 0 && !node.current?.querySelector("[data-command-presentation]")) { detail.dataset.toolPrimary = "true"; detail.open = true; } else detail.open = choices.details.get(row.id)?.[index] ?? false; });
+    details.forEach((detail, index) => { if (index === 0 && !node.current?.querySelector("[data-command-presentation]")) { detail.dataset.toolPrimary = "true"; detail.open = true; } else detail.open = choices.details.get(row.id)?.get(key(detail,index)) ?? false; });
     return () => element?.removeEventListener("toggle", remember, true);
-  }, [hasPayload, choices, row.id]);
+  }, [hasPayload, payload?.revision, choices, row.id]);
   return <li onFocusCapture={event => { event.stopPropagation(); query.protect?.(token); }} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) query.protect?.(); }}><Disclosure className="tool-entry" density={DisclosureDensity.Compact} open={open} onToggle={event => { choices.entries.set(row.id, event.currentTarget.open); changed(); }}>
     <DisclosureSummary>{preview !== undefined ? <span className="tool-command-preview">{`> ${preview}`}</span> : <span>{row.tool?.name || copy("session.tool_7c9bbe")}</span>}{state && state !== "complete" && state !== "completed" ? <small>{statusLabel(state)}</small> : null}</DisclosureSummary>
     {payload ? <div className="tool-entry-payload" ref={node}><GroupedTool value>{render(payload)}</GroupedTool></div> : <button type="button" disabled={!active || Boolean(query.loading || query.error)} onClick={() => { if (active && token !== undefined) query.restore(token); }}>{copy("pagination.restore")}</button>}

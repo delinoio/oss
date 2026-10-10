@@ -76,3 +76,13 @@ it('preserves manual Details/focus through revisions, locale and exact-page evic
  view.rerender(<ToolTurnTranscript {...p} query={{...q,payloadPages:[]}}/>);expect(entry.querySelector('.tool-command-preview')).toBeNull();expect(entry.querySelector('summary')?.textContent).toContain('command');fireEvent.click(entry.querySelector('button')!);expect(q.restore).toHaveBeenCalledExactlyOnceWith('exact-original-page');view.rerender(<ToolTurnTranscript {...p}/>);expect(entry.querySelector<HTMLDetailsElement>('[data-command-presentation] > details')?.open).toBe(true);
  expect(JSON.stringify(conversationProjection(resource,sessionId),(_,value)=>typeof value==='bigint'?String(value):value)).not.toContain('/bin/zsh');
 });
+
+it('falls back to validated initial Claude command when applied input has no string command',()=>{
+ const resource=claude('initial original');const d=JSON.parse(new TextDecoder().decode(resource.documentJson));d.claude_tool.proposal.applied='{}';resource.documentJson=encode(d);expect(toolCommandPreview(resource)).toBe('initial original');
+});
+it('keeps named nested Claude choices and original focused input across new streamed disclosures',()=>{
+ const resource=claude('original'),d=JSON.parse(new TextDecoder().decode(resource.documentJson));d.state='streaming';d.claude_tool.proposal=null;d.claude_tool.result=null;resource.documentJson=encode(d);
+ const q=query([resource]),p=props(q),view=render(<ToolTurnTranscript {...p}/>);const entry=openEntry(view.container);expand(entry.querySelector<HTMLDetailsElement>('[data-tool-detail="command-details"]')!);const initial=entry.querySelector<HTMLDetailsElement>('[data-tool-detail="claude-initial"]')!;expand(initial);const summary=initial.querySelector('summary')!;summary.focus();
+ d.claude_tool.input_delta='{"command":"updated"}';d.claude_tool.proposal={proposed:d.claude_tool.input_delta,applied:'{"command":"updated"}'};const next={...resource,revision:2n,documentJson:encode(d)};
+ view.rerender(<ToolTurnTranscript {...p} live={new Map([[resource.id,next]])}/>);expect(entry.querySelector('[data-tool-detail="claude-initial"]')).toBe(initial);expect(initial.open).toBe(true);expect(document.activeElement).toBe(summary);expect(entry.querySelector<HTMLDetailsElement>('[data-tool-detail="claude-streamed"]')?.open).toBe(false);
+});
