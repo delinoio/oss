@@ -155,7 +155,7 @@ it("help shortcuts reuse existing navigation and screen focus without sending ba
   expect(value.creates).not.toHaveBeenCalled(); expect(value.enqueues).not.toHaveBeenCalled();
 });
 
-function fixture(interactions: Resource[] = [], repositories: Resource[] = [], projects: Resource[] = [], paginated = false, automaticTitles = false, selectorFailure?: Code, emptyAgents = false, agentGate?: Promise<void>) {
+function fixture(interactions: Resource[] = [], repositories: Resource[] = [], projects: Resource[] = [], paginated = false, automaticTitles = false, selectorFailure?: Code, emptyAgents = false, agentGate?: Promise<void>, creationListings = false) {
   const id = newRequestId();
   const session = create(ResourceSchema, { id, sessionId: id, kind: EntityKind.SESSION, revision: 7n, schemaVersion: 1, documentJson: encode({ name: "Retained session", workspace: "general-chat", outcome: "stopped", archive: "active", dispatch: "paused", recovery: "none" }) });
   const message = create(ResourceSchema, { id: newRequestId(), sessionId: id, kind: EntityKind.MESSAGE, revision: 1n, schemaVersion: 1, documentJson: encode({ role: "assistant", text: '<script>window.invalid = true</script>', state: "completed" }) });
@@ -163,7 +163,11 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
   other.sessionId = other.id;
   const enqueues = vi.fn(async (request: { requestId: string; sessionId: string; documentJson: Uint8Array }) => sessionInputReceipt(session, request));
   const controls = vi.fn(async () => ({ change: { session } }));
-  const creates = vi.fn(async (_request: { requestId: string; documentJson: Uint8Array }) => ({ change: { session } }));
+  let published = false;
+  const creates = vi.fn(async (_request: { requestId: string; documentJson: Uint8Array }) => {
+    if (creationListings) { published = true; session.projectId = JSON.parse(new TextDecoder().decode(_request.documentJson)).project_id ?? ""; }
+    return { change: { session } };
+  });
   const agent = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.AGENT, revision: 1n, schemaVersion: 4, documentJson: encode({ name: "Agent One", harness: "codex", routes: [{ model: { subscription_service: "chatgpt", native_id: "fixture-model" }, accounts: [{ id: newRequestId(), weight: 1 }] }], templates: [], options: { permission: "default" } }) });
   const machine = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Worker One" }) });
   const status = vi.fn(async () => ({ version: "0.1.0", protocolVersion: 2, capabilities: automaticTitles ? [SystemCapability.AUTOMATIC_TITLES_V1] : [] }));
@@ -180,6 +184,10 @@ function fixture(interactions: Resource[] = [], repositories: Resource[] = [], p
   const transport = createRouterTransport((router) => {
     router.service(SystemService, { getStatus: status });
     router.service(SessionService, { listSessions: (request) => {
+      if (creationListings) {
+        sessionRequests.push({ projectId: request.projectId, includeArchived: request.includeArchived, pageToken: request.pageToken });
+        return { sessions: published && (!request.projectId || request.projectId === session.projectId) ? [session] : [] };
+      }
       if (!paginated) return { sessions: [session, other] };
       sessionRequests.push({ projectId: request.projectId, includeArchived: request.includeArchived, pageToken: request.pageToken });
       if (request.projectId) return { sessions: [], ...(request.pageToken ? {} : { nextPageToken: "project-session-next" }) };
@@ -1527,4 +1535,39 @@ it("compact navigation never changes the retained wide collapse choice or dispat
   fireEvent.click(screen.getByRole("button", { name: "Close navigation" }));
   act(() => resize(false)); expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeTruthy();
   expect(document.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")!.hidden).toBe(true); expectNoNavigationWrites(value);
+}, fullShellTimeoutMs);
+
+
+it.each([[false, false], [true, false], [true, true]])("publishes accepted creation into the active Home scope immediately (project %s, receipt retry %s)", async (named, uncertain) => {
+  const project = shortcutProject("Loaded creation project"), unrelated = shortcutProject("Unrelated creation project");
+  const value = fixture([], [], [project, unrelated], false, true, undefined, false, undefined, true);
+  if (uncertain) value.creates.mockRejectedValueOnce(new ConnectError("Lost original receipt", Code.Unavailable));
+  render(<App transport={value.transport} />);
+  const folder = await screen.findByRole("button", { name: `Loaded creation project. Project ID: ${project.id}` });
+  fireEvent.click(folder);
+  fireEvent.click(screen.getByRole("button", { name: `Unrelated creation project. Project ID: ${unrelated.id}` }));
+  await waitFor(() => expect(value.sessionRequests.some(request => request.projectId === unrelated.id)).toBe(true));
+  expect(screen.queryByRole("button", { name: /Retained session/ })).toBeNull();
+  fireEvent.click(named ? screen.getByRole("button", { name: `New session in Loaded creation project. Project ID: ${project.id}` }) : screen.getAllByRole("button", { name: "New Chat" })[0]);
+  const page = within(screen.getByRole("region", { name: named ? "What would you like to work on?" : "What would you like to talk about?" }));
+  await chooseScrollOption(page.getByRole("combobox", { name: "Agent Worker" }), value.agent.id);
+  await chooseScrollOption(page.getByRole("combobox", { name: "Runs on" }), value.machine.id);
+  fireEvent.change(page.getByLabelText("First message"), { target: { value: "Accepted Home creation" } });
+  const before = value.sessionRequests.length;
+  fireEvent.click(page.getByRole("button", { name: named ? "Create session" : "Start general chat" }));
+  if (uncertain) {
+    const retry = await page.findByRole("button", { name: "Retry the same session creation" });
+    expect(value.sessionRequests).toHaveLength(before);
+    fireEvent.click(retry);
+    await waitFor(() => expect(value.creates).toHaveBeenCalledTimes(2));
+    expect(value.creates.mock.calls[0][0]).toEqual(value.creates.mock.calls[1][0]);
+  }
+  const row = await screen.findByRole("button", { name: /Retained session/ });
+  expect(row.getAttribute("aria-current")).toBe("true");
+  expect(folder.getAttribute("aria-expanded")).toBe("true");
+  const refreshed = value.sessionRequests.slice(before);
+  expect(refreshed.some(request => request.projectId === "")).toBe(true);
+  expect(refreshed.some(request => request.projectId === project.id)).toBe(named);
+  expect(refreshed.some(request => request.projectId === unrelated.id)).toBe(false);
+  expect(value.creates).toHaveBeenCalledTimes(uncertain ? 2 : 1);
 }, fullShellTimeoutMs);

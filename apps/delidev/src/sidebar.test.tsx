@@ -1,3 +1,4 @@
+import { refreshCreatedSessionNavigation } from "./home-navigation-query";
 import { MutationIntents } from "./mutation";
 import { useState } from "react";
 import { create } from "@bufbuild/protobuf";
@@ -61,7 +62,7 @@ function mountSidebar({ projects, sessions, props = {}, stateful = false }: {
   const tree = () => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Harness /></MutationIntents></QueryClientProvider></TransportProvider>;
   const view = render(tree());
   const setProps = (next: Partial<ComponentProps<typeof Sidebar>>) => { currentProps = { ...currentProps, ...next }; view.rerender(tree()); };
-  return { ...view, setProps, client, navigate, openSession, openSettings, newSession, newGeneralChat, newProject, projectRequests, sessionRequests, setSurface: (surface: Surface) => act(() => selectSurface(surface)) };
+  return { ...view, setProps, client, transport, navigate, openSession, openSettings, newSession, newGeneralChat, newProject, projectRequests, sessionRequests, setSurface: (surface: Surface) => act(() => selectSurface(surface)) };
 }
 
 it("keeps equal-name projects separate, includes empty projects, and only reads expanded project pages", async () => {
@@ -939,4 +940,75 @@ it("keeps the drawer close affordance outside the compact Home header and creati
   value.setProps({ surface: Surface.Search });
   const header = value.container.querySelector(".sidebar-header")!;
   expect(header.nextElementSibling?.className).toBe("sidebar-drawer-close");
+});
+
+
+it.each([false, true])("refreshes acknowledged creation in active global and exact expanded project scopes (archived %s)", async archived => {
+  const project = resource(EntityKind.PROJECT, "Creation project"), unrelated = resource(EntityKind.PROJECT, "Unrelated project");
+  const old = resource(EntityKind.SESSION, "Old project session", project.id, { workspace: "worktree", archive: "active" });
+  const added = resource(EntityKind.SESSION, "Accepted project session", project.id, { workspace: "worktree", archive: "active" });
+  const general = resource(EntityKind.SESSION, "Accepted general chat", "", { workspace: "general-chat", archive: "active" });
+  let accepted = false;
+  const value = mountSidebar({ projects: () => ({ resources: [project, unrelated] }), sessions: request => ({ sessions: request.projectId === unrelated.id ? [] : request.projectId ? accepted ? [added, old] : [old] : accepted ? [added, general] : [] }), stateful: true });
+  fireEvent.click(await screen.findByRole("button", { name: `Creation project. Project ID: ${project.id}` }));
+  fireEvent.click(screen.getByRole("button", { name: `Unrelated project. Project ID: ${unrelated.id}` }));
+  await screen.findByRole("button", { name: /Old project session/ });
+  if (archived) { fireEvent.click(screen.getByRole("button", { name: "Project and conversation options" })); fireEvent.click(screen.getByRole("checkbox", { name: "Include archived" })); await waitFor(() => expect(value.sessionRequests.some(request => request.projectId === project.id && request.includeArchived)).toBe(true)); fireEvent.keyDown(screen.getByRole("dialog", { name: "Project and conversation options" }), { key: "Escape" }); }
+  fireEvent.click(screen.getByRole("button", { name: `New session in Creation project. Project ID: ${project.id}` }));
+  const reads = value.sessionRequests.length;
+  accepted = true;
+  await act(async () => refreshCreatedSessionNavigation(value.client, value.transport, project.id));
+  await screen.findByRole("button", { name: /Accepted project session/ });
+  await screen.findByRole("button", { name: /Accepted general chat/ });
+  expect(value.sessionRequests.slice(reads).map(request => [request.projectId, request.includeArchived])).toEqual(expect.arrayContaining([["", archived], [project.id, archived]]));
+  expect(value.sessionRequests.slice(reads).every(request => request.projectId !== unrelated.id && request.includeArchived === archived)).toBe(true);
+  expect(screen.getByRole("button", { name: `Creation project. Project ID: ${project.id}` }).getAttribute("aria-expanded")).toBe("true");
+  const globalReads = value.sessionRequests.length;
+  await act(async () => refreshCreatedSessionNavigation(value.client, value.transport, ""));
+  expect(value.sessionRequests.slice(globalReads).every(request => request.projectId === "")).toBe(true);
+});
+
+it("recovers a retained Home read error after acknowledged creation and retains Retry on repeated failure", async () => {
+  const old = resource(EntityKind.SESSION, "Retained before creation", "", { workspace: "general-chat", archive: "active" });
+  const added = resource(EntityKind.SESSION, "Accepted after error", "", { workspace: "general-chat", archive: "active" });
+  let failed = false, accepted = false;
+  const value = mountSidebar({ projects: () => ({ resources: [] }), sessions: () => {
+    if (failed) throw new ConnectError("Fixture read failure", Code.Unavailable);
+    return { sessions: accepted ? [added, old] : [old] };
+  }, stateful: true });
+  await screen.findByRole("button", { name: /Retained before creation/ });
+  failed = true;
+  await act(async () => refreshCreatedSessionNavigation(value.client, value.transport, ""));
+  expect(screen.getByRole("button", { name: /Retained before creation/ })).toBeTruthy();
+  expect(screen.getByRole("button", { name: /Retry/ })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "New session" }));
+  accepted = true;
+  await act(async () => refreshCreatedSessionNavigation(value.client, value.transport, ""));
+  expect(screen.getByRole("button", { name: /Retry/ })).toBeTruthy();
+  failed = false;
+  await act(async () => refreshCreatedSessionNavigation(value.client, value.transport, ""));
+  expect(await screen.findByRole("button", { name: /Accepted after error/ })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /Retry/ })).toBeNull();
+});
+
+it("refreshes accepted project page tokens without losing the selected row or reading unseen pages", async () => {
+  const project = resource(EntityKind.PROJECT, "Paged creation project");
+  const first = resource(EntityKind.SESSION, "First accepted range", project.id, { workspace: "worktree", archive: "active" });
+  const tail = resource(EntityKind.SESSION, "Tail accepted range", project.id, { workspace: "worktree", archive: "active" });
+  const added = resource(EntityKind.SESSION, "Created in retained range", project.id, { workspace: "worktree", archive: "active" });
+  let accepted = false;
+  const value = mountSidebar({ projects: () => ({ resources: [project] }), sessions: request => !request.projectId ? { sessions: [] } : request.pageToken ? { sessions: [tail], nextPageToken: "unseen-next" } : { sessions: accepted ? [added, first] : [first], nextPageToken: "accepted-next" } });
+  fireEvent.click(await screen.findByRole("button", { name: `Paged creation project. Project ID: ${project.id}` }));
+  await screen.findByRole("button", { name: /First accepted range/ });
+  reach("Paged creation project sessions");
+  const row = await screen.findByRole("button", { name: /Tail accepted range/ });
+  value.setProps({ selectedSessionId: tail.id });
+  const before = value.sessionRequests.length;
+  accepted = true;
+  await act(async () => refreshCreatedSessionNavigation(value.client, value.transport, project.id));
+  expect(await screen.findByRole("button", { name: /Created in retained range/ })).toBeTruthy();
+  expect(screen.getByRole("button", { name: /Tail accepted range/ })).toBe(row);
+  expect(row.getAttribute("aria-current")).toBe("true");
+  expect(value.sessionRequests.slice(before).filter(request => request.projectId === project.id).map(request => request.pageToken)).toEqual(["", "accepted-next"]);
+  expect(value.sessionRequests.some(request => request.pageToken === "unseen-next")).toBe(false);
 });

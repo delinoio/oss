@@ -1,8 +1,21 @@
 import { useLayoutEffect, useMemo, useSyncExternalStore } from "react";
 import { createQueryOptions, useTransport } from "@connectrpc/connect-query";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { Transport } from "@connectrpc/connect";
+import { type QueryClient, type QueryKey, useQuery, useQueryClient } from "@tanstack/react-query";
 import { EntityKind, ResourceQuery, SessionQuery, newRequestId } from "@delinoio/delidev-api-client";
 import { NavigationChain, navigationRow, type NavigationReader } from "./home-navigation";
+
+const refreshKey = (queryKey: QueryKey) => [...queryKey, { homeNavigationRefresh: true }];
+
+// Notify the original navigation owners only after an acknowledged creation.
+// Exact marker keys exclude ordinary consumers, transient pages and other scopes.
+export async function refreshCreatedSessionNavigation(client: QueryClient, transport: Transport, projectId: string) {
+  const scopes = projectId ? ["", projectId] : [""];
+  await Promise.all(scopes.flatMap(projectId => [false, true].map(includeArchived => {
+    const options = createQueryOptions(SessionQuery.listSessions, { projectId, includeArchived, pageSize: 50 }, { transport });
+    return client.invalidateQueries({ queryKey: refreshKey(options.queryKey), exact: true, type: "active", refetchType: "active" });
+  })));
+}
 
 export enum HomeScope { Catalog = "catalog", Sessions = "sessions" }
 export function useNavigationQuery(chain: NavigationChain, scope: HomeScope, projectId: string, includeArchived: boolean, active: boolean) {
@@ -48,7 +61,15 @@ export function useNavigationQuery(chain: NavigationChain, scope: HomeScope, pro
   const options = scope === HomeScope.Catalog
     ? createQueryOptions(ResourceQuery.listResources, { filter: { kind: EntityKind.PROJECT, pageSize: 50 } }, { transport })
     : createQueryOptions(SessionQuery.listSessions, { projectId, includeArchived, pageSize: 50 }, { transport });
-  useQuery({ queryKey: [...options.queryKey, { homeNavigationRefresh: true }], queryFn: async () => { await chain.refresh(reader); return null; }, enabled: active, initialData: null, refetchOnMount: false, retry: false, staleTime: Infinity, gcTime: 0, refetchInterval: active && scope === HomeScope.Sessions ? 15000 : false, refetchIntervalInBackground: false, refetchOnWindowFocus: false });
+  const markerKey = refreshKey(options.queryKey);
+  useQuery({ queryKey: markerKey, queryFn: async () => {
+    // An explicit accepted-creation invalidation can retry the original failed
+    // read. Polls keep retained errors visible; expired/stalled cursors still
+    // require the existing explicit Reload list action.
+    if (chain.getSnapshot().error && client.getQueryState(markerKey)?.isInvalidated) await chain.retry(reader);
+    await chain.refresh(reader);
+    return null;
+  }, enabled: active, initialData: null, refetchOnMount: false, retry: false, staleTime: Infinity, gcTime: 0, refetchInterval: active && scope === HomeScope.Sessions ? 15000 : false, refetchIntervalInBackground: false, refetchOnWindowFocus: false });
   const snapshot = useSyncExternalStore(chain.subscribe, chain.getSnapshot);
   return { ...snapshot, append: () => { void chain.append(reader); }, retry: () => { void chain.retry(reader); }, reload: () => { void chain.reload(reader); } };
 }
