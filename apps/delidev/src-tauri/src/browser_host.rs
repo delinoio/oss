@@ -2087,6 +2087,11 @@ fn queue_child_destruction(
     {
         return;
     }
+    tracing::info!(
+        operation = "browser_child_close",
+        stage = "dispatch",
+        state = "queued"
+    );
     // Retain this exact CEF object, not the current product view's browser.
     // Replacement may already have changed the view's generation and handle.
     let browser = browser.clone();
