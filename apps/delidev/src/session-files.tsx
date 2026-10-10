@@ -108,7 +108,7 @@ function Explorer({ owner, state, openFile }: { owner: FilesController; state: F
       const repository = state.repository, originalTree = tree.current, originalScroll = scroll.current;
       const opener = [...(originalTree?.querySelectorAll<HTMLElement>("[role=treeitem]") ?? [])].find(row => row.dataset.path === path);
       const positions: { element: HTMLElement; top: number; left: number }[] = [];
-      for (let element = originalScroll; element && element !== document.body && element !== document.documentElement; element = element.parentElement) {
+      for (let element: HTMLElement | null = originalScroll; element && element !== document.body && element !== document.documentElement; element = element.parentElement) {
         positions.push({ element, top: element.scrollTop, left: element.scrollLeft });
         if (element.classList.contains("session-workspace")) break;
       }
