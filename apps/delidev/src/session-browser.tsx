@@ -66,6 +66,7 @@ function NativeSessionBrowser({ session, accountId, close, layout, active=true, 
   const shortcutAdmission=useRef("");
   const tabsStore=useSessionTabsStore();
   const activeRef=useRef(active);activeRef.current=active;
+  const selectedPageRef=useRef(selectedPage);selectedPageRef.current=selectedPage;
   const capabilities = useQuery(BrowserQuery.getBrowserCapabilities, {}, {retry:false,enabled:active});
   const supported = capabilities.data?.capabilities.includes(BrowserCapability.PROTECTED_DEVICE_PROFILE_V1) === true;
   const registration = useRetainedMutation(`browser-register:${session.id}:${accountId}`, BrowserQuery.registerBrowserProfile, (response) => {
@@ -173,11 +174,17 @@ function NativeSessionBrowser({ session, accountId, close, layout, active=true, 
     if (!profileId || busy || state?.removal_pending) return;
     setBusy(true); setFailure(undefined);
     if (openPage && !presentation.current) { pendingAction.current={action,tabId};setPresenting(true);return; }
-    try { const result = browserState(await invoke<BrowserState>("control_browser", { profileId, viewId: presentation.current, action, url: address, tabId })); if (alive.current) { setState(result);if(openPage && [BrowserAction.NewTab,BrowserAction.SelectTab,BrowserAction.Navigate].includes(action)){const tab=result.tabs.tabs.find(value=>value.id===result.tabs.selected);if(tab)openPage({profile:profileId,id:tab.id,title:browserTabTitle(tab.url),label:tab.url});} } }
+    try { const result = browserState(await invoke<BrowserState>("control_browser", { profileId, viewId: presentation.current, action, url: address, tabId })); if (alive.current) { setState(result);if(openPage && [BrowserAction.NewTab,BrowserAction.SelectTab,BrowserAction.Navigate].includes(action) && (action === BrowserAction.NewTab || !selectedPageRef.current || (selectedPageRef.current.profile === profileId && selectedPageRef.current.id === (tabId ?? state?.tabs.selected)))){const tab=result.tabs.tabs.find(value=>value.id===result.tabs.selected);if(tab)openPage({profile:profileId,id:tab.id,title:browserTabTitle(tab.url),label:tab.url});} } }
     catch { if (alive.current) setFailure(ownedMessage("session-browser.extra.51fee7071e2b")); }
     finally { if (alive.current) setBusy(false); }
   };
-  useEffect(()=>{if(!presentation.current||!active||!selectedPage||selectedPage.profile!==profileId||!state||state.tabs.selected===selectedPage.id||!state.tabs.tabs.some(tab=>tab.id===selectedPage.id))return;void control(BrowserAction.SelectTab,selectedPage.id);},[active,selectedPage?.id,profileId,state?.tabs.selected]);
+  useEffect(() => {
+    const node = viewport.current;
+    if (busy || !presentation.current || !activeRef.current || !node?.isConnected || node.closest("[hidden], [inert]") || shortcutModalVisible() || !selectedPage || selectedPage.profile !== profileId || !state || state.tabs.selected === selectedPage.id || !state.tabs.tabs.some(tab => tab.id === selectedPage.id)) return;
+    // A busy action does not own a queued selection. On settlement reconcile
+    // only the latest shared page under the current presentation authority.
+    void control(BrowserAction.SelectTab, selectedPage.id);
+  }, [active, busy, selectedPage?.profile, selectedPage?.id, profileId, state?.tabs.selected]);
   useEffect(()=>{if(!profileId||!openPage)return;let disposed=false;let unlisten:(()=>void)|undefined;void listen<{profile_id:string;view_id:string;position:number;token:string}>("session-tab-selection",event=>{if(!disposed&&activeRef.current&&event.payload.profile_id===profileId&&event.payload.view_id===presentation.current&&event.payload.token===shortcutAdmission.current&&!shortcutModalVisible()){document.getElementById(`session-tab-${session.id}-${event.payload.position-1}`)?.focus({preventScroll:true});tabsStore.position(session.id,event.payload.position);}}).then(stop=>{if(disposed)stop();else unlisten=stop;}).catch(()=>{if(!disposed)console.warn("delidev.browser_shortcuts",{stage:"listener",classification:"unavailable"});});return()=>{disposed=true;unlisten?.();};},[profileId,session.id,tabsStore]);
   useEffect(()=>{if(!profileId||!openPage)return;let disposed=false;const update=()=>{const viewId=presentation.current;if(!viewId)return;const token=newRequestId();shortcutAdmission.current=token;void invoke("browser_tab_shortcuts",{profileId,viewId,token,count:active&&!shortcutModalVisible()?Math.min(9,tabsStore.snapshot(session.id).tabs.length):0}).catch(()=>{if(!disposed)console.warn("delidev.browser_shortcuts",{stage:"admission",classification:"unavailable"});});};update();const observer=new MutationObserver(update);observer.observe(document.body,{subtree:true,attributes:true,attributeFilter:["open","hidden","inert"],childList:true});const stop=tabsStore.subscribe(update);const timer=window.setInterval(update,250);return()=>{disposed=true;shortcutAdmission.current="";window.clearInterval(timer);observer.disconnect();stop();const viewId=presentation.current;if(viewId)void invoke("browser_tab_shortcuts",{profileId,viewId,token:newRequestId(),count:0}).catch(()=>{});};},[active,profileId,state?.tabs.selected,tabsStore,session.id]);
   const blocked = !active || busy || registration.busy || registration.uncertain || state?.removal_pending;

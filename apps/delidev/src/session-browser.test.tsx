@@ -1,5 +1,5 @@
 import { create } from "@bufbuild/protobuf";
-import { StrictMode } from "react";
+import { StrictMode, type ComponentProps } from "react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -31,7 +31,7 @@ function fixture() {
   const local = { tabs: { tabs: [{ id: tabId, url: "https://fixture.test/page" }], selected: tabId }, removal_pending: false };
   native.mockResolvedValue(local);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  function View() { return <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionBrowser session={session} accountId={accountId} close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>; }
+  function View(props: Partial<Pick<ComponentProps<typeof SessionBrowser>, "selectedPage" | "active" | "openPage">> = {}) { return <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionBrowser session={session} accountId={accountId} close={() => {}} {...props} /></MutationIntents></QueryClientProvider></TransportProvider>; }
   return { accountId, profileId, tabId, profile, session, register, local, View };
 }
 async function open() {
@@ -256,4 +256,52 @@ it("fences a retained Browser under the maximized upper inert region through exa
     expect(f.register).toHaveBeenCalledTimes(1);
     expect(native.mock.calls.filter(([operation]) => operation === "open_browser")[1][1].profileId).toBe(original.profileId);
   } finally { view.unmount(); }
+});
+
+it.each(["Back", "Reload", "Go"])("reconciles only the latest shared page after pending %s settles", async action => {
+ const f=fixture(),second=newRequestId(),latest=newRequestId(),openPage=vi.fn();
+ f.local.tabs.tabs.push({id:second,url:"https://fixture.test/second"},{id:latest,url:"https://fixture.test/latest"});
+ let finish!:(value:typeof f.local)=>void;
+ const pendingAction=action==="Back"?"back":action==="Reload"?"reload":"navigate";
+ native.mockImplementation(async(operation,args)=>{
+  if(operation==="control_browser"&&args.action===pendingAction)return new Promise<typeof f.local>(resolve=>{finish=resolve;});
+  if(operation==="control_browser"&&args.action==="select-tab")return {...f.local,tabs:{...f.local.tabs,selected:args.tabId}};
+  return f.local;
+ });
+ const page=(id:string)=>({profile:f.profileId,id,title:id});
+ const mounted=render(<f.View selectedPage={page(f.tabId)} openPage={openPage}/>);await open();
+ await waitFor(()=>expect(native.mock.calls.some(([operation])=>operation==="open_browser")).toBe(true));
+ fireEvent.click(screen.getByRole("button",{name:action}));await waitFor(()=>expect(finish).toBeDefined());
+ mounted.rerender(<f.View selectedPage={page(second)} openPage={openPage}/>);
+ mounted.rerender(<f.View selectedPage={page(latest)} openPage={openPage}/>);
+ expect(native.mock.calls.filter(([operation,args])=>operation==="control_browser"&&args.action==="select-tab")).toHaveLength(0);
+ await act(async()=>finish(f.local));
+ await waitFor(()=>expect(native.mock.calls.filter(([operation,args])=>operation==="control_browser"&&args.action==="select-tab")).toHaveLength(1));
+ const selected=native.mock.calls.find(([operation,args])=>operation==="control_browser"&&args.action==="select-tab")![1];
+ const original=native.mock.calls.find(([operation])=>operation==="open_browser")![1];
+ expect(selected).toMatchObject({profileId:f.profileId,viewId:original.viewId,tabId:latest});
+ expect(openPage).toHaveBeenLastCalledWith(expect.objectContaining({profile:f.profileId,id:latest}));
+ mounted.unmount();
+});
+
+it.each(["inactive","foreign profile","modal","disposed","unchanged"])("does not reconcile a stale or unavailable shared page after busy settlement: %s",async ownership=>{
+ const f=fixture(),second=newRequestId(),openPage=vi.fn();f.local.tabs.tabs.push({id:second,url:"https://fixture.test/second"});
+ let finish!:(value:typeof f.local)=>void;
+ native.mockImplementation(async(operation,args)=>{
+  if(operation==="control_browser"&&args.action==="back")return new Promise<typeof f.local>(resolve=>{finish=resolve;});
+  return f.local;
+ });
+ const page={profile:f.profileId,id:f.tabId,title:"Original"};
+ const mounted=render(<f.View selectedPage={page} openPage={openPage}/>);await open();
+ await waitFor(()=>expect(native.mock.calls.some(([operation])=>operation==="open_browser")).toBe(true));
+ fireEvent.click(screen.getByRole("button",{name:"Back"}));await waitFor(()=>expect(finish).toBeDefined());
+ mounted.rerender(<f.View selectedPage={{...page,id:ownership==="unchanged"?f.tabId:second,profile:ownership==="foreign profile"?newRequestId():f.profileId}} active={ownership!=="inactive"} openPage={openPage}/>);
+ let modal:HTMLElement|undefined;
+ if(ownership==="modal"){modal=globalThis.document.createElement("div");modal.setAttribute("role","dialog");globalThis.document.body.append(modal);}
+ if(ownership==="disposed")mounted.unmount();
+ try{
+  await act(async()=>finish(f.local));
+  expect(native.mock.calls.filter(([operation,args])=>operation==="control_browser"&&args.action==="select-tab")).toHaveLength(0);
+  expect(openPage).not.toHaveBeenCalled();
+ }finally{modal?.remove();mounted.unmount();}
 });
