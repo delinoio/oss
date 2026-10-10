@@ -2265,3 +2265,33 @@ value grants readiness, native support, credential release or input acceptance.
 The original root may observe official `sleep` ThreadItems through the existing tool lifecycle. The shared closed decoder requires exactly `type`, bounded nonempty `id` and nonnegative uint64 `durationMs`, rejects duplicate/unknown fields and preserves the original item, thread and known turn. Lifecycle status comes only from original `item/started` and `item/completed`; duration is immutable across completion. Worker and server independently fence scope and changed duration. Public `sleep.duration_ms` is an exact decimal JSON string to preserve every native uint64 value through browser parsing. The existing tool disclosure displays the duration and original lifecycle status without a timer or controls.
 
 Complete continuation, context/compaction and permitted ordinary/managed Fork history share the same decoder and retain the original normalized native item JSON, sequence and history digest. Both Fork admission checks explicitly allow only this closed inert family; async/structured tool families and other restricted profiles remain separate. The synchronized outbox and server exact-request receipt replay preserve one observation after publication loss; uncertainty permits only replay of that original publication, never native sleep/input replay. Sleep completion settles only the tool. Original turn outcome, accepted input, native failure/interruption, cleanup and recovery remain independent. No protocol allocation, database migration or numeric native version gate is added.
+
+## Passive native file-search observations
+
+The private Codex notification decoder accepts exactly
+`fuzzyFileSearch/sessionUpdated` with required `sessionId`, `query` and `files`,
+and `fuzzyFileSearch/sessionCompleted` with required `sessionId`. The [pinned
+official updated schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/FuzzyFileSearchSessionUpdatedNotification.json)
+uses snake-case `match_type`; renamed `matchType` is rejected. Ordered file
+records retain `root`, `path`, native `match_type` and `file_name`, uint32 `score` and
+omitted, null or ordered uint32 `indices`. File and directory matches remain
+distinct; an empty array is an observed empty result, not an unknown result.
+
+The adapter currently has no admitted original search-session/query generation.
+Validate then discard all results and completion metadata, including foreign or
+stale identities and completion before update. Correlation identifies only the
+original execution process for passive disposal; it does not assign search
+ownership. A future consumer must first prove its original admitted connection,
+session and query generation. Arrival never initiates a search, reads a path,
+indexes a conversation, grants file access or replaces original input/settings.
+
+Strict exact field spelling, unknown/duplicate-field rejection, a 1 MiB envelope,
+1024-byte session identity, 4096-byte query/file strings, 1000 files and 4096
+indices bound this private decoder. Null/missing required fields, unknown match
+types and out-of-range numbers fail with the existing redacted incompatibility
+error. Diagnostics use the closed `filesystem-search` classification without
+raw paths, query, session identity or payload. Same-name server requests retain
+the request boundary. Typed discarded metadata produces no product event,
+receipt, input resend, completion or cleanup/recovery change. No public protocol
+allocation or SQLite migration is added. Fixture checks establish decoding and
+disposal only; installed native/account/platform acceptance remains separate.

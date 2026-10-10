@@ -23,6 +23,7 @@ const (
 	CodexAppsStartupObserved   MetadataKind = "codex-apps-startup-observed"
 	SkillsChangedDiscarded     MetadataKind = "skills-changed-discarded"
 	FilesystemChangedDiscarded MetadataKind = "filesystem-changed-discarded"
+	FuzzySearchDiscarded       MetadataKind = "fuzzy-search-discarded"
 )
 
 type nativeMCPStartupState string
@@ -84,6 +85,13 @@ func (c *Client) metadata(kind MetadataKind) Event {
 
 func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 	switch native.Method {
+	case "fuzzyFileSearch/sessionUpdated", "fuzzyFileSearch/sessionCompleted":
+		if _, err := decodeFuzzySearch(native.Method, native.Params); err != nil {
+			return Event{}, incompatible()
+		}
+		// There is no admitted search owner in this adapter. Process correlation
+		// only allows disposal; native session/query/path values grant no authority.
+		return c.metadata(FuzzySearchDiscarded), nil
 	case "fs/changed":
 		var params struct {
 			WatchID      string   `json:"watchId"`

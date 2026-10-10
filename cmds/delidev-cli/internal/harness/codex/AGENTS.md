@@ -4,6 +4,8 @@
 - This file covers `cmds/delidev-cli/internal/harness/codex/` and its descendants unless a more specific instruction file applies.
 - Read the owning contracts below before changing behavior, including affected cross-domain consumers.
 
+- Keep private notification decoding and passive disposal separate from search/resource ownership. Follow the owning harness contract before adding any consumer.
+
 ## Owning contracts
 
 - [API account browser OAuth](../../../../../docs/cmds-delidev-account-oauth-contract.md)
