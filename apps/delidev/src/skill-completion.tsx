@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useId, useRef, useState, type KeyboardEvent
 import { useQuery, useTransport } from "@connectrpc/connect-query";
 import { SkillQuery, SkillProvenance, isEntityId, type SkillEntry, type SkillSelection } from "@delinoio/delidev-api-client";
 import { copy, useLocale } from "./localization";
-import { pickerSurfaceBounds, pickerSurfaceOwner } from "./picker-overlay";
+import { pickerSurfaceBounds, pickerSurfaceOwner, type PickerBounds } from "./picker-overlay";
 import { skillCompletionGeometry } from "./skill-completion-overlay";
 
 export interface SkillToken { start: number; end: number; prefix: string }
@@ -25,6 +25,23 @@ function completeInventory(entries: readonly SkillEntry[]): boolean {
     if (!entry.name || /[\s$]/u.test(entry.name) || !selection || !isEntityId(selection.skillId) || !isEntityId(selection.inventoryId) || !isEntityId(selection.workerDeviceId) || !/^[a-f0-9]{64}$/.test(selection.contentRevision) || ids.has(selection.skillId) || selection.inventoryId !== first?.inventoryId || selection.workerDeviceId !== first?.workerDeviceId) return false;
     ids.add(selection.skillId); return true;
   });
+}
+function skillAnchorClipped(input: HTMLElement, anchor: DOMRect, bounds: PickerBounds): boolean {
+  if (anchor.width === 0 && anchor.height === 0) return false;
+  if (anchor.left < bounds.left || anchor.top < bounds.top || anchor.right > bounds.right || anchor.bottom > bounds.bottom) return true;
+  for (let node = input.parentElement; node; node = node.parentElement) {
+    const style = getComputedStyle(node);
+    const clipsX = /^(auto|scroll|hidden|clip|overlay)$/.test(style.overflowX);
+    const clipsY = /^(auto|scroll|hidden|clip|overlay)$/.test(style.overflowY);
+    if (!clipsX && !clipsY) continue;
+    const rect = node.getBoundingClientRect();
+    const scaleX = node.offsetWidth > 0 ? rect.width / node.offsetWidth : 1;
+    const scaleY = node.offsetHeight > 0 ? rect.height / node.offsetHeight : 1;
+    const left = rect.left + node.clientLeft * scaleX, top = rect.top + node.clientTop * scaleY;
+    const right = left + node.clientWidth * scaleX, bottom = top + node.clientHeight * scaleY;
+    if (clipsX && (anchor.left < left || anchor.right > right) || clipsY && (anchor.top < top || anchor.bottom > bottom)) return true;
+  }
+  return false;
 }
 export interface SkillTokenBinding { start: number; end: number; token: string; selection: SkillSelection; stale: boolean; context?: string; ambiguous?: boolean }
 export function editedBindings(before: string, after: string, bindings: readonly SkillTokenBinding[]): SkillTokenBinding[] {
@@ -107,10 +124,12 @@ export function useSkillCompletion({ value, change, textarea, machineId, agentId
         const rect = dialog.getBoundingClientRect();
         bounds = { left: Math.max(bounds.left, rect.left), top: Math.max(bounds.top, rect.top), right: Math.min(bounds.right, rect.right), bottom: Math.min(bounds.bottom, rect.bottom) };
       }
+      const anchor = input.getBoundingClientRect();
+      if (skillAnchorClipped(input, anchor, bounds)) { panel.hidePopover?.(); setDismissed(true); return false; }
       const cssWidth = Number.parseFloat(getComputedStyle(panel).width);
       const measured = cssWidth > 0 ? panel.getBoundingClientRect().width / cssWidth : 1;
       const scale = Number.isFinite(measured) && measured > 0 ? measured : 1;
-      const geometry = skillCompletionGeometry(input.getBoundingClientRect(), bounds, (panel.scrollHeight + 2) * scale, scale);
+      const geometry = skillCompletionGeometry(anchor, bounds, (panel.scrollHeight + 2) * scale, scale);
       Object.assign(panel.style, { left: `${geometry.left / scale}px`, top: `${geometry.top / scale}px`, width: `${geometry.width / scale}px`, maxHeight: `${geometry.maxHeight / scale}px` });
       return true;
     };

@@ -11,11 +11,12 @@ import { MutationIntents, useRetainedMutation } from "./mutation";
 import { SupportedLanguage, i18n } from "./localization";
 const machine = newRequestId(), agent = newRequestId(), inventory = newRequestId(), worker = newRequestId();
 const entries = ["add-issue", "add-note"].map(name => ({ name, description: `${name} fixture`, provenance: SkillProvenance.USER, selection: { $typeName: "delidev.v1.SkillSelection" as const, inventoryId: inventory, workerDeviceId: worker, skillId: newRequestId(), contentRevision: "a".repeat(64) } }));
-function Composer({ runner = machine, locked = false, enabled = true, retainTransportContext = false, send }: { runner?: string; locked?: boolean; enabled?: boolean; retainTransportContext?: boolean; send: (value: unknown) => void }) {
+function Composer({ runner = machine, locked = false, enabled = true, retainTransportContext = false, scrolling = false, send }: { runner?: string; locked?: boolean; enabled?: boolean; retainTransportContext?: boolean; scrolling?: boolean; send: (value: unknown) => void }) {
  const [value,change]=useState("");const textarea=useRef<HTMLTextAreaElement>(null);const skills=useSkillCompletion({value,change,textarea,machineId:runner,agentId:agent,disabled:locked,enabled,retainTransportContext});
- return <><fieldset disabled={locked}>{skills.wrap(<textarea aria-label="Message" ref={textarea} value={value} onChange={e=>skills.onChange(e.target.value,e.target.selectionStart)} onSelect={skills.onSelect} onKeyDown={skills.onKeyDown} onCompositionStart={skills.onCompositionStart} onCompositionEnd={skills.onCompositionEnd} {...skills.attributes}/>)}{skills.list}{skills.warning}</fieldset><button disabled={skills.blocked} onClick={()=>send({value,skills:skills.selections})}>Send</button></>;
+ const fieldset=<fieldset disabled={locked}>{skills.wrap(<textarea aria-label="Message" ref={textarea} value={value} onChange={e=>skills.onChange(e.target.value,e.target.selectionStart)} onSelect={skills.onSelect} onKeyDown={skills.onKeyDown} onCompositionStart={skills.onCompositionStart} onCompositionEnd={skills.onCompositionEnd} {...skills.attributes}/>)}{skills.list}{skills.warning}</fieldset>;
+ return <>{scrolling ? <div className="session-tray-content" style={{ height: 100, overflowY: "auto" }}>{fieldset}</div> : fieldset}<button disabled={skills.blocked} onClick={()=>send({value,skills:skills.selections})}>Send</button></>;
 }
-function fixture() {const send=vi.fn(),read=vi.fn(async()=>({skills:entries}));const transport=createRouterTransport(router=>router.service(SkillService,{listSkills:read}));const client=new QueryClient();const view=(runner=machine,locked=false)=><TransportProvider transport={transport}><QueryClientProvider client={client}><Composer runner={runner} locked={locked} send={send}/></QueryClientProvider></TransportProvider>;return{send,read,view};}
+function fixture() {const send=vi.fn(),read=vi.fn(async()=>({skills:entries}));const transport=createRouterTransport(router=>router.service(SkillService,{listSkills:read}));const client=new QueryClient();const view=(runner=machine,locked=false,scrolling=false)=><TransportProvider transport={transport}><QueryClientProvider client={client}><Composer runner={runner} locked={locked} scrolling={scrolling} send={send}/></QueryClientProvider></TransportProvider>;return{send,read,view};}
 it("finds whitespace-delimited caret tokens without consuming surrounding Unicode",()=>{expect(skillToken("한글\n$add-iss trailing",11)).toEqual({start:3,end:11,prefix:"add-iss"});expect(skillToken("email$add",9)).toBeUndefined();});
 it("binds keyboard selection separately, replaces only the token and does not send",async()=>{const f=fixture();render(f.view());const input=screen.getByRole("textbox");fireEvent.change(input,{target:{value:"한글\n$add-iss",selectionStart:11}});await screen.findByRole("option");fireEvent.keyDown(input,{key:"Enter"});expect((input as HTMLTextAreaElement).value).toBe("한글\n$add-issue");expect(f.send).not.toHaveBeenCalled();fireEvent.click(screen.getByText("Send"));expect(f.send.mock.calls[0]![0]).toMatchObject({skills:[entries[0]!.selection]});});
 it("removes an edited binding and requires reselection on Runner changes",async()=>{const f=fixture();const view=render(f.view());const input=screen.getByRole("textbox");fireEvent.change(input,{target:{value:"$add-iss",selectionStart:8}});await screen.findByRole("option");fireEvent.keyDown(input,{key:"Tab"});view.rerender(f.view(newRequestId()));await screen.findByText("The selected skills need reselection before sending.");expect((screen.getByText("Send") as HTMLButtonElement).disabled).toBe(true);fireEvent.change(input,{target:{value:"manual",selectionStart:6}});await waitFor(()=>expect((screen.getByText("Send") as HTMLButtonElement).disabled).toBe(false));fireEvent.click(screen.getByText("Send"));expect(f.send.mock.calls[0]![0]).toMatchObject({skills:[]});});
@@ -190,4 +191,18 @@ it("uses a manual completion top layer and disposes hidden composer presentation
  input.closest("fieldset")!.hidden=true;
  await waitFor(()=>expect(view.container.querySelector(".skill-completion")).toBeNull());
  expect(input).toHaveProperty("value","$add-iss");expect(f.send).not.toHaveBeenCalled();
+});
+it("dismisses completion when scrolling clips its textarea anchor",async()=>{
+ const f=fixture(),view=render(f.view(machine,false,true)),input=screen.getByRole("textbox");
+ const surface=view.container.querySelector<HTMLElement>(".session-tray-content")!;
+ Object.defineProperties(surface,{offsetWidth:{configurable:true,value:200},clientWidth:{configurable:true,value:200},offsetHeight:{configurable:true,value:100},clientHeight:{configurable:true,value:100}});
+ let anchor={left:20,top:20,right:120,bottom:68,width:100,height:48} as DOMRect;
+ vi.spyOn(surface,"getBoundingClientRect").mockReturnValue({left:0,top:0,right:200,bottom:100,width:200,height:100} as DOMRect);
+ vi.spyOn(input,"getBoundingClientRect").mockImplementation(()=>anchor);
+ fireEvent.change(input,{target:{value:"$add-iss",selectionStart:8}});await screen.findByRole("option");
+ expect(input.getAttribute("aria-expanded")).toBe("true");
+ anchor={left:20,top:-60,right:120,bottom:-12,width:100,height:48} as DOMRect;
+ fireEvent.scroll(surface);
+ await waitFor(()=>expect(screen.queryByRole("listbox")).toBeNull());
+ expect(input.getAttribute("aria-expanded")).toBe("false");expect(input).toHaveProperty("value","$add-iss");expect(f.send).not.toHaveBeenCalled();
 });
