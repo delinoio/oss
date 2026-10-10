@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"reflect"
+	"slices"
 	"strings"
 )
 
@@ -93,6 +94,21 @@ func (c CodexAppCallObservation) Validate(status ToolStatus) error {
 
 func (c CodexAppCallIdentity) SameOriginal(next CodexAppCallIdentity) bool {
 	return c.AccountID == next.AccountID && c.Generation == next.Generation && c.AppID == next.AppID && c.Tool == next.Tool && bytes.Equal(c.Arguments, next.Arguments) && reflect.DeepEqual(c.LinkID, next.LinkID) && reflect.DeepEqual(c.AppName, next.AppName) && reflect.DeepEqual(c.ActionName, next.ActionName) && reflect.DeepEqual(c.ReadOnly, next.ReadOnly)
+}
+
+func (c CodexAppCallIdentity) Clone() CodexAppCallIdentity {
+	c.Arguments = slices.Clone(c.Arguments)
+	for _, target := range []**string{&c.LinkID, &c.AppName, &c.ActionName} {
+		if *target != nil {
+			value := **target
+			*target = &value
+		}
+	}
+	if c.ReadOnly != nil {
+		value := *c.ReadOnly
+		c.ReadOnly = &value
+	}
+	return c
 }
 
 func ValidateCodexAppCallTransition(previous, next ToolSnapshot) error {

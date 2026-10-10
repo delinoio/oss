@@ -130,7 +130,7 @@ func (c *Client) observeCodexAppCallLocked(native nativewire.Event, turnID domai
 		if exists || len(c.apps.calls) >= maxTrackedInteractions {
 			return Event{}, incompatible()
 		}
-		c.apps.calls[tool.ID] = trackedAppCall{turn: turnID, identity: tool.CodexApp.Identity}
+		c.apps.calls[tool.ID] = trackedAppCall{turn: turnID, identity: tool.CodexApp.Identity.Clone()}
 	}
 	return Event{Kind: kind, ThreadID: c.thread, TurnID: turnID, ItemID: tool.ID, Tool: tool, Correlated: true, Late: turn.Turn.Status.terminal()}, nil
 }

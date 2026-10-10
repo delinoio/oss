@@ -61,9 +61,13 @@ func TestNativeAppCallRejectsDuplicateAndSubstitutedCompletion(t *testing.T) {
 	if _, err := c.observeCodexAppCallLocked(nativewire.Event{Method: "item/completed"}, turn, completed); err == nil {
 		t.Fatal("completion adopted an unobserved call")
 	}
-	if _, err := c.observeCodexAppCallLocked(nativewire.Event{Method: "item/started"}, turn, started); err != nil {
+	event, err := c.observeCodexAppCallLocked(nativewire.Event{Method: "item/started"}, turn, started)
+	if err != nil {
 		t.Fatal(err)
 	}
+	// Public observations cannot rewrite the retained original call identity.
+	event.Tool.CodexApp.Identity.Arguments[0] = '['
+	*event.Tool.CodexApp.Identity.AppName = "Caller changed display"
 	if _, err := c.observeCodexAppCallLocked(nativewire.Event{Method: "item/started"}, turn, started); err == nil {
 		t.Fatal("duplicate native invocation adopted")
 	}
