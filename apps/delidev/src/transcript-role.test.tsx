@@ -100,8 +100,13 @@ it("keeps Revert outside the user bubble in the same stable transcript item", ()
   const renderRow = (eligible: boolean) => <div data-payload-page="original"><TranscriptItem resource={resource} actions={<button>Existing turn action</button>} revertAction={eligible ? action : null}/></div>;
   const { container, rerender } = render(renderRow(true));
   const bubble = screen.getByLabelText("User message"), item = bubble.parentElement;
+  const group = screen.getByRole("group", { name: "User message" });
   const page = container.querySelector('[data-payload-page]');
   expect(item?.className).toBe("message-user-item");
+  expect(item?.getAttribute("role")).toBe("group");
+  expect(group).toBe(item);
+  expect(group.getAttribute("aria-labelledby")).toBe(bubble.id);
+  expect(within(group).getByRole("button", { name: "Revert and edit" })).toBeTruthy();
   expect(item?.parentElement).toBe(page);
   expect(within(bubble).queryByRole("button", { name: "Revert and edit" })).toBeNull();
   expect(within(bubble).getByRole("button", { name: "Existing turn action" })).toBeTruthy();

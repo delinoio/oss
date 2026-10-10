@@ -3445,10 +3445,11 @@ background is transparent; enabled text uses `--text-secondary`, hover uses
 `--surface-hover` and keyboard focus uses `--focus`. Enabled text must retain
 at least 4.5:1 contrast in supported appearances. Preserve disabled guards and
 English/Korean wrapping at narrow widths and effective 200% zoom. Keep one
-stable transcript item containing the bubble and its secondary action. Bubble
-width still follows message content, with its original maximum width and
-12px/16px padding; images, other turn actions, context/status, resource keys,
-retained page wrappers, measurements, scroll anchors and content visibility
+stable measured user-message item as an accessible group labelled by its
+article. Keep the secondary action inside the group and outside the colored
+bubble. Bubble width still follows message content, with its original maximum
+width and 12px/16px padding. Images, other turn actions, context/status, resource
+keys, retained page wrappers, measurements, scroll anchors and content visibility
 keep their original ownership. This presentation change adds no requests or
 execution authority.
 

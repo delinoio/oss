@@ -228,7 +228,7 @@ export const TranscriptItem = memo(function TranscriptItem({ resource, active = 
   const textRole = data.tool == null && data.artifact == null && data.progress == null &&
     ["grok_text", "claude", "claude_tool", "claude_progress", "claude_interruption"].every(key => !Object.hasOwn(data, key));
   const roleClass = textRole && data.role === "user" ? " message-user" : textRole && data.role === "assistant" ? " message-assistant" : "";
-  const message = <article className={`message${roleClass}`} aria-label={roleClass ? copy(data.role === "user" ? "session.userMessage" : "session.assistantMessage_8352f5") : copy("session.message_e9ca2b", { v0: text(data.role) || "Agent" })}>
+  const message = <article id={roleClass === " message-user" ? `transcript-message-${resource.id}` : undefined} className={`message${roleClass}`} aria-label={roleClass ? copy(data.role === "user" ? "session.userMessage" : "session.assistantMessage_8352f5") : copy("session.message_e9ca2b", { v0: text(data.role) || "Agent" })}>
     {roleClass ? <ConversationStatus state={text(data.state)} /> : <header><strong>{text(data.role) || copy("session.extra.11b39c93777e")}</strong><small>{statusLabel(text(data.state))}</small></header>}
     {text(data.text) ? <pre>{text(data.text)}</pre> : null}
     {Number(data.context_revision ?? 0) < contextRevision ? <small>{copy("session.previousContext")}</small> : null}
@@ -253,7 +253,7 @@ export const TranscriptItem = memo(function TranscriptItem({ resource, active = 
   </article>;
   // Keep one stable measured item when eligibility changes. The bubble remains
   // content-sized; only Revert leaves it, while other turn actions stay inside.
-  return roleClass === " message-user" ? <div className="message-user-item">{message}{revertAction ? <div className="message-user-revert-row">{revertAction}</div> : null}</div> : message;
+  return roleClass === " message-user" ? <div className="message-user-item" role="group" aria-labelledby={`transcript-message-${resource.id}`}>{message}{revertAction ? <div className="message-user-revert-row">{revertAction}</div> : null}</div> : message;
 });
 
 const submissionLabels = {
