@@ -218,7 +218,7 @@
   "configuration-fields.approvalReviewAI": "AI auto-review",
   "configuration-fields.approvalReviewGuidance": "AI auto-review uses native Codex review with on-request approvals. Your sandbox permissions stay unchanged.",
   "configuration-fields.approvalReviewForeign": "A Codex approval reviewer is retained. Clear it explicitly before executing another harness.",
-  "configuration-fields.claudeExecutionRequirements": "Claude execution requires a verified selected account or supported subscription, a matching Anthropic Messages profile, and a selected Runner Device with a supported Claude installation. Account permissions, native model/version, input mode and continuation history are checked for each execution. If any requirement is unverified or unsupported, review that account, profile or Runner Device; saving settings does not bypass these checks.",
+  "configuration-fields.claudeExecutionRequirements": "API accounts require a verified selected account and a matching Anthropic Messages profile. Native subscriptions require the original native account and login, its owning Runner Device, and negotiated subscription support. Native subscriptions do not require an API Provider or profile. Both paths require a selected Runner Device with a supported Claude installation. Account permissions, native model/version, input mode and continuation history are checked for each execution. If any requirement is unverified or unsupported, review the account, applicable API profile or Runner Device. Saving settings does not bypass these checks.",
   "configuration-fields.projectEdit.tabs": "Project editor sections",
   "configuration-fields.projectEdit.general": "General",
   "configuration-fields.projectEdit.repositories": "Repositories",
