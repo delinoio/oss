@@ -4,7 +4,7 @@ import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, ResourceQuery, SessionDirectoryQuery, SystemCapability, SystemQuery, newRequestId, type Resource, type ChangeSessionDirectoryRequest, type SessionDirectoryOperation } from "@delinoio/delidev-api-client";
 import { document, object, text } from "./documents";
 import { copy, useLocale } from "./localization";
-import { useRetainedMutation, useRetainedMutationReceipt } from "./mutation";
+import { useRetainedMutation, useRetainedMutationReceipt, useRetainedMutationIntents } from "./mutation";
 import { useWorkspaceReader } from "./session-files";
 import { FileOperation, type Root } from "./session-files-observation";
 import { canonicalDirectory, directoryDisplayPath, directoryEligible, directorySource, directorySettled, safeDirectoryRoots, verifiedDirectoryOperation } from "./session-directory-model";
@@ -17,6 +17,8 @@ export function useSessionDirectory(session: Resource | undefined, active: boole
  const machineId=text(document(session).machine_id);
  const machine=useQuery(ResourceQuery.getResource,{kind:EntityKind.MACHINE,id:machineId},{enabled:active&&Boolean(machineId)});
  const supported=Boolean(!status.error && !machine.error && machine.data?.resource?.id===machineId && validRunnerObservation(machine.data.resource) && document(machine.data.resource).disabled!==true && status.data?.capabilities.includes(SystemCapability.SESSION_DIRECTORY_V1) && Array.isArray(document(machine.data.resource).worker_capabilities) && (document(machine.data.resource).worker_capabilities as unknown[]).includes("session-directory-v1"));
+ const otherPending=useRetainedMutationIntents("").some(intent=>!intent.key.startsWith("session-directory:") && (object(object(intent.input).mutation).id===session?.id || object(intent.input).sessionId===session?.id));
+ blocked ||= otherPending;
  const key=`session-directory:${session?.id ?? ""}`;
  const [selection,setSelection]=useState<{session:Resource;roots?:Root[];repository:string;path:string;error?:boolean}>();
  const [knownRoots,setKnownRoots]=useState<Root[]>();

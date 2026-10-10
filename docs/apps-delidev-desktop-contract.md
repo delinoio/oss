@@ -5125,3 +5125,11 @@ immutable generation. Queued admission and receipt lookup are not native
 completion. No capability is advertised until the owning complete integration
 meets its activation gates. Fixtures and static checks do not establish actual
 native/account/platform acceptance.
+
+An ordinary settled Fork-derived conversation is its own root and keeps its
+original prepared manifest and completed execution authority. Historical Fork
+metadata alone does not disable directory control. Actual Sidechat ownership
+and pending Fork work remain ineligible. The connection barrier also retains
+the original transport/server/client identity when replacement connection props
+arrive during an unresolved directory receipt; same-identity transport refresh
+can continue without discarding that original request.

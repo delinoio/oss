@@ -13,7 +13,24 @@ const empty: Intent = Object.freeze({ busy: false, uncertain: false });
 function bindAcknowledgement<I extends DescMessage, O extends DescMessage>(acknowledge: (result: MessageShape<O>, request: MessageShape<I>) => boolean, request: MessageShape<I>) {
   return (result: unknown) => acknowledge(result as MessageShape<O>, request);
 }
+// Connection replacement cannot dispose an original directory receipt owner.
+// Same-identity credential/transport refresh keeps its original actor scope.
+export class DirectoryConnectionBarrier<T> {
+  pending = false;
+  private selected?: { identity: unknown; value: T };
+  constructor(private changed?: () => void) {}
+  select(identity: unknown, value: T): T {
+    if (!this.selected || !this.pending || this.selected.identity === identity) this.selected = { identity, value };
+    return this.selected.value;
+  }
+  observe = (pending: boolean) => {
+    if (this.pending === pending) return;
+    this.pending = pending;
+    this.changed?.();
+  };
+}
 class IntentRegistry {
+  directoryBarrier?: Pick<DirectoryConnectionBarrier<unknown>, "observe">;
   alive = true;
   revision = 0;
   entries = new Map<string, Intent>();
@@ -46,6 +63,7 @@ class IntentRegistry {
   }
   put(key: string, value: Intent) {
     this.entries.set(key, value);
+    this.directoryBarrier?.observe([...this.entries].some(([id, intent]) => id.startsWith("session-directory:") && Boolean(intent.input)));
     this.revision += 1;
     for (const listener of this.listeners) listener();
   }
@@ -68,10 +86,11 @@ export function useRetainedMutationIntents(prefix: string): RetainedMutationInte
     : []), [prefix, registry, revision]);
 }
 const Context = createContext<IntentRegistry | undefined>(undefined);
-export function MutationIntents({ children }: { children: ReactNode }) {
+export function MutationIntents({ children, directoryBarrier }: { children: ReactNode; directoryBarrier?: Pick<DirectoryConnectionBarrier<unknown>, "observe"> }) {
   useLocale();
   const opening = useSettingsOpening();
   const [registry] = useState(() => new IntentRegistry());
+  registry.directoryBarrier = directoryBarrier;
   useEffect(() => {
     const dispose = () => { registry.alive = false; registry.entries.clear(); registry.acceptedListeners.clear(); registry.acceptedObservers.clear(); registry.outcomeObservers.clear(); };
     registry.alive = !opening?.disposed;

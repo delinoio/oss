@@ -6,7 +6,7 @@ import { create } from "@bufbuild/protobuf";
 import { fireEvent,render,screen,waitFor,within } from "@testing-library/react";
 import { expect,it } from "vitest";
 import { EntityKind,ResourceSchema,ResourceService,SessionService,SystemService,SessionDirectoryService,SystemCapability,newRequestId,SessionQuery,type Resource,type ChangeSessionDirectoryRequest } from "@delinoio/delidev-api-client";
-import { MutationIntents,useSessionDirectoryPending,useRetainedMutation } from "./mutation";
+import { DirectoryConnectionBarrier,MutationIntents,useSessionDirectoryPending,useRetainedMutation } from "./mutation";
 import { useSessionDirectory } from "./session-directory";
 import { encode } from "./documents";
 function fixture(lost:boolean){
@@ -40,4 +40,12 @@ it("retains queued admission without optimistic completion or automatic polling"
 
 it("Escape closes only the dialog before admission",async()=>{
  const f=fixture(false);render(f.view());const button=await screen.findByRole("button",{name:"Change directory"});await waitFor(()=>expect((button as HTMLButtonElement).disabled).toBe(false));fireEvent.click(button);await screen.findByLabelText("Relative directory");fireEvent(screen.getByRole("dialog"),new Event("cancel",{bubbles:true,cancelable:true}));expect(screen.queryByRole("dialog")).toBeNull();expect(f.counts()).toEqual({changes:0,reads:0,other:0});
+});
+
+it("preserves original connection and actor while a directory receipt is retained",()=>{
+ const original={server:"original",actor:"paired-original"},replacement={server:"replacement",actor:"paired-new"},barrier=new DirectoryConnectionBarrier<typeof original>();
+ expect(barrier.select("original",original)).toBe(original);barrier.observe(true);
+ expect(barrier.select("replacement",replacement)).toBe(original);
+ const refreshed={...original};expect(barrier.select("original",refreshed)).toBe(refreshed);
+ barrier.observe(false);expect(barrier.select("replacement",replacement)).toBe(replacement);
 });

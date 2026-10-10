@@ -28,5 +28,13 @@ it("requires supported original settled Codex root and independent pending gates
  const s=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.SESSION,schemaVersion:1,revision:1n,documentJson:encode(data)});
  expect(directoryEligible(s,true)).toBe(true);expect(directoryEligible(s,false)).toBe(false);
  for(const execution of [{...data.execution,native_compactions:{item:"started"}},{...data.execution,auto_reviews:{review:{status:"inProgress"}}},{...data.execution,waiting:{approval:true}},{...data.execution,subagents:{child:{state:"running"}}}]){s.documentJson=encode({...data,execution});expect(directoryEligible(s,true)).toBe(false);}
- for(const field of ["directory_job_id","active_execution_id","compaction_job_id","pending_steer_id","execution_recovery_job_id","fork"]){s.documentJson=encode({...data,[field]:newRequestId()});expect(directoryEligible(s,true)).toBe(false);}
+ for(const field of ["directory_job_id","active_execution_id","compaction_job_id","pending_steer_id","execution_recovery_job_id"]){s.documentJson=encode({...data,[field]:newRequestId()});expect(directoryEligible(s,true)).toBe(false);}
+});
+
+it("permits an original settled ordinary Fork root while denying Sidechat and malformed ownership",()=>{
+ const data={initial_execution:{configuration:{harness:"codex"}},fork:{snapshot:{}},preparation:{state:"ready"},archive:"active",recovery:"none",dispatch:"ready",outcome:"succeeded",execution:{cleanup_verified:true,execution_id:newRequestId(),job_id:newRequestId()}};
+ const s=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.SESSION,schemaVersion:1,revision:1n,documentJson:encode(data)});
+ expect(directoryEligible(s,true)).toBe(true);
+ s.documentJson=encode({...data,fork:{...data.fork,sidechat_parent_snapshot:{}}});expect(directoryEligible(s,true)).toBe(false);
+ s.documentJson=encode({...data,fork:"malformed"});expect(directoryEligible(s,true)).toBe(false);
 });
