@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -146,4 +147,48 @@ func TestWorkspaceReaderNeverFallsBackFromPrivatePRProfileToFileRead(t *testing.
 	case <-time.After(time.Second):
 		t.Fatal("reader did not join cancellation")
 	}
+}
+
+func TestClaudeConfigurationWorkerTransportUsesOriginalScope(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	root := t.TempDir()
+	project := t.TempDir()
+	if e := os.MkdirAll(filepath.Join(project, ".claude"), 0700); e != nil {
+		t.Fatal(e)
+	}
+	if e := os.WriteFile(filepath.Join(project, ".claude/settings.json"), []byte(`{"model":"fixture"}`), 0600); e != nil {
+		t.Fatal(e)
+	}
+	machine, device, instance := domain.NewID(), domain.NewID(), domain.NewID()
+	scope := &domain.NativeConfigurationReadScope{MachineID: machine, ProjectID: domain.NewID(), ProjectRoot: project, WorkerDeviceID: device, WorkerInstanceID: instance}
+	first := workspace.ReadRequest{ID: domain.NewID(), Deadline: time.Now().Add(2 * time.Second), Preparation: workspace.PrepareRequest{MachineID: machine}, ClaudeConfiguration: scope}
+	second := first
+	second.ID = domain.NewID()
+	service := &workspaceReadTransport{requests: []workspace.ReadRequest{first, second}, reports: make(chan *pb.ReportWorkspaceReadRequest, 2)}
+	path, handler := delidevv1connect.NewWorkerServiceHandler(service)
+	mux := http.NewServeMux()
+	mux.Handle(path, handler)
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	client := delidevv1connect.NewWorkerServiceClient(server.Client(), server.URL)
+	done := make(chan error, 1)
+	go func() {
+		done <- receiveWorkspaceReads(ctx, Config{Root: root}, client, Credential{MachineID: machine, DeviceID: device, Token: "fixture-token"}, instance)
+	}()
+	for range 2 {
+		select {
+		case report := <-service.reports:
+			var snapshot domain.NativeConfigurationSnapshot
+			if report.ProblemCode != "" || domain.Decode(report.DocumentJson, &snapshot) != nil || len(snapshot.Entries) != 1 || string(snapshot.Entries[0].Value) != `"fixture"` {
+				t.Fatal("wrong native observation", report)
+			}
+		case e := <-done:
+			t.Fatal("native reader stopped", e)
+		case <-ctx.Done():
+			t.Fatal("native report timed out")
+		}
+	}
+	cancel()
+	<-done
 }

@@ -5,6 +5,16 @@
 import { ConfigurationService } from "./configuration_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.ConfigurationService.PreviewClaudeConfigurationImport
+ */
+export const previewClaudeConfigurationImport = ConfigurationService.method.previewClaudeConfigurationImport;
+
+/**
+ * @generated from rpc delidev.v1.ConfigurationService.ApplyClaudeConfigurationImport
+ */
+export const applyClaudeConfigurationImport = ConfigurationService.method.applyClaudeConfigurationImport;
+
+/**
  * @generated from rpc delidev.v1.ConfigurationService.ListProjectPromptHistory
  */
 export const listProjectPromptHistory = ConfigurationService.method.listProjectPromptHistory;

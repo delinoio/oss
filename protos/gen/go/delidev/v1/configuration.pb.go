@@ -1133,6 +1133,198 @@ func (x *ClearProjectPromptHistoryResponse) GetRemovedCount() uint32 {
 	return 0
 }
 
+type PreviewClaudeConfigurationImportRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SelectionJson []byte                 `protobuf:"bytes,1,opt,name=selection_json,json=selectionJson,proto3" json:"selection_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PreviewClaudeConfigurationImportRequest) Reset() {
+	*x = PreviewClaudeConfigurationImportRequest{}
+	mi := &file_delidev_v1_configuration_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PreviewClaudeConfigurationImportRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PreviewClaudeConfigurationImportRequest) ProtoMessage() {}
+
+func (x *PreviewClaudeConfigurationImportRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_configuration_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PreviewClaudeConfigurationImportRequest.ProtoReflect.Descriptor instead.
+func (*PreviewClaudeConfigurationImportRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_configuration_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *PreviewClaudeConfigurationImportRequest) GetSelectionJson() []byte {
+	if x != nil {
+		return x.SelectionJson
+	}
+	return nil
+}
+
+type PreviewClaudeConfigurationImportResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PreviewJson   []byte                 `protobuf:"bytes,1,opt,name=preview_json,json=previewJson,proto3" json:"preview_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PreviewClaudeConfigurationImportResponse) Reset() {
+	*x = PreviewClaudeConfigurationImportResponse{}
+	mi := &file_delidev_v1_configuration_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PreviewClaudeConfigurationImportResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PreviewClaudeConfigurationImportResponse) ProtoMessage() {}
+
+func (x *PreviewClaudeConfigurationImportResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_configuration_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PreviewClaudeConfigurationImportResponse.ProtoReflect.Descriptor instead.
+func (*PreviewClaudeConfigurationImportResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_configuration_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *PreviewClaudeConfigurationImportResponse) GetPreviewJson() []byte {
+	if x != nil {
+		return x.PreviewJson
+	}
+	return nil
+}
+
+type ApplyClaudeConfigurationImportRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	PreviewJson   []byte                 `protobuf:"bytes,2,opt,name=preview_json,json=previewJson,proto3" json:"preview_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ApplyClaudeConfigurationImportRequest) Reset() {
+	*x = ApplyClaudeConfigurationImportRequest{}
+	mi := &file_delidev_v1_configuration_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApplyClaudeConfigurationImportRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApplyClaudeConfigurationImportRequest) ProtoMessage() {}
+
+func (x *ApplyClaudeConfigurationImportRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_configuration_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApplyClaudeConfigurationImportRequest.ProtoReflect.Descriptor instead.
+func (*ApplyClaudeConfigurationImportRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_configuration_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *ApplyClaudeConfigurationImportRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *ApplyClaudeConfigurationImportRequest) GetPreviewJson() []byte {
+	if x != nil {
+		return x.PreviewJson
+	}
+	return nil
+}
+
+type ApplyClaudeConfigurationImportResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Imported      *Resource              `protobuf:"bytes,1,opt,name=imported,proto3" json:"imported,omitempty"`
+	Replayed      bool                   `protobuf:"varint,2,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ApplyClaudeConfigurationImportResponse) Reset() {
+	*x = ApplyClaudeConfigurationImportResponse{}
+	mi := &file_delidev_v1_configuration_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApplyClaudeConfigurationImportResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApplyClaudeConfigurationImportResponse) ProtoMessage() {}
+
+func (x *ApplyClaudeConfigurationImportResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_configuration_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApplyClaudeConfigurationImportResponse.ProtoReflect.Descriptor instead.
+func (*ApplyClaudeConfigurationImportResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_configuration_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *ApplyClaudeConfigurationImportResponse) GetImported() *Resource {
+	if x != nil {
+		return x.Imported
+	}
+	return nil
+}
+
+func (x *ApplyClaudeConfigurationImportResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
 var File_delidev_v1_configuration_proto protoreflect.FileDescriptor
 
 const file_delidev_v1_configuration_proto_rawDesc = "" +
@@ -1222,8 +1414,21 @@ const file_delidev_v1_configuration_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
 	"\breplayed\x18\x03 \x01(\bR\breplayed\x12#\n" +
-	"\rremoved_count\x18\x04 \x01(\rR\fremovedCount2\xe4\a\n" +
-	"\x14ConfigurationService\x12u\n" +
+	"\rremoved_count\x18\x04 \x01(\rR\fremovedCount\"P\n" +
+	"'PreviewClaudeConfigurationImportRequest\x12%\n" +
+	"\x0eselection_json\x18\x01 \x01(\fR\rselectionJson\"M\n" +
+	"(PreviewClaudeConfigurationImportResponse\x12!\n" +
+	"\fpreview_json\x18\x01 \x01(\fR\vpreviewJson\"i\n" +
+	"%ApplyClaudeConfigurationImportRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12!\n" +
+	"\fpreview_json\x18\x02 \x01(\fR\vpreviewJson\"v\n" +
+	"&ApplyClaudeConfigurationImportResponse\x120\n" +
+	"\bimported\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\bimported\x12\x1a\n" +
+	"\breplayed\x18\x02 \x01(\bR\breplayed2\xfe\t\n" +
+	"\x14ConfigurationService\x12\x8d\x01\n" +
+	" PreviewClaudeConfigurationImport\x123.delidev.v1.PreviewClaudeConfigurationImportRequest\x1a4.delidev.v1.PreviewClaudeConfigurationImportResponse\x12\x87\x01\n" +
+	"\x1eApplyClaudeConfigurationImport\x121.delidev.v1.ApplyClaudeConfigurationImportRequest\x1a2.delidev.v1.ApplyClaudeConfigurationImportResponse\x12u\n" +
 	"\x18ListProjectPromptHistory\x12+.delidev.v1.ListProjectPromptHistoryRequest\x1a,.delidev.v1.ListProjectPromptHistoryResponse\x12x\n" +
 	"\x19ClearProjectPromptHistory\x12,.delidev.v1.ClearProjectPromptHistoryRequest\x1a-.delidev.v1.ClearProjectPromptHistoryResponse\x12f\n" +
 	"\x13ExportConfiguration\x12&.delidev.v1.ExportConfigurationRequest\x1a'.delidev.v1.ExportConfigurationResponse\x12{\n" +
@@ -1246,65 +1451,74 @@ func file_delidev_v1_configuration_proto_rawDescGZIP() []byte {
 	return file_delidev_v1_configuration_proto_rawDescData
 }
 
-var file_delidev_v1_configuration_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_delidev_v1_configuration_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_delidev_v1_configuration_proto_goTypes = []any{
-	(*SaveAgentWorkerRequest)(nil),             // 0: delidev.v1.SaveAgentWorkerRequest
-	(*AgentWorkerModelSelection)(nil),          // 1: delidev.v1.AgentWorkerModelSelection
-	(*SaveConfigurationRequest)(nil),           // 2: delidev.v1.SaveConfigurationRequest
-	(*SaveConfigurationResponse)(nil),          // 3: delidev.v1.SaveConfigurationResponse
-	(*DeleteConfigurationRequest)(nil),         // 4: delidev.v1.DeleteConfigurationRequest
-	(*DeleteConfigurationResponse)(nil),        // 5: delidev.v1.DeleteConfigurationResponse
-	(*PreviewRoutingRequest)(nil),              // 6: delidev.v1.PreviewRoutingRequest
-	(*PreviewRoutingResponse)(nil),             // 7: delidev.v1.PreviewRoutingResponse
-	(*ExportConfigurationRequest)(nil),         // 8: delidev.v1.ExportConfigurationRequest
-	(*ExportConfigurationResponse)(nil),        // 9: delidev.v1.ExportConfigurationResponse
-	(*PreviewConfigurationImportRequest)(nil),  // 10: delidev.v1.PreviewConfigurationImportRequest
-	(*PreviewConfigurationImportResponse)(nil), // 11: delidev.v1.PreviewConfigurationImportResponse
-	(*ApplyConfigurationImportRequest)(nil),    // 12: delidev.v1.ApplyConfigurationImportRequest
-	(*ApplyConfigurationImportResponse)(nil),   // 13: delidev.v1.ApplyConfigurationImportResponse
-	(*ProjectPromptHistoryEntry)(nil),          // 14: delidev.v1.ProjectPromptHistoryEntry
-	(*ListProjectPromptHistoryRequest)(nil),    // 15: delidev.v1.ListProjectPromptHistoryRequest
-	(*ListProjectPromptHistoryResponse)(nil),   // 16: delidev.v1.ListProjectPromptHistoryResponse
-	(*ClearProjectPromptHistoryRequest)(nil),   // 17: delidev.v1.ClearProjectPromptHistoryRequest
-	(*ClearProjectPromptHistoryResponse)(nil),  // 18: delidev.v1.ClearProjectPromptHistoryResponse
-	(*Mutation)(nil),                           // 19: delidev.v1.Mutation
-	(EntityKind)(0),                            // 20: delidev.v1.EntityKind
-	(*Resource)(nil),                           // 21: delidev.v1.Resource
+	(*SaveAgentWorkerRequest)(nil),                   // 0: delidev.v1.SaveAgentWorkerRequest
+	(*AgentWorkerModelSelection)(nil),                // 1: delidev.v1.AgentWorkerModelSelection
+	(*SaveConfigurationRequest)(nil),                 // 2: delidev.v1.SaveConfigurationRequest
+	(*SaveConfigurationResponse)(nil),                // 3: delidev.v1.SaveConfigurationResponse
+	(*DeleteConfigurationRequest)(nil),               // 4: delidev.v1.DeleteConfigurationRequest
+	(*DeleteConfigurationResponse)(nil),              // 5: delidev.v1.DeleteConfigurationResponse
+	(*PreviewRoutingRequest)(nil),                    // 6: delidev.v1.PreviewRoutingRequest
+	(*PreviewRoutingResponse)(nil),                   // 7: delidev.v1.PreviewRoutingResponse
+	(*ExportConfigurationRequest)(nil),               // 8: delidev.v1.ExportConfigurationRequest
+	(*ExportConfigurationResponse)(nil),              // 9: delidev.v1.ExportConfigurationResponse
+	(*PreviewConfigurationImportRequest)(nil),        // 10: delidev.v1.PreviewConfigurationImportRequest
+	(*PreviewConfigurationImportResponse)(nil),       // 11: delidev.v1.PreviewConfigurationImportResponse
+	(*ApplyConfigurationImportRequest)(nil),          // 12: delidev.v1.ApplyConfigurationImportRequest
+	(*ApplyConfigurationImportResponse)(nil),         // 13: delidev.v1.ApplyConfigurationImportResponse
+	(*ProjectPromptHistoryEntry)(nil),                // 14: delidev.v1.ProjectPromptHistoryEntry
+	(*ListProjectPromptHistoryRequest)(nil),          // 15: delidev.v1.ListProjectPromptHistoryRequest
+	(*ListProjectPromptHistoryResponse)(nil),         // 16: delidev.v1.ListProjectPromptHistoryResponse
+	(*ClearProjectPromptHistoryRequest)(nil),         // 17: delidev.v1.ClearProjectPromptHistoryRequest
+	(*ClearProjectPromptHistoryResponse)(nil),        // 18: delidev.v1.ClearProjectPromptHistoryResponse
+	(*PreviewClaudeConfigurationImportRequest)(nil),  // 19: delidev.v1.PreviewClaudeConfigurationImportRequest
+	(*PreviewClaudeConfigurationImportResponse)(nil), // 20: delidev.v1.PreviewClaudeConfigurationImportResponse
+	(*ApplyClaudeConfigurationImportRequest)(nil),    // 21: delidev.v1.ApplyClaudeConfigurationImportRequest
+	(*ApplyClaudeConfigurationImportResponse)(nil),   // 22: delidev.v1.ApplyClaudeConfigurationImportResponse
+	(*Mutation)(nil),                                 // 23: delidev.v1.Mutation
+	(EntityKind)(0),                                  // 24: delidev.v1.EntityKind
+	(*Resource)(nil),                                 // 25: delidev.v1.Resource
 }
 var file_delidev_v1_configuration_proto_depIdxs = []int32{
-	19, // 0: delidev.v1.SaveAgentWorkerRequest.mutation:type_name -> delidev.v1.Mutation
+	23, // 0: delidev.v1.SaveAgentWorkerRequest.mutation:type_name -> delidev.v1.Mutation
 	1,  // 1: delidev.v1.SaveAgentWorkerRequest.model:type_name -> delidev.v1.AgentWorkerModelSelection
 	1,  // 2: delidev.v1.SaveAgentWorkerRequest.route_models:type_name -> delidev.v1.AgentWorkerModelSelection
-	19, // 3: delidev.v1.SaveConfigurationRequest.mutation:type_name -> delidev.v1.Mutation
-	20, // 4: delidev.v1.SaveConfigurationRequest.kind:type_name -> delidev.v1.EntityKind
-	21, // 5: delidev.v1.SaveConfigurationResponse.resource:type_name -> delidev.v1.Resource
-	21, // 6: delidev.v1.SaveConfigurationResponse.job:type_name -> delidev.v1.Resource
-	19, // 7: delidev.v1.DeleteConfigurationRequest.mutation:type_name -> delidev.v1.Mutation
-	20, // 8: delidev.v1.DeleteConfigurationRequest.kind:type_name -> delidev.v1.EntityKind
+	23, // 3: delidev.v1.SaveConfigurationRequest.mutation:type_name -> delidev.v1.Mutation
+	24, // 4: delidev.v1.SaveConfigurationRequest.kind:type_name -> delidev.v1.EntityKind
+	25, // 5: delidev.v1.SaveConfigurationResponse.resource:type_name -> delidev.v1.Resource
+	25, // 6: delidev.v1.SaveConfigurationResponse.job:type_name -> delidev.v1.Resource
+	23, // 7: delidev.v1.DeleteConfigurationRequest.mutation:type_name -> delidev.v1.Mutation
+	24, // 8: delidev.v1.DeleteConfigurationRequest.kind:type_name -> delidev.v1.EntityKind
 	14, // 9: delidev.v1.ListProjectPromptHistoryResponse.entries:type_name -> delidev.v1.ProjectPromptHistoryEntry
-	15, // 10: delidev.v1.ConfigurationService.ListProjectPromptHistory:input_type -> delidev.v1.ListProjectPromptHistoryRequest
-	17, // 11: delidev.v1.ConfigurationService.ClearProjectPromptHistory:input_type -> delidev.v1.ClearProjectPromptHistoryRequest
-	8,  // 12: delidev.v1.ConfigurationService.ExportConfiguration:input_type -> delidev.v1.ExportConfigurationRequest
-	10, // 13: delidev.v1.ConfigurationService.PreviewConfigurationImport:input_type -> delidev.v1.PreviewConfigurationImportRequest
-	12, // 14: delidev.v1.ConfigurationService.ApplyConfigurationImport:input_type -> delidev.v1.ApplyConfigurationImportRequest
-	0,  // 15: delidev.v1.ConfigurationService.SaveAgentWorker:input_type -> delidev.v1.SaveAgentWorkerRequest
-	2,  // 16: delidev.v1.ConfigurationService.SaveConfiguration:input_type -> delidev.v1.SaveConfigurationRequest
-	4,  // 17: delidev.v1.ConfigurationService.DeleteConfiguration:input_type -> delidev.v1.DeleteConfigurationRequest
-	6,  // 18: delidev.v1.ConfigurationService.PreviewRouting:input_type -> delidev.v1.PreviewRoutingRequest
-	16, // 19: delidev.v1.ConfigurationService.ListProjectPromptHistory:output_type -> delidev.v1.ListProjectPromptHistoryResponse
-	18, // 20: delidev.v1.ConfigurationService.ClearProjectPromptHistory:output_type -> delidev.v1.ClearProjectPromptHistoryResponse
-	9,  // 21: delidev.v1.ConfigurationService.ExportConfiguration:output_type -> delidev.v1.ExportConfigurationResponse
-	11, // 22: delidev.v1.ConfigurationService.PreviewConfigurationImport:output_type -> delidev.v1.PreviewConfigurationImportResponse
-	13, // 23: delidev.v1.ConfigurationService.ApplyConfigurationImport:output_type -> delidev.v1.ApplyConfigurationImportResponse
-	3,  // 24: delidev.v1.ConfigurationService.SaveAgentWorker:output_type -> delidev.v1.SaveConfigurationResponse
-	3,  // 25: delidev.v1.ConfigurationService.SaveConfiguration:output_type -> delidev.v1.SaveConfigurationResponse
-	5,  // 26: delidev.v1.ConfigurationService.DeleteConfiguration:output_type -> delidev.v1.DeleteConfigurationResponse
-	7,  // 27: delidev.v1.ConfigurationService.PreviewRouting:output_type -> delidev.v1.PreviewRoutingResponse
-	19, // [19:28] is the sub-list for method output_type
-	10, // [10:19] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	25, // 10: delidev.v1.ApplyClaudeConfigurationImportResponse.imported:type_name -> delidev.v1.Resource
+	19, // 11: delidev.v1.ConfigurationService.PreviewClaudeConfigurationImport:input_type -> delidev.v1.PreviewClaudeConfigurationImportRequest
+	21, // 12: delidev.v1.ConfigurationService.ApplyClaudeConfigurationImport:input_type -> delidev.v1.ApplyClaudeConfigurationImportRequest
+	15, // 13: delidev.v1.ConfigurationService.ListProjectPromptHistory:input_type -> delidev.v1.ListProjectPromptHistoryRequest
+	17, // 14: delidev.v1.ConfigurationService.ClearProjectPromptHistory:input_type -> delidev.v1.ClearProjectPromptHistoryRequest
+	8,  // 15: delidev.v1.ConfigurationService.ExportConfiguration:input_type -> delidev.v1.ExportConfigurationRequest
+	10, // 16: delidev.v1.ConfigurationService.PreviewConfigurationImport:input_type -> delidev.v1.PreviewConfigurationImportRequest
+	12, // 17: delidev.v1.ConfigurationService.ApplyConfigurationImport:input_type -> delidev.v1.ApplyConfigurationImportRequest
+	0,  // 18: delidev.v1.ConfigurationService.SaveAgentWorker:input_type -> delidev.v1.SaveAgentWorkerRequest
+	2,  // 19: delidev.v1.ConfigurationService.SaveConfiguration:input_type -> delidev.v1.SaveConfigurationRequest
+	4,  // 20: delidev.v1.ConfigurationService.DeleteConfiguration:input_type -> delidev.v1.DeleteConfigurationRequest
+	6,  // 21: delidev.v1.ConfigurationService.PreviewRouting:input_type -> delidev.v1.PreviewRoutingRequest
+	20, // 22: delidev.v1.ConfigurationService.PreviewClaudeConfigurationImport:output_type -> delidev.v1.PreviewClaudeConfigurationImportResponse
+	22, // 23: delidev.v1.ConfigurationService.ApplyClaudeConfigurationImport:output_type -> delidev.v1.ApplyClaudeConfigurationImportResponse
+	16, // 24: delidev.v1.ConfigurationService.ListProjectPromptHistory:output_type -> delidev.v1.ListProjectPromptHistoryResponse
+	18, // 25: delidev.v1.ConfigurationService.ClearProjectPromptHistory:output_type -> delidev.v1.ClearProjectPromptHistoryResponse
+	9,  // 26: delidev.v1.ConfigurationService.ExportConfiguration:output_type -> delidev.v1.ExportConfigurationResponse
+	11, // 27: delidev.v1.ConfigurationService.PreviewConfigurationImport:output_type -> delidev.v1.PreviewConfigurationImportResponse
+	13, // 28: delidev.v1.ConfigurationService.ApplyConfigurationImport:output_type -> delidev.v1.ApplyConfigurationImportResponse
+	3,  // 29: delidev.v1.ConfigurationService.SaveAgentWorker:output_type -> delidev.v1.SaveConfigurationResponse
+	3,  // 30: delidev.v1.ConfigurationService.SaveConfiguration:output_type -> delidev.v1.SaveConfigurationResponse
+	5,  // 31: delidev.v1.ConfigurationService.DeleteConfiguration:output_type -> delidev.v1.DeleteConfigurationResponse
+	7,  // 32: delidev.v1.ConfigurationService.PreviewRouting:output_type -> delidev.v1.PreviewRoutingResponse
+	22, // [22:33] is the sub-list for method output_type
+	11, // [11:22] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_configuration_proto_init() }
@@ -1323,7 +1537,7 @@ func file_delidev_v1_configuration_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_configuration_proto_rawDesc), len(file_delidev_v1_configuration_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   19,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

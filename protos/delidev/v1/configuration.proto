@@ -6,6 +6,8 @@ import "delidev/v1/common.proto";
 option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
 
 service ConfigurationService {
+ rpc PreviewClaudeConfigurationImport(PreviewClaudeConfigurationImportRequest) returns (PreviewClaudeConfigurationImportResponse);
+ rpc ApplyClaudeConfigurationImport(ApplyClaudeConfigurationImportRequest) returns (ApplyClaudeConfigurationImportResponse);
   rpc ListProjectPromptHistory(ListProjectPromptHistoryRequest) returns (ListProjectPromptHistoryResponse);
   rpc ClearProjectPromptHistory(ClearProjectPromptHistoryRequest) returns (ClearProjectPromptHistoryResponse);
   rpc ExportConfiguration(ExportConfigurationRequest) returns (ExportConfigurationResponse);
@@ -129,3 +131,8 @@ message ClearProjectPromptHistoryResponse {
   bool replayed = 3;
   uint32 removed_count = 4;
 }
+
+message PreviewClaudeConfigurationImportRequest { bytes selection_json = 1; }
+message PreviewClaudeConfigurationImportResponse { bytes preview_json = 1; }
+message ApplyClaudeConfigurationImportRequest { string request_id = 1; bytes preview_json = 2; }
+message ApplyClaudeConfigurationImportResponse { Resource imported = 1; bool replayed = 2; }

@@ -66,7 +66,21 @@ func receiveWorkspaceReads(ctx context.Context, config Config, client delidevv1c
 		}
 		report := &pb.ReportWorkspaceReadRequest{MachineId: string(credential.MachineID), InstanceId: string(instance), ReadId: string(request.ID)}
 		var problem error
-		if request.Skills != nil {
+		if request.ClaudeConfiguration != nil {
+			if request.ClaudeConfiguration.WorkerDeviceID != credential.DeviceID || request.ClaudeConfiguration.WorkerInstanceID != instance {
+				return workspace.ResultUncertain()
+			}
+			var result domain.NativeConfigurationSnapshot
+			attempt, stop := context.WithDeadline(ctx, request.Deadline)
+			result, problem = manager.ReadClaudeConfiguration(attempt, request)
+			stop()
+			if problem == nil {
+				report.DocumentJson, _ = json.Marshal(result)
+			}
+			if config.Logger != nil {
+				config.Logger.InfoContext(ctx, "claude_configuration_observed", "read_id", request.ID, "machine_id", credential.MachineID, "entry_count", len(result.Entries), "success", problem == nil)
+			}
+		} else if request.Skills != nil {
 			if request.Skills.WorkerDeviceID != credential.DeviceID || request.Skills.WorkerInstanceID != instance {
 				return workspace.ResultUncertain()
 			}

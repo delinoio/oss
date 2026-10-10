@@ -17,7 +17,7 @@ func configurationTransfer(ctx context.Context, c client, o options, args []stri
 		return nil, usage()
 	}
 	operation := args[0]
-	if operation != "export" && operation != "preview" && operation != "apply" {
+	if operation != "export" && operation != "preview" && operation != "apply" && operation != "claude-preview" && operation != "claude-apply" {
 		return nil, usage()
 	}
 	f := flags("configuration " + operation)
@@ -25,7 +25,7 @@ func configurationTransfer(ctx context.Context, c client, o options, args []stri
 	if operation != "export" {
 		input = f.String("input", "-", "versioned selection or exact reviewed preview JSON")
 	}
-	if operation != "apply" {
+	if operation != "apply" && operation != "claude-apply" {
 		output = f.String("output", "", "new private file for the portable document; never overwrites")
 	}
 	if err := parse(f, args[1:]); err != nil {
@@ -69,7 +69,29 @@ func configurationTransfer(ctx context.Context, c client, o options, args []stri
 			}
 		}
 	}
+	if operation == "claude-preview" || operation == "claude-apply" {
+		status, e := c.system.GetStatus(ctx, request(c, &pb.GetStatusRequest{}))
+		if e != nil {
+			return nil, rpc.ClientError(e)
+		}
+		if !slices.Contains(status.Msg.Capabilities, pb.SystemCapability_SYSTEM_CAPABILITY_CLAUDE_CONFIGURATION_IMPORT_V1) {
+			return nil, domain.Fail(domain.Unsupported, "Server cannot import Claude configuration.", "Update the server before previewing or importing.")
+		}
+	}
 	switch operation {
+	case "claude-preview":
+		result, e := c.configuration.PreviewClaudeConfigurationImport(ctx, request(c, &pb.PreviewClaudeConfigurationImportRequest{SelectionJson: raw}))
+		if e != nil {
+			return nil, rpc.ClientError(e)
+		}
+		raw = result.Msg.PreviewJson
+	case "claude-apply":
+		result, e := c.configuration.ApplyClaudeConfigurationImport(ctx, request(c, &pb.ApplyClaudeConfigurationImportRequest{RequestId: string(o.requestID), PreviewJson: raw}))
+		if e != nil {
+			return nil, rpc.ClientError(e)
+		}
+		return result.Msg, nil
+
 	case "export":
 		result, e := c.configuration.ExportConfiguration(ctx, request(c, &pb.ExportConfigurationRequest{}))
 		if e != nil {

@@ -446,3 +446,7 @@ remain independently paginated. No new business RPC or transport authority is
 added. Follow the [mobile contract](apps-delidev-mobile-contract.md).
 
 Current schema-4 Agent routes embed exact source/native identity and non-secret metadata. The shared parser rejects Model resources, mixed UUID routes and older Agent schemas. Other currently activated Project, Settings and API-profile schemas remain supported. Protocol-2 connection verification rejects protocol 1 without adopting its state.
+
+## Reviewed native configuration bindings
+
+Generated ConfigurationService queries expose Claude configuration preview/apply, with System and Worker capability negotiation and an inspectable imported-native-configuration Resource. Preserve the signed preview unchanged between review and apply. An empty selection previews inventory; select exact supported entry IDs in a new preview before apply. Unknown native settings remain unsupported metadata without source values. Imported settings, ordered instructions and exact bounded UTF-8 packages remain inert; no generated client binding grants activation or native account authority. See the [configuration transfer contract](cmds-delidev-configuration-transfer-contract.md).

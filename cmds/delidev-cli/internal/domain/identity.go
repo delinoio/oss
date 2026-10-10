@@ -20,6 +20,8 @@ func (id ID) Validate() error {
 	return nil
 }
 
+const ImportedNativeConfigurationKind Kind = "imported_native_configuration"
+
 type Kind string
 
 const UpdateKind Kind = "update"
@@ -64,7 +66,7 @@ const (
 
 func (k Kind) Valid() bool {
 	switch k {
-	case ProjectPromptHistoryKind, UpdateKind, SSHSetupKind, TerminalKind, NetworkProfileKind, NetworkRouteKind, SubagentKind, ForwardKind, PairingKind, ProjectKind, RepositoryKind, AgentKind, AccountKind, ProviderKind, ModelKind, MachineKind, SessionKind, TemplateKind, SettingsKind, ScheduleKind, OccurrenceKind, MessageKind, QueueKind, SteerKind, InteractionKind, ReviewKind, SnapshotKind, DeviceKind, IntegrationKind, PullRequestKind, ProblemKind, InboxKind, UsageKind, JobKind, RoutingKind:
+	case ImportedNativeConfigurationKind, ProjectPromptHistoryKind, UpdateKind, SSHSetupKind, TerminalKind, NetworkProfileKind, NetworkRouteKind, SubagentKind, ForwardKind, PairingKind, ProjectKind, RepositoryKind, AgentKind, AccountKind, ProviderKind, ModelKind, MachineKind, SessionKind, TemplateKind, SettingsKind, ScheduleKind, OccurrenceKind, MessageKind, QueueKind, SteerKind, InteractionKind, ReviewKind, SnapshotKind, DeviceKind, IntegrationKind, PullRequestKind, ProblemKind, InboxKind, UsageKind, JobKind, RoutingKind:
 		return true
 	default:
 		return false

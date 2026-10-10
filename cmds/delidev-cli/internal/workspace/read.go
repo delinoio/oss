@@ -22,13 +22,14 @@ import (
 )
 
 type ReadRequest struct {
-	Skills      *domain.SkillReadRequest  `json:"skills,omitempty"`
-	PRCandidate *domain.PRGitTarget       `json:"pr_candidate,omitempty"`
-	ID          domain.ID                 `json:"id"`
-	Deadline    time.Time                 `json:"deadline"`
-	Preparation PrepareRequest            `json:"preparation"`
-	Manifest    Manifest                  `json:"manifest"`
-	Query       domain.WorkspaceReadQuery `json:"query"`
+	ClaudeConfiguration *domain.NativeConfigurationReadScope `json:"claude_configuration,omitempty"`
+	Skills              *domain.SkillReadRequest             `json:"skills,omitempty"`
+	PRCandidate         *domain.PRGitTarget                  `json:"pr_candidate,omitempty"`
+	ID                  domain.ID                            `json:"id"`
+	Deadline            time.Time                            `json:"deadline"`
+	Preparation         PrepareRequest                       `json:"preparation"`
+	Manifest            Manifest                             `json:"manifest"`
+	Query               domain.WorkspaceReadQuery            `json:"query"`
 }
 
 func readFailure() error {

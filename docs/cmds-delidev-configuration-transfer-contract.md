@@ -138,3 +138,45 @@ Follow [project behavior settings](cmds-delidev-catalog-contract.md#project-beha
 ## New-session defaults and branch prefix declarations
 
 Follow [the feature](cmds-delidev-catalog-contract.md#new-session-defaults-and-literal-branch-prefixes) for System 56, Worker 38, schema-3 Project/Settings and portable version 6. Preserve capability 52, schema-1/2 reads and v1–5 imports; reject destructive old-client writes. Automatic creation mode yields only to an explicit checkbox edit. New immutable prefix declarations preserve original source revisions and legacy omission bytes. Shared Execute instructions remain literal, bounded, and absent in Plan/read-only Sidechat; existing native/account/Worker/workspace/recovery/cleanup ownership remains authoritative. No migration, native version gate, branch interception or automatic branch creation is introduced.
+
+## Reviewed Claude native configuration import
+
+Owner/client `PreviewClaudeConfigurationImport` and
+`ApplyClaudeConfigurationImport` use System `CLAUDE_CONFIGURATION_IMPORT_V1`
+and the selected Worker's independent matching capability. They read only the
+explicitly selected registered machine's user configuration and/or the saved
+primary project checkout. The server never opens Worker paths. The bounded
+workspace-read lane binds the original paired device, live instance and current
+project/repository revisions. Imported native configuration is a separately
+inspectable resource; it is excluded from ordinary portable export and execution.
+
+Preview shows source scope, native precedence, exact selected contents, content
+digests, unsupported entries and the imported-resource destination. User settings
+precede shared project settings, then project-local settings. Instructions/rules
+retain their source ordering and bytes. Package files retain exact bounded UTF-8
+contents and immutable digests. Credential/login files, generated memory and
+managed policy are never read. Unknown settings expose names and an unsupported
+reason without exposing their values. Credential-bearing extension definitions
+are unavailable rather than partially redacted packages.
+
+The explicit selection imports settings, instructions/rules and immutable
+extension packages together in one revision-bound transaction. Existing
+unselected destination entries remain unchanged. Source bytes are reobserved and
+the complete observed-source digest must still match the reviewed snapshot;
+changed sources, Worker ownership, project checkout or destination revisions
+reject the complete import. Signed previews bind the authenticated actor, server,
+source observation, exact selections and destination. Exact mutation replay
+returns the original resource without rereading or rewriting host configuration.
+
+Every imported entry remains disabled and grants no native runtime, trust,
+credentials or execution authority. Hooks, plugins and MCP packages need their
+separate supported activation and credential procedures; this import adds no
+activation path. Users inspect retained imports through ResourceService and the
+CLI JSON results. The native adapter continues to use its private settings-source
+profile. Original Claude configuration, credentials and unselected files remain
+untouched. Structured logs contain safe operation/machine/resource IDs and counts,
+never source paths, native bytes or credential-bearing diagnostics.
+
+### CLI review workflow
+
+Use `delidev configuration claude-preview --input selection.json --output preview.json` to observe selected original sources. Selection contains `machine_id`, optional saved `project_id`, explicit `include_user`, `name`, `entries` and `expected_revision` as a decimal string. An empty entry list discovers supported IDs; request a fresh preview with selected IDs to authorize import. To update an imported destination, preserve its `target_id` and exact revision. Apply with `delidev configuration claude-apply --input preview.json`; its durable request ID supports exact receipt inspection. Ordinary resource get/list exposes the imported document, source order, values and immutable package files. The destination has no runtime resolver or implicit activation. Supported setting names are `model`, `effortLevel` and `permissions`; other setting values are excluded. User/project rules, project `CLAUDE.md`, `.claude/CLAUDE.md`, local `CLAUDE.local.md`, bounded UTF-8 skill/plugin directories and credential-free hook/MCP definitions retain exact selected bytes. Generated memory, managed policy, credentials, login state and `.claude.json` are never read. Binary, oversized, symlinked, credential-bearing or unknown content remains unsupported; the importer does not infer a migration or runtime equivalent. Rule path conditions remain part of their exact text, and source precedence and lexical path order remain inspectable. Files imported from these supported directories remain immutable snapshots after source edits; each later import requires a fresh observation and review.
