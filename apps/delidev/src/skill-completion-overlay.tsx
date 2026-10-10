@@ -53,7 +53,8 @@ export function SkillCompletionOverlay({ anchor, panel, dismiss, children }: {
     };
     popup.showPopover?.(); position();
     const resize = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(position);
-    resize?.observe(input); resize?.observe(popup);
+    resize?.observe(popup);
+    for (let node: HTMLElement | null = input; node; node = node.parentElement) resize?.observe(node);
     const mutations = new MutationObserver(position);
     for (let node: HTMLElement | null = input; node; node = node.parentElement) mutations.observe(node, { attributes: true });
     mutations.observe(document.documentElement, { childList: true, subtree: true });

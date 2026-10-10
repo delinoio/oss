@@ -37,6 +37,52 @@ try {
   const origin = `http://127.0.0.1:${server.address().port}`;
   const frame = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   let overlayCases = 0;
+  const surrounding = root => root.evaluate(node => {
+    const selectors = ['.new-session-header', '.new-session-content', 'fieldset', '.new-session-composer', '.composer', 'textarea', '.new-session-toolbar', '.new-session-hints', '.actions'];
+    return selectors.flatMap(selector => [...node.querySelectorAll(selector)].map(element => {
+      const box = element.getBoundingClientRect(); return { selector, x: box.x, y: box.y, width: box.width, height: box.height, scrollTop: element.scrollTop };
+    }));
+  });
+  const unchanged = (before, after) => { assert.equal(after.length, before.length); before.forEach((rect, index) => { for (const field of ['x', 'y', 'width', 'height', 'scrollTop']) assert(Math.abs(rect[field] - after[index][field]) <= 1, JSON.stringify({ rect, after: after[index], field })); }); };
+  const bounded = async (root, input) => {
+    const placement = await input.evaluate(node => {
+      const rect = node.getBoundingClientRect(), panel = node.closest('fieldset, form, [data-shared]').querySelector('.skill-completion'), box = panel.getBoundingClientRect();
+      return { anchor: { left: rect.left, top: rect.top, bottom: rect.bottom, width: rect.width }, box: { left: box.left, top: box.top, right: box.right, bottom: box.bottom, width: box.width, height: box.height }, open: panel.matches(':popover-open'), viewport: { width: innerWidth, height: innerHeight } };
+    });
+    assert(placement.open); assert(placement.box.height <= 220.1);
+    assert(placement.box.left >= 7 && placement.box.top >= 7 && placement.box.right <= placement.viewport.width - 7 && placement.box.bottom <= placement.viewport.height - 7, JSON.stringify(placement));
+    assert(placement.box.width <= placement.anchor.width + 1);
+  };
+  const stableStates = async (root, input) => {
+    await input.fill('$'); await input.press('Escape'); await frame(); const before = await surrounding(root);
+    const reopen = async value => { await input.fill(''); await input.pressSequentially(value); await root.locator('.skill-completion').waitFor(); await frame(); unchanged(before, await surrounding(root)); await bounded(root, input); };
+    await reopen('$a'); await reopen('$'); await reopen('$no-match');
+    await input.press('Escape'); await frame(); unchanged(before, await surrounding(root));
+    await reopen('$');
+    await page.evaluate(() => window.__skillInventory.mode('loading')); await root.locator('.skill-completion p').waitFor(); await frame(); unchanged(before, await surrounding(root));
+    await page.evaluate(() => window.__skillInventory.mode('failed')); await root.locator('.skill-completion button').waitFor(); await frame(); unchanged(before, await surrounding(root));
+    await root.locator('.skill-completion button').click(); await frame(); unchanged(before, await surrounding(root));
+    await page.evaluate(() => window.__skillInventory.mode('ready')); await root.locator('.skill-completion').getByRole('option').first().waitFor(); await frame(); unchanged(before, await surrounding(root));
+    assert(await input.evaluate(node => node === document.activeElement));
+    const viewport = page.viewportSize(); await page.setViewportSize({ width: viewport.width, height: Math.max(240, viewport.height - 40) }); await frame(); await bounded(root, input); await page.setViewportSize(viewport); await frame();
+    await page.evaluate(() => window.visualViewport?.dispatchEvent(new Event('resize'))); await frame(); await bounded(root, input);
+    // Deliberately move only the anchor in the fixture to prove both fallback sides.
+    if (viewport.height >= 400) {
+      const originalTransform = await input.evaluate(node => node.style.transform);
+      for (const side of ['above', 'below']) {
+        await input.evaluate((node, side) => { node.style.transform = ''; const rect = node.getBoundingClientRect(); const target = side === 'above' ? innerHeight - 100 : 20; node.style.transform = `translateY(${target - rect.top}px)`; }, side);
+        await frame(); await bounded(root, input);
+        const gap = await root.locator('.skill-completion').evaluate((panel, side) => { const input = panel.parentElement.querySelector('textarea'), anchor = input.getBoundingClientRect(), box = panel.getBoundingClientRect(); return side === 'above' ? anchor.top - box.bottom : box.top - anchor.bottom; }, side);
+        assert(Math.abs(gap - 8) <= 1, JSON.stringify({ side, gap }));
+      }
+      await input.evaluate((node, transform) => { node.style.transform = transform; }, originalTransform); await frame();
+    }
+    const dimensions = await input.evaluate(node => ({ width: node.style.width, height: node.style.height }));
+    await input.evaluate(node => { node.style.width = '75%'; node.style.height = '80px'; }); await frame(); await bounded(root, input);
+    await page.locator('main').evaluate(node => { node.scrollTop += 25; node.dispatchEvent(new Event('scroll')); }); await frame(); await bounded(root, input);
+    await input.evaluate((node, size) => { node.style.width = size.width; node.style.height = size.height; }, dimensions);
+    await input.press('Escape');
+  };
   const checkOverlay = async (root, input) => {
     const draft = '한글 Native selection $add-issue $removed-skill\n' + 'wrap words $removed-skill '.repeat(30);
     await input.fill(draft); await input.press('Escape');
@@ -73,7 +119,7 @@ try {
     await control.focus(); await page.keyboard.press('End'); await page.keyboard.press('Enter');
     await page.waitForFunction(node => Boolean(node.dataset.value), await control.elementHandle());
   };
-  for (const language of ['en', 'ko']) for (const theme of ['light', 'dark', 'system']) for (const size of [{ width: 1600, height: 1000 }, { width: 960, height: 640 }, { width: 480, height: 320 }, { width: 320, height: 240 }]) for (const kind of ['General Chat', 'New session']) {
+  for (const language of ['en', 'ko']) for (const theme of ['light', 'dark', 'system']) for (const size of [{ width: 1440, height: 900 }, { width: 1280, height: 820 }, { width: 960, height: 640 }, { width: 640, height: 480 }, { width: 720, height: 450 }, { width: 320, height: 240 }]) for (const kind of ['General Chat', 'New session']) {
     process.stdout.write(JSON.stringify({ operation: 'creation-skill-case', language, theme, kind, ...size }) + '\n');
     await page.emulateMedia({ colorScheme: 'dark' }); await page.setViewportSize(size);
     await page.goto(`${origin}/?language=${language}&theme=${theme}&skills=true`);
@@ -90,6 +136,7 @@ try {
         rows: rows.map(row => { const name = row.querySelector('strong'), description = row.querySelector('.skill-completion-description'), badge = row.querySelector('.skill-completion-provenance'); return { width: row.clientWidth, scroll: row.scrollWidth, height: row.getBoundingClientRect().height, name: name.getBoundingClientRect().width, description: description.getBoundingClientRect().width, badge: getComputedStyle(badge).flexShrink, provenance: badge.textContent, nameText: name.textContent, original: description.textContent }; }),
         pageOverflow: document.documentElement.scrollWidth > innerWidth + 1, mainOverflow: node.closest('main').scrollWidth > node.closest('main').clientWidth + 1 };
     });
+    await stableStates(root, input);
     await open('$a'); const one = await geometry();
     assert.equal(one.contentMin, '0px'); assert.equal(one.fieldsetMin, '0px');
     assert(one.content <= 820 && one.fieldset <= one.content + 1, JSON.stringify(one));
@@ -128,6 +175,7 @@ try {
     await page.locator('[data-shared=queue] .actions button').first().click();
     for (const placement of ['follow-up', 'queue']) {
       const root = page.locator(`[data-shared="${placement}"]`), input = root.locator('textarea');
+      await stableStates(root, input);
       await input.fill(''); await input.pressSequentially('$a'); await root.locator('.skill-completion').getByRole('option').waitFor();
       assert(await root.locator('.skill-completion').evaluate(node => node.scrollWidth <= node.clientWidth + 1));
       await input.press('Enter'); assert.equal(await input.inputValue(), '$add-issue'); assert(await input.evaluate(node => node === document.activeElement));
@@ -135,6 +183,18 @@ try {
       await checkOverlay(root, input);
     }
     cases++;
+  }
+  // Unsupported creation uses the same original overlay, with no inventory choices.
+  for (const language of ['en', 'ko']) for (const theme of ['light', 'dark']) for (const kind of ['General Chat', 'New session']) {
+    await page.setViewportSize({ width: 640, height: 480 });
+    await page.goto(`${origin}/?language=${language}&theme=${theme}&skills=true&unsupported=true`);
+    await page.getByRole('button', { name: `Fixture ${kind}`, exact: true }).click();
+    const root = page.locator(kind === 'General Chat' ? '.new-general-chat-page' : '.new-session-page:not(.new-general-chat-page)'), input = root.locator('textarea');
+    if (kind === 'New session') await selectResource(root, 0);
+    await selectResource(root, kind === 'New session' ? 1 : 0); await selectResource(root, kind === 'New session' ? 2 : 1);
+    await input.fill('$'); await root.locator('.skill-completion p').waitFor(); await input.press('Escape'); await frame(); const before = await surrounding(root);
+    await input.fill(''); await input.pressSequentially('$'); await root.locator('.skill-completion p').waitFor(); await frame(); unchanged(before, await surrounding(root)); await bounded(root, input);
+    assert.equal(await root.locator('.skill-completion [role=option]').count(), 0); await input.press('Escape'); await frame(); unchanged(before, await surrounding(root)); cases++;
   }
   assert.deepEqual(errors, []);
   process.stdout.write(JSON.stringify({ operation: 'creation-skill-layout', ...source, cases, overlayCases, screenshots, effectiveZoom: 'half-viewport reflow', nativeAcceptance: 'not-performed' }) + '\n');

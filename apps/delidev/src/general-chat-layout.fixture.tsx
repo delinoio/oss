@@ -3,7 +3,7 @@
 import { create } from "@bufbuild/protobuf";
 import { createRoot } from "react-dom/client";
 import { useState, useRef } from "react";
-import { createRouterTransport } from "@connectrpc/connect";
+import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { EntityKind, ResourceSchema, ResourceService, SessionService, SkillService, SkillProvenance, SystemCapability, SystemService, newRequestId } from "@delinoio/delidev-api-client";
@@ -29,10 +29,17 @@ const rows = [agent, machine, project], creates: Record<string, unknown>[] = [];
 const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 const originalSkills = skills;
 let report: (() => void) | undefined;
-Object.assign(window, { __skillInventory: { remove: async () => { skills = skills.filter(entry => entry.name !== "add-issue"); await client.invalidateQueries(); }, restore: async () => { skills = originalSkills; await client.invalidateQueries(); } } });
+enum InventoryMode { Ready = "ready", Loading = "loading", Failed = "failed" }
+let inventoryMode = InventoryMode.Ready, pendingReads = new Set<() => void>();
+Object.assign(window, { __skillInventory: { remove: async () => { skills = skills.filter(entry => entry.name !== "add-issue"); await client.invalidateQueries(); }, restore: async () => { skills = originalSkills; await client.invalidateQueries(); },
+  mode: (mode: InventoryMode) => { inventoryMode = mode; for (const release of pendingReads) release(); pendingReads.clear(); void client.invalidateQueries(); } } });
 const transport = createRouterTransport(router => {
-  router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.AUTOMATIC_TITLES_V1, ...(skillCompletion ? [SystemCapability.NATIVE_SKILLS_V1] : [])] }) });
-  router.service(SkillService, { listSkills: () => ({ skills }) });
+  router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.AUTOMATIC_TITLES_V1, ...(skillCompletion && args.get("unsupported") !== "true" ? [SystemCapability.NATIVE_SKILLS_V1] : [])] }) });
+  router.service(SkillService, { listSkills: async () => {
+    if (inventoryMode === InventoryMode.Loading) await new Promise<void>(resolve => { pendingReads.add(resolve); });
+    if (inventoryMode === InventoryMode.Failed) throw new ConnectError("Synthetic inventory read failure", Code.Unavailable);
+    return { skills };
+  } });
   router.service(ResourceService, { getResource: request => ({ resource: rows.find(row => row.id === request.id && row.kind === request.kind) }), listResources: request => ({ resources: rows.filter(row => row.kind === request.filter?.kind) }) });
   router.service(SessionService, { editQueuedInput: request => { creates.push({ forbiddenQueueSubmit: request.prompt }); report?.(); return { change: { input: queued } }; }, createSession: request => {
     const data = JSON.parse(new TextDecoder().decode(request.documentJson)); creates.push(data); report?.();
