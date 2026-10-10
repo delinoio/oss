@@ -11,6 +11,7 @@ import { MutationIntents } from "./mutation";
 import { PendingSidechatPane, SessionCreationAction, SessionForkAction, SessionForkProvider } from "./session-fork";
 import { SessionTabsProvider, SessionTabKind, sessionTabKey, useSessionTabs, type SessionTabsStore } from "./session-tabs";
 import { SessionTabBar } from "./session-tab-bar";
+import { SidechatAuthoring } from "./sidechat-authoring";
 import { SessionToolMenu } from "./session-tool-menu";
 
 async function fixture(options: { lost?: boolean; hidden?: boolean; stale?: boolean } = {}) {
@@ -34,6 +35,7 @@ async function fixture(options: { lost?: boolean; hidden?: boolean; stale?: bool
   return <><SessionToolMenu active={active}>{["Diff", "Files", "Terminals", "Browser", "Diagnostics"].map(label => <button key={label} role="menuitem">{label}</button>)}{tabs.tab.kind !== SessionTabKind.PendingSidechat && tabs.tab.kind !== SessionTabKind.Sidechat ? <SessionForkAction source={source} action={SessionCreationAction.Sidechat}/> : null}</SessionToolMenu>
    <SessionTabBar id={sourceId} tabs={tabs.tabs} selected={tabs.selected} select={key => tabs.store.select(sourceId, key)} close={key => tabs.store.close(sourceId, key)}/>
    {tabs.tabs.map(tab => tab.kind === SessionTabKind.PendingSidechat ? <div hidden={!active || tabs.selected !== sessionTabKey(tab)} key={tab.requestId}><PendingSidechatPane requestId={tab.requestId} active={active && tabs.selected === sessionTabKey(tab)}/></div> : null)}
+   {tabs.store.sidechats(sourceId).map(tab => <div key={tab.id} hidden={!active || tabs.selected !== sessionTabKey(tab)}><SidechatAuthoring id={tab.id} active={active && tabs.selected === sessionTabKey(tab)}>{({draft,setDraft}) => <textarea aria-label="Verified child draft" id={`prompt-${tab.id}`} value={draft} onChange={event => setDraft(event.target.value)}/>}</SidechatAuthoring></div>)}
   </>;
  }
  const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionTabsProvider><SessionForkProvider openSession={navigate}><Workspace active={active}/><SessionForkAction source={source} action={SessionCreationAction.Sidechat}/></SessionForkProvider></SessionTabsProvider></MutationIntents></QueryClientProvider></TransportProvider>;
@@ -71,8 +73,16 @@ it.each(["selected", "background", "closed", "hidden"])("publishes only the veri
  await waitFor(() => expect(f.store().parent(f.childId)).toBe(f.sourceId));
  expect(f.navigate).not.toHaveBeenCalled(); expect(f.fork).toHaveBeenCalledTimes(1);
  const snapshot = f.store().snapshot(f.sourceId); expect(snapshot.tabs.some(tab => tab.kind === SessionTabKind.PendingSidechat)).toBe(false);
- expect(f.store().childDraft(f.childId)).toMatchObject({ text: "My original question", start: 3, end: 8, focus: mode === "selected" });
- if (mode === "closed") expect(snapshot.tabs.some(tab => tab.kind === SessionTabKind.Sidechat)).toBe(false);
+ if (mode === "closed") {
+  expect(f.store().childDraft(f.childId)).toMatchObject({ text: "My original question", start: 3, end: 8, focus: false });
+  expect(snapshot.tabs.some(tab => tab.kind === SessionTabKind.Sidechat)).toBe(false);
+  act(() => f.store().open(f.sourceId, { kind: SessionTabKind.Sidechat, id: f.childId, name: "Verified Sidechat" }));
+ }
+ const childInput = document.getElementById(`prompt-${f.childId}`) as HTMLTextAreaElement;
+ expect(childInput.value).toBe("My original question"); expect(f.store().childDraft(f.childId)).toBeUndefined();
+ if (mode === "selected") { expect(document.activeElement).toBe(childInput); expect(childInput.selectionStart).toBe(3); expect(childInput.selectionEnd).toBe(8); }
+ if (mode === "hidden" || mode === "closed") expect(document.activeElement).not.toBe(childInput);
+
  if (mode === "background") { expect(snapshot.selected).toBe(SessionTabKind.Files); expect(document.activeElement).toBe(previousFocus); }
  if (mode === "selected") expect(snapshot.tabs[1]).toMatchObject({ kind: SessionTabKind.Sidechat, id: f.childId });
 });

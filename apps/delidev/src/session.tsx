@@ -77,6 +77,7 @@ import "./session.css";
 import { Interaction } from "./interactions";
 import { SessionTerminals } from "./session-terminals";
 import { PendingSidechatPane, SessionCreationAction, SessionForkAction } from "./session-fork";
+import { SidechatAuthoring } from "./sidechat-authoring";
 import { SidechatFindings } from "./sidechat";
 import { useSidechatQuestionRetry, SidechatRetryAction, sidechatAnswerFilter } from "./sidechat-retry";
 import { SessionTools } from "./session-tools";
@@ -703,6 +704,4 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   </section></SessionActivityProvider>;
 }
 
-function SidechatPane({id,active}:{id:string;active:boolean}) { const store = useSessionTabs(id).store; const initial = useRef(store.childDraft(id)); const[draft,setDraft]=useState(initial.current?.text ?? "");const[bindings,setBindings]=useState<SkillTokenBinding[]>([]);
-  useLayoutEffect(() => { const seed = initial.current; if (!seed) return; store.takeChildFocus(id); if (!seed.focus || !active || globalThis.document.activeElement !== globalThis.document.body) return; const input = globalThis.document.getElementById(`prompt-${id}`) as HTMLTextAreaElement | null; input?.focus(); input?.setSelectionRange(seed.start, seed.end); }, [id, active, store]);
-  return <SessionActivityProvider active={active}><SessionView id={id} active={active} embedded draft={draft} setDraft={(value,skills)=>{setDraft(value);if(skills)setBindings(skills);}} initialSkills={bindings} changeSkills={setBindings}/></SessionActivityProvider>; }
+function SidechatPane({id,active}:{id:string;active:boolean}) { return <SidechatAuthoring id={id} active={active}>{({draft,setDraft,bindings,setBindings}) => <SessionActivityProvider active={active}><SessionView id={id} active={active} embedded draft={draft} setDraft={setDraft} initialSkills={bindings} changeSkills={setBindings}/></SessionActivityProvider>}</SidechatAuthoring>; }
