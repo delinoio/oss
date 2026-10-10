@@ -44,7 +44,32 @@ try {
     const label=language==="en"?{conversation:"Conversation",browser:"Browser",open:"Open account browser",files:"Files"}:{conversation:"대화",browser:"브라우저",open:"계정 브라우저 열기",files:"파일"};
     const composer=page.locator(".composer textarea");
     await composer.evaluate(node=>{window.originalComposer=node;});
-    await page.getByRole("button",{name:language === "ko" ? "도구 열기" : "Open tool",exact:true}).click();
+    const toolLabel = language === "ko" ? "도구 열기" : "Open tool";
+    const toolTrigger = page.getByRole("button", { name: toolLabel, exact: true });
+    const toolGeometry = await toolTrigger.evaluate(node => {
+      const box = node.getBoundingClientRect(), icon = node.querySelector('svg'), glyph = icon.getBoundingClientRect(), style = getComputedStyle(node);
+      return { width: box.width, height: box.height, radius: style.borderRadius, padding: style.padding, text: node.textContent, title: node.title,
+        iconWidth: glyph.width, iconHeight: glyph.height, dx: (glyph.left + glyph.right - box.left - box.right) / 2, dy: (glyph.top + glyph.bottom - box.top - box.bottom) / 2,
+        hidden: icon.getAttribute('aria-hidden'), focusable: icon.getAttribute('focusable'), scale: parseFloat(getComputedStyle(document.body).zoom) || 1 };
+    });
+    assert(Math.abs(toolGeometry.width - 40 * toolGeometry.scale) <= 1 && Math.abs(toolGeometry.height - 40 * toolGeometry.scale) <= 1, JSON.stringify(toolGeometry));
+    assert(Math.abs(toolGeometry.iconWidth - 18 * toolGeometry.scale) <= 1 && Math.abs(toolGeometry.iconHeight - 18 * toolGeometry.scale) <= 1, JSON.stringify(toolGeometry));
+    assert(Math.abs(toolGeometry.dx) <= 1 && Math.abs(toolGeometry.dy) <= 1, JSON.stringify(toolGeometry));
+    assert.equal(toolGeometry.radius, '8px'); assert.equal(toolGeometry.padding, '0px');
+    assert.equal(toolGeometry.text, ''); assert.equal(toolGeometry.title, toolLabel);
+    assert.equal(toolGeometry.hidden, 'true'); assert.equal(toolGeometry.focusable, 'false');
+    const toolCalls = await page.evaluate(() => JSON.stringify(browserFixture));
+    await toolTrigger.focus(); await page.keyboard.press('Space');
+    const toolMenu = page.getByRole('menu', { name: toolLabel });
+    await toolMenu.waitFor();
+    assert(await toolMenu.evaluate(node => node.contains(document.activeElement)));
+    const popup = await toolMenu.evaluate(node => { const rect = node.getBoundingClientRect(); return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, viewportWidth: innerWidth, viewportHeight: innerHeight }; });
+    assert(popup.left >= 0 && popup.right <= popup.viewportWidth + 1 && popup.top >= 0 && popup.bottom <= popup.viewportHeight + 1, JSON.stringify(popup));
+    await page.keyboard.press('Escape');
+    assert(await toolTrigger.evaluate(node => node === document.activeElement));
+    assert(await toolTrigger.evaluate(node => node.matches(':focus-visible') && parseFloat(getComputedStyle(node).outlineWidth) > 0));
+    assert.equal(await page.evaluate(() => JSON.stringify(browserFixture)), toolCalls, 'Opening/dismissing tools does not invoke tool or native callbacks');
+    await page.keyboard.press('Enter');
     await page.getByRole("menuitem",{name:label.browser,exact:true}).click();
     assert.equal(await page.getByRole("tabpanel").count(),1);
     assert.equal(await page.locator(".composer:visible").count(),0);
