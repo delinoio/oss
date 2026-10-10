@@ -7,7 +7,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { expect, it, vi } from "vitest";
 import { EntityKind, ResourceSchema, ResourceService, newRequestId } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
-import { TrackedJob } from "./jobs";
+import { TrackedJob, validJobObservation } from "./jobs";
 import { i18n } from "./localization";
 
 function fixture(state = "queued") {
@@ -69,4 +69,10 @@ it("retains the original identity when a status response is foreign", async () =
   await waitFor(() => expect(screen.queryByRole("button", { name: "Retry original status read" })).toBeNull());
   expect(f.read).toHaveBeenCalledTimes(2);
   for (const [request] of f.read.mock.calls as unknown as [{ id: string }][]) expect(request.id).toBe(f.initial.id);
+});
+
+it("rejects missing, foreign, unsupported, malformed and regressive original Job observations",()=>{
+ const initial=fixture().initial;for(const state of ["queued","claimed","uncertain","succeeded","failed","canceled"])expect(validJobObservation(create(ResourceSchema,{...initial,documentJson:encode({state})}),initial)).toBe(true);
+ for(const row of [undefined,create(ResourceSchema,{...initial,id:newRequestId()}),create(ResourceSchema,{...initial,kind:EntityKind.MACHINE}),create(ResourceSchema,{...initial,schemaVersion:2}),create(ResourceSchema,{...initial,revision:initial.revision-1n}),create(ResourceSchema,{...initial,documentJson:encode({state:4})}),create(ResourceSchema,{...initial,documentJson:encode({state:"future"})}),create(ResourceSchema,{...initial,documentJson:new TextEncoder().encode("invalid")})])expect(validJobObservation(row,initial)).toBe(false);
+ expect(validJobObservation(initial,initial,initial.revision+1n)).toBe(false);
 });

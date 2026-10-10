@@ -5,10 +5,12 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { EntityKind, ResourceSchema, ResourceService, WorkerService, newRequestId } from "@delinoio/delidev-api-client";
+import { EntityKind, ResourceSchema, ResourceService, WorkerService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { RunnerRemediationProvider, useRunnerRemediation } from "./runner-remediation";
-import { useCallback, useState } from "react";
+import { useCallback, useState, useLayoutEffect } from "react";
+import { useMachineSettingsController, type MachineSettingsController } from "./machine-settings";
+import { MutationIntents } from "./mutation";
 import { ResourceChoice, ResourceSelectionPending } from "./configuration-fields";
 const machine = (name: string) => create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, schemaVersion: 1, revision: 9007199254740993n, documentJson: encode({ name, disabled: false, installations: [{ harness: "claude-code", state: "missing", explicit_path: "", problem: { message: "/private/native secret", guidance: "secret native instruction" } }] }) });
 it("retains one inspection draft and original uncertain request across presentation close, without replacing its Runner", async () => {
@@ -124,4 +126,15 @@ it("retains consuming gates for an original diagnostic after selector shortcuts 
   fireEvent.click(await screen.findByRole("button", { name: "Retry the same harness check" }));
   await waitFor(() => expect(discover).toHaveBeenCalledTimes(2)); expect(discover.mock.calls[1][0]).toEqual(original);
   client.clear();
+});
+
+it("settles only submitted paths and Verify revision while retaining newer edits and superseded Job gates",async()=>{
+ const row=machine("Snapshot Runner"),job=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.JOB,schemaVersion:1,revision:1n,documentJson:encode({state:"queued"})});let latest:Resource=job;let controller!:MachineSettingsController;
+ const discover=vi.fn(async()=>({machine:row,job}));const transport=createRouterTransport(router=>{router.service(ResourceService,{getResource:request=>({resource:request.kind===EntityKind.JOB?latest:row})});router.service(WorkerService,{discoverHarnesses:discover})});const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ function Owner(){const value=useMachineSettingsController(row,true);useLayoutEffect(()=>{controller=value},[value]);return <button disabled={value.locked}>Consume original</button>}
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><Owner/></MutationIntents></QueryClientProvider></TransportProvider>);
+ const submitted={revision:row.revision,paths:{codex:"/submitted"}};act(()=>{controller.setEdit(submitted);controller.setVerify(true)});await act(async()=>{await controller.discovery.send({mutation:{id:row.id,expectedRevision:row.revision,requestId:newRequestId()},selectionsJson:encode({executables:[{harness:"codex",path:"/submitted"}]}),verifyProtocol:true})});
+ const newer={revision:row.revision,paths:{codex:"/new-unsent"}};act(()=>{controller.setEdit(newer);controller.setVerify(false)});
+ latest=create(ResourceSchema,{...job,revision:2n,documentJson:encode({state:"succeeded"})});await act(async()=>{await client.invalidateQueries()});await waitFor(()=>expect(controller.pending).toBe(false));expect(controller.edit).toBe(newer);expect(controller.locked).toBe(true);
+ const replacement=create(ResourceSchema,{...job,id:newRequestId()});act(()=>controller.setJob(replacement));latest=create(ResourceSchema,{...job,revision:3n,documentJson:encode({state:"succeeded"})});await act(async()=>{await client.invalidateQueries()});expect(controller.pending).toBe(true);expect(controller.edit).toBe(newer);client.clear();
 });

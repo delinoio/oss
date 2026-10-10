@@ -9,6 +9,7 @@ import { document, encode } from "./documents";
 import { MutationIntents } from "./mutation";
 import { ScheduleDetails, ScheduleEditor, Schedules } from "./schedules";
 import { i18n } from "./localization";
+import { RunnerRemediationProvider, useRunnerRemediation } from "./runner-remediation";
 import { MachineSettings } from "./machine-settings";
 
 function fixture() {
@@ -35,7 +36,7 @@ function fixture() {
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const view = (children: React.ReactNode) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents>{children}</MutationIntents></QueryClientProvider></TransportProvider>;
-  return { schedule, machine, resources, definition, occurrence, save, run, control, remove, discovery, view, client, list, get, project, agent, repositoryId };
+  return { schedule, machine, job, resources, definition, occurrence, save, run, control, remove, discovery, view, client, list, get, project, agent, repositoryId };
 }
 
 it("sends only the editable schedule definition and retries its exact original revision", async () => {
@@ -425,4 +426,16 @@ it.each([
   expect(screen.getByRole("button", { name: "Next" })).toHaveProperty("disabled", false);
   goStep(3); expect(globalThis.document.querySelector(".schedule-creation-review")?.textContent).toContain("Replacement selection");
   expect(screen.getByText(replacement.id)).toBeTruthy(); expect(value.save).not.toHaveBeenCalled();
+});
+
+it.each(["succeeded", "failed", "canceled"])("releases Schedule Task after an original %s inspection without Finish or replay", async state => {
+ const f=fixture();const completed=create(ResourceSchema,{...f.job,revision:2n,documentJson:encode({state,type:"harness-discovery"})});
+ f.get.mockImplementation(async request=>({resource:request.kind===EntityKind.JOB?completed:f.resources.find(row=>row.id===request.id)}));
+ function Surface(){const inspect=useRunnerRemediation();return <><button onClick={()=>inspect?.(f.machine)}>Inspect preferred Runner</button><ScheduleEditor initial={f.schedule} active saved={()=>{}} cancel={()=>{}}/>{inspect?.body}</>}
+ render(f.view(<RunnerRemediationProvider active><Surface/></RunnerRemediationProvider>));
+ const name=await screen.findByLabelText("Schedule name");fireEvent.change(name,{target:{value:"Retained title"}});
+ fireEvent.click(screen.getByRole("button",{name:"Inspect preferred Runner"}));fireEvent.click(await screen.findByRole("button",{name:"Edit executable paths"}));fireEvent.change(screen.getByLabelText("codex executable path"),{target:{value:"/submitted/codex"}});fireEvent.click(screen.getByRole("checkbox"));fireEvent.click(screen.getByRole("button",{name:"Run optional diagnostics"}));
+ await screen.findByRole("button",{name:"Finish inspection"});fireEvent.click(screen.getByRole("button",{name:"Close Inspect installed harnesses"}));
+ await waitFor(()=>expect(name.closest("fieldset")).toHaveProperty("disabled",false));expect(name).toHaveProperty("value","Retained title");expect(screen.getByLabelText("Scheduled prompt")).toHaveProperty("value","Retained prompt");expect(screen.getByRole("button",{name:"Cancel"})).toHaveProperty("disabled",false);expect(screen.getByRole("button",{name:"Next"})).toHaveProperty("disabled",false);
+ fireEvent.click(screen.getByRole("button",{name:"Inspect preferred Runner"}));expect(await screen.findByRole("button",{name:"Finish inspection"})).toBeTruthy();expect(f.discovery).toHaveBeenCalledOnce();expect(f.save).not.toHaveBeenCalled();f.client.clear();
 });
