@@ -160,7 +160,7 @@ summary { cursor: pointer; padding: 3px; }
 .new-session-mode { flex: 0 0 auto; }
 .new-session-submit-row { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 .new-session-options-toggle { min-height: 36px; padding: 6px 10px; color: var(--text-secondary); font-size: 12px; }
-.new-session-submit { display: grid; width: 40px; min-width: 40px; height: 40px; min-height: 40px; place-items: center; padding: 0; border-color: var(--accent); border-radius: 12px; background: var(--accent); color: var(--on-inverse); }
+.new-session-submit { display: grid; width: 40px; min-width: 40px; height: 40px; min-height: 40px; place-items: center; padding: 0; border-color: var(--accent); border-radius: 12px; background: var(--accent); color: var(--on-accent); }
 .new-session-submit:hover { background: var(--accent-hover); }
 .new-session-submit svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .new-session-hints { display: flex; justify-content: space-between; gap: 12px; margin: 11px 3px 0; color: var(--muted); font-size: 12px; }
