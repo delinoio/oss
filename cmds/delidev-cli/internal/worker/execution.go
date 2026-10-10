@@ -386,6 +386,15 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			}()
 		}
 	}
+	if managed != nil && input.Configuration.SidechatPolicy == "" && input.Fork == nil && input.Installation.Version == "0.162.0" {
+		nativeConfig.NativeApps = input.NativeApps
+		if nativeConfig.NativeApps == nil {
+			// An empty local profile grants no connector authority. It lets the
+			// original account's native process provide inventory for a later explicit
+			// durable selection while default/per-app policy is verified before input.
+			nativeConfig.NativeApps = &domain.SessionNativeAppSelection{Scope: domain.NativeAppsAssignmentScope(input), InventoryID: domain.NewID(), Revision: 1, AppIDs: []string{}}
+		}
+	}
 	if managed != nil {
 		nativeConfig.API = nil
 		nativeConfig.ManagedAuthentication = true
@@ -429,6 +438,14 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if managed != nil && config.observations != nil {
 		unregisterObservations = config.observations.register(input.AccountID, client, managed)
 		defer unregisterObservations()
+	}
+	var unregisterApps func()
+	if nativeConfig.NativeApps != nil && config.nativeApps != nil {
+		unregisterApps, err = config.nativeApps.register(domain.NativeAppsAssignmentScope(input), connection.Credential.DeviceID, connection.Instance, client)
+		if err != nil {
+			return nil, err
+		}
+		defer unregisterApps()
 	}
 	input.Installation.Version = client.Version()
 	publisher.nativeVersion = client.Version()
@@ -617,6 +634,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			if err != nil {
 				return nil, err
 			}
+		}
+		if unregisterApps != nil {
+			unregisterApps()
 		}
 		captureManagedBundle()
 		if err := client.Close(); err != nil {

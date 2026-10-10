@@ -61,12 +61,26 @@ func receiveWorkspaceReads(ctx context.Context, config Config, client delidevv1c
 			continue
 		}
 		var request workspace.ReadRequest
-		if len(message.RequestJson) > 2<<20 || domain.Decode(message.RequestJson, &request) != nil || request.ID.Validate() != nil || request.Preparation.MachineID != credential.MachineID {
+		if len(message.RequestJson) > 2<<20 || domain.Decode(message.RequestJson, &request) != nil || request.ID.Validate() != nil || (request.NativeApps == nil && request.Preparation.MachineID != credential.MachineID) || (request.NativeApps != nil && request.NativeApps.Scope.MachineID != credential.MachineID) {
 			return workspace.ResultUncertain()
 		}
 		report := &pb.ReportWorkspaceReadRequest{MachineId: string(credential.MachineID), InstanceId: string(instance), ReadId: string(request.ID)}
 		var problem error
-		if request.Skills != nil {
+		if request.NativeApps != nil {
+			if request.Skills != nil || request.PRCandidate != nil || request.NativeApps.WorkerDeviceID != credential.DeviceID || request.NativeApps.WorkerInstanceID != instance || request.NativeApps.Validate() != nil {
+				return workspace.ResultUncertain()
+			}
+			bounded, stop := context.WithDeadline(ctx, request.Deadline)
+			var result domain.NativeAppInventory
+			result, problem = config.nativeApps.read(bounded, *request.NativeApps)
+			stop()
+			if problem == nil {
+				report.DocumentJson, _ = json.Marshal(result)
+			}
+			if config.Logger != nil {
+				config.Logger.InfoContext(ctx, "native_apps_observation_finished", "read_id", request.ID, "machine_id", credential.MachineID, "success", problem == nil)
+			}
+		} else if request.Skills != nil {
 			if request.Skills.WorkerDeviceID != credential.DeviceID || request.Skills.WorkerInstanceID != instance {
 				return workspace.ResultUncertain()
 			}

@@ -78,6 +78,7 @@ type SleepObservation struct {
 }
 
 type ToolSnapshot struct {
+	Apps      *NativeAppToolObservation   `json:"apps,omitempty"`
 	Sleep     *SleepObservation           `json:"sleep,omitempty"`
 	ImageView *ImageViewObservation       `json:"image_view,omitempty"`
 	Builtin   *OpenCodeBuiltinObservation `json:"builtin,omitempty"`
@@ -185,6 +186,15 @@ func (u ExecutionToolUpdate) Validate(kind ExecutionEventKind) error {
 }
 
 func (s ToolSnapshot) Validate() error {
+	if s.Kind == NativeAppsTool {
+		if s.Apps == nil || s.Sleep != nil || s.ImageView != nil || s.Builtin != nil || s.Todo != nil || s.Command != nil || s.Changes != nil || s.Read != nil || s.Shell != nil {
+			return invalidTool()
+		}
+		return s.Apps.Validate(s.Status)
+	}
+	if s.Apps != nil {
+		return invalidTool()
+	}
 	if s.Kind == SleepTool {
 		if s.Sleep == nil || s.Sleep.DurationMS == nil || s.Command != nil || s.Changes != nil || s.Read != nil || s.Shell != nil || s.Todo != nil || s.Builtin != nil || s.ImageView != nil || (s.Status != ToolRunning && s.Status != ToolCompleted) {
 			return invalidTool()

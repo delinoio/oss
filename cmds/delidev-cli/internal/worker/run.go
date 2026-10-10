@@ -30,6 +30,7 @@ import (
 )
 
 type Config struct {
+	nativeApps               *nativeAppsRegistry
 	startupProgress          bool
 	progress                 *sessionStartupReporter
 	paidCredits              bool
@@ -167,6 +168,7 @@ func fatalTitleProfileProbeError(err error) error {
 
 func Run(ctx context.Context, config Config) (resultErr error) {
 	config.observations = &managedObservationRegistry{}
+	config.nativeApps = &nativeAppsRegistry{}
 	credential, err := LoadCredential(config.Root)
 	if err != nil {
 		return err
