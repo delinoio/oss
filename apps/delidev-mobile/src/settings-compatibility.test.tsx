@@ -25,7 +25,7 @@ function fixture(defaultPlan = true, override = "inherit", modern = true, invali
         const kind = request.filter?.kind ?? EntityKind.UNSPECIFIED;
         return { resources: kind === EntityKind.SETTINGS
           ? [resource(kind, "settings", { plan_mode_default: invalidGlobal ? "plan" : defaultPlan, automatic_plan_approval: false, branch_prefix: "delidev/" }, 3)]
-          : [resource(kind, "choice", { name: "Saved choice", ...(kind === EntityKind.PROJECT ? { settings: { plan_mode_default: override } } : {}) }, kind === EntityKind.PROJECT ? 3 : 1)] };
+          : [resource(kind, "choice", { name: "Saved choice", ...(kind === EntityKind.AGENT ? { routes: [{ model: { subscription_service: "chatgpt", native_id: "fixture" }, accounts: [{ id: "account", weight: 1 }] }] } : {}), ...(kind === EntityKind.PROJECT ? { settings: { plan_mode_default: override } } : {}) }, kind === EntityKind.AGENT ? 4 : kind === EntityKind.PROJECT ? 3 : 1)] };
       },
       getResource: request => ({ resource: resource(request.kind, request.id, { name: "Saved choice", settings: { plan_mode_default: override } }, 3) }),
     });

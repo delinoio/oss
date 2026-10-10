@@ -6,14 +6,17 @@ import { fileURLToPath } from "node:url";
 export const Identity = "io.delino.delidev.mobile";
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 export function validateInputs(input) {
+  const target = input?.target ?? "both";
   if (
     !input ||
     input.identity !== Identity ||
+    !["both", "ios"].includes(target) ||
     !/^\d+\.\d+\.\d+$/.test(input.version) ||
     !/^[1-9]\d{0,17}$/.test(input.iosBuild) ||
-    !/^[1-9]\d{0,9}$/.test(input.androidCode) ||
+    (target === "both" && (!/^[1-9]\d{0,9}$/.test(input.androidCode) ||
     Number(input.androidCode) < 1 ||
-    Number(input.androidCode) > 2100000000 ||
+    Number(input.androidCode) > 2100000000)) ||
+    (target === "ios" && !!input.androidCode) ||
     !/^[a-f0-9]{40}$/.test(input.sourceSha) ||
     input.appleGroupType !== "INTERNAL" ||
     input.playTrack !== "internal"
@@ -21,16 +24,17 @@ export function validateInputs(input) {
     throw new Error("Invalid internal beta candidate input");
   if (
     !/^[a-f0-9]{64}$/.test(input.appleSigner) ||
-    !/^[a-f0-9]{64}$/.test(input.androidSigner)
+    (target === "both" && !/^[a-f0-9]{64}$/.test(input.androidSigner))
   )
     throw new Error("Expected signing fingerprints are required");
   return input;
 }
 export function candidate(input, ios, android) {
   validateInputs(input);
+  const iosOnly = input.target === "ios";
   for (const [artifact, platform, version, signer] of [
     [ios, "ios", input.iosBuild, input.appleSigner],
-    [android, "android", input.androidCode, input.androidSigner],
+    ...(iosOnly ? [] : [[android, "android", input.androidCode, input.androidSigner]]),
   ]) {
     if (
       !artifact ||
@@ -49,12 +53,13 @@ export function candidate(input, ios, android) {
       );
   }
   const manifest = {
-    schema: 1,
+    schema: iosOnly ? 2 : 1,
+    ...(iosOnly ? { target: "ios" } : {}),
     identity: Identity,
     sourceSha: input.sourceSha,
     version: input.version,
     iosBuild: input.iosBuild,
-    androidCode: input.androidCode,
+    ...(iosOnly ? {} : { androidCode: input.androidCode }),
     appleGroupType: "INTERNAL",
     playTrack: "internal",
     artifacts: {
@@ -63,11 +68,11 @@ export function candidate(input, ios, android) {
         bytes: ios.bytes.length,
         signer: ios.signer,
       },
-      android: {
+      ...(iosOnly ? {} : { android: {
         sha256: digest(android.bytes),
         bytes: android.bytes.length,
         signer: android.signer,
-      },
+      } }),
     },
   };
   return { ...manifest, candidateId: digest(JSON.stringify(manifest)) };
@@ -117,6 +122,8 @@ export async function distribute(
     };
   await provider.preflight(manifest); // Must validate account, signer and INTERNAL-only target before any mutation.
   if (receipt.stage === Stage.Unknown || receipt.stage === Stage.Sending) {
+    // Only retained positive transfer proof can finish the original file commit.
+    await provider.recoverUpload?.(manifest, receipt);
     const original = await provider.inspect(manifest, receipt);
     if (
       original.state !== "present" ||
@@ -174,7 +181,8 @@ export async function distribute(
   }
   return receipt;
 }
-export function credentials(environment) {
+export function credentials(environment, target = "both") {
+  if (!["both", "ios"].includes(target)) throw new Error("Invalid beta target");
   for (const name of [
     "DELIDEV_MOBILE_APPLE_ISSUER",
     "DELIDEV_MOBILE_APPLE_KEY_ID",
@@ -182,16 +190,17 @@ export function credentials(environment) {
     "DELIDEV_MOBILE_APPLE_TEAM",
     "DELIDEV_MOBILE_APPLE_APP_ID",
     "DELIDEV_MOBILE_APPLE_INTERNAL_GROUP",
-    "DELIDEV_MOBILE_GOOGLE_SERVICE_ACCOUNT",
+    ...(target === "ios" ? [] : ["DELIDEV_MOBILE_GOOGLE_SERVICE_ACCOUNT",
     "DELIDEV_MOBILE_GOOGLE_PRINCIPAL",
     "DELIDEV_MOBILE_ANDROID_KEYSTORE",
     "DELIDEV_MOBILE_ANDROID_KEY_ALIAS",
     "DELIDEV_MOBILE_ANDROID_KEY_PASSWORD",
-    "DELIDEV_MOBILE_ANDROID_STORE_PASSWORD",
+    "DELIDEV_MOBILE_ANDROID_STORE_PASSWORD"]),
   ]) {
     if (typeof environment[name] !== "string" || !environment[name].trim())
       throw new Error("Protected beta credentials are incomplete");
   }
+  if (target === "ios") return true;
   let account;
   try {
     account = JSON.parse(environment.DELIDEV_MOBILE_GOOGLE_SERVICE_ACCOUNT);
