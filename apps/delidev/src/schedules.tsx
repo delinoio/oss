@@ -1,3 +1,4 @@
+import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { useSidebarPaneVisible } from "./sidebar-context";
 // SPDX-License-Identifier: Apache-2.0
 import { Disclosure, DisclosureSummary } from "./disclosure";
@@ -15,7 +16,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, ResourceQuery, ScheduleAction, ScheduleQuery, WorkerCapability, newRequestId, isEntityId, supportsResourceSchema, type ListSchedulesResponse, type ListScheduleOccurrencesResponse, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, items, Mode, object, text, Workspace, type Document } from "./documents";
-import { ReferenceFields, ResourceChoice, TextField } from "./configuration-fields";
+import { projectRepositoryOption, ReferenceFields, ResourceChoice, TextField } from "./configuration-fields";
+import { useProjectRepositoryNames } from "./project-repositories";
 import { useRetainedMutation } from "./mutation";
 import { useLocalWorkerProof, type ReadLocalWorkerProof } from "./local-worker";
 import { ServiceProblem, Failure, Problem  } from "./ui";
@@ -40,10 +42,21 @@ function occurrencePage(response: ListScheduleOccurrencesResponse) {
 
 export function StartingReferences({ project, starting, change, active }: { project: string; starting: unknown[]; change: (value: unknown[]) => void; active: boolean }) {
   useLocale();
-  const result = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROJECT, id: project }, { enabled: active && Boolean(project) });
   const [selected, setSelected] = useState("");
+  const result = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROJECT, id: project }, { enabled: active && Boolean(project) });
   const references = starting.map(object);
-  return <fieldset><legend>{copy("schedules.startingReferenceOverrides_58881e")}</legend><p>{copy("schedules.omittedRepositoriesUseTheirSavedStarting_266784")}</p><label>{copy("schedules.addRepositoryOverride_3564ca")}<select value={selected} onChange={(event) => setSelected(event.target.value)}><option value="">{copy("schedules.selectAProjectRepository_404acc")}</option>{items(document(result.data?.resource).repositories).map(text).filter((id) => !references.some((row) => row.repository_id === id)).map((id) => <option key={id} value={id}>{id}</option>)}</select></label><button type="button" disabled={!selected || references.length >= 1000} onClick={() => { change([...starting, { repository_id: selected, reference: { type: "local-branch", name: "" } }]); setSelected(""); }}>{copy("schedules.addStartingOverride_71ea93")}</button><Problem error={result.error} />{references.map((row) => <fieldset key={text(row.repository_id)}><legend>{text(row.repository_id)}</legend><ReferenceFields label={copy("schedules.starting_23cc8e", { v0: text(row.repository_id) })} value={row.reference} change={(reference) => change(reference.type ? starting.map((value) => object(value).repository_id === row.repository_id ? { ...row, reference } : value) : starting.filter((value) => object(value).repository_id !== row.repository_id))} /><button type="button" onClick={() => change(starting.filter((value) => object(value).repository_id !== row.repository_id))}>{copy("schedules.removeStartingOverride_21a3a5")}</button></fieldset>)}</fieldset>;
+  const repositories = items(document(result.data?.resource).repositories).map(text);
+  // Retained overrides can outlive the Project's current repository list.
+  const nameIds = [...new Set([...repositories, ...references.map(row => text(row.repository_id))])];
+  const { names, loading, error, retry } = useProjectRepositoryNames(nameIds, active);
+  const label = (id: string) => projectRepositoryOption(id, nameIds.indexOf(id), names);
+  return <fieldset><legend>{copy("schedules.startingReferenceOverrides_58881e")}</legend><p>{copy("schedules.omittedRepositoriesUseTheirSavedStarting_266784")}</p>
+    <label>{copy("schedules.addRepositoryOverride_3564ca")}<select value={selected} onChange={(event) => setSelected(event.target.value)}><option value="">{copy("schedules.selectAProjectRepository_404acc")}</option>{repositories.map((id, index) => ({ id, index })).filter(({ id }) => !references.some(row => row.repository_id === id)).map(({ id, index }) => <option key={id} value={id}>{projectRepositoryOption(id, index, names)}</option>)}</select></label>
+    <button type="button" disabled={!selected || references.length >= 1000} onClick={() => { change([...starting, { repository_id: selected, reference: { type: "local-branch", name: "" } }]); setSelected(""); }}>{copy("schedules.addStartingOverride_71ea93")}</button>
+    <Problem error={result.error} />{loading ? <p role="status">{copy("project-creation.loadingNames")}</p> : null}<Problem error={error} />
+    {error ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={!active || loading} onClick={retry}>{copy("project-creation.retryRead")}</SettingsActionButton> : null}
+    {references.map(row => <fieldset key={text(row.repository_id)}><legend>{label(text(row.repository_id))}</legend><ReferenceFields label={copy("schedules.starting_23cc8e", { v0: label(text(row.repository_id)) })} value={row.reference} change={(reference) => change(reference.type ? starting.map((value) => object(value).repository_id === row.repository_id ? { ...row, reference } : value) : starting.filter((value) => object(value).repository_id !== row.repository_id))} /><button type="button" onClick={() => change(starting.filter((value) => object(value).repository_id !== row.repository_id))}>{copy("schedules.removeStartingOverride_21a3a5")}</button></fieldset>)}
+  </fieldset>;
 }
 
 export function ScheduleEditor({ initial, active, saved, cancel, readLocalWorker, protectedChange = ignoreProtectedChange }: { initial?: Resource; active: boolean; saved: (resource?: Resource) => void; cancel: () => void; readLocalWorker?: ReadLocalWorkerProof; protectedChange?: (protectedState: boolean) => void }) {

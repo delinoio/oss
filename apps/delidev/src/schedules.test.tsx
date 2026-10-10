@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -7,7 +8,7 @@ import { expect, it, vi } from "vitest";
 import { EntityKind, ResourceSchema, ResourceService, ScheduleService, WorkerService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode } from "./documents";
 import { MutationIntents } from "./mutation";
-import { ScheduleDetails, ScheduleEditor, Schedules } from "./schedules";
+import { ScheduleDetails, ScheduleEditor, Schedules, StartingReferences } from "./schedules";
 import { i18n } from "./localization";
 import { MachineSettings } from "./machine-settings";
 
@@ -25,7 +26,8 @@ function fixture() {
   const repositoryId = newRequestId();
   const project = create(ResourceSchema, { id: definition.project_id, kind: EntityKind.PROJECT, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Selected project", repositories: [repositoryId], base: { type: "local-branch", name: "main" } }) });
   const agent = create(ResourceSchema, { id: definition.agent_id, kind: EntityKind.AGENT, schemaVersion: 4, revision: 1n, documentJson: encode({ name: "Selected agent", harness: "codex", routes: [{ model: { provider_id: newRequestId(), native_id: "fixture-native-model", input_modalities: ["text"], metadata_source: "unknown" }, accounts: [{ id: newRequestId(), weight: 1 }] }], templates: [], options: { permission: "default" } }) });
-  const resources = [machine, project, agent];
+  const repository = create(ResourceSchema, { id: repositoryId, kind: EntityKind.REPOSITORY, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "oss" }) });
+  const resources = [machine, project, agent, repository];
   const list = vi.fn(async (request: { filter?: { kind: EntityKind; pageToken: string } }) => ({ resources: resources.filter((row) => row.kind === request.filter?.kind), nextPageToken: "" }));
   const get = vi.fn(async (request: { kind: EntityKind; id: string }) => ({ resource: request.kind === EntityKind.JOB ? job : resources.find((row) => row.id === request.id) }));
   const transport = createRouterTransport((router) => {
@@ -225,15 +227,15 @@ it.each([["0 0 31 2 *", "UTC"], ["0 9 * * 1-5", "unknown/zone"]])("retains serve
 it("keeps complete reference drafts mounted behind the disclosure and clears them on project change", async () => {
   const value = fixture(); render(value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />)); await fillCreation(value);
   const disclosure = screen.getByRole("button", { name: /Starting reference overrides/ }); fireEvent.click(disclosure);
-  await within(screen.getByLabelText("Add repository override")).findByRole("option", { name: value.repositoryId });
+  await within(screen.getByLabelText("Add repository override")).findByRole("option", { name: "oss" });
   choose("Add repository override", value.repositoryId); fireEvent.click(screen.getByRole("button", { name: "Add starting override" }));
-  const reference = screen.getByLabelText(`Starting ${value.repositoryId} name`); fireEvent.change(reference, { target: { value: "retained-branch" } });
+  const reference = screen.getByLabelText("Starting oss name"); fireEvent.change(reference, { target: { value: "retained-branch" } });
   expect(disclosure.textContent).toContain("1 override"); fireEvent.click(disclosure); fireEvent.click(disclosure);
-  expect(screen.getByLabelText(`Starting ${value.repositoryId} name`)).toBe(reference); expect((reference as HTMLInputElement).value).toBe("retained-branch");
+  expect(screen.getByLabelText("Starting oss name")).toBe(reference); expect((reference as HTMLInputElement).value).toBe("retained-branch");
   fireEvent.click(screen.getByRole("button", { name: "Remove starting override" })); expect(disclosure.textContent).toContain("Using saved project references");
   choose("Add repository override", value.repositoryId); fireEvent.click(screen.getByRole("button", { name: "Add starting override" }));
   goStep(0); fireEvent.click(screen.getByRole("combobox", { name: "Project" })); fireEvent.click(screen.getByRole("option", { name: "Select project" }));
-  await waitFor(() => expect(disclosure.textContent).toContain("Using saved project references")); expect(screen.queryByLabelText(`Starting ${value.repositoryId} name`)).toBeNull();
+  await waitFor(() => expect(disclosure.textContent).toContain("Using saved project references")); expect(screen.queryByLabelText("Starting oss name")).toBeNull();
   expect(document(value.project)).toMatchObject({ base: { name: "main" } });
 });
 
@@ -358,7 +360,7 @@ it("validates each wizard step, retains drafts through Back and Edit, and only R
  fireEvent.change(name,{target:{value:""}});fireEvent.click(screen.getByRole("button",{name:"Create schedule"}));expect(globalThis.document.activeElement).toBe(name);expect(screen.queryByRole("button",{name:"Create schedule"})).toBeNull();expect(value.save).not.toHaveBeenCalled();
 });
 it("opens the Execution step and collapsed overrides for an invalid reference",async()=>{
- const value=fixture();render(value.view(<ScheduleEditor active saved={()=>{}} cancel={()=>{}}/>));await fillCreation(value);const disclosure=screen.getByRole("button",{name:/Starting reference overrides/});fireEvent.click(disclosure);await within(screen.getByLabelText("Add repository override")).findByRole("option",{name:value.repositoryId});choose("Add repository override",value.repositoryId);fireEvent.click(screen.getByRole("button",{name:"Add starting override"}));const field=screen.getByLabelText(`Starting ${value.repositoryId} name`);fireEvent.click(disclosure);fireEvent.click(screen.getByRole("button",{name:"Next"}));expect(disclosure.getAttribute("aria-expanded")).toBe("true");expect(globalThis.document.activeElement).toBe(field);expect(value.save).not.toHaveBeenCalled();
+ const value=fixture();render(value.view(<ScheduleEditor active saved={()=>{}} cancel={()=>{}}/>));await fillCreation(value);const disclosure=screen.getByRole("button",{name:/Starting reference overrides/});fireEvent.click(disclosure);await within(screen.getByLabelText("Add repository override")).findByRole("option",{name:"oss"});choose("Add repository override",value.repositoryId);fireEvent.click(screen.getByRole("button",{name:"Add starting override"}));const field=screen.getByLabelText("Starting oss name");fireEvent.click(disclosure);fireEvent.click(screen.getByRole("button",{name:"Next"}));expect(disclosure.getAttribute("aria-expanded")).toBe("true");expect(globalThis.document.activeElement).toBe(field);expect(value.save).not.toHaveBeenCalled();
 });
 
 it("retains exact Review labels through locale changes without another choice read or save", async () => {
@@ -425,4 +427,66 @@ it.each([
   expect(screen.getByRole("button", { name: "Next" })).toHaveProperty("disabled", false);
   goStep(3); expect(globalThis.document.querySelector(".schedule-creation-review")?.textContent).toContain("Replacement selection");
   expect(screen.getByText(replacement.id)).toBeTruthy(); expect(value.save).not.toHaveBeenCalled();
+});
+
+
+function StartingFixture({project,initial=[]}:{project:string;initial:unknown[]}){
+ const [starting,setStarting]=useState(initial);
+ return <StartingReferences project={project} starting={starting} change={setStarting} active/>;
+}
+it("labels duplicate schedule repositories by their original positions and saves the selected UUID",async()=>{
+ const value=fixture(),second=newRequestId();
+ value.resources.push(create(ResourceSchema,{id:second,kind:EntityKind.REPOSITORY,schemaVersion:1,revision:1n,documentJson:encode({name:"oss"})}));
+ value.project.documentJson=encode({...document(value.project),repositories:[value.repositoryId,second]});
+ render(value.view(<ScheduleEditor initial={value.schedule} active saved={()=>{}} cancel={()=>{}}/>));
+ await screen.findByRole("option",{name:"oss (entry 2)"});
+ choose("Add repository override",second);fireEvent.click(screen.getByRole("button",{name:"Add starting override"}));
+ const field=screen.getByLabelText("Starting oss (entry 2) name");fireEvent.change(field,{target:{value:"feature/retained"}});
+ expect(screen.getByRole("option",{name:"oss (entry 1)"})).toBeTruthy();expect(screen.queryByRole("option",{name:"oss (entry 2)"})).toBeNull();
+ fireEvent.click(screen.getByRole("button",{name:"Save schedule"}));await waitFor(()=>expect(value.save).toHaveBeenCalledOnce());
+ const request=value.save.mock.calls[0][0] as {definitionJson:Uint8Array;mutation:{expectedRevision:bigint}};
+ expect(JSON.parse(new TextDecoder().decode(request.definitionJson)).starting).toEqual([{repository_id:second,reference:{type:"local-branch",name:"feature/retained"}}]);expect(request.mutation.expectedRevision).toBe(3n);
+});
+it.each(["missing","unsupported","invalid","failure"])("preserves retained schedule overrides when repository names are %s",async(kind)=>{
+ const value=fixture(),initial=[{repository_id:value.repositoryId,reference:{type:"local-branch",name:"retained"}}];
+ const original=value.get.getMockImplementation()!;
+ value.get.mockImplementation(async(request)=>{
+  if(request.id===value.repositoryId){
+   if(kind==="failure")throw new ConnectError("private provider detail",Code.Unavailable);
+   if(kind==="missing")return {resource:undefined};
+   return {resource:create(ResourceSchema,{id:value.repositoryId,kind:EntityKind.REPOSITORY,schemaVersion:kind==="unsupported"?999:1,revision:1n,documentJson:encode({name:kind==="invalid"?"\0":"wrong name"})})};
+  }
+  return original(request);
+ });
+ render(value.view(<StartingFixture project={value.project.id} initial={initial}/>));
+ await waitFor(()=>expect(screen.queryByText("Loading selected repository names…")).toBeNull());
+ expect((screen.getByLabelText("Starting Repository name unavailable (entry 1) name") as HTMLInputElement).value).toBe("retained");
+ expect(globalThis.document.body.textContent).not.toContain(value.repositoryId);expect(globalThis.document.body.textContent).not.toContain("private provider detail");
+ if(kind==="failure"||kind==="missing"){
+  value.get.mockImplementation(original);fireEvent.click(screen.getByRole("button",{name:"Retry repository loading"}));
+  await screen.findByLabelText("Starting oss name");expect((screen.getByLabelText("Starting oss name") as HTMLInputElement).value).toBe("retained");
+ }
+ fireEvent.click(screen.getByRole("button",{name:"Remove starting override"}));
+ await screen.findByRole("option",{name:kind==="failure"||kind==="missing"?"oss":"Repository name unavailable (entry 1)"});
+ expect(value.save).not.toHaveBeenCalled();
+});
+it("rejects delayed repository names from the previous schedule Project",async()=>{
+ const value=fixture(),otherProject=newRequestId(),otherRepository=newRequestId();let finish!:(value:{resource:Resource})=>void;
+ value.resources.push(create(ResourceSchema,{id:otherProject,kind:EntityKind.PROJECT,schemaVersion:1,revision:1n,documentJson:encode({repositories:[otherRepository]})}),create(ResourceSchema,{id:otherRepository,kind:EntityKind.REPOSITORY,schemaVersion:1,revision:1n,documentJson:encode({name:"Current repository"})}));
+ const original=value.get.getMockImplementation()!;
+ value.get.mockImplementation(async(request)=>request.id===value.repositoryId?new Promise<{resource:Resource}>(resolve=>{finish=resolve;}):original(request));
+ const mounted=render(value.view(<StartingFixture key={value.project.id} project={value.project.id} initial={[]}/>));
+ await waitFor(()=>expect(finish).toBeDefined());expect(screen.getByText("Loading selected repository names…")).toBeTruthy();expect(globalThis.document.body.textContent).not.toContain(value.repositoryId);
+ mounted.rerender(value.view(<StartingFixture key={otherProject} project={otherProject} initial={[]}/>));await screen.findByRole("option",{name:"Current repository"});
+ await act(async()=>finish({resource:create(ResourceSchema,{id:value.repositoryId,kind:EntityKind.REPOSITORY,schemaVersion:1,revision:1n,documentJson:encode({name:"Previous repository"})})}));
+ expect(screen.queryByRole("option",{name:"Previous repository"})).toBeNull();expect(screen.getByRole("option",{name:"Current repository"}).getAttribute("value")).toBe(otherRepository);expect(value.save).not.toHaveBeenCalled();
+});
+
+it("resolves retained override names outside the current Project without changing their references",async()=>{
+ const value=fixture(),retained=newRequestId(),name="repository/"+"long-name".repeat(20);
+ value.resources.push(create(ResourceSchema,{id:retained,kind:EntityKind.REPOSITORY,schemaVersion:1,revision:1n,documentJson:encode({name})}));
+ render(value.view(<StartingFixture project={value.project.id} initial={[{repository_id:retained,reference:{type:"local-branch",name:"saved-branch"}}]}/>));
+ const field=await screen.findByLabelText(`Starting ${name} name`);expect((field as HTMLInputElement).value).toBe("saved-branch");
+ expect(screen.getByRole("option",{name:"oss"}).getAttribute("value")).toBe(value.repositoryId);
+ await act(async()=>{await i18n.changeLanguage("ko");});expect((field as HTMLInputElement).value).toBe("saved-branch");expect(globalThis.document.body.textContent).toContain(name);expect(value.save).not.toHaveBeenCalled();
 });
