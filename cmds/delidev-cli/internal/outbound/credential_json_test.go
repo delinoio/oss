@@ -163,10 +163,17 @@ func (r *blockedCredentialPrefix) Read(p []byte) (int, error) {
 }
 func (r *blockedCredentialPrefix) Close() error { close(r.closed); return nil }
 func TestCredentialJSONCancellationJoinsWithoutReleasingPrefix(t *testing.T) {
-	original := &blockedCredentialPrefix{prefix: []byte(`{"value":"\u0066`), reading: make(chan struct{}), closed: make(chan struct{})}
+	assertCredentialCancellationWithheld(t, `{"value":"\u0066`, `{"value":"`)
+}
+func TestCredentialSSECancellationJoinsWithoutReleasingPrefix(t *testing.T) {
+	assertCredentialCancellationWithheld(t, ": \"\ndata: {\"value\":\"\\u0066", ": \"\ndata: {\"value\":\"")
+}
+func assertCredentialCancellationWithheld(t *testing.T, prefix, released string) {
+	t.Helper()
+	original := &blockedCredentialPrefix{prefix: []byte(prefix), reading: make(chan struct{}), closed: make(chan struct{})}
 	guard := newCredentialBody(original, domain.ProxyCredential{Username: "fixture-user", Password: "fixture-password"})
 	buffer := make([]byte, 256)
-	if n, err := guard.Read(buffer); err != nil || string(buffer[:n]) != `{"value":"` {
+	if n, err := guard.Read(buffer); err != nil || string(buffer[:n]) != released {
 		t.Fatal("unresolved escape was released", err)
 	}
 	readDone := make(chan int, 1)

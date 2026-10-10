@@ -20,6 +20,9 @@ type credentialJSONGuard struct {
 	previous        byte
 	hasPrevious     bool
 	failed          bool
+	framing         credentialFraming
+	probe           []byte
+	sse             credentialSSEFraming
 }
 
 func (g *credentialJSONGuard) retainFrom() int64 {
@@ -36,7 +39,7 @@ func (g *credentialJSONGuard) scan(raw []byte) bool {
 	for _, b := range raw {
 		offset := g.position
 		g.position++
-		g.feed(b, offset)
+		g.frame(b, offset)
 		if g.failed {
 			return true
 		}
@@ -175,6 +178,8 @@ func (g *credentialJSONGuard) resetString() {
 	g.inside = false
 }
 func (g *credentialJSONGuard) clear() {
+	clear(g.probe)
+	g.probe = nil
 	clear(g.escape)
 	g.escape = nil
 	g.resetString()
