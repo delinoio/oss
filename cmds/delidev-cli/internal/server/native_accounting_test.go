@@ -8,6 +8,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
@@ -119,5 +120,22 @@ func TestClaudeUncorrelatedDenialDoesNotCreateAccountingUnit(t *testing.T) {
 	})
 	if err != nil || summary.NativeAccounting == nil || summary.NativeAccounting[0].Totals.Units != 0 || summary.Totals.Responses != 0 {
 		t.Fatal("uncorrelated denial entered accounting", summary, err)
+	}
+}
+
+func TestNativeAccountingWirePreservesOriginalServiceAndAPIIdentity(t *testing.T) {
+	for _, service := range []domain.SubscriptionService{"", domain.SubscriptionOpenCodeGo} {
+		provider := domain.NewID()
+		if service != "" {
+			provider = ""
+		}
+		model := domain.ModelIdentity{ProviderID: provider, SubscriptionService: service, NativeID: "fixture"}
+		group := domain.NativeAccountingGroup{SessionID: domain.NewID(), ProjectID: domain.NewID(), AccountID: domain.NewID(), ProviderID: provider, SubscriptionService: service, ModelID: model.Key(), Totals: domain.NativeAccountingTotals{Kind: domain.OpenCodeStep, Units: 1}}
+		wire := nativeSummary(domain.NativeAccountingSummary{Groups: []domain.NativeAccountingGroup{group}, Models: []domain.NativeAccountingGroup{group}})
+		for _, value := range append(wire.Groups, wire.Models...) {
+			if value.ProviderId != string(provider) || value.SubscriptionService != rpc.WireSubscriptionService(service) || value.AccountId != string(group.AccountID) || value.Model.NativeId != model.NativeID || value.Model.SubscriptionService != rpc.WireSubscriptionService(service) || value.Model.ProviderId != string(provider) || value.Totals.Units != 1 {
+				t.Fatal("wire discarded original source identity", value)
+			}
+		}
 	}
 }

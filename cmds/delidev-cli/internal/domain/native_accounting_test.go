@@ -129,3 +129,54 @@ func TestOpenCodeAccountingPricesDisjointStepsWithUnavailableZeros(t *testing.T)
 		t.Fatal("assistant summary fabricated a step")
 	}
 }
+
+func TestOpenCodeAccountingRequiresExactProviderOrGoService(t *testing.T) {
+	base := nativeUnitFixture()
+	a := base.Attribution()
+	makeUnit := func(provider ID, service SubscriptionService) NativeAccountingUnit {
+		return NativeAccountingUnit{Kind: OpenCodeStep, SourceID: NewID(), RequestID: NewID(), SessionID: base.SessionID, InputID: base.InputID, OpenCode: &OpenCodeUsageRecord{ExecutionID: a.ExecutionID, AccountID: a.AccountID, ConnectionID: a.ConnectionID, ProviderID: provider, SubscriptionService: service, ModelID: (ModelIdentity{ProviderID: provider, SubscriptionService: service, NativeID: "fixture"}).Key(), Harness: OpenCode, Version: OpenCodeProtocolVersion, ThreadID: "ses_01960dcbe1faABCDEFGHIJKLMN", TurnID: "msg_01960dcbe1faABCDEFGHIJKLMN", Sequence: 2, Usage: OpenCodeUsageObservation{Source: OpenCodeStepUsage, NativeID: "prt_01960dcbe1faABCDEFGHIJKLMN", NativeParentID: "msg_01960dcbe1faABCDEFGHIJKLMN", Counts: OpenCodeTokenCounts{Input: "12", CacheRead: "7", CacheWrite: "3", Output: "8", Reasoning: "2"}, NativeEstimate: "999"}}}
+	}
+	for _, tc := range []struct {
+		name     string
+		provider ID
+		service  SubscriptionService
+		valid    bool
+	}{
+		{"api", a.ProviderID, "", true}, {"go", "", SubscriptionOpenCodeGo, true},
+		{"empty", "", "", false}, {"invalid-provider", "invalid", "", false},
+		{"mixed", a.ProviderID, SubscriptionOpenCodeGo, false}, {"foreign-service", "", SubscriptionClaude, false}, {"unknown-service", "", "unknown", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			u := makeUnit(tc.provider, tc.service)
+			if (u.Validate() == nil) != tc.valid {
+				t.Fatal("source identity validation mismatch")
+			}
+			if !tc.valid {
+				return
+			}
+			if u.Attribution().SubscriptionService != tc.service || u.Attribution().ProviderID != tc.provider || u.Attribution().AccountID != a.AccountID {
+				t.Fatal("original source attribution changed")
+			}
+			rate := "1"
+			p := PricingVersion{ID: NewID(), ProviderID: tc.provider, SubscriptionService: tc.service, ModelID: u.OpenCode.ModelID, Basis: TokenPricing{Currency: "USD", Source: "Fixture", AsOf: "2026-10-10", InputMode: UniformInputPrice, InputPerMillion: &rate, OutputPerMillion: &rate}}
+			e, err := EstimateNativeInput(u, p)
+			if err != nil || e.KnownAmount != "0.000032" || e.Coverage != EstimateComplete {
+				t.Fatal("exact step price changed", e, err)
+			}
+			p.SubscriptionService = SubscriptionChatGPT
+			if _, err := EstimateNativeInput(u, p); err == nil {
+				t.Fatal("foreign subscription price accepted")
+			}
+			u.OpenCode.ModelID = (ModelIdentity{ProviderID: NewID(), NativeID: "fixture"}).Key()
+			if u.Validate() == nil {
+				t.Fatal("foreign source model accepted")
+			}
+		})
+	}
+	base.Observation.ProviderID = ""
+	base.Observation.SubscriptionService = SubscriptionOpenCodeGo
+	base.Observation.ModelID = (ModelIdentity{SubscriptionService: SubscriptionOpenCodeGo, NativeID: "fixture"}).Key()
+	if base.Validate() == nil {
+		t.Fatal("OpenCode service accepted for Claude accounting")
+	}
+}

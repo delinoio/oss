@@ -49,7 +49,7 @@ func (t *Tx) PutClaudeAccounting(source, input, session, project domain.ID, o do
 	}
 	e := domain.UnpricedNativeEstimate()
 	var priceID any
-	if p != nil && p.ProviderID == o.ProviderID {
+	if p != nil && p.ProviderID == o.ProviderID && p.SubscriptionService == o.SubscriptionService {
 		e, err = domain.EstimateNativeInput(u, *p)
 		if err != nil {
 			return err
@@ -123,7 +123,14 @@ func (t *Tx) nativeAccountingSummary(f domain.UsageSelection, kind domain.Accoun
 		}
 	}
 	if f.SubscriptionService != "" {
-		where += " AND 0"
+		if kind == domain.OpenCodeStep {
+			// Service identity already resides in the immutable body and source
+			// model key. No synthetic Provider index or schema migration is needed.
+			where += " AND json_extract(body,'$.opencode.subscription_service')=?"
+			args = append(args, f.SubscriptionService)
+		} else {
+			where += " AND 0"
+		}
 	}
 	if f.GeneralChat {
 		where += " AND project_id=''"
@@ -206,7 +213,7 @@ func (t *Tx) nativeAccountingSummary(f domain.UsageSelection, kind domain.Accoun
 			if len(groups) >= maxUsageGroups {
 				return domain.NativeAccountingSummary{}, usageReadLimit()
 			}
-			g = &domain.NativeAccountingGroup{SessionID: u.SessionID, ProjectID: u.ProjectID, AccountID: u.Attribution().AccountID, ProviderID: u.Attribution().ProviderID, ModelID: u.Attribution().ModelID}
+			g = &domain.NativeAccountingGroup{SessionID: u.SessionID, ProjectID: u.ProjectID, AccountID: u.Attribution().AccountID, ProviderID: u.Attribution().ProviderID, SubscriptionService: u.Attribution().SubscriptionService, ModelID: u.Attribution().ModelID}
 			groups[key] = g
 		}
 		if g.ProjectID != u.ProjectID {
@@ -234,7 +241,7 @@ func (t *Tx) nativeAccountingSummary(f domain.UsageSelection, kind domain.Accoun
 			if len(models) >= maxUsageGroups {
 				return domain.NativeAccountingSummary{}, usageReadLimit()
 			}
-			m = &domain.NativeAccountingGroup{ProviderID: u.Attribution().ProviderID, ModelID: u.Attribution().ModelID}
+			m = &domain.NativeAccountingGroup{ProviderID: u.Attribution().ProviderID, SubscriptionService: u.Attribution().SubscriptionService, ModelID: u.Attribution().ModelID}
 			models[modelKey] = m
 		}
 		m.Totals.Add(u, e)
@@ -289,7 +296,7 @@ func (t *Tx) PutOpenCodeAccounting(source, input, session, project domain.ID, o 
 	}
 	e := domain.UnpricedNativeEstimate()
 	var priceID any
-	if p != nil && p.ProviderID == o.ProviderID {
+	if p != nil && p.ProviderID == o.ProviderID && p.SubscriptionService == o.SubscriptionService {
 		e, err = domain.EstimateNativeInput(u, *p)
 		if err != nil {
 			return err

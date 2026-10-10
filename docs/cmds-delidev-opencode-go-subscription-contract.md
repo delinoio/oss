@@ -28,6 +28,14 @@ Settings appends OpenCode Go / For OpenCode to existing flat service rows with l
 
 ## Storage
 
+OpenCode step usage and native accounting preserve the original `opencode_go`
+service, account, connection, execution and source-model key with no Provider
+substitute. Their original transaction accepts both records atomically. Exact
+receipt replay never adds a second unit; conflicting native step publications
+fail without changing retained counts. Historical pricing and authorized
+service/account/model summaries retain the same service attribution under the
+[usage contract](cmds-delidev-usage-contract.md#claude-and-opencode-input-accounting).
+
 Reuse schema-2 service Accounts, service Models, immutable execution/job/session documents and protected server `AccountAPI` vault references. Do not create native login IDs, login state, OAuth attempts, bundles or Worker key copies. Portable configuration contains no credential/native authority; restored Accounts remain disconnected and protected cleanup remains independent. No SQLite migration or schema conversion is introduced.
 
 ## Security

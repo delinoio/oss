@@ -279,6 +279,17 @@ or prices native aggregates.
 
 ### Claude and OpenCode input accounting
 
+OpenCode step units retain exactly one original API Provider UUID or the closed
+`opencode_go` subscription identity with an empty Provider. Reject absent,
+foreign or mixed identities and any mismatched source-model key; Claude input
+units retain their API Provider ownership. Preserve the service in immutable
+attribution, source filtering, group/model projections, wire summaries and
+historical pricing checks. Service filtering uses the original accounting body
+and source-model key without a synthetic Provider or schema migration. A price
+must match the original model, Provider and service together. Exact source/receipt
+deduplication, atomic usage/accounting acceptance and original counts remain
+unchanged; service metadata grants no new inference or recovery authority.
+
 Schema 26 composes the priced input ledger with schema 25 without rewriting any
 Grok body or repricing retained observations. It rebuilds the shared table to
 retain immutable source, assignment and original price-version references. The
