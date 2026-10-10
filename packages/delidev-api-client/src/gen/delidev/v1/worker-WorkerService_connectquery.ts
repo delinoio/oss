@@ -5,6 +5,16 @@
 import { WorkerService } from "./worker_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.WorkerService.ClaimCodexAppsControl
+ */
+export const claimCodexAppsControl = WorkerService.method.claimCodexAppsControl;
+
+/**
+ * @generated from rpc delidev.v1.WorkerService.ReportCodexAppsControlResult
+ */
+export const reportCodexAppsControlResult = WorkerService.method.reportCodexAppsControlResult;
+
+/**
  * @generated from rpc delidev.v1.WorkerService.SyncWorkerNetwork
  */
 export const syncWorkerNetwork = WorkerService.method.syncWorkerNetwork;

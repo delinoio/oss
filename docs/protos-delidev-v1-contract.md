@@ -1,5 +1,21 @@
 # DeliDev v1 Connect contract
 
+## Original Codex apps allocation
+
+Issue #2003 owns System `CODEX_APPS_V1 = 87`, Worker `CODEX_APPS_V1 = 59`
+and `WatchWorkResponse.codex_apps_control = 9`. Preserve fields 1–7 and
+independent goal-control ownership of field 8 (#1996). The complete owning
+feature includes `CodexAppsService` Get, Inspect, Select and Revoke operations,
+the closed `CodexAppsControl` execution-job/operation/revision fields 1–3, and
+the separate Worker Claim/Report control request and response messages.
+Selections, inventories and once-only operation receipts use closed metadata
+documents in the existing typed storage boundary; no SQLite migration is added.
+Declarations alone grant no native support, account access, plugin installation,
+connector OAuth, arbitrary MCP configuration or execution authority. Activation
+must retain the original account lease, immutable generations, original native
+call identities and independently observed cleanup. A native config-file write
+alone cannot confirm a live revocation or grant positive no-send proof.
+
 ## Machine heartbeat read projection
 
 Machine Get, List and Snapshot Resources project the exact Machine's current

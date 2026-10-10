@@ -1,0 +1,58 @@
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+package delidev.v1;
+
+import "delidev/v1/common.proto";
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
+
+// Original-account selections and observations are independent of plugin
+// installation, arbitrary MCP configuration and new provider authentication.
+service CodexAppsService {
+  rpc GetCodexApps(GetCodexAppsRequest) returns (CodexAppsResponse);
+  rpc InspectCodexApps(InspectCodexAppsRequest) returns (CodexAppsResponse);
+  rpc SelectCodexApps(SelectCodexAppsRequest) returns (CodexAppsResponse);
+  rpc RevokeCodexApps(RevokeCodexAppsRequest) returns (CodexAppsResponse);
+}
+
+message GetCodexAppsRequest {
+  string session_id = 1;
+}
+
+message InspectCodexAppsRequest {
+  // The mutation names the original session and its current revision.
+  Mutation mutation = 1;
+  string account_id = 2;
+  string configuration_generation = 3;
+  uint64 account_revision = 4;
+}
+
+message SelectCodexAppsRequest {
+  // Positive authority is accepted only for the next idle execution generation.
+  Mutation mutation = 1;
+  string account_id = 2;
+  string configuration_generation = 3;
+  repeated string app_ids = 4;
+  uint64 account_revision = 5;
+}
+
+message RevokeCodexAppsRequest {
+  Mutation mutation = 1;
+  string account_id = 2;
+  string configuration_generation = 3;
+  // IDs to remove; a live controller cannot gain new app authority.
+  repeated string app_ids = 4;
+}
+
+message CodexAppsResponse {
+  Resource configuration = 1;
+  Resource operation = 2;
+  Resource inventory = 3;
+  bool replayed = 4;
+}
+
+message CodexAppsControl {
+  string execution_job_id = 1;
+  string apps_operation_id = 2;
+  uint64 revision = 3;
+}

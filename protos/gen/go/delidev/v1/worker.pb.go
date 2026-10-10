@@ -25,6 +25,7 @@ type WorkerCapability int32
 
 const (
 	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED                    WorkerCapability = 0
+	WorkerCapability_WORKER_CAPABILITY_CODEX_APPS_V1                  WorkerCapability = 59
 	WorkerCapability_WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1           WorkerCapability = 52
 	WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1      WorkerCapability = 22
 	WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1    WorkerCapability = 50
@@ -68,6 +69,7 @@ const (
 var (
 	WorkerCapability_name = map[int32]string{
 		0:  "WORKER_CAPABILITY_UNSPECIFIED",
+		59: "WORKER_CAPABILITY_CODEX_APPS_V1",
 		52: "WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1",
 		22: "WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1",
 		50: "WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1",
@@ -107,6 +109,7 @@ var (
 	}
 	WorkerCapability_value = map[string]int32{
 		"WORKER_CAPABILITY_UNSPECIFIED":                       0,
+		"WORKER_CAPABILITY_CODEX_APPS_V1":                     59,
 		"WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1":              52,
 		"WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1":         22,
 		"WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1":       50,
@@ -1683,6 +1686,8 @@ type WatchWorkResponse struct {
 	QuestionResponse *QuestionResponseControl `protobuf:"bytes,5,opt,name=question_response,json=questionResponse,proto3" json:"question_response,omitempty"`
 	SteerInput       *SteerInputControl       `protobuf:"bytes,6,opt,name=steer_input,json=steerInput,proto3" json:"steer_input,omitempty"`
 	ApprovalResponse *ApprovalResponseControl `protobuf:"bytes,7,opt,name=approval_response,json=approvalResponse,proto3" json:"approval_response,omitempty"`
+	// Field 8 belongs to independent original goal controls (#1996).
+	CodexAppsControl *CodexAppsControl `protobuf:"bytes,9,opt,name=codex_apps_control,json=codexAppsControl,proto3" json:"codex_apps_control,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -1766,6 +1771,277 @@ func (x *WatchWorkResponse) GetApprovalResponse() *ApprovalResponseControl {
 	return nil
 }
 
+func (x *WatchWorkResponse) GetCodexAppsControl() *CodexAppsControl {
+	if x != nil {
+		return x.CodexAppsControl
+	}
+	return nil
+}
+
+type ClaimCodexAppsControlRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Mutation       *Mutation              `protobuf:"bytes,1,opt,name=mutation,proto3" json:"mutation,omitempty"`
+	MachineId      string                 `protobuf:"bytes,2,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
+	InstanceId     string                 `protobuf:"bytes,3,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	ExecutionJobId string                 `protobuf:"bytes,4,opt,name=execution_job_id,json=executionJobId,proto3" json:"execution_job_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ClaimCodexAppsControlRequest) Reset() {
+	*x = ClaimCodexAppsControlRequest{}
+	mi := &file_delidev_v1_worker_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClaimCodexAppsControlRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClaimCodexAppsControlRequest) ProtoMessage() {}
+
+func (x *ClaimCodexAppsControlRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_worker_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClaimCodexAppsControlRequest.ProtoReflect.Descriptor instead.
+func (*ClaimCodexAppsControlRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ClaimCodexAppsControlRequest) GetMutation() *Mutation {
+	if x != nil {
+		return x.Mutation
+	}
+	return nil
+}
+
+func (x *ClaimCodexAppsControlRequest) GetMachineId() string {
+	if x != nil {
+		return x.MachineId
+	}
+	return ""
+}
+
+func (x *ClaimCodexAppsControlRequest) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *ClaimCodexAppsControlRequest) GetExecutionJobId() string {
+	if x != nil {
+		return x.ExecutionJobId
+	}
+	return ""
+}
+
+type ClaimCodexAppsControlResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Operation     *Resource              `protobuf:"bytes,1,opt,name=operation,proto3" json:"operation,omitempty"`
+	InputJson     []byte                 `protobuf:"bytes,2,opt,name=input_json,json=inputJson,proto3" json:"input_json,omitempty"`
+	Replayed      bool                   `protobuf:"varint,3,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClaimCodexAppsControlResponse) Reset() {
+	*x = ClaimCodexAppsControlResponse{}
+	mi := &file_delidev_v1_worker_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClaimCodexAppsControlResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClaimCodexAppsControlResponse) ProtoMessage() {}
+
+func (x *ClaimCodexAppsControlResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_worker_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClaimCodexAppsControlResponse.ProtoReflect.Descriptor instead.
+func (*ClaimCodexAppsControlResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ClaimCodexAppsControlResponse) GetOperation() *Resource {
+	if x != nil {
+		return x.Operation
+	}
+	return nil
+}
+
+func (x *ClaimCodexAppsControlResponse) GetInputJson() []byte {
+	if x != nil {
+		return x.InputJson
+	}
+	return nil
+}
+
+func (x *ClaimCodexAppsControlResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+type ReportCodexAppsControlResultRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Mutation       *Mutation              `protobuf:"bytes,1,opt,name=mutation,proto3" json:"mutation,omitempty"`
+	MachineId      string                 `protobuf:"bytes,2,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
+	InstanceId     string                 `protobuf:"bytes,3,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	ExecutionJobId string                 `protobuf:"bytes,4,opt,name=execution_job_id,json=executionJobId,proto3" json:"execution_job_id,omitempty"`
+	OutputJson     []byte                 `protobuf:"bytes,5,opt,name=output_json,json=outputJson,proto3" json:"output_json,omitempty"`
+	Problem        *ErrorDetail           `protobuf:"bytes,6,opt,name=problem,proto3" json:"problem,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ReportCodexAppsControlResultRequest) Reset() {
+	*x = ReportCodexAppsControlResultRequest{}
+	mi := &file_delidev_v1_worker_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportCodexAppsControlResultRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportCodexAppsControlResultRequest) ProtoMessage() {}
+
+func (x *ReportCodexAppsControlResultRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_worker_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportCodexAppsControlResultRequest.ProtoReflect.Descriptor instead.
+func (*ReportCodexAppsControlResultRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ReportCodexAppsControlResultRequest) GetMutation() *Mutation {
+	if x != nil {
+		return x.Mutation
+	}
+	return nil
+}
+
+func (x *ReportCodexAppsControlResultRequest) GetMachineId() string {
+	if x != nil {
+		return x.MachineId
+	}
+	return ""
+}
+
+func (x *ReportCodexAppsControlResultRequest) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
+func (x *ReportCodexAppsControlResultRequest) GetExecutionJobId() string {
+	if x != nil {
+		return x.ExecutionJobId
+	}
+	return ""
+}
+
+func (x *ReportCodexAppsControlResultRequest) GetOutputJson() []byte {
+	if x != nil {
+		return x.OutputJson
+	}
+	return nil
+}
+
+func (x *ReportCodexAppsControlResultRequest) GetProblem() *ErrorDetail {
+	if x != nil {
+		return x.Problem
+	}
+	return nil
+}
+
+type ReportCodexAppsControlResultResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Operation     *Resource              `protobuf:"bytes,1,opt,name=operation,proto3" json:"operation,omitempty"`
+	Replayed      bool                   `protobuf:"varint,2,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportCodexAppsControlResultResponse) Reset() {
+	*x = ReportCodexAppsControlResultResponse{}
+	mi := &file_delidev_v1_worker_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportCodexAppsControlResultResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportCodexAppsControlResultResponse) ProtoMessage() {}
+
+func (x *ReportCodexAppsControlResultResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_worker_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportCodexAppsControlResultResponse.ProtoReflect.Descriptor instead.
+func (*ReportCodexAppsControlResultResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ReportCodexAppsControlResultResponse) GetOperation() *Resource {
+	if x != nil {
+		return x.Operation
+	}
+	return nil
+}
+
+func (x *ReportCodexAppsControlResultResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
 type SteerInputControl struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
@@ -1777,7 +2053,7 @@ type SteerInputControl struct {
 
 func (x *SteerInputControl) Reset() {
 	*x = SteerInputControl{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[17]
+	mi := &file_delidev_v1_worker_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1789,7 +2065,7 @@ func (x *SteerInputControl) String() string {
 func (*SteerInputControl) ProtoMessage() {}
 
 func (x *SteerInputControl) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[17]
+	mi := &file_delidev_v1_worker_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1802,7 +2078,7 @@ func (x *SteerInputControl) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SteerInputControl.ProtoReflect.Descriptor instead.
 func (*SteerInputControl) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{17}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *SteerInputControl) GetJobId() string {
@@ -1838,7 +2114,7 @@ type QuestionResponseControl struct {
 
 func (x *QuestionResponseControl) Reset() {
 	*x = QuestionResponseControl{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[18]
+	mi := &file_delidev_v1_worker_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1850,7 +2126,7 @@ func (x *QuestionResponseControl) String() string {
 func (*QuestionResponseControl) ProtoMessage() {}
 
 func (x *QuestionResponseControl) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[18]
+	mi := &file_delidev_v1_worker_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1863,7 +2139,7 @@ func (x *QuestionResponseControl) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuestionResponseControl.ProtoReflect.Descriptor instead.
 func (*QuestionResponseControl) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{18}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *QuestionResponseControl) GetJobId() string {
@@ -1906,7 +2182,7 @@ type ApprovalResponseControl struct {
 
 func (x *ApprovalResponseControl) Reset() {
 	*x = ApprovalResponseControl{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[19]
+	mi := &file_delidev_v1_worker_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1918,7 +2194,7 @@ func (x *ApprovalResponseControl) String() string {
 func (*ApprovalResponseControl) ProtoMessage() {}
 
 func (x *ApprovalResponseControl) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[19]
+	mi := &file_delidev_v1_worker_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1931,7 +2207,7 @@ func (x *ApprovalResponseControl) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApprovalResponseControl.ProtoReflect.Descriptor instead.
 func (*ApprovalResponseControl) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{19}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ApprovalResponseControl) GetJobId() string {
@@ -1975,7 +2251,7 @@ type ReportWorkRequest struct {
 
 func (x *ReportWorkRequest) Reset() {
 	*x = ReportWorkRequest{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[20]
+	mi := &file_delidev_v1_worker_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1987,7 +2263,7 @@ func (x *ReportWorkRequest) String() string {
 func (*ReportWorkRequest) ProtoMessage() {}
 
 func (x *ReportWorkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[20]
+	mi := &file_delidev_v1_worker_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2000,7 +2276,7 @@ func (x *ReportWorkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportWorkRequest.ProtoReflect.Descriptor instead.
 func (*ReportWorkRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{20}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ReportWorkRequest) GetMutation() *Mutation {
@@ -2048,7 +2324,7 @@ type ReportWorkResponse struct {
 
 func (x *ReportWorkResponse) Reset() {
 	*x = ReportWorkResponse{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[21]
+	mi := &file_delidev_v1_worker_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2060,7 +2336,7 @@ func (x *ReportWorkResponse) String() string {
 func (*ReportWorkResponse) ProtoMessage() {}
 
 func (x *ReportWorkResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[21]
+	mi := &file_delidev_v1_worker_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2073,7 +2349,7 @@ func (x *ReportWorkResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportWorkResponse.ProtoReflect.Descriptor instead.
 func (*ReportWorkResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{21}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *ReportWorkResponse) GetJob() *Resource {
@@ -2102,7 +2378,7 @@ type InspectRepositoryRequest struct {
 
 func (x *InspectRepositoryRequest) Reset() {
 	*x = InspectRepositoryRequest{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[22]
+	mi := &file_delidev_v1_worker_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2114,7 +2390,7 @@ func (x *InspectRepositoryRequest) String() string {
 func (*InspectRepositoryRequest) ProtoMessage() {}
 
 func (x *InspectRepositoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[22]
+	mi := &file_delidev_v1_worker_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2127,7 +2403,7 @@ func (x *InspectRepositoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InspectRepositoryRequest.ProtoReflect.Descriptor instead.
 func (*InspectRepositoryRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{22}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *InspectRepositoryRequest) GetRequestId() string {
@@ -2169,7 +2445,7 @@ type InspectRepositoryResponse struct {
 
 func (x *InspectRepositoryResponse) Reset() {
 	*x = InspectRepositoryResponse{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[23]
+	mi := &file_delidev_v1_worker_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2181,7 +2457,7 @@ func (x *InspectRepositoryResponse) String() string {
 func (*InspectRepositoryResponse) ProtoMessage() {}
 
 func (x *InspectRepositoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[23]
+	mi := &file_delidev_v1_worker_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2194,7 +2470,7 @@ func (x *InspectRepositoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InspectRepositoryResponse.ProtoReflect.Descriptor instead.
 func (*InspectRepositoryResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{23}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *InspectRepositoryResponse) GetJob() *Resource {
@@ -2233,7 +2509,7 @@ type DiscoverHarnessesRequest struct {
 
 func (x *DiscoverHarnessesRequest) Reset() {
 	*x = DiscoverHarnessesRequest{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[24]
+	mi := &file_delidev_v1_worker_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2245,7 +2521,7 @@ func (x *DiscoverHarnessesRequest) String() string {
 func (*DiscoverHarnessesRequest) ProtoMessage() {}
 
 func (x *DiscoverHarnessesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[24]
+	mi := &file_delidev_v1_worker_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2258,7 +2534,7 @@ func (x *DiscoverHarnessesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiscoverHarnessesRequest.ProtoReflect.Descriptor instead.
 func (*DiscoverHarnessesRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{24}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *DiscoverHarnessesRequest) GetMutation() *Mutation {
@@ -2294,7 +2570,7 @@ type DiscoverHarnessesResponse struct {
 
 func (x *DiscoverHarnessesResponse) Reset() {
 	*x = DiscoverHarnessesResponse{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[25]
+	mi := &file_delidev_v1_worker_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2306,7 +2582,7 @@ func (x *DiscoverHarnessesResponse) String() string {
 func (*DiscoverHarnessesResponse) ProtoMessage() {}
 
 func (x *DiscoverHarnessesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[25]
+	mi := &file_delidev_v1_worker_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2319,7 +2595,7 @@ func (x *DiscoverHarnessesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiscoverHarnessesResponse.ProtoReflect.Descriptor instead.
 func (*DiscoverHarnessesResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{25}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *DiscoverHarnessesResponse) GetMachine() *Resource {
@@ -2360,7 +2636,7 @@ type WatchWorkspaceReadsRequest struct {
 
 func (x *WatchWorkspaceReadsRequest) Reset() {
 	*x = WatchWorkspaceReadsRequest{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[26]
+	mi := &file_delidev_v1_worker_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2372,7 +2648,7 @@ func (x *WatchWorkspaceReadsRequest) String() string {
 func (*WatchWorkspaceReadsRequest) ProtoMessage() {}
 
 func (x *WatchWorkspaceReadsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[26]
+	mi := &file_delidev_v1_worker_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2385,7 +2661,7 @@ func (x *WatchWorkspaceReadsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchWorkspaceReadsRequest.ProtoReflect.Descriptor instead.
 func (*WatchWorkspaceReadsRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{26}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *WatchWorkspaceReadsRequest) GetMachineId() string {
@@ -2413,7 +2689,7 @@ type WatchWorkspaceReadsResponse struct {
 
 func (x *WatchWorkspaceReadsResponse) Reset() {
 	*x = WatchWorkspaceReadsResponse{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[27]
+	mi := &file_delidev_v1_worker_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2425,7 +2701,7 @@ func (x *WatchWorkspaceReadsResponse) String() string {
 func (*WatchWorkspaceReadsResponse) ProtoMessage() {}
 
 func (x *WatchWorkspaceReadsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[27]
+	mi := &file_delidev_v1_worker_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2438,7 +2714,7 @@ func (x *WatchWorkspaceReadsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchWorkspaceReadsResponse.ProtoReflect.Descriptor instead.
 func (*WatchWorkspaceReadsResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{27}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *WatchWorkspaceReadsResponse) GetHeartbeat() bool {
@@ -2469,7 +2745,7 @@ type ReportWorkspaceReadRequest struct {
 
 func (x *ReportWorkspaceReadRequest) Reset() {
 	*x = ReportWorkspaceReadRequest{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[28]
+	mi := &file_delidev_v1_worker_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2481,7 +2757,7 @@ func (x *ReportWorkspaceReadRequest) String() string {
 func (*ReportWorkspaceReadRequest) ProtoMessage() {}
 
 func (x *ReportWorkspaceReadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[28]
+	mi := &file_delidev_v1_worker_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2494,7 +2770,7 @@ func (x *ReportWorkspaceReadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportWorkspaceReadRequest.ProtoReflect.Descriptor instead.
 func (*ReportWorkspaceReadRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{28}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *ReportWorkspaceReadRequest) GetMachineId() string {
@@ -2540,7 +2816,7 @@ type ReportWorkspaceReadResponse struct {
 
 func (x *ReportWorkspaceReadResponse) Reset() {
 	*x = ReportWorkspaceReadResponse{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[29]
+	mi := &file_delidev_v1_worker_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2552,7 +2828,7 @@ func (x *ReportWorkspaceReadResponse) String() string {
 func (*ReportWorkspaceReadResponse) ProtoMessage() {}
 
 func (x *ReportWorkspaceReadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[29]
+	mi := &file_delidev_v1_worker_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2565,7 +2841,7 @@ func (x *ReportWorkspaceReadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportWorkspaceReadResponse.ProtoReflect.Descriptor instead.
 func (*ReportWorkspaceReadResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{29}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{33}
 }
 
 type WatchForwardRequestsRequest struct {
@@ -2578,7 +2854,7 @@ type WatchForwardRequestsRequest struct {
 
 func (x *WatchForwardRequestsRequest) Reset() {
 	*x = WatchForwardRequestsRequest{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[30]
+	mi := &file_delidev_v1_worker_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2590,7 +2866,7 @@ func (x *WatchForwardRequestsRequest) String() string {
 func (*WatchForwardRequestsRequest) ProtoMessage() {}
 
 func (x *WatchForwardRequestsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[30]
+	mi := &file_delidev_v1_worker_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2603,7 +2879,7 @@ func (x *WatchForwardRequestsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchForwardRequestsRequest.ProtoReflect.Descriptor instead.
 func (*WatchForwardRequestsRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{30}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *WatchForwardRequestsRequest) GetMachineId() string {
@@ -2630,7 +2906,7 @@ type WatchForwardRequestsResponse struct {
 
 func (x *WatchForwardRequestsResponse) Reset() {
 	*x = WatchForwardRequestsResponse{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[31]
+	mi := &file_delidev_v1_worker_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2642,7 +2918,7 @@ func (x *WatchForwardRequestsResponse) String() string {
 func (*WatchForwardRequestsResponse) ProtoMessage() {}
 
 func (x *WatchForwardRequestsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[31]
+	mi := &file_delidev_v1_worker_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2655,7 +2931,7 @@ func (x *WatchForwardRequestsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchForwardRequestsResponse.ProtoReflect.Descriptor instead.
 func (*WatchForwardRequestsResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{31}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *WatchForwardRequestsResponse) GetHeartbeat() bool {
@@ -2686,7 +2962,7 @@ type ListSessionDeletionWorkRequest struct {
 
 func (x *ListSessionDeletionWorkRequest) Reset() {
 	*x = ListSessionDeletionWorkRequest{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[32]
+	mi := &file_delidev_v1_worker_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2698,7 +2974,7 @@ func (x *ListSessionDeletionWorkRequest) String() string {
 func (*ListSessionDeletionWorkRequest) ProtoMessage() {}
 
 func (x *ListSessionDeletionWorkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[32]
+	mi := &file_delidev_v1_worker_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2711,7 +2987,7 @@ func (x *ListSessionDeletionWorkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSessionDeletionWorkRequest.ProtoReflect.Descriptor instead.
 func (*ListSessionDeletionWorkRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{32}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ListSessionDeletionWorkRequest) GetMachineId() string {
@@ -2760,7 +3036,7 @@ type ListSessionDeletionWorkResponse struct {
 
 func (x *ListSessionDeletionWorkResponse) Reset() {
 	*x = ListSessionDeletionWorkResponse{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[33]
+	mi := &file_delidev_v1_worker_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2772,7 +3048,7 @@ func (x *ListSessionDeletionWorkResponse) String() string {
 func (*ListSessionDeletionWorkResponse) ProtoMessage() {}
 
 func (x *ListSessionDeletionWorkResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[33]
+	mi := &file_delidev_v1_worker_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2785,7 +3061,7 @@ func (x *ListSessionDeletionWorkResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSessionDeletionWorkResponse.ProtoReflect.Descriptor instead.
 func (*ListSessionDeletionWorkResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{33}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *ListSessionDeletionWorkResponse) GetWorkJson() [][]byte {
@@ -2816,7 +3092,7 @@ type ReportSessionDeletionRequest struct {
 
 func (x *ReportSessionDeletionRequest) Reset() {
 	*x = ReportSessionDeletionRequest{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[34]
+	mi := &file_delidev_v1_worker_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2828,7 +3104,7 @@ func (x *ReportSessionDeletionRequest) String() string {
 func (*ReportSessionDeletionRequest) ProtoMessage() {}
 
 func (x *ReportSessionDeletionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[34]
+	mi := &file_delidev_v1_worker_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2841,7 +3117,7 @@ func (x *ReportSessionDeletionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportSessionDeletionRequest.ProtoReflect.Descriptor instead.
 func (*ReportSessionDeletionRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{34}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *ReportSessionDeletionRequest) GetRequestId() string {
@@ -2895,7 +3171,7 @@ type ReportSessionDeletionResponse struct {
 
 func (x *ReportSessionDeletionResponse) Reset() {
 	*x = ReportSessionDeletionResponse{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[35]
+	mi := &file_delidev_v1_worker_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2907,7 +3183,7 @@ func (x *ReportSessionDeletionResponse) String() string {
 func (*ReportSessionDeletionResponse) ProtoMessage() {}
 
 func (x *ReportSessionDeletionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[35]
+	mi := &file_delidev_v1_worker_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2920,7 +3196,7 @@ func (x *ReportSessionDeletionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportSessionDeletionResponse.ProtoReflect.Descriptor instead.
 func (*ReportSessionDeletionResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{35}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ReportSessionDeletionResponse) GetJob() *SessionDeletionJob {
@@ -2946,7 +3222,7 @@ type SyncWorkerNetworkRequest struct {
 
 func (x *SyncWorkerNetworkRequest) Reset() {
 	*x = SyncWorkerNetworkRequest{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[36]
+	mi := &file_delidev_v1_worker_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2958,7 +3234,7 @@ func (x *SyncWorkerNetworkRequest) String() string {
 func (*SyncWorkerNetworkRequest) ProtoMessage() {}
 
 func (x *SyncWorkerNetworkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[36]
+	mi := &file_delidev_v1_worker_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2971,7 +3247,7 @@ func (x *SyncWorkerNetworkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncWorkerNetworkRequest.ProtoReflect.Descriptor instead.
 func (*SyncWorkerNetworkRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{36}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *SyncWorkerNetworkRequest) GetRequestId() string {
@@ -3042,7 +3318,7 @@ type SyncWorkerNetworkResponse struct {
 
 func (x *SyncWorkerNetworkResponse) Reset() {
 	*x = SyncWorkerNetworkResponse{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[37]
+	mi := &file_delidev_v1_worker_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3054,7 +3330,7 @@ func (x *SyncWorkerNetworkResponse) String() string {
 func (*SyncWorkerNetworkResponse) ProtoMessage() {}
 
 func (x *SyncWorkerNetworkResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[37]
+	mi := &file_delidev_v1_worker_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3067,7 +3343,7 @@ func (x *SyncWorkerNetworkResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncWorkerNetworkResponse.ProtoReflect.Descriptor instead.
 func (*SyncWorkerNetworkResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{37}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *SyncWorkerNetworkResponse) GetCiphertext() []byte {
@@ -3113,7 +3389,7 @@ type ReportWorkerNativeRouteRequest struct {
 
 func (x *ReportWorkerNativeRouteRequest) Reset() {
 	*x = ReportWorkerNativeRouteRequest{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[38]
+	mi := &file_delidev_v1_worker_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3125,7 +3401,7 @@ func (x *ReportWorkerNativeRouteRequest) String() string {
 func (*ReportWorkerNativeRouteRequest) ProtoMessage() {}
 
 func (x *ReportWorkerNativeRouteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[38]
+	mi := &file_delidev_v1_worker_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3138,7 +3414,7 @@ func (x *ReportWorkerNativeRouteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportWorkerNativeRouteRequest.ProtoReflect.Descriptor instead.
 func (*ReportWorkerNativeRouteRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{38}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *ReportWorkerNativeRouteRequest) GetMutation() *Mutation {
@@ -3199,7 +3475,7 @@ type ReportWorkerNativeRouteResponse struct {
 
 func (x *ReportWorkerNativeRouteResponse) Reset() {
 	*x = ReportWorkerNativeRouteResponse{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[39]
+	mi := &file_delidev_v1_worker_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3211,7 +3487,7 @@ func (x *ReportWorkerNativeRouteResponse) String() string {
 func (*ReportWorkerNativeRouteResponse) ProtoMessage() {}
 
 func (x *ReportWorkerNativeRouteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[39]
+	mi := &file_delidev_v1_worker_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3224,7 +3500,7 @@ func (x *ReportWorkerNativeRouteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportWorkerNativeRouteResponse.ProtoReflect.Descriptor instead.
 func (*ReportWorkerNativeRouteResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{39}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *ReportWorkerNativeRouteResponse) GetReplayed() bool {
@@ -3249,7 +3525,7 @@ type RepositoryCloneGitHubSelection struct {
 
 func (x *RepositoryCloneGitHubSelection) Reset() {
 	*x = RepositoryCloneGitHubSelection{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[40]
+	mi := &file_delidev_v1_worker_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3261,7 +3537,7 @@ func (x *RepositoryCloneGitHubSelection) String() string {
 func (*RepositoryCloneGitHubSelection) ProtoMessage() {}
 
 func (x *RepositoryCloneGitHubSelection) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[40]
+	mi := &file_delidev_v1_worker_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3274,7 +3550,7 @@ func (x *RepositoryCloneGitHubSelection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RepositoryCloneGitHubSelection.ProtoReflect.Descriptor instead.
 func (*RepositoryCloneGitHubSelection) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{40}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *RepositoryCloneGitHubSelection) GetProfileId() string {
@@ -3335,7 +3611,7 @@ type CloneRepositoryRequest struct {
 
 func (x *CloneRepositoryRequest) Reset() {
 	*x = CloneRepositoryRequest{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[41]
+	mi := &file_delidev_v1_worker_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3347,7 +3623,7 @@ func (x *CloneRepositoryRequest) String() string {
 func (*CloneRepositoryRequest) ProtoMessage() {}
 
 func (x *CloneRepositoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[41]
+	mi := &file_delidev_v1_worker_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3360,7 +3636,7 @@ func (x *CloneRepositoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloneRepositoryRequest.ProtoReflect.Descriptor instead.
 func (*CloneRepositoryRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{41}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *CloneRepositoryRequest) GetRequestId() string {
@@ -3423,7 +3699,7 @@ type CloneRepositoryResponse struct {
 
 func (x *CloneRepositoryResponse) Reset() {
 	*x = CloneRepositoryResponse{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[42]
+	mi := &file_delidev_v1_worker_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3435,7 +3711,7 @@ func (x *CloneRepositoryResponse) String() string {
 func (*CloneRepositoryResponse) ProtoMessage() {}
 
 func (x *CloneRepositoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[42]
+	mi := &file_delidev_v1_worker_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3448,7 +3724,7 @@ func (x *CloneRepositoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloneRepositoryResponse.ProtoReflect.Descriptor instead.
 func (*CloneRepositoryResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{42}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *CloneRepositoryResponse) GetJob() *Resource {
@@ -3485,7 +3761,7 @@ type ReportExecutionStartupRequest struct {
 
 func (x *ReportExecutionStartupRequest) Reset() {
 	*x = ReportExecutionStartupRequest{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[43]
+	mi := &file_delidev_v1_worker_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3497,7 +3773,7 @@ func (x *ReportExecutionStartupRequest) String() string {
 func (*ReportExecutionStartupRequest) ProtoMessage() {}
 
 func (x *ReportExecutionStartupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[43]
+	mi := &file_delidev_v1_worker_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3510,7 +3786,7 @@ func (x *ReportExecutionStartupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportExecutionStartupRequest.ProtoReflect.Descriptor instead.
 func (*ReportExecutionStartupRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{43}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *ReportExecutionStartupRequest) GetMutation() *Mutation {
@@ -3551,7 +3827,7 @@ type ReportExecutionStartupResponse struct {
 
 func (x *ReportExecutionStartupResponse) Reset() {
 	*x = ReportExecutionStartupResponse{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[44]
+	mi := &file_delidev_v1_worker_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3563,7 +3839,7 @@ func (x *ReportExecutionStartupResponse) String() string {
 func (*ReportExecutionStartupResponse) ProtoMessage() {}
 
 func (x *ReportExecutionStartupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[44]
+	mi := &file_delidev_v1_worker_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3576,7 +3852,7 @@ func (x *ReportExecutionStartupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportExecutionStartupResponse.ProtoReflect.Descriptor instead.
 func (*ReportExecutionStartupResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{44}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *ReportExecutionStartupResponse) GetObservation() *ExecutionStartupObservation {
@@ -3612,7 +3888,7 @@ type ExecutionStartupObservation struct {
 
 func (x *ExecutionStartupObservation) Reset() {
 	*x = ExecutionStartupObservation{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[45]
+	mi := &file_delidev_v1_worker_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3624,7 +3900,7 @@ func (x *ExecutionStartupObservation) String() string {
 func (*ExecutionStartupObservation) ProtoMessage() {}
 
 func (x *ExecutionStartupObservation) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[45]
+	mi := &file_delidev_v1_worker_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3637,7 +3913,7 @@ func (x *ExecutionStartupObservation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecutionStartupObservation.ProtoReflect.Descriptor instead.
 func (*ExecutionStartupObservation) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{45}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *ExecutionStartupObservation) GetState() ExecutionStartupState {
@@ -3733,7 +4009,7 @@ type DiscoverRepositoryBranchesRequest struct {
 
 func (x *DiscoverRepositoryBranchesRequest) Reset() {
 	*x = DiscoverRepositoryBranchesRequest{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[46]
+	mi := &file_delidev_v1_worker_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3745,7 +4021,7 @@ func (x *DiscoverRepositoryBranchesRequest) String() string {
 func (*DiscoverRepositoryBranchesRequest) ProtoMessage() {}
 
 func (x *DiscoverRepositoryBranchesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[46]
+	mi := &file_delidev_v1_worker_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3758,7 +4034,7 @@ func (x *DiscoverRepositoryBranchesRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use DiscoverRepositoryBranchesRequest.ProtoReflect.Descriptor instead.
 func (*DiscoverRepositoryBranchesRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{46}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *DiscoverRepositoryBranchesRequest) GetRequestId() string {
@@ -3821,7 +4097,7 @@ type DiscoverRepositoryBranchesResponse struct {
 
 func (x *DiscoverRepositoryBranchesResponse) Reset() {
 	*x = DiscoverRepositoryBranchesResponse{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[47]
+	mi := &file_delidev_v1_worker_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3833,7 +4109,7 @@ func (x *DiscoverRepositoryBranchesResponse) String() string {
 func (*DiscoverRepositoryBranchesResponse) ProtoMessage() {}
 
 func (x *DiscoverRepositoryBranchesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[47]
+	mi := &file_delidev_v1_worker_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3846,7 +4122,7 @@ func (x *DiscoverRepositoryBranchesResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use DiscoverRepositoryBranchesResponse.ProtoReflect.Descriptor instead.
 func (*DiscoverRepositoryBranchesResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{47}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *DiscoverRepositoryBranchesResponse) GetJob() *Resource {
@@ -3890,7 +4166,7 @@ type ReportSessionStartupProgressRequest struct {
 
 func (x *ReportSessionStartupProgressRequest) Reset() {
 	*x = ReportSessionStartupProgressRequest{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[48]
+	mi := &file_delidev_v1_worker_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3902,7 +4178,7 @@ func (x *ReportSessionStartupProgressRequest) String() string {
 func (*ReportSessionStartupProgressRequest) ProtoMessage() {}
 
 func (x *ReportSessionStartupProgressRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[48]
+	mi := &file_delidev_v1_worker_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3915,7 +4191,7 @@ func (x *ReportSessionStartupProgressRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use ReportSessionStartupProgressRequest.ProtoReflect.Descriptor instead.
 func (*ReportSessionStartupProgressRequest) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{48}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *ReportSessionStartupProgressRequest) GetMutation() *Mutation {
@@ -4011,7 +4287,7 @@ type ReportSessionStartupProgressResponse struct {
 
 func (x *ReportSessionStartupProgressResponse) Reset() {
 	*x = ReportSessionStartupProgressResponse{}
-	mi := &file_delidev_v1_worker_proto_msgTypes[49]
+	mi := &file_delidev_v1_worker_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4023,7 +4299,7 @@ func (x *ReportSessionStartupProgressResponse) String() string {
 func (*ReportSessionStartupProgressResponse) ProtoMessage() {}
 
 func (x *ReportSessionStartupProgressResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_delidev_v1_worker_proto_msgTypes[49]
+	mi := &file_delidev_v1_worker_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4036,7 +4312,7 @@ func (x *ReportSessionStartupProgressResponse) ProtoReflect() protoreflect.Messa
 
 // Deprecated: Use ReportSessionStartupProgressResponse.ProtoReflect.Descriptor instead.
 func (*ReportSessionStartupProgressResponse) Descriptor() ([]byte, []int) {
-	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{49}
+	return file_delidev_v1_worker_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *ReportSessionStartupProgressResponse) GetReplayed() bool {
@@ -4051,7 +4327,7 @@ var File_delidev_v1_worker_proto protoreflect.FileDescriptor
 const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\n" +
 	"\x17delidev/v1/worker.proto\x12\n" +
-	"delidev.v1\x1a\x17delidev/v1/common.proto\x1a\x19delidev/v1/terminal.proto\"z\n" +
+	"delidev.v1\x1a\x17delidev/v1/common.proto\x1a\x19delidev/v1/terminal.proto\x1a\x1bdelidev/v1/codex_apps.proto\"z\n" +
 	"\vErrorDetail\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x1a\n" +
 	"\bguidance\x18\x02 \x01(\tR\bguidance\x12\x14\n" +
@@ -4148,7 +4424,7 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x03job\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\x03job\x12\x1c\n" +
 	"\theartbeat\x18\x02 \x01(\bR\theartbeat\x12\"\n" +
 	"\rcancel_job_id\x18\x03 \x01(\tR\vcancelJobId\x12)\n" +
-	"\x10cancel_requested\x18\x04 \x01(\bR\x0fcancelRequested\"\x8c\x03\n" +
+	"\x10cancel_requested\x18\x04 \x01(\bR\x0fcancelRequested\"\xd8\x03\n" +
 	"\x11WatchWorkResponse\x12&\n" +
 	"\x03job\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\x03job\x12\x1c\n" +
 	"\theartbeat\x18\x02 \x01(\bR\theartbeat\x12)\n" +
@@ -4157,7 +4433,33 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x11question_response\x18\x05 \x01(\v2#.delidev.v1.QuestionResponseControlR\x10questionResponse\x12>\n" +
 	"\vsteer_input\x18\x06 \x01(\v2\x1d.delidev.v1.SteerInputControlR\n" +
 	"steerInput\x12P\n" +
-	"\x11approval_response\x18\a \x01(\v2#.delidev.v1.ApprovalResponseControlR\x10approvalResponse\"a\n" +
+	"\x11approval_response\x18\a \x01(\v2#.delidev.v1.ApprovalResponseControlR\x10approvalResponse\x12J\n" +
+	"\x12codex_apps_control\x18\t \x01(\v2\x1c.delidev.v1.CodexAppsControlR\x10codexAppsControl\"\xba\x01\n" +
+	"\x1cClaimCodexAppsControlRequest\x120\n" +
+	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x12\x1d\n" +
+	"\n" +
+	"machine_id\x18\x02 \x01(\tR\tmachineId\x12\x1f\n" +
+	"\vinstance_id\x18\x03 \x01(\tR\n" +
+	"instanceId\x12(\n" +
+	"\x10execution_job_id\x18\x04 \x01(\tR\x0eexecutionJobId\"\x8e\x01\n" +
+	"\x1dClaimCodexAppsControlResponse\x122\n" +
+	"\toperation\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\toperation\x12\x1d\n" +
+	"\n" +
+	"input_json\x18\x02 \x01(\fR\tinputJson\x12\x1a\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed\"\x95\x02\n" +
+	"#ReportCodexAppsControlResultRequest\x120\n" +
+	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x12\x1d\n" +
+	"\n" +
+	"machine_id\x18\x02 \x01(\tR\tmachineId\x12\x1f\n" +
+	"\vinstance_id\x18\x03 \x01(\tR\n" +
+	"instanceId\x12(\n" +
+	"\x10execution_job_id\x18\x04 \x01(\tR\x0eexecutionJobId\x12\x1f\n" +
+	"\voutput_json\x18\x05 \x01(\fR\n" +
+	"outputJson\x121\n" +
+	"\aproblem\x18\x06 \x01(\v2\x17.delidev.v1.ErrorDetailR\aproblem\"v\n" +
+	"$ReportCodexAppsControlResultResponse\x122\n" +
+	"\toperation\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\toperation\x12\x1a\n" +
+	"\breplayed\x18\x02 \x01(\bR\breplayed\"a\n" +
 	"\x11SteerInputControl\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x19\n" +
 	"\bsteer_id\x18\x02 \x01(\tR\asteerId\x12\x1a\n" +
@@ -4373,9 +4675,10 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x12repository_ordinal\x18\v \x01(\rR\x11repositoryOrdinal\x12)\n" +
 	"\x10repository_count\x18\f \x01(\rR\x0frepositoryCount\"B\n" +
 	"$ReportSessionStartupProgressResponse\x12\x1a\n" +
-	"\breplayed\x18\x01 \x01(\bR\breplayed*\xa4\x0e\n" +
+	"\breplayed\x18\x01 \x01(\bR\breplayed*\xc9\x0e\n" +
 	"\x10WorkerCapability\x12!\n" +
-	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12*\n" +
+	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12#\n" +
+	"\x1fWORKER_CAPABILITY_CODEX_APPS_V1\x10;\x12*\n" +
 	"&WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1\x104\x12/\n" +
 	"+WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1\x10\x16\x121\n" +
 	"-WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1\x102\x122\n" +
@@ -4460,8 +4763,10 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x1bSessionStartupProgressState\x12.\n" +
 	"*SESSION_STARTUP_PROGRESS_STATE_UNSPECIFIED\x10\x00\x12*\n" +
 	"&SESSION_STARTUP_PROGRESS_STATE_RUNNING\x10\x01\x12,\n" +
-	"(SESSION_STARTUP_PROGRESS_STATE_COMPLETED\x10\x022\xdc\x14\n" +
-	"\rWorkerService\x12`\n" +
+	"(SESSION_STARTUP_PROGRESS_STATE_COMPLETED\x10\x022\xce\x16\n" +
+	"\rWorkerService\x12l\n" +
+	"\x15ClaimCodexAppsControl\x12(.delidev.v1.ClaimCodexAppsControlRequest\x1a).delidev.v1.ClaimCodexAppsControlResponse\x12\x81\x01\n" +
+	"\x1cReportCodexAppsControlResult\x12/.delidev.v1.ReportCodexAppsControlResultRequest\x1a0.delidev.v1.ReportCodexAppsControlResultResponse\x12`\n" +
 	"\x11SyncWorkerNetwork\x12$.delidev.v1.SyncWorkerNetworkRequest\x1a%.delidev.v1.SyncWorkerNetworkResponse\x12r\n" +
 	"\x17ReportWorkerNativeRoute\x12*.delidev.v1.ReportWorkerNativeRouteRequest\x1a+.delidev.v1.ReportWorkerNativeRouteResponse\x12r\n" +
 	"\x17ListSessionDeletionWork\x12*.delidev.v1.ListSessionDeletionWorkRequest\x1a+.delidev.v1.ListSessionDeletionWorkResponse\x12l\n" +
@@ -4503,7 +4808,7 @@ func file_delidev_v1_worker_proto_rawDescGZIP() []byte {
 }
 
 var file_delidev_v1_worker_proto_enumTypes = make([]protoimpl.EnumInfo, 9)
-var file_delidev_v1_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 50)
+var file_delidev_v1_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 54)
 var file_delidev_v1_worker_proto_goTypes = []any{
 	(WorkerCapability)(0),                        // 0: delidev.v1.WorkerCapability
 	(WorkerNativeRouteState)(0),                  // 1: delidev.v1.WorkerNativeRouteState
@@ -4531,153 +4836,168 @@ var file_delidev_v1_worker_proto_goTypes = []any{
 	(*WatchAuxiliaryWorkRequest)(nil),            // 23: delidev.v1.WatchAuxiliaryWorkRequest
 	(*WatchAuxiliaryWorkResponse)(nil),           // 24: delidev.v1.WatchAuxiliaryWorkResponse
 	(*WatchWorkResponse)(nil),                    // 25: delidev.v1.WatchWorkResponse
-	(*SteerInputControl)(nil),                    // 26: delidev.v1.SteerInputControl
-	(*QuestionResponseControl)(nil),              // 27: delidev.v1.QuestionResponseControl
-	(*ApprovalResponseControl)(nil),              // 28: delidev.v1.ApprovalResponseControl
-	(*ReportWorkRequest)(nil),                    // 29: delidev.v1.ReportWorkRequest
-	(*ReportWorkResponse)(nil),                   // 30: delidev.v1.ReportWorkResponse
-	(*InspectRepositoryRequest)(nil),             // 31: delidev.v1.InspectRepositoryRequest
-	(*InspectRepositoryResponse)(nil),            // 32: delidev.v1.InspectRepositoryResponse
-	(*DiscoverHarnessesRequest)(nil),             // 33: delidev.v1.DiscoverHarnessesRequest
-	(*DiscoverHarnessesResponse)(nil),            // 34: delidev.v1.DiscoverHarnessesResponse
-	(*WatchWorkspaceReadsRequest)(nil),           // 35: delidev.v1.WatchWorkspaceReadsRequest
-	(*WatchWorkspaceReadsResponse)(nil),          // 36: delidev.v1.WatchWorkspaceReadsResponse
-	(*ReportWorkspaceReadRequest)(nil),           // 37: delidev.v1.ReportWorkspaceReadRequest
-	(*ReportWorkspaceReadResponse)(nil),          // 38: delidev.v1.ReportWorkspaceReadResponse
-	(*WatchForwardRequestsRequest)(nil),          // 39: delidev.v1.WatchForwardRequestsRequest
-	(*WatchForwardRequestsResponse)(nil),         // 40: delidev.v1.WatchForwardRequestsResponse
-	(*ListSessionDeletionWorkRequest)(nil),       // 41: delidev.v1.ListSessionDeletionWorkRequest
-	(*ListSessionDeletionWorkResponse)(nil),      // 42: delidev.v1.ListSessionDeletionWorkResponse
-	(*ReportSessionDeletionRequest)(nil),         // 43: delidev.v1.ReportSessionDeletionRequest
-	(*ReportSessionDeletionResponse)(nil),        // 44: delidev.v1.ReportSessionDeletionResponse
-	(*SyncWorkerNetworkRequest)(nil),             // 45: delidev.v1.SyncWorkerNetworkRequest
-	(*SyncWorkerNetworkResponse)(nil),            // 46: delidev.v1.SyncWorkerNetworkResponse
-	(*ReportWorkerNativeRouteRequest)(nil),       // 47: delidev.v1.ReportWorkerNativeRouteRequest
-	(*ReportWorkerNativeRouteResponse)(nil),      // 48: delidev.v1.ReportWorkerNativeRouteResponse
-	(*RepositoryCloneGitHubSelection)(nil),       // 49: delidev.v1.RepositoryCloneGitHubSelection
-	(*CloneRepositoryRequest)(nil),               // 50: delidev.v1.CloneRepositoryRequest
-	(*CloneRepositoryResponse)(nil),              // 51: delidev.v1.CloneRepositoryResponse
-	(*ReportExecutionStartupRequest)(nil),        // 52: delidev.v1.ReportExecutionStartupRequest
-	(*ReportExecutionStartupResponse)(nil),       // 53: delidev.v1.ReportExecutionStartupResponse
-	(*ExecutionStartupObservation)(nil),          // 54: delidev.v1.ExecutionStartupObservation
-	(*DiscoverRepositoryBranchesRequest)(nil),    // 55: delidev.v1.DiscoverRepositoryBranchesRequest
-	(*DiscoverRepositoryBranchesResponse)(nil),   // 56: delidev.v1.DiscoverRepositoryBranchesResponse
-	(*ReportSessionStartupProgressRequest)(nil),  // 57: delidev.v1.ReportSessionStartupProgressRequest
-	(*ReportSessionStartupProgressResponse)(nil), // 58: delidev.v1.ReportSessionStartupProgressResponse
-	(*Mutation)(nil),                             // 59: delidev.v1.Mutation
-	(*Resource)(nil),                             // 60: delidev.v1.Resource
-	(*SessionDeletionJob)(nil),                   // 61: delidev.v1.SessionDeletionJob
-	(*WatchTerminalsRequest)(nil),                // 62: delidev.v1.WatchTerminalsRequest
-	(*ClaimTerminalRequest)(nil),                 // 63: delidev.v1.ClaimTerminalRequest
-	(*ReportTerminalRequest)(nil),                // 64: delidev.v1.ReportTerminalRequest
-	(*PublishTerminalOutputRequest)(nil),         // 65: delidev.v1.PublishTerminalOutputRequest
-	(*WatchTerminalsResponse)(nil),               // 66: delidev.v1.WatchTerminalsResponse
-	(*ClaimTerminalResponse)(nil),                // 67: delidev.v1.ClaimTerminalResponse
-	(*ReportTerminalResponse)(nil),               // 68: delidev.v1.ReportTerminalResponse
-	(*PublishTerminalOutputResponse)(nil),        // 69: delidev.v1.PublishTerminalOutputResponse
+	(*ClaimCodexAppsControlRequest)(nil),         // 26: delidev.v1.ClaimCodexAppsControlRequest
+	(*ClaimCodexAppsControlResponse)(nil),        // 27: delidev.v1.ClaimCodexAppsControlResponse
+	(*ReportCodexAppsControlResultRequest)(nil),  // 28: delidev.v1.ReportCodexAppsControlResultRequest
+	(*ReportCodexAppsControlResultResponse)(nil), // 29: delidev.v1.ReportCodexAppsControlResultResponse
+	(*SteerInputControl)(nil),                    // 30: delidev.v1.SteerInputControl
+	(*QuestionResponseControl)(nil),              // 31: delidev.v1.QuestionResponseControl
+	(*ApprovalResponseControl)(nil),              // 32: delidev.v1.ApprovalResponseControl
+	(*ReportWorkRequest)(nil),                    // 33: delidev.v1.ReportWorkRequest
+	(*ReportWorkResponse)(nil),                   // 34: delidev.v1.ReportWorkResponse
+	(*InspectRepositoryRequest)(nil),             // 35: delidev.v1.InspectRepositoryRequest
+	(*InspectRepositoryResponse)(nil),            // 36: delidev.v1.InspectRepositoryResponse
+	(*DiscoverHarnessesRequest)(nil),             // 37: delidev.v1.DiscoverHarnessesRequest
+	(*DiscoverHarnessesResponse)(nil),            // 38: delidev.v1.DiscoverHarnessesResponse
+	(*WatchWorkspaceReadsRequest)(nil),           // 39: delidev.v1.WatchWorkspaceReadsRequest
+	(*WatchWorkspaceReadsResponse)(nil),          // 40: delidev.v1.WatchWorkspaceReadsResponse
+	(*ReportWorkspaceReadRequest)(nil),           // 41: delidev.v1.ReportWorkspaceReadRequest
+	(*ReportWorkspaceReadResponse)(nil),          // 42: delidev.v1.ReportWorkspaceReadResponse
+	(*WatchForwardRequestsRequest)(nil),          // 43: delidev.v1.WatchForwardRequestsRequest
+	(*WatchForwardRequestsResponse)(nil),         // 44: delidev.v1.WatchForwardRequestsResponse
+	(*ListSessionDeletionWorkRequest)(nil),       // 45: delidev.v1.ListSessionDeletionWorkRequest
+	(*ListSessionDeletionWorkResponse)(nil),      // 46: delidev.v1.ListSessionDeletionWorkResponse
+	(*ReportSessionDeletionRequest)(nil),         // 47: delidev.v1.ReportSessionDeletionRequest
+	(*ReportSessionDeletionResponse)(nil),        // 48: delidev.v1.ReportSessionDeletionResponse
+	(*SyncWorkerNetworkRequest)(nil),             // 49: delidev.v1.SyncWorkerNetworkRequest
+	(*SyncWorkerNetworkResponse)(nil),            // 50: delidev.v1.SyncWorkerNetworkResponse
+	(*ReportWorkerNativeRouteRequest)(nil),       // 51: delidev.v1.ReportWorkerNativeRouteRequest
+	(*ReportWorkerNativeRouteResponse)(nil),      // 52: delidev.v1.ReportWorkerNativeRouteResponse
+	(*RepositoryCloneGitHubSelection)(nil),       // 53: delidev.v1.RepositoryCloneGitHubSelection
+	(*CloneRepositoryRequest)(nil),               // 54: delidev.v1.CloneRepositoryRequest
+	(*CloneRepositoryResponse)(nil),              // 55: delidev.v1.CloneRepositoryResponse
+	(*ReportExecutionStartupRequest)(nil),        // 56: delidev.v1.ReportExecutionStartupRequest
+	(*ReportExecutionStartupResponse)(nil),       // 57: delidev.v1.ReportExecutionStartupResponse
+	(*ExecutionStartupObservation)(nil),          // 58: delidev.v1.ExecutionStartupObservation
+	(*DiscoverRepositoryBranchesRequest)(nil),    // 59: delidev.v1.DiscoverRepositoryBranchesRequest
+	(*DiscoverRepositoryBranchesResponse)(nil),   // 60: delidev.v1.DiscoverRepositoryBranchesResponse
+	(*ReportSessionStartupProgressRequest)(nil),  // 61: delidev.v1.ReportSessionStartupProgressRequest
+	(*ReportSessionStartupProgressResponse)(nil), // 62: delidev.v1.ReportSessionStartupProgressResponse
+	(*Mutation)(nil),                             // 63: delidev.v1.Mutation
+	(*Resource)(nil),                             // 64: delidev.v1.Resource
+	(*CodexAppsControl)(nil),                     // 65: delidev.v1.CodexAppsControl
+	(*SessionDeletionJob)(nil),                   // 66: delidev.v1.SessionDeletionJob
+	(*WatchTerminalsRequest)(nil),                // 67: delidev.v1.WatchTerminalsRequest
+	(*ClaimTerminalRequest)(nil),                 // 68: delidev.v1.ClaimTerminalRequest
+	(*ReportTerminalRequest)(nil),                // 69: delidev.v1.ReportTerminalRequest
+	(*PublishTerminalOutputRequest)(nil),         // 70: delidev.v1.PublishTerminalOutputRequest
+	(*WatchTerminalsResponse)(nil),               // 71: delidev.v1.WatchTerminalsResponse
+	(*ClaimTerminalResponse)(nil),                // 72: delidev.v1.ClaimTerminalResponse
+	(*ReportTerminalResponse)(nil),               // 73: delidev.v1.ReportTerminalResponse
+	(*PublishTerminalOutputResponse)(nil),        // 74: delidev.v1.PublishTerminalOutputResponse
 }
 var file_delidev_v1_worker_proto_depIdxs = []int32{
-	59, // 0: delidev.v1.ClaimSteerInputRequest.mutation:type_name -> delidev.v1.Mutation
-	60, // 1: delidev.v1.ClaimSteerInputResponse.steer:type_name -> delidev.v1.Resource
-	60, // 2: delidev.v1.ClaimSteerInputResponse.input:type_name -> delidev.v1.Resource
-	59, // 3: delidev.v1.ClaimQuestionResponseRequest.mutation:type_name -> delidev.v1.Mutation
-	60, // 4: delidev.v1.ClaimQuestionResponseResponse.interaction:type_name -> delidev.v1.Resource
-	59, // 5: delidev.v1.ClaimApprovalResponseRequest.mutation:type_name -> delidev.v1.Mutation
-	60, // 6: delidev.v1.ClaimApprovalResponseResponse.interaction:type_name -> delidev.v1.Resource
-	59, // 7: delidev.v1.PublishExecutionRequest.mutation:type_name -> delidev.v1.Mutation
-	59, // 8: delidev.v1.RegisterExecutionRequest.mutation:type_name -> delidev.v1.Mutation
+	63, // 0: delidev.v1.ClaimSteerInputRequest.mutation:type_name -> delidev.v1.Mutation
+	64, // 1: delidev.v1.ClaimSteerInputResponse.steer:type_name -> delidev.v1.Resource
+	64, // 2: delidev.v1.ClaimSteerInputResponse.input:type_name -> delidev.v1.Resource
+	63, // 3: delidev.v1.ClaimQuestionResponseRequest.mutation:type_name -> delidev.v1.Mutation
+	64, // 4: delidev.v1.ClaimQuestionResponseResponse.interaction:type_name -> delidev.v1.Resource
+	63, // 5: delidev.v1.ClaimApprovalResponseRequest.mutation:type_name -> delidev.v1.Mutation
+	64, // 6: delidev.v1.ClaimApprovalResponseResponse.interaction:type_name -> delidev.v1.Resource
+	63, // 7: delidev.v1.PublishExecutionRequest.mutation:type_name -> delidev.v1.Mutation
+	63, // 8: delidev.v1.RegisterExecutionRequest.mutation:type_name -> delidev.v1.Mutation
 	0,  // 9: delidev.v1.AttachWorkerRequest.capabilities:type_name -> delidev.v1.WorkerCapability
-	60, // 10: delidev.v1.AttachWorkerResponse.machine:type_name -> delidev.v1.Resource
+	64, // 10: delidev.v1.AttachWorkerResponse.machine:type_name -> delidev.v1.Resource
 	0,  // 11: delidev.v1.AttachWorkerResponse.supported_worker_capabilities:type_name -> delidev.v1.WorkerCapability
-	60, // 12: delidev.v1.WatchAuxiliaryWorkResponse.job:type_name -> delidev.v1.Resource
-	60, // 13: delidev.v1.WatchWorkResponse.job:type_name -> delidev.v1.Resource
-	27, // 14: delidev.v1.WatchWorkResponse.question_response:type_name -> delidev.v1.QuestionResponseControl
-	26, // 15: delidev.v1.WatchWorkResponse.steer_input:type_name -> delidev.v1.SteerInputControl
-	28, // 16: delidev.v1.WatchWorkResponse.approval_response:type_name -> delidev.v1.ApprovalResponseControl
-	59, // 17: delidev.v1.ReportWorkRequest.mutation:type_name -> delidev.v1.Mutation
-	9,  // 18: delidev.v1.ReportWorkRequest.problem:type_name -> delidev.v1.ErrorDetail
-	60, // 19: delidev.v1.ReportWorkResponse.job:type_name -> delidev.v1.Resource
-	60, // 20: delidev.v1.InspectRepositoryResponse.job:type_name -> delidev.v1.Resource
-	59, // 21: delidev.v1.DiscoverHarnessesRequest.mutation:type_name -> delidev.v1.Mutation
-	60, // 22: delidev.v1.DiscoverHarnessesResponse.machine:type_name -> delidev.v1.Resource
-	60, // 23: delidev.v1.DiscoverHarnessesResponse.job:type_name -> delidev.v1.Resource
-	60, // 24: delidev.v1.WatchForwardRequestsResponse.forward:type_name -> delidev.v1.Resource
-	61, // 25: delidev.v1.ReportSessionDeletionResponse.job:type_name -> delidev.v1.SessionDeletionJob
-	60, // 26: delidev.v1.SyncWorkerNetworkResponse.route:type_name -> delidev.v1.Resource
-	59, // 27: delidev.v1.ReportWorkerNativeRouteRequest.mutation:type_name -> delidev.v1.Mutation
-	1,  // 28: delidev.v1.ReportWorkerNativeRouteRequest.state:type_name -> delidev.v1.WorkerNativeRouteState
-	49, // 29: delidev.v1.CloneRepositoryRequest.github_selection:type_name -> delidev.v1.RepositoryCloneGitHubSelection
-	60, // 30: delidev.v1.CloneRepositoryResponse.job:type_name -> delidev.v1.Resource
-	59, // 31: delidev.v1.ReportExecutionStartupRequest.mutation:type_name -> delidev.v1.Mutation
-	54, // 32: delidev.v1.ReportExecutionStartupRequest.observation:type_name -> delidev.v1.ExecutionStartupObservation
-	54, // 33: delidev.v1.ReportExecutionStartupResponse.observation:type_name -> delidev.v1.ExecutionStartupObservation
-	3,  // 34: delidev.v1.ExecutionStartupObservation.state:type_name -> delidev.v1.ExecutionStartupState
-	4,  // 35: delidev.v1.ExecutionStartupObservation.phase:type_name -> delidev.v1.ExecutionStartupPhase
-	5,  // 36: delidev.v1.ExecutionStartupObservation.input_delivery:type_name -> delidev.v1.ExecutionStartupInputDelivery
-	6,  // 37: delidev.v1.ExecutionStartupObservation.cleanup:type_name -> delidev.v1.ExecutionStartupCleanup
-	2,  // 38: delidev.v1.ExecutionStartupObservation.failure_kind:type_name -> delidev.v1.ExecutionStartupFailureKind
-	60, // 39: delidev.v1.DiscoverRepositoryBranchesResponse.job:type_name -> delidev.v1.Resource
-	59, // 40: delidev.v1.ReportSessionStartupProgressRequest.mutation:type_name -> delidev.v1.Mutation
-	7,  // 41: delidev.v1.ReportSessionStartupProgressRequest.workspace_operation:type_name -> delidev.v1.SessionStartupWorkspaceOperation
-	4,  // 42: delidev.v1.ReportSessionStartupProgressRequest.native_phase:type_name -> delidev.v1.ExecutionStartupPhase
-	8,  // 43: delidev.v1.ReportSessionStartupProgressRequest.state:type_name -> delidev.v1.SessionStartupProgressState
-	45, // 44: delidev.v1.WorkerService.SyncWorkerNetwork:input_type -> delidev.v1.SyncWorkerNetworkRequest
-	47, // 45: delidev.v1.WorkerService.ReportWorkerNativeRoute:input_type -> delidev.v1.ReportWorkerNativeRouteRequest
-	41, // 46: delidev.v1.WorkerService.ListSessionDeletionWork:input_type -> delidev.v1.ListSessionDeletionWorkRequest
-	43, // 47: delidev.v1.WorkerService.ReportSessionDeletion:input_type -> delidev.v1.ReportSessionDeletionRequest
-	62, // 48: delidev.v1.WorkerService.WatchTerminals:input_type -> delidev.v1.WatchTerminalsRequest
-	63, // 49: delidev.v1.WorkerService.ClaimTerminal:input_type -> delidev.v1.ClaimTerminalRequest
-	64, // 50: delidev.v1.WorkerService.ReportTerminal:input_type -> delidev.v1.ReportTerminalRequest
-	65, // 51: delidev.v1.WorkerService.PublishTerminalOutput:input_type -> delidev.v1.PublishTerminalOutputRequest
-	39, // 52: delidev.v1.WorkerService.WatchForwardRequests:input_type -> delidev.v1.WatchForwardRequestsRequest
-	35, // 53: delidev.v1.WorkerService.WatchWorkspaceReads:input_type -> delidev.v1.WatchWorkspaceReadsRequest
-	37, // 54: delidev.v1.WorkerService.ReportWorkspaceRead:input_type -> delidev.v1.ReportWorkspaceReadRequest
-	20, // 55: delidev.v1.WorkerService.AttachWorker:input_type -> delidev.v1.AttachWorkerRequest
-	22, // 56: delidev.v1.WorkerService.WatchWork:input_type -> delidev.v1.WatchWorkRequest
-	23, // 57: delidev.v1.WorkerService.WatchAuxiliaryWork:input_type -> delidev.v1.WatchAuxiliaryWorkRequest
-	29, // 58: delidev.v1.WorkerService.ReportWork:input_type -> delidev.v1.ReportWorkRequest
-	55, // 59: delidev.v1.WorkerService.DiscoverRepositoryBranches:input_type -> delidev.v1.DiscoverRepositoryBranchesRequest
-	31, // 60: delidev.v1.WorkerService.InspectRepository:input_type -> delidev.v1.InspectRepositoryRequest
-	50, // 61: delidev.v1.WorkerService.CloneRepository:input_type -> delidev.v1.CloneRepositoryRequest
-	33, // 62: delidev.v1.WorkerService.DiscoverHarnesses:input_type -> delidev.v1.DiscoverHarnessesRequest
-	57, // 63: delidev.v1.WorkerService.ReportSessionStartupProgress:input_type -> delidev.v1.ReportSessionStartupProgressRequest
-	52, // 64: delidev.v1.WorkerService.ReportExecutionStartup:input_type -> delidev.v1.ReportExecutionStartupRequest
-	18, // 65: delidev.v1.WorkerService.RegisterExecution:input_type -> delidev.v1.RegisterExecutionRequest
-	16, // 66: delidev.v1.WorkerService.PublishExecution:input_type -> delidev.v1.PublishExecutionRequest
-	12, // 67: delidev.v1.WorkerService.ClaimQuestionResponse:input_type -> delidev.v1.ClaimQuestionResponseRequest
-	14, // 68: delidev.v1.WorkerService.ClaimApprovalResponse:input_type -> delidev.v1.ClaimApprovalResponseRequest
-	10, // 69: delidev.v1.WorkerService.ClaimSteerInput:input_type -> delidev.v1.ClaimSteerInputRequest
-	46, // 70: delidev.v1.WorkerService.SyncWorkerNetwork:output_type -> delidev.v1.SyncWorkerNetworkResponse
-	48, // 71: delidev.v1.WorkerService.ReportWorkerNativeRoute:output_type -> delidev.v1.ReportWorkerNativeRouteResponse
-	42, // 72: delidev.v1.WorkerService.ListSessionDeletionWork:output_type -> delidev.v1.ListSessionDeletionWorkResponse
-	44, // 73: delidev.v1.WorkerService.ReportSessionDeletion:output_type -> delidev.v1.ReportSessionDeletionResponse
-	66, // 74: delidev.v1.WorkerService.WatchTerminals:output_type -> delidev.v1.WatchTerminalsResponse
-	67, // 75: delidev.v1.WorkerService.ClaimTerminal:output_type -> delidev.v1.ClaimTerminalResponse
-	68, // 76: delidev.v1.WorkerService.ReportTerminal:output_type -> delidev.v1.ReportTerminalResponse
-	69, // 77: delidev.v1.WorkerService.PublishTerminalOutput:output_type -> delidev.v1.PublishTerminalOutputResponse
-	40, // 78: delidev.v1.WorkerService.WatchForwardRequests:output_type -> delidev.v1.WatchForwardRequestsResponse
-	36, // 79: delidev.v1.WorkerService.WatchWorkspaceReads:output_type -> delidev.v1.WatchWorkspaceReadsResponse
-	38, // 80: delidev.v1.WorkerService.ReportWorkspaceRead:output_type -> delidev.v1.ReportWorkspaceReadResponse
-	21, // 81: delidev.v1.WorkerService.AttachWorker:output_type -> delidev.v1.AttachWorkerResponse
-	25, // 82: delidev.v1.WorkerService.WatchWork:output_type -> delidev.v1.WatchWorkResponse
-	24, // 83: delidev.v1.WorkerService.WatchAuxiliaryWork:output_type -> delidev.v1.WatchAuxiliaryWorkResponse
-	30, // 84: delidev.v1.WorkerService.ReportWork:output_type -> delidev.v1.ReportWorkResponse
-	56, // 85: delidev.v1.WorkerService.DiscoverRepositoryBranches:output_type -> delidev.v1.DiscoverRepositoryBranchesResponse
-	32, // 86: delidev.v1.WorkerService.InspectRepository:output_type -> delidev.v1.InspectRepositoryResponse
-	51, // 87: delidev.v1.WorkerService.CloneRepository:output_type -> delidev.v1.CloneRepositoryResponse
-	34, // 88: delidev.v1.WorkerService.DiscoverHarnesses:output_type -> delidev.v1.DiscoverHarnessesResponse
-	58, // 89: delidev.v1.WorkerService.ReportSessionStartupProgress:output_type -> delidev.v1.ReportSessionStartupProgressResponse
-	53, // 90: delidev.v1.WorkerService.ReportExecutionStartup:output_type -> delidev.v1.ReportExecutionStartupResponse
-	19, // 91: delidev.v1.WorkerService.RegisterExecution:output_type -> delidev.v1.RegisterExecutionResponse
-	17, // 92: delidev.v1.WorkerService.PublishExecution:output_type -> delidev.v1.PublishExecutionResponse
-	13, // 93: delidev.v1.WorkerService.ClaimQuestionResponse:output_type -> delidev.v1.ClaimQuestionResponseResponse
-	15, // 94: delidev.v1.WorkerService.ClaimApprovalResponse:output_type -> delidev.v1.ClaimApprovalResponseResponse
-	11, // 95: delidev.v1.WorkerService.ClaimSteerInput:output_type -> delidev.v1.ClaimSteerInputResponse
-	70, // [70:96] is the sub-list for method output_type
-	44, // [44:70] is the sub-list for method input_type
-	44, // [44:44] is the sub-list for extension type_name
-	44, // [44:44] is the sub-list for extension extendee
-	0,  // [0:44] is the sub-list for field type_name
+	64, // 12: delidev.v1.WatchAuxiliaryWorkResponse.job:type_name -> delidev.v1.Resource
+	64, // 13: delidev.v1.WatchWorkResponse.job:type_name -> delidev.v1.Resource
+	31, // 14: delidev.v1.WatchWorkResponse.question_response:type_name -> delidev.v1.QuestionResponseControl
+	30, // 15: delidev.v1.WatchWorkResponse.steer_input:type_name -> delidev.v1.SteerInputControl
+	32, // 16: delidev.v1.WatchWorkResponse.approval_response:type_name -> delidev.v1.ApprovalResponseControl
+	65, // 17: delidev.v1.WatchWorkResponse.codex_apps_control:type_name -> delidev.v1.CodexAppsControl
+	63, // 18: delidev.v1.ClaimCodexAppsControlRequest.mutation:type_name -> delidev.v1.Mutation
+	64, // 19: delidev.v1.ClaimCodexAppsControlResponse.operation:type_name -> delidev.v1.Resource
+	63, // 20: delidev.v1.ReportCodexAppsControlResultRequest.mutation:type_name -> delidev.v1.Mutation
+	9,  // 21: delidev.v1.ReportCodexAppsControlResultRequest.problem:type_name -> delidev.v1.ErrorDetail
+	64, // 22: delidev.v1.ReportCodexAppsControlResultResponse.operation:type_name -> delidev.v1.Resource
+	63, // 23: delidev.v1.ReportWorkRequest.mutation:type_name -> delidev.v1.Mutation
+	9,  // 24: delidev.v1.ReportWorkRequest.problem:type_name -> delidev.v1.ErrorDetail
+	64, // 25: delidev.v1.ReportWorkResponse.job:type_name -> delidev.v1.Resource
+	64, // 26: delidev.v1.InspectRepositoryResponse.job:type_name -> delidev.v1.Resource
+	63, // 27: delidev.v1.DiscoverHarnessesRequest.mutation:type_name -> delidev.v1.Mutation
+	64, // 28: delidev.v1.DiscoverHarnessesResponse.machine:type_name -> delidev.v1.Resource
+	64, // 29: delidev.v1.DiscoverHarnessesResponse.job:type_name -> delidev.v1.Resource
+	64, // 30: delidev.v1.WatchForwardRequestsResponse.forward:type_name -> delidev.v1.Resource
+	66, // 31: delidev.v1.ReportSessionDeletionResponse.job:type_name -> delidev.v1.SessionDeletionJob
+	64, // 32: delidev.v1.SyncWorkerNetworkResponse.route:type_name -> delidev.v1.Resource
+	63, // 33: delidev.v1.ReportWorkerNativeRouteRequest.mutation:type_name -> delidev.v1.Mutation
+	1,  // 34: delidev.v1.ReportWorkerNativeRouteRequest.state:type_name -> delidev.v1.WorkerNativeRouteState
+	53, // 35: delidev.v1.CloneRepositoryRequest.github_selection:type_name -> delidev.v1.RepositoryCloneGitHubSelection
+	64, // 36: delidev.v1.CloneRepositoryResponse.job:type_name -> delidev.v1.Resource
+	63, // 37: delidev.v1.ReportExecutionStartupRequest.mutation:type_name -> delidev.v1.Mutation
+	58, // 38: delidev.v1.ReportExecutionStartupRequest.observation:type_name -> delidev.v1.ExecutionStartupObservation
+	58, // 39: delidev.v1.ReportExecutionStartupResponse.observation:type_name -> delidev.v1.ExecutionStartupObservation
+	3,  // 40: delidev.v1.ExecutionStartupObservation.state:type_name -> delidev.v1.ExecutionStartupState
+	4,  // 41: delidev.v1.ExecutionStartupObservation.phase:type_name -> delidev.v1.ExecutionStartupPhase
+	5,  // 42: delidev.v1.ExecutionStartupObservation.input_delivery:type_name -> delidev.v1.ExecutionStartupInputDelivery
+	6,  // 43: delidev.v1.ExecutionStartupObservation.cleanup:type_name -> delidev.v1.ExecutionStartupCleanup
+	2,  // 44: delidev.v1.ExecutionStartupObservation.failure_kind:type_name -> delidev.v1.ExecutionStartupFailureKind
+	64, // 45: delidev.v1.DiscoverRepositoryBranchesResponse.job:type_name -> delidev.v1.Resource
+	63, // 46: delidev.v1.ReportSessionStartupProgressRequest.mutation:type_name -> delidev.v1.Mutation
+	7,  // 47: delidev.v1.ReportSessionStartupProgressRequest.workspace_operation:type_name -> delidev.v1.SessionStartupWorkspaceOperation
+	4,  // 48: delidev.v1.ReportSessionStartupProgressRequest.native_phase:type_name -> delidev.v1.ExecutionStartupPhase
+	8,  // 49: delidev.v1.ReportSessionStartupProgressRequest.state:type_name -> delidev.v1.SessionStartupProgressState
+	26, // 50: delidev.v1.WorkerService.ClaimCodexAppsControl:input_type -> delidev.v1.ClaimCodexAppsControlRequest
+	28, // 51: delidev.v1.WorkerService.ReportCodexAppsControlResult:input_type -> delidev.v1.ReportCodexAppsControlResultRequest
+	49, // 52: delidev.v1.WorkerService.SyncWorkerNetwork:input_type -> delidev.v1.SyncWorkerNetworkRequest
+	51, // 53: delidev.v1.WorkerService.ReportWorkerNativeRoute:input_type -> delidev.v1.ReportWorkerNativeRouteRequest
+	45, // 54: delidev.v1.WorkerService.ListSessionDeletionWork:input_type -> delidev.v1.ListSessionDeletionWorkRequest
+	47, // 55: delidev.v1.WorkerService.ReportSessionDeletion:input_type -> delidev.v1.ReportSessionDeletionRequest
+	67, // 56: delidev.v1.WorkerService.WatchTerminals:input_type -> delidev.v1.WatchTerminalsRequest
+	68, // 57: delidev.v1.WorkerService.ClaimTerminal:input_type -> delidev.v1.ClaimTerminalRequest
+	69, // 58: delidev.v1.WorkerService.ReportTerminal:input_type -> delidev.v1.ReportTerminalRequest
+	70, // 59: delidev.v1.WorkerService.PublishTerminalOutput:input_type -> delidev.v1.PublishTerminalOutputRequest
+	43, // 60: delidev.v1.WorkerService.WatchForwardRequests:input_type -> delidev.v1.WatchForwardRequestsRequest
+	39, // 61: delidev.v1.WorkerService.WatchWorkspaceReads:input_type -> delidev.v1.WatchWorkspaceReadsRequest
+	41, // 62: delidev.v1.WorkerService.ReportWorkspaceRead:input_type -> delidev.v1.ReportWorkspaceReadRequest
+	20, // 63: delidev.v1.WorkerService.AttachWorker:input_type -> delidev.v1.AttachWorkerRequest
+	22, // 64: delidev.v1.WorkerService.WatchWork:input_type -> delidev.v1.WatchWorkRequest
+	23, // 65: delidev.v1.WorkerService.WatchAuxiliaryWork:input_type -> delidev.v1.WatchAuxiliaryWorkRequest
+	33, // 66: delidev.v1.WorkerService.ReportWork:input_type -> delidev.v1.ReportWorkRequest
+	59, // 67: delidev.v1.WorkerService.DiscoverRepositoryBranches:input_type -> delidev.v1.DiscoverRepositoryBranchesRequest
+	35, // 68: delidev.v1.WorkerService.InspectRepository:input_type -> delidev.v1.InspectRepositoryRequest
+	54, // 69: delidev.v1.WorkerService.CloneRepository:input_type -> delidev.v1.CloneRepositoryRequest
+	37, // 70: delidev.v1.WorkerService.DiscoverHarnesses:input_type -> delidev.v1.DiscoverHarnessesRequest
+	61, // 71: delidev.v1.WorkerService.ReportSessionStartupProgress:input_type -> delidev.v1.ReportSessionStartupProgressRequest
+	56, // 72: delidev.v1.WorkerService.ReportExecutionStartup:input_type -> delidev.v1.ReportExecutionStartupRequest
+	18, // 73: delidev.v1.WorkerService.RegisterExecution:input_type -> delidev.v1.RegisterExecutionRequest
+	16, // 74: delidev.v1.WorkerService.PublishExecution:input_type -> delidev.v1.PublishExecutionRequest
+	12, // 75: delidev.v1.WorkerService.ClaimQuestionResponse:input_type -> delidev.v1.ClaimQuestionResponseRequest
+	14, // 76: delidev.v1.WorkerService.ClaimApprovalResponse:input_type -> delidev.v1.ClaimApprovalResponseRequest
+	10, // 77: delidev.v1.WorkerService.ClaimSteerInput:input_type -> delidev.v1.ClaimSteerInputRequest
+	27, // 78: delidev.v1.WorkerService.ClaimCodexAppsControl:output_type -> delidev.v1.ClaimCodexAppsControlResponse
+	29, // 79: delidev.v1.WorkerService.ReportCodexAppsControlResult:output_type -> delidev.v1.ReportCodexAppsControlResultResponse
+	50, // 80: delidev.v1.WorkerService.SyncWorkerNetwork:output_type -> delidev.v1.SyncWorkerNetworkResponse
+	52, // 81: delidev.v1.WorkerService.ReportWorkerNativeRoute:output_type -> delidev.v1.ReportWorkerNativeRouteResponse
+	46, // 82: delidev.v1.WorkerService.ListSessionDeletionWork:output_type -> delidev.v1.ListSessionDeletionWorkResponse
+	48, // 83: delidev.v1.WorkerService.ReportSessionDeletion:output_type -> delidev.v1.ReportSessionDeletionResponse
+	71, // 84: delidev.v1.WorkerService.WatchTerminals:output_type -> delidev.v1.WatchTerminalsResponse
+	72, // 85: delidev.v1.WorkerService.ClaimTerminal:output_type -> delidev.v1.ClaimTerminalResponse
+	73, // 86: delidev.v1.WorkerService.ReportTerminal:output_type -> delidev.v1.ReportTerminalResponse
+	74, // 87: delidev.v1.WorkerService.PublishTerminalOutput:output_type -> delidev.v1.PublishTerminalOutputResponse
+	44, // 88: delidev.v1.WorkerService.WatchForwardRequests:output_type -> delidev.v1.WatchForwardRequestsResponse
+	40, // 89: delidev.v1.WorkerService.WatchWorkspaceReads:output_type -> delidev.v1.WatchWorkspaceReadsResponse
+	42, // 90: delidev.v1.WorkerService.ReportWorkspaceRead:output_type -> delidev.v1.ReportWorkspaceReadResponse
+	21, // 91: delidev.v1.WorkerService.AttachWorker:output_type -> delidev.v1.AttachWorkerResponse
+	25, // 92: delidev.v1.WorkerService.WatchWork:output_type -> delidev.v1.WatchWorkResponse
+	24, // 93: delidev.v1.WorkerService.WatchAuxiliaryWork:output_type -> delidev.v1.WatchAuxiliaryWorkResponse
+	34, // 94: delidev.v1.WorkerService.ReportWork:output_type -> delidev.v1.ReportWorkResponse
+	60, // 95: delidev.v1.WorkerService.DiscoverRepositoryBranches:output_type -> delidev.v1.DiscoverRepositoryBranchesResponse
+	36, // 96: delidev.v1.WorkerService.InspectRepository:output_type -> delidev.v1.InspectRepositoryResponse
+	55, // 97: delidev.v1.WorkerService.CloneRepository:output_type -> delidev.v1.CloneRepositoryResponse
+	38, // 98: delidev.v1.WorkerService.DiscoverHarnesses:output_type -> delidev.v1.DiscoverHarnessesResponse
+	62, // 99: delidev.v1.WorkerService.ReportSessionStartupProgress:output_type -> delidev.v1.ReportSessionStartupProgressResponse
+	57, // 100: delidev.v1.WorkerService.ReportExecutionStartup:output_type -> delidev.v1.ReportExecutionStartupResponse
+	19, // 101: delidev.v1.WorkerService.RegisterExecution:output_type -> delidev.v1.RegisterExecutionResponse
+	17, // 102: delidev.v1.WorkerService.PublishExecution:output_type -> delidev.v1.PublishExecutionResponse
+	13, // 103: delidev.v1.WorkerService.ClaimQuestionResponse:output_type -> delidev.v1.ClaimQuestionResponseResponse
+	15, // 104: delidev.v1.WorkerService.ClaimApprovalResponse:output_type -> delidev.v1.ClaimApprovalResponseResponse
+	11, // 105: delidev.v1.WorkerService.ClaimSteerInput:output_type -> delidev.v1.ClaimSteerInputResponse
+	78, // [78:106] is the sub-list for method output_type
+	50, // [50:78] is the sub-list for method input_type
+	50, // [50:50] is the sub-list for extension type_name
+	50, // [50:50] is the sub-list for extension extendee
+	0,  // [0:50] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_worker_proto_init() }
@@ -4687,13 +5007,14 @@ func file_delidev_v1_worker_proto_init() {
 	}
 	file_delidev_v1_common_proto_init()
 	file_delidev_v1_terminal_proto_init()
+	file_delidev_v1_codex_apps_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_worker_proto_rawDesc), len(file_delidev_v1_worker_proto_rawDesc)),
 			NumEnums:      9,
-			NumMessages:   50,
+			NumMessages:   54,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

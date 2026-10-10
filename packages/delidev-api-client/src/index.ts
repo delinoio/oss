@@ -3,6 +3,7 @@ export * from "./gen/delidev/v1/activity_pb.js";
 export * from "./gen/delidev/v1/attachments_pb.js";
 export * from "./gen/delidev/v1/browser_pb.js";
 export * from "./gen/delidev/v1/common_pb.js";
+export * from "./gen/delidev/v1/codex_apps_pb.js";
 export * from "./gen/delidev/v1/configuration_pb.js";
 export * from "./gen/delidev/v1/device_pb.js";
 export * from "./gen/delidev/v1/forward_pb.js";
@@ -36,6 +37,7 @@ export * as BrowserQuery from "./gen/delidev/v1/browser-BrowserService_connectqu
 export * as AccountQuery from "./gen/delidev/v1/account-AccountService_connectquery.js";
 export * as ProviderQuery from "./gen/delidev/v1/provider-ProviderService_connectquery.js";
 export * as NativeModelQuery from "./gen/delidev/v1/native_models-NativeModelService_connectquery.js";
+export * as CodexAppsQuery from "./gen/delidev/v1/codex_apps-CodexAppsService_connectquery.js";
 export * as SessionQuery from "./gen/delidev/v1/session-SessionService_connectquery.js";
 export * as InteractionQuery from "./gen/delidev/v1/interaction-InteractionService_connectquery.js";
 export * as InboxQuery from "./gen/delidev/v1/inbox-InboxService_connectquery.js";

@@ -3,6 +3,7 @@ package delidev.v1;
 
 import "delidev/v1/common.proto";
 import "delidev/v1/terminal.proto";
+import "delidev/v1/codex_apps.proto";
 
 option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
 
@@ -14,6 +15,8 @@ message ErrorDetail {
 }
 
 service WorkerService {
+  rpc ClaimCodexAppsControl(ClaimCodexAppsControlRequest) returns (ClaimCodexAppsControlResponse);
+  rpc ReportCodexAppsControlResult(ReportCodexAppsControlResultRequest) returns (ReportCodexAppsControlResultResponse);
   rpc SyncWorkerNetwork(SyncWorkerNetworkRequest) returns (SyncWorkerNetworkResponse);
   rpc ReportWorkerNativeRoute(ReportWorkerNativeRouteRequest) returns (ReportWorkerNativeRouteResponse);
   rpc ListSessionDeletionWork(ListSessionDeletionWorkRequest) returns (ListSessionDeletionWorkResponse);
@@ -130,6 +133,7 @@ message AttachWorkerRequest {
 
 enum WorkerCapability {
   WORKER_CAPABILITY_UNSPECIFIED = 0;
+  WORKER_CAPABILITY_CODEX_APPS_V1 = 59;
   WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1 = 52;
 
   WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1 = 22;
@@ -210,6 +214,35 @@ message WatchWorkResponse {
   QuestionResponseControl question_response = 5;
   SteerInputControl steer_input = 6;
   ApprovalResponseControl approval_response = 7;
+  // Field 8 belongs to independent original goal controls (#1996).
+  CodexAppsControl codex_apps_control = 9;
+}
+
+message ClaimCodexAppsControlRequest {
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  string execution_job_id = 4;
+}
+
+message ClaimCodexAppsControlResponse {
+  Resource operation = 1;
+  bytes input_json = 2;
+  bool replayed = 3;
+}
+
+message ReportCodexAppsControlResultRequest {
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  string execution_job_id = 4;
+  bytes output_json = 5;
+  ErrorDetail problem = 6;
+}
+
+message ReportCodexAppsControlResultResponse {
+  Resource operation = 1;
+  bool replayed = 2;
 }
 
 message SteerInputControl {

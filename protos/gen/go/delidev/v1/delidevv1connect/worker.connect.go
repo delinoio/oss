@@ -33,6 +33,12 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// WorkerServiceClaimCodexAppsControlProcedure is the fully-qualified name of the WorkerService's
+	// ClaimCodexAppsControl RPC.
+	WorkerServiceClaimCodexAppsControlProcedure = "/delidev.v1.WorkerService/ClaimCodexAppsControl"
+	// WorkerServiceReportCodexAppsControlResultProcedure is the fully-qualified name of the
+	// WorkerService's ReportCodexAppsControlResult RPC.
+	WorkerServiceReportCodexAppsControlResultProcedure = "/delidev.v1.WorkerService/ReportCodexAppsControlResult"
 	// WorkerServiceSyncWorkerNetworkProcedure is the fully-qualified name of the WorkerService's
 	// SyncWorkerNetwork RPC.
 	WorkerServiceSyncWorkerNetworkProcedure = "/delidev.v1.WorkerService/SyncWorkerNetwork"
@@ -114,6 +120,8 @@ const (
 
 // WorkerServiceClient is a client for the delidev.v1.WorkerService service.
 type WorkerServiceClient interface {
+	ClaimCodexAppsControl(context.Context, *connect.Request[v1.ClaimCodexAppsControlRequest]) (*connect.Response[v1.ClaimCodexAppsControlResponse], error)
+	ReportCodexAppsControlResult(context.Context, *connect.Request[v1.ReportCodexAppsControlResultRequest]) (*connect.Response[v1.ReportCodexAppsControlResultResponse], error)
 	SyncWorkerNetwork(context.Context, *connect.Request[v1.SyncWorkerNetworkRequest]) (*connect.Response[v1.SyncWorkerNetworkResponse], error)
 	ReportWorkerNativeRoute(context.Context, *connect.Request[v1.ReportWorkerNativeRouteRequest]) (*connect.Response[v1.ReportWorkerNativeRouteResponse], error)
 	ListSessionDeletionWork(context.Context, *connect.Request[v1.ListSessionDeletionWorkRequest]) (*connect.Response[v1.ListSessionDeletionWorkResponse], error)
@@ -154,6 +162,18 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 	baseURL = strings.TrimRight(baseURL, "/")
 	workerServiceMethods := v1.File_delidev_v1_worker_proto.Services().ByName("WorkerService").Methods()
 	return &workerServiceClient{
+		claimCodexAppsControl: connect.NewClient[v1.ClaimCodexAppsControlRequest, v1.ClaimCodexAppsControlResponse](
+			httpClient,
+			baseURL+WorkerServiceClaimCodexAppsControlProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("ClaimCodexAppsControl")),
+			connect.WithClientOptions(opts...),
+		),
+		reportCodexAppsControlResult: connect.NewClient[v1.ReportCodexAppsControlResultRequest, v1.ReportCodexAppsControlResultResponse](
+			httpClient,
+			baseURL+WorkerServiceReportCodexAppsControlResultProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("ReportCodexAppsControlResult")),
+			connect.WithClientOptions(opts...),
+		),
 		syncWorkerNetwork: connect.NewClient[v1.SyncWorkerNetworkRequest, v1.SyncWorkerNetworkResponse](
 			httpClient,
 			baseURL+WorkerServiceSyncWorkerNetworkProcedure,
@@ -315,6 +335,8 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 
 // workerServiceClient implements WorkerServiceClient.
 type workerServiceClient struct {
+	claimCodexAppsControl        *connect.Client[v1.ClaimCodexAppsControlRequest, v1.ClaimCodexAppsControlResponse]
+	reportCodexAppsControlResult *connect.Client[v1.ReportCodexAppsControlResultRequest, v1.ReportCodexAppsControlResultResponse]
 	syncWorkerNetwork            *connect.Client[v1.SyncWorkerNetworkRequest, v1.SyncWorkerNetworkResponse]
 	reportWorkerNativeRoute      *connect.Client[v1.ReportWorkerNativeRouteRequest, v1.ReportWorkerNativeRouteResponse]
 	listSessionDeletionWork      *connect.Client[v1.ListSessionDeletionWorkRequest, v1.ListSessionDeletionWorkResponse]
@@ -341,6 +363,16 @@ type workerServiceClient struct {
 	claimQuestionResponse        *connect.Client[v1.ClaimQuestionResponseRequest, v1.ClaimQuestionResponseResponse]
 	claimApprovalResponse        *connect.Client[v1.ClaimApprovalResponseRequest, v1.ClaimApprovalResponseResponse]
 	claimSteerInput              *connect.Client[v1.ClaimSteerInputRequest, v1.ClaimSteerInputResponse]
+}
+
+// ClaimCodexAppsControl calls delidev.v1.WorkerService.ClaimCodexAppsControl.
+func (c *workerServiceClient) ClaimCodexAppsControl(ctx context.Context, req *connect.Request[v1.ClaimCodexAppsControlRequest]) (*connect.Response[v1.ClaimCodexAppsControlResponse], error) {
+	return c.claimCodexAppsControl.CallUnary(ctx, req)
+}
+
+// ReportCodexAppsControlResult calls delidev.v1.WorkerService.ReportCodexAppsControlResult.
+func (c *workerServiceClient) ReportCodexAppsControlResult(ctx context.Context, req *connect.Request[v1.ReportCodexAppsControlResultRequest]) (*connect.Response[v1.ReportCodexAppsControlResultResponse], error) {
+	return c.reportCodexAppsControlResult.CallUnary(ctx, req)
 }
 
 // SyncWorkerNetwork calls delidev.v1.WorkerService.SyncWorkerNetwork.
@@ -475,6 +507,8 @@ func (c *workerServiceClient) ClaimSteerInput(ctx context.Context, req *connect.
 
 // WorkerServiceHandler is an implementation of the delidev.v1.WorkerService service.
 type WorkerServiceHandler interface {
+	ClaimCodexAppsControl(context.Context, *connect.Request[v1.ClaimCodexAppsControlRequest]) (*connect.Response[v1.ClaimCodexAppsControlResponse], error)
+	ReportCodexAppsControlResult(context.Context, *connect.Request[v1.ReportCodexAppsControlResultRequest]) (*connect.Response[v1.ReportCodexAppsControlResultResponse], error)
 	SyncWorkerNetwork(context.Context, *connect.Request[v1.SyncWorkerNetworkRequest]) (*connect.Response[v1.SyncWorkerNetworkResponse], error)
 	ReportWorkerNativeRoute(context.Context, *connect.Request[v1.ReportWorkerNativeRouteRequest]) (*connect.Response[v1.ReportWorkerNativeRouteResponse], error)
 	ListSessionDeletionWork(context.Context, *connect.Request[v1.ListSessionDeletionWorkRequest]) (*connect.Response[v1.ListSessionDeletionWorkResponse], error)
@@ -511,6 +545,18 @@ type WorkerServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	workerServiceMethods := v1.File_delidev_v1_worker_proto.Services().ByName("WorkerService").Methods()
+	workerServiceClaimCodexAppsControlHandler := connect.NewUnaryHandler(
+		WorkerServiceClaimCodexAppsControlProcedure,
+		svc.ClaimCodexAppsControl,
+		connect.WithSchema(workerServiceMethods.ByName("ClaimCodexAppsControl")),
+		connect.WithHandlerOptions(opts...),
+	)
+	workerServiceReportCodexAppsControlResultHandler := connect.NewUnaryHandler(
+		WorkerServiceReportCodexAppsControlResultProcedure,
+		svc.ReportCodexAppsControlResult,
+		connect.WithSchema(workerServiceMethods.ByName("ReportCodexAppsControlResult")),
+		connect.WithHandlerOptions(opts...),
+	)
 	workerServiceSyncWorkerNetworkHandler := connect.NewUnaryHandler(
 		WorkerServiceSyncWorkerNetworkProcedure,
 		svc.SyncWorkerNetwork,
@@ -669,6 +715,10 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 	)
 	return "/delidev.v1.WorkerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case WorkerServiceClaimCodexAppsControlProcedure:
+			workerServiceClaimCodexAppsControlHandler.ServeHTTP(w, r)
+		case WorkerServiceReportCodexAppsControlResultProcedure:
+			workerServiceReportCodexAppsControlResultHandler.ServeHTTP(w, r)
 		case WorkerServiceSyncWorkerNetworkProcedure:
 			workerServiceSyncWorkerNetworkHandler.ServeHTTP(w, r)
 		case WorkerServiceReportWorkerNativeRouteProcedure:
@@ -729,6 +779,14 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 
 // UnimplementedWorkerServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedWorkerServiceHandler struct{}
+
+func (UnimplementedWorkerServiceHandler) ClaimCodexAppsControl(context.Context, *connect.Request[v1.ClaimCodexAppsControlRequest]) (*connect.Response[v1.ClaimCodexAppsControlResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.ClaimCodexAppsControl is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) ReportCodexAppsControlResult(context.Context, *connect.Request[v1.ReportCodexAppsControlResultRequest]) (*connect.Response[v1.ReportCodexAppsControlResultResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.ReportCodexAppsControlResult is not implemented"))
+}
 
 func (UnimplementedWorkerServiceHandler) SyncWorkerNetwork(context.Context, *connect.Request[v1.SyncWorkerNetworkRequest]) (*connect.Response[v1.SyncWorkerNetworkResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.SyncWorkerNetwork is not implemented"))
