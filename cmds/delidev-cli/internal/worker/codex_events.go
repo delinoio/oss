@@ -133,7 +133,8 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 			c.blocked = true
 		}
 	}()
-	if c.blocked || c.finished && event.Kind != codex.SubagentEvent && event.Kind != codex.MetadataEvent && event.Kind != codex.ThreadStatusEvent || c.publisher == nil || c.thread == "" || c.turn == "" {
+	processWarning := event.Kind == codex.NoticeEvent && event.Notice == domain.NativeWarning && event.WindowsWarning != nil
+	if c.blocked || c.finished && event.Kind != codex.SubagentEvent && event.Kind != codex.MetadataEvent && event.Kind != codex.ThreadStatusEvent && !processWarning || c.publisher == nil || c.thread == "" || c.turn == "" {
 		return false, publicationUncertain()
 	}
 	if event.Kind == codex.LateTurnResponseEvent && event.Action == codex.SteerTurnAction {
@@ -198,6 +199,11 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 		}
 		return true, c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionResponseUsageObserved, ObservationID: domain.NewID(), ResponseUsage: event.ResponseUsage})
 	case codex.NoticeEvent:
+		if c.finished && processWarning {
+			// Process warnings can arrive while draining after root completion.
+			// Consume them without publishing after the immutable terminal receipt.
+			return true, nil
+		}
 		return true, c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionNoticeObserved, Notice: event.Notice})
 	case codex.TurnStartedEvent:
 		if event.Turn == nil || event.Turn.ID != c.turn || event.Turn.Status != codex.TurnRunning {
