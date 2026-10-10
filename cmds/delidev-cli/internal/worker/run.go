@@ -424,12 +424,18 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1) {
 				profile += "\x00session-startup-progress-v1"
 			}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_NATIVE_APPS_V1) {
+				profile += "\x00session-native-apps-v1"
+			}
 			if capabilityAttachID == "" || capabilityProfile != profile {
 				capabilityAttachID, capabilityProfile = domain.NewID(), profile
 			}
 			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1)
+			}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_NATIVE_APPS_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_NATIVE_APPS_V1)
 			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1)
