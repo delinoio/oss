@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { globalShortcutBindings, ShortcutId, ShortcutInput, ShortcutPlatform, ShortcutScope, type ShortcutBinding, type ShortcutDefinition } from "./shortcuts";
+import { sessionCloseTabBindings, globalShortcutBindings, ShortcutId, ShortcutInput, ShortcutPlatform, ShortcutScope, type ShortcutBinding, type ShortcutDefinition } from "./shortcuts";
 import { Surface } from "./surface";
 import type { MessageKey } from "./localization";
 
@@ -20,6 +20,7 @@ export const editableShortcutCatalog: readonly CatalogAction[] = [
   { id: ShortcutId.SearchFocus, label: "shortcuts.focusSearch", group: ShortcutGroup.Search, scopes: [Surface.Search], priority: 1, input: ShortcutInput.Allow, defaults: [{ key: "i", primary: true }] },
 ];
 export const readOnlyShortcutCatalog: readonly CatalogAction[] = [
+  { id: ShortcutId.SessionCloseTab, label: "shortcuts.closeTab", group: ShortcutGroup.Session, scopes: [Surface.Sessions], priority: 1, input: ShortcutInput.Allow, defaults: sessionCloseTabBindings },
   { id: ShortcutId.ToggleSidebar, label: "sidebar-preference.toggle", group: ShortcutGroup.Common, scopes: [ShortcutScope.Global], priority: 0, input: ShortcutInput.Allow, defaults: globalShortcutBindings[ShortcutId.ToggleSidebar] },
   { id: ShortcutId.CommandMenu, label: "command-menu.title", group: ShortcutGroup.Common, scopes: [ShortcutScope.Global], priority: 0, input: ShortcutInput.Allow, defaults: globalShortcutBindings[ShortcutId.CommandMenu] },
   { target: ShortcutTargetContext.SessionMessage, id: ShortcutId.SessionNewline, label: "shortcuts.newline", group: ShortcutGroup.Session, scopes: [Surface.Sessions], priority: 2, input: ShortcutInput.Target, defaults: [{ key: "Enter", shift: true }] },
@@ -32,7 +33,6 @@ export const shortcutCatalog = [...editableShortcutCatalog, ...readOnlyShortcutC
 export enum NativeShortcutId { NewWindow="native-new-window", CloseWindow="native-close-window", Quit="native-quit", Hide="native-hide", Minimize="native-minimize" }
 export const fixedNativeShortcutCatalog: readonly {id:NativeShortcutId;label:MessageKey;key:string;macOnly:boolean}[]=[
  {id:NativeShortcutId.NewWindow,label:"shortcuts.nativeNewWindow",key:"n",macOnly:false},
- {id:NativeShortcutId.CloseWindow,label:"shortcuts.nativeCloseWindow",key:"w",macOnly:false},
  {id:NativeShortcutId.Quit,label:"shortcuts.nativeQuit",key:"q",macOnly:true},
  {id:NativeShortcutId.Hide,label:"shortcuts.nativeHide",key:"h",macOnly:true},
  {id:NativeShortcutId.Minimize,label:"shortcuts.nativeMinimize",key:"m",macOnly:false},
@@ -44,7 +44,7 @@ export function validShortcutChord(chord: unknown): chord is ShortcutChord {
   const value = chord as Record<string, unknown>;
   if (Object.keys(value).sort().join(",") !== "key,shift" || typeof value.shift !== "boolean" || typeof value.key !== "string" || !/^(?:[a-z0-9]|Enter)$/.test(value.key)) return false;
   // Fixed product and native editing chords remain unavailable for rebinding.
-  return value.shift ? !/^[vz]$/.test(value.key) : !nativeReservedKeys.has(value.key) && !/^[bkn1-9acvxyz]$/.test(value.key);
+  return value.shift ? !/^[vz]$/.test(value.key) : !nativeReservedKeys.has(value.key) && !/^[bknw1-9acvxyz]$/.test(value.key);
 }
 export function customizationBindings(id: ShortcutId, overrides: ShortcutOverrides): readonly ShortcutBinding[] {
   const override = overrides[id];

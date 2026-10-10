@@ -30,7 +30,7 @@ it("capture requires the renderer primary and rejects unsafe input without match
 it("rejects fixed native menu chords throughout the complete editable map",()=>{for(const action of editableShortcutCatalog)for(const key of ["q","h","m","n","w"]){expect(()=>parseShortcutOverrides({[action.id]:{state:ShortcutOverrideState.Binding,chord:{key,shift:false}}})).toThrow();expect(validShortcutChord({key,shift:true})).toBe(true);}});
 
 it("keeps native menu bindings in a typed read-only catalog separate from seven editable IDs",()=>{
- expect(editableShortcutCatalog).toHaveLength(7);expect(fixedNativeShortcutCatalog.map(action=>action.key)).toEqual(["n","w","q","h","m"]);
+ expect(editableShortcutCatalog).toHaveLength(7);expect(fixedNativeShortcutCatalog.map(action=>action.key)).toEqual(["n","q","h","m"]);
  for(const native of fixedNativeShortcutCatalog){expect(editableShortcutCatalog.some(action=>String(action.id)===String(native.id))).toBe(false);for(const action of editableShortcutCatalog)expect(()=>parseShortcutOverrides({[action.id]:{state:ShortcutOverrideState.Binding,chord:{key:native.key,shift:false}}})).toThrow();}
 });
 
@@ -47,4 +47,12 @@ it("retains fixed Session Enter with default, custom and disabled primary overri
  expect(editableShortcutCatalog.find(action=>action.id===ShortcutId.SessionSend)?.fixed).toEqual([{key:"Enter"}]);
  expect(readOnlyShortcutCatalog.find(action=>action.id===ShortcutId.SessionNewline)?.defaults).toEqual([{key:"Enter",shift:true}]);
  expect(editableShortcutCatalog).toHaveLength(7);
+});
+
+it("keeps renderer Close tab fixed and W reserved without adding an editable preference", () => {
+ const close = readOnlyShortcutCatalog.find(action => action.id === ShortcutId.SessionCloseTab)!;
+ expect(close.defaults).toEqual([{key:"w",primary:true}]); expect(close.input).toBe("allow");
+ expect(editableShortcutCatalog).toHaveLength(7);
+ expect(()=>parseShortcutOverrides({[ShortcutId.SessionCloseTab]:{state:"disabled"}})).toThrow();
+ expect(validShortcutChord({key:"w",shift:false})).toBe(false);
 });

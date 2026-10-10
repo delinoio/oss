@@ -8,6 +8,8 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
+- Renderer workspace shortcuts must reuse the owning presentation-close callbacks and the desktop shortcut contract. Keep fixed shortcut declarations, Help, catalogs and control ARIA consistent; preserve retained resource and request ownership.
+
 ## Owning contracts
 
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)

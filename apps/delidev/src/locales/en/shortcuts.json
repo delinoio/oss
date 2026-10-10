@@ -64,7 +64,6 @@
   "shortcut-settings.capturePending": "Preparing or ending native capture…",
   "shortcut-settings.captureUncertain": "Capture could not be confirmed. Cancel to inspect and end the original capture before trying again.",
   "shortcuts.nativeNewWindow": "New Window",
-  "shortcuts.nativeCloseWindow": "Close Window",
   "shortcuts.nativeQuit": "Quit (macOS menu)",
   "shortcuts.nativeHide": "Hide (macOS menu)",
   "shortcuts.nativeMinimize": "Minimize (native menu)",
@@ -79,5 +78,7 @@
   "shortcuts.tab7": "Select tab 7",
   "shortcuts.tab8": "Select tab 8",
   "shortcuts.tab9": "Select tab 9",
-  "shortcuts.externalBrowserTabLimit": "On Windows and Linux, use the tab bar while an external browser page has focus. Number shortcuts work elsewhere in the app."
+  "shortcuts.externalBrowserTabLimit": "On Windows and Linux, use the tab bar while an external browser page has focus. Number shortcuts work elsewhere in the app.",
+  "shortcuts.closeTab": "Close tab",
+  "shortcuts.conversationPinned": "Conversation stays open."
 }

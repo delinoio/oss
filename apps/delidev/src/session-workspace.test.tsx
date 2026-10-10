@@ -12,6 +12,7 @@ import { i18n } from "./localization";
 import { SessionNameEditorProvider } from "./session-name-editor";
 import { MutationIntents } from "./mutation";
 import { SessionTabsProvider } from "./session-tabs";
+import { ShortcutProvider } from "./shortcut-provider";
 import { SessionView } from "./session";
 
 vi.mock("./terminal-emulator", () => ({ openTerminalScreen: (host: HTMLElement) => {
@@ -522,4 +523,33 @@ it("keeps evicted waiting payload restoration reachable even after all current v
  const input=await screen.findByLabelText("Session name"); await waitFor(()=>expect(input).toHaveProperty("value","Original session"));
  fireEvent.change(input,{target:{value:"Receipt name"}});fireEvent.click(screen.getByRole("button",{name:"Save"}));
  await screen.findByRole("heading",{name:"Receipt name"});expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+
+it.each(["MacIntel", "Win32", "Linux x86_64"])("closes only the selected workspace tab with the local primary W on %s", async platform => {
+ vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
+ const f = fixture(); render(<ShortcutProvider>{f.view()}</ShortcutProvider>);
+ const composer = await screen.findByRole("textbox", { name: "Message" });
+ for (const name of ["Files", "Diagnostics"]) { fireEvent.click(screen.getByRole("button", { name: "Open tool" })); fireEvent.click(screen.getByRole("menuitem", { name })); }
+ const tab = screen.getByRole("tab", { name: "Diagnostics" });
+ const close = screen.getByRole("button", { name: "Close Diagnostics tab" });
+ expect(close.getAttribute("aria-keyshortcuts")).toBe(platform === "MacIntel" ? "Meta+W" : "Control+W");
+ fireEvent.keyDown(tab, { key: "w", ...(platform === "MacIntel" ? { metaKey: true } : { ctrlKey: true }) });
+ expect(screen.queryByRole("tab", { name: "Diagnostics" })).toBeNull();
+ expect(screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected")).toBe("true");
+ // Files retains its existing owner autofocus after immediate-left selection.
+ expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Files" }));
+ fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
+ const handled = new KeyboardEvent("keydown", { key: "w", bubbles: true, cancelable: true, ...(platform === "MacIntel" ? { metaKey: true } : { ctrlKey: true }) }); composer.dispatchEvent(handled);
+ expect(handled.defaultPrevented).toBe(true); expect(screen.getByRole("tab", { name: "Files" })).toBeTruthy();
+ expect(composer).toHaveProperty("value", "Original draft"); expect(f.control).not.toHaveBeenCalled(); expect(f.enqueue).not.toHaveBeenCalled(); expect(f.terminalControl).not.toHaveBeenCalled();
+});
+
+
+it("does not close a retained tab after its session workspace becomes inactive", async () => {
+ const f=fixture();const view=render(<ShortcutProvider>{f.view()}</ShortcutProvider>);await screen.findByRole("textbox",{name:"Message"});
+ fireEvent.click(screen.getByRole("button",{name:"Open tool"}));fireEvent.click(screen.getByRole("menuitem",{name:"Diagnostics"}));
+ view.rerender(<ShortcutProvider>{f.view("Original draft",false)}</ShortcutProvider>);
+ const tab=screen.getByRole("tab",{name:"Diagnostics"});fireEvent.keyDown(tab,{key:"w",ctrlKey:true});
+ expect(screen.getByRole("tab",{name:"Diagnostics"}).getAttribute("aria-selected")).toBe("true");expect(f.control).not.toHaveBeenCalled();
 });

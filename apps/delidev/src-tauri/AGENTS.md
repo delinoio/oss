@@ -8,6 +8,8 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
+- Keep native menu accelerators consistent with renderer-owned fixed shortcuts in the desktop contract. Do not assign a native window-lifecycle accelerator to a chord owned by a renderer workspace action.
+
 ## Owning contracts
 
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)

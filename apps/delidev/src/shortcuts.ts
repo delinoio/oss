@@ -4,7 +4,7 @@ import type { MessageKey } from "./localization";
 import { Surface } from "./surface";
 
 export enum ShortcutScope { Global = "global" }
-export enum ShortcutId { ToggleSidebar = "toggle-sidebar", CommandMenu = "command-menu", SessionTab1 = "session-tab-1", SessionTab2 = "session-tab-2", SessionTab3 = "session-tab-3", SessionTab4 = "session-tab-4", SessionTab5 = "session-tab-5", SessionTab6 = "session-tab-6", SessionTab7 = "session-tab-7", SessionTab8 = "session-tab-8", SessionTab9 = "session-tab-9", Help = "help", NewSession = "new-session", SessionFocus = "session-focus", SessionSend = "session-send", SessionNewline = "session-newline", NewSessionFocus = "new-session-focus", NewSessionSend = "new-session-send", NewSessionNewline = "new-session-newline", SearchFocus = "search-focus", SearchSubmit = "search-submit", FilesClose = "files-close", DiffClose = "diff-close", DiagnosticsClose = "diagnostics-close" }
+export enum ShortcutId { ToggleSidebar = "toggle-sidebar", CommandMenu = "command-menu", SessionCloseTab = "session-close-tab", SessionTab1 = "session-tab-1", SessionTab2 = "session-tab-2", SessionTab3 = "session-tab-3", SessionTab4 = "session-tab-4", SessionTab5 = "session-tab-5", SessionTab6 = "session-tab-6", SessionTab7 = "session-tab-7", SessionTab8 = "session-tab-8", SessionTab9 = "session-tab-9", Help = "help", NewSession = "new-session", SessionFocus = "session-focus", SessionSend = "session-send", SessionNewline = "session-newline", NewSessionFocus = "new-session-focus", NewSessionSend = "new-session-send", NewSessionNewline = "new-session-newline", SearchFocus = "search-focus", SearchSubmit = "search-submit", FilesClose = "files-close", DiffClose = "diff-close", DiagnosticsClose = "diagnostics-close" }
 export enum ShortcutInput { Ignore = "ignore", Allow = "allow", Target = "target" }
 export enum ShortcutExecution { Action = "action", Native = "native" }
 export enum ShortcutPlatform { Mac = "mac", Other = "other" }
@@ -14,6 +14,7 @@ export const globalShortcutBindings = {
   [ShortcutId.Help]: [{ key: "?", ariaKey: "/", ariaShift: true }],
   [ShortcutId.NewSession]: [{ key: "n", primary: true, shift: true }],
 } as const;
+export const sessionCloseTabBindings = [{ key: "w", primary: true }] as const;
 export interface ShortcutBinding { key: string; primary?: boolean; shift?: boolean; ariaKey?: string; ariaShift?: boolean }
 export interface ShortcutDefinition {
   id: ShortcutId;
@@ -71,7 +72,7 @@ export function dispatchShortcut(event: KeyboardEvent, definitions: readonly Sho
   const fromMenu = Boolean(menu?.open && menu.contains(node));
   const fromHelp = Boolean(help?.dialog.open && help.dialog.contains(node));
   if (shortcutModalVisible(fromMenu ? menu : fromHelp ? help!.dialog : undefined)) return false;
-  const candidates = definitions.filter(item => item.active !== false && (!terminal || item.terminal === true) && (!fromMenu || item.id === ShortcutId.CommandMenu) && (item.scope === ShortcutScope.Global || item.scope === surface) && (!local || item.target) && (!fromHelp || (!item.target && !item.terminal && item.id !== ShortcutId.CommandMenu)) && (!item.target || (availableShortcutTarget(item.target.current) && item.target.current!.contains(node))) && (!editable(node) || item.input === ShortcutInput.Allow || (item.input === ShortcutInput.Target && item.target?.current?.contains(node))) && item.bindings.some(binding => bindingMatches(event, binding, platform)));
+  const candidates = definitions.filter(item => item.active !== false && (!terminal || item.terminal === true) && (!fromMenu || item.id === ShortcutId.CommandMenu) && (item.scope === ShortcutScope.Global || item.scope === surface) && (!local || item.target) && (!fromHelp || (!item.target && (!item.terminal || item.id === ShortcutId.SessionCloseTab) && item.id !== ShortcutId.CommandMenu)) && (!item.target || (availableShortcutTarget(item.target.current) && item.target.current!.contains(node))) && (!editable(node) || item.input === ShortcutInput.Allow || (item.input === ShortcutInput.Target && item.target?.current?.contains(node))) && item.bindings.some(binding => bindingMatches(event, binding, platform)));
   const priority = (item: ShortcutDefinition) => item.target ? 2 : item.scope === ShortcutScope.Global ? 0 : 1;
   const highest = Math.max(-1, ...candidates.map(priority));
   const matches = candidates.filter(item => priority(item) === highest);

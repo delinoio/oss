@@ -131,7 +131,7 @@ it("preserves help for excluded events, repeated help and background input actio
 });
 
 it("lists native window bindings as read-only help without adding dispatch actions",()=>{
- const run=vi.fn();render(<ShortcutProvider><Consumer enabled run={run}/></ShortcutProvider>);fireEvent.click(screen.getByRole("button",{name:"Help opener"}));const dialog=screen.getByRole("dialog");expect(Array.from(within(dialog).getByText("New Window").closest("div")!.querySelectorAll("kbd"),node=>node.textContent)).toEqual(["Ctrl","N"]);expect(within(dialog).getByText("Close Window")).toBeTruthy();expect(run).not.toHaveBeenCalled();
+ const run=vi.fn();render(<ShortcutProvider><Consumer enabled run={run}/></ShortcutProvider>);fireEvent.click(screen.getByRole("button",{name:"Help opener"}));const dialog=screen.getByRole("dialog");expect(Array.from(within(dialog).getByText("New Window").closest("div")!.querySelectorAll("kbd"),node=>node.textContent)).toEqual(["Ctrl","N"]);expect(within(dialog).queryByText("Close Window")).toBeNull();expect(run).not.toHaveBeenCalled();
 });
 
 
@@ -199,4 +199,20 @@ it("connection replacement disposes held ownership and its release listeners", (
 it("discloses the exact external browser numeric exception without disabling ordinary tab shortcuts",()=>{
  function TabHelp(){const open=useShortcutHelp();useShortcutSurface(Surface.Sessions);useShortcuts([{id:ShortcutId.SessionTab1,scope:Surface.Sessions,label:"shortcuts.tab1",bindings:[{key:"1",primary:true}],terminal:true,run:()=>{}}]);return <button onClick={open}>Tab help</button>;}
  render(<ShortcutProvider><TabHelp/></ShortcutProvider>);fireEvent.click(screen.getByRole("button",{name:"Tab help"}));expect(screen.getByText("On Windows and Linux, use the tab bar while an external browser page has focus. Number shortcuts work elsewhere in the app.")).toBeTruthy();expect(screen.getByText("Select tab 1")).toBeTruthy();
+});
+
+
+it.each(["en", "ko"])("dismisses %s Help before terminal-eligible Close tab and keeps destination focus", async language => {
+ await act(() => i18n.changeLanguage(language));
+ const destination = document.createElement("button"); document.body.append(destination);
+ const run = vi.fn(() => { expect(document.querySelector(".shortcut-help")).toBeNull(); destination.focus(); });
+ function CloseOwner() {
+  const openHelp = useShortcutHelp(); useShortcutSurface(Surface.Sessions);
+  useShortcuts([{id:ShortcutId.SessionCloseTab,scope:Surface.Sessions,label:"shortcuts.closeTab",bindings:[{key:"w",primary:true}],input:ShortcutInput.Allow,terminal:true,run}]);
+  return <button onClick={openHelp}>Help opener</button>;
+ }
+ render(<ShortcutProvider><CloseOwner/></ShortcutProvider>); fireEvent.click(screen.getByRole("button",{name:"Help opener"}));
+ expect(screen.getByText(language === "ko" ? "탭 닫기" : "Close tab")).toBeTruthy();
+ fireEvent.keyDown(document.querySelector(".shortcut-help button")!,{key:"w",ctrlKey:true});
+ expect(run).toHaveBeenCalledTimes(1); await act(async()=>{});expect(document.activeElement).toBe(destination); destination.remove();
 });

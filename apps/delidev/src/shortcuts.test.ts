@@ -104,3 +104,22 @@ it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])("keeps fixed send and na
  }
  input.remove();
 });
+
+
+it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])("retains input/terminal guards for fixed Close tab on %s", localPlatform => {
+ const input = document.createElement("input"); document.body.append(input); const run = vi.fn();
+ const actions = [{ id: ShortcutId.SessionCloseTab, scope: Surface.Sessions, label: "shortcuts.closeTab" as const, bindings: [{key:"w",primary:true}], input: ShortcutInput.Allow, terminal:true, enabled:true, run }];
+ const modifiers = localPlatform === ShortcutPlatform.Mac ? {metaKey:true} : {ctrlKey:true};
+ for (const terminal of [false,true]) {
+  if(terminal) input.setAttribute("data-shortcuts","passthrough");
+  const event = new KeyboardEvent("keydown",{key:"w",...modifiers,bubbles:true,cancelable:true});
+  input.addEventListener("keydown",()=>dispatchShortcut(event,actions,Surface.Sessions,localPlatform),{once:true});input.dispatchEvent(event);expect(event.defaultPrevented).toBe(true);
+  expect(dispatchShortcut(event,actions,Surface.Sessions,localPlatform)).toBe(false);
+ }
+ expect(run).toHaveBeenCalledTimes(2);
+ input.focus();
+ for(const flags of [{shiftKey:true},{altKey:true},{repeat:true},{isComposing:true},{keyCode:229}]) expect(dispatchShortcut(new KeyboardEvent("keydown",{key:"w",...modifiers,...flags}),actions,Surface.Sessions,localPlatform)).toBe(false);
+ expect(dispatchShortcut(new KeyboardEvent("keydown",{key:"w",...modifiers}),actions,Surface.Search,localPlatform)).toBe(false);
+ actions[0]!.enabled = false;const blocked=new KeyboardEvent("keydown",{key:"w",...modifiers,cancelable:true});expect(dispatchShortcut(blocked,actions,Surface.Sessions,localPlatform)).toBe(true);expect(blocked.defaultPrevented).toBe(true);expect(run).toHaveBeenCalledTimes(2);
+ input.remove();
+});
