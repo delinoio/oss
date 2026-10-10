@@ -148,7 +148,7 @@ SystemService exposes owner/client backup creation, metadata pagination and expl
 
 ### Durable backup creation
 
-`RequestBackup`, `GetBackupCreation` and `ListBackupCreations` expose original durable jobs through Connect and generated queries. Current CLI and Settings use that path; the synchronous `CreateBackup` remains compatible. Keep pending acceptance separate from image publication, exact retries across navigation, typed failure/stale observations and integer precision. Jobs resume after server restart without client resubmission, and completed history does not assert current image availability. See the [storage contract](cmds-delidev-storage-contract.md).
+`RequestBackup`, `GetBackupCreation` and `ListBackupCreations` expose original durable jobs through Connect and generated queries. Current CLI and Settings use that path. The synchronous `CreateBackup` remains compatible only before complete protocol-2/baseline-32 reset activation; reservations alone do not retire it. At the current complete activation, the [reset contract](cmds-delidev-structure-contract.md#pre-release-compatibility-reset) retains only its historical declaration and allocation provenance: authorized calls return Unsupported without a receipt, backup file or current job. Keep pending acceptance separate from image publication, exact retries across navigation, typed failure/stale observations and integer precision. Jobs resume after server restart without client resubmission, and completed history does not assert current image availability. See the [storage contract](cmds-delidev-storage-contract.md).
 
 `SystemService.GetBackupDeletion` is an owner/paired-client read of one original
 durable deletion job ID, independent of history pagination. It rechecks current
