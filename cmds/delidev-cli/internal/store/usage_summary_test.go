@@ -103,6 +103,87 @@ func TestUsageSummaryDailyAttributionAcrossMissingMidnight(t *testing.T) {
 	}
 }
 
+func TestUsageSummarySaoPauloPersistedBoundaryRecords(t *testing.T) {
+	s, _ := openTest(t)
+	fixture := seedSearch(t, s, "source", domain.Archived)
+	parse := func(value string) time.Time {
+		t.Helper()
+		parsed, err := time.Parse(time.RFC3339, value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return parsed
+	}
+	from := parse("2018-11-03T03:00:00Z")
+	dayTwo := parse("2018-11-04T03:00:00Z")
+	dayThree := parse("2018-11-05T02:00:00Z")
+	until := parse("2018-11-06T02:00:00Z")
+	selection := domain.UsageSelection{
+		From:        from,
+		Until:       until,
+		Granularity: domain.UsageTimeGranularityDay,
+		TimeZone:    "America/Sao_Paulo",
+	}
+
+	large, seven, zero, eleven, outside := int64(9007199254740993), int64(7), int64(0), int64(11), int64(99)
+	events := []struct {
+		at    time.Time
+		total *int64
+	}{
+		{from.Add(-time.Millisecond), &outside},
+		{from, &large},
+		{dayTwo.Add(-time.Millisecond), &seven},
+		{dayTwo, &large},
+		{dayThree.Add(-time.Millisecond), nil},
+		{dayThree, &zero},
+		{until.Add(-time.Millisecond), &eleven},
+		{until, &outside},
+	}
+	for i, event := range events {
+		record := responseRecord(fixture)
+		record.Sequence = uint64(i + 1)
+		record.Usage.ResponseDigest = fmt.Sprintf("%064x", i+1)
+		if event.total == nil {
+			record.Usage.Counts = nil
+		} else {
+			record.Usage.Counts = usageCounts(*event.total, 0, *event.total)
+		}
+		writeUsageAt(t, s, record, event.at)
+	}
+
+	summary, err := readUsage(s, selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Analytics == nil || summary.Analytics.TimeZone != selection.TimeZone || len(summary.Analytics.Days) != 3 {
+		t.Fatalf("missing Sao Paulo daily analytics: %+v", summary.Analytics)
+	}
+	wantRanges := [][2]time.Time{{from, dayTwo}, {dayTwo, dayThree}, {dayThree, until}}
+	wantTotals := []domain.UsageMeasure{
+		{KnownTotal: "9007199254741000", MeasuredResponses: 2},
+		{KnownTotal: "9007199254740993", MeasuredResponses: 1, UnavailableResponses: 1},
+		{KnownTotal: "11", MeasuredResponses: 2},
+	}
+	var combined domain.UsageTotals
+	for i, day := range summary.Analytics.Days {
+		if !day.From.Equal(wantRanges[i][0]) || !day.Until.Equal(wantRanges[i][1]) {
+			t.Fatalf("day %d has wrong persisted-summary boundaries: %+v", i, day)
+		}
+		if day.Totals.Responses != 2 || day.Totals.Total != wantTotals[i] {
+			t.Fatalf("day %d lost exact, measured-zero or unavailable totals: %+v", i, day.Totals)
+		}
+		combined.Merge(day.Totals)
+	}
+	wantOverall := domain.UsageMeasure{KnownTotal: "18014398509482004", MeasuredResponses: 5, UnavailableResponses: 1}
+	if summary.Totals.Responses != 6 || summary.Totals.Total != wantOverall || !reflect.DeepEqual(combined, summary.Totals) {
+		t.Fatalf("daily and overall persisted totals do not reconcile: daily=%+v overall=%+v", combined, summary.Totals)
+	}
+	legacy, err := readUsage(s, domain.UsageSelection{From: from, Until: until})
+	if err != nil || legacy.Analytics != nil || !reflect.DeepEqual(legacy.Totals, summary.Totals) {
+		t.Fatalf("daily attribution changed summary-only totals: %+v %v", legacy, err)
+	}
+}
+
 func TestUsageSummaryDailyAndModelAnalyticsShareRetentionSnapshot(t *testing.T) {
 	s, _ := openTest(t)
 	fixture := seedSearch(t, s, "source", domain.Archived)
