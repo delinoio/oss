@@ -266,6 +266,8 @@ Apple-only execution requires only Apple variables and secrets.
    SHA-256 manifest. Record its GitHub artifact ID. A package run cannot upload.
 3. Dispatch `submit` with that exact `candidate_artifact_id`. The workflow checks
    the original repository/run/source/workflow and successful package result.
+   Download the candidate and latest receipt from their independently verified
+   original run IDs; never search the current submission run for retained artifacts.
    Submission checks the retained candidate and never rebuilds or re-signs it.
    Apple validates the exact app/internal group, original BuildUpload/file SHA-256
    and `INTERNAL_ONLY` processed build before assignment. Google validates the

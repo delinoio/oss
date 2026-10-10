@@ -21,7 +21,7 @@
 
 - Persist all selected candidate-bound platform receipts before provider access. Missing recovery receipts remain Unknown. Apple proof requires nested COMPLETE state and complete bounded group pagination; Google staged edit membership is not distribution proof. Mark observation edits writable before any track mutation, commit the original edit, and reconcile exact published bytes without replacement uploads.
 
-- Beta target defaults to both platforms. Explicit iOS-only candidates use schema 2 and require no Android code or credentials; preserve schema-1 both-platform candidates and exact target-bound provenance. Serialize all beta workflow runs without canceling original submissions.
+- Beta target defaults to both platforms. Explicit iOS-only candidates use schema 2 and require no Android code or credentials; preserve schema-1 both-platform candidates and exact target-bound provenance. Serialize all beta workflow runs without canceling original submissions. Bind candidate and receipt downloads to their independently verified original run IDs.
 
 - Direct iOS Cargo builds must pass the configured minimum system version to the Swift linker; do not rely on its iOS 13 fallback or a warm local build.
 

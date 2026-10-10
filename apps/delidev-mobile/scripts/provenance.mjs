@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { spawnSync } from "node:child_process";
+import { appendFileSync } from "node:fs";
 import { Identity } from "./beta.mjs";
 export function verifyProvenance(artifact, run, input, receipt = false) {
   const prefix = receipt
@@ -7,6 +8,9 @@ export function verifyProvenance(artifact, run, input, receipt = false) {
     : `delidev-mobile-candidate-${input.sourceSha}-${input.version}-${input.iosBuild}-${input.target === "ios" ? "ios" : input.androidCode}`;
   if (
     !artifact ||
+    !Number.isSafeInteger(artifact.workflow_run?.id) ||
+    artifact.workflow_run.id < 1 ||
+    artifact.workflow_run.id !== run?.id ||
     artifact.expired ||
     !artifact.name.startsWith(prefix) ||
     (!receipt && artifact.name !== prefix) ||
@@ -20,6 +24,7 @@ export function verifyProvenance(artifact, run, input, receipt = false) {
   return {
     identity: Identity,
     artifactId: artifact.id,
+    runId: run.id,
     sourceSha: input.sourceSha,
   };
 }
@@ -48,7 +53,7 @@ if (process.argv[1]?.endsWith("/provenance.mjs"))
           run = get(
             `repos/${e.GITHUB_REPOSITORY}/actions/runs/${artifact.workflow_run?.id}`,
           );
-        verifyProvenance(
+        const proof = verifyProvenance(
           artifact,
           run,
           {
@@ -60,6 +65,9 @@ if (process.argv[1]?.endsWith("/provenance.mjs"))
           },
           receipt,
         );
+        // Cross-run downloads must use the verified owner, never the current run.
+        if (e.GITHUB_OUTPUT) appendFileSync(e.GITHUB_OUTPUT,
+          `${receipt ? "receipt" : "candidate"}_run_id=${proof.runId}\n`);
       }
   } catch {
     process.stderr.write(

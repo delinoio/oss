@@ -54,8 +54,8 @@ test("dispatch validates exact iOS-only selection without Android input", () => 
   assert.equal(run({ DELIDEV_MOBILE_TARGET: "both", DELIDEV_MOBILE_ANDROID_CODE: "2" }), 0);
   const input = { target: "ios", sourceSha: env.GITHUB_SHA, version: "0.1.0", iosBuild: "1" };
   const artifact = { id: 1, name: `delidev-mobile-candidate-${env.GITHUB_SHA}-0.1.0-1-ios`,
-    workflow_run: { head_sha: env.GITHUB_SHA } };
-  const record = { head_sha: env.GITHUB_SHA, event: "workflow_dispatch", path: ".github/workflows/delidev-mobile-beta.yml", conclusion: "success" };
+    workflow_run: { id: 101, head_sha: env.GITHUB_SHA } };
+  const record = { id: 101, head_sha: env.GITHUB_SHA, event: "workflow_dispatch", path: ".github/workflows/delidev-mobile-beta.yml", conclusion: "success" };
   assert.equal(verifyProvenance(artifact, record, input).artifactId, 1);
   assert.throws(() => verifyProvenance(artifact, record, { ...input, target: "both", androidCode: "1" }));
 });
@@ -70,9 +70,10 @@ test("candidate provenance is exact source, trusted workflow and complete succes
       id: 9,
       name: `delidev-mobile-candidate-${input.sourceSha}-1.0.0-7-8`,
       expired: false,
-      workflow_run: { head_sha: input.sourceSha },
+      workflow_run: { id: 101, head_sha: input.sourceSha },
     },
     run = {
+      id: 101,
       head_sha: input.sourceSha,
       event: "workflow_dispatch",
       path: ".github/workflows/delidev-mobile-beta.yml",
@@ -81,6 +82,8 @@ test("candidate provenance is exact source, trusted workflow and complete succes
   assert.equal(verifyProvenance(artifact, run, input).artifactId, 9);
   for (const delta of [
     { expired: true },
+    { workflow_run: { id: 102, head_sha: input.sourceSha } },
+    { workflow_run: { id: "101", head_sha: input.sourceSha } },
     { name: "foreign" },
     { workflow_run: { head_sha: "b".repeat(40) } },
   ])
@@ -103,4 +106,22 @@ test("Android setup excludes the retired tools package", () => {
     assert.equal(setup.with.packages, "platform-tools");
     assert.equal(setup.with["cmdline-tools-version"], "16111833");
   }
+});
+
+test("cross-run candidate and receipt downloads use their independently verified owners", () => {
+  const steps = workflow.jobs.submit.steps;
+  assert.equal(steps.find(step => step.id === "provenance").run,
+    "node apps/delidev-mobile/scripts/provenance.mjs");
+  const downloads = steps.filter(step => step.uses?.startsWith("actions/download-artifact@"));
+  assert.equal(downloads[0].with["run-id"], "${{ steps.provenance.outputs.candidate_run_id }}");
+  assert.equal(downloads[1].with["run-id"], "${{ steps.provenance.outputs.receipt_run_id }}");
+  const input = { target: "ios", sourceSha: "a".repeat(40), version: "0.1.0", iosBuild: "1" };
+  const run = { id: 101, head_sha: input.sourceSha, event: "workflow_dispatch",
+    path: ".github/workflows/delidev-mobile-beta.yml", conclusion: "success" };
+  const artifact = { id: 9, name: `delidev-mobile-candidate-${input.sourceSha}-0.1.0-1-ios`,
+    workflow_run: { id: 101, head_sha: input.sourceSha } };
+  assert.equal(verifyProvenance(artifact, run, input).runId, 101);
+  assert.equal(verifyProvenance({ ...artifact, id: 10, name: "delidev-mobile-receipts-202-1",
+    workflow_run: { id: 202, head_sha: input.sourceSha } },
+    { ...run, id: 202, conclusion: "failure" }, input, true).runId, 202);
 });

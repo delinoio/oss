@@ -56,4 +56,4 @@
 
 - DeliDev release coordinator and independent release workflow external actions use full commit SHAs. Keep macOS signing in a fresh Environment job with only checkout, Node and artifact transfer actions; no package manager/toolchain/build dependency installation precedes credentials. Build jobs have no signing Environment or secret references. Preserve same-run keyless DMG/Worker/CEF notice digest inventory and signed-candidate reuse before rebuild/resign.
 
-- DeliDev mobile beta defaults to both platforms and permits explicit iOS-only execution under the mobile contract. Preserve target-bound candidates, all initial receipts before provider access, exact source provenance and non-canceling global serialization. iOS-only jobs require no Google credentials.
+- DeliDev mobile beta defaults to both platforms and permits explicit iOS-only execution under the mobile contract. Preserve target-bound candidates, all initial receipts before provider access, exact source provenance and non-canceling global serialization. iOS-only jobs require no Google credentials. Cross-run candidate and receipt downloads use their independently provenance-verified owner run IDs.
