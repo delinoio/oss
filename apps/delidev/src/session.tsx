@@ -1,3 +1,6 @@
+import { CodexAppsPanel } from "./codex-apps";
+import { serviceAccount } from "./subscription-resource";
+
 import { WaitingQueue } from "./waiting-queue";
 
 import { FlatDisclosureScope } from "./disclosure";
@@ -16,6 +19,7 @@ import { SessionProgressStatus, StartupObservedOperation } from "./session-progr
 import { currentTurn } from "./turn-timing";
 import { ToolTurnTranscript } from "./tool-turn-transcript";
 import { Disclosure, DisclosureSummary } from "./disclosure";
+import { NativeCodexApp } from "./native-codex-app";
 import { NativeImageView } from "./native-image-view";
 import { SessionHarness } from "./session-harness";
 import { useSkillCompletion, type SkillTokenBinding } from "./skill-completion";
@@ -65,12 +69,12 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type React
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
 import {
-  ConnectionState, EntityKind, ResourceQuery, ResourceService, SessionAction, SessionQuery, SystemQuery, SystemCapability,
+  ConnectionState, EntityKind, SubscriptionServiceId, isEntityId, ResourceQuery, ResourceService, SessionAction, SessionQuery, SystemQuery, SystemCapability,
   SyncKind, newRequestId, synchronizeResources, clientFailure, supportsResourceSchema, type ClientFailure, type Resource,
 } from "@delinoio/delidev-api-client";
 import { document as readDocument, encode, items, Mode, object, resourceName, text, Workspace } from "./documents";
 import { useRetainedMutation, useRetainedMutationNotifications } from "./mutation";
-import { ServiceProblem, Failure, Problem, failureSummary } from "./ui";
+import { Modal, ServiceProblem, Failure, Problem, failureSummary } from "./ui";
 import { SessionActions, SessionIcon, SessionIconKind, SessionNotice } from "./session-presentation";
 import "./session.css";
 import { Interaction } from "./interactions";
@@ -83,6 +87,40 @@ import { SessionStorageAction } from "./session-storage";
 import { SessionPullRequests } from "./session-pull-requests";
 import { PendingQueueInputs, QueuedInput, type QueuedInputDraft } from "./queue";
 import { StartupRejection } from "./startup-rejection";
+
+// Apps admission uses the retained native profile, never today's Agent or route.
+export function sessionCodexAppsAccountId(session: Resource): string {
+  if (session.kind !== EntityKind.SESSION || !supportsResourceSchema(session) || session.revision <= 0n) return "";
+  const data = readDocument(session), initial = object(data.initial_execution), configuration = object(initial.configuration);
+  if (object(data.fork).sidechat_parent_snapshot || configuration.harness !== "codex" || configuration.subscription !== true || configuration.subscription_service !== SubscriptionServiceId.ChatGPT) return "";
+  const current = object(data.current_execution);
+  // A present invalid account reference must not fall back to another account.
+  const accountId = Object.hasOwn(current, "account_id") ? text(current.account_id) : text(initial.initial_account_id);
+  return isEntityId(accountId) ? accountId : "";
+}
+
+export function SessionCodexApps({ session, supported, active }: { session: Resource; supported: boolean; active: boolean }) {
+  useLocale();
+  const accountId = sessionCodexAppsAccountId(session);
+  const [opened, setOpened] = useState<{ sessionId: string; accountId: string }>();
+  const eligible = active && supported && Boolean(accountId);
+  const original = eligible && opened?.sessionId === session.id && opened.accountId === accountId;
+  const account = useQuery(ResourceQuery.getResource, { id: accountId }, { enabled: original, refetchInterval: original ? 5000 : false });
+  useEffect(() => { if (!original) setOpened(undefined); }, [original]);
+  const close = () => setOpened(undefined);
+  const selected = account.data?.resource;
+  // Disabled/removing accounts still own retained cleanup. The server separately
+  // admits positive actions against the original current connection and health.
+  const valid = !account.isError && serviceAccount(selected, accountId, SubscriptionServiceId.ChatGPT);
+  if (!eligible) return null;
+  return <section className="session-information-section">
+    <h3>{copy("codex-apps.title")}</h3>
+    <button type="button" onClick={() => setOpened({ sessionId: session.id, accountId })}>{copy("codex-apps.title")}</button>
+    {original ? valid ? <CodexAppsPanel session={session} account={selected!} onClose={close} /> : <Modal title={copy("codex-apps.title")} close={close}>
+      {account.isPending ? <p role="status">{copy("codex-apps.loading")}</p> : <><p role="alert">{copy("codex-apps.invalid")}</p>{account.error ? <Problem error={account.error} /> : null}<button type="button" disabled={account.isFetching} onClick={() => void account.refetch()}>{copy("codex-apps.reload")}</button></>}
+    </Modal> : null}
+  </section>;
+}
 
 function useSessionStream(id: string, active: boolean) {
   const transport = useTransport();
@@ -234,7 +272,7 @@ export const TranscriptItem = memo(function TranscriptItem({ resource, active = 
     {Number(data.context_revision ?? 0) < contextRevision ? <small>{copy("session.previousContext")}</small> : null}
     {data.role==="user"?actions:null}
     <RetainedImages value={data.attachments} sessionId={resource.sessionId} active={active} />
-    {toolStarted.kind === "image-view" ? <NativeImageView tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-builtin" ? <NativeBuiltin tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-todo" ? <NativeTodo tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-read" ? <NativeRead tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-shell" ? <NativeShell tool={tool} state={text(data.state)} /> : Object.keys(tool).length ? <Disclosure><DisclosureSummary><LocalizedText id="session.tool_844a02" components={{ s0: <>{text(toolStarted.kind) || copy("session.extra.fa176576233d")}</>, s1: <>{text(toolCompleted.status) || text(toolStarted.status)}</> }} /></DisclosureSummary>
+    {toolStarted.kind === "codex-app" ? <NativeCodexApp tool={tool} state={text(data.state)} /> : toolStarted.kind === "image-view" ? <NativeImageView tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-builtin" ? <NativeBuiltin tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-todo" ? <NativeTodo tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-read" ? <NativeRead tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-shell" ? <NativeShell tool={tool} state={text(data.state)} /> : Object.keys(tool).length ? <Disclosure><DisclosureSummary><LocalizedText id="session.tool_844a02" components={{ s0: <>{text(toolStarted.kind) || copy("session.extra.fa176576233d")}</>, s1: <>{text(toolCompleted.status) || text(toolStarted.status)}</> }} /></DisclosureSummary>
       {text(command.command) ? <pre>{text(command.command)}</pre> : null}
       {text(command.cwd) ? <p><LocalizedText id="session.directory_369f13" components={{ s0: <>{text(command.cwd)}</> }} /></p> : null}
       {text(tool.output) ? <pre>{text(tool.output)}</pre> : null}
@@ -690,6 +728,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
           <section className="session-information-section"><h3>{copy("session.context")}</h3><SessionContext key={id} session={session} /></section>
           <section hidden={subagentsEmpty} className="session-information-section"><h3>{copy("session.subagents")}</h3><Subagents key={id} sessionId={id} revision={session.revision.toString()} emptyChanged={setSubagentsEmpty} diagnosticsTarget={diagnosticsTarget} /></section>
           <section ref={budgetDetails} className="session-information-section" tabIndex={-1}><h3>{copy("session.usageAndBudget")}</h3><NativeUsage session={session} diagnosticsTarget={diagnosticsTarget} /><SessionBudget resource={session} changed={setAcknowledged} blocked={setBudgetBlocked} /></section>
+          <SessionCodexApps key={id} session={session} active={active && !embedded && tabs.tab.kind !== SessionTabKind.Sidechat} supported={!queueStatus.isError && queueStatus.data?.capabilities.includes(SystemCapability.CODEX_APPS_V1) === true} />
           <SessionStorageAction source={session} />
         </> : null}
       </div></FlatDisclosureScope>
