@@ -46,7 +46,9 @@ export function useRepositoryDetailsPopup(expanded: boolean, active: boolean, op
     const trigger = opener.current;
     const check = () => setConcealed(!openerVisible(trigger));
     const observer = new MutationObserver(check);
-    observer.observe(document.documentElement, { childList: true, subtree: true });
+    // Observe the Document separately so the html ancestor attribute watch
+    // cannot replace the subtree removal subscription on the same target.
+    observer.observe(document, { childList: true, subtree: true });
     for (let parent: HTMLElement | null = trigger; parent; parent = parent.parentElement) observer.observe(parent, { attributes: true, attributeFilter: ["hidden", "inert", "class", "style", "open"] });
     document.addEventListener("scroll", check, true); window.addEventListener("resize", check);
     check();
