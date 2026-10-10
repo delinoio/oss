@@ -130,15 +130,26 @@ type GoalResult struct {
 }
 
 func (c *Client) verifyGoalsLocked(ctx context.Context) error {
-	if !c.nativeGoals || c.sidechat != "" || c.mode != ThreadProtocol || c.thread.Validate() != nil || c.execution == nil {
+	enabled, err := c.observeGoalsEnabledLocked(ctx)
+	if err != nil {
+		return err
+	}
+	if !enabled {
 		return incompatible()
+	}
+	return nil
+}
+
+func (c *Client) observeGoalsEnabledLocked(ctx context.Context) (bool, error) {
+	if !c.nativeGoals || c.sidechat != "" || c.mode != ThreadProtocol || c.thread.Validate() != nil || c.execution == nil {
+		return false, incompatible()
 	}
 	response, err := c.wire.Call(ctx, domain.NewID(), "experimentalFeature/list", struct {
 		Thread domain.ID `json:"threadId"`
 		Limit  int       `json:"limit"`
 	}{c.thread, 256})
 	if err != nil {
-		return err
+		return false, err
 	}
 	var observed struct {
 		Data []struct {
@@ -152,24 +163,21 @@ func (c *Client) verifyGoalsLocked(ctx context.Context) error {
 		} `json:"data"`
 		Next *string `json:"nextCursor"`
 	}
-	if response.ErrorCode != nil || domain.Decode(response.Result, &observed) != nil || observed.Data == nil || len(observed.Data) == 0 || len(observed.Data) > 256 || observed.Next != nil {
-		return incompatible()
+	if response.ErrorCode != nil || domain.Decode(response.Result, &observed) != nil || observed.Data == nil || len(observed.Data) > 256 || observed.Next != nil {
+		return false, incompatible()
 	}
 	seen := map[string]bool{}
 	goals := false
 	for _, feature := range observed.Data {
 		if domain.Text(feature.Name, "native feature", 128, true) != nil || seen[feature.Name] || feature.Enabled == nil || feature.DefaultEnabled == nil || !slices.Contains([]string{"stable", "beta", "underDevelopment", "deprecated", "removed"}, feature.Stage) {
-			return incompatible()
+			return false, incompatible()
 		}
 		seen[feature.Name] = true
 		if feature.Name == "goals" {
 			goals = *feature.Enabled
 		}
 	}
-	if !goals {
-		return incompatible()
-	}
-	return nil
+	return goals, nil
 }
 
 // ReadGoal observes state without clearing an earlier mutation's uncertainty.

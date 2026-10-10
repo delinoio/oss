@@ -489,7 +489,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		return nil, domain.SafeError(context.Canceled)
 	}
 	config.startup.acknowledgeInput()
-	if input.NativeGoals {
+	if bound.NativeGoalsEnabled {
 		goal, err := client.ReadGoal(ctx, domain.NewID())
 		if err != nil {
 			return nil, err
@@ -582,7 +582,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			logger.WarnContext(publicationContext, "native_execution_event_unhandled", "event_kind", event.Kind, "metadata", event.Metadata, "extension_stage", event.ExtensionStage, "correlated", event.Correlated, "late", event.Late)
 			return nil, domain.Fail(domain.Unsupported, "The native execution produced an unsupported event family.", "Retain its native history for the required typed adapter; input is never replayed automatically.")
 		}
-		if event.Kind == codex.TurnStartedEvent && input.NativeGoals {
+		if event.Kind == codex.TurnStartedEvent && bound.NativeGoalsEnabled {
 			parentTerminal = nil
 			turn.TurnID = event.TurnID
 		}
@@ -595,7 +595,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			continue
 		}
 
-		if input.NativeGoals {
+		if bound.NativeGoalsEnabled {
 			goal, err := client.ReadGoal(publicationContext, domain.NewID())
 			if err != nil {
 				return nil, err
@@ -651,7 +651,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 				}
 			}
 			original := codex.ContinuationCheckpoint{PaginatedHistory: bound.Thread.History == codex.PaginatedHistory, ContextRevision: input.ContextRevision, ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: turn.TurnID, Status: event.Turn.Status, Mode: input.Input.Mode, Inputs: nativeInputs, Effective: *bound.Effective}
-			if input.NativeGoals {
+			if bound.NativeGoalsEnabled {
 				bound.GoalHistory, err = client.RetainGoalHistory(ctx, original)
 				if err != nil {
 					return nil, err

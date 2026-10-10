@@ -123,7 +123,7 @@ func (p CodexExecutionCheckpoint) matches(ref ExecutionCheckpointRef) bool {
 	terminal := ref.Completion
 	terminal.Version, terminal.NativeCheckpointDigest = 1, ""
 	inputs, err := ref.nativeInputs()
-	if err != nil || ref.validate() != nil || ref.NativeGoals != (p.Native.GoalHistory != nil) || p.Native.GoalHistory != nil && !p.Native.GoalHistory.Valid(p.Native.ThreadID) || p.Version != 1 || p.Native.ContextRevision != ref.ContextRevision || p.JobID != ref.JobID || p.SessionID != ref.SessionID || p.MachineID != ref.MachineID || p.HistoryExecutionID != ref.HistoryExecutionID || p.AssignmentInputDigest != ref.AssignmentInputDigest || p.ConfigurationDigest != ref.ConfigurationDigest || p.AccountID != ref.AccountID || p.ConnectionID != ref.ConnectionID || p.Completion != terminal || string(p.Native.ThreadID) != string(ref.Completion.NativeThreadID) || p.Native.SessionID != p.Native.ThreadID || string(p.Native.TurnID) != string(ref.Completion.NativeTurnID) || p.Native.Mode != ref.InputMode || !slices.Equal(p.Native.Effective.WorkspaceRoots, ref.WorkspaceRoots) || !sameHistoricalPrompts(p.Native.Inputs, inputs) {
+	if err != nil || ref.validate() != nil || ref.NativeGoals != p.Native.NativeGoalsEnabled || p.Native.GoalHistory != nil && !p.Native.GoalHistory.Valid(p.Native.ThreadID) || p.Version != 1 || p.Native.ContextRevision != ref.ContextRevision || p.JobID != ref.JobID || p.SessionID != ref.SessionID || p.MachineID != ref.MachineID || p.HistoryExecutionID != ref.HistoryExecutionID || p.AssignmentInputDigest != ref.AssignmentInputDigest || p.ConfigurationDigest != ref.ConfigurationDigest || p.AccountID != ref.AccountID || p.ConnectionID != ref.ConnectionID || p.Completion != terminal || string(p.Native.ThreadID) != string(ref.Completion.NativeThreadID) || p.Native.SessionID != p.Native.ThreadID || string(p.Native.TurnID) != string(ref.Completion.NativeTurnID) || p.Native.Mode != ref.InputMode || !slices.Equal(p.Native.Effective.WorkspaceRoots, ref.WorkspaceRoots) || !sameHistoricalPrompts(p.Native.Inputs, inputs) {
 		return false
 	}
 	status := map[domain.ExecutionOutcome]codex.TurnStatus{domain.ExecutionSucceeded: codex.TurnCompleted, domain.ExecutionFailed: codex.TurnFailed, domain.ExecutionStopped: codex.TurnInterrupted}[ref.Completion.Outcome]
@@ -211,7 +211,7 @@ func retainCodexCompletion(root string, jobID domain.ID, job domain.Job, input d
 	if err != nil || !bytes.Equal(actual, expected) {
 		return "", executionCheckpointUncertain()
 	}
-	ref := ExecutionCheckpointRef{NativeGoals: input.NativeGoals, ContextRevision: input.ContextRevision, ApprovalsReviewer: input.Configuration.Options.ApprovalsReviewer, Subscription: input.Configuration.Subscription, JobID: jobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: input.ExecutionID, AssignmentInputDigest: executionInputDigest(job.Input), ConfigurationDigest: input.ConfigurationDigest, AccountID: input.AccountID, ConnectionID: input.ConnectionID, Completion: completion, InputMode: input.Input.Mode, PromptDigest: input.Input.InputDigest()}
+	ref := ExecutionCheckpointRef{NativeGoals: bound.NativeGoalsEnabled, ContextRevision: input.ContextRevision, ApprovalsReviewer: input.Configuration.Options.ApprovalsReviewer, Subscription: input.Configuration.Subscription, JobID: jobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: input.ExecutionID, AssignmentInputDigest: executionInputDigest(job.Input), ConfigurationDigest: input.ConfigurationDigest, AccountID: input.AccountID, ConnectionID: input.ConnectionID, Completion: completion, InputMode: input.Input.Mode, PromptDigest: input.Input.InputDigest()}
 	var manifest workspace.Manifest
 	if domain.Decode(input.Manifest, &manifest) != nil {
 		return "", executionCheckpointUncertain()
@@ -238,8 +238,9 @@ func retainCodexCompletion(root string, jobID domain.ID, job domain.Job, input d
 	}
 	status := map[domain.ExecutionOutcome]codex.TurnStatus{domain.ExecutionSucceeded: codex.TurnCompleted, domain.ExecutionFailed: codex.TurnFailed, domain.ExecutionStopped: codex.TurnInterrupted}[completion.Outcome]
 	checkpoint := CodexExecutionCheckpoint{Version: 1, JobID: jobID, SessionID: ref.SessionID, MachineID: ref.MachineID, HistoryExecutionID: ref.HistoryExecutionID, AssignmentInputDigest: ref.AssignmentInputDigest, ConfigurationDigest: ref.ConfigurationDigest, AccountID: ref.AccountID, ConnectionID: ref.ConnectionID, Completion: completion, Native: codex.ContinuationCheckpoint{PaginatedHistory: bound.Thread.History == codex.PaginatedHistory, ContextRevision: input.ContextRevision, ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: domain.ID(completion.NativeTurnID), Status: status, Mode: input.Input.Mode, Inputs: nativeInputs, Effective: *bound.Effective}}
+	checkpoint.Native.NativeGoalsEnabled = bound.NativeGoalsEnabled
 	checkpoint.Native.GoalHistory = bound.GoalHistory
-	if input.NativeGoals != (bound.GoalHistory != nil) {
+	if bound.GoalHistory != nil && !bound.NativeGoalsEnabled || bound.NativeGoalsEnabled && !input.NativeGoals {
 		return "", executionCheckpointUncertain()
 	}
 	if len(contextProofs) > 1 {

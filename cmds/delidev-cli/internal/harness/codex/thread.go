@@ -403,11 +403,14 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 	// before it can send an ordinary input or mutate an existing turn.
 	c.execution.continuationPending = method == resumeThread
 	if c.nativeGoals {
-		if err := c.verifyGoalsLocked(ctx); err != nil {
+		enabled, err := c.observeGoalsEnabledLocked(ctx)
+		if err != nil {
 			c.problem = threadUncertain()
 			return result, c.problem
 		}
-		result.NativeGoalsEnabled = true
+		// A complete original disabled/absent feature observation preserves the
+		// ordinary goal-free profile. Requested flags alone grant no support.
+		c.nativeGoals, result.NativeGoalsEnabled = enabled, enabled
 	}
 	return result, nil
 }

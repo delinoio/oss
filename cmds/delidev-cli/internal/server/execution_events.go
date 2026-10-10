@@ -237,7 +237,7 @@ func applyExecutionEventAt(tx *store.Tx, job store.Record, input domain.Executio
 		if event.Kind != domain.ExecutionThreadBound || event.Sequence != 1 || queued.Delivery != domain.InputClaimed {
 			return executionEventConflict()
 		}
-		if event.Observed.NativeGoalsEnabled != input.NativeGoals {
+		if event.Observed.NativeGoalsEnabled && !input.NativeGoals {
 			return executionEventConflict()
 		}
 		if err := event.Observed.ValidateForInput(input.Configuration, input.Input.Mode); err != nil {

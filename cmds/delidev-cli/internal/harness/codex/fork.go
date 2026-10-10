@@ -394,6 +394,13 @@ func (c *Client) ForkThread(ctx context.Context, requestID domain.ID, source *Fo
 		return result, c.problem
 	}
 	c.execution = newExecutionState(*thread, *effective)
+	if c.nativeGoals {
+		enabled, err := c.observeGoalsEnabledLocked(ctx)
+		if err != nil {
+			return result, err
+		}
+		c.nativeGoals, result.NativeGoalsEnabled = enabled, enabled
+	}
 	if source.checkpoint.GoalHistory != nil {
 		if err := c.verifyGoalsLocked(ctx); err != nil {
 			return result, goalUncertain()

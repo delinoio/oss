@@ -132,10 +132,31 @@ func (c *Client) RetainGoalHistory(ctx context.Context, source ContinuationCheck
 	if err != nil {
 		return nil, err
 	}
+	anyGoalHistory := false
+	for _, raw := range turns {
+		anyGoalHistory = anyGoalHistory || nativeGoalHistoryContent(raw)
+	}
+	if state.goal == nil && state.goalBase == nil && len(state.goalTurns) == 0 && !anyGoalHistory {
+		return nil, nil
+	}
+	contextPrefix := 0
+	if state.goalBase == nil && state.contextBase != nil {
+		contextPrefix = int(state.contextBase.TurnsCount)
+		if contextPrefix >= len(turns) || contextMatchesHistory(*state.contextBase, turns[:contextPrefix]) != nil {
+			return nil, goalUncertain()
+		}
+		for _, raw := range turns[:contextPrefix] {
+			if nativeGoalHistoryContent(raw) {
+				return nil, goalUncertain()
+			}
+		}
+	}
+	hasGoalContent := state.goal != nil
 	proof := &GoalHistoryCheckpoint{Version: 1, Goal: goalJSON(state.goal), TurnsCount: uint32(len(turns)), HistoryDigest: historyDigest(turns)}
 	var previous *GoalHistoryCheckpoint
 	if state.goalBase != nil {
 		previous = state.goalBase
+		hasGoalContent = true
 		if previous.validate(c.thread) != nil || int(previous.TurnsCount) >= len(turns) || !previous.matches(turns[:previous.TurnsCount]) {
 			return nil, goalUncertain()
 		}
@@ -145,11 +166,14 @@ func (c *Client) RetainGoalHistory(ctx context.Context, source ContinuationCheck
 	}
 	found := map[domain.ID]bool{}
 	for n, raw := range turns {
+		if nativeGoalHistoryContent(raw) {
+			hasGoalContent = true
+		}
 		turn, inputs, err := decodeGoalTurnInputs(raw, c.nativeImageInput)
 		if err != nil {
 			return nil, err
 		}
-		if previous != nil && n < int(previous.TurnsCount) {
+		if n < contextPrefix || previous != nil && n < int(previous.TurnsCount) {
 			continue
 		}
 		tracked, known := state.turns[turn.ID]
@@ -158,6 +182,7 @@ func (c *Client) RetainGoalHistory(ctx context.Context, source ContinuationCheck
 		}
 		found[turn.ID] = true
 		if state.goalTurns[turn.ID] {
+			hasGoalContent = true
 			if len(inputs) != 0 {
 				return nil, goalUncertain()
 			}
@@ -187,6 +212,9 @@ func (c *Client) RetainGoalHistory(ctx context.Context, source ContinuationCheck
 	}
 	if !found[source.TurnID] {
 		return nil, goalUncertain()
+	}
+	if !hasGoalContent {
+		return nil, nil
 	}
 	native, err := c.readThreadLocked(ctx, domain.NewID(), c.thread)
 	if err != nil || native.Status.Type != ThreadIdle {
@@ -248,6 +276,13 @@ func (c *Client) InspectOriginalGoal(ctx context.Context, source ContinuationChe
 }
 func (c *Client) VerifyGoalBeforeResume(ctx context.Context, source ContinuationCheckpoint) error {
 	if source.GoalHistory == nil {
+		if !source.NativeGoalsEnabled {
+			return nil
+		}
+		goal, err := c.InspectOriginalGoal(ctx, source)
+		if err != nil || goal != nil {
+			return goalUncertain()
+		}
 		return nil
 	}
 	if source.GoalHistory.validate(source.ThreadID) != nil {
@@ -271,4 +306,26 @@ func sameRootTurn(a, b Turn) bool {
 		return a.RootTurnID == nil && b.RootTurnID == nil
 	}
 	return *a.RootTurnID == *b.RootTurnID
+}
+
+// Native annotations and built-in tool output are source-owned history. They
+// make a Goal-aware proof necessary even after a once-acknowledged clear.
+func nativeGoalHistoryContent(raw json.RawMessage) bool {
+	var turn turnWire
+	if domain.Decode(raw, &turn) != nil {
+		return true
+	}
+	for _, item := range turn.Items {
+		if nativeGoalToolOutput(item) {
+			return true
+		}
+		var head map[string]json.RawMessage
+		if domain.Decode(item, &head) != nil {
+			return true
+		}
+		if string(head["type"]) == `"userMessage"` && string(head["clientId"]) == "null" {
+			return true
+		}
+	}
+	return false
 }

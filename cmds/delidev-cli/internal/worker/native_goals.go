@@ -33,6 +33,16 @@ func goalControl(control *pb.GoalActionControl) (goalControlIdentity, error) {
 	return id, nil
 }
 
+type goalJournalState string
+
+const (
+	goalPrepared goalJournalState = "prepared"
+	goalClaimed  goalJournalState = "claimed"
+	goalSending  goalJournalState = "sending"
+	goalObserved goalJournalState = "observed"
+	goalReported goalJournalState = "reported"
+)
+
 type goalJournal struct {
 	Version     uint32                         `json:"version"`
 	Control     goalControlIdentity            `json:"control"`
@@ -43,7 +53,7 @@ type goalJournal struct {
 	ThreadID    domain.ID                      `json:"thread_id"`
 	ClaimID     domain.ID                      `json:"claim_id"`
 	ReportID    domain.ID                      `json:"report_id"`
-	State       string                         `json:"state"`
+	State       goalJournalState               `json:"state"`
 	Input       *domain.NativeGoalActionInput  `json:"input,omitempty"`
 	Result      *domain.NativeGoalActionResult `json:"result,omitempty"`
 }
@@ -109,7 +119,7 @@ func (c *CodexEventPublisher) deliverGoal(ctx, nativeCtx context.Context, contro
 	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
 		return publicationUncertain()
 	}
-	journal := goalJournal{Version: 1, Control: identity, ServerID: config.Credential.ServerID, DeviceID: config.Credential.DeviceID, InstanceID: config.Instance, ExecutionID: c.publisher.execution, ThreadID: c.thread, ClaimID: domain.NewID(), ReportID: domain.NewID(), State: "prepared"}
+	journal := goalJournal{Version: 1, Control: identity, ServerID: config.Credential.ServerID, DeviceID: config.Credential.DeviceID, InstanceID: config.Instance, ExecutionID: c.publisher.execution, ThreadID: c.thread, ClaimID: domain.NewID(), ReportID: domain.NewID(), State: goalPrepared}
 	if writeJSON(path, journal) != nil {
 		return publicationUncertain()
 	}
@@ -126,7 +136,7 @@ func (c *CodexEventPublisher) deliverGoal(ctx, nativeCtx context.Context, contro
 		return publicationUncertain()
 	}
 	journal.Input = &input
-	journal.State = "claimed"
+	journal.State = goalClaimed
 	if writeJSON(path, journal) != nil {
 		return publicationUncertain()
 	}
@@ -160,7 +170,7 @@ func (c *CodexEventPublisher) deliverGoal(ctx, nativeCtx context.Context, contro
 			if string(expected) != string(actual) {
 				return publicationUncertain()
 			}
-			journal.State = "sending"
+			journal.State = goalSending
 			return writeJSON(path, journal)
 		})
 		if nativeErr != nil {
@@ -172,7 +182,7 @@ func (c *CodexEventPublisher) deliverGoal(ctx, nativeCtx context.Context, contro
 		}
 	}
 	journal.Result = &result
-	journal.State = "observed"
+	journal.State = goalObserved
 	if writeJSON(path, journal) != nil {
 		return publicationUncertain()
 	}
@@ -183,7 +193,7 @@ func (c *CodexEventPublisher) deliverGoal(ctx, nativeCtx context.Context, contro
 	if err != nil || response.Msg.Action == nil || response.Msg.Action.Id != resource.Id || response.Msg.Action.SessionId != resource.SessionId || response.Msg.Session == nil || response.Msg.Session.Id != resource.SessionId {
 		return publicationUncertain()
 	}
-	journal.State = "reported"
+	journal.State = goalReported
 	if writeJSON(path, journal) != nil {
 		return publicationUncertain()
 	}

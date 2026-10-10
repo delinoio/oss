@@ -148,7 +148,7 @@ func recoverSessionRevert(ctx context.Context, config Config, job domain.Job, re
 	if err != nil {
 		return nil, err
 	}
-	native, err := codex.Open(ctx, codex.Config{RevertHistory: true, ImageRoot: config.Root, ImageMachineID: request.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: home, Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: domain.ID(config.execution.Assignment.Id), Executable: installation.ResolvedPath, Cwd: inspection.WorkingDirectory(), Env: env, Logger: config.Logger}})
+	native, err := codex.Open(ctx, codex.Config{EnableNativeGoals: source.Native.NativeGoalsEnabled, RevertHistory: true, ImageRoot: config.Root, ImageMachineID: request.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: home, Process: process.Config{Directory: filepath.Join(config.Root, "processes"), OwnerID: domain.ID(config.execution.Assignment.Id), Executable: installation.ResolvedPath, Cwd: inspection.WorkingDirectory(), Env: env, Logger: config.Logger}})
 	if err != nil {
 		return nil, err
 	}
@@ -161,6 +161,9 @@ func recoverSessionRevert(ctx context.Context, config Config, job domain.Job, re
 		}
 	}()
 	settings := codex.ThreadSettings{Model: input.Assignment.Configuration.NativeModel, Provider: codexExecutionProvider(input.Assignment.Configuration.Subscription), Effort: input.Assignment.Configuration.Effort, Cwd: inspection.WorkingDirectory(), WorkspaceRoots: nativeWorkspaceRoots(manifest), Instructions: input.Assignment.Configuration.Instructions, Options: input.Assignment.Configuration.Options}
+	if err := native.VerifyGoalBeforeResume(ctx, source.Native); err != nil {
+		return nil, err
+	}
 	if _, err = native.ResumeThread(ctx, domain.NewID(), source.Native.ThreadID, settings); err != nil {
 		return nil, err
 	}
