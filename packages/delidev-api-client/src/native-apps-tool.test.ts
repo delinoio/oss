@@ -12,3 +12,5 @@ test("enforces closed fields and native lifecycle outcomes", () => {
  expect(nativeAppsToolSnapshot({kind:"native-apps",status:"failed",apps:{...app,error_present:true}})).toBeDefined();
  expect(nativeAppsToolSnapshot({kind:"native-apps",status:"failed",apps:app})).toBeUndefined();
 });
+
+test("rejects coerced native status and escaped malformed Unicode keys",()=>{expect(nativeAppsToolSnapshot({...completed(),status:["completed"]})).toBeUndefined();const v=completed();v.apps.result.content=['{"\\ud800":1}'];expect(nativeAppsToolSnapshot(v)).toBeUndefined();});

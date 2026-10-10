@@ -5098,3 +5098,39 @@ Home on Sessions and both creation surfaces, including the shared compact drawer
 ### Desktop server protocol validation
 
 Native local startup, supervision and saved-connection verification require the active server protocol 2 and the compiled package version. The Go resident host reports its RPC version constants in the initial started response, matching later authenticated status observations. Private desktop control version 2 and CLI envelope version 1 remain separate from server compatibility. Reject older and newer server protocols without replacing pairing, changing lifecycle intent or granting Worker authority.
+
+
+## Original session Apps
+
+An explicit Apps control in ordinary Session navigation reads and changes the
+original session's native integrations. No account-wide preference, Fork or
+Sidechat transfer is added. The original Session document supplies machine,
+account, connection and immutable initial configuration digest. Independently
+negotiated server and Worker capabilities gate inventory reads and changes;
+missing or unsupported capability stays unavailable without native calls.
+
+Read Apps and Refresh Apps are explicit actions. Validate the complete original
+request/scope/inventory receipt, then reread the same Session resource for its
+current revision before saving. Show discovered, installed, enabled and callable
+facts separately with source display names. Installation and selection never
+supply inferred callability. No source name means no identifier-based app label.
+Selection changes freeze the next ordinary execution; an explicit empty list
+revokes selection. Revocation blocks future protected effects but proves neither
+cancellation nor independently joined cleanup of an admitted call.
+
+Retain the complete original selection request and receipt validator through
+uncertainty and presentation dismissal. A manual retry resends that exact logical
+request; no automatic refresh or mutation replay occurs. Scope or revision changes
+block a fresh save until the original inventory and Session are read again.
+Unresolved requests remain owned by the original connection and cannot transfer
+authority after an account/configuration change. Modal Escape/Close restores its
+original available opener; locale changes retain requests and selection drafts.
+
+Native Apps tool observations bind app identity, source name, tool name and
+argument-presence facts across the original running and terminal snapshots.
+Results preserve bounded original JSON values and content order as escaped text.
+No URL/resource fetch, media/HTML/plugin embedding or execute action is provided.
+Protected arguments, raw errors and technical app/account identifiers are not
+projected. Foreign identities, cross-tool fields and contradictory lifecycle
+snapshots remain unavailable. Existing original native question ownership retains
+approval authority; tool results do not fabricate permission or cleanup.

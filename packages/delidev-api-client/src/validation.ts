@@ -55,14 +55,17 @@ function appJSON(v: unknown): v is string {
     while (pending.length) {
       const item = pending.pop();
       if (typeof item === "string" && /[\uD800-\uDFFF]/u.test(item)) return false;
-      if (item !== null && typeof item === "object") pending.push(...Object.values(item));
+      if (item !== null && typeof item === "object") {
+        if (Object.keys(item).some(key => /[\uD800-\uDFFF]/u.test(key))) return false;
+        for (const value of Object.values(item)) pending.push(value);
+      }
     }
     return true;
   } catch { return false; }
 }
 /** Closed native result metadata grants no fetching, embedding or execution authority. */
 export function nativeAppsToolSnapshot(value: unknown): NativeAppsToolSnapshot | undefined {
-  if (!appObject(value) || !appKeys(value, ["kind", "status", "apps"], ["changes"]) || value.kind !== "native-apps" || value.changes != null || !["running", "completed", "failed"].includes(String(value.status))) return;
+  if (!appObject(value) || !appKeys(value, ["kind", "status", "apps"], ["changes"]) || value.kind !== "native-apps" || value.changes != null || typeof value.status !== "string" || !["running", "completed", "failed"].includes(value.status)) return;
   const a = value.apps;
   if (!appObject(a) || !appKeys(a, ["app_id", "name", "tool_name", "arguments_present", "error_present"], ["result", "duration_ms"]) || !appText(a.app_id, 1024, true) || a.app_id.trim() !== a.app_id || !appText(a.name, 1024, true) || !appText(a.tool_name, 1024, true) || typeof a.arguments_present !== "boolean" || typeof a.error_present !== "boolean") return;
   if (Object.hasOwn(a, "duration_ms") && (!Number.isSafeInteger(a.duration_ms) || Number(a.duration_ms) < 0)) return;
