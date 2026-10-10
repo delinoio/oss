@@ -18,14 +18,14 @@ export function paidCreditProjection(subscription:Record<string,unknown>):PaidCr
 }
 export function PaidCreditBalance({bucket}: {bucket: PaidCreditBucket}) {
  const locale=useLocale(),id=useId(),root=useRef<HTMLSpanElement>(null),button=useRef<HTMLButtonElement>(null);
- const [open,setOpen]=useState(false),[pinned,setPinned]=useState(false);
+ const [open,setOpen]=useState(false),[pinned,setPinned]=useState(false),suppressFocusOpen=useRef(false);
  useEffect(()=>{setOpen(false);setPinned(false);},[bucket.id,bucket.balance,bucket.unlimited]);
  const rounded=bucket.balance===null?undefined:formatPaidCreditBalance(bucket.balance,locale);
  if(bucket.unlimited)return <span className="paid-credit-balance">{copy("paid-credits.unlimited")}</span>;
  if(rounded===undefined)return <span className="paid-credit-balance">{copy("paid-credits.unknown")}</span>;
- return <span ref={root} className="paid-credit-number" onMouseEnter={()=>setOpen(true)} onMouseLeave={()=>{if(!pinned&&!root.current?.contains(document.activeElement))setOpen(false);}} onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null)){setPinned(false);setOpen(false);}}} onKeyDown={event=>{if(event.key==="Escape"&&open){event.preventDefault();event.stopPropagation();setOpen(false);setPinned(false);button.current?.focus({preventScroll:true});}}}>
+ return <span ref={root} className="paid-credit-number" onMouseEnter={()=>setOpen(true)} onMouseLeave={()=>{if(!pinned&&!root.current?.contains(document.activeElement))setOpen(false);}} onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null)){setPinned(false);setOpen(false);}}} onKeyDown={event=>{if(event.key==="Escape"&&open){event.preventDefault();event.stopPropagation();setOpen(false);setPinned(false);suppressFocusOpen.current=true;try{button.current?.focus({preventScroll:true});}finally{suppressFocusOpen.current=false;}}}}>
   <span className="paid-credit-balance">{rounded}</span><span className="paid-credit-unit">{copy("paid-credits.unit")}</span>
-  <button ref={button} type="button" className="paid-credit-information" aria-label={copy("paid-credits.exact")} aria-expanded={open} aria-describedby={open?id:undefined} onFocus={()=>setOpen(true)} onClick={()=>{setPinned(!pinned);setOpen(!pinned);}}>ⓘ</button>
+  <button ref={button} type="button" className="paid-credit-information" aria-label={copy("paid-credits.exact")} aria-expanded={open} aria-describedby={open?id:undefined} onFocus={()=>{if(!suppressFocusOpen.current)setOpen(true);}} onClick={()=>{setPinned(!pinned);setOpen(!pinned);}}>ⓘ</button>
   {open?<span id={id} role="tooltip" className="paid-credit-exact">{copy("paid-credits.exact")}: <span>{bucket.balance}</span></span>:null}
  </span>;
 }
