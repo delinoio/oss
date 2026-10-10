@@ -71,7 +71,7 @@ func (s *Service) SubmitLocalReview(ctx context.Context, req *connect.Request[pb
 		for _, item := range selected {
 			comment := item.Value.Comment
 			anchor := comment.Anchor
-			query := domain.WorkspaceReadQuery{Operation: domain.WorkspaceGitDiff, RepositoryID: anchor.RepositoryID, Comparison: anchor.Comparison, Path: anchor.QueryPath}
+			query := domain.WorkspaceReadQuery{Operation: domain.WorkspaceGitDiff, RepositoryID: anchor.RepositoryID, Comparison: anchor.Comparison, Path: anchor.QueryPath, BaseRef: anchor.BaseRef}
 			diff, ok := observations[query]
 			if !ok {
 				if len(observations) >= 8 {

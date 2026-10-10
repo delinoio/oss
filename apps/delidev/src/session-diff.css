@@ -1,0 +1,20 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.session-diff { overflow: auto; min-width: 0; }
+.session-files .diff-navbar { min-height: 56px; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 8px; }
+.diff-navbar h2 { font-size: 1rem; flex: 0 0 auto; }
+.diff-navbar .diff-select { min-width: 0; max-width: 100%; flex: 0 1 auto; margin: 0; }
+.diff-navbar select { min-height: 40px; max-width: 100%; width: auto; }
+.diff-navbar-space { flex: 1 1 0; }
+.diff-navbar .diff-icon { width: 40px; height: 40px; min-width: 40px; padding: 0; font-size: 1.35rem; }
+.diff-control-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.diff-options { border: 1px solid var(--border); background: var(--background); padding: 12px; border-radius: 8px; }
+.diff-options form { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+.diff-options input { min-width: 0; max-width: 100%; }
+.diff-navbar :focus-visible, .diff-options :focus-visible, .structured-diff:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.structured-diff { max-width: 100%; overflow-x: auto; font-family: ui-monospace, monospace; font-size: .85rem; }
+.structured-diff h3 { font-size: .9rem; overflow-wrap: anywhere; font-weight: 600; }
+.structured-diff table { border-collapse: collapse; width: 100%; }
+.structured-diff td { white-space: pre; vertical-align: top; padding: 1px 6px; }
+.structured-diff .diff-line-number { color: var(--muted); text-align: right; user-select: none; min-width: 3ch; border-right: 1px solid var(--border); }
+.structured-diff .diff-added { background: color-mix(in srgb, var(--success-text) 12%, transparent); color: var(--success-text); }
+.structured-diff .diff-removed { background: var(--danger-background); color: var(--danger-text); }

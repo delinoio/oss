@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -46,5 +47,48 @@ func TestWorkspaceDiffRejectsMixedAndChangedScope(t *testing.T) {
 		if bad.Validate() == nil {
 			t.Fatal("invalid query accepted")
 		}
+	}
+}
+
+func TestWorkspaceBranchIdentityAndLegacySerialization(t *testing.T) {
+	q := WorkspaceReadQuery{Operation: WorkspaceGitDiff, RepositoryID: NewID(), Comparison: DiffWorkingTree, Path: "."}
+	v := WorkspaceDiff{Comparison: q.Comparison, RepositoryID: q.RepositoryID, Path: q.Path, Base: DiffCommit, BaseObject: strings.Repeat("a", 40), HeadCommit: strings.Repeat("a", 40), Untracked: []string{}}
+	// Reproduce the original field order and omission rules, not a new fixture
+	// digest that could silently accept a compatibility regression.
+	legacy := struct {
+		Comparison   WorkspaceDiffComparison `json:"comparison"`
+		RepositoryID ID                      `json:"repository_id"`
+		Path         string                  `json:"path"`
+		Base         WorkspaceDiffBase       `json:"base"`
+		BaseObject   string                  `json:"base_object"`
+		HeadCommit   string                  `json:"head_commit,omitempty"`
+		Patch        string                  `json:"patch"`
+		Untracked    []string                `json:"untracked"`
+		Revision     string                  `json:"revision"`
+	}{v.Comparison, v.RepositoryID, v.Path, v.Base, v.BaseObject, v.HeadCommit, v.Patch, v.Untracked, v.Revision}
+	original, _ := json.Marshal(legacy)
+	current, _ := json.Marshal(v)
+	if string(original) != string(current) {
+		t.Fatal("legacy diff wire bytes changed", string(current))
+	}
+	q.Comparison = DiffBranch
+	q.BaseRef = Reference{Type: LocalBranch, Name: "base"}
+	v.Comparison = DiffBranch
+	v.BaseRef = q.BaseRef
+	v.BaseCommit = strings.Repeat("b", 40)
+	v.MergeBase = v.BaseObject
+	v.Revision = v.Digest()
+	if err := v.Validate(q); err != nil {
+		t.Fatal(err)
+	}
+	changed := v
+	changed.BaseRef.Name = "other"
+	changed.Revision = changed.Digest()
+	if changed.Revision == v.Revision || changed.Validate(q) == nil {
+		t.Fatal("selected base was not bound")
+	}
+	q.Comparison = DiffWorkingTree
+	if q.Validate() == nil {
+		t.Fatal("legacy query accepted speculative base")
 	}
 }
