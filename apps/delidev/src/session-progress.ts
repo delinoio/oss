@@ -127,7 +127,7 @@ export function responseSuppressesProgress(messages: readonly ProgressMessage[],
 export function initialStartupInformationHidden(row: Resource | undefined, phase: SessionProgressPhase | undefined, queue: readonly Resource[]): boolean {
   if (!row || !phase) return false;
   const d = readDocument(row), initial = object(d.initial_execution), selected = object(d.current_execution ?? d.initial_execution), execution = object(d.execution);
-  if (!["local", "worktree", "general-chat"].includes(String(d.workspace)) || d.last_input_sequence != null && d.last_input_sequence !== 1) return false;
+  if (!["local", "worktree", "general-chat"].includes(String(d.workspace)) || d.last_input_sequence !== 1) return false;
   if (!d.active_execution_id) {
     // An ordinary later queued turn must never impersonate initial preparation.
     return d.last_input_sequence === 1 && d.initial_execution == null && d.current_execution == null

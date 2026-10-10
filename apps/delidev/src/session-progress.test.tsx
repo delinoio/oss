@@ -96,12 +96,20 @@ it.each([{ sequence: 2 }, { delivery: "uncertain" }, { execution_id: executionId
 });
 
 it("limits hidden information to proven original initial startup", () => {
- const initial = observation({ workspace: "general-chat" });
+ const initial = observation({ workspace: "general-chat", last_input_sequence: 1 });
  expect(initialStartupInformationHidden(initial.session, sessionProgress(initial), [])).toBe(true);
- for (const extra of [{ last_input_sequence: 2 }, { workspace: "unknown" }, { initial_execution: undefined }, { current_execution: { id: newRequestId(), input_id: newRequestId() } }, { execution: { ...progress, accepted_inputs: [...progress.accepted_inputs, { input_id: newRequestId(), prompt_digest: "b".repeat(64) }] } }]) {
+ for (const extra of [{ last_input_sequence: undefined }, { last_input_sequence: null }, { last_input_sequence: 2 }, { workspace: "unknown" }, { initial_execution: undefined }, { current_execution: { id: newRequestId(), input_id: newRequestId() } }, { execution: { ...progress, accepted_inputs: [...progress.accepted_inputs, { input_id: newRequestId(), prompt_digest: "b".repeat(64) }] } }]) {
   const later = observation({ workspace: "general-chat", ...extra });
   expect(initialStartupInformationHidden(later.session, sessionProgress(later), [])).toBe(false);
  }
+ const accepted = resource(EntityKind.QUEUE, { delivery: "accepted", execution_id: executionId, sequence: 1, content_revision: 1, mode: "execute", prompt: "Initial input" }, inputId);
+ const legacyProgress = (lastInputSequence: number | undefined) => observation({ workspace: "general-chat", last_input_sequence: lastInputSequence, execution: { ...progress, accepted_inputs: undefined } }, { queue: [accepted] });
+ const legacyInitial = legacyProgress(1);
+ expect(sessionProgress(legacyInitial)).toBe(SessionProgressPhase.Response);
+ expect(initialStartupInformationHidden(legacyInitial.session, sessionProgress(legacyInitial), [accepted])).toBe(true);
+ const legacyUnknown = legacyProgress(undefined);
+ expect(sessionProgress(legacyUnknown)).toBe(SessionProgressPhase.Response);
+ expect(initialStartupInformationHidden(legacyUnknown.session, sessionProgress(legacyUnknown), [accepted])).toBe(false);
  const queued = resource(EntityKind.QUEUE, { delivery: "queued", sequence: 1, content_revision: 1, mode: "execute", prompt: "Initial input" }, inputId);
  const pending = observation({ workspace: "worktree", last_input_sequence: 1, active_execution_id: undefined, initial_execution: undefined, execution: undefined, outcome: "not-started", dispatch: "ready", pending_inputs: 1 }, { queue: [queued] });
  expect(initialStartupInformationHidden(pending.session, sessionProgress(pending), [queued])).toBe(true);
