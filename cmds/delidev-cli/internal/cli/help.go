@@ -117,6 +117,11 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   session pr link --id SESSION --repository-id ID --number N
   session pr list|get|unlink --id SESSION [--association-id ID] [--revision N]
   session terminal create|list|inspect|input|resize|output|reattach|close --id ID
+  session shell --id ID --revision N --command COMMAND --confirm-full-access [--timeout-ms N]
+    Native shell runs outside the native sandbox with full access. It is an explicit user action.
+    Retain the request ID and accepted job on uncertain delivery; never automatically resend.
+  session shell-status --job-id JOB
+  session shell-cancel --job-id JOB --revision N
   session fork --id ID --revision N --turn-id TURN --name NAME [--workspace worktree|general-chat|local] [--wait]
   session sidechat --id ID --revision N --turn-id TURN --name NAME [--wait]
   session sidechat send --id ID --revision N --parent-id ID --parent-revision N --messages ID:REV,ID:REV

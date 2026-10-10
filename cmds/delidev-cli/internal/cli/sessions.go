@@ -61,6 +61,8 @@ func sessionCommand(ctx context.Context, c client, o options, args []string, str
 	action := args[0]
 	f := flags("session " + action)
 	switch action {
+	case "shell", "shell-cancel", "shell-status":
+		return sessionNativeShellCommand(ctx, c, o, action, args[1:])
 	case "diagnostics":
 		return sessionDiagnostics(ctx, c, args[1:])
 	case "subagents":
