@@ -62,27 +62,28 @@ func (v CodexAppsInventory) Validate() error {
 // receipt is never retried. Uncertainty retains that obligation independently
 // of selection state and native process cleanup.
 type CodexAppsOperation struct {
-	ClaimID        ID                     `json:"claim_id,omitempty"`
-	Version        int                    `json:"version"`
-	ID             ID                     `json:"id"`
-	Revision       uint64                 `json:"revision,string"`
-	RequestID      ID                     `json:"request_id"`
-	ActorID        ID                     `json:"actor_id"`
-	Action         CodexAppsAction        `json:"action"`
-	State          CodexAppsState         `json:"state"`
-	Original       CodexAppConfiguration  `json:"original"`
-	Next           *CodexAppConfiguration `json:"next,omitempty"`
-	ExecutionID    ID                     `json:"execution_id"`
-	ExecutionJobID ID                     `json:"execution_job_id"`
-	MachineID      ID                     `json:"machine_id"`
-	InstanceID     ID                     `json:"instance_id"`
-	NativeThreadID NativeIdentity         `json:"native_thread_id"`
-	Inventory      *CodexAppsInventory    `json:"inventory,omitempty"`
-	Problem        *Error                 `json:"problem,omitempty"`
+	PositiveNoNativeSend bool                   `json:"positive_no_native_send,omitempty"`
+	ClaimID              ID                     `json:"claim_id,omitempty"`
+	Version              int                    `json:"version"`
+	ID                   ID                     `json:"id"`
+	Revision             uint64                 `json:"revision,string"`
+	RequestID            ID                     `json:"request_id"`
+	ActorID              ID                     `json:"actor_id"`
+	Action               CodexAppsAction        `json:"action"`
+	State                CodexAppsState         `json:"state"`
+	Original             CodexAppConfiguration  `json:"original"`
+	Next                 *CodexAppConfiguration `json:"next,omitempty"`
+	ExecutionID          ID                     `json:"execution_id"`
+	ExecutionJobID       ID                     `json:"execution_job_id"`
+	MachineID            ID                     `json:"machine_id"`
+	InstanceID           ID                     `json:"instance_id"`
+	NativeThreadID       NativeIdentity         `json:"native_thread_id"`
+	Inventory            *CodexAppsInventory    `json:"inventory,omitempty"`
+	Problem              *Error                 `json:"problem,omitempty"`
 }
 
 func (v CodexAppsOperation) Validate() error {
-	if v.Version != 1 || v.Revision == 0 || v.Original.Validate() != nil || !slices.Contains([]CodexAppsState{CodexAppsQueued, CodexAppsClaimed, CodexAppsSucceeded, CodexAppsFailed, CodexAppsUncertain}, v.State) {
+	if v.Version != 1 || v.Revision == 0 || v.Original.Validate() != nil || !slices.Contains([]CodexAppsState{CodexAppsQueued, CodexAppsClaimed, CodexAppsSucceeded, CodexAppsFailed, CodexAppsUncertain, CodexAppsCanceled}, v.State) {
 		return invalidCodexApps()
 	}
 	for _, id := range []ID{v.ID, v.RequestID, v.ActorID, v.ExecutionID, v.ExecutionJobID, v.MachineID, v.InstanceID} {
@@ -90,7 +91,10 @@ func (v CodexAppsOperation) Validate() error {
 			return invalidCodexApps()
 		}
 	}
-	if (v.State != CodexAppsQueued && v.ClaimID.Validate() != nil) || (v.State == CodexAppsQueued && v.ClaimID != "") || v.NativeThreadID.Validate(Codex, NativeThreadIdentity) != nil {
+	if (v.State != CodexAppsQueued && v.State != CodexAppsCanceled && v.ClaimID.Validate() != nil) || ((v.State == CodexAppsQueued || v.State == CodexAppsCanceled) && v.ClaimID != "") || v.NativeThreadID.Validate(Codex, NativeThreadIdentity) != nil {
+		return invalidCodexApps()
+	}
+	if v.PositiveNoNativeSend != (v.State == CodexAppsCanceled) || v.State == CodexAppsCanceled && (v.Inventory != nil || v.Problem != nil) {
 		return invalidCodexApps()
 	}
 	if v.Action == CodexAppsInspect {
