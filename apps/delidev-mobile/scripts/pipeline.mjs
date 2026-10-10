@@ -19,6 +19,7 @@ import {
   Stage,
   Identity,
 } from "./beta.mjs";
+import { iosEnvironment } from "./mobile.mjs";
 import { inspectIos, inspectAndroid } from "./artifacts.mjs";
 import { appleProvider, googleProvider } from "./providers.mjs";
 const app = resolve(dirname(fileURLToPath(import.meta.url)), ".."),
@@ -127,6 +128,7 @@ async function build(input, platform) {
           "custom-protocol",
         ],
         root,
+        iosEnvironment(),
       );
       const target = resolve(root, process.env.CARGO_TARGET_DIR ?? "target"),
         external = join(app, "src-tauri/gen/apple/Externals/arm64/release");

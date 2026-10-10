@@ -126,7 +126,9 @@ Xcode application target without signing or launching a simulator. The pinned
 cargo-mobile2 CLI incorrectly requires an installed runtime for a build-only
 simulator archive; the owned build script uses the installed SDK through direct
 xcodebuild after compiling and copying the exact Rust library. Remove this path
-when the pinned CLI supports build-only simulator targets. `pnpm
+when the pinned CLI supports build-only simulator targets. Direct Cargo
+builds also pass the configured iOS minimum explicitly to the pinned Tauri Swift
+linker, which otherwise falls back to iOS 13 before the app config is applied. `pnpm
 build:android:emulator` builds the x86_64 Android APK through the pinned CLI.
 Required mobile target build failures are blockers. Root `cargo test` remains
 required for Rust changes. Hydrate required LFS assets before root compilation.
