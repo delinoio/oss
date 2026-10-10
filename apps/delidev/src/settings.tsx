@@ -68,6 +68,28 @@ import { useSettingsTaskVisible, useInSettingsTask, useCloseSettingsTask } from 
 
 export enum ConfigurationEditorPresentation { Workflow, InlineServerPreferences }
 
+function RepositorySaveReview({ initial, active, review }: { initial: Resource; active: boolean; review: () => void }) {
+  useLocale();
+  const repository = useQuery(ResourceQuery.getResource, { kind: EntityKind.REPOSITORY, id: initial.id }, { enabled: false, retry: false });
+  const [fresh, setFresh] = useState<Resource>();
+  const [readCompleted, setReadCompleted] = useState(false);
+  const read = useCallback(async () => {
+    setFresh(undefined);
+    setReadCompleted(false);
+    const result = await repository.refetch({ cancelRefetch: true });
+    const value = result.data?.resource;
+    if (!result.error && value?.id === initial.id && value.kind === EntityKind.REPOSITORY && value.revision >= initial.revision && value.revision > 0n && supportsResourceSchema(value)) setFresh(value);
+    setReadCompleted(true);
+  }, [initial.id, initial.revision, repository.refetch]);
+  useEffect(() => { if (active) void read(); }, [active, read]);
+  return <>
+    <Problem error={repository.error} />
+    {readCompleted && !fresh && !repository.error ? <p role="alert">{copy("pull-requests.profileSaveUnverified")}</p> : null}
+    {fresh ? <p>{resourceName(fresh)} · revision {fresh.revision.toString()}</p> : null}
+    {fresh ? <SettingsActionButton icon={SettingsActionIcon.Back} type="button" onClick={review}>{copy("pull-requests.reviewRepositorySave")}</SettingsActionButton> : <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={!active || repository.isFetching} onClick={() => void read()}>{copy("ui.retryCurrentRead")}</SettingsActionButton>}
+  </>;
+}
+
 export function ConfigurationEditor({ kind, initial, initialData, subscriptionOnly = false, serverPreferenceSection = ServerPreferenceSection.All, active, saved, cancel, presentation = ConfigurationEditorPresentation.Workflow, preferencesObservation, registrationAdapters }: { kind: EntityKind; initial?: Resource; initialData?: Document; subscriptionOnly?: boolean; serverPreferenceSection?: ServerPreferenceSection; active: boolean; saved: () => void; cancel: () => void; presentation?: ConfigurationEditorPresentation; preferencesObservation?: ServerPreferencesObservation; registrationAdapters?: ProjectRegistrationAdapters }) {
   useLocale();
   const checkoutPreference = useRunnerPreference(RunnerWorkflow.Checkout, false);
@@ -157,7 +179,7 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
   const isApiEntry = kind === EntityKind.ACCOUNT && data.type === "api";
   const kindLabel = isApiEntry ? copy("settings.extra.1ebd6d7b3aeb") : kind === EntityKind.SETTINGS ? serverPreferenceLabel(serverPreferenceSection) : kindNames[kind];
   const apiEntryHeading = isApiEntry ? <header className="api-entry-heading"><h1 hidden={inTask}>{initial ? copy("settings.editPreferences_00b4cc") : copy("settings.newAiApiKeyEntry_5f978c")}</h1><p>{resourceName(initial)}</p><p className="api-entry-scope">{copy("settings.savedOnTheSelectedServer_93dbee")}</p></header> : null;
-  if (job) return <section className={isApiEntry ? "api-entry-workflow" : undefined}>{apiEntryHeading}{job === "unknown" ? <p role="alert">{copy("settings.theServerAcknowledgedThisRequestWithout_061fa2")}</p> : <TrackedJob initial={job} active={active}>{(state) => state === JobState.Succeeded ? <><p>{copy("settings.configurationSavedAfterWorkerValidation_d2b875")}</p><SettingsActionButton icon={SettingsActionIcon.Cancel} onClick={saved}>{copy("settings.done_11a676")}</SettingsActionButton></> : state === JobState.Failed || state === JobState.Canceled ? <SettingsActionButton icon={SettingsActionIcon.Back} onClick={() => setJob(undefined)}>{copy("settings.returnToRetainedDraft_213f1b")}</SettingsActionButton> : null}</TrackedJob>}</section>;
+  if (job) return <section className={isApiEntry ? "api-entry-workflow" : undefined}>{apiEntryHeading}{job === "unknown" ? <p role="alert">{copy("settings.theServerAcknowledgedThisRequestWithout_061fa2")}</p> : <TrackedJob initial={job} active={active}>{(state, _output, observation) => state === JobState.Succeeded ? <><p>{copy("settings.configurationSavedAfterWorkerValidation_d2b875")}</p><SettingsActionButton icon={SettingsActionIcon.Cancel} onClick={saved}>{copy("settings.done_11a676")}</SettingsActionButton></> : (state === JobState.Failed || state === JobState.Canceled) && observation.verified ? kind === EntityKind.REPOSITORY && source ? <RepositorySaveReview initial={source} active={active} review={() => { mutation.resolveJob(job.id); setJob(undefined); }} /> : <SettingsActionButton icon={SettingsActionIcon.Back} onClick={() => setJob(undefined)}>{copy("settings.returnToRetainedDraft_213f1b")}</SettingsActionButton> : null}</TrackedJob>}</section>;
   const validSubscriptionProvider = !subscriptionOnly || (kind === EntityKind.PROVIDER && data.protocol === "native-subscription" && data.authentication === "subscription" && text(data.endpoint) === "");
   const repositoryNeedsRemoteCapability = kind === EntityKind.REPOSITORY && typeof data.remote_url === "string" && data.remote_url !== "";
   const repositoryStatusPending = repositoryNeedsRemoteCapability && repositoryStatus.data === undefined && !repositoryStatus.error;
