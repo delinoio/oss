@@ -70,6 +70,14 @@ The server does not call the provider directly. Only the original paired Worker 
 
 Worker revocation cancels an unassigned title and records `skipped`/`authority-lost`; a pending Archive may finish when session workspace ownership is clear. A claimed title becomes `uncertain`/`cleanup-uncertain`, and Archive stays pending until the native title runtime's cleanup is confirmed.
 
+Auxiliary receive termination cancels the original watch context directly, including
+clean stream exhaustion. Its active title context inherits that cancellation
+while the original native/provider cleanup joins before the watch returns.
+Retain the stream termination cause and original uncertain attempt; neither
+reconnect nor a lost control stream permits another inference or a successful
+late report. Heartbeat expiry and exact-job cancellation keep their independent
+ownership.
+
 The Worker uses a private temporary native home/work directory and joined process ownership. Cleanup must be confirmed before a successful title report. Uncertain process cleanup remains explicit and cannot trigger another native request. Native process close, proxy close, original-owner reconciliation, private runtime removal and durable parent synchronization must all succeed. Any cleanup failure overrides an earlier inference error with `RecoveryRequired` and suppresses successful output, retaining title and pending Archive ownership. A failed process join preserves the private intent for original-owner recovery; cleanup uncertainty never authorizes another inference or an automatic cleanup retry. Fixed instructions, an effective read-only sandbox, no tools and disabled retry limits are all required; sandbox mode alone is insufficient.
 
 ## Logging

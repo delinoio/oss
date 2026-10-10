@@ -56,6 +56,10 @@ func watchAuxiliary(ctx context.Context, config Config, client delidevv1connect.
 		if err == nil {
 			err = domain.Fail(domain.Unavailable, "The auxiliary Worker stream ended.", "Reconnect and reconcile the accepted title operation.")
 		}
+		// Job execution synchronously owns the consumer until its cleanup joins.
+		// Cancel here so stream loss fences inference and publication immediately,
+		// rather than waiting for that consumer or the heartbeat watchdog.
+		cancel(err)
 		select {
 		case messages <- received{err: err}:
 		case <-watchCtx.Done():
