@@ -591,9 +591,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 							problem = validateForkAuthority(tx, input)
 						}
 						if problem != nil {
-							now := time.Now().UTC()
-							j.State, j.Problem, j.FinishedAt = domain.JobFailed, domain.SafeError(problem), &now
-							return tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, j)
+							return rejectUnclaimedFork(tx, r, j, input, domain.SafeError(problem))
 						}
 					}
 					actor, _ := domain.PrincipalFrom(ctx)

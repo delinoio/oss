@@ -353,6 +353,14 @@ Fork or input. Recheck original actor, account, connection, immutable model and
 instructions, original Worker device/current captured instance, workspace
 reference and native read-only enforcement before claim and publication.
 
+A terminal Fork rejection in the claim transaction fails the original queued job
+and releases only its exact matching active retry generation when the immutable
+assigned device and instance are both absent and no runtime/execution has been
+published. Preserve the generation, receipt, previous answer and original failure
+metadata atomically. Restored authority permits a new explicit retry. Claimed,
+uncertain, mismatched or already published runtime ownership remains fenced until
+its original positive cleanup; authority loss alone is never cleanup proof.
+
 Keep public child ID, title, original `ForkOrigin`, snapshots and parent dependency
 entry immutable. Each retry owns one fresh private native Fork of its accepted
 prefix. Verify the original metadata-only child reference without preparing it

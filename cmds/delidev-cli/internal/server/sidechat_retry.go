@@ -278,6 +278,38 @@ func (s *Service) readSidechatRetry(ctx context.Context, childID, generationID d
 	return json.Marshal(view)
 }
 
+// rejectUnclaimedFork runs in the claim transaction. A queued job with neither
+// immutable assigned device nor instance has never acquired native authority.
+// Once claimed, even an authority error cannot release its cleanup fence.
+func rejectUnclaimedFork(tx *store.Tx, r store.Record, job domain.Job, input domain.ForkJobInput, problem *domain.Error) (any, error) {
+	if job.Type != domain.ForkSessionJob || job.State != domain.JobQueued || job.InstanceID != "" || job.AssignedDeviceID != "" {
+		return r, nil
+	}
+	if input.Retry != nil && input.Validate() == nil && r.SessionID == input.ChildSessionID {
+		cr, child, err := sessionRecord(tx, input.ChildSessionID)
+		if err != nil {
+			return nil, err
+		}
+		for _, generation := range child.SidechatRetries {
+			if generation.ID != input.Retry.GenerationID || generation.ID != child.SidechatActiveRetry || generation.ForkJobID != r.ID || generation.RuntimeID != input.RuntimeID {
+				continue
+			}
+			// A retained runtime or execution owns independent positive cleanup;
+			// a malformed or superseded generation must not retire another owner.
+			if generation.Fork == nil && generation.ExecutionJobID == "" && generation.ExecutionID == "" {
+				child.SidechatActiveRetry = ""
+				if _, err := tx.Put(domain.SessionKind, cr.ID, cr.Revision, cr.ID, cr.ProjectID, child); err != nil {
+					return nil, err
+				}
+			}
+			break
+		}
+	}
+	now := time.Now().UTC()
+	job.State, job.Problem, job.FinishedAt = domain.JobFailed, problem, &now
+	return tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, job)
+}
+
 // Replay refers to the accepted parent job, not the parent's later current turn.
 // Current policy, native cleanup and the unchanged child workspace are still
 // checked at every native claim and publication boundary.
