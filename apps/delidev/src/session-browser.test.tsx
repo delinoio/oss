@@ -1,5 +1,6 @@
 import { create } from "@bufbuild/protobuf";
-import { StrictMode } from "react";
+import { StrictMode, useLayoutEffect } from "react";
+import { SessionTabsProvider, SessionTabKind, sessionTabKey, useSessionTabs, type SessionTabsStore } from "./session-tabs";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -32,7 +33,7 @@ function fixture() {
   native.mockResolvedValue(local);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   function View() { return <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionBrowser session={session} accountId={accountId} close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>; }
-  return { accountId, profileId, tabId, profile, session, register, local, View };
+  return { accountId, profileId, tabId, profile, session, register, local, transport, client, View };
 }
 async function open() {
   const button = screen.getByRole("button", { name: "Open account browser" });
@@ -256,4 +257,43 @@ it("fences a retained Browser under the maximized upper inert region through exa
     expect(f.register).toHaveBeenCalledTimes(1);
     expect(native.mock.calls.filter(([operation]) => operation === "open_browser")[1][1].profileId).toBe(original.profileId);
   } finally { view.unmount(); }
+});
+
+function SharedBrowserFixture({f,capture}:{f:ReturnType<typeof fixture>;capture:(store:SessionTabsStore)=>void}) {
+ const tabs=useSessionTabs(f.session.id);capture(tabs.store);
+ useLayoutEffect(()=>tabs.store.open(f.session.id,{kind:SessionTabKind.Browser}),[]);
+ return <SessionBrowser session={f.session} accountId={f.accountId} close={()=>{}} selectedPage={tabs.tab.kind===SessionTabKind.Page?tabs.tab:undefined} openPage={page=>tabs.store.open(f.session.id,{kind:SessionTabKind.Page,...page})}/>;
+}
+it.each(['acknowledged','failed','still-present','retired'])("removes only the exact shared page after an owned close (%s)",async outcome=>{
+ const f=fixture(), other=newRequestId(), foreignProfile=newRequestId();
+ let state={tabs:{tabs:[...f.local.tabs.tabs,{id:other,url:'https://fixture.test/other'}],selected:f.tabId},removal_pending:false};
+ let settle!:()=>void;
+ native.mockImplementation(async(operation,input)=>{
+  if(operation==='control_browser' && input.action==='close-tab'){
+   await new Promise<void>(resolve=>{settle=resolve;});
+   if(outcome==='failed')throw new Error('Synthetic unavailable close acknowledgment');
+   if(outcome!=='still-present')state={...state,tabs:{tabs:state.tabs.tabs.filter(tab=>tab.id!==input.tabId),selected:other}};
+  }
+  return state;
+ });
+ let store!:SessionTabsStore;
+ const view=render(<TransportProvider transport={f.transport}><QueryClientProvider client={f.client}><MutationIntents><SessionTabsProvider><SharedBrowserFixture f={f} capture={value=>{store=value;}}/></SessionTabsProvider></MutationIntents></QueryClientProvider></TransportProvider>);
+ try{
+  await open();await waitFor(()=>expect(store.snapshot(f.session.id).tabs.some(tab=>tab.kind===SessionTabKind.Page && tab.id===f.tabId)).toBe(true));
+  const target={kind:SessionTabKind.Page as const,profile:f.profileId,id:f.tabId,title:'target'};
+  const surviving={kind:SessionTabKind.Page as const,profile:f.profileId,id:other,title:'surviving'};
+  const foreign={...target,profile:foreignProfile};
+  await act(async()=>{store.open(f.session.id,surviving);store.open(f.session.id,foreign);store.select(f.session.id,sessionTabKey(target));});
+  fireEvent.click(screen.getByRole('button',{name:'Close tab https://fixture.test/page'}));
+  await waitFor(()=>expect(settle).toBeTypeOf('function'));
+  expect(store.snapshot(f.session.id).tabs.some(tab=>sessionTabKey(tab)===sessionTabKey(target))).toBe(true);
+  if(outcome==='retired')view.unmount();
+  await act(async()=>settle());
+  await waitFor(()=>expect(store.snapshot(f.session.id).tabs.some(tab=>sessionTabKey(tab)===sessionTabKey(target))).toBe(outcome!=='acknowledged'));
+  expect(store.snapshot(f.session.id).tabs.some(tab=>sessionTabKey(tab)===sessionTabKey(surviving))).toBe(true);
+  expect(store.snapshot(f.session.id).tabs.some(tab=>sessionTabKey(tab)===sessionTabKey(foreign))).toBe(true);
+  const snapshot=store.snapshot(f.session.id);expect(snapshot.tabs.some(tab=>sessionTabKey(tab)===snapshot.selected)).toBe(true);
+  if(outcome==='acknowledged')expect(snapshot.selected).toBe(SessionTabKind.Browser);
+  expect(native.mock.calls.filter(([operation,input])=>operation==='control_browser'&&input.action==='close-tab')).toHaveLength(1);
+ }finally{view.unmount();f.client.clear();}
 });

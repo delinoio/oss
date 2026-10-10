@@ -1,5 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
-import { useSessionTabsStore, SessionTabKind } from "./session-tabs";
+import { useSessionTabsStore, SessionTabKind, sessionTabKey } from "./session-tabs";
 import { shortcutModalVisible } from "./shortcuts";
 // SPDX-License-Identifier: Apache-2.0
 import { copy, useLocale, ownedMessage, useProductMessage } from "./localization";
@@ -138,6 +138,9 @@ function NativeSessionBrowser({ session, accountId, close, layout, active=true, 
               const changed = browserState(await invoke<BrowserState>("control_browser", {profileId,viewId,action:pending.action,url:address,tabId:pending.tabId}));
               if (!disposed && presentation.current === viewId) {
                 setState(changed);
+                if (pending.action === BrowserAction.CloseTab && pending.tabId && !changed.tabs.tabs.some(tab => tab.id === pending.tabId)) {
+                  tabsStore.close(session.id, sessionTabKey({kind:SessionTabKind.Page,profile:profileId,id:pending.tabId,title:""}));
+                }
                 if (openPage && [BrowserAction.NewTab,BrowserAction.SelectTab].includes(pending.action)) {
                   const tab=changed.tabs.tabs.find(value=>value.id===changed.tabs.selected);
                   if(tab)openPage({profile:profileId,id:tab.id,title:browserTabTitle(tab.url),label:tab.url});
@@ -173,7 +176,16 @@ function NativeSessionBrowser({ session, accountId, close, layout, active=true, 
     if (!profileId || busy || state?.removal_pending) return;
     setBusy(true); setFailure(undefined);
     if (openPage && !presentation.current) { pendingAction.current={action,tabId};setPresenting(true);return; }
-    try { const result = browserState(await invoke<BrowserState>("control_browser", { profileId, viewId: presentation.current, action, url: address, tabId })); if (alive.current) { setState(result);if(openPage && [BrowserAction.NewTab,BrowserAction.SelectTab,BrowserAction.Navigate].includes(action)){const tab=result.tabs.tabs.find(value=>value.id===result.tabs.selected);if(tab)openPage({profile:profileId,id:tab.id,title:browserTabTitle(tab.url),label:tab.url});} } }
+    const viewId = presentation.current;
+    try { const result = browserState(await invoke<BrowserState>("control_browser", { profileId, viewId, action, url: address, tabId })); if (alive.current && presentation.current === viewId) {
+      setState(result);
+      // Only this original acknowledged close may remove its exact descriptor.
+      // A failed/uncertain response or a still-present target preserves the tab.
+      if (action === BrowserAction.CloseTab && tabId && !result.tabs.tabs.some(tab => tab.id === tabId)) {
+        tabsStore.close(session.id, sessionTabKey({kind:SessionTabKind.Page,profile:profileId,id:tabId,title:""}));
+      }
+      if(openPage && [BrowserAction.NewTab,BrowserAction.SelectTab,BrowserAction.Navigate].includes(action)){const tab=result.tabs.tabs.find(value=>value.id===result.tabs.selected);if(tab)openPage({profile:profileId,id:tab.id,title:browserTabTitle(tab.url),label:tab.url});}
+    } }
     catch { if (alive.current) setFailure(ownedMessage("session-browser.extra.51fee7071e2b")); }
     finally { if (alive.current) setBusy(false); }
   };
