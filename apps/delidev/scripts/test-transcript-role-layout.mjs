@@ -35,7 +35,7 @@ try {
   const page = await browser.newPage();
   page.on("pageerror", error => errors.push(error.message));
   const origin = `http://127.0.0.1:${server.address().port}`;
-  const sizes = process.argv.includes("--short-height-baseline") ? [{width:560,height:480}] : [{ width: 1680, height: 1000 }, { width: 980, height: 640 }, { width: 979, height: 640 }, { width: 560, height: 640 }, { width: 1120, height: 960, zoom: 2 }];
+  const sizes = process.argv.includes("--short-height-baseline") ? [{width:560,height:480}] : [{ width: 1680, height: 1000 }, { width: 980, height: 640 }, { width: 979, height: 640 }, { width: 560, height: 640 }, { width: 360, height: 640 }, { width: 1120, height: 960, zoom: 2 }];
   for (const language of ["en", "ko"]) for (const theme of ["light", "dark", "system"]) for (const size of sizes) {
     await page.emulateMedia({ colorScheme: "dark" });
     process.stdout.write(JSON.stringify({ operation: "transcript-role-case", language, theme, ...size }) + "\n");
