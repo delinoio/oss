@@ -377,6 +377,7 @@ it("does not reuse old scope data when a new valid selection fails", async () =>
 it("defaults to Overview, keeps three topmost semantic tabs and retains state without summary reads", async () => {
  const f=fixture(); const view=render(f.view()); await screen.findByText("Incomplete coverage");
  const tabs=screen.getAllByRole("tab");
+ expect(tabs.every(tab=>tab.classList.contains("tab-item")&&tab.classList.contains("tab-label"))).toBe(true);expect(tabs[0].parentElement?.classList.contains("tab-strip")).toBe(true);
  expect(document.querySelector(".usage-page")!.firstElementChild).toBe(tabs[0].parentElement);
  expect(tabs.map(tab=>tab.textContent)).toEqual(["Overview","Usage history","Model prices"]);
  expect(tabs.map(tab=>tab.getAttribute("aria-selected"))).toEqual(["true","false","false"]);

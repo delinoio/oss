@@ -11,3 +11,10 @@ it("roves focus and selection without an absent-position alias and leaves pinned
  fireEvent.keyDown(tabs[1],{key:"End"});expect(document.activeElement).toBe(tabs[2]);fireEvent.keyDown(tabs[2],{key:"Home"});expect(document.activeElement).toBe(tabs[0]);expect(tabs[0].getAttribute("aria-controls")).toBe("session-pane-original");
  fireEvent.click(screen.getAllByRole("button")[0]);expect(close).toHaveBeenCalledWith("files");expect(tabs[0].getAttribute("aria-keyshortcuts")).toMatch(/1$/);
 });
+
+it("uses sibling label/close targets and does not select when closing an inactive tab", () => {
+ const select=vi.fn(),close=vi.fn();render(<SessionTabBar id="presentation" tabs={[{kind:SessionTabKind.Conversation},{kind:SessionTabKind.Files},{kind:SessionTabKind.Browser}]} selected="browser" select={select} close={close}/>);
+ const tabs=screen.getAllByRole("tab");expect(tabs.every(tab=>tab.classList.contains("tab-label"))).toBe(true);expect(tabs[0].closest(".tab-strip")).toBeTruthy();
+ const closeFiles=screen.getByRole("button",{name:/Close Files/});expect(closeFiles.classList.contains("tab-close")).toBe(true);expect(closeFiles.parentElement).toBe(tabs[1].parentElement);expect(tabs[1].contains(closeFiles)).toBe(false);
+ fireEvent.click(closeFiles);expect(close).toHaveBeenCalledExactlyOnceWith("files");expect(select).not.toHaveBeenCalled();expect(tabs[2].getAttribute("aria-selected")).toBe("true");expect(tabs[0].parentElement?.querySelector(".tab-close")).toBeNull();
+});

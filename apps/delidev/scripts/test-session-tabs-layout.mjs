@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Synthetic browser checks do not establish packaged CEF/native acceptance.
 import assert from "node:assert/strict";
+import { assertTabPresentation } from "./tab-layout-assertions.mjs";
 import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { execFileSync } from "node:child_process";
@@ -57,6 +58,7 @@ try {
       const pane=document.querySelector('[role="tabpanel"]'),tabs=document.querySelector('[role="tablist"]'),info=document.querySelector('.session-information'),view=document.querySelector('.browser-viewport');
       return {pane:box(pane),tabs:box(tabs),info:box(info),view:box(view),page:document.documentElement.scrollWidth,viewport:innerWidth,splitters:document.querySelectorAll('.browser-splitter,.terminal-dock-separator').length,selected:tabs.querySelectorAll('[aria-selected="true"]').length,scale:parseFloat(getComputedStyle(document.body).zoom)||1};
     });
+    await assertTabPresentation(page);
     assert.equal(matrix.selected,1);assert.equal(matrix.splitters,0);
     const closeGeometry = await page.locator(".session-tab-close").evaluateAll(nodes => nodes.map(node => { const close = node.getBoundingClientRect(), shell = node.parentElement.getBoundingClientRect(); return { width: close.width, height: close.height, left: close.left, right: close.right, shellLeft: shell.left, shellRight: shell.right }; }));
     assert(closeGeometry.every(row => row.width >= 40 * matrix.scale - 1 && row.height >= 40 * matrix.scale - 1 && row.left >= row.shellLeft - 1 && row.right <= row.shellRight + 1), JSON.stringify(closeGeometry));
@@ -80,6 +82,22 @@ try {
     assert.equal(await page.getByRole("tab",{name:label.browser,exact:true}).getAttribute("aria-selected"),"true");
     assert.equal(await page.locator('.browser-viewport:visible').count(),0,"Browser picker does not show an unselected page");
     process.stdout.write(JSON.stringify({operation:"session-tabs-case",language,theme,...size,geometry:matrix})+"\n");cases++;
+  }
+  // Actual Settings task wrapper loads all form styles; no native resources are opened.
+  for (const language of ["en","ko"]) for (const theme of ["light","dark","custom"]) for (const size of sizes) {
+    await page.setViewportSize({width:size.width,height:size.height});
+    await page.goto(`${origin}/?language=${language}&theme=${theme==="custom"?"light":theme}&zoom=${size.zoom??1}&tabPresentation=project`);
+    if(theme==="custom")await page.evaluate(()=>{document.documentElement.style.setProperty('--selected-border','#9162ad');document.documentElement.style.setProperty('--selected-text','#624373');document.documentElement.style.setProperty('--focus','#b97916');});
+    const dialog=page.getByRole('dialog',{name:'Edit Project fixture'});await dialog.waitFor();
+    const tabs=dialog.getByRole('tab'),name=page.getByRole('textbox',{name:'Fixture name'});
+    await name.fill('Retained draft');await tabs.nth(1).click();
+    const panel=dialog.getByRole('tabpanel');await panel.evaluate(node=>node.scrollTop=100);
+    const position=await panel.evaluate(node=>node.scrollTop);await tabs.nth(1).focus();await page.keyboard.press('ArrowRight');
+    assert.equal(await tabs.nth(1).getAttribute('aria-selected'),'true','Project focus is manual activation');await page.keyboard.press('Enter');await assertTabPresentation(page);
+    await tabs.nth(0).click();assert.equal(await name.inputValue(),'Retained draft');await tabs.nth(1).click();assert.equal(await panel.evaluate(node=>node.scrollTop),position,'mounted panel scroll retained');
+    const ordinary=await dialog.locator('input').first().evaluate(node=>getComputedStyle(node).borderRadius),save=await page.getByRole('button',{name:'Save fixture'}).evaluate(node=>getComputedStyle(node).borderRadius);assert.notEqual(ordinary,'0px');assert.notEqual(save,'0px');
+    await page.getByRole('button',{name:'Save fixture'}).click();await page.getByRole('spinbutton',{name:'Fixture attempts'}).waitFor();assert(await page.getByRole('spinbutton',{name:'Fixture attempts'}).evaluate(node=>node===document.activeElement),'hidden invalid field revealed and focused');
+    await assertTabPresentation(page);cases++;
   }
   assert.deepEqual(errors,[]);
   process.stdout.write(JSON.stringify({operation:"session-tabs-layout",source,cases,result:"passed"})+"\n");

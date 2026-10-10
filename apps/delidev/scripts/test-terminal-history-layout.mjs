@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Actual renderer/history geometry against isolated synthetic services; no native acceptance.
 import assert from "node:assert/strict";
+import { assertTabPresentation } from "./tab-layout-assertions.mjs";
 import { TerminalAction } from "@delinoio/delidev-api-client";
 import { cp, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -38,7 +39,7 @@ try {
    const page=await browser.newPage({viewport:{width:1200,height:720}}),errors=[];page.on("pageerror",error=>errors.push(error.message));
    try {
     await page.goto(`http://127.0.0.1:${server.address().port}/?closed=${closed}`);
-    await page.getByRole("tab").click();await page.locator(".xterm").waitFor();
+    await page.getByRole("tab").click();await page.locator(".xterm").waitFor();if(!baseline)await assertTabPresentation(page);
     await page.waitForFunction(()=>window.__terminalHistoryFixture.metrics.watches===1);
     await page.waitForTimeout(400);
     const bounds=await page.locator(".xterm-screen").boundingBox();

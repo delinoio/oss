@@ -14,6 +14,7 @@ import { encode } from "./documents";
 import { ProjectEditTab, ProjectEditTabs } from "./project-edit-tabs";
 import { readFileSync } from "node:fs";
 const projectTabStyles = readFileSync("src/project-edit-tabs.css", "utf8");
+const sharedTabStyles = readFileSync("src/tab-presentation.css", "utf8");
 
 function renderTask(children: ReactNode) {
   const transport = createRouterTransport(() => {});
@@ -231,7 +232,7 @@ it("retains page cancellation and distinct nested return, while omitting empty t
 
 it("constrains the saved Project tab body through the mounted task wrapper", () => {
   renderTask(<SettingsTaskDialog title="Edit project" size={SettingsDialogSize.Form} close={() => {}}>
-    <style>{projectTabStyles}</style>
+    <style>{projectTabStyles}{sharedTabStyles}</style>
     <form className="project-editor"><ProjectEditTabs disabled={false} panels={{
       [ProjectEditTab.General]: <label>Name<input defaultValue="Saved project" /></label>,
       [ProjectEditTab.Repositories]: <p>Repositories</p>,

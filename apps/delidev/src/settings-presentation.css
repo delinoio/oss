@@ -11,12 +11,12 @@
 .settings-content[aria-label] .settings-content-column :is(label, input, select, textarea, button, summary) { font-size: 14px; line-height: 20px; }
 .settings-content[aria-label] .settings-content-column p { font-size: 14px; line-height: 20px; }
 .settings-content[aria-label] .settings-content-column :is(.settings-scope, .api-entry-scope, .paired-device-scope, .backups-category-scope) { margin-top: 8px; font-size: 12px; line-height: 18px; color: var(--muted); }
-.settings-content[aria-label] .settings-content-column :is(button, input:not([type=checkbox]):not([type=radio]), select, textarea, summary) { min-height: 40px; max-width: 100%; border-radius: 8px; }
-.settings-content[aria-label] .settings-content-column :is(button, input:not([type=checkbox]):not([type=radio]), select, summary) { white-space: normal; }
+.settings-content[aria-label] .settings-content-column :is(button:not(.tab-label):not(.tab-close), input:not([type=checkbox]):not([type=radio]), select, textarea, summary) { min-height: 40px; max-width: 100%; border-radius: 8px; }
+.settings-content[aria-label] .settings-content-column :is(button:not(.tab-label):not(.tab-close), input:not([type=checkbox]):not([type=radio]), select, summary) { white-space: normal; }
 .settings-content[aria-label] .settings-content-column textarea { white-space: pre-wrap; }
 .settings-content[aria-label] .settings-content-column :is(input:not([type=checkbox]):not([type=radio]), select, textarea) { border-color: var(--control-border); }
 .settings-content[aria-label] .settings-content-column label.checkbox { min-height: 40px; }
-.settings-content[aria-label] .settings-content-column button { border-color: var(--control-border); }
+.settings-content[aria-label] .settings-content-column button:not(.tab-label):not(.tab-close) { border-color: var(--control-border); }
 .settings-content[aria-label] .settings-content-column button:is(.primary, .backups-primary) { border-color: var(--accent); }
 .settings-content[aria-label] .settings-content-column button:is(.paired-device-revoke, .integration-danger, .backups-destructive) { border-color: var(--danger-text); }
 .settings-content[aria-label] .settings-category-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin: 0 0 24px; padding-bottom: 24px; border-bottom: 1px solid var(--border); }

@@ -11,7 +11,7 @@ function fixture(disabled = false) {
  }}/></form>;
 }
 it("keeps four ordered panels mounted and preserves drafts and per-panel scroll", () => {
- render(fixture());const tabs=screen.getAllByRole('tab');expect(tabs.map(tab=>tab.textContent)).toEqual(['General','Repositories','Execution','Access']);
+ render(fixture());const tabs=screen.getAllByRole('tab');expect(tabs.every(tab=>tab.classList.contains("tab-item")&&tab.classList.contains("tab-label"))).toBe(true);expect(tabs[0].parentElement?.classList.contains("tab-strip")).toBe(true);expect(tabs.map(tab=>tab.textContent)).toEqual(['General','Repositories','Execution','Access']);
  const name=screen.getByLabelText('Name');fireEvent.change(name,{target:{value:'Retained name'}});
  fireEvent.click(tabs[1]);const repositories=screen.getByRole('tabpanel');repositories.scrollTop=37;
  fireEvent.change(screen.getByLabelText('Primary'),{target:{value:'original'}});

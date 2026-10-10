@@ -264,6 +264,7 @@ it("manually activates stable history tabs and excludes hidden controls from key
   render(f.view());
   await screen.findByText("Backup creation pending");
   const creation = screen.getByRole("tab", { name: "Creation jobs" });
+  expect(creation.classList.contains("tab-label")).toBe(true);expect(creation.parentElement?.classList.contains("tab-strip")).toBe(true);
   const deletion = screen.getByRole("tab", { name: "Deletion jobs" });
   creation.focus();
   fireEvent.keyDown(creation, { key: "ArrowRight" });

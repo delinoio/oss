@@ -1,12 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 .page.usage-page { max-width: 1280px; min-width: 0; margin-inline: auto; padding: 24px; }
 .usage-page [hidden] { display: none; }
-.usage-page button, .usage-sidebar button { min-height: 40px; border-radius: 8px; }
+.usage-page button:not(.tab-label):not(.tab-close), .usage-sidebar button { min-height: 40px; border-radius: 8px; }
 .usage-page .usage-applied { border-radius: 8px; margin-block: 16px; }
-.usage-page .usage-tabs { display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 24px; border-bottom: 1px solid var(--border); margin: 0 0 24px; }
-.usage-page .usage-tabs button { flex: 0 0 auto; min-height: 40px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--muted); padding: 8px 0; }
-.usage-page .usage-tabs button:focus-visible { outline: 2px solid var(--selected-border); outline-offset: -2px; }
-.usage-page .usage-tabs [aria-selected=true] { color: var(--selected-text); border-bottom-color: var(--selected-border); }
 .usage-page .usage-summary { margin-block: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
 .usage-page .usage-summary h2, .usage-page .usage-summary p, .usage-page .usage-metric dt, .usage-page .usage-metric small { color: var(--muted); }
 .usage-page .usage-metrics-primary { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
@@ -111,3 +107,5 @@
  .usage-overview-table th, .usage-overview-table td { padding: 6px 0; border: 0; }
  .usage-overview-table td[data-label]::before { display: block; content: attr(data-label); color: var(--muted); }
 }
+
+.usage-page .usage-tabs { margin: 0 0 24px; }

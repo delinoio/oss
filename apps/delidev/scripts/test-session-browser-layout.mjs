@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Synthetic browser checks do not establish packaged CEF/native acceptance.
 import assert from "node:assert/strict";
+import { assertTabPresentation } from "./tab-layout-assertions.mjs";
 import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { execFileSync } from "node:child_process";
@@ -81,7 +82,7 @@ try {
     assert(Math.abs(m.region.width / m.scale - size.conversation) <= 1, "Threshold uses conversation width excluding Info");
     if (m.splitter) assert(Math.abs(m.panel.width / m.scale - (size.conversation - 8) * .55) <= 1, "Default is 55 percent after splitter");
     assert.equal((await evidence()).registrations, 0);
-    await opening.click(); await page.locator(".browser-tabs li").first().waitFor(); await assertGeometry();
+    await opening.click(); await page.locator(".browser-tabs li").first().waitFor(); await assertTabPresentation(page); await assertGeometry();
     assert.equal((await evidence()).registrations, 1); assert.equal(await page.locator(".browser-tabs li").count(), 2);
     if (screenshots && language === "en" && theme === "light" && size.width === 1904 && size.height === 1000) { await mkdir(screenshots, { recursive: true }); await page.screenshot({ path: join(screenshots, "browser-open-wide.png") }); }
     const full = await page.locator(".browser-tabs li").last().locator("button").first().getAttribute("title");
@@ -122,10 +123,10 @@ try {
     if (state.startsWith("capabilities=")) { assert(await opening.isDisabled()); assert.equal((await evidence()).registrations, 0); assert.equal((await evidence()).opens, 0); await assertGeometry(); cases++; continue; }
     await page.waitForFunction(() => !document.querySelector(".browser-opening button").disabled); await opening.click();
     if (state === "registration=uncertain") {
-      const retry = page.getByRole("button", { name: language === "en" ? "Retry the same registration" : "같은 등록 다시 시도", exact: true }); await retry.waitFor(); assert.equal((await evidence()).registrations, 1); assert.equal((await evidence()).opens, 0); await retry.click(); await page.locator(".browser-tabs li").first().waitFor();
+      const retry = page.getByRole("button", { name: language === "en" ? "Retry the same registration" : "같은 등록 다시 시도", exact: true }); await retry.waitFor(); assert.equal((await evidence()).registrations, 1); assert.equal((await evidence()).opens, 0); await retry.click(); await page.locator(".browser-tabs li").first().waitFor(); await assertTabPresentation(page);
       assert(await page.evaluate(() => JSON.stringify(browserFixture.registrations[0]) === JSON.stringify(browserFixture.registrations[1])), "Explicit retry retains original request");
     } else if (state === "native=failure") { await page.locator(".browser-chrome [role=alert]").waitFor(); assert.equal((await evidence()).opens, 1); assert.equal((await evidence()).actions, 0); }
-    else { await page.locator(".browser-tabs li").first().waitFor(); if (state === "tabs=16") assert(await page.getByRole("button", { name: language === "en" ? "New tab" : "새 탭", exact: true }).isDisabled()); else assert(await page.getByRole("button", { name: language === "en" ? "Back" : "뒤로", exact: true }).isDisabled()); await assertGeometry(); }
+    else { await page.locator(".browser-tabs li").first().waitFor(); await assertTabPresentation(page); if (state === "tabs=16") assert(await page.getByRole("button", { name: language === "en" ? "New tab" : "새 탭", exact: true }).isDisabled()); else assert(await page.getByRole("button", { name: language === "en" ? "Back" : "뒤로", exact: true }).isDisabled()); await assertGeometry(); }
     assert.equal((await evidence()).actions, 0); cases++;
   }
   assert.deepEqual(errors, []);

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Synthetic browser checks do not establish packaged CEF or native acceptance.
 import assert from "node:assert/strict";
+import { assertTabPresentation } from "./tab-layout-assertions.mjs";
 import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { execFileSync } from "node:child_process";
@@ -161,6 +162,7 @@ try {
     assert.equal(await date.inputValue(), "", context);
     if (width < 760) assert.equal(await page.locator(".sidebar-pane-dialog").getAttribute("open"), null, context);
     assert.equal(await page.evaluate(() => window.__usageFixture.writes), 0, context);
+    await assertTabPresentation(page);
     checks++;
     console.log(JSON.stringify({ operation: "usage-layout-case", context, result: "passed" }));
   }

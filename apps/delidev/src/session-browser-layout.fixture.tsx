@@ -12,6 +12,9 @@ import { i18n } from "./localization";
 import { MutationIntents } from "./mutation";
 import { BrowserHostProvider } from "./host-capabilities";
 import { SessionView } from "./session";
+import { SettingsTaskDialog, SettingsTaskActions, SettingsDialogSize } from "./settings-task";
+import { ProjectEditTabs, ProjectEditTab, revealProjectInvalidControl } from "./project-edit-tabs";
+import "./settings-presentation.css";
 import { SessionTabsProvider } from "./session-tabs";
 import "./themes.css";
 import "./styles.css";
@@ -43,8 +46,11 @@ const transport = createRouterTransport(router => {
   router.service(BrowserService, { getBrowserCapabilities: async () => { if (args.get("capabilities") === "loading") await new Promise<void>(() => {}); if (args.get("capabilities") === "failure") throw new ConnectError("Synthetic capability unavailable", Code.Unavailable); return { capabilities: args.get("capabilities") === "unsupported" ? [] : [BrowserCapability.PROTECTED_DEVICE_PROFILE_V1] }; }, registerBrowserProfile: request => { evidence.registrations.push({ requestId: request.session!.requestId, accountId: request.accountId }); if (args.get("registration") === "uncertain" && evidence.registrations.length === 1) throw new ConnectError("Synthetic original receipt unavailable", Code.Unavailable); return { profile }; } });
   router.service(ResourceService, { getSnapshot: () => ({ resources: [session], cursor: "fixture" }), listResources: request => ({ resources: request.filter?.kind === EntityKind.MESSAGE ? messages : [] }), async *watchEvents(_request, context) { if (!context.signal.aborted) await new Promise<void>(resolve => context.signal.addEventListener("abort", () => resolve(), { once: true })); } });
 });
+function ProjectTabsFixture() {
+ return <SettingsTaskDialog title="Edit Project fixture" size={SettingsDialogSize.Form} close={()=>{}}><form className="project-editor" onInvalidCapture={revealProjectInvalidControl} onSubmit={event=>event.preventDefault()}><ProjectEditTabs disabled={false} panels={{[ProjectEditTab.General]:<label>Fixture name<input required defaultValue="Saved project" /></label>,[ProjectEditTab.Repositories]:<div style={{height:900}}>Repository panel</div>,[ProjectEditTab.Execution]:<label>Fixture attempts<input required type="number" defaultValue="" /></label>,[ProjectEditTab.Access]:<p>Access panel</p>}}/><SettingsTaskActions><button type="submit" className="primary">Save fixture</button><button type="button">Cancel fixture</button></SettingsTaskActions></form></SettingsTaskDialog>;
+}
 function Fixture() {
   const [draft, setDraft] = useState("Retained synthetic Browser draft"), [mounted, setMounted] = useState(true);
   return <div className="app browser-layout-fixture" data-fixture="__browserSplitFixture"><aside><h1>DeliDev</h1><button onClick={() => setMounted(value => !value)}>Fixture remount</button></aside><main><div className="session-container">{mounted ? <SessionView id={sessionId} draft={draft} setDraft={setDraft} /> : null}</div></main></div>;
 }
-createRoot(document.getElementById("root")!).render(<TransportProvider transport={transport}><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MutationIntents><BrowserHostProvider available={args.get("host") !== "unsupported"}><SessionTabsProvider><Fixture /></SessionTabsProvider></BrowserHostProvider></MutationIntents></QueryClientProvider></TransportProvider>);
+createRoot(document.getElementById("root")!).render(<TransportProvider transport={transport}><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MutationIntents><BrowserHostProvider available={args.get("host") !== "unsupported"}><SessionTabsProvider>{args.get("tabPresentation")==="project"?<ProjectTabsFixture/>:<Fixture />}</SessionTabsProvider></BrowserHostProvider></MutationIntents></QueryClientProvider></TransportProvider>);
