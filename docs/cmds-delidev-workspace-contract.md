@@ -582,3 +582,5 @@ path, original open, open-handle stat, native file identity, final named stat or
 original identity mismatch. These private structured diagnostics include no path,
 file index or native error text. A diagnostic does not weaken canonical admission,
 adopt a replacement directory or prove successful cleanup.
+
+Git-reported absolute administration paths may use native-equivalent separators and casing. Before capturing a strict directory digest, retain the filesystem canonical spelling only after proving the same original opened directory identity. Reject relative paths, links, foreign aliases and replacement identities; normalization alone grants no ownership or cleanup authority.

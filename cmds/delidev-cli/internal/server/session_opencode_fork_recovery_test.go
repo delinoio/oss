@@ -440,8 +440,19 @@ func TestOpenCodeForkFixtureRetainsWindowsNativeRefusal(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := f.refresh(t)
+	jobsBefore, err := f.service.Store.List(context.Background(), store.Filter{Kind: domain.JobKind, Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Changing only the machine OS cannot convert the original accepted Linux
+	// preparation into Windows authority. Its proof fails before native admission.
 	response, err := sessionClient(f.accountFixture).ForkSession(context.Background(), ownerRequest(f.identity, &pb.ForkSessionRequest{Mutation: acctMutation(resourceForTest(source), domain.NewID()), ExpectedTurnId: string(f.turn), Name: "Unsupported Windows fixture", Workspace: pb.ForkWorkspace_FORK_WORKSPACE_GENERAL_CHAT}))
-	if err == nil || connect.CodeOf(err) != connect.CodeUnimplemented || response != nil {
-		t.Fatal("unsupported Windows native profile acquired fork authority", err)
+	if err == nil || connect.CodeOf(err) != connect.CodeFailedPrecondition || response != nil {
+		t.Fatal("changed Worker OS did not refuse the original Linux preparation", err)
+	}
+	after := f.refresh(t)
+	jobsAfter, err := f.service.Store.List(context.Background(), store.Filter{Kind: domain.JobKind, Limit: 100})
+	if err != nil || source.Revision != after.Revision || string(source.Data) != string(after.Data) || len(jobsBefore) != len(jobsAfter) {
+		t.Fatal("refused Worker OS change mutated the source or admitted fork work", err)
 	}
 }

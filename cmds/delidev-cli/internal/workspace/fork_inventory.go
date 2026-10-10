@@ -27,6 +27,29 @@ type forkGitInventory struct {
 	commonFiles, adminFiles       snapshotInventory
 }
 
+// Git reports Windows absolute paths with its own separators and casing. Keep
+// the filesystem's canonical spelling only after proving the original directory
+// identity; strict digest checks must not accept links or adopt a replacement.
+func canonicalForkGitDirectory(path string) (string, error) {
+	named, err := os.Lstat(path)
+	if err != nil || !filepath.IsAbs(path) || !named.IsDir() || named.Mode()&os.ModeSymlink != 0 {
+		return "", forkUnsupported()
+	}
+	original, err := security.StableStat(path)
+	if err != nil {
+		return "", forkUnsupported()
+	}
+	canonical, err := filepath.EvalSymlinks(path)
+	if err != nil || !sameNativePath(canonical, path) {
+		return "", forkUnsupported()
+	}
+	resolved, err := security.StableStat(canonical)
+	if err != nil || !os.SameFile(original, resolved) {
+		return "", forkUnsupported()
+	}
+	return canonical, nil
+}
+
 func inspectForkGitInventory(ctx context.Context, git Git, source string, budget *snapshotCopyBudget) (forkGitInventory, error) {
 	var result forkGitInventory
 	git.readOnly, git.offline = true, true
@@ -38,10 +61,15 @@ func inspectForkGitInventory(ctx context.Context, git Git, source string, budget
 		return result, err
 	}
 	result.common, result.admin = fields[0], fields[1]
-	for _, p := range []string{result.common, result.admin} {
-		canonical, err := filepath.EvalSymlinks(p)
-		if err != nil || !filepath.IsAbs(p) || !sameNativePath(canonical, p) {
-			return result, forkUnsupported()
+	for i, p := range []string{result.common, result.admin} {
+		canonical, err := canonicalForkGitDirectory(p)
+		if err != nil {
+			return result, err
+		}
+		if i == 0 {
+			result.common = canonical
+		} else {
+			result.admin = canonical
 		}
 	}
 	for _, name := range []string{"alternates", "http-alternates"} {
