@@ -14,6 +14,33 @@ Codex `0.151.0` API and Claude `2.1.236` API now publish the bounded original ch
 
 `machine discover --protocol` binds a non-inference native validation request to the same durable machine discovery generation as its executable selections. Detected installations receive a protocol observation with `verified`, `unsupported` or `failed` state. Missing/denied installations do not claim a handshake. An ordinary version-only discovery cannot publish native protocol observations. Only locally supported installed-version profiles can report verified; raw remote errors are reconstructed into safe diagnostics by the server. Current handshake observations never populate execution capabilities or authorize an account.
 
+### Session-native Apps authority
+
+Native app discovery, metadata, installed runtime state, effective enablement and
+callability are independent observations. Session selection belongs to the original
+account, connection and immutable execution configuration generation; neither a
+name, installation, passive connector-ready notification nor app metadata grants
+execution authority. A complete original authenticated runtime inventory is required
+before app effects. Explicit selection may enable only its exact original connector
+identities. Unselected, revoked, unavailable, foreign or uncertain duplicate calls
+remain denied. Account changes never transfer selections or protected authority.
+
+Native tool calls, original approvals and results retain their correlated thread,
+turn, item, request and connector identities. Revalidate current selection,
+revocation and original account authority before sending a one-call approval;
+original uncertain requests are never replayed. Configuration generations and
+connector/native cleanup remain independently owned. Metadata URLs, native errors,
+private credentials and raw native content are excluded from public availability
+and operational logs. Native inventory refresh is explicit, never triggered by
+passive events or presentation. A committed installed snapshot read is distinct
+from a refresh that starts or refreshes the hosted connector runtime. The native
+startup policies are Eager and LazyWhenCached; no clientPassive flag is inferred.
+
+The official source boundaries are the [Apps schema](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server-protocol/src/protocol/v2/apps.rs),
+[installed snapshot owner](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server/src/request_processors/apps_processor/installed.rs),
+[app policy and original approval owner](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/core/src/mcp_tool_call.rs)
+and [startup policy](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/codex-mcp/src/runtime.rs).
+
 ### Direct startup and native attribution
 
 [Direct startup](cmds-delidev-execution-startup-contract.md) supersedes numeric
