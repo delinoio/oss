@@ -2,6 +2,7 @@
 import { expect, it, vi } from "vitest";
 import { bindingAria, bindingKeys, bindingMatches, dispatchShortcut, globalShortcutBindings, ShortcutExecution, ShortcutId, ShortcutInput, ShortcutPlatform, ShortcutScope, ShortcutStore, type ShortcutDefinition } from "./shortcuts";
 import { Surface } from "./surface";
+import { effectiveShortcutDefinitions, ShortcutOverrideState } from "./shortcut-preferences";
 
 const platform = ShortcutPlatform.Other;
 function definition(extra: Partial<ShortcutDefinition> = {}): ShortcutDefinition { return { id: ShortcutId.NewSession, scope: ShortcutScope.Global, label: "shortcuts.newSession", bindings: [{ key: "k", primary: true }], run: vi.fn(), ...extra }; }
@@ -81,4 +82,25 @@ it("admits only the numeric tab definitions from terminal input and consumes onc
  const tab=definition({id:ShortcutId.SessionTab1,input:ShortcutInput.Allow,terminal:true,bindings:[{key:"1",primary:true}]});
  const other=definition({input:ShortcutInput.Allow});expect(dispatch([tab,other],{key:"1"},input).defaultPrevented).toBe(true);expect(tab.run).toHaveBeenCalledTimes(1);
  dispatch([tab,other],{key:"1",repeat:true},input);dispatch([tab,other],{key:"1",isComposing:true},input);dispatch([tab,other],{key:"1",shiftKey:true},input);dispatch([tab,other],{},input);expect(tab.run).toHaveBeenCalledTimes(1);expect(other.run).not.toHaveBeenCalled();input.remove();
+});
+
+it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])("keeps fixed send and native newline with every primary override on %s", platform => {
+ const input=document.createElement('textarea');document.body.append(input);input.focus();
+ const run=vi.fn(), definitions:ShortcutDefinition[]=[
+  {id:ShortcutId.SessionSend,scope:Surface.Sessions,label:"shortcuts.queueMessage",bindings:[{key:"Enter"},{key:"Enter",primary:true}],target:{current:input},input:ShortcutInput.Target,run},
+  {id:ShortcutId.SessionNewline,scope:Surface.Sessions,label:"shortcuts.newline",bindings:[{key:"Enter",shift:true}],target:{current:input},input:ShortcutInput.Target,execution:ShortcutExecution.Native},
+ ];
+ const primary=platform===ShortcutPlatform.Mac?{metaKey:true}:{ctrlKey:true};
+ for(const override of [undefined,{state:ShortcutOverrideState.Binding,chord:{key:'j',shift:true}} as const,{state:ShortcutOverrideState.Disabled} as const]){
+  const actions=effectiveShortcutDefinitions(definitions,override?{[ShortcutId.SessionSend]:override}:{});
+  const press=(options:KeyboardEventInit={})=>{const event=new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true,...options});input.addEventListener('keydown',()=>dispatchShortcut(event,actions,Surface.Sessions,platform),{once:true});input.dispatchEvent(event);return event;};
+  const before=run.mock.calls.length;expect(press().defaultPrevented).toBe(true);expect(run).toHaveBeenCalledTimes(before+1);
+  expect(press({shiftKey:true}).defaultPrevented).toBe(false);expect(run).toHaveBeenCalledTimes(before+1);
+  for(const flags of [{isComposing:true},{keyCode:229},{repeat:true}])press(flags);
+  const handled=new KeyboardEvent('keydown',{key:'Enter',cancelable:true});handled.preventDefault();expect(dispatchShortcut(handled,actions,Surface.Sessions,platform)).toBe(false);
+  expect(run).toHaveBeenCalledTimes(before+1);
+  if(override?.state!==ShortcutOverrideState.Disabled){press({...primary,...(override?{key:'j',shiftKey:true}:{})});expect(run).toHaveBeenCalledTimes(before+2);}
+  actions[0]!.enabled=false;expect(press().defaultPrevented).toBe(true);
+ }
+ input.remove();
 });

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, it } from "vitest";
-import { captureShortcut, effectiveShortcutDefinitions, parseShortcutOverrides, editableShortcutCatalog, fixedNativeShortcutCatalog, shortcutConflicts, ShortcutOverrideState, validShortcutChord } from "./shortcut-preferences";
+import { captureShortcut, effectiveShortcutDefinitions, parseShortcutOverrides, editableShortcutCatalog, readOnlyShortcutCatalog, fixedNativeShortcutCatalog, shortcutConflicts, ShortcutOverrideState, validShortcutChord } from "./shortcut-preferences";
 import { ShortcutId, ShortcutPlatform, ShortcutScope } from "./shortcuts";
 import { Surface } from "./surface";
 const chord = {state:ShortcutOverrideState.Binding,chord:{key:"j",shift:true}} as const;
@@ -37,4 +37,14 @@ it("keeps native menu bindings in a typed read-only catalog separate from seven 
 it("permits the retired New Window T chord for all seven overrides and capture platforms",()=>{
  for(const action of editableShortcutCatalog){const overrides={[action.id]:{state:ShortcutOverrideState.Binding,chord:{key:"t",shift:false}}};expect(parseShortcutOverrides(overrides)).toEqual(overrides);}
  for(const platform of [ShortcutPlatform.Mac,ShortcutPlatform.Other]){const modifier=platform===ShortcutPlatform.Mac?{metaKey:true}:{ctrlKey:true};expect(captureShortcut(new KeyboardEvent("keydown",{key:"t",...modifier}),platform)).toEqual({key:"t",shift:false});expect(captureShortcut(new KeyboardEvent("keydown",{key:"n",...modifier}),platform)).toBeUndefined();}
+});
+
+it("retains fixed Session Enter with default, custom and disabled primary overrides", () => {
+ const definitions = [{id:ShortcutId.SessionSend,scope:Surface.Sessions,label:"shortcuts.queueMessage" as const,bindings:[{key:"Enter"},{key:"Enter",primary:true}]}];
+ expect(effectiveShortcutDefinitions(definitions,{})[0]!.bindings).toEqual([{key:"Enter"},{key:"Enter",primary:true}]);
+ expect(effectiveShortcutDefinitions(definitions,{[ShortcutId.SessionSend]:chord})[0]!.bindings).toEqual([{key:"Enter"},{key:"j",shift:true,primary:true}]);
+ expect(effectiveShortcutDefinitions(definitions,{[ShortcutId.SessionSend]:{state:ShortcutOverrideState.Disabled}})[0]!.bindings).toEqual([{key:"Enter"}]);
+ expect(editableShortcutCatalog.find(action=>action.id===ShortcutId.SessionSend)?.fixed).toEqual([{key:"Enter"}]);
+ expect(readOnlyShortcutCatalog.find(action=>action.id===ShortcutId.SessionNewline)?.defaults).toEqual([{key:"Enter",shift:true}]);
+ expect(editableShortcutCatalog).toHaveLength(7);
 });
