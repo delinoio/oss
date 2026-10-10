@@ -95,7 +95,7 @@ func directorySettingsMatch(source EffectiveSettings, settings ThreadSettings) b
 // root while reloading destination config/trust/instructions. Keep this profile
 // until a verified standalone native update preserves those same boundaries.
 func (c *Client) ResumeDirectory(ctx context.Context, requestID domain.ID, source ContinuationCheckpoint, settings ThreadSettings, claim func(DirectoryIntent) error) (ThreadResult, error) {
-	if source.validate(ResumeAfterTerminal) != nil || source.ThreadID == "" || claim == nil || settings.Cwd == source.Effective.Cwd || len(source.Effective.WorkspaceRoots) == 0 || !directorySettingsMatch(source.Effective, settings) {
+	if source.validate(ResumeAfterTerminal) != nil || source.ThreadID == "" || claim == nil || settings.Cwd == source.Effective.Cwd || !directorySettingsMatch(source.Effective, settings) {
 		return ThreadResult{}, directoryUncertain()
 	}
 	roots := directoryRoots(source.Effective)
@@ -109,14 +109,24 @@ func (c *Client) ResumeDirectory(ctx context.Context, requestID domain.ID, sourc
 	return c.bindThread(ctx, requestID, source.ThreadID, settings, resumeThread)
 }
 
+// ResumeDirectoryContinuation binds an already retained directory generation.
+// The owning fresh execution must first verify its private generation and exact
+// accepted source checkpoint. This retains the selected cwd, creates no directory
+// intent and grants no input until ordinary continuation history verification.
+func (c *Client) ResumeDirectoryContinuation(ctx context.Context, requestID domain.ID, source ContinuationCheckpoint, settings ThreadSettings) (ThreadResult, error) {
+	if source.validate(ResumeAfterTerminal) != nil || source.Effective.Cwd != settings.Cwd || !directorySettingsMatch(source.Effective, settings) || !slices.Equal(settings.WorkspaceRoots, directoryRoots(source.Effective)) || !directoryInsideOriginalRoots(settings.Cwd, settings.WorkspaceRoots) {
+		return ThreadResult{}, directoryUncertain()
+	}
+	settings.directorySource = &source
+	settings.directoryClaim = func() error { return nil }
+	return c.bindThread(ctx, requestID, source.ThreadID, settings, resumeThread)
+}
+
 // VerifyDirectoryContinuation compares new settings except for the explicitly
 // selected cwd, then verifies the original terminal turn and ordered inputs.
 // Only the local comparison copy changes; historical checkpoints stay immutable.
 func (c *Client) VerifyDirectoryContinuation(ctx context.Context, requestID domain.ID, source ContinuationCheckpoint, selected EffectiveSettings, intent ContinuationIntent) (Turn, error) {
-	prior := source.Effective
-	prior.Cwd = selected.Cwd
-	prior.WorkspaceRoots = directoryRoots(source.Effective)
-	if !sameEffectiveSettings(prior, selected) || !directoryInsideOriginalRoots(selected.Cwd, prior.WorkspaceRoots) {
+	if !DirectorySettingsEqual(source.Effective, selected) {
 		return Turn{}, directoryUncertain()
 	}
 	comparison := source
@@ -243,4 +253,70 @@ func (c *Client) ReadDirectoryReloadEvidence(ctx context.Context, requestID doma
 		return empty, err
 	}
 	return DirectoryReloadEvidence{ConfigDigest: digest, Instructions: instructions}, nil
+}
+
+// DirectorySettingsEqual compares the same filesystem authority when native
+// legacy workspace-write represents the original cwd as an implicit write root.
+// Moving inside that original root must not turn an omitted legacy root into
+// missing authority or permit an unrelated root. All other observed settings
+// remain exact; historical representations are never rewritten.
+func DirectorySettingsEqual(source, selected EffectiveSettings) bool {
+	roots := directoryRoots(source)
+	if !slices.Equal(directoryRoots(selected), roots) || !directoryInsideOriginalRoots(selected.Cwd, roots) {
+		return false
+	}
+	before := source
+	after := selected
+	if source.Sandbox.Type == WorkspaceWrite && selected.Sandbox.Type == WorkspaceWrite {
+		if !directoryWriteRootsEqual(source, selected, roots) {
+			return false
+		}
+		before.Sandbox.WritableRoots = slices.Clone(roots)
+		after.Sandbox.WritableRoots = slices.Clone(roots)
+	}
+	before.Cwd = selected.Cwd
+	before.WorkspaceRoots = slices.Clone(roots)
+	after.WorkspaceRoots = slices.Clone(roots)
+	return sameEffectiveSettings(before, after)
+}
+func directoryWriteRootsEqual(source, selected EffectiveSettings, roots []string) bool {
+	covers := func(policy EffectiveSettings, root string) bool {
+		for _, writable := range append(slices.Clone(policy.Sandbox.WritableRoots), policy.Cwd) {
+			if nativePathEqual(writable, root) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, root := range roots {
+		if !covers(source, root) || !covers(selected, root) {
+			return false
+		}
+	}
+	for _, policy := range []EffectiveSettings{source, selected} {
+		for _, writable := range policy.Sandbox.WritableRoots {
+			if !slices.ContainsFunc(roots, func(root string) bool { return nativePathEqual(root, writable) }) && !nativePathEqual(writable, policy.Cwd) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// ProjectDirectoryCompaction changes only a private comparison copy of a proven
+// context action. Its immutable history/rollout/rollback evidence stays exact.
+func ProjectDirectoryCompaction(p CompactedCheckpoint, selected EffectiveSettings) (CompactedCheckpoint, error) {
+	if !DirectorySettingsEqual(p.Source.Effective, selected) {
+		return CompactedCheckpoint{}, directoryUncertain()
+	}
+	copy := cloneCompactedCheckpoint(&p)
+	copy.Source.Effective = selected
+	return *copy, nil
+}
+func (c *Client) VerifyDirectoryCompactedContinuation(ctx context.Context, request domain.ID, p CompactedCheckpoint, selected EffectiveSettings) (Turn, error) {
+	comparison, err := ProjectDirectoryCompaction(p, selected)
+	if err != nil {
+		return Turn{}, err
+	}
+	return c.VerifyCompactedContinuation(ctx, request, comparison)
 }

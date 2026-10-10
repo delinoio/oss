@@ -841,7 +841,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 				cancel(publicationUncertain())
 				return
 			}
-			work.native = envelope.Type == domain.ExecuteSessionJob || envelope.Type == domain.CompactSessionJob
+			work.native = envelope.Type == domain.ExecuteSessionJob || envelope.Type == domain.CompactSessionJob || envelope.Type == domain.ChangeSessionDirectoryJob
 			if _, loaded := active.LoadOrStore(resource.Id, work); loaded {
 				stopJob()
 				cancel(domain.Fail(domain.RecoveryRequired, "The Worker received a duplicate live assignment.", "Reconcile its original operation before another send."))
@@ -1034,6 +1034,12 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 			return journal{}, workspace.ResultUncertain()
 		}
 	}
+	if job.Type == domain.ChangeSessionDirectoryJob {
+		var input domain.SessionDirectoryInput
+		if domain.DecodeWithLimit(job.Input, &input, domain.MaxCompactionInputBytes) != nil || input.Validate() != nil || input.Assignment.SessionID != domain.ID(resource.SessionId) || input.Assignment.MachineID != job.MachineID || input.SourceJobID != job.ParentID {
+			return journal{}, domain.DirectoryUncertain()
+		}
+	}
 	if job.Type == domain.CompactSessionJob {
 		var input domain.SessionCompactionInput
 		if domain.DecodeCompactionInput(job.Input, &input) != nil || input.Validate() != nil || input.Assignment.SessionID != domain.ID(resource.SessionId) || input.Assignment.MachineID != job.MachineID || input.SourceJobID != job.ParentID {
@@ -1129,6 +1135,8 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job) (json.RawMessage, error) {
 	root := config.Root
 	switch job.Type {
+	case domain.ChangeSessionDirectoryJob:
+		return executeSessionDirectory(ctx, config, owner, job)
 	case domain.CompactSessionJob:
 		return executeSessionCompaction(ctx, config, owner, job)
 	case domain.NativeModelsJob:

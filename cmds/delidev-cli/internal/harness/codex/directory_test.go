@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -24,7 +26,7 @@ func TestDirectoryResumePreservesOriginalRootsAndHistory(t *testing.T) {
 	source.Effective.WorkspaceRoots = []string{root}
 	source.Effective.Sandbox.WritableRoots = []string{root}
 	before, _ := json.Marshal(source)
-	c, capture := openThreadFixture(t, "thread-continuation-ok")
+	c, capture := openThreadFixture(t, "thread-directory-ok")
 	settings := ThreadSettings{Model: source.Effective.Model, Provider: source.Effective.Provider, Effort: *source.Effective.Effort, Cwd: nested, WorkspaceRoots: []string{root}, Options: domain.AgentOptions{Permission: domain.PermissionWorkspaceWrite, ApprovalPolicy: string(source.Effective.ApprovalPolicy), ServiceTier: *source.Effective.ServiceTier}}
 	claims := 0
 	request := domain.NewID()
@@ -38,12 +40,34 @@ func TestDirectoryResumePreservesOriginalRootsAndHistory(t *testing.T) {
 	if err != nil || bound.Thread == nil || bound.Thread.ID != source.ThreadID || bound.Effective == nil || bound.Effective.Cwd != nested || !slices.Equal(bound.Effective.WorkspaceRoots, []string{root}) {
 		t.Fatal("cold retained-thread settings", err)
 	}
+	if err := c.RequireDirectoryQuiescence(context.Background(), domain.NewID()); err != nil {
+		t.Fatal("empty original bound background inventory", err)
+	}
+	reload, err := c.ReadDirectoryReloadEvidence(context.Background(), domain.NewID(), bound)
+	if err != nil || len(reload.ConfigDigest) != 64 || reload.Instructions == nil {
+		t.Fatal("private complete reload inventory", err)
+	}
 	fixtureSignal(t, c, "history", map[string]any{"page": page})
 	if _, err := c.StartTurn(context.Background(), domain.NewID(), domain.NewID(), domain.SessionInput{Prompt: "blocked", Mode: domain.ExecuteMode}); err == nil {
 		t.Fatal("directory acknowledgement authorized input before original history")
 	}
 	if _, err := c.VerifyDirectoryContinuation(context.Background(), domain.NewID(), source, *bound.Effective, ContinueAfterSuccess); err != nil {
 		t.Fatal("unchanged original terminal history", err)
+	}
+	retained := source
+	retained.Effective = *bound.Effective
+	continued, _ := openThreadFixture(t, "thread-directory-ok")
+	continuedBound, continuedErr := continued.ResumeDirectoryContinuation(context.Background(), domain.NewID(), retained, settings)
+	if continuedErr != nil || continuedBound.Effective == nil || continuedBound.Effective.Cwd != nested {
+		t.Fatal("retained directory did not persist", continuedErr)
+	}
+	fixtureSignal(t, continued, "history", map[string]any{"page": page})
+	if _, err := continued.VerifyContinuation(context.Background(), domain.NewID(), retained, ContinueAfterSuccess); err != nil {
+		t.Fatal("retained selected generation history", err)
+	}
+	continuedReload, err := continued.ReadDirectoryReloadEvidence(context.Background(), domain.NewID(), continuedBound)
+	if err != nil || !reflect.DeepEqual(reload, continuedReload) {
+		t.Fatal("destination reload proof drift", err)
 	}
 	after, _ := json.Marshal(source)
 	if string(before) != string(after) || claims != 1 {
@@ -77,7 +101,7 @@ func TestDirectoryResumePreservesOriginalRootsAndHistory(t *testing.T) {
 }
 
 func TestDirectoryResumeRejectsAuthorityDriftBeforeClaim(t *testing.T) {
-	for _, changed := range []string{"model", "provider", "effort", "tier", "approval", "permission", "roots", "missing-original-roots"} {
+	for _, changed := range []string{"model", "provider", "effort", "tier", "approval", "permission", "roots"} {
 		t.Run(changed, func(t *testing.T) {
 			_, _, source, _ := continuationFixture(t, "ok")
 			root := source.Effective.Cwd
@@ -102,8 +126,6 @@ func TestDirectoryResumeRejectsAuthorityDriftBeforeClaim(t *testing.T) {
 				settings.Options.Permission = domain.PermissionFullAccess
 			case "roots":
 				settings.WorkspaceRoots = []string{nested}
-			case "missing-original-roots":
-				source.Effective.WorkspaceRoots = nil
 			}
 			c, capture := openThreadFixture(t, "thread-continuation-ok")
 			claims := 0
@@ -170,5 +192,68 @@ func TestDirectoryInstructionEvidenceRejectsLinksAndChangedContent(t *testing.T)
 	}
 	if empty, err := directoryInstructionEvidence([]string{}); err != nil || empty == nil {
 		t.Fatal("proven empty source inventory", err)
+	}
+}
+
+func (f *threadFixture) handleDirectory(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {
+	if !strings.HasPrefix(f.mode, "thread-directory-") {
+		return false
+	}
+	switch method {
+	case "thread/backgroundTerminals/list":
+		var params struct {
+			ThreadID domain.ID `json:"threadId"`
+			Limit    uint32    `json:"limit"`
+		}
+		if domain.Decode(raw, &params) != nil || f.thread == nil || params.ThreadID != f.thread["id"] || params.Limit != 1 {
+			os.Exit(74)
+		}
+		write(id, map[string]any{"data": []any{}, "nextCursor": nil})
+		return true
+	case "config/read":
+		var params struct {
+			Cwd           string `json:"cwd"`
+			IncludeLayers bool   `json:"includeLayers"`
+		}
+		if domain.Decode(raw, &params) != nil || f.thread == nil || params.Cwd != f.thread["cwd"] || !params.IncludeLayers {
+			os.Exit(75)
+		}
+		write(id, map[string]any{"config": map[string]any{"model": "fixture-model"}, "origins": map[string]any{}, "layers": []any{}})
+		return true
+	}
+	return false
+}
+
+func TestDirectorySettingsPreservesImplicitOriginalWriteRoot(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	nested := filepath.Join(root, "nested")
+	if err := os.Mkdir(nested, 0700); err != nil {
+		t.Fatal(err)
+	}
+	source := EffectiveSettings{Model: "model", Provider: APIProvider, Cwd: root, ApprovalPolicy: ApprovalOnRequest, ApprovalsReviewer: "user", Sandbox: Sandbox{Type: WorkspaceWrite}}
+	selected := source
+	selected.Cwd = nested
+	selected.WorkspaceRoots = []string{root}
+	selected.Sandbox.WritableRoots = []string{root}
+	if !DirectorySettingsEqual(source, selected) {
+		t.Fatal("implicit original cwd write root lost")
+	}
+	changed := selected
+	changed.Sandbox.WritableRoots = nil
+	if DirectorySettingsEqual(source, changed) {
+		t.Fatal("selected cwd narrowed original write root without proof")
+	}
+	changed = selected
+	changed.WorkspaceRoots = []string{nested}
+	if DirectorySettingsEqual(source, changed) {
+		t.Fatal("native roots retargeted")
+	}
+	changed = selected
+	changed.Sandbox.NetworkAccess = true
+	if DirectorySettingsEqual(source, changed) {
+		t.Fatal("new network permission acquired")
 	}
 }

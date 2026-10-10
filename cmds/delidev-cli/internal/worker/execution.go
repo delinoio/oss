@@ -178,7 +178,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if c.PreviousAccountID != "" {
 			account, connection = c.PreviousAccountID, c.PreviousConnectionID
 		}
-		checkpoint, err = ReadCodexExecutionCheckpoint(manager.Root, ExecutionCheckpointRef{ContextRevision: c.Previous.ContextRevision, ApprovalsReviewer: input.Configuration.Options.ApprovalsReviewer, Subscription: input.Configuration.Subscription, JobID: c.Previous.JobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: c.HistoryExecutionID, AssignmentInputDigest: c.AssignmentInputDigest, ConfigurationDigest: input.ConfigurationDigest, AccountID: account, ConnectionID: connection, Completion: c.Completion, InputMode: c.InputMode, PromptDigest: promptDigest, AcceptedInputs: c.Previous.AcceptedInputs, WorkspaceRoots: nativeWorkspaceRoots(manifest)})
+		checkpoint, err = ReadCodexExecutionCheckpoint(manager.Root, ExecutionCheckpointRef{Directory: c.PreviousDirectory, ContextRevision: c.Previous.ContextRevision, ApprovalsReviewer: input.Configuration.Options.ApprovalsReviewer, Subscription: input.Configuration.Subscription, JobID: c.Previous.JobID, SessionID: input.SessionID, MachineID: input.MachineID, HistoryExecutionID: c.HistoryExecutionID, AssignmentInputDigest: c.AssignmentInputDigest, ConfigurationDigest: input.ConfigurationDigest, AccountID: account, ConnectionID: connection, Completion: c.Completion, InputMode: c.InputMode, PromptDigest: promptDigest, AcceptedInputs: c.Previous.AcceptedInputs, WorkspaceRoots: nativeCheckpointWorkspaceRoots(manifest, c.PreviousDirectory)})
 		if err != nil {
 			return nil, err
 		}
