@@ -68,7 +68,7 @@ export function useSessionInboxRead(sessionId: string, active: boolean, admitted
     if (!presented || !availableConversation(region) || !epoch || !foreground.current || !active || !admitted || !loaded || !isEntityId(sessionId) || mutation.busy || attempted.current === epoch) return;
     attempted.current = epoch;
     const original = { sessionId, epoch }, controller = new AbortController();
-    let sent = false, inspecting = true;
+    
     const eligible = () => availableConversation(region) && !controller.signal.aborted && current.current.sessionId === original.sessionId && current.current.active && current.current.admitted && current.current.loaded && foreground.current && document.visibilityState === "visible" && document.hasFocus();
     // Reinspect the initial transcript and session on this activation. Retained
     // payloads alone cannot prove that a stale/reconnected scope loaded safely.
@@ -85,20 +85,19 @@ export function useSessionInboxRead(sessionId: string, active: boolean, admitted
         validateConversationPage(transcript.resources, EntityKind.MESSAGE, sessionId);
         if (transcript.resources.some(message => !isEntityId(message.id) || !supportsResourceSchema(message) || !decodeResourceDocument(message))) throw new ConnectError("The original transcript could not be verified.", Code.DataLoss);
         if (!eligible()) return;
-        sent = true;
         console.info("delidev.session_inbox_read.admitted", { reconciliation: mutation.uncertain });
         if (mutation.uncertain) await mutation.retry();
         else await mutation.send({ requestId: newRequestId(), sessionId });
       } catch (error) {
         if (!controller.signal.aborted) console.warn("delidev.session_inbox_read.inspection_failed", { classification: clientFailure(error).code });
-      } finally { inspecting = false; }
+      }
     };
     void inspect();
     return () => {
       controller.abort();
-      // Strict Mode may cancel preflight before publication. Only unsent work
-      // may be reinspected; retained mutations own every accepted/uncertain ID.
-      if (!sent && inspecting && attempted.current === original.epoch) attempted.current = undefined;
+      // Losing eligibility cancels inspection without rearming this activation.
+      // Only a later selection/background return may submit or reconcile; the
+      // connection registry independently owns accepted/uncertain requests.
     };
   }, [epoch, presented, active, admitted, loaded, expectedRevision, sessionId, transport, mutation.busy, mutation.uncertain, region]);
 }

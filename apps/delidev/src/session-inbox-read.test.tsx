@@ -75,3 +75,11 @@ it("checks conversation availability again after a delayed preflight",async()=>{
  const view=render(f.wrap(<Sender id={f.id}/>));await waitFor(()=>expect(f.read).toHaveBeenCalled());
  view.container.querySelector("[data-conversation]")!.setAttribute("inert","");await act(async()=>{finish();});expect(f.mark).not.toHaveBeenCalled();
 });
+
+it("does not rearm canceled preflight on reconnection alone",async()=>{
+ const f=fixture();let finish!:()=>void;f.list.mockImplementationOnce(()=>new Promise(done=>{finish=()=>done({resources:[],nextPageToken:""});}));
+ const view=render(f.wrap(<Sender id={f.id}/>));await waitFor(()=>expect(f.read).toHaveBeenCalledTimes(1));
+ view.rerender(f.wrap(<Sender id={f.id} admitted={false}/>));await act(async()=>{finish();});
+ view.rerender(f.wrap(<Sender id={f.id}/>));await act(async()=>{});expect(f.mark).not.toHaveBeenCalled();expect(f.read).toHaveBeenCalledTimes(1);
+ background();foreground();await waitFor(()=>expect(f.mark).toHaveBeenCalledTimes(1));
+});
