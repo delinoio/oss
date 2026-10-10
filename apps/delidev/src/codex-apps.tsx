@@ -48,7 +48,7 @@ function operation(v: unknown): Operation | undefined {
 // Dedicated metadata envelopes are not generic Session/Job resources and grant
 // no EntityKind authority. Decode only their closed original-scope documents.
 function payload(resource?: Resource): unknown {
-  if (!resource || !id(resource.id) || resource.revision <= 0n || resource.schemaVersion !== 1 || resource.documentJson.byteLength > 4 << 20) return;
+  if (!resource || !id(resource.id) || resource.revision <= 0n || resource.schemaVersion !== 1 || resource.documentJson.byteLength > (4 << 20)) return;
   try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(resource.documentJson)); } catch { return; }
 }
 export function codexAppsView(reply: { configuration?: Resource; inventory?: Resource; operation?: Resource } | undefined, sessionId: string, accountId: string) {
@@ -59,8 +59,8 @@ export function codexAppsView(reply: { configuration?: Resource; inventory?: Res
   return { config: invalid ? undefined : config, observed: invalid ? undefined : observed, action: invalid ? undefined : action, invalid };
 }
 export function codexAppsIdle(session: Resource): boolean {
-  const d = document(session), prep = object(d.preparation);
-  return d.archive === "active" && d.recovery === "none" && d.pending_inputs === 0 && !d.active_execution_id && !d.pending_steer_id && !d.start_preparation && !d.revert_job_id && !d.compaction_job_id && (!d.preparation || prep.state === "ready");
+  const d = document(session), prep = object(d.preparation), execution = object(d.execution);
+  return d.archive === "active" && d.recovery === "none" && d.pending_inputs === 0 && !d.active_execution_id && !d.pending_steer_id && !d.start_preparation && !d.revert_job_id && !d.compaction_job_id && !d.execution_recovery_job_id && prep.state === "ready" && (!d.execution || execution.cleanup_verified === true);
 }
 const sameIDs = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((value, n) => value === b[n]);
 

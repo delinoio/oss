@@ -6,12 +6,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { CodexAppsService, EntityKind, ResourceSchema, newRequestId, type Resource, type SelectCodexAppsRequest, type InspectCodexAppsRequest, type RevokeCodexAppsRequest } from "@delinoio/delidev-api-client";
-import { CodexAppsPanel, codexAppsView } from "./codex-apps";
+import { CodexAppsPanel, codexAppsIdle, codexAppsView } from "./codex-apps";
 import { encode } from "./documents";
 import { MutationIntents } from "./mutation";
 function fixture({ configured = true, live = false }: { configured?: boolean; live?: boolean } = {}) {
   const sessionId = newRequestId(), accountId = newRequestId(), execution = newRequestId(), job = newRequestId(), machine = newRequestId(), instance = newRequestId(), thread = newRequestId();
-  const session = create(ResourceSchema, { id: sessionId, kind: EntityKind.SESSION, schemaVersion: 1, revision: 2n, documentJson: encode({ archive: "active", recovery: "none", pending_inputs: 0, ...(live ? { active_execution_id: execution } : {}), initial_execution: { initial_account_id: accountId, configuration: { harness: "codex" } }, execution: { execution_id: execution, native_thread_id: thread, cleanup_verified: !live } }) });
+  const session = create(ResourceSchema, { id: sessionId, kind: EntityKind.SESSION, schemaVersion: 1, revision: 2n, documentJson: encode({ archive: "active", recovery: "none", pending_inputs: 0, preparation: { state: "ready" }, ...(live ? { active_execution_id: execution } : {}), initial_execution: { initial_account_id: accountId, configuration: { harness: "codex" } }, execution: { execution_id: execution, native_thread_id: thread, cleanup_verified: !live } }) });
   const account = create(ResourceSchema, { id: accountId, kind: EntityKind.ACCOUNT, schemaVersion: 1, revision: 3n });
   const metadata = (body: object, id = newRequestId()) => create(ResourceSchema, { id, kind: EntityKind.UNSPECIFIED, sessionId, schemaVersion: 1, revision: 1n, documentJson: encode(body) });
   let config = { version: 1, session_id: sessionId, account_id: accountId, generation: newRequestId(), app_ids: ["calendar"] };
@@ -132,4 +132,17 @@ it("keeps canceled-before-native-send distinct from a claimed cleanup result", (
  const reply={configuration:f.metadata(f.config,f.config.generation),operation:f.metadata(action,action.id)};
  expect(codexAppsView(reply,f.session.id,f.account.id).invalid).toBe(false);
  expect(codexAppsView({...reply,operation:f.metadata({...action,claim_id:newRequestId()},action.id)},f.session.id,f.account.id).invalid).toBe(true);
+});
+
+it("keeps absent preparation and unjoined cleanup from idle selection", () => {
+ const f=fixture();const data=JSON.parse(new TextDecoder().decode(f.session.documentJson));
+ const resource=(patch:Record<string,unknown>)=>create(ResourceSchema,{...f.session,documentJson:new TextEncoder().encode(JSON.stringify({...data,...patch}))});
+ expect(codexAppsIdle(resource({preparation:undefined}))).toBe(false);
+ expect(codexAppsIdle(resource({execution:{...data.execution,cleanup_verified:false}}))).toBe(false);
+ expect(codexAppsIdle(resource({execution_recovery_job_id:newRequestId()}))).toBe(false);
+});
+it("accepts bounded opaque native thread metadata without app authority transfer",()=>{
+ const f=fixture();const i={...f.inventory,native_thread_id:"original-native-thread"};
+ expect(codexAppsView({inventory:f.metadata(i)},f.session.id,f.account.id).invalid).toBe(false);
+ expect(codexAppsView({inventory:f.metadata({...i,native_thread_id:"bad\0thread"})},f.session.id,f.account.id).invalid).toBe(true);
 });
