@@ -1,3 +1,4 @@
+import { goJsonBytes } from "./go-json-bytes";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { copy, useLocale } from "./localization";
 import { object, type Document } from "./documents";
@@ -28,8 +29,7 @@ function citationKey(v: Document) {
  return JSON.stringify([v.kind,v.text,v.title,v.document==null?null:[d.index,d.start,d.end,Object.hasOwn(d,"file")?[object(d.file).value]:[]],v.search==null?null:[s.index,s.start,s.end,s.source],v.web==null?null:object(v.web).url]);
 }
 export function claudeCitationHistoryBytes(value: unknown) {
- // Match Go's escaped JSON retention bound, including HTML-significant text.
- return new TextEncoder().encode(JSON.stringify(value).replace(/[<>&\u2028\u2029]/g,c=>`\\u${c.charCodeAt(0).toString(16).padStart(4,"0")}`)).length;
+ return goJsonBytes(value);
 }
 export function validClaudeCitationHistory(value: unknown, state: string): boolean {
  const h=object(value);

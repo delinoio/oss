@@ -1,3 +1,4 @@
+import { goJsonBytes } from "./go-json-bytes";
 import timestampVectors from "../../../cmds/delidev-cli/internal/domain/testdata/claude-web-timestamps.json";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
@@ -62,4 +63,35 @@ test.each(timestampVectors)("preserves timestamp readability parity: $name", ({ 
   } else {
     expect(screen.getByText(/unavailable or inconsistent/)).toBeTruthy();
   }
+});
+
+
+test.each(["<", ">", "&", "\u2028", "\u2029"])("rejects Go-escaped overbound web document text %s before rendering", character => {
+ const data=fixture("web_fetch");
+ data.blocks[1]!.block.web.result!.fetch!.document.text=character.repeat(50000);
+ expect(validNativeClaudeMessage(data,"complete")).toBe(false);
+ const {container}=render(<NativeClaudeMessage content={data} state="complete"/>);
+ expect(screen.getByText(/unavailable or inconsistent/)).toBeTruthy();
+ expect(container.textContent).not.toContain(character.repeat(100));
+});
+
+test.each([-1,0,1])("enforces the exact mixed escaped web aggregate boundary (%i bytes)", delta => {
+ const data=fixture("web_fetch");
+ const document=data.blocks[1]!.block.web.result!.fetch!.document;
+ document.text="<>&\u2028\u2029".repeat(8000);
+ const bytes=data.blocks.reduce((sum,entry)=>sum+goJsonBytes(entry.block.web),0);
+ document.text+="a".repeat((256<<10)-bytes+delta);
+ expect(data.blocks.reduce((sum,entry)=>sum+goJsonBytes(entry.block.web),0)).toBe((256<<10)+delta);
+ expect(validNativeClaudeMessage(data,"complete")).toBe(delta<=0);
+});
+
+test("includes ordinary text and every web call in the shared aggregate",()=>{
+ const data=fixture("web_fetch");
+ const document=data.blocks[1]!.block.web.result!.fetch!.document;
+ document.text="&".repeat(40000);
+ const remaining=(256<<10)-data.blocks.reduce((sum,entry)=>sum+goJsonBytes(entry.block.web),0);
+ const mixed={...data,blocks:[...data.blocks,{index:2,block:{kind:"text",text:"a".repeat(remaining)},state:"stopped"}]};
+ expect(validNativeClaudeMessage(mixed,"complete")).toBe(true);
+ mixed.blocks[2]!.block.text+="a";
+ expect(validNativeClaudeMessage(mixed,"complete")).toBe(false);
 });
