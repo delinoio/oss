@@ -149,3 +149,13 @@ it("does not refresh a successful diagnostics page for unchanged Apply filters",
  fireEvent.change(screen.getByLabelText("Execution ID (optional)"),{target:{value:f.execution}});fireEvent.click(screen.getByRole("button",{name:"Apply execution filter"}));await waitFor(()=>expect(f.read).toHaveBeenCalledTimes(initial+1));
  fireEvent.click(screen.getByRole("button",{name:"Apply execution filter"}));await new Promise(resolve=>setTimeout(resolve,0));expect(f.read).toHaveBeenCalledTimes(initial+1);
 });
+
+it("retains independent native review diagnostic purpose without borrowing conversation input", () => {
+  const f = fixture();
+  f.row.purpose = "native-code-review";
+  f.row.inputId = "";
+  const page = create(ListRequestDiagnosticsResponseSchema, { records: [f.row] });
+  expect(validateDiagnosticPage(page, f.session, f.execution)).toBe(page);
+  f.row.purpose = "foreign-review";
+  expect(() => validateDiagnosticPage(page, f.session, f.execution)).toThrow();
+});
