@@ -249,6 +249,9 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	native := *c.pendingEvent
 	c.pendingEvent = nil
 	event, err := c.observeEventLocked(native)
+	if err == nil {
+		err = c.enrichNativeAppsEventLocked(ctx, &event)
+	}
 	if err != nil {
 		c.problem = turnUncertain()
 		if c.execution != nil {
@@ -561,6 +564,8 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 			eventKind = ArtifactCompletedEvent
 		}
 		return Event{Kind: eventKind, ThreadID: c.thread, TurnID: params.TurnID, ItemID: artifact.ID, Artifact: artifact, Correlated: known, Late: turn.Turn.Status.terminal()}, nil
+	case "mcpToolCall":
+		return c.observeNativeAppsToolLocked(native, params.TurnID, params.Item)
 	case "commandExecution", "fileChange", "imageView", "sleep":
 		tool, err := decodeTool(params.Item, kind, native.Method == "item/completed")
 		if err != nil {

@@ -66,3 +66,9 @@ func (v NativeAppToolObservation) Validate(status ToolStatus) error {
 	}
 	return nil
 }
+
+// Completion retains the original public identity without acquiring authority
+// from a different connector, arguments record or renamed runtime tool.
+func SameNativeAppTool(start, terminal *NativeAppToolObservation) bool {
+	return start != nil && terminal != nil && start.AppID == terminal.AppID && start.Name == terminal.Name && start.ToolName == terminal.ToolName && start.ArgumentsPresent == terminal.ArgumentsPresent
+}

@@ -36,6 +36,35 @@ passive events or presentation. A committed installed snapshot read is distinct
 from a refresh that starts or refreshes the hosted connector runtime. The native
 startup policies are Eager and LazyWhenCached; no clientPassive flag is inferred.
 
+The exact `codex_apps` tool item retains its original account-bound thread, turn,
+item, tool name, arguments and App context privately. The selected connector ID
+comes from the original native App context and verified inventory, never a tool
+name pattern. Public tool observations show the canonical App name, argument
+presence, bounded result JSON values as inert text in original order, error
+presence and duration. They grant no URL fetch, resource read, media decoding,
+embedded UI or execution authority. Rich App descriptors, arguments, metadata
+and raw error text remain in protected native history. Live, continuation,
+compaction and managed Fork history use the same closed tool decoder; malformed,
+foreign, incomplete and duplicate items cannot become successful history or new
+call authority. Fork history transfers no App selection, and a new account never
+inherits an earlier selection.
+
+The exact supported Prompt fallback retains the original call item in
+`requestUserInput`. Its one-call `Allow` and `Cancel` options are closed; remembered,
+free-form, unknown and foreign responses grant neither release nor cancellation.
+The first durable response claim observes the original installed runtime and then
+atomically revalidates the frozen selection, current revocation and original
+execution/account/Worker before admitting `Allow`. That claim is the effect
+admission boundary for the original pending native approval release, not a later
+transport callback. A later revocation cannot undo an already admitted call, but
+denies every unadmitted original call. An exact original `Cancel` needs its pending
+original account/Worker question owner and remains cleanup after selection
+revocation; it grants no effect. Uncertain native delivery never repeats the
+original release. The original native catalog lease may prepare hosted-file input
+before its connector dispatch; product admission does not claim a callback there.
+Original inventory readers are unregistered and joined before independent native
+process, connector and credential cleanup.
+
 The official source boundaries are the [Apps schema](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server-protocol/src/protocol/v2/apps.rs),
 [installed snapshot owner](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server/src/request_processors/apps_processor/installed.rs),
 [app policy and original approval owner](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/core/src/mcp_tool_call.rs)

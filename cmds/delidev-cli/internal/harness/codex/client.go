@@ -46,6 +46,8 @@ type Config struct {
 }
 type Client struct {
 	nativeApps         *domain.SessionNativeAppSelection
+	nativeAppCalls     map[string]*ownedNativeAppCall
+	nativeAppsCaller   nativeAppsCall
 	managedForkHistory bool
 	quotaUsed          atomic.Bool
 	skillsRoot         string

@@ -439,6 +439,9 @@ func optionalForkString(a, b *string) bool {
 
 // Preserve complete native tool JSON; decoding establishes eligibility only and never executes history.
 func settledForkTool(raw json.RawMessage, kind string) bool {
+	if kind == "mcpToolCall" {
+		return settledNativeAppsTool(raw)
+	}
 	if kind != "commandExecution" && kind != "fileChange" {
 		return false
 	}
@@ -463,7 +466,7 @@ func managedForkItem(raw json.RawMessage, kind string) bool {
 		_, err := decodeSleep(raw)
 		return err == nil
 	}
-	if kind == "commandExecution" || kind == "fileChange" {
+	if kind == "commandExecution" || kind == "fileChange" || kind == "mcpToolCall" {
 		return settledForkTool(raw, kind)
 	}
 	if kind == "reasoning" {

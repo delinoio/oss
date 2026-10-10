@@ -15,10 +15,11 @@ type CommandActionKind string
 type FileChangeKind string
 
 const (
-	CommandTool   ToolKind = "command-execution"
-	PatchTool     ToolKind = "file-change"
-	ImageViewTool ToolKind = "image-view"
-	SleepTool     ToolKind = "sleep"
+	NativeAppsTool ToolKind = "native-apps"
+	CommandTool    ToolKind = "command-execution"
+	PatchTool      ToolKind = "file-change"
+	ImageViewTool  ToolKind = "image-view"
+	SleepTool      ToolKind = "sleep"
 
 	ToolRunning   ToolStatus = "inProgress"
 	ToolCompleted ToolStatus = "completed"
@@ -73,6 +74,8 @@ type FileChange struct {
 // work or imply that an entire turn succeeded. Native aggregate output may be
 // truncated independently from streamed deltas, so retain both observations.
 type Tool struct {
+	Apps            *domain.NativeAppToolObservation
+	NativeApps      *decodedNativeAppsTool
 	ID              string
 	Kind            ToolKind
 	Status          ToolStatus

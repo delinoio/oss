@@ -4,6 +4,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
+	"slices"
 )
 
 func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session store.Record, event domain.ExecutionEvent) error {
@@ -18,6 +19,11 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 		}
 		machine, err := store.Decode[domain.Machine](machineRow)
 		if err != nil || input.Configuration.Harness != domain.Codex || update.NativeParentID != "" || update.Snapshot.ImageView == nil || update.Snapshot.ImageView.ReferenceID != update.ID || workspace.ValidateImageViewReference(input, machine.OS, *update.Snapshot.ImageView) != nil {
+			return executionEventConflict()
+		}
+	}
+	if update.Snapshot != nil && update.Snapshot.Kind == domain.NativeAppsTool {
+		if input.NativeApps == nil || domain.ValidateNativeAppsAssignment(input, *input.NativeApps) != nil || update.NativeParentID != "" || update.Snapshot.Apps == nil || !slices.Contains(input.NativeApps.AppIDs, update.Snapshot.Apps.AppID) {
 			return executionEventConflict()
 		}
 	}
@@ -88,6 +94,14 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 			}
 			if update.Snapshot.Kind != tool.Started.Kind {
 				return executionEventConflict()
+			}
+			if tool.Started.Kind == domain.NativeAppsTool {
+				if !domain.SameNativeAppTool(tool.Started.Apps, update.Snapshot.Apps) {
+					return executionEventConflict()
+				}
+				if err := validateCompletedNativeAppCall(tx, input, event); err != nil {
+					return err
+				}
 			}
 			if tool.Started.Kind == domain.CommandTool {
 				prior, next := tool.Started.Command, update.Snapshot.Command

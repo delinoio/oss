@@ -31,3 +31,35 @@ func validatePublishedNativeAppCall(tx *store.Tx, input domain.ExecutionJobInput
 	}
 	return nil
 }
+
+// A retained terminal result cannot manufacture a one-call release. Revocation
+// after the durable admission does not retroactively change that original fact.
+func validateCompletedNativeAppCall(tx *store.Tx, input domain.ExecutionJobInput, event domain.ExecutionEvent) error {
+	ids, err := tx.ExecutionItemInteractions(input.ExecutionID, event.NativeThreadID, event.NativeTurnID, event.Tool.NativeID)
+	if err != nil {
+		return err
+	}
+	if len(ids) == 0 && event.Tool.Snapshot.Status == domain.ToolFailed && event.Tool.Snapshot.Apps != nil && event.Tool.Snapshot.Apps.Result == nil && event.Tool.Snapshot.Apps.ErrorPresent {
+		// A closed original native failure without a result grants no release.
+		return nil
+	}
+	if len(ids) != 1 {
+		return domain.NativeAppsUnavailable()
+	}
+	row, err := tx.Get(domain.InteractionKind, ids[0])
+	if err != nil {
+		return err
+	}
+	value, err := store.Decode[domain.ExecutionInteraction](row)
+	if err != nil {
+		return err
+	}
+	if row.SessionID != input.SessionID || value.NativeApps == nil || value.NativeApps.AppID != event.Tool.Snapshot.Apps.AppID || value.NativeItemID != event.Tool.NativeID || value.Response == nil || value.Response.Claim == nil || value.Response.State == domain.QuestionResponseQueued || value.Response.State == domain.QuestionResponseCanceled {
+		return domain.NativeAppsUnavailable()
+	}
+	allow, err := domain.NativeAppsResponseAdmitsEffect(value)
+	if err != nil || !allow && event.Tool.Snapshot.Status != domain.ToolFailed {
+		return domain.NativeAppsUnavailable()
+	}
+	return nil
+}

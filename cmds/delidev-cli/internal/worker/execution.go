@@ -386,7 +386,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			}()
 		}
 	}
-	if managed != nil && input.Configuration.SidechatPolicy == "" && input.Fork == nil && input.Installation.Version == "0.162.0" {
+	if managed != nil && input.Configuration.SidechatPolicy == "" && input.Installation.Version == "0.162.0" {
 		nativeConfig.NativeApps = input.NativeApps
 		if nativeConfig.NativeApps == nil {
 			// An empty local profile grants no connector authority. It lets the

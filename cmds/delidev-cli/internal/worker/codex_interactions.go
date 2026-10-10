@@ -56,6 +56,10 @@ func (c *CodexEventPublisher) publishInteraction(ctx context.Context, e codex.Ev
 				q.Questions = append(q.Questions, question)
 			}
 			update.Questions = q
+			update.NativeApps = i.NativeApps
+			if i.NativeApps != nil && (c.publisher.input.NativeApps == nil || i.NativeApps.Scope != domain.NativeAppsAssignmentScope(c.publisher.input)) {
+				return publicationUncertain()
+			}
 		default:
 			return publicationUncertain()
 		}
@@ -103,8 +107,9 @@ func (c *CodexEventPublisher) publishInteraction(ctx context.Context, e codex.Ev
 		// of commands, paths or permission profiles. Keep it through closure.
 		c.approvalKinds[update.ID] = update.Approval.Codex.Kind
 	}
-	update.Questions = nil // Durable original question content belongs to the server.
-	update.Approval = nil  // The original approval also belongs to server retention.
+	update.NativeApps = nil // Protected original proof belongs to the server.
+	update.Questions = nil  // Durable original question content belongs to the server.
+	update.Approval = nil   // The original approval also belongs to server retention.
 	if update.NativeRequestID.Number != nil {
 		number := *update.NativeRequestID.Number
 		update.NativeRequestID.Number = &number

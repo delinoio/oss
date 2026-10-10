@@ -10,6 +10,7 @@ import (
 )
 
 type codexToolPublication struct {
+	Apps            *domain.NativeAppToolObservation
 	ID              domain.ID
 	Kind            domain.ToolKind
 	Completed       bool
@@ -58,7 +59,7 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 			if c.itemKnown(event.ItemID) || c.itemLimitReached() {
 				return publicationUncertain()
 			}
-			retained = codexToolPublication{ID: domain.NewID(), Kind: snapshot.Kind, ImageView: snapshot.ImageView, SleepDurationMS: nil}
+			retained = codexToolPublication{ID: domain.NewID(), Kind: snapshot.Kind, Apps: snapshot.Apps, ImageView: snapshot.ImageView, SleepDurationMS: nil}
 			if snapshot.Sleep != nil {
 				retained.SleepDurationMS = snapshot.Sleep.DurationMS
 			}
@@ -72,6 +73,9 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 				return publicationUncertain()
 			}
 			if snapshot.Kind == domain.SleepTool && (retained.SleepDurationMS == nil || snapshot.Sleep == nil || snapshot.Sleep.DurationMS == nil || *retained.SleepDurationMS != *snapshot.Sleep.DurationMS) {
+				return publicationUncertain()
+			}
+			if snapshot.Kind == domain.NativeAppsTool && !domain.SameNativeAppTool(retained.Apps, snapshot.Apps) {
 				return publicationUncertain()
 			}
 			retained.Completed = true
@@ -120,9 +124,10 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 
 func codexToolSnapshot(native codex.Tool) (domain.ToolSnapshot, error) {
 	result := domain.ToolSnapshot{
-		Kind:    map[codex.ToolKind]domain.ToolKind{codex.CommandTool: domain.CommandTool, codex.PatchTool: domain.PatchTool, codex.SleepTool: domain.SleepTool}[native.Kind],
+		Kind:    map[codex.ToolKind]domain.ToolKind{codex.NativeAppsTool: domain.NativeAppsTool, codex.CommandTool: domain.CommandTool, codex.PatchTool: domain.PatchTool, codex.SleepTool: domain.SleepTool}[native.Kind],
 		Status:  map[codex.ToolStatus]domain.ToolStatus{codex.ToolRunning: domain.ToolRunning, codex.ToolCompleted: domain.ToolCompleted, codex.ToolFailed: domain.ToolFailed, codex.ToolDeclined: domain.ToolDeclined}[native.Status],
 		Changes: codexFileChanges(native.Changes),
+		Apps:    native.Apps,
 	}
 	if native.SleepDurationMS != nil {
 		value := *native.SleepDurationMS

@@ -341,6 +341,9 @@ func (c *Client) AnswerQuestions(ctx context.Context, responseID, interactionID,
 	if ctx.Err() != nil {
 		return owned.status, domain.SafeError(ctx.Err())
 	}
+	if err := c.nativeAppsAnswerChoice(owned, answers); err != nil {
+		return owned.status, err
+	}
 	s.responses[responseID] = true
 	owned.status.ResponseID = responseID
 	raw, _ := json.Marshal(response) // Validated by questionResponseSize above.

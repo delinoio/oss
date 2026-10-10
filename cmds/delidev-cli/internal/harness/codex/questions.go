@@ -64,11 +64,12 @@ type QuestionRequest struct {
 	Questions        []Question
 }
 type Interaction struct {
-	ID        domain.ID
-	NativeID  NativeRequestID
-	Kind      InteractionKind
-	Questions *QuestionRequest
-	Approval  *ApprovalRequest
+	NativeApps *domain.NativeAppCallProof
+	ID         domain.ID
+	NativeID   NativeRequestID
+	Kind       InteractionKind
+	Questions  *QuestionRequest
+	Approval   *ApprovalRequest
 }
 
 func (c *Client) observeInteractionLocked(native nativewire.Event) (Event, error) {

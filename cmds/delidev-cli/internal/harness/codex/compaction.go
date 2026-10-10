@@ -427,6 +427,10 @@ func (c *Client) contextTurnsLocked(ctx context.Context, direction string, curso
 				items[item.ID] = true
 				switch item.Type {
 				case "userMessage", "agentMessage", "reasoning", "plan", "contextCompaction":
+				case "mcpToolCall":
+					if !settledNativeAppsTool(rawItem) {
+						return nil, compactionUncertain()
+					}
 				case "commandExecution", "fileChange", "imageView", "sleep":
 					if _, err := decodeTool(rawItem, item.Type, true); err != nil {
 						return nil, compactionUncertain()
