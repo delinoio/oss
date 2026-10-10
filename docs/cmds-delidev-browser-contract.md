@@ -143,6 +143,18 @@ profiles and pending-creation guards. Failed unmapping never permits directory p
 Removal unmaps and close requests run outside native state. Close requests after
 tab replacement also run outside native state; pending old creation callbacks
 remain generation-guarded.
+Raw ExternalLife close callbacks own only their original CEF child. On macOS
+and Windows, intercept the default parent-window close and dispatch destruction
+of that exact NSView/HWND on the native UI thread, following the unchanged pinned
+runtime. Returning handled without destroying the child does not settle closure.
+Bind browser ID, native child handle and immutable presentation generation per
+child; duplicate/foreign callbacks cannot destroy replacement or sibling views.
+The original on_before_close acknowledgment releases live-child accounting once,
+even if parent teardown precedes queued destruction. Linux retains its original
+CEF child-window close behavior. Log closed operation states and generations
+without addresses, credentials or page content. Product close-to-tray, independent
+profile cleanup and joined Quit keep their existing owners. Fixture and build
+checks do not establish macOS, Windows or Linux native acceptance.
 Only successful native geometry updates become the panel's last applied bounds;
 a failed resize clears that cache so later callbacks retry identical geometry
 for the current presentation.
