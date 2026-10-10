@@ -3205,6 +3205,10 @@ Date format uses one labeled native dropdown with the existing ordered system/ym
 
 Agent Worker rows display the configured account count from each exact saved route. Schema-3 uses that route’s accounts; supported legacy schemas use top-level accounts. The collapsed/single-route summary shows the first count and expanded routes keep saved order and repeated model references. Explicit empty arrays show zero; missing, nonarray or unreadable data is unavailable. Counts do not depend on weights, enabled state, connection health or model metadata and trigger no account reads. Unsupported schemas infer no count or execution authority.
 
+### Agent Worker configured reasoning effort — issue #2505
+
+Supported schema-4 Agent Worker rows show read-only **Reasoning effort** (**추론 강도**) once beside the configured model and account count. Project the exact saved root `effort` from the already loaded readable document. Omitted or empty-string values show Native default; explicit `none`, future values and whitespace remain exact. Nonstring values show localized Unavailable. Unsupported schemas and unreadable documents expose no effort projection. Never substitute `options.subagent_effort` or infer execution support from this text. Expanded routes retain saved order and counts, while the root effort remains only in the summary. Use semantic theme tokens and wrapping text without clipping. Rendering and disclosure add no reads, mutations or native discovery and preserve all original action gates.
+
 ### Agent Worker row text alignment — issue #1870
 
 Agent Worker rows reserve a 32px decorative harness gutter and an 8px gap beside one flexible text column. The heading, health, configured-model summary, ordered route disclosure, reconfiguration notice and complete Worker ID share that column. Unknown or unsupported rows retain the empty gutter without an invented mark. Routes retain their 24px indent. Wide-layout actions align with the details top and do not move when routes expand. Preserve the existing viewport-at-most-1099px stacking and below-640px available-row action wrapping, model-reader ownership, schema gates and mutation controls.
