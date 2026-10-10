@@ -1440,4 +1440,3 @@ export const TailscaleService: GenService<{
   },
 }> = /*@__PURE__*/
   serviceDesc(file_delidev_v1_tailscale, 0);
-
