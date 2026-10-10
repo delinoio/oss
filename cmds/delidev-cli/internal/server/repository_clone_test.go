@@ -187,3 +187,55 @@ func TestRepositoryCloneRegistrationFailurePreservesPublishedMetadata(t *testing
 		t.Fatal("unauthorized checkout registered", err)
 	}
 }
+
+func TestRepositoryCloneNameFailureKeepsTransferredCheckout(t *testing.T) {
+	f := newIntegrationFixture(t)
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	machine, device, repositoryID, jobID, instance := domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()
+	input := domain.RepositoryCloneInput{RepositoryID: repositoryID, MachineID: machine, LocalOrigin: domain.LocalOrigin{MachineID: machine, DeviceID: device}, ParentPath: "/alias/parent", URL: "https://example.com/repo.git", DirectoryName: "repo"}
+	raw, _ := json.Marshal(input)
+	job := domain.Job{Type: domain.CloneRepositoryJob, State: domain.JobClaimed, MachineID: machine, InstanceID: instance, AssignedDeviceID: device, Input: raw, AcceptedAt: time.Now().UTC()}
+	// Revoked original provenance is deliberately retained as a registration
+	// failure, after the Worker has already published the user-owned checkout.
+	_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.clone", nil, func(tx *store.Tx) (any, error) {
+		_, err := tx.Put(domain.MachineKind, machine, 0, "", "", domain.Machine{Name: "fixture", OS: "linux", Architecture: "amd64", Version: rpc.Version, WorkerCapabilities: []domain.WorkerCapability{domain.RepositoryCloneV1}})
+		if err != nil {
+			return nil, err
+		}
+		_, err = tx.Put(domain.DeviceKind, device, 0, "", "", domain.Device{Name: "fixture", Type: domain.WorkerDevice, MachineID: machine, Revoked: false, PairedAt: time.Now().UTC()})
+		if err != nil {
+			return nil, err
+		}
+		if _, err := tx.Put(domain.RepositoryKind, domain.NewID(), 0, "", "", domain.Repository{Name: " REPO ", RemoteURL: "https://example.com/other.git", AutoFetch: true}); err != nil {
+			return nil, err
+		}
+		return tx.PutJob(jobID, 0, "", "", job)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := f.service.Store.Get(ctx, domain.JobKind, jobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome, _ := json.Marshal(workspace.CloneResult{Inspection: &workspace.Inspection{Root: "/canonical/parent/repo", Name: "repo", Remotes: []string{"origin"}, DefaultRefs: map[string]string{}}})
+	_, err = f.service.Store.Mutate(ctx, domain.NewID(), "fixture.finish", nil, func(tx *store.Tx) (any, error) {
+		return finishRepositoryClone(tx, record, job, record.Revision, outcome, nil)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	failed, err := f.service.Store.Get(ctx, domain.JobKind, jobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, _ := store.Decode[domain.Job](failed)
+	var result workspace.CloneResult
+	_ = domain.Decode(value.Output, &result)
+	if value.Problem == nil || value.Problem.Cause != domain.ConfigurationNameConflictCause || value.State != domain.JobFailed || result.Inspection == nil || result.Inspection.Root != "/canonical/parent/repo" || result.RepositoryID != "" {
+		t.Fatal("published checkout metadata lost")
+	}
+	if _, err := f.service.Store.Get(ctx, domain.RepositoryKind, repositoryID); domain.SafeError(err).Code != domain.NotFound {
+		t.Fatal("unauthorized checkout registered", err)
+	}
+}

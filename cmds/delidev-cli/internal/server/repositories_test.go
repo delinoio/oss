@@ -318,3 +318,75 @@ func TestRepositoryTombstonesFenceAdmissionAndSettleOriginalChild(t *testing.T) 
 		})
 	}
 }
+
+func TestRepositoryNamesRecheckCompetingInspectionsAtPublication(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(ctx, filepath.Join(t.TempDir(), "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	machine := domain.NewID()
+	_, err = db.Mutate(ctx, domain.NewID(), "name.machine", nil, func(tx *store.Tx) (any, error) {
+		return tx.Put(domain.MachineKind, machine, 0, "", "", domain.Machine{Name: "fixture", OS: "linux", Architecture: "amd64", Version: "0.1.0", WorkerCapabilities: []domain.WorkerCapability{domain.RepositoryInspectionMetadataV1}})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parents := []store.Record{}
+	for _, name := range []string{"Alpha", " alpha "} {
+		raw, _ := json.Marshal(domain.Repository{Name: name, RemoteURL: "https://example.test/repo.git", PreferredRemote: "origin", Checkouts: []domain.Checkout{{MachineID: machine, Path: "/tmp/repo"}}})
+		accepted, err := SaveConfiguration(ctx, db, ConfigurationMutation{Kind: domain.RepositoryKind, ID: domain.NewID(), RequestID: domain.NewID(), Document: raw})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var parent store.Record
+		if err := domain.Decode(accepted.Data, &parent); err != nil {
+			t.Fatal(err)
+		}
+		parents = append(parents, parent)
+	}
+	for _, parent := range parents {
+		_, err = db.Mutate(ctx, domain.NewID(), "name.inspection.finish", nil, func(tx *store.Tx) (any, error) {
+			children, err := tx.Jobs("", parent.ID, "", "", 10)
+			if err != nil || len(children) != 1 {
+				return nil, err
+			}
+			child, err := store.Decode[domain.Job](children[0])
+			if err != nil {
+				return nil, err
+			}
+			child.State = domain.JobSucceeded
+			now := time.Now().UTC()
+			child.FinishedAt = &now
+			child.Output, _ = json.Marshal(workspace.Inspection{Root: "/tmp/repo", Name: "repo", Remotes: []string{"origin"}, DefaultRefs: map[string]string{}})
+			if _, err = tx.PutJob(children[0].ID, children[0].Revision, "", "", child); err != nil {
+				return nil, err
+			}
+			return nil, finishRepositorySave(tx, parent.ID)
+		})
+		if err != nil {
+			t.Fatal("settlement rolled back", err)
+		}
+	}
+	for i, parent := range parents {
+		row, err := db.Get(ctx, domain.JobKind, parent.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		job, err := store.Decode[domain.Job](row)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i == 0 && job.State != domain.JobSucceeded {
+			t.Fatal(job)
+		}
+		if i == 1 && (job.State != domain.JobFailed || job.Problem == nil || job.Problem.Cause != domain.ConfigurationNameConflictCause) {
+			t.Fatal(job)
+		}
+	}
+	rows, err := db.List(ctx, store.Filter{Kind: domain.RepositoryKind, Limit: 10})
+	if err != nil || len(rows) != 1 {
+		t.Fatal("double publication", rows, err)
+	}
+}

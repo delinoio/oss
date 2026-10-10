@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"log/slog"
 	"slices"
 	"sort"
 	"time"
@@ -645,6 +646,29 @@ func validateConfigurationPlan(tx *store.Tx, plan domain.ConfigurationImportPlan
 			overlay.staged[change.ID] = old
 		} else {
 			overlay.staged[change.ID] = store.Record{ID: change.ID, Kind: change.Kind, Data: change.After}
+		}
+	}
+	// Compare the complete overlay, including explicit reuse, against every live
+	// target. Name equality never grants identity reuse or merges two resources.
+	for _, kind := range []domain.Kind{domain.ProjectKind, domain.RepositoryKind} {
+		rows, err := all(overlay, kind)
+		if err != nil {
+			return err
+		}
+		names := map[string]domain.ID{}
+		for _, row := range rows {
+			var value struct {
+				Name string `json:"name"`
+			}
+			if err := json.Unmarshal(row.Data, &value); err != nil {
+				return err
+			}
+			key := domain.ConfigurationNameKey(value.Name)
+			if other, exists := names[key]; exists && other != row.ID {
+				slog.Info("configuration preview rejected", "kind", kind, "cause", domain.ConfigurationNameConflictCause)
+				return domain.ConfigurationNameConflict()
+			}
+			names[key] = row.ID
 		}
 	}
 	settings, err := all(overlay, domain.SettingsKind)

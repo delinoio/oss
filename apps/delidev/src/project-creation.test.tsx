@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { StrictMode, useState, type ReactNode } from "react";
 import { expect, it, vi } from "vitest";
-import { ConfigurationService, SystemService, SystemCapability, EntityKind, ResourceSchema, ResourceService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { ConfigurationService, SystemService, SystemCapability, EntityKind, ErrorDetailSchema, ResourceSchema, ResourceService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { ConfigurationEditor } from "./settings";
 import { ProjectCreation } from "./project-creation";
 import { SettingsActionScope } from "./settings-action";
@@ -294,4 +294,12 @@ it("uses labeled scoped registration actions while preserving original opener an
  f.list.mockRejectedValueOnce(new ConnectError("Read unavailable",Code.Unavailable));await registerFromProject();
  const retry=await screen.findByRole("button",{name:"Retry repository read"});expect(retry.getAttribute("data-settings-action")).toBe("retry");expect(retry.getAttribute("data-settings-action-presentation")).toBe("label");
  expect(f.registrationSave).toHaveBeenCalledOnce();fireEvent.click(retry);await screen.findByRole("button",{name:/^Move repository 1:/});expect(f.registrationSave).toHaveBeenCalledOnce();expect(f.save).not.toHaveBeenCalled();
+});
+
+it("returns a definitive name collision to the retained name step and permits correction", async () => {
+ const f = fixture(); f.save.mockRejectedValueOnce(new ConnectError("Rejected", Code.Aborted, undefined, [{ desc: ErrorDetailSchema, value: create(ErrorDetailSchema, { code: "conflict", cause: "configuration_name_conflict" }) }]));
+ render(f.view()); await choose("oss"); next(); fireEvent.change(name(), { target: { value: " alpha " } }); next(); fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
+ await screen.findByText("A project with this name already exists. Choose another name.");
+ await waitFor(() => expect(document.activeElement).toBe(name())); expect(name().value).toBe(" alpha ");expect(name().getAttribute("aria-describedby")).toBeTruthy();
+ fireEvent.change(name(), { target: { value: "Unique" } });next();fireEvent.click(screen.getByRole("button", {name:"Save Project"}));await waitFor(()=>expect(f.save).toHaveBeenCalledTimes(2));
 });

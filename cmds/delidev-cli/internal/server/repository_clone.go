@@ -194,9 +194,15 @@ func finishRepositoryClone(tx *store.Tx, record store.Record, job domain.Job, re
 		} else {
 			saved, e := tx.Put(domain.RepositoryKind, input.RepositoryID, 0, "", "", repository)
 			if e != nil {
-				return store.Record{}, e
+				// Registration is separate from the clone's transferred Local lifetime.
+				// A definitive name refusal settles this job without deleting its checkout.
+				if domain.SafeError(e).Cause != domain.ConfigurationNameConflictCause {
+					return store.Record{}, e
+				}
+				problem = domain.SafeError(e)
+			} else {
+				outcome.RepositoryID, outcome.RepositoryRevision = saved.ID, saved.Revision
 			}
-			outcome.RepositoryID, outcome.RepositoryRevision = saved.ID, saved.Revision
 		}
 	}
 	outcome.Problem = problem

@@ -1,3 +1,4 @@
+import { ConfigurationNameFailure } from "./configuration-name-failure";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { DisclosureButton, DisclosureContent, DisclosureDensity, Disclosure, DisclosureSummary } from "./disclosure";
@@ -11,7 +12,7 @@ import { useSettingsTaskVisible, useCloseSettingsTask, useInSettingsTask } from 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
-import { ConfigurationQuery, EntityKind, ResourceQuery, ResourceService, SystemCapability, SystemQuery, WorkerQuery, supportsResourceSchema, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { clientFailure, FailureCause, ConfigurationQuery, EntityKind, ResourceQuery, ResourceService, SystemCapability, SystemQuery, WorkerQuery, supportsResourceSchema, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { RepositoryFields, ResourceChoice, TextField, newConfiguration } from "./configuration-fields";
 import { document, encode, items, object, resourceName, text, type Document } from "./documents";
 import { JobState, TrackedJob } from "./jobs";
@@ -121,6 +122,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
   const runner = useRunnerPreference(RunnerWorkflow.RemoteRepository, active && computer === Computer.Remote, undefined, true);
   const runnerTouched = useRef(false);
   const [busy, setBusy] = useState(false);
+  const [nameCollision, setNameCollision] = useState(false);
   const [problem, setProblem] = useProductMessage("");
   const [workerProblem, setWorkerProblem] = useState(false), [verifiedAgain, setVerifiedAgain] = useState(false);
   const [verifiedMachine, setVerifiedMachine] = useState("");
@@ -165,6 +167,10 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
   const serverMachine = useQuery(ResourceQuery.getResource, { kind: EntityKind.MACHINE, id: source?.machine ?? "" }, { enabled: active && Boolean(source), refetchInterval: active && source ? 5000 : false, refetchOnWindowFocus: false, refetchOnReconnect: false });
   // Successful read time also reevaluates a structurally shared lease. Failed
   // refreshes stay unknown; this clock never replaces the original last_seen.
+  useEffect(() => {
+    if ((!save.uncertain && save.error && clientFailure(save.error).cause === FailureCause.ConfigurationNameConflict) || (!clone.uncertain && clone.error && clientFailure(clone.error).cause === FailureCause.ConfigurationNameConflict)) setNameCollision(true);
+  }, [save.error, save.uncertain, clone.error, clone.uncertain]);
+  useEffect(() => { if (nameCollision && remoteUnsupported) setOptions(true); }, [nameCollision, remoteUnsupported]);
   const heartbeat = repositoryWorkerHeartbeat(serverMachine.data?.resource, source?.machine ?? "", Boolean(serverMachine.error), serverMachine.dataUpdatedAt || Date.now());
   const offline = heartbeat === RepositoryWorkerHeartbeat.Offline;
   const heartbeatUnknown = Boolean(source && !serverMachine.isLoading && heartbeat === RepositoryWorkerHeartbeat.Unknown);
@@ -172,6 +178,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
   useEffect(() => { if (active && !runnerTouched.current && !blocked && computer === Computer.Remote && !machine && runner.suggestion) { setMachine(runner.suggestion.id); setMachineName(resourceName(runner.suggestion)); } }, [active, runner.suggestion, blocked, computer, machine]);
   const taskVisible = useSettingsTaskVisible(), cancelTask = useCloseSettingsTask(cancel), inTask = useInSettingsTask();
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  const nameConflict = active && taskVisible && nameCollision ? copy("configuration-fields.repositoryNameConflict") : undefined;
   useEffect(() => { if (taskVisible) initialAction.current?.focus(); }, [taskVisible]);
   const live = () => alive.current && activeRef.current && !opening?.disposed;
   const native = <T,>(operation: () => Promise<T>) => opening ? opening.native(operation) : operation();
@@ -235,7 +242,7 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
   const change = (next: Document) => {
     if (encode(next).byteLength > 1 << 20) { setProblem(ownedMessage("repository-registration.extra.eede23d37ef3")); return; }
     draftEdited.current = true;
-    if (next.name !== data.name) nameEdited.current = true;
+    if (next.name !== data.name) { nameEdited.current = true; setNameCollision(false); save.clearRejected(); clone.clearRejected(); }
     setData(next); setProblem("");
   };
   const browseCloneParent = async () => {
@@ -296,16 +303,28 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
   // status read leaves both paths disabled until the user retries the read.
   const legacyReady = Boolean(!cloneLocally && remoteUnsupported && checkoutConfirmed && text(data.name) && new TextEncoder().encode(text(data.name)).byteLength <= 256);
   const ready = Boolean(!cloneLocally && ((remoteSupported && parsedClone && text(data.name) && new TextEncoder().encode(text(data.name)).byteLength <= 256 && (!primaryCheckout || checkoutConfirmed)) || legacyReady));
+  const correctCloneName = (output: Document, job: Resource) => {
+    setNameCollision(true); setCloneLocally(false);
+    // The verified original clone already transferred this checkout to Local
+    // ownership. A new display-name save retains it without another clone.
+    const inspection = object(output.inspection), machineId = text(document(job).machine_id), root = text(inspection.root);
+    if (machineId && root && validRepositoryInspection(inspection)) {
+      const selected = { path: root, machine: machineId, name: copy("repository-registration.thisComputer_26f9f9"), local: true };
+      setSource(selected); setSummary({ output: inspection, source: selected }); setConnectFolder(true);
+      setData(current => ({ ...current, checkouts: [{ machine_id: machineId, path: root }] }));
+    }
+    clone.resolveJob(job.id); setCloneJob(undefined);
+  };
   const cloneModeBlocked = options || draftEdited.current;
   return <section className="repository-registration" aria-label={copy("repository-registration.addRepository_2eda4d")}>
     <SettingsTaskDismissButton type="button" disabled={blocked} onClick={cancelTask}>{copy("repository-registration.backToRepositories_92a79b")}</SettingsTaskDismissButton>
     <h2 hidden={inTask}>{copy("repository-registration.addRepository_2eda4d")}</h2>
-    {cloneJob ? <>{cloneJob === "unknown" ? <p role="alert">{copy("repository-registration.inline.296ac69de7")}</p> : <TrackedJob initial={cloneJob} active={active}>{(state, output) => <><SaveCompletion state={state} output={output} clone saved={repository => { if (live()) saved(repository); }} />{text(object(output.inspection).root) && state !== JobState.Succeeded ? <p role="alert">{copy("repository-registration.inline.a0600eeb9e")} {text(object(output.inspection).root)}{copy("repository-registration.inline.999469a947")}</p> : null}{state === JobState.Failed || state === JobState.Canceled ? <SettingsActionButton icon={SettingsActionIcon.Back} type="button" onClick={() => setCloneJob(undefined)}>{copy("repository-registration.inline.dc52059dec")}</SettingsActionButton> : null}</>}</TrackedJob>}<SettingsTaskActions className="repository-add-footer"><SettingsActionButton icon={SettingsActionIcon.Cancel} type="button" data-settings-task-cancel onClick={cancelTask}>{copy("repository-registration.inline.19766ed6cc")}</SettingsActionButton></SettingsTaskActions></> : saveJob ? <>{saveJob === "unknown" ? <p role="alert">{copy("repository-registration.theSaveWasAcknowledgedWithoutA_186074")}</p> : <TrackedJob initial={saveJob} active={active}>{(state, output) => <><SaveCompletion state={state} output={output} saved={repository => { if (live()) saved(repository); }} />{state === JobState.Failed || state === JobState.Canceled ? <SettingsActionButton icon={SettingsActionIcon.Back} type="button" onClick={() => setSaveJob(undefined)}>{copy("repository-registration.returnToCurrentDraft_0d5f4c")}</SettingsActionButton> : null}</>}</TrackedJob>}<SettingsTaskActions className="repository-add-footer"><SettingsActionButton icon={SettingsActionIcon.Cancel} type="button" data-settings-task-cancel onClick={cancelTask}>{copy("repository-registration.inline.19766ed6cc")}</SettingsActionButton></SettingsTaskActions></> : <>
+    {cloneJob ? <>{cloneJob === "unknown" ? <p role="alert">{copy("repository-registration.inline.296ac69de7")}</p> : <TrackedJob initial={cloneJob} active={active}>{(state, output, observation) => <><ConfigurationNameFailure state={state} verified={observation.verified} problem={observation.problem} confirmed={() => correctCloneName(output, cloneJob)} /><SaveCompletion state={state} output={output} clone saved={repository => { if (live()) saved(repository); }} />{text(object(output.inspection).root) && state !== JobState.Succeeded ? <p role="alert">{copy("repository-registration.inline.a0600eeb9e")} {text(object(output.inspection).root)}{copy("repository-registration.inline.999469a947")}</p> : null}{state === JobState.Failed || state === JobState.Canceled ? <SettingsActionButton icon={SettingsActionIcon.Back} type="button" onClick={() => { if (observation.verified && observation.problem.cause === FailureCause.ConfigurationNameConflict) { correctCloneName(output, cloneJob); } setCloneJob(undefined); }}>{copy("repository-registration.inline.dc52059dec")}</SettingsActionButton> : null}</>}</TrackedJob>}<SettingsTaskActions className="repository-add-footer"><SettingsActionButton icon={SettingsActionIcon.Cancel} type="button" data-settings-task-cancel onClick={cancelTask}>{copy("repository-registration.inline.19766ed6cc")}</SettingsActionButton></SettingsTaskActions></> : saveJob ? <>{saveJob === "unknown" ? <p role="alert">{copy("repository-registration.theSaveWasAcknowledgedWithoutA_186074")}</p> : <TrackedJob initial={saveJob} active={active}>{(state, output, observation) => <><ConfigurationNameFailure state={state} verified={observation.verified} problem={observation.problem} confirmed={() => { setNameCollision(true); save.resolveJob(saveJob.id); setSaveJob(undefined); }} /><SaveCompletion state={state} output={output} saved={repository => { if (live()) saved(repository); }} />{state === JobState.Failed || state === JobState.Canceled ? <SettingsActionButton icon={SettingsActionIcon.Back} type="button" onClick={() => { if (observation.verified && observation.problem.cause === FailureCause.ConfigurationNameConflict) setNameCollision(true); if (observation.verified) save.resolveJob(saveJob.id); setSaveJob(undefined); }}>{copy("repository-registration.returnToCurrentDraft_0d5f4c")}</SettingsActionButton> : null}</>}</TrackedJob>}<SettingsTaskActions className="repository-add-footer"><SettingsActionButton icon={SettingsActionIcon.Cancel} type="button" data-settings-task-cancel onClick={cancelTask}>{copy("repository-registration.inline.19766ed6cc")}</SettingsActionButton></SettingsTaskActions></> : <>
       <section className="repository-remote-fields" aria-label={copy("repository-registration.inline.9112065139")}>
         <label>{copy("repository-registration.inline.cd01c2ef6a")}<input ref={initialAction} type="text" value={cloneDraft.url} maxLength={4096} placeholder={copy("repository-registration.inline.a2116e2c72")} disabled={blocked} autoComplete="off" spellCheck={false} onChange={event => changeCloneDraft({ ...cloneDraft, url: event.target.value, directory: undefined })} /></label>
         {cloneDraft.url && !parsedClone ? <p role="alert">{copy("repository-registration.inline.2f00f15706")}</p> : null}
         <RepositoryGitHubPicker active={active} supported={pickerSupported} disabled={blocked} choose={(selection, url) => { changeCloneDraft({ ...cloneDraft, url, directory: undefined }); setGitHubSelection(selection); setData(current => ({ ...current, integration_id: selection.profileId, github_owner: selection.owner, github_name: selection.name })); }} />
-        {cloneLocally ? <p className="repository-clone-name">{copy("repository-registration.inline.d214dccd1f")} <strong>{cloneDirectory}</strong>.</p> : <TextField label={copy("repository-registration.inline.a2b1b3f24a")} value={data.name} required change={name => { nameEdited.current = true; change({ ...data, name }); }} />}
+        {cloneLocally ? <p className="repository-clone-name">{copy("repository-registration.inline.d214dccd1f")} <strong>{cloneDirectory}</strong>.</p> : <TextField nameConflict={nameConflict} label={copy("repository-registration.inline.a2b1b3f24a")} value={data.name} required change={name => { nameEdited.current = true; change({ ...data, name }); }} />}
         <p>{copy("repository-registration.inline.3b8c8f1549")}</p>
         {remoteUnsupported ? <p role="status">{copy("repository-registration.inline.add2f25d8c")}</p> : null}
         <Problem error={status.error} />
@@ -337,8 +356,8 @@ export function RepositoryRegistration({ active, readLocalWorker, controlLocalWo
       {verifiedAgain ? <p role="status">{copy("repository-registration.workerRechecked")}</p> : null}
       {unknown ? <p role="alert">{copy("repository-registration.inspectionWasAcknowledgedWithoutAReadable_28ee95")}</p> : null}
       {cloneLocally ? <p>{copy("repository-registration.inline.57dbb8a56f")}</p> : null}
-      {ready && !cloneLocally ? <><DisclosureButton density={DisclosureDensity.Settings} type="button" className="repository-options-toggle" aria-expanded={options} aria-controls="repository-options" onClick={() => setOptions(value => !value)}>{copy("repository-registration.optionalSettings_e88b5c")}</DisclosureButton><DisclosureContent id="repository-options" hidden={!options}><fieldset disabled={save.busy || save.uncertain || busy || Boolean(inspection) || inspect.uncertain}><RepositoryFields data={data} change={change} active={active && options} existing={false} pendingOperation={setChildPending} registration requiredCheckout={primaryCheckout} /></fieldset></DisclosureContent></> : null}
-      {problem ? <p role="alert">{problem}</p> : null}<Problem error={inspect.error || save.error || clone.error} />
+      {ready && !cloneLocally ? <><DisclosureButton density={DisclosureDensity.Settings} type="button" className="repository-options-toggle" aria-expanded={options} aria-controls="repository-options" onClick={() => setOptions(value => !value)}>{copy("repository-registration.optionalSettings_e88b5c")}</DisclosureButton><DisclosureContent id="repository-options" hidden={!options}><fieldset disabled={save.busy || save.uncertain || busy || Boolean(inspection) || inspect.uncertain}><RepositoryFields nameConflict={options && remoteUnsupported ? nameConflict : undefined} data={data} change={change} active={active && options} existing={false} pendingOperation={setChildPending} registration requiredCheckout={primaryCheckout} /></fieldset></DisclosureContent></> : null}
+      {problem ? <p role="alert">{problem}</p> : null}<Problem error={inspect.error || (nameCollision ? undefined : save.error || clone.error)} />
       {inspect.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={inspect.busy} onClick={inspect.retry}>{copy("repository-registration.retryTheSameInspection_8ce3eb")}</SettingsActionButton> : null}
       <SettingsTaskActions className="repository-add-footer"><SettingsActionButton icon={SettingsActionIcon.Cancel} type="button" data-settings-task-cancel onClick={cancelTask}>{copy("repository-registration.inline.19766ed6cc")}</SettingsActionButton>{cloneLocally ? <SettingsActionButton icon={SettingsActionIcon.Add} type="button" className="primary" disabled={blocked || !cloneReady} onClick={() => void startClone()}>{copy("repository-registration.inline.91a5165017")}</SettingsActionButton> : <SettingsActionButton icon={SettingsActionIcon.Add} type="button" className="primary" disabled={blocked || !ready} onClick={() => void save.send({ mutation: { requestId: newRequestId(), expectedRevision: 0n }, kind: EntityKind.REPOSITORY, schemaVersion: 1, documentJson: encode(repositoryRegistrationDocument(data, legacyReady)) })}>{copy("repository-registration.addRepository_2eda4d")}</SettingsActionButton>}{clone.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={clone.busy} onClick={clone.retry}>{copy("repository-registration.inline.3f0ac0a40a")}</SettingsActionButton> : null}{save.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={save.busy} onClick={save.retry}>{copy("repository-registration.retryTheSameRepositorySave_b78084")}</SettingsActionButton> : null}</SettingsTaskActions>
     </>}

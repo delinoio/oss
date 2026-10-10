@@ -576,3 +576,5 @@ existing original cleanup and recovery ownership; a foreign directory or
 unproved process cleanup remains uncertain. Sidechat keeps metadata-only parent
 references. Original Local sharing and legacy accepted linked-worktree lifetimes
 keep their existing ownership boundaries.
+
+Repository inspection and clone registration recheck normalized same-kind name uniqueness at final publication. A definitive name collision settles the original parent failure while preserving successful child observations. Clone registration failure keeps the transferred user-owned Local checkout and its inspection metadata; it grants no filesystem deletion authority.

@@ -800,3 +800,38 @@ func assertRejectedPortableVersion(t *testing.T, s *Service, selection domain.Co
 	default:
 	}
 }
+
+func TestConfigurationImportNamesRejectBundleTargetAndPreviewDrift(t *testing.T) {
+	single := func() domain.ConfigurationImportSelection {
+		return domain.ConfigurationImportSelection{Bundle: domain.ConfigurationBundle{Version: 4, Entries: []domain.ConfigurationEntry{transferEntry(domain.RepositoryKind, domain.Repository{Name: "Alpha", RemoteURL: "https://example.test/a.git", AutoFetch: true})}, Machines: []domain.ConfigurationMachine{}}, Bindings: []domain.ConfigurationBinding{}, Machines: []domain.ConfigurationMachineBinding{}, Checkouts: []domain.ConfigurationCheckoutBinding{}}
+	}
+	t.Run("bundle", func(t *testing.T) {
+		s, _ := newDoctorFixture(t)
+		selection := single()
+		duplicate := selection.Bundle.Entries[0]
+		duplicate.ID = domain.NewID()
+		selection.Bundle.Entries = append(selection.Bundle.Entries, duplicate)
+		raw, _ := json.Marshal(selection)
+		_, err := s.PreviewConfigurationImport(transferOwner(), connect.NewRequest(&pb.PreviewConfigurationImportRequest{SelectionJson: raw}))
+		if err == nil {
+			t.Fatal("intra-bundle duplicate accepted")
+		}
+	})
+	t.Run("target and drift", func(t *testing.T) {
+		s, _ := newDoctorFixture(t)
+		selection := single()
+		preview := transferPreview(t, s, selection)
+		doctorPut(t, s, domain.RepositoryKind, domain.NewID(), 0, domain.Repository{Name: " alpha ", RemoteURL: "https://example.test/b.git", AutoFetch: true})
+		raw, _ := json.Marshal(selection)
+		if _, err := s.PreviewConfigurationImport(transferOwner(), connect.NewRequest(&pb.PreviewConfigurationImportRequest{SelectionJson: raw})); err == nil {
+			t.Fatal("target duplicate accepted")
+		}
+		if _, err := s.ApplyConfigurationImport(transferOwner(), connect.NewRequest(&pb.ApplyConfigurationImportRequest{RequestId: string(domain.NewID()), PreviewJson: preview})); err == nil {
+			t.Fatal("preview drift accepted")
+		}
+		rows, err := s.Store.List(context.Background(), store.Filter{Kind: domain.RepositoryKind, Limit: 10})
+		if err != nil || len(rows) != 1 {
+			t.Fatal("partial import", rows, err)
+		}
+	})
+}

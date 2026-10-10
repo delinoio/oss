@@ -39,8 +39,8 @@ function focusControl(form: HTMLFormElement | null, field: string) {
   control?.scrollIntoView?.({ block: "nearest" });
 }
 
-export function ProjectCreationWizard({ data, change, active, visible, blocked, busy, saveDisabled, submit, cancel, cancelDisabled, uncertain, retry, children, registrationAdapters }: {
-  data: Document; change: (value: Document) => void; active: boolean; visible: boolean; blocked: boolean; saveDisabled: boolean;
+export function ProjectCreationWizard({ nameConflict, data, change, active, visible, blocked, busy, saveDisabled, submit, cancel, cancelDisabled, uncertain, retry, children, registrationAdapters }: {
+  nameConflict?: string; data: Document; change: (value: Document) => void; active: boolean; visible: boolean; blocked: boolean; saveDisabled: boolean;
   busy: boolean; submit: () => void; cancel: () => void; cancelDisabled: boolean; uncertain: boolean; retry: () => void; children?: ReactNode; registrationAdapters?: ProjectRegistrationAdapters;
 }) {
   useLocale();
@@ -58,6 +58,10 @@ export function ProjectCreationWizard({ data, change, active, visible, blocked, 
   const [problem, setProblem] = useProductMessage("");
   const form = useRef<HTMLFormElement>(null), focused = useRef(false);
   const formId = useId(), inputId = useId();
+  useEffect(() => {
+    if (!nameConflict || !active || !visible || uncertain) return;
+    setValidationField("name"); setStep(Step.Configure); setFocusAttempt(value => value + 1);
+  }, [nameConflict, active, visible, uncertain]);
   const catalog = useProjectRepositoryCatalog(active && visible);
   const query = useDeferredValue(search.trim().toLowerCase());
   const names = useMemo(() => new Map(catalog.rows.filter(row => row.supported).map(row => [row.id, row.name])), [catalog.rows]);
@@ -143,7 +147,7 @@ export function ProjectCreationWizard({ data, change, active, visible, blocked, 
     </section>
     <section hidden={step !== Step.Configure}>
       <h3>{stepName(Step.Configure)}</h3><fieldset disabled={blocked || step !== Step.Configure}>
-        <label>{copy("project-creation.name")}<input data-project-focus="name" required maxLength={256} value={text(data.name)} onChange={event => { setNameEdited(true); change({ ...data, name: event.target.value }); setProblem(""); }} /></label>
+        <label>{copy("project-creation.name")}<input aria-invalid={nameConflict ? true : undefined} aria-describedby={nameConflict ? `${inputId}-name-conflict` : undefined} data-project-focus="name" required maxLength={256} value={text(data.name)} onChange={event => { setNameEdited(true); change({ ...data, name: event.target.value }); setProblem(""); }} /></label>{nameConflict ? <p id={`${inputId}-name-conflict`} role="alert" className="configuration-name-conflict">{nameConflict}</p> : null}
         {!nameEdited ? <p>{copy("project-creation.nameHelp")}</p> : null}
         {nameEdited && !validName(text(data.name)) ? <p role="alert">{copy("project-creation.invalidName")}</p> : null}
         <label>{copy("configuration-fields.primaryRepository_b2bbc5")}<select data-project-focus="primary" required value={text(data.primary_repository)} onChange={event => { change({ ...data, primary_repository: event.target.value }); setProblem(""); }}><option value="">{copy("configuration-fields.selectThePrimaryRepository_bd9082")}</option>{ids.map((id, index) => <option key={id} value={id}>{projectRepositoryOption(id, index, names)}</option>)}</select></label>

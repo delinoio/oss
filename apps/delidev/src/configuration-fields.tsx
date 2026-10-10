@@ -1,3 +1,4 @@
+import "./configuration-name-conflict.css";
 import { ProjectEditTabs, ProjectEditTab } from "./project-edit-tabs";
 import { defaultBranchPrefix, validBranchPrefix } from "./session-defaults";
 import { useSidebarActivity } from "./sidebar-context";
@@ -59,10 +60,18 @@ export function NativeOptionExplanation({ value, clear, label }: { value: unknow
   const retained = value !== undefined && value !== "" && value !== 0;
   return <><p>{copy("configuration-fields.nativeOptionUnavailable")}</p>{retained ? <SettingsActionButton icon={SettingsActionIcon.Inspect} type="button" aria-label={`${copy("configuration-fields.clearRetainedNativeOption")}: ${label}`} onClick={clear}>{copy("configuration-fields.clearRetainedNativeOption")}</SettingsActionButton> : null}</>;
 }
-export function TextField({ label, value, change, required = false, max = 256, disabled = false, markRequired = false, placeholder, unavailable = false }: { label: string; value: unknown; change: (value: string) => void; required?: boolean; max?: number; disabled?: boolean; markRequired?: boolean; placeholder?: string; unavailable?: boolean }) {
+export function TextField({ nameConflict, label, value, change, required = false, max = 256, disabled = false, markRequired = false, placeholder, unavailable = false }: { nameConflict?: string; label: string; value: unknown; change: (value: string) => void; required?: boolean; max?: number; disabled?: boolean; markRequired?: boolean; placeholder?: string; unavailable?: boolean }) {
   useLocale();
-  const help = useId();
-  return <><label>{markRequired ? <span>{label}<span className="agent-required" aria-hidden="true"> *</span></span> : label}<input aria-label={markRequired ? label : undefined} aria-describedby={unavailable ? help : undefined} placeholder={placeholder} value={text(value)} required={required} maxLength={max} disabled={disabled || unavailable} onChange={(event) => change(event.target.value)} /></label>{unavailable ? <div id={help}><NativeOptionExplanation label={label} value={value} clear={() => change("")} /></div> : null}</>;
+  const help = useId(), input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!nameConflict) return;
+    const control = input.current;
+    control?.closest("[data-project-edit-panel]")?.dispatchEvent(new Event("project-reveal-invalid", { bubbles: true }));
+    for (let node = control?.parentElement; node; node = node.parentElement) if (node instanceof HTMLDetailsElement) node.open = true;
+    const frame = requestAnimationFrame(() => { if (control?.isConnected) control.focus(); });
+    return () => cancelAnimationFrame(frame);
+  }, [nameConflict]);
+  return <><label>{markRequired ? <span>{label}<span className="agent-required" aria-hidden="true"> *</span></span> : label}<input ref={input} data-configuration-name={nameConflict ? "conflict" : undefined} aria-invalid={nameConflict ? true : undefined} aria-label={markRequired ? label : undefined} aria-describedby={unavailable || nameConflict ? help : undefined} placeholder={placeholder} value={text(value)} required={required} maxLength={max} disabled={disabled || unavailable} onChange={(event) => change(event.target.value)} /></label>{nameConflict ? <p id={help} role="alert" className="configuration-name-conflict">{nameConflict}</p> : null}{unavailable ? <div id={help}><NativeOptionExplanation label={label} value={value} clear={() => change("")} /></div> : null}</>;
 }
 enum ServiceTierSelection { Default = "default", Fast = "fast", Custom = "custom" }
 export function ServiceTierField({ value, unavailable, change, clear }: { value: unknown; unavailable: boolean; change: (value: string) => void; clear: () => void }) {
@@ -251,7 +260,7 @@ function ProviderFields({ data, change, subscriptionOnly = false, ...props }: Fi
   </>;
 }
 export enum ServerPreferenceSection { All = "all", AccountRouting = "account-routing", GitWorkflow = "git-workflow", ProjectDefaults = "project-defaults" }
-interface FieldsProps { disabled?: boolean; supportsProjectBehavior?: boolean; supportsSessionDefaults?: boolean; movementActive?: boolean; initial?: Resource; keepsFormatKey?: (ready: boolean) => void; saveBlocked?: (blocked: boolean) => void; data: Document; change: (value: Document) => void; active: boolean; existing: boolean; pendingOperation?: (pending: boolean) => void; subscriptionOnly?: boolean; serverPreferenceSection?: ServerPreferenceSection; workerWizard?: boolean }
+interface FieldsProps { nameConflict?: string; disabled?: boolean; supportsProjectBehavior?: boolean; supportsSessionDefaults?: boolean; movementActive?: boolean; initial?: Resource; keepsFormatKey?: (ready: boolean) => void; saveBlocked?: (blocked: boolean) => void; data: Document; change: (value: Document) => void; active: boolean; existing: boolean; pendingOperation?: (pending: boolean) => void; subscriptionOnly?: boolean; serverPreferenceSection?: ServerPreferenceSection; workerWizard?: boolean }
 export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: EntityKind }) {
   useLocale();
   const { data, change, active, existing, serverPreferenceSection = ServerPreferenceSection.All, supportsProjectBehavior = false, supportsSessionDefaults = false } = props;
@@ -314,13 +323,13 @@ export function projectRepositoryOption(id: string, index: number, names: Readon
   const name = names.get(id) ?? copy("project-creation.nameUnavailable");
   return [...names.values()].filter(value => value === name).length > 1 || !names.has(id) ? copy("project-creation.distinctRepository", { name, position: index + 1 }) : name;
 }
-function ProjectFields({ data, change, active, disabled = false, movementActive = active, supportsProjectBehavior = false, supportsSessionDefaults = false }: FieldsProps) {
+function ProjectFields({ nameConflict, data, change, active, disabled = false, movementActive = active, supportsProjectBehavior = false, supportsSessionDefaults = false }: FieldsProps) {
   const [selected, setSelected] = useState("");
   useLocale();
   const repositories = items(data.repositories).map(text);
   const { names, loading, error, retry } = useProjectRepositoryNames(repositories, active);
   return <ProjectEditTabs disabled={disabled} panels={{
-    [ProjectEditTab.General]: <>    <fieldset className="project-field-group"><legend>{copy("configuration-fields.name_dcd1d5")}</legend><TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} required change={(name) => change({ ...data, name })} /></fieldset></>,
+    [ProjectEditTab.General]: <>    <fieldset className="project-field-group"><legend>{copy("configuration-fields.name_dcd1d5")}</legend><TextField nameConflict={nameConflict} label={copy("configuration-fields.name_dcd1d5")} value={data.name} required change={(name) => change({ ...data, name })} /></fieldset></>,
     [ProjectEditTab.Repositories]: <>
     <fieldset className="project-field-group"><legend>{copy("configuration-fields.repositories_1e32af")}</legend>
       <fieldset><legend>{copy("configuration-fields.orderedRepositories_f1a12d")}</legend><p><LocalizedText id="configuration-fields.orderIsPreserved_62a111" components={{ s0: <>{copy("project-creation.workspaceHelp")}</> }} /></p>
@@ -356,7 +365,7 @@ function RemediationFields({ value, change, active, workflow = RunnerWorkflow.Re
   </RemediationPolicyFields>;
 }
 
-export function RepositoryFields({ data, change, active, pendingOperation, requiredCheckout, registration = false, existing }: FieldsProps & { registration?: boolean; requiredCheckout?: { machine_id: string; path: string } }) {
+export function RepositoryFields({ nameConflict, data, change, active, pendingOperation, requiredCheckout, registration = false, existing }: FieldsProps & { registration?: boolean; requiredCheckout?: { machine_id: string; path: string } }) {
   useLocale();
   const [machine, setMachine] = useState(""), [path, setPath] = useState("");
   const runner = useRunnerPreference(RunnerWorkflow.Checkout, active);
@@ -370,7 +379,7 @@ export function RepositoryFields({ data, change, active, pendingOperation, requi
   const checkoutBacked = Array.isArray(data.checkouts) && data.checkouts.length > 0;
   // Share every field and operation between presentations; disclosure state
   // changes layout only and never changes the original controller lifetime.
-  const identityName = <><TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} required change={(name) => change({ ...data, name })} /></>;
+  const identityName = <><TextField nameConflict={nameConflict} label={copy("configuration-fields.name_dcd1d5")} value={data.name} required change={(name) => change({ ...data, name })} /></>;
   const identityRemote = <>{!registration ? <TextField label={copy("configuration-fields.repositoryEdit.remoteUrl")} value={data.remote_url} max={4096} required={!checkoutBacked} change={(remote_url) => change({ ...data, remote_url })} /> : null}</>;
   const preferredRemote = <><TextField label={copy("configuration-fields.preferredGitRemote_ef1241")} value={data.preferred_remote} change={(preferred_remote) => change({ ...data, preferred_remote })} /></>;
   const githubIdentity = <><TextField label={copy("configuration-fields.githubRepositoryOwner_47e01a")} value={data.github_owner} max={100} change={(github_owner) => change({ ...data, github_owner })} /><TextField label={copy("configuration-fields.githubRepositoryName_b09ffb")} value={data.github_name} max={100} change={(github_name) => change({ ...data, github_name })} /></>;

@@ -508,7 +508,7 @@ func storageError(err error) error {
 		case 13:
 			return &domain.Error{Code: domain.ResourceExhausted, Message: "Storage is full.", Guidance: "Free disk space without removing DeliDev state, then retry.", Cause: "sqlite_full"}
 		case 19:
-			return &domain.Error{Code: domain.Conflict, Message: "A database invariant rejected the change.", Guidance: "Reload current state and retry with its revision.", Cause: "sqlite_constraint"}
+			return constraintConflict()
 		default:
 			cause = "sqlite_failure"
 		}
@@ -517,6 +517,10 @@ func storageError(err error) error {
 		return &domain.Error{Code: domain.PermissionDenied, Message: "State storage is inaccessible.", Guidance: "Check owner-only permissions and disk availability.", Cause: "filesystem_permission"}
 	}
 	return &domain.Error{Code: domain.Internal, Message: "State storage failed.", Guidance: "Check disk health and the correlated diagnostic; preserve the data scope.", Cause: cause}
+}
+
+func constraintConflict() *domain.Error {
+	return &domain.Error{Code: domain.Conflict, Message: "A database invariant rejected the change.", Guidance: "Reload current state and retry with its revision.", Cause: "sqlite_constraint"}
 }
 
 func (t *Tx) Get(kind domain.Kind, id domain.ID) (Record, error) {
@@ -690,6 +694,29 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return Record{}, storageError(err)
+	}
+	// Preserve original identity/revision errors before classifying a name.
+	if kind == domain.ProjectKind || kind == domain.RepositoryKind {
+		if expected != 0 {
+			old, e := t.Get(kind, id)
+			if e != nil {
+				return Record{}, e
+			}
+			if old.Revision != expected {
+				return Record{}, domain.Fail(domain.Conflict, "The entity revision changed.", "Read its latest revision before editing.")
+			}
+		} else {
+			var exists bool
+			if e := t.tx.QueryRowContext(t.ctx, "SELECT EXISTS(SELECT 1 FROM entities WHERE id=?)", id).Scan(&exists); e != nil {
+				return Record{}, storageError(e)
+			}
+			if exists {
+				return Record{}, constraintConflict()
+			}
+		}
+		if e := t.CheckConfigurationName(kind, id, body); e != nil {
+			return Record{}, e
+		}
 	}
 	var membership queueMembership
 	if kind == domain.QueueKind {

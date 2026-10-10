@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { create } from "@bufbuild/protobuf";
 import { ErrorDetailSchema } from "./gen/delidev/v1/worker_pb.js";
-import { clientFailure, FailureCode } from "./errors.js";
+import { clientFailure, FailureCode, FailureCause } from "./errors.js";
 
 describe("canonical protocol error details", () => {
   it("retains the original typed guidance without a compatibility descriptor", () => {
@@ -15,4 +15,11 @@ describe("canonical protocol error details", () => {
     expect(failure.code).toBe(FailureCode.ServerUnavailable);
     expect(failure.message).not.toContain("secret");
   });
+});
+
+it("projects only a definitive configuration name conflict cause", () => {
+ const failure = (code: string, cause: string) => clientFailure(new ConnectError("Rejected", Code.Aborted, undefined, [{ desc: ErrorDetailSchema, value: create(ErrorDetailSchema, { code, cause }) }]));
+ expect(failure("conflict", "configuration_name_conflict").cause).toBe(FailureCause.ConfigurationNameConflict);
+ expect(failure("conflict", "revision_changed").cause).toBeUndefined();
+ expect(failure("unavailable", "configuration_name_conflict").cause).toBeUndefined();
 });

@@ -8,7 +8,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { ConfigurationService, IntegrationService, SystemService, SystemCapability, EntityKind, ResourceSchema, ResourceService, WorkerService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { ConfigurationService, IntegrationService, SystemService, SystemCapability, EntityKind, ErrorDetailSchema, ResourceSchema, ResourceService, WorkerService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { SettingsTasks, SettingsTaskDialog, SettingsDialogSize } from "./settings-task";
 import { Settings, SettingsEntryDestination } from "./settings";
 import { resourceName, encode, document as resourceDocument, type Document } from "./documents";
@@ -716,4 +716,17 @@ it("preserves shared footer spacing when a nested remediation owns ordinary acti
  const css=readFileSync("src/repository-registration.css","utf8");const selector=css.match(/([^{}]+)\{ padding: 0; border: 0; \}/)![1].trim();
  expect(footer.matches(selector)).toBe(true);const registrationActions=footer.querySelector(".repository-add-footer")!;registrationActions.remove();const nested=document.createElement("div");nested.className="actions";footer.append(nested);
  expect(dialog.querySelector(".repository-registration")).not.toBeNull();expect(footer.matches(selector)).toBe(false);nested.remove();footer.append(registrationActions);
+});
+
+it("focuses the retained repository name after a definitive server collision", async () => {
+ const f=fixture();f.save.mockRejectedValueOnce(new ConnectError("Rejected",Code.Aborted,undefined,[{desc:ErrorDetailSchema,value:create(ErrorDetailSchema,{code:"conflict",cause:"configuration_name_conflict"})}]));f.mount();await f.add(false);
+ const name=screen.getByRole("textbox",{name:"Repository name"}) as HTMLInputElement;fireEvent.change(name,{target:{value:" alpha "}});const saveButton=within(screen.getByRole("dialog",{name:"Add repository"})).getByRole("button",{name:"Add repository"});await waitFor(()=>expect(saveButton.hasAttribute("disabled")).toBe(false));fireEvent.click(saveButton);
+ await screen.findByText("A repository with this name already exists. Choose another name.");await waitFor(()=>expect(document.activeElement).toBe(name));expect(name.value).toBe(" alpha ");
+ fireEvent.change(name,{target:{value:"Unique"}});fireEvent.click(within(screen.getByRole("dialog",{name:"Add repository"})).getByRole("button",{name:"Add repository"}));await waitFor(()=>expect(f.save).toHaveBeenCalledTimes(2));
+});
+it("corrects a verified clone registration collision using the retained Local checkout", async () => {
+ const f=fixture(metadata,true);f.mount();await f.add();cloneInputs();const cloneButton=screen.getByRole("button",{name:"Clone & add repository"});await waitFor(()=>expect(cloneButton.hasAttribute("disabled")).toBe(false));fireEvent.click(cloneButton);await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
+ const original=f.jobs[0]!;f.resources.set(original.id,{...original,revision:2n,documentJson:encode({type:"clone-repository",machine_id:f.machine.id,state:"failed",problem:{code:"conflict",cause:"configuration_name_conflict"},output:{inspection:metadata}})});await act(async()=>{await f.client.invalidateQueries()});
+ const name=await screen.findByRole("textbox",{name:"Repository name"});await waitFor(()=>expect(document.activeElement).toBe(name));fireEvent.change(name,{target:{value:"Unique"}});fireEvent.click(within(screen.getByRole("dialog",{name:"Add repository"})).getByRole("button",{name:"Add repository"}));await waitFor(()=>expect(f.save).toHaveBeenCalledOnce());
+ expect(JSON.parse(new TextDecoder().decode(f.save.mock.calls[0][0].documentJson))).toMatchObject({name:"Unique",checkouts:[{machine_id:f.machine.id,path:"/canonical/oss"}]});expect(f.clone).toHaveBeenCalledOnce();expect(f.inspected).not.toHaveBeenCalled();
 });
