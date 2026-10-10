@@ -2,6 +2,7 @@ syntax = "proto3";
 package delidev.v1;
 
 import "delidev/v1/common.proto";
+import "delidev/v1/session.proto";
 import "delidev/v1/terminal.proto";
 
 option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
@@ -14,6 +15,7 @@ message ErrorDetail {
 }
 
 service WorkerService {
+  rpc PublishNativeCodeReview(PublishNativeCodeReviewRequest) returns (PublishNativeCodeReviewResponse);
   rpc SyncWorkerNetwork(SyncWorkerNetworkRequest) returns (SyncWorkerNetworkResponse);
   rpc ReportWorkerNativeRoute(ReportWorkerNativeRouteRequest) returns (ReportWorkerNativeRouteResponse);
   rpc ListSessionDeletionWork(ListSessionDeletionWorkRequest) returns (ListSessionDeletionWorkResponse);
@@ -130,6 +132,7 @@ message AttachWorkerRequest {
 
 enum WorkerCapability {
   WORKER_CAPABILITY_UNSPECIFIED = 0;
+  WORKER_CAPABILITY_NATIVE_CODEX_REVIEW_V1 = 54;
   WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1 = 52;
 
   WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1 = 22;
@@ -503,3 +506,15 @@ message ReportSessionStartupProgressRequest {
 message ReportSessionStartupProgressResponse {
   bool replayed = 1;
 }
+
+message PublishNativeCodeReviewRequest {
+ Mutation mutation = 1;
+ string machine_id = 2;
+ string instance_id = 3;
+ NativeCodeReviewState state = 4;
+ NativeCodeReviewSelection selection = 5;
+ string thread_id = 6;
+ string turn_id = 7;
+ string item_id = 8;
+}
+message PublishNativeCodeReviewResponse { uint64 revision = 1; }

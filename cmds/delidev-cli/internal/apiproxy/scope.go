@@ -97,7 +97,7 @@ func (s Scope) Validate() error {
 		if s.Provider.Protocol != domain.OpenAIResponses || len(s.Operations) != 1 || s.Operations[0] != ResponseCreate || domain.Text(s.TitlePrompt, "first message for title generation", domain.MaxPromptBytes, true) != nil || domain.Text(s.Effort, "native reasoning effort", 64, false) != nil || domain.Text(s.ServiceTier, "native service tier", 64, false) != nil {
 			return domain.Fail(domain.Unsupported, "The automatic title relay scope is not the pinned Codex profile.", "Use one bounded Responses request for the original first message and frozen native settings.")
 		}
-	} else if s.Purpose != "" && s.Purpose != domain.ConversationUsage {
+	} else if s.Purpose != "" && s.Purpose != domain.ConversationUsage && s.Purpose != domain.NativeCodeReviewUsage {
 		return domain.Fail(domain.Unsupported, "Unknown native usage purpose.", "Use the conversation or session-title authority profile.")
 	}
 	if s.CompactionSourceTurn != "" && (s.Harness != domain.Codex || s.Provider.Protocol != domain.OpenAIResponses || s.CompactionSourceTurn.Validate(domain.Codex, domain.NativeTurnIdentity) != nil || s.ChildModel != nil || s.Purpose == domain.SessionTitleUsage) {

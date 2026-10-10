@@ -152,13 +152,47 @@ type NativeCodeReviewResult struct {
 }
 
 func (r NativeCodeReviewResult) Validate() error {
-	if r.Version != 1 || r.ActionID.Validate() != nil || r.Selection.Validate() != nil || r.ThreadID.Validate(Codex, NativeThreadIdentity) != nil || r.TurnID.Validate(Codex, NativeTurnIdentity) != nil || Text(r.EnteredItemID, "entered review item", 256, true) != nil || Text(r.ExitedItemID, "exited review item", 256, true) != nil || r.EnteredItemID == r.ExitedItemID || r.Findings == nil || len(r.Findings) > 64 || Text(r.Explanation, "native review explanation", 8192, false) != nil || Text(r.Correctness, "native review correctness", 256, false) != nil || math.IsNaN(r.Confidence) || math.IsInf(r.Confidence, 0) || r.Confidence < 0 || r.Confidence > 1 || !reviewDigest(r.RolloutDigest) || !r.CleanupVerified {
+	if r.Version != 1 || r.ActionID.Validate() != nil || r.Selection.Validate() != nil || r.ThreadID.Validate(Codex, NativeThreadIdentity) != nil || r.TurnID.Validate(Codex, NativeTurnIdentity) != nil || Text(r.EnteredItemID, "entered review item", 256, true) != nil || Text(r.ExitedItemID, "exited review item", 256, true) != nil || r.EnteredItemID == r.ExitedItemID || r.Findings == nil || len(r.Findings) > 64 || Text(r.Explanation, "native review explanation", 8192, false) != nil || (r.Correctness != "patch is correct" && r.Correctness != "patch is incorrect") || math.IsNaN(r.Confidence) || math.IsInf(r.Confidence, 0) || r.Confidence < 0 || r.Confidence > 1 || !reviewDigest(r.RolloutDigest) || !r.CleanupVerified {
 		return NativeCodeReviewUnavailable()
 	}
 	for _, f := range r.Findings {
 		if f.Validate() != nil {
 			return NativeCodeReviewUnavailable()
 		}
+	}
+	return nil
+}
+
+// Operational stages never become execution or recovery authority.
+type NativeCodeReviewProgress struct {
+	Version       uint32                    `json:"version"`
+	Revision      uint64                    `json:"revision"`
+	State         NativeCodeReviewState     `json:"state"`
+	Selection     NativeCodeReviewSelection `json:"selection"`
+	ThreadID      NativeIdentity            `json:"thread_id"`
+	TurnID        NativeIdentity            `json:"turn_id"`
+	EnteredItemID string                    `json:"entered_item_id"`
+	ExitedItemID  string                    `json:"exited_item_id"`
+}
+
+func (p NativeCodeReviewProgress) Validate() error {
+	if p.Version != 1 || p.Revision == 0 || p.Revision >= 1<<63 || p.Selection.Validate() != nil || p.ThreadID.Validate(Codex, NativeThreadIdentity) != nil {
+		return NativeCodeReviewUnavailable()
+	}
+	switch p.State {
+	case NativeReviewReady:
+		if p.TurnID != "" || p.EnteredItemID != "" || p.ExitedItemID != "" {
+			return NativeCodeReviewUnavailable()
+		}
+	case NativeReviewEntered, NativeReviewExited:
+		if p.TurnID.Validate(Codex, NativeTurnIdentity) != nil || Text(p.EnteredItemID, "entered review item", 256, true) != nil {
+			return NativeCodeReviewUnavailable()
+		}
+		if p.State == NativeReviewEntered && p.ExitedItemID != "" || p.State == NativeReviewExited && (Text(p.ExitedItemID, "exited review item", 256, true) != nil || p.ExitedItemID == p.EnteredItemID) {
+			return NativeCodeReviewUnavailable()
+		}
+	default:
+		return NativeCodeReviewUnavailable()
 	}
 	return nil
 }

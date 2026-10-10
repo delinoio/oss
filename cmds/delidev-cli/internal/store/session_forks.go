@@ -9,6 +9,9 @@ import (
 // A durable fork job reserves only its original source boundary. Uncertainty
 // keeps that reservation; another request cannot bypass native ownership loss.
 func (t *Tx) RequireNoSessionFork(session domain.ID) error {
+	if err := t.RequireNoNativeCodeReview(session); err != nil {
+		return err
+	}
 	var exists bool
 	err := t.tx.QueryRowContext(t.ctx, `SELECT EXISTS(SELECT 1 FROM entities WHERE kind='job' AND session_id=? AND json_extract(body,'$.type')='fork-session' AND json_extract(body,'$.state') IN ('queued','claimed','uncertain'))`, session).Scan(&exists)
 	if err != nil {

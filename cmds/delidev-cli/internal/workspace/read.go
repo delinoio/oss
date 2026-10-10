@@ -120,6 +120,13 @@ func (m *Manager) observeWorkspace(ctx context.Context, request ReadRequest, rep
 	}
 	ctx, cancel := context.WithDeadline(ctx, request.Deadline)
 	defer cancel()
+	return m.observeWorkspaceOwned(ctx, nil, request, repositoryID, verifyAfter, observe)
+}
+
+// A joined review retains the same read ownership for its original operation.
+// Only admission uses the short file-read deadline; native lifetime is owned by
+// its admitted Worker job, never by a disposable read request.
+func (m *Manager) observeWorkspaceOwned(ctx, operation context.Context, request ReadRequest, repositoryID domain.ID, verifyAfter bool, observe func(context.Context, Git, Manifest, *os.Root, string) error) (returned error) {
 	if security.CheckPrivateDir(m.Root) != nil || m.initialize() != nil {
 		return ResultUncertain()
 	}
@@ -212,6 +219,12 @@ func (m *Manager) observeWorkspace(ctx context.Context, request ReadRequest, rep
 	}
 	if err := ctx.Err(); err != nil {
 		return domain.SafeError(err)
+	}
+	if operation != nil {
+		ctx = operation
+		if err := ctx.Err(); err != nil {
+			return domain.SafeError(err)
+		}
 	}
 	git := inspection.Git
 	git.OwnerID = request.ID

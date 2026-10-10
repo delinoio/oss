@@ -10,6 +10,8 @@ option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1"
 // Owner/client session acceptance and ordered input. Native execution and
 // interactions are separately capability-checked; acceptance is not dispatch.
 service SessionService {
+  rpc CreateNativeCodeReview(CreateNativeCodeReviewRequest) returns (CreateNativeCodeReviewResponse);
+  rpc GetNativeCodeReview(GetNativeCodeReviewRequest) returns (GetNativeCodeReviewResponse);
   rpc ListRequestDiagnostics(ListRequestDiagnosticsRequest) returns (ListRequestDiagnosticsResponse);
   rpc RetrySidechatQuestion(RetrySidechatQuestionRequest) returns (RetrySidechatQuestionResponse);
   rpc GetSidechatQuestionRetry(GetSidechatQuestionRetryRequest) returns (GetSidechatQuestionRetryResponse);
@@ -586,3 +588,84 @@ message ListWaitingQueueResponse {
   uint64 current_queue_generation = 3;
   uint32 waiting_count = 4;
 }
+
+// Dedicated read-only native review; independent of feedback/approval reviews.
+enum NativeCodeReviewTargetKind {
+ NATIVE_CODE_REVIEW_TARGET_KIND_UNSPECIFIED = 0;
+ NATIVE_CODE_REVIEW_TARGET_KIND_UNCOMMITTED = 1;
+ NATIVE_CODE_REVIEW_TARGET_KIND_BASE_BRANCH = 2;
+ NATIVE_CODE_REVIEW_TARGET_KIND_COMMIT = 3;
+ NATIVE_CODE_REVIEW_TARGET_KIND_CUSTOM = 4;
+}
+enum NativeCodeReviewState {
+ NATIVE_CODE_REVIEW_STATE_UNSPECIFIED = 0;
+ NATIVE_CODE_REVIEW_STATE_QUEUED = 1;
+ NATIVE_CODE_REVIEW_STATE_READY = 2;
+ NATIVE_CODE_REVIEW_STATE_ENTERED = 3;
+ NATIVE_CODE_REVIEW_STATE_EXITED = 4;
+ NATIVE_CODE_REVIEW_STATE_COMPLETED = 5;
+ NATIVE_CODE_REVIEW_STATE_INTERRUPTED = 6;
+ NATIVE_CODE_REVIEW_STATE_UNCERTAIN = 7;
+ NATIVE_CODE_REVIEW_STATE_STALE = 8;
+}
+message NativeCodeReviewTarget {
+ NativeCodeReviewTargetKind kind = 1;
+ string repository_id = 2;
+ string diff_revision = 3;
+ string reference = 4;
+ string instructions = 5;
+}
+message NativeCodeReviewSelection {
+ NativeCodeReviewTarget target = 1;
+ string head_commit = 2;
+ string base_commit = 3;
+ string content_digest = 4;
+}
+message NativeCodeReviewFinding {
+ string title = 1;
+ string body = 2;
+ double confidence = 3;
+ int32 priority = 4;
+ string path = 5;
+ uint32 start_line = 6;
+ uint32 end_line = 7;
+}
+message NativeCodeReviewResult {
+ NativeCodeReviewSelection selection = 1;
+ string thread_id = 2;
+ string turn_id = 3;
+ string entered_item_id = 4;
+ string exited_item_id = 5;
+ repeated NativeCodeReviewFinding findings = 6;
+ string correctness = 7;
+ string explanation = 8;
+ double confidence = 9;
+ string rollout_digest = 10;
+ bool cleanup_verified = 11;
+}
+message NativeCodeReview {
+ Resource job = 1;
+ string action_id = 2;
+ NativeCodeReviewTarget target = 3;
+ NativeCodeReviewState state = 4;
+ uint64 revision = 5;
+ string thread_id = 6;
+ string turn_id = 7;
+ string entered_item_id = 8;
+ string exited_item_id = 9;
+ NativeCodeReviewResult result = 10;
+}
+message CreateNativeCodeReviewRequest {
+ Mutation mutation = 1;
+ NativeCodeReviewTarget target = 2;
+}
+message CreateNativeCodeReviewResponse {
+ NativeCodeReview review = 1;
+ string request_id = 2;
+ bool replayed = 3;
+}
+message GetNativeCodeReviewRequest {
+ string session_id = 1;
+ string job_id = 2;
+}
+message GetNativeCodeReviewResponse { NativeCodeReview review = 1; }

@@ -33,6 +33,12 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// SessionServiceCreateNativeCodeReviewProcedure is the fully-qualified name of the SessionService's
+	// CreateNativeCodeReview RPC.
+	SessionServiceCreateNativeCodeReviewProcedure = "/delidev.v1.SessionService/CreateNativeCodeReview"
+	// SessionServiceGetNativeCodeReviewProcedure is the fully-qualified name of the SessionService's
+	// GetNativeCodeReview RPC.
+	SessionServiceGetNativeCodeReviewProcedure = "/delidev.v1.SessionService/GetNativeCodeReview"
 	// SessionServiceListRequestDiagnosticsProcedure is the fully-qualified name of the SessionService's
 	// ListRequestDiagnostics RPC.
 	SessionServiceListRequestDiagnosticsProcedure = "/delidev.v1.SessionService/ListRequestDiagnostics"
@@ -145,6 +151,8 @@ const (
 
 // SessionServiceClient is a client for the delidev.v1.SessionService service.
 type SessionServiceClient interface {
+	CreateNativeCodeReview(context.Context, *connect.Request[v1.CreateNativeCodeReviewRequest]) (*connect.Response[v1.CreateNativeCodeReviewResponse], error)
+	GetNativeCodeReview(context.Context, *connect.Request[v1.GetNativeCodeReviewRequest]) (*connect.Response[v1.GetNativeCodeReviewResponse], error)
 	ListRequestDiagnostics(context.Context, *connect.Request[v1.ListRequestDiagnosticsRequest]) (*connect.Response[v1.ListRequestDiagnosticsResponse], error)
 	RetrySidechatQuestion(context.Context, *connect.Request[v1.RetrySidechatQuestionRequest]) (*connect.Response[v1.RetrySidechatQuestionResponse], error)
 	GetSidechatQuestionRetry(context.Context, *connect.Request[v1.GetSidechatQuestionRetryRequest]) (*connect.Response[v1.GetSidechatQuestionRetryResponse], error)
@@ -194,6 +202,18 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 	baseURL = strings.TrimRight(baseURL, "/")
 	sessionServiceMethods := v1.File_delidev_v1_session_proto.Services().ByName("SessionService").Methods()
 	return &sessionServiceClient{
+		createNativeCodeReview: connect.NewClient[v1.CreateNativeCodeReviewRequest, v1.CreateNativeCodeReviewResponse](
+			httpClient,
+			baseURL+SessionServiceCreateNativeCodeReviewProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("CreateNativeCodeReview")),
+			connect.WithClientOptions(opts...),
+		),
+		getNativeCodeReview: connect.NewClient[v1.GetNativeCodeReviewRequest, v1.GetNativeCodeReviewResponse](
+			httpClient,
+			baseURL+SessionServiceGetNativeCodeReviewProcedure,
+			connect.WithSchema(sessionServiceMethods.ByName("GetNativeCodeReview")),
+			connect.WithClientOptions(opts...),
+		),
 		listRequestDiagnostics: connect.NewClient[v1.ListRequestDiagnosticsRequest, v1.ListRequestDiagnosticsResponse](
 			httpClient,
 			baseURL+SessionServiceListRequestDiagnosticsProcedure,
@@ -415,6 +435,8 @@ func NewSessionServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // sessionServiceClient implements SessionServiceClient.
 type sessionServiceClient struct {
+	createNativeCodeReview   *connect.Client[v1.CreateNativeCodeReviewRequest, v1.CreateNativeCodeReviewResponse]
+	getNativeCodeReview      *connect.Client[v1.GetNativeCodeReviewRequest, v1.GetNativeCodeReviewResponse]
 	listRequestDiagnostics   *connect.Client[v1.ListRequestDiagnosticsRequest, v1.ListRequestDiagnosticsResponse]
 	retrySidechatQuestion    *connect.Client[v1.RetrySidechatQuestionRequest, v1.RetrySidechatQuestionResponse]
 	getSidechatQuestionRetry *connect.Client[v1.GetSidechatQuestionRetryRequest, v1.GetSidechatQuestionRetryResponse]
@@ -451,6 +473,16 @@ type sessionServiceClient struct {
 	deleteLocalReviewComment *connect.Client[v1.DeleteLocalReviewCommentRequest, v1.DeleteLocalReviewCommentResponse]
 	submitLocalReview        *connect.Client[v1.SubmitLocalReviewRequest, v1.SubmitLocalReviewResponse]
 	switchSessionAccount     *connect.Client[v1.SwitchSessionAccountRequest, v1.SwitchSessionAccountResponse]
+}
+
+// CreateNativeCodeReview calls delidev.v1.SessionService.CreateNativeCodeReview.
+func (c *sessionServiceClient) CreateNativeCodeReview(ctx context.Context, req *connect.Request[v1.CreateNativeCodeReviewRequest]) (*connect.Response[v1.CreateNativeCodeReviewResponse], error) {
+	return c.createNativeCodeReview.CallUnary(ctx, req)
+}
+
+// GetNativeCodeReview calls delidev.v1.SessionService.GetNativeCodeReview.
+func (c *sessionServiceClient) GetNativeCodeReview(ctx context.Context, req *connect.Request[v1.GetNativeCodeReviewRequest]) (*connect.Response[v1.GetNativeCodeReviewResponse], error) {
+	return c.getNativeCodeReview.CallUnary(ctx, req)
 }
 
 // ListRequestDiagnostics calls delidev.v1.SessionService.ListRequestDiagnostics.
@@ -635,6 +667,8 @@ func (c *sessionServiceClient) SwitchSessionAccount(ctx context.Context, req *co
 
 // SessionServiceHandler is an implementation of the delidev.v1.SessionService service.
 type SessionServiceHandler interface {
+	CreateNativeCodeReview(context.Context, *connect.Request[v1.CreateNativeCodeReviewRequest]) (*connect.Response[v1.CreateNativeCodeReviewResponse], error)
+	GetNativeCodeReview(context.Context, *connect.Request[v1.GetNativeCodeReviewRequest]) (*connect.Response[v1.GetNativeCodeReviewResponse], error)
 	ListRequestDiagnostics(context.Context, *connect.Request[v1.ListRequestDiagnosticsRequest]) (*connect.Response[v1.ListRequestDiagnosticsResponse], error)
 	RetrySidechatQuestion(context.Context, *connect.Request[v1.RetrySidechatQuestionRequest]) (*connect.Response[v1.RetrySidechatQuestionResponse], error)
 	GetSidechatQuestionRetry(context.Context, *connect.Request[v1.GetSidechatQuestionRetryRequest]) (*connect.Response[v1.GetSidechatQuestionRetryResponse], error)
@@ -680,6 +714,18 @@ type SessionServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	sessionServiceMethods := v1.File_delidev_v1_session_proto.Services().ByName("SessionService").Methods()
+	sessionServiceCreateNativeCodeReviewHandler := connect.NewUnaryHandler(
+		SessionServiceCreateNativeCodeReviewProcedure,
+		svc.CreateNativeCodeReview,
+		connect.WithSchema(sessionServiceMethods.ByName("CreateNativeCodeReview")),
+		connect.WithHandlerOptions(opts...),
+	)
+	sessionServiceGetNativeCodeReviewHandler := connect.NewUnaryHandler(
+		SessionServiceGetNativeCodeReviewProcedure,
+		svc.GetNativeCodeReview,
+		connect.WithSchema(sessionServiceMethods.ByName("GetNativeCodeReview")),
+		connect.WithHandlerOptions(opts...),
+	)
 	sessionServiceListRequestDiagnosticsHandler := connect.NewUnaryHandler(
 		SessionServiceListRequestDiagnosticsProcedure,
 		svc.ListRequestDiagnostics,
@@ -898,6 +944,10 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 	)
 	return "/delidev.v1.SessionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case SessionServiceCreateNativeCodeReviewProcedure:
+			sessionServiceCreateNativeCodeReviewHandler.ServeHTTP(w, r)
+		case SessionServiceGetNativeCodeReviewProcedure:
+			sessionServiceGetNativeCodeReviewHandler.ServeHTTP(w, r)
 		case SessionServiceListRequestDiagnosticsProcedure:
 			sessionServiceListRequestDiagnosticsHandler.ServeHTTP(w, r)
 		case SessionServiceRetrySidechatQuestionProcedure:
@@ -978,6 +1028,14 @@ func NewSessionServiceHandler(svc SessionServiceHandler, opts ...connect.Handler
 
 // UnimplementedSessionServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedSessionServiceHandler struct{}
+
+func (UnimplementedSessionServiceHandler) CreateNativeCodeReview(context.Context, *connect.Request[v1.CreateNativeCodeReviewRequest]) (*connect.Response[v1.CreateNativeCodeReviewResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.CreateNativeCodeReview is not implemented"))
+}
+
+func (UnimplementedSessionServiceHandler) GetNativeCodeReview(context.Context, *connect.Request[v1.GetNativeCodeReviewRequest]) (*connect.Response[v1.GetNativeCodeReviewResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.GetNativeCodeReview is not implemented"))
+}
 
 func (UnimplementedSessionServiceHandler) ListRequestDiagnostics(context.Context, *connect.Request[v1.ListRequestDiagnosticsRequest]) (*connect.Response[v1.ListRequestDiagnosticsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SessionService.ListRequestDiagnostics is not implemented"))
