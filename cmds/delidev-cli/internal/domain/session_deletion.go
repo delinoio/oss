@@ -7,6 +7,10 @@ import (
 	"encoding/json"
 )
 
+// MaxSessionDeletionJobs bounds original jobs and their distinct Worker owners
+// in one permanent deletion plan. Readers and assembly share this allowance.
+const MaxSessionDeletionJobs = 4096
+
 // MaxSessionDeletionBytes admits all 4,096 original ownership copies while
 // bounding both the synchronized private plan and one Worker page.
 const MaxSessionDeletionBytes = 4 << 20
@@ -72,7 +76,7 @@ func (w SessionDeletionWork) Validate() error {
 		}
 		preserved[ref.ID] = true
 	}
-	if w.Version != 1 || (len(w.Copies) == 0 && w.Fork == nil && len(w.SkillSnapshots) == 0 && len(w.Images) == 0 && len(w.RetryForks) == 0) || len(w.Copies) > 4096 || len(w.Images) > MaxSessionImageAttachments || len(w.PreparationDigests) > 4096 {
+	if w.Version != 1 || (len(w.Copies) == 0 && w.Fork == nil && len(w.SkillSnapshots) == 0 && len(w.Images) == 0 && len(w.RetryForks) == 0) || len(w.Copies) > MaxSessionDeletionJobs || len(w.Images) > MaxSessionImageAttachments || len(w.PreparationDigests) > MaxSessionDeletionJobs {
 		return SessionDeletionPending()
 	}
 	for _, id := range []ID{w.DeletionID, w.ServerID, w.SessionID, w.MachineID, w.DeviceID} {
@@ -80,7 +84,7 @@ func (w SessionDeletionWork) Validate() error {
 			return SessionDeletionPending()
 		}
 	}
-	if len(w.RetryForks) > 4096 {
+	if len(w.RetryForks) > MaxSessionDeletionJobs {
 		return SessionDeletionPending()
 	}
 	retryJobs, retryRuntimes := map[ID]bool{}, map[ID]bool{}

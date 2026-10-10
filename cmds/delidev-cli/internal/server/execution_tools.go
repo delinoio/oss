@@ -21,6 +21,9 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 			return executionEventConflict()
 		}
 	}
+	if update.Snapshot != nil && update.Snapshot.Kind == domain.SleepTool && (input.Configuration.Harness != domain.Codex || update.NativeParentID != "") {
+		return executionEventConflict()
+	}
 	var value domain.ExecutionMessage
 	var revision uint64
 	if event.Kind == domain.ExecutionToolStarted {
@@ -106,10 +109,18 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 			if tool.Started.Kind == domain.ImageViewTool && (tool.Started.ImageView == nil || update.Snapshot.ImageView == nil || *tool.Started.ImageView != *update.Snapshot.ImageView) {
 				return executionEventConflict()
 			}
+			if tool.Started.Kind == domain.SleepTool && (tool.Started.Sleep == nil || tool.Started.Sleep.DurationMS == nil || update.Snapshot.Sleep == nil || update.Snapshot.Sleep.DurationMS == nil || *tool.Started.Sleep.DurationMS != *update.Snapshot.Sleep.DurationMS) {
+				return executionEventConflict()
+			}
 			tool.Completed = update.Snapshot
 			value.State = domain.MessageComplete
 		case domain.ExecutionToolOutput:
-			if tool.Started.Kind != domain.CommandTool {
+			outputKind := update.OutputKind
+			if outputKind == "" {
+				// Historical omitted provenance admits only command output.
+				outputKind = domain.CommandTool
+			}
+			if tool.Started.Kind != outputKind {
 				return executionEventConflict()
 			}
 			output := ""

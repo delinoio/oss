@@ -35,20 +35,11 @@ func (t *Tx) CompleteTerminalArchive(sessionID domain.ID) error {
 	if session.Preparation != nil && (session.Preparation.State == domain.PreparationPending || session.Preparation.State == domain.PreparationStopping || session.Preparation.State == domain.PreparationUncertain) {
 		return nil
 	}
-	if session.TitleJobID != "" {
-		titleRecord, err := t.Get(domain.JobKind, session.TitleJobID)
-		if err != nil {
-			return err
-		}
-		job, err := Decode[domain.Job](titleRecord)
-		if err != nil {
-			return err
-		}
-		if job.State == domain.JobClaimed || job.State == domain.JobUncertain || job.State == domain.JobQueued {
-			return nil
-		}
+	pendingTitle, err := t.SessionTitleCleanupPending(sessionID, session)
+	if err != nil {
+		return err
 	}
-	if session.TitleState == domain.TitleRunning || session.TitleState == domain.TitleUncertain {
+	if pendingTitle {
 		return nil
 	}
 	if session.InitialExecution != nil && (session.Execution == nil || !session.Execution.CleanupVerified) && session.StartupRejection == nil {

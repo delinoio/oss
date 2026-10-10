@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { copy, useLocale } from "./localization";
+import { SessionIcon, SessionIconKind } from "./session-presentation";
 
 /** Tool entry gestures share the original callbacks; this popup owns only focus. */
 export function SessionToolMenu({ children, active }: { children: ReactNode; active: boolean }) {
@@ -38,7 +39,7 @@ export function SessionToolMenu({ children, active }: { children: ReactNode; act
     if (next !== undefined) { event.preventDefault(); event.stopPropagation(); entries[next]?.focus(); }
     if (event.key === "Tab") setOpen(false);
   }}>
-    <button type="button" ref={trigger} aria-haspopup="menu" aria-expanded={open} aria-controls={id} onClick={() => setOpen(value => !value)}>{copy("session.openTool")}</button>
+    <button type="button" ref={trigger} aria-label={copy("session.openTool")} title={copy("session.openTool")} aria-haspopup="menu" aria-expanded={open} aria-controls={id} onClick={() => setOpen(value => !value)}><SessionIcon kind={SessionIconKind.Tools}/></button>
     <div ref={menu} id={id} className="session-tool-menu" role="menu" aria-label={copy("session.openTool")} hidden={!open} onClick={event => {
       if (!(event.target instanceof Element) || !event.target.closest('button:not(:disabled)')) return;
       setOpen(false);

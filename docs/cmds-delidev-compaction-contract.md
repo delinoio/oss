@@ -447,6 +447,22 @@ subsequent new executions/messages/response usage use the advanced context
 revision. A new Fork or compaction requires a completed execution in that current
 context; a historical removed turn is not a fresh source boundary.
 
+A confirmed pre-send failure is a separate closed output, never a successful
+Revert or compaction checkpoint. The original Worker must prove that the Revert
+claim callback was never entered, so neither an intent write nor `thread/revert`
+was attempted. Join the original native process, API proxy, workspace lease and
+protected-account cleanup before reporting that exact job/action/execution/input
+digest, context revision and native thread with its safe failure code. The server
+matches these original facts and refuses any remaining protected subscription
+lease or recovery requirement. It records the failed job and releases only that
+context-job fence, leaving context revision, prior checkpoint, transcript and
+historical execution unchanged; dispatch stays paused. Cancellation cannot
+create native uncertainty when this complete positive no-send proof exists.
+Any callback attempt, including a failed intent write, stays uncertain. A generic
+error, missing report or unjoined cleanup is never positive no-send evidence.
+Fresh explicit admission remains separate; this outcome never resends, creates
+an intent or grants a successor checkpoint. Ordinary compaction is unchanged.
+
 Uncertain acknowledgment blocks new input. Explicit original execution recovery
 may observe only the exact original Revert intent, original claim/journal,
 registration/send claims, joined original process/workspace cleanup, and proved
@@ -454,6 +470,10 @@ protected-account Finish/no-live-lease state. A private cleanup receipt cannot
 replace those independent checks. Recovery resumes an observation process with
 no execution grant or materialized credentials, compares the entire retained
 prefix, joins that observer and publishes only the original action checkpoint.
-It never sends Revert again, changes targets or retries native input. Missing
+Verified explicit recovery may settle an originally canceled Revert once. Keep
+its durable cancellation record and use the recovery-specific finalization path;
+ordinary late canceled reports remain quarantined. Receipt replay cannot advance
+the context again. It never sends Revert again, changes targets or retries native
+input. Missing
 intent, mismatched history, changed ownership or cleanup uncertainty remains
 quarantined. Ordinary context jobs keep their existing recovery restrictions.

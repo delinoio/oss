@@ -31,6 +31,7 @@
   "shortcut-settings.session": "세션",
   "shortcut-settings.creation": "새 세션 / 새 일반 대화",
   "shortcut-settings.search": "검색",
+  "shortcut-settings.fixedBinding": "고정: {{binding}}",
   "shortcut-settings.default": "기본값: {{binding}}",
   "shortcut-settings.capture": "단축키 입력",
   "shortcut-settings.captureAction": "{{name}} 단축키 입력",

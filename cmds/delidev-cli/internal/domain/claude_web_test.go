@@ -2,6 +2,7 @@ package domain
 
 import (
 	"encoding/json"
+	"os"
 	"testing"
 )
 
@@ -43,5 +44,53 @@ func TestClaudeWebHistoryRejectsForeignRepeatedAndUnclosedCalls(t *testing.T) {
 	var block ClaudeTextBlock
 	if json.Unmarshal(raw, &block) == nil {
 		t.Fatal("unknown private field accepted")
+	}
+}
+
+// The desktop consumes these same vectors to protect admission/readability parity.
+func TestClaudeWebTimestampGrammar(t *testing.T) {
+	raw, err := os.ReadFile("testdata/claude-web-timestamps.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var vectors []struct {
+		Name  string  `json:"name"`
+		Value *string `json:"value"`
+		Valid bool    `json:"valid"`
+	}
+	if err := json.Unmarshal(raw, &vectors); err != nil {
+		t.Fatal(err)
+	}
+	for _, vector := range vectors {
+		t.Run(vector.Name, func(t *testing.T) {
+			web := &ClaudeWebBlock{NativeID: "srvtool_original", Name: ClaudeWebFetch, Result: &ClaudeWebResult{Fetch: &ClaudeWebFetchContent{URL: "https://fixture.invalid", RetrievedAt: vector.Value, Document: ClaudeWebDocument{Source: "text", Media: "text/plain"}}}}
+			err := web.Validate(ClaudeWebFetchResult)
+			if (err == nil) != vector.Valid {
+				t.Fatalf("timestamp admission = %v, want %v", err == nil, vector.Valid)
+			}
+			if !vector.Valid {
+				return
+			}
+			raw, err := json.Marshal(web)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var retained ClaudeWebBlock
+			if err := json.Unmarshal(raw, &retained); err != nil {
+				t.Fatal(err)
+			}
+			if vector.Value == nil {
+				if retained.Result.Fetch.RetrievedAt != nil {
+					t.Fatal("absent timestamp changed")
+				}
+			} else if retained.Result.Fetch.RetrievedAt == nil || *retained.Result.Fetch.RetrievedAt != *vector.Value {
+				t.Fatal("original timestamp spelling changed")
+			}
+			call := ClaudeRetainedBlock{Index: 0, State: ClaudeBlockStopped, Block: ClaudeTextBlock{Kind: ClaudeWebCall, Web: &ClaudeWebBlock{NativeID: web.NativeID, Name: ClaudeWebFetch, Call: &ClaudeWebCallContent{InitialInput: `{"url":"https://fixture.invalid"}`}}}}
+			result := ClaudeRetainedBlock{Index: 1, State: ClaudeBlockStopped, Block: ClaudeTextBlock{Kind: ClaudeWebFetchResult, Web: &retained}}
+			if err := validateClaudeWebHistory([]ClaudeRetainedBlock{call, result}, true); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
