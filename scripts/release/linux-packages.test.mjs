@@ -1,3 +1,4 @@
+import './linux-packages-install.test.mjs';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
