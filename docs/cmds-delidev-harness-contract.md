@@ -60,6 +60,20 @@ and [event mapping](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2
 keep this status separate from tool execution and authentication. Other server
 names, API profiles, unscoped/foreign observations, OAuth completions, MCP event
 streams and tool calls retain their existing private adapter boundaries.
+The original execution process also consumes notification-only
+`account/gatewayOAuth/changed` through a closed passive profile. Validate required
+bounded provider ID and `notReady`, `started`, `succeeded` or `failed` status,
+with optional nullable bounded private `authUrl` and `error` strings. Preserve
+omission versus null while decoding, then discard provider identity, URL and
+error before product events or logs. URL strings remain inert, including foreign
+provider IDs, unsafe schemes and callback-like data. No status establishes a
+login owner, account readiness, callback, credential write, browser/network
+operation or another input. Same-name server requests retain the private
+unsupported boundary. The API configuration rule still accepts only omitted or
+exact-null `gateway_oauth` before input. Only a future independently admitted
+original gateway operation could own correlated status; this passive adapter
+creates no such operation or authority.
+
 The original execution process's notification-only `skills/changed` accepts
 exactly a required empty object as discarded process metadata. Its native cache
 invalidation signal never causes `skills/list`, package enumeration, catalog

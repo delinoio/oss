@@ -82,6 +82,8 @@ func (c *Client) metadata(kind MetadataKind) Event {
 
 func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 	switch native.Method {
+	case "account/gatewayOAuth/changed":
+		return c.observeGatewayOAuthLocked(native)
 	case "skills/changed":
 		// The original process invalidated its own cache. Discard this passive
 		// notification without enumerating packages or changing selected input.
