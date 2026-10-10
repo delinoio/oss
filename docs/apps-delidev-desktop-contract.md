@@ -5114,7 +5114,10 @@ request/scope/inventory receipt, then reread the same Session resource for its
 current revision before saving. Show discovered, installed, enabled and callable
 facts separately with source display names. Installation and selection never
 supply inferred callability. No source name means no identifier-based app label.
-Selection changes freeze the next ordinary execution; an explicit empty list
+Verified accessible discovery can be selected even while its installed, enabled
+or callable facts are false. Selection changes freeze policy for the next ordinary
+execution and grant no tool effect; runtime inventory and original Prompt admission
+still gate every call. An explicit empty list
 revokes selection. Revocation blocks future protected effects but proves neither
 cancellation nor independently joined cleanup of an admitted call.
 

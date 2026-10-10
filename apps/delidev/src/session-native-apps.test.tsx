@@ -36,7 +36,7 @@ function fixture(supported = true) {
 async function inspect(v:ReturnType<typeof fixture>){render(v.view);fireEvent.click(screen.getByRole("button",{name:"Apps"}));await waitFor(()=>expect((screen.getByRole("button",{name:"Read Apps"}) as HTMLButtonElement).disabled).toBe(false));expect(v.read).not.toHaveBeenCalled();fireEvent.click(screen.getByRole("button",{name:"Read Apps"}));await screen.findByText("Calendar");}
 test("separates original discovery/install/callability and submits explicit empty revocation with fresh source revision",async()=>{
  const v=fixture();await inspect(v);
- expect((screen.getByRole("checkbox",{name:"Available app"}) as HTMLInputElement).disabled).toBe(true);
+ expect((screen.getByRole("checkbox",{name:"Available app"}) as HTMLInputElement).disabled).toBe(false);
  expect((screen.getByRole("checkbox",{name:"Calendar"}) as HTMLInputElement).checked).toBe(true);
  expect(globalThis.document.body.textContent).not.toContain(v.scope.originalAccountId);expect(globalThis.document.body.textContent).not.toContain(v.scope.originalConnectionId);
  fireEvent.click(screen.getByRole("button",{name:"Clear selection"}));fireEvent.click(screen.getByRole("button",{name:"Save selection"}));await waitFor(()=>expect(v.update).toHaveBeenCalledTimes(1));
@@ -64,4 +64,13 @@ test("foreign original inventory receipt retains uncertainty without granting se
 test("closing and reopening preserves the original uncertain read rather than creating another refresh",async()=>{
  const v=fixture();v.read.mockRejectedValueOnce(new ConnectError("lost",Code.Unavailable));render(v.view);fireEvent.click(screen.getByRole("button",{name:"Apps"}));await screen.findByRole("button",{name:"Read Apps"});fireEvent.click(screen.getByRole("button",{name:"Read Apps"}));await screen.findByRole("button",{name:"Retry the same Apps read"});
  const original=v.read.mock.calls[0][0];fireEvent.click(screen.getByRole("button",{name:"Close Apps"}));fireEvent.click(screen.getByRole("button",{name:"Apps"}));expect(v.read).toHaveBeenCalledTimes(1);fireEvent.click(screen.getByRole("button",{name:"Retry the same Apps read"}));await screen.findByText("Calendar");expect(v.read.mock.calls[1][0]).toEqual(original);
+});
+
+test("explicit selection can enable a verified accessible App without borrowing installation or callable authority",async()=>{
+ const v=fixture(),original=v.read.getMockImplementation()!;
+ v.read.mockImplementation(async request=>{const observed=await original(request);return {...observed,discovered:[{id:"available",name:"Available app",accessible:true,enabled:false},{id:"callable",name:"Calendar",accessible:true,enabled:false}],installed:[{id:"callable",enabled:false,callable:false}],selection:{scope:v.scope,inventoryId:observed.inventoryId,revision:1n,appIds:[]}};});
+ await inspect(v);const available=screen.getByRole("checkbox",{name:"Available app"}) as HTMLInputElement;
+ expect(available.disabled).toBe(false);expect(available.checked).toBe(false);fireEvent.click(available);fireEvent.click(screen.getByRole("button",{name:"Save selection"}));
+ await waitFor(()=>expect(v.update).toHaveBeenCalledTimes(1));expect(v.update.mock.calls[0][0].selectedAppIds).toEqual(["available"]);
+ expect(screen.queryByRole("button",{name:/execute|invoke|approve/i})).toBeNull();
 });

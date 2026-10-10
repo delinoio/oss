@@ -36,6 +36,12 @@ passive events or presentation. A committed installed snapshot read is distinct
 from a refresh that starts or refreshes the hosted connector runtime. The native
 startup policies are Eager and LazyWhenCached; no clientPassive flag is inferred.
 
+The original process receives the requested Apps policy before initialization,
+without an executable-version probe or restart. Actual initialized user-agent
+metadata admits selected Apps only for the source-verified native profile. Unknown
+or unsupported actual versions grant no Apps inventory/call authority; an optional
+empty deny-all inventory profile does not become a selected execution requirement.
+
 The exact `codex_apps` tool item retains its original account-bound thread, turn,
 item, tool name, arguments and App context privately. The selected connector ID
 comes from the original native App context and verified inventory, never a tool

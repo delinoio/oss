@@ -17,7 +17,7 @@ func configureNativeApps(config *Config) error {
 	if config.NativeApps == nil {
 		return nil
 	}
-	if config.NativeApps.Validate() != nil || config.Mode != ThreadProtocol || !config.ManagedAuthentication || config.API != nil || config.Sidechat != "" || config.Version != "0.162.0" {
+	if config.NativeApps.Validate() != nil || config.Mode != ThreadProtocol || !config.ManagedAuthentication || config.API != nil || config.Sidechat != "" {
 		return domain.NativeAppsUnavailable()
 	}
 	config.Process.Args = append(config.Process.Args,
@@ -122,4 +122,15 @@ func (c *Client) verifyNativeAppsSettings(ctx context.Context, settings Effectiv
 		return domain.NativeAppsUnavailable()
 	}
 	return c.verifyManagedConfig(ctx, settings.Cwd)
+}
+
+// The actual initialized process owns version evidence. Selecting Apps must not
+// borrow an empty pre-start installation version or cause a probe/restart. An
+// empty optional inventory remains unavailable on unsupported actual profiles
+// while its deny-all policy continues to grant no connector effects.
+func nativeAppsInitialized(selection *domain.SessionNativeAppSelection, actualVersion string) error {
+	if selection != nil && len(selection.AppIDs) > 0 && actualVersion != "0.162.0" {
+		return domain.NativeAppsUnavailable()
+	}
+	return nil
 }

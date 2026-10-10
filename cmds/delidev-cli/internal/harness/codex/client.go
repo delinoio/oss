@@ -225,16 +225,15 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if err != nil || actualHome != home || !strings.HasPrefix(initialized.UserAgent, "delidev/") {
 		return nil, incompatible()
 	}
-	observedVersion, _, _ := strings.Cut(strings.TrimPrefix(initialized.UserAgent, "delidev/"), " ")
-	config.Version = ""
-	if domain.ValidNativeVersionMetadata(observedVersion) {
-		config.Version = observedVersion
-	}
+	config.Version = nativeInitializedVersion(initialized.UserAgent)
 	// Revert uses the closed response and cursor profile verified for this
 	// actual initialized process. General startup eligibility does not imply
 	// support for a context mutation or its replacement history shape.
-	if (config.RevertHistory || config.NativeApps != nil) && config.Version != "0.162.0" {
+	if config.RevertHistory && config.Version != "0.162.0" {
 		return nil, incompatible()
+	}
+	if err := nativeAppsInitialized(config.NativeApps, config.Version); err != nil {
+		return nil, err
 	}
 	platform, family := runtime.GOOS, "unix"
 	if platform == "darwin" {
@@ -341,4 +340,15 @@ func configureOrdinaryTools(config *Config) {
 		config.OrdinaryTools = executionenv.Ordinary{}
 	}
 	config.Process.Env = config.OrdinaryTools.Apply(config.Process.Env)
+}
+
+func nativeInitializedVersion(userAgent string) string {
+	if !strings.HasPrefix(userAgent, "delidev/") {
+		return ""
+	}
+	version, _, _ := strings.Cut(strings.TrimPrefix(userAgent, "delidev/"), " ")
+	if domain.ValidNativeVersionMetadata(version) {
+		return version
+	}
+	return ""
 }
