@@ -6,11 +6,12 @@ import { useState } from "react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserCapability, BrowserProfileSchema, BrowserProfileState, BrowserService, BudgetState, EntityKind, ResourceSchema, ResourceService, SessionService, SystemService, newRequestId } from "@delinoio/delidev-api-client";
+import { BrowserCapability, BrowserProfileSchema, BrowserProfileState, BrowserService, BudgetState, EntityKind, ResourceSchema, ResourceService, SessionService, SystemService, SystemCapability, newRequestId } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { i18n } from "./localization";
 import { MutationIntents } from "./mutation";
 import { BrowserHostProvider } from "./host-capabilities";
+import { SessionForkProvider } from "./session-fork";
 import { SessionView } from "./session";
 import { SessionTabsProvider } from "./session-tabs";
 import "./themes.css";
@@ -20,8 +21,9 @@ const args = new URLSearchParams(location.search);
 await i18n.changeLanguage(args.get("language") ?? "en");
 if (args.get("theme") !== "system") document.documentElement.dataset.theme = args.get("theme") ?? "light";
 if (args.get("zoom") === "2") {document.body.style.zoom = "2";document.documentElement.style.setProperty("--fixture-scale","2");}
+const sidechatFixture = args.get("sidechat") === "eligible", machineId = newRequestId();
 const sessionId = newRequestId(), accountId = newRequestId(), profileId = newRequestId();
-const session = create(ResourceSchema, { id: sessionId, sessionId, kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ name: "Synthetic Browser session", workspace: "general-chat", archive: "active", outcome: "stopped", dispatch: "paused", recovery: "none", initial_execution: { id: newRequestId(), initial_account_id: accountId } }) });
+const session = create(ResourceSchema, { id: sessionId, sessionId, kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ name: "Synthetic Browser session", workspace: "general-chat", archive: "active", outcome: sidechatFixture ? "succeeded" : "stopped", dispatch: "paused", recovery: "none", initial_execution: { id: newRequestId(), initial_account_id: accountId, ...(sidechatFixture ? { configuration: { harness: "codex" } } : {}) }, ...(sidechatFixture ? { machine_id: machineId, execution: { native_turn_id: newRequestId(), cleanup_verified: true } } : {}) }) });
 const profile = create(BrowserProfileSchema, { id: profileId, accountId, revision: 1n, state: BrowserProfileState.ACTIVE, serverId: newRequestId(), deviceId: newRequestId() });
 const messages = ["user", "assistant"].map((role, index) => create(ResourceSchema, { id: newRequestId(), sessionId, kind: EntityKind.MESSAGE, revision: 1n, schemaVersion: 1, documentJson: encode({ role, state: "complete", text: `Synthetic ${role} message ${index}` }) }));
 const tabs = Array.from({ length: args.get("tabs") === "16" ? 16 : 2 }, (_, n) => ({ id: newRequestId(), url: n ? `https://docs.example.com/${"long-path/".repeat(40)}` : "https://example.com/" }));
@@ -38,13 +40,13 @@ Object.assign(window, { browserFixture: evidence, __TAURI_INTERNALS__: { invoke:
   return local;
 } } });
 const transport = createRouterTransport(router => {
-  router.service(SystemService, { getStatus: () => ({ capabilities: [] }) });
+  router.service(SystemService, { getStatus: () => ({ capabilities: sidechatFixture ? [SystemCapability.NATIVE_SIDECHAT_V1] : [] }) });
   router.service(SessionService, { listQueue: () => ({ inputs: [] }), getSessionBudget: () => ({ view: { session, state: BudgetState.ALLOW_INCOMPLETE } }) });
   router.service(BrowserService, { getBrowserCapabilities: async () => { if (args.get("capabilities") === "loading") await new Promise<void>(() => {}); if (args.get("capabilities") === "failure") throw new ConnectError("Synthetic capability unavailable", Code.Unavailable); return { capabilities: args.get("capabilities") === "unsupported" ? [] : [BrowserCapability.PROTECTED_DEVICE_PROFILE_V1] }; }, registerBrowserProfile: request => { evidence.registrations.push({ requestId: request.session!.requestId, accountId: request.accountId }); if (args.get("registration") === "uncertain" && evidence.registrations.length === 1) throw new ConnectError("Synthetic original receipt unavailable", Code.Unavailable); return { profile }; } });
-  router.service(ResourceService, { getSnapshot: () => ({ resources: [session], cursor: "fixture" }), listResources: request => ({ resources: request.filter?.kind === EntityKind.MESSAGE ? messages : [] }), async *watchEvents(_request, context) { if (!context.signal.aborted) await new Promise<void>(resolve => context.signal.addEventListener("abort", () => resolve(), { once: true })); } });
+  router.service(ResourceService, { getResource: request => ({ resource: request.kind === EntityKind.MACHINE ? create(ResourceSchema, { id: machineId, kind: EntityKind.MACHINE, schemaVersion: 1, revision: 1n, documentJson: encode({ worker_capabilities: ["codex-read-only-sidechat-v1"] }) }) : session }), getSnapshot: () => ({ resources: [session], cursor: "fixture" }), listResources: request => ({ resources: request.filter?.kind === EntityKind.MESSAGE ? messages : [] }), async *watchEvents(_request, context) { if (!context.signal.aborted) await new Promise<void>(resolve => context.signal.addEventListener("abort", () => resolve(), { once: true })); } });
 });
 function Fixture() {
   const [draft, setDraft] = useState("Retained synthetic Browser draft"), [mounted, setMounted] = useState(true);
   return <div className="app browser-layout-fixture" data-fixture="__browserSplitFixture"><aside><h1>DeliDev</h1><button onClick={() => setMounted(value => !value)}>Fixture remount</button></aside><main><div className="session-container">{mounted ? <SessionView id={sessionId} draft={draft} setDraft={setDraft} /> : null}</div></main></div>;
 }
-createRoot(document.getElementById("root")!).render(<TransportProvider transport={transport}><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MutationIntents><BrowserHostProvider available={args.get("host") !== "unsupported"}><SessionTabsProvider><Fixture /></SessionTabsProvider></BrowserHostProvider></MutationIntents></QueryClientProvider></TransportProvider>);
+createRoot(document.getElementById("root")!).render(<TransportProvider transport={transport}><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MutationIntents><BrowserHostProvider available={args.get("host") !== "unsupported"}><SessionTabsProvider>{sidechatFixture ? <SessionForkProvider openSession={() => {}}><Fixture /></SessionForkProvider> : <Fixture />}</SessionTabsProvider></BrowserHostProvider></MutationIntents></QueryClientProvider></TransportProvider>);

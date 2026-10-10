@@ -75,7 +75,7 @@ import { SessionActions, SessionIcon, SessionIconKind, SessionNotice } from "./s
 import "./session.css";
 import { Interaction } from "./interactions";
 import { SessionTerminals } from "./session-terminals";
-import { SessionForkAction } from "./session-fork";
+import { SessionForkPresentation, SessionForkAction } from "./session-fork";
 import { SidechatFindings } from "./sidechat";
 import { useSidechatQuestionRetry, SidechatRetryAction, sidechatAnswerFilter } from "./sidechat-retry";
 import { SessionTools } from "./session-tools";
@@ -580,12 +580,12 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         <button type="button" disabled={!session || control.busy || control.uncertain} onClick={() => action(SessionAction.STOP)}>{copy("session.stop_cae7d5")}</button>
         <button type="button" disabled={!session || control.busy || control.uncertain || runnerRemediationPending || !sessionControlEligibility(session, budgetBlocked).resume} onClick={() => action(SessionAction.RESUME)}>{startupRetry ? copy("session.startupRetry") : copy("session.resume_d640c7")}</button>
         <SessionActions>
-          {session ? <SessionForkAction source={session} disabled={control.busy || control.uncertain} /> : null}
+          {session ? <SessionForkAction source={session} presentation={SessionForkPresentation.Fork} disabled={control.busy || control.uncertain} /> : null}
           <button type="button" disabled={!session || control.busy || control.uncertain} onClick={() => action(text(data.archive) === "archived" ? SessionAction.RESTORE : SessionAction.ARCHIVE)}>{text(data.archive) === "archived" ? copy("session.restore_a76e13") : copy("session.archive_66f480")}</button>
         </SessionActions>
       </div>
     </header>
-    {!embedded ? <div className="session-navigation"><SessionTabBar id={id} tabs={tabs.tabs} selected={tabs.selected} select={key=>tabs.store.select(id,key)} close={closeTab}/><SessionToolMenu active={active}>{tools.map(tool => <button role="menuitem" key={tool.panel} type="button" ref={panelButtons[tool.panel]} disabled={tool.panel===SessionPanel.Terminals&&Boolean(object(data.fork).sidechat_parent_snapshot)} onClick={()=>togglePanel(tool.panel)}><SessionIcon kind={tool.icon}/>{tool.label}</button>)}</SessionToolMenu></div> : null}
+    {!embedded ? <div className="session-navigation"><SessionTabBar id={id} tabs={tabs.tabs} selected={tabs.selected} select={key=>tabs.store.select(id,key)} close={closeTab}/><SessionToolMenu active={active}>{openDialog => <>{tools.map(tool => <button role="menuitem" key={tool.panel} type="button" ref={panelButtons[tool.panel]} disabled={tool.panel===SessionPanel.Terminals&&Boolean(object(data.fork).sidechat_parent_snapshot)} onClick={()=>togglePanel(tool.panel)}><SessionIcon kind={tool.icon}/>{tool.label}</button>)}{session && tabs.tab.kind !== SessionTabKind.Sidechat ? <SessionForkAction source={session} presentation={SessionForkPresentation.Sidechat} disabled={control.busy || control.uncertain} onOpen={openDialog}/> : null}</>}</SessionToolMenu></div> : null}
     <div className="session-content">
     <div id={`session-pane-${id}`} role={embedded ? undefined : "tabpanel"} aria-labelledby={embedded ? undefined : `session-tab-${id}-${tabs.tabs.findIndex(tab=>sessionTabKey(tab)===tabs.selected)}`} ref={upperContent} className="session-upper-content">
     <div ref={conversationRegion} className="session-conversation-region">

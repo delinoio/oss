@@ -18,3 +18,24 @@ it("opens at the first enabled entry and owns arrows, Escape and outside dismiss
   fireEvent.click(trigger); const destination = screen.getByRole("button", { name: "Destination" }); destination.focus(); fireEvent.pointerDown(destination); expect(document.activeElement).toBe(destination); expect(trigger.getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(trigger); view.rerender(<SessionToolMenu active={false}><button role="menuitem">Files</button></SessionToolMenu>); expect(screen.queryByRole("menuitem")).toBeNull();
 });
+
+
+it("hands a visible opener to dialog entries while preserving ordinary tool destination focus", () => {
+  const opened = vi.fn();
+  render(<><SessionToolMenu active>{openDialog => <><button role="menuitem" onClick={() => screen.getByRole("button", { name: "Tool destination" }).focus()}>Files</button><button role="menuitem" disabled>Unavailable</button><button role="menuitem" onClick={() => { openDialog(); opened(document.activeElement); }}>Open Sidechat</button></>}</SessionToolMenu><button>Tool destination</button></>);
+  const trigger = screen.getByRole("button", { name: "Open tool" });
+  fireEvent.click(trigger);
+  fireEvent.keyDown(screen.getByRole("menuitem", { name: "Files" }), { key: "End" });
+  const sidechat = screen.getByRole("menuitem", { name: "Open Sidechat" });
+  expect(document.activeElement).toBe(sidechat);
+  fireEvent.click(sidechat);
+  expect(opened).toHaveBeenCalledTimes(1); expect(opened).toHaveBeenCalledWith(trigger);
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(trigger);
+  fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Tool destination" }));
+  fireEvent.click(trigger);
+  fireEvent.keyDown(screen.getByRole("menuitem", { name: "Files" }), { key: "Tab" });
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(opened).toHaveBeenCalledTimes(1);
+});

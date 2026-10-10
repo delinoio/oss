@@ -9,7 +9,9 @@ import { expect, it, vi } from "vitest";
 import { EntityKind, ForkPurpose, ForkWorkspace, ResourceSchema, ResourceService, SessionService, SystemCapability, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, object } from "./documents";
 import { MutationIntents } from "./mutation";
-import { SessionForkAction, SessionForkProvider } from "./session-fork";
+import { SessionToolMenu } from "./session-tool-menu";
+import { SessionActions } from "./session-presentation";
+import { SessionForkAction, SessionForkProvider, SessionForkPresentation } from "./session-fork";
 
 function deferred<T>() {
  let resolve!: (value: T) => void;
@@ -238,9 +240,24 @@ it.each([true, false])("gates native Sidechat on the original Runner Device and 
  const fork=vi.fn(async(_request:unknown)=>({job}));
  const transport=createRouterTransport((router)=>{router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.NATIVE_SIDECHAT_V1]})});router.service(ResourceService,{getResource:(request)=>({resource:request.kind===EntityKind.MACHINE?machine:source})});router.service(SessionService,{forkSession:fork,getSessionFork:()=>({job})});});
  const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
- render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionForkProvider openSession={vi.fn()}><SessionForkAction source={source}/></SessionForkProvider></MutationIntents></QueryClientProvider></TransportProvider>);
- if(!supported){await waitFor(()=>expect(client.isFetching()).toBe(0));expect(screen.queryByRole("button",{name:"Open Sidechat"})).toBeNull();expect(fork).not.toHaveBeenCalled();return;}
- fireEvent.click(await screen.findByRole("button",{name:"Open Sidechat"}));
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionForkProvider openSession={vi.fn()}><SessionActions><SessionForkAction source={source} presentation={SessionForkPresentation.Fork}/><button>Archive</button></SessionActions><SessionToolMenu active>{openDialog => <>{["Diff", "Files", "Terminals", "Browser", "Diagnostics"].map(name => <button role="menuitem" key={name}>{name}</button>)}<SessionForkAction source={source} presentation={SessionForkPresentation.Sidechat} onOpen={openDialog}/></>}</SessionToolMenu></SessionForkProvider></MutationIntents></QueryClientProvider></TransportProvider>);
+ const trigger=screen.getByRole("button",{name:"Open tool"});
+ fireEvent.click(screen.getByRole("button",{name:"Session actions"}));
+ expect(screen.queryByRole("menuitem",{name:"Open Sidechat"})).toBeNull();
+ fireEvent.click(screen.getByRole("button",{name:"Session actions"}));
+ fireEvent.click(trigger);
+ if(!supported){await waitFor(()=>expect(client.isFetching()).toBe(0));expect(screen.queryByRole("menuitem",{name:"Open Sidechat"})).toBeNull();expect(fork).not.toHaveBeenCalled();return;}
+ const entry=await screen.findByRole("menuitem",{name:"Open Sidechat"});
+ expect(screen.getAllByRole("menuitem").map(item=>item.textContent)).toEqual(["Diff","Files","Terminals","Browser","Diagnostics","Open Sidechat"]);
+ expect(fork).not.toHaveBeenCalled();
+ fireEvent.click(entry);
+ expect(screen.getAllByRole("dialog")).toHaveLength(1);
+ expect(trigger.getAttribute("aria-expanded")).toBe("false");
+ expect(fork).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole("button",{name:"Close Open Sidechat"}));
+ expect(document.activeElement).toBe(trigger);
+ fireEvent.click(trigger);
+ fireEvent.click(screen.getByRole("menuitem",{name:"Open Sidechat"}));
  expect(screen.queryByRole("combobox",{name:"Workspace"})).toBeNull();
  expect(screen.getByText(/permanently deletes dependent Sidechats/)).not.toBeNull();
  fireEvent.click(screen.getByRole("button",{name:"Create Sidechat"}));
@@ -323,12 +340,12 @@ it.each(["eligible", "missing-server", "missing-worker", "missing-auth", "locked
   router.service(SessionService, { forkSession: fork, getSessionFork: () => ({ job }) });
  });
  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
- render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionForkProvider openSession={vi.fn()}><SessionForkAction source={source} disabled={profile === "locked"} /></SessionForkProvider></MutationIntents></QueryClientProvider></TransportProvider>);
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionForkProvider openSession={vi.fn()}><SessionForkAction source={source} presentation={SessionForkPresentation.Sidechat} disabled={profile === "locked"} /></SessionForkProvider></MutationIntents></QueryClientProvider></TransportProvider>);
  if (profile.startsWith("missing")) {
   await waitFor(() => expect(client.isFetching()).toBe(0));
-  expect(screen.queryByRole("button", { name: "Open Sidechat" })).toBeNull();
+  expect(screen.queryByRole("menuitem", { name: "Open Sidechat" })).toBeNull();
  } else {
-  const action = await screen.findByRole("button", { name: "Open Sidechat" });
+  const action = await screen.findByRole("menuitem", { name: "Open Sidechat" });
   if (profile === "locked") expect((action as HTMLButtonElement).disabled).toBe(true);
   else {
    fireEvent.click(action);
@@ -434,4 +451,27 @@ it("preserves pending then uncertain original ownership through hiding and attem
  fireEvent.click(screen.getByRole("button", { name: "Open forked session" }));
  expect(fixture.open).toHaveBeenCalledWith([...fixture.children.values()][0]!.id);
  expect(fixture.fork).toHaveBeenCalledTimes(2);
+});
+
+
+it.each(["capability", "runner"])("keeps relocated Sidechat %s retry read-only", async failure => {
+ const machineId = newRequestId();
+ const source=create(ResourceSchema,{kind:EntityKind.SESSION,id:newRequestId(),schemaVersion:1,revision:8n,documentJson:encode({machine_id:machineId,workspace:"general-chat",archive:"active",recovery:"none",outcome:"succeeded",initial_execution:{configuration:{harness:"codex"}},execution:{native_turn_id:newRequestId(),cleanup_verified:true}})});
+ const machine=create(ResourceSchema,{kind:EntityKind.MACHINE,id:machineId,schemaVersion:1,revision:1n,documentJson:encode({worker_capabilities:["codex-read-only-sidechat-v1"]})});
+ const status=vi.fn(()=>({capabilities:[SystemCapability.NATIVE_SIDECHAT_V1]}));
+ const runner=vi.fn(()=>({resource:machine}));
+ if(failure==="capability") status.mockImplementationOnce(()=>{throw new ConnectError("Fixture capability unavailable",Code.Unavailable);});
+ else runner.mockImplementationOnce(()=>{throw new ConnectError("Fixture Runner unavailable",Code.Unavailable);});
+ const fork=vi.fn();
+ const transport=createRouterTransport(router=>{router.service(SystemService,{getStatus:status});router.service(ResourceService,{getResource:runner});router.service(SessionService,{forkSession:fork});});
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionForkProvider openSession={vi.fn()}><SessionToolMenu active>{openDialog=><SessionForkAction source={source} presentation={SessionForkPresentation.Sidechat} onOpen={openDialog}/>}</SessionToolMenu></SessionForkProvider></MutationIntents></QueryClientProvider></TransportProvider>);
+ const trigger=screen.getByRole("button",{name:"Open tool"});fireEvent.click(trigger);
+ const retry=await screen.findByRole("menuitem",{name:failure==="capability"?"Retry fork capability read":"Recheck original fork Runner"});
+ fireEvent.click(retry);
+ expect(screen.queryByRole("dialog")).toBeNull();expect(fork).not.toHaveBeenCalled();
+ fireEvent.click(trigger);
+ expect(await screen.findByRole("menuitem",{name:"Open Sidechat"})).toBeTruthy();
+ expect(failure==="capability"?status:runner).toHaveBeenCalledTimes(2);
+ expect(fork).not.toHaveBeenCalled();
 });

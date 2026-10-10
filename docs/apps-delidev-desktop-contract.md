@@ -1923,7 +1923,7 @@ Session details expose revision-bound rename, retry of confirmed failed/canceled
 
 Existing session detail uses a compact conversation-first workspace. Keep the
 shared sidebar and native title bar. The header retains the original name and live connection observation. Independent workspace, outcome, dispatch, Archive and automatic-title evidence belongs in Status and recovery (issues #1958/#1952). Stop and Resume retain their existing revision, uncertainty, budget and
-startup-rejection guards. Fork/Sidechat and Archive/Restore use a keyboard-operable
+startup-rejection guards. Fork and Archive/Restore use a keyboard-operable
 Session actions popup; opening or closing it never creates or replaces authority.
 
 The header displays a decorative 32px licensed local harness mark and muted
@@ -1943,7 +1943,7 @@ session width or less use 12px padding and wrap controls below identity; retain
 short-height bounded scrolling, accessible composer and all original action
 guards. Reflow must retain workspace controller and draft identities.
 
-Issues #2140/#2121 use two primary workspace rows: an approximately 72px identity/action header and a 52px navigation row. A fixed 40px Open tool menu sits beside the horizontally scrolling tablist. It exposes exactly Diff, Files, Terminals, Browser and Diagnostics in that order through their original entry callbacks and eligibility. Opening focuses the first enabled item; arrows, Home/End and native Enter/Space select entries. Escape closes only the menu and restores its trigger; outside dismissal preserves destination focus. The 220px popup stays viewport-bounded and scrolls vertically. Tool selection closes it and focuses the selected singleton descriptor without new resources or observation reads.
+Issues #2140/#2121 use two primary workspace rows: an approximately 72px identity/action header and a 52px navigation row. A fixed 40px Open tool menu sits beside the horizontally scrolling tablist. It exposes the five tools Diff, Files, Terminals, Browser and Diagnostics in that order through their original entry callbacks and eligibility, followed by the eligible Open Sidechat action as a flat menu item. Use its existing localized label and a decorative enum-based outline chat glyph. Sidechat selection closes the popup and focuses its visible Open tool trigger before opening the original form once, so Escape/Close returns to that trigger. Ordinary tool selection preserves its original tab-focus behavior. Keep independent Fork and Sidechat eligibility in the shared typed action presentation; preserve original capability/Runner read failures and explicit read-only retries, busy/uncertain locks and inactive readers. Opening/dismissing a menu never creates a job, and only explicit Create submits the original revision/native-turn request. Selecting a Sidechat child or an embedded child offers no nested creation. Opening focuses the first enabled item; arrows, Home/End and native Enter/Space select entries. Escape closes only the menu and restores its trigger; outside dismissal preserves destination focus. The 220px popup stays viewport-bounded and scrolls vertically. Tool selection closes it and focuses the selected singleton descriptor without new resources or observation reads.
 
 Tabs form a continuous gapless neutral editor strip attached to the active pane. Each tab is 40px high and at most 320px wide. Selected tabs use the surface background, 4px top corners, square bottom corners and a 2px accent underline; inactive tabs have transparent backgrounds and subtle separators. Every closeable tab encloses an always-visible 40px close target beside its truncated label, using sibling controls with independent focus treatment. This supersedes #2121's earlier rounded-shell appearance while preserving its enclosed close-control principle. Exactly one content region is active. Conversation is
 pinned first, initially selected and cannot be closed or moved. Files and Diff
@@ -3154,7 +3154,7 @@ revision, commands, results and unresolved limits in PRs and CI artifacts.
 
 Managed ChatGPT/Codex Sidechat (issue #1829) composes System 47, Worker 26,
 existing Sidechat 27/16 and managed authentication Worker 3. The session detail
-action menu exposes Open Sidechat only for the original eligible completed
+Open tool menu exposes Open Sidechat after Diagnostics only for the original eligible completed
 source and negotiated Runner. Independent subscription Fork remains unsupported.
 See [managed Sidechat](cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat--issue-1829)
 for protected lease/Finish publication, read-only continuation and dependent

@@ -3,7 +3,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } f
 import { copy, useLocale } from "./localization";
 
 /** Tool entry gestures share the original callbacks; this popup owns only focus. */
-export function SessionToolMenu({ children, active }: { children: ReactNode; active: boolean }) {
+export function SessionToolMenu({ children, active }: { children: ReactNode | ((openDialog: () => void) => ReactNode); active: boolean }) {
   useLocale();
   const id = useId(), root = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null), menu = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -29,6 +29,7 @@ export function SessionToolMenu({ children, active }: { children: ReactNode; act
     document.addEventListener("pointerdown", outside);
     return () => document.removeEventListener("pointerdown", outside);
   }, [open]);
+  const openDialog = () => { setOpen(false); trigger.current?.focus(); };
   return <div className="session-tool-popup" ref={root} onKeyDown={event => {
     if (!open || event.nativeEvent.isComposing) return;
     if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setOpen(false); trigger.current?.focus(); return; }
@@ -42,6 +43,6 @@ export function SessionToolMenu({ children, active }: { children: ReactNode; act
     <div ref={menu} id={id} className="session-tool-menu" role="menu" aria-label={copy("session.openTool")} hidden={!open} onClick={event => {
       if (!(event.target instanceof Element) || !event.target.closest('button:not(:disabled)')) return;
       setOpen(false);
-    }}>{children}</div>
+    }}>{typeof children === "function" ? children(openDialog) : children}</div>
   </div>;
 }
