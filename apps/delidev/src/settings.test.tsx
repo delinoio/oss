@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { SystemService, SystemCapability, configurationSchemaVersion, AccountService, ApiAuthentication, ApiProtocol, ConfigurationService, EntityKind, ProviderApiFormatSchema, ProviderInventoryCapability, ProviderInventoryEntrySchema, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, WorkerService, newRequestId, type ListResourcesRequest, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
-import { Settings, ConfigurationEditor } from "./settings";
+import { Settings, SettingsEntryDestination, ConfigurationEditor } from "./settings";
 import { AgentWorkerWizard } from "./agent-worker-wizard";
 import { copy, i18n, SupportedLanguage } from "./localization";
 import { RepositoryRow } from "./repository-list";
@@ -17,7 +17,7 @@ import { chooseScrollOption, scrollChoiceValue } from "./test-scroll-picker";
 import { NotificationProvider } from "./toast-notifications";
 
 function resource(kind: EntityKind, value: Document, revision = 1n) { if (kind === EntityKind.AGENT && !Object.hasOwn(value, "model_id") && !Object.hasOwn(value, "routes")) value = { ...value, routes: [{ model: { subscription_service: "chatgpt", native_id: "fixture-native" }, accounts: [{ id: newRequestId(), weight: 1 }] }] }; return create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: configurationSchemaVersion(kind, value), revision, documentJson: encode(value) }); }
-function fixture(resources: Resource[], options: { readResource?: (id: string) => Promise<{ resource?: Resource }> | { resource?: Resource }; providerEntries?: ProviderInventoryEntry[]; presets?: unknown[]; providerInventoryError?: ConnectError; systemStatusError?: ConnectError; systemCapabilities?: SystemCapability[]; readResources?: (kind: EntityKind, pageToken: string) => { resources: Resource[]; nextPageToken?: string } | Promise<{ resources: Resource[]; nextPageToken?: string }>;  readProviderInventory?: (pageToken: string, request: { query: string; enabledOnly: boolean; pageSize: number }) => { entries: ProviderInventoryEntry[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string } | Promise<{ entries: ProviderInventoryEntry[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string }>; doctor?: () => { reportJson?: Uint8Array }; readModelSearch?: (pageToken: string) => { models: Resource[]; providers: Resource[]; nextPageToken?: string } } = {}) {
+function fixture(resources: Resource[], options: { readResource?: (id: string) => Promise<{ resource?: Resource }> | { resource?: Resource }; exportConfiguration?: () => { documentJson: Uint8Array } | Promise<{ documentJson: Uint8Array }>; providerEntries?: ProviderInventoryEntry[]; presets?: unknown[]; providerInventoryError?: ConnectError; systemStatusError?: ConnectError; systemCapabilities?: SystemCapability[]; readResources?: (kind: EntityKind, pageToken: string) => { resources: Resource[]; nextPageToken?: string } | Promise<{ resources: Resource[]; nextPageToken?: string }>;  readProviderInventory?: (pageToken: string, request: { query: string; enabledOnly: boolean; pageSize: number }) => { entries: ProviderInventoryEntry[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string } | Promise<{ entries: ProviderInventoryEntry[]; capabilities: ProviderInventoryCapability[]; nextPageToken?: string }>; doctor?: () => { reportJson?: Uint8Array }; readModelSearch?: (pageToken: string) => { models: Resource[]; providers: Resource[]; nextPageToken?: string } } = {}) {
   const save = vi.fn(async (_request: unknown): Promise<{ resource?: Resource; job?: Resource }> => ({ resource: resources[0] }));
   const remove = vi.fn(async (_request: unknown) => ({}));
   const preview = vi.fn(async (_request: unknown) => ({ routeJson: encode({ policy: "remaining-quota", selected: "", candidates: [] }) }));
@@ -27,7 +27,7 @@ function fixture(resources: Resource[], options: { readResource?: (id: string) =
   const list = vi.fn((request: ListResourcesRequest) => options.readResources?.(request.filter?.kind ?? EntityKind.UNSPECIFIED, request.filter?.pageToken ?? "") ?? ({ resources: resources.filter((row) => row.kind === request.filter?.kind) }));
   const transport = createRouterTransport((router) => {
     router.service(SystemService, { getDoctor: options.doctor ?? vi.fn(() => { throw new Error("Doctor is not requested by Settings"); }), getStatus: () => { if (options.systemStatusError) throw options.systemStatusError; return ({ protocolVersion: 2, capabilities: options.systemCapabilities ?? [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.REMOTE_REPOSITORIES_V1, SystemCapability.INLINE_WORKER_MODELS_V1] }); } });
-    router.service(ConfigurationService, { saveConfiguration: save, deleteConfiguration: remove, previewRouting: preview });
+    router.service(ConfigurationService, { saveConfiguration: save, deleteConfiguration: remove, previewRouting: preview, exportConfiguration: options.exportConfiguration ?? (() => ({ documentJson: encode({ version: 4, entries: [], machines: [] }) })) });
     router.service(WorkerService, { inspectRepository: inspect });
     router.service(ResourceService, { listResources: list, getResource: (request) => options.readResource?.(request.id) ?? ({ resource: resources.find((row) => row.id === request.id) }) });
     router.service(AccountService, { getAccountStatus: (request) => ({ account: resources.find((row) => row.id === request.id) }), connectAccount: connect, disconnectAccount: disconnect });
@@ -45,6 +45,25 @@ function fixture(resources: Resource[], options: { readResource?: (id: string) =
   return { resources, save, remove, preview, inspect, connect, disconnect, client, transport, list, view };
 }
 function input(value: unknown) { return value as { mutation: { requestId: string; expectedRevision: bigint }; documentJson: Uint8Array }; }
+
+it("defers an incoming Repositories entry while a Settings export is protected", async () => {
+  let reject!: (error: unknown) => void;
+  const exportConfiguration = vi.fn(() => new Promise<{ documentJson: Uint8Array }>((_resolve, rejected) => { reject = rejected; }));
+  const value = fixture([], { exportConfiguration });
+  const consumed = vi.fn();
+  const tree = (entryDestination?: SettingsEntryDestination) => value.view(<Settings entryDestination={entryDestination} destinationConsumed={consumed} />);
+  const mounted = render(tree());
+  fireEvent.click(screen.getByRole("button", { name: "Import / Export" }));
+  fireEvent.click(screen.getByRole("button", { name: "Export configuration" }));
+  await waitFor(() => expect(exportConfiguration).toHaveBeenCalledOnce());
+  mounted.rerender(tree(SettingsEntryDestination.Repositories));
+  expect(screen.getByRole("button", { name: "Import / Export" }).getAttribute("aria-current")).toBe("page");
+  expect(consumed).not.toHaveBeenCalled();
+
+  await act(async () => reject(new ConnectError("Export failed", Code.InvalidArgument)));
+  await screen.findByRole("heading", { level: 1, name: "Repositories" });
+  expect(consumed).toHaveBeenCalledOnce();
+});
 
 it("shows a configuration toast only for an immediate saved resource", async () => {
   const repository = resource(EntityKind.REPOSITORY, { name: "Repository" });
