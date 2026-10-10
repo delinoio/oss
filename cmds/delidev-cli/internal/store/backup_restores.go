@@ -276,6 +276,36 @@ func (s *Store) GetBackupRestore(ctx context.Context, id domain.ID) (BackupResto
 	return v, nil
 }
 
+// AuthorizeBackupRestore bounds pre-admission reads even while an existing
+// restore owns the exclusive store gate for a long candidate preparation.
+// Ordinary Store.Read retains its independent transaction/locking contract.
+func (s *Store) AuthorizeBackupRestore(ctx context.Context) error {
+	actor, ok := domain.PrincipalFrom(ctx)
+	if !ok || (actor.Type != domain.OwnerDevice && actor.Type != domain.ClientDevice) {
+		return domain.Fail(domain.PermissionDenied, "Only an owner or paired client can manage backups.", "Use an authorized product client.")
+	}
+	for {
+		if err := ctx.Err(); err != nil {
+			return domain.SafeError(err)
+		}
+		if s.gate.TryRLock() {
+			break
+		}
+		timer := time.NewTimer(10 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return domain.SafeError(ctx.Err())
+		case <-timer.C:
+		}
+	}
+	defer s.gate.RUnlock()
+	if s.deletionFault {
+		return domain.SessionDeletionPending()
+	}
+	return s.readLocked(ctx, func(tx *Tx) error { return tx.Authorize() })
+}
+
 func lockRestoreContext(ctx context.Context, gate *sync.RWMutex) error {
 	for {
 		if err := ctx.Err(); err != nil {

@@ -252,6 +252,8 @@ func TestRestoreRPCRequiresOriginalInspectionAndCurrentAuthority(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The fixture now represents an explicitly restarted epoch.
+	s.stopping.Store(false)
 	result, err = s.RestoreBackup(ctx, connect.NewRequest(request))
 	if err != nil || !result.Msg.Replayed || result.Msg.Receipt.State != pb.BackupRestoreState_BACKUP_RESTORE_STATE_RESTORED {
 		t.Fatal(result, err)

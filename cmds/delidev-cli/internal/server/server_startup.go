@@ -160,6 +160,7 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	child, stop := context.WithCancel(ctx)
 	defer stop()
 	service := &Service{releaseVerifier: config.releaseVerifier, releaseFactory: config.releaseFactory, userServiceBackend: config.userServiceBackend, userServiceOptions: serviceOptions, Store: state, Identity: identity, Endpoint: Endpoint{URL: protocol + "://" + listener.Addr().String(), ServerID: identity.ServerID, Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, StartedAt: time.Now().UTC()}, logger: config.Logger, stop: stop, accountSecrets: config.accountSecrets}
+	service.initializeBackupRestores(child)
 	if err := service.retainLostSubscriptionLeases("", "", false); err != nil {
 		return err
 	}
@@ -317,6 +318,9 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	imageCleanupDone := make(chan struct{})
 	go func() { defer close(imageCleanupDone); service.runImageDraftCleanups(imageCleanupCtx) }()
 	defer func() { stopImageCleanup(); <-imageCleanupDone }()
+	// Every exit, including listener failure, joins admitted restore work before
+	// account secrets, SQLite or the process lock can be retired.
+	defer service.closeBackupRestores()
 	config.Logger.Info("server_ready", "server_id", identity.ServerID, "listener", service.Endpoint.URL, "version", rpc.Version)
 	if ready != nil {
 		ready(service.Endpoint)
@@ -341,6 +345,7 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 		}
 		<-done
 	}
+	service.closeBackupRestores()
 	stopSkills()
 	<-skillsDone
 	stopCatalog()

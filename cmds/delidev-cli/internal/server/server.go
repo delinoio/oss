@@ -136,6 +136,11 @@ type Service struct {
 	logger                        *slog.Logger
 	stop                          context.CancelFunc
 	stopping                      atomic.Bool
+	backupRestoresMu              sync.Mutex
+	backupRestoresContext         context.Context
+	backupRestoresCancel          context.CancelFunc
+	backupRestoresClosing         bool
+	backupRestoresJobs            sync.WaitGroup
 	connectionsMu                 sync.Mutex
 	connections                   map[domain.ID]map[domain.ID]context.CancelFunc
 	pairAttempts                  map[string]attemptWindow
