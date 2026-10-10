@@ -1,3 +1,4 @@
+import { productName } from "./test-product-identity";
 import { MutationIntents } from "./mutation";
 import { useState } from "react";
 import { create } from "@bufbuild/protobuf";
@@ -75,8 +76,8 @@ it("keeps equal-name projects separate, includes empty projects, and only reads 
     sessions: (request) => request.projectId === first.id ? { sessions: [firstSession] } : request.projectId === second.id ? { sessions: [secondSession] } : { sessions: [] },
   });
 
-  const firstGroup = await screen.findByRole("button", { name: `Same name. Project ID: ${first.id}` });
-  const secondGroup = screen.getByRole("button", { name: `Same name. Project ID: ${second.id}` });
+  const firstGroup = await screen.findByRole("button", { name: productName(`Same name. Project ID: ${first.id}`) });
+  const secondGroup = screen.getByRole("button", { name: productName(`Same name. Project ID: ${second.id}`) });
   expect(firstGroup).not.toBe(secondGroup);
   expect(firstGroup.getAttribute("aria-expanded")).toBe("false");
   expect(value.sessionRequests.filter((request) => request.projectId === first.id)).toHaveLength(0);
@@ -85,7 +86,7 @@ it("keeps equal-name projects separate, includes empty projects, and only reads 
   expect(await screen.findByRole("button", { name: /Worktree First session/ })).toBeTruthy();
   fireEvent.click(secondGroup);
   expect(await screen.findByRole("button", { name: /Local computer Second session/ })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: `Empty project. Project ID: ${empty.id}` }));
+  fireEvent.click(screen.getByRole("button", { name: productName(`Empty project. Project ID: ${empty.id}`) }));
   await waitFor(() => expect(screen.getAllByText("No conversations loaded.")).toHaveLength(1));
 
   expect(value.sessionRequests.filter((request) => request.projectId === first.id)).toHaveLength(1);
@@ -101,8 +102,8 @@ it("opens project creation shortcuts without toggling groups or reading collapse
   const value = mountSidebar({ projects: () => ({ resources: [first, second, empty] }), sessions: () => ({ sessions: [] }) });
   for (const project of [first, second, empty]) {
     const name = JSON.parse(new TextDecoder().decode(project.documentJson)).name as string;
-    const toggle = await screen.findByRole("button", { name: `${name}. Project ID: ${project.id}` });
-    const shortcut = screen.getByRole("button", { name: `New session in ${name}. Project ID: ${project.id}` });
+    const toggle = await screen.findByRole("button", { name: productName(`${name}. Project ID: ${project.id}`) });
+    const shortcut = screen.getByRole("button", { name: productName(`New session in ${name}. Project ID: ${project.id}`) });
     expect(shortcut.parentElement).toBe(toggle.parentElement);
     expect(toggle.contains(shortcut)).toBe(false);
     expect(shortcut.getAttribute("title")).toBe(`New session in ${name}`);
@@ -116,13 +117,13 @@ it("opens project creation shortcuts without toggling groups or reading collapse
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
   }
   value.setProps({ projectSelectionBlocked: true });
-  const disabled = screen.getByRole("button", { name: `New session in Same name. Project ID: ${first.id}` });
+  const disabled = screen.getByRole("button", { name: productName(`New session in Same name. Project ID: ${first.id}`) });
   expect(disabled).toHaveProperty("disabled", true);
   const before = value.newSession.mock.calls.length;
   fireEvent.click(disabled);
   expect(value.newSession).toHaveBeenCalledTimes(before);
   await act(() => i18n.changeLanguage("ko"));
-  expect(screen.getByRole("button", { name: `Same name 프로젝트의 새 세션. 프로젝트 ID: ${first.id}` })).toBe(disabled);
+  expect(screen.getByRole("button", { name: productName(`Same name 프로젝트의 새 세션. 프로젝트 ID: ${first.id}`) })).toBe(disabled);
   expect(disabled.getAttribute("title")).toBe("Same name 프로젝트의 새 세션");
 });
 
@@ -141,7 +142,7 @@ it("includes the safe title reason in sidebar text and its accessible descriptio
     workspace: "worktree", outcome: "succeeded", archive: "active", name_mode: "automatic", title_state: "skipped", title_reason: "budget-reached",
   });
   mountSidebar({ projects: () => ({ resources: [project] }), sessions: () => ({ sessions: [session] }) });
-  fireEvent.click(await screen.findByRole("button", { name: `Title project. Project ID: ${project.id}` }));
+  fireEvent.click(await screen.findByRole("button", { name: productName(`Title project. Project ID: ${project.id}`) }));
   const row = await screen.findByRole("button", { name: /Title skipped\. The session budget did not allow another request\./ });
   expect(within(row).getByText("Skipped · Budget reached")).toBeTruthy();
 });
@@ -157,12 +158,12 @@ it("keeps sparse global paging reachable and groups retained sessions by their o
     sessions: (request) => request.projectId ? { sessions: [] } : request.pageToken === "" ? { sessions: [owned], nextPageToken: "global-next" } : { sessions: [general, retained] },
   });
 
-  await screen.findByRole("button", { name: `Listed project. Project ID: ${listedProject.id}` });
+  await screen.findByRole("button", { name: productName(`Listed project. Project ID: ${listedProject.id}`) });
   await waitFor(() => expect(value.sessionRequests).toHaveLength(1));
   reach("sessions");
 
   expect(await screen.findByRole("button", { name: /General Chat General session/ })).toBeTruthy();
-  const fallback = await screen.findByRole("button", { name: `Project · ${missingParent}. Project ID: ${missingParent}` });
+  const fallback = await screen.findByRole("button", { name: productName(`Project · ${missingParent}. Project ID: ${missingParent}`) });
   expect(fallback.getAttribute("aria-expanded")).toBe("true");
   expect(screen.getByText("Project details are not in the loaded project catalog.")).toBeTruthy();
   const retainedRow = screen.getByRole("button", { name: /Local computer Retained missing-parent session/ });
@@ -186,15 +187,15 @@ it("keeps catalog and session cursors independent and resets every session scope
     },
   });
 
-  const oneGroup = await screen.findByRole("button", { name: `Project one. Project ID: ${first.id}` });
+  const oneGroup = await screen.findByRole("button", { name: productName(`Project one. Project ID: ${first.id}`) });
   fireEvent.click(oneGroup);
   reach("Project one sessions");
   await waitFor(() => expect(value.sessionRequests.some((request) => request.projectId === first.id && request.pageToken === "one-next")).toBe(true));
   reach("sessions");
   await waitFor(() => expect(value.sessionRequests.some((request) => request.projectId === "" && request.pageToken === "global-next")).toBe(true));
   reach("projects");
-  expect(await screen.findByRole("button", { name: `Project two. Project ID: ${second.id}` })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: `Project two. Project ID: ${second.id}` }));
+  expect(await screen.findByRole("button", { name: productName(`Project two. Project ID: ${second.id}`) })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: productName(`Project two. Project ID: ${second.id}`) }));
   await screen.findByRole("button", { name: /Local computer Two/ });
 
   const catalogReadsBeforeArchive = value.projectRequests.length;
@@ -203,7 +204,7 @@ it("keeps catalog and session cursors independent and resets every session scope
   await waitFor(() => expect(value.sessionRequests.some((request) => request.includeArchived && request.projectId === "" && request.pageToken === "")).toBe(true));
   expect(value.sessionRequests.some((request) => request.includeArchived && request.projectId === second.id && request.pageToken === "")).toBe(true);
   expect(value.projectRequests).toHaveLength(catalogReadsBeforeArchive);
-  expect(screen.getByRole("button", { name: `Project one. Project ID: ${first.id}` })).toBeTruthy();
+  expect(screen.getByRole("button", { name: productName(`Project one. Project ID: ${first.id}`) })).toBeTruthy();
   await waitFor(() => expect(value.sessionRequests.some((request) => request.includeArchived && request.projectId === first.id && request.pageToken === "")).toBe(true));
 });
 
@@ -465,15 +466,15 @@ it("keeps cached rows visible and labels them as previous data after a failed re
     projects: () => { projectReads++; if (projectReads > 1) throw new ConnectError("Offline", Code.Unavailable); return { resources: [project] }; },
     sessions: () => ({ sessions: [] }),
   });
-  const row = await screen.findByRole("button", { name: `Cached project. Project ID: ${project.id}` });
+  const row = await screen.findByRole("button", { name: productName(`Cached project. Project ID: ${project.id}`) });
   await act(async () => { await value.client.invalidateQueries({ refetchType: "active" }); });
   expect(await screen.findByText("Could not refresh projects. Previous data is shown.")).toBeTruthy();
-  expect(screen.getByRole("button", { name: `Cached project. Project ID: ${project.id}` })).toBe(row);
+  expect(screen.getByRole("button", { name: productName(`Cached project. Project ID: ${project.id}`) })).toBe(row);
   expect(screen.queryByRole("button", { name: "Refresh projects and sessions" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Retry project catalog" }));
   await waitFor(() => expect(value.projectRequests).toHaveLength(3));
   expect(value.projectRequests).toEqual(["", "", ""]);
-  expect(screen.getByRole("button", { name: `Cached project. Project ID: ${project.id}` })).toBe(row);
+  expect(screen.getByRole("button", { name: productName(`Cached project. Project ID: ${project.id}`) })).toBe(row);
 });
 
 it("retries only the failed catalog and global-session pages", async () => {
@@ -495,13 +496,13 @@ it("retries only the failed catalog and global-session pages", async () => {
     },
   });
 
-  await screen.findByRole("button", { name: `First project. Project ID: ${first.id}` });
+  await screen.findByRole("button", { name: productName(`First project. Project ID: ${first.id}`) });
   reach("projects");
   expect(await screen.findByRole("button", { name: "Retry project catalog" })).toBeTruthy();
   reach("sessions");
   expect(await screen.findByRole("button", { name: "Retry global sessions" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Retry project catalog" }));
-  expect(await screen.findByRole("button", { name: `Second project. Project ID: ${second.id}` })).toBeTruthy();
+  expect(await screen.findByRole("button", { name: productName(`Second project. Project ID: ${second.id}`) })).toBeTruthy();
   expect(value.projectRequests).toEqual(["", "project-next", "project-next"]);
   expect(value.sessionRequests.map(({ projectId, pageToken }) => [projectId, pageToken])).toEqual([["", ""], ["", "global-next"]]);
   expect(screen.getByRole("button", { name: "Retry global sessions" })).toBeTruthy();
@@ -524,7 +525,7 @@ it("retries an expanded project's exact session page without refetching other sc
       return { sessions: [row] };
     },
   });
-  fireEvent.click(await screen.findByRole("button", { name: `Named project. Project ID: ${project.id}` }));
+  fireEvent.click(await screen.findByRole("button", { name: productName(`Named project. Project ID: ${project.id}`) }));
   reach("Named project sessions");
   expect(await screen.findByRole("button", { name: "Retry Named project sessions" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Retry Named project sessions" }));
@@ -607,7 +608,7 @@ it("discards delayed named continuations on collapse and preserves accepted rows
   const late = resource(EntityKind.SESSION, "Late", project.id);
   let release!: (result: { sessions: Resource[]; nextPageToken: string }) => void;
   const value = mountSidebar({ projects: () => ({ resources: [project] }), sessions: ({ projectId, pageToken }) => !projectId ? { sessions: [] } : !pageToken ? { sessions: [first], nextPageToken: "next" } : new Promise((resolve) => { release = resolve; }) });
-  const group = await screen.findByRole("button", { name: `Delayed. Project ID: ${project.id}` });
+  const group = await screen.findByRole("button", { name: productName(`Delayed. Project ID: ${project.id}`) });
   fireEvent.click(group);
   await screen.findByRole("button", { name: /Accepted/ });
   reach("Delayed sessions");
@@ -642,7 +643,7 @@ it("transfers expanded fallback rows until the authoritative named read accepts 
   const originalRow = screen.getByRole("button", { name: /Retained fallback/ });
   originalRow.focus();
   reach("projects");
-  const named = await screen.findByRole("button", { name: `Resolved parent. Project ID: ${project.id}` });
+  const named = await screen.findByRole("button", { name: productName(`Resolved parent. Project ID: ${project.id}`) });
   expect(named.getAttribute("aria-expanded")).toBe("true");
   const row = screen.getByRole("button", { name: /Retained fallback/ });
   expect(row).toBe(originalRow);
@@ -740,7 +741,7 @@ it("retains sidebar page scopes, group expansion and per-surface scroll through 
     projects: (page) => ({ resources: [project], nextPageToken: page ? undefined : "project-next" }),
     sessions: (request) => ({ sessions: [], nextPageToken: request.pageToken ? undefined : request.projectId ? "group-next" : "global-next" }),
   });
-  fireEvent.click(await screen.findByRole("button", { name: `Retained project. Project ID: ${project.id}` }));
+  fireEvent.click(await screen.findByRole("button", { name: productName(`Retained project. Project ID: ${project.id}`) }));
   await waitFor(() => expect(screen.queryByText("Loading Retained project sessions…")).toBeNull());
   reach("Retained project sessions");
   await waitFor(() => expect(value.sessionRequests.some((request) => request.projectId === project.id && request.pageToken === "group-next")).toBe(true));
@@ -757,7 +758,7 @@ it("retains sidebar page scopes, group expansion and per-surface scroll through 
   fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
   expectHeaderActions(true);
   expect(list.scrollTop).toBe(180);
-  expect(screen.getByRole("button", { name: `Retained project. Project ID: ${project.id}` }).getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByRole("button", { name: productName(`Retained project. Project ID: ${project.id}`) }).getAttribute("aria-expanded")).toBe("true");
   expect(screen.queryByRole("button", { name: /First project page|First session page|First page of Retained project sessions|Next page/ })).toBeNull();
   await waitFor(() => {
     expect(value.projectRequests).toContain("project-next");

@@ -33,7 +33,7 @@ it.each(["service-managed", "permission-denied", "credential-unavailable", "unco
   const opener = await screen.findByRole("button", { name: "View problem details" });
   opener.focus(); fireEvent.click(opener);
   const dialog = screen.getByRole("dialog", { name: "Local Worker problem" });
-  expect(within(dialog).getByText(`Execution machine: ${value.machine_id}`)).toBeTruthy();
+  expect(within(dialog).getByText(/Execution machine: Runner Device \d+/)).toBeTruthy();
   expect(dialog.textContent).not.toContain(failure);
   expect(screen.queryByRole("button", { name: "Start local Worker" })).toBeNull();
   expect(control).toHaveBeenCalledOnce();
@@ -42,7 +42,7 @@ it.each(["service-managed", "permission-denied", "credential-unavailable", "unco
   fireEvent.click(opener);
   value = { ...value, machine_id: newRequestId() };
   fireEvent.click(screen.getByRole("button", { name: "Refresh local Worker" }));
-  await waitFor(() => expect(within(screen.getByRole("dialog")).getByText(`Execution machine: ${value.machine_id}`)).toBeTruthy());
+  await waitFor(() => expect(within(screen.getByRole("dialog")).getByText(/Execution machine: Runner Device \d+/)).toBeTruthy());
   expect(control).toHaveBeenCalledTimes(2);
   fireEvent(screen.getByRole("dialog"), new Event("cancel", {cancelable:true}));
   expect(document.activeElement).toBe(opener); expect(control).toHaveBeenCalledTimes(2);
@@ -87,7 +87,7 @@ it.each(Object.values(LocalWorkerPresentation))("retains an uncertain original s
   fireEvent.click(await screen.findByRole("button", { name: "Stop local Worker" }));
   fireEvent.click(screen.getByRole("button", { name: "Confirm Worker stop" }));
   await screen.findByRole("button", { name: "Retry original Worker stop" });
-  await screen.findByText(`Execution machine: ${replacement.machine_id}`);
+  await screen.findByText(/Execution machine: Runner Device \d+/);
   view.rerender(<LocalWorkerControls presentation={presentation} control={control} active={false} changed={() => {}} />);
   view.rerender(<LocalWorkerControls presentation={presentation} control={control} active changed={() => {}} />);
   await waitFor(() => expect((screen.getByRole("button", { name: "Retry original Worker stop" }) as HTMLButtonElement).disabled).toBe(false));
@@ -120,7 +120,7 @@ it.each([
   expect(label.getAttribute("role")).toBeNull();
   expect(screen.getAllByText(description)).toHaveLength(1);
   expect(screen.getByRole("status").textContent).toBe(state === LocalWorkerState.Running ? "Process running · Readiness checked separately" : description);
-  expect(screen.getByText(`Execution machine: ${value.machine_id}`)).toBeTruthy();
+  expect(screen.getByText(/Execution machine: Runner Device \d+/)).toBeTruthy();
   expect(Boolean(screen.queryByRole("button", { name: "Start local Worker" }))).toBe(start);
   expect(Boolean(screen.queryByRole("button", { name: "Stop local Worker" }))).toBe(stop);
 });
@@ -151,7 +151,7 @@ it.each([true, false])("collapses complete Running explanations without changing
   await screen.findByText("Process running · Readiness checked separately");
   const details = screen.getByText("Details").closest("details")!;
   expect(details.open).toBe(false);
-  expect(within(details).getByText(`Execution machine: ${value.machine_id}`)).toBeTruthy();
+  expect(within(details).getByText(/Execution machine: Runner Device \d+/)).toBeTruthy();
   expect(screen.getByText(owned_by_app ? "Stops when you quit DeliDev." : "Keeps running after you quit DeliDev.").closest("details")).toBeNull();
   expect(within(details).getByText(/Worker controller running/)).toBeTruthy();
   details.open = true; fireEvent(details, new Event("toggle"));

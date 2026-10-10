@@ -1,3 +1,5 @@
+import { ProductIdentity } from "./product-identity-labels";
+import { ProductIdentityKind } from "./product-identity";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { quotaColorStyle } from "./quota-color";
@@ -88,7 +90,7 @@ export function ApiEntryRow({ row, provider, active, manage, edit, remove, openU
         <h2 id={nameId}>{name}</h2><p className="api-entry-provider-name">{provider?.displayName ?? copy("api-entry-row.extra.37709967fc3f") + text(value.provider_id)}</p>
         <p className="api-entry-format">{apiFormatLabels[apiFormat(value.api_protocol) ?? apiFormat(provider?.protocol)!] ?? ""}</p>
         <div className="api-entry-statuses"><span data-state={cleanup ? "warning" : connected ? "connected" : "neutral"}><span className="api-entry-sr-only">{copy("api-entry-row.connection_9adb21")}</span>{cleanup ? copy("api-entry-row.credentialCleanupPending_50459d") : connected ? copy("api-entry-row.connected_229655") : copy("api-entry-row.disconnected_04dfac")}</span><span data-state={value.health === "ready" ? "connected" : "warning"}><span className="api-entry-sr-only">{copy("api-entry-row.health_6e9098")}</span>{verified ? copy("api-verification.badge") : statusLabel(text(value.health)) || copy("api-entry-row.extra.b764cdc0eab7")}</span></div>
-        {!supported ? <small>{row.id}</small> : null}
+        {!supported ? <small><ProductIdentity id={row.id} kind={ProductIdentityKind.Account} /></small> : null}
       </div></div>
       <dl className="api-usage-metrics"><UsageMetrics data={result.data} /><div className="api-usage-metric"><dt>{copy("api-entry-row.quota_6c105c")}</dt><dd>{value.confirmed_exhausted === true ? <strong className="api-entry-exhausted">{copy("api-entry-row.confirmedExhausted_763851")}</strong> : windows.length ? windows.slice(0, 2).map((window, index) => <Quota key={index} window={window} now={now} compact />) : <strong>{copy("api-entry-row.notReported_adadfa")}</strong>}</dd></div></dl>
       <div className="api-entry-controls"><SettingsActionButton icon={SettingsActionIcon.Connect} type="button" disabled={!supported} onClick={manage}>{copy("api-entry-row.manageConnection_ad2892")}</SettingsActionButton><div className="api-entry-more">

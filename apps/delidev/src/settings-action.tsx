@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+import { ProductIdentity, useProductIdentity } from "./product-identity-labels";
+import { ProductIdentityKind } from "./product-identity";
 import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode, type Ref } from "react";
 import { createPortal } from "react-dom";
 import "./settings-action.css";
@@ -53,11 +55,12 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
 /** Native element identity, callbacks, guards and form ownership stay with callers. */
 export function SettingsActionButton({ icon, presentation = SettingsActionPresentation.Label, ref, children, decorativePrefix, targetName, targetId, ...props }: Props) {
   const scoped = useContext(ActionScope), tooltipId = useId();
+  const identity = useProductIdentity();
   const [tooltip, setTooltip] = useState<{ left: number; top: number; owner: HTMLElement }>();
   const tooltipRef = useRef<HTMLDivElement>(null);
   const label = scoped && decorativePrefix && typeof children === "string" && children.startsWith(decorativePrefix) ? children.slice(decorativePrefix.length) : children;
   const originalName = props["aria-label"] ?? (label !== children && typeof children === "string" ? children : undefined);
-  const name = scoped && (targetName || targetId) ? [originalName ?? (typeof children === "string" ? children : undefined), targetName, targetId].filter(Boolean).join(" · ") : originalName;
+  const name = scoped && (targetName || targetId) ? [originalName ?? (typeof children === "string" ? children : undefined), targetId ? identity.label(targetId, ProductIdentityKind.Resource, targetName, true) : targetName].filter(Boolean).join(" · ") : originalName;
   useLayoutEffect(() => {
     if (!tooltip || !tooltipRef.current) return;
     const zoom = Number(getComputedStyle(document.body).zoom) || 1;

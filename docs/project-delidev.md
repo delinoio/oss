@@ -421,3 +421,7 @@ workspace/process/native adapters own actual operation observations; desktop own
 the grouped conversation and compact disclosure. Follow the startup, workspace,
 process, protocol and desktop contracts. No telemetry observation grants input,
 credentials, retry, cleanup or execution authority, and no migration is added.
+
+### Product identity presentation
+
+Desktop, mobile, diagnostics, notification and widget product projections follow issue #2496 and the desktop contract Product identity presentation policy. Generated internal IDs remain original private authority, while already observed names and connection/view-scoped stable presentation numbers identify product items without extra name-only reads. User/native/external content and technical artifact bytes remain unchanged; presentation numbers grant no execution, recovery or native authority.

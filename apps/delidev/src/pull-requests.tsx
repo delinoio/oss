@@ -1,3 +1,5 @@
+import { ProductIdentity, useProductIdentity } from "./product-identity-labels";
+import { ProductIdentityKind } from "./product-identity";
 import { useSidebarPaneVisible } from "./sidebar-context";
 import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclosure";
 import { ScrollContinuation } from "./scroll-continuation";
@@ -36,10 +38,12 @@ function RepositoryNavigationRow({ row, selected, expanded, choose, toggleDetail
   const name = resourceName(row);
   const config = document(row);
   const owner = text(config.github_owner), repository = text(config.github_name);
-  const detailsLabel = copy("pull-requests.repositoryDetails", { name, id: row.id });
-  return <div className="pr-repository-item">
+  const identity = useProductIdentity();
+  const safeName = identity.label(row.id, ProductIdentityKind.Repository);
+  const detailsLabel = copy("pull-requests.repositoryDetails", { name, id: safeName });
+  return <div className="pr-repository-item" data-repository-id={row.id}>
     <div className="pr-repository-heading" data-selected={selected}>
-      <button type="button" className="sidebar-repository-row" aria-label={copy("pull-requests.repositoryId_cfd937", { v0: name, v1: row.id })} aria-pressed={selected} onClick={choose}>
+      <button type="button" className="sidebar-repository-row" aria-label={copy("pull-requests.repositoryId_cfd937", { v0: name, v1: safeName })} aria-pressed={selected} onClick={choose}>
         <svg className="sidebar-icon sidebar-repository-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M5 3h14v18H5zM9 3v18M13 7h3M13 11h3" /></svg>
         <span className="sidebar-repository-info">{name}</span>
       </button>
@@ -49,7 +53,7 @@ function RepositoryNavigationRow({ row, selected, expanded, choose, toggleDetail
     </div>
     <DisclosureContent id={detailsId} className="pr-repository-details" role="region" aria-label={detailsLabel} hidden={!expanded}>
       <dl><dt>{copy("pull-requests.githubRepository")}</dt><dd>{owner && repository ? `${owner}/${repository}` : copy("pull-requests.repositoryNotConfigured")}</dd>
-        <dt>{copy("pull-requests.repositoryIdentifier")}</dt><dd>{row.id}</dd></dl>
+        </dl>
     </DisclosureContent>
   </div>;
 }
@@ -57,25 +61,25 @@ function RepositoryNavigationRow({ row, selected, expanded, choose, toggleDetail
 function PendingDismissal({ intent, id }: { intent: RetainedMutationIntent; id: string }) {
   useLocale();
   const mutation = useRetainedMutation(intent.key, IntegrationQuery.dismissPullRequestProblem);
-  return <article className="pending-pr-action"><strong><LocalizedText id="pull-requests.problemDismissal_9c312b" components={{ s0: <>{id}</> }} /></strong><p>{intent.busy ? copy("pull-requests.submitting_cba659") : copy("pull-requests.acknowledgmentUncertain_62e6b9")}</p>{intent.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>{copy("pull-requests.retryOriginalDismissal_bb2de0")}</button> : null}</article>;
+  return <article className="pending-pr-action"><strong><LocalizedText id="pull-requests.problemDismissal_9c312b" components={{ s0: <ProductIdentity id={id} /> }} /></strong><p>{intent.busy ? copy("pull-requests.submitting_cba659") : copy("pull-requests.acknowledgmentUncertain_62e6b9")}</p>{intent.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>{copy("pull-requests.retryOriginalDismissal_bb2de0")}</button> : null}</article>;
 }
 
 function PendingCollection({ intent, repositoryId, number }: { intent: RetainedMutationIntent; repositoryId: string; number: string }) {
   useLocale();
   const mutation = useRetainedMutation(intent.key, IntegrationQuery.refreshPullRequestProblems);
-  return <article className="pending-pr-action"><strong><LocalizedText id="pull-requests.problemCollectionRepositoryPr_233e06" components={{ s0: <>{repositoryId}</>, s1: <>{number}</> }} /></strong><p>{intent.busy ? copy("pull-requests.submitting_cba659") : copy("pull-requests.acknowledgmentUncertain_62e6b9")}</p>{intent.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>{copy("pull-requests.retryOriginalProblemCollection_31fab2")}</button> : null}</article>;
+  return <article className="pending-pr-action"><strong><LocalizedText id="pull-requests.problemCollectionRepositoryPr_233e06" components={{ s0: <ProductIdentity id={repositoryId} kind={ProductIdentityKind.Repository} />, s1: <>{number}</> }} /></strong><p>{intent.busy ? copy("pull-requests.submitting_cba659") : copy("pull-requests.acknowledgmentUncertain_62e6b9")}</p>{intent.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>{copy("pull-requests.retryOriginalProblemCollection_31fab2")}</button> : null}</article>;
 }
 
 function PendingAllowance({ intent, repositoryId, pullRequestId }: { intent: RetainedMutationIntent; repositoryId: string; pullRequestId: string }) {
   useLocale();
   const workflow = usePRWorkflow();
   const mutation = useRetainedMutation(intent.key, IntegrationQuery.resumePullRequestRemediation, () => workflow.cancelAllowance(`pr-remediation-confirm:${repositoryId}:${pullRequestId}`));
-  return <article className="pending-pr-action"><strong><LocalizedText id="pull-requests.attemptAllowanceRepositoryPr_510835" components={{ s0: <>{repositoryId}</>, s1: <>{pullRequestId}</> }} /></strong><p>{intent.busy ? copy("pull-requests.submitting_cba659") : copy("pull-requests.acknowledgmentUncertain_62e6b9")}</p>{intent.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>{copy("pull-requests.retryOriginalAllowanceResumption_991985")}</button> : null}</article>;
+  return <article className="pending-pr-action"><strong><LocalizedText id="pull-requests.attemptAllowanceRepositoryPr_510835" components={{ s0: <ProductIdentity id={repositoryId} kind={ProductIdentityKind.Repository} />, s1: <ProductIdentity id={pullRequestId} /> }} /></strong><p>{intent.busy ? copy("pull-requests.submitting_cba659") : copy("pull-requests.acknowledgmentUncertain_62e6b9")}</p>{intent.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>{copy("pull-requests.retryOriginalAllowanceResumption_991985")}</button> : null}</article>;
 }
 
 function PendingFix({ intent, remoteRepositoryId, pullRequestId }: { intent: RetainedMutationIntent; remoteRepositoryId: string; pullRequestId: string }) {
   const mutation = useRetainedMutation(intent.key, PullRequestFixQuery.requestPullRequestFix);
-  return <article className="pending-pr-action"><strong><LocalizedText id="pull-requests.pendingFix" components={{ s0: <>{remoteRepositoryId}</>, s1: <>{pullRequestId}</> }} /></strong><p>{intent.busy ? copy("pull-requests.submitting_cba659") : copy("pull-requests.acknowledgmentUncertain_62e6b9")}</p><Problem error={mutation.error} />{intent.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>{copy("pr-fix.retryOriginalFixRequest_3ecf60")}</button> : null}</article>;
+  return <article className="pending-pr-action"><strong><LocalizedText id="pull-requests.pendingFix" components={{ s0: <>{remoteRepositoryId}</>, s1: <ProductIdentity id={pullRequestId} /> }} /></strong><p>{intent.busy ? copy("pull-requests.submitting_cba659") : copy("pull-requests.acknowledgmentUncertain_62e6b9")}</p><Problem error={mutation.error} />{intent.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>{copy("pr-fix.retryOriginalFixRequest_3ecf60")}</button> : null}</article>;
 }
 
 function PendingPRActions() {

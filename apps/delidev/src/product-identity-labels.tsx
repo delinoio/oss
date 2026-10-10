@@ -22,5 +22,6 @@ export function useProductIdentity() {
   return { label, diagnostic: (value: string) => productDiagnosticPresentation(value, id => label(id, ProductIdentityKind.Reference)) };
 }
 export function ProductIdentity({ id, kind = ProductIdentityKind.Resource, name = "", numbered = false }: { id: string; kind?: ProductIdentityKind; name?: string; numbered?: boolean }) {
-  return <>{useProductIdentity().label(id, kind, name, numbered)}</>;
+  const identity = useProductIdentity();
+  return name ? numbered ? <><span>{name}</span> · {identity.label(id, kind)}</> : <>{name}</> : <>{identity.label(id, kind)}</>;
 }

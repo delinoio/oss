@@ -1,3 +1,5 @@
+import { ProductIdentity, useProductIdentity } from "./product-identity-labels";
+import { ProductIdentityKind } from "./product-identity";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclosure";
@@ -47,7 +49,7 @@ export function AgentWorkerRow({ row, edit, preview, remove }: { row: Resource; 
       {supported && modelIDs.length > 1 ? <DisclosureContent id={region} role="region" hidden={!expanded} aria-label={copy("agent-worker-row.configuredModels")}><ol className="agent-model-routes">{modelIDs.map((id, index) => <li key={index}>{model(index)}{accountCount(index)}</li>)}</ol></DisclosureContent> : null}
       {!supported && [1, 2, 3].includes(row.schemaVersion) ? <span className="agent-route-account-count">{copy("agent-worker-row.accountCountUnavailable")}</span> : null}
       {data.reconfiguration_required === true ? <p role="status">{copy("settings.reconfigurationRequired_a84a37")}</p> : null}
-      <small>{row.id}</small>
+      <small><ProductIdentity id={row.id} kind={ProductIdentityKind.Agent} /></small>
       </div>
     </div>
     <div className="actions settings-agent-actions">

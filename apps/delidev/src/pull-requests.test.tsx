@@ -1,3 +1,4 @@
+import { productName } from "./test-product-identity";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -43,7 +44,7 @@ async function open() {
   return within(screen.getByRole("region", { name: "Pull requests navigation and filters" }));
 }
 async function choose(row: Resource) {
-  fireEvent.click(await screen.findByRole("button", { name: `${resourceName(row)}. Repository ID: ${row.id}` }));
+  fireEvent.click(await screen.findByRole("button", { name: productName(`${resourceName(row)}. Repository ID: ${row.id}`) }));
   await waitFor(() => expect(screen.queryByText("Loading repository settings…")).toBeNull());
 }
 const submitted = (value: ReturnType<typeof fixture>, index: number) => JSON.parse(new TextDecoder().decode(value.query.mock.calls[index][0].queryJson));
@@ -71,7 +72,7 @@ it("shows only the selected name and loads the selected default query automatica
   const pane = await open(); await choose(value.rows[0]);
   expect(pane.getByRole("heading", { name: "Query options" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "GitHub profiles" })).toBeNull();
-  const row = pane.getByRole("button", { name: `Example repository. Repository ID: ${repositoryId}` });
+  const row = pane.getByRole("button", { name: productName(`Example repository. Repository ID: ${repositoryId}`) });
   expect(row.textContent).toBe("Example repository");
   expect(row.querySelector("button")).toBeNull();
   expect(pane.queryByRole("region", { name: /Details for/ })).toBeNull();
@@ -89,23 +90,23 @@ it("discloses one exact duplicate-name identity without selecting or reading it"
   const first = repository(), second = repository(); second.id = newRequestId();
   const value = fixture([first, second]); render(<App transport={value.transport} />);
   const pane = await open();
-  const firstButton = await pane.findByRole("button", { name: `Details for Example repository. Repository ID: ${first.id}` });
-  const secondButton = pane.getByRole("button", { name: `Details for Example repository. Repository ID: ${second.id}` });
+  const firstButton = await pane.findByRole("button", { name: productName(`Details for Example repository. Repository ID: ${first.id}`) });
+  const secondButton = pane.getByRole("button", { name: productName(`Details for Example repository. Repository ID: ${second.id}`) });
   const catalogReads = value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.REPOSITORY).length;
   expect(firstButton.getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(firstButton);
-  let details = pane.getByRole("region", { name: `Details for Example repository. Repository ID: ${first.id}` });
+  let details = pane.getByRole("region", { name: productName(`Details for Example repository. Repository ID: ${first.id}`) });
   expect(details.id).toBe(firstButton.getAttribute("aria-controls"));
-  expect(within(details).getByText(first.id).textContent).toBe(first.id);
+  expect(details.textContent).not.toContain(first.id);
   expect(within(details).getByText("owner/repo")).toBeTruthy();
   fireEvent.click(secondButton);
   expect(firstButton.getAttribute("aria-expanded")).toBe("false");
   expect(secondButton.getAttribute("aria-expanded")).toBe("true");
-  details = pane.getByRole("region", { name: `Details for Example repository. Repository ID: ${second.id}` });
-  expect(within(details).getByText(second.id)).toBeTruthy();
+  details = pane.getByRole("region", { name: productName(`Details for Example repository. Repository ID: ${second.id}`) });
+  expect(details.textContent).not.toContain(second.id);
   expect(pane.queryAllByRole("region", { name: /Details for/ })).toHaveLength(1);
   expect(pane.queryByRole("heading", { name: "Query options" })).toBeNull();
-  expect(pane.getByRole("button", { name: `Example repository. Repository ID: ${first.id}` }).getAttribute("aria-pressed")).toBe("false");
+  expect(pane.getByRole("button", { name: productName(`Example repository. Repository ID: ${first.id}`) }).getAttribute("aria-pressed")).toBe("false");
   fireEvent.click(secondButton);
   expect(pane.queryByRole("region", { name: /Details for/ })).toBeNull();
   expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.REPOSITORY)).toHaveLength(catalogReads);
@@ -117,7 +118,7 @@ it("retains expanded details and enum drafts through paging, navigation, reconne
   const row = repository("Long repository name ".repeat(20));
   const value = fixture([row]); const view = render(<App transport={value.transport} />);
   let pane = await open(); await choose(row);
-  const detailsName = `Details for ${resourceName(row)}. Repository ID: ${row.id}`;
+  const detailsName = productName(`Details for ${resourceName(row)}. Repository ID: ${row.id}`);
   fireEvent.click(pane.getByRole("button", { name: detailsName }));
   fireEvent.click(pane.getByRole("radio", { name: "Closed" }));
   fireEvent.change(pane.getByLabelText("Search title and body"), { target: { value: "fix" } });
@@ -131,7 +132,7 @@ it("retains expanded details and enum drafts through paging, navigation, reconne
   expect(pane.getByRole("region", { name: detailsName })).toBeTruthy();
   await act(() => i18n.changeLanguage(SupportedLanguage.Korean));
   pane = within(screen.getByRole("region", { name: "풀 리퀘스트 탐색 및 필터" }));
-  expect(pane.getByRole("button", { name: `${resourceName(row).trim()} 상세. 저장소 ID: ${row.id}` }).getAttribute("aria-expanded")).toBe("true");
+  expect(pane.getByRole("button", { name: productName(`${resourceName(row).trim()} 상세. 저장소 ID: ${row.id}`) }).getAttribute("aria-expanded")).toBe("true");
   expect((pane.getByRole("radio", { name: "닫힘" }) as HTMLInputElement).checked).toBe(true);
   expect((pane.getByLabelText("제목과 본문 검색") as HTMLInputElement).value).toBe("fix");
   expect(value.query).toHaveBeenCalled();
@@ -141,12 +142,12 @@ it("keeps missing repository mapping and original content inert in Details", asy
   const row = repository(); row.documentJson = encode({ name: "<b>Original name</b>", remote_url: "https://private.example/repo", local_path: "/original/path" });
   const value = fixture([row]); render(<App transport={value.transport} />);
   const pane = await open();
-  fireEvent.click(await pane.findByRole("button", { name: `Details for <b>Original name</b>. Repository ID: ${row.id}` }));
-  const details = pane.getByRole("region", { name: `Details for <b>Original name</b>. Repository ID: ${row.id}` });
+  fireEvent.click(await pane.findByRole("button", { name: productName(`Details for <b>Original name</b>. Repository ID: ${row.id}`) }));
+  const details = pane.getByRole("region", { name: productName(`Details for <b>Original name</b>. Repository ID: ${row.id}`) });
   expect(within(details).getByText("Not configured")).toBeTruthy();
   expect(details.textContent).not.toContain("https://private.example/repo");
   expect(details.textContent).not.toContain("/original/path");
-  expect(pane.getByRole("button", { name: `<b>Original name</b>. Repository ID: ${row.id}` }).querySelector("b")).toBeNull();
+  expect(pane.getByRole("button", { name: productName(`<b>Original name</b>. Repository ID: ${row.id}`) }).querySelector("b")).toBeNull();
   expect(value.get).not.toHaveBeenCalled();
   expect(value.query).not.toHaveBeenCalled();
 });
@@ -166,7 +167,7 @@ it("preserves selected identity and filter drafts through empty appended pages a
   expect((pane.getByRole("radio", { name: "Closed" }) as HTMLInputElement).checked).toBe(true);
   expect((pane.getByLabelText("Search title and body") as HTMLInputElement).value).toBe("fix");
   fireEvent.click(pane.getByRole("button", { name: "Refresh" }));
-  await pane.findByRole("button", { name: `Example repository. Repository ID: ${repositoryId}` });
+  await pane.findByRole("button", { name: productName(`Example repository. Repository ID: ${repositoryId}`) });
   expect((pane.getByLabelText("PR page size") as HTMLSelectElement).value).toBe("5");
   const tokens = value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.REPOSITORY).map(([request]) => request.filter?.pageToken);
   expect(tokens.slice(0, 2)).toEqual(["", "repository-next"]);
@@ -218,7 +219,7 @@ it.each([Code.PermissionDenied, Code.Unavailable])("distinguishes catalog failur
   await choose(value.rows[0]);
   value.fail(code); fireEvent.click(pane.getByRole("button", { name: "Refresh" }));
   await pane.findByText("Refresh failed. Showing the previous repository page.");
-  expect(pane.getByRole("button", { name: `Example repository. Repository ID: ${repositoryId}` })).toBeTruthy();
+  expect(pane.getByRole("button", { name: productName(`Example repository. Repository ID: ${repositoryId}`) })).toBeTruthy();
   expect(pane.queryByText("No repositories on this page.")).toBeNull();
   expect(value.query).toHaveBeenCalledTimes(1);
 });
@@ -246,7 +247,7 @@ it.each(["schema", "integration_id", "github_owner", "github_name"])("keeps unco
 it("hides the profile shortcut before selection and for an unavailable selected repository", async () => {
   const value = fixture(); value.get.mockResolvedValue({ resource: undefined }); render(<App transport={value.transport} />);
   await open(); expect(screen.queryByRole("button", { name: "GitHub profiles" })).toBeNull();
-  fireEvent.click(await screen.findByRole("button", { name: `Example repository. Repository ID: ${repositoryId}` }));
+  fireEvent.click(await screen.findByRole("button", { name: productName(`Example repository. Repository ID: ${repositoryId}`) }));
   await screen.findByText("This repository is no longer available. Refresh the repository catalog and choose another entry.");
   expect(screen.queryByRole("button", { name: "GitHub profiles" })).toBeNull(); expect(value.query).not.toHaveBeenCalled(); expect(value.mutation).not.toHaveBeenCalled();
 });
@@ -408,7 +409,7 @@ it("waits for validated selected metadata before automatic GitHub reads", async 
   const pending = new Promise<void>(resolve => { release = resolve; });
   value.get.mockImplementation(async request => { await pending; return read(request); });
   render(<App transport={value.transport} />); await open();
-  fireEvent.click(await screen.findByRole("button", { name: `Example repository. Repository ID: ${repositoryId}` }));
+  fireEvent.click(await screen.findByRole("button", { name: productName(`Example repository. Repository ID: ${repositoryId}`) }));
   await screen.findByText("Loading repository settings…");
   expect(value.query).not.toHaveBeenCalled();
   await act(async () => { release(); await pending; });

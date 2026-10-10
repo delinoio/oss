@@ -1,3 +1,4 @@
+import { ProductIdentityScope } from "./product-identity-labels";
 import { QuitConnectionProvider, useQuitConnection } from "./quit-confirmation";
 import { createDesktopFetch } from "./desktop-runtime";
 import { copy, useLocale } from "./localization";
@@ -300,4 +301,4 @@ function DesktopContent() {
   return context.profile ? <SavedDesktop profile={context.profile} /> : <LocalDesktop />;
 }
 
-export function Desktop() { return <QuitConnectionProvider><DesktopContent/></QuitConnectionProvider>; }
+export function Desktop() { return <ProductIdentityScope scope="desktop-window"><QuitConnectionProvider><DesktopContent/></QuitConnectionProvider></ProductIdentityScope>; }

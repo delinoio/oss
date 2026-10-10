@@ -1,3 +1,4 @@
+import { productName } from "./test-product-identity";
 import { formatTimestampLabel, TimestampMode } from "./timestamp-format";
 import { toBinary } from "@bufbuild/protobuf";
 import { StrictMode } from "react";
@@ -38,7 +39,7 @@ it("lists metadata without inspecting automatically and preserves exact byte cou
   view.rerender(f.view());
   await screen.findByText(/9,007,199,254,740,993 bytes/);
   expect(f.inspect).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: `Inspect backup ${f.id}` }));
+  fireEvent.click(screen.getByRole("button", { name: productName(`Inspect backup ${f.id}`) }));
   await screen.findByText("Database integrity and original server identity verified.");
   f.inspect.mockRejectedValueOnce(new ConnectError("Backup changed", Code.FailedPrecondition));
   fireEvent.click(screen.getByRole("button", { name: "Recheck selected backup" }));
@@ -59,7 +60,7 @@ it("retries an uncertain creation with its original request after hiding setting
   fireEvent.click(screen.getByRole("button", { name: "Retry the same backup creation" }));
   await waitFor(() => expect(f.create).toHaveBeenCalledTimes(2));
   expect(toBinary(RequestBackupRequestSchema, f.create.mock.calls[0]![0] as RequestBackupRequest)).toEqual(toBinary(RequestBackupRequestSchema, f.create.mock.calls[1]![0] as RequestBackupRequest));
-  await screen.findByRole("article", { name: `Backup ${f.creation.backupId} creation` });
+  await screen.findByRole("article", { name: productName(`Backup ${f.creation.backupId} creation`) });
 });
 
 
@@ -68,11 +69,11 @@ it("requires inspected confirmation and retains the exact deletion after an unce
   f.remove.mockRejectedValueOnce(new ConnectError("Acknowledgement lost", Code.Unavailable));
   const view = render(f.view());
   expect(screen.queryByRole("button", { name: "Permanently delete selected backup" })).toBeNull();
-  fireEvent.click(await screen.findByRole("button", { name: `Inspect backup ${f.id}` }));
+  fireEvent.click(await screen.findByRole("button", { name: productName(`Inspect backup ${f.id}`) }));
   fireEvent.click(await screen.findByRole("button", { name: "Delete selected backup…" }));
   const button = await screen.findByRole("button", { name: "Permanently delete selected backup" });
   expect((button as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.click(screen.getByRole("checkbox", { name: `I confirm permanent deletion of backup ${f.id}` }));
+  fireEvent.click(screen.getByRole("checkbox", { name: productName(`I confirm permanent deletion of backup ${f.id}`) }));
   fireEvent.click(button);
   await screen.findByRole("button", { name: "Retry the same backup deletion" });
   const first = f.remove.mock.calls[0]![0];
@@ -103,8 +104,8 @@ it("shows durable creation outcomes without treating pending or stale observatio
 it.each(["hide", "reinspect"])("requires fresh deletion confirmation after %s replaces inspection", async action => {
   const f = fixture();
   const view = render(f.view());
-  fireEvent.click(await screen.findByRole("button", { name: `Inspect backup ${f.id}` }));
-  const checkboxName = `I confirm permanent deletion of backup ${f.id}`;
+  fireEvent.click(await screen.findByRole("button", { name: productName(`Inspect backup ${f.id}`) }));
+  const checkboxName = productName(`I confirm permanent deletion of backup ${f.id}`);
   fireEvent.click(await screen.findByRole("button", { name: "Delete selected backup…" }));
   fireEvent.click(await screen.findByRole("checkbox", { name: checkboxName }));
   expect((screen.getByRole("button", { name: "Permanently delete selected backup" }) as HTMLButtonElement).disabled).toBe(false);
@@ -137,14 +138,14 @@ it("polls each accepted operation beyond the first history page and refreshes in
   f.deletions.mockResolvedValue({ jobs: [] });
   const view = render(f.view());
   fireEvent.click(screen.getByRole("button", { name: "Create database backup" }));
-  const created = await screen.findByRole("article", { name: `Backup ${f.creation.backupId} creation` });
+  const created = await screen.findByRole("article", { name: productName(`Backup ${f.creation.backupId} creation`) });
   await within(created).findByText("pending");
   expect(f.getCreation.mock.calls[0]![0].id).toBe(f.creation.id);
-  fireEvent.click(await screen.findByRole("button", { name: `Inspect backup ${f.id}` }));
+  fireEvent.click(await screen.findByRole("button", { name: productName(`Inspect backup ${f.id}`) }));
   fireEvent.click(await screen.findByRole("button", { name: "Delete selected backup…" }));
-  fireEvent.click(await screen.findByRole("checkbox", { name: `I confirm permanent deletion of backup ${f.id}` }));
+  fireEvent.click(await screen.findByRole("checkbox", { name: productName(`I confirm permanent deletion of backup ${f.id}`) }));
   fireEvent.click(screen.getByRole("button", { name: "Permanently delete selected backup" }));
-  const removed = await screen.findByRole("article", { name: `Backup ${f.deletion.backupId} deletion` });
+  const removed = await screen.findByRole("article", { name: productName(`Backup ${f.deletion.backupId} deletion`) });
   await within(removed).findByText("pending");
   expect(f.getDeletion.mock.calls[0]![0].id).toBe(f.deletion.id);
   // Pause still-pending direct reads without discarding either accepted identity.
@@ -156,11 +157,11 @@ it("polls each accepted operation beyond the first history page and refreshes in
   const reads = f.list.mock.calls.length;
   f.getCreation.mockResolvedValue({ job: { ...f.creation, revision: 2n, state: BackupCreationState.SUCCEEDED } });
   view.rerender(f.view());
-  await within(created).findByRole("button", { name: `Dismiss backup ${f.creation.backupId} creation tracking` });
+  await within(created).findByRole("button", { name: productName(`Dismiss backup ${f.creation.backupId} creation tracking`) });
   await waitFor(() => expect(f.list.mock.calls.length).toBeGreaterThan(reads));
   const afterCreation = f.list.mock.calls.length;
   f.getDeletion.mockResolvedValue({ job: { ...f.deletion, revision: 2n, state: BackupDeletionState.SUCCEEDED } });
-  await within(removed).findByRole("button", { name: `Dismiss backup ${f.deletion.backupId} deletion tracking` }, { timeout: 4000 });
+  await within(removed).findByRole("button", { name: productName(`Dismiss backup ${f.deletion.backupId} deletion tracking`) }, { timeout: 4000 });
   await waitFor(() => expect(f.list.mock.calls.length).toBeGreaterThan(afterCreation), { timeout: 4000 });
 }, 15000);
 
@@ -173,8 +174,8 @@ it("retains multiple accepted creations and marks a failed direct refresh stale"
   f.create.mockResolvedValueOnce({ job: next, requestId: newRequestId(), replayed: false });
   f.getCreation.mockImplementation(async input => ({ job: input.id === next.id ? next : f.creation }));
   fireEvent.click(screen.getByRole("button", { name: "Create database backup" }));
-  await screen.findByRole("article", { name: `Backup ${next.backupId} creation` });
-  const first = screen.getByRole("article", { name: `Backup ${f.creation.backupId} creation` });
+  await screen.findByRole("article", { name: productName(`Backup ${next.backupId} creation`) });
+  const first = screen.getByRole("article", { name: productName(`Backup ${f.creation.backupId} creation`) });
   f.getCreation.mockRejectedValueOnce(new ConnectError("read failed", Code.Unavailable));
   await f.client.invalidateQueries();
   await within(first).findByText("The last observation is stale; current job status is unavailable.");
@@ -196,7 +197,9 @@ it("renders the approved two-row table with UTC labels, full metadata and inert 
   expect(within(table).getByText("499,712 bytes")).toBeTruthy();
   expect(within(table).getByText(formatTimestampLabel(backups[0].modifiedAt, { mode: TimestampMode.Absolute, timeZone: "UTC" }))).toBeTruthy();
   expect(within(table).getByText(formatTimestampLabel(backups[1].modifiedAt, { mode: TimestampMode.Absolute, timeZone: "UTC" }))).toBeTruthy();
-  expect(within(table).getAllByRole("button").map(button => button.getAttribute("aria-label"))).toEqual(backups.map(backup => `Inspect backup ${backup.id}`));
+  const buttons = within(table).getAllByRole("button");
+  expect(buttons).toHaveLength(backups.length);
+  backups.forEach((backup, index) => expect(productName(`Inspect backup ${backup.id}`)(buttons[index].getAttribute("aria-label") ?? "", buttons[index])).toBe(true));
   expect(within(table).getAllByText("Not checked")).toHaveLength(2);
   for (const backup of backups) {
     expect(within(table).getByText((_content, element) => element?.classList.contains("backups-sr-only") === true && element.textContent === `Original modification timestamp: ${backup.modifiedAt}`)).toBeTruthy();
@@ -222,7 +225,7 @@ it("preserves fractional timestamps and exact BigInt deletion operands, with raw
   f.inspect.mockResolvedValue({ backup, sha256: "a".repeat(64), schemaVersion: 20, serverId: newRequestId() });
   render(f.view());
   await screen.findAllByText("unformattable-timestamp");
-  fireEvent.click(screen.getByRole("button", { name: `Inspect backup ${f.id}` }));
+  fireEvent.click(screen.getByRole("button", { name: productName(`Inspect backup ${f.id}`) }));
   const detail = screen.getByRole("region", { name: "Backup integrity inspection" });
   await within(detail).findByText("9,007,199,254,740,993 bytes");
   expect(within(detail).getByTitle(backup.modifiedAt)).toBeTruthy();
@@ -291,9 +294,9 @@ it("focuses inspection only at activation and restores the opener or list-headin
   let finish!: (value: Awaited<ReturnType<typeof f.inspect>>) => void;
   f.inspect.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
   render(f.view());
-  const opener = await screen.findByRole("button", { name: `Inspect backup ${f.id}` });
+  const opener = await screen.findByRole("button", { name: productName(`Inspect backup ${f.id}`) });
   fireEvent.click(opener);
-  const heading = screen.getByRole("heading", { name: `Inspection: ${f.id}` });
+  const heading = screen.getByRole("heading", { name: productName(`Inspection: ${f.id}`) });
   expect(document.activeElement).toBe(heading);
   // The inspection intentionally focuses its own heading after modal mount.
   // Initial dialog layout must preserve that newer focus inside the task.
@@ -348,8 +351,8 @@ it("retains cached inventory during an updating read and its failed refresh", as
   f.list.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
   fireEvent.click(screen.getByRole("button", { name: "Refresh backups" }));
   await screen.findByText("Updating managed backups…");
-  expect(screen.getByText(f.id)).toBeTruthy();
-  expect((screen.getByRole("button", { name: `Inspect backup ${f.id}` }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByText(f.id)).toBeNull();
+  expect((screen.getByRole("button", { name: productName(`Inspect backup ${f.id}`) }) as HTMLButtonElement).disabled).toBe(true);
   await act(async () => reject(new ConnectError("refresh failed", Code.Unavailable)));
   await screen.findByText("The previous backup list is shown. Refresh before relying on it.");
   expect(screen.getByText("9,007,199,254,740,993 bytes")).toBeTruthy();
@@ -386,7 +389,7 @@ it.each(["creation", "deletion"])("stops repeated %s history cursors until expli
 it("clears fresh confirmation on a failed or in-flight reinspection", async () => {
   const f = fixture();
   render(f.view());
-  fireEvent.click(await screen.findByRole("button", { name: `Inspect backup ${f.id}` }));
+  fireEvent.click(await screen.findByRole("button", { name: productName(`Inspect backup ${f.id}`) }));
   fireEvent.click(await screen.findByRole("button", { name: "Delete selected backup…" }));
   fireEvent.click(await screen.findByRole("checkbox"));
   let fail!: (reason: unknown) => void;
@@ -407,7 +410,7 @@ it("disposes tab, inspection and uncertain-write presentation on a Strict Mode o
   const f = fixture();
   f.create.mockRejectedValueOnce(new ConnectError("lost acknowledgement", Code.Unavailable));
   const view = render(f.lifetimeView());
-  fireEvent.click(await screen.findByRole("button", { name: `Inspect backup ${f.id}` }));
+  fireEvent.click(await screen.findByRole("button", { name: productName(`Inspect backup ${f.id}`) }));
   await screen.findByRole("button", { name: "Delete selected backup…" });
   fireEvent.click(screen.getByRole("button", { name: "Close Backup integrity inspection" }));
   fireEvent.click(screen.getByRole("tab", { name: "Deletion jobs" }));
@@ -419,12 +422,12 @@ it("disposes tab, inspection and uncertain-write presentation on a Strict Mode o
   expect(screen.getByRole("button", { name: "Retry the same backup creation" })).toBeTruthy();
   view.unmount();
   render(f.lifetimeView());
-  await screen.findByRole("button", { name: `Inspect backup ${f.id}` });
+  await screen.findByRole("button", { name: productName(`Inspect backup ${f.id}`) });
   expect(screen.getByRole("tab", { name: "Creation jobs" }).getAttribute("aria-selected")).toBe("true");
   expect(screen.queryByRole("button", { name: "Retry the same backup creation" })).toBeNull();
   expect(screen.queryByRole("region", { name: "Backup integrity inspection" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Create database backup" }));
-  await screen.findByRole("article", { name: `Backup ${f.creation.backupId} creation` });
+  await screen.findByRole("article", { name: productName(`Backup ${f.creation.backupId} creation`) });
   expect(f.create).toHaveBeenCalledTimes(2);
   expect(f.create.mock.calls[0]![0]).not.toEqual(f.create.mock.calls[1]![0]);
 });
@@ -454,16 +457,16 @@ it("keeps backup metadata across four pages and restores an evicted payload with
     return { backups: [backups[index]!], nextPageToken: index < 3 ? `p${index + 1}` : "" };
   });
   render(f.view());
-  await screen.findByRole("button", { name: `Inspect backup ${backups[0]!.id}` });
+  await screen.findByRole("button", { name: productName(`Inspect backup ${backups[0]!.id}`) });
   for (let index = 1; index < 4; index++) {
     fireEvent.click(screen.getByRole("button", { name: "Load more Database backups" }));
-    await screen.findByRole("button", { name: `Inspect backup ${backups[index]!.id}` });
+    await screen.findByRole("button", { name: productName(`Inspect backup ${backups[index]!.id}`) });
   }
   expect(screen.getByText("4 loaded")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: `Inspect backup ${backups[0]!.id}` })).toBeNull();
+  expect(screen.queryByRole("button", { name: productName(`Inspect backup ${backups[0]!.id}`) })).toBeNull();
   expect(screen.getAllByRole("table", { name: "Database backups" })).toHaveLength(3);
   fireEvent.click(screen.getByRole("button", { name: "Restore previously loaded items" }));
-  await screen.findByRole("button", { name: `Inspect backup ${backups[0]!.id}` });
+  await screen.findByRole("button", { name: productName(`Inspect backup ${backups[0]!.id}`) });
   expect(f.list.mock.calls.map(([input]) => input.pageToken)).toEqual(["", "p1", "p2", "p3", ""]);
   expect(f.inspect).not.toHaveBeenCalled();
   expect(f.create).not.toHaveBeenCalled();
@@ -472,7 +475,7 @@ it("keeps backup metadata across four pages and restores an evicted payload with
 
 it("pauses all backup inventory readers during original inspection without replacing the opener", async () => {
   const f = fixture(); render(f.view());
-  const opener = await screen.findByRole("button", { name: `Inspect backup ${f.id}` });
+  const opener = await screen.findByRole("button", { name: productName(`Inspect backup ${f.id}`) });
   fireEvent.click(opener); await screen.findByText("Database integrity and original server identity verified.");
   const reads = [f.list.mock.calls.length, f.creations.mock.calls.length, f.deletions.mock.calls.length];
   await act(async () => { await f.client.invalidateQueries(); await new Promise(resolve => setTimeout(resolve, 20)); });
@@ -497,7 +500,7 @@ it.each(["inventory", "creation", "deletion"])("rejects duplicate IDs in a whole
   const owner = kind === "inventory" ? f.list : kind === "creation" ? f.creations : f.deletions;
   const original = f.backup.id;
   const result = kind === "inventory" ? screen : within(screen.getByRole("tabpanel", { name: label }));
-  const idText = (id: string) => kind === "inventory" ? id : `Backup ${id}`;
+  const idText = (id: string) => productName(kind === "inventory" ? id : `Backup ${id}`);
   await result.findByText(idText(original));
   fireEvent.click(await screen.findByRole("button", { name: `Load more ${label}` }));
   const retry = await screen.findByRole("button", { name: "Retry" });

@@ -1,3 +1,5 @@
+import { ProductIdentity, useProductIdentity } from "./product-identity-labels";
+import { ProductIdentityKind } from "./product-identity";
 // SPDX-License-Identifier: Apache-2.0
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { useEffect, useRef, type ReactNode, type SyntheticEvent } from "react";
@@ -42,7 +44,7 @@ export function RepositoryCheckoutIdentity({ machineId, path, active }: { machin
   const machine = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.MACHINE, pageSize: 50, pageToken: "" } }, { enabled: active && Boolean(machineId) });
   const row = machine.data?.resources.find(resource => resource.id === machineId);
   const name = row?.id === machineId && row.kind === EntityKind.MACHINE ? text(document(row).name) : "";
-  return <p>{name ? <><span>{name}</span> · </> : null}<code>{machineId}</code> · <code>{path}</code></p>;
+  return <p>{name ? <><span>{name}</span> · </> : null}<ProductIdentity id={machineId} kind={ProductIdentityKind.Worker} name={name} numbered /> · <code>{path}</code></p>;
 }
 
 export function RepositoryEditSections({ identity, github, checkouts, addition, advanced, inspectionProblem }: { identity: ReactNode; github: ReactNode; checkouts: ReactNode; addition: ReactNode; advanced: ReactNode; inspectionProblem: boolean }) {

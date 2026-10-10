@@ -200,15 +200,17 @@ it("preserves disabled schema actions and unreadable original singleton referenc
   const mounted = render(<ProjectList resources={[saved]} metadata={new Map()} edit={() => {}} remove={() => {}} />);
   expect(screen.getAllByRole("button")[0]!.hasAttribute("disabled")).toBe(true);
   expect(screen.getAllByRole("button")[1]!.hasAttribute("disabled")).toBe(true);
-  expect(within(mounted.container.querySelector("details")!).getByText(saved.id)).toBeTruthy();
+  expect(mounted.container.textContent).not.toContain(saved.id);
+  expect(mounted.container.querySelector(".project-original-details")).toBeNull();
   expect(screen.getByText("0 repositories")).toBeTruthy();
 });
 
 
-it("keeps unreadable saved references in supported project details", () => {
+it("keeps unreadable saved references private while showing truthful unavailability", () => {
   const saved = { ...project([]), documentJson: encode({ name: "Project", repositories: ["unreadable-original-reference"] }) };
   const mounted = render(<ProjectList resources={[saved]} metadata={new Map([["unreadable-original-reference", { state: RepositoryDetailsState.Unavailable }]])} edit={() => {}} remove={() => {}} />);
-  expect(within(mounted.container.querySelector("details")!).getByText("unreadable-original-reference")).toBeTruthy();
+  expect(mounted.container.textContent).not.toContain("unreadable-original-reference");
+  expect(mounted.container.querySelector(".project-original-details")).toBeNull();
   expect(screen.getByText("Repository details unavailable")).toBeTruthy(); expect(screen.queryByText("1 repository")).toBeNull();
 });
 

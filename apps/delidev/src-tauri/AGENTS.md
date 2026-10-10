@@ -171,3 +171,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - Quit silent admission atomically checks the captured product scope set and stops registry admission under its original lock before scheduling ExitRequested. A newly reserved/replaced scope turns coverage unknown without starting shutdown; focus changes do not change scope authority.
 
 - Linux Quit fallback retains and waits for its original zenity child in the joined confirmation owner. Install SIGKILL parent-death containment and recheck the original parent before exec; crashes and forced exits cannot leave an independent Quit prompt.
+
+- Issue #2496 follows the desktop contract Product identity presentation policy: no generated internal UUID in product text/details/tooltips/accessible names/Copy. Use already observed names and stable connection/view-scoped kind/number labels without new name-only reads. Preserve exact original RPC, recovery, receipt, protected native routing/claim/profile IDs and artifact bytes; keep user/native/external content verbatim. Remove UUID-only disclosures and correlation rows. Presentation numbers grant no authority.

@@ -319,3 +319,7 @@ remain independently paginated. No new business RPC or transport authority is
 added. Follow the [mobile contract](apps-delidev-mobile-contract.md).
 
 Current schema-4 Agent routes embed exact source/native identity and non-secret metadata. The shared parser rejects Model resources, mixed UUID routes and older Agent schemas. Other currently activated Project, Settings and API-profile schemas remain supported. Protocol-2 connection verification rejects protocol 1 without adopting its state.
+
+## Product presentation references
+
+Issue #2496 adds a pure runtime helper shared by desktop and mobile. `ProductIdentityNumbers` allocates non-reused presentation numbers against the exact kind/original ID inside the caller-owned connection/view lifetime. `ProductIdentityKind` is a closed presentation noun catalog, independent of protocol enums. `productDiagnosticPresentation` is opt-in for DeliDev-generated prose only; it cannot process user/native/external content. The helper has no reads, state persistence, RPC, credentials, native validation or operation authority. Callers retain original IDs and all original artifacts, localize labels and dispose registries at their owning lifecycle boundary. This adds no dependency, generated declaration, public wire type, capability or migration.

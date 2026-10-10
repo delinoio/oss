@@ -1,3 +1,5 @@
+import { ProductIdentity } from "./product-identity-labels";
+import { ProductIdentityKind } from "./product-identity";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import { DisclosureButton, DisclosureContent, DisclosureDensity, Disclosure, DisclosureSummary } from "./disclosure";
@@ -20,7 +22,7 @@ function ProjectRow({ row, metadata, edit, remove }: { row: Resource; metadata: 
   const name = resourceName(row), ids = projectRepositoryIds(row), primary = text(document(row).primary_repository);
   const singleton = ids.length === 1;
   return <article className="project-row project-metadata-row" data-single-repository={singleton || undefined}>
-    <header className="project-row-heading"><div className="project-identity"><h3>{name}</h3>{!singleton ? <p>{copy("settings.projectRepositoryCount", { count: ids.length })}</p> : null}</div>
+    <header className="project-row-heading"><div className="project-identity"><h3><ProductIdentity id={row.id} kind={ProductIdentityKind.Project} name={name} numbered /></h3>{!singleton ? <p>{copy("settings.projectRepositoryCount", { count: ids.length })}</p> : null}</div>
       <div className="actions"><SettingsActionButton icon={SettingsActionIcon.Edit} presentation={SettingsActionPresentation.Icon} targetId={row.id} type="button" disabled={!supportsResourceSchema(row)} aria-label={copy("settings.edit_f1be7e", { v0: name })} onClick={() => edit(row)}>{copy("settings.edit_464c4f")}</SettingsActionButton><SettingsActionButton icon={SettingsActionIcon.Delete} presentation={SettingsActionPresentation.Icon} targetId={row.id} type="button" disabled={!supportsResourceSchema(row)} aria-label={copy("settings.delete_cd822e", { v0: name })} onClick={() => remove(row)}>{copy("settings.delete_e2d0a5")}</SettingsActionButton></div>
     </header>
     <ol id={repositoriesId} className="project-repository-rows">{(expanded ? ids : ids.slice(0, 3)).map((id, index) => {
@@ -33,6 +35,5 @@ function ProjectRow({ row, metadata, edit, remove }: { row: Resource; metadata: 
       </li>;
     })}</ol>
     {ids.length > 3 ? <DisclosureButton density={DisclosureDensity.Settings} type="button" className="project-show-repositories" aria-controls={repositoriesId} aria-expanded={expanded} onClick={() => setExpanded(value => !value)} focusWhenCollapsing={element => { const row = element.closest("li"); return Boolean(row && [...row.parentElement!.children].indexOf(row) >= 3); }}>{copy(expanded ? "settings.projectRepositoriesShowFewer" : "settings.projectRepositoriesShowAll")}</DisclosureButton> : null}
-    <Disclosure density={DisclosureDensity.Settings} className="project-original-details"><DisclosureSummary>{copy("settings.projectDetails")}</DisclosureSummary><dl><dt>{copy("settings.projectOriginalID")}</dt><dd>{row.id}</dd><dt>{copy("settings.projectRepositoryOriginalIDs")}</dt><dd><ol>{ids.map((id, index) => <li key={`${id}:${index}`}>{id}</li>)}</ol></dd></dl></Disclosure>
   </article>;
 }

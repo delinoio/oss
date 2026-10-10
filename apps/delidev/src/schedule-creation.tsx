@@ -1,3 +1,5 @@
+import { ProductIdentity, useProductIdentity } from "./product-identity-labels";
+import { ProductIdentityKind } from "./product-identity";
 import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclosure";
 import { copy, useLocale } from "./localization";
 import { flushSync } from "react-dom";
@@ -44,7 +46,7 @@ function ReviewIdentity({ kind, id }: { kind: EntityKind; id: string }) {
   // not fetch choices or derive names from the previous localized DOM commit.
   const selected = useQuery(ResourceQuery.getResource, { kind, id }, { enabled: false });
   const resource = selected.data?.resource;
-  return <><span>{resource?.id === id && resource.kind === kind ? resourceName(resource) : ""}</span><code>{id}</code></>;
+  return <><span>{resource?.id === id && resource.kind === kind ? resourceName(resource) : ""}</span><ProductIdentity id={id} /></>;
 }
 
 export function ScheduleCreation({ definition, change, active, blocked: externalBlocked, submitBlocked = false, localAvailable, selectLocal, submit, cancel, references, errors, retry }: ScheduleCreationProps) {

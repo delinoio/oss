@@ -1,3 +1,4 @@
+import { productName } from "./test-product-identity";
 import { SidebarProvider, memorySidebarBridge } from "./sidebar-preference";
 import { sessionInputReceipt } from "./test-session-input";
 import { chooseScrollOption, scrollChoiceValue, waitScrollChoices } from "./test-scroll-picker";
@@ -429,11 +430,11 @@ it.each([false, true])("selects a project once, retains the draft, and focuses t
   const rendered = render(<StrictMode><App transport={value.transport} currentDeviceId={currentDeviceId} pairingAuthority={pairingAuthority} /></StrictMode>);
   const showHome = async () => {
     if (compact) fireEvent.click(screen.getByRole("button", { name: "Open session navigation" }));
-    await screen.findByRole("button", { name: `New session in First project. Project ID: ${first.id}` });
+    await screen.findByRole("button", { name: productName(`New session in First project. Project ID: ${first.id}`) });
   };
   await showHome();
-  const fold = screen.getByRole("button", { name: `First project. Project ID: ${first.id}` });
-  fireEvent.click(screen.getByRole("button", { name: `New session in First project. Project ID: ${first.id}` }));
+  const fold = screen.getByRole("button", { name: productName(`First project. Project ID: ${first.id}`) });
+  fireEvent.click(screen.getByRole("button", { name: productName(`New session in First project. Project ID: ${first.id}`) }));
   const prompt = screen.getByRole("textbox", { name: "First message" });
   expect(scrollChoiceValue(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Project" }))).toBe(first.id);
   expect(fold.getAttribute("aria-expanded")).toBe("false");
@@ -450,11 +451,11 @@ it.each([false, true])("selects a project once, retains the draft, and focuses t
   fireEvent.change(within(document.querySelector(".new-session-page")!).getByLabelText("Budget currency"), { target: { value: "USD" } });
   fireEvent.change(within(document.querySelector(".new-session-page")!).getByLabelText("Estimated-cost threshold"), { target: { value: "1.25" } });
   await showHome();
-  fireEvent.click(screen.getByRole("button", { name: `New session in First project. Project ID: ${first.id}` }));
+  fireEvent.click(screen.getByRole("button", { name: productName(`New session in First project. Project ID: ${first.id}`) }));
   expect(scrollChoiceValue(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Agent Worker" }))).toBe(value.agent.id);
   expect(scrollChoiceValue(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Runs on" }))).toBe(value.machine.id);
   await showHome();
-  fireEvent.click(screen.getByRole("button", { name: `New session in Second project. Project ID: ${second.id}` }));
+  fireEvent.click(screen.getByRole("button", { name: productName(`New session in Second project. Project ID: ${second.id}`) }));
   expect(scrollChoiceValue(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Project" }))).toBe(second.id);
   expect(scrollChoiceValue(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Agent Worker" }))).toBe("");
   expect(scrollChoiceValue(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Runs on" }))).toBe("");
@@ -485,14 +486,14 @@ it("locks shortcuts for pending and uncertain creates and retries the unchanged 
   let reject!: (reason: unknown) => void;
   value.creates.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
   render(<App transport={value.transport} />);
-  fireEvent.click(await screen.findByRole("button", { name: `New session in First project. Project ID: ${first.id}` }));
+  fireEvent.click(await screen.findByRole("button", { name: productName(`New session in First project. Project ID: ${first.id}`) }));
   await waitScrollChoices(screen.getByRole("combobox", { name: "Agent Worker" }));
   await chooseScrollOption(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Agent Worker" }), value.agent.id);
   await chooseScrollOption(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Runs on" }), value.machine.id);
   fireEvent.change(within(document.querySelector(".new-session-page")!).getByLabelText("First message"), { target: { value: "Original request" } });
   fireEvent.click(screen.getByRole("button", { name: "Create session" }));
   await waitFor(() => expect(value.creates).toHaveBeenCalledTimes(1));
-  const shortcut = screen.getByRole("button", { name: `New session in Second project. Project ID: ${second.id}` });
+  const shortcut = screen.getByRole("button", { name: productName(`New session in Second project. Project ID: ${second.id}`) });
   expect(shortcut).toHaveProperty("disabled", true);
   fireEvent.click(shortcut);
   expect(scrollChoiceValue(within(document.querySelector(".new-session-page")!).getByRole("combobox", { name: "Project" }))).toBe(first.id);
@@ -518,10 +519,10 @@ it("locks shortcuts during Local proof and preserves the original project on com
   let release!: (proof: { machineId: string; token: string }) => void;
   const readLocalWorker = vi.fn(() => new Promise<{ machineId: string; token: string }>(resolve => { release = resolve; }));
   render(<App transport={value.transport} readLocalWorker={readLocalWorker} />);
-  fireEvent.click(await screen.findByRole("button", { name: `New session in First project. Project ID: ${first.id}` }));
+  fireEvent.click(await screen.findByRole("button", { name: productName(`New session in First project. Project ID: ${first.id}`) }));
   fireEvent.click(screen.getByRole("button", { name: "Options" }));
   fireEvent.click(screen.getByRole("radio", { name: "Local" }));
-  const shortcut = screen.getByRole("button", { name: `New session in Second project. Project ID: ${second.id}` });
+  const shortcut = screen.getByRole("button", { name: productName(`New session in Second project. Project ID: ${second.id}`) });
   expect(shortcut).toHaveProperty("disabled", true);
   fireEvent.click(shortcut);
   await act(async () => release({ machineId: value.machine.id, token: "A".repeat(43) }));
@@ -806,12 +807,12 @@ it("invalidates the loaded sidebar pages after saving without resetting their cu
   const project = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.PROJECT, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Existing project" }) });
   const value = fixture([], [repository], [project], true);
   render(<App transport={value.transport} />);
-  await screen.findByRole("button", { name: `Existing project. Project ID: ${project.id}` });
+  await screen.findByRole("button", { name: productName(`Existing project. Project ID: ${project.id}`) });
   reach("projects");
   await waitFor(() => expect(value.projectRequests).toContain("project-next"));
   reach("sessions");
   await waitFor(() => expect(value.sessionRequests.some((request) => request.projectId === "" && request.pageToken === "global-next")).toBe(true));
-  fireEvent.click(screen.getByRole("button", { name: `Existing project. Project ID: ${project.id}` }));
+  fireEvent.click(screen.getByRole("button", { name: productName(`Existing project. Project ID: ${project.id}`) }));
   await waitFor(() => expect(window.document.querySelector('[data-continuation="Existing project sessions"]')).toBeTruthy());
   reach("Existing project sessions");
   await waitFor(() => expect(value.sessionRequests.some((request) => request.projectId === project.id && request.pageToken === "project-session-next")).toBe(true));
@@ -1115,7 +1116,7 @@ it("opens a dedicated PR workspace and reads GitHub automatically after valid se
   const value = fixture([], [repository]);
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Pull requests" }));
-  const select = await screen.findByRole("button", { name: `Fixture repository. Repository ID: ${repository.id}` });
+  const select = await screen.findByRole("button", { name: productName(`Fixture repository. Repository ID: ${repository.id}`) });
   expect(value.githubQuery).not.toHaveBeenCalled();
   fireEvent.click(select);
   expect(screen.queryByRole("button", { name: "Load pull requests" })).toBeNull();
@@ -1169,7 +1170,7 @@ it("opens a fresh targeted Git Profiles visit after abandoning an unsaved profil
   await screen.findByRole("heading", { name: "Add your first GitHub profile" }); fireEvent.click(screen.getByRole("button", { name: "New GitHub profile" }));
   fireEvent.change(await screen.findByRole("textbox", { name: "Profile name" }), { target: { value: "Discarded profile draft" } });
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
-  fireEvent.click(await screen.findByRole("button", { name: `Unconfigured repository. Repository ID: ${repository.id}` }));
+  fireEvent.click(await screen.findByRole("button", { name: productName(`Unconfigured repository. Repository ID: ${repository.id}`) }));
   fireEvent.click(await screen.findByRole("button", { name: "GitHub profiles" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Git Profiles" }).getAttribute("aria-pressed")).toBe("true"));
   expect(screen.queryByRole("textbox", { name: "Profile name" })).toBeNull(); expect(screen.queryByRole("dialog")).toBeNull();

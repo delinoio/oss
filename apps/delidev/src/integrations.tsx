@@ -1,3 +1,5 @@
+import { ProductIdentity } from "./product-identity-labels";
+import { ProductIdentityKind } from "./product-identity";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
@@ -166,7 +168,7 @@ function IntegrationConnection({ initial, active, close, initialRetry, initialPr
         <p className="integration-secondary">{tokenStorageNote()}</p>
         {retryIdentity || pending.operation === "replace-token" ? <p>{copy("integrations.reenterTheSameTokenToRetry_d082cd")}</p> : null}
       </fieldset><SettingsTaskActions form={tokenFormId}><SettingsActionButton icon={SettingsActionIcon.Retry} className="primary" disabled={blocked || deleting || Boolean(result.error) || !/^[!-~]{1,512}$/.test(token) || (pending.operation === "replace-token" && !original)}>{retryIdentity || pending.operation === "replace-token" ? copy("integrations.retryOriginalTokenReplacement_cdf40d") : copy("integrations.saveAndValidateToken_d79171")}</SettingsActionButton></SettingsTaskActions></form>
-      {retryIdentity ? <p><LocalizedText id="integrations.pendingRequest_2efde7" components={{ s0: <>{retryIdentity.requestId}</> }} /></p> : null}
+      {retryIdentity ? <p><LocalizedText id="integrations.pendingRequest_2efde7" components={{ s0: <ProductIdentity id={retryIdentity.requestId} kind={ProductIdentityKind.Request} /> }} /></p> : null}
     </section>
     <section className="integration-section" aria-label={copy("integrations.validateIdentity_1ba57b")}><h4>{copy("integrations.identityValidation_657b2c")}</h4>
       <p>{copy("integrations.identityValidationDoesNotVerifyAccess_7be91f")}</p>

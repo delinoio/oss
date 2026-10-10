@@ -1,3 +1,5 @@
+import { ProductIdentity, useProductIdentity } from "./product-identity-labels";
+import { ProductIdentityKind } from "./product-identity";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { LocalizedText, copy, useLocale, type MessageKey } from "./localization";
@@ -9,6 +11,7 @@ export interface InlineProblemPresentation { summary?: ReactNode; actions?: Reac
 /** Presentation only. The owning workflow supplies original actions and guards. */
 export function InlineRemediation({ summary, actions, details }: { summary: ReactNode; actions?: ReactNode; details?: ReactNode }) {
   useLocale();
+  const identity = useProductIdentity();
   return <div role="alert" className="problem"><div>{summary}</div>{actions ? <div className="actions">{actions}</div> : null}{details ? <Disclosure><DisclosureSummary>{copy("ui.technicalDetails")}</DisclosureSummary>{details}</Disclosure> : null}</div>;
 }
 
@@ -20,8 +23,9 @@ export function Problem({ error, ...presentation }: { error: unknown } & InlineP
 }
 export function Failure({ failure, summary, actions }: { failure?: ClientFailure } & InlineProblemPresentation) {
   useLocale();
+  const identity = useProductIdentity();
   if (!failure) return null;
-  return <div role="alert" className="problem"><strong>{copy("ui.requestFailed")}</strong><p>{copy(failureGuidance[failure.code])}</p>{summary ? <div>{summary}</div> : null}{actions ? <div className="actions">{actions}</div> : null}<Disclosure><DisclosureSummary>{copy("ui.technicalDetails")}</DisclosureSummary><strong>{failure.message}</strong><p>{failure.guidance}</p><code>{failure.code}</code></Disclosure>{failure.correlationId ? <small><LocalizedText id="ui.reference_0eac07" components={{ s0: <>{failure.correlationId}</> }} /></small> : null}</div>;
+  return <div role="alert" className="problem"><strong>{copy("ui.requestFailed")}</strong><p>{copy(failureGuidance[failure.code])}</p>{summary ? <div>{summary}</div> : null}{actions ? <div className="actions">{actions}</div> : null}<Disclosure><DisclosureSummary>{copy("ui.technicalDetails")}</DisclosureSummary><strong>{identity.diagnostic(failure.message)}</strong><p>{identity.diagnostic(failure.guidance)}</p><code>{failure.code}</code></Disclosure></div>;
 }
 export function ServiceProblem({ code, children, summary, actions }: { code?: string; children: ReactNode } & InlineProblemPresentation) {
   useLocale();
