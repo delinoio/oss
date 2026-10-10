@@ -15,6 +15,8 @@ const args = new URLSearchParams(location.search);
 const theme = args.get("theme") === "dark" ? Theme.Dark : Theme.Light;
 void i18n.changeLanguage(args.get("language") === "ko" ? SupportedLanguage.Korean : SupportedLanguage.English);
 const requests = { github: 0, repository: 0 };
+let catalogReads = 0;
+Object.defineProperty(window, "__prSidebarCatalogReads", { get: () => catalogReads });
 // Layout checks can inspect only synthetic read counts, never product state or credentials.
 Object.defineProperty(window, "__prSidebarFixture", { value: requests });
 const rows = args.get("empty") === "true" ? [] : ["oss", "delidev", args.get("long") === "true" ? "long-repository-name-".repeat(18) : "docs"].map((name, index) => create(ResourceSchema, {
@@ -26,7 +28,10 @@ const transport = createRouterTransport(router => {
   router.service(SessionService, { listSessions: () => ({ sessions: [] }) });
   router.service(InboxService, { listInbox: () => ({ entries: [] }), getNotificationPreferences: () => ({ preferences: create(NotificationPreferencesSchema, { revision: 1n }) }) });
   router.service(ResourceService, {
-    listResources: request => ({ resources: request.filter?.kind === EntityKind.REPOSITORY ? rows : [] }),
+    listResources: request => {
+      if (request.filter?.kind === EntityKind.REPOSITORY) catalogReads++;
+      return { resources: request.filter?.kind === EntityKind.REPOSITORY ? rows : [] };
+    },
     getResource: request => { requests.repository++; return { resource: rows.find(row => row.id === request.id) }; },
   });
   router.service(IntegrationService, { queryRepositoryIntegration: () => { requests.github++; throw new ConnectError("Synthetic observation unavailable", Code.Unavailable); } });

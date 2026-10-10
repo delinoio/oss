@@ -259,7 +259,7 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	if err != nil {
 		return nil, err
 	}
-	instructions, err := assignment.Configuration.NativeInstructions(assignment.Input.Mode)
+	instructions, err := childSnapshot.Configuration.NativeInstructions(assignment.Input.Mode)
 	if err != nil {
 		return nil, err
 	}

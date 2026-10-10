@@ -3,12 +3,13 @@
 .command-menu::backdrop { background:var(--backdrop); }
 .command-menu-title { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; }
 .command-menu [cmdk-root] { display:flex; flex-direction:column; min-height:0; max-height:min(438px,calc(100dvh - 34px)); }
-.command-menu-search { display:flex; align-items:center; gap:8px; padding:8px; box-sizing:border-box; min-height:56px; flex-shrink:0; border-bottom:1px solid var(--border); }
+.command-menu-search { display:flex; align-items:center; gap:12px; padding:8px 16px; box-sizing:border-box; height:56px; min-height:56px; flex-shrink:0; border-bottom:1px solid var(--border); }
 .command-menu svg { flex-shrink:0; }
 .command-menu [cmdk-input] { box-sizing:border-box; min-width:0; width:100%; flex:1; min-height:40px; border:0; background:transparent; color:var(--text); }
 .command-menu button { min-width:40px; min-height:40px; border-radius:8px; }
-.command-menu [cmdk-list] { min-height:0; overflow:auto; overscroll-behavior:contain; }
-.command-menu [cmdk-group-heading] { color:var(--muted); font-size:12px; padding:12px 8px 4px; }
+.command-menu [cmdk-list] { box-sizing:border-box; padding:8px; min-height:0; overflow:auto; overscroll-behavior:contain; }
+.command-menu [cmdk-group]:not([hidden]):has([cmdk-item], .command-menu-status:not(:empty)) ~ [cmdk-group]:not([hidden]):has([cmdk-item], .command-menu-status:not(:empty)) { margin-top:8px; }
+.command-menu [cmdk-group-heading] { color:var(--muted); font-size:12px; padding:12px 8px 8px; }
 .command-menu [cmdk-item] { display:flex; align-items:center; gap:8px; min-height:40px; padding:8px; box-sizing:border-box; border-radius:8px; cursor:pointer; overflow-wrap:anywhere; }
 .command-menu [cmdk-item] > span { min-width:0; flex:1; }
 .command-menu [cmdk-item][data-selected="true"] { background:var(--surface-selected); outline:2px solid var(--focus); outline-offset:-2px; }

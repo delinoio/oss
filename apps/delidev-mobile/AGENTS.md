@@ -18,3 +18,13 @@
   track, provision owner accounts or invent credentials as part of fixtures.
 
 - New session inherits current authenticated server/Project Plan defaults until an explicit mode choice. Missing, stale or invalid defaults retain drafts and require reinspection; frozen pending requests retain their original mode. Notification preference writes retain the original client revision and closed situation selection; legacy servers retain the combined-category compatibility shape.
+
+- Persist all selected candidate-bound platform receipts before provider access. Missing recovery receipts remain Unknown. Apple proof requires nested COMPLETE state and complete bounded group pagination; Google staged edit membership is not distribution proof. Mark observation edits writable before any track mutation, commit the original edit, and reconcile exact published bytes without replacement uploads.
+
+- Beta target defaults to both platforms. Explicit iOS-only candidates use schema 2 and require no Android code or credentials; preserve schema-1 both-platform candidates and exact target-bound provenance. Serialize all beta workflow runs without canceling original submissions. Bind candidate and receipt downloads to their independently verified original run IDs.
+
+- Direct iOS Cargo builds must pass the configured minimum system version to the Swift linker; do not rely on its iOS 13 fallback or a warm local build.
+
+- Android beta build hosts install the exact SDK package `platforms;android-37.0` with command-line tools 16111833; the integer-only `android-37` package is absent from the official inventory. This build SDK does not alter the API 31 runtime minimum.
+
+- Apple IPA commits send only `uploaded: true`. Its returned MD5 corroborates locally reverified SHA-256 bytes only for retained candidate/upload/file receipt ownership and complete exact-size files; no handleless MD5 adoption. Save positive original transfer proof before metadata commit. Explicit repaired resume pins the reviewed recovery-code SHA independently while checking the original clean candidate source and immutable bytes; no rebuild, re-sign or replacement upload.
