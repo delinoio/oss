@@ -195,8 +195,8 @@ func TestRepositoryCloneNameFailureKeepsTransferredCheckout(t *testing.T) {
 	input := domain.RepositoryCloneInput{RepositoryID: repositoryID, MachineID: machine, LocalOrigin: domain.LocalOrigin{MachineID: machine, DeviceID: device}, ParentPath: "/alias/parent", URL: "https://example.com/repo.git", DirectoryName: "repo"}
 	raw, _ := json.Marshal(input)
 	job := domain.Job{Type: domain.CloneRepositoryJob, State: domain.JobClaimed, MachineID: machine, InstanceID: instance, AssignedDeviceID: device, Input: raw, AcceptedAt: time.Now().UTC()}
-	// Revoked original provenance is deliberately retained as a registration
-	// failure, after the Worker has already published the user-owned checkout.
+	// A competing name appears before registration, after the original Worker
+	// has published the user-owned checkout with valid retained provenance.
 	_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.clone", nil, func(tx *store.Tx) (any, error) {
 		_, err := tx.Put(domain.MachineKind, machine, 0, "", "", domain.Machine{Name: "fixture", OS: "linux", Architecture: "amd64", Version: rpc.Version, WorkerCapabilities: []domain.WorkerCapability{domain.RepositoryCloneV1}})
 		if err != nil {
