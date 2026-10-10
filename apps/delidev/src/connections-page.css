@@ -32,3 +32,8 @@
 .connections-row-menu summary { list-style: none; }
 .connections-row-menu summary::-webkit-details-marker { display: none; }
 @media (max-width: 759px) { .connections-local-heading { flex-direction: column; } }
+
+.connections-page { max-width: 1040px; width: 100%; margin-inline: auto; }
+.tailscale-access { margin-top: 16px; border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+.tailscale-access h3 { margin: 0; }
+.tailscale-code { font-variant-numeric: tabular-nums; letter-spacing: .12em; }

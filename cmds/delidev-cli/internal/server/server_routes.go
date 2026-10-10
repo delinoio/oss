@@ -28,6 +28,7 @@ func (s *Service) rpcMux() *http.ServeMux {
 	mux.Handle(delidevv1connect.NewUsageServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewConfigurationServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewDeviceServiceHandler(s, options...))
+	mux.Handle(delidevv1connect.NewTailscaleServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewWorkerServiceHandler(s, append(options, connect.WithConditionalHandlerOptions(func(spec connect.Spec) []connect.HandlerOption {
 		if spec.Procedure == delidevv1connect.WorkerServiceReportWorkProcedure {
 			return []connect.HandlerOption{connect.WithReadMaxBytes(domain.MaxRepositoryBranchesJobBytes), connect.WithSendMaxBytes(2 * domain.MaxRepositoryBranchesJobBytes)}

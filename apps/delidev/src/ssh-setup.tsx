@@ -13,18 +13,18 @@ import { useSettingsOpening } from "./settings-lifetime";
 import { Problem } from "./ui";
 
 enum Authentication { Password = "password", PrivateKey = "private-key" }
-export function SSHSetup({ active }: { active: boolean }) {
+export function SSHSetup({ active, targetHost = "", serverOrigin = "" }: { active: boolean; targetHost?: string; serverOrigin?: string }) {
   useLocale();
   const [expanded, setExpanded] = useState(false);
   return <section data-settings-search-target="ssh"><SettingsActionButton icon={SettingsActionIcon.Inspect} type="button" onClick={() => setExpanded(true)}>{copy("ssh-setup.setUpAWorkerOverSsh_9a1626")}</SettingsActionButton>
-    {expanded ? <SettingsTaskScope><SSHSetupTask active={active} close={() => setExpanded(false)} /></SettingsTaskScope> : null}
+    {expanded ? <SettingsTaskScope><SSHSetupTask active={active} targetHost={targetHost} serverOrigin={serverOrigin} close={() => setExpanded(false)} /></SettingsTaskScope> : null}
   </section>;
 }
 
-function SSHSetupTask({ active, close }: { active: boolean; close: () => void }) {
+function SSHSetupTask({ active, close, targetHost, serverOrigin }: { active: boolean; close: () => void; targetHost: string; serverOrigin: string }) {
   useLocale();
   const formId = useId();
-  const [host, setHost] = useState(""), [port, setPort] = useState("22"), [user, setUser] = useState(""), [name, setName] = useState(""), [id, setId] = useState("");
+  const [host, setHost] = useState(targetHost), [port, setPort] = useState("22"), [user, setUser] = useState(""), [name, setName] = useState(""), [id, setId] = useState("");
   const [submittedStartId, setSubmittedStartId] = useState("");
   const [accepted, setAccepted] = useState<Resource>(), [confirmed, setConfirmed] = useState(false), [method, setMethod] = useState(Authentication.PrivateKey);
   const [busy, setBusy] = useState(false), [uncertain, setUncertain] = useState(false), [error, setError] = useState<unknown>();
@@ -51,13 +51,14 @@ function SSHSetupTask({ active, close }: { active: boolean; close: () => void })
     setSubmittedStartId(id); setBusy(true); setError(undefined);
     const abort = new AbortController(); controller.current = abort;
     try {
-      const response = await createClient(InstallationService, transport).startSSHSetup({ mutation: mutation(), name, confirmedFingerprint: text(identity.fingerprint), credential: bytes }, { signal: abort.signal, timeoutMs: 35000 });
+      const response = await createClient(InstallationService, transport).startSSHSetup({ mutation: mutation(), name, confirmedFingerprint: text(identity.fingerprint), credential: bytes, serverOrigin }, { signal: abort.signal, timeoutMs: 35000 });
       if (alive.current && !opening?.disposed && response.setup) setAccepted(response.setup);
     } catch (problem) { if (alive.current && !opening?.disposed) { setError(problem); setUncertain(true); void currentRead.refetch(); } }
     finally { bytes.fill(0); if (alive.current && !opening?.disposed) setBusy(false); }
   };
   const blocked = !active || busy || inspection.busy || inspection.uncertain || cancel.busy || reconcile.busy;
   return <SettingsTaskDialog title={copy("ssh-setup.setUpAWorkerOverSsh_9a1626")} size={SettingsDialogSize.Wide} onDismiss={() => { if (secret.current) secret.current.value = ""; if (passphrase.current) passphrase.current.value = ""; }} close={close}>
+ {serverOrigin ? <><p>{copy("tailscale.currentServer")}: {serverOrigin}</p><p>{copy("tailscale.sshServer")}</p></> : null}
     <p>{copy("ssh-setup.firstInspectTheHostIdentityAnd_2194ce")}</p>
     {!supported ? <p>{status.isPending ? copy("ssh-setup.checkingServerSupport_8d95fa") : copy("ssh-setup.thisServerRequiresAnUpdateTo_df31b8")}</p> : <>
       <form id={`${formId}-inspect`} onSubmit={event => { event.preventDefault(); if (!blocked && !submittedStartId) void inspection.send({ requestId: newRequestId(), host, port: Number(port), user }); }}><fieldset disabled={blocked || Boolean(submittedStartId)}>

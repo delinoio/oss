@@ -1,3 +1,4 @@
+import { SavedConnectionEvent } from "./connection-events";
 import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import {  ownedMessage, useProductMessage, LocalizedText, copy, useLocale   } from "./localization";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
@@ -83,6 +84,11 @@ export function SavedConnections({ visible, close, actions, target, advancedTarg
     setFetching(true);
     void actions.list().then((value) => { if (!canceled && generation === readGeneration.current) { setProfiles(value); setError(undefined); } }, (error) => { if (!canceled && generation === readGeneration.current) setError(error); }).finally(() => { if (!canceled && generation === readGeneration.current) setFetching(false); });
     return () => { canceled = true; };
+  }, [visible, actions]);
+  useEffect(() => {
+    const changed = () => { if (visible) void refresh(); };
+    window.addEventListener(SavedConnectionEvent.Changed, changed);
+    return () => window.removeEventListener(SavedConnectionEvent.Changed, changed);
   }, [visible, actions]);
   let preview: Record<string, unknown> = {};
   if (grant.length <= 32768) { try { preview = object(JSON.parse(grant)); } catch { /* A partial private grant is never displayed or submitted. */ } }

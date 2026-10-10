@@ -28,6 +28,7 @@ const (
 )
 
 type sshOperation struct {
+	ServerOrigin          string                `json:"server_origin,omitempty"`
 	ServerID              domain.ID             `json:"server_id"`
 	Actor                 domain.Principal      `json:"actor"`
 	Target                sshsetup.Target       `json:"target"`

@@ -13293,6 +13293,828 @@
       "member": "replayed",
       "number": 2,
       "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleDiscoveryState",
+      "member": "TAILSCALE_DISCOVERY_STATE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleDiscoveryState",
+      "member": "TAILSCALE_DISCOVERY_STATE_READY",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleDiscoveryState",
+      "member": "TAILSCALE_DISCOVERY_STATE_MISSING",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleDiscoveryState",
+      "member": "TAILSCALE_DISCOVERY_STATE_STOPPED",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleDiscoveryState",
+      "member": "TAILSCALE_DISCOVERY_STATE_LOGGED_OUT",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleDiscoveryState",
+      "member": "TAILSCALE_DISCOVERY_STATE_PERMISSION_DENIED",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleDiscoveryState",
+      "member": "TAILSCALE_DISCOVERY_STATE_MALFORMED",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleDiscoveryState",
+      "member": "TAILSCALE_DISCOVERY_STATE_INCOMPLETE",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleOwnership",
+      "member": "TAILSCALE_OWNERSHIP_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleOwnership",
+      "member": "TAILSCALE_OWNERSHIP_OWN",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleOwnership",
+      "member": "TAILSCALE_OWNERSHIP_SHARED",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleOwnership",
+      "member": "TAILSCALE_OWNERSHIP_TAGGED",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleOwnership",
+      "member": "TAILSCALE_OWNERSHIP_UNKNOWN",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscalePeerState",
+      "member": "TAILSCALE_PEER_STATE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscalePeerState",
+      "member": "TAILSCALE_PEER_STATE_NOT_CHECKED",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscalePeerState",
+      "member": "TAILSCALE_PEER_STATE_ACCEPTING",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscalePeerState",
+      "member": "TAILSCALE_PEER_STATE_OFFLINE",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscalePeerState",
+      "member": "TAILSCALE_PEER_STATE_TLS_FAILURE",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscalePeerState",
+      "member": "TAILSCALE_PEER_STATE_BLOCKED",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscalePeerState",
+      "member": "TAILSCALE_PEER_STATE_UNSUPPORTED",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleApprovalState",
+      "member": "TAILSCALE_APPROVAL_STATE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleApprovalState",
+      "member": "TAILSCALE_APPROVAL_STATE_PENDING",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleApprovalState",
+      "member": "TAILSCALE_APPROVAL_STATE_APPROVED",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleApprovalState",
+      "member": "TAILSCALE_APPROVAL_STATE_DENIED",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleApprovalState",
+      "member": "TAILSCALE_APPROVAL_STATE_EXPIRED",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleApprovalState",
+      "member": "TAILSCALE_APPROVAL_STATE_CANCELED",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleAccessState",
+      "member": "TAILSCALE_ACCESS_STATE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleAccessState",
+      "member": "TAILSCALE_ACCESS_STATE_OFF",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleAccessState",
+      "member": "TAILSCALE_ACCESS_STATE_STARTING",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleAccessState",
+      "member": "TAILSCALE_ACCESS_STATE_READY",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleAccessState",
+      "member": "TAILSCALE_ACCESS_STATE_UNAVAILABLE",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "TailscaleAccessState",
+      "member": "TAILSCALE_ACCESS_STATE_CLEANUP_REQUIRED",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "TailscalePeer",
+      "member": "id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "TailscalePeer",
+      "member": "name",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "TailscalePeer",
+      "member": "origin",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "TailscalePeer",
+      "member": "online",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "TailscalePeer",
+      "member": "ownership",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "GetTailscaleStatusResponse",
+      "member": "server_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "GetTailscaleStatusResponse",
+      "member": "origin",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "GetTailscaleStatusResponse",
+      "member": "public_key",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "GetTailscaleStatusResponse",
+      "member": "accepting",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "ReadTailscaleDevicesResponse",
+      "member": "state",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "ReadTailscaleDevicesResponse",
+      "member": "self",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "ReadTailscaleDevicesResponse",
+      "member": "peers",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "ReadTailscaleDevicesResponse",
+      "member": "https_ready",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "CheckTailscaleDeviceRequest",
+      "member": "peer_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "CheckTailscaleDeviceResponse",
+      "member": "state",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "CheckTailscaleDeviceResponse",
+      "member": "server_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "GetTailscaleAccessResponse",
+      "member": "state",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "GetTailscaleAccessResponse",
+      "member": "origin",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "GetTailscaleAccessResponse",
+      "member": "enabled",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "SetTailscaleAccessRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "SetTailscaleAccessRequest",
+      "member": "enable",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "SetTailscaleAccessRequest",
+      "member": "server_id",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "SetTailscaleAccessRequest",
+      "member": "origin",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "RequestTailscaleConnectionRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "RequestTailscaleConnectionRequest",
+      "member": "requester_name",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "RequestTailscaleConnectionRequest",
+      "member": "requester_key",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "RequestTailscaleConnectionRequest",
+      "member": "server_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "RequestTailscaleConnectionRequest",
+      "member": "origin",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "RequestTailscaleConnectionRequest",
+      "member": "role",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "RequestTailscaleConnectionRequest",
+      "member": "observed_target_key",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "RequestTailscaleConnectionRequest",
+      "member": "worker_server_id",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "RequestTailscaleConnectionRequest",
+      "member": "worker_server_origin",
+      "number": 9,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "TailscaleConnection",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "TailscaleConnection",
+      "member": "requester_name",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "TailscaleConnection",
+      "member": "requester_key",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "TailscaleConnection",
+      "member": "target_key",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "TailscaleConnection",
+      "member": "server_id",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "TailscaleConnection",
+      "member": "origin",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "TailscaleConnection",
+      "member": "role",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "TailscaleConnection",
+      "member": "confirmation_code",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "TailscaleConnection",
+      "member": "expires_at",
+      "number": 9,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "TailscaleConnection",
+      "member": "state",
+      "number": 10,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "TailscaleConnection",
+      "member": "encrypted_grant",
+      "number": 11,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "TailscaleConnection",
+      "member": "worker_server_id",
+      "number": 12,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "TailscaleConnection",
+      "member": "worker_server_origin",
+      "number": 13,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "TailscaleConnectionResponse",
+      "member": "connection",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "GetTailscaleConnectionRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "GetTailscaleConnectionRequest",
+      "member": "requester_key",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "ListTailscaleConnectionsResponse",
+      "member": "connections",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "DecideTailscaleConnectionRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "DecideTailscaleConnectionRequest",
+      "member": "decision_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "DecideTailscaleConnectionRequest",
+      "member": "confirmation_code",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "DecideTailscaleConnectionRequest",
+      "member": "allow",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "StartTailscalePeerConnectionRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "StartTailscalePeerConnectionRequest",
+      "member": "peer_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "StartTailscalePeerConnectionRequest",
+      "member": "role",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "PollTailscalePeerConnectionRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "CompleteTailscalePeerConnectionRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "CompleteTailscalePeerConnectionRequest",
+      "member": "confirmation_code",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "CompleteTailscalePeerConnectionResponse",
+      "member": "profile_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "CompleteTailscalePeerConnectionResponse",
+      "member": "worker_device_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "CompleteTailscalePeerConnectionResponse",
+      "member": "completed",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_TAILSCALE_CONNECTION_APPROVAL_V1",
+      "number": 86
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "StartSSHSetupRequest",
+      "member": "server_origin",
+      "number": 5
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "StartTailscalePeerConnectionRequest",
+      "member": "target_origin",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "StartTailscalePeerConnectionRequest",
+      "member": "target_server_id",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "DeliverTailscaleWorkerGrantRequest",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "DeliverTailscaleWorkerGrantRequest",
+      "member": "requester_key",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "DeliverTailscaleWorkerGrantRequest",
+      "member": "encrypted_grant",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "DeliverTailscaleWorkerGrantResponse",
+      "member": "worker_device_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2136,
+      "kind": "message",
+      "declaration": "DeliverTailscaleWorkerGrantResponse",
+      "member": "completed",
+      "number": 2,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [
@@ -13527,6 +14349,150 @@
       "method": "SetAutomaticResetCreditConsent",
       "input": "SetAutomaticResetCreditConsentRequest",
       "output": "SetAutomaticResetCreditConsentResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "GetTailscaleStatus",
+      "input": "GetTailscaleStatusRequest",
+      "output": "GetTailscaleStatusResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "ReadTailscaleDevices",
+      "input": "ReadTailscaleDevicesRequest",
+      "output": "ReadTailscaleDevicesResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "CheckTailscaleDevice",
+      "input": "CheckTailscaleDeviceRequest",
+      "output": "CheckTailscaleDeviceResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "GetTailscaleAccess",
+      "input": "GetTailscaleAccessRequest",
+      "output": "GetTailscaleAccessResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "SetTailscaleAccess",
+      "input": "SetTailscaleAccessRequest",
+      "output": "GetTailscaleAccessResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "RequestTailscaleConnection",
+      "input": "RequestTailscaleConnectionRequest",
+      "output": "TailscaleConnectionResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "GetTailscaleConnection",
+      "input": "GetTailscaleConnectionRequest",
+      "output": "TailscaleConnectionResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "ListTailscaleConnections",
+      "input": "ListTailscaleConnectionsRequest",
+      "output": "ListTailscaleConnectionsResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "DecideTailscaleConnection",
+      "input": "DecideTailscaleConnectionRequest",
+      "output": "TailscaleConnectionResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "CancelTailscaleConnection",
+      "input": "GetTailscaleConnectionRequest",
+      "output": "TailscaleConnectionResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "StartTailscalePeerConnection",
+      "input": "StartTailscalePeerConnectionRequest",
+      "output": "TailscaleConnectionResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "PollTailscalePeerConnection",
+      "input": "PollTailscalePeerConnectionRequest",
+      "output": "TailscaleConnectionResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "CompleteTailscalePeerConnection",
+      "input": "CompleteTailscalePeerConnectionRequest",
+      "output": "CompleteTailscalePeerConnectionResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "ListTailscalePeerConnections",
+      "input": "ListTailscaleConnectionsRequest",
+      "output": "ListTailscaleConnectionsResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "CancelTailscalePeerConnection",
+      "input": "PollTailscalePeerConnectionRequest",
+      "output": "TailscaleConnectionResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2136,
+      "service": "TailscaleService",
+      "method": "DeliverTailscaleWorkerGrant",
+      "input": "DeliverTailscaleWorkerGrantRequest",
+      "output": "DeliverTailscaleWorkerGrantResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

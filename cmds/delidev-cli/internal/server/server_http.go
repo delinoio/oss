@@ -76,7 +76,7 @@ func (s *Service) Handler(origins []string, loopback bool) http.Handler {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		if r.URL.Path == delidevv1connect.DeviceServicePairDeviceProcedure {
+		if r.URL.Path == delidevv1connect.DeviceServicePairDeviceProcedure || s.tailnet(r.Context()) && (r.URL.Path == delidevv1connect.TailscaleServiceGetTailscaleStatusProcedure || r.URL.Path == delidevv1connect.TailscaleServiceRequestTailscaleConnectionProcedure || r.URL.Path == delidevv1connect.TailscaleServiceGetTailscaleConnectionProcedure || r.URL.Path == delidevv1connect.TailscaleServiceCancelTailscaleConnectionProcedure || r.URL.Path == delidevv1connect.TailscaleServiceDeliverTailscaleWorkerGrantProcedure) {
 			if !s.pairingAllowed(r.RemoteAddr) {
 				reject(domain.Fail(domain.ResourceExhausted, "Pairing attempts are temporarily limited.", "Wait one minute before retrying the existing grant."))
 				return

@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { copy, useLocale } from "./localization";
 import "./connections-page.css";
+import { TailscaleAccessControls, TailscaleDevices } from "./tailscale-connections";
 
 export interface ConnectionPageSlots { current: HTMLElement; saved?: HTMLElement; advanced: HTMLElement }
 // This host moves without changing portal identity. Controllers and their exact
@@ -36,8 +37,8 @@ export function ConnectionsPage({ onSlots, local = false }: { onSlots: (slots: C
     return () => { observer.disconnect(); onSlots(undefined); };
   }, [onSlots]);
   return <div className="connections-page">
-    <section data-settings-search-target="current-connection" aria-label={copy("settings.connections.current")}><h2>{copy("settings.connections.current")}</h2><div className="connections-current" ref={current} /></section>
-    {local ? <div ref={saved} /> : null}
+    <section data-settings-search-target="current-connection" aria-label={copy("settings.connections.current")}><h2>{copy("settings.connections.current")}</h2><div className="connections-current" ref={current} />{local ? <TailscaleAccessControls /> : null}</section>
+    {local ? <><TailscaleDevices /><div ref={saved} /></> : null}
     {attention ? <p className="connections-attention" role="status">{copy("settings.connections.attention")}</p> : null}
     <Disclosure density={DisclosureDensity.Settings} className="connections-advanced"><DisclosureSummary>{copy("settings.connections.advanced")}</DisclosureSummary><p>{copy("settings.connections.advancedHelp")}</p><div ref={advanced} /></Disclosure>
   </div>;

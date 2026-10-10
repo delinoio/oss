@@ -103,7 +103,8 @@ func (s *Service) StartSSHSetup(ctx context.Context, req *connect.Request[pb.Sta
 		ID                            domain.ID
 		Revision                      uint64
 		Name, Fingerprint, Commitment string
-	}{actor, domain.ID(m.Id), m.ExpectedRevision, req.Msg.Name, req.Msg.ConfirmedFingerprint, s.installationCommitment(domain.ID(m.RequestId), req.Msg.Credential)}
+		ServerOrigin                  string `json:",omitempty"`
+	}{actor, domain.ID(m.Id), m.ExpectedRevision, req.Msg.Name, req.Msg.ConfirmedFingerprint, s.installationCommitment(domain.ID(m.RequestId), req.Msg.Credential), req.Msg.ServerOrigin}
 	unlock, e := s.lockAccounts(ctx)
 	if e != nil {
 		return nil, rpc.Error(e, correlation)
@@ -139,9 +140,16 @@ func (s *Service) StartSSHSetup(ctx context.Context, req *connect.Request[pb.Sta
 		if e != nil {
 			return nil, rpc.Error(e, correlation)
 		}
+		endpointOrigin := s.Endpoint.URL
+		if input.ServerOrigin != "" {
+			if s.tailscale == nil || s.tailscale.access.Origin() != input.ServerOrigin {
+				return nil, rpc.Error(installationFailure(domain.Conflict), correlation)
+			}
+			endpointOrigin = input.ServerOrigin
+		}
 		// A remote host cannot reach this server through its own loopback.
 		// Reject the incompatible product topology before protected staging.
-		if endpoint, problem := url.Parse(s.Endpoint.URL); problem == nil && endpoint.Host != "" && endpoint.Scheme == "http" {
+		if endpoint, problem := url.Parse(endpointOrigin); problem == nil && endpoint.Host != "" && endpoint.Scheme == "http" {
 			host := net.ParseIP(operation.Target.Host)
 			local := operation.Target.Host == "localhost" || host != nil && host.IsLoopback()
 			if !local {
@@ -170,6 +178,7 @@ func (s *Service) StartSSHSetup(ctx context.Context, req *connect.Request[pb.Sta
 			}
 			current.State = installationRequested
 			current.Name = input.Name
+			current.ServerOrigin = input.ServerOrigin
 			current.StartRequestID = domain.ID(m.RequestId)
 			_, e = tx.Put(r.Kind, r.ID, r.Revision, "", "", current)
 			return installationReceipt{r.ID}, e

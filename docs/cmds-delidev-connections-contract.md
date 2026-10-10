@@ -77,3 +77,7 @@ Explicit-port authorities retain loopback IP-family checks and require a valid
 nonzero decimal port. Malformed hosts, numeric IPv4 aliases and foreign hosts
 remain denied. Exact configured browser origins and authenticated RPC checks
 remain independent; this changes no listener or privileged-port ownership.
+
+## Tailscale original connections
+
+The [Tailscale connection contract](cmds-delidev-tailscale-contract.md) owns bounded discovery, separate explicit ingress and original approved pairing under System capability 86. Preserve existing manual pairing, saved HTTPS identity, SSH fingerprint/signed Worker setup and independent Worker lifetimes. Discovery and Tailscale membership grant no readiness or operation authority. Main Local Connections presents Current connection, Tailscale devices, Saved servers and Advanced with scoped cancellation and original accepted-operation recovery.

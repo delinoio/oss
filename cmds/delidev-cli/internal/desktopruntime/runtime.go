@@ -146,7 +146,7 @@ func Handler(t Target, next http.Handler, origins []string) http.Handler {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
-			next.ServeHTTP(w, verified)
+			next.ServeHTTP(w, verified.WithContext(WithTarget(verified.Context(), &t)))
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")

@@ -1417,3 +1417,7 @@ Each native bucket owns its exact bounded ID, required hasCredits/unlimited flag
 Account rows show one exact balance or a localized multi-bucket count. Manage subscription shows the read-only Paid credits card above Quota, with separate bucket labels and retained stale/error timestamps. Keep loading, unavailable/update, unknown, zero, positive and unlimited states distinct. Use existing theme tokens, wrapping rows, parent scrolling, keyboard/dismissal ownership and EN/KO strings. Presentation grants no account, execution, native or platform acceptance.
 
 The reconciled `CreateTerminalRequest` baseline retains original fields 1–4. The feature records their unchanged reset provenance as existing declarations; its records do not reclassify this original message as new. The feature owns creation intent field 5, original candidate field 6 and the closed creation-mode values. Preserve all member numbers and ownership.
+
+## Tailscale original connections
+
+The [Tailscale connection contract](cmds-delidev-tailscale-contract.md) owns bounded discovery, separate explicit ingress and original approved pairing under System capability 86. Preserve existing manual pairing, saved HTTPS identity, SSH fingerprint/signed Worker setup and independent Worker lifetimes. Discovery and Tailscale membership grant no readiness or operation authority. Main Local Connections presents Current connection, Tailscale devices, Saved servers and Advanced with scoped cancellation and original accepted-operation recovery.

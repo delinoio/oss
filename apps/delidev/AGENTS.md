@@ -23,3 +23,5 @@
 - [OpenCode Go subscription contract](../../docs/cmds-delidev-opencode-go-subscription-contract.md)
 - [DeliDev native read-only Sidechat](../../docs/cmds-delidev-sidechat-contract.md)
 - [Repository Workflow Contract](../../docs/repository-workflow-contract.md)
+
+- [Tailscale connection ownership](../../docs/cmds-delidev-tailscale-contract.md)

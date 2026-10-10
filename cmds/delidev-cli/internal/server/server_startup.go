@@ -160,6 +160,12 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	child, stop := context.WithCancel(ctx)
 	defer stop()
 	service := &Service{releaseVerifier: config.releaseVerifier, releaseFactory: config.releaseFactory, userServiceBackend: config.userServiceBackend, userServiceOptions: serviceOptions, Store: state, Identity: identity, Endpoint: Endpoint{URL: protocol + "://" + listener.Addr().String(), ServerID: identity.ServerID, Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, StartedAt: time.Now().UTC()}, logger: config.Logger, stop: stop, accountSecrets: config.accountSecrets}
+	if err := service.initializeTailscale(child, config); err != nil {
+		return err
+	}
+	if service.tailscale != nil {
+		defer service.tailscale.access.Close()
+	}
 	if err := service.retainLostSubscriptionLeases("", "", false); err != nil {
 		return err
 	}

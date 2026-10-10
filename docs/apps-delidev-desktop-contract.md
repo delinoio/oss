@@ -5098,3 +5098,7 @@ Home on Sessions and both creation surfaces, including the shared compact drawer
 ### Desktop server protocol validation
 
 Native local startup, supervision and saved-connection verification require the active server protocol 2 and the compiled package version. The Go resident host reports its RPC version constants in the initial started response, matching later authenticated status observations. Private desktop control version 2 and CLI envelope version 1 remain separate from server compatibility. Reject older and newer server protocols without replacing pairing, changing lifecycle intent or granting Worker authority.
+
+## Tailscale original connections
+
+The [Tailscale connection contract](cmds-delidev-tailscale-contract.md) owns bounded discovery, separate explicit ingress and original approved pairing under System capability 86. Preserve existing manual pairing, saved HTTPS identity, SSH fingerprint/signed Worker setup and independent Worker lifetimes. Discovery and Tailscale membership grant no readiness or operation authority. Main Local Connections presents Current connection, Tailscale devices, Saved servers and Advanced with scoped cancellation and original accepted-operation recovery.

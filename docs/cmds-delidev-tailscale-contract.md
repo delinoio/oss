@@ -18,6 +18,18 @@ Approval binds the original request, both ephemeral keys, target server/origin a
 
 Desktop Worker registration names the selected current server before consent and starts a separately owned outbound Worker. Headless targets reuse explicit SSH fingerprint confirmation, write-only authentication, signed installation and original-operation recovery. Only DeliDev Worker installation is allowed; no remote desktop/server, harness, service or arbitrary command is introduced.
 
+### Connections presentation
+
+Order the main Local page as Current connection, Tailscale devices, Saved connections and collapsed Advanced controls. Access controls belong to Current connection. Keep the content width at 1040 pixels, use semantic colors, 8-pixel corners and 40-pixel controls, and stack row actions on narrow windows. Provide English and Korean copy, announced read/status failures, keyboard focus and Escape dismissal. The single matching-code input receives focus. A saved-connection window can approve its authenticated target's request but cannot inspect another machine's local Tailscale installation.
+
+Opening the page reads installed availability and visible peers. Refresh reads again; it does not Check peers, enable ingress or mutate registration. Online peers expose explicit Check, followed by supported client/Worker actions. Headless or unsupported peers retain SSH setup. Show the selected current server before desktop or SSH Worker consent. Existing manual client pairing, advanced server controls and independent local Worker remain available.
+
+### Retained delivery and recovery
+
+Persist only the selected request's peer identity and canonical origin, original actor/server, requester ephemeral private key, original offer and approval transcript, profile identity and exact Worker pairing request. Go owns grants and credentials; React receives typed public status and matching codes. Returning to Connections reads original pending operations and reconciles those exact requests. The original target approves the original requested role and selected Worker destination, then encrypts its single-use approval to the requester. Worker delivery returns a separately encrypted selected-server pairing grant to that target; it cannot turn target-side approval into a Worker grant for the target's own server. Retain the original delivery digest before pairing, and fence startup before launching the independently owned Worker. A lost original pairing/start journal fails closed instead of reconstructing an attempt.
+
+An explicit SSH server origin must match the original active Tailscale HTTPS ingress before credentials are staged and before a remote artifact is staged. Capture it in the original durable SSH operation. Omitted origin retains the existing manual endpoint behavior. Existing original installer documents and reconciliation remain authoritative after acceptance.
+
 ## Storage
 Retain bounded private UUID-v7 access/approval intents and original retry ownership. Never persist a complete peer inventory. Reuse pairing receipts and saved profile identity; pin canonical HTTPS hostname:8443. Changed tailnet identity requires new explicit pairing, never silent profile rewriting. Add no unrelated or empty migration.
 
@@ -45,3 +57,5 @@ Update desktop, connections, SSH, protocol, lifecycle and project ownership cont
 - [Defaults](repository-defaults.md)
 - [Tailscale Serve](https://tailscale.com/docs/reference/tailscale-cli/serve)
 - [Tailscale CLI](https://tailscale.com/docs/reference/tailscale-cli)
+- [Foreground Serve ownership](https://github.com/tailscale/tailscale/blob/main/cmd/tailscale/cli/serve_v2.go)
+- [Native peer ownership metadata](https://github.com/tailscale/tailscale/blob/main/ipn/ipnstate/ipnstate.go)

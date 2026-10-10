@@ -319,6 +319,7 @@ type StartSSHSetupRequest struct {
 	Credential           []byte                 `protobuf:"bytes,2,opt,name=credential,proto3" json:"credential,omitempty"`
 	Name                 string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
 	ConfirmedFingerprint string                 `protobuf:"bytes,4,opt,name=confirmed_fingerprint,json=confirmedFingerprint,proto3" json:"confirmed_fingerprint,omitempty"`
+	ServerOrigin         string                 `protobuf:"bytes,5,opt,name=server_origin,json=serverOrigin,proto3" json:"server_origin,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -377,6 +378,13 @@ func (x *StartSSHSetupRequest) GetName() string {
 func (x *StartSSHSetupRequest) GetConfirmedFingerprint() string {
 	if x != nil {
 		return x.ConfirmedFingerprint
+	}
+	return ""
+}
+
+func (x *StartSSHSetupRequest) GetServerOrigin() string {
+	if x != nil {
+		return x.ServerOrigin
 	}
 	return ""
 }
@@ -1547,14 +1555,15 @@ const file_delidev_v1_installation_proto_rawDesc = "" +
 	"\x05setup\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\x05setup\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x02 \x01(\tR\trequestId\x12\x1a\n" +
-	"\breplayed\x18\x03 \x01(\bR\breplayed\"\xb1\x01\n" +
+	"\breplayed\x18\x03 \x01(\bR\breplayed\"\xd6\x01\n" +
 	"\x14StartSSHSetupRequest\x120\n" +
 	"\bmutation\x18\x01 \x01(\v2\x14.delidev.v1.MutationR\bmutation\x12\x1e\n" +
 	"\n" +
 	"credential\x18\x02 \x01(\fR\n" +
 	"credential\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x123\n" +
-	"\x15confirmed_fingerprint\x18\x04 \x01(\tR\x14confirmedFingerprint\"~\n" +
+	"\x15confirmed_fingerprint\x18\x04 \x01(\tR\x14confirmedFingerprint\x12#\n" +
+	"\rserver_origin\x18\x05 \x01(\tR\fserverOrigin\"~\n" +
 	"\x15StartSSHSetupResponse\x12*\n" +
 	"\x05setup\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\x05setup\x12\x1d\n" +
 	"\n" +

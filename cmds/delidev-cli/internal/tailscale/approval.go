@@ -35,12 +35,15 @@ const (
 )
 
 type ApprovalInput struct {
-	ID            domain.ID         `json:"request_id"`
-	RequesterName string            `json:"requester_name"`
-	RequesterKey  []byte            `json:"requester_key"`
-	ServerID      domain.ID         `json:"server_id"`
-	Origin        string            `json:"origin"`
-	Role          domain.DeviceType `json:"role"`
+	ObservedTargetKey  []byte            `json:"observed_target_key,omitempty"`
+	WorkerServerID     domain.ID         `json:"worker_server_id,omitempty"`
+	WorkerServerOrigin string            `json:"worker_server_origin,omitempty"`
+	ID                 domain.ID         `json:"request_id"`
+	RequesterName      string            `json:"requester_name"`
+	RequesterKey       []byte            `json:"requester_key"`
+	ServerID           domain.ID         `json:"server_id"`
+	Origin             string            `json:"origin"`
+	Role               domain.DeviceType `json:"role"`
 }
 type Approval struct {
 	Input          ApprovalInput `json:"input"`
@@ -51,6 +54,8 @@ type Approval struct {
 	EncryptedGrant []byte        `json:"encrypted_grant,omitempty"`
 }
 type approvalIntent struct {
+	DeliveryDigest []byte    `json:"delivery_digest,omitempty"`
+	WorkerDeviceID domain.ID `json:"worker_device_id,omitempty"`
 	DecisionActor  string    `json:"decision_actor,omitempty"`
 	Approval       Approval  `json:"approval"`
 	PrivateKey     []byte    `json:"private_key"`
@@ -71,9 +76,22 @@ type Approvals struct {
 	mu       sync.Mutex
 }
 
+func (a *Approvals) SetOrigin(origin string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.Origin = origin
+}
+
 const maxApprovalRecords = 256
 
 func (i ApprovalInput) Validate() error {
+	if i.Role == domain.WorkerDevice {
+		if i.WorkerServerID.Validate() != nil || ValidateOrigin(i.WorkerServerOrigin) != nil {
+			return invalid()
+		}
+	} else if i.WorkerServerID != "" || i.WorkerServerOrigin != "" {
+		return invalid()
+	}
 	if i.ID.Validate() != nil || i.ServerID.Validate() != nil || ValidateOrigin(i.Origin) != nil || domain.Text(i.RequesterName, "requester name", 256, true) != nil || len(i.RequesterKey) != 32 || (i.Role != domain.ClientDevice && i.Role != domain.WorkerDevice) {
 		return invalid()
 	}
@@ -138,13 +156,14 @@ func transcript(i ApprovalInput, target []byte) ([]byte, error) {
 		return nil, invalid()
 	}
 	return json.Marshal(struct {
+		Input     ApprovalInput
 		Request   domain.ID
 		Requester []byte
 		Target    []byte
 		Server    domain.ID
 		Origin    string
 		Role      domain.DeviceType
-	}{i.ID, i.RequesterKey, target, i.ServerID, i.Origin, i.Role})
+	}{i, i.ID, i.RequesterKey, target, i.ServerID, i.Origin, i.Role})
 }
 func confirmation(i ApprovalInput, target []byte) (string, error) {
 	raw, err := transcript(i, target)
@@ -380,4 +399,101 @@ func OpenGrant(private []byte, a Approval) ([]byte, error) {
 		return nil, invalid()
 	}
 	return aead.Open(nil, a.EncryptedGrant[:aead.NonceSize()], a.EncryptedGrant[aead.NonceSize():], associated)
+}
+
+// WorkerDelivery is encrypted for the originally approved target. Its grant
+// belongs to the requester's selected server, never the target's own server.
+type WorkerDelivery struct {
+	Token string          `json:"token"`
+	Grant json.RawMessage `json:"grant"`
+}
+
+func SealWorkerDelivery(private []byte, a Approval, payload []byte) ([]byte, error) {
+	if a.State != ApprovalApproved || a.Input.Role != domain.WorkerDevice || len(payload) > 32<<10 {
+		return nil, invalid()
+	}
+	key, err := ecdh.X25519().NewPrivateKey(private)
+	if err != nil || !bytes.Equal(key.PublicKey().Bytes(), a.Input.RequesterKey) {
+		return nil, invalid()
+	}
+	associated, err := transcript(a.Input, a.TargetKey)
+	if err != nil {
+		return nil, err
+	}
+	associated = append([]byte("worker-delivery-v1\x00"), associated...)
+	c, err := grantCipher(private, a.TargetKey, associated)
+	if err != nil {
+		return nil, err
+	}
+	nonce := make([]byte, c.NonceSize())
+	if _, err = rand.Read(nonce); err != nil {
+		return nil, err
+	}
+	return c.Seal(nonce, nonce, payload, associated), nil
+}
+func (a *Approvals) DeliverWorker(ctx context.Context, id domain.ID, requester, sealed []byte, consume func(context.Context, ApprovalInput, json.RawMessage, bool) (domain.ID, error)) (domain.ID, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if len(sealed) > 33<<10 || id.Validate() != nil {
+		return "", invalid()
+	}
+	j, err := a.load()
+	if err != nil {
+		return "", err
+	}
+	for n, r := range j.Requests {
+		if r.Approval.Input.ID != id {
+			continue
+		}
+		if r.Approval.State != ApprovalApproved || r.Approval.Input.Role != domain.WorkerDevice || !bytes.Equal(requester, r.Approval.Input.RequesterKey) {
+			return "", invalid()
+		}
+		digest := sha256.Sum256(sealed)
+		fresh := len(r.DeliveryDigest) == 0
+		if !fresh && !bytes.Equal(r.DeliveryDigest, digest[:]) {
+			return "", domain.Fail(domain.Conflict, "The original Worker delivery changed.", "Reconcile the retained delivery.")
+		}
+		if r.WorkerDeviceID != "" {
+			return r.WorkerDeviceID, nil
+		}
+		associated, err := transcript(r.Approval.Input, r.Approval.TargetKey)
+		if err != nil {
+			return "", err
+		}
+		associated = append([]byte("worker-delivery-v1\x00"), associated...)
+		c, err := grantCipher(r.PrivateKey, requester, associated)
+		if err != nil || len(sealed) < c.NonceSize() {
+			return "", invalid()
+		}
+		raw, err := c.Open(nil, sealed[:c.NonceSize()], sealed[c.NonceSize():], associated)
+		if err != nil {
+			return "", invalid()
+		}
+		defer clear(raw)
+		var delivery WorkerDelivery
+		if domain.Decode(raw, &delivery) != nil || subtle.ConstantTimeCompare([]byte(delivery.Token), []byte(r.GrantCode)) != 1 {
+			return "", invalid()
+		}
+		if fresh {
+			r.DeliveryDigest = append([]byte(nil), digest[:]...)
+			j.Requests[n] = r
+			if err = a.save(j); err != nil {
+				return "", err
+			}
+		}
+		device, err := consume(ctx, r.Approval.Input, delivery.Grant, fresh)
+		if err != nil {
+			return "", err
+		}
+		if device.Validate() != nil {
+			return "", recovery()
+		}
+		r.WorkerDeviceID = device
+		j.Requests[n] = r
+		if err = a.save(j); err != nil {
+			return "", err
+		}
+		return device, nil
+	}
+	return "", invalid()
 }

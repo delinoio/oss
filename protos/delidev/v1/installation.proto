@@ -40,6 +40,7 @@ message StartSSHSetupRequest {
   bytes credential = 2;
   string name = 3;
   string confirmed_fingerprint = 4;
+  string server_origin = 5;
 }
 message StartSSHSetupResponse {
   Resource setup = 1;

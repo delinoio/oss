@@ -369,6 +369,13 @@ func (s *Service) performSSHSetup(ctx context.Context, r store.Record, o sshOper
 		if e != nil {
 			return e, nil
 		}
+		endpointOrigin := s.Endpoint.URL
+		if o.ServerOrigin != "" {
+			if s.tailscale == nil || s.tailscale.access.Origin() != o.ServerOrigin {
+				return installationFailure(domain.Conflict), nil
+			}
+			endpointOrigin = o.ServerOrigin
+		}
 		s.logger.InfoContext(ctx, "ssh_setup_phase", "operation_id", r.ID, "phase", "stage")
 		if e = connection.Stage(ctx, s.Identity.ServerID, r.ID, artifact, source); e != nil {
 			return e, nil
@@ -377,7 +384,7 @@ func (s *Service) performSSHSetup(ctx context.Context, r store.Record, o sshOper
 		if e != nil {
 			return e, nil
 		}
-		grant := worker.PairingCode{Version: 1, PairingID: domain.NewID(), ServerID: s.Identity.ServerID, Endpoint: s.Endpoint.URL, Code: code}
+		grant := worker.PairingCode{Version: 1, PairingID: domain.NewID(), ServerID: s.Identity.ServerID, Endpoint: endpointOrigin, Code: code}
 		document = sshsetup.SetupDocument{Version: 1, OperationID: r.ID, ServerID: s.Identity.ServerID, ReleaseVersion: candidate.Payload.Version, SourceRevision: candidate.Payload.SourceRevision, Artifact: artifact, Grant: grant, Name: o.Name}
 		raw, _ := json.Marshal(document)
 		if _, e = s.sshProtected(ctx, credentials.Ref{Owner: r.ID, ID: r.ID, Purpose: credentials.WorkerSSH}, raw); e != nil {

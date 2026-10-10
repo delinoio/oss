@@ -39,3 +39,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - [DeliDev updates contract](../../docs/cmds-delidev-updates-contract.md)
 - [DeliDev current-user service contract](../../docs/cmds-delidev-user-services-contract.md)
 - [DeliDev v1 Connect contract](../../docs/protos-delidev-v1-contract.md)
+
+- [Tailscale connection ownership](../../docs/cmds-delidev-tailscale-contract.md)

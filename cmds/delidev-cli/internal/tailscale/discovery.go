@@ -4,6 +4,7 @@ package tailscale
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"io"
@@ -90,7 +91,11 @@ func (c CLI) Read(ctx context.Context, args ...string) ([]byte, error) {
 		return nil, ReadFailure{Malformed}
 	}
 	if err != nil {
-		return nil, ReadFailure{PermissionDenied}
+		// A failing status command may still return a typed backend state.
+		if len(args) == 2 && args[0] == "status" && args[1] == "--json" && output.Len() > 0 {
+			return output.Bytes(), nil
+		}
+		return nil, ReadFailure{Incomplete}
 	}
 	return output.Bytes(), nil
 }
@@ -122,13 +127,14 @@ func Discover(ctx context.Context, r Runner) (Discovery, error) {
 }
 
 type peerWire struct {
-	ID         string
-	HostName   string
-	DNSName    string
-	UserID     json.Number
-	Online     *bool
-	Tags       []string
-	ShareeNode bool
+	ID              string
+	HostName        string
+	DNSName         string
+	UserID          json.Number
+	Online          *bool
+	Tags            []string
+	ShareeNode      bool
+	AltSharerUserID json.Number
 }
 
 func CanonicalOrigin(name string) (string, error) {
@@ -165,6 +171,9 @@ func invalid() error {
 	return domain.Fail(domain.InvalidArgument, "The Tailscale observation is invalid.", "Refresh the original device observation.")
 }
 func DecodeStatus(raw []byte) (Discovery, error) {
+	if !uniqueJSON(raw) {
+		return Discovery{State: Malformed}, nil
+	}
 	bad := func(state State) (Discovery, error) { return Discovery{State: state, Peers: []Peer{}}, nil }
 	if len(raw) == 0 || len(raw) > MaxOutput || !json.Valid(raw) {
 		return bad(Malformed)
@@ -206,7 +215,7 @@ func DecodeStatus(raw []byte) (Discovery, error) {
 		owner := Unknown
 		if len(p.Tags) > 0 {
 			owner = Tagged
-		} else if p.ShareeNode {
+		} else if p.ShareeNode || p.AltSharerUserID != "" && p.AltSharerUserID != "0" {
 			owner = Shared
 		} else if p.UserID != "" && wire.Self.UserID != "" && p.UserID == wire.Self.UserID {
 			owner = Own
@@ -280,7 +289,12 @@ func Check(ctx context.Context, peer Peer, transport http.RoundTripper) (PeerChe
 	req.Header.Set("Connect-Protocol-Version", "1")
 	response, err := client.Do(req)
 	if err != nil {
-		return PeerCheck{State: TLSFailure}, nil
+		var certificate *tls.CertificateVerificationError
+		var record tls.RecordHeaderError
+		if errors.As(err, &certificate) || errors.As(err, &record) {
+			return PeerCheck{State: TLSFailure}, nil
+		}
+		return PeerCheck{State: Blocked}, nil
 	}
 	defer response.Body.Close()
 	if response.StatusCode != 200 {

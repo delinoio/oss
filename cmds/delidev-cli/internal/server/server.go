@@ -63,6 +63,8 @@ type Endpoint struct {
 type writeControllerKey struct{}
 
 type Service struct {
+	delidevv1connect.UnimplementedTailscaleServiceHandler
+	tailscale *tailscaleController
 	delidevv1connect.UnimplementedAttachmentServiceHandler
 	imageTransfersMu      sync.Mutex
 	imageTransferReaders  map[domain.ID]*imageTransferReader

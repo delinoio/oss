@@ -1,0 +1,178 @@
+syntax = "proto3";
+package delidev.v1;
+
+import "delidev/v1/device.proto";
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
+service TailscaleService {
+ rpc ListTailscalePeerConnections(ListTailscaleConnectionsRequest) returns (ListTailscaleConnectionsResponse);
+ rpc CancelTailscalePeerConnection(PollTailscalePeerConnectionRequest) returns (TailscaleConnectionResponse);
+ rpc DeliverTailscaleWorkerGrant(DeliverTailscaleWorkerGrantRequest) returns (DeliverTailscaleWorkerGrantResponse);
+  rpc GetTailscaleStatus(GetTailscaleStatusRequest) returns (GetTailscaleStatusResponse);
+  rpc ReadTailscaleDevices(ReadTailscaleDevicesRequest) returns (ReadTailscaleDevicesResponse);
+  rpc CheckTailscaleDevice(CheckTailscaleDeviceRequest) returns (CheckTailscaleDeviceResponse);
+  rpc GetTailscaleAccess(GetTailscaleAccessRequest) returns (GetTailscaleAccessResponse);
+  rpc SetTailscaleAccess(SetTailscaleAccessRequest) returns (GetTailscaleAccessResponse);
+  rpc RequestTailscaleConnection(RequestTailscaleConnectionRequest) returns (TailscaleConnectionResponse);
+  rpc GetTailscaleConnection(GetTailscaleConnectionRequest) returns (TailscaleConnectionResponse);
+  rpc ListTailscaleConnections(ListTailscaleConnectionsRequest) returns (ListTailscaleConnectionsResponse);
+  rpc DecideTailscaleConnection(DecideTailscaleConnectionRequest) returns (TailscaleConnectionResponse);
+  rpc CancelTailscaleConnection(GetTailscaleConnectionRequest) returns (TailscaleConnectionResponse);
+  rpc StartTailscalePeerConnection(StartTailscalePeerConnectionRequest) returns (TailscaleConnectionResponse);
+  rpc PollTailscalePeerConnection(PollTailscalePeerConnectionRequest) returns (TailscaleConnectionResponse);
+  rpc CompleteTailscalePeerConnection(CompleteTailscalePeerConnectionRequest) returns (CompleteTailscalePeerConnectionResponse);
+}
+enum TailscaleDiscoveryState {
+  TAILSCALE_DISCOVERY_STATE_UNSPECIFIED = 0;
+  TAILSCALE_DISCOVERY_STATE_READY = 1;
+  TAILSCALE_DISCOVERY_STATE_MISSING = 2;
+  TAILSCALE_DISCOVERY_STATE_STOPPED = 3;
+  TAILSCALE_DISCOVERY_STATE_LOGGED_OUT = 4;
+  TAILSCALE_DISCOVERY_STATE_PERMISSION_DENIED = 5;
+  TAILSCALE_DISCOVERY_STATE_MALFORMED = 6;
+  TAILSCALE_DISCOVERY_STATE_INCOMPLETE = 7;
+}
+enum TailscaleOwnership {
+  TAILSCALE_OWNERSHIP_UNSPECIFIED = 0;
+  TAILSCALE_OWNERSHIP_OWN = 1;
+  TAILSCALE_OWNERSHIP_SHARED = 2;
+  TAILSCALE_OWNERSHIP_TAGGED = 3;
+  TAILSCALE_OWNERSHIP_UNKNOWN = 4;
+}
+enum TailscalePeerState {
+  TAILSCALE_PEER_STATE_UNSPECIFIED = 0;
+  TAILSCALE_PEER_STATE_NOT_CHECKED = 1;
+  TAILSCALE_PEER_STATE_ACCEPTING = 2;
+  TAILSCALE_PEER_STATE_OFFLINE = 3;
+  TAILSCALE_PEER_STATE_TLS_FAILURE = 4;
+  TAILSCALE_PEER_STATE_BLOCKED = 5;
+  TAILSCALE_PEER_STATE_UNSUPPORTED = 6;
+}
+enum TailscaleApprovalState {
+  TAILSCALE_APPROVAL_STATE_UNSPECIFIED = 0;
+  TAILSCALE_APPROVAL_STATE_PENDING = 1;
+  TAILSCALE_APPROVAL_STATE_APPROVED = 2;
+  TAILSCALE_APPROVAL_STATE_DENIED = 3;
+  TAILSCALE_APPROVAL_STATE_EXPIRED = 4;
+  TAILSCALE_APPROVAL_STATE_CANCELED = 5;
+}
+enum TailscaleAccessState {
+  TAILSCALE_ACCESS_STATE_UNSPECIFIED = 0;
+  TAILSCALE_ACCESS_STATE_OFF = 1;
+  TAILSCALE_ACCESS_STATE_STARTING = 2;
+  TAILSCALE_ACCESS_STATE_READY = 3;
+  TAILSCALE_ACCESS_STATE_UNAVAILABLE = 4;
+  TAILSCALE_ACCESS_STATE_CLEANUP_REQUIRED = 5;
+}
+message TailscalePeer {
+  string id = 1;
+  string name = 2;
+  string origin = 3;
+  bool online = 4;
+  TailscaleOwnership ownership = 5;
+}
+message GetTailscaleStatusRequest {}
+message GetTailscaleStatusResponse {
+  string server_id = 1;
+  string origin = 2;
+  bytes public_key = 3;
+  bool accepting = 4;
+}
+message ReadTailscaleDevicesRequest {}
+message ReadTailscaleDevicesResponse {
+  TailscaleDiscoveryState state = 1;
+  TailscalePeer self = 2;
+  repeated TailscalePeer peers = 3;
+  bool https_ready = 4;
+}
+message CheckTailscaleDeviceRequest {
+  string peer_id = 1;
+}
+message CheckTailscaleDeviceResponse {
+  TailscalePeerState state = 1;
+  string server_id = 2;
+}
+message GetTailscaleAccessRequest {}
+message GetTailscaleAccessResponse {
+  TailscaleAccessState state = 1;
+  string origin = 2;
+  bool enabled = 3;
+}
+message SetTailscaleAccessRequest {
+  string request_id = 1;
+  bool enable = 2;
+  string server_id = 3;
+  string origin = 4;
+}
+message RequestTailscaleConnectionRequest {
+  string request_id = 1;
+  string requester_name = 2;
+  bytes requester_key = 3;
+  string server_id = 4;
+  string origin = 5;
+  DeviceType role = 6;
+  bytes observed_target_key = 7;
+  string worker_server_id = 8;
+  string worker_server_origin = 9;
+}
+message TailscaleConnection {
+  string request_id = 1;
+  string requester_name = 2;
+  bytes requester_key = 3;
+  bytes target_key = 4;
+  string server_id = 5;
+  string origin = 6;
+  DeviceType role = 7;
+  string confirmation_code = 8;
+  string expires_at = 9;
+  TailscaleApprovalState state = 10;
+  bytes encrypted_grant = 11;
+  string worker_server_id = 12;
+  string worker_server_origin = 13;
+}
+message TailscaleConnectionResponse {
+  TailscaleConnection connection = 1;
+}
+message GetTailscaleConnectionRequest {
+  string request_id = 1;
+  bytes requester_key = 2;
+}
+message ListTailscaleConnectionsRequest {}
+message ListTailscaleConnectionsResponse {
+  repeated TailscaleConnection connections = 1;
+}
+message DecideTailscaleConnectionRequest {
+  string request_id = 1;
+  string decision_id = 2;
+  string confirmation_code = 3;
+  bool allow = 4;
+}
+message StartTailscalePeerConnectionRequest {
+  string request_id = 1;
+  string peer_id = 2;
+  DeviceType role = 3;
+  string target_origin = 4;
+  string target_server_id = 5;
+}
+message PollTailscalePeerConnectionRequest {
+  string request_id = 1;
+}
+message CompleteTailscalePeerConnectionRequest {
+  string request_id = 1;
+  string confirmation_code = 2;
+}
+message CompleteTailscalePeerConnectionResponse {
+  string profile_id = 1;
+  string worker_device_id = 2;
+  bool completed = 3;
+}
+
+message DeliverTailscaleWorkerGrantRequest {
+ string request_id = 1;
+ bytes requester_key = 2;
+ bytes encrypted_grant = 3;
+}
+message DeliverTailscaleWorkerGrantResponse {
+ string worker_device_id = 1;
+ bool completed = 2;
+}
