@@ -3,5 +3,14 @@
   "native-reasoning.complete_143b27": "완료",
   "native-reasoning.streaming_a951c5": "스트리밍 중",
   "native-reasoning.reasoning_4d3137": "추론 · <s0/>",
-  "native-reasoning.theRetainedReasoningContentIsUnavailable_d2c416": "유지된 추론 콘텐츠를 확인할 수 없거나 일관되지 않습니다."
+  "native-reasoning.theRetainedReasoningContentIsUnavailable_d2c416": "유지된 추론 콘텐츠를 확인할 수 없거나 일관되지 않습니다.",
+  "native-reasoning.codexThinking": "생각 과정",
+  "native-reasoning.codexEmpty": "제공된 생각 과정이 없습니다.",
+  "native-reasoning.codexInitial": "초기 관측",
+  "native-reasoning.codexStreamed": "스트리밍 관측",
+  "native-reasoning.codexFinal": "최종 관측",
+  "native-reasoning.codexSummaryPart": "요약 부분 {{index}}",
+  "native-reasoning.codexContentPart": "본문 부분 {{index}}",
+  "native-reasoning.codexDelta": "{{kind}} · 부분 {{index}} · 순서 {{sequence}}",
+  "native-reasoning.codexAccessibleLabel": "Codex 생각 과정"
 }

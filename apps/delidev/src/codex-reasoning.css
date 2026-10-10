@@ -1,0 +1,12 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.message.message-codex-reasoning { min-width: 0; max-width: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.message-codex-reasoning > header { margin-bottom: 4px; }
+.codex-reasoning.disclosure { min-width: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.codex-reasoning.disclosure > .disclosure-header { min-height: 36px; padding: 7px 0; border: 0; border-radius: 0; background: transparent; color: var(--muted); font-size: 14px; font-weight: 400; }
+.codex-reasoning.disclosure > .disclosure-header:hover { background: transparent; color: var(--text); }
+.codex-reasoning-summary { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.codex-reasoning-body { min-width: 0; margin: 4px 0 0 6px; padding: 0 0 0 20px; border-inline-start: 1px solid var(--border-subtle); }
+.codex-reasoning-body > section + section { margin-top: 16px; }
+.codex-reasoning-body h4, .codex-reasoning-part-label { margin: 0 0 6px; color: var(--muted); font-size: 12px; font-weight: 400; overflow-wrap: anywhere; }
+.codex-reasoning-part-label { margin-top: 10px; }
+.codex-reasoning-body pre { min-width: 0; max-width: 100%; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; white-space: pre-wrap; overflow-wrap: anywhere; }

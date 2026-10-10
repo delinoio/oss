@@ -1,3 +1,5 @@
+import { CodexReasoning } from "./codex-reasoning";
+import { readCodexReasoning } from "./codex-reasoning-observation";
 import { WaitingQueue } from "./waiting-queue";
 
 import { FlatDisclosureScope } from "./disclosure";
@@ -226,8 +228,10 @@ export const TranscriptItem = memo(function TranscriptItem({ resource, active = 
   const artifact = object(data.artifact);
   const completed = object(artifact.completed);
   const started = object(artifact.started);
+  const codexReasoning = data.role === "artifact" && data.text === "" && data.tool == null && data.progress == null && data.claude == null && (data.attachments == null || Array.isArray(data.attachments) && data.attachments.length === 0) ? readCodexReasoning(artifact, text(data.state)) : undefined;
   const progress = object(data.progress);
   const plan = object(progress.plan);
+  if (codexReasoning) return <article className="message message-codex-reasoning" aria-label={copy("native-reasoning.codexAccessibleLabel")}><ConversationStatus state={text(data.state)} />{Number(data.context_revision ?? 0) < contextRevision ? <small>{copy("session.previousContext")}</small> : null}<CodexReasoning observation={codexReasoning} /></article>;
   const textRole = data.tool == null && data.artifact == null && data.progress == null &&
     ["grok_text", "claude", "claude_tool", "claude_progress", "claude_interruption"].every(key => !Object.hasOwn(data, key));
   const roleClass = textRole && data.role === "user" ? " message-user" : textRole && data.role === "assistant" ? " message-assistant" : "";
