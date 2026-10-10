@@ -303,10 +303,31 @@ browser profiles are outside the deletion plan. Worker cleanup removes original
 job/journal/outbox, execution runtime/history/claim, title runtime, workspace
 recovery, PR startup and owned process records. It persists original workspace
 proof before any unlink, persists removal stages before deleting journals, and
-then retains only non-content digest/report tombstones. Filesystem traversal
+then retains non-content digest/report tombstones and original native admission
+metadata. Filesystem traversal
 never follows links, checks original file identity, observes cancellation before
 each unlink and is capped at 100,000 entries per owned tree. A replaced root is
 preserved as uncertain. Cleanup retry never starts native work or resends input.
+Before validating original job/checkpoint/process ownership, the Worker captures
+native identities for every generic managed removal root and its existing
+ancestors, including explicit absence for missing operands. It creates any
+original process recovery lock before this capture so reconciliation does not
+invent a later removal operand. After original ownership validation, the private
+delete proof retains that bounded admission inventory before workspace cleanup
+or generic unlink. This metadata-only local proof is capped at 32 MiB and
+147,456 operands; it changes neither the immutable 4 MiB server plan nor RPCs.
+Every generic traversal and unlink checks the retained root/ancestor identity;
+walked descendant directories retain their own identity through removal. A
+renamed/replaced directory, same-content foreign file, restored runtime or
+newly appeared formerly absent operand remains untouched and pending. Cleanup
+recovery reuses the persisted identities and cannot acquire a fresh baseline.
+Previously started legacy proofs without native admission evidence remain
+pending; untouched legacy plans may validate originals, and completed legacy
+proofs retain their absence-only replay. Proven initial absence performs no
+unlink or new directory synchronization. Actual original removals retain the
+existing synchronization boundary. Workspace, storage-root, image, skill and
+unpublished-child retirement keep their independent original ownership gates.
+
 Reusing a completed proof
 rechecks the full removal inventory, including process records/recovery locks and
 a bounded scan of matching title runtimes; a restored replacement stays pending.

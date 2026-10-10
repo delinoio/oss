@@ -3,6 +3,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -21,11 +22,12 @@ import (
 )
 
 type sessionDeletionProof struct {
-	Version        uint32    `json:"version"`
-	Digest         string    `json:"digest"`
-	ReportID       domain.ID `json:"report_id"`
-	RemovalStarted bool      `json:"removal_started"`
-	Complete       bool      `json:"complete"`
+	Version        uint32                                 `json:"version"`
+	Digest         string                                 `json:"digest"`
+	ReportID       domain.ID                              `json:"report_id"`
+	RemovalStarted bool                                   `json:"removal_started"`
+	Complete       bool                                   `json:"complete"`
+	Admissions     map[string]security.OwnedTreeAdmission `json:"admissions,omitempty"`
 }
 
 func sessionDeletionPath(root string, id domain.ID) string {
@@ -81,6 +83,12 @@ func watchSessionDeletions(ctx context.Context, config Config, client delidevv1c
 // Tombstones close native admission before cleanup. A once-persisted plan may
 // resume removals after a crash; it never replays preparation or native input.
 func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDeletionWork) (sessionDeletionProof, error) {
+	return deleteSessionCopiesAtRemoval(ctx, config, w, nil)
+}
+
+// The callback is an internal deterministic fixture seam, after original
+// validation and persisted admission but before any generic copy unlink.
+func deleteSessionCopiesAtRemoval(ctx context.Context, config Config, w domain.SessionDeletionWork, beforeRemoval func() error) (sessionDeletionProof, error) {
 	proof := sessionDeletionProof{Version: 1, Digest: w.Digest(), ReportID: domain.NewID()}
 	if w.Validate() != nil {
 		return proof, domain.SessionDeletionPending()
@@ -103,9 +111,9 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	}
 	defer lock.Close()
 	path := sessionDeletionPath(root, w.SessionID)
-	raw, e := security.ReadPrivate(path, 4096)
+	raw, e := security.ReadPrivate(path, maxSessionDeletionProofBytes)
 	if e == nil {
-		if domain.Decode(raw, &proof) != nil || proof.Version != 1 || proof.ReportID.Validate() != nil {
+		if domain.DecodeWithLimit(raw, &proof, maxSessionDeletionProofBytes) != nil || proof.Version != 1 || proof.ReportID.Validate() != nil || len(proof.Admissions) > maxSessionDeletionAdmissions {
 			return proof, domain.SessionDeletionPending()
 		}
 		if proof.Digest != w.Digest() {
@@ -120,14 +128,14 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 				return proof, domain.SessionDeletionPending()
 			}
 			proof.Digest = w.Digest()
-			if err := writeJSON(path, proof); err != nil {
+			if err := writeSessionDeletionProof(path, proof); err != nil {
 				return proof, err
 			}
 		}
 	} else if !errors.Is(e, os.ErrNotExist) {
 		return proof, domain.SessionDeletionPending()
 	} else {
-		if e := writeJSON(path, proof); e != nil {
+		if e := writeSessionDeletionProof(path, proof); e != nil {
 			return proof, e
 		}
 	}
@@ -159,6 +167,9 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		}
 		return proof, nil
 	}
+	if err := checkSessionAdmissions(root, proof.Admissions); err != nil {
+		return proof, err
+	}
 	// The publisher lock precedes the session lock throughout the Worker. A live
 	// owner must finish cancellation and release its handles before removal.
 	locks := []*security.Lock{}
@@ -171,6 +182,73 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			jobLocks[i].Close()
 		}
 	}()
+	for _, copy := range w.Copies {
+		// Native execution and final journal/report publication retain this
+		// outer lock after workspace and outbox locks are released. Join it
+		// first so a completed operation cannot recreate its journal mid-delete.
+		jobLock, e := security.TryLock(filepath.Join(root, "jobs", string(copy.JobID)+".lock"))
+		if e != nil {
+			return proof, domain.SessionDeletionPending()
+		}
+		jobLocks = append(jobLocks, jobLock)
+		folder := filepath.Join(root, "jobs", string(copy.JobID))
+		if _, e := os.Lstat(folder); e == nil {
+			if e := security.CheckPrivateDir(folder); e != nil {
+				return proof, domain.SessionDeletionPending()
+			}
+			l, e := security.TryLock(filepath.Join(folder, "publication.lock"))
+			if e != nil {
+				return proof, domain.SessionDeletionPending()
+			}
+			locks = append(locks, l)
+		} else if !errors.Is(e, os.ErrNotExist) {
+			return proof, domain.SessionDeletionPending()
+		}
+	}
+
+	// Original native roots are captured before journal/checkpoint validation,
+	// never at the later destructive boundary. Original reconciliation may create
+	// its external recovery lock; create that same owner-only lock before capture.
+	if len(proof.Admissions) == 0 {
+		if proof.RemovalStarted && (len(w.Copies) != 0 || w.Fork != nil) {
+			return proof, domain.SessionDeletionPending()
+		}
+		paths, err := sessionDeletionCopyPaths(ctx, root, w)
+		if err != nil {
+			return proof, err
+		}
+		for _, operand := range paths {
+			if filepath.Dir(operand) != filepath.Join(root, "processes") || filepath.Ext(operand) != "" {
+				continue
+			}
+			if info, err := os.Lstat(operand); err == nil && info.IsDir() {
+				recovery, err := security.TryLock(operand + ".recovery.lock")
+				if err != nil {
+					return proof, domain.SessionDeletionPending()
+				}
+				if err := recovery.Close(); err != nil {
+					return proof, domain.SessionDeletionPending()
+				}
+			}
+		}
+		proof.Admissions = map[string]security.OwnedTreeAdmission{}
+		for _, operand := range paths {
+			if err := ctx.Err(); err != nil {
+				return proof, domain.SafeError(err)
+			}
+			if sessionCopyAbsenceOnly(root, operand) {
+				continue
+			}
+			admitted, err := security.CaptureOwnedTree(root, operand)
+			if err != nil {
+				return proof, err
+			}
+			proof.Admissions[admitted.Path] = admitted
+		}
+	}
+	if err := checkSessionAdmissions(root, proof.Admissions); err != nil {
+		return proof, err
+	}
 	allowAbsentWorkspace := w.Fork == nil
 	if w.Fork != nil && !proof.RemovalStarted {
 		if _, err := executionCheckpointPath(root, w.Fork.RuntimeID); err != nil {
@@ -201,27 +279,6 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		}
 	}
 	for _, copy := range w.Copies {
-		// Native execution and final journal/report publication retain this
-		// outer lock after workspace and outbox locks are released. Join it
-		// first so a completed operation cannot recreate its journal mid-delete.
-		jobLock, e := security.TryLock(filepath.Join(root, "jobs", string(copy.JobID)+".lock"))
-		if e != nil {
-			return proof, domain.SessionDeletionPending()
-		}
-		jobLocks = append(jobLocks, jobLock)
-		folder := filepath.Join(root, "jobs", string(copy.JobID))
-		if _, e := os.Lstat(folder); e == nil {
-			if e := security.CheckPrivateDir(folder); e != nil {
-				return proof, domain.SessionDeletionPending()
-			}
-			l, e := security.TryLock(filepath.Join(folder, "publication.lock"))
-			if e != nil {
-				return proof, domain.SessionDeletionPending()
-			}
-			locks = append(locks, l)
-		} else if !errors.Is(e, os.ErrNotExist) {
-			return proof, domain.SessionDeletionPending()
-		}
 		if !proof.RemovalStarted {
 			raw, e := security.ReadPrivate(filepath.Join(root, "jobs", string(copy.JobID)+".json"), 2<<20)
 			if e != nil {
@@ -268,6 +325,15 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			}
 		}
 	}
+	if err := checkSessionAdmissions(root, proof.Admissions); err != nil {
+		return proof, err
+	}
+	// Persist before workspace cleanup or any generic unlink. Recovery can only
+	// reuse these identities and absence proofs, never capture replacement roots.
+	if err := writeSessionDeletionProof(path, proof); err != nil {
+		return proof, err
+	}
+
 	unpublishedPaths := map[string]bool{}
 	for _, copy := range w.Copies {
 		if copy.UnpublishedChildProcessID != "" {
@@ -291,7 +357,7 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			locks = nil
 			if !proof.RemovalStarted {
 				proof.RemovalStarted = true
-				if e := writeJSON(path, proof); e != nil {
+				if e := writeSessionDeletionProof(path, proof); e != nil {
 					return e
 				}
 			}
@@ -299,6 +365,14 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 				if err := (skills.Manager{Root: root}).DeletePreparedSnapshot(ctx, w.MachineID, binding); err != nil {
 					return domain.SessionDeletionPending()
 				}
+			}
+			if beforeRemoval != nil {
+				if err := beforeRemoval(); err != nil {
+					return err
+				}
+			}
+			if err := checkSessionAdmissions(root, proof.Admissions); err != nil {
+				return err
 			}
 			paths, e := sessionDeletionCopyPaths(ctx, root, w)
 			if e != nil {
@@ -311,7 +385,7 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 					}
 					continue
 				}
-				if e := removeSessionCopy(ctx, root, path); e != nil {
+				if e := removeAdmittedSessionCopy(ctx, root, path, proof.Admissions); e != nil {
 					return e
 				}
 			}
@@ -340,7 +414,7 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	// removal. Opaque references never grant access to original Local files.
 	if !proof.RemovalStarted {
 		proof.RemovalStarted = true
-		if err := writeJSON(path, proof); err != nil {
+		if err := writeSessionDeletionProof(path, proof); err != nil {
 			return proof, err
 		}
 	}
@@ -362,33 +436,60 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		}
 	}
 	proof.Complete = true
-	return proof, writeJSON(path, proof)
+	return proof, writeSessionDeletionProof(path, proof)
 }
 
 // Workspace cleanup already validated original storage namespace ownership.
 // Reappearance cannot give the generic copy remover new traversal authority.
 func removeSessionCopy(ctx context.Context, root, path string) error {
-	parent := filepath.Dir(path)
-	name := filepath.Base(path)
-	canonicalFinalClaim := parent == filepath.Join(root, "storage-removal-root-claims") && len(name) == 41 && name[36:] == ".json" && domain.ID(name[:36]).Validate() == nil
-	if parent == filepath.Join(root, "snapshot-staging") || parent == filepath.Join(root, "workspace-removals") || parent == filepath.Join(root, "workspace-removal-roots") || parent == filepath.Join(root, "workspace-removal-quarantine") || canonicalFinalClaim {
-		// Workspace cleanup already checked the original native staging,
-		// public removal, final-root identity, or final-root claim. A later
-		// replacement or an old name without a published proof remains
-		// protected here. The generic session remover must never acquire
-		// authority over it.
-		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
-			return domain.SessionDeletionPending()
-		}
-		return nil
-	}
-	if parent == filepath.Join(root, "skill-snapshots") {
+	if sessionCopyAbsenceOnly(root, path) {
 		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
 			return domain.SessionDeletionPending()
 		}
 		return nil
 	}
 	return removeSessionTree(ctx, root, path)
+}
+
+func sessionCopyAbsenceOnly(root, path string) bool {
+	parent, name := filepath.Dir(path), filepath.Base(path)
+	canonicalFinalClaim := parent == filepath.Join(root, "storage-removal-root-claims") && len(name) == 41 && name[36:] == ".json" && domain.ID(name[:36]).Validate() == nil
+	return parent == filepath.Join(root, "snapshot-staging") || parent == filepath.Join(root, "workspace-removals") || parent == filepath.Join(root, "workspace-removal-roots") || parent == filepath.Join(root, "workspace-removal-quarantine") || parent == filepath.Join(root, "skill-snapshots") || canonicalFinalClaim
+}
+
+func removeAdmittedSessionCopy(ctx context.Context, root, path string, admissions map[string]security.OwnedTreeAdmission) error {
+	if sessionCopyAbsenceOnly(root, path) {
+		return removeSessionCopy(ctx, root, path)
+	}
+	relative, err := filepath.Rel(root, path)
+	admitted, known := admissions[relative]
+	if err != nil || !known {
+		return domain.SessionDeletionPending()
+	}
+	return security.RemoveAdmittedTree(ctx, root, path, admitted)
+}
+
+const maxSessionDeletionProofBytes = 32 << 20
+const maxSessionDeletionAdmissions = domain.MaxSessionDeletionJobs*32 + 16384
+
+func writeSessionDeletionProof(path string, proof sessionDeletionProof) error {
+	raw, err := json.Marshal(proof)
+	if err != nil || len(raw) > maxSessionDeletionProofBytes || len(proof.Admissions) > maxSessionDeletionAdmissions {
+		return domain.SessionDeletionPending()
+	}
+	return security.WriteAtomic(path, raw)
+}
+
+func checkSessionAdmissions(root string, admissions map[string]security.OwnedTreeAdmission) error {
+	for relative, admitted := range admissions {
+		if relative != admitted.Path || !filepath.IsLocal(relative) || len(admitted.Parents) > 16 || len(admitted.Identity) > 64 {
+			return domain.SessionDeletionPending()
+		}
+		if err := security.CheckOwnedTreeAdmission(root, filepath.Join(root, relative), admitted); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Walk first without following symlinks, then remove deepest paths first. Each
