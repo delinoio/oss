@@ -3005,7 +3005,7 @@ Names match exactly; a valid caret completion prefix and a bare `$` remain ordin
 Confirmed absent token ranges use semantic muted text in a noninteractive aligned
 overlay. Keep the native textarea, exact draft, wrapping, scrolling, selection,
 caret, undo and IME; suppress the overlay during composition. Localized accessible
-status describes affected tokens without exposing prompt content in logs.
+status describes affected tokens without exposing prompt content in logs. Issue #2231 keeps a mounted polite count-only live region beside the textarea description and hidden painted mirror, including when completion is dismissed. Publish only changed confirmed counts, including recovery to zero after an unavailable outcome; ordinary edits and unchanged successful reads do not repeat announcements. Loading, errors and IME never prove recovery. Retain the last confirmed announcement only within its original scope/transport and retire it on replacement, without moving focus or changing request authority.
 An open panel can retain previously displayed disappeared rows until dismissal or
 scope change. Bound retention to 256 entries with live entries taking priority.
 Unavailable rows retain original names, descriptions and provenance, show localized

@@ -180,3 +180,42 @@ it("prioritizes a complete live inventory at the retention bound instead of carr
  current=Array.from({length:256},(_,index)=>({...entries[0]!,name:`live-${index}`,selection:{...entries[0]!.selection,skillId:newRequestId()}})); await client.invalidateQueries();
  await waitFor(()=>expect(screen.getAllByRole("option")).toHaveLength(256));expect(screen.queryByText("add-issue",{selector:"strong"})).toBeNull();expect(screen.queryByRole("option",{name:/Unavailable/})).toBeNull();
 });
+
+it.each([SupportedLanguage.English, SupportedLanguage.Korean])("announces deferred unavailable counts while dismissed without moving focus in %s", async language => {
+ await i18n.changeLanguage(language);
+ try {
+  let release!: () => void;
+  const pending=new Promise<void>(resolve=>{release=resolve;}),client=new QueryClient();
+  const read=vi.fn(async()=>{await pending;return {skills:entries};});
+  const transport=createRouterTransport(router=>router.service(SkillService,{listSkills:read}));
+  const view=render(<TransportProvider transport={transport}><QueryClientProvider client={client}><Composer send={vi.fn()}/></QueryClientProvider></TransportProvider>);
+  const input=screen.getByRole("textbox");input.focus();
+  const status=view.container.querySelector("[data-skill-availability-status]")!;
+  expect(status.getAttribute("role")).toBe("status");expect(status.getAttribute("aria-live")).toBe("polite");expect(status.textContent).toBe("");
+  fireEvent.change(input,{target:{value:"$missing",selectionStart:8}});fireEvent.keyDown(input,{key:"Escape"});
+  await waitFor(()=>expect(read).toHaveBeenCalledOnce());release();
+  const unavailable=language===SupportedLanguage.Korean ? "현재 범위에서 스킬 토큰 1개를 사용할 수 없습니다." : "1 skill tokens are unavailable in this scope.";
+  await waitFor(()=>expect(status.textContent).toBe(unavailable));
+  expect(document.activeElement).toBe(input);expect(screen.getByRole("textbox",{description:unavailable})).toBe(input);expect(view.container.querySelector(".skill-completion")).toBeNull();
+  const mutations: MutationRecord[]=[];const observer=new MutationObserver(records=>mutations.push(...records));observer.observe(status,{childList:true,characterData:true,subtree:true});
+  await client.invalidateQueries();await waitFor(()=>expect(read).toHaveBeenCalledTimes(2));
+  fireEvent.change(input,{target:{value:"ordinary text $missing",selectionStart:0}});await Promise.resolve();
+  expect(status.textContent).toBe(unavailable);expect(mutations).toHaveLength(0);observer.disconnect();
+  fireEvent.compositionStart(input);fireEvent.change(input,{target:{value:"$add-issue",selectionStart:10}});expect(status.textContent).toBe(unavailable);
+  fireEvent.compositionEnd(input);await waitFor(()=>expect(status.textContent).toContain(language===SupportedLanguage.Korean ? "토큰 0개" : "0 skill tokens"));
+  expect(document.activeElement).toBe(input);view.unmount();
+ } finally {await i18n.changeLanguage(SupportedLanguage.English);}
+});
+
+it("retires live status on transport replacement and ignores incomplete and late inventories", async()=>{
+ let release!:()=>void;const pending=new Promise<void>(resolve=>{release=resolve;}),client=new QueryClient();
+ let oldSkills=entries;
+ const old=createRouterTransport(router=>router.service(SkillService,{listSkills:async()=>({skills:oldSkills})}));
+ const replacement=createRouterTransport(router=>router.service(SkillService,{listSkills:async()=>{await pending;return {skills:[entries[0]!,{...entries[1]!,selection:{...entries[1]!.selection,inventoryId:newRequestId()}}]};}}));
+ const tree=(transport:typeof old)=><TransportProvider transport={transport}><QueryClientProvider client={client}><Composer send={vi.fn()}/></QueryClientProvider></TransportProvider>;
+ const view=render(tree(old));const input=screen.getByRole("textbox");input.focus();fireEvent.change(input,{target:{value:"$missing",selectionStart:8}});fireEvent.keyDown(input,{key:"Escape"});
+ const status=view.container.querySelector("[data-skill-availability-status]")!;await waitFor(()=>expect(status.textContent).toContain("1 skill tokens"));
+ view.rerender(tree(replacement));expect(status.textContent).toBe("");release();
+ await client.invalidateQueries();expect(status.textContent).toBe("");
+ oldSkills=[];await client.invalidateQueries();expect(status.textContent).toBe("");expect(document.activeElement).toBe(input);
+});
