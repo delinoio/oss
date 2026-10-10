@@ -330,7 +330,16 @@
 .queue-drag-handle { flex: 0 0 24px; cursor: grab; padding: 4px; color: var(--muted); touch-action: none; }
 .queue-drag-handle:disabled { cursor: default; }
 .queue-insertion { border-top: 2px solid var(--accent); }
-.queue-drop-end { min-height: 8px; }
+/* Keep the final drop hit area inside the last resident row. Resting controls
+ * remain reachable; only an admitted queue drag activates the overlay. */
+.queue-compact-list .queue-row-slot { position: relative; }
+.queue-compact-list .queue-drop-end { position: absolute; inset: auto 0 0; height: 8px; pointer-events: none; }
+.queue-compact-list .queue-drop-end[data-dragging="true"] { pointer-events: auto; }
+.queue-compact-list .queue-drop-end.queue-insertion { border-top: 0; box-shadow: inset 0 -2px var(--accent); }
+/* Retain the observer anchor without bottom-only space after exhaustion. */
+.queue-compact-list > .sidebar-continuation:empty { min-height: 0; }
+.queue-compact-list .queue-drag-handle { display: inline-flex; align-items: center; justify-content: center; height: 32px; min-height: 32px; line-height: 20px; }
+.queue-compact-list .queue-compact-actions > button, .queue-compact-list .queue-more > button { height: 32px; line-height: 20px; }
 
 .session-information-section { padding:12px 0; border-bottom:1px solid var(--border-subtle); }
 .session-information-section > h3, .session-diagnostics h3, .session-diagnostics h4, .session-information-section h3, .session-information-section h4 { margin:0 0 8px; font-size:12px; font-weight:600; color:var(--muted); }

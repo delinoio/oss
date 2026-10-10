@@ -5070,6 +5070,16 @@ uncertain states; Save and other mutations retain their original locks.
 Attachments and editors may grow rows; narrow rows wrap their actions. Keep
 Agent requests separate and the existing short-height scrolling budget.
 
+A settled unwrapped row keeps its grip, prompt and action boxes on the same
+vertical center, within one CSS pixel in browser geometry. The inactive final
+drop target and empty terminal continuation add no resting bottom space. Keep
+the final drop hit area inside the last resident row and activate its pointer
+handling only during an admitted drag; its insertion mark cannot grow the row.
+The empty continuation anchor stays mounted for the existing observer. Loading,
+read errors and explicit retry/continuation controls keep their visible space
+and original controller ownership. These geometry styles apply only to the
+compact queue.
+
 Hide the ordinary surface and its gap only after a successful current complete
 read with all relevant payloads resident establishes no waiting inputs. Failed
 reads, continuations and evicted payload restoration remain independently
