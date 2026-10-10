@@ -63,7 +63,7 @@ export function validPRFeedback(raw: unknown, item: Document): boolean {
   return total <= 500 && [...entries.values()].every(entry => entry.kind !== "review-comment" || comments.has(text(entry.node_id)));
 }
 
-export function PRFeedback({ value }: { value: Document }) {
+export function PRFeedback({ value, workspace = false }: { value: Document; workspace?: boolean }) {
   useLocale();
   const threads = new Map((value.threads as Document[]).map(thread => [text(thread.node_id), thread]));
   const entries = value.entries as Document[];
@@ -76,12 +76,12 @@ export function PRFeedback({ value }: { value: Document }) {
       const kind = entry.kind === "review" ? copy("github-feedback.extra.7f33299db6b9") : entry.kind === "review-comment" ? copy("github-feedback.extra.a965be705c49") : copy("github-feedback.extra.f79456bcd564");
       return <article className="result" key={text(entry.node_id)}>
         <h5>{kind} · {text(author.login) || copy("github-feedback.extra.a326f4758492")}</h5>
-        {entry.author != null ? <p>{text(author.native_type)} · {text(author.id) || copy("github-feedback.extra.de4e3fe5f1d2")} · <code>{text(author.node_id)}</code></p> : null}
+        {entry.author != null && !workspace ? <p>{text(author.native_type)} · {text(author.id) || copy("github-feedback.extra.de4e3fe5f1d2")} · <code>{text(author.node_id)}</code></p> : null}
         <p><LocalizedText id="github-feedback.published_3e1d2d" components={{ s0: <><Timestamp value={text(entry.published_at)} /></>, s1: <>{entry.last_edited_at ? <TimestampText id={"github-feedback.edited_01b606"} values={{ v0: <Timestamp value={text(entry.last_edited_at)} /> }} /> : ""}</>, s2: <>{entry.native_state ? copy("github-feedback.message_2fa20b", { v0: text(entry.native_state) }) : ""}</>, s3: <>{entry.review_state ? copy("github-feedback.review_741980", { v0: text(entry.review_state) }) : ""}</> }} /></p>
         {thread ? <p>{thread.resolved ? copy("github-feedback.threadResolvedOnGithub_0cf45e") : copy("github-feedback.threadUnresolvedOnGithub_2d3df9")}{thread.outdated ? copy("github-feedback.outdatedCodePosition_881964") : ""}</p> : null}
         <pre>{text(entry.body) || copy("github-feedback.extra.b8e6ea915c53")}</pre>
         {entry.code != null ? <Disclosure><DisclosureSummary><LocalizedText id="github-feedback.codeContext_df3a2f" components={{ s0: <>{text(code.path)}</> }} /></DisclosureSummary><p><LocalizedText id="github-feedback.currentLineOriginalLine_72e6d7" components={{ s0: <>{code.line == null ? copy("github-feedback.unavailable_ca1844") : String(code.line)}</>, s1: <>{code.original_line == null ? copy("github-feedback.unavailable_ca1844") : String(code.original_line)}</> }} /></p><pre>{text(code.diff_hunk)}</pre></Disclosure> : null}
-        <Disclosure><DisclosureSummary>{copy("github-feedback.feedbackIdentityAndContentVersion_56157d")}</DisclosureSummary><p><LocalizedText id="github-feedback.githubAddress_e2d25b" components={{ s0: <code>{text(entry.url)}</code> }} /></p><p><LocalizedText id="github-feedback.originalId_b7f034" components={{ s0: <>{text(entry.id)}</>, s1: <code>{text(entry.node_id)}</code> }} /></p><p><LocalizedText id="github-feedback.contentVersion_0bc2d3" components={{ s0: <code>{text(entry.content_version)}</code> }} /></p></Disclosure>
+        <Disclosure><DisclosureSummary>{copy("github-feedback.feedbackIdentityAndContentVersion_56157d")}</DisclosureSummary>{workspace && entry.author != null ? <p>{text(author.native_type)} · {text(author.id) || copy("github-feedback.extra.de4e3fe5f1d2")} · <code>{text(author.node_id)}</code></p> : null}<p><LocalizedText id="github-feedback.githubAddress_e2d25b" components={{ s0: <code>{text(entry.url)}</code> }} /></p><p><LocalizedText id="github-feedback.originalId_b7f034" components={{ s0: <>{text(entry.id)}</>, s1: <code>{text(entry.node_id)}</code> }} /></p><p><LocalizedText id="github-feedback.contentVersion_0bc2d3" components={{ s0: <code>{text(entry.content_version)}</code> }} /></p></Disclosure>
       </article>;
     })}
   </section>;

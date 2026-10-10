@@ -13293,6 +13293,149 @@
       "member": "replayed",
       "number": 2,
       "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1",
+      "number": 84
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "GetPullRequestWorkspaceRequest",
+      "member": "repository_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "GetPullRequestWorkspaceRequest",
+      "member": "expected_revision",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "GetPullRequestWorkspaceRequest",
+      "member": "seeds",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "GetPullRequestWorkspaceResponse",
+      "member": "schema_version",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "GetPullRequestWorkspaceResponse",
+      "member": "document_json",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "repository_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "expected_revision",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "number",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "base_sha",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "head_sha",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "page_token",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsResponse",
+      "member": "schema_version",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsResponse",
+      "member": "document_json",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ReadPullRequestAvatarRequest",
+      "member": "reference",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ReadPullRequestAvatarResponse",
+      "member": "reference",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ReadPullRequestAvatarResponse",
+      "member": "media_type",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ReadPullRequestAvatarResponse",
+      "member": "raster",
+      "number": 3,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [
@@ -13527,6 +13670,33 @@
       "method": "SetAutomaticResetCreditConsent",
       "input": "SetAutomaticResetCreditConsentRequest",
       "output": "SetAutomaticResetCreditConsentResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2678,
+      "service": "IntegrationService",
+      "method": "GetPullRequestWorkspace",
+      "input": "GetPullRequestWorkspaceRequest",
+      "output": "GetPullRequestWorkspaceResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2678,
+      "service": "IntegrationService",
+      "method": "ListPullRequestCommits",
+      "input": "ListPullRequestCommitsRequest",
+      "output": "ListPullRequestCommitsResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2678,
+      "service": "IntegrationService",
+      "method": "ReadPullRequestAvatar",
+      "input": "ReadPullRequestAvatarRequest",
+      "output": "ReadPullRequestAvatarResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

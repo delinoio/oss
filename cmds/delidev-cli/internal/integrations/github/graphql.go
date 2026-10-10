@@ -20,10 +20,13 @@ const (
 	graphQLThreads
 	graphQLThreadComments
 	graphQLWorkflowSuites
+	graphQLCommits
 )
 
 func graphQLDocument(operation graphQLRead) (string, string) {
 	switch operation {
+	case graphQLCommits:
+		return commitsGraphQL, "DeliDevPRCommits"
 	case graphQLCI:
 		return ciGraphQL, "DeliDevRequiredCI"
 	case graphQLWorkflowSuites:

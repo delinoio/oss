@@ -10,7 +10,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { EntityKind, IntegrationService, ResourceSchema, newRequestId } from "@delinoio/delidev-api-client";
-import { StandalonePullRequestResults, githubResult, type PullRequestNavigation } from "./github-items";
+import { QueryResult, githubResult, type PullRequestNavigation } from "./github-items";
 import { encode } from "./documents";
 import { ItemKind, ItemState, QueryOperation, type GitHubQuery } from "./github-query-model";
 
@@ -31,12 +31,13 @@ function fixture(headRepository?: unknown, initialQuery: GitHubQuery = { kind: I
   function StandaloneFixture({ active }: { active: boolean }) {
     const [navigation, changeNavigation] = useState<PullRequestNavigation>();
     if (!active) return null;
-    return navigation ? <StandalonePullRequestResults selected={repository} navigation={navigation} active changeNavigation={changeNavigation} /> : <button onClick={() => changeNavigation({ scopeKey: "standalone-fixture", query: initialQuery, previous: [] })}>Load pull requests</button>;
+    const change = (next: GitHubQuery) => { if (navigation) changeNavigation({ ...navigation, query: next, previous: next.operation !== navigation.query.operation ? [...navigation.previous, navigation.query] : navigation.previous }); };
+    return navigation ? <QueryResult selected={repository} query={navigation.query} active change={change} back={navigation.previous.length ? () => changeNavigation({ ...navigation, query: navigation.previous.at(-1)!, previous: navigation.previous.slice(0,-1) }) : undefined} /> : <button onClick={() => changeNavigation({ scopeKey: "standalone-fixture", query: initialQuery, previous: [] })}>Load pull requests</button>;
   }
   const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><StandaloneFixture active={active} /></QueryClientProvider></TransportProvider>;
   return { repository, query, inspect, client, view };
 }
-it("loads standalone pull request results and reads detail without inventing mergeability", async () => {
+it("preserves shared pull request inspection without inventing mergeability", async () => {
   const f = fixture(); const view = render(f.view());
   expect(f.query).not.toHaveBeenCalled(); fireEvent.click(screen.getByRole("button", { name: "Load pull requests" }));
   await screen.findByRole("button", { name: "Read #17" });

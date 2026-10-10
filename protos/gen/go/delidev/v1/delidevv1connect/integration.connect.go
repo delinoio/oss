@@ -33,6 +33,15 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// IntegrationServiceGetPullRequestWorkspaceProcedure is the fully-qualified name of the
+	// IntegrationService's GetPullRequestWorkspace RPC.
+	IntegrationServiceGetPullRequestWorkspaceProcedure = "/delidev.v1.IntegrationService/GetPullRequestWorkspace"
+	// IntegrationServiceListPullRequestCommitsProcedure is the fully-qualified name of the
+	// IntegrationService's ListPullRequestCommits RPC.
+	IntegrationServiceListPullRequestCommitsProcedure = "/delidev.v1.IntegrationService/ListPullRequestCommits"
+	// IntegrationServiceReadPullRequestAvatarProcedure is the fully-qualified name of the
+	// IntegrationService's ReadPullRequestAvatar RPC.
+	IntegrationServiceReadPullRequestAvatarProcedure = "/delidev.v1.IntegrationService/ReadPullRequestAvatar"
 	// IntegrationServiceInspectGitHubTokenProcedure is the fully-qualified name of the
 	// IntegrationService's InspectGitHubToken RPC.
 	IntegrationServiceInspectGitHubTokenProcedure = "/delidev.v1.IntegrationService/InspectGitHubToken"
@@ -82,6 +91,9 @@ const (
 
 // IntegrationServiceClient is a client for the delidev.v1.IntegrationService service.
 type IntegrationServiceClient interface {
+	GetPullRequestWorkspace(context.Context, *connect.Request[v1.GetPullRequestWorkspaceRequest]) (*connect.Response[v1.GetPullRequestWorkspaceResponse], error)
+	ListPullRequestCommits(context.Context, *connect.Request[v1.ListPullRequestCommitsRequest]) (*connect.Response[v1.ListPullRequestCommitsResponse], error)
+	ReadPullRequestAvatar(context.Context, *connect.Request[v1.ReadPullRequestAvatarRequest]) (*connect.Response[v1.ReadPullRequestAvatarResponse], error)
 	InspectGitHubToken(context.Context, *connect.Request[v1.InspectGitHubTokenRequest]) (*connect.Response[v1.InspectGitHubTokenResponse], error)
 	PrepareGitHubTokenForm(context.Context, *connect.Request[v1.PrepareGitHubTokenFormRequest]) (*connect.Response[v1.PrepareGitHubTokenFormResponse], error)
 	SaveIntegrationProfile(context.Context, *connect.Request[v1.SaveIntegrationProfileRequest]) (*connect.Response[v1.SaveIntegrationProfileResponse], error)
@@ -110,6 +122,24 @@ func NewIntegrationServiceClient(httpClient connect.HTTPClient, baseURL string, 
 	baseURL = strings.TrimRight(baseURL, "/")
 	integrationServiceMethods := v1.File_delidev_v1_integration_proto.Services().ByName("IntegrationService").Methods()
 	return &integrationServiceClient{
+		getPullRequestWorkspace: connect.NewClient[v1.GetPullRequestWorkspaceRequest, v1.GetPullRequestWorkspaceResponse](
+			httpClient,
+			baseURL+IntegrationServiceGetPullRequestWorkspaceProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("GetPullRequestWorkspace")),
+			connect.WithClientOptions(opts...),
+		),
+		listPullRequestCommits: connect.NewClient[v1.ListPullRequestCommitsRequest, v1.ListPullRequestCommitsResponse](
+			httpClient,
+			baseURL+IntegrationServiceListPullRequestCommitsProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("ListPullRequestCommits")),
+			connect.WithClientOptions(opts...),
+		),
+		readPullRequestAvatar: connect.NewClient[v1.ReadPullRequestAvatarRequest, v1.ReadPullRequestAvatarResponse](
+			httpClient,
+			baseURL+IntegrationServiceReadPullRequestAvatarProcedure,
+			connect.WithSchema(integrationServiceMethods.ByName("ReadPullRequestAvatar")),
+			connect.WithClientOptions(opts...),
+		),
 		inspectGitHubToken: connect.NewClient[v1.InspectGitHubTokenRequest, v1.InspectGitHubTokenResponse](
 			httpClient,
 			baseURL+IntegrationServiceInspectGitHubTokenProcedure,
@@ -205,6 +235,9 @@ func NewIntegrationServiceClient(httpClient connect.HTTPClient, baseURL string, 
 
 // integrationServiceClient implements IntegrationServiceClient.
 type integrationServiceClient struct {
+	getPullRequestWorkspace            *connect.Client[v1.GetPullRequestWorkspaceRequest, v1.GetPullRequestWorkspaceResponse]
+	listPullRequestCommits             *connect.Client[v1.ListPullRequestCommitsRequest, v1.ListPullRequestCommitsResponse]
+	readPullRequestAvatar              *connect.Client[v1.ReadPullRequestAvatarRequest, v1.ReadPullRequestAvatarResponse]
 	inspectGitHubToken                 *connect.Client[v1.InspectGitHubTokenRequest, v1.InspectGitHubTokenResponse]
 	prepareGitHubTokenForm             *connect.Client[v1.PrepareGitHubTokenFormRequest, v1.PrepareGitHubTokenFormResponse]
 	saveIntegrationProfile             *connect.Client[v1.SaveIntegrationProfileRequest, v1.SaveIntegrationProfileResponse]
@@ -220,6 +253,21 @@ type integrationServiceClient struct {
 	dismissPullRequestProblem          *connect.Client[v1.DismissPullRequestProblemRequest, v1.DismissPullRequestProblemResponse]
 	listPullRequestRemediationAttempts *connect.Client[v1.ListPullRequestRemediationAttemptsRequest, v1.ListPullRequestRemediationAttemptsResponse]
 	resumePullRequestRemediation       *connect.Client[v1.ResumePullRequestRemediationRequest, v1.ResumePullRequestRemediationResponse]
+}
+
+// GetPullRequestWorkspace calls delidev.v1.IntegrationService.GetPullRequestWorkspace.
+func (c *integrationServiceClient) GetPullRequestWorkspace(ctx context.Context, req *connect.Request[v1.GetPullRequestWorkspaceRequest]) (*connect.Response[v1.GetPullRequestWorkspaceResponse], error) {
+	return c.getPullRequestWorkspace.CallUnary(ctx, req)
+}
+
+// ListPullRequestCommits calls delidev.v1.IntegrationService.ListPullRequestCommits.
+func (c *integrationServiceClient) ListPullRequestCommits(ctx context.Context, req *connect.Request[v1.ListPullRequestCommitsRequest]) (*connect.Response[v1.ListPullRequestCommitsResponse], error) {
+	return c.listPullRequestCommits.CallUnary(ctx, req)
+}
+
+// ReadPullRequestAvatar calls delidev.v1.IntegrationService.ReadPullRequestAvatar.
+func (c *integrationServiceClient) ReadPullRequestAvatar(ctx context.Context, req *connect.Request[v1.ReadPullRequestAvatarRequest]) (*connect.Response[v1.ReadPullRequestAvatarResponse], error) {
+	return c.readPullRequestAvatar.CallUnary(ctx, req)
 }
 
 // InspectGitHubToken calls delidev.v1.IntegrationService.InspectGitHubToken.
@@ -300,6 +348,9 @@ func (c *integrationServiceClient) ResumePullRequestRemediation(ctx context.Cont
 
 // IntegrationServiceHandler is an implementation of the delidev.v1.IntegrationService service.
 type IntegrationServiceHandler interface {
+	GetPullRequestWorkspace(context.Context, *connect.Request[v1.GetPullRequestWorkspaceRequest]) (*connect.Response[v1.GetPullRequestWorkspaceResponse], error)
+	ListPullRequestCommits(context.Context, *connect.Request[v1.ListPullRequestCommitsRequest]) (*connect.Response[v1.ListPullRequestCommitsResponse], error)
+	ReadPullRequestAvatar(context.Context, *connect.Request[v1.ReadPullRequestAvatarRequest]) (*connect.Response[v1.ReadPullRequestAvatarResponse], error)
 	InspectGitHubToken(context.Context, *connect.Request[v1.InspectGitHubTokenRequest]) (*connect.Response[v1.InspectGitHubTokenResponse], error)
 	PrepareGitHubTokenForm(context.Context, *connect.Request[v1.PrepareGitHubTokenFormRequest]) (*connect.Response[v1.PrepareGitHubTokenFormResponse], error)
 	SaveIntegrationProfile(context.Context, *connect.Request[v1.SaveIntegrationProfileRequest]) (*connect.Response[v1.SaveIntegrationProfileResponse], error)
@@ -324,6 +375,24 @@ type IntegrationServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewIntegrationServiceHandler(svc IntegrationServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	integrationServiceMethods := v1.File_delidev_v1_integration_proto.Services().ByName("IntegrationService").Methods()
+	integrationServiceGetPullRequestWorkspaceHandler := connect.NewUnaryHandler(
+		IntegrationServiceGetPullRequestWorkspaceProcedure,
+		svc.GetPullRequestWorkspace,
+		connect.WithSchema(integrationServiceMethods.ByName("GetPullRequestWorkspace")),
+		connect.WithHandlerOptions(opts...),
+	)
+	integrationServiceListPullRequestCommitsHandler := connect.NewUnaryHandler(
+		IntegrationServiceListPullRequestCommitsProcedure,
+		svc.ListPullRequestCommits,
+		connect.WithSchema(integrationServiceMethods.ByName("ListPullRequestCommits")),
+		connect.WithHandlerOptions(opts...),
+	)
+	integrationServiceReadPullRequestAvatarHandler := connect.NewUnaryHandler(
+		IntegrationServiceReadPullRequestAvatarProcedure,
+		svc.ReadPullRequestAvatar,
+		connect.WithSchema(integrationServiceMethods.ByName("ReadPullRequestAvatar")),
+		connect.WithHandlerOptions(opts...),
+	)
 	integrationServiceInspectGitHubTokenHandler := connect.NewUnaryHandler(
 		IntegrationServiceInspectGitHubTokenProcedure,
 		svc.InspectGitHubToken,
@@ -416,6 +485,12 @@ func NewIntegrationServiceHandler(svc IntegrationServiceHandler, opts ...connect
 	)
 	return "/delidev.v1.IntegrationService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case IntegrationServiceGetPullRequestWorkspaceProcedure:
+			integrationServiceGetPullRequestWorkspaceHandler.ServeHTTP(w, r)
+		case IntegrationServiceListPullRequestCommitsProcedure:
+			integrationServiceListPullRequestCommitsHandler.ServeHTTP(w, r)
+		case IntegrationServiceReadPullRequestAvatarProcedure:
+			integrationServiceReadPullRequestAvatarHandler.ServeHTTP(w, r)
 		case IntegrationServiceInspectGitHubTokenProcedure:
 			integrationServiceInspectGitHubTokenHandler.ServeHTTP(w, r)
 		case IntegrationServicePrepareGitHubTokenFormProcedure:
@@ -454,6 +529,18 @@ func NewIntegrationServiceHandler(svc IntegrationServiceHandler, opts ...connect
 
 // UnimplementedIntegrationServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedIntegrationServiceHandler struct{}
+
+func (UnimplementedIntegrationServiceHandler) GetPullRequestWorkspace(context.Context, *connect.Request[v1.GetPullRequestWorkspaceRequest]) (*connect.Response[v1.GetPullRequestWorkspaceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.GetPullRequestWorkspace is not implemented"))
+}
+
+func (UnimplementedIntegrationServiceHandler) ListPullRequestCommits(context.Context, *connect.Request[v1.ListPullRequestCommitsRequest]) (*connect.Response[v1.ListPullRequestCommitsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.ListPullRequestCommits is not implemented"))
+}
+
+func (UnimplementedIntegrationServiceHandler) ReadPullRequestAvatar(context.Context, *connect.Request[v1.ReadPullRequestAvatarRequest]) (*connect.Response[v1.ReadPullRequestAvatarResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.ReadPullRequestAvatar is not implemented"))
+}
 
 func (UnimplementedIntegrationServiceHandler) InspectGitHubToken(context.Context, *connect.Request[v1.InspectGitHubTokenRequest]) (*connect.Response[v1.InspectGitHubTokenResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.IntegrationService.InspectGitHubToken is not implemented"))
