@@ -81,7 +81,16 @@ Recognized syntax is case-insensitive `bearer `, `sk-`, `ghp_`, `github_pat_`,
 `token=`, `password` and `api_key`, plus email-shaped values containing `@`.
 Account aliases are masked before renderer-to-native tray IPC and account/saved
 server names are masked again before native menu rendering. Stored labels and
-original resource/navigation identities remain unchanged.
+original resource/navigation identities remain unchanged. Internal saved-profile
+UUIDs are native selection identifiers and protected snapshot fields only; never
+use them as display text, accessibility labels, fallback names or product copy.
+Server and account labels come from the already authorized snapshot without
+name-only reads. Preserve UUID-looking user names/aliases under the existing
+credential/control masking rules; do not scan arbitrary native/user content for
+UUIDs. Notification claim/inbox/profile IDs likewise remain unchanged in
+authorization, deduplication and activation routing; fixed product notification
+text does not expose these IDs. Presentation cannot grant execution or recovery
+authority.
 
 Successful refresh time comes from the validated server overview, never from
 disk write time, a reload request or a widget timeline. Failed refresh retains

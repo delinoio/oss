@@ -18,3 +18,13 @@
   track, provision owner accounts or invent credentials as part of fixtures.
 
 - New session inherits current authenticated server/Project Plan defaults until an explicit mode choice. Missing, stale or invalid defaults retain drafts and require reinspection; frozen pending requests retain their original mode. Notification preference writes retain the original client revision and closed situation selection; legacy servers retain the combined-category compatibility shape.
+
+- Product labels and diagnostics hide internal UUIDs. Reuse the pure presentation
+  number registry from `../delidev/src/product-identity.ts`; keep each registry in
+  its original profile/connection view lifetime through refresh, paging and tab
+  changes. Never persist a number or use it for selection, protected verification,
+  requests or receipts. Use already authorized names only, preserve user/native
+  content verbatim, and add no name-only reads. Unknown generated state values
+  show localized unavailable copy; never globally rewrite raw error/native text.
+  Native notification tags, callback routing and protected machine-readable
+  artifacts retain exact original IDs while notification copy remains fixed.

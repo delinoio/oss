@@ -167,3 +167,16 @@ it("retains notifications across same-provider navigation and clears them on ide
   value.mounted.rerender(value.view("replacement"));
   expect(screen.queryByText("Retained")).toBeNull();
 });
+
+it("keeps internal toast routing out of copy and preserves UUID-looking original content", async () => {
+  await act(() => i18n.changeLanguage("en"));
+  const value = fixture();
+  const originalId = "0199aaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee";
+  const nativeContent = "Original native text 0199ffff-bbbb-7ccc-8ddd-eeeeeeeeeeee";
+  act(() => value.controller.notify({ id: originalId, kind: ToastKind.Info, message: nativeContent, durationMs: 0 }));
+  expect(document.body.textContent).not.toContain(originalId);
+  expect(screen.getByText(nativeContent)).toBeTruthy();
+  expect(screen.getByRole("button", { name: `Dismiss notification: ${nativeContent}` })).toBeTruthy();
+  act(() => value.controller.dismiss(originalId));
+  expect(screen.queryByText(nativeContent)).toBeNull();
+});

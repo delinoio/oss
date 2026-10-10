@@ -104,7 +104,20 @@ prove that a person saw an alert or accepted a native request.
 ## Logging
 
 Platform failures log only the operation and sanitized outcome. Product
-connection diagnostics include opaque profile/server identifiers and status.
+connection diagnostics show localized presentation labels and status, including copied
+product diagnostics. Internal profile/server/device/resource identifiers stay in
+protected state, verification, requests, receipts and cache/selection keys.
+Already authorized names remain verbatim, including UUID-looking names and
+message/native content. Missing or ambiguous references use kind-specific
+presentation numbers allocated against exact original IDs for the original
+connection or mounted profile view. Retain numbers across paging, refresh,
+reorder and tab changes; never persist them or use them as authority. Dispose
+connection registries when the original profile is forgotten or revoked. Add no
+reads solely for names. Unknown generated state values use a localized unavailable
+label; raw errors and native/user content must not pass through a global UUID
+replacement. Original server verification and uncertain request ownership remain
+unchanged. Mobile imports only the desktop identity module’s pure TypeScript
+registry; it does not import desktop React presentation or business state.
 Never log origins, authorization headers, pairing codes, prompts, messages,
 native request content, platform exception strings or protected file paths.
 

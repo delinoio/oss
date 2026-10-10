@@ -46,6 +46,7 @@ export const en = {
     "This session requires recovery in its original desktop client.",
   certificate: "The HTTPS certificate is invalid or untrusted.",
   sessions: "Sessions",
+  session: "Session",
   inbox: "Inbox",
   settings: "Settings",
   profile: "Server profile",
@@ -126,7 +127,9 @@ export const en = {
   diagnostics: "Connection diagnostics",
   export: "Copy safe diagnostics",
   copied: "Safe diagnostics copied",
-  safe: "Diagnostics contain only operation names and opaque correlation identifiers.",
+  safe: "Diagnostics contain operation names, status and presentation labels. Internal identifiers remain protected.",
+  presentationNumber: "number",
+  referenceUnavailable: "Unavailable",
   notificationNote:
     "OS submission is not proof that you saw a notification. Inbox read state is separate.",
   localNote:
@@ -155,7 +158,7 @@ export const en = {
   turn: "This turn",
   requestScope: "Original native scope",
   revokeInspect: "Inspect client before revocation",
-  identity: "Server identity",
+  identity: "Server",
   diagnosticFailure: "Diagnostics unavailable",
   confirmRetry: "Retry the exact protected original request?",
   pendingPair:
@@ -207,6 +210,7 @@ export const ko: Record<keyof typeof en, string> = {
   recoveryRequired: "원래 데스크톱 클라이언트에서 이 세션을 복구해야 합니다.",
   certificate: "HTTPS 인증서가 유효하지 않거나 신뢰되지 않습니다.",
   sessions: "세션",
+  session: "세션",
   inbox: "받은 편지함",
   settings: "설정",
   profile: "서버 프로필",
@@ -285,7 +289,9 @@ export const ko: Record<keyof typeof en, string> = {
   diagnostics: "연결 진단",
   export: "안전한 진단 복사",
   copied: "안전한 진단 복사됨",
-  safe: "진단에는 작업 이름과 불투명한 상관 식별자만 포함됩니다.",
+  safe: "진단에는 작업 이름, 상태와 표시 이름만 포함됩니다. 내부 식별자는 보호됩니다.",
+  presentationNumber: "번호",
+  referenceUnavailable: "사용 불가",
   notificationNote:
     "OS에 제출되었다고 알림을 보았다는 뜻은 아닙니다. 받은 편지함 읽음 상태는 별개입니다.",
   localNote:
@@ -313,7 +319,7 @@ export const ko: Record<keyof typeof en, string> = {
   turn: "이번 턴",
   requestScope: "원래 네이티브 범위",
   revokeInspect: "해제 전에 클라이언트 확인",
-  identity: "서버 식별자",
+  identity: "서버",
   diagnosticFailure: "진단 사용 불가",
   confirmRetry: "보호된 원래 요청을 정확히 재시도할까요?",
   pendingPair:

@@ -64,6 +64,7 @@ import {
   tls,
 } from "./platform";
 import { en, ko, type Labels } from "./localization";
+import { ProductIdentityNumbers as SharedProductIdentityNumbers, ProductIdentityKind } from "../../delidev/src/product-identity";
 import { presentForeground } from "./notifications";
 import { RequestResponse } from "./interaction";
 const owner = new ProtectedState(storage);
@@ -84,14 +85,40 @@ function record(v: unknown): Record<string, unknown> {
     ? (v as Record<string, unknown>)
     : {};
 }
-function label(resource: Resource): string {
-  return text(value(resource).name) || resource.id;
+const Identity = createContext<SharedProductIdentityNumbers | undefined>(undefined);
+function useIdentity() {
+  const retained = useRef(new SharedProductIdentityNumbers());
+  const numbers = useContext(Identity) ?? retained.current, c = useCopy();
+  const identify = (id: string, kind: ProductIdentityKind, name = "") => {
+    const nouns: Partial<Record<ProductIdentityKind, string>> = {
+      [ProductIdentityKind.Project]: c.project,
+      [ProductIdentityKind.Agent]: c.agent,
+      [ProductIdentityKind.Worker]: c.runner,
+      [ProductIdentityKind.Session]: c.session,
+      [ProductIdentityKind.Server]: c.identity,
+      [ProductIdentityKind.Connection]: c.profile,
+      [ProductIdentityKind.Notification]: c.notifications,
+    };
+    const noun = nouns[kind] ?? c.information;
+    if (!id) return name || `${noun} · ${c.referenceUnavailable}`;
+    const numbered = `${noun} ${c.presentationNumber} ${numbers.number(kind, id)}`;
+    return name ? `${name} · ${numbered}` : numbered;
+  };
+  return { identify, label: (resource: Resource) => {
+    const kinds: Partial<Record<EntityKind, ProductIdentityKind>> = {
+      [EntityKind.PROJECT]: ProductIdentityKind.Project,
+      [EntityKind.AGENT]: ProductIdentityKind.Agent,
+      [EntityKind.MACHINE]: ProductIdentityKind.Worker,
+      [EntityKind.SESSION]: ProductIdentityKind.Session,
+    };
+    return identify(resource.id, kinds[resource.kind] ?? ProductIdentityKind.Resource, text(value(resource).name));
+  } };
 }
 function observation(v: unknown, c: Labels): string {
   const key = text(v);
   if (key === "general-chat") return c.general;
   if (key === "worktree") return c.worktree;
-  return Object.hasOwn(c, key) ? c[key as keyof Labels] : key;
+  return Object.hasOwn(c, key) ? c[key as keyof Labels] : c.referenceUnavailable;
 }
 function guidance(error: unknown, c: Labels, pairing = false): string {
   const code = clientFailure(error).code;
@@ -184,9 +211,19 @@ export function App({ state = owner }: { state?: ProtectedState }) {
     document.documentElement.lang = s.language;
     document.documentElement.dataset.theme = s.theme;
   }, [s.language, s.theme, revision]);
+  const profileNumbers = useMemo(() => new SharedProductIdentityNumbers(), [state]);
+  const registries = useMemo(() => new Map<string, SharedProductIdentityNumbers>(), [state]);
+  // These maps are presentation memory only. Forget/revoke retires the original
+  // connection scope; switching tabs and refreshing observations retain it.
+  for (const key of registries.keys()) {
+    if (!s.profiles.some(p => p.id === key && !p.revoked)) registries.delete(key);
+  }
+  const scope = s.selectedProfile;
+  if (scope && s.profiles.some(p => p.id === scope && !p.revoked) && !registries.has(scope)) registries.set(scope, new SharedProductIdentityNumbers());
   const profile = s.profiles.find((p) => p.id === s.selectedProfile);
   return (
     <Copy.Provider value={c}>
+      <Identity.Provider value={profileNumbers}>
       <div className="shell">
         <header className="app-header">
           <h1>DeliDev</h1>
@@ -199,6 +236,7 @@ export function App({ state = owner }: { state?: ProtectedState }) {
           ) : tab === "settings" ? (
             <Settings state={state} changed={changed} active={active} />
           ) : profile && !profile.pairing && !profile.revoked ? (
+            <Identity.Provider value={registries.get(scope)!}>
             <Connected
               key={profile.id}
               state={state}
@@ -207,6 +245,7 @@ export function App({ state = owner }: { state?: ProtectedState }) {
               tab={tab}
               changed={changed}
             />
+            </Identity.Provider>
           ) : (
             <p>{profile?.revoked ? c.revoked : c.selectProfile}</p>
           )}
@@ -223,6 +262,7 @@ export function App({ state = owner }: { state?: ProtectedState }) {
           ))}
         </nav>
       </div>
+    </Identity.Provider>
     </Copy.Provider>
   );
 }
@@ -235,6 +275,7 @@ function Settings({
   changed: () => void;
   active: boolean;
 }) {
+  const { identify } = useIdentity();
   const c = useCopy(),
     [adding, setAdding] = useState(false),
     [name, setName] = useState(""),
@@ -282,7 +323,7 @@ function Settings({
             disabled={busy}
             onClick={() => void run(() => state.select(p.id))}
           >
-            {p.name}
+            {identify(p.id, ProductIdentityKind.Connection, p.name)}
           </button>
           <p>{p.origin}</p>
           {p.pairing ? (
@@ -379,7 +420,7 @@ function Settings({
           {JSON.stringify(
             {
               operation: "connection-profile",
-              profile_id: state.state.selectedProfile,
+              profile: identify(state.state.selectedProfile, ProductIdentityKind.Connection, state.state.profiles.find(p => p.id === state.state.selectedProfile)?.name),
               paired: state.state.profiles.filter(
                 (p) => !p.pairing && !p.revoked,
               ).length,
@@ -596,6 +637,7 @@ function Connected({
   tab: string;
   changed: () => void;
 }) {
+  const { identify } = useIdentity();
   const c = useCopy(),
     [status, setStatus] = useState(Status.Connecting),
     [sessionId, setSessionId] = useState(""),
@@ -816,7 +858,7 @@ function Connected({
           <details>
             <summary>{c.diagnostics}</summary>
             <p>
-              {c.identity}: {state.profile(id).serverId}
+              {identify(state.profile(id).serverId, ProductIdentityKind.Server)}
             </p>
             <p>{status}</p>
             <button
@@ -873,6 +915,7 @@ function Choices({
   onSelect: (id: string) => void;
   title: string;
 }) {
+  const { label } = useIdentity();
   const c = useCopy(),
     [page, setPage] = useState(""),
     [items, setItems] = useState<Resource[]>([]);
@@ -945,6 +988,7 @@ function Sessions({
   open: (id: string) => void;
   create: () => void;
 }) {
+  const { label } = useIdentity();
   const c = useCopy(),
     [page, setPage] = useState(""),
     [items, setItems] = useState<Resource[]>([]);
@@ -1153,6 +1197,7 @@ function Conversation({
   back: () => void;
 }) {
   const transport = useTransport();
+  const { label, identify } = useIdentity();
   const c = useCopy(),
     [page, setPage] = useState(""),
     [history, setHistory] = useState<Resource[]>([]),
@@ -1223,10 +1268,10 @@ function Conversation({
           ))}
         </dl>
         <p>
-          {c.runner}: {text(data.machine_id)}
+          {identify(text(data.machine_id), ProductIdentityKind.Worker)}
         </p>
         <p>
-          {c.agent}: {text(data.agent_id)}
+          {identify(text(data.agent_id), ProductIdentityKind.Agent)}
         </p>
       </details>
       {session.isError ? <p role="alert">{c.sessionGone}</p> : null}
@@ -1405,6 +1450,7 @@ function Inbox({
   mutate: Mutate;
   open: (id: string) => void;
 }) {
+  const { label, identify } = useIdentity();
   const c = useCopy(),
     [page, setPage] = useState(""),
     [items, setItems] = useState<InboxView[]>([]),
@@ -1444,7 +1490,7 @@ function Inbox({
         <article key={v.entry?.id}>
           <button className="row" onClick={() => setSelected(v.entry!.id)}>
             <strong>
-              {v.session ? label(v.session) : text(value(v.entry).source)}
+              {v.session ? label(v.session) : identify(v.entry?.id || "", ProductIdentityKind.Notification)}
             </strong>
             <span>
               {observation(value(v.entry).source, c)} ·{" "}
