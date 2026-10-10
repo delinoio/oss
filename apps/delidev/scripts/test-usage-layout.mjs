@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Synthetic browser checks do not establish packaged CEF or native acceptance.
 import assert from "node:assert/strict";
+import { assertDesktopTabs } from "./desktop-tabs-layout-assertions.mjs";
 import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { execFileSync } from "node:child_process";
@@ -80,6 +81,7 @@ try {
     await page.getByRole("button", { name: language === "ko" ? "사용량" : "Usage", exact: true }).click();
     const main = page.locator(".usage-page");
     assert.equal(await main.getByRole("tab").nth(0).getAttribute("aria-selected"), "true", context);
+    await assertDesktopTabs(page);
     assert(await main.evaluate(node => node.firstElementChild.classList.contains("usage-tabs")), context);
     assert.deepEqual(await main.getByRole("tab").allTextContents(), language === "ko" ? ["개요", "사용 기록", "모델 단가"] : ["Overview", "Usage history", "Model prices"], context);
     assert.equal(await main.getByRole("heading", { name: /Model details|모델 상세/ }).count(), 0, context);

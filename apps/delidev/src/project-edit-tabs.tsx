@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+import "./desktop-tabs.css";
+import {revealDesktopTab, revealSelectedDesktopTab} from "./desktop-tabs";
 import { useId, useLayoutEffect, useRef, useState, type ReactNode, type SyntheticEvent } from "react";
 import { flushSync } from "react-dom";
 import { copy, useLocale } from "./localization";
@@ -33,9 +35,10 @@ export function ProjectEditTabs({ panels, disabled }: { panels: Record<ProjectEd
     node?.addEventListener("project-reveal-invalid", reveal);
     return () => node?.removeEventListener("project-reveal-invalid", reveal);
   }, []);
+  useLayoutEffect(()=>revealSelectedDesktopTab(root.current),[selected]);
   return <div className="project-edit-tabs" ref={root}>
-    <div role="tablist" aria-label={copy("configuration-fields.projectEdit.tabs")} className="project-edit-tablist">
-      {order.map(tab => <button key={tab} ref={node => { if (node) tabs.current.set(tab, node); else tabs.current.delete(tab); }} type="button" role="tab" id={`${id}-${tab}-tab`} aria-controls={`${id}-${tab}-panel`} aria-selected={selected === tab} tabIndex={selected === tab ? 0 : -1} onClick={() => setSelected(tab)} onKeyDown={event => {
+    <div role="tablist" aria-label={copy("configuration-fields.projectEdit.tabs")} className="project-edit-tablist desktop-tab-strip" onFocusCapture={event=>revealDesktopTab(event.target)}>
+      {order.map(tab => <button className="desktop-tab-item desktop-tab-label" key={tab} ref={node => { if (node) tabs.current.set(tab, node); else tabs.current.delete(tab); }} type="button" role="tab" id={`${id}-${tab}-tab`} aria-controls={`${id}-${tab}-panel`} aria-selected={selected === tab} tabIndex={selected === tab ? 0 : -1} onClick={() => setSelected(tab)} onKeyDown={event => {
         const index = order.indexOf(tab), next = event.key === "ArrowRight" ? order[(index + 1) % order.length] : event.key === "ArrowLeft" ? order[(index + order.length - 1) % order.length] : event.key === "Home" ? order[0] : event.key === "End" ? order[order.length - 1] : undefined;
         if (next) { event.preventDefault(); tabs.current.get(next)?.focus(); }
       }}>{copy(`configuration-fields.projectEdit.${tab}`)}</button>)}

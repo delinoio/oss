@@ -1,9 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+import "./desktop-tabs.css";
+import {revealDesktopTab, revealSelectedDesktopTab} from "./desktop-tabs";
 import { listen } from "@tauri-apps/api/event";
 import { useSessionTabsStore, SessionTabKind } from "./session-tabs";
 import { shortcutModalVisible } from "./shortcuts";
-// SPDX-License-Identifier: Apache-2.0
 import { copy, useLocale, ownedMessage, useProductMessage } from "./localization";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useLayoutEffect } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { invoke } from "@tauri-apps/api/core";
 import { BrowserQuery, BrowserCapability, BrowserProfileState, newRequestId, type Resource, type BrowserProfile } from "@delinoio/delidev-api-client";
@@ -52,6 +54,8 @@ function NativeSessionBrowser({ session, accountId, close, layout, active=true, 
   const [address, setAddress] = useState("");
   const [profileId, setProfileId] = useState<string>();
   const [state, setState] = useState<BrowserState>();
+  const pageStrip=useRef<HTMLElement>(null);
+ useLayoutEffect(()=>revealSelectedDesktopTab(pageStrip.current),[state?.tabs.selected,active]);
   const [failure, setFailure] = useProductMessage();
   const [busy, setBusy] = useState(false);
   const [retry, setRetry] = useState(0);
@@ -190,7 +194,7 @@ function NativeSessionBrowser({ session, accountId, close, layout, active=true, 
       {failure ? <p role="alert">{failure}</p> : null}
       {state?.removal_pending ? <p role="alert">{copy("session-browser.thisAccountWasDeletedItsProfile_4cf6fc")}</p> : null}
       {profileId ? <>
-        {openPage ? <div className="browser-tab-bar"><div className="browser-pages" role="group" aria-label={copy("session-browser.browserTabs_3e94f1")}>{state?.tabs.tabs.map(tab=><div key={tab.id}><button disabled={blocked} title={tab.url} aria-label={tab.url} onClick={()=>{if(openPage)openPage({profile:profileId,id:tab.id,title:browserTabTitle(tab.url),label:tab.url});else void control(BrowserAction.SelectTab,tab.id);}}>{browserTabTitle(tab.url)}</button><button disabled={blocked} aria-label={copy("session-browser.closeTab_bc9560",{v0:tab.url})} onClick={()=>void control(BrowserAction.CloseTab,tab.id)}>×</button></div>)}</div><button disabled={blocked||(state?.tabs.tabs.length??0)>=16} onClick={()=>void control(BrowserAction.NewTab)} aria-label={copy("session-browser.newTab_1e08fd")}>+</button></div> : <div className="browser-tab-bar"><ul aria-label={copy("session-browser.browserTabs_3e94f1")} className="browser-tabs">{state?.tabs.tabs.map((tab, index) => <li key={tab.id}><button disabled={blocked} aria-label={copy("session-browser.tabLabel", { number: index + 1, url: tab.url })} title={tab.url} aria-current={state.tabs.selected === tab.id ? "page" : undefined} onClick={() => void control(BrowserAction.SelectTab, tab.id)}>{browserTabTitle(tab.url)}</button><button disabled={blocked} aria-label={copy("session-browser.closeTab_bc9560", { v0: index + 1 })} onClick={() => void control(BrowserAction.CloseTab, tab.id)}>×</button></li>)}</ul><button disabled={blocked || (state?.tabs.tabs.length ?? 0) >= 16} onClick={() => void control(BrowserAction.NewTab)} aria-label={copy("session-browser.newTab_1e08fd")}>+</button></div>}
+        {openPage ? <div className="browser-tab-bar"><div className="browser-pages desktop-tab-strip" ref={node=>{pageStrip.current=node;}} onFocusCapture={event=>revealDesktopTab(event.target)} role="group" aria-label={copy("session-browser.browserTabs_3e94f1")}>{state?.tabs.tabs.map(tab=><div className={`desktop-tab-item desktop-tab-dynamic${state.tabs.selected===tab.id?" is-selected":""}`} key={tab.id}><button className="desktop-tab-label" disabled={blocked} title={tab.url} aria-label={tab.url} onClick={()=>{if(openPage)openPage({profile:profileId,id:tab.id,title:browserTabTitle(tab.url),label:tab.url});else void control(BrowserAction.SelectTab,tab.id);}}>{browserTabTitle(tab.url)}</button><button className="desktop-tab-close" disabled={blocked} aria-label={copy("session-browser.closeTab_bc9560",{v0:tab.url})} onClick={()=>void control(BrowserAction.CloseTab,tab.id)}>×</button></div>)}</div><button disabled={blocked||(state?.tabs.tabs.length??0)>=16} onClick={()=>void control(BrowserAction.NewTab)} aria-label={copy("session-browser.newTab_1e08fd")}>+</button></div> : <div className="browser-tab-bar"><ul aria-label={copy("session-browser.browserTabs_3e94f1")} className="browser-tabs desktop-tab-strip" ref={node=>{pageStrip.current=node;}} onFocusCapture={event=>revealDesktopTab(event.target)}>{state?.tabs.tabs.map((tab, index) => <li className={`desktop-tab-item desktop-tab-dynamic${state.tabs.selected===tab.id?" is-selected":""}`} key={tab.id}><button className="desktop-tab-label" disabled={blocked} aria-label={copy("session-browser.tabLabel", { number: index + 1, url: tab.url })} title={tab.url} aria-current={state.tabs.selected === tab.id ? "page" : undefined} onClick={() => void control(BrowserAction.SelectTab, tab.id)}>{browserTabTitle(tab.url)}</button><button className="desktop-tab-close" disabled={blocked} aria-label={copy("session-browser.closeTab_bc9560", { v0: index + 1 })} onClick={() => void control(BrowserAction.CloseTab, tab.id)}>×</button></li>)}</ul><button disabled={blocked || (state?.tabs.tabs.length ?? 0) >= 16} onClick={() => void control(BrowserAction.NewTab)} aria-label={copy("session-browser.newTab_1e08fd")}>+</button></div>}
         <form onSubmit={event => { event.preventDefault(); void control(BrowserAction.Navigate); }} className="browser-address">
           <button type="button" disabled={blocked} onClick={() => void control(BrowserAction.Back)} aria-label={copy("session-browser.back_76900f")}>←</button><button type="button" disabled={blocked} onClick={() => void control(BrowserAction.Forward)} aria-label={copy("session-browser.forward_f1c65e")}>→</button><button type="button" disabled={blocked} onClick={() => void control(BrowserAction.Reload)} aria-label={copy("session-browser.reload_bdc090")}>↻</button>
           {addressField}<button disabled={blocked}>{copy("session-browser.go_6cc851")}</button>

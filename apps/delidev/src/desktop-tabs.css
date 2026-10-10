@@ -1,0 +1,13 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Static shared presentation only; each surface retains its own tab controller. */
+.desktop-tab-strip { display: flex; flex-wrap: nowrap; align-items: stretch; gap: 0; min-width: 0; max-width: 100%; overflow-x: auto; overflow-y: hidden; margin: 0; padding: 0; list-style: none; border: 0; background: linear-gradient(var(--border), var(--border)) left bottom / 100% 1px no-repeat; }
+.desktop-tab-strip .desktop-tab-item { position: relative; display: flex; align-items: stretch; flex: 0 0 auto; gap: 0; min-width: 0; min-height: 40px; margin: 0; border: 0; border-radius: 0; background: transparent; color: var(--muted); }
+.desktop-tab-strip .desktop-tab-item::after { position: absolute; right: 0; bottom: 0; left: 0; height: 2px; background: transparent; content: ""; pointer-events: none; }
+.desktop-tab-strip .desktop-tab-item:is(.is-selected, [aria-selected="true"], [aria-current="page"]) { color: var(--selected-text); }
+.desktop-tab-strip .desktop-tab-item:is(.is-selected, [aria-selected="true"], [aria-current="page"])::after { background: var(--accent); }
+.desktop-tab-strip .desktop-tab-label, .desktop-tab-strip .desktop-tab-close { min-height: 40px; margin: 0; border: 0; border-radius: 0; background: transparent; color: inherit; font-size: 14px; line-height: 20px; }
+.desktop-tab-strip .desktop-tab-label { display: block; flex: 1 1 auto; min-width: 40px; padding: 10px 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
+.desktop-tab-strip .desktop-tab-dynamic { max-width: 320px; }
+.desktop-tab-strip .desktop-tab-dynamic .desktop-tab-label { min-width: 0; }
+.desktop-tab-strip .desktop-tab-close { display: grid; place-items: center; flex: 0 0 40px; width: 40px; min-width: 40px; height: 40px; padding: 0; }
+.desktop-tab-strip :is(.desktop-tab-label, .desktop-tab-close):focus-visible { outline: 2px solid var(--focus); outline-offset: -3px; }

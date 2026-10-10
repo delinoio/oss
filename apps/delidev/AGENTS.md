@@ -4,6 +4,8 @@
 - This file covers `apps/delidev/` and its descendants unless a more specific instruction file applies.
 - Read the owning contracts below before changing behavior, including affected cross-domain consumers.
 
+- Shared desktop tab presentation belongs to `src/desktop-tabs.css`; component interaction/resource controllers remain in their owning components. Follow the desktop contract below.
+
 ## Owning contracts
 
 - [DeliDev desktop client](../../docs/apps-delidev-desktop-contract.md)

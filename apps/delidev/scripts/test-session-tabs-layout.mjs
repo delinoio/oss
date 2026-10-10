@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Synthetic browser checks do not establish packaged CEF/native acceptance.
 import assert from "node:assert/strict";
+import { assertDesktopTabs } from "./desktop-tabs-layout-assertions.mjs";
 import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { execFileSync } from "node:child_process";
@@ -83,6 +84,7 @@ try {
       return {pane:box(pane),tabs:box(tabs),info:box(info),view:box(view),page:document.documentElement.scrollWidth,viewport:innerWidth,splitters:document.querySelectorAll('.browser-splitter,.terminal-dock-separator').length,selected:tabs.querySelectorAll('[aria-selected="true"]').length,scale:parseFloat(getComputedStyle(document.body).zoom)||1};
     });
     assert.equal(matrix.selected,1);assert.equal(matrix.splitters,0);
+    await assertDesktopTabs(page);
     const closeGeometry = await page.locator(".session-tab-close").evaluateAll(nodes => nodes.map(node => { const close = node.getBoundingClientRect(), shell = node.parentElement.getBoundingClientRect(); return { width: close.width, height: close.height, left: close.left, right: close.right, shellLeft: shell.left, shellRight: shell.right }; }));
     assert(closeGeometry.every(row => row.width >= 40 * matrix.scale - 1 && row.height >= 40 * matrix.scale - 1 && row.left >= row.shellLeft - 1 && row.right <= row.shellRight + 1), JSON.stringify(closeGeometry));
     assert(matrix.tabs.bottom<=matrix.pane.top+1,JSON.stringify(matrix));
