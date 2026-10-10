@@ -193,7 +193,9 @@ func (c *Client) observeSafetyLocked(native nativewire.Event) (Event, error) {
 		// Keep native safety enforced and actual-model evidence privately. Original
 		// reconciliation is required; selected settings and usage are never rewritten.
 		c.execution.paused = true
-		c.problem = turnUncertain()
+		if c.problem == nil {
+			c.problem = turnUncertain()
+		}
 	}
 	event := c.metadata(kind)
 	event.TurnID, event.Late, event.Safety = observation.TurnID, turn.Turn.Status.terminal(), copySafety(observation)

@@ -130,3 +130,13 @@ func TestSafetyRerouteBlocksFreshInputWithoutReconciliation(t *testing.T) {
 		t.Fatal("reroute granted a fresh send or changed attribution", err)
 	}
 }
+
+func TestSafetyReroutePreservesOriginalRecoveryProblem(t *testing.T) {
+	c, turn := observationClient()
+	original := turnUncertain()
+	c.problem = original
+	_, err := observeFixture(c, "model/rerouted", map[string]any{"threadId": c.thread, "turnId": turn, "fromModel": "fixture-model", "toModel": "safety-model", "reason": "highRiskCyberActivity"})
+	if err != nil || c.problem != original || !c.execution.paused {
+		t.Fatal("reroute replaced original recovery ownership", err)
+	}
+}
