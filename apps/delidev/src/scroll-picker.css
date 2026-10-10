@@ -11,3 +11,8 @@
 .scroll-picker-content > span:last-child { min-width: 0; overflow-wrap: anywhere; }
 .scroll-picker-decoration { display: block; flex: 0 0 16px; width: 16px; height: 16px; }
 .scroll-picker-decoration .worker-harness-mark { width: 16px; height: 16px; flex-basis: 16px; margin: 0; }
+
+/* Top-layer popovers keep their DOM owner. Sidebar lists suppress both boundary
+   affordances and chaining; independently owned task dialogs keep their policy.
+   The compact sidebar dialog itself remains a sidebar owner. */
+:is(.sidebar-list, .sidebar-footer, .sidebar-surface-content, .subscription-rail-popover) .scroll-picker-popup:not(dialog:not(.sidebar-pane-dialog) *) { overscroll-behavior: none; }
