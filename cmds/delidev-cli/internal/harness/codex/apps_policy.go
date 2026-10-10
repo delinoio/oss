@@ -12,7 +12,7 @@ import (
 // layer, not session flags: a session flag would survive an explicit removal.
 // Each selected connector requires a fresh, one-call native approval. Replacing
 // the complete apps object also removes inherited per-tool and link approvals.
-type nativeAppApprovalMode nativeAppApprovalMode
+type nativeAppApprovalMode string
 
 const nativeAppPrompt nativeAppApprovalMode = "prompt"
 
