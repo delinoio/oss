@@ -534,23 +534,25 @@ it("keeps repository save acknowledgment separate from completed Worker validati
 });
 
 it.each(["failed", "canceled"] as const)("freshly reviews a %s repository save before returning to its retained draft", async state => {
-  const repository = resource(EntityKind.REPOSITORY, { name: "Repository" });
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", remote_url: "https://github.com/fixture/repo.git" });
   const job = resource(EntityKind.JOB, { type: "save-repository", state: "queued" });
   const resources = [repository, job];
-  let repositoryReads = 0, submissions = 0;
+  let repositoryReads = 0;
   const value = fixture(resources, { readResource: id => {
     if (id === repository.id) repositoryReads += 1;
     return { resource: resources.find(row => row.id === id) };
   } });
   const saved = vi.fn();
   value.save.mockImplementation(async request => {
-    submissions += 1;
     const requestId = input(request).mutation.requestId;
-    return submissions === 1 ? { job, requestId } : { resource: repository, requestId };
+    return { job, requestId };
   });
   render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={saved} cancel={() => {}} />));
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Retained draft" } });
-  fireEvent.click(await screen.findByRole("button", { name: "Save Repository" }));
+  const initialSave = await screen.findByRole("button", { name: "Save Repository" }) as HTMLButtonElement;
+  await waitFor(() => expect(initialSave.disabled).toBe(false));
+  fireEvent.click(initialSave);
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
   await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
   const previousRepositoryReads = repositoryReads;
 
@@ -567,7 +569,7 @@ it.each(["failed", "canceled"] as const)("freshly reviews a %s repository save b
   await waitFor(() => expect(save.disabled).toBe(false));
   fireEvent.click(save);
   await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
-  expect(saved).toHaveBeenCalledTimes(1);
+  expect(saved).not.toHaveBeenCalled();
 });
 
 it("keeps repository saving blocked and offers a retry when the capability check fails", async () => {
