@@ -182,6 +182,7 @@ func deleteSessionCopiesAtRemoval(ctx context.Context, config Config, w domain.S
 			jobLocks[i].Close()
 		}
 	}()
+	originalFolders := map[string]security.OwnedTreeAdmission{}
 	for _, copy := range w.Copies {
 		// Native execution and final journal/report publication retain this
 		// outer lock after workspace and outbox locks are released. Join it
@@ -192,6 +193,13 @@ func deleteSessionCopiesAtRemoval(ctx context.Context, config Config, w domain.S
 		}
 		jobLocks = append(jobLocks, jobLock)
 		folder := filepath.Join(root, "jobs", string(copy.JobID))
+		if len(proof.Admissions) == 0 {
+			original, err := security.CaptureOwnedTree(root, folder)
+			if err != nil {
+				return proof, err
+			}
+			originalFolders[original.Path] = original
+		}
 		if _, e := os.Lstat(folder); e == nil {
 			if e := security.CheckPrivateDir(folder); e != nil {
 				return proof, domain.SessionDeletionPending()
@@ -237,6 +245,14 @@ func deleteSessionCopiesAtRemoval(ctx context.Context, config Config, w domain.S
 				return proof, domain.SafeError(err)
 			}
 			if sessionCopyAbsenceOnly(root, operand) {
+				continue
+			}
+			relative, err := filepath.Rel(root, operand)
+			if err != nil {
+				return proof, domain.SessionDeletionPending()
+			}
+			if original, known := originalFolders[relative]; known {
+				proof.Admissions[relative] = original
 				continue
 			}
 			admitted, err := security.CaptureOwnedTree(root, operand)

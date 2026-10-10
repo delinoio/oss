@@ -11,11 +11,13 @@ import (
 )
 
 func TestSessionDeletionAdmissionPreservesReplacementAndPendingRecovery(t *testing.T) {
-	for _, kind := range []string{"process-directory", "journal-same-content", "restored-runtime", "previously-absent"} {
+	for _, kind := range []string{"process-directory", "journal-directory", "journal-same-content", "restored-runtime", "previously-absent"} {
 		t.Run(kind, func(t *testing.T) {
 			config, work, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
 			path := filepath.Join(config.Root, "processes", string(work.Copies[0].JobID))
 			switch kind {
+			case "journal-directory":
+				path = filepath.Join(config.Root, "jobs", string(work.Copies[0].JobID))
 			case "journal-same-content":
 				path = filepath.Join(config.Root, "jobs", string(work.Copies[0].JobID)+".json")
 			case "restored-runtime", "previously-absent":
