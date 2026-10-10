@@ -223,18 +223,14 @@ fn valid_colors(value: &std::collections::BTreeMap<String, String>) -> bool {
         "conversation-text",
         "conversation-border",
     ];
-    if value.len() != TOKENS.len()
-        || !TOKENS.iter().all(|k| {
+    value.len() == TOKENS.len()
+        && TOKENS.iter().all(|k| {
             value.get(*k).is_some_and(|v| {
                 v.len() == 7
                     && v.starts_with('#')
                     && v.as_bytes()[1..].iter().all(u8::is_ascii_hexdigit)
             })
         })
-    {
-        return false;
-    }
-    true
 }
 fn valid_new_theme_colors(value: &std::collections::BTreeMap<String, String>) -> bool {
     const CONTRAST_SURFACES: &[&str] = &[
