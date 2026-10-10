@@ -1,0 +1,8 @@
+{
+  "native-apps.title": "앱",
+  "native-apps.unavailableTool": "이 네이티브 앱 관측 정보를 사용할 수 없습니다.",
+  "native-apps.protectedArguments": "원래 호출에 보호된 인수가 포함되어 있습니다.",
+  "native-apps.noArguments": "원래 호출에 인수가 없습니다.",
+  "native-apps.structuredResult": "구조화된 결과",
+  "native-apps.nativeError": "네이티브 호출에서 오류가 보고되었습니다. 비공개 오류 정보는 표시되지 않습니다."
+}

@@ -1,0 +1,8 @@
+{
+  "native-apps.title": "Apps",
+  "native-apps.unavailableTool": "This native app observation is unavailable.",
+  "native-apps.protectedArguments": "The original call contains protected arguments.",
+  "native-apps.noArguments": "The original call contains no arguments.",
+  "native-apps.structuredResult": "Structured result",
+  "native-apps.nativeError": "The native call reported an error. Private error details are not displayed."
+}

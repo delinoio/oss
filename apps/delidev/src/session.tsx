@@ -1,3 +1,4 @@
+import { NativeAppsTool } from "./native-apps-tool";
 import { WaitingQueue } from "./waiting-queue";
 
 import { FlatDisclosureScope } from "./disclosure";
@@ -236,7 +237,7 @@ export const TranscriptItem = memo(function TranscriptItem({ resource, active = 
     {Number(data.context_revision ?? 0) < contextRevision ? <small>{copy("session.previousContext")}</small> : null}
     {data.role==="user"?actions:null}
     <RetainedImages value={data.attachments} sessionId={resource.sessionId} active={active} />
-    {toolStarted.kind === "image-view" ? <NativeImageView tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-builtin" ? <NativeBuiltin tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-todo" ? <NativeTodo tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-read" ? <NativeRead tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-shell" ? <NativeShell tool={tool} state={text(data.state)} /> : Object.keys(tool).length ? <Disclosure><DisclosureSummary><LocalizedText id="session.tool_844a02" components={{ s0: <>{text(toolStarted.kind) || copy("session.extra.fa176576233d")}</>, s1: <>{text(toolCompleted.status) || text(toolStarted.status)}</> }} /></DisclosureSummary>
+    {toolStarted.kind === "native-apps" || Object.hasOwn(toolStarted, "apps") || object(tool.completed).kind === "native-apps" ? <NativeAppsTool tool={tool} state={text(data.state)} /> : toolStarted.kind === "image-view" ? <NativeImageView tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-builtin" ? <NativeBuiltin tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-todo" ? <NativeTodo tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-read" ? <NativeRead tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-shell" ? <NativeShell tool={tool} state={text(data.state)} /> : Object.keys(tool).length ? <Disclosure><DisclosureSummary><LocalizedText id="session.tool_844a02" components={{ s0: <>{text(toolStarted.kind) || copy("session.extra.fa176576233d")}</>, s1: <>{text(toolCompleted.status) || text(toolStarted.status)}</> }} /></DisclosureSummary>
       {sleepDuration ? <p><LocalizedText id="session.sleepDuration" components={{ s0: <>{sleepDuration}</> }} /></p> : null}
       {text(command.command) ? <pre>{text(command.command)}</pre> : null}
       {text(command.cwd) ? <p><LocalizedText id="session.directory_369f13" components={{ s0: <>{text(command.cwd)}</> }} /></p> : null}
