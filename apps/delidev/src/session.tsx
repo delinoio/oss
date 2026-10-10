@@ -513,8 +513,15 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     if(next === SessionPanel.Terminals) { setTerminalOpened(true); if (session) setTerminalOpenIntent(current => current ?? { requestId: newRequestId(), revision: session.revision }); else setPendingTerminalOpen(current => current ?? newRequestId()); }
     if(next === SessionPanel.Browser) setBrowserOpened(true);
     const kinds={ [SessionPanel.Files]:SessionTabKind.Files,[SessionPanel.Diff]:SessionTabKind.Diff,[SessionPanel.Terminals]:SessionTabKind.Terminals,[SessionPanel.Browser]:SessionTabKind.Browser,[SessionPanel.Diagnostics]:SessionTabKind.Diagnostics } as const;
-    tabs.store.open(id, {kind:kinds[next]});
-    requestAnimationFrame(() => { const current = tabs.store.snapshot(id); const index = current.tabs.findIndex(tab => sessionTabKey(tab) === current.selected); document.getElementById(`session-tab-${id}-${index}`)?.focus({ preventScroll: true }); });
+    const target = { kind: kinds[next] };
+    const targetKey = sessionTabKey(target);
+    tabs.store.open(id, target);
+    requestAnimationFrame(() => {
+      const current = tabs.store.snapshot(id);
+      if (current.selected !== targetKey) return;
+      const index = current.tabs.findIndex(tab => sessionTabKey(tab) === targetKey);
+      document.getElementById(`session-tab-${id}-${index}`)?.focus({ preventScroll: true });
+    });
   };
   // Revealing Info preserves the selected resource and its original controller.
   const showInfo = (_opener: HTMLButtonElement, target = InfoTarget.Status) => {

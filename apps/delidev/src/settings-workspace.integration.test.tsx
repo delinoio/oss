@@ -164,8 +164,18 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   await screen.findByText(/Threshold: USD 12.345678901234567/);
   expect((await budgetClient.getSessionBudget({ sessionId: budgetSession.id })).view?.budget?.threshold).toBe("12.345678901234567");
   await editCurrentBudget();
-  fireEvent.click(screen.getByRole("checkbox", { name: "Enable estimated-cost budget" }));
-  fireEvent.click(screen.getByRole("button", { name: "Save session budget" }));
+  const enableBudget = screen.getByRole("checkbox", { name: "Enable estimated-cost budget" }) as HTMLInputElement;
+  fireEvent.click(enableBudget);
+  expect(enableBudget.checked).toBe(false);
+  const saveBudget = screen.getByRole("button", { name: "Save session budget" }) as HTMLButtonElement;
+  if (saveBudget.disabled) {
+    expect(screen.getByRole("alert").textContent).toContain("The session changed. Your budget draft is retained.");
+    const latestRevision = screen.getByRole("button", { name: "Use latest revision with this draft" });
+    fireEvent.click(latestRevision);
+    await waitFor(() => expect(saveBudget.disabled).toBe(false));
+    expect(enableBudget.checked).toBe(false);
+  }
+  fireEvent.click(saveBudget);
   await screen.findByText("No estimated-cost budget is configured.");
   expect((await budgetClient.getSessionBudget({ sessionId: budgetSession.id })).view?.state).toBe(BudgetState.DISABLED);
   cleanup();

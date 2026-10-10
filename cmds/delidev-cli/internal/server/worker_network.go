@@ -458,7 +458,7 @@ func (s *Service) ReportWorkerNativeRoute(ctx context.Context, req *connect.Requ
 		switch job.Type {
 		case domain.ExecuteSessionJob:
 			var input domain.ExecutionJobInput
-			if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Configuration.Subscription || input.Configuration.Harness != domain.Codex || !domain.CodexVersionAllowed(input.Installation.Version) || input.ExecutionID != value.ExecutionID {
+			if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.Configuration.Subscription || input.Configuration.Harness != domain.Codex || (input.Version != 4 && !domain.CodexVersionAllowed(input.Installation.Version)) || input.ExecutionID != value.ExecutionID {
 				return nil, executionDenied()
 			}
 		case domain.CompactSessionJob:
@@ -494,6 +494,8 @@ func (s *Service) ReportWorkerNativeRoute(ctx context.Context, req *connect.Requ
 			if err != nil || routeRecord.ID != value.RouteID || routeRecord.Revision != value.Generation || route.Profile.Mode == domain.ProxyDirect || route.Binding == nil || route.Binding.DeviceID != value.DeviceID {
 				return nil, networkConflict()
 			}
+			// The original tunnel is needed to initialize the v4 process.
+			// Scope validates its grant without granting ready-only inference.
 			if _, err := s.executionAuthority.scope(tx, grant); err != nil {
 				return nil, err
 			}
@@ -519,6 +521,7 @@ func (s *Service) ReportWorkerNativeRoute(ctx context.Context, req *connect.Requ
 		return struct{}{}, err
 	})
 	if err != nil {
+		s.logger.WarnContext(ctx, "worker_native_route_rejected", "job_id", value.JobID, "execution_id", value.ExecutionID, "code", domain.SafeError(err).Code)
 		return nil, rpc.Error(err, c)
 	}
 	s.logger.InfoContext(ctx, "worker_native_route_observed", "machine_id", value.MachineID, "job_id", value.JobID, "execution_id", value.ExecutionID, "route_id", value.RouteID, "generation", value.Generation, "state", value.State, "replayed", result.Replayed)
