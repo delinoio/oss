@@ -1536,7 +1536,10 @@ it.each(["MacIntel", "Win32", "Linux x86_64"])("opens Settings with the fixed lo
   const value = fixture(); render(<App transport={value.transport} />);
   const button = await screen.findByRole("button", { name: "Settings" });
   expect(button.getAttribute("aria-keyshortcuts")).toBe(platform === "MacIntel" ? "Meta+," : "Control+,");
-  fireEvent.keyDown(document.body, { key: ",", ...primary });
+  fireEvent.click(screen.getByRole("button", { name: "Search" }));
+  const query = await screen.findByRole("textbox", { name: "Search conversations" });
+  fireEvent.change(query, { target: { value: "Retained ordinary input" } });
+  fireEvent.keyDown(query, { key: ",", ...primary });
   await screen.findByRole("heading", { level: 1, name: "AI Subscription" });
   fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
   const category = screen.getByRole("button", { name: "Instructions" }); category.focus();
