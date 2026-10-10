@@ -86,3 +86,7 @@ it('keeps named nested Claude choices and original focused input across new stre
  d.claude_tool.input_delta='{"command":"updated"}';d.claude_tool.proposal={proposed:d.claude_tool.input_delta,applied:'{"command":"updated"}'};const next={...resource,revision:2n,documentJson:encode(d)};
  view.rerender(<ToolTurnTranscript {...p} live={new Map([[resource.id,next]])}/>);expect(entry.querySelector('[data-tool-detail="claude-initial"]')).toBe(initial);expect(initial.open).toBe(true);expect(document.activeElement).toBe(summary);expect(entry.querySelector<HTMLDetailsElement>('[data-tool-detail="claude-streamed"]')?.open).toBe(false);
 });
+
+it.each([null,17,{command:'foreign'}])('keeps malformed Codex command %j standalone without inventing a preview',command=>{
+ const resource=row({tool:{started:{kind:'command',command:{command}}}});expect(toolCommandPreview(resource)).toBeUndefined();expect(conversationProjection(resource,sessionId).tool).toBeUndefined();
+});
