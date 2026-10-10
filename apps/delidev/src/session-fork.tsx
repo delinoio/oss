@@ -172,11 +172,11 @@ export function PendingSidechatPane({ requestId, active }: { requestId: string; 
   return <div className="session-conversation-region session-sidechat-preparation"><div className="session-body">
     <div className="transcript">{pending.state ? <OperationStatus state={pending.state}/> : <p role="status">{copy("session-fork.preparingSidechat")}</p>}
       {pending.terminal ? <p role="alert">{copy("session-fork.sidechatPreparationFailed")}</p> : null}
-      {pending.stale ? <p role="alert">{copy("session-fork.theSourceChangedCloseAndDiscard_45f91e")}</p> : null}
+      {pending.stale ? <p role="alert">{copy("session-fork.sidechatSourceChanged")}</p> : null}
       <Problem error={pending.error}/>
       {text(pending.problem.message) ? <ServiceProblem code={text(pending.problem.code) || text(pending.problem.problem_code)}><p role="alert">{text(pending.problem.message)} {text(pending.problem.guidance)}</p></ServiceProblem> : null}
-      {pending.invalid ? <p role="alert">{copy("session-fork.theForkAcknowledgmentIsIncompleteRetain_a0f92f")}</p> : null}
-      {pending.uncertain ? <button disabled={pending.busy} onClick={pending.replay}>{copy("session-fork.retryTheSameForkRequest_782e42")}</button> : null}
+      {pending.invalid ? <p role="alert">{copy("session-fork.sidechatStatusUnverified")}</p> : null}
+      {pending.uncertain ? <button disabled={pending.busy} onClick={pending.replay}>{copy("session-fork.retrySameSidechatRequest")}</button> : null}
       {pending.error && !pending.state && !pending.uncertain ? <button disabled={pending.reading} onClick={pending.retryRead}>{copy("ui.retryCurrentRead")}</button> : null}
       {pending.invalid || pending.state === JobState.Uncertain || pending.state === JobState.Succeeded || pending.state && pending.error ? <button disabled={pending.reading} onClick={pending.reinspect}>{copy("jobs.retryStatusRead")}</button> : null}
       {!pending.busy && !pending.uncertain && (!pending.state || pending.terminal) ? <button onClick={pending.discard}>{copy("session-fork.discardSidechat")}</button> : null}

@@ -91,7 +91,7 @@ it.each(["selected", "background", "closed", "hidden"])("publishes only the veri
 it("lost creation response retains draft and replays only the exact original request explicitly", async () => {
  const f = await fixture({ lost: true }); fireEvent.click(screen.getByRole("menuitem", { name: "Open Sidechat" }));
  const input = await screen.findByRole("textbox", { name: "Message" }); fireEvent.change(input, { target: { value: "Keep this draft" } });
- const retry = await screen.findByRole("button", { name: "Retry the same fork request" }); expect(f.fork).toHaveBeenCalledTimes(1);
+ const retry = await screen.findByRole("button", { name: "Retry original Sidechat request" }); expect(f.fork).toHaveBeenCalledTimes(1);
  expect(screen.queryByRole("button", { name: "Discard Sidechat draft" })).toBeNull(); fireEvent.click(retry);
  await waitFor(() => expect(f.observe).toHaveBeenCalled()); expect(f.fork.mock.calls[1]![0]).toEqual(f.fork.mock.calls[0]![0]); expect(input).toHaveProperty("value", "Keep this draft");
 });
@@ -108,7 +108,7 @@ it.each(["uncertain", "foreign-child", "missing-overlay", "foreign-job"])("unset
 
 it("fresh source revision mismatch retains draft without admitting creation", async () => {
  const f = await fixture({ stale: true }); fireEvent.click(screen.getByRole("menuitem", { name: "Open Sidechat" }));
- await screen.findByText(/The source changed/);
+ await screen.findByText(/The original turn changed/);
  expect(f.fork).not.toHaveBeenCalled(); expect(screen.getByRole("textbox", { name: "Message" })).toHaveProperty("disabled", false);
 });
 
