@@ -68,10 +68,10 @@ export function SessionFiles({ sessionId, close, openFile, active=true }: { sess
     {state.rootsError ? <button type="button" disabled={state.rootsLoading} onClick={() => void owner.readRoots()}>{copy("session-files.retryWorkspaceRoots_6b5165")}</button> : null}
     {state.roots ? <label className="file-root-selector">{copy("session-files.workspaceRepository_0dbfbb")}<select value={state.repository ?? ""} onChange={event => owner.selectRepository(event.target.value)}>{state.roots.map(root => <option key={root.repository_id} value={root.repository_id}>{root.name}{root.primary ? copy("session-files.primary_b88564") : ""}</option>)}</select></label> : null}
     {state.roots?.length === 0 ? <p role="status">{copy("session-files.noRoots")}</p> : null}
-    {state.repository !== undefined ? <Explorer key={state.repository} owner={owner} state={state} openFile={openFile} /> : null}
+    {state.repository !== undefined ? <Explorer key={state.repository} owner={owner} state={state} openFile={openFile} active={active} /> : null}
   </aside>;
 }
-function Explorer({ owner, state, openFile }: { owner: FilesController; state: FilesSnapshot; openFile?: (repository:string,path:string)=>void }) {
+function Explorer({ owner, state, openFile, active }: { owner: FilesController; state: FilesSnapshot; openFile?: (repository:string,path:string)=>void; active:boolean }) {
   const scroll = useRef<HTMLDivElement>(null), tree = useRef<HTMLDivElement>(null), previewHeading = useRef<HTMLHeadingElement>(null);
   const scrollPosition = useRef({ top: 0, left: 0 }), ancestors = useRef<{ owner: FilesController; repository: string | undefined; positions: { element: HTMLElement; top: number; left: number }[] } | undefined>(undefined), returning = useRef(false), focusOwned = useRef(false);
   const [focused, setFocused] = useState<string>();
@@ -88,6 +88,7 @@ function Explorer({ owner, state, openFile }: { owner: FilesController; state: F
     (row ?? tree.current)?.focus({ preventScroll });
   };
   useLayoutEffect(() => {
+    if (!active || tree.current?.closest("[hidden], [inert]")) return;
     if (state.preview) { previewHeading.current?.focus(); return; }
     if (returning.current) {
       returning.current = false;
@@ -99,12 +100,11 @@ function Explorer({ owner, state, openFile }: { owner: FilesController; state: F
       }
     }
     // Refresh can remove the focused row; only repair focus if the tree owned it.
-  }, [Boolean(state.preview)]);
+  }, [Boolean(state.preview), active]);
   useLayoutEffect(() => {
-    if (!state.preview && focusOwned.current && focused && !visible.some(row => row.path === focused)) focusRow(focusPath);
-  }, [state.directories, state.expanded, state.preview, focused]);
+    if (active && !state.preview && focusOwned.current && focused && !visible.some(row => row.path === focused)) focusRow(focusPath);
+  }, [state.directories, state.expanded, state.preview, focused, active]);
   const open = (path: string) => {
-    if (openFile && state.repository !== undefined) { openFile(state.repository,path); return; }
     scrollPosition.current = { top: scroll.current?.scrollTop ?? 0, left: scroll.current?.scrollLeft ?? 0 };
     const positions: { element: HTMLElement; top: number; left: number }[] = [];
     // Preview focus can move every compact enclosing scroll owner. Retain only
@@ -113,7 +113,15 @@ function Explorer({ owner, state, openFile }: { owner: FilesController; state: F
       positions.push({ element, top: element.scrollTop, left: element.scrollLeft });
       if (element.classList.contains("session-workspace")) break;
     }
-    ancestors.current = { owner, repository: state.repository, positions }; owner.open(path);
+    ancestors.current = { owner, repository: state.repository, positions };
+    if (openFile && state.repository !== undefined) {
+      // Shared preview hides this retained explorer. Restore its original row
+      // and scroll only when the same owner becomes active again.
+      returning.current = true;
+      openFile(state.repository,path);
+      return;
+    }
+    owner.open(path);
   };
   const activate = (path: string, entry: Entry) => { if (entry.kind !== EntryKind.Directory && entry.kind !== EntryKind.File) return; owner.select(path); setFocused(path); if (entry.kind === EntryKind.Directory) owner.toggle(path); else if (entry.kind === EntryKind.File) open(path); };
   const keyboard = (event: KeyboardEvent<HTMLElement>, path: string, parent: string, entry: Entry) => {
@@ -150,7 +158,9 @@ function DirectoryStatus({ owner, state, path, root }: { owner: FilesController;
 
 /** Only the active tab owns bytes; unmount fences its original serialized read. */
 export function SessionFilePreview({sessionId,repository,path,close}:{sessionId:string;repository:string;path:string;close:()=>void}) {
+ const heading=useRef<HTMLHeadingElement>(null);
+ useLayoutEffect(()=>{const node=heading.current;if(node?.isConnected&&!node.closest("[hidden], [inert]"))node.focus({preventScroll:true});},[sessionId,repository,path]);
  const read=useWorkspaceReader(sessionId);const[result,setResult]=useState<Awaited<ReturnType<WorkspaceReader>>>();const[error,setError]=useState<unknown>();const[retry,setRetry]=useState(0);
  useLayoutEffect(()=>{const abort=new AbortController();setResult(undefined);setError(undefined);void read({operation:FileOperation.File,repository_id:repository,path},abort.signal).then(value=>{if(!abort.signal.aborted)setResult(value);},reason=>{if(!abort.signal.aborted)setError(reason);});return()=>{abort.abort();};},[read,repository,path,retry]);
- return <section className="session-files file-preview" aria-label={copy("session-files.filePreview_71d50a")}><header><h2>{path}</h2><button type="button" onClick={close}>{copy("session-diff.close_7d9eb7")}</button></header><p>{copy("session-files.readOnly")}</p><Problem error={error}/><button onClick={()=>setRetry(value=>value+1)}>{copy("session-files.refreshFiles_e2b488")}</button>{!result&&!error?<p role="status">{copy("session-files.previewLoading")}</p>:null}{result?result.binary?<p>{copy("session-files.thisFileHasNoUtf8_c06ed8")}</p>:<><p>{result.size}{result.truncated?copy("session-files.previewLimitedTo64Kib_9fd380"):""}</p><pre tabIndex={0}>{result.text}</pre></>:null}</section>;
+ return <section className="session-files file-preview" aria-label={copy("session-files.filePreview_71d50a")}><header><h2 ref={heading} tabIndex={-1}>{path}</h2><button type="button" onClick={close}>{copy("session-diff.close_7d9eb7")}</button></header><p>{copy("session-files.readOnly")}</p><Problem error={error}/><button onClick={()=>setRetry(value=>value+1)}>{copy("session-files.refreshFiles_e2b488")}</button>{!result&&!error?<p role="status">{copy("session-files.previewLoading")}</p>:null}{result?result.binary?<p>{copy("session-files.thisFileHasNoUtf8_c06ed8")}</p>:<><p>{result.size}{result.truncated?copy("session-files.previewLimitedTo64Kib_9fd380"):""}</p><pre tabIndex={0}>{result.text}</pre></>:null}</section>;
 }
