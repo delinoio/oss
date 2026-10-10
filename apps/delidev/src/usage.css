@@ -33,7 +33,8 @@
 .sidebar-list:has(.usage-sidebar:not([hidden])) { overflow: hidden; }
 .sidebar-surface-outlet:has(.usage-sidebar:not([hidden])) { display: flex; flex: 1; min-height: 0; flex-direction: column; }
 .usage-sidebar:not([hidden]) { display: flex; flex: 1; min-height: 0; flex-direction: column; padding-bottom: 0; }
-.usage-sidebar > h2, .usage-sidebar > p { flex-shrink: 0; }
+.usage-sidebar > h2 { flex-shrink: 0; margin-bottom: 8px; }
+.usage-sidebar .usage-timezone-chip { flex-shrink: 0; align-self: flex-start; box-sizing: border-box; max-width: calc(100% - 8px); margin: 0 4px 16px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-inset); color: var(--muted); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
 .usage-sidebar .usage-sidebar-form { display: flex; flex: 1; min-height: 0; flex-direction: column; }
 .usage-sidebar .usage-filter-scroll { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; padding-inline: 4px; scrollbar-gutter: stable; }
 .usage-sidebar fieldset { padding-block: 12px; border-top: 1px solid var(--border); min-width: 0; }
