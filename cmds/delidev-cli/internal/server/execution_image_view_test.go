@@ -249,3 +249,29 @@ func TestExecutionImageViewRejectsChangedScopeAndReference(t *testing.T) {
 		})
 	}
 }
+
+func TestExecutionImageViewPublishesLiteralPOSIXFilenameMetadata(t *testing.T) {
+	for _, filename := range []string{"frame:01.png", `frame\01.png`} {
+		t.Run(filename, func(t *testing.T) {
+			f, original := newImageViewPublicationFixture(t)
+			publisher, mapper := bindNativeMapper(t, f, publicationWorkerConfig(t, f))
+			// Deliberately nonexistent: publishing a native observation cannot read bytes.
+			location := filepath.Dir(original) + "/" + filename
+			native := &codex.Tool{ID: "native-posix-image", Kind: codex.ImageViewTool, Status: codex.ToolRunning, ImagePath: location}
+			publishNativeEvent(t, f, mapper, codex.Event{Kind: codex.ToolStartedEvent, ItemID: native.ID, Tool: native})
+			native.Status = codex.ToolCompleted
+			publishNativeEvent(t, f, mapper, codex.Event{Kind: codex.ToolCompletedEvent, ItemID: native.ID, Tool: native})
+			if err := publisher.ReplayPending(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			rows, err := f.service.Store.List(context.Background(), store.Filter{Kind: domain.MessageKind, SessionID: f.input.SessionID, Limit: 10})
+			if err != nil || len(rows) != 1 {
+				t.Fatal("original POSIX publication failed", err)
+			}
+			m, err := store.Decode[domain.ExecutionMessage](rows[0])
+			if err != nil || m.Tool == nil || m.Tool.Completed == nil || m.Tool.Started.ImageView == nil || m.Tool.Completed.ImageView == nil || *m.Tool.Started.ImageView != *m.Tool.Completed.ImageView || m.Tool.Started.ImageView.Location != filename || len(m.Attachments) != 0 || m.Text != "" {
+				t.Fatal("POSIX metadata altered or became attachment", err)
+			}
+		})
+	}
+}

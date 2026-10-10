@@ -52,6 +52,19 @@ func TestImageViewReferenceUsesOriginalLocalRepositoryAndWorkerPathGrammar(t *te
 			if err != nil || ref.RepositoryID != p.Repositories[1].ID || ref.Location != "images/original.png" || ValidateImageViewReference(input, workerOS, ref) != nil {
 				t.Fatalf("original repository/path grammar lost: %v", err)
 			}
+
+			if workerOS == "windows" {
+				for _, bad := range []string{paths[1] + `\images\frame:01.png`, paths[1] + `\images\C:foreign.png`, `C:source\two\image.png`, `D:\source\two\image.png`, `\\server\share\image.png`, paths[1] + `\..\foreign.png`, paths[1] + `-sibling\image.png`, paths[1] + `\images\\image.png`} {
+					if _, err := ObserveImageViewLocation(input, workerOS, bad, domain.NewID()); err == nil {
+						t.Fatal("Windows malformed or foreign location admitted", bad)
+					}
+				}
+				forged := ref
+				forged.Location = `images\original.png`
+				if ValidateImageViewReference(input, workerOS, forged) == nil {
+					t.Fatal("unnormalized Windows metadata admitted")
+				}
+			}
 		})
 	}
 }
@@ -80,5 +93,27 @@ func TestImageViewReferenceRejectsForeignScopeAndOwnership(t *testing.T) {
 	input.Manifest = append(input.Manifest, ' ')
 	if ValidateImageViewReference(input, "linux", ref) == nil {
 		t.Fatal("different manifest generation adopted original reference")
+	}
+}
+
+func TestImageViewReferencePreservesPOSIXFilenameCharacters(t *testing.T) {
+	for _, workerOS := range []string{"linux", "darwin"} {
+		for _, location := range []string{"screens/frame:01.png", `screens/frame\01.png`, `screens/frame:01\raw.png`} {
+			input := imageViewInput(t)
+			var manifest Manifest
+			_ = json.Unmarshal(input.Manifest, &manifest)
+			ref, err := ObserveImageViewLocation(input, workerOS, manifest.PrimaryPath+"/"+location, domain.NewID())
+			if err != nil || ref.Location != location || ValidateImageViewReference(input, workerOS, ref) != nil {
+				t.Fatal("original POSIX location rejected or altered", workerOS, location, err)
+			}
+			raw, _ := json.Marshal(ref)
+			var retained domain.ImageViewObservation
+			if domain.Decode(raw, &retained) != nil || retained != ref || ValidateImageViewReference(input, workerOS, retained) != nil {
+				t.Fatal("server metadata round trip lost original POSIX reference")
+			}
+			if _, err := ObserveImageViewLocation(input, workerOS, manifest.PrimaryPath+"-sibling/"+location, domain.NewID()); err == nil {
+				t.Fatal("sibling root admitted")
+			}
+		}
 	}
 }

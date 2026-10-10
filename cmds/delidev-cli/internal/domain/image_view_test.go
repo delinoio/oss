@@ -2,6 +2,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -17,6 +18,24 @@ func TestImageViewSnapshotHasNoInputOrFileAuthority(t *testing.T) {
 		change(&next)
 		if next.Validate() == nil {
 			t.Fatal("image view accepted mixed or fabricated evidence")
+		}
+	}
+}
+
+func TestImageViewMetadataPreservesLiteralPOSIXCharacters(t *testing.T) {
+	for _, location := range []string{"images/plain.png", "screens/frame:01.png", `screens/frame\01.png`, `screens/frame:01\raw.png`} {
+		observation := ImageViewObservation{ReferenceID: NewID(), MachineID: NewID(), ManifestDigest: strings.Repeat("a", 64), Location: location}
+		snapshot := ToolSnapshot{Kind: ImageViewTool, Status: ToolRunning, ImageView: &observation}
+		raw, err := json.Marshal(snapshot)
+		var retained ToolSnapshot
+		if err != nil || Decode(raw, &retained) != nil || retained.Validate() != nil || retained.ImageView == nil || *retained.ImageView != observation {
+			t.Fatal("inert original metadata did not round trip", location, err)
+		}
+	}
+	for _, location := range []string{"/absolute.png", "../outside.png", "images/../outside.png", "images//image.png", "https://example.com/image.png", "file:///image.png", ".", "", "images/\x00.png"} {
+		observation := ImageViewObservation{ReferenceID: NewID(), MachineID: NewID(), ManifestDigest: strings.Repeat("a", 64), Location: location}
+		if observation.Validate() == nil {
+			t.Fatal("invalid relative metadata accepted", location)
 		}
 	}
 }

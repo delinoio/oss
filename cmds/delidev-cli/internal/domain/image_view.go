@@ -18,9 +18,11 @@ type ImageViewObservation struct {
 	Location       string `json:"location"`
 }
 
+// Location is inert slash-delimited metadata. The original workspace boundary
+// applies Worker OS grammar; colon and backslash remain literal POSIX characters.
 func (v ImageViewObservation) Validate() error {
 	digest, err := hex.DecodeString(v.ManifestDigest)
-	if v.ReferenceID.Validate() != nil || v.MachineID.Validate() != nil || (v.RepositoryID != "" && v.RepositoryID.Validate() != nil) || err != nil || len(digest) != 32 || hex.EncodeToString(digest) != v.ManifestDigest || Text(v.Location, "native image location", 4096, true) != nil || path.IsAbs(v.Location) || path.Clean(v.Location) != v.Location || v.Location == "." || v.Location == ".." || strings.HasPrefix(v.Location, "../") || strings.ContainsAny(v.Location, "\\:") {
+	if v.ReferenceID.Validate() != nil || v.MachineID.Validate() != nil || (v.RepositoryID != "" && v.RepositoryID.Validate() != nil) || err != nil || len(digest) != 32 || hex.EncodeToString(digest) != v.ManifestDigest || Text(v.Location, "native image location", 4096, true) != nil || path.IsAbs(v.Location) || path.Clean(v.Location) != v.Location || v.Location == "." || v.Location == ".." || strings.HasPrefix(v.Location, "../") || strings.Contains(v.Location, "://") {
 		return invalidTool()
 	}
 	return nil

@@ -50,6 +50,11 @@ func ObserveImageViewLocation(input domain.ExecutionJobInput, workerOS, location
 			selected, relative = root, strings.TrimPrefix(location, base+"/")
 		}
 	}
+	// Windows separators have already been normalized. A colon in the selected
+	// relative path is a drive/stream spelling, not admitted filename metadata.
+	if workerOS == "windows" && strings.Contains(relative, ":") {
+		return domain.ImageViewObservation{}, ResultUncertain()
+	}
 	digest := sha256.Sum256(input.Manifest)
 	observation := domain.ImageViewObservation{ReferenceID: reference, MachineID: input.MachineID, RepositoryID: selected.ID, ManifestDigest: hex.EncodeToString(digest[:]), Location: relative}
 	if observation.Validate() != nil {

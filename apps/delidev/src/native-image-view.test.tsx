@@ -29,3 +29,16 @@ test.each(["../outside.png", "/absolute.png", "https://example.com/image.png", "
  render(<NativeImageView tool={tool} state="complete" />);
  expect(screen.getByText("This image-view observation is unavailable.")).toBeTruthy();
 });
+
+
+test.each(["screens/frame:01.png", String.raw`screens/frame\01.png`, String.raw`screens/frame:01\raw.png`])("preserves admitted POSIX filename %s as inert text", location => {
+ const fetch = vi.spyOn(globalThis, "fetch");
+ const tool = fixture(); tool.started.image_view.location = location; tool.completed.image_view.location = location;
+ const { container } = render(<NativeImageView tool={tool} state="complete" />);
+ expect(screen.getByText(location)).toBeTruthy();
+ expect(screen.getByText(/Preview unavailable/)).toBeTruthy();
+ expect(container.querySelector("pre")?.textContent).toBe(location);
+ expect(container.querySelector("a,img,button,input,iframe")).toBeNull();
+ expect(fetch).not.toHaveBeenCalled();
+ fetch.mockRestore();
+});
