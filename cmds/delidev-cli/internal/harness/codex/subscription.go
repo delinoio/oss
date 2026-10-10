@@ -151,6 +151,18 @@ func (c *Client) verifyManagedConfig(ctx context.Context, cwd string) (returned 
 			return incompatible()
 		}
 	}
+	if c.appsProfile {
+		var features map[string]json.RawMessage
+		if json.Unmarshal(result.Config["features"], &features) != nil {
+			return incompatible()
+		}
+		for key, want := range map[string]bool{"apps": true, "tool_call_mcp_elicitation": false, "auth_elicitation": false} {
+			var enabled *bool
+			if json.Unmarshal(features[key], &enabled) != nil || enabled == nil || *enabled != want {
+				return incompatible()
+			}
+		}
+	}
 	return nil
 }
 

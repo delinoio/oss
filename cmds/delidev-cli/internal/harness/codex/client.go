@@ -24,6 +24,7 @@ import (
 const SupportedVersion = domain.CodexProtocolVersion
 
 type Config struct {
+	CodexAppsProfile      bool
 	ManagedForkHistory    bool
 	OrdinaryTools         executionenv.Ordinary `json:"-"`
 	RevertHistory         bool                  `json:"-"`
@@ -45,6 +46,7 @@ type Config struct {
 }
 type Client struct {
 	apps               *appsController
+	appsProfile        bool
 	managedForkHistory bool
 	quotaUsed          atomic.Bool
 	skillsRoot         string
@@ -123,6 +125,9 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if config.ManagedForkHistory && (config.Mode != ThreadProtocol || !config.ManagedAuthentication || config.Sidechat != "") {
 		return nil, incompatible()
 	}
+	if config.CodexAppsProfile && (config.Mode != ThreadProtocol || !config.ManagedAuthentication || config.API != nil || config.Sidechat != "") {
+		return nil, incompatible()
+	}
 	if (config.Mode == QuotaProtocol && (config.ManagedAuthentication || config.API != nil || config.Sidechat != "" || config.ModelObservation)) || (config.Mode == SubscriptionProtocol && !config.ManagedAuthentication) || (config.ManagedAuthentication && (config.Mode == ProbeProtocol || config.API != nil)) {
 		return nil, incompatible()
 	}
@@ -164,6 +169,12 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if config.ManagedAuthentication {
 		config.Process.Args[1] = `cli_auth_credentials_store="file"`
 		config.Process.Args = append(config.Process.Args, "-c", `model_provider="openai"`, "-c", `forced_login_method="chatgpt"`)
+	}
+	if config.CodexAppsProfile {
+		// The original 0.162 profile exposes exact call IDs through the manual
+		// user-input approval route. Generic elicitation does not bind a call ID.
+		// New provider authentication is outside this connector execution scope.
+		config.Process.Args = append(config.Process.Args, "-c", "features.apps=true", "-c", "features.tool_call_mcp_elicitation=false", "-c", "features.auth_elicitation=false")
 	}
 	if err := configureImageGeneration(&config); err != nil {
 		return nil, err
@@ -228,6 +239,9 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 	if config.RevertHistory && config.Version != "0.162.0" {
 		return nil, incompatible()
 	}
+	if config.CodexAppsProfile && config.Version != "0.162.0" {
+		return nil, incompatible()
+	}
 	platform, family := runtime.GOOS, "unix"
 	if platform == "darwin" {
 		platform = "macos"
@@ -266,6 +280,7 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 		config.Process.Logger.InfoContext(ctx, "Codex native handshake verified", "owner_id", config.Process.OwnerID, "version", config.Version)
 	}
 	client = &Client{imageGeneration: config.EnableImageGeneration, revertHistory: config.RevertHistory, managedForkHistory: config.ManagedForkHistory, home: home, skillsRoot: config.SkillsRoot, imageRoot: config.ImageRoot, imageMachine: config.ImageMachineID, wire: wire, version: config.Version, ownerID: config.Process.OwnerID, logger: config.Process.Logger, control: make(chan struct{}, 1), eventGate: make(chan struct{}, 1), mode: config.Mode, api: api, modelObservation: observation, sidechat: config.Sidechat}
+	client.appsProfile = config.CodexAppsProfile
 	phase = profilePhase
 	if err := client.verifyLifecyclePlugins(ctx); err != nil {
 		return nil, err

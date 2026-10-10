@@ -311,6 +311,9 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 	if c.problem != nil {
 		return result, c.problem
 	}
+	if c.appsProfile && c.apps == nil {
+		return result, incompatible()
+	}
 	if c.thread != "" {
 		return result, domain.Fail(domain.Conflict, "This native connection already owns a root thread.", "Use the retained native thread; do not start or resume another one on this connection.")
 	}

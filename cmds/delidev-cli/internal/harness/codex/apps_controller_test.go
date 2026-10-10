@@ -15,7 +15,7 @@ func TestAppsControllerRejectsForeignOrReplayedRemovalBeforeNativeWrite(t *testi
 	request := domain.NewID()
 	selection := domain.CodexAppConfiguration{Version: 1, SessionID: domain.NewID(), AccountID: domain.NewID(), Generation: domain.NewID(), AppIDs: []string{"original"}}
 	controller := func() *Client {
-		return &Client{mode: ThreadProtocol, version: "0.162.0", home: home, managedHome: home, thread: domain.NewID(), control: make(chan struct{}, 1), apps: &appsController{original: selection.Clone(), current: selection.Clone(), path: filepath.Join(home, "config.toml"), cwd: cwd, version: "original-version", requests: map[domain.ID]bool{request: true}}}
+		return &Client{appsProfile: true, mode: ThreadProtocol, version: "0.162.0", home: home, managedHome: home, thread: domain.NewID(), control: make(chan struct{}, 1), apps: &appsController{original: selection.Clone(), current: selection.Clone(), path: filepath.Join(home, "config.toml"), cwd: cwd, version: "original-version", requests: map[domain.ID]bool{request: true}}}
 	}
 	removed := selection.Clone()
 	removed.Generation, removed.AppIDs = domain.NewID(), []string{}
@@ -61,9 +61,26 @@ func TestAppsPreparationCannotBorrowAnExistingThreadOrAccountProfile(t *testing.
 		{mode: ThreadProtocol, version: "0.162.0", home: home},
 		{mode: ThreadProtocol, version: "0.161.0", home: home, managedHome: home},
 	} {
+		c.appsProfile = true
 		c.control = make(chan struct{}, 1)
 		if c.PrepareCodexApps(context.Background(), domain.NewID(), selection, home) == nil || c.apps != nil {
 			t.Fatal("unrelated native scope acquired apps authority")
+		}
+	}
+}
+
+func TestAppsProfileRequiresOriginalManagedThreadBeforeProcessStart(t *testing.T) {
+	for _, configuration := range []Config{
+		{CodexAppsProfile: true, Mode: ProbeProtocol, ManagedAuthentication: true},
+		{CodexAppsProfile: true, Mode: SubscriptionProtocol, ManagedAuthentication: true},
+		{CodexAppsProfile: true, Mode: ThreadProtocol},
+		{CodexAppsProfile: true, Mode: ThreadProtocol, ManagedAuthentication: true, API: &APIConfig{}},
+		{CodexAppsProfile: true, Mode: ThreadProtocol, ManagedAuthentication: true, Sidechat: ReadOnlySidechatV1},
+	} {
+		// No native executable or home exists. Scope validation must return its
+		// profile failure before any process or authentication file is opened.
+		if client, err := Open(context.Background(), configuration); client != nil || domain.SafeError(err).Code != domain.Unsupported {
+			t.Fatalf("apps profile admitted unrelated authority: %v", err)
 		}
 	}
 }

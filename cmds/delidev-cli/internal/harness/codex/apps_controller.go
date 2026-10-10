@@ -25,7 +25,7 @@ func appsUncertain() *domain.Error {
 }
 
 func (c *Client) originalAppsEligible() bool {
-	return c.mode == ThreadProtocol && c.version == "0.162.0" && c.managedHome != "" && c.managedHome == c.home && c.api == nil && c.sidechat == "" && c.problem == nil
+	return c.appsProfile && c.mode == ThreadProtocol && c.version == "0.162.0" && c.managedHome != "" && c.managedHome == c.home && c.api == nil && c.sidechat == "" && c.problem == nil
 }
 
 func (c *Client) readAppsConfigLocked(ctx context.Context, cwd string) (json.RawMessage, [32]byte, error) {
