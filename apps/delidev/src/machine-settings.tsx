@@ -4,9 +4,10 @@ import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { SettingsTaskActions } from "./settings-task";
 import { useCloseSettingsTask } from "./settings-task-context";
-import { useState, useId, useMemo, useRef } from "react";
+import { useState, useId, useMemo, useRef, useLayoutEffect } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { installationObservation, validRunnerObservation } from "./runner-observation";
+import { mergeMachineRead } from "./machine-settings-observation";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, ResourceQuery, WorkerQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, items, object, resourceName, text } from "./documents";
@@ -20,16 +21,24 @@ import type { PairingAuthority } from "./pairing-grant";
 
 export function useMachineSettingsController(initial: Resource, active: boolean) {
   const result = useQuery(ResourceQuery.getResource, { kind: EntityKind.MACHINE, id: initial.id }, { enabled: active, refetchInterval: active ? 5000 : false });
-  const [acknowledged, setAcknowledged] = useState<Resource>();
   const exact = (row?: Resource): row is Resource => validRunnerObservation(row) && row.id === initial.id;
-  const current = [initial, result.data?.resource, acknowledged].filter(exact).reduce<Resource | undefined>((a, b) => !a || b.revision > a.revision ? b : a, undefined);
+  const [accepted, setAccepted] = useState<Resource>(() => initial);
+  const current = [accepted, initial].filter(exact).reduce<Resource | undefined>((a, b) => !a || b.revision > a.revision ? b : a, undefined);
+  // Successful read arrivals own heartbeat freshness independently of business
+  // revisions. A mutation acknowledgment does not replay an older cached read.
+  useLayoutEffect(() => {
+    if (!result.error) setAccepted(previous => {
+      const base = exact(previous) && previous.revision >= initial.revision ? previous : initial;
+      return mergeMachineRead(base, result.data?.resource, initial.id) ?? previous;
+    });
+  }, [result.data, result.dataUpdatedAt, result.error, initial.id, initial.revision]);
   const data = useMemo(() => document(current), [current]);
   const [edit, setEdit] = useState<{ revision: bigint; paths: Record<string, string> }>();
   const [verify, setVerifyValue] = useState(false);
   const [verifyEdited, setVerifyEdited] = useState(false);
   const setVerify = useMemo(() => (next: boolean) => { setVerifyValue(next); setVerifyEdited(next); }, []);
   const [job, setJob] = useState<Resource | "unknown">();
-  const discovery = useRetainedMutation(`machine-discovery:${initial.id}`, WorkerQuery.discoverHarnesses, (response) => { if (exact(response.machine)) setAcknowledged(response.machine); setJob(response.job ?? "unknown"); setVerifyEdited(false); });
+  const discovery = useRetainedMutation(`machine-discovery:${initial.id}`, WorkerQuery.discoverHarnesses, (response) => { const machine = response.machine; if (exact(machine)) setAccepted(previous => exact(previous) && previous.revision > machine.revision ? previous : machine); setJob(response.job ?? "unknown"); setVerifyEdited(false); });
   const pending = discovery.busy || discovery.uncertain || Boolean(job);
   const stale = Boolean(edit && edit.revision !== current?.revision);
   const readError = useMemo(() => result.error || (result.data && !exact(result.data.resource) ? new ConnectError("Runner observation is unavailable.", Code.DataLoss) : undefined), [result.error, result.data, initial.id]);

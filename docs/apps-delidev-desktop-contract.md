@@ -2437,6 +2437,16 @@ Queue pages expose edit, remove and explicit Steer for unclaimed items. Editing 
 
 ### Editable settings and account connection
 
+Runner Device Settings retains the highest accepted Machine business revision.
+Successful same-ID reads at that revision refresh only the independent heartbeat
+`last_seen` projection, including an omitted/unknown current lease, without
+replacing editable configuration or invalidating executable-path drafts. Lower
+revision reads cannot roll back an accepted mutation or newer configuration;
+malformed, foreign or failed observations preserve existing read errors and
+mutation locks. A mutation acknowledgment does not replay an older cached poll.
+Fresh compatible reads keep original edit/request revisions and exact retries.
+
+
 AI API Keys, AI Subscription and Doctor expose no Account storage inspection UI or account-category storage-owned Doctor readers. Preserve actual account operations, cleanup failures, usage and general diagnostics under the [diagnostics presentation contract](apps-delidev-diagnostics-contract.md#account-storage-presentation).
 Provider, model, AI account, Agent Worker and instruction-template forms use generated configuration RPCs. Provider presets seed concrete editable values; custom API endpoints and explicit keyless authentication remain server-validated. Model provider/native identity is immutable when editing. Agents retain ordered weighted account links, ordered templates, routing inheritance and native permission/options. Configured compatibility does not establish native execution capability. Project/repository forms and local execution-Worker registration/controller lifecycle are implemented; remote setup, updates and OS services retain their separate acceptance requirements.
 
