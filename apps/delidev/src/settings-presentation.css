@@ -96,3 +96,13 @@
 .settings-content[aria-label] .settings-breadcrumb { margin: 0 0 16px; color: var(--muted); font-size: 12px; line-height: 18px; }
 
 .settings-content .provider-connection-guidance { color: var(--muted); overflow-wrap: anywhere; }
+
+/* Only this catalog owns internal scrolling. Outer main remains the fallback
+   when operation guidance and footer exceed the available category height. */
+.settings-content.settings-shortcuts[aria-label] { height: 100%; min-height: 0; }
+.settings-shortcuts .settings-task-background, .settings-shortcuts .settings-content-column { height: 100%; min-height: 0; }
+.settings-shortcuts .settings-content-column > div { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.settings-shortcuts .settings-category-heading { flex: none; margin-bottom: 16px; }
+.settings-shortcuts .settings-panels { flex: 1; min-height: 0; }
+.settings-content.settings-shortcuts[aria-label] .shortcut-settings h3 { font-size: 14px; line-height: 20px; }
+.settings-content.settings-shortcuts[aria-label] .shortcut-catalog h2 { font-size: 14px; line-height: 20px; }

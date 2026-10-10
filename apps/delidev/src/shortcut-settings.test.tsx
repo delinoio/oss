@@ -51,7 +51,7 @@ it("uses New Chat in the English creation heading while preserving Korean and sh
 it("keeps draft bindings inactive until Save and updates dispatch and ARIA without remount",async()=>{
  const f=fixture(),run=vi.fn();render(<StrictMode><Owner bridge={f.bridge} run={run}/></StrictMode>);await screen.findByText("Current saved shortcuts");
  expect(screen.getByRole("button",{name:"Save changes"}).getAttribute("data-settings-action")).toBe("save");
- expect(screen.getByRole("button",{name:"Capture shortcut for New session"}).getAttribute("data-settings-action-presentation")).toBe("label");
+ expect(screen.getByRole("button",{name:"Capture shortcut for New session"}).getAttribute("data-settings-action-presentation")).toBe("icon");
  const action=screen.getByRole("button",{name:"Ordinary action"});await capture();expect(action.getAttribute("aria-keyshortcuts")).toBe("Control+Shift+N");fireEvent.keyDown(action,{key:"j",ctrlKey:true,shiftKey:true});expect(run).not.toHaveBeenCalled();
  fireEvent.click(screen.getByRole("button",{name:"Save changes"}));await waitFor(()=>expect(action.getAttribute("aria-keyshortcuts")).toBe("Control+Shift+J"));expect(f.bridge.update).toHaveBeenCalledOnce();fireEvent.keyDown(action,{key:"j",ctrlKey:true,shiftKey:true});expect(run).toHaveBeenCalledOnce();fireEvent.keyDown(action,{key:"n",ctrlKey:true,shiftKey:true});expect(run).toHaveBeenCalledOnce();expect(screen.getByRole("button",{name:"Ordinary action"})).toBe(action);
 });
@@ -130,4 +130,37 @@ it.each([['en','Add message to queue','Fixed: Enter'],['ko','메시지 대기열
  expect(within(row as HTMLElement).getByText(fixed)).toBeTruthy();
  expect(screen.getAllByText('Shift + Enter').length).toBeGreaterThan(0);
  await act(()=>i18n.changeLanguage('en'));
+});
+
+
+it("keeps the complete compact catalog inside a focusable region and guidance/footer outside it", async () => {
+ const f=fixture();render(<Owner bridge={f.bridge}/>);await screen.findByText("Current saved shortcuts");
+ const catalog=screen.getByRole("region",{name:"Keyboard shortcuts"});
+ expect(catalog.tabIndex).toBe(0);
+ expect(catalog.querySelectorAll(".shortcut-settings-row")).toHaveLength(7);
+ expect(within(catalog).getByRole("heading",{name:"Native and fixed shortcuts"})).toBeTruthy();
+ expect(catalog.contains(screen.getByRole("button",{name:"Save changes"}))).toBe(false);
+ expect(catalog.contains(screen.getByText("Current saved shortcuts"))).toBe(false);
+ expect(screen.getByRole("button",{name:"Save changes"}).hasAttribute("disabled")).toBe(true);
+ expect(screen.getByRole("button",{name:"Discard changes"}).hasAttribute("disabled")).toBe(true);
+ expect(screen.getByRole("button",{name:"Restore all defaults"}).hasAttribute("disabled")).toBe(false);
+ const opener=within(catalog).getByRole("button",{name:"Capture shortcut for New session"});
+ expect(opener.getAttribute("data-settings-action-presentation")).toBe("icon");
+ fireEvent.focus(opener);expect(await screen.findByRole("tooltip")).toHaveProperty("textContent","Capture shortcut for New session");
+ fireEvent.click(opener);await screen.findByRole("button",{name:"Cancel capture"});
+ expect(catalog.contains(screen.getByRole("button",{name:"Cancel capture"}))).toBe(false);
+ fireEvent.keyDown(opener,{key:"Escape"});await waitFor(()=>expect(document.activeElement).toBe(opener));
+});
+
+it("retains the catalog, dirty bindings and capture opener across locale/theme reflow", async () => {
+ const f=fixture();render(<Owner bridge={f.bridge}/>);await screen.findByText("Current saved shortcuts");
+ await capture();const catalog=screen.getByRole("region",{name:"Keyboard shortcuts"});
+ const opener=screen.getByRole("button",{name:"Capture shortcut for New session"});
+ fireEvent.click(opener);await screen.findByRole("button",{name:"Cancel capture"});
+ await act(async()=>{await i18n.changeLanguage(SupportedLanguage.Korean);});
+ document.documentElement.dataset.theme="dark";window.dispatchEvent(new Event("resize"));
+ expect(screen.getByRole("region",{name:"키보드 단축키"})).toBe(catalog);
+ expect(opener.isConnected).toBe(true);expect(screen.getByText("Ctrl + Shift + J")).toBeTruthy();
+ fireEvent.keyDown(opener,{key:"Escape"});await waitFor(()=>expect(document.activeElement).toBe(opener));
+ expect(f.bridge.update).not.toHaveBeenCalled();delete document.documentElement.dataset.theme;
 });

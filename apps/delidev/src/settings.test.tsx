@@ -1276,3 +1276,13 @@ it("reveals a hidden invalid Project branch prefix through complete-document Sav
  fireEvent.click(screen.getByRole("tab",{name:"General"}));const save=screen.getByRole("button",{name:"Save Project"});await waitFor(()=>expect(save).toHaveProperty("disabled",false));fireEvent.click(save);
  await waitFor(()=>expect(screen.getByRole("tab",{name:"Execution"}).getAttribute("aria-selected")).toBe("true"));await waitFor(()=>expect(document.activeElement).toBe(prefix));expect(f.save).not.toHaveBeenCalled();
 });
+
+
+it("shows shortcut scope once and uses a category-specific catalog without changing other Settings", async () => {
+ const value=fixture([]);render(value.view(<Settings visible/>));
+ fireEvent.click(screen.getByRole("button",{name:"Keyboard shortcuts"}));
+ expect(screen.getAllByText("Saved on this computer. Changes take effect only after Save changes.")).toHaveLength(1);
+ expect(screen.getByRole("region",{name:"Keyboard shortcuts"}).closest(".settings-shortcuts")).toBeTruthy();
+ fireEvent.click(screen.getByRole("button",{name:"Appearance"}));
+ expect(document.querySelector(".settings-shortcuts")).toBeNull();
+});

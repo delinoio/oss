@@ -261,6 +261,8 @@ editor draft, capture opener, effective bindings or business request owners.
 Browser-only persistence remains visibly unavailable. Follow the desktop
 device-local shortcut preference contract; no captured content enters logs.
 
+The compact shortcut catalog uses the existing localized Keyboard shortcuts region name and action-specific capture/disable/restore names for accessible icon controls and tooltips. Scope guidance appears once; labels and decorative platform-resolved keycaps reflow without resetting catalog, draft or capture identity.
+
 ## Command menu
 
 The feature adds Command menu / 명령 메뉴, localized groups, input hint, Close and no-results guidance. Reuse current-language navigation, creation and shared Settings labels/help/breadcrumbs. NFC normalization supports Korean composed/decomposed input; never add cross-language aliases or dynamic resource content. Locale changes retain the palette query/input focus and update matches. The fixed primary+K action shares the typed Help/ARIA catalog and remains outside editable shortcut preferences.

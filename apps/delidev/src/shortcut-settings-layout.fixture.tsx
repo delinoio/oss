@@ -2,7 +2,8 @@
 // Isolated device preference adapters; no native storage or product mutation runs.
 import { createRoot } from "react-dom/client";
 import { useState } from "react";
-import { i18n } from "./localization";
+import { SettingsActionScope } from "./settings-action";
+import { copy, i18n } from "./localization";
 import { ShortcutPreferenceProvider, type ShortcutPreferenceSnapshot, type ShortcutPreferenceBridge } from "./shortcut-preference-controller";
 import { ShortcutProvider, useGlobalShortcutAria, useShortcuts } from "./shortcut-provider";
 import { ShortcutSettings } from "./shortcut-settings";
@@ -17,6 +18,6 @@ let snapshot:ShortcutPreferenceSnapshot={revision:1,overrides:{},problem:null};
 const listeners=new Set<(raw:unknown)=>void>();
 let writes=0;
 const bridge:ShortcutPreferenceBridge={read:async()=>snapshot,update:async(overrides,revision)=>{writes++;if(revision!==snapshot.revision)return{...snapshot,problem:"changed"};snapshot={revision:revision+1,overrides,problem:null};for(const callback of listeners)callback(snapshot);return snapshot;},subscribe:async callback=>{listeners.add(callback);return()=>{listeners.delete(callback);};}};
-function Fixture(){const [runs,setRuns]=useState(0);const aria=useGlobalShortcutAria(ShortcutId.NewSession);useShortcuts([{id:ShortcutId.NewSession,scope:ShortcutScope.Global,label:"shortcuts.newSession",input:ShortcutInput.Allow,bindings:globalShortcutBindings[ShortcutId.NewSession],run:()=>setRuns(value=>value+1)}]);return <main className="settings-content" style={{width:"100%",padding:24,minWidth:0}}><div className="settings-content-column"><button data-shortcut-action aria-keyshortcuts={aria}>Fixture action</button><output data-shortcut-state>{runs}:{writes}</output><h1>Keyboard shortcuts</h1><ShortcutSettings/></div></main>;}
+function Fixture(){const [runs,setRuns]=useState(0);const aria=useGlobalShortcutAria(ShortcutId.NewSession);useShortcuts([{id:ShortcutId.NewSession,scope:ShortcutScope.Global,label:"shortcuts.newSession",input:ShortcutInput.Allow,bindings:globalShortcutBindings[ShortcutId.NewSession],run:()=>setRuns(value=>value+1)}]);return <main aria-label="Settings content" className="settings-content settings-shortcuts" style={{width:"100%",height:"100dvh",minWidth:0}}><SettingsActionScope><div className="settings-content-column"><div><header className="settings-category-heading"><div><button data-shortcut-action aria-keyshortcuts={aria}>Fixture action</button><output data-shortcut-state>{runs}:{writes}</output><h1>{copy("shortcuts.title")}</h1><p className="settings-scope">{copy("shortcut-settings.scope")}</p></div></header><div className="settings-panels"><ShortcutSettings showScope={false}/></div></div></div></SettingsActionScope></main>;}
 (globalThis as unknown as Record<string,unknown>).__shortcutPreferencesFixture=true;
 createRoot(document.getElementById("root")!).render(<ShortcutPreferenceProvider bridge={bridge}><ShortcutProvider><Fixture/></ShortcutProvider></ShortcutPreferenceProvider>);

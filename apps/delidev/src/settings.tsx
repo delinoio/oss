@@ -540,7 +540,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
   const taskSize = deleting || device ? SettingsDialogSize.Confirmation : routing ? SettingsDialogSize.Form : machine || account || [EntityKind.AGENT, EntityKind.TEMPLATE, EntityKind.REPOSITORY].includes(taskKind) ? SettingsDialogSize.Wide : SettingsDialogSize.Form;
   return <SettingsTasks>
       <SettingsSearchFocus request={searchRequest} root={deviceContent} category={selectedCategory} />
-      <section className={selectedCategory === SettingsCategory.Repositories ? "settings-content settings-repositories" : isProjects ? "settings-content settings-projects" : (isPreferenceCategory || isServerPreferences) ? `settings-content settings-server-preferences${isGitWorkflow ? " settings-git-workflow" : ""}` : isApiAccounts ? "settings-content settings-api-keys" : isRunnerDevices ? "settings-content settings-runner-devices" : area === SettingsArea.Diagnostics ? "settings-content settings-connections" : "settings-content"} aria-label={copy("settings.settingsContent_e4dcd3")}>
+      <section className={area === SettingsArea.KeyboardShortcuts ? "settings-content settings-shortcuts" : selectedCategory === SettingsCategory.Repositories ? "settings-content settings-repositories" : isProjects ? "settings-content settings-projects" : (isPreferenceCategory || isServerPreferences) ? `settings-content settings-server-preferences${isGitWorkflow ? " settings-git-workflow" : ""}` : isApiAccounts ? "settings-content settings-api-keys" : isRunnerDevices ? "settings-content settings-runner-devices" : area === SettingsArea.Diagnostics ? "settings-content settings-connections" : "settings-content"} aria-label={copy("settings.settingsContent_e4dcd3")}>
         <SettingsTaskBackground><div className="settings-content-column">
         <div ref={deviceContent} className={isAgentWorkers ? "settings-agent-column" : isPairedDevices ? "settings-paired-column" : isRunnerDevices ? "settings-runner-column" : area === SettingsArea.Transfer ? "settings-transfer-column" : undefined}>
         {isGitWorkflow ? <p className="settings-breadcrumb">{copy("settings.gitWorkflow")}</p> : null}
@@ -557,7 +557,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
         </div> : null}
         <div className="settings-panels">
           {area === SettingsArea.Network ? <NetworkSettings active={visible && isServerPreferences} authority={pairingAuthority} onPresentationChange={setNetworkPresentationOpen} /> : null}
-          {area === SettingsArea.KeyboardShortcuts ? <ShortcutSettings /> : null}
+          {area === SettingsArea.KeyboardShortcuts ? <ShortcutSettings showScope={false} /> : null}
           {area === SettingsArea.Appearance ? <div><AppearanceSettings /><LanguageSettings /><DateFormatSettings /></div> : null}
           {area === SettingsArea.Backups ? <div><Backups active={visible} /></div> : null}
           {area === SettingsArea.Integrations ? <div><Integrations active={visible} showCategoryIntro={false} /></div> : null}

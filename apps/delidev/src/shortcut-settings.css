@@ -1,13 +1,31 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-.shortcut-settings { min-width: 0; max-width: 1040px; }
-.shortcut-settings > section { margin-block: 24px; }
-.shortcut-settings h2 { font-size: 16px; line-height: 24px; }
-.shortcut-settings-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-block: 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.shortcut-settings { min-width: 0; min-height: 0; max-width: 1040px; display: flex; flex-direction: column; gap: 12px; height: 100%; }
+.shortcut-scope { flex: none; margin: 0; color: var(--muted); }
+.shortcut-catalog { flex: 1 1 auto; min-height: 80px; min-width: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; border: 1px solid var(--border); border-radius: 8px; container: shortcut-catalog / inline-size; }
+.shortcut-catalog:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.shortcut-catalog > section { margin: 0; }
+.shortcut-catalog h2 { display: flex; align-items: center; min-height: 40px; margin: 0; padding: 8px 12px; font-size: 14px; line-height: 20px; background: var(--surface-muted); }
+.shortcut-settings-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .7fr) 136px; align-items: center; gap: 8px 16px; min-height: 56px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
 .shortcut-settings-row > div { min-width: 0; }
 .shortcut-settings h3 { font-size: 14px; line-height: 20px; margin: 0; }
-.shortcut-settings-row p { margin: 4px 0; overflow-wrap: anywhere; }
-.shortcut-settings small { color: var(--muted); }
+.shortcut-settings-row p { margin: 4px 0 0; overflow-wrap: anywhere; }
+.shortcut-settings small { display: block; font-size: 12px; line-height: 18px; color: var(--muted); overflow-wrap: anywhere; }
 .shortcut-settings .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .shortcut-settings button { min-height: 40px; border-radius: 8px; }
-.shortcut-settings dl > div { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-block: 8px; }
-.shortcut-settings dd { margin: 0; }
+.shortcut-catalog dl { margin: 0; }
+.shortcut-catalog dl > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .7fr) 136px; align-items: center; gap: 8px 16px; min-height: 40px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.shortcut-catalog dd { min-width: 0; margin: 0; }
+.shortcut-catalog dt { font-size: 14px; line-height: 20px; }
+.shortcut-catalog > section > p { margin: 8px 12px; color: var(--muted); }
+.shortcut-chords, .shortcut-chords > span { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; max-width: 100%; }
+.shortcut-chords kbd { display: inline-block; max-width: 100%; padding: 2px 6px; border: 1px solid var(--control-border); border-radius: 4px; color: var(--text); background: var(--surface-muted); font: inherit; overflow-wrap: anywhere; }
+.shortcut-or { color: var(--muted); }
+.shortcut-operation, .shortcut-footer { flex: none; min-width: 0; }
+.shortcut-operation p { margin: 0 0 8px; }
+.shortcut-operation > p:last-child { margin-bottom: 0; }
+.shortcut-footer { display: flex; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
+.shortcut-footer > .actions { margin-left: auto; justify-content: flex-end; }
+@container shortcut-catalog (width < 640px) {
+  .shortcut-settings-row, .shortcut-catalog dl > div { grid-template-columns: minmax(0, 1fr); }
+  .shortcut-settings-row .actions { justify-content: flex-start; }
+}
