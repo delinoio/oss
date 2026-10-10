@@ -2226,8 +2226,10 @@ These observations publish distinct metadata-only transcript progress, without a
 
 The pinned [guardian warning schema](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server-protocol/schema/json/v2/GuardianWarningNotification.json)
 requires the original `threadId` and bounded `message`. The [deprecation schema](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server-protocol/schema/json/v2/DeprecationNoticeNotification.json)
-requires `summary` and permits omitted, string or null `details`. Validate only
-these exact fields, discard private messages/details/migration instructions, and
+requires `summary` and permits omitted, string or null `details`. Empty and
+whitespace-only strings remain valid; each supplied text value must still be
+bounded and well-formed. Validate only these exact fields, discard private
+messages/details/migration instructions, and
 project the existing native-warning/native-config-warning notice categories on
 the original process/execution. Foreign guardian threads remain private;
 malformed types, unknown/duplicate keys and excessive text retain rejection.

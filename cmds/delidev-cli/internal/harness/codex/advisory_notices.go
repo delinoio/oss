@@ -28,7 +28,7 @@ func (c *Client) observeAdvisoryNoticeLocked(native nativewire.Event) (Event, er
 			ThreadID domain.ID `json:"threadId"`
 			Message  *string   `json:"message"`
 		}
-		if domain.Decode(native.Params, &p) != nil || p.ThreadID.Validate() != nil || p.Message == nil || domain.Text(*p.Message, "private guardian warning", nativewire.MaxFrame, true) != nil {
+		if domain.Decode(native.Params, &p) != nil || p.ThreadID.Validate() != nil || p.Message == nil || domain.Text(*p.Message, "private guardian warning", nativewire.MaxFrame, false) != nil {
 			return Event{}, incompatible()
 		}
 		if p.ThreadID != c.thread {
@@ -41,7 +41,7 @@ func (c *Client) observeAdvisoryNoticeLocked(native nativewire.Event) (Event, er
 			Summary *string `json:"summary"`
 			Details *string `json:"details"`
 		}
-		if domain.Decode(native.Params, &fields) != nil || len(fields) > 2 || domain.Decode(native.Params, &p) != nil || p.Summary == nil || domain.Text(*p.Summary, "private deprecation summary", nativewire.MaxFrame, true) != nil || p.Details != nil && domain.Text(*p.Details, "private deprecation details", nativewire.MaxFrame, false) != nil {
+		if domain.Decode(native.Params, &fields) != nil || len(fields) > 2 || domain.Decode(native.Params, &p) != nil || p.Summary == nil || domain.Text(*p.Summary, "private deprecation summary", nativewire.MaxFrame, false) != nil || p.Details != nil && domain.Text(*p.Details, "private deprecation details", nativewire.MaxFrame, false) != nil {
 			return Event{}, incompatible()
 		}
 		return Event{Kind: NoticeEvent, ThreadID: c.thread, Notice: domain.NativeConfigWarning, Correlated: true}, nil

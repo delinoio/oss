@@ -19,6 +19,40 @@ func advisoryFixture() (*Client, domain.ID) {
 	c.execution.settings.ApprovalsReviewer = "auto_review"
 	return c, turn
 }
+
+func TestGuardianAndDeprecationAcceptEmptySchemaStrings(t *testing.T) {
+	for _, sample := range []struct{ label, value string }{{"empty", ""}, {"whitespace", " \t"}} {
+		for _, item := range []struct {
+			method string
+			params func(*Client) map[string]any
+			notice domain.NativeNotice
+		}{
+			{
+				method: "guardianWarning",
+				params: func(c *Client) map[string]any {
+					return map[string]any{"threadId": c.thread, "message": sample.value}
+				},
+				notice: domain.NativeWarning,
+			},
+			{
+				method: "deprecationNotice",
+				params: func(*Client) map[string]any {
+					return map[string]any{"summary": sample.value}
+				},
+				notice: domain.NativeConfigWarning,
+			},
+		} {
+			t.Run(item.method+"/"+sample.label, func(t *testing.T) {
+				c, _ := advisoryFixture()
+				event, err := observeFixture(c, item.method, item.params(c))
+				if err != nil || event.Kind != NoticeEvent || event.Notice != item.notice || !event.Correlated {
+					t.Fatal("valid schema string was rejected or changed notice category", event, err)
+				}
+			})
+		}
+	}
+}
+
 func TestGuardianDeprecationStrictReviewKeepOnlyBoundedNoticesAndOriginalCompletion(t *testing.T) {
 	for _, method := range []string{"guardianWarning", "deprecationNotice", "autoApprovalReview/strictReviewRequired"} {
 		t.Run(method, func(t *testing.T) {
