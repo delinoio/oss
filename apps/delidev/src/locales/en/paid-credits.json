@@ -9,5 +9,9 @@
   "paid-credits.failed": "Refresh failed; retained observation",
   "paid-credits.stale": "Stale observation",
   "paid-credits.observed": "Observed",
-  "paid-credits.failed-empty": "Refresh failed; no balance observed"
+  "paid-credits.failed-empty": "Refresh failed; no balance observed",
+  "paid-credits.unit": "credits",
+  "paid-credits.exact-label": "Show exact credit balance",
+  "paid-credits.exact": "Exact balance: {{balance}}",
+  "paid-credits.unavailable": "Balance unavailable"
 }

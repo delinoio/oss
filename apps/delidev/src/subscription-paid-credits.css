@@ -1,6 +1,13 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-.subscription-paid-credits { padding: 16px; border: 1px solid var(--border); border-radius: 8px; margin-block: 16px; min-width: 0; }
+.subscription-paid-credits { padding: 12px; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; margin-block: 16px; min-width: 0; overflow-wrap: anywhere; }
+.subscription-paid-credits h3 { margin: 0 0 8px; font-size: 12px; color: var(--text-secondary); font-weight: 500; }
 .subscription-paid-credits ul { list-style: none; padding: 0; margin: 0; }
-.subscription-paid-credits li { display: flex; flex-wrap: wrap; gap: 8px 16px; padding-block: 8px; min-width: 0; overflow-wrap: anywhere; }
-.subscription-paid-credits li small { flex-basis: 100%; }
-.subscription-paid-summary { grid-column: 1 / -1; overflow-wrap: anywhere; }
+.subscription-paid-credits li { display: flex; flex-direction: column; gap: 8px; padding-block: 4px; min-width: 0; }
+.subscription-paid-credits small { display: block; font-size: 12px; color: var(--text-secondary); }
+.subscription-paid-summary { grid-column: 1 / -1; margin-block: 0 8px; }
+.subscription-paid-value { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.subscription-paid-unit { font-size: 12px; color: var(--text-secondary); }
+.subscription-paid-number { position: relative; min-width: 0; }
+.subscription-paid-info { color: var(--text-secondary); background: transparent; border: 0; padding: 4px; cursor: pointer; }
+.subscription-paid-info:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.subscription-paid-exact { display: block; border: 1px solid var(--border); border-radius: 8px; padding: 8px; margin-top: 4px; font-size: 12px; background: var(--surface); overflow-wrap: anywhere; }
