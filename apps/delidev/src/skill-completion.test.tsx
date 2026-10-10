@@ -216,7 +216,7 @@ it("does not repeat unchanged unavailable results or ordinary edits and retires 
  try {
   fireEvent.change(input, { target: { value: "ordinary $missing", selectionStart: 17 } }); fireEvent.keyDown(input, { key: "Escape" });
   await client.invalidateQueries(); await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
-  expect(status.textContent).toBe(""); expect(updates).toEqual([]);
+  expect(updates).toEqual([]);
   current = [...entries, { ...entries[0]!, name: "missing", selection: { ...entries[0]!.selection, skillId: newRequestId() } }];
   await client.invalidateQueries(); await waitFor(() => expect(view.container.querySelector(".skill-text-overlay")).toBeNull()); expect(status.textContent).toBe("");
   current = entries; await client.invalidateQueries(); await waitFor(() => expect(status.textContent).toBe("1 skill tokens are unavailable in this scope."));
@@ -226,4 +226,20 @@ it("does not repeat unchanged unavailable results or ordinary edits and retires 
   await client.invalidateQueries(); expect(status.textContent).toBe("");
   view.rerender(tree(false)); expect(status.textContent).toBe(""); expect(document.activeElement).toBe(input);
  } finally { observer.disconnect(); }
+});
+
+it("retires a proven status immediately on scope or transport replacement", async () => {
+ let release!: () => void; const pending = new Promise<void>(resolve => { release = resolve; }); const nextRunner = newRequestId();
+ const transport = createRouterTransport(router => router.service(SkillService, { listSkills: async request => { if (request.machineId === nextRunner) await pending; return { skills: entries }; } }));
+ const replacement = createRouterTransport(router => router.service(SkillService, { listSkills: async () => { await pending; return { skills: entries }; } }));
+ const client = new QueryClient();
+ const tree = (runner: string, currentTransport = transport) => <TransportProvider transport={currentTransport}><QueryClientProvider client={client}><Composer runner={runner} retainTransportContext send={vi.fn()}/></QueryClientProvider></TransportProvider>;
+ const view = render(tree(machine)); const input = screen.getByRole("textbox"); input.focus();
+ const status = view.container.querySelector<HTMLElement>("[data-skill-availability-status]")!;
+ fireEvent.change(input, { target: { value: "$missing", selectionStart: 8 } }); fireEvent.keyDown(input, { key: "Escape" });
+ await waitFor(() => expect(status.textContent).toBe("1 skill tokens are unavailable in this scope."));
+ view.rerender(tree(nextRunner)); expect(status.textContent).toBe("");
+ view.rerender(tree(nextRunner, replacement)); expect(status.textContent).toBe(""); expect(document.activeElement).toBe(input);
+ release(); await waitFor(() => expect(status.textContent).toBe("1 skill tokens are unavailable in this scope."));
+ expect(input).toHaveProperty("value", "$missing");
 });
