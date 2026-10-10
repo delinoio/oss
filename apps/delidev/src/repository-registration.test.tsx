@@ -8,7 +8,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { ConfigurationService, IntegrationService, SystemService, SystemCapability, EntityKind, ResourceSchema, ResourceService, WorkerService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { ErrorDetailSchema, ConfigurationService, IntegrationService, SystemService, SystemCapability, EntityKind, ResourceSchema, ResourceService, WorkerService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { SettingsTasks, SettingsTaskDialog, SettingsDialogSize } from "./settings-task";
 import { Settings, SettingsEntryDestination } from "./settings";
 import { resourceName, encode, document as resourceDocument, type Document } from "./documents";
@@ -716,4 +716,35 @@ it("preserves shared footer spacing when a nested remediation owns ordinary acti
  const css=readFileSync("src/repository-registration.css","utf8");const selector=css.match(/([^{}]+)\{ padding: 0; border: 0; \}/)![1].trim();
  expect(footer.matches(selector)).toBe(true);const registrationActions=footer.querySelector(".repository-add-footer")!;registrationActions.remove();const nested=document.createElement("div");nested.className="actions";footer.append(nested);
  expect(dialog.querySelector(".repository-registration")).not.toBeNull();expect(footer.matches(selector)).toBe(false);nested.remove();footer.append(registrationActions);
+});
+
+it("keeps a definitive repository name refusal beneath the original field and permits correction", async () => {
+  const f = fixture();
+  f.save.mockRejectedValueOnce(new ConnectError("A repository with this name already exists.", Code.Aborted, undefined, [{ desc: ErrorDetailSchema, value: create(ErrorDetailSchema, { code: "conflict", cause: "configuration_name_conflict", guidance: "Choose another name." }) }]));
+  f.mount(); await f.chooseAndReview();
+  const name = screen.getByRole("textbox", { name: "Repository name" }) as HTMLInputElement;
+  fireEvent.change(name, { target: { value: "Alpha" } }); fireEvent.click(within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }));
+  await screen.findByText("A repository with this name already exists. Choose another name.");
+  await waitFor(() => expect(document.activeElement).toBe(name)); expect(name.value).toBe("Alpha");
+  expect((screen.getByRole("textbox", { name: "Git URL" }) as HTMLInputElement).value).toBe("https://github.com/delinoio/oss.git");
+  try { await act(async () => { await i18n.changeLanguage(SupportedLanguage.Korean); }); expect(screen.getByText("같은 이름의 저장소가 이미 있습니다. 다른 이름을 선택하세요.")).toBeDefined(); }
+  finally { await act(async () => { await i18n.changeLanguage(SupportedLanguage.English); }); }
+  fireEvent.change(name, { target: { value: "Beta" } }); fireEvent.click(within(screen.getByRole("dialog", { name: "Add repository" })).getByRole("button", { name: "Add repository" }));
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(2));
+  expect(JSON.parse(new TextDecoder().decode(f.save.mock.calls[1][0].documentJson))).toMatchObject({ name: "Beta", checkouts: [{ machine_id: f.machine.id, path: metadata.root }] });
+});
+it("returns a clone registration collision to its original directory field and retains checkout guidance", async () => {
+  const f = fixture(metadata, true); f.mount(); await f.add(); cloneInputs();
+  const submit = screen.getByRole("button", { name: "Clone & add repository" }); await waitFor(() => expect(submit.hasAttribute("disabled")).toBe(false)); fireEvent.click(submit);
+  await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
+  const original = f.jobs.at(-1)!;
+  f.resources.set(original.id, create(ResourceSchema, { ...original, revision: 2n, documentJson: encode({ type: "clone-repository", machine_id: f.machine.id, state: "failed", problem: { code: "conflict", cause: "configuration_name_conflict", message: "A repository with this name already exists." }, output: { inspection: metadata } }) }));
+  await act(async () => { await f.client.invalidateQueries(); });
+  await screen.findByText("A repository with this name already exists. Choose another name.");
+  const control = screen.getByRole("textbox", { name: "Repository folder name" }) as HTMLInputElement;
+  await waitFor(() => expect(document.activeElement).toBe(control)); expect(control.value).toBe("oss");
+  expect(screen.getByText(new RegExp(metadata.root))).toBeDefined(); expect(f.clone).toHaveBeenCalledTimes(1); expect(f.save).not.toHaveBeenCalled();
+  fireEvent.change(control, { target: { value: "another-folder" } }); fireEvent.click(screen.getByRole("button", { name: "Clone & add repository" }));
+  await waitFor(() => expect(f.clone).toHaveBeenCalledTimes(2));
+  expect(f.clone.mock.calls[1][0].directoryName).toBe("another-folder"); expect(f.clone.mock.calls[1][0].requestId).not.toBe(f.clone.mock.calls[0][0].requestId);
 });

@@ -4,7 +4,7 @@ import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { SystemService, SystemCapability, configurationSchemaVersion, AccountService, ApiAuthentication, ApiProtocol, ConfigurationService, EntityKind, ProviderApiFormatSchema, ProviderInventoryCapability, ProviderInventoryEntrySchema, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, WorkerService, newRequestId, type ListResourcesRequest, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
+import { ErrorDetailSchema, SystemService, SystemCapability, configurationSchemaVersion, AccountService, ApiAuthentication, ApiProtocol, ConfigurationService, EntityKind, ProviderApiFormatSchema, ProviderInventoryCapability, ProviderInventoryEntrySchema, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, WorkerService, newRequestId, type ListResourcesRequest, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
 import { Settings, ConfigurationEditor } from "./settings";
 import { AgentWorkerWizard } from "./agent-worker-wizard";
 import { copy, i18n, SupportedLanguage } from "./localization";
@@ -1236,4 +1236,38 @@ it("reveals a hidden invalid Project branch prefix through complete-document Sav
  fireEvent.click(screen.getByRole("tab",{name:"Execution"}));const prefix=await screen.findByLabelText("Literal branch prefix");fireEvent.change(prefix,{target:{value:"bad..prefix"}});
  fireEvent.click(screen.getByRole("tab",{name:"General"}));const save=screen.getByRole("button",{name:"Save Project"});await waitFor(()=>expect(save).toHaveProperty("disabled",false));fireEvent.click(save);
  await waitFor(()=>expect(screen.getByRole("tab",{name:"Execution"}).getAttribute("aria-selected")).toBe("true"));await waitFor(()=>expect(document.activeElement).toBe(prefix));expect(f.save).not.toHaveBeenCalled();
+});
+
+it("returns a failed original Repository save job to its retained name field", async () => {
+  const repository = resource(EntityKind.REPOSITORY, { name: "Alpha", remote_url: "https://github.com/fixture/repo.git", checkouts: [], base: {}, starting: {}, auto_fetch: true });
+  const job = resource(EntityKind.JOB, { type: "save-repository", state: "queued" });
+  const f = fixture([repository, job]); f.save.mockResolvedValue({ job });
+  render(f.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={() => {}} cancel={() => {}} />));
+  const submit = await screen.findByRole("button", { name: "Save Repository" });
+  await waitFor(() => expect((submit as HTMLButtonElement).disabled).toBe(false)); fireEvent.click(submit);
+  await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
+  f.resources[1] = create(ResourceSchema, { ...job, revision: 2n, documentJson: encode({ type: "save-repository", state: "failed", problem: { code: "conflict", cause: "configuration_name_conflict", message: "A repository with this name already exists.", guidance: "Choose another name." } }) });
+  await act(async () => { await f.client.invalidateQueries(); });
+  await screen.findByText("A repository with this name already exists. Choose another name.");
+  const control = screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement;
+  await waitFor(() => expect(document.activeElement).toBe(control)); expect(control.value).toBe("Alpha");
+  expect(screen.getByRole("textbox", { name: "Remote Git URL" })).toBeDefined();
+  fireEvent.change(control, { target: { value: "Beta" } }); fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(2));
+  const original = f.save.mock.calls[0][0] as { mutation: { id: string; expectedRevision: bigint; requestId: string }; documentJson: Uint8Array };
+  const corrected = f.save.mock.calls[1][0] as typeof original;
+  expect(corrected.mutation.id).toBe(original.mutation.id); expect(corrected.mutation.expectedRevision).toBe(original.mutation.expectedRevision); expect(corrected.mutation.requestId).not.toBe(original.mutation.requestId);
+  expect(JSON.parse(new TextDecoder().decode(corrected.documentJson))).toMatchObject({ name: "Beta", auto_fetch: true });
+});
+it("reveals the original Project General name field after a typed collision", async () => {
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository" });
+  const project = resource(EntityKind.PROJECT, { name: "Alpha", repositories: [repository.id], primary_repository: repository.id });
+  const f = fixture([project, repository]);
+  f.save.mockRejectedValueOnce(new ConnectError("A project with this name already exists.", Code.Aborted, undefined, [{ desc: ErrorDetailSchema, value: create(ErrorDetailSchema, { code: "conflict", cause: "configuration_name_conflict", guidance: "Choose another name." }) }]));
+  render(f.view(<ConfigurationEditor kind={EntityKind.PROJECT} initial={project} active saved={() => {}} cancel={() => {}} />));
+  fireEvent.click(screen.getByRole("tab", { name: "Repositories" })); fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
+  await screen.findByText("A project with this name already exists. Choose another name.");
+  const control = screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement;
+  await waitFor(() => expect(document.activeElement).toBe(control)); expect(control.value).toBe("Alpha");
+  expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
 });

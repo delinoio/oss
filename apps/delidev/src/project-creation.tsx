@@ -1,3 +1,4 @@
+import { useConfigurationNameIssue, ConfigurationNameProblem } from "./configuration-name";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { ProjectRepositoryOrder, RepositorySecondaryID } from "./project-repository-order";
@@ -43,6 +44,8 @@ export function ProjectCreationWizard({ data, change, active, visible, blocked, 
   busy: boolean; submit: () => void; cancel: () => void; cancelDisabled: boolean; uncertain: boolean; retry: () => void; children?: ReactNode; registrationAdapters?: ProjectRegistrationAdapters;
 }) {
   useLocale();
+  const nameIssue = useConfigurationNameIssue(EntityKind.PROJECT);
+  const nameHelp = useId();
   const [step, setStep] = useState(Step.Repositories);
   const [nameEdited, setNameEdited] = useState(Boolean(text(data.name)));
   const [search, setSearch] = useState("");
@@ -57,6 +60,10 @@ export function ProjectCreationWizard({ data, change, active, visible, blocked, 
   const [problem, setProblem] = useProductMessage("");
   const form = useRef<HTMLFormElement>(null), focused = useRef(false);
   const formId = useId(), inputId = useId();
+  useEffect(() => {
+    if (!nameIssue || !active || !visible || blocked) return;
+    setNameEdited(true); focused.current = true; setValidationField("name"); setStep(Step.Configure); setFocusAttempt(value => value + 1);
+  }, [nameIssue?.attempt, active, visible, blocked]);
   const catalog = useProjectRepositoryCatalog(active && visible);
   const query = useDeferredValue(search.trim().toLowerCase());
   const names = useMemo(() => new Map(catalog.rows.filter(row => row.supported).map(row => [row.id, row.name])), [catalog.rows]);
@@ -142,7 +149,8 @@ export function ProjectCreationWizard({ data, change, active, visible, blocked, 
     </section>
     <section hidden={step !== Step.Configure}>
       <h3>{stepName(Step.Configure)}</h3><fieldset disabled={blocked || step !== Step.Configure}>
-        <label>{copy("project-creation.name")}<input data-project-focus="name" required maxLength={256} value={text(data.name)} onChange={event => { setNameEdited(true); change({ ...data, name: event.target.value }); setProblem(""); }} /></label>
+        <label>{copy("project-creation.name")}<input data-project-focus="name" data-configuration-name aria-invalid={Boolean(nameIssue) || undefined} aria-describedby={nameIssue ? nameHelp : undefined} required maxLength={256} value={text(data.name)} onChange={event => { setNameEdited(true); change({ ...data, name: event.target.value }); setProblem(""); }} /></label>
+        {nameIssue ? <ConfigurationNameProblem kind={EntityKind.PROJECT} id={nameHelp} /> : null}
         {!nameEdited ? <p>{copy("project-creation.nameHelp")}</p> : null}
         {nameEdited && !validName(text(data.name)) ? <p role="alert">{copy("project-creation.invalidName")}</p> : null}
         <label>{copy("configuration-fields.primaryRepository_b2bbc5")}<select data-project-focus="primary" required value={text(data.primary_repository)} onChange={event => { change({ ...data, primary_repository: event.target.value }); setProblem(""); }}><option value="">{copy("configuration-fields.selectThePrimaryRepository_bd9082")}</option>{ids.map((id, index) => <option key={id} value={id}>{projectRepositoryOption(id, index, names)}</option>)}</select></label>

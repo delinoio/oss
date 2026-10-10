@@ -22,10 +22,13 @@ export enum FailureCode {
   Internal = "internal",
 }
 
+export enum FailureCause { ConfigurationNameConflict = "configuration_name_conflict" }
+
 export interface ClientFailure {
   code: FailureCode;
   message: string;
   guidance: string;
+  cause?: FailureCause;
   correlationId?: string;
 }
 
@@ -37,6 +40,7 @@ export function clientFailure(reason: unknown): ClientFailure {
       code: detail.code as FailureCode,
       message: error.rawMessage,
       guidance: detail.guidance,
+      cause: detail.code === FailureCode.Conflict && detail.cause === FailureCause.ConfigurationNameConflict ? FailureCause.ConfigurationNameConflict : undefined,
       correlationId: isEntityId(detail.correlationId) ? detail.correlationId : undefined,
     };
   }

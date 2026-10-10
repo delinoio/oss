@@ -1,3 +1,5 @@
+import { useConfigurationNameIssue, ConfigurationNameProblem } from "./configuration-name";
+import { EntityKind } from "@delinoio/delidev-api-client";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { copy, useLocale } from "./localization";
@@ -49,7 +51,7 @@ export function RepositoryCloneFields({ draft, change, busy, browse, github, sup
   draft: RepositoryCloneDraft; change: (draft: RepositoryCloneDraft) => void; busy: boolean; browse: () => void; github?: ReactNode; supported: boolean; showURL?: boolean;
 }) {
   useLocale();
-  const parentId = useId();
+  const parentId = useId(), nameHelp = useId(), nameIssue = useConfigurationNameIssue(EntityKind.REPOSITORY);
   const parsed = repositoryCloneURL(draft.url);
   const directory = draft.directory ?? parsed?.directory ?? "";
   return <section className="repository-clone-fields" aria-label={copy("repository-clone-fields.inline.e8fa94aba0")}>
@@ -58,7 +60,7 @@ export function RepositoryCloneFields({ draft, change, busy, browse, github, sup
     {github}</> : null}
     <div><label htmlFor={parentId}>{copy("repository-clone-fields.inline.274474037d")}</label><div className="repository-clone-destination"><input id={parentId} type="text" value={draft.parent} maxLength={4096} placeholder={copy("repository-clone-fields.inline.5dbae92725")} disabled={busy} autoComplete="off" spellCheck={false} onChange={event => change({ ...draft, parent: event.target.value })} /><SettingsActionButton icon={SettingsActionIcon.Folder} type="button" disabled={busy} onClick={browse}>{copy("repository-clone-fields.inline.93c6b664dc")}</SettingsActionButton></div></div>
     <p>{copy("repository-clone-fields.inline.50edff7c50")}</p>
-    {parsed ? <><label>{copy("repository-clone-fields.inline.734294b760")}<input type="text" value={directory} maxLength={255} disabled={busy} onChange={event => change({ ...draft, directory: event.target.value })} /></label>{!repositoryCloneDirectory(directory) ? <p role="alert">{copy("repository-clone-fields.inline.ebb54b60a0")}</p> : null}</> : null}
+    {parsed ? <><label>{copy("repository-clone-fields.inline.734294b760")}<input data-configuration-name aria-invalid={Boolean(nameIssue) || undefined} aria-describedby={nameIssue ? nameHelp : undefined} type="text" value={directory} maxLength={255} disabled={busy} onChange={event => change({ ...draft, directory: event.target.value })} /></label>{nameIssue ? <ConfigurationNameProblem kind={EntityKind.REPOSITORY} id={nameHelp} /> : null}{!repositoryCloneDirectory(directory) ? <p role="alert">{copy("repository-clone-fields.inline.ebb54b60a0")}</p> : null}</> : null}
     {draft.parent && !repositoryCloneParent(draft.parent) ? <p role="alert">{copy("repository-clone-fields.inline.a0acf59b0f")}</p> : null}
     {parsed && repositoryCloneDirectory(directory) && repositoryCloneParent(draft.parent) ? <p className="repository-path">{copy("repository-clone-fields.inline.51d016541d")} {repositoryClonePath(draft.parent, directory)}</p> : null}
     <p>{copy("repository-clone-fields.inline.4df6bcbdda")}</p>

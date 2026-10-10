@@ -1,3 +1,4 @@
+import { ConfigurationNameContext, configurationNameConflict, focusConfigurationName, type ConfigurationNameIssue } from "./configuration-name";
 import { revealProjectInvalidControl } from "./project-edit-tabs";
 import { defaultBranchPrefix, validBranchPrefix } from "./session-defaults";
 // SPDX-License-Identifier: Apache-2.0
@@ -127,6 +128,21 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
   const stale = inline ? Boolean(latest && (!source || latest.id !== source.id || latest.revision > source.revision))
     : apiEditor ? Boolean(source && polled && polled.revision > source.revision && accountEditingIdentity(document(polled)) !== accountEditingIdentity(document(source))) : Boolean(initial && current.data?.resource && current.data.resource.revision !== initial.revision);
   const blocked = mutation.busy || mutation.uncertain || formatMutation.busy || formatMutation.uncertain;
+  const [nameIssue, setNameIssue] = useState<ConfigurationNameIssue>();
+  const nameAttempt = useRef(0), nameError = useRef<unknown>(undefined);
+  const currentNameIssue = nameIssue?.name === text(data.name) && !blocked ? nameIssue : undefined;
+  useEffect(() => {
+    if (!mutation.error || nameError.current === mutation.error || blocked || ![EntityKind.PROJECT, EntityKind.REPOSITORY].includes(kind) || !configurationNameConflict(clientFailure(mutation.error))) return;
+    nameError.current = mutation.error;
+    setNameIssue({ name: text(data.name), attempt: ++nameAttempt.current });
+  }, [mutation.error, blocked, kind, data.name]);
+  useLayoutEffect(() => {
+    if (currentNameIssue && active && taskVisible) return focusConfigurationName(form);
+  }, [currentNameIssue?.attempt, active, taskVisible]);
+  const settledName = (state: string, _output: Document, problem: Document) => {
+    if (state !== JobState.Failed || !configurationNameConflict(problem) || ![EntityKind.PROJECT, EntityKind.REPOSITORY].includes(kind)) return;
+    setNameIssue({ name: text(data.name), attempt: ++nameAttempt.current }); setJob(undefined);
+  };
   const inlineReadBlocked = inline && Boolean(!preferencesObservation?.complete || preferencesObservation.fetching || preferencesObservation.error || currentUnavailable);
   useEffect(() => {
     if (!inline || !mutation.error || observedConflict.current === mutation.error || clientFailure(mutation.error).code !== FailureCode.Conflict) return;
@@ -152,12 +168,13 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
   }, [apiEditor, source, polled, stale, blocked]);
   const change = (value: Document) => {
     if (encode(value).byteLength > 1 << 20 || (kind === EntityKind.TEMPLATE && new TextEncoder().encode(text(value.contents)).byteLength > 128 << 10)) { setProblem(ownedMessage("settings.extra.0097158d86f7")); return; }
+    if (text(value.name) !== text(data.name)) setNameIssue(undefined);
     setData(value); setProblem("");
   };
   const isApiEntry = kind === EntityKind.ACCOUNT && data.type === "api";
   const kindLabel = isApiEntry ? copy("settings.extra.1ebd6d7b3aeb") : kind === EntityKind.SETTINGS ? serverPreferenceLabel(serverPreferenceSection) : kindNames[kind];
   const apiEntryHeading = isApiEntry ? <header className="api-entry-heading"><h1 hidden={inTask}>{initial ? copy("settings.editPreferences_00b4cc") : copy("settings.newAiApiKeyEntry_5f978c")}</h1><p>{resourceName(initial)}</p><p className="api-entry-scope">{copy("settings.savedOnTheSelectedServer_93dbee")}</p></header> : null;
-  if (job) return <section className={isApiEntry ? "api-entry-workflow" : undefined}>{apiEntryHeading}{job === "unknown" ? <p role="alert">{copy("settings.theServerAcknowledgedThisRequestWithout_061fa2")}</p> : <TrackedJob initial={job} active={active}>{(state) => state === JobState.Succeeded ? <><p>{copy("settings.configurationSavedAfterWorkerValidation_d2b875")}</p><SettingsActionButton icon={SettingsActionIcon.Cancel} onClick={saved}>{copy("settings.done_11a676")}</SettingsActionButton></> : state === JobState.Failed || state === JobState.Canceled ? <SettingsActionButton icon={SettingsActionIcon.Back} onClick={() => setJob(undefined)}>{copy("settings.returnToRetainedDraft_213f1b")}</SettingsActionButton> : null}</TrackedJob>}</section>;
+  if (job) return <section className={isApiEntry ? "api-entry-workflow" : undefined}>{apiEntryHeading}{job === "unknown" ? <p role="alert">{copy("settings.theServerAcknowledgedThisRequestWithout_061fa2")}</p> : <TrackedJob initial={job} active={active} settled={settledName}>{(state) => state === JobState.Succeeded ? <><p>{copy("settings.configurationSavedAfterWorkerValidation_d2b875")}</p><SettingsActionButton icon={SettingsActionIcon.Cancel} onClick={saved}>{copy("settings.done_11a676")}</SettingsActionButton></> : state === JobState.Failed || state === JobState.Canceled ? <SettingsActionButton icon={SettingsActionIcon.Back} onClick={() => setJob(undefined)}>{copy("settings.returnToRetainedDraft_213f1b")}</SettingsActionButton> : null}</TrackedJob>}</section>;
   const validSubscriptionProvider = !subscriptionOnly || (kind === EntityKind.PROVIDER && data.protocol === "native-subscription" && data.authentication === "subscription" && text(data.endpoint) === "");
   const repositoryNeedsRemoteCapability = kind === EntityKind.REPOSITORY && typeof data.remote_url === "string" && data.remote_url !== "";
   const repositoryStatusPending = repositoryNeedsRemoteCapability && repositoryStatus.data === undefined && !repositoryStatus.error;
@@ -174,6 +191,7 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
     if (kind === EntityKind.PROJECT && form.current && !form.current.checkValidity()) return;
     // The ref also fences a submit dispatched before React commits the disabled button.
     if (saveDisabled || prefixInvalid || pendingSelections.current.size) return;
+    setNameIssue(undefined);
     const selectedFormat = apiFormat(data.api_protocol);
     if (apiEditor && keepsFormatKey && source && selectedFormat && selectedFormat !== document(source).api_protocol) {
       void formatMutation.send({ mutation: { id: source.id, expectedRevision: source.revision, requestId: newRequestId() }, apiProtocol: apiFormatToWire(selectedFormat), alias: text(data.alias), enabled: data.enabled === true, excludeAutomatic: data.exclude_automatic === true, recoveryNotifications: data.recovery_notifications === true });
@@ -202,10 +220,10 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
     }
     void mutation.send({ mutation: { id: source?.id ?? "", expectedRevision: source?.revision ?? 0n, requestId: newRequestId() }, kind, schemaVersion: [EntityKind.PROJECT, EntityKind.SETTINGS].includes(kind) && !supportsProjectBehavior ? 1 : configurationSchemaVersion(kind, submittedData), documentJson });
   };
-  if (kind === EntityKind.PROJECT && !source) return <ResourceSelectionPending.Provider value={reportSelectionPending}><ProjectCreationWizard registrationAdapters={registrationAdapters} data={data} change={change} active={active} visible={taskVisible} blocked={blocked || childPending} busy={mutation.busy} saveDisabled={saveDisabled} submit={submit} cancel={cancelTask} cancelDisabled={!inTask && (blocked || childPending)} uncertain={mutation.uncertain} retry={mutation.retry}>
+  if (kind === EntityKind.PROJECT && !source) return <ConfigurationNameContext.Provider value={{ kind, issue: currentNameIssue }}><ResourceSelectionPending.Provider value={reportSelectionPending}><ProjectCreationWizard registrationAdapters={registrationAdapters} data={data} change={change} active={active} visible={taskVisible} blocked={blocked || childPending} busy={mutation.busy} saveDisabled={saveDisabled} submit={submit} cancel={cancelTask} cancelDisabled={!inTask && (blocked || childPending)} uncertain={mutation.uncertain} retry={mutation.retry}>
     {problem ? <p role="alert">{problem}</p> : null}<Problem error={mutation.error} />
-  </ProjectCreationWizard></ResourceSelectionPending.Provider>;
-  return <ResourceSelectionPending.Provider value={reportSelectionPending}><form id={formId} ref={form} aria-label={inline ? copy("settings.projectDefaultsForm") : undefined} className={kind === EntityKind.REPOSITORY && source ? "repository-editor" : kind === EntityKind.PROJECT ? "project-editor" : kind === EntityKind.AGENT ? "agent-configuration" : kind === EntityKind.SETTINGS ? "server-preferences-editor" : isApiEntry ? "api-entry-workflow api-entry-preferences" : undefined} onInvalidCapture={kind === EntityKind.PROJECT ? revealProjectInvalidControl : kind === EntityKind.REPOSITORY && source ? revealRepositoryInvalidControl : kind === EntityKind.AGENT ? revealAgentInvalidControl : kind === EntityKind.SETTINGS ? revealServerPreferenceInvalidControl : undefined} onSubmit={(event) => { event.preventDefault(); submit(); }}>
+  </ProjectCreationWizard></ResourceSelectionPending.Provider></ConfigurationNameContext.Provider>;
+  return <ConfigurationNameContext.Provider value={{ kind, issue: currentNameIssue }}><ResourceSelectionPending.Provider value={reportSelectionPending}><form id={formId} ref={form} aria-label={inline ? copy("settings.projectDefaultsForm") : undefined} className={kind === EntityKind.REPOSITORY && source ? "repository-editor" : kind === EntityKind.PROJECT ? "project-editor" : kind === EntityKind.AGENT ? "agent-configuration" : kind === EntityKind.SETTINGS ? "server-preferences-editor" : isApiEntry ? "api-entry-workflow api-entry-preferences" : undefined} onInvalidCapture={kind === EntityKind.PROJECT ? revealProjectInvalidControl : kind === EntityKind.REPOSITORY && source ? revealRepositoryInvalidControl : kind === EntityKind.AGENT ? revealAgentInvalidControl : kind === EntityKind.SETTINGS ? revealServerPreferenceInvalidControl : undefined} onSubmit={(event) => { event.preventDefault(); submit(); }}>
 
     {inline ? null : isApiEntry ? apiEntryHeading : <h3 hidden={inTask}>{initial ? copy("settings.edit_464c4f") : copy("settings.new_18fdd5")} {kindLabel}</h3>}
     {kind === EntityKind.AGENT && !initial ? <p className="agent-subtitle">{copy("settings.configureTheEssentialsThenCustomizeOnly_a8beda")}</p> : null}
@@ -218,7 +236,7 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
     {!inline && (kind === EntityKind.AGENT || kind === EntityKind.SETTINGS) ? <SettingsTaskActions form={formId} className={kind === EntityKind.AGENT ? "agent-footer" : "server-preferences-actions"}><SettingsTaskDismissButton type="button" data-settings-task-cancel disabled={!inTask && (blocked || childPending)} onClick={cancelTask}>{copy("settings.cancelEdit_6fa271")}</SettingsTaskDismissButton>{formatMutation.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={formatMutation.busy} onClick={formatMutation.retry}>{copy("settings.retryTheSameConfiguration_630088")}</SettingsActionButton> : null}{mutation.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("settings.retryTheSameConfiguration_630088")}</SettingsActionButton> : null}<SettingsActionButton icon={SettingsActionIcon.Save} className="primary" disabled={saveDisabled}>{apiEditor && keepsFormatKey ? copy("settings.saveChanges") : <LocalizedText id="settings.save_cdb68b" components={{ s0: <>{kindLabel}</> }} />}</SettingsActionButton></SettingsTaskActions>
       : !inline ? <SettingsTaskActions form={formId}>{kind === EntityKind.REPOSITORY && source && inTask ? null : <SettingsTaskDismissButton type="button" data-settings-task-cancel disabled={!inTask && (blocked || childPending)} onClick={cancelTask}>{copy("settings.cancelEdit_6fa271")}</SettingsTaskDismissButton>}<SettingsActionButton icon={SettingsActionIcon.Save} className="primary" disabled={saveDisabled}>{apiEditor && keepsFormatKey ? copy("settings.saveChanges") : <LocalizedText id="settings.save_cdb68b" components={{ s0: <>{kindLabel}</> }} />}</SettingsActionButton>{formatMutation.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={formatMutation.busy} onClick={formatMutation.retry}>{copy("settings.retryTheSameConfiguration_630088")}</SettingsActionButton> : null}{mutation.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("settings.retryTheSameConfiguration_630088")}</SettingsActionButton> : null}</SettingsTaskActions> : null}
 
-  </form></ResourceSelectionPending.Provider>;
+  </form></ResourceSelectionPending.Provider></ConfigurationNameContext.Provider>;
 }
 
 function ServerPreferencesWorkspace({ resources, nextPageToken, page, fetching, error, section, active, saved, authority, onNetworkPresentationChange }: { resources?: Resource[]; nextPageToken?: string; page: string; fetching: boolean; error?: unknown; section: ServerPreferenceSection; active: boolean; saved: () => void; authority?: PairingAuthority; onNetworkPresentationChange?: (open: boolean) => void }) {

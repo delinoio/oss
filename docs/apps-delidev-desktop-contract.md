@@ -3713,3 +3713,28 @@ Home on Sessions and both creation surfaces, including the shared compact drawer
 ### Desktop server protocol validation
 
 Native local startup, supervision and saved-connection verification require the active server protocol 2 and the compiled package version. The Go resident host reports its RPC version constants in the initial started response, matching later authenticated status observations. Private desktop control version 2 and CLI envelope version 1 remain separate from server compatibility. Reject older and newer server protocols without replacing pairing, changing lifecycle intent or granting Worker authority.
+
+## Project and Repository naming conflicts — issue #2495
+
+Server [configuration naming validation](cmds-delidev-contract.md#unique-configuration-names--issue-2495)
+is authoritative. Loaded pages cannot prove global availability; do not add a
+catalog-wide scan or availability RPC. Project and Repository names have separate
+namespaces and retain their display spelling and existing byte limits.
+
+Only a definitive original typed Conflict with cause
+`configuration_name_conflict` presents a localized name error beneath the owning
+existing field. English Project guidance is “A project with this name already
+exists. Choose another name.” Repository guidance replaces “project” with
+“repository”; Korean provides the corresponding kind-specific guidance. Ordinary
+revision, identity, unavailable and recovery conflicts are not name collisions.
+
+Keep the original draft, revision, wizard/editor steps, geometry, theme tokens,
+keyboard flow, task host and opener restoration. A definitive collision returns
+to Configure/General or the Repository name field and focuses it so the user can
+correct the name and submit a fresh explicit request. Authoritative terminal save
+job observations use the original job ID/revision; reads never replay mutations.
+An uncertain original request retains its exact bytes/UUID and cannot be edited
+or replaced by naming presentation. A failed Clone registration retains the
+user-owned checkout and shows its existing preserved-path guidance; a fresh
+explicit attempt acquires no authority to remove that checkout. No new preview,
+RPC, capability, protocol declaration, migration or native permission is added.

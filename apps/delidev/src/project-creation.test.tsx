@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { StrictMode, useState, type ReactNode } from "react";
 import { expect, it, vi } from "vitest";
-import { ConfigurationService, SystemService, SystemCapability, EntityKind, ResourceSchema, ResourceService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { ErrorDetailSchema, ConfigurationService, SystemService, SystemCapability, EntityKind, ResourceSchema, ResourceService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { ConfigurationEditor } from "./settings";
 import { ProjectCreation } from "./project-creation";
 import { SettingsActionScope } from "./settings-action";
@@ -294,4 +294,33 @@ it("uses labeled scoped registration actions while preserving original opener an
  f.list.mockRejectedValueOnce(new ConnectError("Read unavailable",Code.Unavailable));await registerFromProject();
  const retry=await screen.findByRole("button",{name:"Retry repository read"});expect(retry.getAttribute("data-settings-action")).toBe("retry");expect(retry.getAttribute("data-settings-action-presentation")).toBe("label");
  expect(f.registrationSave).toHaveBeenCalledOnce();fireEvent.click(retry);await screen.findByRole("button",{name:/^Move repository 1:/});expect(f.registrationSave).toHaveBeenCalledOnce();expect(f.save).not.toHaveBeenCalled();
+});
+
+it("returns a definitive naming conflict to Configure, preserving the original selection and localized draft", async () => {
+  const f = fixture();
+  const detail = create(ErrorDetailSchema, { code: "conflict", cause: "configuration_name_conflict", guidance: "Choose another name." });
+  f.save.mockRejectedValueOnce(new ConnectError("A project with this name already exists.", Code.Aborted, undefined, [{ desc: ErrorDetailSchema, value: detail }]));
+  render(f.view()); await choose("oss"); next(); fireEvent.change(name(), { target: { value: "Alpha" } }); next();
+  fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
+  await screen.findByText("A project with this name already exists. Choose another name.");
+  const retained = name(); await waitFor(() => expect(document.activeElement).toBe(retained));
+  expect(retained.value).toBe("Alpha"); expect(primary().value).toBe(f.rows[0].id);
+  try {
+    await act(async () => { await i18n.changeLanguage(SupportedLanguage.Korean); });
+    expect(screen.getByText("같은 이름의 프로젝트가 이미 있습니다. 다른 이름을 선택하세요.")).toBeDefined();
+    expect(retained.value).toBe("Alpha");
+  } finally { await act(async () => { await i18n.changeLanguage(SupportedLanguage.English); }); }
+  fireEvent.change(retained, { target: { value: "Beta" } }); next(); fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(2));
+  expect(JSON.parse(new TextDecoder().decode(f.save.mock.calls[1][0].documentJson))).toMatchObject({ name: "Beta", repositories: [f.rows[0].id], primary_repository: f.rows[0].id });
+  const request = (value: unknown) => value as { mutation: { requestId: string } };
+  expect(request(f.save.mock.calls[1][0]).mutation.requestId).not.toBe(request(f.save.mock.calls[0][0]).mutation.requestId);
+});
+it("does not relabel an ordinary project revision conflict as a name collision", async () => {
+  const f = fixture();
+  f.save.mockRejectedValueOnce(new ConnectError("The project revision changed.", Code.Aborted, undefined, [{ desc: ErrorDetailSchema, value: create(ErrorDetailSchema, { code: "conflict", guidance: "Read the current revision." }) }]));
+  render(f.view()); await choose("oss"); configure(f.rows[0].id); fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
+  expect(screen.queryByText("A project with this name already exists. Choose another name.")).toBeNull();
+  expect(screen.getByRole("button", { name: "Save Project" })).toBeDefined();
 });

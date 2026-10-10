@@ -1,3 +1,4 @@
+import { useConfigurationNameIssue, ConfigurationNameProblem } from "./configuration-name";
 import { ProjectEditTabs, ProjectEditTab } from "./project-edit-tabs";
 import { defaultBranchPrefix, validBranchPrefix } from "./session-defaults";
 import { useSidebarActivity } from "./sidebar-context";
@@ -59,10 +60,10 @@ export function NativeOptionExplanation({ value, clear, label }: { value: unknow
   const retained = value !== undefined && value !== "" && value !== 0;
   return <><p>{copy("configuration-fields.nativeOptionUnavailable")}</p>{retained ? <SettingsActionButton icon={SettingsActionIcon.Inspect} type="button" aria-label={`${copy("configuration-fields.clearRetainedNativeOption")}: ${label}`} onClick={clear}>{copy("configuration-fields.clearRetainedNativeOption")}</SettingsActionButton> : null}</>;
 }
-export function TextField({ label, value, change, required = false, max = 256, disabled = false, markRequired = false, placeholder, unavailable = false }: { label: string; value: unknown; change: (value: string) => void; required?: boolean; max?: number; disabled?: boolean; markRequired?: boolean; placeholder?: string; unavailable?: boolean }) {
+export function TextField({ label, value, change, required = false, max = 256, disabled = false, markRequired = false, placeholder, unavailable = false, nameKind }: { label: string; value: unknown; change: (value: string) => void; required?: boolean; max?: number; disabled?: boolean; markRequired?: boolean; placeholder?: string; unavailable?: boolean; nameKind?: EntityKind }) {
   useLocale();
-  const help = useId();
-  return <><label>{markRequired ? <span>{label}<span className="agent-required" aria-hidden="true"> *</span></span> : label}<input aria-label={markRequired ? label : undefined} aria-describedby={unavailable ? help : undefined} placeholder={placeholder} value={text(value)} required={required} maxLength={max} disabled={disabled || unavailable} onChange={(event) => change(event.target.value)} /></label>{unavailable ? <div id={help}><NativeOptionExplanation label={label} value={value} clear={() => change("")} /></div> : null}</>;
+  const help = useId(), nameIssue = useConfigurationNameIssue(nameKind);
+  return <><label>{markRequired ? <span>{label}<span className="agent-required" aria-hidden="true"> *</span></span> : label}<input data-configuration-name={nameKind !== undefined ? true : undefined} aria-invalid={Boolean(nameIssue) || undefined} aria-label={markRequired ? label : undefined} aria-describedby={unavailable || nameIssue ? help : undefined} placeholder={placeholder} value={text(value)} required={required} maxLength={max} disabled={disabled || unavailable} onChange={(event) => change(event.target.value)} /></label>{nameIssue && nameKind !== undefined ? <ConfigurationNameProblem kind={nameKind} id={help} /> : null}{unavailable ? <div id={help}><NativeOptionExplanation label={label} value={value} clear={() => change("")} /></div> : null}</>;
 }
 enum ServiceTierSelection { Default = "default", Fast = "fast", Custom = "custom" }
 export function ServiceTierField({ value, unavailable, change, clear }: { value: unknown; unavailable: boolean; change: (value: string) => void; clear: () => void }) {
@@ -320,7 +321,7 @@ function ProjectFields({ data, change, active, disabled = false, movementActive 
   const repositories = items(data.repositories).map(text);
   const { names, loading, error, retry } = useProjectRepositoryNames(repositories, active);
   return <ProjectEditTabs disabled={disabled} panels={{
-    [ProjectEditTab.General]: <>    <fieldset className="project-field-group"><legend>{copy("configuration-fields.name_dcd1d5")}</legend><TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} required change={(name) => change({ ...data, name })} /></fieldset></>,
+    [ProjectEditTab.General]: <>    <fieldset className="project-field-group"><legend>{copy("configuration-fields.name_dcd1d5")}</legend><TextField nameKind={EntityKind.PROJECT} label={copy("configuration-fields.name_dcd1d5")} value={data.name} required change={(name) => change({ ...data, name })} /></fieldset></>,
     [ProjectEditTab.Repositories]: <>
     <fieldset className="project-field-group"><legend>{copy("configuration-fields.repositories_1e32af")}</legend>
       <fieldset><legend>{copy("configuration-fields.orderedRepositories_f1a12d")}</legend><p><LocalizedText id="configuration-fields.orderIsPreserved_62a111" components={{ s0: <>{copy("project-creation.workspaceHelp")}</> }} /></p>
@@ -370,7 +371,7 @@ export function RepositoryFields({ data, change, active, pendingOperation, requi
   const checkoutBacked = Array.isArray(data.checkouts) && data.checkouts.length > 0;
   // Share every field and operation between presentations; disclosure state
   // changes layout only and never changes the original controller lifetime.
-  const identityName = <><TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} required change={(name) => change({ ...data, name })} /></>;
+  const identityName = <><TextField nameKind={EntityKind.REPOSITORY} label={copy("configuration-fields.name_dcd1d5")} value={data.name} required change={(name) => change({ ...data, name })} /></>;
   const identityRemote = <>{!registration ? <TextField label={copy("configuration-fields.repositoryEdit.remoteUrl")} value={data.remote_url} max={4096} required={!checkoutBacked} change={(remote_url) => change({ ...data, remote_url })} /> : null}</>;
   const preferredRemote = <><TextField label={copy("configuration-fields.preferredGitRemote_ef1241")} value={data.preferred_remote} change={(preferred_remote) => change({ ...data, preferred_remote })} /></>;
   const githubIdentity = <><TextField label={copy("configuration-fields.githubRepositoryOwner_47e01a")} value={data.github_owner} max={100} change={(github_owner) => change({ ...data, github_owner })} /><TextField label={copy("configuration-fields.githubRepositoryName_b09ffb")} value={data.github_name} max={100} change={(github_name) => change({ ...data, github_name })} /></>;
