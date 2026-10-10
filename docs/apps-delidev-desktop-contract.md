@@ -92,11 +92,11 @@ which follows frontend build; combined `test:qa` also waits for unit/integration
 readers. Do not allow QA's declaration rewrite to race any of those readers.
 
 Keep the current jsdom `maxWorkers: 2` under the owning app instructions; preserve
-focus/lifetime and product deadlines independently. The earlier four-worker
-setting does not authorize raising the current limit without peak native-build
-validation. Local `pnpm test` retains the complete client-build, typecheck, unit,
-integration, bundle, desktop-launch, widget, QA, frontend-build and release-check
-sequence. Cache authentication grants no release authority. Fixtures, builds and
+focus/lifetime and product deadlines independently. Do not raise the current limit
+without peak native-build validation. Local `pnpm test` retains the complete
+client-build, typecheck, unit, integration, bundle, desktop-launch, widget, QA,
+frontend-build and release-check sequence. Cache authentication grants no release
+authority. Fixtures, builds and
 packaging remain distinct from actual native/account/platform acceptance; record
 exact revision, commands, results and unresolved limits in PRs/issues/CI artifacts,
 without repository evidence documents.
@@ -1252,7 +1252,7 @@ Confirmed saves use the existing completion and list refresh; accepted jobs reta
 
 Internal workflow and confirmation steps share one native modal surface, keeping their parent controllers mounted rather than stacking dialogs. The specific exceptions are the read-only GitHub repository chooser above its mounted Add repository task and independently scoped repository registration above New Project as defined below. Each top-level dialog has its own nested Settings lifetime; internal steps share it. Category departure and Settings exit also dispose that scope under the rules below, preserving original native/account ownership and detached work. The native modal makes the background inert and contains Tab/Shift+Tab. Creation focuses its first input, long details focus their title and destructive confirmations focus their named header close control when the neutral action duplicates dismissal; a distinct nested Cancel/Keep action retains initial focus. Restore focus only to a connected visible opener; otherwise use that category's title. Do not overwrite a deliberate focus transfer or restore a departed category. Closing a compact category drawer precedes opening its task. Follow the [W3C modal Dialog pattern](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/).
 
-Validation covers open/close/save/failure/denial, unchanged list position, discarded drafts/secrets, pending/uncertain close, exact retry while open, fresh reopen, existing server duplicate/revision guards, disposed late results and departure, X/Escape/Tab/Shift+Tab/return focus, drawer handoff, Strict Mode and same-server reconnect. The frontend jsdom suite uses at most four workers to preserve timer responsiveness during concurrent native builds; test and product deadlines remain independent and unchanged. Raise concurrency only after verifying those suites under peak shared-host load. Browser fixtures cover light/dark at 1440×900, 1280×820, 960×640, 640×480 and effective 200% layouts. Keep those checks separate from actual packaged CEF keyboard/zoom and account/platform acceptance. Prepare required generated clients and hydrated LFS assets, run `pnpm test` in `apps/delidev`, and remove generated `dist` directories after validation. No RPC, schema, migration or dependency changes are required.
+Validation covers open/close/save/failure/denial, unchanged list position, discarded drafts/secrets, pending/uncertain close, exact retry while open, fresh reopen, existing server duplicate/revision guards, disposed late results and departure, X/Escape/Tab/Shift+Tab/return focus, drawer handoff, Strict Mode and same-server reconnect. The frontend jsdom suite uses at most two workers to preserve timer responsiveness during concurrent native builds; test and product deadlines remain independent and unchanged. Raise concurrency only after verifying those suites under peak shared-host load. Browser fixtures cover light/dark at 1440×900, 1280×820, 960×640, 640×480 and effective 200% layouts. Keep those checks separate from actual packaged CEF keyboard/zoom and account/platform acceptance. Prepare required generated clients and hydrated LFS assets, run `pnpm test` in `apps/delidev`, and remove generated `dist` directories after validation. No RPC, schema, migration or dependency changes are required.
 
 ### Agent Worker routing preview presentation
 
