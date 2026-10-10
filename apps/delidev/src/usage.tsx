@@ -137,7 +137,7 @@ export function Usage({ active, open, entry }: { active: boolean; open: (id: str
       </form>
     </SidebarSurface>
     <section hidden={!active} className="page usage-page" aria-busy={result.isFetching}>
-    <div className="usage-tabs tab-strip" ref={revealSelectedTab} onFocusCapture={revealTabFocus} role="tablist" aria-label={copy("usage.analysisTabs")}>
+    <div className="usage-tabs tab-strip" ref={node => revealSelectedTab(node)} onFocusCapture={revealTabFocus} role="tablist" aria-label={copy("usage.analysisTabs")}>
       {tabs.map((value, index) => <button className="tab-item tab-label" key={value} type="button" role="tab" id={`${tabId}-${value}-tab`} aria-controls={`${tabId}-${value}-panel`} aria-selected={tab === value} tabIndex={tab === value ? 0 : -1} onClick={() => setTab(value)} onKeyDown={(event) => {
         const next = event.key === "ArrowRight" ? tabs[(index + 1) % tabs.length] : event.key === "ArrowLeft" ? tabs[(index + tabs.length - 1) % tabs.length] : event.key === "Home" ? tabs[0] : event.key === "End" ? tabs[tabs.length - 1] : undefined;
         if (!next) return;
