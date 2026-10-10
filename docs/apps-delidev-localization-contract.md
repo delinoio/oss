@@ -68,8 +68,10 @@ original details already admitted by the owning diagnostic contract. A translati
 never replaces original evidence or creates retry permission.
 
 The Appearance category retains all 18 categories, theme choices,
-colors, navigation and visit lifetime. A divider below Theme introduces Language.
-Use an editable search combobox at most 320 CSS pixels wide and at least 40 pixels
+colors, navigation and visit lifetime. Language follows the five appearance sections, with a thin semantic divider.
+The desktop Appearance body aligns the existing search combobox in its 220-pixel
+control column, stacking at an available body width below 640 pixels. Outside
+that body the combobox remains at most 320 CSS pixels wide and at least 40 pixels
 tall, with 8-pixel corners and full available width below 640 pixels. Keep System
 first, then sort languages by their stable English names, independently of UI
 language. Show each language as “English name - native name”, including

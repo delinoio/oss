@@ -24,7 +24,7 @@
 .appearance-body .language-settings, .appearance-body .date-format-settings { border-color: var(--border-subtle); }
 .appearance-body .language-settings > label, .appearance-body .language-picker, .appearance-body .date-format-row { min-height: 64px; align-content: center; }
 @container appearance-body (width < 640px) {
- .appearance-body .appearance-row, .appearance-disclosures, .appearance-disclosure-controls, .appearance-body .language-settings, .appearance-body .date-format-row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+ .appearance-body .appearance-row, .appearance-disclosures, .appearance-disclosure-controls, .settings-content[aria-label] .appearance-body .language-settings, .appearance-body .date-format-row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
  .appearance-body .appearance-choices { grid-template-columns: minmax(0, 1fr); }
  .appearance-body .date-format-example { grid-column: 1; }
 }
