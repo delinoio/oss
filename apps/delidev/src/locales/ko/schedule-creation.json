@@ -73,5 +73,7 @@
   "schedule-creation.completed": "완료",
   "schedule-creation.current": "현재",
   "schedule-creation.future": "예정",
-  "schedule-creation.repeat": "반복"
+  "schedule-creation.repeat": "반복",
+  "schedule-creation.nameUnavailable": "이름을 사용할 수 없음",
+  "schedule-creation.repositoryOrdinal": "저장소 {{number}}"
 }
