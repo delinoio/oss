@@ -33,6 +33,70 @@ Metadata export is an authenticated, read-only operation for an exact Worker des
 
 CLI: `network profile save|delete|list|get`, `network select`, `network status` and `network export-metadata`. Mutations use the common request ID and exact decimal revisions; secret input enters stdin independently of public definition files. Ordinary output contains only public resources and signed non-secret metadata.
 
+### cmds/delidev-cli/internal/cli constraints
+
+- The `network` command family uses authenticated NetworkService under `cmds-delidev-network-contract.md`. Keep exact decimal revisions and request IDs; definition files, server authentication and proxy credential stdin must be independent. CLI response deadlines exceed bounded server credential work. Read status/export metadata never claims native Worker application.
+
+- Worker network prepare/import and owner export/status preserve the original protected recipient scope. Bound public recipient input and encrypted transfers; require separately supplied ciphertext digest, private atomic output and original exact route revision. No stdin secret, decrypted derivative, private key or proxy credential may enter ordinary JSON output or logs.
+
+### cmds/delidev-cli/internal/domain constraints
+
+- Explicit outbound profiles and immutable selections follow `cmds-delidev-network-contract.md`. Keep closed Direct/HTTP/HTTPS/SOCKS5 modes, bounded exact-host/IP/CIDR bypass rules and separate write-only credentials; never interpret DNS answers or wildcards as bypass authority.
+
+- Worker network bindings/status use closed route states and exact decimal-string generations under the network contract. Separate desired/effective/native generations, original recipient scope and immutable active route copies. Public key or attachment metadata grants no pairing, execution, decrypted cache or observed native capability.
+
+### cmds/delidev-cli/internal/knownmodels constraints
+
+- Follow the catalog and network contracts in `docs/` and parent ownership rules.
+
+- Fetch only the compiled repository-main HTTPS URL through the server outbound route. Keep 15-second/1 MiB limits, 24-hour success/one-hour failure scheduling, private atomic cache and joined shutdown.
+
+### cmds/delidev-cli/internal/outbound constraints
+
+- Resolve one immutable server route per HTTP attempt. Preserve destination TLS, bounded CONNECT/SOCKS5 handshakes, cancellation and the callers' existing body/stream limits.
+
+- Never discover ambient proxies, retry a connection, or fall back to Direct or another profile. Exact bypasses are explicit direct authority.
+
+### cmds/delidev-cli/internal/server constraints
+
+- Keep business logic in Go and product communication in authenticated Connect. Workers initiate outbound connections; never add a client-facing WebSocket or SSE API.
+
+- NetworkService is owner/paired-client-only under `cmds-delidev-network-contract.md`. Preserve actor/request/revision receipts, immutable server and independent Worker selections, bounded vault generations and denial-before-cleanup deletion. All server provider, inference and GitHub clients use only the explicit server route without ambient settings or fallback. Exported Worker metadata is signed, non-secret desired-generation evidence, not native application or credential-transfer proof.
+
+- Worker network export/control follows `cmds-delidev-network-contract.md`. Pin each pending grant to one original machine/device/recipient, preserve actor/revision receipts, and require authenticated imported-digest acknowledgement before effective generation. Recheck fresh dispatch/claim/registration under current generation while preserving original active leases and cleanup. Native route reports retain exact job/execution/instance/device/generation ownership; an observed old runtime cannot authorize another launch or fabricate current application.
+
+- Worker Attach retries preserve immutable acceptance receipts while projecting current Machine discovery and network status in one authorized read. Recheck the paired device, original machine/instance and active Machine before returning observations; do not repeat attachment writes or promote unchecked installations. Follow `cmds-delidev-network-contract.md`.
+
+### cmds/delidev-cli/internal/store constraints
+
+- Pairing codes are single-use/expiring; raw codes and device tokens stay out of SQLite and ordinary output. Workers have machine-scoped authorization and initiate outbound Connect streams. Revalidate revocation and job ownership at mutation commit boundaries, and retain uncertainty after a disconnected or replaced Worker instance instead of redispatching accepted execution.
+
+- Explicit outbound profiles/routes reuse the existing entity/event/receipt transactions under `cmds-delidev-network-contract.md`. Keep one revisioned selection per server or registered Worker, reject deletion of selected profiles, and exclude network authority from generic configuration import/export. Protected credential bytes never enter SQLite.
+
+- Worker network transfer, pending-pairing and native-runtime pins reuse existing metadata with strict original UUID/generation/digest validation. Keep ciphertext and protected derivatives outside SQLite. Remove native job pins with ordinary/session job purge; preserve pending pairing and current routing through their independent authority and restore boundary. Periodic unchanged acknowledgements do not republish Machine state.
+
+### cmds/delidev-cli/internal/worker constraints
+
+- Session Git comparisons use the bounded outbound workspace read channel, original repository manifest and independent process owner. Preserve current HEAD versus index versus immutable Worktree creation-commit semantics, including explicit unborn empty-tree evidence. Never create a Local filesystem baseline, run external diff/textconv/fsmonitor helpers, silently apply clean/process filters or mutate native ownership. Working-tree diffs use a private temporary Git admin with a highest-precedence `!filter` rule so a raced attribute or index change cannot invoke a clean/process driver; check active filters before and after the diff. Keep untracked paths and submodule Gitlinks explicit, hash complete returned observations, reject oversized/mixed/foreign data, and grant no review or execution authority from patch text.
+
+- Workers must keep receiving the outbound work stream during owned native work. Stream loss/revocation or 45 seconds without a heartbeat cancels the active operation, joins native cleanup, and durably retains its outcome before reconnect. The server sends one unresolved assignment per stream and leaves later jobs queued until the prior result resolves. Bound received assignments and never convert lost transport into successful completion or automatic re-execution.
+
+- Claude first dispatch composes the pinned `2.1.236` Anthropic Messages profile with current Worker/account/model readiness and complete original workspace ownership. Freeze immutable selection/input/routing before the real outbound Worker runner; reject unsupported options before claiming; multiple repositories use the independently validated ordered-root profile below. Claim native input once, publish the original initialization/replay/progress/content/usage/callback/terminal facts through the shared durable outbox, join direct response controls and native EOF/workspace closure, then report version 1. Never drop unknown observations or grant later input from this completion. Targeted pre-acceptance cancellation contains the owned process and retains recovery. Accepted streaming Stop/Archive uses one synchronized original native interrupt and a bounded grace under the original Worker stream; publish its separate original Stop proof only after partial-response/context/result/command/idle validation and joined native cleanup, followed by a separate workspace completion report. Never invent a native result input ID or continuation authority. Keep opt-in installed-native scripted-provider evidence distinct from fixture protocol discovery, hosted accounts and other platforms.
+
+- Manual Git authentication remains in the separately owned Worker bridge, never reversible harness environment variables. Pin scope/configuration, isolate local-command lookup from network authentication, authenticate push claims with a parent-only key, and cancel/join the bounded loopback bridge before proof or lease release.
+
+- Encrypted network bootstrap follows `cmds-delidev-network-contract.md`. Prepare the original protected X25519 identity before pairing; require an independently supplied digest on import. Keep attachment replay input frozen, synchronize current generation before work and join control/account lanes with their shared original protected runtime. Stale or missing authority cannot fall back to Direct. A claimed Codex API/title listener captures immutable generation/credentials, cannot be recreated on replay, and joins before process/workspace cleanup or checkpoint proof.
+
+- Forwarding control and traffic share the selected network runtime with the primary lane. Failure to load its protected authority cancels and joins the lane; no Direct fallback is allowed.
+
+### cmds/delidev-cli/internal/workernetwork constraints
+
+- Follow `cmds-delidev-network-contract.md` and parent instructions. This package owns bounded X25519-only transfer and the protected derivative cache, not authoritative profile editing, pairing admission or native execution.
+
+- Import requires the separately obtained ciphertext digest plus independently selected exact server, endpoint, machine, device, pairing and original recipient/key identity. Encryption alone cannot authenticate an export.
+
+- Preserve atomic complete cache publication and monotonic generation; same-generation conflicting authority is recovery-required. Native runtimes retain independent bounded Go copies while new control attempts adopt the newly reconciled cache.
+
 ## Storage
 Accepted network receipts retain their original request identity and replay classification independently of the live resource. A later authoritative resource deletion returns `deleted = true` with no resource; it never recreates the entity or rewrites credentials. Authorization, cancellation and storage errors remain failures, and altered input cannot reuse the accepted receipt.
 
@@ -60,6 +124,8 @@ Uses the existing server vault, resource authority and generated Go/TypeScript c
 
 ## Change Triggers
 Update scoped command/protocol/package AGENTS, the project index, CLI and evidence contracts when routing, secret ownership, generations or export semantics change.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - [Project](project-delidev.md)

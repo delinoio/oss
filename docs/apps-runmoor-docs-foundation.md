@@ -31,6 +31,54 @@
 - The CLI release README remains in `cmds/runmoor/README.md` with a link to the consolidated Runmoor subpath.
 - The commands guide and CLI README label the scoped pause recovery fix as unreleased. Explain that late dependency failures and corrected reload cannot clear an explicit pause or scoped stop; the operator uses Resume after correcting the cause. Keep internal phase ownership in the command contract.
 
+### Project requirements
+
+- Public Runmoor documentation is Markdown-owned by `apps/public-docs/docs/runmoor` and published at `https://oss.delino.io/runmoor`; follow `apps-runmoor-docs-foundation.md`. Keep all public discovery links pointed at the consolidated subpath.
+
+### Application integration
+
+- Describe Docker volume cleanup revalidation as unreleased until a containing release is verified. Preserve conflict and inspection-failure recovery guidance, non-force removal and the remaining replacement window between inspection and deletion. Do not expose internal ownership records or claim atomic race protection.
+
+- Describe service-version reload as unreleased until a containing release is verified. It advances an older owned service to an already installed CLI, preserves active jobs, never downloads releases or downgrades, and leaves foreground reload and stopped services unchanged. Explain incomplete-operation recovery without exposing the private journal or native handoff implementation. After Stop completes during an interrupted reload, describe one explicit Start after the reload command and cleanup finish, with pause preservation and inspection of uncertain ownership.
+
+- DinD CPU admission changes must distinguish releases through 0.2.7, which reserve runner plus daemon CPU, from the unreleased runner-only CPU policy. Explain that daemon memory remains reserved, daemon CPU remains a container limit, and existing reservations remain until the prior resources terminate. Do not assign a release version before publication is verified.
+
+- The `/runmoor/host` guide documents unreleased explicit macOS 14+ arm64 host selection, admission-only CPU/memory reservations, same-account trusted workflows, disposable directories, operator toolchains, cleanup/recovery limits and the absence of actual host, unsigned Xcode and live GitHub validation. Tart is required only for Tart execution.
+
+- `apps/public-docs/docs/runmoor` owns the Runmoor public guides published at `https://oss.delino.io/runmoor`. Keep every stable route in navigation and the sidebar, with visible GitHub repository links in the social navigation and footer.
+
+- Stable clean routes are `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, `/host`, and `/operations`; validate output artifacts, article headings and links, main landmarks, and absence of retired standalone-origin links or root-path escapes.
+
+- Preserve the credential and internal-path publication checks that covered Runmoor in public-docs. Reject prohibited content in rendered text, HTML comments, URL attributes, and CSS resource references, including encoded URL credentials and local/repository paths. Credential parameters must be checked in ordinary queries, direct fragments, and queries inside hash-routed fragments. Keep valid public routes, static assets, and documented credential placeholders usable; route exceptions must match a complete route ID, never a prefix of a private path. Validation diagnostics must not echo rejected content. Exercise these boundaries against temporary copies of generated HTML in `pnpm test`.
+
+- Development uses the consolidated `127.0.0.1:46302` server through the shared fixed-port wrapper without address overrides or automatic remapping.
+
+- Malformed documentation links must fail validation with only the output page and error classification; never propagate URL parser errors that include the original input.
+
+- Enforce clean internal URLs across every recognized HTML URL attribute, each `srcset` candidate, and CSS resource references, while permitting external `.html` URLs and generated static assets.
+
+- Preserve the former public-docs release-claim classifier and its negation fixtures: reject affirmative beta-channel, partial/staged GA, phased/fractional rollout, early-access, and early-announcement claims while allowing Runmoor stable-channel disclosures and explicit prohibitions.
+
+- Validate every stable route within both the rendered top navigation and sidebar on each document page. Validate GitHub social-navigation and document-footer links independently; article links cannot satisfy navigation requirements.
+
+- Scan every emitted stylesheet as well as HTML for prohibited credentials, private resource URLs, and non-clean internal destinations. Apply the raw credential patterns to CSS comments and custom-property values as well as checking parsed resource URLs, and never echo rejected values. Resolve relative CSS URLs against the stylesheet location and preserve valid generated fonts and static assets.
+
+- Preserve all supported CLI/configuration and image/service workflows, manual verification/update/rollback, external licenses, and the unverified live GitHub/Tart/host compatibility boundary. Document that image changes require a running manager, including initial preparation without pools or connections. Keep internal scheduling/storage implementation in `docs/`.
+
+- Runmoor Ubuntu troubleshooting must distinguish `runmoor init` from configuration validation, preserve existing state during private-file recovery, explain non-root Docker socket access and pending capacity, account for lingering systemd user managers retaining old Docker group membership, and expose the original systemd user-service failure before recommending service replacement. Keep the CLI README linked to the public guides and do not claim an unverified service-start cause.
+
+- Runmoor installation examples must select an exact published release, derive download URLs and the tag signing identity from the same variable, and verify signatures and the selected checksum before extracting or installing. Keep the manual-main signing identity explicitly separate and synchronize the CLI README.
+
+- Runmoor's Homebrew instructions use `delinoio/tap/runmoor` for macOS 14+ Apple Silicon, with explicit install, version, upgrade and uninstall commands. Preserve direct archive verification, manual service ownership, operator-installed Tart and the absence of Intel/Linux Homebrew support.
+
+- The Runmoor guides are published below `/runmoor`; no duplicate root-app guides, redirects, or handoff pages are added. The CLI release README remains in place and links to the canonical consolidated subpath.
+
+- Runmoor's installation page must make shared key verification and stable repository registration explicit prerequisites, explain that key inspection does not register APT, and link to missing-package troubleshooting. Keep installation, upgrade, and removal in separate copyable blocks; APT diagnostics check architecture, source settings, a successful update, and the package candidate without disabling signature verification.
+
+- Runmoor public configuration and operations guides must explain GitHub PAT creation and runner permissions, identify `RUNMOOR_PAT` as an environment reference, and show a private credential file as the durable choice for Ubuntu systemd user services. Preserve the user-manager environment boundary, explicit refresh/resume after token rotation, and stop/start plus resume for a service that already ran without its imported PAT. Never place PAT values in public examples or service definitions.
+
+- Public package documentation includes the exact public fingerprint, supported systems, stable/preview registration, installation/update/removal, and explicit Runmoor service ownership. Keep R2, signing secrets, CI and recovery internals in `docs/`.
+
 ## Storage
 - Markdown sources live in `apps/public-docs/docs/runmoor`.
 - Static output is generated into the ignored `apps/public-docs/doc_build` directory.
@@ -69,6 +117,8 @@
 - Update this contract, the Runmoor project index, relevant `AGENTS.md` files, and app README when routes, ownership, ports, commands, validation, or hosting change.
 - Keep public-docs navigation, removal checks, and contracts synchronized with this migration.
 - Update the documentation catalog when adding or renaming this contract.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - `docs/project-runmoor.md`

@@ -133,3 +133,43 @@ actual executed host, exact versions, warnings and errors.
 
 - [glTF 2.0 skin, morph and animation specification](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html).
 - [ufbx independent animation evaluation](https://ufbx.github.io/elements/animation/).
+
+## Project requirements
+
+- `react-forge`: affected source changes require Node 24 native, installed-CLI, document rendering and benchmark validation on Windows/glibc Linux x64/arm64 in ordinary PR/main CI; documentation-only changes do not select the native job. Manual CI and the exact-tag release also require macOS x64/arm64, using the same package-owned host validation command on both Darwin rows. Require real Windows console cancellation and macOS/Linux Office/PDF rendering. Retain existing Forge regression jobs when shared package primitives change. Native/system-font work is uncached, render evidence expires after seven days, and CI cannot publish packages or install production dependencies at runtime. Complete candidate assembly and npm publication belong to the exact-tag release workflow. Source-consuming CI and release build checkouts must hydrate the AURA PNG textures tracked by Git LFS; `.gitattributes` changes select React Forge validation. React Forge scene engine tests, React scene tests, interoperability and Blender visual/render checks remain local acceptance work.
+
+- React Forge also owns `crates/forge-scene`, `crates/forge-glb` and `crates/forge-fbx` for generation-only GLB/FBX with bounded animation. Follow `packages-react-forge-scene-contract.md`; runtime generation remains local and converter-free.
+
+## Application integration
+
+- React Forge GLB/FBX public guides document availability from npm `0.2.0`. Keep the released static API separate from the unreleased animation extension, document FBX rotation/CUBIC sampling limits, and preserve Blender 4.5 compatibility limits; package availability does not establish identical results in every FBX application.
+
+## Rust component integration
+
+- `forge-scene`, `forge-glb` and `forge-fbx` own bounded 3D scene/animation validation and converter-free GLB/FBX generation under `packages-react-forge-scene-contract.md`. Use cancellation checkpoints, preserve meter/Y-up semantics, embed textures, and verify FBX independently with ufbx. Never copy GPL exporter code into repository-owned engines.
+
+- FBX animation export must reject adjacent source-key intervals shorter than one FBX tick before baking or rounding; distinct rounded ticks do not prove a representable source interval.
+
+## Package integration
+
+- React Forge GLB/FBX scene and animation sessions follow `packages-react-forge-scene-contract.md`; preserve the shared React, atomic export and MCP lifecycle while keeping the 3D model independent from Office/PDF.
+
+## packages/react-forge constraints
+
+- GLB/FBX creation and animation follow `packages-react-forge-scene-contract.md`. Keep binary geometry outside React JSON, 3D bounds separate from 2D geometry, aggregate admission bounded, and source assets immutable across pinned exports. Blender/web viewers are verification tools only; never repair imported validation assets to conceal exporter faults.
+
+- Native scene measurement diagnostics and errors use the layout stage; preserve document import and export stages when adapting native events, using trusted format/operation metadata.
+
+- Queue explicit scene renders with the other session operations so concurrent calls commit independently in invocation order. A later recovery render must not hide an earlier render failure or let an intervening export bypass it. File exports must reserve both the session operation queue and the shared output-directory queue at invocation, before waiting on either.
+
+- Keep AURA's original procedural geometry, deterministic texture sources, provenance and GLB/FBX profile probes together. Scene verification uses pinned Blender 4.5.14, independent Khronos/ufbx checks and actual-file imports; normalize only importer-invented labels when comparing hierarchy. Keep complete rendering artifacts separate from compact committed evidence, and mark unexecuted hosts and unreleased APIs honestly.
+
+- Track every `examples/audio-studio-assets/*.png` source texture in Git LFS using explicit file paths in the root `.gitattributes`. Hydrate them before scene or installed-example validation, keep their decoded bytes unchanged during storage migrations, and retain the deterministic generator and provenance as ordinary Git source. Generated models and renders remain untracked.
+
+- AURA quality revisions retain prior acceptance records as historical evidence. Keep fine surface details in the exported geometry/textures, verify winding and tangent frames for new procedural meshes, and record per-image dimensions when combining 4K hero views with 2048px inspection views. Presentation lighting must remain separate from imported product materials.
+
+- Scene preparation alone is not completed visual evidence. Static AURA acceptance renders compare both GLB and FBX across all four views, reject incomplete/duplicate or changed artifacts and images, and retain the 2048px minimum before producing comparison reports.
+
+- The shared `scripts/validate-host.sh` native test and Clippy gates exclude the scene, GLB and FBX engines on each selected CI or release host. Hosted React Forge validation skips `tests/scene.test.tsx`, `tests/scene-animation.test.tsx` and animated installed-consumer cases; generic Rust workspace gates also exclude the three scene crates. Keep engine tests, Blender scene preparation, interoperability and product rendering as local acceptance evidence.
+
+- Scene animation follows the scene contract: register binary samplers/skin/morph data, resolve document-scoped refs after React commits, keep JavaScript baking outside native workers, and preserve revision-pinned animated bounds. Validate generated clips with Khronos, independent ufbx deformation, and Blender 4.5.14 locally. Keep character start/middle/end and motion-extreme stills at 2048px, with independent playback and sampled bounds; compact playback videos may use lower resolution. Mark animation unreleased until publication; keep static format availability since 0.2.0.

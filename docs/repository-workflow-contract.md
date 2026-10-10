@@ -373,6 +373,8 @@ The CEF summary writes committed/upstream revisions, comparison status and count
 
 Changes to DevHud workflows or these contracts must update `docs/apps-devhud-operations-contract.md`, `docs/apps-devhud-support-contract.md`, `docs/project-devhud.md`, the relevant release contract text, `AGENTS.md`, and `scripts/release/devhud-operations.test.mjs` together. `CI.yml` runs the static release/operations contract suite without contacting a controller or publication service.
 
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+
 ## Selected CLI release and bot ownership
 
 `release-project.yml` is the manual `Release Project` entrypoint. Its required choices are `project` (`binpm`, `cargo-mono`, `nodeup`, `with-watch`, `derun`, `runmoor`, `clibox`, `pnport`, `async-commit-hook`, `react-forge`, `delidev`) and `bump` (`patch`, `minor`, `major`, pnport-only `next`, default `patch`). It accepts only `main` in `delinoio/oss`. There is no main-push workspace publisher: Rust libraries remain available through explicit local `cargo mono publish` usage, but are not published by this workflow. DevHud and documentation deployment remain separate.
@@ -471,3 +473,299 @@ operational credentials or publish the first release.
 ## DeliDev QA output ordering
 
 DeliDev QA preparation and its original signal-test children rebuild the API client in the current checkout. Turbo must finish desktop typecheck and release validation before `ci:qa` starts; release validation already follows the frontend build. The combined `test:qa` graph also finishes unit and integration readers first. A dependency on the initial API client build alone does not order a later QA rebuild against its consumers. These edges retain standalone QA preparation, original process admission and joined signal cleanup. Do not infer valid generated declarations from a successful earlier build while another owner can still rewrite its output. Synthetic graph and lifecycle fixtures establish ordering only; actual QA, typecheck, frontend builds and native/platform acceptance remain independent CI or owner validation.
+
+## Workflow integration
+
+- The five legacy CLI release workflows use `scripts/release/legacy-cli-release.mjs` before Homebrew credentials or writes. Follow the repository workflow contract: reuse only a complete public inventory with exact retained bytes and source-bound signatures; never sign, delete, replace, upload or edit on that path. Reject conflicting/incomplete public inventories. Fresh and owned partial drafts upload only missing assets and require complete signed readback before publication. Keep unsigned dry runs, exact tag/source checks and downstream job ordering.
+
+- DeliDev checks use separate `delidev-protocol`, `delidev-client` and `delidev-frontend` jobs. Select schemas/generated freshness, client and dependent desktop checks by their inputs, exclude DevHud-only inputs, and require all planned results through `CI Result`. Shared `pnpm proto:check` remains repository-wide; follow `repository-workflow-contract.md`.
+
+- Every workflow step reaching the shared protocol breaking check must pass `DEVHUD_PROTO_BASELINE`: push events use `github.event.before`, manual main runs use `HEAD^`, and PR/manual non-main runs use `origin/main`; the manually dispatched async-commit-hook release workflow uses `HEAD^`. Preserve full-history checkout and the Turbo leaf's environment pass-through, including indirect async-commit-hook and Go-binding paths. Keep schema-only LFS handling and no-prior-schema behavior unchanged.
+
+- The `async-commit-hook` job owns shared protocol freshness for DevHud schemas, Go bindings and `packages/devhud-api-client/src/gen/**` on PRs and main pushes. Preserve DevHud consumer selection, exclude DevHud-only inputs from DeliDev jobs, and run the uncached `ci:proto:fresh` leaf through `ci:proto:check` even with a warm cache. Handwritten DevHud client changes do not select this shared protocol owner.
+
+- Generic Rust CI uses the single verified prebuilt cargo-mono selection and exact comparison/fallback policy in `repository-workflow-contract.md`. Validate the published executable with offline live fixtures before planning; no source fallback or binary cache. Preserve final package/job agreement, pnport runtime ownership, scene exclusions, conditional native preparation, full manual/shared-input checks and independent project validation.
+
+- Formatting-only configuration changes retain the separate `rust-fmt` job. That job installs the pinned formatter and runs its real cold/warm cache regression through an uncached CI workspace task; ordinary contract jobs need no formatter installation.
+
+- The owner-authorized 2026-10-05 repair release in `project-pnport.md` permits exactly stable 0.1.2 after the failed 0.1.1 candidate is repaired and all retained four-native candidate gates pass. Keep 0.1.1 and published tags/bytes immutable. Require `pnportReleaseReady: true` and exact `pnportReleaseVersion: "0.1.2"`; preserve the earlier disclosed initialization/SIGHUP, clibox watch and full-acceptance limits without claiming fixes or skipped passes. No new candidate failure is waived. Keep issue #958 and Windows 0.2.0 acceptance open; preserve final-tag dry-run, fresh native validation, integrity/signing, native-before-launcher and immutable-retry gates. Later versions need separate reviewed authorization.
+
+- Each pnport native CI/candidate host must pass installed hidden-cache native conformance and the prepared, offline default-config Vitest cache suite in inline/split forms before evidence recording. Linux includes dynamic/static children. Keep all four macOS/glibc Linux targets and existing native/benchmark/publication gates.
+
+- pnport tag pushes perform credential-free dry runs only. Actual publication requires an explicit `Release pnport` dispatch at the same final tag with `dry_run=false` after its successful dry run. Before publication outputs/write authority, verify the latest exact-tag/revision first-party push run and its complete successful native/assembly jobs with all publication jobs skipped; missing, failed, pending or untrusted records block. All npm/GitHub/Homebrew jobs require the manual event and retain complete fresh native verification.
+
+- The owner-authorized 2026-10-04 amendment in `project-pnport.md` permits exactly stable 0.1.0 publication with the recorded macOS initialization/SIGHUP failures, separate root clibox watch failure and full-acceptance review deferred. This version-specific exception takes precedence over earlier full-acceptance prerequisites; it does not establish a cause fix or passing skipped checks. Require `pnportReleaseReady: true` plus an exact `pnportReleaseVersion` match; version coordination preserves both fields. Retain all final four-native candidate execution/install/TypeScript/benchmark, integrity, signing, native-before-launcher and immutable-retry gates. New failures still block publication. Keep #958 open, preserve Windows 0.2.0 and immutable 0.1.0-next.1, and disclose unresolved user-facing limits. Remove the stable unreleased notice only after verified publication.
+
+- pnport 0.1.0 native CI and exact-tag release matrices derive from `packages/pnport/scripts/native-matrix.mjs` and its package-owned four macOS/glibc Linux targets. Windows x64/arm64 is deferred to 0.2.0. Preserve full native and installed-package gates, credential-free dry runs, exact-source identity and immutable publication. Stable publication also requires the reviewed private `pnportReleaseReady` source gate; version preparation never enables it. Experimental `0.1.0-next.N` publication requires the exact reviewed `pnportPreviewVersion` declaration instead, with the same four-host package gates. Keep npm next separate from latest, signed GitHub artifacts marked prerelease and never latest, and Homebrew skipped. Discover recovery drafts through every releases-list page, pin the numeric ID, and reject duplicate same-tag releases before writing or publishing. All five pnport npm latest tags now point to stable 0.1.2. The temporary first-name bootstrap exception is removed: preview inspection rejects every non-stable latest, including `0.0.0-stage`, and preserves stable latest plus the immutable next channel. Do not delete historical placeholder versions or mutate published package bytes.
+
+- Each pnport native CI/candidate host must repeat the offline cold/warm benchmark protocol after installed-consumer and TypeScript conformance. Upload only the numeric `benchmark.json` under a target/revision/attempt-specific artifact identity, separately from native package assembly. A failed or incomplete measurement blocks its native job; passing measurements do not replace full/minimum-OS acceptance or enable publication.
+
+- pnport 0.1.0 requires macOS 15+; use macOS 15 Intel and Apple Silicon native runners and `MACOSX_DEPLOYMENT_TARGET=15.0` for its own jobs. Do not change other projects' minimum operating systems.
+
+- Each pnport native CI/candidate host must run the default-parallel process lifecycle suite with `PNPORT_TEST_BINARY` set to the absolute packaged native executable after archive installation, before recording native evidence or benchmarking. Source/debug process tests alone do not validate the shipped owner helpers and adjacent injection library; failures block native acceptance.
+
+- The same installed binary must pass `native_conformance` for ZIP library constructors, nested loading/fork callbacks, direct package bins, mmap, read-only data and actual native source-file/directory watch events in inline/split form; Linux also runs a fully static watch child. Record both installed suite gates in assembled native evidence before benchmarking or publication. These fixtures do not replace full process ownership or minimum-OS acceptance.
+
+- pnport candidates additionally repeat the internally concurrent fork/child-callback control ten times after the complete native suite, without retrying a failure or relaxing its cleanup deadline. This bounds investigation of native host-kernel ordering races; repeats do not replace the complete parallel installed suite.
+
+- Go validation uses the central event-owned `go_test_matrix` under the existing `go-test` job and `CI Result` aggregate. PRs allocate five Ubuntu package shards only, including forced/shared-input validation, and establish Linux coverage only. Main keeps complete Ubuntu suites and native dependency-aware affected packages on macOS and five Windows shards. Shared inputs and forced validation select full suites only on event-eligible hosts; manual runs retain all seven complete suites. `CI Result` rejects missing or altered event matrices. Keep other jobs' OS policies independent and add no periodic schedule. Discover native packages before partitioning; every package belongs to exactly one PR Ubuntu or Windows shard, including newly added packages. Windows first compiles its selected test binaries at default Go compiler parallelism with `-c -o NUL`, without running fixtures; preserve `-p=1` for the subsequent complete test execution. Every execution through the central runner uses `-count=1` in full and affected modes so selected tests and `TestMain` run despite cached successful results; compiled objects remain reusable. Use the repository workflow contract’s 45-minute package watchdog for the Windows Worker and workspace shards and explicit workspace investigation; retain 20 minutes for other Go CI packages. These fixture budgets cannot change production deadlines or recovery-attempt limits. The workspace package and descendants own a separate Windows runner. Preserve metadata-only top-level test timing summaries and seven-day artifacts on success and failure. Windows Go caches remain shard-scoped; Ubuntu PR shards restore main's `go-test-all` cache without saving; Unix tests, contracts, quality, API/ach and DeliDev jobs/phases use separate producer scopes. Unmodified callers retain their default keys and all saves remain successful-main-only. Follow the repository workflow contract for import/test/subprocess/embed edges, conservative fallbacks and logged empty affected shards. Ubuntu shards use default Go parallelism, no precompilation and 20-minute watchdogs. Exact non-embedded `AGENTS.md` metadata does not widen Go selection. Comparison and discovery failures cannot pass.
+
+- The optional DeliDev `workspace_fixture_only` manual input defaults to false. When true, run only the closed Windows workspace regression list declared in the workflow: retained writers, post-publication recovery, bounded journal compaction, shared observation entry/byte limits, aggregate Git inventory, and private-path admission headroom, all against temporary fixtures, skip package planning and assembly, and retain the same read-only credential boundary. Use independent per-ref concurrency groups for fixture investigation and packaging without canceling either. This investigation path never substitutes for complete CI or package/platform acceptance.
+
+- DeliDev uses the one six-target native matrix exported by its package tool. Verify packages before uploading revision-bound workflow artifacts; never count static package inspection as native runtime, production-signing or release acceptance. Update the workflow contract tests with boundary changes and record validation in pull requests, issues and CI logs/artifacts under the root DeliDev validation policy; do not add repository evidence documents.
+
+- clibox Homebrew follows its exact-tag GitHub Release independently of npm enablement. Both native macOS installation/audit gates and signed public-source verification must precede tap-only app-token creation. Publish only the identical tested Formula, then verify public-tap installation on both architectures. Dry runs never enter Homebrew publication; keep the release summary and workflow contracts synchronized.
+
+- DeliDev updater input dry runs use the same six-target native matrix and keyless read-only manual workflow. Export exact twelve signed-inventory filenames and source/version/size/digest provenance only after package checks. Keep production signing readiness and private-key access separate; dry-run artifacts never imply production release or installed-platform acceptance.
+
+- Shared Tauri CLI preparation uses `setup-prebuilt` and execution-host lock selection; restore/verify on native and mobile paths, save only after a successful main job, and retain existing application Cargo caches. Native DeliDev dry runs remain read-only and credential-free.
+
+- DevHud Linux Xvfb smokes must provide an explicit session-local StatusNotifierWatcher fixture for the pinned ksni tray backend, retain Chromium sandbox requirements, and keep fixture-only tray registration distinct from real desktop-panel acceptance. Only AppImage smokes may set APPDIR and APPIMAGE.
+
+- DevHud Windows private packaging checks `$LASTEXITCODE` immediately after SignTool verification and stops before installer execution on failure. Keep the failure diagnostic limited to stable context and numeric status. The read-only `devhud-supply-chain` job retains Ubuntu fixtures and runs native PowerShell failure/success stubs on Windows through an uncached Turbo task; stub results do not establish certificate or signed-package acceptance.
+
+- PR CI validation uses package-owned Turbo leaves and the private `scripts/ci` workspace under `repository-workflow-contract.md`. Preserve complete assertions and native/clean/freshness gates; cache-only OIDC access does not grant release authority. Keep affected selection, development environment allowlists and final generated-dist cleanup intact.
+
+- Load repository-local actions only after checkout. Cache authentication requires the `delinoio/oss` repository, GitHub workflow name `CI` and exact `CI.yml` workflow-ref prefix. Prepare the pinned Rust toolchain before native tasks and retain serial DevHud conformance; export prepared Go cache locations explicitly for Turbo strict environments.
+
+- DeliDev validation separates schema/binding freshness, TypeScript client and desktop jobs. Preserve the exact checks/two-Vitest-shard matrix, Turbo client build dependencies, uncached real-server fixtures and complete CI Result aggregation. A runner-owned source build may share only its executable path; retain private fixture state and QA build ownership.
+
+- The separate Runmoor PR Docker workflow also uses uncached `scripts/ci` Turbo tasks, preserving the explicit Docker opt-in, race coverage, read-only contents authority and successful-main-only dependency-cache saves. It requires no remote-cache token.
+
+- DeliDev release coordinator and independent release workflow external actions use full commit SHAs. Keep macOS signing in a fresh Environment job with only checkout, Node and artifact transfer actions; no package manager/toolchain/build dependency installation precedes credentials. Build jobs have no signing Environment or secret references. Preserve same-run keyless DMG/Worker/CEF notice digest inventory and signed-candidate reuse before rebuild/resign.
+
+- DeliDev mobile beta defaults to both platforms and permits explicit iOS-only execution under the mobile contract. Preserve target-bound candidates, all initial receipts before provider access, exact source provenance and non-canceling global serialization. iOS-only jobs require no Google credentials. Cross-run candidate and receipt downloads use their independently provenance-verified owner run IDs.
+
+- DeliDev mobile `recovery_sha` is permitted only for explicit resume. Pin workflow code to that exact reviewed SHA and retain a separate clean checkout of the original candidate `source_sha`; verify original artifacts and candidate-bound receipts independently. The repair lane cannot package or submit a new candidate and never changes original binary provenance.
+
+## Project requirements
+
+- Agent Worker ordered source routes follow the catalog, desktop, protocol and sessions contracts. Main reservation PR #1371 owns System capability 36 and SaveAgentWorkerRequest.route_models field 5; preserve capability 35. Keep schema-3 routes exclusive with legacy fields, all models/accounts referenced and saved atomically, per-source routing state updated only with a successful first claim, confirmed-exhaustion-only fallback and observed-recovery preference for later new sessions. Preserve immutable executions, old-client write protection and portable v1/v2/v3 compatibility; add no SQLite migration.
+
+- Go CI package watchdogs follow `repository-workflow-contract.md`: Windows Worker, workspace and explicit DeliDev workspace investigation use 45 minutes for aggregate durable filesystem fixtures; other Go CI package watchdogs remain 20 minutes. Preserve product deadlines and recovery-attempt limits independently of test scheduling.
+
+- After completing each task, update the relevant `AGENTS.md` and `docs/` files in the same change when policies, structure, or contracts changed.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+
+- Root `pnpm install` must install Lefthook in linked worktrees when the effective `core.hooksPath` resolves to Git's shared common-directory hooks path, preserve Lefthook's protective failure for unrelated custom hook paths, and skip hook installation without blocking app preparation when Git metadata is unavailable.
+
+- Renovate ordinary branch creation, existing branch updates and lock file maintenance are limited to Mondays from 00:00 inclusive to 04:00 exclusive in `Asia/Seoul`. Keep `updateNotScheduled: false` and preserve immediate vulnerability-fix handling, shared presets, automerge and release-age rules. Follow `repository-workflow-contract.md`; repository schedules restrict branch work, not the hosted service's scan cadence.
+
+- Root `go.mod` selects the Go security baseline, currently Go `1.26.8`; keep the API/sweeper Docker build image on that exact version. CI reads the module selector.
+
+Repository-wide quality CI is defined in `.github/workflows/CI.yml`. Go validation uses an event-owned `go_test_matrix` under the existing `go-test` job: PRs allocate only Ubuntu, including forced and shared-input checks; main pushes retain complete Ubuntu suites and native dependency-aware affected selection on macOS and five Windows shards; manual runs retain complete suites on all seven runners. Shared inputs and forced validation select complete suites only on the hosts eligible for that event. PR Go results establish Linux coverage only; Windows/macOS regressions are checked on main or manual runs. `CI Result` must reject a missing or altered event matrix. Test imports, subprocess command consumers and real UI embed owners must remain in the selection graph. Unknown/deleted inputs expand conservatively; discovery/comparison errors fail and empty affected shards are logged successful no-ops. Windows partitions the native `go list ./...` inventory exactly once, precompiles selected test binaries without running them at default compiler parallelism, then preserves `-p=1` for complete test execution per runner. Every central Go test execution uses `-count=1` in full and affected modes so selected tests and `TestMain` run even when successful results are cached; compiled-object caches remain reusable. The workspace package and descendants run on their own Windows runner. Timing summaries and seven-day artifacts retain source revision, commands, phase durations and top-level test metadata without raw output or dynamic subtest names. Shard-scoped caches are saved only after successful main validation. The Windows Worker and workspace shards and explicit workspace investigation use a 45-minute per-package watchdog; all other Go CI packages retain 20 minutes. These are fixture scheduling limits, not product command timeouts. Follow `repository-workflow-contract.md` for shard ownership and measurement.
+
+Coverage expectations:
+
+- `go-quality`: generates and validates the ignored administrator and ach UI bundles, then checks formatting without rewriting sources and runs `go vet` on the selected native packages on Ubuntu. Main/manual runs retain the full suite.
+
+- `go-test`: generates and validates the ignored administrator and ach UI bundles on every allocated runner, then runs the complete tests of selected packages through `scripts/ci/go-test.mjs`. PRs use Ubuntu only; main uses full Ubuntu and affected macOS/Windows packages; shared/forced inputs select full suites on eligible hosts and manual runs use all seven runners.
+
+- `rust-fmt`: runs `cargo fmt --all --check`.
+
+- `rust-clippy`: prepares the DeliDev typed client, frontend and Go sidecar plus WebKitGTK 4.1 development prerequisites, then runs `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
+
+- `rust-test`: prepares the DeliDev typed client, frontend and Go sidecar plus WebKitGTK 4.1 development prerequisites, builds pnport and its injection companion with `cargo build --locked -p pnport -p pnport-preload`, then runs `cargo test --workspace --all-targets`.
+
+- `node-public-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter public-docs test`, covering the root and all seven project content sections.
+
+- `node-clibox-test`: runs `cargo test --locked -p clibox -p clibox-config -p clibox-fspy -p clibox-system -p clibox-transform -p clibox-wait` for native utility/configuration/process/adapter and file-access behavior, including isolated Windows Ctrl+C/Ctrl+Break readiness cancellation and Node launcher result preservation. Native CLI consumer installation and launcher/distribution tests run on Linux, macOS, and Windows, selected by shared CI planning and required by `CI Result`.
+
+- `node-pnport-test`: checks launcher and package contracts, version synchronization, immutable artifacts, installer rollback, and fail-closed release publication on affected PRs and main pushes.
+
+- `pnport-native`: on affected main pushes and manual CI dispatch, runs the four macOS/glibc Linux x64/arm64 native targets for 0.1.0, installed npm/Yarn PnP consumers, TypeScript conformance, archive packaging, and direct-installer smoke. Each installed binary must also pass native hidden-cache conformance and the prepared offline default-config Vitest suite in inline/split form before benchmarking. PRs skip this native matrix; the pnport tag workflow independently requires the same four targets before publication. Windows x64/arm64 retains the complete acceptance requirements for 0.2.0.
+
+- `node-public-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter public-docs test`.
+
+- `forge-test` and `forge-render`: validate the three private Forge crates on Linux/macOS/Windows, official stdio MCP interoperability, and mandatory Linux LibreOffice/Poppler rendering. Both follow central change planning and remain required in `CI Result`; optional local renderers do not make the selected render job optional.
+
+- `react-forge` follows central change planning and validates four Windows/Linux hosts on affected PRs and main pushes, adding both Darwin hosts for manual CI and release. The shared host script covers non-scene native engines, installed CLI/MCP, package tests, Office/PDF rendering and benchmarks. Scene engine tests, React scene tests, interoperability, Blender visual evidence and product renders remain local acceptance work; generic Rust CI excludes the scene engines from tests/Clippy.
+
+- `ci-contracts`: validates workflow syntax and the repository CI contract with the checked-in Go `actionlint` tool and Node fixtures on Linux. Its macOS/Windows rows run the uncached installed-Buf launcher fixtures through `ci:proto:launcher`; Linux covers those fixtures in the full contract suite.
+
+- `async-commit-hook`: follows the central change plan, runs Go race tests, local UI/docs/client tests, protocol freshness and release fixtures, and builds all six unsigned target archives. Shared setup actions restore caches; only successful main validation saves them.
+
+- `devhud-frontend`, `devhud-extension`, and `devhud-admin`: run package-local type, lint, unit, component, accessibility, and deterministic frontend/package builds.
+
+- DeliDev CI separates `delidev-protocol` schema/Go-binding freshness, `delidev-client` TypeScript validation and `delidev-frontend` desktop validation. Screen-only changes do not select schema/client checks; command changes retain real-server integration. Desktop checks use exactly one checks phase plus two complete Vitest shards, with fail-fast disabled and all results required by `CI Result`.
+
+- `devhud-api`: runs package-local Go format, vet, unit, PostgreSQL migration, integration, API, and sweeper conformance.
+
+- `devhud-rust-conformance`: runs package-local capture, shortcut, IPC, updater, and native-host protocol tests in addition to the repository Rust baseline.
+
+- `devhud-security`: runs credential, redaction, logout, deletion, restore, direct GitHub/R2, and agent adapter fixtures.
+
+- `devhud-desktop`: validates the exact CEF pin and feasible macOS, Windows, and Ubuntu x64/arm64 native packages, installer/native-host lifecycle, and Linux X11 smoke.
+
+- `devhud-mobile-contracts`, `devhud-ios-simulator`, and `devhud-android-emulator`: validate iOS/Android app and widget generation and production/simulator/emulator builds.
+
+- `devhud-oci`: builds both API and sweeper OCI layouts for amd64/arm64 and validates non-root execution, embedded migrations, and SPDX SBOMs without pushing.
+
+- `devhud-supply-chain`: validates installer, Native Messaging host, extension ZIP, updater/key-rotation signature, SBOM, and provenance fixtures on Ubuntu, plus native PowerShell SignTool failure/success stubs on Windows. These stubs do not establish certificate or signed-package acceptance.
+
+- `devhud-release-contracts`: runs every top-level `scripts/release/*.test.mjs` fixture, including cross-project release tests, alongside deterministic static/dry DevHud candidate, identity, configuration, signing/preflight, review, rollback, and redaction contracts without exercising publication. Changes to those test files, committed data under `scripts/release/fixtures/`, `scripts/release/linux-packages.mjs`, `scripts/release/linux-packages/**`, or `packaging/linux/**` select this job on PRs and main pushes. Keep native Linux package assembly skipped on PRs and require the portable fixture result through `CI Result`.
+
+- `ci-result`: retains the `CI Result` status and checks every dependency against the exact `changes` plan; failed/cancelled jobs, missing dependencies, and unexpected skips or execution fail the aggregate.
+
+- The DevHud release-contract job also validates the internal operations runbook, repository workflow contract, and read-only CEF review workflow through `scripts/release/devhud-operations.test.mjs`.
+
+Change-scoped execution rules:
+
+- Generic Rust tests and Clippy consume one final `rust_packages` selection from the central changes job through the verified first-party cargo-mono 0.6.9 Linux x64 binary; never build the selector from source in CI. Include transitive manifest dependents and the explicit pnport-preload runtime test owner. Shared/forced/manual inputs, unsupported exact comparisons and changed PR merge graphs retain full validation. Empty selection disables both jobs and must agree with CI Result. Preserve scene exclusions, rustfmt, dedicated native/release gates, conditional desktop/sidecar/companion preparation and successful-main-only caches. Follow `repository-workflow-contract.md`; keep the Tauri recipe lock independent.
+
+- A single `changes` job selects domain jobs before runner allocation using `scripts/ci/job-paths.json` and `scripts/ci/plan.mjs`. `ci-contracts` always runs. Go tests allocate Ubuntu only on PRs and retain all three operating systems on main/manual runs through the event matrix. Environment checks retain all three operating systems when selected.
+
+- PRs run affected validation, including OCI checks, but never allocate the two Linux CLI package, four pnport native, ten desktop, three iOS, or four Android package entries. Relevant main pushes run Linux CLI, pnport native, eight Windows/Linux DevHud desktop entries, four Android entries, and four Windows/Linux React Forge hosts; they skip Mac desktop, iOS native, and React Forge Darwin rows. Manual dispatch runs every check and platform. The signed DevHud candidate requires both Mac desktop packages, signed iOS arm64, and arm64/x64 simulators; the React Forge tag release requires both Darwin rows through the shared CI validation command. There is no nightly CI schedule.
+
+- PR comparisons use the base/head merge-base; main comparisons use the exact `before..sha` trees, including all commits in the push. Missing or invalid comparisons fail. Deleted and renamed files select both affected owners.
+
+- Node workspace jobs use `scripts/ci/run-affected.mjs` to invoke the installed Turbo Node entry point directly with `turbo run <task> --affected --filter <workspace>` arguments, without a shell or package-manager shim, and with the planner's exact `TURBO_SCM_BASE` and `TURBO_SCM_HEAD`. External inputs and forced runs omit `--affected`; an otherwise empty affected set is a successful no-op.
+
+- Because `public-docs` builds seven project content roots directly, changes under `apps/public-docs/docs/{async-commit-hook,binpm,nodeup,runmoor,clibox,pnport,react-forge}` select and force `node-public-docs-test`. Changes to `apps-react-forge-docs-foundation.md` alone also force that job.
+
+- Central path rules cover Go, Rust, every Node workspace, repository environment tooling, DevHud domains, packaging, public docs, and package/release/review workflows. Runmoor-only release scripts do not select DevHud native packaging; shared DevHud packaging inputs still do.
+
+- The PR frontend job runs the complete DevHud test command, including native-script fixtures, clean desktop/mobile frontend output validation, static mobile/widget contracts, and immutable CEF pins. Its aggregate `test` task is non-cacheable because it validates consecutive clean builds and external contract inputs.
+
+- Protocol generation and package-local frontend outputs are deterministic and cacheable; the ignored administrator and ach UI embeds, native package, mobile, smoke, signing, release, and deployment tasks remain non-cacheable.
+
+- DeliDev client and desktop CI build a current-checkout Go fixture executable once per client/Vitest host. Share only executable bytes through the absolute `DELIDEV_TEST_BINARY` test input; keep processes, credentials, state and cleanup private to each fixture. Local tests retain private builds, QA retains its lifecycle-tracked build, and all integration stays uncached. Go compiler cache producers use separate job/phase scopes and successful-main-only saves; no external remote cache is added.
+
+- Changes to `.github/workflows/CI.yml`, `.github/actions/**`, or central planning/result logic force every check eligible for that event. Changes to `scripts/ci/job-paths.json` compare the previous and current rules and force only changed eligible jobs. PRs still exclude native packaging; `workflow_dispatch` runs all domain jobs regardless of changed paths.
+
+- CI installs always use the frozen pnpm lockfile with `--ignore-scripts`. Shared pnpm/Go setup actions restore caches scoped by OS, architecture, tool version, and lockfile; only successful main jobs save them. Rust compilation caches likewise save only on successful main jobs; the DevHud desktop matrix must cache dependencies only with target caching disabled, and rustfmt has no dependency cache. PRs may restore main caches but never create branch-scoped caches. The Runmoor workflow uses the same Go cache policy and cancels superseded executions on the same ref.
+
+- CI is read-only: it does not consume release secrets, push tags or images, create releases, upload stores, deploy services/docs, or mutate updater/controller state.
+
+- When build or test commands change in project contracts, update this section and `.github/workflows/CI.yml` in the same commit.
+
+Release automation baseline:
+
+- CLI release orchestration is owned by `repository-workflow-contract.md` and the manual `Release Project` workflow: only binpm, cargo-mono, nodeup, with-watch, derun, runmoor, clibox, pnport, async-commit-hook, react-forge, and delidev are selectable. Do not restore main-push workspace publishing. Version commits and individual release-tag pushes use the repository-scoped `delino-release-bot` GitHub App; Homebrew uses a separate tap-scoped token. Preserve exact release-source validation, version-only run-ID recovery, non-forced pushes, and existing signed artifact workflows. Keep bot keys/tokens out of files, artifacts, logs, Git URLs, and configuration.
+
+- Trigger contract: `release-project.yml` accepts only manual `main` runs in `delinoio/oss`, with closed `project` and `bump` choices. All selectable projects proceed from version preparation through registry validation/publication and the exact tag push without inspecting or waiting for main CI. Main CI runs independently; pending, failed, or canceled CI does not block release orchestration. For Rust targets that publish to crates.io, registry publication must still succeed before the tag push.
+
+- The coordinator ends after the verified release-tag push. Tag-triggered project release workflows, including DeliDev, run asynchronously; downstream release failures are repaired from that workflow's Actions page and do not require retrying the coordinator when the tag push succeeded. async-commit-hook is preparation-only: its tag never starts publication, and its summary directs maintainers to the separate manual release workflow.
+
+- Legacy binpm, cargo-mono, nodeup, with-watch and derun publishers follow `repository-workflow-contract.md`: verify exact retained unsigned bytes and source-bound Sigstore bundles before signing or writing. Reuse complete public releases with no release/signing mutations so downstream tap recovery can proceed; reject incomplete or conflicting public state. Fresh publication and explicitly source-owned partial drafts require complete signed readback before publication, missing-asset-only uploads, paginated unique discovery and pinned release IDs. Dry runs remain unsigned and nonpublishing; never move tags or automatically redispatch for recovery.
+
+- Publish command contract: `cargo run --locked -p cargo-mono -- publish --package "$RELEASE_PROJECT"` for Rust CLI targets other than clibox and pnport; Go, clibox, and pnport targets validate the release source without a registry upload.
+
+- Authentication contract: checkout disables persisted credentials, read-only release-source inspection uses the built-in token, and fresh `delino-release-bot` installation tokens perform source/tag and Homebrew writes with separate repository scopes. Configuration is `DELINO_RELEASE_BOT_CLIENT_ID` (Actions variable), `DELINO_RELEASE_BOT_PRIVATE_KEY` (Actions secret), and `CARGO_REGISTRY_TOKEN` (Rust upload secret). No PAT is required by these workflows.
+
+- `release-cargo-mono` is defined in `.github/workflows/release-cargo-mono.yml`.
+
+- Trigger contract: runs on tag push `cargo-mono@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
+
+- Distribution contract: publishes signed multi-OS cargo-mono release artifacts to GitHub Releases for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`.
+
+- `release-binpm` is defined in `.github/workflows/release-binpm.yml`.
+
+- Trigger contract: runs on tag push `binpm@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
+
+- Distribution contract: publishes signed multi-OS binpm release artifacts for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`, including standalone prebuilt binaries (`binpm-<os>-<arch>[.exe]`) and archive assets (`binpm-<os>-<arch>.tar.gz|zip`), then updates Homebrew (`binpm`) from prebuilt archives for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, and `linux/arm64`.
+
+- `release-nodeup` is defined in `.github/workflows/release-nodeup.yml`.
+
+- Trigger contract: runs on tag push `nodeup@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
+
+- Distribution contract: publishes signed multi-OS nodeup release artifacts for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`, including standalone prebuilt binaries (`nodeup-<os>-<arch>[.exe]`) and archive assets (`nodeup-<os>-<arch>.tar.gz|zip`), then updates Homebrew (`nodeup`) from prebuilt archives for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, and `linux/arm64`.
+
+- `release-derun` is defined in `.github/workflows/release-derun.yml`.
+
+- Trigger contract: runs on tag push `derun@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
+
+- Distribution contract: publishes signed multi-OS derun release artifacts and updates Homebrew (`derun`) from GitHub release prebuilt archives (`darwin-amd64`, `darwin-arm64`, `linux-amd64`).
+
+- `release-with-watch` is defined in `.github/workflows/release-with-watch.yml`.
+
+- Trigger contract: runs on tag push `with-watch@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
+
+- Distribution contract: publishes signed multi-OS with-watch release artifacts for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`, including standalone prebuilt binaries (`with-watch-<os>-<arch>[.exe]`) and archive assets (`with-watch-<os>-<arch>.tar.gz|zip`), then updates Homebrew (`with-watch`) from GitHub release prebuilt archives (`darwin-amd64`, `darwin-arm64`, `linux-amd64`, `linux-arm64`).
+
+- `release-devhud` is defined in `.github/workflows/release-devhud.yml` and is manual-only with exact `main` version input, an optional exact lowercase ancestor revision for interrupted-release recovery, plus `dry-run` or protected `release` mode. Historical recovery must reuse the retained revision-bound candidate and its original non-secret release-configuration fingerprint, must not rebuild signing output, and must bind every checkout and public boundary to the selected revision and destinations rather than the newer dispatch SHA or environment values. Controller authorization separately binds that newer dispatch SHA to the GitHub OIDC `sha` claim and permits a differing selected revision only after independent ancestor validation.
+
+- `devhud-cef-security-review` is defined in `.github/workflows/devhud-cef-security-review.yml`, runs monthly or by explicit dispatch, and has read-only contents permission. It compares the committed Tauri revision with an immutable upstream `feat/cef` revision, emits only bounded redacted metadata, and may upload its report artifact; it must not mutate source, pins, lockfiles, releases, stores, registries, deployments, alerts, updater state, or GA state. High-risk CEF response is maintainer-owned and must update `apps/devhud/cef-pins.json`, every authoritative Cargo and verifier pin consumer, every matching `Cargo.lock` source entry, compatibility evidence, signed candidate evidence, and release contracts before any updater publication.
+
+- The CEF maintainer summary must succeed before the metadata report upload, whose retention remains 35 days. Release fixtures must parse the actual summary heredoc and execute the workflow summary step with synthetic zero-signal and truncated-signal reports, checking revision/comparison/signal metadata without exposing raw commit messages, credentials, or native content.
+
+- DevHud public release contract: serialize every version through one project-wide release group; retain, discover by exact revision across every attempt of every recovery run, reuse, and revalidate the original complete private signed candidate through the protected review window; fail closed across every documented signing, store, GitHub, Logto, PostgreSQL, R2, asset, registry, docs, and exact-identity provider-neutral deployment boundary; wait on protected review gates; reconcile absent App Store versions, already uploaded exact builds, pending submissions, same-commit retries, interrupted partial store publication, and draft GitHub Release assets without repeating completed mutations; require an existing draft's exact `targetCommitish` and an existing published release's remotely resolved tag to match the selected revision before reconciliation or reuse; validate and reuse an exact already-published immutable GitHub Release without deleting, replacing, or re-uploading assets; block the first publication on the exact docs candidate; bind the deployed `/devhud` page to that candidate; remotely reverify all exact stores, the exact GitHub asset set, the complete extracted evidence archive and expected keyless bundle inventory, every published payload and updater manifest against signed checksums and signatures, and source-bound immutable OCI digests and keyless signatures both before and immediately after final GA approval; require every downstream environment-bound publication, deployment, cleanup, store-publication, and GA job's complete release-variable fingerprint, including the Chrome extension and OCI production push-principal identities, to match the fully validated preflight environment before its first external check or mutation; query every exact store state before cleanup, withdraw every held store submission after any pre-publication failure or cancellation including a failed or timed-out final store-publication gate, and reconcile attempted infrastructure promotion from live controller status before rollback only while no store is public; and serialize infrastructure, all stores, regular GitHub Release, updater, public docs, independent verification, and GA without beta or partial GA.
+
+- DevHud public preflight keeps private updater, desktop, iOS, and Android signing material confined to `devhud-private-build`; the publication environment receives only live release credentials and required dual-use Apple/Chrome identity material, checks Apple submission authority through a read-only API surface, binds the protected public-asset base URL to the controller's exact runtime authority through SHA-256 before promotion, requires the protected Google Play production-release service-account principal and the operator-confirmed OCI production push principal to match their credentials before any network access, classifies terminal App Store `INVALID_BINARY` state as rejected, replaces terminal canceled Apple review submissions with a live draft, and uses immediate/default Chrome publication only after the protected held-review gate. Controller updater input archives normalize ordering, ownership, modes, timestamps, and gzip headers so retries reproduce identical bytes.
+
+- DevHud permission/deployment contract: start with no GitHub permissions, grant job-local read/OIDC/write scopes only where required, and keep the official API host operator-selected behind `servers-devhud-release-controller-contract.md`.
+
+- DevHud Chrome review submission requires a `SUCCEEDED` upload response with the exact selected extension `itemId` and release `crxVersion` before publication. Stop on failed, processing, unknown, missing, or mismatched responses with fixed redacted errors. Preserve explicit operator recovery and the staged 100 percent review options; do not add automatic polling or retry. Follow `apps-devhud-operations-contract.md`.
+
+- Project ID `async-commit-hook` owns `cmds/async-commit-hook`, `apps/async-commit-hook`, `apps/public-docs/docs/async-commit-hook`, `protos/async_commit_hook/v1` and `packages/async-commit-hook-api-client`; only executable `ach` is distributed.
+
+- Follow `project-async-commit-hook.md` and its domain contracts. Issue #897 applies with the owner's recorded exclusions of actual six-target machine validation and actual public publication.
+
+- `Release Project` prepares async-commit-hook versions and tags only. Keep the Go version, local UI/docs/client package versions and release metadata synchronized in one version-only commit; installer defaults must resolve the latest published stable release so an automatic Public Docs deployment cannot target an unpublished prepared version. Reject drift and missing or ambiguous declarations before writes. Keep Cargo publication credentials out of this path. Actual publication retains the separate manual main workflow and its exact signing identity and tag/dispatch-commit validation.
+
+- CLI/MCP/Connect share one core, exact-commit latest-compatible-attempt validation and explicit per-run acknowledgements. Never resurrect old successful evidence after pruning.
+
+- State, reports and logs remain local and account-owned; no telemetry. User commands require explicit repository trust. Cancellation must reconcile owned descendants before releasing exclusive scheduling groups.
+
+- Development uses frontend 46308 and local UI/API 46309 with conflict failure; docs development/preview use 46310/46281. Root DevHud development remains unchanged.
+
+- The daemon and on-demand viewer serve the same embedded UI without pairing. Every RPC requires exact same-origin POST and the API version header. `https://oss.delino.io/async-commit-hook` is documentation-only.
+
+- Run `pnpm --filter async-commit-hook build:embedded` before ach Go compilation or repository-wide Go checks, including commit hooks. The app owns the generated command webassets/dist; never commit or substitute placeholder assets. Root Go checks also require the existing DevHud administrator embed.
+
+- Legacy binpm, cargo-mono, nodeup, with-watch and derun releases bind every checkout and new tag to the validated workflow SHA. Before signing, release upload and Homebrew writes, resolve remote lightweight or bounded annotated tags and all release-by-tag state, reject conflicting, orphaned or uncertain targets, and atomically create plus re-resolve an absent tag before handing off to the release uploader. Preserve manual-main publication, never move tags, and keep development-ref dry runs unsigned with read-only contents authority. Follow `repository-workflow-contract.md`.
+
+- Native package release callers must explicitly inherit secrets so the reusable publisher can resolve its protected `linux-packages` environment. Only the guarded publication job references production credentials; validation and installation jobs remain credential-free. Preserve the environment boundary for manual recovery of already-published release identities.
+
+- APT signing-certificate updates are distributed by the shared `delino-archive-keyring` dependency in both suites. Keep certificate versions immutable, retain historical public signing subkeys, and require a completed 30-day old-signer publication overlap before switching CI subkeys.
+
+- Relevant main pushes, including Rust CLI source, Cargo workspace/configuration and toolchain changes, must select the Linux package CI job so both native architectures retain the AlmaLinux 9 compatibility baseline. Manual CI dispatch always selects it. PRs skip this job even when CI configuration changes force all eligible checks; its `CI Result` dependency remains and must match the planned skip. General Linux validation, static package contracts, and release-time packaging checks remain enabled.
+
+## CI task integration
+
+- `@delinoio/ci` owns repository-wide validation; app/package leaves stay with their workspace. Actions owns setup, affected planning, matrices, temporary services, artifacts and `CI Result`.
+
+- Follow `repository-workflow-contract.md`. Route checks through `run-affected.mjs` and publish the central event-owned `go_test_matrix`. PR Go tests allocate five Ubuntu package shards even when forced; main keeps full Ubuntu suites and affected macOS/Windows packages; shared inputs and forced validation select full suites only on eligible hosts and manual runs retain all seven complete suites. PR Go results establish Linux coverage only. Require exact matrix agreement in `CI Result`; preserve exact comparison SHAs, external forcing, complete selected package tests, disjoint PR Ubuntu/Windows package shards and platform-owned 20/45-minute package watchdogs. Ubuntu uses default parallelism without precompilation, restores main's `go-test-all` cache and never saves.
+
+- DevHud API client validation in `devhud-frontend` runs the package `typecheck` and `test` tasks together with `FORCE_RUN=true`. Consumer builds do not cover the package test files.
+
+- Use the dependency-free shared dot-aware path matcher for job ownership, configuration forcing and workspace forcing. Include hidden leaves and directories at every wildcard depth, preserve literal-dot patterns and Git path characters, and retain event eligibility. Planning must work before workspace installation.
+
+- Affected Go discovery uses native `go list -mod=readonly -test -json` and retains only original package owners. Match resolved production/internal-test/external-test embed files against every consumer before narrowing testdata ownership; production embeds propagate to callers and test embeds select tests only. Preserve import and subprocess/frontend edges, native checkout identity, discovery failures and conservative deletion/move fallbacks.
+
+- Root `turbo.json`, `package.json`, `pnpm-lock.yaml` and `pnpm-workspace.yaml` changes select `rust-fmt`, `forge-test` and `forge-render` through their job-specific path rules. Preserve the existing native `FORCE_RUN` commands and event eligibility; these root inputs do not globally force unrelated jobs.
+
+- `scripts/release/generate-delidev-updater.mjs` is an external input of `delidev-frontend` and `devhud-release-contracts`. Generator-only PRs and pushes must select both consumers and force the DeliDev workspace checks; retain separate credential-free native dry runs and event-based packaging skips.
+
+- Preserve the central validated Rust package selection. `run-rust.mjs` selects an explicit uncached Turbo graph with only the selected owners' build prerequisites; it must not expand the Cargo package list or bypass empty-selection rejection.
+
+- Cache deterministic leaves only. Go/Rust execution, DB/OS/render/benchmark, repeated clean builds, embedded generation and protocol freshness run every time. Declare actual outputs and external inputs, plus task-local platform/tool/option hashes.
+
+- The cached environment graph checker must hash root/workspace definitions and the DevHud app, administrator, API and API-client manifests/Turbo configurations. Keep `ci:environment:turbo` inputs tied to the exact package graph and workspace files, exclude generated Turbo logs from its script inputs, and preserve the exact development environment allowlist and task inventory. Its disposable fixtures must prove cold/warm reuse, independent invalidation and verifier failure for each graph mutation, including manifest-only package-name changes, and reuse after restoration; keep `ci:environment` uncached.
+
+- Central Go test execution uses `-count=1` in full and affected modes for every shard. Turbo's uncached task does not disable Go's result cache. Keep discovery and compile-only arguments unchanged, retain compiled-object cache reuse, and verify subprocess consumers and repeated execution in disposable fixtures.
+
+- Keep JS hashes independent of native tool availability. Hash installed Go/Rust/Buf versions only in their owning cached tasks; metadata queries must not install compilers.
+
+- Vercel OIDC tokens are short-lived and cache-only. Main writes, first-party PR/manual non-main reads, forks skip auth; failures fall back locally and must not suppress validation failures. Keep development's exact environment boundary unchanged.
+
+- Test cold/warm restoration, invalidation and uncached failure propagation in disposable fixtures. Record hosted main-write/PR-hit and comparable timing in PRs or CI artifacts, not repository evidence files.
+
+- Rustfmt configuration changes select only `rust-fmt`, including nested overrides matched by broad package rules. Hash both supported filenames at every depth in `ci:rust:fmt`; run the real formatter cache fixture uncached in the formatting job. The disposable fixture records the exact production command's completion, status and diff before returning to Turbo; cache hits must create no fresh receipt. Do not accept unrelated nonzero exits or rely on Turbo console forwarding as completion evidence.
+
+- Extension packaging order fixtures prove the declared dependency chain and observed cold/warm operations through a held destructive interval. Turbo wall-clock summary timestamps are timing diagnostics, not causal ordering evidence; preserve cache restoration and every injected failure control.
+
+- CI task setup must resolve Go cache paths before strict environment filtering and install the pinned Rust toolchain before shared-target native validation. Retain the ordered DevHud capture, shortcut, IPC and updater dependency chain.
+
+- Protocol lint, format and freshness resolve the pinned installed `@bufbuild/buf` package manifest `bin.buf` as a bounded, contained Node entry and invoke it through the current Node executable with literal argv and no shell. Keep the launcher fixtures uncached on Linux, macOS and Windows; preserve compatibility generation and tracked/untracked freshness rejection.
+
+- Changes to the shared legacy CLI publisher select `devhud-release-contracts`, which owns its top-level release fixtures. Keep this input edge in `job-paths.json` and the planner tests when changing release-helper ownership.
+
+- Go timing reports retain source revision, commands, phase times and top-level test metadata only. Keep raw output and dynamic subtest names out of artifacts. Preserve failure status, native affected selection and exhaustive shard coverage when changing instrumentation. Windows workspace tests run on their own runner and use the retained 45-minute fixture watchdog.
+
+- Exact `AGENTS.md` files are policy metadata and do not seed affected Go selection. Resolved production/internal-test/external-test embeds remain authoritative; embedded deletions/moves and other unknown resources retain conservative fallbacks.
+
+- Go formatting inventory uses NUL-separated Git paths and passes literal arguments to the formatter. Preserve source bytes and Git, formatter, missing-scope and empty-inventory failures; cover quoted non-ASCII and newline names in the central contract fixtures.
+
+- Runner-owned DeliDev Go fixture preparation uses a five-minute cold-build watchdog, separate from fixture lifetimes, product deadlines and Go package watchdogs. Publish structured start/failure timing; share only the resulting executable path.

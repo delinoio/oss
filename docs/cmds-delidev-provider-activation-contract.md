@@ -54,6 +54,10 @@ Tests cover fresh hosted defaults, one-time migration and rollback, legacy omitt
 
 Automated fixtures do not establish real desktop layout/keyboard, real provider account or inference acceptance. Record native/manual evidence separately in pull requests, issues and CI logs/artifacts; do not claim provider readiness from a UI or protocol fixture.
 
+## cmds/delidev-cli/internal/store constraints
+
+- DeliDev API provider activation follows `cmds-delidev-provider-activation-contract.md`. Seed only the six hosted presets On during fresh database creation and the one-time existing-database migration; preserve saved Off state and provider identity without creating accounts, keys or models. Keep the three local presets virtual Off until activation and custom providers independent. Preserve missing-enabled legacy semantics, immutable managed preset identity, unique preset activation across writes/imports, metadata-only structured logs, and transaction-order admission. Version signed provider inventory cursor scopes whenever key encoding or ordering changes so old cursors expire instead of being reinterpreted. Never revoke a committed current-turn grant when a provider is turned Off.
+
 ## References
 
 - [Project index](project-delidev.md)

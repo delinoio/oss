@@ -4,7 +4,7 @@
 
 Issue #1746 owns first-message and follow-up still-image inputs for project sessions and General Chat. File selection, clipboard images and drag/drop share one ordered draft. Image-only messages are valid. Text retains its independent 256 KiB limit. Each message admits at most eight images, 10 MiB per image and 40 MiB combined. Accept original PNG, JPEG and WebP bytes only after content decoding; reject animation, corruption, mismatched media types and unsafe decode allocations. Do not resize, convert, OCR or replace images with text.
 
-The owner explicitly permits the complete capability/protocol declarations and their activation in one feature PR for this issue. System capability 45, Worker capability 25, and `CreateSessionRequest.attachments` / `EnqueueInputRequest.attachments` field 5 belong exclusively to this feature. The ordinary main-first reservation rule remains mandatory for unrelated features. No SQLite migration is authorized.
+The owner explicitly permits the complete capability/protocol declarations and their activation in one feature PR for this issue. System capability 45, Worker capability 25, and `CreateSessionRequest.attachments` / `EnqueueInputRequest.attachments` field 5 belong exclusively to this feature. All feature allocations follow the [shared allocation workflow](cmds-delidev-structure-contract.md#allocation-workflow); a separate reservation PR or prior merge to main is not required. No SQLite migration is authorized.
 
 ## Transfer and immutable input authority
 
@@ -64,3 +64,77 @@ The original Worker durably records execution/job/instance/machine ownership and
 Deletion freezes independent owners, preserved generated references and every originally admitted execution generation, even if no output metadata was published. Frozen work requires Worker capability 35 before a first acknowledgment; a downgraded Worker cannot skip unpublished controller intents. Original acknowledged receipts remain replayable without replacing their revision. No cleanup acquires newer output references. After the original native execution and workspace owners have joined, the original Worker enumerates its durable controller, including an image whose publication acknowledgment was lost. A last-owner deletion removes only the original owned stored bytes; an independent Fork's retained reference protects them until that owner is explicitly deleted. Read-only Sidechat borrows references without owning bytes. Tombstones fence delayed recreation. Native saved files and explicit exported user copies are outside this cleanup authority.
 
 Native/account/platform observations remain separate from automated decoder, authenticated transfer, partial-publication, durable-controller and independent-owner fixtures. Allocations and fixtures grant no account entitlement or proof of installed native behavior.
+
+## Project requirements
+
+- Issue #1746 image inputs follow `cmds-delidev-image-input-contract.md`. The owner permits declarations and complete activation in the same feature PR for System 45, Worker 25 and creation/enqueue attachments field 5 only. Preserve metadata-only server storage, authenticated Worker byte ownership, ordered immutable claims, original native image proofs and durable independent cleanup; no migration. Real-account, installed-native, remote-machine and platform acceptance remain owner-assigned and nonblocking for this feature.
+
+## cmds/delidev-cli/internal/domain constraints
+
+- Windows service process ownership resolves the reported Win32 image path under the installation's canonical path contract, including 8.3 aliases, and matches the original executable file identity. Preserve independent SID and before/after process-birth checks.
+
+- Issue #2048 optional startup failure kind is closed and zero-omitted. IMAGE_INPUT_REJECTED requires Failed/Input/Codex/Unsupported/NotSent/confirmed cleanup; generic errors and mixed metadata cannot acquire image provenance. Follow the image-input and direct startup contracts.
+
+## cmds/delidev-cli/internal/harness/codex constraints
+
+- Image inputs use the pinned V2 localImage primitive under `cmds-delidev-image-input-contract.md`. Require the exact immutable model to advertise image modality before send, resolve only original validated private Worker bytes, and bind ordered refs into acknowledgment/history/recovery digests. Never publish native paths, convert images to text, omit image parts or enable image-bound Steer without a separate complete profile.
+
+- Issue #2048 image rejection proof is private to original image preparation before turn/start and binds request/input/full ordered input digest. Generic errors, attachment resolution, transport/acknowledgment and successful native sends cannot grant the proof. Preserve exact native model modality and localImage/history verification under the image-input and direct startup contracts.
+
+## cmds/delidev-cli/internal/imageinput constraints
+
+- Store original image bytes only in private Worker-owned storage. Caller paths, filenames and native event paths grant no authority. Resolve native paths through the original closed reference, paired Runner and validated bounded content.
+
+## cmds/delidev-cli/internal/providers constraints
+
+- OpenRouter inspection requests `output_modalities=text` for every selected API format. Retain image/audio input models that produce text, exclude non-text-only generation models, and preserve strict positive context-limit validation. A filtered catalog never deletes previously saved models or grants inference authority.
+
+## cmds/delidev-cli/internal/server constraints
+
+- Image inputs follow `cmds-delidev-image-input-contract.md`: bind original actor/draft/operation, admitted Runner revision and paired Worker device; claim ordered ready references atomically with original input acceptance. Forward bounded authenticated chunks without durable bytes, preserve immutable queue edits and original execution snapshots, and join only explicit unclaimed-draft removal retries. Accepted images belong to session deletion after native cleanup; quarantine blocks restored input/readback.
+
+- Hold the shared credential gate through managed restore eligibility and publication. Private network publication/deletion intents block replacement, and the current safety image retains network profiles/generations/selections; historical routing cannot replace current explicit authority.
+
+- Empty image selections preserve ordinary text-only queue admission and receipt replay without image-specific Runner or Worker registration checks. Nonempty image claims retain their original actor, operation, Runner revision and Worker Device fences.
+
+- Image Begin, claim and metadata updates use the store-owned session capacity fence before writing new metadata or Worker bytes. Preserve existing per-input limits and exact actor/operation/Runner authority; capacity rejection never admits or retires an uncertain image. Follow the image-input contract.
+
+- Issue #2048 accepts image startup provenance only for the closed settled Input-phase Codex rejection with original ready process identity, native thread without acknowledged turn and exact claimed queue/input/request/images. Preserve original receipts, prompt/ordered image references, pending capacity settlement and explicit original-selection retry; malformed or mixed reports fail closed. Follow the image-input and direct startup contracts.
+
+## cmds/delidev-cli/internal/store constraints
+
+- Current-only inline-model storage is schema 32. Earlier live databases and backup images fail before writable admission without changing original bytes or sidecars. Historical allocation records and frozen schemas retain provenance; their former upgrade rules grant no current migration path. Preserve independent native/credential, deletion and retained restore-image cleanup receipts. New Agents retain exact source/native-ID inline routes; Model resources and historical estimate backfills are retired.
+
+- Backup publication records the original image metadata and digest in live SQLite before a no-replace rename. Recovery must match that independent claim; same-server identity or a known filename alone never establishes creation provenance. Preserve unclaimed/replaced images as recovery evidence.
+
+- Backup deletion atomically claims images without replacement into private `backup-removals/`, synchronizes both directories, revalidates the full claimed image and sidecars, and only unlinks the claim. Resume retained claims after restart; preserve changed claims, reopened original paths and sidecars as pending recovery evidence. Never unlink the externally known image name after a pathname-only validation.
+
+- Completed backup-deletion maintenance validates the retained intent and image absence without repeated fsync. Preserve synchronization for uncertain recovery and each actual unlink, and continue removing matching reappearing images.
+
+- Backup creation recovery must independently match the published image's server identity to the live scope. Validate immutable SQLite images without adjacent WAL/SHM/journal state, preserving foreign or corrupt originals instead of adopting them by filename. Migration backup validation follows the same sidecar refusal.
+
+- Permanent session deletion must bind its final backup inventory to the exact images inspected without session content under the backup publication gate. Preserve new/replaced images as pending until a fresh classification pass.
+
+- Managed restore rejects unfinished external session deletion, redacts shared remediation/session activity before tombstoned entity removal, and retires exact receipt-owned temporary images before serving a settled outcome. Preserve metadata journals and unaccepted/changed staging; remaining database copies block permanent deletion completion. Pin every staging-migration image in the prepared external journal before publication and verify its exact original fingerprint before cleanup; a legacy journal cannot adopt existing copies. Follow the storage contract.
+
+- Managed restore retains the complete current Device documents from its synchronized external safety image, including browser pending/removed state and original profile/deletion identities. Discard historical Device inventory before copying current records; offline/revoked obligations and completed cleanup cannot be rolled back by an older backup.
+
+- Managed restore refuses any pending private network publication/deletion intent before closing SQLite. Preserve current network profiles, immutable credential generations and server/Worker selections from the safety image, preserving their bodies while freshening resource revisions under the ordinary restore rule; a historical snapshot cannot reactivate outbound authority. The owning server serializes restore with network/account credential operations through the shared gate.
+
+- Copy current machine metadata required by retained Worker network routes from the safety image, replacing historical metadata for those IDs. Owners must be able to read/clear a route and delete its deselected profile without pairing that Worker again. Metadata cannot restore Worker verifiers, instances, grants or native ownership; ordinary restore revocation remains mandatory.
+
+- Installation entities are server-owned operation history. Restore copies current SSH/update entities rather than historical images, and blocks unsettled installation or protected cleanup. Pending projections exclude terminal history without truncating active obligations.
+
+- Image jobs retain empty entity session scope and closed bounded metadata. Independent Fork publication inherits only its accepted boundary prefix; Sidechat borrows original parent references without deletion ownership. Last-owner removal joins synchronized deletion and original Worker acknowledgement. Restore preserves current ownership/removal as quarantined and discards historical authority. Follow the image-input, Fork, Sidechat and storage contracts; add no migration.
+
+- Image admission and Fork ownership atomically retain at most 4,096 distinct unresolved references per session, using the same current-owner and unclaimed/deleting scope as cleanup. Confirmed deleted drafts and released source ownership do not consume capacity; removed inputs, quarantine and uncertain deletion remain retained. Preserve original receipts and proofs; no eviction or migration. Follow the image-input contract.
+
+## cmds/delidev-cli/internal/worker constraints
+
+- Image transfers keep original PNG/JPEG/WebP bytes in private Worker storage under `cmds-delidev-image-input-contract.md`. Validate actual content, size, full digest and bounded decode before readiness or native paths. Immutable deletion tombstones reject delayed writes; completion replay observes exact original absence without removing replacements. Join the authenticated transfer watch with the original primary Worker stream.
+
+- Windows native launch classification must include documented incompatible-image, machine-type and missing-subsystem loader statuses without exposing OS diagnostic strings.
+
+- Last-owner image removal uses original Worker identity after joined native/process cleanup. Image-only plans grant no workspace authority. Persist intent before DELETE; completion and replay require original deletion receipt and absent data/metadata. Reappearing files remain protected. Follow the image-input and storage contracts.
+
+- Issue #2048 classifies original image rejection only from the opaque pre-wire adapter proof, exclusive synchronized original assignment/input/request claim and independent confirmed cleanup. Retain claimed uncertainty on missing/changed proof or cleanup, unchanged public receipts and original assignment revisions; never resend by observation. Follow the image-input and direct startup contracts.

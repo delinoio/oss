@@ -47,8 +47,14 @@ Provide a Rust CLI that JavaScript projects can pin through npm and their lockfi
 - Linux/macOS/Windows process tests and installed npm/pnpm smoke tests cover all three configuration commands and environment execution. Eight-target and Alpine release gates remain unchanged.
 - Public guides are owned by the consolidated `public-docs` site under `/clibox`; no standalone documentation workspace or deployment is added. From the next release, Homebrew distributes verified macOS x64/arm64 prebuilt archives through `delinoio/tap/clibox`, with no Node.js or Rust prerequisite; Linux Homebrew is excluded. The two GNU Linux binaries also ship as signed GitHub Release archives and stable APT/DNF packages under [the Linux package contract](repository-linux-packages-contract.md).
 
+## Project requirements
+
+- `clibox` -> `crates/clibox`, `crates/clibox-config`, `crates/clibox-fspy`, `crates/clibox-system`, `crates/clibox-transform`, `crates/clibox-wait`, `packages/clibox`, `apps/public-docs/docs/clibox`
+
 ## Change Policy
 Update the relevant domain contracts, this index, relevant AGENTS files, version synchronization, platform fixtures, and release workflows together when these boundaries change.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - [Repository defaults](repository-defaults.md)

@@ -18,6 +18,18 @@ Exports are deterministic ZIP bundles (`.sprite.zip`) containing `sheet.png`, `s
 
 Snapshot, refs, React updates/Suspense, diagnostics, revision pinning, cancellation and disposal reuse `DocumentSession`. Import and mounted editing of exported sprite archives are unsupported; update the React source and export again. CLI and MCP export validate `.sprite.zip`; library file exports retain the existing caller-selected-path behavior.
 
+### Project requirements
+
+- React Forge sprites follow `packages-react-forge-sprite-contract.md`: use an independent bounded pixel renderer and one revision-pinned `.sprite.zip` archive for sheet PNG, frame PNGs and metadata. Keep image generation services, sprite import and engine-specific compatibility outside this extension; describe its availability from npm `0.2.0` and retain the engine-compatibility limits.
+
+### Rust component integration
+
+- `forge-sprite` owns the independent sprite model and CPU pixel renderer under `packages-react-forge-sprite-contract.md`. Validate hidden nodes, bound decoded images and combined frame/atlas raster work, poll cancellation during rasterization and bounded PNG compression (including within wide scanlines), preserve deterministic alpha/nearest-neighbor output, and return one bounded archive without filesystem or network access.
+
+### packages/react-forge constraints
+
+- Follow `packages-react-forge-sprite-contract.md` for `/sprite`, `Format.Sprite`, strict component props, pixel geometry and atomic `.sprite.zip` exports. Hidden layers suppress drawing only; their drawing leaves retain translated measurement geometry. Keep sprites connected to common session/CLI/MCP lifecycle and installed-consumer tests; never publish the sheet and JSON as separate uncoordinated writes.
+
 ## Storage
 Memory-only sessions and explicit local export reuse the project's local-storage exception. One atomic archive publication keeps PNGs and JSON on the same revision. Output conflicts, explicit overwrite, directory serialization and cleanup retain the existing file contract. User extraction is separate from publication.
 
@@ -35,6 +47,8 @@ Reuse the pinned `image` crate for PNG/JPEG decoding, `png` for PNG framing/chec
 
 ## Change Triggers
 Update the project/native/Node/MCP contracts, capabilities, package exports, examples, CI, relevant AGENTS rules and validation evidence together. Public guides state the published version that first includes Sprite and preserve separate evidence boundaries. The public guide does not claim automatic artwork generation or engine importer compatibility.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - [Project](project-react-forge.md).

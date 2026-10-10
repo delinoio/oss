@@ -31,6 +31,38 @@ Before signing, `--verify-tag COMMIT` reads the remote version ref and its peele
 
 After an interrupted draft upload or a downstream Homebrew failure, use GitHub Actions **Re-run failed jobs** on that same workflow run within the seven-day artifact retention window. Successful GitHub publication remains complete and is not repeated. The consolidated documentation deployment is retried through its owning `public-docs` workflow. Re-running all jobs or dispatching another publication for an already published version intentionally fails the immutable-release guard. A new workflow run also cannot take over an earlier run's draft. Legacy drafts without the ownership marker, modified drafts and drafts with unexpected assets require maintainer inspection; the workflow never deletes or claims them automatically. If retained artifacts have expired, stop and recover the original validated artifacts through maintainer review; never overwrite the existing release.
 
+### Project requirements
+
+- `release-async-commit-hook.yml` is manual-only from `main`, defaults to unsigned nonpublishing dry-run artifacts, and follows `cmds-async-commit-hook-release-contract.md`. Ordinary CI must never sign or publish ach artifacts, mutate the Homebrew tap or deploy Pages.
+
+### cmds/async-commit-hook constraints
+
+- Release verification and replacement follow `cmds-async-commit-hook-release-contract.md`; never weaken the pinned workflow identity or package-manager ownership checks.
+
+### packaging/async-commit-hook constraints
+
+- `release-metadata.json`, the Go version constant, local UI, docs and client versions must match exactly. `Release Project` updates all five version fields in one version-only commit and prepares the exact tag; public installer defaults resolve the latest published stable release and are not version-preparation fields. The coordinator must reject drift and missing or ambiguous declarations before writes, never publish or dispatch the publication workflow, and never require or inject a Cargo registry token for this project.
+
+- Archive bytes must be reproducible for identical executable bytes: fix both tar member and gzip-header metadata, omit gzip filenames, and retain fixed ZIP entry metadata.
+
+- Build all six targets with CGO disabled. Every archive contains exactly one regular `ach` or `ach.exe` file.
+
+- Publish only through the manually dispatched `release-async-commit-hook.yml` from `main`, after validation, archive checksums and Sigstore signing. The updater pins that exact workflow identity.
+
+- Before signing and immediately before release creation, resolve the remote version tag (including annotated/nested tags) to the exact validated commit; reject mismatches and lookup errors without changing tags.
+
+- Dry runs never sign, create tags/releases, update a tap or deploy Pages. They emit unsigned archives and an explicit validation record.
+
+- Keep GitHub publication and Homebrew in separate dependent jobs so Re-run failed jobs preserves successful immutable publication. Documentation validation remains in the release workflow, but the consolidated `public-docs` publisher owns documentation deployment; this release workflow must not add a standalone Pages job. An already matching Homebrew formula is a successful no-op.
+
+- Resume only an unpublished draft whose exact ownership marker, target commit, version and workflow run ID match the current run. Reread ownership before replacing partial uploads, reject unexpected assets, and verify the full uploaded names, sizes, SHA-256 digests and uploaded states before publication. Published releases and unowned drafts are never overwritten.
+
+- Release artifact/installer fixtures under `scripts/release` use Node built-ins only and run without dependency installation. YAML workflow fixtures belong to `scripts/ci` and run after the frozen workspace install.
+
+- Do not label cross-compilation as native integration validation. Preserve the owner-approved exclusions in `cmds-async-commit-hook-release-contract.md`.
+
+- Public installers are authored under `scripts/install/async-commit-hook.sh` and `scripts/install/async-commit-hook.ps1`; release preparation copies those exact bytes into downloadable assets.
+
 ## Storage
 Installed executable replacement uses a same-volume candidate, a retained previous executable, a durable account-scoped update journal and a consistent SQLite `VACUUM INTO` backup plus owned evidence. State version 1 is validated before use; unknown versions fail without conversion. Backups remain account-private and exclude filesystem symlink traversal.
 
@@ -98,6 +130,8 @@ The recorded local contexts are macOS 26.6.2 arm64 for supervisor-death recovery
 
 ## Change Triggers
 Update this contract, packaging AGENTS, version metadata and public upgrade/compatibility guidance when artifact names, trust identity, update ownership or deployment behavior changes. Keep the process-ownership validation commands, Edge status and owner-approved exclusions in this contract synchronized with those changes.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - [Project](project-async-commit-hook.md)

@@ -1,6 +1,9 @@
-# Figma planner
+# crates/forge-figma working instructions
 
-- Follow `docs/packages-react-forge-figma-contract.md`. This crate owns only bounded model validation, dependency ordering, diff and page/code/result-sized batch plans.
-- Keep credentials, networking, sleeps, JavaScript execution and remote recovery in the Node adapter/session layer. Do not add a Figma REST mutation dependency.
-- Only explicit selected bindings and managed children authorize changes. Reject unsupported replacement, nested pages and unprovable preservation before publishing a plan.
-- Keep error values stable and content-free. Test planning boundaries with synthetic IDs and data; run root `cargo test` for Rust changes.
+- Follow the root instruction-update policy and the nearest parent instructions.
+- This file covers `crates/forge-figma/` and its descendants unless a more specific instruction file applies.
+- Read the owning contracts below before changing behavior, including affected cross-domain consumers.
+
+## Owning contracts
+
+- [React Forge Figma Contract](../../docs/packages-react-forge-figma-contract.md)

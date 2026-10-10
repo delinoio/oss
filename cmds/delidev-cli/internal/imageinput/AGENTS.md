@@ -1,6 +1,14 @@
-# Image input storage ownership
+# cmds/delidev-cli/internal/imageinput working instructions
+
+- Follow the root instruction-update policy and the nearest parent instructions.
+- This file covers `cmds/delidev-cli/internal/imageinput/` and its descendants unless a more specific instruction file applies.
+- Read the owning contracts below before changing behavior, including affected cross-domain consumers.
+
+## Development and validation
 
 - Follow the parent instructions and `docs/cmds-delidev-image-input-contract.md`.
-- Store original image bytes only in private Worker-owned storage. Caller paths, filenames and native event paths grant no authority. Resolve native paths through the original closed reference, paired Runner and validated bounded content.
-- Synchronize immutable journals, data writes and deletion tombstones before reporting success. Identical chunks may replay; conflicting bytes or ownership fail. Deletion receipts prevent delayed writes from recreating bytes.
-- Retained deletion proof is read-only. Reappeared files, symlinks and changed receipts fail proof and remain untouched. Do not infer cleanup from a missing journal alone.
+
+## Owning contracts
+
+- [DeliDev image input contract](../../../../docs/cmds-delidev-image-input-contract.md)
+- [DeliDev storage operations](../../../../docs/cmds-delidev-storage-contract.md)

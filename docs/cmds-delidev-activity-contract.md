@@ -32,6 +32,20 @@ Run `go test -race -p 1 ./cmds/delidev-cli/...`, `go vet ./cmds/delidev-cli/...`
 ## Dependencies and Change Triggers
 Preserve independent execution, Inbox, schedule, usage, PR, deletion and backup ownership. Keep declarations/generated clients compilable, synchronize CLI help and relevant AGENTS/contracts, and record source revision, checks and unresolved limits in PR/issue/CI records rather than repository evidence documents.
 
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+
+## Project requirements
+
+- DeliDev Activity retirement follows `cmds-delidev-activity-contract.md`: remove desktop/CLI/live projections while retaining authenticated Unsupported protocol compatibility, legacy validators and dependent session/backup cleanup. Preserve canonical PR/native/cleanup/push evidence and independent observations.
+
+## cmds/delidev-cli/internal/store constraints
+
+- Activity is retired under `cmds-delidev-activity-contract.md`: publish no new transition or dedicated verification snapshots and expose no live projection. Keep legacy validators, session-dependent erasure including pre-binding reservations, and managed restore/tombstone quarantine. Preserve canonical PR transactions, receipts, indexes, handling and independent native/cleanup/push proof.
+
+## cmds/delidev-cli/internal/worker constraints
+
+- Follow `cmds-delidev-activity-contract.md` for read-only activity. Project only original durable execution jobs, terminal inbox evidence and schedule occurrences; distinguish dispatch acceptance, native outcome, owned cleanup and current occurrence state. Preserve original account/source references and server retention times, include Archive, retain configuration-independent history, and exclude deleted-session sources. Keep content and native identities out of activity; reading cannot mark inbox entries or authorize work. Recheck revocation and bind bounded pages to actor/filter/source epoch.
+
 ## References
 - [DeliDev project](project-delidev.md)
 - [Desktop contract](apps-delidev-desktop-contract.md)

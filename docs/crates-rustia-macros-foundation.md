@@ -30,6 +30,28 @@
   - always emits `impl LLMData`
   - emits `impl Validate`
 
+### Project requirements
+
+```ts
+enum RustiaComponent {
+  Core = "core",
+  Llm = "llm",
+  Macros = "macros",
+}
+```
+
+- `Macros` -> `crates/rustia-macros`
+
+### Rust component integration
+
+- `crates/rustia-macros`: Proc-macro derive companion crate for rustia.
+
+- Keep `rustia` as the runtime-facing crate, `rustia-llm` as the aisdk adapter crate, and `rustia-macros` as the proc-macro companion crate.
+
+- Keep future macro/runtime compatibility constraints synchronized with rustia project and crate contracts.
+
+- `rustia-macros` crate changes must update `crates-rustia-macros-foundation.md` and `project-rustia.md`.
+
 ## Storage
 - No persistent storage contract.
 - Macro outputs are compile-time artifacts only.

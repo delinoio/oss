@@ -20,6 +20,42 @@ PPTX list, image, shape, chart and connector components are leaves. Nonempty Rea
 
 `react-forge run <entry.tsx> --output <file> [--data <json>] [--overwrite] [--json]` loads the default task function with `{ data, signal }`, exports its returned session and disposes it. Help, version, typed human/JSON failures and process-signal cleanup are required. Include the TSX loader dependency.
 
+### Project requirements
+
+- `react-forge` is the public npm Node.js 24 / React 19.2.8 cross-platform document project in issue #968. Follow `project-react-forge.md` and its complete requirements. Keep JavaScript reconciliation outside native workers, format models independent, sessions in memory, exports revision-pinned and atomic, and imported opaque content preserved. All required formats and evidence are required before completion.
+
+### Application integration
+
+- Keep the nine format guides in `react-forge/formats/<format>/index.md`, link to their `/react-forge/formats/<format>/` routes, and preserve permanent redirects from the former top-level format routes. Validate both route sets through the public-docs build.
+
+- Validate all eighteen rendered routes, guide links, selector state, sidebar, social/footer links, clean URLs, and prohibited credentials and internal paths through `pnpm --filter public-docs test`.
+
+- Chrome extension CI must order the uncached repeated clean-build regression before the cached test build or output restoration, then run the final ZIP parity check. These tasks share `dist`, `build` and `artifacts` output directories; preserve controlled cold/warm interleaving and failure-propagation fixtures.
+
+### Package integration
+
+- Sessions are memory-only. Serialize mutations, reject invalid latest renders and overlapping targets, pin export revisions, serialize file exports sharing a directory identity in invocation order across sessions, support cancellation without timeouts, and clean resources on dispose without deleting exports. Keep callbacks and component code outside native computations. Reject exports to an imported document's tracked source or canonical aliases even with explicit overwrite; require a separate output path because fingerprint-then-rename cannot protect external saves.
+
+- Imported-source protection must conservatively reject case aliases on Windows/macOS and Unicode normalization aliases on macOS, including after the original source has been removed.
+
+- Treat the external `0.0.1` npm packages only as name reservations. The `0.1.0` source tag failed before registry publication and remains immutable. Patch version `0.1.1` is the first functional release of all seven packages through the exact-tag OIDC workflow. After a failed React Forge release, fix the cause and bump the patch version rather than rerunning or moving its tag. Publish only a complete verified seven-package candidate through the configured Trusted Publishers.
+
+- React Forge native/system-font build, integration, rendering and benchmark tasks must remain uncached. Use package-owned scripts and record test renderer/font provenance without bundling system fonts. Retain actual packed-consumer CLI coverage. Fonts/assets participate in immutable revision snapshots; disposal owns in-flight mounts and mutations.
+
+- Word list components must carry stable list-instance identity into the native model. Separate numbered lists restart independently; items within a list share numbering, and imported numbering definitions remain untouched.
+
+### packages/react-forge constraints
+
+- Follow `packages-react-forge-contract.md` for local Office/PDF and `packages-react-forge-figma-contract.md` for explicit remote Figma publication. Keep their storage and failure contracts distinct.
+
+- Preserve external content, verify revision guards before mutation, retain confirmed IDs after partial application and reconcile unknown writes before any retry. Refresh guards for indirectly changed resources and variant parents after each batch. Remounting must transfer retained ownership without deleting omitted descendants. Never infer node ownership from names.
+
+- Run package build, typecheck, lint and tests, the examples' standalone TypeScript checks and relevant installed CLI coverage. Remove generated `dist` after validation.
+
+- Keep `ci:host` uncached and pass `CARGO_TARGET_DIR` through its task-local strict environment allowlist so raw Cargo tests, Clippy and Windows console validation use the configured dependency-cache directory. An unset variable retains Cargo's default; preserve the native builder's explicit directory selection and existing host gates.
+
+- CLI signal tests must wait for mounted-effect readiness with a bounded 30-second startup deadline, report early process exits, and cover delayed task startup before checking cancellation and effect cleanup.
+
 ## Storage
 In-memory sessions and explicit local input/output only, a documented departure from R2 defaults. Accept bytes or explicit paths for documents/images/fonts. File exports sharing a canonical directory identity are serialized in invocation order across sessions, including case and symlink aliases; a cancelled waiter cannot release an earlier publisher. Different directories and buffer exports remain independent. Output conflicts fail by default; explicit overwrite uses same-filesystem atomic publication. Imported sources and canonical path aliases reject replacement with `unsupported_edit`, including explicit overwrite; callers must select a separate output path. Portable unconditional rename cannot protect an external save after fingerprinting. Failed/canceled operations preserve existing files and clean owned temporary output. Disposal never deletes exported files.
 

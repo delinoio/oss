@@ -55,6 +55,30 @@ Native connection edges reserve an immutable private local ledger record before 
 
 CLI individual controls are `notification configure --revision N` with any of `--questions`, `--approvals`, `--succeeded`, `--failed`, `--stopped`, `--server-lost`, `--server-restored`, `--worker-unavailable`, `--worker-available`, `--quota-exhausted`, `--schedule-start-failed` and `--schedule-offline`, each `on|off`. Unspecified choices retain the acknowledged generation. CLI sends the exclusive optional-bool `SituationNotificationChanges` shape plus the original expected revision through the existing Set RPC. The original actor/revision/typed changes bind its durable receipt; unchanged values are resolved inside the write transaction. A committed lost acknowledgment can therefore replay the exact request without a new preference read or stale revision rejection. Complete frontend saves and original legacy receipt shapes remain unchanged. Do not combine these controls with legacy combined flags. Public JSON preserves explicit defaults and decimal revision strings; request IDs retain ordinary exact-retry ownership. `notification observe-connection` is the fixed native sidecar projection of actual transport outcomes, not an execution probe.
 
+### cmds/delidev-cli/internal/cli constraints
+
+- `server overview` / `SystemService.GetOverview` are owner/client-only read observations. Count retained active execution ownership, current unanswered open interactions independently of inbox read state, and registered versus live authorized Workers. Require stream presence, enabled machine, unrevoked Worker identity and a fresh current lease for connected counts; never equate connection with execution readiness. Read one authorized database snapshot under a bounded deadline, return exact integer counts and server UTC day boundaries without source content or secret inspection, and keep ordinary Worker-compatible status unchanged.
+
+### cmds/delidev-cli/internal/server constraints
+
+- Situation notifications follow the Inbox contract under System 58. Join the bounded ten-second Worker observation loop and preserve exact 45-second original device/instance baselines. Only valid ordered ChatGPT usable-to-exhausted observations and original Schedule pre-start/offline outcomes publish operational events. Unknown, revoked, replaced, reset or restored observations grant no edges or recovery execution.
+
+### cmds/delidev-cli/internal/store constraints
+
+- Notification preferences and display reservations follow `cmds-delidev-inbox-contract.md`. Derive their client identity from the authenticated principal, recheck current source/Archive/dispatch/recovery and response state at claim commit, and reserve once before any native side effect. Receipt replay and reconnect return observation only, never another display grant; no TTL or failed/uncertain report can requeue a notification. Keep reports metadata-only and terminal, with OS submission distinct from human observation. Neither preference edits nor claims/reports can change source responses, inbox reads or execution. Preserve synchronized pre-migration backups and original v1-v16 history when adding schema v17.
+
+- Follow `cmds-delidev-inbox-contract.md` for retained inbox sources. Atomically create one independent unread inbox reference with each native question or terminal observation; preserve native terminal evidence separately from session outcome and process cleanup. Read-state revisions belong only to inbox entries and must never stale an active interaction-response control or authorize execution. Reference-only source replay cannot duplicate entries or reset read state. Migration must back up first, process bounded source pages, retain exact original records and fail atomically on inconsistent ownership without inventing missing history. Joined inbox reads must revalidate the client, bind pagination to filters and the inbox event epoch, bound complete source documents and return current session/interaction state from one read transaction. Read-state receipts bind the acting client and return current views without reapplying old marks. Native notification delivery/deduplication remains a separate integration.
+
+- Grok typed tool observations and interactions use existing Resource JSON storage and scoped bounded reads; preserve publication sequence, exact original native ownership and original request contents in Session/Inbox projections. Close SQL row readers before nested resource reads, and bound complete retained journals without truncation. Derived search projection or native restoration requires independent typed ownership; tool paths and descriptors remain inert.
+
+- Account deletion removes only its account-scoped subscription-recovery Inbox entries in the same transaction through ordinary tombstone/receipt-redaction/event publication. Preserve unrelated account and session Inbox entries and bound every read page.
+
+- Preserve issue #2055 typed version-1 metadata preferences/checkpoints, reservations and Worker baselines under the Inbox/storage contracts. Couple the original preference revision atomically, reject destructive legacy writes, retain source-owned claims without expiry, remove source/Inbox orphans, and preserve current preference/claim authority through restore quarantine. Do not reinterpret new kinds through legacy delivery CHECK values or consume reserved migration 32.
+
+### cmds/delidev-cli/internal/worker constraints
+
+- Persist native approval observations through their dedicated pinned harness/version graph and the same atomic interaction/index/inbox/event transaction as questions. Deep-copy original scopes before outbox retention, preserve nullable collections and exact offered policy choices, and reject mixed payloads or unsolicited responses. Approval and question payloads share count/open/byte limits; the existing database byte column accounts for either type. Closure, terminal outcome and inbox read state cannot authorize a response or erase the original approval. Dedicated question response paths must reject approvals; approvals use their own owner acceptance/control delivery boundary.
+
 ## Storage
 Schema v17 adds per-client preference revisions and client/inbox-unique delivery reservations. It stores only opaque IDs, closed kinds/states and booleans, with inbox deletion cascading to that inbox's reservations. Migration from v1-v16 retains a synchronized pre-migration backup, preserves original resources/receipts/history and starts with no invented delivery evidence or preferences. Existing conflicting tables fail migration atomically; they are never adopted or overwritten. Reopening preserves reservations, including claimed-but-unreported uncertainty. Ordinary preference and delivery writes do not create inbox resource revisions/events.
 
@@ -76,6 +100,8 @@ Native publication, retained interactions, execution completion, resource events
 
 ## Change Triggers
 Update this contract, command/session/protocol contracts, project index, validation records in pull requests, issues and CI logs/artifacts and scoped AGENTS whenever source kinds, read-state ownership, public operations, migration or notification boundaries change.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - [Project](project-delidev.md)

@@ -23,12 +23,18 @@ Provide a Go CLI that preserves terminal fidelity for AI-agent workflows and bri
 - Release signing may publish Sigstore sidecars in addition to `SHA256SUMS`, but direct installers verify only `SHA256SUMS` and must not require bundle sidecars or `cosign`.
 - Homebrew distribution must install `derun` from GitHub release prebuilt archives (darwin amd64/arm64 and linux amd64/arm64) instead of source builds.
 
+## Project requirements
+
+- `derun` -> `cmds/derun`
+
 ## Change Policy
 - Update this index and `docs/cmds-derun-foundation.md` together whenever command shape or runtime contracts change.
 - Update this index and `docs/cmds-derun-foundation.md` together whenever user-facing error message contracts or compatibility tokens change.
 - Update `.github/workflows/release-derun.yml`, `scripts/release/update-homebrew.sh`, and `packaging/homebrew/templates/derun.rb.tmpl` in the same change when derun release artifact names, target matrix, or package-manager distribution contracts change.
 - Keep direct installer contracts in `scripts/install/derun.sh` and `scripts/install/derun.ps1` synchronized with release signing changes.
 - Align command lifecycle changes with `cmds/AGENTS.md` and root `AGENTS.md`.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - `docs/project-template.md`

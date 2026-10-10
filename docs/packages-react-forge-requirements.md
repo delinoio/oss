@@ -20,6 +20,8 @@ The issue originally limited support to **Node.js 24, React 19.2.8, and macOS ar
 - Searches for `forge` and `"react-forge"` found no existing GitHub issue.
 - No repository issue template or `PRD` label currently exists.
 
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+
 ## Current Gap
 
 Developers cannot currently compose documents using React components, Context, Hooks, asynchronous data, and reusable document elements.
@@ -242,6 +244,8 @@ This additive approved scope does not remove the original document requirements.
 
 Deliver original reusable TSX audio-product examples (headphones, DAC/amplifier, stand and combined studio), deterministic geometry/texture source and provenance. Validate actual exports using Khronos Validator, independent ufbx, pinned Blender 4.5 LTS empty-scene imports and 2048-pixel front/back/oblique/detail renders without material/mesh repair, plus interactive local GLB viewing. Inspect and correct visual faults, record versions/hashes/observations, and state unexecuted hosts honestly. Extend CLI/MCP, installation consumers, six-platform engine CI and Linux visual CI. Run root Rust tests, relevant Clippy, package build/typecheck/lint/tests/example checks and public-doc tests; update contracts/AGENTS and remove generated dist. Scene import/editing, animation, rigging, refraction, transmission and advanced coatings are excluded. Full details are in `packages-react-forge-scene-contract.md`.
 
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+
 ### CI scope follow-up (2026-09-26)
 
 The explicit request for this PR authorizes removing all React Forge scene CI.
@@ -289,3 +293,6 @@ README and public guides together; preserve static release history and identify
 animation as unreleased. Existing-file import, automatic rigging/weights, IK,
 retargeting, physics, clip blending/playback runtime, Unity/Unreal acceptance and
 npm publication are excluded. Looping belongs to consumers.
+
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.

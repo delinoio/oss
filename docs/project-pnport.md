@@ -105,8 +105,14 @@ The Linux syscall adapter permits ordinary Node/libuv IPC that reserves optional
 
 The macOS multi-group ownership extension is implemented as defined in the Rust foundation contract: native birth/version admission, authenticated accepted-record recovery, and kernel audit-token signals. Full native acceptance remains a separate stable release gate.
 
+## Project requirements
+
+- `pnport` -> `crates/pnport`, `crates/pnport-core`, `crates/pnport-preload`, macOS `crates/fspy_preload_unix`, `packages/pnport`, `apps/public-docs/docs/pnport`
+
 ## Change Policy
 Update this index, the relevant domain contracts and AGENTS files together. Record implemented behavior and outstanding release gates separately; preserve deferred Windows requirements and keep #958 open until the complete scope is accepted.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - [Requirements](crates-pnport-requirements.md)

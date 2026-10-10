@@ -84,6 +84,106 @@ never the inherited last source turn. Check these identities before changing
 progress or queue accounting; rejected publications leave source, child, queue
 and original job records unchanged.
 
+### cmds/delidev-cli constraints
+
+- Codex fork Local sharing is limited to original Local manifests with no parent-owned checkouts. Reject managed Worktree sharing before job acceptance and again before Worker native inspection/preparation and server publication; parent deletion retains those paths. Independent Worktree copying remains available. Follow `cmds-delidev-forks-contract.md`.
+
+- Independent managed ChatGPT Fork follows issue #1979 and `cmds-delidev-forks-contract.md#managed-chatgpt-independent-fork--issue-1979`. System 53 / Worker 29 separately authorize original-account native Fork; ordinary Fork and managed Sidechat capabilities do not. Preserve exact settled tool history, original source/settings/reviewer/generation, credential-free inspection, exclusive EXECUTE Take, capture/join/plaintext cleanup and durable Finish before publication. Child runtime/workspace/checkpoint lifetime remains independent after parent deletion; no migration, replacement credentials, command replay or path rewrite.
+
+### cmds/delidev-cli/internal/cli constraints
+
+- `session fork` uses authenticated Fork/GetSessionFork and preserves accepted job/request identities on bounded wait failure. Keep dispatch in `dispatch_session.go`, retain the two-minute Worker bound with a 145-second command deadline, and never replay creation while observing a job. Follow `cmds-delidev-forks-contract.md`.
+
+### cmds/delidev-cli/internal/domain constraints
+
+- Same-account Codex forks follow `cmds-delidev-forks-contract.md`. Keep source boundary reservations read-only, original actor/current account checks at acceptance/claim/publication, once-only journaled native Fork, private rollout proof, complete multi-repository snapshot checks across native creation, separate opened roots for copy reads/writes, synchronized copied files/directories, independent child queues and immutable continuation settings. Unknown native/cleanup outcomes never authorize another Fork.
+
+- Fork-origin metadata is a validated child-owned immutable seed with original Worker cleanup device and checkpoint/input digests. Permanent-deletion work may contain a bounded child fork-runtime ownership reference before any execution copy exists; parent work must never adopt a published child runtime. Follow `cmds-delidev-forks-contract.md`.
+
+- Observed native subagents retain version-1 paused completion even after every child closes. Fork requires an independent version-2 checkpoint; child observation or cleanup cannot promote that completion. Preserve both the subagent and fork contracts.
+
+- Native Fork accepts API-authenticated Codex sources and the separately negotiated bounded OpenCode Unix General Chat profile. OpenCode freezes all five original operation UUIDs, a complete native message/part clone map and child-owned inherited transcript provenance before publication; inherited messages grant no queue/input or accounting authority. Reject managed subscription configuration before acceptance and Worker journaling until Fork owns a separately verified protected lease and joined credential write-back; native source inspection grants no authentication authority.
+
+- The existing 1 MiB Worker job output bound also covers the complete OpenCode Fork identity map. Worker preflight must reserve the entire serialized result before native mutation; native message/part inspection maxima cannot authorize truncation or an oversized durable output.
+
+- Fork publication retains the original v4 startup selection on the child before parent-owned creation jobs can be purged. Use that child-owned digest/selection for independent execution; missing older seed evidence requires recovery, never a replacement executable. Response usage accepts optional bounded original startup version metadata, and compaction attribution reads the exact completed source job readiness without rewriting assignments. Follow the Fork, startup and usage contracts.
+
+- OpenCode independent Fork children retain their original native creation request and closed original publication proof atomically in the immutable child-owned seed at verified publication. Bind the expected request to the child, original input/output digests, runtime/checkpoint, Worker and complete immutable selection before recovery admission; a mutable valid UUID grants no authority. First and later completed-report recovery use resumed native claim version 2 and the independent Fork runtime, preserving current binding/input and original Worker device. Legacy omitted markers require the exact retained completed Fork input/output, digest, child/runtime/native checkpoint and immutable selection; missing or foreign proof stays pending. Parent deletion cannot become a new-child recovery dependency. No migration or protocol allocation.
+
+- Manual compaction of a settled first Fork-child turn clears the one-shot Fork import in its fresh restore and retains the exact independent Fork runtime as history. Preserve legacy assignment 3 to restore 2, startup assignment 4 to restore 4, all immutable source/account/configuration/checkpoint and cleanup facts, negotiated harness capability and Sidechat read-only/dependent-parent gates. No native Fork replay, allocation or migration.
+
+### cmds/delidev-cli/internal/harness/opencode constraints
+
+- Native summaries/forks must retain original source identities, complete history, nullable usage and protected runtime ownership. Never manufacture history, rewrite native database rows, infer native acceptance from HTTP success or replay uncertain native mutations.
+
+- Issue #1210 preparation owns only bounded Unix plain-text General Chat native Fork, complete ID-clone/history proof, explicit no-change relocation and copied-source deletion. Use an unregistered fresh nonce without inference; native agent/model absence is an explicit preparation state. Claim every mutation once and reconcile exact owned native state after response loss without resend. Preserve inherited paths/usage as provenance, not filesystem or accounting authority.
+
+- Native checkpoint metadata uses the strict declared 8 MiB decoder ceiling, retaining canonical bytes and independent complete private-file inventory verification. Fork source inventory exposes content-free original IDs only after full private checkpoint/profile validation; it grants no native mutation or inference authority.
+
+- Fork source eligibility reserves the complete serialized child checkpoint before workspace copying or any native claim, including duplicated histories, full identities and metadata bounds under 8 MiB. Conservatively retain all source file descriptors in the estimate and reserve the separate 64 KiB fresh SQLite runtime inventory profile. Capacity exhaustion grants no mutation; unexpected native auxiliary growth cannot enlarge this profile. Follow `cmds-delidev-forks-contract.md`.
+
+### cmds/delidev-cli/internal/process constraints
+
+- Unpublished Fork owner retirement requires joined completed native scopes, the retained directory identity when available, an exclusive recovery lock, empty-index removal and synchronized parent/absence checks. A path or arbitrary empty index cannot reconstruct original ownership; foreign and uncertain evidence stays preserved. Callers retain their original job admission fence.
+
+### cmds/delidev-cli/internal/server constraints
+
+- Same-account Codex forks follow `cmds-delidev-forks-contract.md`. Keep source boundary reservations read-only, original actor/current account checks at acceptance/claim/publication, once-only journaled native Fork, private rollout proof, complete multi-repository snapshot checks across native creation, separate opened roots for copy reads/writes, synchronized copied files/directories, independent child queues and immutable continuation settings. Reject sessions with retained fork-origin metadata before accepting another fork job, including children with a completed turn. Verified pre-native copy failure settles failed and releases the source reservation; unproved cleanup remains uncertain. Unknown native/cleanup outcomes never authorize another Fork.
+
+- Fork children retain their immutable publication seed and original Worker cleanup device independently of parent records. First continuation must survive parent permanent deletion; child deletion before first input must remove only its digest-bound runtime and owned workspace. An unresolved unpublished fork blocks parent deletion intent. Preserve the stable original Git registration source after comparing common directories; never use a removed parent managed path as child cleanup authority. Follow `cmds-delidev-forks-contract.md`.
+
+- Reject version-2 completion reports when original execution progress contains observed subagents. Fork independently requires a version-2 checkpoint, so a closed observed tree cannot authorize a fork or upgrade version-1 completion.
+
+- First fork-child dispatch uses the same stale/future Worker-instance checks as ordinary initial and continuation dispatch, with only the existing one-second future tolerance. A rejected clock observation cannot consume queued input, publish execution work or mark an empty Resume ready.
+
+- First fork-child lost-report recovery derives `HistoryExecutionID` from the immutable assignment's fork runtime, independently of the fresh execution/report ID. Preserve the original thread, accepted input, terminal outcome and paused recovery gates; later continuations retain their independently assigned history identity.
+
+- Bind first fork-child `ThreadBound` publication to the exact assigned native child thread and reject `InputAccepted` reuse of the inherited source turn. Validate both before changing progress or queue accounting; a rejected event cannot change the child, source or original execution job.
+
+- Fork status observation and acceptance-receipt reads require current owner/client authority inside the same read transaction before retrieving job or child documents. Worker or missing principals cannot observe this client-only RPC; a stale paired principal cannot bypass current device authorization.
+
+- Fork acceptance, claim and publication require a present workspace with no pending or uncertain storage owner. Workspace storage waits for every original fork reservation to settle before admitting work; neither operation can bypass the other's retained ownership.
+
+- The independent OpenCode General Chat Fork profile requires System 26/Worker 15, a pinned Unix API-only Build/Execute source and complete plain-text history. Freeze all native operation identities at admission; recheck original account/connection, installation, Worker and source revision at claim/publication. Atomically clone only mapped complete canonical text into a paused empty-queue child with explicit inherited provenance; never copy input authority or usage. Follow `cmds-delidev-forks-contract.md`.
+
+- Remote repository saves accept credential-free URLs with no checkout or Worker validation child. Pin URL/source enum in session and schedule requests. Require capability 19 at managed-clone and independent-Fork admission and assignment; validate independent Fork results without acquiring the parent Git lifetime. Follow the workspace/protocol contracts.
+
+### cmds/delidev-cli/internal/skills constraints
+
+- Joined original session deletion retires accepted snapshot intents. Accepted copies have no automatic expiry. Runtime and independent Fork copies retain their own lifetimes.
+
+### cmds/delidev-cli/internal/store constraints
+
+- Failed independent Fork deletion copies retain their original child process owner. Enrich legacy pending plans only from digest/revision/instance/session/machine/device/runtime-matched immutable job assignments; missing or succeeded-job proof stays unresolved. Preserve unrelated omitted fields, original deletion identities and acknowledged receipts. Stale acknowledgements cannot omit the enriched work. Follow the Fork contract; no RPC or migration.
+
+### cmds/delidev-cli/internal/worker constraints
+
+- Same-account Codex forks follow `cmds-delidev-forks-contract.md`. Keep source boundary reservations read-only, original actor/current account checks at acceptance/claim/publication, once-only journaled native Fork, private rollout proof, complete multi-repository snapshot checks across native creation, separate opened roots for copy reads/writes, synchronized copied files/directories, independent child queues and immutable continuation settings. Pre-native file/HEAD/index snapshot drift must use verified rollback of all owned copies; preserve uncertainty for unproved Git process cleanup and for drift after native creation. Native rollout descendants use owner-only Windows DACL validation and Unix write-bit refusal; Windows permission emulation cannot prove private access. Normalize Git index paths to the Worker-native namespace before canonical comparison. Unknown native/cleanup outcomes never authorize another Fork.
+
+- Rejected Codex fork-source inspection must remove its proven-unused fresh runtime after confirmed source-process closure, synchronize the parent and verify absence before a definite failure releases the reservation. Unjoined inspection or unconfirmed removal remains uncertain; successful inspection retains its runtime for the original native creation.
+
+- Apply the same unused-runtime cleanup to all later pre-native fork workspace rejections after joined source inspection and independently confirmed owned-copy rollback. A `RecoveryRequired` workspace result provides no rollback proof and retains the runtime even before native creation. Revoke removal authority before attempting the child-native process; unknown inspection or possible native child state remains retained. Log closed phases and stable codes only.
+
+- OpenCode General Chat Fork independently verifies the original accepted ordinary v2 report, claims/outbox, cleanup and full native checkpoint under the exact account/connection before copying. Preparation uses a fresh unregistered nonce and five synchronized once-only native claims; keep its envelope/claims outside the native snapshot inventory but inside the child-owned runtime. First ordinary child input independently proves native agent/model before public ThreadBound; retained preparation absence grants no observed selection. Inherited canonical messages and native usage remain provenance only. Follow `cmds-delidev-forks-contract.md`.
+
+- OpenCode Fork reads source/child execution checkpoints with the strict 9 MiB private checkpoint bound; Claude/Codex compaction readers retain the strict 10 MiB bound. OpenCode compaction retention and all restoration readers use one strict 12 MiB canonical envelope, reserving its independently bounded 8 MiB native document, 3 MiB accepted input and 1 MiB closed ownership metadata. Canonical bytes, original native history and all identity/claim checks remain mandatory. Complete OpenCode Fork mappings must fit the existing 1 MiB job output before any workspace copy or native mutation. Reserve a closed 64 KiB General Chat manifest envelope; oversized results fail with ResourceExhausted without truncation or native claims.
+
+- Permanent deletion verifies original OpenCode fork checkpoints with the strict 9 MiB decoder and legacy Codex fork checkpoints with their declared bound. Preserve canonical bytes, digest and original job/runtime/session/machine checks before any removal.
+
+- Negotiate capability 19 before managed workspace or independent Fork cloning. Preserve original source enums, URL, once-only ownership and process-exit uncertainty through leases, recovery, snapshots and deletion; Git authentication belongs to the selected Worker's helper/SSH environment. Follow the workspace/protocol contracts.
+
+- Published Fork runtimes retain their original resolved startup executable independently of source-owned job journals. Resolve the child-owned identity first; legacy journal fallback cannot select a replacement after missing original evidence. Follow the Fork and direct startup contracts.
+
+- Unpublished independent Fork failure owns the original child Git process index. Retire only completed original scopes under the retained directory identity after definite pre-native rejection, independently of caller cancellation. Failed-Fork deletion carries the exact private child owner; started/complete deletion replay treats retired owner paths as absence-only. Foreign, missing original proof or uncertain cleanup stays recovery-required; published children remain independent. Follow the Fork contract.
+
+### cmds/delidev-cli/internal/workspace constraints
+
+- OpenCode General Chat Fork uses the closed `opencode-general-chat-v1` copy profile with an independent 8,192-entry/256 MiB bound. Preserve omitted legacy Codex profiles and their bounds; apply the chosen bound to initial inspection, actual copy and both final comparisons. Only independently owned sibling managed session roots may be relocated; no links, Git administration or special files may enter this copy.
+
+- Remote Worktree sources follow the workspace contract: persist original clone ownership before Git, require native commitments and joined process cleanup, retain uncertain outcomes and legacy accepted requests, and keep independent Fork Git stores and metadata-only Sidechat lifetimes. Managed session clones are an explicit scratch-creation exception with session ownership; they grant no Local folder deletion authority.
+
+- Fork scanners exclude native `.git` aliases by anchored same-parent identity, not case folding. Omit only declared top-level administration; reject General Chat/nested administration, preserve distinct ordinary case-sensitive `.GIT` entries, never follow gitdir pointers, and retain the original snapshot marker presence/identity across copy/final verification; later scans cannot create replacement authority. Follow the fork contract.
+
 ## Storage
 
 ### Native and workspace ownership
@@ -262,6 +362,8 @@ Update this contract, project index, issue-owned evidence, session/workspace/har
 contracts and the relevant scoped Go owners' `AGENTS.md` files for profile or ownership changes.
 Update protocol/client contracts, their AGENTS files and generated bindings for
 RPC changes. Keep desktop contracts/AGENTS synchronized with presentation changes.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 

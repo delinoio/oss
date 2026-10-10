@@ -25,6 +25,34 @@ Developers using clibox directly or through a project-pinned npm dependency, and
 - Dotenv guidance distinguishes the removable `export` prefix (immediate ASCII space followed by another assignment key) from the ordinary `export` key with optional assignment whitespace, including tabs. Keep these examples aligned with both READMEs and the parser contract.
 - Real GUI, clipboard persistence, and application-wait observations remain unverified follow-up work. Mocked and automated coverage must not imply those observations were completed.
 
+### Project requirements
+
+- Public clibox documentation is owned by `apps/public-docs/docs/clibox` at `https://oss.delino.io/clibox`, a major project alongside Runmoor in the shared selector. Follow `apps-clibox-docs-foundation.md`; synchronize public behavior with native/npm guides and keep release internals in `docs/`.
+
+### Application integration
+
+- clibox Homebrew guidance is macOS x64/arm64 only through `delinoio/tap/clibox`. Keep the next-release availability notice until first public installation is verified; document install, version, upgrade and uninstall without exposing release internals.
+
+- `apps/public-docs/docs/clibox` owns the thirteen English public guide routes in `apps-clibox-docs-foundation.md`, including `/clibox/fspy`, with `https://oss.delino.io/clibox` as the canonical destination. Use the existing public-docs build, deployment, theme, and fixed development port.
+
+- Expose clibox as a peer of Runmoor in the shared project selector, with every clibox route in its desktop/mobile sidebar and visible repository social/footer links. Keep the root top navbar empty.
+
+- Explain the dotenv `export` prefix separately from the ordinary `export` assignment key, including the immediate ASCII-space boundary.
+
+- Preserve all 25 commands in published 0.2.0, input/output limits, file-publication behavior, cancellation, platform prerequisites, migration, and verification limits from the clibox contracts and READMEs. Document that Unix execution-wrapper ownership is limited to its process group, so daemonizing workloads and managed services must manage their own lifecycle. Keep the seven issue #971 file-access workflows identified as source-only until a later manual release, with a public guide to their behavior and limits. Do not claim unpublished APT/DNF availability or describe already released syntax as a future feature.
+
+- Validate every clibox route, required article heading/link, exact selector state, sidebar link, and repository region. Apply clean-URL, credential, and private-path checks to clibox HTML and shared stylesheets, with regression fixtures for removed links and rejected content.
+
+- When command or installation behavior changes, synchronize these guides, both clibox READMEs, and the clibox project/domain contracts.
+
+- Native package documentation must distinguish implemented release integration from published availability. Runmoor `0.1.3` native packages have passed public installation verification on all package distribution/architecture pairs; executable installation/update/removal examples must use the published Runmoor package. Keep each other CLI package-manager example unavailable until its own public installation verification completes. Package compatibility does not expand runtime support: the Runmoor manager requires Ubuntu 22.04+ on Linux, and non-Ubuntu package checks cover installation and version/help only. Runmoor and clibox use stable.
+
+- The owner-authorized 2026-10-04 amendment in `project-pnport.md` permits exactly stable 0.1.0 publication with the recorded macOS initialization/SIGHUP failures, separate root clibox watch failure and full-acceptance review deferred. This version-specific exception takes precedence over earlier full-acceptance prerequisites; it does not establish a cause fix or passing skipped checks. Require `pnportReleaseReady: true` plus an exact `pnportReleaseVersion` match; version coordination preserves both fields. Retain all final four-native candidate execution/install/TypeScript/benchmark, integrity, signing, native-before-launcher and immutable-retry gates. New failures still block publication. Keep #958 open, preserve Windows 0.2.0 and immutable 0.1.0-next.1, and disclose unresolved user-facing limits. Remove the stable unreleased notice only after verified publication.
+
+### Rust component integration
+
+- Keep the CLI README and `apps/public-docs/docs/clibox` aligned with user-facing behavior. Follow `apps-clibox-docs-foundation.md`; the consolidated public guide covers the 25 commands published in 0.2.0 and marks issue #971 fspy workflows as source-only until a separate release.
+
 ## Storage
 
 Markdown is committed source. Static output is ignored generated `apps/public-docs/doc_build` content. The documentation adds no user state, telemetry, or credentials.
@@ -51,6 +79,8 @@ Uses existing Rspress, `packages/docs-site-switcher`, the shared Linux package g
 ## Change Triggers
 
 Update this contract, `docs/project-clibox.md`, the clibox Rust/distribution contracts, public-docs project/app contracts, selector contract, docs catalog and relevant AGENTS rules when public behavior, routes or ownership change. Keep both consumer READMEs and public guides synchronized without changing CLI behavior or distribution channels in documentation-only changes.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 

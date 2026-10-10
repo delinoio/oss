@@ -182,3 +182,125 @@ Cancellation before acquisition admits no vault or native work; failed opening
 publishes no owner and permits a later original-authority retry. Release the gate
 before native login/logout or waiting on its process. Original operation claims,
 independent cleanup and joined shutdown keep their existing ownership.
+
+## cmds/delidev-cli/internal/apiproxy constraints
+
+- Keep native bodies, task arguments, buffered frames and credentials out of logs, persistence and public diagnostics. Cancellation, malformed/truncated streams and rejected calls discard private buffers without a direct fallback or provider retry.
+
+## cmds/delidev-cli/internal/cli constraints
+
+- Activity is retired. Keep it out of dispatch, help and client wiring; reject unknown commands before connection, credential input or state creation. Preserve other CLI commands and generated compatibility clients.
+
+- Saved Worker network commands derive the exact private root and original credential from the saved connection. Ciphertext may enter bounded stdin independently of its authenticated digest, never alongside token/pairing input. Import output contains only public original IDs, exact decimal generation and ciphertext digest; omit vault references and reject future/malformed status shapes.
+
+- The private resident `runtime.credentials` operation must use its original in-process server/vault and exact runtime/server/client/attempt ownership. A successful explicit local-registration recovery may rebind the retained attempt to the replacement client only after the original client is confirmed revoked; preserve the attempt/result and never restart a Keychain check automatically. Accept only closed Begin/Status/Retry/Skip payloads; reject extra arguments/scopes and foreign generations. Never create a second vault or add a public credential-check endpoint. Follow the startup Keychain section of the desktop/credential contracts.
+
+- Short desktop Worker preparation/admission loads the private same-server runtime locator and proves the original generation before authentication. Preserve immutable client/Worker credentials and local-pairing proof, persist no-fallback following before admission, and use the existing Local Worker transport for reconnect and update polling/reporting. Missing, foreign or failed runtime proof never permits ordinary discovery or stale-address fallback.
+
+## cmds/delidev-cli/internal/desktopruntime constraints
+
+- This package owns private runtime publication/retirement, challenge proof and generation-bound authenticated encryption of the transport-only bearer copy. Restore it before existing server authentication; keep stable credential formats and public Connect unchanged. Keep stable device authority outside it, validate private files/canonical loopback origins and retire only the original generation. Preserve selected outbound transports; proof failure grants no direct/stale fallback. No public RPC or database migration is owned here.
+
+## cmds/delidev-cli/internal/domain constraints
+
+- Repository clone inputs accept only credential-free HTTPS, ssh:// and SCP-style SSH, with bounded portable folder names and no encoded path separators. Keep helper transports, local paths, controls and URL passwords/tokens outside that contract. When GitHub repository metadata accompanies a remote URL, it must match the parsed GitHub owner/name. GitHub source identities normalize only the GitHub owner/repository namespace case; generic hosts retain security-significant path and transport distinctions. GitHub picker entries use validated numeric/node/owner/name identity and constructed GitHub.com URLs; metadata observations never provide Git credentials or execution authority.
+
+- Model discovery must apply raw/Base64 credential reflection checks to the retained decimal spelling of numeric context limits as well as retained strings; reject the complete catalog before publication on a match.
+
+- Repository remote_url is required on explicit save/import and accepts credential-free HTTPS, SSH or SCP syntax. Empty checkouts are valid. Keep historical omitted URLs readable without migration, extraction or rewriting; pinned preparation source kinds remain closed enums.
+
+## cmds/delidev-cli/internal/harness/codex constraints
+
+- Ordinary native closure uses a three-second stdin EOF window with fenced writes and joined original input/process handles before forced cancellation. Preserve immediate failure/cancellation termination, independent credential scans, symlink refusal and all existing recovery fences. Native temporary helper destructor cleanup never authorizes an account recovery or altered completion receipt.
+
+- Owned API proxies use only canonical authenticated ephemeral loopback URLs. Reconstruct proxy environment, pin and verify disabled system discovery plus all native shell exclusions before start/resume, and retain execution/local credentials only in transient protected forms. Keep upstream credentials in Go; native frame reflection fails before durable publication. Normal and title API profiles share this route ownership without granting subscription routing.
+
+## cmds/delidev-cli/internal/harness/opencode constraints
+
+- Keep structured logs to stable owner/action/phase/error metadata. Never log prompt/output, raw native content, paths, credentials or checkpoint bytes. Keep validation results in PR/issue/CI records, not repository evidence documents.
+
+- Include the original private HTTP password in SSE and content-snapshot guards. Exact owned GET `/config` and `/provider` responses remain private credential-verification inputs; this exception grants no content publication or other route authority.
+
+## cmds/delidev-cli/internal/nativeproxy constraints
+
+- Keep upstream credentials in bounded Go memory and local credentials in the private native environment only. Do not persist, log or serialize either. Exact bypass selection belongs exclusively to the Go profile; no retries, ambient discovery or failure fallback.
+
+- Use isolated controlled proxies and temporary state in tests; never real accounts, system trust mutations or user credential stores.
+
+## cmds/delidev-cli/internal/outbound constraints
+
+- Proxy credentials stay out of URLs, origin headers and raw diagnostics. Keep finite reflection protection bounded and describe its limits.
+
+- Literal and encoded credential forms shorter than eight bytes require complete token boundaries; retain a complete candidate until the next byte or EOF establishes its right boundary. Preserve the preceding emitted byte across reads and treat independent headers as complete values.
+
+- Check HTTP field names against case-folded protected forms because the HTTP transport canonicalizes them. Credential-bearing routes expose no response trailers or trailer announcements; keep the transport's original response private so EOF cannot repopulate a caller-visible trailer map.
+
+- Fixtures use isolated loopback servers and test credentials; never user accounts or real network infrastructure.
+
+- Proxy credential body guards incrementally decode valid JSON string escapes in names/values and JSON SSE data. Select SSE framing from its response media type, with bounded initial-field detection for typeless streams. Decode only joined data fields, ignore metadata for JSON decoding and reset decoder state at every record boundary; literal protection still covers all wire bytes. Retain only bounded decoded matching suffixes and incomplete escapes with their original wire offsets; preserve allowed wire bytes and short-token boundaries. Rejection closes the original response, and cancellation joins without releasing retained protected prefixes.
+
+## cmds/delidev-cli/internal/providers constraints
+
+- Preserve bounded API model IDs containing `~`, including OpenRouter latest aliases, without resolution or rewriting. Keep malformed/duplicate identity and credential-reflection rejection atomic. Credential/model-catalog failure diagnostics use closed stage/reason enums, never parser prose or response/model content; these log-only fields do not change RPCs or durable receipts.
+
+## cmds/delidev-cli/internal/server constraints
+
+- Revoked desktop eligibility must bind the entire credential, including token and pairing identity, to the private commitment retained after fresh authenticated local pairing or a prior immutable completed recovery receipt. Synchronize fresh proof before publishing the active credential or retiring the pending pairing journal; interruptions must retry that exact accepted pairing. Never reconstruct missing original proof from revoked metadata or ordinary reuse; legacy revoked scopes without proof remain recovery-required.
+
+- Require and validate the original local desktop pairing journal and its request-bound grant before revoked eligibility or recovery intent. Both original credential and pairing commitments are mandatory on journal load; validate archived pairing ownership on retries and never reconstruct absent original pairing evidence.
+
+- Enforce the optional desktop `--expected-endpoint` guard against the authenticated owner client before any recovery journal, archive or pairing mutation. The guard never selects another endpoint, and a mismatch preserves the original credential and all recovery state.
+
+- Retain an omitted proxy credential only when mode, canonical host and port are unchanged. An authority edit clears the new profile's credential association unless fresh write-only input explicitly replaces it; preserve independently pinned old routes and their immutable generations until profile deletion. Name/bypass edits alone retain the same authority.
+
+- Before a network credential write, synchronize one server-bound private publication intent with original actor/input and immutable reference. Exact retry preserves that generation. A new request requires authoritative receipt comparison and, for a proved unpublished generation, durable cleanup denial plus confirmed native removal before another write. Unknown receipt/cleanup proof blocks replacement; clearing an accepted intent must never delete its published credential.
+
+- SSH setup uses InstallationService and joined ssh_setup_runtime maintenance. Exact host confirmation precedes protected credential consumption; external once-only claims survive database rollback. Cancel preserves uncertain remote authority, and reconciliation inspects only the original native operation. Never infer readiness from SSH exit or upload alone. Follow the SSH and signed-updates contracts.
+
+- Protocol 2 saves schema-4 inline source routes atomically, deriving each source from every selected Account. Native IDs and metadata grant no credential/native/execution authority. Endpoint autocomplete is an owner/client read that pins original Account/Provider/connection revisions, borrows and clears only protected credentials, joins cancellation, and performs no validation probe, catalog save, resource write, event or receipt. Preserve System 42 / Worker 22 independently of startup 43/23.
+
+## cmds/delidev-cli/internal/store constraints
+
+- Private OpenCode process replacement requires an independently retained original closed checkpoint, fresh process/runtime/credential ownership and one durable predecessor-bound resume claim before native staging or launch. The supported profile is Build/Plan non-VCS text/reasoning plus the positively observed closed inline tool/interaction profiles defined below; do not adopt other tool, auxiliary or child state through it; single-root Git history additionally requires the positive snapshot profile below. Copy exact SQLite database/WAL/SHM bytes into the new private runtime without mutating the predecessor or importing old configuration/account files. Revalidate effective settings, sole original session, idle/pending inventories and all original ordered message/part digests before permitting one fresh input. Preserve full bounded lineage, forbid old request/message/part reuse and require explicit intent after Stop/failure. Temporary read authority ends on every path; history contradictions latch failure and cleanup uncertainty takes precedence. Public first-assignment journals still reject this private resume claim, and version-1 reports cannot grant continuation.
+
+- Automatic reset-credit consent (#2123) is protected account JSON, not a migration. Managed restore explicitly clears standing consent while retaining original episode/operation and credential references under quarantine for independent cleanup. Portable transfer removes subscription authority. Never promote retained history, old-client omission or restore into automatic spending.
+
+## cmds/delidev-cli/internal/tokenprices constraints
+
+- Never log content, credentials, endpoints or user state. Fixture tests use isolated private temporary state and injected transports.
+
+## cmds/delidev-cli/internal/worker constraints
+
+- Explicit fixed Local Workers retain immutable pairing credentials while their transport follows the same server ID through the private desktop runtime locator. Probe each execution generation before bearer release; after opting in, missing runtime authority cannot fall back to an obsolete pairing address. Saved/remote Worker addresses and selected outbound route policy remain unchanged. Desktop shutdown never stops an independently executing Worker.
+
+- Keep Worker request authorization endpoint-allowlisted. Only include `WatchAuxiliaryWork` for paired Worker credentials when its handler rechecks the current machine, instance and negotiated title capability; Worker credentials never gain owner product operations.
+
+- GitHub PATs use the direct OS credential service under `cmds-delidev-credentials-contract.md`, separate from account wrapping material. Persist only scoped generation intents, keyed commitments and irreversible tombstones; never persist PAT payloads or unkeyed hashes. Match exact staged retries, refuse regeneration of a missing sealed entry, record denial before native deletion, and never let an old mutation affect a replacement generation. The protected server owner key is copied only for the store lifetime and cleared after joined closure. Public integration authorization, cancellation and receipts must be composed separately.
+
+- Executable discovery is Worker-owned and generation-bound. An invalid explicit path never falls back to PATH; version probes use private per-harness runtimes, bounded streams/timeouts, no inherited account credentials and disabled automatic updates. A detected version does not prove a native protocol or selected-account capability. Ordinary tests must not probe user-installed harnesses. Reconstruct remote discovery diagnostics before persistence and reject stale discovery generations without overwriting newer selections.
+
+- Follow `cmds-delidev-credentials-contract.md` for protected server secrets. Keep wrapping material in the native OS store, payloads authenticated-encrypted, and immutable request references/deletion markers durable across uncertainty. Never silently unlock, enumerate user credentials, replace a missing sealed key, or use a plaintext fallback. Native tests must use temporary keychains/UUID entries or an explicitly disposable Secret Service container; never lock a user's shared collection. A stored secret does not establish account readiness.
+
+- Public first dispatch scans bounded eligible pages and must join server shutdown before state/credential closure. Atomically validate the selected configuration, current Worker lease, exact protocol-verified installation, original ready manifest and matching validated API connection before committing the first snapshot, FIFO claim, route and immutable job. No native/HTTP/credential work or interpretation of remote filesystem paths belongs inside that transaction. Failed checks roll back the entire prospective claim, then may publish a stable blocking reason without overwriting concurrent controls. Never requeue prior/uncertain executions or automatically resume paused/restored/recovered sessions. Explicit first Resume uses the same checks; later-turn Resume uses the separate exact-predecessor gate. Creation/control receipts join the current execution job without repeating selection or cancellation. Protocol/account checks authorize a bounded native attempt, never fabricated selected-model success.
+
+- Every continuation owns fresh job/execution/process/runtime/outbox/credential identities. Reuse only the validated original private `CODEX_HOME` after the exact predecessor lease/checkpoint and native history/defaults checks; never rebuild missing evidence, adopt a new thread or resend prior input. Publication/relay/completion/control must target current selection, reject old authority and preserve exact prior receipt semantics. Check every retained terminal inbox source before binding a new native turn. Goal-absence resume metadata is content-free and grants no execution authority; populated/foreign goals remain unsupported until their own adapter. Keep stable typed publication-failure diagnostics without raw native content.
+
+- Public completed-execution recovery is a separate actor/revision/execution-bound RPC and owning-Worker job. Freeze original assignment/server/device/instance/checkpoint comparison facts without prompts, responses or credentials. Recheck all terminal/input/Steer/interaction facts at result commit, retain original report identity, reconcile original job/session atomically and always preserve pause plus independent terminal outcome. Missing events, pending publication or unresolved responses cannot become completion proof. Replacement Worker inspection never restores old-instance authority, resends input or grants Resume; current execution authorization belongs to explicit Resume.
+
+- OpenCode discovery owns a fresh authenticated loopback server with an ephemeral secret and exact nonzero selected port; never attach to a user TUI, remap after a conflict or inherit credentials/configuration. Keep its protocol runtime separate from version-probe side effects. Require the owned official SDK startup record, actual absent/wrong/original credential checks, exact healthy/version facts, empty global config and bounded static operation advertisements. HTTP uses only the original authority and closed global/static GETs without proxy/redirect/retry. Project initialization and its managed settings/plugin dependencies require separate execution authority; OpenAPI advertisements cannot grant account/session readiness. Join output drains and owned cleanup before deleting state, and keep secrets, native endpoints and diagnostic bodies out of logs/public metadata.
+
+- OpenCode private API initialization must compare complete effective configuration before and after provider inspection, and require exactly the selected configured provider/model, scoped relay credential, native package and explicit capability/rejection profile. Native provider options contain credentials despite their public-info name: keep bodies private and log only bounded phase/status/code facts. Reject overrides, extra providers/models, ambient credential sources and changed native selection before any session claim. Native connected flags and zero default prices establish neither credential readiness nor actual cost; this read-only profile does not grant public execution or replace managed-policy/workspace/account validation.
+
+- Install managed execution credential cleanup at the auth-file write boundary, before publisher/registration failure paths, including predecessor runtimes. Remove and synchronize only owned authentication after confirmed native closure or before any native ownership; unconfirmed startup/closure retains its recovery lease.
+
+- Retained managed native history must pass the bounded cleanup scan for both raw tokens and padded/unpadded standard/URL Base64 copies before confirming credential removal. Retain original history and uncertain ownership when that scan fails.
+
+## cmds/delidev-cli/internal/workernetwork constraints
+
+- Keep recipient private keys and derivative contents in the existing OS-key-wrapped credential Vault. Ordinary metadata contains public recipient/reference, scope, generation and ciphertext digest only. No plaintext fallback, key regeneration after uncertain publication, ambient route discovery, older-profile fallback or offline readiness.
+
+- Tests inject isolated protected stores and temporary state. Never read user credentials or access real proxy infrastructure.
+
+## cmds/delidev-cli/internal/workspace constraints
+
+- Repository Clone owns a separate original-job-bound private staging claim and has a ten-minute execution deadline. Capture the empty staging checkout's native identity before Git so completion cannot adopt its replacement. Use credential-free HTTPS/SSH URLs and the computer's existing Git credentials, with an explicit `origin` remote and no PAT, hooks or recursive submodules. Publish the validated checkout without replacing any destination. Cleanup requires the original claim, parent/staging native identities and joined process termination; uncertainty retains files for recovery. Published checkouts become user-owned Local folders and remain intact after registration failure or configuration deletion. This exception to snapshot-only scratch creation grants no snapshot/session deletion ownership.

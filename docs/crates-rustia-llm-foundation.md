@@ -39,6 +39,16 @@
   - handler success payload is serialized as JSON string via `serde_json::to_string`
   - handler and serialization failures are returned as tool errors
 
+### Project requirements
+
+- `Llm` -> `crates/rustia-llm`
+
+### Rust component integration
+
+- `crates/rustia-llm`: aisdk tool adapter crate for rustia-based function-calling input validation.
+
+- `rustia-llm` crate changes must update `crates-rustia-llm-foundation.md` and `project-rustia.md`.
+
 ## Storage
 - No persistent storage contract.
 - All parsing/validation/execution state remains request-scoped in memory.

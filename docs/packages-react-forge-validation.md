@@ -106,6 +106,8 @@ Foundation PR #967 at `303fa6747d89fae427725b6f50e6a1a58b10bafb` is the reused r
 ## Change Triggers
 Update evidence and relevant project/native/Node contracts when formats, preservation, runtime compatibility, fonts, lifecycle, limits or validation commands change. Keep central CI path selection, required result aggregation and owning AGENTS rules synchronized.
 
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+
 ## References
 - [Project](project-react-forge.md).
 - [Complete requirements](packages-react-forge-requirements.md).

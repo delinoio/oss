@@ -78,6 +78,74 @@ CLI commands are `session budget get --id ID`, `session budget set --id ID --rev
 ### Auxiliary title usage
 Automatic title responses retain the existing immutable usage record with purpose `session-title`, original execution attribution, and a separate native thread/turn. A valid title may still be applied when native usage is missing; missing counters, prices and actual spend remain unavailable. Usage summary response counts and accepted-execution-missing-response coverage include only purpose `conversation`, so title inference never appears as a conversation turn. Lifetime session estimate totals and the matching-currency budget gate include a title response estimate once when the original usage and price basis are available. No separate budget, reservation or billing guarantee is introduced.
 
+### cmds/delidev-cli/internal/cli constraints
+
+- Daily/model Usage analytics extend the existing authorized response-summary snapshot. Bucket `response_usage.created_at` by explicit IANA calendar days (including DST and clipped endpoints), keep all exact original model groups for ID-tuple-stable ordering and server-computed top-five/Other, and preserve the old summary-only request shape. Validate timezone/granularity and total protobuf/JSON bounds before returning; failures never expose partial analytics. CLI syntax is `usage summary --granularity day --timezone <IANA>`.
+
+- `usage summary --accounting-profile native-units-v1` requires the server echo before exposing native units. Omission preserves the existing response-only profile; unknown values fail. Keep source kinds and exact decimal totals distinct.
+
+### cmds/delidev-cli/internal/domain constraints
+
+- Keep negotiated native accounting unit kinds distinct under the usage contract. GrokClosedInput preserves its supplied uint64 total, original input/history/closure/source references and immutable attribution; it has no pricing or budget contribution.
+
+- Shared subagent usage validation requires an original bounded native report for every supplied usage observation. Decode the exact source-specific Codex cumulative, Claude task or Claude provider schema, reject unknown/case-aliased/duplicate fields and invalid native counters, and require exact nullable normalized counter parity before accepting any batch member. Collaboration/activity cannot carry usage. Validate Claude numeric counters through the existing closed provider schema using a temporary copy; preserve original report bytes and keep unavailable usage nil.
+
+- ClaudeMainLoopInput and OpenCodeStep accounting follow the usage contract. Keep original source identities and immutable prices, nullable Claude primitives, unavailable OpenCode normalized zeros, independent native totals and disjoint OpenCode reasoning pricing. Never add assistant/cumulative/inherited observations or reinterpret units as responses.
+
+### cmds/delidev-cli/internal/harness/opencode constraints
+
+- Bound early native events privately until dual ownership is verified. Child arrivals cannot acknowledge root input or enter root text, usage or completion. Parent task completion never proves child settlement. Every fresh history read reconstructs status from its owned user/assistant records; earlier failed, interrupted or completed status cannot fill a truncated page. Completion/Stop inventories retain all original children and independently join process cleanup; child-bearing histories grant no continuation checkpoint. A pinned unfinished child record may report interruption only through the separate original Stop/scope-cleanup source after joined cleanup, preserving its unfinished native history without fabricating native settlement.
+
+### cmds/delidev-cli/internal/server constraints
+
+- Before subagent resource/session/event writes, shared validation must close each supplied native usage report to its original source family and compare exact nullable normalized counters. Arbitrary JSON objects, unknown nested metadata, missing reports, invalid native counters and mismatched scopes or projections reject the entire batch without advancing execution ownership. Preserve validated native report bytes and original receipt replay.
+
+- Native input accounting capability 8 composes Claude main-loop inputs and OpenCode step-finish sources with negotiated native-units-v1 reads. Preserve response-only fields, original failed-input usage, combined source/group/wire bounds and separate budget unit coverage. No native source IDs, content or credentials enter aggregates.
+
+- Token price collection uses the explicit server outbound route, bounded joined requests, private cache and original actor authorization. Automatic/Manual policy and current price compare-and-save share a transaction. Request replay returns the original accepted policy and immutable price. Log stable codes/counts and original request UUIDs without raw upstream/model keys, credentials or native content.
+
+- Token pricing mode changes check the original displayed active price revision together with original policy/provider revisions before changing policy. Automatic refresh does not advance policy revisions; it cannot silently replace the reviewed Manual freeze basis.
+
+### cmds/delidev-cli/internal/store constraints
+
+- Follow `cmds-delidev-usage-contract.md` for exact response usage. Hash native response identity before publication, pin original assignment attribution, and atomically deduplicate by account/provider/response with immutable evidence. Never sum cumulative snapshots or relabel inherited responses. Missing counts stay unavailable; native amounts without verified currency/billing semantics cannot become actual cost or estimates. Preserve transactional sequence rollback, backup-first migration and original history.
+
+- Token pricing is an explicit immutable estimate basis, never native actual cost. Keep source/date/currency/mode/rates and exclusions, use exact integer arithmetic, preserve missing rates/counts and only split validated cache-read subsets with known-zero cache writes. Snapshot the matching original provider/model price in the response publication transaction; replay, later edits/deletion and migration cannot silently reprice history. Separate token-basis completeness from incomplete native telemetry and all currencies.
+
+- Migration 26 rebuilds the shared native accounting ledger after real 25, retaining Grok body bytes and no historical raw backfill. Publish priced input units only with their touched original usage source in the same receipt transaction; validate indexed attribution against body and original price on reads. Keep response and native lifetime tables independent and combine only in budget evaluation. Summary reads enforce the combined 500 distinct immutable pricing-basis limit across all accounting families; shared price IDs retain separate category projections while counting once.
+
+### cmds/delidev-cli/internal/tokenprices constraints
+
+- Follow the usage, catalog, network and structure contracts. This separate Go manager fetches only the fixed models.dev provider API with the selected server outbound route; no redirects, ambient proxy or direct fallback.
+
+- Cache non-secret validated snapshots atomically in private state, coalesce refreshes and join shutdown. Refresh updates only Automatic policies after transactional authority/revision checks; manual and historical first-retention evidence remain authoritative.
+
+### cmds/delidev-cli/internal/worker constraints
+
+- Grok interrupted text has a separate native result/turn/prompt-completion profile. Preserve the exact original session/prompt/model and cancellation category, with context tokens separate from absent usage. Correlate all three native cancellation observations; notification delivery, idle state and force cleanup alone cannot replace them. Parsing an interrupted result never grants durable Stop, public completion, history continuation or replay authority.
+
+- The pinned Codex legacy profile enables raw supplemental observations for exact live question/permission acceptance and the separately typed per-response usage adapter. Keep raw instructions, answer text, upstream response metadata and diagnostic fields out of normalized events/logs/journals. Match original arrival/response/thread/turn/call and the canonical answer digest; never treat closure, cancellation output, another tool/namespace or duplicate output as new acceptance. Question call IDs cannot be reused within a turn. Publish content-free acceptance only after the original durable delivery/claim, retain independent transport/closure/cleanup and decrement outstanding acceptance once. Receipt replay and later Worker loss preserve confirmed facts without clearing unrelated recovery or resuming input; missing history remains uncertain.
+
+- Usage summary reads are owner/client-only, transactionally authorized and bounded by time, source/group counts, deadline and both wire encodings. Aggregate exact response rows only, keep arbitrary-precision decimal known subtotals and unavailable counts, and preserve original IDs when current labels change or disappear. Explicitly retain incomplete root/resume/child coverage and unavailable actual costs; estimates retain original price versions and reads cannot authorize work. The pinned Codex raw-event flag is start-only and must not be sent as a fictitious Resume capability.
+
+- Public pricing writes keep actor-bound reference-only receipts, independent price revisions and immutable accepted responses. Aggregate historical estimates in the same bounded authorized usage snapshot, reject corrupt/missing derived records without partial totals, and return separate currencies plus source/category coverage. Native source limits remain independent of complete token-price calculations.
+
+- Claude main-history proofs retain original native message identity/role and conversation payload digests; finalized provider usage/stop/context metadata is separately pinned by exact file bytes and cannot become immutable block accounting. Verify original order on the native selected parent chain, report unobserved messages on every branch, reject partial/foreign/malformed/unknown records without truncation, and keep reads cancellable and bounded. Main transcript evidence alone cannot grant filesystem/process ownership, child-history completeness, durable checkpoint publication, account/configuration authority or native Resume.
+
+- OpenCode usage publication keeps original finished-step and finalized-message sources separate and once-only under the live binding/outbox. Preserve native disjoint counter meanings, missing total and exact unpriced estimate spelling; native defaults and overlapping sources cannot enter exact response accounting, prices or budgets. Bound retained sources and session history, reject changed ownership/counters and block the original transcript after uncertain usage publication. Validate decimal signs without exponent expansion or underflow-based acceptance.
+
+- OpenCode snapshot/patch/step references remain opaque immutable artifact evidence, independent of usage and without restore/file authority. Preserve source, part/parent, ordered paths and exact start/completion. Session diffs and original input summaries retain independent event/source ownership, absent optional fields, counts and empty lists; never substitute a session empty diff for an input summary. Deduplicate original progress events across Todo/change kinds and require native history coverage before terminal publication. A Git-root session legitimately reports an empty relative path while absolute directory/root checks remain mandatory.
+
+- Claude usage publication retains original message-start, completed-block, message-metadata and input-result reports separately. Keep exact nullable string counters, native decimal estimate spelling, per-turn main-loop scope and original runtime cumulative model scope; never add overlapping reports to billing, pricing or budgets. Bind provider reports to their original stored message/lifecycle and native envelope, deduplicate receipt and original-result identity, retain immutable assignment attribution and share the session retention bound. No thinking-progress estimate can become provider usage.
+
+- Claude interruption publication follows the sessions contract. Bind exact interrupted-denial settlement, original rejected tool, separate context and session-result envelopes; preserve absent native input identity and overlapping exact usage without fabricating an input result, terminal Inbox entry or cleanup. Retain pause and prior recovery, reject foreign/duplicate/out-of-order records atomically and retry only original outbox receipts. Desktop interruption controls default off and preserve exact original responses; display the independently validated session result without granting Resume or execution authority.
+
+- Claude root API retry progress preserves exact original event/turn ownership, pre/post-acceptance chronology, unsigned decimal counters and explicit nullable HTTP status with a closed native error enum. Keep retry, status, permission, usage and outcome independent. Retry only the original publication receipt, never native input or provider requests. Validate mixed/foreign/reused records atomically and render read-only desktop facts. Existing Stop retry wire records retain their shape; partial-content retry reconciliation and exhausted-retry cleanup require their separate original evidence.
+
+- Every Codex root completion performs state-DB-only descendant inspection before cleanup/continuation, even without observed spawn events. Claude task receipts contain only current-source output/model/usage; retain prior values separately after acknowledgment. Reconcile explicit late task metadata without clearing skip-transcript; stored child history requires exact retained description/depth and selected leaf ancestry. Forwarded user/context and tool results cannot populate assistant output.
+
+- Every supplied child usage observation carries its original bounded native report and passes shared source-family schema and exact nullable counter-parity validation before publication. Codex history uses native cumulative/last/context counters; Claude tasks use all three unsigned task counters; Claude content/history uses the closed native provider-response graph. Missing reports remain unavailable usage, not fabricated counter evidence; retain original bytes and never expose arbitrary diagnostic extensions.
+
 ## Storage
 Schema 14 adds `response_usage` with one UUID-v7 record and a unique `(account_id, provider_id, response_digest)` key. The response body is bounded to 16 KiB. First publication commits the ledger, session progress, event and receipt in one transaction. An exact repeated response under another publication sequence/observation UUID returns the original ID without changing its timestamp, sequence, attribution or counts. A reused observation UUID or native identity with changed evidence requires recovery and rolls back the complete publication; it cannot double charge, silently upgrade missing counters or move inherited history to a new execution/turn/session. Reopening the server preserves this identity check.
 
@@ -107,6 +175,8 @@ Run package Go tests and vet from `cmds/delidev-cli`. Ordinary tests cover exact
 
 ## Change Triggers
 Update this contract, the project index, protocol/session/harness docs, validation records in pull requests, issues and CI logs/artifacts and `cmds/delidev-cli/AGENTS.md` when usage scope, deduplication, pricing, cost evidence, migrations or dashboard interfaces change. Do not promote fixture evidence into actual billing or cross-platform acceptance.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - [DeliDev project](project-delidev.md)

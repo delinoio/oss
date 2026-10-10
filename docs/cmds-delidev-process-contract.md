@@ -29,6 +29,24 @@ ownership still cannot supply reboot completion proof.
 
 The private supervisor transport is internal local IPC only and adds no remotely reachable Worker listener. A dropped control connection cancels the owned scope. Supervisor startup has a deadline, output is bounded by synchronous consumption, and slow/broken consumers cannot authorize duplicate execution.
 
+### cmds/delidev-cli/internal/process constraints
+
+- Follow the parent instructions and `cmds-delidev-process-contract.md`. Native scope journals and joined cleanup retain their original ownership and uncertainty gates.
+
+- `ControllerIdentity` observes an infrastructure controller only. Validate its exact PID/kernel-birth shape and use the closed Alive/Exited/Unknown outcomes. Permission, malformed, unavailable and unsupported reads cannot prove exit; boolean liveness and process-list scans are not proof.
+
+- Independently verified PID reuse or definitive kernel absence proves only the original controller exited. Never adopt or terminate the unrelated current process, reconcile native descendants, remove journals or infer execution cleanup from this observation.
+
+- Preserve Linux boot/start ticks, Darwin kernel timestamps and Windows creation FILETIME. Windows exit state and its final birth comparison use the same retained query handle. Linux signal-zero absence checks deliver no signal; missing procfs data alone grants no proof.
+
+- Keep safe phase/code logs separate from PID, birth, paths and native contents. Record platform acceptance separately from temporary-process fixtures, race tests, cross-compilation and packaging.
+
+- The shared Resume barrier checks the original Start context synchronously before command transmission or suspended-child resume. Observable cancellation/deadline refuses launch and joins the original owner; unconfirmed cleanup remains RecoveryRequired. Preserve once-only successful admission and post-admission cancellation semantics.
+
+### cmds/delidev-cli/internal/worker constraints
+
+- Follow `cmds-delidev-process-contract.md` for Worker subprocesses. Persist execution ownership before the start barrier, record completed ownership after any output-pipe setup failure proven to precede native launch, retain separate native byte streams, and prove owned descendant termination before confirming stop or releasing credentials/workspaces. Never use PID absence alone as that proof or persist command/environment/input/output in ownership journals. Before enforcing owner recovery capacity, retire only platform-validated complete scopes after their controller lock is released; serialize and synchronize retirement, preserve incomplete journals, and retain the owner index.
+
 ## Storage
 Owner-ID directories index process scopes directly, so session recovery does not scan unrelated process history. Worker Git inspection/preparation/cleanup uses these scopes, and workspace rollback requires process reconciliation first. Private atomic ownership journals record version, execution owner, supervisor/process start identity, boot/kernel ownership identity, start-barrier state and reconciled completion. They contain no prompt, command/environment, upstream key, proxy token, or raw output. Keep incomplete journals for recovery. Owner reconciliation prunes only platform-validated completed scopes whose native controller lock has been released, before applying the 10,000 retained-scope bound. It reads bounded directory batches, serializes retirement with an owner maintenance lock, atomically renames each completed scope to a synchronized `.retired-<UUID>` entry and then removes it. Interrupted retired-directory removal is retryable; incomplete/invalid journals and journals still owned by an open Handle are retained. The generic reconciler retains the owner index even when empty; terminal ownership alone retires that empty index and its released recovery lock after synchronizing the independently verified cleanup report acknowledgement. Interrupted terminal retirement is locally retryable without server record availability; missing individual journals still cannot prove individual process completion. This cleanup cannot delete session workspaces.
 
@@ -57,6 +75,8 @@ Platform ownership primitives follow [Linux subreaper semantics](https://man7.or
 
 ## Change Triggers
 Update this contract and scoped AGENTS when process ownership, proof of termination, journal contents or supported-platform behavior changes. Preserve uncertainty whenever native proof becomes unavailable.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 Preparation recovery uses `ReconcileOwnerContext` to stop between bounded native ownership checks when its Worker deadline/cancellation fires. A check already terminating owned work finishes its confirmation before returning. Cancellation is not completion proof; partial reconciliation retains workspace recovery and blocks replacement preparation.
 

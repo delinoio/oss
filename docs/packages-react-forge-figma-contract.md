@@ -23,6 +23,44 @@ Offline CI uses synthetic credentials and fake MCP. Cover model/diff/batching, R
 
 Live evidence creates five editable ROAM mobile screens (Explore, Search, Destination, Itinerary, Saved) in the selected Pro team's Drafts, closes/reopens the session, changes text/images/layout and proves preservation and duplicate-free republication. Also edit an external fixture without Forge metadata. Record URLs, structural checks, screenshots and call counts without credentials or generated dist.
 
+## Project requirements
+
+- Figma creation/editing follows `packages-react-forge-figma-contract.md`. Figma alone permits explicit official-MCP networking and remote publication. Reuse matching MCP Keychain credentials without refreshing/writing them. Preserve unselected external content; report partial/unknown writes and never blindly retry creation.
+
+- React Forge owns `packages/react-forge`, `crates/react-forge-node`, `crates/forge-package`, `crates/forge-document`, `crates/forge-docx`, `crates/forge-xlsx`, `crates/forge-pdf`, `crates/forge-figma`, `crates/forge-sfx`, `crates/forge-sprite`, and `apps/public-docs/docs/react-forge`; reuse existing Forge presentation engines without changing CLI/MCP defaults.
+
+## Application integration
+
+- Keep installation and API examples aligned with the published `@delino/react-forge` package and public types. Document the release version for each available format and retain distinct evidence limits. Distinguish six-host local format support from macOS Keychain Figma authentication; document explicit publication, receipts, preservation, and verification limits without exposing repository internals.
+
+## Rust component integration
+
+- `forge-figma` owns pure bounded Figma model validation, preservation-aware diff and batch planning. Keep OAuth, network I/O and JavaScript execution outside Rust workers. Follow `packages-react-forge-figma-contract.md`.
+
+## crates/forge-figma constraints
+
+- Follow `packages-react-forge-figma-contract.md`. This crate owns only bounded model validation, dependency ordering, diff and page/code/result-sized batch plans.
+
+- Keep credentials, networking, sleeps, JavaScript execution and remote recovery in the Node adapter/session layer. Do not add a Figma REST mutation dependency.
+
+- Only explicit selected bindings and managed children authorize changes. Reject unsupported replacement, nested pages and unprovable preservation before publishing a plan.
+
+- Keep error values stable and content-free. Test planning boundaries with synthetic IDs and data; run root `cargo test` for Rust changes.
+
+## Package integration
+
+- Figma sessions follow `packages-react-forge-figma-contract.md`: local React rendering, explicit remote publication, credential-free receipts, official MCP, shared rate admission and reconciliation before uncertain-write retries. Isolate these exceptions from Office/PDF. CI uses fake MCP and synthetic credentials.
+
+## packages/react-forge constraints
+
+- Figma credentials are read only from the selected host application's matching macOS Keychain record. Never refresh, rewrite, log, serialize or pass them in argv. Expiry and 401 share one session-wide reread allowance; reconnect attempts must not reset it. CI uses synthetic records and fake MCP only.
+
+- `examples/travel-figma.tsx` is an illustrative editable ROAM design. Live receipts/screenshots stay outside the repository; committed evidence contains only non-secret fixture identities, counts and validation results.
+
+- Keep real SDK and installed-archive MCP coverage in the six-host package suite, including entry-relative imports, state retention, source protection, cancellation, process cleanup and fake Figma. Run `typecheck:examples` after building.
+
+- MCP task diagnostics may expose bounded caller-authored compile, task and uncaught React error messages only in tool error results. Validate local JavaScript/JSX helper syntax before evaluation to retain proven compile locations. Replace host-path-bearing resolver messages with a safe caller import specifier when available. Keep CLI/library JSON and operational stderr redacted, omit source excerpts/full stacks/absolute-path fields, preserve existing error codes and Figma receipts, and disclose exception details only when the first file-backed throw-site frame maps to the caller's TSX or local JavaScript/JSX helpers; thrown values without a traceable stack remain generic.
+
 ## References
 - [Project](project-react-forge.md)
 - [Official tools](https://developers.figma.com/docs/figma-mcp-server/tools-and-prompts/)

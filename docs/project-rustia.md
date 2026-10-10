@@ -38,11 +38,17 @@ Provide serde-based LLM JSON parsing and function-calling tool adapter utilities
 - Release tag eligibility remains explicit through root workspace metadata:
   `[workspace.metadata.cargo-mono.publish.tag].packages` must include `rustia`, `rustia-llm`, and `rustia-macros`.
 
+## Project requirements
+
+- `rustia` -> `crates/rustia`, `crates/rustia-llm`, `crates/rustia-macros`
+
 ## Change Policy
 - Update this index and related crate contract docs together when runtime parsing semantics, adapter contracts, or derive expansion contracts change.
 - Keep root and crate-domain `AGENTS.md` ownership mappings synchronized with this index when rustia component paths or stability policies change.
 - Update root `Cargo.toml` publish-tag package configuration in the same change when rustia package release eligibility changes.
 - When upstream parity baseline commit changes, update this index, runtime contract docs, and parity tests together.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - `docs/project-template.md`

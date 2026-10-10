@@ -69,11 +69,17 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 - The Nodeup section must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in the top-level social links and in the document-page footer.
 - Nodeup documentation routes must stay aligned with runtime, release, installer, shim, completion, package-manager, human/JSON output, and color-control contracts.
 
+## Project requirements
+
+- `nodeup` -> `crates/nodeup`, `apps/public-docs/docs/nodeup`
+
 ## Change Policy
 - Update this index, `docs/crates-nodeup-foundation.md`, and `docs/apps-nodeup-docs-foundation.md` in the same change for behavior or storage contract updates that affect Nodeup documentation.
 - Update this index and `docs/apps-nodeup-docs-foundation.md` in the same change for the Nodeup content path, route, theme repository-link surface, toolchain, validation, or publication contract updates.
 - Keep `scripts/install/nodeup.sh`, `scripts/install/nodeup.ps1`, and `crates/nodeup/Cargo.toml` synchronized with release asset names and signing contracts.
 - Keep release, install, and documentation-app contracts synchronized with root, `crates/AGENTS.md`, and `apps/AGENTS.md` rules.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - `docs/project-template.md`

@@ -22,6 +22,10 @@ Execution requires both independently negotiated capabilities, the same account 
 
 Settings appends OpenCode Go / For OpenCode to existing flat service rows with licensed local OpenCode artwork. Connect uses the category-owned name/key form, default OpenCode Go alias, masked key, accessible reveal, API-key focus and explicit Console link. Exact uncertain requests and partial create results retain their original controller until category disposal; presentation dismissal does not manufacture a new account. Manage connection and explicit Disconnect use the shared original-key cleanup flow. English/Korean and theme/reflow semantics remain shared. Quota is unavailable: no quota bars, refresh, reset credits or native subscription login actions.
 
+### Project requirements
+
+- Issue #2097 OpenCode Go/Go Plus follows `cmds-delidev-opencode-go-subscription-contract.md`. Preserve identity 4, System 54 and Worker 28 with System 52 Project behavior ownership. Only the exact OpenCode key-backed service may use the fixed Go Chat Completions profile and original accepted native-session header. Reuse protected AccountAPI receipts, joined revocation and confirmed independent cleanup; no native login, quota authority, paid connection validation or migration. Retain category-owned exact uncertain requests and immutable continuation/Fork attribution.
+
 ## Storage
 
 Reuse schema-2 service Accounts, service Models, immutable execution/job/session documents and protected server `AccountAPI` vault references. Do not create native login IDs, login state, OAuth attempts, bundles or Worker key copies. Portable configuration contains no credential/native authority; restored Accounts remain disconnected and protected cleanup remains independent. No SQLite migration or schema conversion is introduced.
@@ -45,6 +49,8 @@ Reuse the account, subscription, catalog, harness, proxy, execution startup, For
 ## Change Triggers
 
 Update this contract, the DeliDev project index and relevant scoped AGENTS rules when identity, allocation, fixed profile, key ownership, native proof, cleanup or presentation ownership changes. Regenerate Go and TypeScript bindings from the reconciled protocol sources.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 

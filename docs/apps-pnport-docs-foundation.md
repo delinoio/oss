@@ -23,6 +23,24 @@ The preview-testing guide owns the external Turbopack development/build/start an
 
 Benchmark guidance distinguishes released performance from development observations. Cold/warm comparisons retain identical child work and incremental/application cache state, use at least five samples with median/range, identify instrumentation overhead and filesystem count level, and disclose sampled-memory resolution/shared-page limits. Keep internal harness paths and validation records out of the public guide; publication of release numbers remains gated by full four-target acceptance.
 
+### Application integration
+
+- The 2026-10-05 repair amendment in `project-pnport.md` authorizes exactly stable 0.1.2 after every retained final-tag and fresh publication gate. It retains the previously disclosed initialization/cancellation and full-acceptance limits; earlier 0.1.0 authority does not authorize later versions.
+
+- Describe hidden tool-cache coexistence and recoverable macOS pre-launch child rejection as available in verified stable 0.1.2. Published 0.1.0 and 0.1.0-next.1 still reject physical project node_modules, including cache-only directories. Public guidance must distinguish cache storage from installed dependency trees and preserve the published conflict diagnostics.
+
+- pnport stable 0.1.x targets macOS 15+ on Intel and Apple Silicon, with the same full acceptance standard on both architectures. Keep public installation/support guidance aligned with the owner-approved minimum and retain the separate experimental preview limitations.
+
+- Public pnport guides belong to `apps/public-docs/docs/pnport` at https://oss.delino.io/pnport. Follow `apps-pnport-docs-foundation.md`; use the shared accessible navigation and consolidated fixed-port development/publishing pipeline. Describe published stable 0.1.2 with its unresolved macOS initialization/cancellation failures and incomplete full acceptance. Describe experimental npm next separately, with a registry check before installation and known feature/minimum-OS/initialization limits; never claim availability from preparation alone. Preview npm instructions use global installation to avoid a conflicting physical node_modules directory in the selected PnP project; Yarn instructions use project-local PnP installation and `yarn pnport` invocation. Describe Windows x64/arm64 as planned for 0.2.0, preserve its deferred requirements, and never present its rejecting installer as currently supported. Keep compatibility/release evidence truthful and internal details in docs/.
+
+- Public pnport benchmark guidance must keep development observations distinct from released performance, compare identical child work and incremental/application state across cold/warm caches, and disclose instrumented-count and sampled-memory limits without exposing internal harness or validation paths.
+
+- Public pnport installation guidance must explain package-age quarantine while preserving the user's configured gate. Temporary validation may preapprove only the exact five verified candidate package/version descriptors; record that exception rather than claiming immediate default Yarn acceptance.
+
+- Disclose the published pnport `0.1.0-next.1` macOS detached-session/group cleanup gap in user terms, with foreground/daemonization-disabled preview guidance. Do not attribute a later source-only containment fix to that immutable package or equate containment with complete stable process acceptance.
+
+- Keep `/pnport/preview-testing` in the public sidebar and explicit route catalog, linked from overview, installation and getting started. Its Turbopack and TypeScript 7 walkthrough pins the published pnport preview and validated TypeScript 7.1 nightly, uses the `typescript` package and `tsc` command, preserves the TypeScript 7.0.2 macOS signing limitation, and explains project-local cache placement and sanitized reporting without claiming complete tool acceptance.
+
 ## Storage
 Preview installation guidance must explain Yarn's package-age quarantine without disabling a user's configured gate. A global npm launcher can run against an already installed PnP project. Temporary release validation may preapprove only the exact five candidate package/version descriptors after checking their public immutable bytes; disclose that exception separately from default-age-gate acceptance.
 
@@ -42,6 +60,8 @@ Shared docs-site-switcher and existing Rspress build. Curate from the complete #
 
 ## Change Triggers
 Update pnport CLI/npm guides, project index, shared navigation/public-site contracts and relevant AGENTS files together.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - [Project](project-pnport.md)

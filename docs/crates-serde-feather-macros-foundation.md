@@ -17,6 +17,27 @@
 - Macro output must remain compatible with `serde-feather` core runtime APIs.
 - Generated code should remain deterministic for equivalent input types.
 
+### Project requirements
+
+```ts
+enum SerdeFeatherComponent {
+  Core = "core",
+  Macros = "macros",
+}
+```
+
+- `Macros` -> `crates/serde-feather-macros`
+
+### Rust component integration
+
+- `crates/serde-feather-macros`: Proc-macro companion crate for serde-feather.
+
+- Keep `serde-feather` as the runtime-facing crate and `serde-feather-macros` as the proc-macro crate.
+
+- Keep stable derive macro identifiers (`FeatherSerialize`, `FeatherDeserialize`) aligned with `project-serde-feather.md` and crate component docs.
+
+- `serde-feather-macros` changes must update `crates-serde-feather-macros-foundation.md` and `project-serde-feather.md`.
+
 ## Storage
 - No persistent storage contract.
 - Macro expansion artifacts are compile-time outputs only.

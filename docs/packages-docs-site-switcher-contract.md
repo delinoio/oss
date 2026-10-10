@@ -27,6 +27,10 @@
 - Run `pnpm --filter @delinoio/docs-site-switcher test` for the component interaction and pathname-mapping tests.
 - Changes to the enum, registry, markup contract, or keyboard behavior require corresponding updates to the package tests and consolidated public-docs validation.
 
+## Package integration
+
+- `packages/docs-site-switcher`: shared accessible documentation site selector used by the consolidated Public Docs root and all seven project content sections. Follow `packages-docs-site-switcher-contract.md`; keep its fixed site registry, enum IDs, keyboard behavior, focus management, and active-route semantics synchronized across consumers.
+
 ## Change Triggers
 
 - Update this contract and `docs/README.md` when a documentation destination, public label, accessibility contract, or package ownership changes.

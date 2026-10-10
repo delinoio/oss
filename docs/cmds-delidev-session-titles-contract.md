@@ -44,6 +44,20 @@ Manual rename transfers title ownership atomically and advances its generation. 
 
 Authorized session metadata retains typed owner, mode, state and bounded reason: waiting, queued, running, succeeded, skipped, failed, unsupported or uncertain. An explicit `Unsupported` Worker result, including a changed or unavailable pinned profile, remains `unsupported` with the unsupported-profile reason rather than becoming an inference failure. The desktop exposes both state and its safe reason in session details and loaded sidebar rows, including their accessible descriptions. It never infers state from a local request or overwrites the status with cached selection. The new-session page requires server title capability, keeps its first-message draft when unavailable, and never asks users to invent a title.
 
+### cmds/delidev-cli/internal/server constraints
+
+- Proxy title requests commit the original once-only title HTTP claim with their diagnostic send revision and event in one transaction. Diagnostic publication failure cannot consume title authority before transmission. A committed send claim is not provider acceptance.
+
+- Automatic title jobs belong exclusively to auxiliary admission and delivery under `cmds-delidev-session-titles-contract.md`. Primary `WatchWork` skips queued and already auxiliary-claimed titles before generic claim and delivery, preserving ordinary dispatch and targeted controls. Keep original title authority, per-Worker/server capacity and capability gates.
+
+### cmds/delidev-cli/internal/worker constraints
+
+- Automatic titles follow `cmds-delidev-session-titles-contract.md`. Preserve omitted `name_mode` receipt JSON for existing manual callers, bind title inference to the exact original successful Worker/device/instance/server epoch and immutable initial-execution snapshot even after a follow-up changes the selected execution, and during recovery queue title work only if the exact original Worker device/instance completes recovery; replacement recovery settles as skipped/authority-lost. Use a separately negotiated auxiliary stream, and persist the send claim before native profile verification or any provider side effect. Reject a second send claim under a new registration request ID while preserving exact receipt replay. Require both the durable execution-registration claim and one relayed HTTP-request claim before accepting successful title output or usage; typed pre-send failures may report without those claims. Allow only bounded reasoning events/items through the title relay and discard their content in the title Worker; they never grant tool authority or enter the applied title. The capability describes the implemented adapter independently of installation inspection. Initialize the actual auxiliary process using the original execution path/hash; validate effective settings before its native input. Never substitute another PATH executable for original history. Preserve explicit unsupported profile outcomes as `unsupported` with the unsupported-profile reason; do not collapse them into inference failures. Keep title-purpose usage separate from conversation response counts while including known title cost once in lifetime budget gates.
+
+- Worker attachment performs no title or managed-auth profile probes. Title startup failures retain their own unsupported/recovery outcome and cannot block the primary conversation lane.
+
+- Worker revocation settles queued title jobs as skipped/authority-lost and completes pending Archive when workspace ownership is clear; claimed title jobs become uncertain/cleanup-uncertain and keep Archive pending until cleanup is confirmed.
+
 ## Storage
 
 Automatic naming metadata lives in the existing session JSON document. The immutable auxiliary assignment is one durable UUID-v7 job. A one-time inference claim is stored independently from native credential grants. Schema 24 reconciles both pre-merge version-23 layouts, preserving existing send/HTTP claims and adding only missing title and backup structures. Schema migration adds a typed usage purpose without backfilling title work or repricing history; migration remains backup-first and transactional.
@@ -79,6 +93,8 @@ Run `go test -race -p 1 ./cmds/delidev-cli/...` and `go vet ./cmds/delidev-cli/.
 ## Change Triggers
 
 Update the DeliDev project index, relevant Go/protocol/client/desktop `AGENTS.md` instructions, session/proxy/usage/protocol/client/desktop contracts, generated bindings, and validation records in pull requests, issues and CI logs/artifacts whenever capability, ownership, usage purpose, UI, storage or native cleanup behavior changes.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 

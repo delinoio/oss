@@ -54,6 +54,10 @@ CLI:
 
 Without `--output`, export/preview use the ordinary versioned JSON result envelope. With `--output`, they create a new owner-only file containing the directly consumable document and synchronize it and its directory; they never overwrite a file or follow an existing link. A failed/uncertain write preserves the selected path for inspection. Configuration stdin cannot share stdin with an authentication token.
 
+### cmds/delidev-cli/internal/worker constraints
+
+- Portable configuration follows `cmds-delidev-configuration-transfer-contract.md`. Export only the closed supported configuration schema; never serialize protected/runtime authority. Import uses explicit machine/checkout remapping, fresh disconnected accounts, exact unchanged reuse or revision-bound singleton settings replacement, an actor/server-bound signed read-only preview, and atomic all-repository validation/publication. Preserve original instructions and native options; reject conflicts without partial writes. Terminal import jobs discard staged configuration copies, and exact reference-only receipt replay never creates another import.
+
 ## Storage
 
 Imports with no new repositories publish all entries, metadata events, the completed coordinator job and its receipt in one transaction. Imports with new repositories first create only an `import-configuration` coordinator and ordinary read-only repository-inspection jobs. The server does not open Worker paths. Every selected checkout must report the exact canonical path shown in the preview; a differently resolved path requires a new explicit preview. Reuse of identical existing repository configuration does not claim a new live inspection.
@@ -87,6 +91,8 @@ Uses existing configuration validation, SQLite transactions, durable Worker jobs
 ## Change Triggers
 
 Update this contract, project/catalog links and scoped AGENTS for new portable kinds, trust state, remapping rules, application semantics or bounds. Additional portable surfaces require explicit schemas and their own authentication/revision/activation semantics; never infer them from ordinary resource serialization.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 

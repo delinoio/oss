@@ -48,7 +48,7 @@ Define local validation commands and CI expectations for this component.
 Document upstream/downstream dependencies and cross-domain dependencies.
 
 ## Change Triggers
-Declare what related docs and AGENTS contracts must be updated when this contract changes.
+Declare which related contracts must be updated when this contract changes. Update `AGENTS.md` only when development procedures, directory ownership or repository/domain development rules change; follow the [instruction-update policy](README.md#instruction-update-policy). Ordinary feature, bug-fix, test and behavior-contract changes update their owning contracts without duplicating requirements in instructions.
 
 ## References
 Link to the owning `docs/project-<id>.md` index and any related contract docs.

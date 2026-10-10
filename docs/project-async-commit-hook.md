@@ -41,6 +41,8 @@ Primary public installation instructions follow the downloaded installers' lates
 ## Change Policy
 Update the owning domain contract, the relevant requirements or release contract, and relevant AGENTS.md alongside interface, ownership, security or lifecycle changes. Generate protocol sources; never edit generated output. Public documentation describes supported user workflows, not repository internals.
 
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+
 ## References
 - https://github.com/delinoio/oss/issues/897
 - [Repository defaults](repository-defaults.md)

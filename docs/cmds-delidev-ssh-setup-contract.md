@@ -20,6 +20,10 @@ Independent System capabilities 28 (signed updates), 29 (SSH setup) and Worker c
 
 Initial SSH pairing installs the exact server-compatible signed Worker release, independently of a newer update candidate; it cannot weaken the ordinary pairing version gate. Non-loopback SSH targets require an explicit reachable TLS server endpoint before protected staging. Windows staging checks ancestor reparse points before creation and creates only new owner-only product directories; existing permissions are validated without rewriting them.
 
+### cmds/delidev-cli/internal/sshsetup constraints
+
+Follow `cmds-delidev-ssh-setup-contract.md` and parent rules. Observe host keys without authentication; exact explicit confirmation is required before the closed command path. Never inherit SSH agents/config/known_hosts, emit raw SSH output or accept renderer/CLI shell strings. Protected credentials and encrypted stdin remain separate from operation metadata. Join all transport/session cancellation callbacks and preserve uncertainty after any remote effect send. Repeated setup must inspect the original registration and cannot reset private roots or workspaces.
+
 ## Storage
 
 Credentials use the existing WorkerSSH protected vault purpose. Durable operation metadata contains only original host/port/user, fingerprint, generation, request/actor identities and typed progress. Secrets and pairing documents are transferred only inside encrypted SSH stdin, never shell arguments, logs, ordinary resources or history. Once-only remote journals reconcile uncertain installation or pairing from the original operation.
@@ -45,6 +49,8 @@ golang.org/x/crypto/ssh at the repository security baseline, protected credentia
 ## Change Triggers
 
 Update the project index, allocation ledger and affected domain AGENTS when authority, protocol ownership, supported targets, release namespace, credential lifecycle or installation policy changes.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 

@@ -196,9 +196,15 @@ Chrome capture rechecks the configured origin's Chrome-valid scheme-and-host opt
 
 - Desktop Deck configuration remains sticky in a viewport-bounded vertical scroll area, so short windows retain access to editor, widget, save, and delete controls. Result-row status badges respond to the available workspace track and move below details before constrained sidebars or enlarged text can clip them.
 
+## Project requirements
+
+- `devhud` -> `apps/devhud` (shared shell, identity/settings/diagnostics, direct-client GitHub.com provider/setup and RealQA issue submission, desktop RealQA capture/editor/encrypted drafts/direct official and BYO R2 uploads, populated Deck surface, desktop/mobile hosts, production WidgetKit/AppWidgetProvider Deck widgets, and desktop Native Messaging listener implemented; other populated product surfaces planned), `apps/devhud-chrome-extension` (implemented), `apps/devhud-admin` (implemented), `servers/devhud-api` (Bootstrap/Settings/Upload/Account/Admin/Diagnostics and embedded administrator assets implemented), `protos/devhud/v1` (implemented), `packages/devhud-api-client` (implemented), `crates/devhud-native-messaging-host` (implemented)
+
 ## Change Policy
 
 Update this index, affected domain contracts, `docs/README.md`, and applicable root/domain `AGENTS.md` files together when ownership, identifiers, interfaces, platform support, persistence, security, release, or exclusions change. Do not add runtime code before the documentation-first contracts are updated.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 

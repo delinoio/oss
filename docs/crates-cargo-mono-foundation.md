@@ -37,6 +37,26 @@
   - Precedence: `--color` > `CARGO_MONO_OUTPUT_COLOR` > `NO_COLOR` > auto-detection.
 - Machine-readable contract: JSON output must remain ANSI-free and schema-stable regardless of color settings.
 
+### Rust component integration
+
+- `crates/cargo-mono`: Cargo-based Rust monorepo management CLI.
+
+- Keep command identifiers stable and documented in `project-cargo-mono.md` and `crates-cargo-mono-foundation.md`.
+
+- Preserve `cargo mono` subcommand compatibility (`cargo-mono` binary naming contract).
+
+- Keep release-tag responsibility split: `bump` must not create tags, and `publish` may create tags only for packages listed in `[workspace.metadata.cargo-mono.publish.tag].packages`.
+
+- Keep `publish` delegation aligned with the documented contract: `cargo mono publish` must invoke `cargo publish --no-verify` in both execute and dry-run modes.
+
+- Keep `publish` package ordering based on manifest-declared workspace path dependencies, including optional feature-gated dependencies; do not rely only on Cargo's default-feature resolve graph.
+
+- Ensure release automation (`bump`, `publish`) logs include structured operational context.
+
+- Keep runtime error output on the fixed `Summary/Context/Hint` three-line contract and include only safe debugging context values.
+
+- Keep direct installers and `cargo-binstall` metadata aligned with release asset names, signing contracts, and install docs.
+
 ## Storage
 - Uses workspace metadata and package manifests as canonical input.
 - Uses temporary local files/caches only for transient command execution.
@@ -85,6 +105,8 @@
 ## Change Triggers
 - Update `docs/project-cargo-mono.md` with this file when command identifiers or ownership changes.
 - Update `crates/AGENTS.md` and root `AGENTS.md` when policy or path contracts change.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - `docs/project-cargo-mono.md`

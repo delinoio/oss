@@ -221,6 +221,71 @@ CLI uses `session pr link --id SESSION --repository-id ID --number N`, `session 
 
 The desktop session exposes an explicit PR associations panel, with scoped pages, inert historical identities/title, project-restricted named repository choices, canonical decimal number entry, link/unlink and explicit refresh. The main conversation remains mounted. Validate complete retained pages and mutation acknowledgments, preserve original uncertain mutation bytes across navigation, and never silently retry using new IDs or selections. Closing drops association queries; ordinary configuration selectors retain their existing connection-scoped cache policy. A link alone grants no automatic-fix eligibility. Only an independently enabled effective policy admits the bounded background observations described below.
 
+### cmds/delidev-cli/internal/cli constraints
+
+- Standalone GitHub repository access inspection is retired. Preserve the allocated RPC and messages for older clients; authenticated owner/paired-client calls return typed Unsupported/Connect Unimplemented with safe guidance and correlation. The endpoint performs no store, vault, admission or outbound work. Browse and PR operations retain their independent selected-profile/generation/revision checks. Follow `cmds-delidev-integrations-contract.md#retired-standalone-repository-access-inspection`.
+
+### cmds/delidev-cli/internal/domain constraints
+
+- GitHub draft form URLs may omit an undeclared fine-grained owner while retaining the closed read-only prefills. Saved-profile form URLs and profile validation still require that owner. The native presentation validator admits only the exact canonical draft or saved form, rejecting empty explicit parameters, extra/duplicate query parameters and write permissions. Follow the integration contract; URL preparation grants no repository access.
+
+- Pinned required workflows follow `cmds-delidev-integrations-contract.md`: require explicit source SHA, original numeric repository/path identity, the current ordered-parent test merge, complete suite/current-attempt job inventories and native PR requiredness. Preserve Unknown for missing, competing, stale or unsupported evidence and retain historical status-check proof/version compatibility. Observation cannot authorize execution.
+
+- ALLGREEN merge-queue CI follows `cmds-delidev-integrations-contract.md`. Select only the exact entry head after complete stable PR/queue/entry/configuration/rules/check inventories. Recheck the complete CI inventory after the final rules read even when the initial observation is not queued, so entry into the queue invalidates earlier PR-commit evidence. Actions results require original `merge_group` and matching workflow suite/commit; HEADGREEN, absent proof and queue state never establish failure. Fresh remediation must match original queue/entry identity; retain historical proofs without current authority after removal.
+
+### cmds/delidev-cli/internal/integrations/github constraints
+
+- Repository picker inventory reads only the fixed, independently constructed `/user/repos` Metadata endpoint with bounded page/size inputs. Validate complete pages and exact numeric/node/owner/name identities before constructing GitHub.com clone URLs; never execute returned URLs or project temporary clone tokens. Provider paging supplies only a verified next page number, never a URL to follow. Preserve the original PAT generation's server cancellation/join and post-read revision checks when the RPC is activated with its recorded allocations.
+
+- Pinned required workflows use numeric-ID rename resolution, the original run/file relationship and explicit immutable SHA. Bound and repeat complete current-test-merge suite and exact-attempt job inventories inside the existing rule/PR brackets. Keep inaccessible, changed, incomplete, competing and unsupported evidence Unknown without erasing ordinary status-check observations. Never match display names or nested reusable workflows, resolve mutable refs, fetch returned source URLs or log protected/native evidence.
+
+- Enrich only known-source, known-parameter rules with an explicit SHA when the open, unmerged PR can evaluate current test-merge contexts. Skip unusable rule-source lookups even in mixed inventories; preserve their Unknown requirement rows.
+
+- Admit optional workflow proof only after sizing the complete rules/result CI envelope against `MaxCIEvidenceBytes`. Oversized proof remains wholly unavailable; preserve ordinary check observations and never publish a truncated run/job inventory.
+
+### cmds/delidev-cli/internal/server constraints
+
+- Use private temporary state/accounts/repositories in tests. Never access user logins, redeem credits, publish to GitHub, or invoke inference from ordinary tests.
+
+- Repository GitHub access follows the integration contract: derive the exact configured owner/repository/profile/generation, bound and join reads outside locks, and recheck authorization and repository revision before response. Keep all eight endpoint states independent; absent head evidence cannot invent Checks/statuses, and availability cannot imply successful CI, satisfied rules, reviewer identity or future authorization. No fallback token, response URL authority, access persistence or inspection receipt.
+
+- Official GitHub form preparation is a current profile/revision-bound owner/client metadata read, without PAT access or server-side browser launch. Keep verified canonical prefills and explicit classic public/private choices; explain manual fine-grained repository selection and unavailable Checks prefill. Local presentation accepts only closed canonical GitHub form/PR/issue URLs, with no shell, inherited credential environment, arbitrary browser command or output-pipe inheritance. Bound/join dispatch and preserve uncertainty without automatic retry.
+
+- `PrepareGitHubTokenForm` is the independent capability-34 owner/paired-client draft read. Permit an empty fine-grained owner only there, omit `target_name` and echo the original request/kind/owner/access. Preserve explicit-owner callers, closed prefills and saved-profile owner/revision checks. Desktop shortcuts use public Classic or selected-repositories Fine grained access; add no allocation, receipt, credential effect or migration.
+
+- Repository metadata support is independently advertised and accepted under issue #1142. Reject all unknown/duplicate capabilities and validate optional GitHub maps against current negotiated Machine support, inspected remote keys, existing identity validators and the 128-remote/1 MiB bounds. Preserve strict input decoding, atomic repository saves and legacy omission; omit the opaque source identity from save and configuration-import inspections assigned to Workers without `RepositoryInspectionMetadataV1`.
+
+- Repository inspection enrichment presence, including explicit null, cannot bypass capability validation; a present `github_repositories` must be a non-null validated map.
+
+### cmds/delidev-cli/internal/store constraints
+
+- GitHub profile lifecycle follows `cmds-delidev-integrations-contract.md`. Only dedicated owner/client RPCs write connection state. Persist denial before native replacement/deletion, bind receipts to actor and original generation, join canceled inspections before cleanup, preserve current-state replay and decimal pending revisions, and never infer repository access from `/user`. Keep HTTPS outside gates/transactions and PATs outside SQLite, reads, logs and Worker credentials.
+
+- Retained ALLGREEN queue failures bind the original queue and entry nodes to the complete CI proof. Deduplicate by evaluated source, queue/entry identity and original native result, so replacement entries retain separate proofs even when their commit/check result is reused. Preserve legacy plain-node records and local decisions without rewriting original evidence. Preserve non-queue history, clear current membership on removal, and require fresh matching queue/entry evidence before another remediation attempt. Follow `cmds-delidev-integrations-contract.md`; no queue state alone creates failure evidence.
+
+### cmds/delidev-cli/internal/worker constraints
+
+- GitHub PR/issue queries follow the integration contract: fix repository/kind/search authority, distinguish issue-API and PR-API numeric identities, validate complete bounded projections, retain null mergeability and deleted authors, and treat pagination URLs only as checked metadata. Preserve empty filtered issue pages, search incompleteness/1,000-result limits and exact decimal values; no content read grants remediation, system Git or native opening authority.
+
+- PR detail preserves the original head repository separately from its base, including explicit provider unavailability and historical unobserved data. Validate exact repository identity namespaces and closed GitHub transport metadata, and recheck source identity alongside immutable commits after observation reads. Never substitute the base for a missing fork or treat a non-secret Git target snapshot as Worker execution/authentication authority; follow the integration contract.
+
+- Explicit PR Worktree preparation follows the workspace/integration contracts. Bind one original PR target to exact base/head commit references, validate native branch grammar and canonical selected GitHub transports, and recheck remote heads and URL expansion around object fetch. Do not update user refs, FETCH_HEAD, remotes, tags or unrelated working data; disable implicit pruning/maintenance/submodule fetch. Preserve target provenance through publication, partial cleanup and ordinary execution ownership. Preparation uses only Worker Git authentication and does not grant push, live-branch resumption or controller authority.
+
+- Before manual PR Git capability publication, every privileged fetch/push and post-native proof, revalidate the complete original lease's workspace administration and companion repository identities. Current commits may advance; replacement directories, symlinks or Git administration cannot borrow native authentication or handled proof. Follow `cmds-delidev-integrations-contract.md` and the workspace contract.
+
+- Manual push verification independently reconciles the original native owner before its first Git observation while retaining the active execution lease. Native client exit or a later lease Close cannot substitute for that preceding descendant-cleanup barrier; missing process evidence leaves proof uncertain. Follow `cmds-delidev-integrations-contract.md` and the workspace contract.
+
+- The PR Git bridge retains shared command ownership through the actual sandboxed local child, using a fresh bounded grant and authenticated completion after child exit. Parallel commands cannot validate or claim push before that completion. Completion has separate admission capacity; missing, cancelled or lost completion poisons the capability and cannot grant another command, clean bridge closure or push replay. The handshake sequences local calls; it never substitutes for independent descendant cleanup. Follow `cmds-delidev-integrations-contract.md` and the workspace contract.
+
+### cmds/delidev-cli/internal/workspace constraints
+
+- Local repository saves bind each configured checkout to the server's opaque
+  source identity. The Worker computes that identity from the selected effective
+  remote without returning the raw URL; GitHub transport forms normalize only
+  within their established namespace, while generic SSH user/path namespaces
+  remain distinct. A mismatch fails the save before the checkout can become
+  Local execution authority.
+
 ## Storage
 
 Non-secret definitions, generation references, current typed validation, pending operations, stable session PR association metadata and receipts enter server SQLite. Direct PAT bytes use the separate native service in the credential contract. Private generation metadata and keyed receipt commitments are outside/inside SQLite respectively, but neither contains raw tokens, encrypted PAT payloads, unkeyed token hashes or owner-key bytes. The protected server owner identity keys domain-separated request commitments and must accompany restoration of its matching scope.
@@ -276,6 +341,8 @@ The credential package owns native storage and immutable generation markers. Exi
 ## Change Triggers
 
 Update this document, the credential/protocol/client/desktop contracts, the project index, validation records in pull requests, issues and CI logs/artifacts and scoped AGENTS files when lifecycle, token retention, authority, retry or GitHub capability boundaries change. New GitHub queries/forms/remediation require their own complete permission and real-environment evidence.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 

@@ -59,6 +59,20 @@
     - `Infinity` / `-Infinity` expectations are excluded
     - lone-surrogate code-unit expectations are excluded
 
+### Project requirements
+
+`rustia` is a three-component project with fixed mapping:
+
+- `Core` -> `crates/rustia`
+
+### Rust component integration
+
+- Keep stable rustia identifiers (`Validate`, `IValidation`, `IValidationError`, `LLMData`, `LlmJsonParseResult`, `LlmJsonParseError`, `LlmToolInput`, `LlmToolOutput`, `LlmToolSpec`, `tool`, `LlmToolBuildError`, `LlmToolInputError`, `LlmToolExecutionError`, and `#[derive(LLMData)]`) synchronized with `project-rustia.md`, `crates-rustia-core-foundation.md`, `crates-rustia-llm-foundation.md`, and `crates-rustia-macros-foundation.md`.
+
+- Keep non-contracted v0 identifiers explicitly documented as unstable until promoted in rustia contract docs.
+
+- `rustia` core crate changes must update `crates-rustia-core-foundation.md` and `project-rustia.md`.
+
 ## Storage
 - No persistent internal storage contract.
 - Parsing is in-memory and request-scoped.

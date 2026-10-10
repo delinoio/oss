@@ -54,6 +54,75 @@ bounded heartbeat. Later independent work may progress, but there is still only
 one outstanding primary assignment. Every retry rechecks the original dependency
 gate before atomic claim; a scan wake never grants native cleanup authority.
 
+### Project requirements
+
+- DeliDev Sidechat follows `cmds-delidev-sidechat-contract.md`. Preserve the parent fork-point account/snapshot, native read-only and external-write restrictions, metadata-only workspace reference ownership and durable dependent cleanup. Independent Fork lifetime and deletion ownership remain separate; reserved System 27 / Worker 16 numbers grant no support.
+
+- Managed ChatGPT Sidechat follows issue #1829 and `cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat--issue-1829`. Compose System 47 / Worker 26 with original Sidechat 27/16 and protected Worker 3. Freeze original generation/actor/source/instance; use the exact claimed Fork EXECUTE lease and server-owned Finish receipt before publication. Recheck managed authentication plus read-only enforcement before Fork/input/Steer/compaction. Preserve joined process/plaintext cleanup, original account/history, uncertainty and dependent deletion. Independent subscription Fork stays unsupported; no migration/new login. Fixtures do not establish native/account/platform acceptance.
+
+- Sidechat same-question retry follows `cmds-delidev-sidechat-contract.md#same-question-retry--issue-2061`: System 57 / Worker 31 compose original 27/16 and managed 47/26/3. Preserve one direct text-only question, exact actor/revision/turn receipts, immutable child/snapshots, original metadata-only workspace reference, captured Worker/native authority, atomic current-answer publication and all-generation joined cleanup within existing bounds. Never replay uncertain native work, create another child or add a migration.
+
+### cmds/delidev-cli constraints
+
+- Native read-only Sidechat additionally follows `cmds-delidev-sidechat-contract.md`. Keep original account/snapshot provenance separate from the immutable child enforcement overlay and reference parent workspace roots without ownership. Parent deletion/storage cleanup must durably stop and join every dependent child before removing parent files; independent Fork lifetime remains unchanged.
+
+- Managed ChatGPT Sidechat follows issue #1829 and `cmds-delidev-sidechat-contract.md#managed-chatgpt-sidechat--issue-1829`. Compose System 47 / Worker 26 with original Sidechat 27/16 and protected Worker 3. Freeze original generation/actor/source/instance; use the exact claimed Fork EXECUTE lease and server-owned Finish receipt before publication. Recheck managed authentication plus read-only enforcement before Fork/input/Steer/compaction. Preserve joined process/plaintext cleanup, original account/history, uncertainty and dependent deletion. Independent subscription Fork follows the separately negotiated #1979 profile; no migration/new login. Fixtures do not establish native/account/platform acceptance.
+
+### cmds/delidev-cli/internal/cli constraints
+
+- `session sidechat` requires independent server support before purpose submission, preserves original parent workspace and accepts no Local override. `session sidechat send` freezes exact selected reply and parent revisions under one request; receipt retry never infers or automatically Steers. Follow `cmds-delidev-sidechat-contract.md`.
+Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
+
+- Sidechat creation and observation retain the native fork 145-second command deadline; selected findings submission retains the immediate ordinary deadline. A bounded wait failure returns the original accepted job identity.
+
+### cmds/delidev-cli/internal/domain constraints
+
+- Sidechat uses a closed Codex read-only overlay of the complete original API account snapshot, with no child-account or permission expansion. Preserve the separate parent snapshot, version-3 fork seed and ordinary omitted-purpose bytes; follow `cmds-delidev-sidechat-contract.md`.
+Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
+
+- Permanent-deletion ownership envelopes retain the original unpublished Sidechat child ID only for a Fork copy. Their dedicated strict JSON bound is 4 MiB; public command JSON retains 1 MiB. Preserve the 4,096-copy bound and reject malformed or extra authority.
+
+### cmds/delidev-cli/internal/harness/codex constraints
+
+- Private Sidechat uses the closed pinned read-only profile under `cmds-delidev-sidechat-contract.md`. Pin restrictions before launch, reject inherited MCP/plugin/hook/notification authority and independently verify normalized effective features before Fork, after binding and before each turn/Steer. Preserve original model/provider/effort/tier while applying only read-only, network-disabled, approval-never permissions. Approval grants/amendments cannot expand this profile. Its disabled Goals feature has a source-proved empty boundary and no native goal/get authority; ordinary Fork retains that read. Private validation grants no public capability or Worker admission by itself.
+
+- Manual Sidechat compaction rechecks the complete closed config/read and normalized experimental feature inventory immediately before claiming or sending its one native action. A changed MCP, hook/plugin/notification, sandbox or feature observation cannot inherit the earlier turn's read-only authority.
+
+### cmds/delidev-cli/internal/server constraints
+
+- Sidechat admission/publication/execution require the original parent, account, completed native boundary and Worker capability 16. Selected complete replies use exact child/message/parent revisions and the ordinary queue receipt. Parent storage retirement and deletion freeze complete child obligations before cancellation; retirement inspection never grants early cleanup. Follow `cmds-delidev-sidechat-contract.md`.
+Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
+
+- Primary Worker dependency rescans follow the Sidechat/storage contracts. Retain one earliest skipped predecessor cursor for blocked cleanup/recovery, restore it on completion/store wake/heartbeat, and preserve later independent progress, bounded pages, original atomic dependent-retirement gates and one outstanding assignment.
+
+### cmds/delidev-cli/internal/store constraints
+
+- Sidechat publication atomically records its bounded parent dependency. Keep it until original native, database and backup retirement finishes. Synchronized complete parent/storage intents reconstruct only their original child plans across SQL rollback and response loss; compare immutable ownership inventories, never substitute current work. Follow `cmds-delidev-sidechat-contract.md`.
+Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
+
+- Permanent deletion derives unpublished Sidechat child IDs only from original immutable failed/canceled Fork assignments. Persist the complete synchronized plan within its 4 MiB bound, preserving legacy omitted fields and original request/digest identities; no current child lookup can reconstruct ownership.
+
+- Sidechat storage retirement uses the strict typed storage-input decoder, including large original recovery with no dependents. Its private wrapper retains the full existing 4 MiB deletion plan plus 4 KiB fixed wrapper headroom; publication/restart use the same bound. Preserve original actor, job/input digest and every child plan identity before native storage admission.
+
+- Selected skill admission shares one 4,096-reference budget across the parent and its indexed dependent Sidechats, including current/retired queued bindings. Resolve original Sidechat Fork/index ownership; keep independent Forks separate. Check original input/edit transactions and Sidechat admission/claim/publication atomically. Deleting indexed children fence new package/Sidechat admission until confirmed native, database and backup retirement releases the index; absent SQL rows are not proof. Preserve plain input, exact receipts and original preparation cleanup. Keep the existing 4 MiB outer deletion envelope; no eviction, RPC or migration. Follow the sessions and Sidechat contracts.
+
+### cmds/delidev-cli/internal/worker constraints
+
+- Sidechat pins the Codex native read-only profile for source inspection, Fork and every Execute/Plan/Steer/compaction continuation. Reference original workspace roots without owning their removal. A publication/deletion race may release an assignment only after authenticated exact retiring-envelope comparison; retain native uncertainty and let the joined deletion lane prove cleanup. Follow `cmds-delidev-sidechat-contract.md`.
+Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
+
+- After a failed native Sidechat fork joins its original process, discard only its original inode-bound unpublished metadata under bounded cleanup. Foreign or replaced metadata remains pending. Revalidate the closed Sidechat native configuration/features immediately before manual compaction claim/send.
+
+- Permanent deletion joins every original process/journal before reconciling unpublished Sidechat metadata through the original job/parent/child claim. Never remove those claim/root paths through generic cleanup. Published-child deletion retires its exact claim only after original metadata removal; completed-proof replay requires all claim and metadata names absent. Decode deletion work with its dedicated 4 MiB bound; the Connect response allowance includes bounded JSON/base64 overhead.
+
+### cmds/delidev-cli/internal/workspace constraints
+
+- Sidechat uses `codex-sidechat-reference-v1` under `cmds-delidev-sidechat-contract.md`. Retain original preparation/manifest and native directory identities; child metadata owns no parent files, repositories or General Chat directory. Reads/execution revalidate the exact parent and reference metadata while permitting ordinary file edits. Preparation/storage/terminal paths cannot expand that reference. Parent deletion, preparation cleanup and source-removing storage require all reference metadata to be independently removed after joined child cleanup. Child removal checks the original metadata inode and sole manifest entry and never traverses source roots; unknown/replaced ownership remains pending.
+
+- Failed unpublished Sidechat reference preparation rolls back only the original inode-bound metadata through independent bounded cleanup. Foreign or replaced metadata remains pending; referenced parent files are never removed.
+
+- Sidechat preparation synchronizes a private 4 MiB original-job/parent/child/inode-bound claim in sidechat-preparations/ before manifest publication. Failure and restart cleanup remove only matching original metadata; missing, malformed or changed claims cannot adopt existing roots. Published-child deletion retires the matching claim only after metadata absence. Parent files and native thread ownership never follow from this claim.
+
 ## Storage
 
 Use additive strict JSON on existing session/fork/job/checkpoint records and
@@ -141,6 +210,8 @@ workspace roots and native permission proof remain original-Worker-owned.
 Changes to native enforcement, parent dependency cleanup, public schema or numeric
 ownership update this contract, affected scoped `AGENTS.md`, project index,
 allocation ledger and generated bindings in the same change.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 

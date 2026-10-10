@@ -224,6 +224,8 @@ Updates and rollback use explicit version installation. Do not add automatic upd
 
 Before runtime implementation, create the project and Rust, npm-distribution, and public-documentation contracts. Register pnport ownership, update the documentation catalog and relevant AGENTS files, and document Rust/local-storage choices against repository defaults.
 
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+
 Keep npm source ownership under `packages/pnport` and public guides under `apps/public-docs/docs/pnport`, published at `https://oss.delino.io/pnport`. Use the existing Rspress site, shared accessible navigation, Cloudflare Pages deployment, and fixed documentation development server.
 
 Provide English CLI help, errors, README, and public documentation covering installation, commands, supported filesystem behavior, limitations, editor configuration, cache management, diagnostics, benchmarks, and rollback. Keep internal architecture and release operations in `docs/`. Support uses GitHub issues.
@@ -282,4 +284,3 @@ Run focused pnport tests and repository-required root `cargo test`, Rust formatt
 - Hosted accounts, remote control, runtime telemetry, feature flags, dashboards, and automatic updates.
 - APT/RPM distribution, Apple notarization, and Windows Authenticode.
 - Unreviewed or incomplete-target preview releases, numerical performance guarantees, support-response SLAs, and fixed release deadlines.
-

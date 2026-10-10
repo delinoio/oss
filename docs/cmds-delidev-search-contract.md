@@ -17,6 +17,10 @@ The server owner and authenticated paired desktop/CLI clients query retained con
 
 Optional CLI selectors are `--session-id`, `--project-id`, `--agent-id`, `--account-id`, `--outcome all|not-started|running|succeeded|failed|stopped` and `--archive all|active|archiving|archived`. Account filtering uses the original message execution's immutable job account, never current Agent candidates or a later account selection. Other selectors use current retained session membership. Missing historical execution authority cannot invent an account match. The wire exposes closed enums and rejects unknown numeric enum values.
 
+### cmds/delidev-cli/internal/store constraints
+
+- Follow `cmds-delidev-search-contract.md` for retained conversation search. Index only typed canonical transcript content in the same source/event transaction; never inspect private native history, credential/configuration documents or workspace files. Preserve original-execution account attribution, Archive inclusion, actor/filter/epoch-bound cursors with keyed query commitments, complete binary/JSON byte bounds, transactional revocation and bounded cancellable reads. Source deletion must remove derived text and FTS content atomically; backup erasure remains part of permanent session deletion. New message shapes require an explicit typed projection.
+
 ## Storage
 Schema 13 adds a private `transcript_search` derived table with stable integer keys and a SQLite FTS5 trigram index. Unicode lowercase is applied identically to source text and queries. Three-or-more-rune queries use escaped literal FTS phrases; shorter queries use literal substring lookup under the same two-second cancellable read budget. SQLite remains the exclusive local search backend, overriding the repository's cloud-search default for this project. See [SQLite FTS5](https://www.sqlite.org/fts5.html) for trigram and external-content semantics.
 
@@ -40,6 +44,8 @@ SQLite FTS5 uses the pinned modernc runtime; Go protobuf and Connect code is gen
 
 ## Change Triggers
 Keep this contract, scoped `AGENTS.md`, protocol bindings, CLI help, the project index and validation records in pull requests, issues and CI logs/artifacts synchronized. Any new transcript shape needs an explicit typed search projection; never index raw private protocol envelopes or credential-bearing configuration.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - [DeliDev project](project-delidev.md)

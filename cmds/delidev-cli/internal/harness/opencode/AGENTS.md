@@ -1,33 +1,18 @@
-- Direct startup validates the actual original owned API and effective settings without numeric version admission or a separate execution probe under `docs/cmds-delidev-execution-startup-contract.md`. Versions remain optional observed metadata. Preserve strict native shapes, original executable identity, account/Worker/history, once-only mutations and independently joined cleanup; no supported feature or platform is inferred from a version.
+# cmds/delidev-cli/internal/harness/opencode working instructions
 
-# OpenCode native ownership
+- Follow the root instruction-update policy and the nearest parent instructions.
+- This file covers `cmds/delidev-cli/internal/harness/opencode/` and its descendants unless a more specific instruction file applies.
+- Read the owning contracts below before changing behavior, including affected cross-domain consumers.
 
-- Follow `docs/cmds-delidev-harness-contract.md`, `docs/cmds-delidev-subagents-contract.md`, `docs/cmds-delidev-compaction-contract.md` and `docs/cmds-delidev-forks-contract.md`. Go owns the original private process/API/session and durable business admission; no exported constructor may adopt an arbitrary native endpoint.
-- Foreground child observation requires original accepted root input/task message/part/call metadata plus an independently read child `parentID`. Preserve same provider/model, one newly created child level, default depth one and disabled experimental background support. Task reuse, nesting, promotion and unsupported child interactions grant no response or control authority.
-- Bound early native events privately until dual ownership is verified. Child arrivals cannot acknowledge root input or enter root text, usage or completion. Parent task completion never proves child settlement. Every fresh history read reconstructs status from its owned user/assistant records; earlier failed, interrupted or completed status cannot fill a truncated page. Completion/Stop inventories retain all original children and independently join process cleanup; child-bearing histories grant no continuation checkpoint. A pinned unfinished child record may report interruption only through the separate original Stop/scope-cleanup source after joined cleanup, preserving its unfinished native history without fabricating native settlement.
-- Native summaries/forks must retain original source identities, complete history, nullable usage and protected runtime ownership. Never manufacture history, rewrite native database rows, infer native acceptance from HTTP success or replay uncertain native mutations.
-- Keep structured logs to stable owner/action/phase/error metadata. Never log prompt/output, raw native content, paths, credentials or checkpoint bytes. Keep validation results in PR/issue/CI records, not repository evidence documents.
-- Original compaction observations join the accepted input with native compaction user/part, summary assistant, independently emitted completion event and marked continuation under the compaction contract. Preserve complete private current inventory and immutable conversation history across replacement. Permit only independently validated native completed-tool pruning markers; never change canonical output or manufacture lifecycle after transport loss. The auxiliary summary task's late context-user metadata is a separate read proof, never input/settlement authority. Manual summarize synchronizes one action-bound claim before a bounded asynchronous original request, joins HTTP lifetime at cleanup and retains uncertainty without resend; its private controller grants no product capability.
+## Owning contracts
 
-- Retained manual compaction inspection pins the final original action/history digest against unchanged ordinary lineage and every inherited context record. Native acknowledgment, context lifecycle, full history and joined cleanup remain independent; no checkpoint or auxiliary read can reconstruct missing native arrivals or command authority.
-
-- New immutable `native-v1` context policy enables pinned native pruning, while omitted legacy policy preserves existing configuration/digests. Late pruning may be retained through the final owned API read only after atomic full-part comparison proves the completed timestamp is the sole change; never reconstruct an event or lifecycle from that read.
-
-- Issue #1210 preparation owns only bounded Unix plain-text General Chat native Fork, complete ID-clone/history proof, explicit no-change relocation and copied-source deletion. Use an unregistered fresh nonce without inference; native agent/model absence is an explicit preparation state. Claim every mutation once and reconcile exact owned native state after response loss without resend. Preserve inherited paths/usage as provenance, not filesystem or accounting authority.
-
-- Native checkpoint metadata uses the strict declared 8 MiB decoder ceiling, retaining canonical bytes and independent complete private-file inventory verification. Fork source inventory exposes content-free original IDs only after full private checkpoint/profile validation; it grants no native mutation or inference authority.
-
-- The foreground child profile excludes native question tools as well as nested task tools in both live events and final independent histories. Completed historical questions cannot establish child settlement or response authority.
-
-- Fork source eligibility reserves the complete serialized child checkpoint before workspace copying or any native claim, including duplicated histories, full identities and metadata bounds under 8 MiB. Conservatively retain all source file descriptors in the estimate and reserve the separate 64 KiB fresh SQLite runtime inventory profile. Capacity exhaustion grants no mutation; unexpected native auxiliary growth cannot enlarge this profile. Follow `docs/cmds-delidev-forks-contract.md`.
-
-- Explicit reasoning effort maps unchanged to the selected model `options.reasoningEffort`. Before input, independently reread and validate complete loaded `/config` and `/provider` profiles and project the applied value from native bytes. Empty selections omit model options and retain native defaults. Bind explicit effort in checkpoint settings digests with omitted empty metadata so historical default digests remain unchanged. Preserve original process, provider relay, instructions and cleanup ownership.
-
-- Ordinary execution tool authentication follows `docs/cmds-delidev-harness-contract.md#ordinary-execution-github-cli-context`. Carry only the executing Worker’s typed `GH_CONFIG_DIR` selector and bounded Linux `DBUS_SESSION_BUS_ADDRESS` / `XDG_RUNTIME_DIR` session selectors after private environment reconstruction, including continuation and independent Fork. Keep discovery, login, title, inspection and Sidechat isolated. Never read, copy, transfer, inject or clean up gh credentials/configuration; preserve native permissions and protected execution/proxy exclusions. No RPC or migration.
-
-- Register the exact original API execution token and caller-protected values in transient native reflection guards. Refuse supported literal, decoded JSON and Base64 reflections before event retention, public content or retained-history proof; keep original cleanup/recovery and once-only input claims. Never redact or replace native content. Guard values remain private runtime state and grant no operating-system sandbox guarantee.
-- Include the original private HTTP password in SSE and content-snapshot guards. Exact owned GET `/config` and `/provider` responses remain private credential-verification inputs; this exception grants no content publication or other route authority.
-
-- Foreground child success/error projections require the same closed native message/part predicate: completion time, ended text/reasoning and terminal tools. Unfinished histories retain running partial telemetry; only the independent original verified Stop/joined-scope cleanup source may interrupt an unfinished abort. Missing/busy status never supplies settlement.
-
-- Issue #2120 permits only transient nonblocking descriptive observations from the original interactive native process and validated initialization/settings boundaries. Preserve exact native/protocol/account/input/history/cleanup checks; observed stage success grants no input or recovery authority, and no helper/probe may stand in for agent launch. Follow the startup and harness contracts.
+- [DeliDev account lifecycle](../../../../../docs/cmds-delidev-accounts-contract.md)
+- [DeliDev native session compaction](../../../../../docs/cmds-delidev-compaction-contract.md)
+- [DeliDev protected credential storage](../../../../../docs/cmds-delidev-credentials-contract.md)
+- [DeliDev direct execution startup](../../../../../docs/cmds-delidev-execution-startup-contract.md)
+- [DeliDev same-account native session forks](../../../../../docs/cmds-delidev-forks-contract.md)
+- [DeliDev native harness adapter contract](../../../../../docs/cmds-delidev-harness-contract.md)
+- [DeliDev provider inspection](../../../../../docs/cmds-delidev-providers-contract.md)
+- [DeliDev native subagent observations](../../../../../docs/cmds-delidev-subagents-contract.md)
+- [DeliDev Session Terminals Contract](../../../../../docs/cmds-delidev-terminals-contract.md)
+- [DeliDev native usage ledger](../../../../../docs/cmds-delidev-usage-contract.md)

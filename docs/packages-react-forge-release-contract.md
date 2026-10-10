@@ -29,3 +29,7 @@ Run the package build, tests and installed consumer on all six hosts; the aggreg
 The static-scene extension adds six local CLI/MCP format consumers (four document formats plus GLB/FBX). Historical `0.2.0` release validation included independent native engine tests; the `0.1.1` publication evidence remains historical and contains no scene support. PR #992 removes the scene-specific test, Clippy, rendering and visual-validation gates from React Forge CI and release host validation; Khronos Validator, ufbx, Blender, and Three.js remain local acceptance tools.
 
 The exact-tag [`react-forge@v0.2.0` release run](https://github.com/delinoio/oss/actions/runs/36206600514) completed successfully, including all six native build jobs, package assembly, and `publish-npm`. The published `@delino/react-forge@0.2.0` metadata reports `latest: 0.2.0` and exports `/glb`, `/fbx`, `/sfx`, and `/sprite`; this is the first published version containing all documented formats. Keep the separate visual, interoperability, and perceptual evidence limits below; package availability does not expand them.
+
+## Package integration
+
+- Internal docs, examples, messages and troubleshooting are English; public npm publication follows `packages-react-forge-release-contract.md`, with no runtime downloads. Tests must exercise installed/workspace CLI and asynchronous React behavior, not manually invoked components.

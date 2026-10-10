@@ -54,9 +54,15 @@ Runmoor manages disposable, single-job GitHub Actions runners on one developer o
 - Publication discovers an existing draft through paginated release listings and pins its numeric ID through the final download, complete signed-asset verification and publication. Published or conflicting releases are never overwritten; an uncertain publication result requires remote inspection before recovery.
 - The implementation task explicitly omits live GitHub verification and local real Tart execution. Issue #1312 also excludes actual host execution, unsigned Xcode builds and live GitHub jobs. Automated mocks, local Docker validation, and opt-in Tart tests must not be described as full GitHub/Tart certification.
 
+## Project requirements
+
+- `runmoor` -> `cmds/runmoor`, `apps/public-docs/docs/runmoor`
+
 ## Change Policy
 
 Update this index, the command contract, relevant AGENTS files, CLI/config/JSON tests, README and public documentation together when behavior or compatibility changes. Preserve all existing root development entry points, fixed ports, and unrelated CI boundaries. Keep generated `dist` ignored and remove generated directories from the final worktree.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 

@@ -67,6 +67,8 @@ part of this extension.
 ## Change Policy
 Update the project index, affected domain contracts, relevant AGENTS rules, examples and validation together when interfaces or ownership change. Internal rollback uses source revision rollback and rebuild without rewriting exported files.
 
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+
 ## References
 - [Repository defaults](repository-defaults.md).
 - [Forge project](project-forge.md).

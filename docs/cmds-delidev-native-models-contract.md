@@ -91,6 +91,23 @@ publication. Account revocation/disconnection, installation replacement,
 cancellation or ownership loss fences stale results. Exact receipt replay after
 restart returns the original operation without another native launch.
 
+### cmds/delidev-cli/internal/domain constraints
+
+- Native observation JSON preserves decimal uint64 revisions, distinct picker/executable IDs and bounded closed advisory metadata under `cmds-delidev-native-models-contract.md`. Reject the entire observation on duplicate identity, malformed metadata, secret reflection or missing confirmed cleanup; detected Codex executable digests never grant readiness.
+
+### cmds/delidev-cli/internal/server constraints
+
+- NativeModelService is owner/client-only under `cmds-delidev-native-models-contract.md`. Atomically bind accepted jobs/receipts to original machine/account/connection/install/actor scope; recheck that scope and cancellation at publication. Only the original assigned Worker may report. Keep immutable observations separate from canonical models/readiness and retain last success after failure.
+
+### cmds/delidev-cli/internal/store constraints
+
+- Native model observations reuse generic immutable jobs and receipts without a migration under `cmds-delidev-native-models-contract.md`. Last-success lookup binds the original machine/account, installation generation/digest, connection and hidden policy; failed output cannot replace successful observations or modify canonical models.
+ - Native model observations reuse generic immutable jobs and receipts without a migration under `cmds-delidev-native-models-contract.md`. Last-success lookup binds the original machine/account, installation generation/digest, connection and hidden policy; failed output cannot replace successful observations or modify canonical models.
+
+### cmds/delidev-cli/internal/worker constraints
+
+- Native model discovery uses the original durable job journal and one isolated Codex runtime under `cmds-delidev-native-models-contract.md`. Pin executable bytes, collect every bounded page, and confirm process/file cleanup before reporting success; reconnect or receipt replay cannot relaunch a claimed observation.
+
 ## Storage
 
 The server retains accepted operations and immutable complete observations
@@ -186,6 +203,8 @@ registration semantics or paging bounds change. Keep scoped AGENTS rules aligned
 with ownership/policy changes and the project index aligned with its domain links
 and cross-domain invariants. Record new shared numbers and migration versions
 with implementation in the owning feature PR under the structure contract.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 

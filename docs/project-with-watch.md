@@ -42,11 +42,17 @@ Provide a Rust-based CLI wrapper that reruns delegated shell utilities and arbit
 - Release automation must publish signed GitHub Release assets for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`, including standalone binaries (`with-watch-<os>-<arch>[.exe]`) and archives (`with-watch-<os>-<arch>.tar.gz|zip`).
 - Homebrew installation must consume prebuilt `with-watch` release archives for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, and `linux/arm64`.
 
+## Project requirements
+
+- `with-watch` -> `crates/with-watch`
+
 ## Change Policy
 - Update this index and `docs/crates-with-watch-foundation.md` together when CLI shape, watch inference behavior, operator guidance, release automation, side-effect suppression, or storage/logging contracts change.
 - Update root `Cargo.toml`, `.github/workflows/release-with-watch.yml`, `scripts/release/update-homebrew.sh`, and `packaging/homebrew/templates/with-watch.rb.tmpl` in the same change when with-watch release tags, artifact names, or package-manager distribution contracts change.
 - Keep `scripts/install/with-watch.sh`, `scripts/install/with-watch.ps1`, and `crates/with-watch/Cargo.toml` synchronized with release asset names and signing contracts.
 - Keep root `AGENTS.md` and `crates/AGENTS.md` aligned with ownership and project-ID changes.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - `docs/project-template.md`

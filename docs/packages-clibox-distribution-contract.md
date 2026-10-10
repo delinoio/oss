@@ -32,6 +32,58 @@ JavaScript developers using `pnpm add -D -E @delino/clibox` followed by `pnpm ex
 
 Windows console Ctrl+C and Ctrl+Break are broadcast to both Node and the attached native child. The launcher handles `SIGINT`/`SIGBREAK` by awaiting native completion so cleanup and numeric status 130 survive for readiness waits, configuration, and transformations. Readiness waits emit their single final cancelled/interrupted JSON result before the launcher exits. It must not call Node's kill API for these console events because that forcibly terminates Windows children; [Node documents this platform behavior](https://nodejs.org/api/child_process.html#subprocesskillsignal). On Unix, the launcher explicitly forwards `SIGINT`, `SIGTERM`, and `SIGHUP` so a signal sent to the launcher PID always reaches the native child. A foreground terminal can also broadcast Ctrl+C to the child's process group. Forced process termination and console teardown cannot promise graceful cleanup. Unix terminal acknowledgements suppress forwarding only during one unambiguous pending grace attempt; unsolicited bytes are discarded. The first unacknowledged fallback or overlapping SIGINT permanently enables forwarding for that launch, so a delayed byte cannot suppress a later launcher-only interrupt. This conservative boundary can duplicate terminal forwarding after uncertainty; child completion cancels every owned grace timer and removes handlers.
 
+### Package integration
+
+- Public npm packages generated here declare Apache-2.0 and include the complete license; preserve bundled third-party notices.
+
+- Generated packages must have a canonical source contract, reproducible generation, freshness checks, and no implicit secret or persistence policy.
+
+- `packages/clibox`: private source workspace generating the public `@delino/clibox` launcher and eight native npm packages.
+
+- clibox macOS archives reuse verified npm binary bytes, retain full Apache-2.0/NOTICE and imported MIT notices, and feed the macOS-only Homebrew Formula. Verify public source, all asset digests/signatures and both native tested Formulae before tap-only bot publication; preserve GNU archive format and npm-independent release guards. See the clibox distribution contract.
+
+- Keep the npm README and `apps/public-docs/docs/clibox` aligned with user-facing command and installation behavior; link to `https://oss.delino.io/clibox`. The shared documentation selector uses clean same-origin paths on production and the consolidated development server, including clibox and pnport as destinations.
+
+- Native and installed npm commands must share the canonical `run env`, `port list`, and `hash compute` names, quiet/PID output separation, stdout dash selector, force validation, and numeric owned-operation cancellation (130/143); validate the migration in installed consumer smoke tests without launcher-side argument rewriting.
+
+- Native and installed npm smoke tests must exercise `system cpus` in default, logical, JSON, and quiet forms across all eight targets. The launcher forwards it unchanged and never computes or substitutes a CPU count.
+
+- Native and installed npm commands must also share the five `run with-*` wrappers for rate admission, lock ownership, service readiness, retries, and timeouts. The launcher remains a literal argv/stdio/signal forwarder: it must not parse wrapper options, own local state, make readiness requests, or introduce a shell.
+
+- Follow `packages-clibox-distribution-contract.md`. Keep the source workspace private, with no unpublished platform dependencies; generate public manifests and exact optional dependencies during packaging only.
+
+- Preserve platform/libc/version checks, literal native argv execution, inherited stdio, and signal/exit propagation. No runtime downloads, install hooks, public JavaScript API, or system binary fallback.
+
+- Keep tests runnable with Node built-ins, and smoke-test npm/pnpm consumer tarball installs with scripts disabled, including missing-subcommand help on stderr with exit code 2, native JSON readiness, environment execution with literal empty argv/exit propagation and dotenv list/merge plus YAML normalization with reference resolution, literal value preservation, idempotence, and silent file publication. Consumer smoke builds must use release mode so TLS-enabled debug binaries do not exceed bounded archive inspection. Run Rust command/process/adapter/readiness tests on Linux, macOS, and Windows through the existing clibox CI matrix. Build/package/release tasks are package-owned; native integration and publication tasks are not Turbo-cacheable.
+
+- Installed consumer smoke tests must also exercise the seven issue #917 commands as well as help/version across the existing eight target artifacts. Run Rust command/process/adapter tests on Linux, macOS and Windows through the existing clibox CI matrix. Keep command documentation consistent between native and npm distributions without exposing release internals.
+
+- Default consumer smoke builds must use Cargo's stripped release profile within the bounded archive reader; an explicit `--binary` must use the supplied native artifact without rebuilding or changing it.
+
+- Preserve all eight artifacts, native readiness tests, and Alpine consumer checks when TLS dependencies change. musl uses target-native C compilation for statically linked ring and pinned self-contained `rust-lld` for final linking; no dynamic OpenSSL runtime dependency. Keep user-facing wait usage, limits, output, cancellation, and troubleshooting in the npm README.
+
+- Validate complete artifact inventories and source identity before publication. Confirm all native dependencies before the main package and reject conflicting existing integrity. Allow at most 121 registry readback checks with ten-second delays and 30-second request timeouts after each successful upload, log pending confirmations, and never repeat that write during polling.
+
+- Accept LF and CRLF source manifests. Pack launcher text, README, and license as canonical UTF-8/LF and verify their exact canonical bytes across build/assembly operating systems; native executable bytes must never be normalized.
+
+- Require archive execute bits for Unix native binaries and the npm bin shim; Windows PE payloads must remain valid when packed from NTFS without POSIX execute bits. Pin Node's release-build architecture to the selected Rust target.
+
+- Finalize the executable header mode during tarball creation before recording integrity, independent of host filesystem permissions. Artifact verification must never repair or rewrite downloaded tarballs.
+
+- Build both Linux musl targets with the pinned Rust toolchain's `rust-lld` and self-contained runtime objects. Keep native-host and Alpine consumer execution gates; adding C dependencies requires revisiting this toolchain contract.
+
+- clibox GNU npm and GitHub Release archives must contain the same verified AlmaLinux 9/glibc 2.34 binaries. Its separately guarded GitHub publisher validates the complete nine-tarball input, exact tag/commit and source version, preserves immutable assets and reuses verified signatures before stable APT/DNF publication. The npm enable flag gates only npm. Neither publisher may query crates.io or require Cargo registry publication. Include all six clibox crate directories and affected fspy interception sources in package test inputs and native CI selection. Installed package smoke must check the fspy command family on every target before its first release.
+
+- clibox GitHub publication must discover drafts through every release-list page and establish a unique same-tag candidate before writes. Failed, malformed, repeated or incomplete discovery cannot authorize draft creation. Pin the numeric release ID, verify draft source/channel ownership and existing bytes/signatures, upload only missing assets, and recheck uniqueness plus the pinned verified inventory immediately before publication. Complete public releases remain read-only.
+
+- The owner-authorized 2026-10-05 repair release in `project-pnport.md` permits exactly stable 0.1.2 after the failed 0.1.1 candidate is repaired and all retained four-native candidate gates pass. Keep 0.1.1 and published tags/bytes immutable. Require `pnportReleaseReady: true` and exact `pnportReleaseVersion: "0.1.2"`; preserve the earlier disclosed initialization/SIGHUP, clibox watch and full-acceptance limits without claiming fixes or skipped passes. No new candidate failure is waived. Keep issue #958 and Windows 0.2.0 acceptance open; preserve final-tag dry-run, fresh native validation, integrity/signing, native-before-launcher and immutable-retry gates. Later versions need separate reviewed authorization.
+
+- The owner-authorized 2026-10-04 amendment in `project-pnport.md` permits exactly stable 0.1.0 publication with the recorded macOS initialization/SIGHUP failures, separate root clibox watch failure and full-acceptance review deferred. This version-specific exception takes precedence over earlier full-acceptance prerequisites; it does not establish a cause fix or passing skipped checks. Require `pnportReleaseReady: true` plus an exact `pnportReleaseVersion` match; version coordination preserves both fields. Retain all final four-native candidate execution/install/TypeScript/benchmark, integrity, signing, native-before-launcher and immutable-retry gates. New failures still block publication. Keep #958 open, preserve Windows 0.2.0 and immutable 0.1.0-next.1, and disclose unresolved user-facing limits. Remove the stable unreleased notice only after verified publication.
+
+### packaging/homebrew constraints
+
+- clibox supports macOS x64/arm64 only, using its version-bound signed Darwin archives. Preserve full LICENSE, NOTICE and LICENSE.fspy during installation. Test and audit the identical Formula on both native Mac architectures before acquiring tap-only credentials; reject downgrades and changed same-version Formula bytes. Never validate by mutating a developer's Homebrew installation. Follow `packages-clibox-distribution-contract.md`.
+
 ## Storage
 Generated packages and tarballs live under ignored `dist` or an explicitly supplied temporary output directory. Never track generated output; remove repository-owned `dist` directories after local verification. The installed runtime adds no settings, cache, or history apart from the Rust contract's private local hashed lock/bucket coordination state for explicitly requested `run with-lock` and `run with-rate-limit`. Native commands otherwise read requested input and write requested output plus temporary files required for atomic publication. Waits observe targets without file mutations or service termination. Operational rollback uses an earlier pinned package version and never deletes coordination state.
 
@@ -61,6 +113,8 @@ Public package READMEs describe installation, supported platforms, all seven iss
 
 ## Change Triggers
 Keep the project index, Rust contract, package tests, CI path rules, release coordinator, workflows, and root/package AGENTS rules synchronized.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 Public consumer documentation is maintained at `apps/public-docs/docs/clibox` and `https://oss.delino.io/clibox`; follow `docs/apps-clibox-docs-foundation.md`. Both consumer READMEs retain their detailed guidance and link to that section.
 

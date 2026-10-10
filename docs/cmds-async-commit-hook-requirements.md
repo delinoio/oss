@@ -275,6 +275,8 @@ Documentation-first implementation:
 - Keep internal architecture and repository operations in `docs/`; publish user workflows, installation, configuration, CLI/MCP/skill guidance, privacy, compatibility, and troubleshooting under `/docs`.
 - Generate required `dist` output for validation but never track it, and remove generated repository-owned `dist` directories from the final worktree.
 
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+
 ## Acceptance Criteria
 
 - Committing submits checks durably, returns a usable receipt, and allows the Git command to finish while checks remain active.

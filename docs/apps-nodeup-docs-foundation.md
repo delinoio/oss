@@ -27,6 +27,34 @@
 - Content must stay aligned with the Nodeup project and crate contracts, especially installation method selection, direct-installer current and pinned command patterns, release verification, supported host targets, x64/amd64 release asset terminology, command behavior, linked-runtime lifecycle and executable validation, linked-runtime per-shim command availability diagnostics, runtime resolution precedence, shim behavior, Windows shim alias extension behavior versus delegated runtime `.cmd` package-manager executables, shell completions and shell-specific completion installation guidance, invalid subcommand-scope guidance, package-manager resolution, `nodeup run` versus managed-shim install-on-demand behavior, human/JSON output contracts, parser-error envelope behavior, PATH/PATHEXT troubleshooting guidance, and color-control precedence.
 - Content must curate those internal contracts into public guidance and must not document repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
 
+### Application integration
+
+- `nodeup-docs` must remain Rspress-based unless `project-nodeup.md` and `apps-nodeup-docs-foundation.md` document a replacement.
+
+- The Nodeup content section is built directly by `public-docs`; it has no standalone production deployment.
+
+- `nodeup-docs` canonical production URL is `https://oss.delino.io/nodeup`.
+
+- Rspress routes and navigation in `apps/public-docs/rspress.config.ts` must stay aligned with `apps-nodeup-docs-foundation.md`.
+
+- `nodeup-docs` must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in top-level social links and in the document-page footer.
+
+- Stable `nodeup-docs` route IDs are `/`, `/installation`, `/getting-started`, `/commands`, `/runtime-resolution`, `/shims-and-package-managers`, `/output`, `/completions`, `/releases`, `/troubleshooting`, and `/reference`.
+
+- `nodeup-docs` generated theme controls must preserve keyboard and screen-reader accessibility: mobile documentation navigation closes on `Esc`, returns focus to its opener, keeps closed mobile-sidebar links out of the tab order without hiding the persistent desktop sidebar, uses a labeled mobile search button, avoids redundant ambiguous hamburger labels, keeps search overlays clear of the sticky header, removes decorative heading anchors from sequential keyboard navigation, and keeps Markdown tables horizontally readable on mobile viewports.
+
+- Nodeup direct-installer guidance must include copy-pasteable remote POSIX and PowerShell commands that use the canonical subpath entrypoints `https://oss.delino.io/nodeup/install.sh` and `https://oss.delino.io/nodeup/install.ps1`, preserve current and pinned first-party `delinoio/oss` raw GitHub URL examples, keep `scripts/install/nodeup.sh` and `scripts/install/nodeup.ps1` visible for maintainer workflows, describe checksum verification through `SHA256SUMS`, and distinguish unsupported-host, missing release material, and checksum verification failures.
+
+- `nodeup-docs` must not document repository-internal implementation details from source contracts unless the detail is itself a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
+
+- Nodeup installation, release, and troubleshooting guidance must explain that `cargo-binstall` uses first-party release assets only and does not enable `quick-install` or `compile` fallback strategies.
+
+- Nodeup release and installation guidance must explain that `amd64` release asset names correspond to x64 hosts.
+
+- Nodeup completion guidance must document the difference between generating a completion script and installing or sourcing it for each supported shell.
+
+- When Nodeup user-facing runtime, release, installer, shim, completion, package-manager, or color-control behavior changes, update related `apps/public-docs/docs/nodeup` pages in the same change set.
+
 ## Storage
 - Source documentation is versioned in-repo under `apps/public-docs/docs/nodeup`.
 - Build artifacts are generated into `apps/public-docs/doc_build` and are not source-controlled.
@@ -61,6 +89,8 @@
 - Update `docs/project-nodeup.md`, this file, and `apps/AGENTS.md` when the content path, route IDs, theme repository-link surface, validation commands, toolchain, output directory, or publication target changes.
 - Update `docs/crates-nodeup-foundation.md` and the relevant app pages when Nodeup runtime, release, installer, shim, completion, package-manager, or color-control behavior changes.
 - Update `docs/README.md` when adding, renaming, or removing this domain contract.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - `docs/project-nodeup.md`

@@ -50,6 +50,14 @@ Retain type/service, connection/authentication, generation, identity commitment 
 
 Desktop layout, accessible disclosures, visible failure ownership and opening lifecycle follow the [Diagnostics presentation contract](apps-delidev-diagnostics-contract.md). Presentation does not change this report, authorization or read-only boundary.
 
+### cmds/delidev-cli/internal/server constraints
+
+- ChatGPT Doctor storage inspection follows `cmds-delidev-diagnostics-contract.md#chatgpt-saved-storage-adapter`: read only a valid idle service-native account's exact `AccountLogin` generation through the existing/non-creating read-only vault. Preserve pending, lease, native/server, quota/reset-credit, recovery, removal and cleanup exclusions; completed history alone does not block. Clear plaintext immediately and reauthorize/recheck private type/service, connection/authentication, generation/commitment and eligibility selectors at publication. Never expose selectors, contact providers or grant authentication/cleanup/recovery authority. Claude, unactivated Grok and retired subscription shapes remain unsupported; no protocol or migration change.
+
+### cmds/delidev-cli/internal/worker constraints
+
+- Follow `cmds-delidev-diagnostics-contract.md` for doctor. Inspect only existing exact credential references under the account gate, clear returned bytes, never initialize/repair vaults or enumerate native accounts, and recheck connection generations plus client authorization before publication. Keep database/native I/O separate, capacities as decimal strings, inventories explicitly bounded and raw paths/errors out of reports/logs.
+
 ## Storage
 Doctor never creates mutation receipts/events, repairs SQLite, runs a checkpoint/vacuum, creates missing vault state, reconciles credential scratch files or writes/removes native keys. Read SQLite page count/page size and resource-kind counts in one read transaction. Outside the transaction, inspect private regular database/WAL file sizes and OS filesystem capacity/space available to the server user. A missing optional WAL is zero; failed/unavailable measurements remain absent. Preserve already observed fields after a subsequent measurement failure, with a failed/unavailable result. Counts may also be incomplete on failure. Physical database bytes, WAL bytes and logical database bytes overlap and must not be added or interpreted as reclaimable storage. Backups, workspace disk usage, native history and user files are not recursively scanned.
 
@@ -71,6 +79,8 @@ Uses existing Connect System service, single-authority store, Worker stream regi
 
 ## Change Triggers
 Update scoped CLI/desktop AGENTS, the protocol and desktop contracts, project index and validation records in pull requests, issues and CI logs/artifacts when report schemas, scope, limits, native access or presentation guarantees change. New credential families require their own exact ownership and read-only inspection contract before doctor may access them.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - [DeliDev project](project-delidev.md)

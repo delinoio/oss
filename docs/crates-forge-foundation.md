@@ -58,6 +58,46 @@ Editable native pictures require one stretch fill with an absent or zero-inset f
 
 Editable imported text bodies require explicit zero insets, square wrapping, top anchoring and `noAutofit`, with only supported horizontal, single-column body attributes. Nonzero or implicit native insets, no-wrap, vertical/rotated text, column spacing, alternate anchors and native autofit remain opaque until represented in measurement. Unrelated edits preserve these text bodies byte-for-byte. The external fixture includes an explicitly supported title placeholder and an unsupported default textbox. Missing insets cannot be treated as zero; see [Microsoft's body-property inset defaults](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.drawing.bodyproperties.leftinset?view=openxml-3.0.1).
 
+### Rust component integration
+
+- `crates/forge-tree-doc`, `crates/forge-pptx`, `crates/delino-forge`: private Forge DSL, preserving PPTX adapter, and local CLI/stdio MCP. Follow `crates-forge-foundation.md`; keep structured logs free of document content and publish output only through explicit export to a separate path from an opened document's tracked source. Keep the committed schema synchronized with Rust types, retain font source/license/hash and external-fixture provenance, and exercise the optional-renderer test explicitly in Forge rendering CI.
+
+- Forge-generated content-type override paths must match the exact spelling of their ZIP members for reader interoperability. Scope compatibility normalization to new packages and preserve imported source XML.
+
+- Forge document lock guards must explicitly unlock on drop, including error exits, so duplicated or fork-inherited descriptors cannot extend a completed operation's lock lifetime. Preserve exclusive ownership checks and redact lock-release diagnostics.
+
+- Forge custom XML ownership requires both its package relationship and namespace identity. Preserve unrelated colliding part names and relationship IDs, and bind those original parts into the metadata hashes.
+
+- Forge metadata bindings must be unique native targets in their corresponding logical slide; validate native slide order and count before accepting the stored tree.
+
+- Forge packages require exactly one supported internal office-document root relationship; reject ambiguous roots before importing or editing.
+
+- Forge exports to an opened document's tracked source, including canonical path aliases, must fail with `unsupported_edit` even with explicit overwrite; a fingerprint check followed by unconditional replacement cannot protect external saves. Keep separate-output export and explicit replacement of those outputs available, and expose this boundary through CLI/MCP help and capabilities. Retain recovery of earlier builds' interrupted source-export journals under the document lock; unrelated external changes remain conflicts.
+
+- Forge atomic file publication must flush its renamed directory entry: sync the parent directory on Unix and use write-through same-volume publication on Windows. Propagate durability failures.
+
+- Forge chart insertion must reject collisions with preexisting chart, workbook and relationship parts, including case-equivalent package names. A supplied node identity never grants ownership of original package parts.
+
+- Forge image media reuse requires identical bytes, including case-equivalent part names; reject mismatched content instead of pointing a new image relationship at unrelated media.
+
+- Forge image import must validate full-frame stretch fill as well as crop/aspect geometry before allowing contain/cover edits; preserve other native picture fills as opaque.
+
+- Forge text import must validate body geometry against measurement semantics before exposing editable text; keep unrepresented insets, wrapping, columns, anchoring, rotation and autofit opaque.
+
+- Forge asset loading must visit only referenced image handles, deduplicate aliases, and bound aggregate bytes before reads in addition to per-file limits and checksum validation.
+
+- Forge nested canvases must validate unchanged children's bounds against their current allocation. Preserve native off-page bounds only for unchanged children under a slide-root canvas with unchanged page dimensions.
+
+- Forge containers must reject placeholder references before creation or patch commit; logical containers do not emit native placeholder shapes.
+
+- For new package scaffolding, default `publish = false` until publish contracts are explicitly approved.
+
+- If Rust code changes in this domain, run `cargo test` from repository root.
+
+- Keep logs sufficient for debugging install, dispatch, and runtime resolution flow.
+
+- Keep CLI logs colorized by default for human operators, with explicit opt-out controls.
+
 ## Storage
 The user-data directory owns registered assets, document originals, immutable revisions, and atomically replaced state pointers. `--state-dir` overrides the default. Persistent state is private to the user. Open/apply do not overwrite source files. Export verifies source fingerprints, serializes writers, validates candidate bytes and atomically publishes from the same filesystem to a separate output path. Replacing that separate output requires an explicit overwrite option. Export to the tracked source, including canonical path aliases, returns `unsupported_edit` with a different-output-path instruction even when overwrite is requested. A fingerprint check followed by unconditional replacement cannot protect another application's save between the two operations; document locks do not exclude external editors. This rejection precedes publication and leaves the original, managed revision, and state pointer unchanged. CLI help, MCP tool descriptions and `capabilities.export.tracked_source_overwrite: false` expose this boundary. Close removes only the selected managed document; shared assets and lock files are retained. An interrupted generation is unreachable until the atomic pointer commit, and old generations remain available. Source fingerprints are checked before mutation and again before committing an edit. Local storage is an explicit exception to the repository's R2 default.
 
@@ -89,6 +129,8 @@ New packages match every content-type override's path spelling to its actual ZIP
 
 ## Change Triggers
 Keep project index, AGENTS rules, schema/examples, CLI/MCP descriptions and CI contracts synchronized. All packages remain unpublished until a separate release contract is approved.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - [Project](project-forge.md).

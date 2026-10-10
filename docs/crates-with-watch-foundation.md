@@ -57,6 +57,24 @@
 - Recognized-but-not-auto-watchable commands must remain clearly labeled as requiring `exec --input` when operators want explicit rerun inputs.
 - Homebrew installation must consume prebuilt GitHub release archives for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, and `linux/arm64`.
 
+### Rust component integration
+
+- `crates/with-watch`: Rust-based filesystem-watching command wrapper.
+
+- Keep passthrough, shell, and `exec --input` command shapes stable and documented in `project-with-watch.md` and `crates-with-watch-foundation.md`.
+
+- Keep default rerun filtering content-hash-based, with `--no-hash` as the documented metadata-only override.
+
+- Keep `--clear` as a best-effort TTY-only output refresh flag; redirected or piped stdout must stay byte-for-byte clean.
+
+- Keep shell support scoped to command-line expressions and do not silently broaden into shell-script control-flow without updating docs first.
+
+- Keep logs sufficient to explain inferred inputs, watcher anchors, snapshot counts, and rerun causes.
+
+- Keep public release contracts aligned across root publish-tag allowlist, `.github/workflows/release-with-watch.yml`, and Homebrew packaging assets.
+
+- Keep direct installers and `cargo-binstall` metadata aligned with release asset names, signing contracts, and install docs.
+
 ## Storage
 - `with-watch` does not persist project state.
 - Snapshot state is in-memory only for the current process.
@@ -96,6 +114,8 @@
 ## Change Triggers
 - Update `docs/project-with-watch.md` with this file when command shape, detection behavior, release distribution, or ownership changes.
 - Update `docs/README.md`, root `AGENTS.md`, and `crates/AGENTS.md` when project registration or policy changes.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - `docs/project-with-watch.md`

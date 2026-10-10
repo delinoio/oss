@@ -1,6 +1,11 @@
-# Native skill package ownership
+# cmds/delidev-cli/internal/skills working instructions
 
-- Follow `docs/cmds-delidev-sessions-contract.md#explicit-native-skills` and the storage contract. Import only bounded selected packages; inventories expose opaque metadata and expire independently from accepted copies.
-- Synchronize original preparation intent, all file claims and native root identity before copied bytes. Publish snapshot metadata last. Exact prepared retries retain the original proof across delivery reconnect; ordinary inventory scope remains current-instance-bound.
-- Preparation and cleanup share one original snapshot lock. Verify complete original root and resource ownership before removal, observe absence, and retain compact exact-ID terminal tombstones outside active staging capacity. Never adopt replacement, changed or unlisted bytes.
-- Joined original session deletion retires accepted snapshot intents. Accepted copies have no automatic expiry. Runtime and independent Fork copies retain their own lifetimes.
+- Follow the root instruction-update policy and the nearest parent instructions.
+- This file covers `cmds/delidev-cli/internal/skills/` and its descendants unless a more specific instruction file applies.
+- Read the owning contracts below before changing behavior, including affected cross-domain consumers.
+
+## Owning contracts
+
+- [DeliDev same-account native session forks](../../../../docs/cmds-delidev-forks-contract.md)
+- [DeliDev session acceptance and input queue contract](../../../../docs/cmds-delidev-sessions-contract.md)
+- [DeliDev Session Terminals Contract](../../../../docs/cmds-delidev-terminals-contract.md)

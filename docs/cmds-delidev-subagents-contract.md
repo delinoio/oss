@@ -55,6 +55,30 @@ Every root completion reads its independent child inventory, including roots wit
 
 Pinned native references: [foreground task](https://github.com/anomalyco/opencode/blob/545f51d26cc39a907d2867492d498d9607ea5fa4/packages/opencode/src/tool/task.ts), [permission derivation](https://github.com/anomalyco/opencode/blob/545f51d26cc39a907d2867492d498d9607ea5fa4/packages/opencode/src/agent/subagent-permissions.ts), [common tool wrapper](https://github.com/anomalyco/opencode/blob/545f51d26cc39a907d2867492d498d9607ea5fa4/packages/opencode/src/tool/tool.ts) and [chronological bounded native pages](https://github.com/anomalyco/opencode/blob/545f51d26cc39a907d2867492d498d9607ea5fa4/packages/opencode/src/session/message-v2.ts).
 
+### cmds/delidev-cli/internal/cli constraints
+
+- Native subagent observations follow `cmds-delidev-subagents-contract.md`. Validate original bounded ownership and complete batches before atomic publication; preserve exact receipts, source coverage, requested versus observed models and nullable non-additive usage. Live/unavailable children retain independent cleanup obligations after parent completion. Observation never grants child control or unproved continuation.
+
+### cmds/delidev-cli/internal/domain constraints
+
+- Native subagent observations follow `cmds-delidev-subagents-contract.md`. Validate original bounded ownership and complete batches before atomic publication; preserve exact receipts, source coverage, requested versus observed models and nullable non-additive usage. Supplied child output must explicitly declare partial=true; reject omitted or false markers before any batch publication. Live/unavailable children retain independent cleanup obligations after parent completion. Codex descendant inventory uses state-DB-only reads without native metadata repair. Native shutdown may refine terminal status without reopening lifecycle. Observation never grants child control or unproved continuation.
+
+- Shared subagent validation reserves every non-empty original parent-tool identity for one child across the complete batch and retained tree, including terminal children. Reject conflicting claims atomically; Codex retains its existing prohibition on Claude parent-tool fields. Follow `cmds-delidev-subagents-contract.md`.
+
+- Validate incoming subagent telemetry before merging retained last-available facts: Claude task reports cannot supply output/observed model; Codex activity cannot supply output/observed/requested models; Codex collaboration cannot supply observed models or content blocks. Keep retained earlier telemetry independently readable and reject an invalid complete batch before writes. Follow `cmds-delidev-subagents-contract.md`.
+
+- Codex child configuration follows issue #1101 and `cmds-delidev-subagents-contract.md`: preserve omitted defaults, map the exact model/effort/numeric concurrency keys, freeze canonical child model identity before the first digest and revalidate that original model under the same parent account. Require System capability 22 and Worker capability 11. Relay requests narrow to the original parent/child model set with model-specific diagnostics and native response ownership; no independent child account, requested-to-observed substitution or later Agent/catalog rewrite is permitted.
+
+### cmds/delidev-cli/internal/server constraints
+
+- Atomic subagent publication rejects two children claiming the same original Claude Agent/Task parent tool across both a complete batch and retained ownership, including terminal children from earlier executions of the same session. Preserve distinct-tool sibling ownership and the existing Codex field restrictions. Follow `cmds-delidev-subagents-contract.md`.
+
+### cmds/delidev-cli/internal/worker constraints
+
+- Native subagent observations follow `cmds-delidev-subagents-contract.md`. Validate original bounded ownership and complete batches before atomic publication; preserve exact receipts, source coverage, requested versus observed models and nullable non-additive usage. Live/unavailable children retain independent cleanup obligations after parent completion. Codex descendant inventory uses state-DB-only reads without native metadata repair. Native shutdown may refine terminal status without reopening lifecycle. Root Claude usage may bypass publication only for exact acknowledged child usage with unchanged ownership and original report model presence/value, retained at receipt acknowledgment independently of the child's last available model; a child tag alone never grants that bypass. Observation never grants child control or unproved continuation.
+
+- A Claude Agent/Task parent tool may own only one original child, including after completion. Use shared atomic ownership validation before publication acknowledgment so root and nested content cannot acquire ambiguous child owners. Follow `cmds-delidev-subagents-contract.md`.
+
 ## Storage
 Existing generic session-owned resource storage retains child observations; there is no destructive migration, backfill or new secret table. Execution progress retains bounded ownership metadata only. Durable request receipts retain the exact original event payload. Resource updates, revision advancement and event/session publication occur in one transaction, including rejection after root completion. Output and observations remain protected retained conversation data with existing session/server retention; no cloud storage or telemetry export is introduced.
 
@@ -72,6 +96,8 @@ The existing session, execution outbox, native adapter, process, usage and gener
 
 ## Change Triggers
 Update this contract, project/catalog index, harness/session/process/usage/protocol/client/desktop contracts and relevant `AGENTS.md` when versions, bounds, native source coverage, ownership, storage or capabilities change. Record source revisions, commands, results and unresolved validation limits in pull requests, issues and CI logs/artifacts under the repository validation policy; do not add repository evidence documents. Child-control or continuation support requires independent original evidence and an explicit contract extension.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - [Project index](project-delidev.md)

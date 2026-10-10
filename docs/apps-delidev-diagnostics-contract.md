@@ -56,6 +56,16 @@ Use existing system fonts, white content `#ffffff`, text `#202632`, muted `#5b65
 
 Summary cards use three columns at CSS viewport widths of at least 1100px, one below. Server/storage panels use two columns at least 1200px, one below. Preserve Settings padding, independent vertical scrolling, ordinary application page, 52px rail and 288px/256px context pane and navigation drawer below 760px. Validate 1920×1080, 1440×900, 960×640, 640×480 and 200% zoom for overflow, focus and reachable controls; native window minimum geometry is unchanged.
 
+### apps/delidev constraints
+
+Diagnostics presentation is owned by `src/doctor.tsx`, `src/doctor.css` and the scoped frontend instructions, following `apps-delidev-diagnostics-contract.md`.
+
+### apps/delidev/src constraints
+
+- Diagnostics follows `apps-delidev-diagnostics-contract.md`: Doctor owns the single category title and active-gated read; native disclosures hide only secondary metadata. Keep failures, caveats and partial notices visible, retain exact integers and report compatibility, and bind disclosure state to server/machine/account-connection identities within one Settings opening. Reset on category departure or leaving Settings; retain through reflow and same-identity reconnect; scope static styles to Diagnostics and add no operations, content logging or persistence.
+
+- Account storage inspection has no desktop UI under `apps-delidev-diagnostics-contract.md#account-storage-presentation`. Account categories must not mount storage-owned Doctor readers or expose storage controls, results, notices, details or navigation. Preserve actual account operations, health, quota/usage, durable cleanup and their independently owned failures. General Doctor retains its own reader, refresh and server/owner/Runner diagnostics; server/CLI reports and protected credential authority remain unchanged.
+
 ## Storage
 
 Disclosures are native memory-only presentation state within the original connection and active Settings category. There is no Web Storage, persisted settings, file output or new query cache. Exact server-returned values remain observations under the existing query owner.
@@ -81,6 +91,8 @@ Reuse React, Connect Query, the existing shared QueryClient and native `details/
 No API/schema/generated binding, backend, persistence, authorization, credential access, migration, feature flag, dependency or release/deployment behavior changes. Do not log report content, identity or endpoint. Preserve AI Subscription, Backups, child-dialog/drawer focus containment and opener restoration, unrestricted category and global navigation and underlying session/composer behavior.
 
 Update this presentation contract, the desktop/diagnostics links and scoped frontend AGENTS when hierarchy, lifecycle, bounds or styling guarantees change. Update the project index for domain ownership/catalog changes and record validation independently.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 

@@ -26,8 +26,14 @@ Create and edit Office documents through a typed, validated document tree withou
 ## Implementation Status
 PPTX v1 is implemented in the three private crates. See the Rust contract for supported preservation boundaries, schema/examples, local verification evidence and the pending hosted CI matrix. Local usage is documented in `crates/delino-forge/README.md`.
 
+## Project requirements
+
+- `forge` -> `crates/forge-tree-doc`, `crates/forge-pptx`, `crates/delino-forge`; follow `project-forge.md` and `crates-forge-foundation.md`. Keep all three packages private, local-only, and preserve unsupported PPTX content during supported edits. Opened documents export to a separate path; reject replacement of their tracked source even with explicit overwrite. CLI/MCP share one core; optional preview is not a generation dependency.
+
 ## Change Policy
 Update this index, the Rust foundation contract, examples/schema, and root/crates AGENTS rules with ownership or behavior changes. Release automation, public hosting, other formats, and remote MCP are outside the initial implementation.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - [Repository defaults](repository-defaults.md).

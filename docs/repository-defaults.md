@@ -19,12 +19,39 @@ Repository-owned source, package metadata and future release artifacts use Apach
 - Domain contract docs must record deviations in the relevant `Runtime and Language`, `Storage`, `Security`, `Build and Test`, or `Dependencies and Integrations` sections.
 - Repository and domain `AGENTS.md` files must stay aligned with this document when these defaults change.
 
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+
 ## Repository Workflow Defaults
 - Newly created pull requests must use Conventional Commit-style titles with a required scope: `<type>(<scope>): <description>`.
 - Pull request title scopes should use stable lowercase project, component, domain, or tooling identifiers from repository contracts when one applies.
 - Pull request titles must not omit the scope and must not use bracket-style project prefixes.
 - Root `pnpm install` must support linked worktrees when the effective Git hooks path resolves to the repository's shared common-directory hooks directory, without overriding an unrelated custom hooks path. Source archives and other workspaces without Git metadata skip hook installation while continuing app preparation.
 - Root `pnpm dev` is reserved for the DevHud team workflow. Documentation development uses the single `pnpm dev:public-docs` entry point; the Runmoor, Nodeup, binpm, async-commit-hook, and clibox content sections are served from that consolidated site. Every documentation development command uses the documented fixed loopback host and port, prevents CLI address overrides from changing that binding, and fails when that port is occupied rather than automatically selecting another port. Development wrappers forward termination signals to the child server and wait for it to exit so stopped commands do not leave orphaned listeners.
+
+## Project identifier contract
+
+Treat project IDs as stable enum-style values:
+
+```ts
+enum ProjectId {
+  Binpm = "binpm",
+  CargoMono = "cargo-mono",
+  Clibox = "clibox",
+  Pnport = "pnport",
+  Nodeup = "nodeup",
+  WithWatch = "with-watch",
+  Derun = "derun",
+  Runmoor = "runmoor",
+  SerdeFeather = "serde-feather",
+  Rustia = "rustia",
+  PublicDocs = "public-docs",
+  DevHud = "devhud",
+  AsyncCommitHook = "async-commit-hook",
+  DeliDev = "delidev",
+  Forge = "forge",
+  ReactForge = "react-forge",
+}
+```
 
 ## References
 - `docs/README.md`

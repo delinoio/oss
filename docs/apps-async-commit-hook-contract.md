@@ -20,6 +20,74 @@ Open the local URL printed by `ach ui` without pairing, login or browser authori
 
 A rerun accepted before a startup failure shows its run ID, diagnostic, recovery hint, status command and an Open accepted execution action. Both rerun submission buttons stay disabled after acceptance to avoid accidental duplicate attempts. Successful startup navigates directly to the accepted execution.
 
+### Application integration
+
+- `apps/public-docs`: Rspress static public documentation app, including the `docs/binpm`, `docs/nodeup`, `docs/runmoor`, `docs/async-commit-hook`, `docs/clibox`, `docs/pnport`, and `docs/react-forge` content roots.
+
+- `public-docs` is the sole production documentation publisher. It builds the `docs/runmoor`, `docs/nodeup`, `docs/binpm`, `docs/async-commit-hook`, `docs/clibox`, `docs/pnport`, and `docs/react-forge` content roots directly below their same-name canonical subpaths; no package-local documentation workspaces or output directories are independently published.
+
+- Every assembled documentation page must expose the shared site selector for Delino OSS, Runmoor, Nodeup, binpm, async-commit-hook, clibox, pnport, and React Forge. Production and the consolidated development server at port `46302` use the same clean relative destinations; never remap project links to retired per-project ports. It must expose `aria-expanded` and `aria-current`, support keyboard selection, Escape/outside-click close, and focus return.
+
+- Nodeup, binpm, Runmoor, async-commit-hook, clibox, pnport, and React Forge are exposed from `apps/public-docs/docs` through canonical same-origin subpaths `/nodeup`, `/binpm`, `/runmoor`, `/async-commit-hook`, `/clibox`, `/pnport`, and `/react-forge`. Their Markdown is owned directly by these content roots and must not be duplicated elsewhere. pnport's guides describe verified 0.1.2 availability with known macOS failures and incomplete full acceptance; future availability changes require verified distribution.
+
+- Public-docs `build`, `build:frontend`, and `ci:routes` must hash all eight canonical `scripts/install/{nodeup,binpm,async-commit-hook,pnport}.{sh,ps1}` sources through package-local external inputs. Preserve inherited build inputs, dependencies, outputs, and deterministic caching; installer changes must not invalidate unrelated workspace caches.
+
+- `apps/async-commit-hook` owns the embedded local Rsbuild UI. `apps/public-docs/docs/async-commit-hook` owns the Rspress documentation content at `https://oss.delino.io/async-commit-hook`, and `scripts/install` owns the installer sources. Follow the project contracts.
+
+- Fixed development port 46308; root entry `pnpm dev:async-commit-hook`. Use generated Connect Query and React Query. Logs/source remain inert, every RPC is same-origin without browser pairing, and results never go to static hosting.
+
+- The local UI app exclusively generates and validates command webassets/dist via `build:embedded`. Generate before Go compilation, tests or packaging.
+
+- Documentation development uses the consolidated `127.0.0.1:46302` public-docs server. Preserve all migrated guide sections, the `/docs` section-link migration, and installer bytes. The async release workflow validates the consolidated docs but does not deploy a standalone site.
+
+- The canonical public-docs production origin is `https://oss.delino.io`; shared Linux package guidance is `https://oss.delino.io/linux-packages`. Consolidated project documentation uses the same origin with `/runmoor`, `/nodeup`, `/binpm`, `/async-commit-hook`, `/clibox`, `/pnport`, and `/react-forge` prefixes.
+
+- Public-docs cached `build`, `build:frontend`, and `ci:routes` tasks must hash the eight canonical `scripts/install/{nodeup,binpm,async-commit-hook,pnport}.{sh,ps1}` sources. Preserve inherited build inputs, generated outputs, and exact installer byte checks; CI job selection alone does not invalidate task caches.
+
+### apps/async-commit-hook constraints
+
+- The package owns development on fixed port 46308, tests and static production builds. The root entry delegates to this package.
+
+- Development shutdown uses the shared process-tree owner and awaits POSIX group or Windows taskkill cleanup before exiting; terminating only the package-manager parent is insufficient.
+
+- Include the shared process resolver and termination helper in the app test's Turbo inputs and CI path selection.
+
+- Use the generated Connect Query descriptors for server state. Filter lists on the server before applying their scoped cursors.
+
+- The detached branch selection sends an explicit detached filter; the inbox leaves branches unfiltered.
+
+- Preserve accepted rerun IDs when startup fails: show the startup diagnostic, recovery hint and a direct execution action; disable repeated submission after acceptance.
+
+- Disable acknowledgement until an execution is terminal; opening or waiting for a result never acknowledges it.
+
+- Poll execution details only while active; terminal evidence verification must not repeat on a timer. Explicit refresh and mutation invalidation remain available.
+
+- Render source, logs, report data and failure diagnostics as inert text. Do not use HTML interpretation or remote telemetry.
+
+- The daemon and on-demand viewer serve the same embedded UI. Use same-origin Connect with mandatory API version headers, no pairing or browser credential persistence; keep result caches in memory and run fragments refreshable.
+
+- Reject foreign/missing Origin, Host, method and version header before the development proxy rewrites a request. Production API security cannot depend on a dev-only CORS grant.
+
+- Preserve keyboard navigation, dialog focus restoration, status words and recoverable network/version states.
+
+- Public documentation is owned by `apps/public-docs/docs/async-commit-hook`, and installers are maintained in `scripts/install`. The UI links to https://oss.delino.io/async-commit-hook.
+
+- `build:embedded` is the sole producer of command webassets/dist: clear the previous embed before building, validate real hashed assets and copy only after success. Include license files; never substitute a placeholder bundle.
+
+- Run-list rows use the optional server check count, falling back to checks.length only for older responses; opening a row retrieves complete execution details.
+
+- Poll expanded logs only while their check is active, fetch final bytes once on completion, and retain explicit refresh and pagination for terminal evidence.
+
+- Load repository pages on demand with Connect Query, merge split repositories/worktrees by ID, and retain loaded navigation and selection across next-page errors. Keep the load control focusable during loading and guard repeated activation.
+
+- Load branches on demand, retaining the selected branch even when its page is not loaded; preserve loaded options and selection through next-page errors.
+
+- Key branch options by opaque identity, not normalized display text, and pass branch_id to source/history queries. Keep current identities before their page loads and preserve legacy servers without IDs.
+
+- Checks and Inbox queries require both a selected repository and worktree. Pending, empty or failed discovery must never issue an unfiltered run query or render cached unscoped rows.
+
+- Execution deep links bind the page heading, path, selected worktree and branch navigation to the run's repository/worktree IDs. Suppress unrelated identity while the run or its registry page is pending, failed or unavailable; keep evidence accessible and registry pagination on demand. Share the detail query cache without additional polling or acknowledgement.
+
 ## Storage
 
 Detail navigation focuses the commit heading, returning to results restores the selected row, and polling never steals focus. Cancellation uses a native modal dialog with Escape and prior-focus restoration. No browser credentials or connection preferences are persisted; result cache is in memory. Durable results belong to local CLI state. Recovery tells users to run `ach ui` and reload, retaining the on-demand viewer while needed.
@@ -38,6 +106,8 @@ Generated @delinoio/async-commit-hook-api-client; Go embed ties the UI to the in
 
 ## Change Triggers
 Update project/protocol/client contracts, app AGENTS and public docs alongside user-visible changes.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 - [Project](project-async-commit-hook.md)

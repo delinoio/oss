@@ -123,6 +123,10 @@ reads/replaces the server snapshot nor advances any observation/success time.
 WidgetKit timeline reload is best effort. Three sizes retain bounded truthful
 presentation and disclose extra records in DeliDev.
 
+### apps/delidev constraints
+
+- English/Korean desktop, native and widget presentation follows `apps-delidev-localization-contract.md`. Keep the device Language controller above connection/Settings visits, use bundled typed catalogs, preserve exact machine values, user/native content, draft/focus/query/request lifetimes and original server details, and never replay work on language change. Protect independent `language.json` and App Group preference storage with revision/atomic-write/uncertainty rules. Generate Swift/native resources from reconciled source catalogs during preparation/tests/packaging, and keep real platform/WidgetKit acceptance separate from fixtures and builds.
+
 ## Storage
 
 Native `app_config_dir()/language.json` contains only `{ "version": 1,
@@ -200,6 +204,8 @@ Update this contract, desktop/widget/packaging contracts, project catalog and
 scoped app/src/native/scripts AGENTS when languages, preference ownership,
 storage, native interfaces, catalog generation or presentation boundaries change.
 Validation-only updates belong in PRs/issues/CI and do not change ownership docs.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 

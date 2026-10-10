@@ -1,3 +1,9 @@
-# Ordinary execution environment
+# cmds/delidev-cli/internal/harness/executionenv working instructions
 
-- Follow `docs/cmds-delidev-harness-contract.md#ordinary-execution-github-cli-context`. This package owns only an in-memory selector resolved from the original Worker environment and cwd. It must never inspect or own user files, credentials or OS credential stores. Keep its zero value isolated, its path unexported and nonserializable, and diagnostics limited to safe selector classifications.
+- Follow the root instruction-update policy and the nearest parent instructions.
+- This file covers `cmds/delidev-cli/internal/harness/executionenv/` and its descendants unless a more specific instruction file applies.
+- Read the owning contracts below before changing behavior, including affected cross-domain consumers.
+
+## Owning contracts
+
+- [DeliDev native harness adapter contract](../../../../../docs/cmds-delidev-harness-contract.md)

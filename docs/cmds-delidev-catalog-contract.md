@@ -397,6 +397,94 @@ Resolution uses an exact canonical UUID first; an upstream native ID cannot shad
 
 Provider-row account links use the list-only `provider_id` selector on `ResourceService.ListResources`. Account-type filtering composes with that selector in SQL before the account page limit; the returned account page must never be treated as the provider's total account count. See the account lifecycle and protocol contracts for cursor scope and snapshot/event behavior.
 
+### Workflow integration
+
+- Known subscription model suggestions follow `cmds-delidev-catalog-contract.md#known-subscription-model-suggestions`. PR #1370 established System capability 35 and the advisory declarations on main before activation. Keep bounded read-only owner/client metadata, explicit server outbound routing, joined cache refresh and review-only daily PRs separate from account/native/execution authority. Preserve atomic native-ID Worker saves and saved revision/history checks; no database migration.
+
+### Project requirements
+
+- Key-preserving API format changes follow `cmds-delidev-catalog-contract.md#key-preserving-api-format-change-reservations`: PR #1666 established ProviderInventory 9 and the complete ChangeAccountApiFormat RPC declarations on main before activation. Preserve capability 7, OAuth reservation 8, protected shared key references, original execution/continuation generations, new-format validation, immutable referenced profiles and all-generation explicit cleanup. No SQLite migration or native change. Reservation-only changes activate no support.
+
+- API account format selection follows `cmds-delidev-catalog-contract.md#api-account-format-selection` and the account/protocol contracts. PR #1646 established ProviderInventory capability 7, inventory profile field 10, account-list protocol field 5 and the complete closed declarations on main before activation. Preserve schema-3 API families, portable v4 with v1–3 imports, original defaults, capability-7 disconnect/confirmed cleanup and capability-9 key-preserving format changes, account-referenced profile immutability, immutable executions and keyless cleanup proofs. Resolve the selected account profile in every consuming flow; add no database migration or format conversion.
+
+- Inline Worker models and endpoint-only completion follow the allocation amendment in `cmds-delidev-catalog-contract.md`. Record System 42 / Worker 22 and the complete endpoint/identity/pricing declarations in the owning feature PR. Compose complete DB 32 / protocol 2 reset with Worker schema 4 and portable bundle 4, removing independent Models/persistent API catalogs while preserving exact inline settings, pricing history and native/account authority. Earlier DBs and backups are unsupported. The owner waives earlier DB retention, permitting an explicit reset of its DB/sidecars without conversion; protected credentials and native ownership retain their original cleanup authority. Reservation-only changes grant no support.
+
+- DeliDev execution options follow `cmds-delidev-catalog-contract.md#native-execution-option-selection`: forward available native settings exactly without advertised-support gates or a product concurrency cap. Keep unavailable saved values, reject them explicitly at execution, and preserve applied-setting, account, authentication, cleanup and original-recovery proofs. Codex API/subscription accept all four permission modes; full-access may expose managed authentication files. No RPC/storage migration.
+
+- Issues #2054/#2057 follow `cmds-delidev-catalog-contract.md#new-session-defaults-and-literal-branch-prefixes--issues-2054-and-2057`: System 56/Worker 38, schema-3 Project/Settings and portable v6 preserve capability52, schema1/2 reads and v1–5 imports. Reject destructive legacy writes. Resolve creation Plan defaults until explicit checkbox edit; freeze pending/uncertain mode and exact requests. Preserve literal `delidev/` default, absent inheritance/empty disable, exact UTF-8 ref validation, original source revisions and legacy execution omission bytes. Compose bounded shared prefix instructions in Execute only through existing four-harness channels, never in Plan/read-only Sidechat or shell interpolation. Preserve all native/account/workspace/history/cleanup authority; no migration or numeric native gate.
+
+### cmds/delidev-cli constraints
+
+- Project behavior settings follow `cmds-delidev-catalog-contract.md#project-behavior-settings-issue-1965`: System 52, schema-2 Project/Settings and portable v5 preserve continuous typed inheritance, explicit project context, source-route/Agent and repository precedence, all three fetch gates, immutable snapshots and first-publication durable plan response decisions. Previously pending plans stay manual; uncertainty never permits resend. Preserve v1–4 imports and reject destructive legacy writes. No SQLite migration or Worker capability is added.
+
+### cmds/delidev-cli/internal/cli constraints
+
+- Current protocol-2 model catalogs are retired: ordinary Model CRUD/search/resolve returns typed Unsupported before server selection or authentication input. Keep native observation commands independent. Inline schema-4 fixture routes require original same-source Accounts; disconnected fixture Accounts remain disconnected and grant no native readiness. Token pricing uses Provider-or-SubscriptionService plus the exact native ID, never a Model UUID.
+
+### cmds/delidev-cli/internal/domain constraints
+
+- OpenCode foreground children follow issue #1208 and the subagent contract: close original task input/metadata and product/native tool references, retain exact independent child IDs, same model and nullable response counters. Keep task observations separate from independently read content/history, reject nested/reused/background ownership and never add child usage to root accounting.
+
+- OpenCode context metadata preserves a selected known/user-declared model limit in an optional immutable execution snapshot before its first digest. Omitted legacy limits and limits with unknown metadata sources remain unknown and do not change the execution digest. Original automatic context progress uses the closed OpenCode native part identity and ordered lifecycle; summaries/continuation users grant no product input or fabricated accounting.
+
+- Agent Worker ordered source routes follow the catalog, desktop, protocol and sessions contracts. Main reservation PR #1371 owns System capability 36 and SaveAgentWorkerRequest.route_models field 5; preserve capability 35. Keep schema-3 routes exclusive with legacy fields, all models/accounts referenced and saved atomically, per-source routing state updated only with a successful first claim, confirmed-exhaustion-only fallback and observed-recovery preference for later new sessions. Preserve immutable executions, old-client write protection and portable v1/v2/v3 compatibility; add no SQLite migration.
+
+- `native_options.go` separates saved selection validity from execution adapter availability under the catalog native-option contract. Preserve unavailable saved values and report exact option names before execution. Bounded efforts and approval policies are not support enums; uint32 concurrency has no product cap. Retain exact applied observations and immutable same-account model references.
+
+### cmds/delidev-cli/internal/harness/codex constraints
+
+- Empty native model verification is discarded metadata only for the original known root turn. Populated/foreign verification remains a private extension; missing/null/malformed arrays or unknown fields fail. Closed extension classifications provide diagnostics without logging native methods or payloads. Installed thread fixtures must reject unhandled extensions.
+
+- Before native thread Start/Resume, pass explicit child model and effort selections unchanged without gating on advertised native models or effort lists. Native rejection remains an execution error and cannot authorize omission or default retry. Canonical same-account child model references remain mandatory and grant no additional account authority. Concurrency retains the exact native `agents.max_concurrent_threads_per_session` semantics, including native V2 composition with the root; zero omits the override. Native Code Mode/runtime and collaboration availability remain independently required and must not be inferred from a saved model selection.
+
+- Discard only notification-form `skills/changed` with a required empty object as closed process metadata. Never refresh skills/catalogs, enumerate packages or alter immutable selected input; null/missing/non-object/nonempty/malformed payloads, same-name server requests and unknown families retain rejection. Preserve original input, continuation, recovery and cleanup fences under the harness contract.
+
+### cmds/delidev-cli/internal/knownmodels constraints
+
+- On restart, restore a cache only when its reviewed date is newer than the bundled catalog or its date and semantic version exactly match; an equal-date version mismatch is ambiguous, so prefer the bundle and refresh immediately.
+
+### cmds/delidev-cli/internal/server constraints
+
+- Agent Worker wizard saving follows the catalog/protocol contracts: derive one current account source, require at least one account, preserve ordered routing, resolve exact model identity and write model plus Worker in one receipt transaction. Bind source-scoped list cursors before pagination. Preserve canonical metadata/history and legacy accountless APIs; capability 33 is configuration support, never native readiness.
+
+- Preserve each child’s original explicit requested model and reject Claude-only task/tool metadata on Codex batches. Check historical native/product/execution ownership once for the complete batch before publication; keep atomic rejection and source-specific nullable usage.
+
+- Windows OpenCode General Chat dispatch uses the separate root/checkpoint profile in the harness/session contracts. Remove only the OS exclusion; preserve immutable selection, current account/model/Worker and preparation gates. The owning Worker independently verifies exact native `/` and canonical filesystem roots before native work. Continuation and completed-report recovery require the original accepted report/history and independent root/process/workspace proof; no server-native path interpretation, legacy checkpoint promotion or input replay.
+
+- Native execution option availability follows the catalog native-option contract. Reject missing adapters before execution admission with the exact field name; do not gate forwarded values on advertised support or rewrite accepted snapshots. All four Codex API/subscription permissions preserve original leases, account/Worker authority and cleanup/recovery.
+
+### cmds/delidev-cli/internal/store constraints
+
+- Follow `cmds-delidev-catalog-contract.md` for presets and model discovery. Join bounded automatic refresh work before releasing server resources; cancel discovery when disabled, and publish models/observation/events/receipt atomically. Preserve manual registrations, user-declared metadata, display preferences, acknowledged NEW state and explicit-deletion suppressions. Discovery cannot grant account readiness or harness compatibility. Canonical UUIDs take precedence over upstream names; ambiguous alias/native selectors fail. Search cursors bind filters and the model/provider event epoch, and legacy identity conflicts must fail migration without rewriting original data.
+
+- Current protocol-2 stores directly initialize the complete Model-free schema 32 from `schema_032.go`. Startup, inspection and restore reject earlier layouts before writes; there is no schema 1–31 conversion, replay or compatibility repair. Preserve original allocation ownership and all current native/protected cleanup records. Frozen historical schema fixtures document earlier layouts and grant no current upgrade path.
+
+- Project behavior settings follow `cmds-delidev-catalog-contract.md#project-behavior-settings-issue-1965`: System 52, schema-2 Project/Settings and portable v5 preserve continuous typed inheritance, explicit project context, source-route/Agent and repository precedence, all three fetch gates, immutable snapshots of the exact selected route policy and first-publication durable plan response decisions. Previously pending plans stay manual; uncertainty never permits resend. Preserve v1–4 imports and reject destructive legacy writes. No SQLite migration or Worker capability is added.
+
+### cmds/delidev-cli/internal/tokenprices constraints
+
+- Keep 15-second/16 MiB and bounded inventory limits, exact decimal rates and source/native identity. Automatic rates grant no model/account/native support. Preserve missing values, unsupported variants and original unpriced Grok accounting.
+
+### cmds/delidev-cli/internal/worker constraints
+
+- The Grok first-text Worker runner and public initial dispatch are limited to Execute/default settings, owned General Chat and the pinned API profile. Snapshot the selected model's explicit context window plus known/user-declared provenance; match it against original native setup without inventing a limit for historical/unknown metadata. Reject unsupported selections atomically before consuming input/routing. Retain registration metadata outside the empty runtime, replay only original outbox receipts and require independent workspace-lease cleanup before completion output. Before acceptance and on stream loss, cancellation joins the process and retains uncertainty. Accepted text Stop, including before the first output chunk, uses the original once-only native claim, independently retained terminal/idle/cleanup, acknowledged content and server cancellation proof within a bounded grace; force cleanup cannot manufacture native Stop, a continuation checkpoint or a replacement input.
+
+- Grok Build's private API initialization/session-creation profile is separate from discovery and public execution. Reconstruct the private environment, inspect machine/runtime/workspace configuration, pin primary and auxiliary native model selectors to one registered relay model, and accept only the documented original native purge marker when configuration changes. Preserve strict JSON-RPC 2.0 and bounded redacted output. Persist original creation and native-binding claims before further work; failed or uncertain creation never permits another attempt on that runtime. Native setup/MCP/model observations grant no prompt, permission, subscription, continuation or Worker dispatch authority by themselves. MCP initialization may finish after the native session actor is spawned but before the remaining ordered setup phases; retain independent barriers and require both before accepting input. Reject premature, duplicate, foreign or incomplete initialization.
+
+- Grok's private original Read input profile uses the same once-only input claim and native binding as text, then composes only the validated default file-read observations through the original callback/lifetime boundary. Keep individual model-response counters, the last response's RPC metadata, aggregate original-input usage and context separate; compare reported aggregate primitives with overflow-checked original response totals, without deriving absent total tokens, duration or auxiliary costs. Reject Write/request authority, unsettled tools, changed accounting and replay; Read completion cannot borrow plain-text Stop, native-close/history or continuation authority.
+
+- Codex metadata cannot silently change the accepted root/model/options/permission or active mode. Keep internal instructions, native warning bodies and remote identities out of product records/logs. Native token observations preserve cumulative versus last-request counters and unavailable fields, carry immutable assignment-derived account/model provenance, and replay through the same durable outbox identity. Never sum these observations, fabricate zeros/costs or treat an empty quota bucket as recovery; counter-reset/fork/subagent aggregation and populated quota require their own validated adapters.
+
+- Claude API initialization must verify separately correlated native applied model/effort before returning a stream. Preserve native default/null effort and exact immutable explicit selections; raw settings, requested flags or model advertisements cannot substitute for applied evidence. The current private profile requires empty effective/source collections and no advisor/ultracode. Reject malformed or mismatched observations before input, join cleanup, keep raw sources private, and treat retained initial settings as historical metadata that needs a fresh read after configuration changes. Native configuration evidence does not prove hosted-provider capability.
+
+- OpenCode Worker requested settings must preserve the immutable model/instructions/input mode and reject unsupported explicit options before native work. Requested native defaults are not observations. Emit the private initial `opencode_agent` observation only after original owned configuration/context/agent verification, for an explicit empty session override array; keep missing effort/tier null and reject cross-harness or input-mode drift. Do not reinterpret native defaults as a sandbox or grant public dispatch/publication from shared shape validation.
+
+- Codex empty model-verification metadata grants no account/model/input authority and is consumed only after the harness binds it to the original known root turn. Unsupported event logs use closed extension classifications, never raw native methods or payloads. Preserve unknown-event rejection and original accepted-input recovery.
+
+### Protocol integration
+
+- Inline Worker models and endpoint-only completion follow the allocation amendment in `cmds-delidev-catalog-contract.md`. Record System 42 / Worker 22 and the complete endpoint/identity/pricing declarations in the owning feature PR. Compose complete DB 32 / protocol 2 reset with Worker schema 4 and portable bundle 4, removing independent Models/persistent API catalogs while preserving exact inline settings, pricing history and native/account authority. Earlier DBs/backups/sidecars remain untouched and unsupported; reservation-only changes grant no support.
+
 ## Storage
 
 Schema v3 adds unique canonical-model and alias indexes, native-ID/display-order indexes, an indexed model/provider event epoch and `model_suppressions`. Migration from v1/v2 first synchronizes a private consistent backup and then applies schema changes transactionally. Conflicting legacy identities fail with the original version/data intact; migration never renames or merges them silently. Search, resolution and due-account scans are bounded indexed reads. A discovery publication is bounded to 10,000 retained models for one provider; exceeding the bound produces a visible failed observation without partial additions. SQLite/local search is the documented project override of cloud search/storage defaults.
@@ -420,6 +508,8 @@ Connect Go/protobuf, SQLite, the protected account lifecycle, provider inspector
 ## Change Triggers
 
 Update this contract, provider/account and protocol contracts, the project index, validation records in pull requests, issues and CI logs/artifacts and applicable AGENTS whenever preset identities, observation ownership, discovery scheduling, model identity/provenance or search semantics change.
+
+Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
 
