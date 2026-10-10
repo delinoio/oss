@@ -2,7 +2,6 @@
 package codex
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -156,7 +155,8 @@ func testSkillForkCopiesOriginalPackages(t *testing.T, withImages bool) {
 		extra = append(extra, map[string]any{"type": "localImage", "path": filepath.Join(imageRoot, "image-inputs", string(ref.ID)+".data")})
 	}
 	id, turnID := domain.NewID(), domain.NewID()
-	turn, _ := json.Marshal(map[string]any{"id": turnID, "status": "completed", "itemsView": "full", "items": []any{map[string]any{"id": "user", "type": "userMessage", "clientId": id, "content": append(append([]any{map[string]any{"type": "text", "text": "<skill><path>" + selected[0].Path + "</path></skill> literal user quotation", "text_elements": []any{}}}, extra...), map[string]any{"type": "skill", "name": "add-issue", "path": selected[0].Path})}}})
+	literalUserText := "<skill><path>" + selected[0].Path + "</path></skill> literal user quotation"
+	turn, _ := json.Marshal(map[string]any{"id": turnID, "status": "completed", "itemsView": "full", "items": []any{map[string]any{"id": "user", "type": "userMessage", "clientId": id, "content": append(append([]any{map[string]any{"type": "text", "text": literalUserText, "text_elements": []any{}}}, extra...), map[string]any{"type": "skill", "name": "add-issue", "path": selected[0].Path})}}})
 	_, original, err := decodeLatestTurnInputs(marshalForkPage([]json.RawMessage{turn}), imageClient.nativeImageInput)
 	if err != nil {
 		t.Fatal(err)
@@ -180,9 +180,28 @@ func testSkillForkCopiesOriginalPackages(t *testing.T, withImages bool) {
 	if child.checkpoint.Inputs[0].PromptDigest != original[0].PromptDigest || child.checkpoint.Inputs[0].SkillDigest == original[0].SkillDigest {
 		t.Fatal("invalid remapped native proof")
 	}
-	// Literal user text is never rewritten merely because it resembles native tags.
-	if !bytes.Contains(child.turns[0], []byte(selected[0].Path)) {
+	// Compare decoded values: JSON escapes Windows path separators. Literal
+	// text remains exact while only the typed skill node moves to the child.
+	var childTurn struct {
+		Items []struct {
+			Type    string `json:"type"`
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+				Path string `json:"path"`
+			} `json:"content"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(child.turns[0], &childTurn); err != nil || len(childTurn.Items) != 1 || childTurn.Items[0].Type != "userMessage" || len(childTurn.Items[0].Content) != 2+len(extra) {
+		t.Fatal("invalid child user message", err)
+	}
+	content := childTurn.Items[0].Content
+	if content[0].Type != "text" || content[0].Text != literalUserText {
 		t.Fatal("literal user path was rewritten")
+	}
+	skill := content[len(content)-1]
+	if skill.Type != "skill" || skill.Path != filepath.Join(childHome, "selected-skills", string(entry.SkillID), "SKILL.md") {
+		t.Fatal("typed skill path did not retain its child package")
 	}
 	// Source inventory edits and parent deletion cannot replace child resources.
 	os.RemoveAll(sourceHome)
