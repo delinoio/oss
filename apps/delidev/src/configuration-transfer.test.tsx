@@ -26,7 +26,7 @@ function fixture() {
     router.service(ResourceService, { getResource, listResources: () => ({ resources: [] }) });
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
-  const view = (active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ConfigurationTransfer active={active} /></MutationIntents></QueryClientProvider></TransportProvider>;
+  const view = (active = true, onWorkflowReadyChange?: (active: boolean) => void) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ConfigurationTransfer active={active} onWorkflowReadyChange={onWorkflowReadyChange} /></MutationIntents></QueryClientProvider></TransportProvider>;
   return { bundle, previewBytes, exported, preview, apply, client, view, status, getResource, jobId, state: (next: string) => { state = next; } };
 }
 function load(bundle: unknown) {
@@ -363,4 +363,45 @@ it("fences a late export failure after an import draft event without releasing t
  expect(screen.queryByRole("alert")).toBeNull();expect(screen.queryByText("Technical details")).toBeNull();
  fireEvent.click(screen.getByRole("button",{name:"Load configuration document"}));
  expect(screen.getByRole("button",{name:"Preview configuration changes"})).toBeTruthy();expect(value.apply).not.toHaveBeenCalled();
+});
+
+
+it.each(["rpc", "document"])("releases export-only %s failure protection while retaining guidance and retry", async failure => {
+  const value = fixture(), protectedWorkflow = vi.fn();
+  if (failure === "rpc") value.exported.mockRejectedValueOnce(new ConnectError("private export error", Code.Unavailable));
+  else value.exported.mockResolvedValueOnce({ documentJson: encode({ version: 999, entries: [], machines: [] }) });
+  render(value.view(true, protectedWorkflow));
+  fireEvent.click(screen.getByRole("button", { name: "Export configuration" }));
+  await screen.findByRole("alert");
+  await waitFor(() => expect(protectedWorkflow).toHaveBeenLastCalledWith(false));
+  expect((screen.getByRole("button", { name: "Export configuration" }) as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Export configuration" }));
+  const exported = await screen.findByRole("textbox", { name: "Exported configuration" }) as HTMLTextAreaElement;
+  expect(exported.value).toBe(JSON.stringify(value.bundle));
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(value.exported).toHaveBeenCalledTimes(2);
+  expect(value.apply).not.toHaveBeenCalled();
+});
+
+it("protects the original pending export and uncertain import independently of terminal export guidance", async () => {
+  const value = fixture(), protectedWorkflow = vi.fn();
+  let reject!: (error: unknown) => void;
+  value.exported.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+  value.apply.mockRejectedValueOnce(new ConnectError("lost import acknowledgement", Code.Unavailable));
+  render(value.view(true, protectedWorkflow));
+  fireEvent.click(screen.getByRole("button", { name: "Export configuration" }));
+  await waitFor(() => expect(protectedWorkflow).toHaveBeenLastCalledWith(true));
+  await act(async () => reject(new ConnectError("export failure", Code.Unavailable)));
+  await waitFor(() => expect(protectedWorkflow).toHaveBeenLastCalledWith(false));
+  load(value.bundle);
+  expect(protectedWorkflow).toHaveBeenLastCalledWith(true);
+  fireEvent.click(screen.getByRole("button", { name: "Preview configuration changes" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Apply reviewed configuration" }));
+  await screen.findByRole("button", { name: "Retry the same configuration import" });
+  expect(protectedWorkflow).toHaveBeenLastCalledWith(true);
+  fireEvent.click(screen.getByRole("button", { name: "Retry the same configuration import" }));
+  await waitFor(() => expect(value.apply).toHaveBeenCalledTimes(2));
+  expect(value.apply.mock.calls[1][0]).toEqual(value.apply.mock.calls[0][0]);
+  await screen.findByText(/Import accepted. Waiting for confirmation/);
+  expect(protectedWorkflow).toHaveBeenLastCalledWith(true);
 });

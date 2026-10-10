@@ -1555,3 +1555,21 @@ it("compact navigation never changes the retained wide collapse choice or dispat
   act(() => resize(false)); expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeTruthy();
   expect(document.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")!.hidden).toBe(true); expectNoNavigationWrites(value);
 }, fullShellTimeoutMs);
+
+
+it("opens targeted Repositories after closing Settings with a terminal export failure", async () => {
+  const value = fixture();
+  render(<App transport={value.transport} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Import / Export" }));
+  // This fixture deliberately has no export handler: the read terminates with Unimplemented.
+  fireEvent.click(screen.getByRole("button", { name: "Export configuration" }));
+  await screen.findByRole("alert");
+  expect((screen.getByRole("button", { name: "Export configuration" }) as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
+  fireEvent.click(screen.getByRole("button", { name: "Repository settings" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Repositories" }).getAttribute("aria-pressed")).toBe("true"));
+  expect(screen.queryByRole("textbox", { name: "Configuration JSON" })).toBeNull();
+  expect(value.saveConfiguration).not.toHaveBeenCalled();
+});
