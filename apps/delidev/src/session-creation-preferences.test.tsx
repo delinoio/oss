@@ -25,13 +25,14 @@ function fixture(initial = true, includeRemembered = false, defaults?: { global:
  const bridge={read:vi.fn(async(kind:NewSessionKind):Promise<unknown>=>({revision,scope,pair:memory.get(kind)??null,problem:null})),update:vi.fn(async(kind:NewSessionKind,pair:CreationPreferencePair,expected:number):Promise<unknown>=>{expect(expected).toBe(revision);memory.set(kind,pair);return {revision:++revision,scope,pair,problem:null};})};
  const get=vi.fn((request:{kind:EntityKind;id:string})=>({resource:[agent,machine,otherAgent,otherMachine,...projects].find(row=>row.id===request.id&&row.kind===request.kind)}));
  const createSession=vi.fn(async(_request:CreateSessionRequest)=>({change:{session:resource(EntityKind.SESSION,"Accepted")}}));
+ const settingsReads=vi.fn();
  const transport=createRouterTransport(router=>{
-  router.service(ResourceService,{getResource:get,listResources:request=>{ if(request.filter?.kind===EntityKind.SETTINGS && defaults?.fail) throw new ConnectError("defaults unavailable",Code.Unavailable);return ({resources:request.filter?.kind===EntityKind.SETTINGS && defaults?[defaultSettings]:request.filter?.kind===EntityKind.AGENT?[otherAgent,...(includeRemembered?[agent]:[])]:request.filter?.kind===EntityKind.MACHINE?[otherMachine]:request.filter?.kind===EntityKind.PROJECT?projects:[]})}});
+  router.service(ResourceService,{getResource:get,listResources:request=>{ if(request.filter?.kind===EntityKind.SETTINGS) settingsReads(); if(request.filter?.kind===EntityKind.SETTINGS && defaults?.fail) throw new ConnectError("defaults unavailable",Code.Unavailable);return ({resources:request.filter?.kind===EntityKind.SETTINGS && defaults?[defaultSettings]:request.filter?.kind===EntityKind.AGENT?[otherAgent,...(includeRemembered?[agent]:[])]:request.filter?.kind===EntityKind.MACHINE?[otherMachine]:request.filter?.kind===EntityKind.PROJECT?projects:[]})}});
   router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.AUTOMATIC_TITLES_V1,...(defaults?[SystemCapability.SESSION_DEFAULTS_V1]:[])]})});router.service(SessionService,{createSession});
  });
  const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
  const view=(kind=NewSessionKind.Session, readLocalWorker?: () => Promise<{machineId:string;token:string}>)=><StrictMode><TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><NewSession kind={kind} active ownsActivation activation={1} back={()=>{}} openSettings={()=>{}} open={()=>{}} created={()=>{}} preferenceBridge={bridge} preferenceScope={scope} readLocalWorker={readLocalWorker}/></MutationIntents></QueryClientProvider></TransportProvider></StrictMode>;
- return {agent,machine,otherAgent,otherMachine,projects,scope,bridge,memory,get,createSession,client,view};
+ return {agent,machine,otherAgent,otherMachine,projects,scope,bridge,memory,get,createSession,client,view,defaultSettings,settingsReads};
 }
 
 // Agent and Runner restoration settle independently. Submit only after the
@@ -200,4 +201,44 @@ it("does not submit a provisional default after a failed settings read",async()=
  expect(create.disabled).toBe(true);expect(f.createSession).not.toHaveBeenCalled();
  fireEvent.click(screen.getByRole("checkbox",{name:"Plan Mode"}));
  await waitFor(()=>expect(create.disabled).toBe(false));
+});
+
+
+it("rereads changed global defaults before untouched automatic creation and freezes uncertain retries", async () => {
+ const defaults={global:false}, f=fixture(true,false,defaults);render(f.view());
+ fireEvent.change(screen.getByRole("textbox",{name:"First message"}),{target:{value:"Original automatic request"}});
+ await waitFor(()=>expect((screen.getByRole("button",{name:"Create session"}) as HTMLButtonElement).disabled).toBe(false));
+ const before=f.settingsReads.mock.calls.length;
+ f.defaultSettings.revision=2n;f.defaultSettings.documentJson=encode({automatic_plan_approval:false,plan_mode_default:true,branch_prefix:"delidev/"});
+ expect((screen.getByRole("checkbox",{name:"Plan Mode"}) as HTMLInputElement).checked).toBe(false);
+ f.createSession.mockRejectedValueOnce(new ConnectError("Lost creation acknowledgment",Code.Unavailable));
+ await submitCreation();await screen.findByRole("button",{name:"Retry the same session creation"});
+ expect(f.settingsReads.mock.calls.length).toBe(before+1);
+ const original=f.createSession.mock.calls[0][0];expect(JSON.parse(new TextDecoder().decode(original.documentJson)).mode).toBe("plan");
+ f.defaultSettings.revision=3n;f.defaultSettings.documentJson=encode({automatic_plan_approval:false,plan_mode_default:false,branch_prefix:"delidev/"});
+ fireEvent.click(screen.getByRole("button",{name:"Retry the same session creation"}));await waitFor(()=>expect(f.createSession).toHaveBeenCalledTimes(2));
+ expect(f.createSession.mock.calls[1][0].requestId).toBe(original.requestId);expect(f.createSession.mock.calls[1][0].documentJson).toEqual(original.documentJson);expect(f.settingsReads.mock.calls.length).toBe(before+1);
+});
+
+it("rereads the exact selected project's changed override without remounting", async () => {
+ const f=fixture(true,false,{global:false,project:"inherit"});render(f.view());
+ await chooseScrollOption(screen.getByRole("combobox",{name:"Project"}),f.projects[0].id);
+ fireEvent.change(screen.getByRole("textbox",{name:"First message"}),{target:{value:"Selected project request"}});
+ await waitFor(()=>expect((screen.getByRole("button",{name:"Create session"}) as HTMLButtonElement).disabled).toBe(false));
+ const project=f.projects[0], before=f.get.mock.calls.filter(([r])=>r.id===project.id).length;
+ project.revision=2n;project.documentJson=encode({...JSON.parse(new TextDecoder().decode(project.documentJson)),settings:{plan_mode_default:"enabled"}});
+ await submitCreation();await waitFor(()=>expect(f.createSession).toHaveBeenCalledOnce());
+ expect(f.get.mock.calls.filter(([r])=>r.id===project.id).length).toBe(before+1);
+ expect(JSON.parse(new TextDecoder().decode(f.createSession.mock.calls[0][0].documentJson))).toMatchObject({project_id:project.id,mode:"plan"});
+});
+
+it("blocks a failed submit-time default read and preserves explicit Execute intent", async () => {
+ const defaults={global:false,fail:false}, f=fixture(true,false,defaults);render(f.view());
+ fireEvent.change(screen.getByRole("textbox",{name:"First message"}),{target:{value:"Retained draft"}});
+ await waitFor(()=>expect((screen.getByRole("button",{name:"Create session"}) as HTMLButtonElement).disabled).toBe(false));
+ defaults.fail=true;await submitCreation();await screen.findByRole("button",{name:"Retry Plan Mode defaults"});
+ expect(f.createSession).not.toHaveBeenCalled();expect((screen.getByRole("button",{name:"Create session"}) as HTMLButtonElement).disabled).toBe(true);
+ const before=f.settingsReads.mock.calls.length, checkbox=screen.getByRole("checkbox",{name:"Plan Mode"});fireEvent.click(checkbox);fireEvent.click(checkbox);
+ await submitCreation();await waitFor(()=>expect(f.createSession).toHaveBeenCalledOnce());
+ expect(JSON.parse(new TextDecoder().decode(f.createSession.mock.calls[0][0].documentJson)).mode).toBe("execute");expect(f.settingsReads.mock.calls.length).toBe(before);
 });

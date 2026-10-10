@@ -592,8 +592,11 @@ Server `plan_mode_default` defaults to false. The project's typed
 New Session follows the selected project override and then the global value;
 General Chat follows the global value. Defaults apply until an explicit mode
 checkbox edit. Prompt, Agent, Runner and budget edits do not count as mode edits.
-Loading, failed, incomplete, stale or malformed reads cannot authorize a
-provisional mode. Explicit mode selection remains available. Freeze original
+Before each untouched automatic creation, reread the complete current Settings
+singleton and exact selected Project directly. Validate their original identities,
+schemas and non-regressing revisions before resolving the mode; mounted cached
+queries alone do not authorize creation. Loading, failed, incomplete, stale or
+malformed reads cannot authorize a provisional mode. Explicit mode selection remains available. Freeze original
 mode during pending/uncertain creation, preserve exact retries and mounted draft
 ownership, and reset automatic resolution after accepted creation.
 

@@ -354,7 +354,7 @@ controls at 1100px, 520px, 960×640 and effective 200% reflow. Preserve creation
 touched marker and inherited fieldset lock, the existing session's pending and
 uncertain lock, independent mounted drafts and connection identity resets.
 Navigation and language changes retain their original mode state. Project changes
-recalculate automatic capability-56 creation defaults while explicit mode choices remain retained. Explicit uncertain retries use the original request identity and mode.
+recalculate automatic capability-56 creation defaults while explicit mode choices remain retained. Before new automatic creation, fresh complete Settings and selected Project reads must validate original identities, schemas and non-regressing revisions. Keep the captured selection locked during this read; failures block automatic creation until an explicit retry or mode choice. Explicit uncertain retries use the original request identity and mode.
 Schedule and local-review mode controls keep their current presentation. This
 change grants no new execution, protocol, account or native authority.
 
