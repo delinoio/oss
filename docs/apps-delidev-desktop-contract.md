@@ -3438,7 +3438,10 @@ request; stale sources and uncertain outcomes cannot submit new input.
 
 Verified completion restores the original prompt text as an unsent draft and
 focuses the active composer. Preserve a draft edited during the operation or
-while the view was inactive; offer explicit restoration of the retained prompt
+while the view was inactive. Capture the original draft edit generation at
+confirmation and require it to remain unchanged, even if edits or undo return
+to identical text. Keep that generation with the connection draft owner across
+empty drafts and navigation; offer explicit restoration of the retained prompt
 instead of overwriting it. Reopening the conversation can restore that same
 verified prompt without a new native mutation. Original image/skill metadata
 stays in historical input records; fresh selection/staging owns later input.

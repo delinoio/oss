@@ -18,13 +18,13 @@ export function verifiedRevertDraft(session: Resource | undefined, action: strin
  if (p.action_id !== action || target.message_id !== message || revision(target.context_revision) !== context || revision(result.context_revision) !== context + 1n || revision(s.context_revision) !== context + 1n || s.compaction_job_id || s.recovery !== "none" || !text(p.job_id) || !Array.isArray(result.retained_turn_ids) || result.retained_turn_ids.includes(target.native_turn_id) || typeof prompt.prompt !== "string" || !["execute", "plan"].includes(text(prompt.mode))) return;
  return prompt;
 }
-export function useSessionRevert({session,active,draft,restore,composer,blocked,changed}:{session?:Resource;active:boolean;draft:string;restore:(prompt:string,mode:string)=>boolean|void;composer:RefObject<HTMLTextAreaElement|null>;blocked:boolean;changed:(resource:Resource)=>void}) {
+export function useSessionRevert({session,active,draft,readDraftEditGeneration,restore,composer,blocked,changed}:{session?:Resource;active:boolean;draft:string;readDraftEditGeneration:()=>bigint;restore:(prompt:string,mode:string)=>boolean|void;composer:RefObject<HTMLTextAreaElement|null>;blocked:boolean;changed:(resource:Resource)=>void}) {
  useLocale();
  const status=useQuery(SystemQuery.getStatus,{}, {enabled:active});
  const machine=useQuery(ResourceQuery.getResource,{kind:EntityKind.MACHINE,id:text(document(session).machine_id)},{enabled:active && Boolean(session)});
  const supported=Boolean(status.data?.capabilities.includes(SystemCapability.CODEX_SESSION_REVERT_V1) && !status.error && !machine.error && Array.isArray(document(machine.data?.resource).worker_capabilities) && (document(machine.data?.resource).worker_capabilities as unknown[]).includes("codex-session-revert-v1"));
  const [selected,setSelected]=useState<{row:Resource;source:Resource}>();
- const [pending,setPending]=useState<{action:string;message:string;context:bigint;draft:string}>();
+ const [pending,setPending]=useState<{action:string;message:string;context:bigint;draft:string;editGeneration:bigint}>();
  const [replacement,setReplacement]=useState<Document>();
  const restoredAction=useRef<string | undefined>(undefined);
  const originalSession=useRef(session?.id);
@@ -42,7 +42,7 @@ export function useSessionRevert({session,active,draft,restore,composer,blocked,
   const prompt=verifiedRevertDraft(original,pending.action,pending.message,pending.context);if(!prompt)return;
   // Native completion cannot overwrite a draft edited while the original job
   // was pending, or restore text into an inactive conversation.
-  if(latestDraft.current===pending.draft && restore(text(prompt.prompt),text(prompt.mode))!==false){composer.current?.focus();restoredAction.current=pending.action;setReplacement(undefined);}else setReplacement(prompt);
+  if(latestDraft.current===pending.draft && readDraftEditGeneration()===pending.editGeneration && restore(text(prompt.prompt),text(prompt.mode))!==false){composer.current?.focus();restoredAction.current=pending.action;setReplacement(undefined);}else setReplacement(prompt);
   setPending(undefined);setSelected(undefined);
  },[original,pending,active]);
  useEffect(()=>{if(mutation.error && !mutation.uncertain && !mutation.busy)setPending(undefined);},[mutation.error,mutation.uncertain,mutation.busy]);
@@ -51,7 +51,7 @@ export function useSessionRevert({session,active,draft,restore,composer,blocked,
  const confirm=()=>{
   if(!selected || !session || selected.source.id!==session.id || selected.source.revision!==session.revision || blocked || mutation.busy || mutation.uncertain || pending || !revertEligible(session,selected.row,supported))return;
   const action=newRequestId(),target=document(selected.row),context=revision(document(session).context_revision)!;
-  setPending({action,message:selected.row.id,context,draft:latestDraft.current});
+  setPending({action,message:selected.row.id,context,draft:latestDraft.current,editGeneration:readDraftEditGeneration()});
   setSelected(undefined);
   void mutation.send({mutation:{id:session.id,expectedRevision:session.revision,requestId:action},messageId:selected.row.id,beforeTurnId:text(target.native_turn_id),expectedContextRevision:context});
  };
