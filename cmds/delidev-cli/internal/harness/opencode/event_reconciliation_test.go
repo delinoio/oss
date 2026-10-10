@@ -476,3 +476,160 @@ func TestEventReconciliationLateArrivalsCannotEscapeHistoryBoundary(t *testing.T
 		})
 	}
 }
+
+func TestEventReconciliationTextReplayPreservesOrderAndMultiplicity(t *testing.T) {
+	for _, scenario := range []struct {
+		name, prefix, final string
+		deltas              []string
+		cumulative          string
+		wantFailure         bool
+	}{
+		{name: "reversed", final: "ab", deltas: []string{"b", "a"}, wantFailure: true},
+		{name: "missing multiplicity", final: "ab", deltas: []string{"a", "a"}, wantFailure: true},
+		{name: "ordered", final: "ab", deltas: []string{"a", "b"}},
+		{name: "real repeated text", final: "aa", deltas: []string{"a", "a"}},
+		{name: "retained prefix", prefix: "before ", final: "before ab", deltas: []string{"a", "b"}},
+		{name: "unicode", prefix: "한", final: "한글😀", deltas: []string{"글", "😀"}},
+		{name: "partial cumulative boundary", final: "abc", deltas: []string{"a", "c"}, cumulative: "ab"},
+		{name: "cumulative repeats accepted prefix", final: "ab", deltas: []string{"a", "b"}, cumulative: "a"},
+		{name: "cumulative contradicts deltas", final: "abc", deltas: []string{"ab", "c"}, cumulative: "a", wantFailure: true},
+		{name: "snapshot covers missed suffix", final: "abc", deltas: []string{"a"}},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			f := newObserverFixture(t)
+			f.start()
+			f.part(f.assistantPart(StepStartPartKind, 100, nil))
+			part := f.assistantPart(TextPartKind, 102, map[string]any{"text": scenario.prefix, "time": map[string]any{"start": 1236}})
+			f.part(part)
+			live := f.o.reconciliationCopy()
+			part["text"] = scenario.final
+			part["time"].(map[string]any)["end"] = 1245
+			f.part(part)
+			f.part(f.assistantPart(StepFinishPartKind, 101, map[string]any{"reason": FinishStop, "tokens": f.a["tokens"], "cost": 0}))
+			f.a["finish"] = FinishStop
+			f.a["time"].(map[string]any)["completed"] = 1250
+			f.message(f.a)
+			var events []NativeEvent
+			for index, delta := range scenario.deltas {
+				raw, _ := json.Marshal(map[string]any{"sessionID": fixtureSessionID, "messageID": f.a["id"], "partID": part["id"], "field": "text", "delta": delta})
+				events = append(events, NativeEvent{ID: fmt.Sprintf("evt_%012xabcdefghijklmn", index+200), Kind: MessagePartDeltaEvent, Properties: raw})
+				if index == 0 && scenario.cumulative != "" {
+					update := f.assistantPart(TextPartKind, 102, map[string]any{"text": scenario.cumulative, "time": map[string]any{"start": 1236}})
+					raw, _ := json.Marshal(map[string]any{"sessionID": fixtureSessionID, "part": update, "time": 1240})
+					events = append(events, NativeEvent{ID: "evt_ffffffffffe0abcdefghijklmn", Kind: MessagePartUpdatedEvent, Properties: raw})
+				}
+			}
+			candidate, observations, err := live.joinReconciliation(snapshotOfObserver(f.o), events)
+			if scenario.wantFailure {
+				if err == nil || candidate != nil || len(observations) != 0 {
+					t.Fatal("contradictory replay published covered facts", err)
+				}
+			} else {
+				if err != nil || candidate.parts[part["id"].(string)].text != scenario.final || !candidate.snapshot().SettledObserved {
+					t.Fatal("valid ordered replay failed", err)
+				}
+				for _, event := range events {
+					if !candidate.seen[event.ID] {
+						t.Fatal("original event identity was not covered")
+					}
+				}
+			}
+			if live.parts[part["id"].(string)].text != scenario.prefix {
+				t.Fatal("candidate validation changed original retained prefix")
+			}
+			for _, event := range events {
+				if live.seen[event.ID] {
+					t.Fatal("candidate validation changed original event coverage")
+				}
+			}
+		})
+	}
+}
+
+func TestEventReconciliationContradictoryDeltasRetainOriginalRecovery(t *testing.T) {
+	f := newReconciliationFixture(t)
+	for index, delta := range []string{" and", " and"} {
+		raw, _ := json.Marshal(map[string]any{"sessionID": fixtureSessionID, "messageID": f.o.progress.AssistantID, "partID": "prt_000000000066ABCDEFGHIJKLMN", "field": "text", "delta": delta})
+		f.overlap = append(f.overlap, NativeEvent{ID: fmt.Sprintf("evt_%012xabcdefghijklmn", index+200), Kind: MessagePartDeltaEvent, Properties: raw})
+	}
+	value, err := f.api.Next(context.Background())
+	if err == nil || value.Kind != "" || len(f.api.session.recovered) != 0 || !f.api.session.observer.snapshot().NeedsRecovery {
+		t.Fatal("contradictory deltas acquired terminal publication", err)
+	}
+	for _, event := range f.overlap {
+		if f.api.session.observer.seen[event.ID] {
+			t.Fatal("failed cycle marked original events covered")
+		}
+	}
+	if _, err := f.api.Next(context.Background()); err == nil || f.opened.Load() != 1 {
+		t.Fatal("contradiction gained another reconciliation attempt")
+	}
+}
+
+func TestEventReconciliationInterleavedPartsKeepIndependentTextBoundaries(t *testing.T) {
+	f := newObserverFixture(t)
+	f.start()
+	f.part(f.assistantPart(StepStartPartKind, 100, nil))
+	first := f.assistantPart(TextPartKind, 102, map[string]any{"text": "", "time": map[string]any{"start": 1236}})
+	second := f.assistantPart(TextPartKind, 103, map[string]any{"text": "한", "time": map[string]any{"start": 1237}})
+	f.part(first)
+	f.part(second)
+	live := f.o.reconciliationCopy()
+	first["text"], second["text"] = "ab", "한글😀"
+	first["time"].(map[string]any)["end"] = 1245
+	second["time"].(map[string]any)["end"] = 1245
+	f.part(first)
+	f.part(second)
+	f.part(f.assistantPart(StepFinishPartKind, 101, map[string]any{"reason": FinishStop, "tokens": f.a["tokens"], "cost": 0}))
+	f.a["finish"] = FinishStop
+	f.a["time"].(map[string]any)["completed"] = 1250
+	f.message(f.a)
+	var events []NativeEvent
+	for index, entry := range []struct{ part, text string }{{first["id"].(string), "a"}, {second["id"].(string), "글"}, {first["id"].(string), "b"}, {second["id"].(string), "😀"}} {
+		raw, _ := json.Marshal(map[string]any{"sessionID": fixtureSessionID, "messageID": f.a["id"], "partID": entry.part, "field": "text", "delta": entry.text})
+		events = append(events, NativeEvent{ID: fmt.Sprintf("evt_%012xabcdefghijklmn", index+200), Kind: MessagePartDeltaEvent, Properties: raw})
+	}
+	candidate, _, err := live.joinReconciliation(snapshotOfObserver(f.o), events)
+	if err != nil || candidate.reconciliationText[first["id"].(string)] != "ab" || candidate.reconciliationText[second["id"].(string)] != "한글😀" {
+		t.Fatal("interleaved original parts shared a replay boundary", err)
+	}
+	var wrong map[string]any
+	if err := json.Unmarshal(events[0].Properties, &wrong); err != nil {
+		t.Fatal(err)
+	}
+	wrong["messageID"] = f.o.input.receipt.MessageID
+	events[0].Properties, _ = json.Marshal(wrong)
+	if candidate, _, err := live.joinReconciliation(snapshotOfObserver(f.o), events); err == nil || candidate != nil {
+		t.Fatal("text replay crossed its original message boundary")
+	}
+}
+
+func TestEventReconciliationLateTailRejectsContradictionAtomically(t *testing.T) {
+	f := newReconciliationFixture(t)
+	drainReconciliation(t, f)
+	o := f.api.session.observer
+	var events []NativeEvent
+	for index, delta := range []string{" and", " and"} {
+		raw, _ := json.Marshal(map[string]any{"sessionID": fixtureSessionID, "messageID": o.progress.AssistantID, "partID": "prt_000000000066ABCDEFGHIJKLMN", "field": "text", "delta": delta})
+		events = append(events, NativeEvent{ID: fmt.Sprintf("evt_%012xabcdefghijklmn", index+200), Kind: MessagePartDeltaEvent, Properties: raw})
+	}
+	stream := f.api.session.events
+	stream.mu.Lock()
+	for _, event := range events {
+		stream.queue <- event
+		stream.pending += len(event.Properties)
+	}
+	stream.mu.Unlock()
+	before := o.reconciliationText["prt_000000000066ABCDEFGHIJKLMN"]
+	if err := f.api.session.verifyRecoveredTail(context.Background(), o); err == nil {
+		t.Fatal("late contradictory deltas were covered")
+	}
+	if !o.snapshot().NeedsRecovery || o.reconciliationText["prt_000000000066ABCDEFGHIJKLMN"] != before {
+		t.Fatal("late failed batch changed replay boundary or erased recovery")
+	}
+	for _, event := range events {
+		if o.seen[event.ID] {
+			t.Fatal("late failed batch partially committed coverage")
+		}
+	}
+}

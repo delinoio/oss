@@ -91,17 +91,22 @@ func (s *sessionAPI) verifyRecoveredTail(ctx context.Context, o *inputObserver) 
 	if problem != nil || ctx.Err() != nil {
 		return o.interruption(ctx)
 	}
+	if len(events) == 0 {
+		return nil
+	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	c := o.reconciliationCopy()
 	for _, event := range events {
-		if len(event.Properties) > maxObservedBytes-o.bytes {
+		if len(event.Properties) > maxObservedBytes-c.bytes {
 			return o.fail(ctx, "reconciliation-tail", eventBound())
 		}
-		if err := o.coveredReconciliationEvent(event); err != nil {
+		if err := c.coveredReconciliationEvent(event); err != nil {
 			return o.fail(ctx, "reconciliation-tail", err)
 		}
-		o.bytes += len(event.Properties)
+		c.bytes += len(event.Properties)
 	}
+	o.seen, o.reconciliationText, o.bytes = c.seen, c.reconciliationText, c.bytes
 	return nil
 }
 
@@ -414,7 +419,7 @@ func (o *inputObserver) reconciliationCopy() *inputObserver {
 	// Called with o.mu held. Copy every mutable comparison owner; failed joining
 	// must not change a published prefix, response receipt, or usage observation.
 	c := &inputObserver{contextOverflow: maps.Clone(o.contextOverflow), contextRecords: cloneContextRecords(o.contextRecords), contextUsers: maps.Clone(o.contextUsers), contextPending: o.contextPending, contextParent: o.contextParent, contextManual: o.contextManual, contextPruned: slices.Clone(o.contextPruned), contextBaseInventory: cloneHistoryInventory(o.contextBaseInventory), creation: o.creation, input: o.input, cwd: o.cwd, root: o.root, logger: o.logger, owner: o.owner,
-		seen: maps.Clone(o.seen), bytes: o.bytes, messages: map[string]*observedMessage{}, messageOrder: slices.Clone(o.messageOrder),
+		seen: maps.Clone(o.seen), reconciliationText: maps.Clone(o.reconciliationText), bytes: o.bytes, messages: map[string]*observedMessage{}, messageOrder: slices.Clone(o.messageOrder),
 		parts: map[string]*observedPart{}, attachments: maps.Clone(o.attachments), calls: maps.Clone(o.calls), progress: o.progress,
 		ctx: o.ctx, cancel: o.cancel, interactions: map[string]*observedInteraction{}, responseIDs: maps.Clone(o.responseIDs),
 		alwaysOrder: slices.Clone(o.alwaysOrder), sessionPermissions: slices.Clone(o.sessionPermissions), rejectionPolicy: o.rejectionPolicy, retries: slices.Clone(o.retries)}
@@ -469,6 +474,14 @@ func (o *inputObserver) joinReconciliation(snapshot reconciliationSnapshot, even
 	o.mu.Lock()
 	c := o.reconciliationCopy()
 	o.mu.Unlock()
+	// Replay text from the retained arrival boundary, independently of the final
+	// snapshot applied below. Substring membership cannot prove their original arrival order.
+	c.reconciliationText = make(map[string]string)
+	for id, part := range c.parts {
+		if part.value.Text != nil {
+			c.reconciliationText[id] = part.text
+		}
+	}
 	c.snapshotJoining = true
 	var observations []inputObservation
 	// Only actual original reply events can resolve a pending delivery. Neither
@@ -634,7 +647,16 @@ func (o *inputObserver) coveredReconciliationEvent(event NativeEvent) error {
 		if current == nil || value.SessionID != o.input.receipt.SessionID || value.MessageID != current.value.MessageID || value.Kind != current.value.Kind {
 			return observerProblem()
 		}
+		if value.Text != nil && current.value.Text != nil {
+			prior := o.reconciliationText[value.ID]
+			if !strings.HasPrefix(value.Text.Text, prior) || !strings.HasPrefix(current.text, value.Text.Text) {
+				return observerProblem()
+			}
+		}
 		if bytes.Equal(canonicalNative(fields["part"]), current.raw) {
+			if value.Text != nil {
+				o.reconciliationText[value.ID] = value.Text.Text
+			}
 			break
 		}
 		if value.Text != nil && current.value.Text != nil {
@@ -650,16 +672,24 @@ func (o *inputObserver) coveredReconciliationEvent(event NativeEvent) error {
 		} else {
 			return observerProblem()
 		}
+		if value.Text != nil {
+			o.reconciliationText[value.ID] = value.Text.Text
+		}
 	case MessagePartDeltaEvent:
 		if _, err := shape(event.Properties, []string{"sessionID", "messageID", "partID", "field", "delta"}, nil); err != nil || !scalar(fields["sessionID"], o.input.receipt.SessionID) || !scalar(fields["field"], "text") {
 			return observerProblem()
 		}
-		id, _ := boundedString(fields["partID"], 30, true)
+		id, identityValid := boundedString(fields["partID"], 30, true)
 		text, valid := boundedString(fields["delta"], maxHTTPBody, false)
 		part := o.parts[id]
-		if !valid || part == nil || part.value.Text == nil || !scalar(fields["messageID"], part.value.MessageID) || !strings.Contains(part.text, text) {
+		if !valid || !identityValid || part == nil || part.value.Text == nil || !scalar(fields["messageID"], part.value.MessageID) {
 			return observerProblem()
 		}
+		prefix := o.reconciliationText[id]
+		if len(prefix) > len(part.text) || len(text) > len(part.text)-len(prefix) || !strings.HasPrefix(part.text, prefix+text) {
+			return observerProblem()
+		}
+		o.reconciliationText[id] = prefix + text
 	case SessionStatusEvent, SessionIdleEvent, SessionUpdatedEvent, ServerHeartbeatEvent, LspUpdatedEvent, ModelsDevRefreshedEvent, CatalogUpdatedEvent, ReferenceUpdatedEvent, IntegrationUpdatedEvent, ProjectDirectoriesUpdatedEvent, PluginAddedEvent, IntegrationConnectionUpdatedEvent:
 		// Validate ancillary shapes using a throwaway live observer without changing
 		// the independently read idle boundary or accepting contradictory activity.
