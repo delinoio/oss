@@ -18,11 +18,16 @@ import (
 
 func TestPrimaryWorkRescansOriginalDependencyBlockedStorage(t *testing.T) {
 	for _, scenario := range []struct {
-		name     string
-		recovery bool
-		terminal int
+		name       string
+		recovery   bool
+		terminal   int
+		blocked    int
+		allBlocked bool
 	}{
 		{name: "cleanup"}, {name: "recovery", recovery: true}, {name: "later-terminal", terminal: 1}, {name: "across-pages", terminal: store.MaxPage + 1},
+		{name: "full-blocked-cleanup", blocked: store.MaxPage},
+		{name: "full-blocked-recovery", blocked: store.MaxPage, recovery: true},
+		{name: "all-blocked-heartbeat", blocked: store.MaxPage, allBlocked: true},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			f := newStorageFixture(t)
@@ -55,6 +60,18 @@ func TestPrimaryWorkRescansOriginalDependencyBlockedStorage(t *testing.T) {
 				if _, err := tx.PutJob(blocked, 0, f.session, "", domain.Job{Type: domain.WorkspaceStorageJob, State: domain.JobQueued, MachineID: f.machine, Input: raw, AcceptedAt: time.Now().UTC()}); err != nil {
 					return nil, err
 				}
+				for i := 1; i < scenario.blocked; i++ {
+					id := domain.NewID()
+					copy := input
+					copy.OperationID = id
+					payload, err := json.Marshal(copy)
+					if err != nil {
+						return nil, err
+					}
+					if _, err := tx.PutJob(id, 0, f.session, "", domain.Job{Type: domain.WorkspaceStorageJob, State: domain.JobQueued, MachineID: f.machine, Input: payload, AcceptedAt: time.Now().UTC()}); err != nil {
+						return nil, err
+					}
+				}
 				for i := 0; i < scenario.terminal; i++ {
 					if _, err := tx.PutJob(domain.NewID(), 0, "", "", domain.Job{Type: domain.InspectRepositoryJob, State: domain.JobSucceeded, MachineID: f.machine, Input: []byte(`{}`), Output: []byte(`{}`), AcceptedAt: time.Now().UTC()}); err != nil {
 						return nil, err
@@ -62,7 +79,11 @@ func TestPrimaryWorkRescansOriginalDependencyBlockedStorage(t *testing.T) {
 				}
 				// Allocate after the intervening terminal records to exercise stable pages.
 				ordinary, later = domain.NewID(), domain.NewID()
-				for _, id := range []domain.ID{ordinary, later} {
+				independent := []domain.ID{ordinary, later}
+				if scenario.allBlocked {
+					independent = nil
+				}
+				for _, id := range independent {
 					if _, err := tx.PutJob(id, 0, "", "", domain.Job{Type: domain.InspectRepositoryJob, State: domain.JobQueued, MachineID: f.machine, Input: []byte(`{"path":"/isolated/fixture","preferred_remote":"origin"}`), AcceptedAt: time.Now().UTC()}); err != nil {
 						return nil, err
 					}
@@ -77,7 +98,7 @@ func TestPrimaryWorkRescansOriginalDependencyBlockedStorage(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
 			stream, err := f.worker.WatchWork(ctx, ownerRequest(f.workerIdentity, &pb.WatchWorkRequest{MachineId: string(f.machine), InstanceId: string(f.instance)}))
 			if err != nil {
@@ -86,6 +107,26 @@ func TestPrimaryWorkRescansOriginalDependencyBlockedStorage(t *testing.T) {
 			defer stream.Close()
 			if !stream.Receive() || !stream.Msg().Heartbeat {
 				t.Fatal("primary readiness missing", stream.Err())
+			}
+			if scenario.allBlocked {
+				// The next heartbeat requires reaching the ticker select after scanning
+				// the complete blocked page; readiness alone cannot prove liveness.
+				if !stream.Receive() || !stream.Msg().Heartbeat || stream.Msg().Job != nil {
+					t.Fatal("blocked page prevented periodic heartbeat", stream.Msg(), stream.Err())
+				}
+				cancel()
+				if stream.Receive() {
+					t.Fatal("canceled blocked stream remained active")
+				}
+				row, err := f.service.Store.Get(context.Background(), domain.JobKind, blocked)
+				if err != nil {
+					t.Fatal(err)
+				}
+				job, err := store.Decode[domain.Job](row)
+				if err != nil || job.State != domain.JobQueued || row.Revision != 1 {
+					t.Fatal("heartbeat or cancellation claimed blocked cleanup", job, err)
+				}
+				return
 			}
 			if !stream.Receive() || stream.Msg().Job == nil || stream.Msg().Job.Id != string(ordinary) {
 				t.Fatal("later independent work did not progress", stream.Msg(), stream.Err())

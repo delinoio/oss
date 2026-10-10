@@ -483,6 +483,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 				}
 				if pending && (storageInput.Action == workspace.StorageCleanup || storageInput.Action == workspace.StorageRecover) {
 					rememberDependency()
+					after = record.ID
 					continue
 				}
 			}
@@ -615,6 +616,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 				}
 				if claimDependencyBlocked {
 					rememberDependency()
+					after = record.ID
 					continue
 				}
 			}

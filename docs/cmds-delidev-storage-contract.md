@@ -1191,6 +1191,12 @@ trailing documents, malformed exceptions and oversized ordinary jobs remain
 rejected. Same-instance reconnect delivers the original claimed ID, revision and
 input bytes without another claim mutation or native effect.
 
+Dependency-blocked cleanup and recovery records advance the ordinary work scan
+cursor. The stream separately retains the earliest blocked predecessor for change,
+heartbeat and completed-assignment revisits. Full blocked pages cannot starve later
+independent work or the heartbeat/cancellation wait. Claim admission still rechecks
+original Sidechat dependents atomically before granting cleanup authority.
+
 Storage observations preserve the exact accepted snapshot ID, session, machine,
 digest, byte size, creation instant and repository count. Successful original
 deletion changes only its Deleted tombstone. Failed inspect/restore/delete recovery
