@@ -12,7 +12,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[path = "browser_child_close.rs"]
+mod child_close;
 use cef::*;
+use child_close::ChildClose;
 use delidev_desktop::{
     Connector, NativeFailure, SavedConnection,
     browser::{self, Policy, ProfileRecord, ProfileState, Tab, Tabs},
@@ -1911,6 +1914,7 @@ fn create_child(
         profile,
         request.clone(),
         policy,
+        Arc::new(ChildClose::default()),
     );
     if browser_host_create_browser(
         Some(&info),
@@ -1938,12 +1942,12 @@ fn create_child(
     };
     Ok(())
 }
-cef::wrap_client! {struct ExternalClient{host:Arc<BrowserHost>,app:AppHandle<CefRuntime>,profile:String,request:ViewRequest,policy:Arc<Mutex<Policy>>,}impl Client{
+cef::wrap_client! {struct ExternalClient{host:Arc<BrowserHost>,app:AppHandle<CefRuntime>,profile:String,request:ViewRequest,policy:Arc<Mutex<Policy>>,close:Arc<ChildClose>,}impl Client{
  // The pinned runtime installs a renderer-wide JavaScript message stub. Raw
  // external children have no Tauri browser-side handler: reject every process
  // message here so that stub cannot acquire product/native authority.
  fn on_process_message_received(&self,_browser:Option<&mut Browser>,_frame:Option<&mut Frame>,_source_process:ProcessId,_message:Option<&mut ProcessMessage>)->i32{0}
- fn life_span_handler(&self)->Option<LifeSpanHandler>{Some(ExternalLife::new(Arc::clone(&self.host),self.app.clone(),self.profile.clone(),self.request.clone()))}
+ fn life_span_handler(&self)->Option<LifeSpanHandler>{Some(ExternalLife::new(Arc::clone(&self.host),self.app.clone(),self.profile.clone(),self.request.clone(),Arc::clone(&self.close)))}
  fn request_handler(&self)->Option<RequestHandler>{Some(ExternalRequests::new(self.policy.clone()))}
  fn display_handler(&self)->Option<DisplayHandler>{Some(ExternalDisplay::new(Arc::clone(&self.host),self.profile.clone(),self.request.clone()))}
  fn permission_handler(&self)->Option<PermissionHandler>{Some(DenyPermissions::new())}
@@ -2032,20 +2036,116 @@ fn native_composition_clear(browser: &Browser) -> bool {
         false
     }
 }
-cef::wrap_life_span_handler! {struct ExternalLife{host:Arc<BrowserHost>,app:AppHandle<CefRuntime>,profile:String,request:ViewRequest,}impl LifeSpanHandler{
+cef::wrap_life_span_handler! {struct ExternalLife{host:Arc<BrowserHost>,app:AppHandle<CefRuntime>,profile:String,request:ViewRequest,close:Arc<ChildClose>,}impl LifeSpanHandler{
  fn on_after_created(&self,browser:Option<&mut Browser>){
    let Some(b)=browser else{return};
+   if !self.close.created(b.identifier()){return;}
    self.host.finish_child_created(&self.profile,&self.request,
      self.host.child_created(&self.profile,&self.request,b),
      ||{let _=hide_browser(b,&self.request);});
  }
  fn on_before_popup(&self,_browser:Option<&mut Browser>,_frame:Option<&mut Frame>,_popup_id:i32,_target_url:Option<&CefString>,_target_frame_name:Option<&CefString>,_target_disposition:WindowOpenDisposition,_user_gesture:i32,_popup_features:Option<&PopupFeatures>,_window_info:Option<&mut WindowInfo>,_client:Option<&mut Option<Client>>,_settings:Option<&mut BrowserSettings>,_extra_info:Option<&mut Option<DictionaryValue>>,_no_javascript_access:Option<&mut i32>)->i32{1}
- fn on_before_close(&self,_browser:Option<&mut Browser>){
+ fn do_close(&self,browser:Option<&mut Browser>)->i32{
+   #[cfg(any(target_os="macos",windows))]
+   {
+     // CEF's default closes the containing product window on these platforms.
+     // Destroy only this original child, as the pinned Tauri runtime does.
+     // Keep this override while raw children bypass its managed close handler.
+     let Some(browser)=browser else{return 1};
+     if !self.close.schedule(browser.identifier()){return 1;}
+     let original=browser.clone();let close=Arc::clone(&self.close);let parent=self.request.parent;
+     let queued=self.app.run_on_main_thread(move||destroy_original_child(&original,&close,parent));
+     if queued.is_err(){
+       tracing::warn!(operation="browser_child_close",phase="dispatch",classification="unavailable");
+       // DoClose is already on CEF's UI thread. A rejected event-loop dispatch
+       // must still finish child destruction without delegating to the parent.
+       destroy_original_child(browser,&self.close,self.request.parent);
+     }
+     1
+   }
+   #[cfg(not(any(target_os="macos",windows)))]
+   {let _=browser;0}
+ }
+ fn on_before_close(&self,browser:Option<&mut Browser>){
+   let Some(browser)=browser else{return};
+   if !self.close.completed(browser.identifier()){return;}
    let exit = self.host.child_closed(&self.request);
    tracing::info!(operation="browser_view",state="closed");
    if let Some(code)=exit{self.app.exit(code);}
  }
 }}
+#[cfg(any(target_os = "macos", windows))]
+fn destroy_original_child(browser: &Browser, close: &ChildClose, parent: usize) {
+    if !close.should_destroy(browser.identifier()) {
+        return;
+    }
+    let Some(host) = browser.host() else {
+        tracing::warn!(
+            operation = "browser_child_close",
+            phase = "destroy",
+            classification = "missing_host"
+        );
+        return;
+    };
+    let handle = host.window_handle();
+    // The retained original Browser resolves its own child handle. Never look
+    // up a current view by product-window label: it can already be a
+    // replacement.
+    if handle as usize == 0 || handle as usize == parent {
+        tracing::warn!(
+            operation = "browser_child_close",
+            phase = "destroy",
+            classification = "invalid_child"
+        );
+        return;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSView;
+        let view = unsafe { &*(handle as *const NSView) };
+        if unsafe { view.superview() }
+            .is_none_or(|view| view.as_ref() as *const NSView as usize != parent)
+        {
+            tracing::warn!(
+                operation = "browser_child_close",
+                phase = "destroy",
+                classification = "foreign_parent"
+            );
+            return;
+        }
+        // The superview owns CEF's child view. Releasing it drives CEF's
+        // WindowDestroyed -> OnBeforeClose sequence, without closing NSWindow.
+        unsafe {
+            view.removeFromSuperview();
+        }
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{DestroyWindow, GetParent};
+        if unsafe { GetParent(handle) } as usize != parent {
+            tracing::warn!(
+                operation = "browser_child_close",
+                phase = "destroy",
+                classification = "foreign_parent"
+            );
+            return;
+        }
+        // CEF's child window procedure reports WindowDestroyed on WM_NCDESTROY.
+        if unsafe { DestroyWindow(handle) } == 0 {
+            tracing::warn!(
+                operation = "browser_child_close",
+                phase = "destroy",
+                classification = "native_failure"
+            );
+            return;
+        }
+    }
+    tracing::info!(
+        operation = "browser_child_close",
+        phase = "destroy",
+        state = "requested"
+    );
+}
 cef::wrap_request_handler! {struct ExternalRequests{policy:Arc<Mutex<Policy>>,}impl RequestHandler{
  fn on_before_browse(&self,_browser:Option<&mut Browser>,_frame:Option<&mut Frame>,request:Option<&mut cef::Request>,_user_gesture:i32,_is_redirect:i32)->i32{if request.is_some_and(|r|self.policy.lock().is_ok_and(|p|p.navigation(&CefString::from(&r.url()).to_string()))){0}else{1}}
  fn resource_request_handler(&self,_browser:Option<&mut Browser>,_frame:Option<&mut Frame>,_request:Option<&mut cef::Request>,_is_navigation:i32,_is_download:i32,_request_initiator:Option<&CefString>,_disable_default_handling:Option<&mut i32>)->Option<ResourceRequestHandler>{Some(ExternalResources::new(self.policy.clone()))}

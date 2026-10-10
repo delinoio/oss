@@ -143,6 +143,18 @@ profiles and pending-creation guards. Failed unmapping never permits directory p
 Removal unmaps and close requests run outside native state. Close requests after
 tab replacement also run outside native state; pending old creation callbacks
 remain generation-guarded.
+Raw CEF child closure cannot close, hide or minimize its containing product window.
+On macOS and Windows, the original child life-span handler intercepts CEF's default
+parent-close notification and completes destruction of that exact child on the UI
+thread. Its shared per-client lifetime permits one teardown request and one close
+accounting update. Queued work retains the original browser identity, verifies its
+original parent and stops after native close completion; it never resolves a
+replacement through a product-window label. macOS releases only the original CEF
+child view; Windows destroys only its original child window. Linux retains CEF's
+child-only default. Existing unmap-before-release and generation guards remain
+required. Explicit product close-to-tray and joined Quit retain their independent
+ownership. Structured close diagnostics contain only phase and result metadata.
+Fixture and build results do not establish installed CEF or platform acceptance.
 Only successful native geometry updates become the panel's last applied bounds;
 a failed resize clears that cache so later callbacks retry identical geometry
 for the current presentation.
