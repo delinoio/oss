@@ -20,6 +20,6 @@ export interface NativeGoalView {
   readonly observation?: NativeGoalSnapshot | null;
   readonly observed_at?: string;
   readonly action_id?: string;
-  readonly action_state?: "accepted" | "claimed" | "acknowledged" | "uncertain";
+  readonly action_state?: "accepted" | "claimed" | "acknowledged" | "uncertain" | "canceled";
   readonly problem_code?: string;
 }

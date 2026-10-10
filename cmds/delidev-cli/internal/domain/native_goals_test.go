@@ -52,3 +52,34 @@ func TestNativeGoalActionRetainsOriginalClaimScope(t *testing.T) {
 		t.Fatal("invalid claim accepted")
 	}
 }
+
+func TestNativeGoalEventsCannotMixPayloadsOrInventProductInput(t *testing.T) {
+	e := ExecutionEvent{Version: 1, Sequence: 3, ExecutionID: NewID(), NativeThreadID: string(NewID()), NativeTurnID: string(NewID()), Kind: ExecutionGoalObserved, Goal: &NativeGoalObservation{Snapshot: json.RawMessage("null")}}
+	if e.Validate() != nil {
+		t.Fatal("absence observation rejected")
+	}
+	e.Kind = ExecutionInputAccepted
+	if e.Validate() == nil {
+		t.Fatal("goal observation manufactured input acceptance")
+	}
+	e.Kind = ExecutionGoalTurnStarted
+	e.Goal = nil
+	e.GoalTurn = &NativeGoalTurn{NativeTurnID: ID(e.NativeTurnID), PreviousNativeTurnID: NewID(), Status: "inProgress"}
+	if e.Validate() != nil {
+		t.Fatal("native iteration rejected")
+	}
+	e.GoalTurn.PreviousNativeTurnID = e.GoalTurn.NativeTurnID
+	if e.Validate() == nil {
+		t.Fatal("native iteration reused predecessor")
+	}
+	e.Kind = ExecutionGoalTurnFinished
+	e.GoalTurn.PreviousNativeTurnID = ""
+	e.GoalTurn.Status = "completed"
+	if e.Validate() != nil {
+		t.Fatal("native iteration terminal rejected")
+	}
+	e.Outcome = ExecutionSucceeded
+	if e.Validate() == nil {
+		t.Fatal("iteration terminal manufactured run terminal")
+	}
+}

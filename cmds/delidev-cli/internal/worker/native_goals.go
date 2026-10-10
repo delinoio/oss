@@ -192,3 +192,37 @@ func (c *CodexEventPublisher) deliverGoal(ctx, nativeCtx context.Context, contro
 	}
 	return nil
 }
+
+// FinishGoalRun publishes only the last independently observed terminal after
+// a native non-active goal boundary. The caller still owns descendant joining,
+// process closure and checkpoint proof; none is inferred from this observation.
+func (c *CodexEventPublisher) FinishGoalRun(ctx context.Context, goal *codex.Goal) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.publisher == nil || !c.publisher.input.NativeGoals || c.goalTerminal == nil || c.finished || c.blocked || goal != nil && goal.Status == codex.GoalActive {
+		return publicationUncertain()
+	}
+	if err := c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionGoalObserved, Goal: &domain.NativeGoalObservation{Snapshot: goalSnapshot(goal)}}); err != nil {
+		return err
+	}
+	outcome := domain.ExecutionSucceeded
+	terminal := c.goalTerminal
+	switch terminal.Turn.Status {
+	case codex.TurnCompleted:
+	case codex.TurnFailed:
+		outcome = domain.ExecutionFailed
+	case codex.TurnInterrupted:
+		outcome = domain.ExecutionStopped
+	default:
+		return publicationUncertain()
+	}
+	event := domain.ExecutionEvent{Kind: domain.ExecutionTurnFinished, Outcome: outcome}
+	if terminal.Turn.Problem != nil {
+		event.ProblemCode = terminal.Turn.Problem.Code
+	}
+	if err := c.publish(ctx, event); err != nil {
+		return err
+	}
+	c.finished = true
+	return nil
+}

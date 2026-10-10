@@ -70,6 +70,9 @@ type inputAttempt struct {
 }
 
 type executionState struct {
+	goal                *Goal
+	goalKnown           bool
+	goalTurns           map[domain.ID]bool
 	autoReviews         map[domain.ID]domain.AutoReviewState
 	autoReviewPayloads  map[string][32]byte
 	autoReviewActions   map[string][32]byte
@@ -104,7 +107,7 @@ func newExecutionState(thread Thread, settings EffectiveSettings) *executionStat
 		v := *thread.DirectInput
 		thread.DirectInput = &v
 	}
-	return &executionState{thread: thread, settings: settings, paused: thread.Status.Type != ThreadIdle, turns: map[domain.ID]trackedTurn{}, inputs: map[domain.ID]inputAttempt{}, pending: map[domain.ID]turnOperation{}, steers: map[domain.ID]*steerAttempt{}}
+	return &executionState{goalTurns: map[domain.ID]bool{}, thread: thread, settings: settings, paused: thread.Status.Type != ThreadIdle, turns: map[domain.ID]trackedTurn{}, inputs: map[domain.ID]inputAttempt{}, pending: map[domain.ID]turnOperation{}, steers: map[domain.ID]*steerAttempt{}}
 }
 func copyString(v *string) *string {
 	if v == nil {

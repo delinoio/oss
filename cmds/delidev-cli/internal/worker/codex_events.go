@@ -16,6 +16,7 @@ type CodexEventPublisher struct {
 	children          domain.SubagentState
 	mu                sync.Mutex
 	publisher         *ExecutionPublisher
+	goalTerminal      *codex.Event
 	thread, turn      domain.ID
 	messages          map[string]domain.ExecutionMessageUpdate
 	tools             map[string]codexToolPublication
@@ -156,11 +157,28 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 	if event.Kind == codex.NativeExtensionEvent || event.Kind == codex.LateTurnResponseEvent {
 		return false, nil
 	}
+	if c.publisher.input.NativeGoals && event.Kind == codex.TurnStartedEvent && event.TurnID != c.turn {
+		if !event.Correlated || event.Late || event.ThreadID != c.thread || event.Turn == nil || event.Turn.Status != codex.TurnRunning || c.goalTerminal == nil {
+			return false, publicationUncertain()
+		}
+		previous := c.turn
+		c.turn = event.TurnID
+		if err := c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionGoalTurnStarted, GoalTurn: &domain.NativeGoalTurn{NativeTurnID: c.turn, PreviousNativeTurnID: previous, Status: "inProgress"}}); err != nil {
+			return true, err
+		}
+		c.goalTerminal = nil
+		return true, nil
+	}
 	if !event.Correlated || event.Late || event.ThreadID != c.thread || (event.TurnID != "" && event.TurnID != c.turn) {
 		c.blocked = true
 		return false, publicationUncertain()
 	}
 	switch event.Kind {
+	case codex.GoalObservedEvent:
+		if !c.publisher.input.NativeGoals || event.Goal == nil || (event.Goal.Goal == nil) != event.Goal.Cleared {
+			return false, publicationUncertain()
+		}
+		return true, c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionGoalObserved, Goal: &domain.NativeGoalObservation{Snapshot: goalSnapshot(event.Goal.Goal)}})
 	case codex.AutoReviewEvent:
 		if event.AutoReview == nil || c.publisher.input.Configuration.Options.ApprovalsReviewer != domain.CodexReviewerAuto || event.ThreadID != c.thread || event.TurnID != c.turn || !event.Correlated {
 			return false, publicationUncertain()
@@ -296,6 +314,17 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 			outcome = domain.ExecutionStopped
 		default:
 			return false, publicationUncertain()
+		}
+		if c.publisher.input.NativeGoals {
+			if c.goalTerminal != nil {
+				return false, publicationUncertain()
+			}
+			copy := event
+			if err := c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionGoalTurnFinished, GoalTurn: &domain.NativeGoalTurn{NativeTurnID: c.turn, Status: string(event.Turn.Status)}}); err != nil {
+				return true, err
+			}
+			c.goalTerminal = &copy
+			return true, nil
 		}
 		published := domain.ExecutionEvent{Kind: domain.ExecutionTurnFinished, Outcome: outcome}
 		if event.Turn.Problem != nil {

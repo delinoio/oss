@@ -427,3 +427,95 @@ func (s *Service) pendingGoalAction(tx *store.Tx, jr store.Record, job domain.Jo
 	}
 	return &pb.GoalActionControl{JobId: string(jr.ID), ActionId: string(id), Revision: ar.Revision}, nil
 }
+
+func publishNativeGoalEvent(input domain.ExecutionJobInput, session *domain.Session, progress *domain.ExecutionProgress, event domain.ExecutionEvent, at time.Time) error {
+	g := session.NativeGoal
+	if !input.NativeGoals || input.Configuration.Harness != domain.Codex || input.Configuration.SidechatPolicy != "" || g == nil || !g.Enabled || g.SourceExecutionID != input.ExecutionID || g.SourceNativeThreadID != domain.ID(event.NativeThreadID) || progress.CleanupVerified || progress.Outcome != domain.ExecutionRunning {
+		return domain.NativeGoalUncertain()
+	}
+	switch event.Kind {
+	case domain.ExecutionGoalObserved:
+		if progress.NativeTurnID != event.NativeTurnID || event.Goal == nil || event.Goal.Validate() != nil {
+			return domain.NativeGoalUncertain()
+		}
+		g.Observation = append(json.RawMessage(nil), event.Goal.Snapshot...)
+		g.ObservedAt = &at
+	case domain.ExecutionGoalTurnStarted:
+		var snapshot domain.NativeGoalSnapshot
+		if event.GoalTurn == nil || len(progress.GoalTurns) >= 4096 || domain.Decode(g.Observation, &snapshot) != nil || snapshot.Status != domain.NativeGoalActive || snapshot.Validate() != nil || string(event.GoalTurn.PreviousNativeTurnID) != progress.NativeTurnID || event.NativeTurnID == progress.NativeTurnID {
+			return domain.NativeGoalUncertain()
+		}
+		if len(progress.GoalTurns) == 0 || progress.GoalTurns[len(progress.GoalTurns)-1].Status == "inProgress" {
+			return domain.NativeGoalUncertain()
+		}
+		for _, turn := range progress.GoalTurns {
+			if turn.NativeTurnID == event.GoalTurn.NativeTurnID {
+				return domain.NativeGoalUncertain()
+			}
+		}
+		progress.NativeTurnID = event.NativeTurnID
+		progress.GoalTurns = append(progress.GoalTurns, *event.GoalTurn)
+		progress.TurnTiming = nil
+	case domain.ExecutionGoalTurnFinished:
+		if event.GoalTurn == nil || progress.NativeTurnID != event.NativeTurnID || len(progress.GoalTurns) >= 4096 {
+			return domain.NativeGoalUncertain()
+		}
+		if len(progress.GoalTurns) == 0 {
+			progress.GoalTurns = append(progress.GoalTurns, *event.GoalTurn)
+		} else {
+			last := &progress.GoalTurns[len(progress.GoalTurns)-1]
+			if last.NativeTurnID != event.GoalTurn.NativeTurnID || last.Status != "inProgress" {
+				return domain.NativeGoalUncertain()
+			}
+			last.Status = event.GoalTurn.Status
+		}
+	default:
+		return domain.NativeGoalUncertain()
+	}
+	return nil
+}
+
+// A control that never acquired its original claim can be canceled safely.
+// A claimed control remains uncertain until its original native report; Stop,
+// account loss, process exit and read-only observation cannot acknowledge it.
+func retireGoalAction(tx *store.Tx, sr store.Record, session *domain.Session, uncertainClaim bool) error {
+	if session.PendingGoalActionID == "" {
+		return nil
+	}
+	ar, err := tx.Get(domain.JobKind, session.PendingGoalActionID)
+	if err != nil {
+		return err
+	}
+	job, err := store.Decode[domain.Job](ar)
+	var input domain.NativeGoalActionInput
+	if err != nil || ar.SessionID != sr.ID || job.Type != domain.NativeGoalActionJob || domain.Decode(job.Input, &input) != nil || input.Validate() != nil || session.NativeGoal == nil || session.NativeGoal.ActionID != ar.ID {
+		return domain.NativeGoalUncertain()
+	}
+	switch job.State {
+	case domain.JobQueued:
+		if input.ClaimID != "" {
+			return domain.NativeGoalUncertain()
+		}
+		now := time.Now().UTC()
+		job.State = domain.JobCanceled
+		job.FinishedAt = &now
+		session.PendingGoalActionID = ""
+		session.NativeGoal.ActionState = domain.NativeGoalCanceled
+	case domain.JobClaimed:
+		if !uncertainClaim {
+			return nil
+		}
+		job.State = domain.JobUncertain
+		job.Problem = domain.NativeGoalUncertain()
+		session.NativeGoal.ActionState = domain.NativeGoalUncertainState
+		session.NativeGoal.ProblemCode = domain.RecoveryRequired
+		session.Recovery = domain.NeedsRecovery
+		session.Dispatch = domain.DispatchPaused
+	case domain.JobUncertain:
+		return nil
+	default:
+		return domain.NativeGoalUncertain()
+	}
+	_, err = tx.Put(ar.Kind, ar.ID, ar.Revision, ar.SessionID, ar.ProjectID, job)
+	return err
+}

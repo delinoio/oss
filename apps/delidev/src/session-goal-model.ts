@@ -18,7 +18,7 @@ export function nativeGoalView(value: unknown): (NativeGoalView & { readonly ena
   if (typeof v.enabled !== "boolean" || Object.keys(v).some(key => !allowed.includes(key)) || typeof v.source_execution_id !== "string" || !v.source_execution_id || typeof v.source_native_thread_id !== "string" || !v.source_native_thread_id) return;
   if (v.observed_at !== undefined && (typeof v.observed_at !== "string" || timestampInstant(v.observed_at) === undefined)) return;
   if (v.action_id !== undefined && (typeof v.action_id !== "string" || !v.action_id) || v.problem_code !== undefined && typeof v.problem_code !== "string") return;
-  if (v.action_state !== undefined && !["accepted", "claimed", "acknowledged", "uncertain"].includes(v.action_state as string)) return;
+  if (v.action_state !== undefined && !["accepted", "claimed", "acknowledged", "uncertain", "canceled"].includes(v.action_state as string)) return;
   if ((v.action_id === undefined) !== (v.action_state === undefined)) return;
   if (v.observation !== undefined && v.observation !== null) {
     const o = object(v.observation);
@@ -28,5 +28,5 @@ export function nativeGoalView(value: unknown): (NativeGoalView & { readonly ena
   return v as unknown as NativeGoalView & { readonly enabled: boolean };
 }
 export function goalActionPending(view?: NativeGoalView): boolean {
-  return Boolean(view?.action_state && view.action_state !== "acknowledged");
+  return Boolean(view?.action_state && view.action_state !== "acknowledged" && view.action_state !== "canceled");
 }

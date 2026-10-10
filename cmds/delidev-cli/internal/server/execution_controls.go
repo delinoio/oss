@@ -73,6 +73,9 @@ func controlNativeSession(tx *store.Tx, sr store.Record, session *domain.Session
 		return executionEventConflict()
 	}
 	session.Dispatch, session.NextExecutionIntent = domain.DispatchPaused, ""
+	if err := retireGoalAction(tx, sr, session, false); err != nil {
+		return err
+	}
 	if err := retireSteer(tx, sr, session, false); err != nil {
 		return err
 	}
@@ -151,6 +154,9 @@ func cancelAccountExecutions(tx *store.Tx, account domain.ID) error {
 				return err
 			}
 			session.Dispatch, session.NextExecutionIntent = domain.DispatchPaused, ""
+			if err := retireGoalAction(tx, sr, &session, false); err != nil {
+				return err
+			}
 			if err := retireSteer(tx, sr, &session, false); err != nil {
 				return err
 			}

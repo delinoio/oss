@@ -80,6 +80,7 @@ type NativeGoalView struct {
 type NativeGoalActionState string
 
 const (
+	NativeGoalCanceled       NativeGoalActionState = "canceled"
 	NativeGoalAccepted       NativeGoalActionState = "accepted"
 	NativeGoalClaimed        NativeGoalActionState = "claimed"
 	NativeGoalAcknowledged   NativeGoalActionState = "acknowledged"
@@ -160,4 +161,30 @@ type NativeGoalActionResult struct {
 
 func NativeGoalUncertain() *Error {
 	return Fail(RecoveryRequired, "The original native goal requires reconciliation.", "Retain the original action and native history. Do not resend an uncertain mutation or infer cleanup from a goal observation.")
+}
+
+// Goal iteration records are native observations, not queued product inputs.
+// Keeping each original turn prevents a later terminal from overwriting prior
+// messages, usage or input attribution.
+type NativeGoalTurn struct {
+	NativeTurnID         ID     `json:"native_turn_id"`
+	PreviousNativeTurnID ID     `json:"previous_native_turn_id,omitempty"`
+	Status               string `json:"status"`
+}
+type NativeGoalObservation struct {
+	Snapshot json.RawMessage `json:"snapshot"`
+}
+
+func (o NativeGoalObservation) Validate() error {
+	if len(o.Snapshot) == 0 || len(o.Snapshot) > 20000 {
+		return NativeGoalUncertain()
+	}
+	if string(o.Snapshot) == "null" {
+		return nil
+	}
+	var snapshot NativeGoalSnapshot
+	if Decode(o.Snapshot, &snapshot) != nil {
+		return NativeGoalUncertain()
+	}
+	return snapshot.Validate()
 }

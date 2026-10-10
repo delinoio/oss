@@ -326,3 +326,5 @@ The generated `SessionQuery.getSessionGoalState` and `SessionQuery.requestSessio
 
 
 `NativeGoalView.enabled` is required and represents an actual original native Goals feature observation. A source execution/thread pair or capability declaration alone does not establish this proof. Goal action resources are Jobs of type `native-goal-action`, with the original session ID; `action_id` is the Job ID rather than a replacement action/request identity.
+
+The native goal action state `canceled` means the original control was canceled before its once-only claim. It is not a native acknowledgment. The retained Job remains independently readable.

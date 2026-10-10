@@ -326,6 +326,14 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 		}
 		event := Event{Kind: kind, ThreadID: c.thread, TurnID: turn.ID, Turn: &turn}
 		prior, exists := c.execution.turns[turn.ID]
+		if !exists && native.Method == "turn/started" && c.nativeGoals && c.sidechat == "" && c.execution.goalKnown && c.execution.goal != nil && c.execution.goal.Status == GoalActive && c.execution.active == "" && c.problem == nil && len(c.execution.turns) < maxTrackedTurns {
+			// Native Goals owns this automatic turn; it is not a new product
+			// prompt and cannot manufacture an input acceptance receipt.
+			prior = trackedTurn{Turn: turn, Mode: domain.ExecuteMode}
+			c.execution.turns[turn.ID], c.execution.active = prior, turn.ID
+			c.execution.goalTurns[turn.ID] = true
+			exists = true
+		}
 		if !exists && native.Method == "turn/started" && c.execution.compaction != nil && c.execution.compaction.turnID == "" && c.execution.compaction.acknowledged && c.execution.active == "" && c.problem == nil {
 			// Only the original once-claimed manual action can own a new native
 			// compaction turn. It carries no synthetic input or input receipt.

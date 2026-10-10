@@ -483,6 +483,15 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		return nil, domain.SafeError(context.Canceled)
 	}
 	config.startup.acknowledgeInput()
+	if input.NativeGoals {
+		goal, err := client.ReadGoal(ctx, domain.NewID())
+		if err != nil {
+			return nil, err
+		}
+		if _, err := mapper.PublishCore(ctx, codex.Event{Kind: codex.GoalObservedEvent, ThreadID: bound.Thread.ID, Goal: &codex.GoalObservation{Goal: goal, Cleared: goal == nil}, Correlated: true}); err != nil {
+			return nil, err
+		}
+	}
 	logger.InfoContext(ctx, "native_execution_input_accepted", "input_id", input.InputID)
 	finishResponses := startQuestionResponseController(ctx, nativeCtx, cancelNative, config.questionControls, mapper, client)
 	finishApprovals := startApprovalResponseController(ctx, nativeCtx, cancelNative, config.approvalControls, mapper, client)
@@ -567,6 +576,10 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			logger.WarnContext(publicationContext, "native_execution_event_unhandled", "event_kind", event.Kind, "metadata", event.Metadata, "extension_stage", event.ExtensionStage, "correlated", event.Correlated, "late", event.Late)
 			return nil, domain.Fail(domain.Unsupported, "The native execution produced an unsupported event family.", "Retain its native history for the required typed adapter; input is never replayed automatically.")
 		}
+		if event.Kind == codex.TurnStartedEvent && input.NativeGoals {
+			parentTerminal = nil
+			turn.TurnID = event.TurnID
+		}
 		if event.Kind == codex.TurnCompletedEvent {
 			copy := event
 			parentTerminal = &copy
@@ -576,6 +589,21 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			continue
 		}
 
+		if input.NativeGoals {
+			goal, err := client.ReadGoal(publicationContext, domain.NewID())
+			if err != nil {
+				return nil, err
+			}
+			if goal != nil && goal.Status == codex.GoalActive {
+				if stopping {
+					return nil, domain.NativeGoalUncertain()
+				}
+				continue
+			}
+			if err := mapper.FinishGoalRun(publicationContext, goal); err != nil {
+				return nil, err
+			}
+		}
 		event = *parentTerminal
 		if managed != nil && config.quotaBlockSupported && event.Turn != nil && event.Turn.Status == codex.TurnFailed && event.Turn.QuotaBlock.Valid() && input.Input.Mode == domain.ExecuteMode {
 			managed.publishQuotaBlock(ctx, config.observations, domain.SubscriptionQuotaBlock{SessionID: input.SessionID, ExecutionID: input.ExecutionID, NativeThreadID: domain.NativeIdentity(bound.Thread.ID), NativeTurnID: domain.NativeIdentity(turn.TurnID), Reason: event.Turn.QuotaBlock})

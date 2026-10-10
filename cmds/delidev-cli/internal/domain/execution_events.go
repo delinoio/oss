@@ -8,6 +8,9 @@ import (
 type ExecutionEventKind string
 
 const (
+	ExecutionGoalObserved               ExecutionEventKind = "goal-observed"
+	ExecutionGoalTurnStarted            ExecutionEventKind = "goal-turn-started"
+	ExecutionGoalTurnFinished           ExecutionEventKind = "goal-turn-finished"
 	ExecutionSubagentObserved           ExecutionEventKind = "subagent-observed"
 	ExecutionGrokToolObserved           ExecutionEventKind = "grok-tool-observed"
 	ExecutionGrokTextObserved           ExecutionEventKind = "grok-text-observed"
@@ -189,6 +192,8 @@ type ExecutionMessageUpdate struct {
 // envelope. Exactly one event kind owns its optional payload. Unknown native
 // extensions need dedicated adapters before they can enter this document.
 type ExecutionEvent struct {
+	Goal               *NativeGoalObservation             `json:"goal,omitempty"`
+	GoalTurn           *NativeGoalTurn                    `json:"goal_turn,omitempty"`
 	Subagents          []SubagentObservation              `json:"subagents,omitempty"`
 	GrokTool           *ExecutionGrokToolUpdate           `json:"grok_tool,omitempty"`
 	GrokUserMessageID  ID                                 `json:"grok_user_message_id,omitempty"`
@@ -256,7 +261,24 @@ func (e ExecutionEvent) Validate() error {
 	if e.GrokUserMessageID != "" && (e.Kind != ExecutionInputAccepted || e.GrokUserMessageID.Validate() != nil) {
 		return invalidGrokContent()
 	}
+	if (e.Kind != ExecutionGoalObserved && e.Goal != nil) || (e.Kind != ExecutionGoalTurnStarted && e.Kind != ExecutionGoalTurnFinished && e.GoalTurn != nil) {
+		return NativeGoalUncertain()
+	}
 	switch e.Kind {
+	case ExecutionGoalObserved:
+		if e.Goal == nil || e.Goal.Validate() != nil {
+			return NativeGoalUncertain()
+		}
+	case ExecutionGoalTurnStarted, ExecutionGoalTurnFinished:
+		if e.GoalTurn == nil || e.GoalTurn.NativeTurnID.Validate() != nil || string(e.GoalTurn.NativeTurnID) != e.NativeTurnID {
+			return NativeGoalUncertain()
+		}
+		if e.Kind == ExecutionGoalTurnStarted && (e.GoalTurn.Status != "inProgress" || e.GoalTurn.PreviousNativeTurnID.Validate() != nil || e.GoalTurn.PreviousNativeTurnID == e.GoalTurn.NativeTurnID) {
+			return NativeGoalUncertain()
+		}
+		if e.Kind == ExecutionGoalTurnFinished && (e.GoalTurn.PreviousNativeTurnID != "" || !slices.Contains([]string{"completed", "failed", "interrupted"}, e.GoalTurn.Status)) {
+			return NativeGoalUncertain()
+		}
 	case ExecutionSubagentObserved:
 		if len(e.Subagents) == 0 || len(e.Subagents) > 128 {
 			return invalidSubagent()
@@ -487,6 +509,7 @@ type TurnTiming struct {
 }
 
 type ExecutionProgress struct {
+	GoalTurns                []NativeGoalTurn            `json:"goal_turns,omitempty"`
 	AutoReviews              AutoReviewState             `json:"auto_reviews,omitempty"`
 	ContextRevision          uint64                      `json:"context_revision,omitempty"`
 	TurnTiming               *TurnTiming                 `json:"turn_timing,omitempty"`

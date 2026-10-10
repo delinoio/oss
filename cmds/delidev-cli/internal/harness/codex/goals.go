@@ -198,12 +198,14 @@ func (c *Client) ReadGoal(ctx context.Context, request domain.ID) (*Goal, error)
 		return nil, goalUncertain()
 	}
 	if string(observed.Goal) == "null" {
+		c.execution.goal, c.execution.goalKnown = nil, true
 		return nil, nil
 	}
 	goal, err := DecodeGoal(observed.Goal, c.thread)
 	if err != nil {
 		return nil, err
 	}
+	c.execution.goal, c.execution.goalKnown = &goal, true
 	return &goal, nil
 }
 
@@ -278,6 +280,7 @@ func (c *Client) MutateGoal(ctx context.Context, request domain.ID, action GoalA
 			return fail()
 		}
 		result.Goal = &goal
+		c.execution.goal, c.execution.goalKnown = &goal, true
 	} else {
 		var observed struct {
 			Cleared *bool `json:"cleared"`
@@ -286,6 +289,9 @@ func (c *Client) MutateGoal(ctx context.Context, request domain.ID, action GoalA
 			return fail()
 		}
 		result.Cleared = *observed.Cleared
+		if result.Cleared {
+			c.execution.goal, c.execution.goalKnown = nil, true
+		}
 	}
 	return result, nil
 }
@@ -345,5 +351,6 @@ func (c *Client) observeGoalLocked(native nativewire.Event) (Event, error) {
 	default:
 		return privateNative(native), nil
 	}
+	c.execution.goal, c.execution.goalKnown = observed.Goal, true
 	return Event{Kind: GoalObservedEvent, ThreadID: thread, TurnID: turn, Goal: observed, Correlated: true}, nil
 }

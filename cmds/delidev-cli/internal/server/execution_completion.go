@@ -162,6 +162,9 @@ func nativeCompletionUncertain() *domain.Error {
 }
 
 func retainNativeUncertainty(tx *store.Tx, input domain.ExecutionJobInput, sr store.Record, session *domain.Session) error {
+	if err := retireGoalAction(tx, sr, session, true); err != nil {
+		return err
+	}
 	if err := retireSteer(tx, sr, session, true); err != nil {
 		return err
 	}

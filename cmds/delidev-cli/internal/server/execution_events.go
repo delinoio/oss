@@ -284,6 +284,10 @@ func applyExecutionEventAt(tx *store.Tx, job store.Record, input domain.Executio
 			if err := publishSubagents(tx, input, sr, progress, event); err != nil {
 				return err
 			}
+		} else if event.Kind == domain.ExecutionGoalObserved || event.Kind == domain.ExecutionGoalTurnStarted || event.Kind == domain.ExecutionGoalTurnFinished {
+			if err := publishNativeGoalEvent(input, session, progress, event, observedAt); err != nil {
+				return err
+			}
 		} else if event.Kind == domain.ExecutionClaudeProgressObserved {
 			if err := publishClaudeProgress(tx, input, sr, progress, event); err != nil {
 				return err
@@ -390,6 +394,9 @@ func applyExecutionEventAt(tx *store.Tx, job store.Record, input domain.Executio
 					if event.OpenCodeStop != nil && event.OpenCodeStop.AssistantID != usage.Usage.NativeParentID {
 						return executionEventConflict()
 					}
+				}
+				if err := retireGoalAction(tx, sr, session, true); err != nil {
+					return err
 				}
 				if err := retireSteer(tx, sr, session, true); err != nil {
 					return err

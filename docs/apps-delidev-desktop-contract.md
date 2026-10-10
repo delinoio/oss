@@ -3745,3 +3745,5 @@ retain exact text within the native bound of 4,000 Unicode scalar values. Use ty
 English/Korean copy and existing Info geometry, controls and focus ownership.
 Component fixtures, source checks and builds remain separate from installed-native
 or real-account acceptance.
+
+Native Goals treat an original unclaimed `canceled` action as settled product cancellation rather than a native acknowledgment. Retain its Job outcome; the goal observation and process cleanup remain independent.
