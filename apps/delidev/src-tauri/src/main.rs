@@ -2346,6 +2346,38 @@ mod tests {
         let capabilities: BTreeMap<String, Capability> =
             serde_json::from_str(include_str!(concat!(env!("OUT_DIR"), "/capabilities.json")))
                 .unwrap();
+        // Remove only main's updater grant in a copy of the build's actual
+        // capabilities. Other main permissions and local/saved grants stay
+        // intact.
+        let mut without_main = capabilities.clone();
+        let main_capability = without_main.get_mut("main").unwrap();
+        assert!(main_capability.windows.is_empty());
+        let mut updater_without_main = main_capability.clone();
+        updater_without_main.identifier = "test-updater-without-main".into();
+        updater_without_main
+            .permissions
+            .retain(|permission| permission.identifier().get() == "desktop-update");
+        assert_eq!(updater_without_main.permissions.len(), 1);
+        updater_without_main
+            .webviews
+            .retain(|label| label != "main");
+        main_capability
+            .permissions
+            .retain(|permission| permission.identifier().get() != "desktop-update");
+        without_main.insert(
+            updater_without_main.identifier.clone(),
+            updater_without_main,
+        );
+        let restricted = Resolved::resolve(&manifests, without_main, Target::current()).unwrap();
+        let restricted_authority = RuntimeAuthority::new(
+            #[cfg(debug_assertions)]
+            serde_json::from_str(include_str!(concat!(
+                env!("OUT_DIR"),
+                "/acl-manifests.json"
+            )))
+            .unwrap(),
+            restricted,
+        );
         let resolved = Resolved::resolve(&manifests, capabilities, Target::current()).unwrap();
         for command in commands {
             assert!(resolved.allowed_commands.contains_key(command));
@@ -2356,14 +2388,57 @@ mod tests {
             resolved,
         );
         let mut registry = Registry::default();
-        let main = registry.reserve(Role::Local, false).unwrap();
+        let main = registry.reserve(Role::Local, true).unwrap();
         registry.ready(&main).unwrap();
         let local = registry.reserve(Role::Local, false).unwrap();
         registry.ready(&local).unwrap();
+        let server_id = uuid::Uuid::now_v7().to_string();
         let saved = registry
-            .reserve(Role::Saved(uuid::Uuid::now_v7().to_string()), false)
+            .reserve(Role::Saved(server_id.clone()), false)
             .unwrap();
         registry.ready(&saved).unwrap();
+        assert_eq!(main.label, "main");
+        assert_eq!(main.role, Role::Local);
+        assert_eq!(local.label, format!("local-{}", local.instance));
+        assert_eq!(local.role, Role::Local);
+        assert_eq!(
+            saved.label,
+            format!("server-{server_id}-{}", saved.instance)
+        );
+        assert_eq!(saved.role, Role::Saved(server_id));
+        assert_ne!(main.label, local.label);
+        assert_ne!(main.label, saved.label);
+        assert_ne!(local.label, saved.label);
+        let updater_admitted = |authority: &RuntimeAuthority, label: &str| {
+            commands.iter().all(|command| {
+                authority
+                    .resolve_access(command, label, label, &Origin::Local)
+                    .is_some()
+            })
+        };
+        assert!(
+            [&main, &local, &saved]
+                .iter()
+                .all(|entry| updater_admitted(&authority, &entry.label))
+        );
+        assert!(
+            ![&main, &local, &saved]
+                .iter()
+                .all(|entry| updater_admitted(&restricted_authority, &entry.label))
+        );
+        assert!(!updater_admitted(&restricted_authority, &main.label));
+        assert!(updater_admitted(&restricted_authority, &local.label));
+        assert!(updater_admitted(&restricted_authority, &saved.label));
+        assert!(
+            restricted_authority
+                .resolve_access(
+                    "account_oauth_native",
+                    &main.label,
+                    &main.label,
+                    &Origin::Local
+                )
+                .is_some()
+        );
         for command in commands {
             for entry in [&main, &local, &saved] {
                 assert!(registry.admitted(&entry.label).is_ok());

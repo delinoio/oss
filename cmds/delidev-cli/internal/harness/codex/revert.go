@@ -78,6 +78,9 @@ func (c *Client) RevertThread(ctx context.Context, action domain.ID, source Cont
 	if err := claim(intent); err != nil {
 		return result, err
 	}
+	// Remember only the existing durable owner; the supplement cannot confirm
+	// its response, history, checkpoint or cleanup.
+	state.revertAction = action
 	response, err := c.wire.Call(ctx, action, "thread/revert", struct {
 		Thread domain.ID `json:"threadId"`
 		Before domain.ID `json:"beforeTurnId"`
@@ -183,6 +186,7 @@ func (c *Client) verifyRevertedContinuation(ctx context.Context, request domain.
 		}
 		s.turns[last.ID] = tracked
 	}
+	s.revertAction = p.Revert.ActionID
 	s.continuationPending, s.paused = false, false
 	return last, nil
 }
@@ -208,6 +212,7 @@ func (c *Client) ReconcileRevert(ctx context.Context, intent RevertIntent) (Comp
 	if c.problem != nil || c.execution.active != "" || len(c.execution.pending) != 0 || c.execution.interactions.blocksInput() || len(c.subagents) != 0 || c.checkNativeStateLocked(ctx, true) != nil || c.noForkWorkLocked(ctx, c.thread) != nil {
 		return CompactedCheckpoint{}, compactionUncertain()
 	}
+	c.execution.revertAction = intent.ActionID
 	history, err := c.contextTurnsLocked(ctx, "asc", nil, true)
 	if err != nil || !slices.EqualFunc(history, intent.ExpectedHistory, equivalentForkJSON) {
 		return CompactedCheckpoint{}, compactionUncertain()

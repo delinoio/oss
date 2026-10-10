@@ -473,3 +473,24 @@ func TestExecutionRecoveryFailureAllowsNewExplicitInspection(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestExecutionRecoveryCapacityRejectsBeforeWriting(t *testing.T) {
+	f := recoveryFixture(t, domain.ExecutionSucceeded)
+	padExecutionHistory(t, f.service.Store, f.input.SessionID, f.input.MachineID, domain.MaxSessionDeletionJobs)
+	request := recoveryRequest(t, f)
+	client := delidevv1connect.NewSessionServiceClient(f.http.Client(), f.http.URL)
+	if _, err := client.RecoverSessionExecution(context.Background(), ownerRequest(f.service.Identity, request)); err == nil || !strings.Contains(err.Error(), string(domain.ResourceExhausted)) {
+		t.Fatal("full history admitted inspection", err)
+	}
+	if got := executionHistoryCount(t, f.service.Store, f.input.SessionID); got != domain.MaxSessionDeletionJobs {
+		t.Fatal("rejected recovery wrote history", got)
+	}
+	record, err := f.service.Store.Get(context.Background(), domain.SessionKind, f.input.SessionID)
+	if err != nil || record.Revision != request.Mutation.ExpectedRevision {
+		t.Fatal("rejected recovery advanced session", err)
+	}
+	session, err := store.Decode[domain.Session](record)
+	if err != nil || session.ExecutionRecoveryJobID != "" {
+		t.Fatal("rejected recovery acquired authority", err)
+	}
+}
