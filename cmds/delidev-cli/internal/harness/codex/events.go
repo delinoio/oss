@@ -91,6 +91,8 @@ func validationStage(method string) eventValidationStage {
 }
 
 const (
+	DynamicToolObservedEvent      EventKind = "dynamic-tool-observed"
+	DynamicToolRequestedEvent     EventKind = "dynamic-tool-requested"
 	AutoReviewEvent               EventKind = "auto-review"
 	CompactionEvent               EventKind = "compaction"
 	SubagentEvent                 EventKind = "subagent"
@@ -150,6 +152,7 @@ type Message struct {
 }
 
 type Event struct {
+	DynamicTool      *DynamicTool `json:"-"`
 	AutoReview       *domain.AutoReviewObservation
 	ImageGeneration  *ImageGeneration `json:"-"`
 	Compaction       *CompactionObservation
@@ -538,6 +541,8 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 	}
 	message := &Message{}
 	switch kind {
+	case "dynamicToolCall":
+		return c.observeDynamicItem(native, params.TurnID, params.Item)
 	case "imageGeneration":
 		return c.observeImageGeneration(native, params.TurnID, params.Item)
 	case "contextCompaction":

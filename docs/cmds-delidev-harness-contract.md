@@ -2265,3 +2265,53 @@ value grants readiness, native support, credential release or input acceptance.
 The original root may observe official `sleep` ThreadItems through the existing tool lifecycle. The shared closed decoder requires exactly `type`, bounded nonempty `id` and nonnegative uint64 `durationMs`, rejects duplicate/unknown fields and preserves the original item, thread and known turn. Lifecycle status comes only from original `item/started` and `item/completed`; duration is immutable across completion. Worker and server independently fence scope and changed duration. Public `sleep.duration_ms` is an exact decimal JSON string to preserve every native uint64 value through browser parsing. The existing tool disclosure displays the duration and original lifecycle status without a timer or controls.
 
 Complete continuation, context/compaction and permitted ordinary/managed Fork history share the same decoder and retain the original normalized native item JSON, sequence and history digest. Both Fork admission checks explicitly allow only this closed inert family; async/structured tool families and other restricted profiles remain separate. The synchronized outbox and server exact-request receipt replay preserve one observation after publication loss; uncertainty permits only replay of that original publication, never native sleep/input replay. Sleep completion settles only the tool. Original turn outcome, accepted input, native failure/interruption, cleanup and recovery remain independent. No protocol allocation, database migration or numeric native version gate is added.
+
+## Codex dynamic tool observations and original negative replies
+
+The ordinary root Codex profile validates `dynamicToolCall` with one closed,
+bounded decoder for live started/completed items, full context history,
+continuation and Fork. Required nullable namespace, output, success and duration
+fields remain distinct from omitted fields. Original tool/call identity,
+namespace, arbitrary JSON argument values, status, ordered `inputText`,
+`inputImage` and `inputAudio` content, success and duration remain in protected
+original native evidence. Unknown variants/fields, duplicate keys at any depth,
+foreign root ownership and excessive bytes cannot acquire reply authority.
+Native arguments have a 1 MiB bound, items/requests a 4 MiB bound and output has
+at most 128 items and 256 KiB total text. Retained ownership/evidence has at most
+4096 records and an 8 MiB aggregate bound; exhaustion stops without truncation.
+
+The public version-1 `codex_dynamic_tool` ToolMessage profile retains original
+call/tool/namespace, argument presence/type/SHA-256 digest and ordered bounded
+inert text or media reference kind/presence/digest. It contains no argument JSON,
+image/audio URL/data bytes, native envelope, credentials or retrieval capability.
+Each complete message is one immutable observation; its message state does not
+claim native item completion. Requested, send-started, transmitted/uncertain and
+request-resolved observations remain separate from native item status/success,
+root outcome and process/workspace cleanup. Native success is not inferred from
+status, a negative reply or root completion.
+
+Only an original live `item/tool/call` arrival can receive a response. The
+private original arrival token and original string-versus-integer wire request
+ID remain bound to the exact Worker actor/device/server/machine/instance, claimed
+job revision/digest, session/execution and native thread/turn/call tuple. The
+Worker exclusively creates and synchronizes a protected original intent before
+wire access, then synchronizes send-started before its only native invocation.
+The fixed reply is exactly `success: false` with one `inputText` content item:
+`This dynamic tool is unavailable in DeliDev.` No registry lookup, handler,
+dispatch, adoption, product question, approval or custom backend is added.
+
+Existing or partial intent files fence every restart; original-attempt inspection
+is read-only. Send-started, cancellation, lost acknowledgment and uncertainty
+never automatically resend a reply. Pipe delivery does not resolve the native
+request; only its original `serverRequest/resolved` identity does. An unresolved
+owned arrival blocks another ordinary input/compaction/revert/Fork operation.
+Lifecycle/history observations never create an arrival, and Fork inherits
+original items without inheriting request or reply authority. Restricted Sidechat,
+Title and model-observation profiles cannot answer dynamic requests. Known late
+lifecycle/resolution observations may be retained while the original claimed
+job is still owned; cleanup cannot be manufactured from those observations.
+
+The shared protocol profile uses System `CODEX_DYNAMIC_TOOL_V1` and Worker
+`CODEX_DYNAMIC_TOOL_V1`; both sides must negotiate support before the controller
+can answer. Actual native/account/platform acceptance remains distinct from
+synthetic wire, storage, projection and unit-test fixtures.

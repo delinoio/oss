@@ -59,6 +59,16 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 		if jobRecord.Revision != identity.Revision || job.Type != domain.ExecuteSessionJob || job.State != domain.JobClaimed || job.InstanceID != identity.Instance || job.MachineID != identity.Machine {
 			return nil, executionEventConflict()
 		}
+		if event.Kind == domain.ExecutionCodexDynamicToolObserved {
+			mr, err := tx.Get(domain.MachineKind, identity.Machine)
+			if err != nil {
+				return nil, err
+			}
+			machine, err := store.Decode[domain.Machine](mr)
+			if err != nil || !slices.Contains(machine.WorkerCapabilities, domain.CodexDynamicToolV1) {
+				return nil, executionEventConflict()
+			}
+		}
 		var input domain.ExecutionJobInput
 		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.ExecutionID != event.ExecutionID || input.SessionID != jobRecord.SessionID || input.MachineID != identity.Machine {
 			return nil, executionEventConflict()
@@ -276,6 +286,13 @@ func applyExecutionEventAt(tx *store.Tx, job store.Record, input domain.Executio
 				return executionEventConflict()
 			}
 			if err := publishSubagents(tx, input, sr, progress, event); err != nil {
+				return err
+			}
+		} else if event.Kind == domain.ExecutionCodexDynamicToolObserved {
+			if progress.NativeTurnID != event.NativeTurnID || progress.CleanupVerified || queued.Delivery != domain.InputAccepted || progress.Outcome != domain.ExecutionRunning && (event.CodexDynamicTool.Stage == domain.DynamicToolRequested || event.CodexDynamicTool.Stage == domain.DynamicToolReplied) {
+				return executionEventConflict()
+			}
+			if err := publishCodexDynamicTool(tx, input, sr, progress, event); err != nil {
 				return err
 			}
 		} else if event.Kind == domain.ExecutionClaudeProgressObserved {

@@ -8,6 +8,7 @@ import (
 type ExecutionEventKind string
 
 const (
+	ExecutionCodexDynamicToolObserved   ExecutionEventKind = "codex-dynamic-tool-observed"
 	ExecutionSubagentObserved           ExecutionEventKind = "subagent-observed"
 	ExecutionGrokToolObserved           ExecutionEventKind = "grok-tool-observed"
 	ExecutionGrokTextObserved           ExecutionEventKind = "grok-text-observed"
@@ -185,6 +186,7 @@ type ExecutionMessageUpdate struct {
 // envelope. Exactly one event kind owns its optional payload. Unknown native
 // extensions need dedicated adapters before they can enter this document.
 type ExecutionEvent struct {
+	CodexDynamicTool   *CodexDynamicTool                  `json:"codex_dynamic_tool,omitempty"`
 	Subagents          []SubagentObservation              `json:"subagents,omitempty"`
 	GrokTool           *ExecutionGrokToolUpdate           `json:"grok_tool,omitempty"`
 	GrokUserMessageID  ID                                 `json:"grok_user_message_id,omitempty"`
@@ -232,6 +234,9 @@ type ExecutionEvent struct {
 }
 
 func (e ExecutionEvent) Validate() error {
+	if e.Kind != ExecutionCodexDynamicToolObserved && e.CodexDynamicTool != nil {
+		return InvalidDynamicTool()
+	}
 	if e.Kind != ExecutionSubagentObserved && e.Subagents != nil {
 		return invalidSubagent()
 	}
@@ -253,6 +258,10 @@ func (e ExecutionEvent) Validate() error {
 		return invalidGrokContent()
 	}
 	switch e.Kind {
+	case ExecutionCodexDynamicToolObserved:
+		if e.CodexDynamicTool == nil || e.CodexDynamicTool.Validate() != nil {
+			return InvalidDynamicTool()
+		}
 	case ExecutionSubagentObserved:
 		if len(e.Subagents) == 0 || len(e.Subagents) > 128 {
 			return invalidSubagent()
@@ -483,6 +492,7 @@ type TurnTiming struct {
 }
 
 type ExecutionProgress struct {
+	CodexDynamicObservations uint32                      `json:"codex_dynamic_observations,omitempty"`
 	AutoReviews              AutoReviewState             `json:"auto_reviews,omitempty"`
 	ContextRevision          uint64                      `json:"context_revision,omitempty"`
 	TurnTiming               *TurnTiming                 `json:"turn_timing,omitempty"`
@@ -547,6 +557,7 @@ type ForkMessageOrigin struct {
 }
 
 type ExecutionMessage struct {
+	CodexDynamicTool   *CodexDynamicTool          `json:"codex_dynamic_tool,omitempty"`
 	ContextRevision    uint64                     `json:"context_revision,omitempty"`
 	TurnTiming         *TurnTiming                `json:"turn_timing,omitempty"`
 	Attachments        []ImageAttachment          `json:"attachments,omitempty"`

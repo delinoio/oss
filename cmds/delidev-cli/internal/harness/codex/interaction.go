@@ -225,6 +225,9 @@ func (c *Client) observeInteractionClosedLocked(native nativewire.Event) (Event,
 	if err != nil {
 		return Event{}, err
 	}
+	if event, handled, err := c.resolveDynamicRequest(native, id); handled || err != nil {
+		return event, err
+	}
 	s := &c.execution.interactions
 	arrival := s.native[requestKey(id)]
 	if arrival == "" {

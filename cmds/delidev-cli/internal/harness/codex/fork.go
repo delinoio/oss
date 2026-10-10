@@ -52,6 +52,9 @@ func (c *Client) InspectForkSource(ctx context.Context, checkpoint ContinuationC
 		return nil, err
 	}
 	defer func() { <-c.control }()
+	if c.execution != nil && c.execution.blocksInput() {
+		return nil, unsupportedFork()
+	}
 	if c.problem != nil {
 		return nil, c.problem
 	}
@@ -183,7 +186,11 @@ func (c *Client) forkTurnsLocked(ctx context.Context, thread domain.ID) ([]json.
 					}
 					seen["item:"+identity.ID] = true
 				}
-				if identity.Type == "sleep" {
+				if identity.Type == "dynamicToolCall" {
+					if _, err := DecodeDynamicTool(item, ""); err != nil {
+						return nil, unsupportedFork()
+					}
+				} else if identity.Type == "sleep" {
 					if seen["sleep:"+identity.ID] {
 						return nil, unsupportedFork()
 					}
@@ -459,6 +466,10 @@ func settledForkTool(raw json.RawMessage, kind string) bool {
 }
 
 func managedForkItem(raw json.RawMessage, kind string) bool {
+	if kind == "dynamicToolCall" {
+		_, err := DecodeDynamicTool(raw, "")
+		return err == nil
+	}
 	if kind == "sleep" {
 		_, err := decodeSleep(raw)
 		return err == nil

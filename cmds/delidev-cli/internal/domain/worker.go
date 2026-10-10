@@ -92,6 +92,8 @@ const (
 	GenerateSessionTitleJob       JobType = "generate-session-title"
 )
 
+const CodexDynamicToolV1 WorkerCapability = "codex-dynamic-tool-v1"
+
 const CodexSubagentConfigurationV1 WorkerCapability = "codex-subagent-configuration-v1"
 
 const SessionStartupProgressV1 WorkerCapability = "session-startup-progress-v1"

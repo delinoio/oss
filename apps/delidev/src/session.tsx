@@ -41,6 +41,7 @@ import { Surface } from "./surface";
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { Subagents } from "./subagents";
+import { NativeCodexDynamicTool } from "./native-codex-dynamic-tool";
 import { NativeGrokTool } from "./native-grok-interactions";
 import { NativeGrokText, NativeGrokUser } from "./native-grok";
 import { SessionBrowser } from "./session-browser";
@@ -194,6 +195,7 @@ function ConversationStatus({ state }: { state: string }) {
 export const TranscriptItem = memo(function TranscriptItem({ resource, active = true, actions, contextRevision = 0 }: { resource: Resource; active?: boolean; actions?: ReactNode; contextRevision?: number }) {
   useLocale();
   const data = readDocument(resource);
+  if (Object.hasOwn(data,"codex_dynamic_tool")) return <NativeCodexDynamicTool data={data}/>;
   if (Object.hasOwn(data,"grok_tool")) return <NativeGrokTool data={data}/>;
  if (Object.hasOwn(data, "grok_user")) return <NativeGrokUser data={data} />;
   if (data.grok_text != null) return <NativeGrokText data={data} />;

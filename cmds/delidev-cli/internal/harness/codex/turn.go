@@ -70,6 +70,7 @@ type inputAttempt struct {
 }
 
 type executionState struct {
+	dynamicTools        dynamicToolState
 	autoReviews         map[domain.ID]domain.AutoReviewState
 	autoReviewPayloads  map[string][32]byte
 	autoReviewActions   map[string][32]byte
@@ -145,7 +146,7 @@ func (c *Client) eligibleTurnLocked(allowRecovery bool) error {
 	if !allowRecovery && c.execution.continuationPending {
 		return continuationUncertain()
 	}
-	if !allowRecovery && c.execution.interactions.blocksInput() {
+	if !allowRecovery && c.execution.blocksInput() {
 		return interactionConflict()
 	}
 	if c.execution.thread.DirectInput == nil || !*c.execution.thread.DirectInput {
@@ -458,4 +459,16 @@ func (c *Client) callTurnLocked(ctx context.Context, op turnOperation, params an
 	}
 	delete(state.pending, op.RequestID)
 	return response, nil
+}
+
+func (s *executionState) blocksInput() bool {
+	if s.interactions.blocksInput() {
+		return true
+	}
+	for _, owned := range s.dynamicTools.arrivals {
+		if !owned.resolved {
+			return true
+		}
+	}
+	return false
 }

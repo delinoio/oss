@@ -446,3 +446,13 @@ remain independently paginated. No new business RPC or transport authority is
 added. Follow the [mobile contract](apps-delidev-mobile-contract.md).
 
 Current schema-4 Agent routes embed exact source/native identity and non-secret metadata. The shared parser rejects Model resources, mixed UUID routes and older Agent schemas. Other currently activated Project, Settings and API-profile schemas remain supported. Protocol-2 connection verification rejects protocol 1 without adopting its state.
+
+## Codex dynamic tool observation bindings
+
+Generated Go/TypeScript-compatible capability bindings include the independent
+Codex dynamic tool profile allocated in the [v1 protocol contract](protos-delidev-v1-contract.md#codex-dynamic-tool-profile).
+The version-1 generic execution document remains closed in its owning domain;
+its optional typed ToolMessage observation carries inert original lifecycle
+metadata and no registry, dispatch, retrieval or native-response API. Public
+projections cannot restore private native arguments, references or reply
+ownership.

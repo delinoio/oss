@@ -554,6 +554,12 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			}
 			event = activity
 		}
+		if event.Kind == codex.DynamicToolRequestedEvent {
+			if err := mapper.HandleDynamicRequest(ctx, client, event, config.dynamicToolsSupported); err != nil {
+				return nil, err
+			}
+			continue
+		}
 		handled, err := mapper.PublishCore(publicationContext, event)
 		if err != nil {
 			logger.WarnContext(publicationContext, "native_execution_publication_failed", "event_kind", event.Kind, "correlated", event.Correlated, "late", event.Late, "code", domain.SafeError(err).Code)

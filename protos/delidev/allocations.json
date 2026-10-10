@@ -13293,6 +13293,20 @@
       "member": "replayed",
       "number": 2,
       "newDeclaration": true
+    },
+    {
+      "issue": 2397,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_CODEX_DYNAMIC_TOOL_V1",
+      "number": 91
+    },
+    {
+      "issue": 2397,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_CODEX_DYNAMIC_TOOL_V1",
+      "number": 60
     }
   ],
   "rpcReservations": [

@@ -568,3 +568,14 @@ Native session compaction for the feature follows the planned shared boundary in
 Removal journals use newline-framed records. Validate the complete prefix before atomically discarding an unterminated final append; malformed complete records remain uncertain and unchanged. Retain per-entry removed receipts through compaction. Recovery accepts an absent entry only with its own durable renamed/removal proof, and rejects reappearing settled entries. Legacy cleared records grant no missing-entry authority.
 
 Compact settled removal proof to one original inventory path per entry, without generated private-path repetition. Admit these projection records only through validated atomic compaction, and validate membership in the unchanged original intent. Successful recovered cleanup must emit its original canonical source/preview digest.
+
+## Dynamic tool history boundary
+
+Full context and continuation validate original Codex `dynamicToolCall` items
+with the same closed decoder used by live observations and Fork. Original
+nullable fields, arguments and ordered output variants remain protected native
+history, following the [harness contract](cmds-delidev-harness-contract.md#codex-dynamic-tool-observations-and-original-negative-replies).
+A historical item cannot open a dynamic request, dispatch a tool, adopt a
+backend or authorize a reply. Unresolved live original arrivals block a new
+ordinary input, compaction, revert or Fork operation without being relabeled as
+product questions.

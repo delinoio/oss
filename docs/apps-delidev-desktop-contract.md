@@ -5098,3 +5098,14 @@ Home on Sessions and both creation surfaces, including the shared compact drawer
 ### Desktop server protocol validation
 
 Native local startup, supervision and saved-connection verification require the active server protocol 2 and the compiled package version. The Go resident host reports its RPC version constants in the initial started response, matching later authenticated status observations. Private desktop control version 2 and CLI envelope version 1 remain separate from server compatibility. Reject older and newer server protocols without replacing pairing, changing lifecycle intent or granting Worker authority.
+
+## Inert Codex dynamic tool transcript
+
+The transcript reads the closed optional `codex_dynamic_tool` profile through
+the [native harness contract](cmds-delidev-harness-contract.md#codex-dynamic-tool-observations-and-original-negative-replies).
+It preserves ordered text and media kinds as inert observations. Text renders
+through React text escaping, without Markdown execution, links, image/audio
+fetches, native paths or tool actions. Mixed message families, malformed metadata
+and omitted required nullable fields are unavailable. Native item status,
+negative-response delivery, request resolution, root completion and cleanup stay
+separate; a complete observation record is not a successful native tool.

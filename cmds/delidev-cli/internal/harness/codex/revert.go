@@ -44,7 +44,7 @@ func (c *Client) RevertThread(ctx context.Context, action domain.ID, source Cont
 	}
 	defer func() { <-c.control }()
 	state := c.execution
-	if state == nil || c.problem != nil || state.continuationPending || state.paused || state.active != "" || state.interrupt != "" || state.compaction != nil || len(state.pending) != 0 || len(c.subagents) != 0 || state.interactions.blocksInput() || source.ThreadID != c.thread || source.SessionID != state.thread.SessionID || !sameEffectiveSettings(source.Effective, state.settings) {
+	if state == nil || c.problem != nil || state.continuationPending || state.paused || state.active != "" || state.interrupt != "" || state.compaction != nil || len(state.pending) != 0 || len(c.subagents) != 0 || state.blocksInput() || source.ThreadID != c.thread || source.SessionID != state.thread.SessionID || !sameEffectiveSettings(source.Effective, state.settings) {
 		return result, compactionUncertain()
 	}
 	if err := c.checkNativeStateLocked(ctx, true); err != nil {
@@ -149,7 +149,7 @@ func (c *Client) verifyRevertedContinuation(ctx context.Context, request domain.
 	}
 	defer func() { <-c.control }()
 	s := c.execution
-	if s == nil || !s.continuationPending || s.paused || s.active != "" || len(s.turns) != 0 || len(s.inputs) != 0 || len(s.pending) != 0 || s.interactions.blocksInput() || c.problem != nil || c.thread != p.Source.ThreadID || !sameEffectiveSettings(s.settings, p.Source.Effective) {
+	if s == nil || !s.continuationPending || s.paused || s.active != "" || len(s.turns) != 0 || len(s.inputs) != 0 || len(s.pending) != 0 || s.blocksInput() || c.problem != nil || c.thread != p.Source.ThreadID || !sameEffectiveSettings(s.settings, p.Source.Effective) {
 		return Turn{}, compactionUncertain()
 	}
 	fail := func() (Turn, error) { c.problem = compactionUncertain(); s.paused = true; return Turn{}, c.problem }
@@ -205,7 +205,7 @@ func (c *Client) ReconcileRevert(ctx context.Context, intent RevertIntent) (Comp
 		return CompactedCheckpoint{}, err
 	}
 	defer func() { <-c.control }()
-	if c.problem != nil || c.execution.active != "" || len(c.execution.pending) != 0 || c.execution.interactions.blocksInput() || len(c.subagents) != 0 || c.checkNativeStateLocked(ctx, true) != nil || c.noForkWorkLocked(ctx, c.thread) != nil {
+	if c.problem != nil || c.execution.active != "" || len(c.execution.pending) != 0 || c.execution.blocksInput() || len(c.subagents) != 0 || c.checkNativeStateLocked(ctx, true) != nil || c.noForkWorkLocked(ctx, c.thread) != nil {
 		return CompactedCheckpoint{}, compactionUncertain()
 	}
 	history, err := c.contextTurnsLocked(ctx, "asc", nil, true)

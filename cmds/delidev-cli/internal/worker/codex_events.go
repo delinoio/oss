@@ -44,7 +44,7 @@ func codexExecutionProvider(subscription bool) string {
 }
 
 func (c *CodexEventPublisher) publish(ctx context.Context, event domain.ExecutionEvent) error {
-	if c.publisher == nil || c.blocked || c.finished && event.Kind != domain.ExecutionSubagentObserved {
+	if c.publisher == nil || c.blocked || c.finished && event.Kind != domain.ExecutionSubagentObserved && event.Kind != domain.ExecutionCodexDynamicToolObserved {
 		return publicationUncertain()
 	}
 	event.NativeThreadID = string(c.thread)
@@ -133,7 +133,7 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 			c.blocked = true
 		}
 	}()
-	if c.blocked || c.finished && event.Kind != codex.SubagentEvent && event.Kind != codex.MetadataEvent && event.Kind != codex.ThreadStatusEvent || c.publisher == nil || c.thread == "" || c.turn == "" {
+	if c.blocked || c.finished && event.Kind != codex.SubagentEvent && event.Kind != codex.MetadataEvent && event.Kind != codex.ThreadStatusEvent && event.Kind != codex.DynamicToolObservedEvent || c.publisher == nil || c.thread == "" || c.turn == "" {
 		return false, publicationUncertain()
 	}
 	if event.Kind == codex.LateTurnResponseEvent && event.Action == codex.SteerTurnAction {
@@ -156,11 +156,13 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 	if event.Kind == codex.NativeExtensionEvent || event.Kind == codex.LateTurnResponseEvent {
 		return false, nil
 	}
-	if !event.Correlated || event.Late || event.ThreadID != c.thread || (event.TurnID != "" && event.TurnID != c.turn) {
+	if !event.Correlated || event.Late && event.Kind != codex.DynamicToolObservedEvent || event.ThreadID != c.thread || (event.TurnID != "" && event.TurnID != c.turn) {
 		c.blocked = true
 		return false, publicationUncertain()
 	}
 	switch event.Kind {
+	case codex.DynamicToolObservedEvent:
+		return true, c.publishDynamic(ctx, event)
 	case codex.AutoReviewEvent:
 		if event.AutoReview == nil || c.publisher.input.Configuration.Options.ApprovalsReviewer != domain.CodexReviewerAuto || event.ThreadID != c.thread || event.TurnID != c.turn || !event.Correlated {
 			return false, publicationUncertain()

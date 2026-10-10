@@ -137,7 +137,7 @@ func (c *Client) RetainContinuationContext(ctx context.Context, source Continuat
 	}
 	defer func() { <-c.control }()
 	s := c.execution
-	if s == nil || c.problem != nil || source.Status == TurnCompleted && s.paused || s.active != "" || s.compaction != nil || len(s.pending) != 0 || s.interactions.blocksInput() || len(c.subagents) != 0 || source.ThreadID != c.thread || source.SessionID != s.thread.SessionID || !sameEffectiveSettings(source.Effective, s.settings) {
+	if s == nil || c.problem != nil || source.Status == TurnCompleted && s.paused || s.active != "" || s.compaction != nil || len(s.pending) != 0 || s.blocksInput() || len(c.subagents) != 0 || source.ThreadID != c.thread || source.SessionID != s.thread.SessionID || !sameEffectiveSettings(source.Effective, s.settings) {
 		return nil, compactionUncertain()
 	}
 	if len(s.contextOrder) == 0 && s.contextBase == nil {

@@ -4,6 +4,7 @@ import { responseEvidence, type ResponseEvidence } from "./session-progress";
 import { EntityKind, type Resource } from "@delinoio/delidev-api-client";
 import { document as readDocument, object } from "./documents";
 import { claudeToolReference } from "./native-claude-tool";
+import { validCodexDynamicTool } from "./native-codex-dynamic-tool";
 import { validGrokTool } from "./native-grok-interactions";
 
 export interface ConversationProjection { id: string; revision: bigint; turnOwner?: string; turn?: TurnProjection; executionId?: string; inputId?: string; role?: string; inherited?: boolean; response?: ResponseEvidence; tool?: { owner: string; name: string; state: string } }
@@ -20,10 +21,13 @@ export function conversationProjection(row: Resource, sessionId: string): Conver
   const d = readDocument(row);
   if(row.kind===EntityKind.MESSAGE&&row.sessionId===sessionId&&uuid(d.execution_id)){projection.executionId=d.execution_id;projection.inputId=uuid(d.input_id)?d.input_id:undefined;projection.role=typeof d.role==="string"&&["user","assistant","tool"].includes(d.role)?d.role:undefined;projection.inherited=Boolean(d.inherited);}
   if (row.kind !== EntityKind.MESSAGE || row.sessionId !== sessionId || !uuid(row.id) || !uuid(sessionId) || !uuid(d.execution_id) || !identity(d.native_thread_id) || !identity(d.native_turn_id) || d.role !== "tool") return projection;
-  const families = ["tool", "claude_tool", "grok_tool"].filter(key => Object.hasOwn(d, key));
+  const families = ["tool", "claude_tool", "grok_tool", "codex_dynamic_tool"].filter(key => Object.hasOwn(d, key));
   if (families.length !== 1 || ["artifact", "progress", "claude", "claude_progress", "claude_interruption", "grok_text", "grok_user"].some(key => Object.hasOwn(d, key))) return projection;
   let name = "", state = label(d.state);
-  if (families[0] === "claude_tool") {
+  if (families[0] === "codex_dynamic_tool") {
+ if (!validCodexDynamicTool(d)) return projection;
+ const tool=object(d.codex_dynamic_tool);name=label(tool.tool);state=label(tool.status)||label(tool.delivery)||state;
+ } else if (families[0] === "claude_tool") {
     const c = object(d.claude_tool), ref = claudeToolReference(c.reference);
     if (!ref || ref.id !== row.id || ref.native_id !== d.native_id || c.native_message_id !== d.native_parent_id) return projection;
     name = ref.name;

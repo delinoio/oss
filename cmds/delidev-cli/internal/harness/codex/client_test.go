@@ -193,6 +193,18 @@ func init() {
 				}
 				continue
 			}
+			if request.Method == "" && mode == "thread-turn-dynamic" {
+				var value any
+				_ = json.Unmarshal(request.Result, &value)
+				expected := map[string]any{"success": false, "contentItems": []any{map[string]any{"type": "inputText", "text": domain.DynamicUnavailableText}}}
+				a, _ := json.Marshal(value)
+				b, _ := json.Marshal(expected)
+				if string(a) != string(b) {
+					os.Exit(34)
+				}
+				threads.notify("serverRequest/resolved", map[string]any{"threadId": threads.thread["id"], "requestId": request.ID})
+				continue
+			}
 			if request.Method == "" && mode == "thread-turn-questions" {
 				if !threads.questionReply(request.ID, request.Result) {
 					os.Exit(34)

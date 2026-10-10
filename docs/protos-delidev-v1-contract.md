@@ -1417,3 +1417,22 @@ Each native bucket owns its exact bounded ID, required hasCredits/unlimited flag
 Account rows show one exact balance or a localized multi-bucket count. Manage subscription shows the read-only Paid credits card above Quota, with separate bucket labels and retained stale/error timestamps. Keep loading, unavailable/update, unknown, zero, positive and unlimited states distinct. Use existing theme tokens, wrapping rows, parent scrolling, keyboard/dismissal ownership and EN/KO strings. Presentation grants no account, execution, native or platform acceptance.
 
 The reconciled `CreateTerminalRequest` baseline retains original fields 1–4. The feature records their unchanged reset provenance as existing declarations; its records do not reclassify this original message as new. The feature owns creation intent field 5, original candidate field 6 and the closed creation-mode values. Preserve all member numbers and ownership.
+
+## Codex dynamic tool profile
+
+System `SYSTEM_CAPABILITY_CODEX_DYNAMIC_TOOL_V1 = 91` and Worker
+`WORKER_CAPABILITY_CODEX_DYNAMIC_TOOL_V1 = 60` own the optional closed
+version-1 `codex_dynamic_tool` execution event/ToolMessage profile. Their exact
+allocations are recorded in the existing allocation registry. Go and TypeScript
+bindings are generated together. This adds no RPC, entity kind, global event
+version or database migration. Capability advertisement grants no dispatch,
+registry, tool adoption, media retrieval or public native-reply authority.
+
+The server accepts the dedicated event only for the original ordinary Codex
+assignment and authenticated current Worker advertising its independent profile.
+It applies exact outbox receipts and revalidates bounded per-call descriptors,
+request ID kind, original arrival, negative outcome, response identity and
+send-started/delivery/resolution sequence across retained immutable records.
+Tool result, native request resolution, root result and cleanup are independent.
+The owning [native harness contract](cmds-delidev-harness-contract.md#codex-dynamic-tool-observations-and-original-negative-replies)
+fixes protected provenance and the safe public projection.

@@ -509,3 +509,15 @@ Automated fixtures and builds validate these boundaries. Installed native, real-
 ## Inherited elapsed observations
 
 Completed inherited OpenCode user Messages copy original server-owned turn timing with their existing immutable `inherited_from` source session/execution/input/native provenance. Child remapping does not rewrite either observation, and later child input captures a separate interval. Timing is copied only after the original canonical/native mapping checks; it adds no Fork eligibility or native history proof. Fork creation/job/checkpoint/digest inputs omit display timing and retain their prior closed Worker shape.
+
+## Original dynamic tool history
+
+Full Codex Fork source validation includes the shared closed `dynamicToolCall`
+decoder from the [native harness contract](cmds-delidev-harness-contract.md#codex-dynamic-tool-observations-and-original-negative-replies).
+The original JSON arguments, nullable namespace/output/success/duration and
+ordered text/image/audio variants remain protected source history. Native Fork
+uses the original history; public argument/media digests cannot rebuild it.
+Inherited ToolMessage projections remain inert observations, with no live request
+arrival or negative reply ownership transferred to the child. Unknown or
+malformed variants and unresolved original live arrivals cannot grant Fork
+admission or native response authority.

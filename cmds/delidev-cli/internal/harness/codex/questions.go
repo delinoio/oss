@@ -72,6 +72,9 @@ type Interaction struct {
 }
 
 func (c *Client) observeInteractionLocked(native nativewire.Event) (Event, error) {
+	if native.Method == "item/tool/call" {
+		return c.observeDynamicRequestLocked(native)
+	}
 	if native.Method != "item/tool/requestUserInput" {
 		return c.observeApprovalLocked(native)
 	}
