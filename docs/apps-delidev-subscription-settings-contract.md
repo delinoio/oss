@@ -99,7 +99,7 @@ Instruction-file updates in this requirement apply only to changes in developmen
 - [Protocol](protos-delidev-v1-contract.md)
 - [API client](packages-delidev-api-client-contract.md)
 
-Native quota and reset-credit controls follow the [managed subscription contract](cmds-delidev-subscription-contract.md#native-quota-and-reset-credits). Refresh-all invokes one server-owned complete operation; current account settings expose separate quota refresh, default-off observed-recovery notifications and revision/generation-bound credit confirmation. Retained uncertain requests and original-key reconciliation belong to the current Settings visit and never implicitly run after disposal.
+Native quota and reset-credit controls follow the [managed subscription contract](cmds-delidev-subscription-contract.md#native-quota-and-reset-credits). Refresh-all invokes one server-owned complete operation; current account settings consolidate explicit status/quota refresh while retaining default-off observed-recovery notifications and revision/generation-bound credit confirmation. Retained uncertain requests and original-key reconciliation belong to the current Settings visit and never implicitly run after disposal.
 
 Quota row refresh selects the active execution lease machine, falling back to the retained native owner only when no lease exists. Other active lease kinds disable that action. Recovery Inbox details show the account and quota observation time without terminal content; read-state changes grant no quota, session or execution authority.
 
@@ -266,6 +266,41 @@ allocation, migration, persistent preference or native behavior.
 
 ## Server quota V2 negotiation
 Individual row/detail Refresh and Refresh all require System 50 and send an omitted machine selector even when the account retains Worker ownership or an Execute lease. The selected server owns five-minute quota maintenance. An absent or disconnected Runner Device does not disable this quota lane; lifecycle/recovery/removal and independent quota/reset-credit obligations still fence competing work. Older servers receive update guidance and no expanded request. Preserve exact retained mutation bytes, last-success evidence, failed/stale status and observed-recovery preferences. Reset-credit confirmation keeps its original idle server versus explicit Worker ownership and is not widened by quota availability. No broad settings redesign is introduced.
+
+## Consolidated Manage refresh
+
+Manage subscription has one footer Refresh action. For an eligible connected
+ChatGPT account its accessible name and icon tooltip are Refresh account status
+and quota / 계정 상태와 쿼터 새로고침. One explicit activation reads the original
+Account and sends one existing QUOTA request through the retained observation
+controller, capturing its validated account ID, bigint revision, connection and
+credential generation before that read completes. The machine selector remains
+omitted. A synchronous activation lock plus the existing read/mutation guards
+prevent overlaps. No standalone Refresh quota button remains.
+
+System 50, validated current account/capability reads and the original
+lifecycle/recovery/removal, native lease, quota/reset-credit phase and uncertain
+mutation gates determine eligibility. An Execute lease or absent Runner does
+not disable the server quota lane. Unsupported, disconnected or otherwise
+ineligible accounts retain available read-only status refresh and existing
+update/recovery guidance. Neither a successful status read nor a read-error
+retry submits quota or acquires eligibility for its original activation.
+
+The quota/credit/preferences/consent controllers stay mounted for the original
+Manage account, retaining exact uncertain requests when later status reads
+change its connection or presentation. Only explicit original retry reuses
+those bytes; reconnect, locale and rerender do not send work. Verified accepted
+revisions do not decrease, while retained last-success timestamps, values and
+sanitized failure notices preserve their original meaning. Paid credits,
+authentication, recovery notifications, credit confirmation, automatic-credit
+consent, dismissal and cleanup ownership retain their existing boundaries.
+Header Refresh all remains one server-owned complete batch, independent of
+loaded pages, and row Refresh retains its individual original-bound QUOTA call.
+
+The compositional footer reuses existing semantic icons, both themes, 40px
+controls, 8px corners, wrapping actions, focus and parent scrolling. Quota
+content and widgets are unchanged. No protocol, capability, migration, native
+behavior, persistent preference or rollout flag is added.
 
 ## OpenCode Go subscriptions
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.

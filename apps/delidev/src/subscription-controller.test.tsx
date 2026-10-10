@@ -139,7 +139,7 @@ it("preserves managed quota authority without the independent login capability",
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ManagedSubscriptionAccount initial={account} active close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>);
-  const button = await screen.findByRole("button", { name: "Refresh quota" });
+  const button = await screen.findByRole("button", { name: "Refresh account status and quota" });
   await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
   expect((screen.getByRole("button", { name: "Refresh login" }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(button);
@@ -225,10 +225,10 @@ it("blocks fresh subscription actions for successful reads older than the origin
  const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
  const view=render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ManagedSubscriptionAccount initial={account} active close={vi.fn()} /></MutationIntents></QueryClientProvider></TransportProvider>);
  const unavailable=()=>screen.findByText(/The current account could not be verified/);
- const freshButtons=()=>["Refresh login","Log out","Refresh quota"].map(name=>screen.getByRole("button",{name}) as HTMLButtonElement);
+ const freshButtons=()=>["Refresh login","Log out"].map(name=>screen.getByRole("button",{name}) as HTMLButtonElement);
  await unavailable();expect(freshButtons().every(button=>button.disabled)).toBe(true);expect(quota).not.toHaveBeenCalled();
  observed=account;fireEvent.click(screen.getByRole("button",{name:"Refresh account status"}));await waitFor(()=>expect(freshButtons().every(button=>!button.disabled)).toBe(true));
- fireEvent.click(screen.getByRole("button",{name:"Refresh quota"}));await waitFor(()=>expect(quota).toHaveBeenCalledOnce());await unavailable();
+ fireEvent.click(await screen.findByRole("button",{name:"Refresh account status and quota"}));await waitFor(()=>expect(quota).toHaveBeenCalledOnce());await unavailable();
  expect(quota.mock.calls[0][0].mutation.expectedRevision).toBe(account.revision);expect(freshButtons().every(button=>button.disabled)).toBe(true);expect(login).not.toHaveBeenCalled();
  observed=accepted;fireEvent.click(screen.getByRole("button",{name:"Refresh account status"}));await waitFor(()=>expect(freshButtons().every(button=>!button.disabled)).toBe(true));
  expect(quota).toHaveBeenCalledOnce();expect(login).not.toHaveBeenCalled();view.unmount();client.clear();

@@ -38,8 +38,12 @@ function NativeManagedSubscriptionAccount({ initial, active, close }: { initial:
   const initialResource = "kind" in initial ? initial : undefined;
   const service = initialResource ? subscriptionService(document(initialResource).subscription_service)! : (initial as SubscriptionManagementSelection).service;
   const [quotaBusy, setQuotaBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshLock = useRef(false);
+
   const [logoutConfirmation, setLogoutConfirmation] = useState<Resource>();
   const [accepted, setAccepted] = useState<Resource>();
+  const acceptAccount = (resource: Resource) => setAccepted(previous => !previous || resource.revision >= previous.revision ? resource : previous);
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
   const read = useQuery(ResourceQuery.getResource, { kind: EntityKind.ACCOUNT, id: initial.id }, { enabled: active, refetchInterval: active ? 2000 : false });
   const flow = useSubscriptionLogin(active, () => { void read.refetch(); });
@@ -49,7 +53,7 @@ function NativeManagedSubscriptionAccount({ initial, active, close }: { initial:
   const current = verifiedObservation ? observed : accepted && accepted.revision >= initial.revision ? accepted : initialResource;
   const data = document(current), state = object(data.subscription), pending = object(state.pending);
   const validRead = !read.error && (!read.isSuccess || verifiedObservation);
-  const operation = useRetainedMutation("subscription:lifecycle:" + initial.id, SubscriptionQuery.requestSubscription, (result) => { setAccepted(result.account); void read.refetch(); },
+  const operation = useRetainedMutation("subscription:lifecycle:" + initial.id, SubscriptionQuery.requestSubscription, (result) => { if (result.account) acceptAccount(result.account); void read.refetch(); },
     (result, request) => result.operationId === request.mutation?.requestId && serviceAccount(result.account, initial.id, service, request.mutation?.expectedRevision ?? 1n));
   const blocked = quotaBusy || operation.busy || operation.uncertain;
   const connected = Boolean(text(object(data.connection).id)), pendingID = text(pending.id);
@@ -63,6 +67,22 @@ function NativeManagedSubscriptionAccount({ initial, active, close }: { initial:
   const request = (action: SubscriptionAction) => {
     if (!current || !(action === SubscriptionAction.LOGOUT ? logoutReady : ready)) return;
     void operation.send({ mutation: { id: current.id, expectedRevision: current.revision, requestId: newRequestId() }, action, ...(service === SubscriptionServiceId.Claude ? {machineId:text(state.owner_machine_id)} : {}) });
+  };
+  const refreshFooter = (refreshQuota?: () => Promise<void>) => {
+    const refresh = async () => {
+      if (!active || blocked || refreshing || read.isFetching || refreshLock.current) return;
+      refreshLock.current = true;
+      setRefreshing(true);
+      try {
+        // Admission is explicit and the quota closure binds the pre-read
+        // account. Status completion cannot manufacture new quota eligibility.
+        await Promise.allSettled([refreshQuota?.(), read.refetch()]);
+      } finally {
+        refreshLock.current = false;
+        setRefreshing(false);
+      }
+    };
+    return <SettingsTaskActions className=""><SettingsActionButton icon={SettingsActionIcon.Refresh} presentation={SettingsActionPresentation.Icon} type="button" disabled={!active || blocked || refreshing || read.isFetching} onClick={() => void refresh()}>{copy(refreshQuota ? "subscription-accounts.refreshAccountStatusAndQuota" : "subscription-accounts.refreshAccountStatus_fa2870")}</SettingsActionButton><SettingsTaskDismissButton data-settings-task-cancel type="button" disabled={blocked} onClick={closeTask}>{copy("subscription-accounts.backToSubscriptions_257d53")}</SettingsTaskDismissButton></SettingsTaskActions>;
   };
   if (!current) return <><p role="status">{copy("subscription-settings.loadingSubscriptions_d98d84")}</p><Problem error={read.error} summary={<p>{copy("subscription-accounts.theCurrentAccountCouldNotBe_9c686a")}</p>} />{read.isSuccess && !verifiedObservation ? <p role="alert">{copy("subscription-accounts.theCurrentAccountCouldNotBe_9c686a")}</p> : null}</>;
   if (flow.body) return service === SubscriptionServiceId.Claude ? <SettingsTaskDialog title={copy("claude-subscription.title")} size={SettingsDialogSize.Wide} retained={flow.retained} close={flow.hide}>{flow.body}</SettingsTaskDialog> : flow.body;
@@ -81,8 +101,7 @@ function NativeManagedSubscriptionAccount({ initial, active, close }: { initial:
     {read.error || status.error ? <LocalConnectionHelp active={active} /> : null}
     {operation.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={operation.busy} onClick={operation.retry}>{copy("subscription-accounts.retryOriginalSubscriptionOperation_691fa2")}</SettingsActionButton> : null}
     {service === SubscriptionServiceId.ChatGPT ? <PaidCredits buckets={paidCreditProjection(state)} state={!status.data?PaidCreditState.Loading:!status.data.capabilities.includes(SystemCapability.SUBSCRIPTION_PAID_CREDITS_V1)?PaidCreditState.Unsupported:state.quota_state==="failed"?PaidCreditState.Failed:PaidCreditState.Observed} active={active}/> : null}
- {service === SubscriptionServiceId.ChatGPT && connected ? <SubscriptionQuotaControls current={current} machine={quotaObservationMachine(state)} active={active && validRead} accepted={setAccepted} busyChanged={setQuotaBusy} /> : null}
-    <SettingsTaskActions className=""><SettingsActionButton icon={SettingsActionIcon.Refresh} presentation={SettingsActionPresentation.Icon} type="button" disabled={blocked} onClick={() => void read.refetch()}>{copy("subscription-accounts.refreshAccountStatus_fa2870")}</SettingsActionButton><SettingsTaskDismissButton data-settings-task-cancel type="button" disabled={blocked} onClick={closeTask}>{copy("subscription-accounts.backToSubscriptions_257d53")}</SettingsTaskDismissButton></SettingsTaskActions>
+ {service === SubscriptionServiceId.ChatGPT ? <SubscriptionQuotaControls current={current} machine={quotaObservationMachine(state)} active={active && connected && validRead && !status.error && !operation.busy && !operation.uncertain} visible={connected || quotaBusy} accepted={acceptAccount} busyChanged={setQuotaBusy} footer={refreshFooter} /> : refreshFooter()}
   </section>;
 }
 
