@@ -91,16 +91,19 @@ type Service struct {
 	delidevv1connect.UnimplementedProviderServiceHandler
 	delidevv1connect.UnimplementedNetworkServiceHandler
 	delidevv1connect.UnimplementedIntegrationServiceHandler
-	integrationOnce               sync.Once
-	integrationGate               chan struct{}
-	integrationChecks             map[domain.ID]*integrationCheck
-	integrationPreviews           map[domain.ID]*integrationCheck
-	integrationSecrets            integrationSecrets
-	ownedPAT                      *credentials.PATStore
-	github                        githubIdentity
-	githubQueries                 githubRepositoryQueries
-	githubRepositories            githubRepositoryInventory
-	terminalOutputMu              sync.Mutex
+	integrationOnce       sync.Once
+	integrationGate       chan struct{}
+	integrationChecks     map[domain.ID]*integrationCheck
+	integrationPreviews   map[domain.ID]*integrationCheck
+	integrationSecrets    integrationSecrets
+	ownedPAT              *credentials.PATStore
+	github                githubIdentity
+	githubQueries         githubRepositoryQueries
+	githubRepositories    githubRepositoryInventory
+	terminalOutputMu      sync.Mutex
+	terminalOutputChanged chan struct{}
+	// Set before stream admission in isolated tests; production uses 100 ms.
+	terminalWatchInterval         time.Duration
 	terminalOutputs               map[domain.ID]*terminalOutputRing
 	terminalOutputOrder           list.List
 	prFixRequests                 prFixRequestTracker
