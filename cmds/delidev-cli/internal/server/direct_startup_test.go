@@ -216,73 +216,100 @@ func TestDirectStartupRejectsForeignReportsAndSettlesNoInputFailure(t *testing.T
 }
 
 func TestDirectStartupExplicitRetryRetainsOriginalSelectionAndReceipt(t *testing.T) {
-	f := newFirstDispatchFixture(t)
-	ctx := context.Background()
-	_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.no-inspection", nil, func(tx *store.Tx) (any, error) {
-		mr, machine, err := activeMachine(tx, domain.ID(f.machine.Id))
-		if err != nil {
-			return nil, err
+	for _, total := range []int{4094, 4095} {
+		name := "last execution plus recovery slots"
+		if total == 4095 {
+			name = "insufficient recovery slot"
 		}
-		machine.Installations = nil
-		return tx.Put(domain.MachineKind, mr.ID, mr.Revision, "", "", machine)
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	sr, err := f.service.Store.Get(ctx, domain.SessionKind, domain.ID(f.change.Session.Id))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = f.service.dispatchExecution(ctx, sr); err != nil {
-		t.Fatal(err)
-	}
-	if !f.workerStream.Receive() || f.workerStream.Msg().Job == nil {
-		t.Fatal("missing direct assignment", f.workerStream.Err())
-	}
-	original := f.workerStream.Msg().Job
-	var job domain.Job
-	var input domain.ExecutionJobInput
-	if domain.Decode(original.DocumentJson, &job) != nil || domain.Decode(job.Input, &input) != nil || input.Version != 4 || input.Installation.ResolvedPath != "" {
-		t.Fatal("inspection evidence was required")
-	}
-	o := domain.ExecutionStartupObservation{State: domain.StartupFailed, Phase: domain.StartupResolve, Harness: domain.Codex, ProblemCode: domain.NotFound, CorrelationID: domain.ID(original.Id), InputDelivery: domain.StartupNotSent, Cleanup: domain.StartupCleanupConfirmed}
-	if _, err = f.workerClient.ReportExecutionStartup(ctx, ownerRequest(f.workerIdentity, &pb.ReportExecutionStartupRequest{Mutation: acctMutation(original, domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, Observation: rpc.StartupMessage(o)})); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = f.workerClient.ReportWork(ctx, ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: acctMutation(original, domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, Problem: &pb.ErrorDetail{Code: string(domain.NotFound)}})); err != nil {
-		t.Fatal(err)
-	}
-	sr, err = f.service.Store.Get(ctx, domain.SessionKind, domain.ID(f.change.Session.Id))
-	if err != nil {
-		t.Fatal(err)
-	}
-	request := &pb.ControlSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(sr.ID), ExpectedRevision: sr.Revision}, Action: pb.SessionAction_SESSION_ACTION_RESUME}
-	for range 2 {
-		if _, err = sessionClient(f.accountFixture).ControlSession(ctx, ownerRequest(f.identity, request)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if !f.workerStream.Receive() || f.workerStream.Msg().Job == nil {
-		t.Fatal("missing explicit retry", f.workerStream.Err())
-	}
-	retry := f.workerStream.Msg().Job
-	var retryJob domain.Job
-	var next domain.ExecutionJobInput
-	if domain.Decode(retry.DocumentJson, &retryJob) != nil || domain.Decode(retryJob.Input, &next) != nil || next.Validate() != nil {
-		t.Fatal("invalid retry assignment")
-	}
-	if retry.Id == original.Id || next.ExecutionID == input.ExecutionID || next.InputID == input.InputID || next.Retry == nil || next.Retry.JobID != domain.ID(original.Id) || !next.Input.Equal(input.Input) || next.ConfigurationDigest != input.ConfigurationDigest || next.AccountID != input.AccountID || next.ConnectionID != input.ConnectionID || next.MachineID != input.MachineID || *next.Startup != *input.Startup {
-		t.Fatal("retry replaced original selection or input")
-	}
-	sr, err = f.service.Store.Get(ctx, domain.SessionKind, domain.ID(f.change.Session.Id))
-	session, decodeErr := store.Decode[domain.Session](sr)
-	if err != nil || decodeErr != nil || session.PendingInputs != 1 || session.ActiveExecutionID != next.ExecutionID || !session.OwnsExecution(next) || session.InitialExecution.ID != input.ExecutionID {
-		t.Fatal("receipt replay duplicated input or rewrote history")
-	}
-	retained, err := f.service.Store.Get(ctx, domain.JobKind, domain.ID(original.Id))
-	old, decodeErr := store.Decode[domain.Job](retained)
-	if err != nil || decodeErr != nil || old.State != domain.JobFailed || string(old.Input) != string(job.Input) || old.Startup == nil || old.Startup.Failure == nil {
-		t.Fatal("failed attempt was rewritten")
+		t.Run(name, func(t *testing.T) {
+			f := newFirstDispatchFixture(t)
+			ctx := context.Background()
+			_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.no-inspection", nil, func(tx *store.Tx) (any, error) {
+				mr, machine, err := activeMachine(tx, domain.ID(f.machine.Id))
+				if err != nil {
+					return nil, err
+				}
+				machine.Installations = nil
+				return tx.Put(domain.MachineKind, mr.ID, mr.Revision, "", "", machine)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			sr, err := f.service.Store.Get(ctx, domain.SessionKind, domain.ID(f.change.Session.Id))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = f.service.dispatchExecution(ctx, sr); err != nil {
+				t.Fatal(err)
+			}
+			if !f.workerStream.Receive() || f.workerStream.Msg().Job == nil {
+				t.Fatal("missing direct assignment", f.workerStream.Err())
+			}
+			original := f.workerStream.Msg().Job
+			var job domain.Job
+			var input domain.ExecutionJobInput
+			if domain.Decode(original.DocumentJson, &job) != nil || domain.Decode(job.Input, &input) != nil || input.Version != 4 || input.Installation.ResolvedPath != "" {
+				t.Fatal("inspection evidence was required")
+			}
+			o := domain.ExecutionStartupObservation{State: domain.StartupFailed, Phase: domain.StartupResolve, Harness: domain.Codex, ProblemCode: domain.NotFound, CorrelationID: domain.ID(original.Id), InputDelivery: domain.StartupNotSent, Cleanup: domain.StartupCleanupConfirmed}
+			if _, err = f.workerClient.ReportExecutionStartup(ctx, ownerRequest(f.workerIdentity, &pb.ReportExecutionStartupRequest{Mutation: acctMutation(original, domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, Observation: rpc.StartupMessage(o)})); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = f.workerClient.ReportWork(ctx, ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: acctMutation(original, domain.NewID()), MachineId: f.machine.Id, InstanceId: f.workerInstance, Problem: &pb.ErrorDetail{Code: string(domain.NotFound)}})); err != nil {
+				t.Fatal(err)
+			}
+			sr, err = f.service.Store.Get(ctx, domain.SessionKind, domain.ID(f.change.Session.Id))
+			if err != nil {
+				t.Fatal(err)
+			}
+			padExecutionHistory(t, f.service.Store, sr.ID, domain.ID(f.machine.Id), total)
+			request := &pb.ControlSessionRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID()), Id: string(sr.ID), ExpectedRevision: sr.Revision}, Action: pb.SessionAction_SESSION_ACTION_RESUME}
+			if total == 4095 {
+				before, err := f.service.Store.List(ctx, store.Filter{Kind: domain.QueueKind, SessionID: sr.ID, Limit: 100})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := sessionClient(f.accountFixture).ControlSession(ctx, ownerRequest(f.identity, request)); err == nil || !strings.Contains(err.Error(), string(domain.ResourceExhausted)) {
+					t.Fatal("retry without recovery headroom", err)
+				}
+				after, err := f.service.Store.List(ctx, store.Filter{Kind: domain.QueueKind, SessionID: sr.ID, Limit: 100})
+				if err != nil || len(after) != len(before) || executionHistoryCount(t, f.service.Store, sr.ID) != total {
+					t.Fatal("rejected startup wrote input/job", err)
+				}
+				return
+			}
+			for range 2 {
+				if _, err = sessionClient(f.accountFixture).ControlSession(ctx, ownerRequest(f.identity, request)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if !f.workerStream.Receive() || f.workerStream.Msg().Job == nil {
+				t.Fatal("missing explicit retry", f.workerStream.Err())
+			}
+			retry := f.workerStream.Msg().Job
+			var retryJob domain.Job
+			var next domain.ExecutionJobInput
+			if domain.Decode(retry.DocumentJson, &retryJob) != nil || domain.Decode(retryJob.Input, &next) != nil || next.Validate() != nil {
+				t.Fatal("invalid retry assignment")
+			}
+			if retry.Id == original.Id || next.ExecutionID == input.ExecutionID || next.InputID == input.InputID || next.Retry == nil || next.Retry.JobID != domain.ID(original.Id) || !next.Input.Equal(input.Input) || next.ConfigurationDigest != input.ConfigurationDigest || next.AccountID != input.AccountID || next.ConnectionID != input.ConnectionID || next.MachineID != input.MachineID || *next.Startup != *input.Startup {
+				t.Fatal("retry replaced original selection or input")
+			}
+			sr, err = f.service.Store.Get(ctx, domain.SessionKind, domain.ID(f.change.Session.Id))
+			session, decodeErr := store.Decode[domain.Session](sr)
+			if err != nil || decodeErr != nil || session.PendingInputs != 1 || session.ActiveExecutionID != next.ExecutionID || !session.OwnsExecution(next) || session.InitialExecution.ID != input.ExecutionID {
+				t.Fatal("receipt replay duplicated input or rewrote history")
+			}
+			retained, err := f.service.Store.Get(ctx, domain.JobKind, domain.ID(original.Id))
+			old, decodeErr := store.Decode[domain.Job](retained)
+			if err != nil || decodeErr != nil || old.State != domain.JobFailed || string(old.Input) != string(job.Input) || old.Startup == nil || old.Startup.Failure == nil {
+				t.Fatal("failed attempt was rewritten")
+			}
+
+			if got := executionHistoryCount(t, f.service.Store, sr.ID); got != total+1 {
+				t.Fatal("startup replay consumed jobs", got)
+			}
+		})
 	}
 }
 

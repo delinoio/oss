@@ -44,7 +44,7 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; line
 .sidebar-new-session[aria-current="page"], .sidebar-new-general-chat[aria-current="page"] { border-color: var(--selected-border); background: var(--selected-background); color: var(--selected-text); }
 .sidebar-session-title-state { min-width: 0; flex: 0 1 auto; max-width: 132px; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .session-title-status { color: var(--muted); font-size: 12px; }
-.sidebar-list { display: flex; min-height: 0; flex: 1; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 0 1px 8px 0; }
+.sidebar-list { display: flex; min-height: 0; flex: 1; flex-direction: column; overflow-y: auto; overscroll-behavior: none; scrollbar-gutter: stable; padding: 0 1px 8px 0; }
 .sidebar-projects-heading { min-height: 30px; gap: 4px; }
 .sidebar-projects-heading h2 { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.2; letter-spacing: .07em; text-transform: uppercase; font-weight: 650; }
 .sidebar-new-project-button { display: grid; place-items: center; width: 34px; height: 34px; min-width: 34px; min-height: 34px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted); }
@@ -88,10 +88,10 @@ button.sidebar-project-row:hover { background: var(--surface-hover); }
 .sidebar-group-pager, .sidebar-global-pager, .sidebar-project-pager { display: flex; flex-wrap: wrap; gap: 4px; padding: 5px 2px 7px 25px; }
 .sidebar-global-pager, .sidebar-project-pager { padding-left: 4px; }
 .sidebar-group-pager button, .sidebar-global-pager button, .sidebar-project-pager button { min-height: 26px; padding: 3px 6px; border-color: transparent; background: transparent; color: var(--text-secondary); font-size: 10px; }
-.sidebar-footer { flex: 0 0 auto; max-height: 35%; overflow: auto; border-top: 1px solid var(--border); padding: 8px 2px 2px; scrollbar-gutter: stable; }
+.sidebar-footer { flex: 0 0 auto; max-height: 35%; overflow: auto; border-top: 1px solid var(--border); padding: 8px 2px 2px; scrollbar-gutter: stable; overscroll-behavior: none; }
 .sidebar-footer p { margin: 0 0 5px; color: var(--muted); font-size: 11px; }
 .sidebar-footer button { max-width: 100%; }
-.sidebar-session-tooltip { position: fixed; z-index: 1000; inset: auto; margin: 0; width: 320px; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); box-shadow: 0 4px 16px var(--shadow-soft); font-size: 12px; line-height: 18px; overflow: auto; overflow-wrap: anywhere; overscroll-behavior: contain; pointer-events: auto; }
+.sidebar-session-tooltip { position: fixed; z-index: 1000; inset: auto; margin: 0; width: 320px; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); box-shadow: 0 4px 16px var(--shadow-soft); font-size: 12px; line-height: 18px; overflow: auto; overflow-wrap: anywhere; overscroll-behavior: none; pointer-events: auto; }
 .sidebar-session-card-title { margin: 0; font-size: 15px; line-height: 20px; font-weight: 600; }
 .sidebar-session-card-workspace { display: flex; align-items: flex-start; gap: 8px; margin: 8px 0 0; color: var(--muted); }
 .sidebar-session-card-workspace .sidebar-icon { flex: 0 0 auto; margin-top: 2px; }
@@ -430,7 +430,7 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .inbox-read-progress { color: var(--muted); font-size: 14px; }
 
 /* The contextual sidebar keeps one controller outlet so responsive placement never duplicates query observers or drafts. */
-.sidebar-pane-dialog { position: static; display: flex; width: auto; height: auto; max-width: none; max-height: none; margin: 0; padding: 0; overflow: hidden; border: 0; border-radius: 0; color: inherit; background: transparent; }
+.sidebar-pane-dialog { position: static; display: flex; width: auto; height: auto; max-width: none; max-height: none; margin: 0; padding: 0; overflow: hidden; border: 0; border-radius: 0; color: inherit; background: transparent; overscroll-behavior: none; }
 .sidebar-pane-dialog[open] { display: flex; }
 .sidebar-drawer-close, .sidebar-context-trigger { display: none; }
 .sidebar-pane { width: 100%; }
@@ -895,7 +895,7 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .is-home .sidebar-projects-heading { position: relative; gap: 4px; }
 .is-home .sidebar-projects-heading h2 { flex: 1; font-size: 12px; letter-spacing: 0; text-transform: none; color: var(--muted); }
 .sidebar-options-button { display: grid; place-items: center; width: 34px; height: 34px; min-height: 34px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--muted); }
-.sidebar-options-popup { position: absolute; z-index: 25; top: 100%; right: 0; padding: 8px 12px; border: 1px solid var(--surface-hover); border-radius: 8px; background: var(--surface); box-shadow: 0 4px 12px var(--shadow-soft); }
+.sidebar-options-popup { position: absolute; z-index: 25; top: 100%; right: 0; padding: 8px 12px; border: 1px solid var(--surface-hover); border-radius: 8px; background: var(--surface); box-shadow: 0 4px 12px var(--shadow-soft); overscroll-behavior: none; }
 .sidebar-options-popup .sidebar-archived-filter { white-space: nowrap; margin: 0; }
 .sidebar-archive-indicator { margin: 4px 8px 8px; font-size: 12px; color: var(--muted); }
 .sidebar-continuation { min-height: 1px; font-size: 12px; color: var(--muted); }
@@ -908,7 +908,7 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .sidebar-server-label { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 4px; font-size: 14px; }
 .sidebar-server-label > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar-server-label > [role=status] { font-size: 12px; color: var(--muted); }
-.sidebar-server-management { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.sidebar-server-management { min-height: 0; overflow-y: auto; overscroll-behavior: none; }
 /* Repository registration keeps the existing Settings tokens and scroll owner. */
 .settings-content .repository-registration { max-width: 760px; min-width: 0; }
 .repository-folder-card, .repository-summary { border: 1px solid var(--border); border-radius: 10px; padding: 24px; margin: 20px 0; }
@@ -1052,7 +1052,7 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .sidebar-statuses[data-outcome=running] > :first-child { color: var(--execution-running); }
 .sidebar-statuses[data-outcome=succeeded] > :first-child { color: var(--success-text); }
 .sidebar-statuses[data-outcome=failed] > :first-child { color: var(--danger-text); }
-.sidebar-session-menu { position: fixed; inset: auto; z-index: 1200; width: 220px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto; margin: 0; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); box-shadow: 0 4px 16px var(--shadow-soft); }
+.sidebar-session-menu { position: fixed; inset: auto; z-index: 1200; width: 220px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto; margin: 0; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); box-shadow: 0 4px 16px var(--shadow-soft); overscroll-behavior: none; }
 .sidebar-session-menu button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; margin: 0; padding: 6px 8px; border: 0; text-align: left; background: transparent; }
 .sidebar-session-menu button:hover { background: var(--surface-hover); }
 .sidebar-session-menu p { font-size: 12px; overflow-wrap: anywhere; }
