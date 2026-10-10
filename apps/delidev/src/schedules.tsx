@@ -29,7 +29,7 @@ enum Overlap { Overlap = "overlap", Skip = "skip", Wait = "wait" }
 enum EnabledFilter { All = "all", Enabled = "enabled", Paused = "paused" }
 const ignoreProtectedChange = (_protectedState: boolean) => undefined;
 const scheduleName = (row?: Resource) => text(object(document(row).definition).name) || copy("schedules.extra.d5ef9d155d1e");
-const emptyDefinition = (): Document => ({ name: "", prompt: "", enabled: false, project_id: "", agent_id: "", machine_id: "", workspace: Workspace.Worktree, mode: Mode.Execute, cron: "0 9 * * 1-5", timezone: "UTC", overlap: Overlap.Overlap });
+const emptyDefinition = (): Document => ({ name: "", prompt: "", enabled: true, project_id: "", agent_id: "", machine_id: "", workspace: Workspace.Worktree, mode: Mode.Execute, cron: "0 9 * * 1-5", timezone: "UTC", overlap: Overlap.Overlap });
 
 function schedulePage(response: ListSchedulesResponse) {
   if (response.schedules.length > 50 || response.schedules.some(row => !isEntityId(row.id))) throw new ConnectError("Invalid schedule page", Code.DataLoss);
