@@ -203,6 +203,7 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
     } catch {
       setProblem(copy("settings.accountPreferencesCouldNotBeSavedReopen_4a7c1b")); return;
     }
+    setJobNameConflict(undefined);
     void mutation.send({ mutation: { id: source?.id ?? "", expectedRevision: source?.revision ?? 0n, requestId: newRequestId() }, kind, schemaVersion: [EntityKind.PROJECT, EntityKind.SETTINGS].includes(kind) && !supportsProjectBehavior ? 1 : configurationSchemaVersion(kind, submittedData), documentJson });
   };
   if (kind === EntityKind.PROJECT && !source) return <ResourceSelectionPending.Provider value={reportSelectionPending}><ProjectCreationWizard nameConflict={nameConflict} registrationAdapters={registrationAdapters} data={data} change={change} active={active} visible={taskVisible} blocked={blocked || childPending} busy={mutation.busy} saveDisabled={saveDisabled} submit={submit} cancel={cancelTask} cancelDisabled={!inTask && (blocked || childPending)} uncertain={mutation.uncertain} retry={mutation.retry}>
