@@ -3110,7 +3110,10 @@ existing backend lifecycle; local draft cleanup cannot delete accepted history.
 decoding, ordered file/paste/drop entry, separate drafts, navigation retention,
 image-only typed admission and localized responsive controls with synthetic
 services. Keep the fixture outside release bundles. Browser fixtures and builds
-do not establish real native, account or platform acceptance.
+do not establish real native, account or platform acceptance. When optional
+screenshots are enabled, resolve the output directory and reject existing
+symlinks at every generated screenshot filename before browser import or build.
+This prevents capture from following a file symlink into the checkout.
 ## Shared timestamps and device date format (issue #1736)
 
 Every human-facing desktop timestamp uses `Timestamp` from

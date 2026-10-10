@@ -38,3 +38,19 @@ export async function screenshotDirectory(value, checkout, cwd = process.cwd()) 
     }
   }
 }
+
+export async function validateScreenshotFiles(directory, names) {
+  const root = resolve(directory);
+  for (const name of names) {
+    if (basename(name) !== name || name === "." || name === "..") {
+      throw new Error("Screenshot output name must be a file name");
+    }
+    const output = resolve(root, name);
+    try {
+      const entry = await lstat(output);
+      if (entry.isSymbolicLink()) throw new Error(`Screenshot output cannot be a symbolic link: ${name}`);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+  }
+}

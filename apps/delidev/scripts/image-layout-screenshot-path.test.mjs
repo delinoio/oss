@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink, writeFile } f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { screenshotDirectory } from "./image-layout-screenshot-path.mjs";
+import { screenshotDirectory, validateScreenshotFiles } from "./image-layout-screenshot-path.mjs";
 
 async function fixture(t) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "delidev-screenshot-path-")));
@@ -63,11 +63,23 @@ test("unset destinations stay disabled and dangling links fail without writes", 
   assert.deepEqual((await readdir(root)).sort(), ["checkout", "dangling"]);
 });
 
+test("rejects existing screenshot output symlinks before capture", async t => {
+  const { root, checkout } = await fixture(t);
+  const screenshots = join(root, "screenshots");
+  await mkdir(screenshots);
+  const filename = "en-light-1440-1-images.png";
+  await symlink(join(checkout, "original.txt"), join(screenshots, filename), "file");
+  await assert.rejects(validateScreenshotFiles(screenshots, [filename]), /cannot be a symbolic link/);
+  assert.equal(await readFile(join(checkout, "original.txt"), "utf8"), "original user content");
+});
+
 test("layout guard runs before browser import, temporary output and build", async () => {
   const source = await readFile(new URL("./test-image-input-layout.mjs", import.meta.url), "utf8");
   const guard = source.indexOf("const screenshots = await screenshotDirectory(");
+  const files = source.indexOf("await validateScreenshotFiles(screenshots, screenshotNames)");
   assert(guard > 0);
-  for (const operation of ["await import(modulePath", "await mkdtemp(", "await mkdir(screenshots", "await createRsbuild("]) assert(guard < source.indexOf(operation));
+  assert(files > guard);
+  for (const operation of ["await import(modulePath", "await mkdtemp(", "await mkdir(screenshots", "await createRsbuild("]) assert(files < source.indexOf(operation));
   assert.match(source, /cases:16,creationGuidanceSurfaces:32/);
   assert.match(source, /await browser\?\.close\(\)/);
   assert.match(source, /await rm\(directory,\{recursive:true,force:true\}\)/);

@@ -8,7 +8,7 @@ import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRsbuild } from "@rsbuild/core";
 import { pluginReact } from "@rsbuild/plugin-react";
-import { screenshotDirectory } from "./image-layout-screenshot-path.mjs";
+import { screenshotDirectory, validateScreenshotFiles } from "./image-layout-screenshot-path.mjs";
 
 
 async function guidance(page, plus, language) {
@@ -38,8 +38,13 @@ async function guidance(page, plus, language) {
  await plus.focus();await tip.waitFor();await page.getByRole('button',{name:'Fixture navigate',exact:true}).click();assert.equal(await tip.count(),0,'Inactive mounted composer disposes its portal');await page.getByRole('button',{name:'Fixture navigate',exact:true}).click();await page.locator('textarea').focus();
 }
 
+const languages = ["en", "ko"];
+const themes = ["light", "dark"];
+const layouts = [[1440,1000,1],[960,640,1],[320,640,1],[640,640,2]];
+const screenshotNames = languages.flatMap(language => themes.flatMap(theme => layouts.flatMap(([width,,zoom]) => [`${language}-${theme}-${width}-${zoom}-images.png`, `${language}-${theme}-${width}-${zoom}.png`])));
 const app = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const screenshots = await screenshotDirectory(process.env.DELIDEV_LAYOUT_SCREENSHOTS, resolve(app, "../.."));
+if (screenshots) await validateScreenshotFiles(screenshots, screenshotNames);
 const modulePath = process.env.DELIDEV_LAYOUT_PLAYWRIGHT_MODULE;
 const { chromium } = await import(modulePath ? pathToFileURL(resolve(modulePath)).href : "playwright");
 const directory = await mkdtemp(join(tmpdir(), "delidev-image-layout-"));
@@ -61,7 +66,7 @@ try {
  browser = await chromium.launch({ headless:true, ...(process.env.DELIDEV_LAYOUT_BROWSER_CHANNEL ? { channel:process.env.DELIDEV_LAYOUT_BROWSER_CHANNEL } : {}) });
  const page = await browser.newPage();
  const errors = []; page.on("pageerror",error => errors.push(error.message));
- for (const language of ["en","ko"]) for (const theme of ["light","dark"]) for (const [width,height,zoom] of [[1440,1000,1],[960,640,1],[320,640,1],[640,640,2]]) {
+ for (const language of languages) for (const theme of themes) for (const [width,height,zoom] of layouts) {
   const compact = zoom === 2;
   await page.setViewportSize({width,height});
   await page.goto(`http://127.0.0.1:${server.address().port}/?language=${language}&theme=${theme}&zoom=${compact ? 2 : 1}`);
