@@ -16,13 +16,15 @@ import (
 // snapshot. It contains no credential, arbitrary config, or base-instruction
 // override. Account authority and durable snapshot acceptance belong upstream.
 type ThreadSettings struct {
-	Model          string
-	Provider       string
-	Effort         string
-	Cwd            string
-	WorkspaceRoots []string
-	Instructions   string
-	Options        domain.AgentOptions
+	directorySource *ContinuationCheckpoint
+	directoryClaim  func() error
+	Model           string
+	Provider        string
+	Effort          string
+	Cwd             string
+	WorkspaceRoots  []string
+	Instructions    string
+	Options         domain.AgentOptions
 }
 
 type ApprovalPolicy string
@@ -214,7 +216,7 @@ func (s ThreadSettings) wireSettings() (threadParams, error) {
 		return p, unsupportedSettings()
 	}
 	if len(s.WorkspaceRoots) > 0 {
-		if !slices.Contains(s.WorkspaceRoots, s.Cwd) {
+		if !slices.Contains(s.WorkspaceRoots, s.Cwd) && (s.directorySource == nil || !slices.Equal(s.WorkspaceRoots, directoryRoots(s.directorySource.Effective)) || !directoryInsideOriginalRoots(s.Cwd, s.WorkspaceRoots)) {
 			return p, unsupportedSettings()
 		}
 		for i, root := range s.WorkspaceRoots {
@@ -358,6 +360,14 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 		}
 		c.logger.InfoContext(ctx, "Codex native thread operation", "owner_id", c.ownerID, "request_id", requestID, "operation", method, "stage", "native-thread-binding", "options", (domain.ExecutionConfiguration{Effort: settings.Effort, Options: settings.Options}).SelectedNativeOptionNames(), "code", code)
 	}()
+	if settings.directorySource != nil {
+		if method != resumeThread || settings.directoryClaim == nil {
+			return result, directoryUncertain()
+		}
+		if err := settings.directoryClaim(); err != nil {
+			return result, err
+		}
+	}
 	response, err := c.wire.Call(ctx, requestID, string(method), params)
 	if err != nil {
 		if domain.SafeError(err).Code == domain.RecoveryRequired {
