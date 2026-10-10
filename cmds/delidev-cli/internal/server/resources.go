@@ -382,7 +382,7 @@ func (s *Service) SaveConfiguration(ctx context.Context, req *connect.Request[pb
 		if err != nil {
 			return nil, rpc.Error(err, correlation)
 		}
-		if !provider.Discovery {
+		if !provider.Discovery || !provider.EnabledValue() {
 			s.cancelCatalogChecks(record.ID)
 		}
 		if !provider.EnabledValue() {
