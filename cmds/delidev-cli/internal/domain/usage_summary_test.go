@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -183,5 +184,88 @@ func TestUsageGranularityAndTimezoneValidation(t *testing.T) {
 		if err := bad.Validate(); err == nil {
 			t.Fatalf("invalid usage granularity or timezone accepted: %+v", bad)
 		}
+	}
+}
+
+func TestUsageDayBucketsSaoPauloMissingMidnightPartitionAndExactTotals(t *testing.T) {
+	selection := usageDaySelection(t, "2018-11-03T03:00:00Z", "2018-11-06T02:00:00Z", "America/Sao_Paulo")
+	if err := selection.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	buckets, err := selection.UsageDayBuckets()
+	if err != nil || len(buckets) != 3 {
+		t.Fatalf("Sao Paulo civil dates: %+v %v", buckets, err)
+	}
+	zone, err := time.LoadLocation(selection.TimeZone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	boundaries := []string{"2018-11-03T03:00:00Z", "2018-11-04T03:00:00Z", "2018-11-05T02:00:00Z", "2018-11-06T02:00:00Z"}
+	dates := []string{"2018-11-03", "2018-11-04", "2018-11-05"}
+	durations := []time.Duration{24 * time.Hour, 23 * time.Hour, 24 * time.Hour}
+	var partition time.Duration
+	for i, bucket := range buckets {
+		if bucket.From.UTC().Format(time.RFC3339) != boundaries[i] || bucket.Until.UTC().Format(time.RFC3339) != boundaries[i+1] {
+			t.Fatalf("wrong civil boundary %d: %+v", i, bucket)
+		}
+		if bucket.From.In(zone).Format(time.DateOnly) != dates[i] || bucket.Until.Add(-time.Nanosecond).In(zone).Format(time.DateOnly) != dates[i] {
+			t.Fatalf("duplicate or folded civil date %d: %+v", i, bucket)
+		}
+		if got := bucket.Until.Sub(bucket.From); got != durations[i] {
+			t.Fatalf("day %s duration = %s, want %s", dates[i], got, durations[i])
+		}
+		if i > 0 && !buckets[i-1].Until.Equal(bucket.From) {
+			t.Fatal("civil partition has a gap or overlap")
+		}
+		partition += bucket.Until.Sub(bucket.From)
+	}
+	if !buckets[0].From.Equal(selection.From) || !buckets[2].Until.Equal(selection.Until) || partition != selection.Until.Sub(selection.From) || partition != 71*time.Hour {
+		t.Fatal("requested half-open range was not completely partitioned")
+	}
+	// This date has no real midnight. Its first instant is 01:00, rather than
+	// time.Date's normalized 23:00 on the preceding date.
+	if start := buckets[1].From.In(zone); start.Hour() != 1 || start.Minute() != 0 {
+		t.Fatalf("nonexistent midnight was used: %s", start)
+	}
+	large, seven, zero, eleven, outside := int64(9007199254740993), int64(7), int64(0), int64(11), int64(99)
+	events := []struct {
+		at    time.Time
+		total *int64
+	}{
+		{selection.From.Add(-time.Nanosecond), &outside},
+		{selection.From, &large},
+		{buckets[1].From.Add(-time.Nanosecond), &seven},
+		{buckets[1].From, &large},
+		{buckets[2].From.Add(-time.Nanosecond), nil},
+		{buckets[2].From, &zero},
+		{selection.Until.Add(-time.Nanosecond), &eleven},
+		{selection.Until, &outside},
+	}
+	var overall UsageTotals
+	for _, event := range events {
+		selected := !event.at.Before(selection.From) && event.at.Before(selection.Until)
+		matches := 0
+		for i := range buckets {
+			if !event.at.Before(buckets[i].From) && event.at.Before(buckets[i].Until) {
+				buckets[i].Totals.Add(&NativeTokenCounts{Total: event.total})
+				matches++
+			}
+		}
+		if selected {
+			overall.Add(&NativeTokenCounts{Total: event.total})
+		}
+		if selected && matches != 1 || !selected && matches != 0 {
+			t.Fatalf("boundary event belongs to %d buckets: %s", matches, event.at)
+		}
+	}
+	var merged UsageTotals
+	for i, expected := range []UsageMeasure{{KnownTotal: "9007199254741000", MeasuredResponses: 2}, {KnownTotal: "9007199254740993", MeasuredResponses: 1, UnavailableResponses: 1}, {KnownTotal: "11", MeasuredResponses: 2}} {
+		if buckets[i].Totals.Responses != 2 || buckets[i].Totals.Total != expected {
+			t.Fatalf("day %s lost exact boundary totals: %+v", dates[i], buckets[i].Totals)
+		}
+		merged.Merge(buckets[i].Totals)
+	}
+	if !reflect.DeepEqual(merged, overall) || overall.Responses != 6 || overall.Total != (UsageMeasure{KnownTotal: "18014398509482004", MeasuredResponses: 5, UnavailableResponses: 1}) {
+		t.Fatalf("daily totals do not reconcile exactly: daily=%+v overall=%+v", merged, overall)
 	}
 }
