@@ -159,7 +159,8 @@ func (c *Client) checkNativeStateLocked(ctx context.Context, requireIdle bool) e
 		return err
 	}
 	s := c.execution.settings
-	if native.Cwd != s.Cwd && !nativePathEqual(native.Cwd, s.Cwd) || native.ModelProvider != s.Provider || native.SessionID != c.execution.thread.SessionID || native.HistoryMode != LegacyHistory || native.CanAcceptDirectInput == nil || !*native.CanAcceptDirectInput {
+	history := native.summary().History
+	if native.Cwd != s.Cwd && !nativePathEqual(native.Cwd, s.Cwd) || native.ModelProvider != s.Provider || native.SessionID != c.execution.thread.SessionID || !historyModeAllowed(history, c.revertHistory) || history != c.execution.thread.History || native.CanAcceptDirectInput == nil || !*native.CanAcceptDirectInput {
 		c.problem = turnUncertain()
 		return c.problem
 	}

@@ -80,6 +80,12 @@ type Thread struct {
 	DirectInput *bool
 }
 
+// historyModeAllowed uses the already admitted closed profile, never a version
+// number. A selected Revert process may bind either known history mode.
+func historyModeAllowed(mode HistoryMode, revert bool) bool {
+	return mode == LegacyHistory || revert && mode == PaginatedHistory
+}
+
 type HistoryMode string
 
 const (

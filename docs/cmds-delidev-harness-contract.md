@@ -1963,7 +1963,11 @@ configuration. Require the initialized original process to positively report
 0.162.0 before activating this selected closed profile; configured versions and
 general startup eligibility do not prove Revert support. Permit paginated metadata only through the selected Revert
 profile or retained private checkpoint; legacy profiles retain their closed
-metadata/history checks. Native method or schema rejection does not permit
+metadata/history checks. Binding and later native-state reads share the same
+profile predicate and retain the original admitted history mode. Initial Revert,
+post-result checks, replacement continuation and explicit observation cannot
+change that mode or infer profile support from numeric version metadata.
+Native method or schema rejection does not permit
 rollback, fallback, omission, resend or a fresh target. A retained empty prefix
 is separately proved and never manufactures an old turn or input.
 

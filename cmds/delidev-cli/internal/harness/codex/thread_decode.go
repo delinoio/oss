@@ -114,7 +114,7 @@ func decodeBoundThreadProfile(raw json.RawMessage, settings ThreadSettings, expe
 		return nil, nil, err
 	}
 	thread := wire.summary()
-	if thread.History != LegacyHistory && !revert {
+	if !historyModeAllowed(thread.History, revert) {
 		return &thread, nil, incompatible()
 	}
 	if expectedID != "" && wire.ID != expectedID {
