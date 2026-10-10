@@ -26,7 +26,7 @@ function fixture(details: unknown = [{ id: "credit_1", reset_type: "codexRateLim
   const queryClient=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
  function Harness() {
     const [current, setCurrent] = useState(account), [, setBusy] = useState(false);
-    return <QueryClientProvider client={queryClient}><TransportProvider transport={transport}><MutationIntents><SubscriptionQuotaControls current={current} machine={preferred} active accepted={setCurrent} busyChanged={setBusy} /><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n, documentJson: encode({ ...data, subscription: { ...data.subscription, reset_credits: { ...data.subscription.reset_credits, credits: Array.isArray(details) ? [...details].reverse() : details } } }) }); setCurrent(account); }}>Reorder fixture credits</button><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n }); setCurrent(account); }}>Change fixture account revision</button><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n, documentJson: encode({ ...data, subscription: { ...data.subscription, reset_credits: { ...data.subscription.reset_credits, available_count: "0" } } }) }); setCurrent(account); }}>Remove fixture credits</button><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n, documentJson: encode({ ...data, subscription: { ...data.subscription, reset_credits: { ...data.subscription.reset_credits, credits: [{id:"credit_2",reset_type:"codexRateLimits",status:"available"}] } } }) }); setCurrent(account); }}>Replace fixture credit</button></MutationIntents></TransportProvider></QueryClientProvider>;
+    return <QueryClientProvider client={queryClient}><TransportProvider transport={transport}><MutationIntents><SubscriptionQuotaControls current={current} machine={preferred} active accepted={setCurrent} busyChanged={setBusy} footer={refresh => <button disabled={!refresh} onClick={() => void refresh?.()}>Refresh account status and quota</button>} /><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n, documentJson: encode({ ...data, subscription: { ...data.subscription, reset_credits: { ...data.subscription.reset_credits, credits: Array.isArray(details) ? [...details].reverse() : details } } }) }); setCurrent(account); }}>Reorder fixture credits</button><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n }); setCurrent(account); }}>Change fixture account revision</button><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n, documentJson: encode({ ...data, subscription: { ...data.subscription, reset_credits: { ...data.subscription.reset_credits, available_count: "0" } } }) }); setCurrent(account); }}>Remove fixture credits</button><button onClick={() => { account = create(ResourceSchema, { ...account, revision: account.revision + 1n, documentJson: encode({ ...data, subscription: { ...data.subscription, reset_credits: { ...data.subscription.reset_credits, credits: [{id:"credit_2",reset_type:"codexRateLimits",status:"available"}] } } }) }); setCurrent(account); }}>Replace fixture credit</button></MutationIntents></TransportProvider></QueryClientProvider>;
   }
   return { Harness, request, reconcile, consent, account, machine, connection, generation, inventory };
 }
@@ -60,8 +60,8 @@ it("requires an explicit count-only next-credit confirmation and fences stale re
 
 it("explicit quota refresh does not consume credits or refresh authentication", async () => {
   const value = fixture(); render(<value.Harness />);
-  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh quota" }) as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(screen.getByRole("button", { name: "Refresh quota" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Refresh account status and quota" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Refresh account status and quota" }));
   await waitFor(() => expect(value.request).toHaveBeenCalledTimes(1));
   expect(value.request.mock.calls[0][0]).toMatchObject({ creditId: "", nextCredit: false, confirmed: false });
   expect(value.reconcile).not.toHaveBeenCalled();
@@ -71,8 +71,8 @@ it("explicit quota refresh does not consume credits or refresh authentication", 
 it("refreshes detail quota on the server during execution despite a different selected device",async()=>{
  const runner=newRequestId(),value=fixture(undefined,{action:"execute",machine_id:runner},newRequestId());
  render(<value.Harness />);
- await waitFor(()=>expect((screen.getByRole("button",{name:"Refresh quota"}) as HTMLButtonElement).disabled).toBe(false));
- fireEvent.click(screen.getByRole("button",{name:"Refresh quota"}));
+ await waitFor(()=>expect((screen.getByRole("button",{name:"Refresh account status and quota"}) as HTMLButtonElement).disabled).toBe(false));
+ fireEvent.click(screen.getByRole("button",{name:"Refresh account status and quota"}));
  await waitFor(()=>expect(value.request).toHaveBeenCalledTimes(1));
  expect(value.request.mock.calls[0]?.[0]).toMatchObject({machineId:""});
 });
@@ -80,7 +80,7 @@ it("blocks detail quota refresh while a different native lease kind owns the acc
  const value=fixture(undefined,{action:"refresh",machine_id:newRequestId()},newRequestId());
  render(<value.Harness />);
  await screen.findByText(/Last successful observation/);
- expect((screen.getByRole("button",{name:"Refresh quota"}) as HTMLButtonElement).disabled).toBe(true);
+ expect((screen.getByRole("button",{name:"Refresh account status and quota"}) as HTMLButtonElement).disabled).toBe(true);
  expect(value.request).not.toHaveBeenCalled();
 });
 
@@ -88,7 +88,7 @@ it("blocks detail quota refresh while a different native lease kind owns the acc
 it.each([true, false])("negotiates server quota without a Runner Device (supported: %s)", async supported => {
  const value=fixture(undefined,undefined,"",true,supported);render(<value.Harness />);
  await screen.findByText(/Last successful observation/);
- const button=screen.getByRole("button",{name:"Refresh quota"}) as HTMLButtonElement;
+ const button=screen.getByRole("button",{name:"Refresh account status and quota"}) as HTMLButtonElement;
  await waitFor(()=>expect(button.disabled).toBe(!supported));
  fireEvent.click(button);
  if(supported){await waitFor(()=>expect(value.request).toHaveBeenCalledTimes(1));expect(value.request.mock.calls[0][0]).toMatchObject({machineId:"",connectionId:value.connection,generationId:value.generation,mutation:{id:value.account.id,expectedRevision:1n}})}else{expect(value.request).not.toHaveBeenCalled()}
@@ -96,7 +96,7 @@ it.each([true, false])("negotiates server quota without a Runner Device (support
 });
 it.each(["queued","sending","uncertain"])("retains the server quota %s fence in detail controls",async phase=>{
  const value=fixture(undefined,undefined,"",true,true,phase);render(<value.Harness />);await screen.findByText(/Last successful observation/);
- expect((screen.getByRole("button",{name:"Refresh quota"}) as HTMLButtonElement).disabled).toBe(true);expect(value.request).not.toHaveBeenCalled();
+ expect((screen.getByRole("button",{name:"Refresh account status and quota"}) as HTMLButtonElement).disabled).toBe(true);expect(value.request).not.toHaveBeenCalled();
 });
 
 it.each([undefined, null])("confirms server reset credits with the original omitted-machine selector", async details => {
@@ -112,7 +112,7 @@ it.each([undefined, null])("confirms server reset credits with the original omit
 it.each(["queued","sending","uncertain"])("server credit %s blocks competing refresh and consumption",async phase=>{
  const value=fixture(undefined,undefined,"",true,true,"",true,phase);render(<value.Harness />);
  await screen.findByText(/Last successful observation/);
- expect((screen.getByRole("button",{name:"Refresh quota"}) as HTMLButtonElement).disabled).toBe(true);
+ expect((screen.getByRole("button",{name:"Refresh account status and quota"}) as HTMLButtonElement).disabled).toBe(true);
  expect((screen.getByRole("button",{name:"Use"}) as HTMLButtonElement).disabled).toBe(true);
  expect(value.request).not.toHaveBeenCalled();
 });
@@ -218,7 +218,7 @@ it.each(["unsupported", "unavailable"])("shows selected-server quota troubleshoo
  render(<value.Harness />);
  await screen.findByText(code === "unsupported" ? /Check the selected server’s Codex installation/ : /Check the selected server connection/);
  expect(value.request).not.toHaveBeenCalled();
- fireEvent.click(screen.getByRole("button", { name: "Refresh quota" }));
+ fireEvent.click(screen.getByRole("button", { name: "Refresh account status and quota" }));
  await waitFor(() => expect(value.request).toHaveBeenCalledTimes(1));
  expect(value.request.mock.calls[0][0]).toMatchObject({ machineId: "" });
 });

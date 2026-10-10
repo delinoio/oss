@@ -6,7 +6,7 @@ import { timestampInstant } from "./timestamp-format";
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import "./subscription-quota.css";
 import { useQuery } from "@connectrpc/connect-query";
 import { ConfigurationQuery, SubscriptionObservationAction, SubscriptionQuery, SystemCapability, SystemQuery, EntityKind, isEntityId, newRequestId, type Resource } from "@delinoio/delidev-api-client";
@@ -39,7 +39,7 @@ export function quotaAccountAvailable(data: Record<string, unknown>): boolean {
   return data.health === "ready" && isEntityId(text(object(data.connection).id)) && isEntityId(text(state.generation)) && !data.removal && state.recovery_required !== true && !state.pending && !["queued", "sending", "uncertain"].includes(text(observation.phase)) && !["queued", "sending", "uncertain"].includes(text(serverQuota.phase)) && !["queued", "sending", "uncertain"].includes(text(serverCredit.phase));
 }
 
-export function SubscriptionQuotaControls({ current, machine, active, accepted, busyChanged }: { current: Resource; machine: string; active: boolean; accepted: (resource: Resource) => void; busyChanged: (busy: boolean) => void }) {
+export function SubscriptionQuotaControls({ current, machine, active, accepted, busyChanged, footer, visible = true }: { current: Resource; machine: string; active: boolean; accepted: (resource: Resource) => void; busyChanged: (busy: boolean) => void; footer?: (refreshQuota?: () => Promise<void>) => ReactNode; visible?: boolean }) {
   useLocale();
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
   const workerQuotaSupported = status.data?.capabilities.includes(SystemCapability.SUBSCRIPTION_QUOTA_V1) === true;
@@ -85,7 +85,10 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
   const busy = consent.busy || consent.uncertain || observe.busy || observe.uncertain || reconcile.busy || reconcile.uncertain || preferences.busy || preferences.uncertain;
   useEffect(() => { busyChanged(busy); return () => busyChanged(false); }, [busy, busyChanged]);
   const originalActive = ["queued", "sending", "uncertain"].includes(text(observation.phase)) || ["queued", "sending", "uncertain"].includes(text(serverObservation.phase)) || ["queued", "sending", "uncertain"].includes(text(serverCredit.phase));
-  const ready = active && quotaSupported && serviceAccount(current) && data.subscription_service === "chatgpt" && data.health === "ready" && isEntityId(connection) && isEntityId(generation) && serverAvailable && state.recovery_required !== true && !text(object(state.pending).id) && !data.removal && !busy;
+  const ready = active && !status.error && !status.isFetching && quotaSupported && serviceAccount(current) && data.subscription_service === "chatgpt" && quotaAccountAvailable(data) && serverAvailable && !busy && !originalActive;
+  // The enclosing Manage footer uses this original retained owner. Capture the
+  // verified resource bindings before a concurrent status read changes the view.
+  const refreshQuota = ready ? () => observe.send({ mutation: { requestId: newRequestId(), id: current.id, expectedRevision: current.revision }, machineId: "", action: SubscriptionObservationAction.QUOTA, connectionId: connection, generationId: generation }) : undefined;
   const creditReady = active && creditLaneAvailable && serviceAccount(current) && data.subscription_service === "chatgpt" && data.health === "ready" && isEntityId(connection) && isEntityId(generation) && state.recovery_required !== true && !state.pending && !data.removal && !busy;
   const count = text(inventory.available_count);
   const countValid = /^(?:0|[1-9][0-9]{0,18})$/.test(count) && BigInt(count) <= 9223372036854775807n;
@@ -140,9 +143,10 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
     <div className="actions"><SettingsActionButton icon={SettingsActionIcon.Confirm} type="button" className="primary" disabled={!automaticReady || consentConfirmation.revision !== current.revision || consentConfirmation.id !== current.id} onClick={() => sendConsent(true, consentConfirmation)}>{copy("subscription-quota.automaticEnable")}</SettingsActionButton><SettingsActionButton icon={SettingsActionIcon.Cancel} type="button" disabled={consent.busy} onClick={closeConsent}>{copy("subscription-quota.automaticCancel")}</SettingsActionButton></div>
     {consent.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={consent.busy} onClick={consent.retry}>{copy("subscription-quota.automaticRetry")}</SettingsActionButton> : null}
   </SettingsTaskDialog>;
-  return <section aria-label={copy("subscription-quota.nativeQuotaAndResetCredits_8a07a3")}>
+  if (!visible) return <>{footer?.()}</>;
+  return <><section aria-label={copy("subscription-quota.nativeQuotaAndResetCredits_8a07a3")}>
     <h3>{copy("subscription-quota.quota_6c105c")}</h3>
-    {!quotaSupported ? <p role="status">{copy("subscription-quota.updateTheServerAndRunnerDevice_57363b")}</p> : <><p><LocalizedText id="subscription-quota.lastSuccessfulObservation_836238" components={{ s0: <><Timestamp value={text(state.quota_observed_at)} fallback={copy("subscription-quota.extra.ca1844969742")} /></>, s1: <>{state.quota_state === "failed" ? copy("subscription-quota.theLatestRefreshFailedTheLast_78f81e") : copy("subscription-quota.quotaIsObservedByTheOriginal_16d486")}</> }} /></p><SettingsActionButton icon={SettingsActionIcon.Refresh} type="button" disabled={!ready || originalActive} onClick={() => void observe.send({ mutation: { requestId: newRequestId(), id: current.id, expectedRevision: current.revision }, machineId: "", action: SubscriptionObservationAction.QUOTA, connectionId: connection, generationId: generation })}>{copy("subscription-quota.refreshQuota_3e8708")}</SettingsActionButton></>}
+    {!quotaSupported ? <p role="status">{copy("subscription-quota.updateTheServerAndRunnerDevice_57363b")}</p> : <><p><LocalizedText id="subscription-quota.lastSuccessfulObservation_836238" components={{ s0: <><Timestamp value={text(state.quota_observed_at)} fallback={copy("subscription-quota.extra.ca1844969742")} /></>, s1: <>{state.quota_state === "failed" ? copy("subscription-quota.theLatestRefreshFailedTheLast_78f81e") : copy("subscription-quota.quotaIsObservedByTheOriginal_16d486")}</> }} /></p></>}
     {quotaSupported && !serverSupported ? <p role="status">{copy("subscription-quota.serverQuotaUnsupported")}</p> : null}
     <label className="checkbox"><input type="checkbox" checked={data.recovery_notifications === true} disabled={!active || !quotaSupported || busy} onChange={(event) => saveRecoveryNotifications(event.target.checked)} />{copy("subscription-quota.notifyMeOfObservedQuotaRecovery_b8f166")}</label>
     {preferenceProblem ? <p role="alert">{preferenceProblem}</p> : null}
@@ -190,5 +194,5 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
     {reconcile.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={reconcile.busy} onClick={reconcile.retry}>{copy("subscription-quota.retryOriginalCreditReconciliationRequest_1dd094")}</SettingsActionButton> : null}
     {consent.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={consent.busy} onClick={consent.retry}>{copy("subscription-quota.automaticRetry")}</SettingsActionButton> : null}
     {preferences.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={preferences.busy} onClick={preferences.retry}>{copy("subscription-quota.retryOriginalRecoveryPreference_fa3cb3")}</SettingsActionButton> : null}
-  </section>;
+  </section>{footer?.(refreshQuota)}</>;
 }

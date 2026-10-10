@@ -24,5 +24,6 @@
   "subscription-accounts.firstPage_0bdbb7": "첫 페이지",
   "subscription-accounts.nextPage_c08ac7": "다음 페이지",
   "subscription-accounts.retryOriginalQuotaRefresh_8a9eca": "원래 할당량 새로고침 다시 시도",
-  "subscription-accounts.extra.22fc4e1096f2": "서비스 자체 계정"
+  "subscription-accounts.extra.22fc4e1096f2": "서비스 자체 계정",
+  "subscription-accounts.refreshAccountStatusAndQuota": "계정 상태와 쿼터 새로고침"
 }
