@@ -2827,6 +2827,58 @@ Default preserves the original colors. Custom libraries hold at most 32 UUID-v7
 identities, with names of at most 80 Unicode scalar values. Bundled themes are
 immutable; duplication creates a separate editable identity.
 
+The committed shared `src/appearance-palettes.json` owns all 38 existing opaque
+semantic tokens for each bundled mode. Default maps retain their original bytes.
+The four other families use the following approved core colors:
+
+| Family / mode | Background B | Surface S | Inset I | Text T | Accent A |
+|---|---|---|---|---|---|
+| Titanium Light | #F4F4F5 | #FFFFFF | #E4E4E7 | #27272A | #52525B |
+| Titanium Dark | #18181B | #27272A | #09090B | #FAFAFA | #52525B |
+| Nord Light | #ECEFF4 | #E5E9F0 | #D8DEE9 | #2E3440 | #3A5877 |
+| Nord Dark | #2E3440 | #3B4252 | #242933 | #ECEFF4 | #3A5877 |
+| Dracula Light | #F7F3FF | #F0E9FA | #E6DCF3 | #382C4A | #7143A5 |
+| Dracula Dark | #282A36 | #343746 | #21222C | #F8F8F2 | #7143A5 |
+| Solarized Light | #FDF6E3 | #EEE8D5 | #E3DCC8 | #4B6068 | #006B82 |
+| Solarized Dark | #002B36 | #073642 | #001F27 | #D6D3C4 | #006B82 |
+
+`mix(X,Y,p)` blends encoded sRGB channels as `round(p*X + (1-p)*Y)`
+and serializes uppercase opaque `#RRGGBB`. Store the resulting values in JSON;
+there is no runtime palette generator. The text specification is authoritative;
+synthetic preview pixels are supporting evidence.
+
+- `background=B`, `surface=S`, `surface-inset=I`, `text=T`, `accent=A`.
+- `surface-subtle=mix(B,S,.5)`, `surface-muted=mix(I,S,.25)`,
+  `surface-hover=mix(T,S,.08)`.
+- Let `Q=mix(A,S,.08)` and `C=mix(T,S,.8)`.
+  `surface-selected=Q`, `selected-background=Q`, `selected-text=T`,
+  `selected-border=C`.
+- `text-secondary=mix(T,S,.98)`, `muted=mix(T,S,.97)`,
+  `text-subtle=mix(T,S,.96)`.
+- `border=mix(T,S,.25)`, `control-border=C`, `border-subtle=mix(T,S,.15)`.
+- `accent-hover=mix(#000000,A,.15)`, `on-accent=#FFFFFF`.
+  Light uses `link=focus=A`; Dark uses `link=focus=mix(#FFFFFF,A,.65)`.
+- Let `P=#FFFFFF` in Light and `P=#000000` in Dark.
+  `inverse-surface=T`, `inverse-hover=mix(P,T,.1)`,
+  `inverse-border=mix(P,T,.65)`, `on-inverse=P`,
+  `on-inverse-muted=mix(P,T,.9)`.
+- `conversation-background=Q`, `conversation-text=T`, `conversation-border=C`.
+- Warning, danger and success retain the corresponding Default mode values and
+  meanings. Dark preserves Default `execution-running`; Light uses
+  `mix(#000000,#087B78,.15)` to preserve its teal status meaning.
+
+Normal text and links require 4.5:1 contrast against their actual content
+surfaces. Required control, focus and disclosure/icon indicators require 3:1
+against their adjacent surfaces. Saved bundled references select the updated
+map; existing custom maps, including earlier duplicates, retain their stored
+values without a migration or preference rewrite. Palette changes preserve
+geometry, labels, keyboard/focus ownership, mounted drafts, request identities,
+independent mode selection and native revision/recovery behavior. Terminal,
+backdrop, shadow and OS-native surfaces retain their existing treatment. No
+logging, telemetry, preference schema, RPC or capability is added. Frontend and
+native distributions must rebuild after map updates because Rust embeds this
+same JSON; native tray projections continue to use the shared map.
+
 A custom editor owns its name and complete light/dark opaque semantic color maps.
 Its synthetic preview contains no conversation content. Save and import require
 explicit confirmation. Import accepts one version-1 JSON theme of at most 32 KiB,
