@@ -180,3 +180,14 @@ it("prioritizes a complete live inventory at the retention bound instead of carr
  current=Array.from({length:256},(_,index)=>({...entries[0]!,name:`live-${index}`,selection:{...entries[0]!.selection,skillId:newRequestId()}})); await client.invalidateQueries();
  await waitFor(()=>expect(screen.getAllByRole("option")).toHaveLength(256));expect(screen.queryByText("add-issue",{selector:"strong"})).toBeNull();expect(screen.queryByRole("option",{name:/Unavailable/})).toBeNull();
 });
+
+it("uses a manual completion top layer and disposes hidden composer presentation",async()=>{
+ const f=fixture(),view=render(f.view()),input=screen.getByRole("textbox");
+ fireEvent.change(input,{target:{value:"$add-iss",selectionStart:8}});await screen.findByRole("option");
+ const panel=view.container.querySelector(".skill-completion")!;
+ expect(panel.getAttribute("popover")).toBe("manual");expect(f.send).not.toHaveBeenCalled();
+ expect(input).toHaveProperty("value","$add-iss");
+ input.closest("fieldset")!.hidden=true;
+ await waitFor(()=>expect(view.container.querySelector(".skill-completion")).toBeNull());
+ expect(input).toHaveProperty("value","$add-iss");expect(f.send).not.toHaveBeenCalled();
+});

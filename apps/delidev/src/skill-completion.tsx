@@ -3,6 +3,8 @@ import { useEffect, useLayoutEffect, useId, useRef, useState, type KeyboardEvent
 import { useQuery, useTransport } from "@connectrpc/connect-query";
 import { SkillQuery, SkillProvenance, isEntityId, type SkillEntry, type SkillSelection } from "@delinoio/delidev-api-client";
 import { copy, useLocale } from "./localization";
+import { pickerSurfaceBounds, pickerSurfaceOwner } from "./picker-overlay";
+import { skillCompletionGeometry } from "./skill-completion-overlay";
 
 export interface SkillToken { start: number; end: number; prefix: string }
 export function skillToken(value: string, caret: number): SkillToken | undefined {
@@ -95,6 +97,39 @@ export function useSkillCompletion({ value, change, textarea, machineId, agentId
   const distinct = new Map(bindings.filter(binding => !binding.stale && value.slice(binding.start,binding.end)===binding.token).map(binding => [binding.selection.skillId, binding.selection]));
   const blocked = contextChanged && bindings.length > 0 || bindings.some(binding => binding.stale || binding.context && (!machineId || !agentId || binding.context !== scope) || !binding.ambiguous && value.slice(binding.start,binding.end)!==binding.token) || distinct.size > 16;
   useLayoutEffect(() => {
+    const panel = completion.current, input = textarea.current;
+    if (!visible || !panel || !input) return;
+    const position = () => {
+      const dialog = input.closest("dialog");
+      if (!canEdit() || dialog && !dialog.open) { panel.hidePopover?.(); setDismissed(true); return false; }
+      let bounds = pickerSurfaceBounds(input);
+      if (dialog) {
+        const rect = dialog.getBoundingClientRect();
+        bounds = { left: Math.max(bounds.left, rect.left), top: Math.max(bounds.top, rect.top), right: Math.min(bounds.right, rect.right), bottom: Math.min(bounds.bottom, rect.bottom) };
+      }
+      const cssWidth = Number.parseFloat(getComputedStyle(panel).width);
+      const measured = cssWidth > 0 ? panel.getBoundingClientRect().width / cssWidth : 1;
+      const scale = Number.isFinite(measured) && measured > 0 ? measured : 1;
+      const geometry = skillCompletionGeometry(input.getBoundingClientRect(), bounds, (panel.scrollHeight + 2) * scale, scale);
+      Object.assign(panel.style, { left: `${geometry.left / scale}px`, top: `${geometry.top / scale}px`, width: `${geometry.width / scale}px`, maxHeight: `${geometry.maxHeight / scale}px` });
+      return true;
+    };
+    if (!position()) return;
+    panel.showPopover?.(); position();
+    const lifetime = new MutationObserver(position);
+    for (let node: HTMLElement | null = input; node; node = node.parentElement) lifetime.observe(node, { attributes: true, attributeFilter: ["open", "hidden", "inert", "disabled"], childList: true });
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(position);
+    observer?.observe(input); observer?.observe(panel);
+    const surface = input.closest("dialog") ?? pickerSurfaceOwner(input); if (surface) observer?.observe(surface);
+    window.addEventListener("resize", position); document.addEventListener("scroll", position, true);
+    window.visualViewport?.addEventListener("resize", position); window.visualViewport?.addEventListener("scroll", position);
+    return () => {
+      observer?.disconnect(); lifetime.disconnect(); panel.hidePopover?.();
+      window.removeEventListener("resize", position); document.removeEventListener("scroll", position, true);
+      window.visualViewport?.removeEventListener("resize", position); window.visualViewport?.removeEventListener("scroll", position);
+    };
+  }, [visible, query.isFetching, inventoryKnown, candidates.length]);
+  useLayoutEffect(() => {
     if (!keyboardNavigation.current) return;
     keyboardNavigation.current = false;
     const container = completion.current;
@@ -108,7 +143,7 @@ export function useSkillCompletion({ value, change, textarea, machineId, agentId
     if (row.top < top) container.scrollTop += (row.top - top) / scale;
     else if (row.bottom > bottom) container.scrollTop += (row.bottom - bottom) / scale;
   }, [validIndex, visible, query.isFetching]);
-  const list = visible ? <div ref={completion} className="skill-completion">
+  const list = visible ? <div ref={completion} popover="manual" className="skill-completion" onKeyDown={event => { if (event.key === "Escape" && !event.nativeEvent.isComposing) { event.preventDefault(); event.stopPropagation(); setDismissed(true); if (canEdit()) textarea.current?.focus({ preventScroll: true }); } }}>
     {enabled ? query.isFetching ? <p role="status">{copy("skills.loading")}</p> : !inventoryKnown ? <><p role="status">{copy("skills.unavailable")}</p><button type="button" onClick={() => { if (canEdit() && enabled && machineId && agentId && !contextChanged) void query.refetch(); }}>{copy("skills.retry")}</button></> : candidates.length ? <ul role="listbox" id={id} aria-label={copy("skills.available")}>{candidates.map((entry, index) => <li key={entry.selection!.skillId} id={`${id}-${index}`} role="option" aria-selected={index === validIndex} aria-disabled={entry.availability === SkillAvailability.Unavailable || undefined} data-availability={entry.availability} onMouseDown={event => event.preventDefault()} onClick={() => accept(entry)}><strong className="skill-completion-name">{entry.name}</strong><span className="skill-completion-description">{entry.description}</span>{entry.availability === SkillAvailability.Unavailable ? <span className="skill-completion-status">{copy("skills.entryUnavailable")}</span> : null}<span className="skill-completion-provenance">{entry.provenance === SkillProvenance.PROJECT ? copy("skills.project") : copy("skills.user")}</span></li>)}</ul> : <p role="status">{copy("skills.empty")}</p> : <p role="status">{copy("skills.unsupported")}</p>}
   </div> : null;
   return { selections: [...distinct.values()], blocked, list, clear: () => { if (canEdit()) setBindings([]); }, // Original receipt acceptance settles ownership before the pending render unlocks.

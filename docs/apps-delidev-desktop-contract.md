@@ -3015,6 +3015,18 @@ creates, restores or repairs opaque binding authority. All four placements share
 these rules and existing stale-binding, pending and uncertain request guards.
 
 
+Issue #2202 uses one nonmodal manual top-layer completion panel across project,
+General Chat, follow-up and queued-input editing. It reserves no normal-flow
+height. Anchor it to the textarea at an 8px gap, match its width within the usable
+viewport/owning modal, and keep an 8px surface margin. Prefer above; flip below
+when the bounded panel fits there, otherwise use the larger side with internal
+scrolling and a 220px maximum height. Reposition on textarea/surface resize,
+ancestor scrolling, window and visual viewport changes. Hide/dispose when the
+original composer is hidden, inert, disabled, disconnected or unmounted.
+All inventory states retain the same panel and original input/selection guards;
+never transfer focus automatically or scroll ancestors for keyboard navigation.
+Keep original project disclosure placement and General Chat centering unchanged.
+
 The three first-message/follow-up composer surfaces share one `$` completion
 controller. Original pending or uncertain composer locks suppress completion
 reads and choices while preserving the exact draft and selected bindings. Every

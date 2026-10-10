@@ -73,7 +73,23 @@ try {
     await control.focus(); await page.keyboard.press('End'); await page.keyboard.press('Enter');
     await page.waitForFunction(node => Boolean(node.dataset.value), await control.elementHandle());
   };
-  for (const language of ['en', 'ko']) for (const theme of ['light', 'dark', 'system']) for (const size of [{ width: 1600, height: 1000 }, { width: 960, height: 640 }, { width: 480, height: 320 }, { width: 320, height: 240 }]) for (const kind of ['General Chat', 'New session']) {
+  const surroundings = root => root.evaluate(node => {
+    const rects = [...node.querySelectorAll('h2, .new-session-content, fieldset, textarea, .new-session-selectors, .new-session-hints, .new-session-submit-row, .actions')].map(element => {
+      const rect = element.getBoundingClientRect(); return [rect.left, rect.top, rect.width, rect.height];
+    });
+    const scroll = []; for (let owner = node; owner; owner = owner.parentElement) scroll.push([owner.scrollLeft, owner.scrollTop]);
+    return { rects, scroll };
+  });
+  const stationary = async (root, baseline) => {
+    const current = await surroundings(root); assert.deepEqual(current.scroll, baseline.scroll);
+    assert.equal(current.rects.length, baseline.rects.length);
+    current.rects.forEach((rect, index) => rect.forEach((value, coordinate) => assert(Math.abs(value - baseline.rects[index][coordinate]) <= 1, 'Completion leaves surrounding rectangles stationary')));
+    const panel = root.locator('.skill-completion');
+    if (await panel.count()) assert(await panel.evaluate(node => {
+      const rect = node.getBoundingClientRect(); return node.getAttribute('popover') === 'manual' && rect.left >= 7 && rect.top >= 7 && rect.right <= innerWidth - 7 && rect.bottom <= innerHeight - 7;
+    }), 'Completion remains in its usable viewport');
+  };
+  for (const language of ['en', 'ko']) for (const theme of ['light', 'dark', 'system']) for (const size of [{ width: 1440, height: 900 }, { width: 1280, height: 820 }, { width: 960, height: 640 }, { width: 640, height: 480 }, { width: 480, height: 320 }, { width: 320, height: 240 }]) for (const kind of ['General Chat', 'New session']) {
     process.stdout.write(JSON.stringify({ operation: 'creation-skill-case', language, theme, kind, ...size }) + '\n');
     await page.emulateMedia({ colorScheme: 'dark' }); await page.setViewportSize(size);
     await page.goto(`${origin}/?language=${language}&theme=${theme}&skills=true`);
@@ -82,6 +98,7 @@ try {
     const input = root.locator('textarea'); await input.waitFor();
     if (kind === 'New session') await selectResource(root, 0);
     await selectResource(root, kind === 'New session' ? 1 : 0); await selectResource(root, kind === 'New session' ? 2 : 1);
+    await input.focus(); await input.fill(''); const closedGeometry = await surroundings(root);
     const open = async token => { await input.fill(''); await input.pressSequentially(token); await root.locator('.skill-completion').getByRole('option').first().waitFor(); await frame(); };
     const geometry = async () => root.evaluate(node => {
       const content = node.querySelector('.new-session-content'), fieldset = node.querySelector('fieldset'), list = node.querySelector('.skill-completion');
@@ -90,7 +107,7 @@ try {
         rows: rows.map(row => { const name = row.querySelector('strong'), description = row.querySelector('.skill-completion-description'), badge = row.querySelector('.skill-completion-provenance'); return { width: row.clientWidth, scroll: row.scrollWidth, height: row.getBoundingClientRect().height, name: name.getBoundingClientRect().width, description: description.getBoundingClientRect().width, badge: getComputedStyle(badge).flexShrink, provenance: badge.textContent, nameText: name.textContent, original: description.textContent }; }),
         pageOverflow: document.documentElement.scrollWidth > innerWidth + 1, mainOverflow: node.closest('main').scrollWidth > node.closest('main').clientWidth + 1 };
     });
-    await open('$a'); const one = await geometry();
+    await open('$a'); const one = await geometry(); await stationary(root, closedGeometry);
     assert.equal(one.contentMin, '0px'); assert.equal(one.fieldsetMin, '0px');
     assert(one.content <= 820 && one.fieldset <= one.content + 1, JSON.stringify(one));
     assert.equal(one.pageOverflow, false); assert.equal(one.mainOverflow, false);
@@ -98,7 +115,7 @@ try {
     const assertRows = data => { for (const row of data.rows) { assert(row.scroll <= row.width + 1, JSON.stringify(row)); assert(row.height >= 40 && row.height < 42); assert.equal(row.badge, '0'); assert(row.name <= row.width * 0.4 + 1); assert([language === 'en' ? 'User' : '사용자', language === 'en' ? 'Project' : '프로젝트'].includes(row.provenance)); } };
     assertRows(one);
     await input.press('Escape'); assert.equal(await root.locator('.skill-completion').count(), 0); assert(await input.evaluate(node => node === document.activeElement));
-    await open('$'); const many = await geometry(); assertRows(many); assert(many.listHeight <= 220); assert(many.listScroll > many.listClient); assert(many.rows.some(row => row.original === '' && row.nameText === 'long-name-'.repeat(30))); 
+    await open('$'); const many = await geometry(); await stationary(root, closedGeometry); assertRows(many); assert(many.listHeight <= 220); assert(many.listScroll > many.listClient); assert(many.rows.some(row => row.original === '' && row.nameText === 'long-name-'.repeat(30)));
     const scroll = await page.locator('main').evaluate(node => node.scrollTop);
     for (let index = 0; index < 10; index++) await input.press('ArrowDown');
     assert(await root.locator('.skill-completion').evaluate(node => node.scrollTop > 0));
@@ -117,6 +134,7 @@ try {
     assert.equal(await removed.getAttribute('data-availability'), 'unavailable'); assert(await input.evaluate(node => node === document.activeElement));
     await input.press('Escape'); await input.fill(''); await input.pressSequentially('$a');
     await frame(); assert.equal(await root.locator('.skill-completion').getByRole('option').count(), 0);
+    await stationary(root, closedGeometry);
     await page.evaluate(() => window.__skillInventory.restore());
     await checkOverlay(root, input);
     cases++;
@@ -128,7 +146,9 @@ try {
     await page.locator('[data-shared=queue] .actions button').first().click();
     for (const placement of ['follow-up', 'queue']) {
       const root = page.locator(`[data-shared="${placement}"]`), input = root.locator('textarea');
-      await input.fill(''); await input.pressSequentially('$a'); await root.locator('.skill-completion').getByRole('option').waitFor();
+      await input.focus(); await input.fill(''); const closedGeometry = await surroundings(root);
+      await input.pressSequentially('$a'); await root.locator('.skill-completion').getByRole('option').waitFor();
+      await stationary(root, closedGeometry);
       assert(await root.locator('.skill-completion').evaluate(node => node.scrollWidth <= node.clientWidth + 1));
       await input.press('Enter'); assert.equal(await input.inputValue(), '$add-issue'); assert(await input.evaluate(node => node === document.activeElement));
       assert.equal(await page.locator('output').getAttribute('data-fixture-creates'), '0');
