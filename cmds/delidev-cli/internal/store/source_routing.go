@@ -41,41 +41,13 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 		projectDefaults = project.HarnessDefaults
 	}
 	routes := agent.SourceRoutes()
-	resolvedAgents := make([]domain.Agent, len(routes))
+	protocols := make([]map[domain.ID]domain.APIProtocol, len(routes))
 	sources := make([]domain.SourceRouteInput, 0, len(routes))
 	for index, route := range routes {
-		var protocol domain.APIProtocol
-		for _, link := range route.Accounts {
-			if agent.HarnessSelection == nil && route.ModelSelection == nil {
-				break
-			}
-			_, account, e := decodeEntity[domain.Account](t, domain.AccountKind, link.ID)
-			if e != nil {
-				return result, e
-			}
-			selectedProtocol := account.APIProtocol
-			if account.Type == domain.APIAccount && selectedProtocol == "" {
-				_, provider, e := decodeEntity[domain.Provider](t, domain.ProviderKind, account.ProviderID)
-				if e != nil {
-					return result, e
-				}
-				profile, e := providers.ResolveAccountProfile(provider, account)
-				if e != nil {
-					return result, e
-				}
-				selectedProtocol = profile.Protocol
-			}
-			if protocol != "" && selectedProtocol != protocol {
-				return result, domain.Fail(domain.InvalidArgument, "Inherited defaults require one API profile per source.", "Separate account profiles before selecting their defaults.")
-			}
-			protocol = selectedProtocol
-		}
-		resolved, resolvedRoute, e := domain.ResolveHarnessSource(agent, route, protocol, defaults.HarnessDefaults, projectDefaults)
-		if e != nil {
-			slog.Warn("harness_defaults_resolution", "harness", agent.Harness, "code", domain.SafeError(e).Code)
-			return result, e
-		}
-		resolvedAgents[index], routes[index], route = resolved, resolvedRoute, resolvedRoute
+		// Routing uses the retained source identity only. Resolve the effective
+		// model/options after the original routing policy selects an exact account;
+		// an incompatible sibling profile cannot supply another account's defaults.
+		protocols[index] = map[domain.ID]domain.APIProtocol{}
 		model := route.Model.AsModel(agent.Harness)
 		mr := Record{Revision: 1}
 		err := route.Model.Validate(agent.Harness)
@@ -118,6 +90,7 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 					source.Blocked[link.ID] = domain.IncompatibleAccount
 					continue
 				}
+				protocols[index][link.ID] = selected.Protocol
 			}
 			if len(agent.Routes) > 0 {
 				blocked := false
@@ -146,6 +119,14 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 		routingAgent.Routes = routes
 	}
 	route, next, err := domain.RouteSources(agentID, routingAgent, project, sources, defaultPolicy, state, t.now)
+	// Inherited sibling selectors are retained source anchors, not effective
+	// model evidence. Only the exact selected source receives resolved attribution.
+	for i := range route.Sources {
+		if agent.HarnessSelection != nil || routes[i].ModelSelection != nil {
+			route.Sources[i].ModelID, route.Sources[i].NativeModel = "", ""
+			route.Sources[i].ModelRevision = 0
+		}
+	}
 	result.Route, result.routingRecord, result.nextRouting = route, record, next
 	if err != nil {
 		return result, err
@@ -154,10 +135,16 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 	if route.SourceIndex != nil {
 		index = int(*route.SourceIndex)
 	}
-	result.Agent = resolvedAgents[index].WithSource(routes[index])
-	result.Model, result.ModelRevision, result.Accounts = sources[index].Model, sources[index].ModelRevision, sources[index].Accounts
-	if sources[index].Problem != nil {
-		return result, sources[index].Problem
+	resolved, resolvedRoute, err := domain.ResolveHarnessSource(agent, routes[index], protocols[index][route.Selected], defaults.HarnessDefaults, projectDefaults)
+	if err != nil {
+		slog.Warn("harness_defaults_resolution", "harness", agent.Harness, "code", domain.SafeError(err).Code)
+		return result, err
+	}
+	result.Agent = resolved.WithSource(resolvedRoute)
+	result.Model, result.ModelRevision, result.Accounts = resolvedRoute.Model.AsModel(agent.Harness), sources[index].ModelRevision, sources[index].Accounts
+	if route.SourceIndex != nil {
+		selected := &result.Route.Sources[index]
+		selected.ModelID, selected.NativeModel, selected.ModelRevision = resolvedRoute.ModelID, result.Model.NativeID, result.ModelRevision
 	}
 	return result, nil
 }

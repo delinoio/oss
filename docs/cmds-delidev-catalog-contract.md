@@ -754,6 +754,8 @@ A malformed document, cancellation or failed publication rolls back the complete
 conversion. Sessions, execution snapshots, receipts and historical digests retain
 their exact bytes. Later explicit overrides remain valid.
 
+First-execution routing chooses the exact account with its original eligibility, order, weights and routing policy before resolving inherited defaults for that account's validated API profile. Incompatible sibling profiles remain blocked candidates; they cannot supply default evidence or block an otherwise eligible source. Unknown selected-profile defaults refuse admission rather than selecting another account or profile. Only the selected source receives effective model attribution; unselected inherited source anchors remain unavailable as effective models. The original connection profile also owns the authentication check.
+
 First-execution routing resolves configuration in its original store transaction
 and freezes exact model/native options plus Settings and Project revision pairs.
 It performs no separate native execution probe. Actual original native startup
