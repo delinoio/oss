@@ -3,6 +3,8 @@ package codex
 
 import (
 	"encoding/json"
+	"maps"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -23,7 +25,10 @@ func TestWindowsWarningsAreRedactedBoundedAndReplaySafe(t *testing.T) {
 	} {
 		c, turn := observationClient()
 		c.execution.paused = false
-		before, _ := json.Marshal(c.execution)
+		before := *c.execution
+		before.turns = maps.Clone(c.execution.turns)
+		before.inputs = maps.Clone(c.execution.inputs)
+		before.pending = maps.Clone(c.execution.pending)
 		params := map[string]any{"samplePaths": sample.paths, "extraCount": sample.extra, "failedScan": sample.failed}
 		event, err := observeFixture(c, "windows/worldWritableWarning", params)
 		raw, _ := json.Marshal(event)
@@ -34,8 +39,7 @@ func TestWindowsWarningsAreRedactedBoundedAndReplaySafe(t *testing.T) {
 		if err != nil || replay.Kind != MetadataEvent || replay.Metadata != WindowsWarningReplayChecked || replay.WindowsWarning != nil {
 			t.Fatal("warning replay duplicated effect", err)
 		}
-		after, _ := json.Marshal(c.execution)
-		if string(before) != string(after) || c.execution.active != turn {
+		if !reflect.DeepEqual(before, *c.execution) || c.execution.active != turn {
 			t.Fatal("warning changed original ownership")
 		}
 		completed, err := observeFixture(c, "turn/completed", map[string]any{"threadId": c.thread, "turn": map[string]any{"id": turn, "status": "completed", "error": nil, "items": []any{}}})
@@ -57,11 +61,13 @@ func TestWindowsSetupIsValidatedDiscardedWithoutReadiness(t *testing.T) {
 			for _, diagnostic := range []any{nil, "private-error-marker"} {
 				c, _ := observationClient()
 				c.execution.paused = false
-				before, _ := json.Marshal(c.execution)
+				before := *c.execution
+				before.turns = maps.Clone(c.execution.turns)
+				before.inputs = maps.Clone(c.execution.inputs)
+				before.pending = maps.Clone(c.execution.pending)
 				event, err := observeFixture(c, "windowsSandbox/setupCompleted", map[string]any{"mode": mode, "success": success, "error": diagnostic})
 				raw, _ := json.Marshal(event)
-				after, _ := json.Marshal(c.execution)
-				if err != nil || event.Kind != MetadataEvent || event.Metadata != WindowsSetupDiscarded || event.Native != nil || strings.Contains(string(raw), "private-error-marker") || string(before) != string(after) || c.problem != nil {
+				if err != nil || event.Kind != MetadataEvent || event.Metadata != WindowsSetupDiscarded || event.Native != nil || strings.Contains(string(raw), "private-error-marker") || !reflect.DeepEqual(before, *c.execution) || c.problem != nil {
 					t.Fatal("setup granted readiness or disclosed diagnostic", err)
 				}
 			}
