@@ -88,8 +88,17 @@ func TestCanceledBackupRestoreIsRejectedBeforeAdmission(t *testing.T) {
 }
 
 func TestAdmittedBackupRestorePreservesReceiptAfterCallerDisconnect(t *testing.T) {
+	testAdmittedBackupRestoreReceipt(t, false)
+}
+
+func TestAdmittedBackupRestorePublishesAfterSlowPreparedStage(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) { testAdmittedBackupRestoreReceipt(t, true) })
+}
+
+func testAdmittedBackupRestoreReceipt(t *testing.T, slowStage bool) {
+	t.Helper()
 	service, _ := newDoctorFixture(t)
-	caller, cancel := context.WithCancel(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}))
+	caller, cancel := context.WithTimeout(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}), 30*time.Second)
 	defer cancel()
 	if err := service.Store.BindIdentity(caller, service.Identity.ServerID); err != nil {
 		t.Fatal(err)
@@ -107,7 +116,9 @@ func TestAdmittedBackupRestorePreservesReceiptAfterCallerDisconnect(t *testing.T
 		t.Fatal(err)
 	}
 	defer finish()
-	cancel()
+	if !slowStage {
+		cancel()
+	}
 	modified, err := time.Parse(time.RFC3339Nano, inspected.Msg.Backup.ModifiedAt)
 	if err != nil {
 		t.Fatal(err)
@@ -115,6 +126,14 @@ func TestAdmittedBackupRestorePreservesReceiptAfterCallerDisconnect(t *testing.T
 	id := domain.NewID()
 	input := store.BackupRestoreInput{Backup: store.Backup{ID: domain.ID(inspected.Msg.Backup.Id), Bytes: inspected.Msg.Backup.SizeBytes, ModifiedAt: modified}, SHA256: inspected.Msg.Sha256, ExpectedRevision: inspected.Msg.RestoreRevision, ServerID: service.Identity.ServerID, Actor: domain.Principal{Type: domain.OwnerDevice}}
 	receipt, replayed, err := service.Store.RestoreBackupWithBarrier(operation, id, input, func() error {
+		if slowStage {
+			// Hold the actual store restore at its original prepared barrier past
+			// ordinary admission time, then publish the same request and image.
+			time.Sleep(31 * time.Second)
+			if !errors.Is(caller.Err(), context.DeadlineExceeded) {
+				t.Fatal("controlled stage did not exceed ordinary deadline")
+			}
+		}
 		if operation.Err() != nil {
 			t.Fatal("caller cancellation reached prepared barrier")
 		}
