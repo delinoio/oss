@@ -24,6 +24,7 @@ func restoreMessage(v store.BackupRestore) *pb.BackupRestoreReceipt {
 
 func (s *Service) RestoreBackup(ctx context.Context, req *connect.Request[pb.RestoreBackupRequest]) (*connect.Response[pb.RestoreBackupResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
+	// Only authorization, request validation and gate admission use this bound.
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if err := s.authorizeBackups(ctx); err != nil {
@@ -47,13 +48,30 @@ func (s *Service) RestoreBackup(ctx context.Context, req *connect.Request[pb.Res
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
-	defer unlock()
+	var finish func()
+	defer func() {
+		unlock()
+		if finish != nil {
+			finish()
+		}
+	}()
 	lifecycle, err := LockLifecycle(s.Store.Root())
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
 	defer lifecycle.Close()
 	input := store.BackupRestoreInput{Backup: store.Backup{ID: domain.ID(req.Msg.Backup.Id), Bytes: req.Msg.Backup.SizeBytes, ModifiedAt: modified.UTC()}, SHA256: req.Msg.Sha256, ExpectedRevision: *req.Msg.ExpectedRestoreRevision, ServerID: s.Identity.ServerID, Actor: actor}
+	operation, joined, err := s.admitBackupRestore(ctx)
+	if err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	finish = joined
+	started := time.Now()
+	// Full image copy/validation/publication belongs to the joined server owner,
+	// not the client's ordinary RPC wait. Store rechecks original authority and
+	// every immutable receipt/revision/barrier under its existing exclusive gates.
+	ctx = operation
+	s.logger.InfoContext(ctx, "backup_restore_operation_admitted", "request_id", req.Msg.RequestId, "correlation_id", correlation)
 	epochStopped := false
 	v, replayed, err := s.Store.RestoreBackupWithBarrier(ctx, domain.ID(req.Msg.RequestId), input, func() error {
 		if err := writeStopped(s.Store.Root(), domain.ID(req.Msg.RequestId), configurationDigest(Config{})); err != nil {
@@ -79,10 +97,10 @@ func (s *Service) RestoreBackup(ctx context.Context, req *connect.Request[pb.Res
 		time.AfterFunc(100*time.Millisecond, s.stop)
 	}
 	if err != nil {
-		s.logger.WarnContext(ctx, "backup_restore_failed", "request_id", req.Msg.RequestId, "correlation_id", correlation, "code", domain.SafeError(err).Code)
+		s.logger.WarnContext(ctx, "backup_restore_failed", "request_id", req.Msg.RequestId, "correlation_id", correlation, "code", domain.SafeError(err).Code, "duration_ms", time.Since(started).Milliseconds())
 		return nil, rpc.Error(err, correlation)
 	}
-	s.logger.InfoContext(ctx, "backup_restore_observed", "request_id", v.RequestID, "backup_id", v.Input.Backup.ID, "state", v.State, "replayed", replayed, "correlation_id", correlation)
+	s.logger.InfoContext(ctx, "backup_restore_observed", "request_id", v.RequestID, "backup_id", v.Input.Backup.ID, "state", v.State, "replayed", replayed, "correlation_id", correlation, "duration_ms", time.Since(started).Milliseconds())
 	response := connect.NewResponse(&pb.RestoreBackupResponse{Receipt: restoreMessage(v), Replayed: replayed})
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil

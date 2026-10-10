@@ -279,7 +279,7 @@ Authenticated NetworkService and `network` CLI operations configure revisioned D
 
 `backup restore` uses owner/client `SystemService.RestoreBackup` with explicit
 confirmation, the complete original inspection and its exact live restore
-revision. Retain the UUID-v7 request across an uncertain response; `backup
+revision. Full restore waiting retains caller cancellation/deadlines, without the ordinary CLI command or response-header cap (issue #2441). Server authorization, input validation and gate admission retain thirty seconds; admitted full-image work follows the joined server restore lifetime independently of the client wait. Explicit shutdown cancels and joins original work before owner retirement. Inspection/status and all other command limits remain unchanged. Retain the UUID-v7 request across an uncertain response; `backup
 restore-status --id REQUEST-ID` reads the original external receipt after explicit
 server restart. Publication ends the original process and durably suppresses
 implicit `server ensure` recovery before replacement. Inspection or status never

@@ -245,3 +245,52 @@ func TestCLIUnaryDeadlineOrdinaryReadKeepsHeaderAndOuterLimits(t *testing.T) {
 		})
 	}
 }
+
+func TestCLIFullBackupRestoreRetainsOnlyCallerDeadline(t *testing.T) {
+	for _, bounded := range []bool{false, true} {
+		t.Run(map[bool]string{false: "no-ordinary-cap", true: "original-caller-deadline"}[bounded], func(t *testing.T) {
+			calls := make(chan deadlineCall, 1)
+			mux := http.NewServeMux()
+			mux.Handle(delidevv1connect.SystemServiceRestoreBackupProcedure, connect.NewUnaryHandler(delidevv1connect.SystemServiceRestoreBackupProcedure, func(ctx context.Context, request *connect.Request[pb.RestoreBackupRequest]) (*connect.Response[pb.RestoreBackupResponse], error) {
+				deadline, ok := ctx.Deadline()
+				remaining := time.Duration(0)
+				if ok {
+					remaining = time.Until(deadline)
+				}
+				calls <- deadlineCall{id: request.Msg.RequestId, remaining: remaining}
+				return connect.NewResponse(&pb.RestoreBackupResponse{Receipt: &pb.BackupRestoreReceipt{RequestId: request.Msg.RequestId, BackupId: request.Msg.Backup.Id, State: pb.BackupRestoreState_BACKUP_RESTORE_STATE_PUBLISHED}}), nil
+			}))
+			peer := httptest.NewServer(mux)
+			defer peer.Close()
+			root := identityClientScope(t, peer.URL, domain.ClientDevice)
+			id := string(domain.NewID())
+			args := []string{"backup", "restore", "--id", string(domain.NewID()), "--expected-revision", "1", "--size-bytes", "1024", "--modified-at", "2026-10-10T00:00:00Z", "--sha256", strings.Repeat("a", 64), "--expected-restore-revision", "0", "--confirm", "--request-id", id}
+			ctx := context.Background()
+			if bounded {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, 2*time.Second)
+				defer cancel()
+			}
+			code, envelope := runDeadlineCommand(t, ctx, root, args, "")
+			if code != 0 {
+				t.Fatal("valid original restore response rejected", envelope)
+			}
+			call := <-calls
+			if call.id != id || envelope["request_id"] != id {
+				t.Fatal("restore identity changed")
+			}
+			if bounded {
+				if call.remaining <= 0 || call.remaining > 2*time.Second {
+					t.Fatal("caller deadline lost", call.remaining)
+				}
+			} else if call.remaining != 0 {
+				t.Fatal("restore inherited ordinary unary deadline", call.remaining)
+			}
+			select {
+			case <-calls:
+				t.Fatal("restore automatically replayed")
+			default:
+			}
+		})
+	}
+}

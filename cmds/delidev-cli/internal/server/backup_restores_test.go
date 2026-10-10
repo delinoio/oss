@@ -242,7 +242,8 @@ func TestRestoreRPCRequiresOriginalInspectionAndCurrentAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reopened.Close()
-	s.Store = reopened
+	// Receipt observation belongs to the explicitly restarted server epoch.
+	s = &Service{Store: reopened, Identity: s.Identity, logger: s.logger, stop: func() { t.Error("receipt replay stopped the replacement epoch") }}
 	lifecycle, err := LockLifecycle(root)
 	if err != nil {
 		t.Fatal(err)

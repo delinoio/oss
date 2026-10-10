@@ -164,19 +164,25 @@ func Run(ctx context.Context, args []string, streams IO) int {
 		return emit(nil, err)
 	}
 	defer c.transport.CloseIdleConnections()
-	if command != "events" && !(command == "session" && (followsTerminalOutput(rest) || (len(rest) >= 2 && rest[0] == "forward" && rest[1] == "start"))) {
+	fullRestore := command == "backup" && len(rest) > 0 && rest[0] == "restore"
+	if fullRestore {
+		// A full restore owns its joined server lifetime. Preserve caller
+		// cancellation/deadlines without imposing an ordinary unary/header cap.
+		c.transport.ResponseHeaderTimeout = 0
+	}
+	if !fullRestore && command != "events" && !(command == "session" && (followsTerminalOutput(rest) || (len(rest) >= 2 && rest[0] == "forward" && rest[1] == "start"))) {
 		limit := 30 * time.Second
 		if extended := extendedUnaryBudget(command, rest); extended != 0 {
 			limit = extended
 			c.transport.ResponseHeaderTimeout = extended
 		}
-		// Network credential work and backup inspection/replacement own bounded
+		// Network credential work and backup inspection own bounded
 		// 30-second server work. Allow its typed outcome to arrive first.
 		if command == "machine" && len(rest) > 0 && rest[0] == "ssh" {
 			limit = 35 * time.Second
 			c.transport.ResponseHeaderTimeout = limit
 		}
-		if command == "network" || command == "backup" && len(rest) > 0 && (rest[0] == "restore" || rest[0] == "inspect") {
+		if command == "network" || command == "backup" && len(rest) > 0 && rest[0] == "inspect" {
 			limit = 35 * time.Second
 			c.transport.ResponseHeaderTimeout = limit
 		}

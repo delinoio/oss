@@ -408,8 +408,7 @@ Receipt reads require the exact original owner or paired-client principal record
 in the external journal, including after rollback and restart. Another currently
 authorized actor cannot read the receipt by knowing its request UUID.
 
-The thirty-second cancellable operation holds both the managed-file gate and
-exclusive store gate under the server's process lock. It checks original actor,
+Issue #2441 limits only request authorization, validation and credential/lifecycle-gate admission to thirty seconds. After admission, the full copy, validation, safety-image and publication operation has no ordinary RPC deadline: it retains the original authenticated principal under the joined server restore lifetime. Client disconnect or wait cancellation cannot cancel that admitted operation or create rollback/replay authority. Explicit server shutdown fences new admission, cancels original work and joins it before retiring credentials, the database or the server scope. Stage failures still return through the unchanged scratch/prepared/published recovery boundaries. The operation holds both the managed-file gate and exclusive store gate under the server's process lock. It checks original actor,
 server identity and exact event revision, then refuses live claimed/uncertain jobs,
 active/running/recovery/archiving sessions, uncertain/stopping workspace ownership,
 pending credential removals/integration operations, any private network credential publication/deletion intent, and any forward that is not
@@ -515,8 +514,7 @@ final permanent-session backup acknowledgement. The selected source backup is
 never removed by restore. This closes the restore namespace over later permanent
 erasure without inventing cleanup of uncertain original images.
 
-Restore logs contain only validated request/backup UUIDs, closed state, correlation
-and safe error codes. Hashes, paths, database bodies and credentials are not logged.
+Restore logs contain only validated request/backup UUIDs, closed admission/state, correlation, duration and safe error codes. Hashes, paths, database bodies and credentials are not logged.
 This operation proves database replacement/recovery only; it does not establish
 real-account, Worker workspace, native harness or platform-distribution acceptance.
 

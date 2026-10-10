@@ -160,6 +160,7 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	child, stop := context.WithCancel(ctx)
 	defer stop()
 	service := &Service{releaseVerifier: config.releaseVerifier, releaseFactory: config.releaseFactory, userServiceBackend: config.userServiceBackend, userServiceOptions: serviceOptions, Store: state, Identity: identity, Endpoint: Endpoint{URL: protocol + "://" + listener.Addr().String(), ServerID: identity.ServerID, Version: rpc.Version, ProtocolVersion: rpc.ProtocolVersion, StartedAt: time.Now().UTC()}, logger: config.Logger, stop: stop, accountSecrets: config.accountSecrets}
+	service.initializeBackupRestores(child)
 	if err := service.retainLostSubscriptionLeases("", "", false); err != nil {
 		return err
 	}
@@ -190,6 +191,7 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 		handler = desktopruntime.Handler(target, handler, config.AllowedOrigins)
 	}
 	defer service.executionAuthority.close()
+	defer service.closeBackupRestores()
 	httpServer := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10, BaseContext: func(net.Listener) context.Context { return child }, ErrorLog: slog.NewLogLogger(config.Logger.Handler(), slog.LevelWarn)}
 	raw, err := json.Marshal(service.Endpoint)
 	if err != nil {
@@ -364,6 +366,8 @@ func Serve(ctx context.Context, config Config, ready func(Endpoint)) (result err
 	// Join its original controller before retiring dependencies or reporting Stop.
 	stopSessionDeletions()
 	<-sessionDeletionsDone
+	// Join admitted restore work before closing credentials or the store scope.
+	service.closeBackupRestores()
 	service.executionAuthority.close()
 	if config.Desktop != nil && config.DesktopCredentials != nil {
 		config.DesktopCredentials.close()
