@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -22,11 +23,11 @@ func TestCodexImageViewWorkerRejectsChangedOwnerScopeAndCompletion(t *testing.T)
 			p := workspace.PrepareRequest{SessionID: input.SessionID, MachineID: input.MachineID, Type: domain.GeneralChat, Repositories: []workspace.RepositorySpec{}}
 			raw, _ := json.Marshal(p)
 			digest := sha256.Sum256(raw)
-			root := "/original/workspaces/" + string(input.SessionID) + "/chat"
+			root := filepath.Join(t.TempDir(), "workspaces", string(input.SessionID), "chat")
 			m := workspace.Manifest{Version: 1, SessionID: input.SessionID, MachineID: input.MachineID, Type: domain.GeneralChat, State: workspace.Ready, InputDigest: hex.EncodeToString(digest[:]), PrimaryPath: root, Repositories: []workspace.PreparedRepository{}, CreatedAt: time.Now().UTC()}
 			input.Preparation = raw
 			input.Manifest, _ = json.Marshal(m)
-			native := &codex.Tool{ID: "image-original", Kind: codex.ImageViewTool, Status: codex.ToolRunning, ImagePath: root + "/never-open.png"}
+			native := &codex.Tool{ID: "image-original", Kind: codex.ImageViewTool, Status: codex.ToolRunning, ImagePath: filepath.Join(root, "never-open.png")}
 			event := codex.Event{Kind: codex.ToolStartedEvent, ThreadID: c.thread, TurnID: c.turn, ItemID: native.ID, Correlated: true, Tool: native}
 			if handled, err := c.PublishCore(context.Background(), event); !handled || err != nil {
 				t.Fatal(err)
@@ -35,7 +36,7 @@ func TestCodexImageViewWorkerRejectsChangedOwnerScopeAndCompletion(t *testing.T)
 			native.Status = codex.ToolCompleted
 			switch bad {
 			case "native-location":
-				native.ImagePath = root + "/another.png"
+				native.ImagePath = filepath.Join(root, "another.png")
 			case "machine":
 				input.MachineID = domain.NewID()
 			case "manifest":

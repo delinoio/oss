@@ -30,7 +30,10 @@ func shortQuotaBundle(t *testing.T) []byte {
 }
 
 func TestQuotaReflectionRejectsExactShortOriginalAndEncodedIDs(t *testing.T) {
-	home := t.TempDir()
+	home := filepath.Join(t.TempDir(), "private-home")
+	if err := security.PrivateDir(home); err != nil {
+		t.Fatal(err)
+	}
 	if err := security.WriteAtomic(filepath.Join(home, "auth.json"), shortQuotaBundle(t)); err != nil {
 		t.Fatal(err)
 	}

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
 	"os"
 	"path/filepath"
@@ -117,10 +118,15 @@ func TestSkillForkCopiesOriginalPackagesAndRewritesProofsBeforeParentDeletion(t 
 }
 func testSkillForkCopiesOriginalPackages(t *testing.T, withImages bool) {
 	ctx := context.Background()
-	sourceHome, _ := filepath.EvalSymlinks(t.TempDir())
-	childHome, _ := filepath.EvalSymlinks(t.TempDir())
-	os.Chmod(sourceHome, 0700)
-	os.Chmod(childHome, 0700)
+	sourceHome := filepath.Join(t.TempDir(), "source-home")
+	childHome := filepath.Join(t.TempDir(), "child-home")
+	for _, home := range []string{sourceHome, childHome} {
+		if err := security.PrivateDir(home); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sourceHome, _ = filepath.EvalSymlinks(sourceHome)
+	childHome, _ = filepath.EvalSymlinks(childHome)
 	user := t.TempDir()
 	packagePath := filepath.Join(user, ".agents", "skills", "add-issue")
 	os.MkdirAll(packagePath, 0700)
@@ -156,8 +162,12 @@ func testSkillForkCopiesOriginalPackages(t *testing.T, withImages bool) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(sourceHome, "sessions", "source.jsonl")
-	os.MkdirAll(filepath.Dir(path), 0700)
-	os.WriteFile(path, append(turn, '\n'), 0600)
+	if err := security.PrivateDir(filepath.Dir(path)); err != nil {
+		t.Fatal(err)
+	}
+	if err := security.WriteAtomic(path, append(turn, '\n')); err != nil {
+		t.Fatal(err)
+	}
 	digest, err := forkRolloutDigest(ctx, sourceHome, path)
 	if err != nil {
 		t.Fatal(err)

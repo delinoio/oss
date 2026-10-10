@@ -101,7 +101,7 @@ func safeDesktopFailure(err error) *desktopFailure {
 // (for example, denied or malformed configuration) as proof of another owner.
 func desktopListenerFailure(err error) error {
 	problem := domain.Fail(domain.Conflict, "The desktop listener could not be bound.", "Preserve the original process and inspect the connection configuration.")
-	if errors.Is(err, syscall.EADDRINUSE) {
+	if listenerAddressInUse(err) {
 		return classifiedStartupConflict(problem, startupOwnership)
 	}
 	return problem

@@ -399,7 +399,7 @@ func TestForkOriginalGitMarkerSurvivesPhaseBoundaries(t *testing.T) {
 					}
 				}
 				marker := filepath.Join(source.PrimaryPath, ".git")
-				original, err := os.Lstat(marker)
+				original, err := security.StableStat(marker)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -434,7 +434,7 @@ func TestForkOriginalGitMarkerSurvivesPhaseBoundaries(t *testing.T) {
 				if err := os.Chtimes(marker, original.ModTime(), original.ModTime()); err != nil {
 					t.Fatal(err)
 				}
-				replacement, err := os.Lstat(marker)
+				replacement, err := security.StableStat(marker)
 				if err != nil || os.SameFile(original, replacement) {
 					t.Fatal("marker replacement fixture invalid", err)
 				}
