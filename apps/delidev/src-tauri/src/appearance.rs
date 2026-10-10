@@ -718,12 +718,42 @@ mod tests {
         assert!(valid_new_theme_colors(&light));
         assert!(valid_new_theme_colors(&dark));
 
-        let mut weak_light = light;
-        let mut weak_dark = dark;
-        weak_light.insert("link".into(), weak_light["surface"].clone());
-        weak_light.insert("focus".into(), weak_light["surface"].clone());
-        weak_dark.insert("link".into(), weak_dark["surface"].clone());
-        weak_dark.insert("focus".into(), weak_dark["surface"].clone());
+        let accepted_theme = CustomTheme {
+            version: 1,
+            id: uuid::Uuid::now_v7().to_string(),
+            name: "Readable custom".into(),
+            light: light.clone(),
+            dark: dark.clone(),
+        };
+        let mut accepted = Preferences::default();
+        accepted.light_palette = accepted_theme.id.clone();
+        accepted.dark_palette = accepted_theme.id.clone();
+        accepted.custom_themes.push(accepted_theme);
+        assert!(accepted.valid());
+        assert!(valid_new_theme_changes(&Preferences::default(), &accepted));
+
+        let mut weak_added = accepted.clone();
+        let weak_light_surface = weak_added.custom_themes[0].light["surface"].clone();
+        weak_added.custom_themes[0]
+            .light
+            .insert("link".into(), weak_light_surface.clone());
+        weak_added.custom_themes[0]
+            .light
+            .insert("focus".into(), weak_light_surface);
+        let weak_dark_surface = weak_added.custom_themes[0].dark["surface"].clone();
+        weak_added.custom_themes[0]
+            .dark
+            .insert("link".into(), weak_dark_surface.clone());
+        weak_added.custom_themes[0]
+            .dark
+            .insert("focus".into(), weak_dark_surface);
+        assert!(!valid_new_theme_changes(
+            &Preferences::default(),
+            &weak_added
+        ));
+
+        let weak_light = weak_added.custom_themes[0].light.clone();
+        let weak_dark = weak_added.custom_themes[0].dark.clone();
         assert!(valid_colors(&weak_light));
         assert!(!valid_new_theme_colors(&weak_light));
 
@@ -750,17 +780,7 @@ mod tests {
             .light
             .insert("accent".into(), "#123456".into());
         assert!(!valid_new_theme_changes(&saved, &edited));
-        assert!(valid_new_theme_changes(&Preferences::default(), &saved));
-        let mut weak = saved.clone();
-        weak.custom_themes[0].light.insert(
-            "link".into(),
-            weak.custom_themes[0].light["surface"].clone(),
-        );
-        weak.custom_themes[0].light.insert(
-            "focus".into(),
-            weak.custom_themes[0].light["surface"].clone(),
-        );
-        assert!(!valid_new_theme_changes(&Preferences::default(), &weak));
+        assert!(!valid_new_theme_changes(&Preferences::default(), &saved));
 
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("appearance.json");
