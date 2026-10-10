@@ -267,7 +267,7 @@ func (t *Tx) CancelUnclaimedCodexAppsControl(jobID domain.ID) error {
 	}
 	var input domain.ExecutionJobInput
 	var complete domain.ExecutionCompletion
-	if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || domain.Decode(job.Output, &complete) != nil || complete.ValidateForHarness(input.Configuration.Harness) != nil || !complete.CleanupVerified || complete.ExecutionID != input.ExecutionID || complete.InputID != input.InputID {
+	if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || domain.Decode(job.Output, &complete) != nil || complete.ValidateForHarness(input.Configuration.Harness) != nil || !complete.CleanupVerified || record.SessionID != input.SessionID || job.MachineID != input.MachineID || complete.ExecutionID != input.ExecutionID || complete.InputID != input.InputID {
 		return codexAppsConflict()
 	}
 	value, err := t.CodexAppsSnapshot(record.SessionID)
@@ -278,7 +278,7 @@ func (t *Tx) CancelUnclaimedCodexAppsControl(jobID domain.ID) error {
 	if operation.ExecutionJobID != jobID || operation.State != domain.CodexAppsQueued {
 		return nil
 	}
-	if operation.ExecutionID != complete.ExecutionID || operation.NativeThreadID != complete.NativeThreadID || operation.ClaimID != "" {
+	if operation.ExecutionID != complete.ExecutionID || operation.MachineID != job.MachineID || operation.InstanceID != job.InstanceID || input.CodexApps == nil || input.CodexApps.AccountID != operation.Original.AccountID || !(input.CodexApps.Generation == operation.Original.Generation && slices.Equal(input.CodexApps.AppIDs, operation.Original.AppIDs) || input.CodexApps.RemovalOnly(operation.Original)) || operation.NativeThreadID != complete.NativeThreadID || operation.ClaimID != "" {
 		return codexAppsConflict()
 	}
 	operation.State, operation.PositiveNoNativeSend, operation.Revision = domain.CodexAppsCanceled, true, operation.Revision+1
