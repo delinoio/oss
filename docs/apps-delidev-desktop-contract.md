@@ -1460,6 +1460,13 @@ Deletion requires confirmation and atomically returns all selected references to
 Default. Cancel discards only the editor/import draft. Concurrent revisions keep
 dirty drafts visible and block save until explicit discard/reload.
 
+When session accent is disabled, focused content inside a user message keeps an
+outline with at least 3:1 contrast against `surface-selected`. Use the semantic
+`focus` token when it meets this threshold. Otherwise, compute the higher-contrast
+opaque black or white value and expose it through the render-only
+`--focus-on-selected` variable. This fallback does not change stored theme tokens
+or reject an existing custom theme.
+
 Composer and Display retain Regular/Compact layouts and explicit 12/14/16/18px
 text choices. Default text size preserves the original per-component size;
 Original disclosure defaults preserve each component’s original expansion. Explicit
