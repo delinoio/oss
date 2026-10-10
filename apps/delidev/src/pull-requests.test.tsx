@@ -292,7 +292,7 @@ it("uses standalone cards with exact UTC precision, Draft and unknown author evi
   });
   const view = render(<App transport={value.transport} />); const pane = await open(); await choose(value.rows[0]);
   const heading = await screen.findByRole("heading", { name: title.trim() });
-  const card = heading.closest("article")!; expect(card.className).toBe("pr-list-card");
+  const card = heading.closest("article")!; expect(card.className).toBe("pr-workspace-row");
   expect(within(card).getByText("Open")).toBeTruthy(); expect(within(card).getByText("Draft")).toBeTruthy(); expect(within(card).getByText(/Unverified author type/)).toBeTruthy();
   expect(card.querySelector("time")?.textContent).toBe(updated); expect(screen.getByText(observed).getAttribute("datetime")).toBe(observed);
   expect(screen.getByText("Open · Page 1 · 20 per page")).toBeTruthy();

@@ -99,6 +99,8 @@ type Service struct {
 	ownedPAT                      *credentials.PATStore
 	github                        githubIdentity
 	githubQueries                 githubRepositoryQueries
+	prWorkspaceMu                 sync.Mutex
+	prWorkspaceRefs               map[string]prWorkspaceReference
 	githubRepositories            githubRepositoryInventory
 	terminalOutputMu              sync.Mutex
 	terminalOutputs               map[domain.ID]*terminalOutputRing

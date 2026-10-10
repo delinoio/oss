@@ -446,3 +446,7 @@ remain independently paginated. No new business RPC or transport authority is
 added. Follow the [mobile contract](apps-delidev-mobile-contract.md).
 
 Current schema-4 Agent routes embed exact source/native identity and non-secret metadata. The shared parser rejects Model resources, mixed UUID routes and older Agent schemas. Other currently activated Project, Settings and API-profile schemas remain supported. Protocol-2 connection verification rejects protocol 1 without adopting its state.
+
+## PR workspace client family
+
+Generated IntegrationQuery exports the negotiated GetPullRequestWorkspace, ListPullRequestCommits and ReadPullRequestAvatar methods and typed scoped inputs. Generated SystemCapability includes PULL_REQUEST_WORKSPACE_V1 (84). Regenerate Go/TypeScript bindings from the owning proto source. Version-1 JSON observations use the owning protocol contract's closed workspace/commit families and exact repository/profile/PR operands. Client decoding rejects malformed counts and cross-scope observations. Commit continuation retains the shared page/payload bounds. Avatar references return sanitized authenticated raster bytes; clients never fetch private provider locators. Legacy List/Search APIs and other inspection consumers retain compatibility.

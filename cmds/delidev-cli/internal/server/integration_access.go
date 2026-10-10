@@ -71,6 +71,12 @@ func (s *Service) withRepositoryIntegration(ctx context.Context, id domain.ID, o
 		return repositoryIntegrationSelection{}, err
 	}
 	profileID := selected.repository.IntegrationID
+	background := operation == "pr-workspace" || operation == "pr-avatar"
+	if active := s.integrationChecks[profileID]; active != nil && active.background && !background {
+		if err := s.stopIntegrationCheck(ctx, profileID); err != nil {
+			return repositoryIntegrationSelection{}, err
+		}
+	}
 	if s.integrationChecks[profileID] != nil {
 		return repositoryIntegrationSelection{}, domain.Fail(domain.Conflict, "The selected profile already has an active GitHub inspection.", "Wait for its result before starting another inspection.")
 	}
@@ -81,7 +87,7 @@ func (s *Service) withRepositoryIntegration(ctx context.Context, id domain.ID, o
 		s.integrationChecks = map[domain.ID]*integrationCheck{}
 	}
 	checkCtx, cancel := context.WithTimeout(ctx, 35*time.Second)
-	check := &integrationCheck{cancel: cancel, done: make(chan struct{})}
+	check := &integrationCheck{cancel: cancel, done: make(chan struct{}), background: background}
 	s.integrationChecks[profileID] = check
 	defer func() {
 		cancel()

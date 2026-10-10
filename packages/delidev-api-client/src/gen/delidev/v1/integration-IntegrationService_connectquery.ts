@@ -5,6 +5,21 @@
 import { IntegrationService } from "./integration_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.IntegrationService.GetPullRequestWorkspace
+ */
+export const getPullRequestWorkspace = IntegrationService.method.getPullRequestWorkspace;
+
+/**
+ * @generated from rpc delidev.v1.IntegrationService.ListPullRequestCommits
+ */
+export const listPullRequestCommits = IntegrationService.method.listPullRequestCommits;
+
+/**
+ * @generated from rpc delidev.v1.IntegrationService.ReadPullRequestAvatar
+ */
+export const readPullRequestAvatar = IntegrationService.method.readPullRequestAvatar;
+
+/**
  * @generated from rpc delidev.v1.IntegrationService.InspectGitHubToken
  */
 export const inspectGitHubToken = IntegrationService.method.inspectGitHubToken;
