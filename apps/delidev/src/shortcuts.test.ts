@@ -104,3 +104,35 @@ it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])("keeps fixed send and na
  }
  input.remove();
 });
+
+
+it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])("dispatches physical primary chords once across input layouts on %s", localPlatform => {
+  const modifiers = localPlatform === ShortcutPlatform.Mac ? { metaKey: true } : { ctrlKey: true };
+  const input = document.createElement("textarea"); document.body.append(input);
+  for (const [key, translated, code, shiftKey] of [["k", "ㅏ", "KeyK", false], ["b", "ㅠ", "KeyB", false], ["i", "ㅑ", "KeyI", false], ["n", "ㅜ", "KeyN", true], ["1", "!", "Digit1", true]] as const) {
+    const item = definition({ input: ShortcutInput.Allow, bindings: [{ key, primary: true, shift: shiftKey }] });
+    for (const logicalKey of [key, translated]) {
+      const event = new KeyboardEvent("keydown", { key: logicalKey, code, shiftKey, ...modifiers, bubbles: true, cancelable: true });
+      input.addEventListener("keydown", () => dispatchShortcut(event, [item], Surface.Search, localPlatform), { once: true }); input.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true);
+      expect(dispatchShortcut(event, [item], Surface.Search, localPlatform)).toBe(false);
+    }
+    expect(item.run).toHaveBeenCalledTimes(2);
+  }
+  input.remove();
+});
+it("prefers physical alphanumeric codes and preserves named, logical Help and Numpad keys", () => {
+  const matches = (key: string, code: string, binding: string, primary = true) => bindingMatches(new KeyboardEvent("keydown", { key, code, ctrlKey: primary }), { key: binding, primary }, platform);
+  expect(matches("k", "KeyJ", "j")).toBe(true);
+  expect(matches("k", "KeyJ", "k")).toBe(false);
+  for (const code of ["", "Unidentified", "Numpad1"]) expect(matches("1", code, "1")).toBe(true);
+  expect(matches("Enter", "KeyJ", "Enter")).toBe(true);
+  expect(matches("Escape", "KeyJ", "Escape")).toBe(true);
+  expect(matches("?", "KeyJ", "?", false)).toBe(true);
+  expect(matches("ㅏ", "KeyK", "k", false)).toBe(false);
+});
+it.each([{ isComposing: true }, { keyCode: 229 }, { repeat: true }, { shiftKey: true }, { altKey: true }, { metaKey: true }])("retains rejection fences for translated physical chords %j", flags => {
+  const item = definition({ input: ShortcutInput.Allow });
+  const event = dispatch([item], { key: "ㅏ", code: "KeyK", ...flags });
+  expect(item.run).not.toHaveBeenCalled(); expect(event.defaultPrevented).toBe(false);
+});

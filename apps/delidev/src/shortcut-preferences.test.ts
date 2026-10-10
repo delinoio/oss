@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { captureShortcut, effectiveShortcutDefinitions, parseShortcutOverrides, editableShortcutCatalog, readOnlyShortcutCatalog, fixedNativeShortcutCatalog, shortcutConflicts, ShortcutOverrideState, validShortcutChord } from "./shortcut-preferences";
 import { ShortcutId, ShortcutPlatform, ShortcutScope } from "./shortcuts";
 import { Surface } from "./surface";
@@ -47,4 +47,22 @@ it("retains fixed Session Enter with default, custom and disabled primary overri
  expect(editableShortcutCatalog.find(action=>action.id===ShortcutId.SessionSend)?.fixed).toEqual([{key:"Enter"}]);
  expect(readOnlyShortcutCatalog.find(action=>action.id===ShortcutId.SessionNewline)?.defaults).toEqual([{key:"Enter",shift:true}]);
  expect(editableShortcutCatalog).toHaveLength(7);
+});
+
+
+it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])("captures physical chords without preference migration on %s", platform => {
+  const modifiers = platform === ShortcutPlatform.Mac ? { metaKey: true } : { ctrlKey: true };
+  for (const [key, code, canonical, shiftKey] of [["t", "KeyT", "t", false], ["ㅅ", "KeyT", "t", false], ["k", "KeyJ", "j", false], ["!", "Digit1", "1", true], ["1", "Numpad1", "1", true], ["j", "Unidentified", "j", false], ["j", "", "j", false], ["Enter", "Enter", "Enter", false]] as const) {
+    const captured = captureShortcut(new KeyboardEvent("keydown", { key, code, shiftKey, ...modifiers }), platform);
+    expect(captured).toEqual({ key: canonical, shift: shiftKey });
+    const persisted = { [ShortcutId.SessionFocus]: { state: ShortcutOverrideState.Binding, chord: captured } };
+    expect(parseShortcutOverrides(persisted)).toEqual(persisted);
+  }
+  for (const flags of [{ isComposing: true }, { keyCode: 229 }, { repeat: true }, { altKey: true }, { ctrlKey: true, metaKey: true }]) {
+    expect(captureShortcut(new KeyboardEvent("keydown", { key: "ㅅ", code: "KeyT", ...modifiers, ...flags }), platform)).toBeUndefined();
+  }
+  const altGraph = new KeyboardEvent("keydown", { key: "ㅅ", code: "KeyT", ...modifiers });
+  vi.spyOn(altGraph, "getModifierState").mockImplementation(key => key === "AltGraph");
+  expect(captureShortcut(altGraph, platform)).toBeUndefined();
+  expect(captureShortcut(new KeyboardEvent("keydown", { key: "ㅏ", code: "KeyK", ...modifiers }), platform)).toBeUndefined();
 });
