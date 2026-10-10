@@ -60,6 +60,20 @@ and [event mapping](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2
 keep this status separate from tool execution and authentication. Other server
 names, API profiles, unscoped/foreign observations, OAuth completions, MCP event
 streams and tool calls retain their existing private adapter boundaries.
+The notification-only `remoteControl/status/changed` profile recognizes closed
+`disabled`, `connecting`, `connected` and `errored` states with required bounded
+private `serverName` and `installationId` strings and optional nullable bounded
+`environmentId`. Only disabled with an absent/null environment is passive
+metadata. Other valid states or a non-null environment produce a typed redacted
+remote-control-policy refusal, distinct from malformed/unknown protocol data.
+The original execution remains fenced through its existing uncertainty and
+independent cleanup/recovery path; acknowledged input is never replayed. Logs
+retain only closed policy/status classifications and safe original owner IDs,
+never native identity strings. Observations cannot adopt remote execution, pair,
+change host settings, disable/reconnect, answer a same-name server request or
+supply terminal/cleanup evidence. Existing external-token quota ownership stays
+independent. This profile grants no remote-control support or authority.
+
 The original execution process's notification-only `skills/changed` accepts
 exactly a required empty object as discarded process metadata. Its native cache
 invalidation signal never causes `skills/list`, package enumeration, catalog

@@ -42,6 +42,8 @@ const (
 // Log a closed classification instead of untrusted native method or content.
 func validationStage(method string) eventValidationStage {
 	switch method {
+	case "remoteControl/status/changed":
+		return validationRemoteControl
 	case "thread/settings/updated":
 		return validationSettings
 	case "item/started", "item/completed":
@@ -251,7 +253,7 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 			c.execution.paused = true
 		}
 		if c.logger != nil {
-			c.logger.WarnContext(ctx, "Codex native event validation failed", "owner_id", c.ownerID, "stage", validationStage(native.Method), "code", c.problem.Code)
+			c.logger.WarnContext(ctx, "Codex native event validation failed", "owner_id", c.ownerID, "stage", remoteControlFailureStage(err, validationStage(native.Method)), "code", c.problem.Code)
 		}
 		return Event{}, c.problem
 	}
