@@ -209,6 +209,15 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 				rows.Close()
 				return err
 			}
+			// The outer storage limit alone cannot validate the smaller immutable
+			// compaction input or its original execution/continuation invariants.
+			// Validate before quarantine changes any historical job state.
+			if v.Type == domain.CompactSessionJob {
+				if err := domain.DecodeCompactionJob(raw, &v); err != nil {
+					rows.Close()
+					return err
+				}
+			}
 			if v.Type == domain.ImageAttachmentJob {
 				var upload domain.ImageUpload
 				if domain.Decode(v.Input, &upload) != nil || validateImageUpload(upload) != nil {
