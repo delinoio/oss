@@ -644,3 +644,26 @@ System `SUBSCRIPTION_PAID_CREDITS_V1 = 76` and Worker `SUBSCRIPTION_PAID_CREDITS
 Each native bucket owns its exact bounded ID, required hasCredits/unlimited flags, nullable balance and successful observation timestamp. Accept nonnegative plain decimal strings of at most 64 bytes without numeric conversion. Explicit null is unknown, zero is a real value, and unlimited takes presentation precedence. Never sum buckets or infer balance from quota, reset credits, plan type or hasCredits. Omitted credits/balance fields retain the last successful bucket and its timestamp; failed, malformed or reflected reads retain evidence without refreshing it. Credential-generation replacement clears observations. Ordinary configuration saves and legacy clients cannot replace protected subscription observations. Original identity/token reflection checks include paid bucket IDs and exact balance strings, including short/encoded secrets. Raw responses, unrelated billing/display text and credentials remain private.
 
 Account rows show one exact balance or a localized multi-bucket count. Manage subscription shows the read-only Paid credits card above Quota, with separate bucket labels and retained stale/error timestamps. Keep loading, unavailable/update, unknown, zero, positive and unlimited states distinct. Use existing theme tokens, wrapping rows, parent scrolling, keyboard/dismissal ownership and EN/KO strings. Presentation grants no account, execution, native or platform acceptance.
+
+
+### Protected display names in quota observations
+
+Worker managed quota reads and rolling updates, and server-owned quota reads
+from an original protected identity, include its parsed `DisplayName` with the
+original access/refresh/ID tokens, email, account and user reflection inputs.
+Names may originate from the ID token's direct name or profile name claim.
+Reject exact raw names and every complete standard, raw standard, URL-safe and
+raw URL-safe Base64 form at all supported lengths, including fewer than eight
+bytes, before quota/credit publication. Existing adapter-owned final window
+suffix matching and reset/paid-credit identifier checks remain unchanged.
+
+Exact matching preserves harmless short-word substrings and removes only the
+original final primary, secondary or spend suffix. Long protected substring
+checks retain their existing behavior. An absent display name adds no reflection
+input. External access-token-only quota lacks a parsed name source and retains
+only its original token/account scope; never infer or import a display name.
+Reflection rejection preserves last good values/timestamps, exhaustion state,
+immutable operation receipts and independently confirmed protected cleanup.
+Raw names, native responses and credentials remain excluded from diagnostics.
+No authentication, native execution, reset-credit consumption or recovery
+permission, protocol allocation or database migration is added.
