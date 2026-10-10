@@ -435,3 +435,120 @@ func TestBackupCreationHistoricalSuccessSurvivesLaterDeletion(t *testing.T) {
 		t.Fatal("history replay recreated image", images, err)
 	}
 }
+
+func TestBackupCreationUnchangedFailureRechecksDeletion(t *testing.T) {
+	for _, scenario := range []string{"not-deleted", "pending-deletion", "completed-deletion"} {
+		t.Run(scenario, func(t *testing.T) {
+			s, root, ctx, owner := creationFixture(t)
+			request := domain.NewID()
+			original, _, err := s.RequestBackup(ctx, request, owner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, intent, err := DecodeBackupCreation(original)
+			if err != nil {
+				t.Fatal(err)
+			}
+			transient := domain.Fail(domain.Unavailable, "Fixture synchronization needs recovery.", "Retry the original job.")
+			// The original image is published, but its final synchronization result
+			// remains uncertain. Retrying receives the identical transient result.
+			uncertain, err := s.runBackupCreation(ctx, original.ID, owner, func(work context.Context, id domain.ID) (domain.ID, error) {
+				if _, err := s.BackupID(work, id); err != nil {
+					t.Fatal(err)
+				}
+				return id, transient
+			})
+			job, _, decodeErr := DecodeBackupCreation(uncertain)
+			if err != transient || decodeErr != nil || job.State != domain.JobUncertain {
+				t.Fatal("fixture did not retain uncertainty", job, err, decodeErr)
+			}
+			var deletion Record
+			var receiptsBefore int
+			copies := 0
+			result, err := s.runBackupCreation(ctx, original.ID, owner, func(work context.Context, id domain.ID) (domain.ID, error) {
+				copies++
+				if id != intent.BackupID {
+					t.Fatal("retry changed original image identity")
+				}
+				// The real copy gate is already released here. Accept deletion at
+				// that boundary before the repeated failure reaches settlement.
+				if scenario != "not-deleted" {
+					checked, err := s.InspectBackup(ctx, id, owner)
+					if err != nil {
+						t.Fatal(err)
+					}
+					actor, _ := domain.PrincipalFrom(ctx)
+					deletion, _, err = s.DeleteBackup(ctx, domain.NewID(), BackupDeletionInput{Actor: actor, ServerID: owner, Backup: checked.Backup, ExpectedRevision: 1, SHA256: checked.SHA256})
+					if err != nil {
+						t.Fatal(err)
+					}
+					if scenario == "completed-deletion" {
+						if _, err = s.RunBackupDeletion(ctx, deletion.ID, owner); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+				if err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM receipts").Scan(&receiptsBefore); err != nil {
+					t.Fatal(err)
+				}
+				return id, transient
+			})
+			job, settled, decodeErr := DecodeBackupCreation(result)
+			if decodeErr != nil || result.ID != original.ID || settled != intent || copies != 1 {
+				t.Fatal("original ownership changed", settled, copies, decodeErr)
+			}
+			var receiptsAfter int
+			if err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM receipts").Scan(&receiptsAfter); err != nil {
+				t.Fatal(err)
+			}
+			if scenario == "not-deleted" {
+				if err != transient || job.State != domain.JobUncertain || result.Revision != uncertain.Revision || job.FinishedAt != nil || receiptsAfter != receiptsBefore {
+					t.Fatal("unchanged uncertainty rewrote receipt or status", job, result.Revision, err, receiptsBefore, receiptsAfter)
+				}
+			} else {
+				if domain.SafeError(err).Code != domain.RecoveryRequired || job.State != domain.JobFailed || job.Problem == nil || job.Problem.Code != domain.RecoveryRequired || job.FinishedAt == nil || result.Revision != uncertain.Revision+1 || receiptsAfter != receiptsBefore+1 {
+					t.Fatal("unchanged result bypassed deletion", job, result.Revision, err, receiptsBefore, receiptsAfter)
+				}
+				if _, err = s.RunBackupDeletion(ctx, deletion.ID, owner); err != nil {
+					t.Fatal(err)
+				}
+				again, err := s.runBackupCreation(ctx, original.ID, owner, func(context.Context, domain.ID) (domain.ID, error) { copies++; return intent.BackupID, nil })
+				if err != nil || again.Revision != result.Revision || copies != 1 {
+					t.Fatal("terminal retry recreated deleted image", again, copies, err)
+				}
+				if _, err := os.Lstat(filepath.Join(root, "backups", string(intent.BackupID)+".sqlite")); !os.IsNotExist(err) {
+					t.Fatal("deleted image was recreated", err)
+				}
+			}
+			replay, replayed, err := s.RequestBackup(ctx, request, owner)
+			if err != nil || !replayed || replay.ID != result.ID || replay.Revision != result.Revision {
+				t.Fatal("original receipt lost settlement", replay, replayed, err)
+			}
+		})
+	}
+}
+
+func TestBackupCreationUnchangedFailureRechecksOriginalRevision(t *testing.T) {
+	s, _, ctx, owner := creationFixture(t)
+	original, _, err := s.RequestBackup(ctx, domain.NewID(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transient := domain.Fail(domain.Unavailable, "Fixture synchronization needs recovery.", "Retry the original job.")
+	uncertain, err := s.runBackupCreation(ctx, original.ID, owner, func(context.Context, domain.ID) (domain.ID, error) { return "", transient })
+	if err != transient {
+		t.Fatal(err)
+	}
+	job, _, _ := DecodeBackupCreation(uncertain)
+	_, err = s.runBackupCreation(ctx, original.ID, owner, func(context.Context, domain.ID) (domain.ID, error) {
+		if _, err := s.Mutate(ctx, domain.NewID(), "fixture.creation-revision", nil, func(tx *Tx) (any, error) {
+			return tx.PutJob(original.ID, uncertain.Revision, "", "", job)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return "", transient
+	})
+	if domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("unchanged result bypassed original revision validation", err)
+	}
+}

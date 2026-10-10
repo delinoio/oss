@@ -168,9 +168,9 @@ func (s *Store) runBackupCreation(ctx context.Context, id, server domain.ID, cop
 			retained.State = domain.JobFailed
 		}
 	}
-	if reflect.DeepEqual(retained, job) {
-		return row, attempt
-	}
+	// An unchanged attempt still needs the transactional intent and deletion
+	// checks. This private sentinel rolls back a no-op without adding a receipt.
+	unchanged := domain.Fail(domain.Canceled, "Backup creation result is unchanged.", "Keep the original uncertain job.")
 	_, err = s.Mutate(ctx, domain.NewID(), "backup.creation-result", struct {
 		ID       domain.ID
 		Revision uint64
@@ -194,12 +194,18 @@ func (s *Store) runBackupCreation(ctx context.Context, id, server domain.ID, cop
 			attempt = deletionBlocked()
 			retained.State, retained.Problem = domain.JobFailed, domain.SafeError(attempt)
 		}
+		if reflect.DeepEqual(retained, job) {
+			return nil, unchanged
+		}
 		if retained.State.Terminal() {
 			retained.FinishedAt = &tx.now
 		}
 		_, err = tx.PutJob(id, current.Revision, "", "", retained)
 		return struct{}{}, err
 	})
+	if err == unchanged {
+		return row, attempt
+	}
 	if err != nil {
 		return row, err
 	}
