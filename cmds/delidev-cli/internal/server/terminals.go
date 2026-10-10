@@ -346,6 +346,9 @@ func (s *Service) WatchTerminals(ctx context.Context, req *connect.Request[pb.Wa
 	seen := map[domain.ID]domain.ID{}
 	nextHeartbeat := time.Time{}
 	for {
+		// Subscribe before reading assignments; publication during the snapshot
+		// still closes this captured notification before the next wait.
+		changed := s.Store.Changed()
 		var assignments []terminal.Assignment
 		err := s.Store.Read(ctx, func(tx *store.Tx) error {
 			if err := terminalMachine(tx, machine, instance); err != nil {
@@ -408,13 +411,12 @@ func (s *Service) WatchTerminals(ctx context.Context, req *connect.Request[pb.Wa
 			}
 			nextHeartbeat = time.Now().Add(10 * time.Second)
 		}
-		select {
-		case <-ctx.Done():
+		waiting := time.Now()
+		stage, live := waitTerminalChange(ctx, primary.Done, changed, nil, ticker.C)
+		if !live {
 			return nil
-		case <-primary.Done:
-			return nil
-		case <-ticker.C:
 		}
+		s.logTerminalWake(terminalAssignmentStream, stage, time.Since(waiting))
 	}
 }
 

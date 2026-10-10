@@ -37,6 +37,21 @@ type terminalOutputRing struct {
 	order          *list.Element
 }
 
+// terminalOutputNotification requires terminalOutputMu. One replaceable channel
+// wakes every observer without retaining per-terminal or per-client waiters.
+func (s *Service) terminalOutputNotification() chan struct{} {
+	if s.terminalOutputChanged == nil {
+		s.terminalOutputChanged = make(chan struct{})
+	}
+	return s.terminalOutputChanged
+}
+
+// notifyTerminalOutput requires terminalOutputMu and a validated new append.
+func (s *Service) notifyTerminalOutput() {
+	close(s.terminalOutputNotification())
+	s.terminalOutputChanged = make(chan struct{})
+}
+
 // A service-wide 128-ring limit bounds all retained output to 64 MiB. Eviction
 // and server restart change the epoch; even a cursorless client must see a
 // gap when the empty ring cannot prove that earlier output was retained.
@@ -122,6 +137,9 @@ func (s *Service) PublishTerminalOutput(ctx context.Context, req *connect.Reques
 		ring.chunks[0] = terminalOutputChunk{}
 		ring.chunks = ring.chunks[1:]
 	}
+	// Only a validated newly appended frame advances this broadcast. Exact
+	// retries and rejected frames return above without signalling progress.
+	s.notifyTerminalOutput()
 	return connect.NewResponse(&pb.PublishTerminalOutputResponse{}), nil
 }
 
@@ -150,6 +168,8 @@ func (s *Service) WatchTerminalOutput(ctx context.Context, req *connect.Request[
 	defer ticker.Stop()
 	nextHeartbeat := time.Time{}
 	for {
+		// Capture before the read so a concurrent commit cannot be missed.
+		changed := s.Store.Changed()
 		var record store.Record
 		var value domain.Terminal
 		err := s.Store.Read(ctx, func(tx *store.Tx) error {
@@ -167,6 +187,7 @@ func (s *Service) WatchTerminalOutput(ctx context.Context, req *connect.Request[
 			return rpc.Error(err, correlation)
 		}
 		s.terminalOutputMu.Lock()
+		outputChanged := s.terminalOutputNotification()
 		ring := s.terminalRing(id)
 		first := ring.sequence + 1
 		if len(ring.chunks) != 0 {
@@ -210,10 +231,11 @@ func (s *Service) WatchTerminalOutput(ctx context.Context, req *connect.Request[
 		if value.CleanupVerified {
 			return nil
 		}
-		select {
-		case <-ctx.Done():
+		waiting := time.Now()
+		stage, live := waitTerminalChange(ctx, nil, changed, outputChanged, ticker.C)
+		if !live {
 			return nil
-		case <-ticker.C:
 		}
+		s.logTerminalWake(terminalOutputStream, stage, time.Since(waiting))
 	}
 }

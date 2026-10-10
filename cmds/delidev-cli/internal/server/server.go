@@ -101,6 +101,7 @@ type Service struct {
 	githubQueries                 githubRepositoryQueries
 	githubRepositories            githubRepositoryInventory
 	terminalOutputMu              sync.Mutex
+	terminalOutputChanged         chan struct{}
 	terminalOutputs               map[domain.ID]*terminalOutputRing
 	terminalOutputOrder           list.List
 	prFixRequests                 prFixRequestTracker

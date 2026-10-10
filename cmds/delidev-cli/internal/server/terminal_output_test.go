@@ -2,6 +2,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
@@ -214,5 +216,90 @@ func TestTerminalOutputEvictionPreservesExactAccessOrder(t *testing.T) {
 	service.terminalRing(domain.NewID())
 	if service.terminalOutputs[first] != retained || service.terminalOutputs[second] != nil || len(service.terminalOutputs) != 128 || service.terminalOutputOrder.Len() != 128 {
 		t.Fatal("bounded eviction did not preserve the most recently observed ring")
+	}
+}
+
+func TestTerminalOutputNotificationsPreserveTwoObserverBurstAndExactRetries(t *testing.T) {
+	f, session, worker, client, instance, manifest := terminalFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	product := delidevv1connect.NewTerminalServiceClient(http.DefaultClient, f.endpoint.URL)
+	accepted, err := product.CreateTerminal(ctx, ownerRequest(f.identity, &pb.CreateTerminalRequest{Mutation: acctMutation(session, domain.NewID()), Rows: 24, Columns: 80}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value domain.Terminal
+	if domain.Decode(accepted.Msg.Terminal.DocumentJson, &value) != nil {
+		t.Fatal("invalid terminal")
+	}
+	claim := &pb.ClaimTerminalRequest{RequestId: string(domain.NewID()), MachineId: string(value.MachineID), InstanceId: instance, TerminalId: accepted.Msg.Terminal.Id, OperationId: string(value.Pending.ID)}
+	if _, err := client.ClaimTerminal(ctx, ownerRequest(worker, claim)); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(terminal.Result{State: domain.TerminalRunning, Shell: "/fixture/shell", Cwd: manifest.PrimaryPath, Rows: 24, Columns: 80})
+	if _, err := client.ReportTerminal(ctx, ownerRequest(worker, &pb.ReportTerminalRequest{RequestId: string(domain.NewID()), MachineId: claim.MachineId, InstanceId: instance, TerminalId: claim.TerminalId, OperationId: claim.OperationId, ResultJson: raw})); err != nil {
+		t.Fatal(err)
+	}
+	first, err := product.WatchTerminalOutput(ctx, ownerRequest(f.identity, &pb.WatchTerminalOutputRequest{TerminalId: claim.TerminalId}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	if !first.Receive() {
+		t.Fatal("first observer missing snapshot", first.Err())
+	}
+	second, err := product.WatchTerminalOutput(ctx, ownerRequest(f.identity, &pb.WatchTerminalOutputRequest{TerminalId: claim.TerminalId}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	if !second.Receive() {
+		t.Fatal("second observer missing snapshot", second.Err())
+	}
+	epoch := string(domain.NewID())
+	expected := []byte("ordered burst")
+	for i, b := range expected {
+		frame := &pb.PublishTerminalOutputRequest{MachineId: claim.MachineId, InstanceId: instance, TerminalId: claim.TerminalId, Epoch: epoch, Sequence: uint64(i + 1), Data: []byte{b}}
+		if _, err := client.PublishTerminalOutput(ctx, ownerRequest(worker, frame)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := client.PublishTerminalOutput(ctx, ownerRequest(worker, frame)); err != nil {
+			t.Fatal("identical retry rejected", err)
+		}
+		changed := &pb.PublishTerminalOutputRequest{MachineId: frame.MachineId, InstanceId: frame.InstanceId, TerminalId: frame.TerminalId, Epoch: frame.Epoch, Sequence: frame.Sequence, Data: []byte{b ^ 0xff}}
+		if _, err := client.PublishTerminalOutput(ctx, ownerRequest(worker, changed)); connect.CodeOf(err) != connect.CodeAborted {
+			t.Fatal("changed retry accepted", err)
+		}
+	}
+	for _, receive := range []func() ([]byte, uint64, bool){func() ([]byte, uint64, bool) {
+		if !first.Receive() {
+			return nil, 0, false
+		}
+		return first.Msg().Data, first.Msg().Sequence, true
+	}, func() ([]byte, uint64, bool) {
+		if !second.Receive() {
+			return nil, 0, false
+		}
+		return second.Msg().Data, second.Msg().Sequence, true
+	}} {
+		var got []byte
+		var sequence uint64
+		for len(got) < len(expected) {
+			data, next, ok := receive()
+			if !ok {
+				t.Fatal("observer lost burst")
+			}
+			if len(data) == 0 {
+				continue
+			}
+			if next != sequence+1 {
+				t.Fatal("duplicate or reordered output")
+			}
+			sequence = next
+			got = append(got, data...)
+		}
+		if !bytes.Equal(got, expected) {
+			t.Fatal("observers received different ordered bytes")
+		}
 	}
 }
