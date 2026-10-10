@@ -49,6 +49,7 @@ test("environment checker invalidates a warm cache when its development graph ch
     "scripts/ci/package.json",
     "scripts/ci/turbo.json",
     "scripts/ci/from-root.mjs",
+    "scripts/ci/buf-entry.mjs",
     "scripts/dev-environment/verify-turbo.mjs",
     "scripts/dev-environment/process.mjs",
     "scripts/dev-environment/contracts.mjs",

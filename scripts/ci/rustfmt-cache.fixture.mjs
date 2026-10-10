@@ -57,6 +57,7 @@ process.exitCode = result.status ?? 1;
 `);
       write("scripts/ci/turbo.json", JSON.stringify({ extends: ["//"], tasks: { "ci:rust:fmt": task } }));
       write("scripts/ci/from-root.mjs", read("scripts/ci/from-root.mjs"));
+      write("scripts/ci/buf-entry.mjs", read("scripts/ci/buf-entry.mjs"));
       write("rust-toolchain", read("rust-toolchain"));
       write(".nvmrc", read(".nvmrc"));
       write("Cargo.toml", '[workspace]\nmembers = ["crates/example"]\nresolver = "3"\n');
