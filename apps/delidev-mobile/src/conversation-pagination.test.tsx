@@ -35,7 +35,7 @@ vi.mock("./connection", async () => {
 afterEach(cleanup);
 
 
-function fixture(question = false) {
+function fixture(question = false, invalidFresh = "") {
   const state = new ProtectedState({ read: async () => null, write: async () => {} });
   state.state = { version: 1, profiles: [{ id: "profile", name: "Fixture", origin: "https://fixture.invalid", serverId: "server", deviceId: "device", token: "fixture" }], selectedProfile: "profile", language: "en", theme: "system", notifications: false };
   vi.spyOn(state, "load").mockResolvedValue(undefined);
@@ -47,7 +47,7 @@ function fixture(question = false) {
     router.service(SessionService, { listSessions: () => ({ sessions: [session] }), listQueue: request => ({ inputs: request.pageToken ? [resource(EntityKind.QUEUE, "original-input", { prompt: "Input fifty-one" })] : Array.from({ length: 50 }, (_, index) => resource(EntityKind.QUEUE, `queue-${index}`, { prompt: `Input ${index}` })), nextPageToken: request.pageToken ? "" : "queue-exact" }) });
     router.service(ResourceService, {
       listResources: request => request.filter?.kind === EntityKind.INTERACTION ? { resources: request.filter.pageToken ? [interaction] : Array.from({ length: 50 }, (_, index) => resource(EntityKind.INTERACTION, `closed-${index}`, { closure: "closed" })), nextPageToken: request.filter.pageToken ? "" : "interaction-exact" } : { resources: [] },
-      getResource: request => { reads.push(request.id); return { resource: request.kind === EntityKind.INTERACTION ? interaction : session }; },
+      getResource: request => { reads.push(request.id); return { resource: request.kind === EntityKind.INTERACTION ? { ...interaction, id: invalidFresh === "identity" ? "replacement" : interaction.id, revision: invalidFresh === "revision" ? 14n : interaction.revision, schemaVersion: invalidFresh === "schema" ? 99 : interaction.schemaVersion } : session }; },
     });
     router.service(InboxService, { listInbox: () => ({ entries: [] }), getNotificationPreferences: () => ({}) });
   });
@@ -84,4 +84,15 @@ it.each([false, true])("answers the original second-page approval/question (%s) 
   await waitFor(() => expect(f.perform).toHaveBeenCalled());
   expect(f.reads).toContain("original-request");
   expect(f.perform.mock.calls[0]).toMatchObject(["profile", question ? Operation.Question : Operation.Approval, { mutation: { id: "original-request", expectedRevision: 13n } }, "original-request"]);
+});
+
+it.each(["identity", "revision", "schema"])("refuses a second-page response after the fresh original request changes %s", async invalidFresh => {
+  const f = fixture(false, invalidFresh); await openConversation();
+  const requests = screen.getByRole("region", { name: en.interactions });
+  fireEvent.click(await within(requests).findByRole("button", { name: en.more }));
+  await within(requests).findByRole("heading", { name: en.approval });
+  fireEvent.change(within(requests).getByRole("combobox"), { target: { value: "once" } });
+  fireEvent.click(within(requests).getByRole("button", { name: en.submit }));
+  await within(requests).findByRole("alert");
+  expect(f.perform).not.toHaveBeenCalled();
 });

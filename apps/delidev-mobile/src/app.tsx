@@ -1323,7 +1323,7 @@ function Conversation({
                 ResourceService,
                 transport,
               ).getResource({ kind: EntityKind.INTERACTION, id: r.id }, { signal: interactions.signal() });
-              if (!interactions.canWrite(r) || !fresh.resource || fresh.resource.kind !== EntityKind.INTERACTION || fresh.resource.sessionId !== id || fresh.resource.revision !== r.revision || value(fresh.resource).closure !== "open")
+              if (!interactions.canWrite(r) || !fresh.resource || fresh.resource.id !== r.id || !supportsResourceSchema(fresh.resource) || fresh.resource.kind !== EntityKind.INTERACTION || fresh.resource.sessionId !== id || fresh.resource.revision !== r.revision || value(fresh.resource).closure !== "open")
                 throw new Error("stale-request");
               await mutate(
                 question ? Operation.Question : Operation.Approval,
