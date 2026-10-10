@@ -12,22 +12,21 @@ import (
 type MetadataKind string
 
 const (
-	AuthRecoveryStartedObserved   MetadataKind = "auth-recovery-started-observed"
-	AuthRecoveryCompletedObserved MetadataKind = "auth-recovery-completed-observed"
-)
-
-const (
-	AutoReviewReplayChecked    MetadataKind = "auto-review-replay-checked"
-	ThreadIdentityChecked      MetadataKind = "thread-identity-checked"
-	ThreadSettingsChecked      MetadataKind = "thread-settings-checked"
-	RemoteControlDisabled      MetadataKind = "remote-control-disabled"
-	QuotaUnavailable           MetadataKind = "quota-unavailable"
-	RawSupplementDiscarded     MetadataKind = "raw-supplement-discarded"
-	NativeGoalAbsent           MetadataKind = "native-goal-absent"
-	ModelVerificationAbsent    MetadataKind = "model-verification-absent"
-	CodexAppsStartupObserved   MetadataKind = "codex-apps-startup-observed"
-	SkillsChangedDiscarded     MetadataKind = "skills-changed-discarded"
-	FilesystemChangedDiscarded MetadataKind = "filesystem-changed-discarded"
+	AuthRecoveryStartedObserved      MetadataKind = "auth-recovery-started-observed"
+	AuthRecoveryCompletedObserved    MetadataKind = "auth-recovery-completed-observed"
+	AutoReviewReplayChecked          MetadataKind = "auto-review-replay-checked"
+	ThreadIdentityChecked            MetadataKind = "thread-identity-checked"
+	ThreadSettingsChecked            MetadataKind = "thread-settings-checked"
+	RemoteControlDisabled            MetadataKind = "remote-control-disabled"
+	QuotaUnavailable                 MetadataKind = "quota-unavailable"
+	RawSupplementDiscarded           MetadataKind = "raw-supplement-discarded"
+	NativeGoalAbsent                 MetadataKind = "native-goal-absent"
+	ModelVerificationAbsent          MetadataKind = "model-verification-absent"
+	CodexAppsStartupObserved         MetadataKind = "codex-apps-startup-observed"
+	SkillsChangedDiscarded           MetadataKind = "skills-changed-discarded"
+	FilesystemChangedDiscarded       MetadataKind = "filesystem-changed-discarded"
+	ThreadMetadataDiscarded          MetadataKind = "thread-metadata-discarded"
+	ThreadContextSupplementDiscarded MetadataKind = "thread-context-supplement-discarded"
 )
 
 type nativeMCPStartupState string
@@ -91,6 +90,10 @@ func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 	switch native.Method {
 	case "error", "modelProvider/authRecoveryStarted", "modelProvider/authRecoveryCompleted":
 		return c.observeRecoveryTelemetryLocked(native)
+	case "thread/name/updated", "thread/attachment/updated", "project/changed", "thread/project/updated", "thread/prediction/updated", "thread/environment/connected", "thread/environment/disconnected", "thread/readState/changed":
+		return c.observeThreadMetadataLocked(native)
+	case "thread/archived", "thread/deleted", "thread/closed", "thread/unarchived", "thread/queue/changed", "thread/compacted", "thread/reverted":
+		return c.observeThreadLifecycleLocked(native)
 	case "fs/changed":
 		var params struct {
 			WatchID      string   `json:"watchId"`

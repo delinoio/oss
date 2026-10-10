@@ -77,6 +77,7 @@ type executionState struct {
 	contextBase         *ContinuationContextCheckpoint
 	contextOrder        []ContextRecord
 	compaction          *manualCompaction
+	revertAction        domain.ID
 	compactionItems     map[string]compactionItem
 	thread              Thread
 	settings            EffectiveSettings
@@ -279,6 +280,9 @@ func (c *Client) StartTurn(ctx context.Context, requestID, inputID domain.ID, in
 	}
 	params := startTurnParams{ThreadID: c.thread, Input: append(nativeParts, selected...), ClientInputID: inputID, Model: s.Model, Effort: s.Effort, Cwd: s.Cwd, ApprovalPolicy: s.ApprovalPolicy, ApprovalsReviewer: s.ApprovalsReviewer, Sandbox: s.Sandbox, ServiceTier: s.ServiceTier, Collaboration: collaborationMode{Mode: mode, Settings: collaborationSettings{Model: s.Model, Effort: s.Effort}}}
 	op := turnOperation{Action: StartTurnAction, RequestID: requestID, InputID: inputID, Mode: input.Mode, InputDigest: input.InputDigest(), SkillDigest: nativeSkillDigest(selected)}
+	// A new original input ends the prior Revert supplement scope. Its durable
+	// history proof remains independently owned by the continuation checkpoint.
+	state.revertAction = ""
 	response, err := c.callTurnLocked(ctx, op, params)
 	if err != nil {
 		return result, err

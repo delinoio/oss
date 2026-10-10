@@ -14,9 +14,14 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func newSteerFixture(t *testing.T) (*publicationFixture, *pb.SteerQueuedInputRequest) {
+func newSteerFixture(t *testing.T, original ...*authorityFixture) (*publicationFixture, *pb.SteerQueuedInputRequest) {
 	t.Helper()
-	f := newPublicationFixture(t)
+	var f *publicationFixture
+	if len(original) == 0 {
+		f = newPublicationFixture(t)
+	} else {
+		f = publicationFixtureFromAuthority(t, original[0])
+	}
 	f.registerGrant(t)
 	f.publish(t, f.event(domain.ExecutionThreadBound, 1))
 	f.publish(t, f.event(domain.ExecutionInputAccepted, 2))

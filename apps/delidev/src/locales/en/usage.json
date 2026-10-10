@@ -1,7 +1,6 @@
 {
   "usage.measuredUnavailableResponses_5145e5": "<s0/> measured · <s1/> unavailable responses",
   "usage.usage_8d5982": "Usage",
-  "usage.last30DaysByDefaultTimes_70537d": "Last 30 days by default · Times use <s0/>.",
   "usage.fromTime_b9f8b1": "From (<s0/> time)",
   "usage.untilTimeExclusive_4c9f27": "Until (<s0/> time, exclusive)",
   "usage.session_6959b4": "Session",

@@ -1,3 +1,4 @@
+import "./wizard-presentation.css";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { WorkerSourceOrder } from "./worker-source-order";
@@ -200,7 +201,7 @@ export function AgentWorkerSourceWizard({ initial, active, saved, cancel, openAc
   };
   const advance = () => { if (validate(step)) { setStep(step + 1); setProblem(""); focus(); } };
 
-  return <form id={formID} ref={form} className="agent-configuration worker-wizard worker-source-wizard" data-wizard-step={step} noValidate onInvalidCapture={revealAgentInvalidControl} onSubmit={event => {
+  return <form id={formID} ref={form} className="agent-configuration worker-wizard worker-source-wizard desktop-wizard" data-wizard-step={step} noValidate onInvalidCapture={revealAgentInvalidControl} onSubmit={event => {
     event.preventDefault(); if (!active || blocked || step === Step.Harness) return; if (step !== Step.Configure) { advance(); return; }
     if (!validate(Step.Configure) || stale || initial && (!current.data?.resource || current.error)) return;
     if (!form.current?.checkValidity()) { revealAgentInvalidControl(event); form.current?.querySelector<HTMLElement>("input:invalid, select:invalid, textarea:invalid")?.focus(); return; }
@@ -211,7 +212,7 @@ export function AgentWorkerSourceWizard({ initial, active, saved, cancel, openAc
     if (encode(next).byteLength > 1 << 20) { fail(Step.Configure, ownedMessage("agent-worker-wizard.configurationTooLarge")); return; }
     void mutation.send({ mutation: { requestId: newRequestId(), id: initial?.id ?? "", expectedRevision: initial?.revision ?? 0n }, schemaVersion:4,documentJson:encode(next),routeModels:selections });
   }}>
-    {!inTask ? <h2>{initial ? copy("agent-worker-wizard.editAgentWorker") : copy("agent-worker-wizard.newAgentWorker")}</h2> : null}<ol className="worker-steps" aria-label={copy("agent-worker-wizard.workerConfigurationSteps")}>{[Step.Harness, Step.Accounts, Step.Model, Step.Configure].map(value => <li key={value} aria-current={step === value ? "step" : undefined} data-completed={value < step}><span>{value}</span><span>{stepName(value)}</span></li>)}</ol><h3 ref={heading} tabIndex={-1}>{stepName(step)}</h3>
+    {!inTask ? <h2>{initial ? copy("agent-worker-wizard.editAgentWorker") : copy("agent-worker-wizard.newAgentWorker")}</h2> : null}<ol className="worker-steps wizard-progress" aria-label={copy("agent-worker-wizard.workerConfigurationSteps")}>{[Step.Harness, Step.Accounts, Step.Model, Step.Configure].map(value => <li key={value} aria-current={step === value ? "step" : undefined} data-completed={value < step}><span className="wizard-step-number" aria-hidden="true">{value}</span><span>{stepName(value)}</span></li>)}</ol><h3 ref={heading} tabIndex={-1}>{stepName(step)}</h3>
     <fieldset disabled={mutation.busy || mutation.uncertain}>
       <section hidden={step !== Step.Harness}><WorkerHarnessPicker value={data.harness} disabled={blocked || !active} change={chooseHarness} confirm={harness => { chooseHarness(harness); setStep(Step.Accounts); setProblem(""); focus(); }} /></section>
       <div hidden={step !== Step.Accounts}><p>{harnessNames[data.harness as Harness]} <SettingsActionButton icon={SettingsActionIcon.Inspect} type="button" disabled={blocked} onClick={() => { setStep(Step.Harness); focus(); }}>{copy("agent-worker-wizard.changeHarness")}</SettingsActionButton></p></div>

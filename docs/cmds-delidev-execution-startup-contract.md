@@ -30,6 +30,19 @@ Users retain explicit account connection, installation and executable-path edits
 
 ## Interfaces and Contracts
 
+### Native routing and active steering
+
+Version-4 execution assignments use their original startup selection and epoch-bound
+execution grant, without an Installation document or a numeric version gate.
+A non-direct Codex API route must accept its original pre-ready tunnel observation
+so that the actual process can initialize. That observation grants no inference;
+the original validated ready startup still gates provider requests.
+Steering additionally requires that original ready startup and the existing
+account, execution, native-turn and queued-input ownership checks. Missing, failed
+or foreign startup proof cannot steer an active turn. Versions 1–3 retain their
+existing installation version and protocol checks. Neither route reporting nor
+steering discovers a harness, replaces a process or replays input.
+
 ### Main-first allocation closure
 
 Under the feature, the originating change reserved System `EXECUTION_STARTUP_V1 = 43` and Worker

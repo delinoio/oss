@@ -45,5 +45,16 @@
   "pull-requests.thisRepositoryIsNoLongerAvailable_3fa1ad": "이 저장소를 더 이상 사용할 수 없습니다. 저장소 목록을 새로 고쳐 다른 항목을 선택하세요.",
   "pull-requests.configureThisRepositorySGithubProfile_86db03": "요청을 불러오기 전에 저장소 설정에서 이 저장소의 GitHub 프로필, 소유자와 이름을 설정하세요.",
   "pull-requests.chooseTheStateAndOptionalTitle_5fb280": "저장소 설정을 확인한 후 풀 리퀘스트를 자동으로 불러옵니다.",
-  "pull-requests.pendingFix": "수동 PR 수정 · 원격 저장소 <s0/> · PR ID <s1/>"
+  "pull-requests.pendingFix": "수동 PR 수정 · 원격 저장소 <s0/> · PR ID <s1/>",
+  "pull-requests.connectProfileHeading": "GitHub 프로필 연결",
+  "pull-requests.connectProfileHelp": "PR을 불러오려면 선택한 저장소에 연결할 GitHub 프로필을 선택하세요.",
+  "pull-requests.profileLabel": "GitHub 프로필",
+  "pull-requests.connectProfile": "프로필 연결",
+  "pull-requests.needProfile": "프로필이 없나요? GitHub 프로필 설정에서 생성하거나 연결하세요.",
+  "pull-requests.profileSavePending": "저장소 프로필 연결",
+  "pull-requests.reviewRepositorySave": "저장소 설정을 읽고 검토",
+  "pull-requests.retryOriginalProfileSave": "기존 프로필 연결 재시도",
+  "pull-requests.editCurrentRepository": "이 저장소 편집",
+  "pull-requests.profileCapabilityRequired": "저장소 연결에는 현재 서버의 지원이 필요합니다.",
+  "pull-requests.profileSaveUnverified": "저장된 저장소 식별 정보나 리비전을 확인할 수 없습니다. 계속하기 전에 원래 작업을 확인하세요."
 }

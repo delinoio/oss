@@ -109,6 +109,7 @@ func (c *Client) StartCompaction(ctx context.Context, action domain.ID, source C
 	}
 	// Claim before Call. A rejected, partial or lost response cannot erase this
 	// attempt or grant another native send, even under a new request identity.
+	c.execution.revertAction = ""
 	attempt := &manualCompaction{actionID: action, source: cloneCompactionSource(source), previous: cloneCompactedCheckpoint(previous), before: before}
 	c.execution.compaction = attempt
 	defer func() {

@@ -184,7 +184,7 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 			return false, publicationUncertain()
 		}
 		switch event.Metadata {
-		case codex.AutoReviewReplayChecked, codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable, codex.RawSupplementDiscarded, codex.NativeGoalAbsent, codex.ModelVerificationAbsent, codex.CodexAppsStartupObserved, codex.SkillsChangedDiscarded, codex.FilesystemChangedDiscarded, codex.AuthRecoveryStartedObserved, codex.AuthRecoveryCompletedObserved:
+		case codex.AutoReviewReplayChecked, codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable, codex.RawSupplementDiscarded, codex.NativeGoalAbsent, codex.ModelVerificationAbsent, codex.CodexAppsStartupObserved, codex.SkillsChangedDiscarded, codex.FilesystemChangedDiscarded, codex.AuthRecoveryStartedObserved, codex.AuthRecoveryCompletedObserved, codex.ThreadMetadataDiscarded, codex.ThreadContextSupplementDiscarded:
 			// These validated observations grant no new product authority.
 			return true, nil
 		default:

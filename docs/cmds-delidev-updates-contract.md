@@ -45,7 +45,12 @@ Only the existing main/local-* and server-* product document capabilities grant
 it. External/child/remote webviews receive no grant. Label matching cannot replace
 native product-window registry admission, original saved binding, lifetime epoch,
 server checks or confirmation. Validate actual generated manifests and resolved
-permissions against the existing OAuth control; those fixtures establish ACL
+permissions against the existing OAuth control. Reserve the initial Local as
+`main`, then assert exact distinct `local-*` and `server-*` labels and roles
+before resolution. A controlled copy of generated capabilities must remove only
+main's updater admission: the complete updater gate fails while Local, Saved and
+main's OAuth control remain admitted. Preserve external-child, remote-origin,
+unregistered and runtime-registry denials. These fixtures establish ACL
 behavior, separately from real native installation acceptance.
 
 ### cmds/delidev-cli constraints

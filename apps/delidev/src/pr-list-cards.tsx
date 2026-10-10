@@ -1,15 +1,49 @@
 // SPDX-License-Identifier: Apache-2.0
 import { Timestamp, TimestampMode } from "./timestamp-display";
-import type { ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { SettingsActionGlyph, SettingsActionIcon } from "./settings-action";
 import type { Resource } from "@delinoio/delidev-api-client";
 import { resourceName, items, object, text, type Document } from "./documents";
 import { ItemKind, QueryOperation, type GitHubQuery } from "./github-query-model";
 import { LocalizedText, copy, useLocale } from "./localization";
 import "./pr-list-cards.css";
 
+function PRRefreshButton({ disabled, refresh }: { disabled: boolean; refresh: () => void }) {
+  const label = copy("github-items.refreshGithubResults_bd77c0"), tooltipId = useId();
+  const [tooltip, setTooltip] = useState<{ left: number; top: number }>();
+  const tooltipRef = useRef<HTMLDivElement>(null);
+  const visible = Boolean(tooltip);
+  useLayoutEffect(() => {
+    if (!tooltip || !tooltipRef.current) return;
+    const zoom = Number(getComputedStyle(document.body).zoom) || 1;
+    const top = Math.max(8, Math.min(tooltip.top, window.innerHeight / zoom - tooltipRef.current.getBoundingClientRect().height / zoom - 8));
+    if (top !== tooltip.top) setTooltip({ ...tooltip, top });
+  }, [tooltip, label]);
+  useEffect(() => {
+    if (!visible) return;
+    const hide = () => setTooltip(undefined);
+    window.addEventListener("scroll", hide, true);
+    window.addEventListener("resize", hide);
+    return () => { window.removeEventListener("scroll", hide, true); window.removeEventListener("resize", hide); };
+  }, [visible]);
+  const reveal = (button: HTMLButtonElement) => {
+    const rect = button.getBoundingClientRect(), zoom = Number(getComputedStyle(document.body).zoom) || 1;
+    const width = window.innerWidth / zoom;
+    setTooltip({ left: Math.max(8, Math.min(rect.left / zoom, width - Math.min(280, width - 16) - 8)), top: rect.bottom / zoom + 8 });
+  };
+  return <><button className="pr-list-refresh" type="button" aria-label={label} aria-describedby={tooltip ? tooltipId : undefined} disabled={disabled} onClick={refresh}
+    onPointerEnter={event => reveal(event.currentTarget)}
+    onPointerLeave={event => { if (document.activeElement !== event.currentTarget) setTooltip(undefined); }}
+    onFocus={event => reveal(event.currentTarget)} onBlur={() => setTooltip(undefined)}
+    onKeyDown={event => { if (event.key === "Escape") setTooltip(undefined); }}>
+    <SettingsActionGlyph icon={SettingsActionIcon.Refresh} />
+  </button>{tooltip ? createPortal(<div id={tooltipId} ref={tooltipRef} role="tooltip" className="settings-action-tooltip" style={tooltip}>{label}</div>, document.body) : null}</>;
+}
+
 export function PRListHeader({ selected, pending, reading, reloadRequired = false, refresh }: { selected: Resource; pending?: ReactNode; reading: boolean; reloadRequired?: boolean; refresh: () => void }) {
   useLocale();
-  return <><header className="pr-list-header"><div><h2>{copy("pull-requests.pullRequests_d9e3f2")}</h2><p>{resourceName(selected)}</p></div><button type="button" disabled={reading || reloadRequired} onClick={refresh}>{copy("github-items.refreshGithubResults_bd77c0")}</button></header>{pending}</>;
+  return <><header className="pr-list-header"><div><h2>{copy("pull-requests.pullRequests_d9e3f2")}</h2><p>{resourceName(selected)}</p></div><PRRefreshButton disabled={reading || reloadRequired} refresh={refresh} /></header>{pending}</>;
 }
 
 // Only validated standalone list/search pages use cards. The server's original

@@ -22,5 +22,7 @@
   "queue.moveUp": "Move up",
   "queue.moveDown": "Move down",
   "queue.retryMove": "Retry the same movement",
-  "queue.moved": "Waiting input moved."
+  "queue.moved": "Waiting input moved.",
+  "queue.rejectedImageInputs_one": "{{count}} input rejected because images are unsupported",
+  "queue.rejectedImageInputs_other": "{{count}} inputs rejected because images are unsupported"
 }

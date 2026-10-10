@@ -2,7 +2,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { EntityKind, InboxService, IntegrationService, NotificationPreferencesSchema, ResourceSchema, ResourceService, SessionService, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { ConfigurationService, EntityKind, InboxService, IntegrationService, NotificationPreferencesSchema, ResourceSchema, ResourceService, SessionService, SystemService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { App } from "./App";
 import { encode, resourceName } from "./documents";
 import { i18n, SupportedLanguage } from "./localization";
@@ -11,16 +11,17 @@ const repositoryId = "0195c9c0-7b13-7000-8000-000000000001";
 function repository(name = "Example repository") {
   return create(ResourceSchema, { id: repositoryId, kind: EntityKind.REPOSITORY, revision: 1n, schemaVersion: 1, documentJson: encode({ name, integration_id: newRequestId(), github_owner: "owner", github_name: "repo" }) });
 }
-function fixture(rows = [repository()]) {
+function fixture(rows = [repository()], setup?: { profiles: Resource[]; job: Resource; save: (request: { mutation?: { requestId: string } }) => Promise<{ requestId?: string; job: Resource }> }) {
   let failure: Code | undefined;
   let gate: Promise<void> | undefined;
   const list = vi.fn(async (request: { filter?: { kind: EntityKind; pageToken: string } }) => {
+    if (request.filter?.kind === EntityKind.INTEGRATION && setup) return { resources: setup.profiles };
     if (request.filter?.kind !== EntityKind.REPOSITORY) return { resources: [] };
     if (gate) await gate;
     if (failure) throw new ConnectError("Catalog request failed", failure);
     return request.filter.pageToken ? { resources: [] } : { resources: rows, ...(rows.length ? { nextPageToken: "repository-next" } : {}) };
   });
-  const get = vi.fn(async (request: { id: string }) => ({ resource: rows.find((row) => row.id === request.id) }));
+  const get = vi.fn(async (request: { id: string }) => ({ resource: [...rows, ...(setup ? [...setup.profiles, setup.job] : [])].find((row) => row.id === request.id) }));
   const query = vi.fn(async (request: { repositoryId: string; queryJson: Uint8Array }) => {
     const row = rows.find((row) => row.id === request.repositoryId)!;
     const config = JSON.parse(new TextDecoder().decode(row.documentJson));
@@ -31,6 +32,7 @@ function fixture(rows = [repository()]) {
   const preferences = create(NotificationPreferencesSchema, { revision: 1n });
   const transport = createRouterTransport((router) => {
     router.service(SystemService, { getStatus: () => ({ version: "0.1.0", protocolVersion: 1 }) });
+    if (setup) router.service(ConfigurationService, { saveConfiguration: request => setup.save(request) });
     router.service(SessionService, { listSessions: () => ({ sessions: [] }) });
     router.service(ResourceService, { listResources: list, getResource: get });
     router.service(InboxService, { listInbox: () => ({ entries: [] }), getNotificationPreferences: () => ({ preferences }) });
@@ -297,8 +299,24 @@ it("uses standalone cards with exact UTC precision, Draft and unknown author evi
   expect(card.querySelector("time")?.textContent).toBe(updated); expect(screen.getByText(observed).getAttribute("datetime")).toBe(observed);
   expect(screen.getByText("Open · Page 1 · 20 per page")).toBeTruthy();
   expect(view.container.querySelector(".pending-pr-actions")?.getAttribute("data-empty")).toBe("true");
-  expect(screen.getAllByRole("button", { name: "Refresh GitHub results" })).toHaveLength(1);
+  const refresh = screen.getByRole("button", { name: "Refresh GitHub results" });
+  expect(refresh.textContent).toBe("");
+  expect(refresh.querySelector('svg[aria-hidden="true"][focusable="false"]')).toBeTruthy();
+  fireEvent.pointerEnter(refresh);
+  expect(screen.getByRole("tooltip").textContent).toBe("Refresh GitHub results");
+  expect(screen.getByRole("tooltip").getAttribute("tabindex")).toBeNull();
+  expect(value.query).toHaveBeenCalledTimes(1);
+  fireEvent.keyDown(refresh, { key: "Escape" });
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  fireEvent.focus(refresh); fireEvent.blur(refresh);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  fireEvent.pointerEnter(refresh); fireEvent.scroll(window);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  fireEvent.focus(refresh); fireEvent.resize(window);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  fireEvent.focus(refresh);
   await act(() => i18n.changeLanguage(SupportedLanguage.Korean));
+  expect(screen.getByRole("tooltip").textContent).toBe(refresh.getAttribute("aria-label"));
   expect(card.querySelector("time")?.textContent).toBe(updated); expect(screen.getByText(observed).textContent).toBe(observed); expect(value.query).toHaveBeenCalledTimes(1);
 });
 
@@ -510,4 +528,52 @@ it.each(["invalid", "composing"])("applies State and page size with the last val
  expect(submitted(value, 3)).toMatchObject({ search: "accepted", state: "closed", page: 1, page_size: 5 });
  await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
  expect(value.query).toHaveBeenCalledTimes(4);
+});
+
+
+it("requires explicit verified profile selection and retains admission until job success and fresh metadata", async () => {
+  const row = repository(); const original = { name: "Example repository", github_owner: "owner", github_name: "repo", checkouts: [], nested: { preserved: true } }; row.documentJson = encode(original);
+  const profile = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.INTEGRATION, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Disconnected profile" }) });
+  const job = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.JOB, revision: 1n, schemaVersion: 1, documentJson: encode({ state: "queued" }) });
+  const save = vi.fn(async (request: { mutation?: { requestId: string } }) => ({ requestId: request.mutation?.requestId, job }));
+  const value = fixture([row], { profiles: [profile], job, save }); render(<App transport={value.transport} />); await open(); await choose(row);
+  await screen.findByRole("heading", { name: "Connect a GitHub profile" });
+  const connect = screen.getByRole("button", { name: "Connect profile" }) as HTMLButtonElement;
+  expect(connect.disabled).toBe(true); expect(value.query).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("combobox", { name: "GitHub profile" })); fireEvent.click(await screen.findByRole("option", { name: "Disconnected profile" }));
+  await waitFor(() => expect(connect.disabled).toBe(false)); expect(save).not.toHaveBeenCalled(); expect(value.query).not.toHaveBeenCalled();
+  fireEvent.click(connect); await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+  const request = save.mock.calls[0][0] as unknown as { mutation: { id: string; expectedRevision: bigint }; documentJson: Uint8Array };
+  expect(request.mutation).toMatchObject({ id: row.id, expectedRevision: 1n });
+  expect(JSON.parse(new TextDecoder().decode(request.documentJson))).toEqual({ ...original, integration_id: profile.id });
+  await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish."); expect(value.query).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  row.revision = 2n; row.documentJson = encode({ ...original, integration_id: profile.id });
+  job.revision = 2n; job.documentJson = encode({ state: "succeeded", output: { id: row.id, revision: "2" } });
+  await open(); await waitFor(() => expect(value.query).toHaveBeenCalledTimes(1), { timeout: 4000 });
+  expect(save).toHaveBeenCalledTimes(1);
+});
+
+it("opens targeted repository setup for missing owner without an inline profile choice", async () => {
+  const row = repository(); row.documentJson = encode({ name: "Example repository", github_name: "repo" });
+  const value = fixture([row]); render(<App transport={value.transport} />); await open(); await choose(row);
+  expect(screen.queryByRole("combobox", { name: "GitHub profile" })).toBeNull();
+  fireEvent.click(await screen.findByRole("button", { name: "Edit this repository" }));
+  await waitFor(() => expect(document.querySelector(".repository-editor")).toBeTruthy());
+  expect(value.get.mock.calls.some(([request]) => request.id === row.id)).toBe(true);
+  expect(value.query).not.toHaveBeenCalled();
+});
+
+it("keeps an admitted save unresolved when succeeded job output identifies another repository", async () => {
+  const row = repository(); row.documentJson = encode({ name: "Example repository", github_owner: "owner", github_name: "repo" });
+  const profile = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.INTEGRATION, revision: 1n, schemaVersion: 1, documentJson: encode({ name: "Selected profile" }) });
+  const job = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.JOB, revision: 1n, schemaVersion: 1, documentJson: encode({ state: "succeeded", output: { id: newRequestId(), revision: "2" } }) });
+  const save = vi.fn(async (request: { mutation?: { requestId: string } }) => ({ requestId: request.mutation?.requestId, job }));
+  const value = fixture([row], { profiles: [profile], job, save }); render(<App transport={value.transport} />); await open(); await choose(row);
+  fireEvent.click(await screen.findByRole("combobox", { name: "GitHub profile" })); fireEvent.click(await screen.findByRole("option", { name: "Selected profile" }));
+  const button = screen.getByRole("button", { name: "Connect profile" }) as HTMLButtonElement;
+  await waitFor(() => expect(button.disabled).toBe(false)); fireEvent.click(button);
+  await screen.findByText("The saved repository identity or revision could not be verified. Inspect the original operation before continuing.");
+  expect(value.query).not.toHaveBeenCalled(); expect(button.disabled).toBe(true);
+  fireEvent.click(button); expect(save).toHaveBeenCalledTimes(1);
 });
