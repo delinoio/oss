@@ -560,7 +560,7 @@ test("package-local CI commands and deterministic cache boundaries are explicit"
   assert.equal(packages["package.json"].scripts["proto:fresh"], "turbo run ci:proto:fresh --filter=@delinoio/ci");
   const ciTasks = JSON.parse(readFileSync(`${root}/scripts/ci/turbo.json`, "utf8")).tasks;
   assert.equal(ciTasks["ci:proto:fresh"].cache, false);
-  assert.match(readFileSync(`${root}/scripts/ci/protocol-fresh.mjs`, "utf8"), /run\("node", \["node_modules\/@bufbuild\/buf\/bin\/buf", "generate"\]\)/u);
+  assert.match(readFileSync(`${root}/scripts/ci/protocol-fresh.mjs`, "utf8"), /run\("node", \[resolveBufEntry\(cwd\), "generate"\]\)/u);
   const adminScripts = packages["apps/devhud-admin/package.json"].scripts;
   for (const task of ["build:embedded", "verify:embedded"]) {
     assert.match(adminScripts[task], /^pnpm --filter @delinoio\/devhud-api-client build && pnpm build &&/u, task);

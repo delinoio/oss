@@ -6,20 +6,27 @@ import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
+import { resolveBufEntry } from "./buf-entry.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const manifest = JSON.parse(readFileSync(join(root, "scripts/ci/package.json"), "utf8"));
 const generatedPaths = ["protos/gen", "packages/devhud-api-client/src/gen", "packages/async-commit-hook-api-client/src/gen", "packages/delidev-api-client/src/gen"];
 
-function fixture(t) {
+const fixtureBin = "runtime/Buf entry & shell; .cjs";
+
+function fixture(t, installed = false) {
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), "protocol launcher with spaces ")));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
   const write = (path, body) => {
     mkdirSync(dirname(join(cwd, path)), { recursive: true });
     writeFileSync(join(cwd, path), body);
   };
-  for (const name of ["from-root.mjs", "protocol-fresh.mjs"]) {
+  for (const name of ["from-root.mjs", "protocol-fresh.mjs", "buf-entry.mjs"]) {
     write(`scripts/ci/${name}`, readFileSync(join(root, "scripts/ci", name), "utf8"));
+  }
+  if (!installed) {
+    write("node_modules/@bufbuild/buf/package.json", JSON.stringify({ name: "@bufbuild/buf", bin: { buf: fixtureBin } }));
+    write(`node_modules/@bufbuild/buf/${fixtureBin}`, "console.log(JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2) }));\n");
   }
   const run = (args, options = {}) => spawnSync(process.execPath, args, {
     cwd: join(cwd, "scripts/ci"), encoding: "utf8", shell: false, timeout: 30_000, ...options,
@@ -46,8 +53,12 @@ function trace(f, outcome = { status: 0 }) {
     childProcess.spawn = (command, args, options) => {
       capture(command, args, options);
       const child = new EventEmitter();
-      child.kill = () => true;
-      process.nextTick(() => outcome.error ? child.emit("error", new Error(outcome.error)) : child.emit("exit", outcome.status, null));
+      child.kill = (signal) => {
+        console.log(JSON.stringify({ kind: "forwarded", signal }));
+        child.emit("exit", null, signal);
+        return true;
+      };
+      process.nextTick(() => outcome.signal ? process.emit(outcome.signal) : outcome.error ? child.emit("error", new Error(outcome.error)) : child.emit("exit", outcome.status, null));
       return child;
     };
     syncBuiltinESMExports();
@@ -67,7 +78,7 @@ test("lint, format and freshness dispatch the installed Buf entry through the cu
     const { result, calls } = run(name);
     assert.equal(result.status, 0, result.stdout + result.stderr);
     assert.deepEqual(calls.map(({ command, args, options }) => ({ command, args, options: { ...options, cwd: resolve(options.cwd) } })), [{
-      command: process.execPath, args: ["node_modules/@bufbuild/buf/bin/buf", ...args],
+      command: process.execPath, args: [join(f.cwd, "node_modules/@bufbuild/buf", fixtureBin), ...args],
       options: { cwd: f.cwd, stdio: "inherit", shell: false },
     }]);
   }
@@ -81,7 +92,7 @@ test("lint, format and freshness dispatch the installed Buf entry through the cu
   assert.equal(fresh.status, 0, fresh.stdout + fresh.stderr);
   const syncCalls = fresh.stdout.trim().split(/\r?\n/u).map((line) => JSON.parse(line));
   assert.deepEqual(syncCalls.map(({ command, args }) => ({ command, args })), [
-    { command: process.execPath, args: ["node_modules/@bufbuild/buf/bin/buf", "generate"] },
+    { command: process.execPath, args: [join(f.cwd, "node_modules/@bufbuild/buf", fixtureBin), "generate"] },
     { command: process.execPath, args: ["scripts/delidev/proto-compat.mjs"] },
     { command: "git", args: ["diff", "--exit-code", "--", ...generatedPaths] },
     { command: "git", args: ["ls-files", "--others", "--exclude-standard", "--", ...generatedPaths] },
@@ -121,7 +132,7 @@ test("from-root preserves spaces and shell metacharacters in literal Node argv",
 });
 
 function installedFixture(t) {
-  const f = fixture(t);
+  const f = fixture(t, true);
   symlinkSync(join(root, "node_modules"), join(f.cwd, "node_modules"), process.platform === "win32" ? "junction" : "dir");
   // Remove all Buf executable/shim directories, including pnpm's inherited bins.
   // Preserve native Git for freshness inspection and normal OS runtime lookup.
@@ -135,7 +146,7 @@ function installedFixture(t) {
   f.write("buf.yaml", "version: v2\nmodules:\n  - path: protos\nlint:\n  use:\n    - STANDARD\n");
   const schema = 'syntax = "proto3";\n\npackage fixture.v1;\n\nmessage Fixture {\n  string value = 1;\n}\n';
   f.write("protos/fixture/v1/fixture.proto", schema);
-  const buf = (...args) => spawnSync(process.execPath, ["node_modules/@bufbuild/buf/bin/buf", ...args], {
+  const buf = (...args) => spawnSync(process.execPath, [resolveBufEntry(f.cwd), ...args], {
     cwd: f.cwd, env, encoding: "utf8", shell: false, timeout: 30_000,
   });
   const leaf = (name) => f.leaf(name, { env });
@@ -215,4 +226,69 @@ test("installed Buf generation retains compatibility, failure status and tracked
   assert.notEqual(generation.status, 0);
   result = f.leaf("fresh");
   assert.equal(result.status, generation.status, result.stdout + result.stderr);
+});
+
+
+test("Buf uses the declared package entry and preserves literal arguments", (t) => {
+  const f = fixture(t);
+  const args = ["with spaces", "& echo injected > shell-ran", "; echo injected", "$(echo injected)", "`echo injected`", "*", "한글"];
+  const result = f.run(["from-root.mjs", "buf", ...args]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const output = result.stdout.split(/\r?\n/u).find((line) => line.startsWith('{"cwd"'));
+  assert.deepEqual(JSON.parse(output), { cwd: f.cwd, args });
+  assert.equal(existsSync(join(f.cwd, "shell-ran")), false);
+  // Extensionless npm bins must prove a Node shebang, as the pinned Buf does.
+  f.write("node_modules/@bufbuild/buf/launcher", "#!/usr/bin/env node\n");
+  f.write("node_modules/@bufbuild/buf/package.json", JSON.stringify({ name: "@bufbuild/buf", bin: { buf: "launcher" } }));
+  assert.equal(resolveBufEntry(f.cwd), join(f.cwd, "node_modules/@bufbuild/buf/launcher"));
+});
+
+test("Buf resolution rejects missing, malformed, oversized and escaping package entries before launch", (t) => {
+  const f = fixture(t);
+  const packageRoot = join(f.cwd, "node_modules/@bufbuild/buf");
+  const entries = [undefined, null, 7, "", "missing.cjs", "../outside.cjs", "../../../../outside.cjs", "/absolute.cjs", "C:\\absolute.cjs", "C:drive-relative.cjs", "bin\\entry.cjs", "launcher", ".", "x".repeat(4097)];
+  f.write("outside.cjs", "throw new Error('escaped entry ran');\n");
+  f.write("node_modules/@bufbuild/buf/launcher", "#!/bin/sh\nexit 0\n");
+  for (const entry of entries) {
+    f.write("node_modules/@bufbuild/buf/package.json", JSON.stringify({ name: "@bufbuild/buf", bin: { buf: entry } }));
+    for (const args of [["from-root.mjs", "buf", "lint"], ["protocol-fresh.mjs"]]) {
+      const result = f.run(args);
+      assert.notEqual(result.status, 0, String(entry));
+      assert.equal(result.stdout, "", "Invalid resolution must stop before any child dispatch");
+    }
+  }
+  f.write("node_modules/@bufbuild/buf/launcher", "#!/bin/sh node\n");
+  f.write("node_modules/@bufbuild/buf/package.json", JSON.stringify({ name: "@bufbuild/buf", bin: { buf: "launcher" } }));
+  assert.throws(() => resolveBufEntry(f.cwd), /not a Node entry/u);
+  for (const body of ["{", "null", JSON.stringify({ name: "another-package", bin: { buf: fixtureBin } }), " ".repeat(64 * 1024 + 1)]) {
+    f.write("node_modules/@bufbuild/buf/package.json", body);
+    assert.throws(() => resolveBufEntry(f.cwd));
+  }
+  rmSync(join(packageRoot, "package.json"));
+  assert.throws(() => resolveBufEntry(f.cwd));
+  rmSync(packageRoot, { recursive: true });
+  assert.throws(() => resolveBufEntry(f.cwd));
+});
+
+test("Buf resolution rejects a symlinked entry outside its installed package", (t) => {
+  const f = fixture(t);
+  f.write("outside.cjs", "throw new Error('escaped entry ran');\n");
+  const entry = join(f.cwd, "node_modules/@bufbuild/buf/link.cjs");
+  try {
+    symlinkSync(join(f.cwd, "outside.cjs"), entry, "file");
+  } catch (error) {
+    if (process.platform === "win32" && error.code === "EPERM") return t.skip("File symlinks require Windows permission");
+    throw error;
+  }
+  f.write("node_modules/@bufbuild/buf/package.json", JSON.stringify({ name: "@bufbuild/buf", bin: { buf: "link.cjs" } }));
+  assert.throws(() => resolveBufEntry(f.cwd), /contained file/u);
+});
+
+test("Buf launch forwards cancellation and retains the child's signal outcome", (t) => {
+  const f = fixture(t);
+  const run = trace(f, { signal: "SIGTERM" });
+  const { result } = run("lint");
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout, /"kind":"forwarded","signal":"SIGTERM"/u);
+  assert.match(result.stdout, /"event":"ci_task_exit","command":"buf","code":null,"signal":"SIGTERM"/u);
 });
