@@ -437,7 +437,9 @@ func (s *Service) refreshNativeAppsEffect(ctx context.Context, identity question
 	if !needed {
 		return nil, nil
 	}
-	inventory, _, _, err := s.observeNativeApps(ctx, scope, false)
+	// Refresh the original installed catalog before first release; a cached
+	// snapshot cannot prove native revocation during the approval wait.
+	inventory, _, _, err := s.observeNativeApps(ctx, scope, true)
 	if err != nil {
 		return nil, err
 	}
