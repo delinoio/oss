@@ -122,7 +122,7 @@ export function SubscriptionRail({ enabled, manage, focusFallback = () => undefi
       {!unavailable && remainingBadge(account.windows, now) === undefined ? <p>{copy("subscription-rail.incomplete")}</p> : null}
       {account.windows.length ? account.windows.map((window, index) => <QuotaWindow key={`${window.id}:${index}`} window={window} index={index} now={now} unavailable={unavailable} />) : <p>{copy("subscription-rail.unknown")}</p>}
       <div className="subscription-account-actions">
-        <button type="button" disabled={!allowed || Boolean(query.loading)} onClick={query.refresh}>{copy("account-connection.inline.railRecheck")}</button>
+        <button type="button" disabled={!allowed || Boolean(query.loading)} onClick={query.refreshExplicit}>{copy("account-connection.inline.railRecheck")}</button>
         <button type="button" onClick={() => { close(); manage(); }}>{copy("subscription-rail.manage")}</button>
       </div>
     </div>, document.body) : null}
