@@ -12,6 +12,7 @@ import { SessionControlProvider } from "./session-control";
 import { LocalizedText, copy, useLocale } from "./localization";
 import type { UsageEntry } from "./usage-entry";
 import type { ServerPresentation } from "./server-presentation";
+import { ProductIdentityScope } from "./product-identity-labels";
 import { LocalConnectionPresentationProvider } from "./local-connection-presentation";
 import { useCallback, useEffect, useLayoutEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { type Transport } from "@connectrpc/connect";
@@ -207,7 +208,7 @@ export function App({ transport, localServer, serverPresentation, connectionSett
   const client = connection.client;
   useEffect(() => connection.activate(), [connection]);
   useEffect(() => { if (connectionReady) void client.invalidateQueries({ refetchType: "active" }); }, [client, connectionReady, connectionEpoch]);
-  return <SidebarPreferenceBoundary><TransportProvider transport={transport}><QueryClientProvider key={connection.id} client={client}><NotificationProvider><MutationIntents><SessionTabsProvider><SessionSubmissionsProvider><ImageDraftProvider><PRWorkflowProvider><ShortcutProvider><SessionNameEditorProvider><Shell connectionReady={connectionReady} pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} connectionSettings={connectionSettings} connectionTarget={connectionTarget} onConnectionHelp={onConnectionHelp} localServer={localServer} serverPresentation={serverPresentation} readLocalWorker={readLocalWorker} /></SessionNameEditorProvider></ShortcutProvider></PRWorkflowProvider></ImageDraftProvider></SessionSubmissionsProvider></SessionTabsProvider></MutationIntents></NotificationProvider></QueryClientProvider></TransportProvider></SidebarPreferenceBoundary>;
+  return <SidebarPreferenceBoundary><TransportProvider transport={transport}><QueryClientProvider key={connection.id} client={client}><ProductIdentityScope scope={connection.id}><NotificationProvider><MutationIntents><SessionTabsProvider><SessionSubmissionsProvider><ImageDraftProvider><PRWorkflowProvider><ShortcutProvider><SessionNameEditorProvider><Shell connectionReady={connectionReady} pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} connectionSettings={connectionSettings} connectionTarget={connectionTarget} onConnectionHelp={onConnectionHelp} localServer={localServer} serverPresentation={serverPresentation} readLocalWorker={readLocalWorker} /></SessionNameEditorProvider></ShortcutProvider></PRWorkflowProvider></ImageDraftProvider></SessionSubmissionsProvider></SessionTabsProvider></MutationIntents></NotificationProvider></ProductIdentityScope></QueryClientProvider></TransportProvider></SidebarPreferenceBoundary>;
 }
 
 // The connection owns submitted drafts even while another Session is mounted.

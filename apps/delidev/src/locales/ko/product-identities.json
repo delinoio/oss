@@ -1,0 +1,22 @@
+{
+  "resource": "리소스",
+  "project": "프로젝트",
+  "repository": "저장소",
+  "account": "계정",
+  "provider": "제공자",
+  "agent": "Agent Worker",
+  "session": "세션",
+  "backup": "백업",
+  "connection": "연결",
+  "server": "서버",
+  "device": "기기",
+  "worker": "Runner Device",
+  "execution": "실행",
+  "request": "요청",
+  "schedule": "일정",
+  "notification": "알림",
+  "operation": "작업",
+  "reference": "참조",
+  "numbered": "{{kind}} {{number}}",
+  "unavailable": "{{kind}} 이름을 확인할 수 없습니다"
+}

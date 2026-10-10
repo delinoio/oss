@@ -1,0 +1,22 @@
+{
+  "resource": "Resource",
+  "project": "Project",
+  "repository": "Repository",
+  "account": "Account",
+  "provider": "Provider",
+  "agent": "Agent Worker",
+  "session": "Session",
+  "backup": "Backup",
+  "connection": "Connection",
+  "server": "Server",
+  "device": "Device",
+  "worker": "Runner Device",
+  "execution": "Execution",
+  "request": "Request",
+  "schedule": "Schedule",
+  "notification": "Notification",
+  "operation": "Operation",
+  "reference": "Reference",
+  "numbered": "{{kind}} {{number}}",
+  "unavailable": "{{kind}} name unavailable"
+}
