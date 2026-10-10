@@ -67,7 +67,7 @@ it("rejects missing and invalid assets through the real core loader", async () =
 });
 it("bounds public measurement before engine and queue resize", async () => {
   const value=await core(),host=document.createElement("div");document.body.append(host);let pixels=100000;
-  vi.spyOn(HTMLElement.prototype,"getBoundingClientRect").mockImplementation(function(){return {width:this===host?pixels:8,height:this===host?pixels:17,left:0,right:8,top:0,bottom:17,x:0,y:0,toJSON:()=>({})};});
+  vi.spyOn(HTMLElement.prototype,"getBoundingClientRect").mockImplementation(function(this: HTMLElement){return {width:this===host?pixels:8,height:this===host?pixels:17,left:0,right:8,top:0,bottom:17,x:0,y:0,toJSON:()=>({})};});
   const terminal=new WTerm(host,{core:value,autoResize:false,autoFocus:false,inputEnabled:false});
   try {await terminal.init();expect(terminal.measureDimensions()).toEqual({cols:1000,rows:500});pixels=1;expect(terminal.measureDimensions()).toEqual({cols:1,rows:1});pixels=0;expect(terminal.measureDimensions()).toBeNull();}
   finally{terminal.destroy();value.dispose();host.remove();}
