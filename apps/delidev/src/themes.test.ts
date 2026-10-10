@@ -63,3 +63,12 @@ test("all native modal backdrops use the same subtle dimming token without surfa
     expect(rule.declarations, rule.filename).not.toMatch(/backdrop-filter|animation|box-shadow/);
   }
 });
+
+test("Revert secondary text retains contrast on its resting and hover surfaces", () => {
+  const appearances = JSON.parse(readFileSync(join(directory, "appearance-palettes.json"), "utf8")) as Record<string, Record<string, Record<string, string>>>;
+  for (const [name, modes] of Object.entries(appearances)) for (const [mode, palette] of Object.entries(modes)) {
+    for (const surface of ["background", "surface-hover"]) {
+      expect(contrast(palette["text-secondary"], palette[surface]), `${name}/${mode}: Revert on ${surface}`).toBeGreaterThanOrEqual(4.5);
+    }
+  }
+});

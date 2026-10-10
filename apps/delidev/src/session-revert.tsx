@@ -55,7 +55,7 @@ export function useSessionRevert({session,active,draft,restore,composer,blocked,
   setSelected(undefined);
   void mutation.send({mutation:{id:session.id,expectedRevision:session.revision,requestId:action},messageId:selected.row.id,beforeTurnId:text(target.native_turn_id),expectedContextRevision:context});
  };
- const action=(row:Resource)=>revertEligible(session,row,supported)?<button type="button" disabled={blocked || mutation.busy || mutation.uncertain || Boolean(pending)} onClick={()=>open(row)}>{copy("session.revertAndEdit")}</button>:null;
+ const action=(row:Resource)=>revertEligible(session,row,supported)?<button className="session-revert-action" type="button" disabled={blocked || mutation.busy || mutation.uncertain || Boolean(pending)} onClick={()=>open(row)}>{copy("session.revertAndEdit")}</button>:null;
  const content=<>
  {selected ? <Modal title={copy("session.revertAndEdit")} close={()=>setSelected(undefined)} focusClose trapFocus><p>{copy("session.revertConfirmation")}</p><pre className="revert-prompt">{text(document(selected.row).text)}</pre>{draft ? <p>{copy("session.revertDraftWarning")}</p>:null}<button type="button" disabled={blocked || mutation.busy || mutation.uncertain || Boolean(pending) || selected.source.revision!==session?.revision} onClick={confirm}>{copy("session.revertAndEdit")}</button></Modal>:null}
  {pending ? <p role="status">{copy("session.revertPending")}</p>:null}

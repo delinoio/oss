@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-import { act, render, screen, within } from "@testing-library/react";
-import { afterEach, expect, it } from "vitest";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
 import { SubmissionStatus, TranscriptItem, messageRows } from "./session";
 import { transcriptResource, transcriptRoleFixtures, transcriptSessionId } from "./transcript-role-fixtures";
 import { copy, i18n } from "./localization";
@@ -92,4 +92,26 @@ it.each(["en", "ko"])("keeps every projected delivery status without a visible r
   expect(screen.getAllByRole("status")).toHaveLength(phases.length);
   for (const status of screen.getAllByRole("status")) expect(status.textContent?.length).toBeGreaterThan(0);
   expect(container.querySelector("strong")).toBeNull();
+});
+
+it("keeps Revert outside the user bubble in the same stable transcript item", () => {
+  const resource = transcriptResource(transcriptRoleFixtures().user), open = vi.fn();
+  const action = <button className="session-revert-action" onClick={open}>Revert and edit</button>;
+  const renderRow = (eligible: boolean) => <div data-payload-page="original"><TranscriptItem resource={resource} actions={<button>Existing turn action</button>} revertAction={eligible ? action : null}/></div>;
+  const { container, rerender } = render(renderRow(true));
+  const bubble = screen.getByLabelText("User message"), item = bubble.parentElement;
+  const page = container.querySelector('[data-payload-page]');
+  expect(item?.className).toBe("message-user-item");
+  expect(item?.parentElement).toBe(page);
+  expect(within(bubble).queryByRole("button", { name: "Revert and edit" })).toBeNull();
+  expect(within(bubble).getByRole("button", { name: "Existing turn action" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Revert and edit" }).parentElement).toBe(bubble.nextElementSibling);
+  fireEvent.click(screen.getByRole("button", { name: "Revert and edit" })); expect(open).toHaveBeenCalledTimes(1);
+  rerender(renderRow(false));
+  expect(screen.queryByRole("button", { name: "Revert and edit" })).toBeNull();
+  expect(screen.getByLabelText("User message")).toBe(bubble); expect(bubble.parentElement).toBe(item);
+  expect(container.querySelector('[data-payload-page]')).toBe(page);
+  rerender(renderRow(true));
+  expect(screen.getByLabelText("User message")).toBe(bubble);
+  expect(screen.getByRole("button", { name: "Revert and edit" }).closest('.message-user-item')).toBe(item);
 });

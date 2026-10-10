@@ -3426,7 +3426,7 @@ Notifications Settings renders saved, read-only choices under Requests, Executio
 
 Follow the situation notification source, cache, deduplication and joined observer boundaries in `cmds-delidev-inbox-contract.md` and `cmds-delidev-storage-contract.md`. Native copy is fixed and localized with opaque activation targets. Operational activation freshly resolves original resources, and retained Schedule occurrence details are read-only. Connection events use the closed Connection & diagnostics destination. Permission remains explicit; notification observers never request it automatically. Automated fixtures/builds and native OS/account/platform acceptance remain separate.
 
-## Conversation Revert and edit — issue #2045
+## Conversation Revert and edit — issues #2045 and #2247
 
 Show one **Revert and edit** action on eligible original complete user turns.
 Require server and original Runner capability plus a settled original root,
@@ -3435,6 +3435,20 @@ this and later turns from working context, unchanged files, preserved prior
 history/usage/Fork/Sidechat snapshots, and replacement of the current draft.
 Preserve the exact source revision, context revision and retained mutation
 request; stale sources and uncertain outcomes cannot submit new input.
+
+The eligible native button stays visible outside the colored user bubble,
+right aligned below it with a 6px gap. Use 13px medium text, a 32px minimum
+height, 8px horizontal padding, 6px corners and no resting border. Its resting
+background is transparent; enabled text uses `--text-secondary`, hover uses
+`--surface-hover` and keyboard focus uses `--focus`. Enabled text must retain
+at least 4.5:1 contrast in supported appearances. Preserve disabled guards and
+English/Korean wrapping at narrow widths and effective 200% zoom. Keep one
+stable transcript item containing the bubble and its secondary action. Bubble
+width still follows message content, with its original maximum width and
+12px/16px padding; images, other turn actions, context/status, resource keys,
+retained page wrappers, measurements, scroll anchors and content visibility
+keep their original ownership. This presentation change adds no requests or
+execution authority.
 
 Verified completion restores the original prompt text as an unsent draft and
 focuses the active composer. Preserve a draft edited during the operation or

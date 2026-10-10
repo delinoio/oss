@@ -190,7 +190,7 @@ function ConversationStatus({ state }: { state: string }) {
   return !state || state === "complete" || state === "completed" ? null : <header><small>{statusLabel(state)}</small></header>;
 }
 
-export const TranscriptItem = memo(function TranscriptItem({ resource, active = true, actions, contextRevision = 0 }: { resource: Resource; active?: boolean; actions?: ReactNode; contextRevision?: number }) {
+export const TranscriptItem = memo(function TranscriptItem({ resource, active = true, actions, revertAction, contextRevision = 0 }: { resource: Resource; active?: boolean; actions?: ReactNode; revertAction?: ReactNode; contextRevision?: number }) {
   useLocale();
   const data = readDocument(resource);
   if (Object.hasOwn(data,"grok_tool")) return <NativeGrokTool data={data}/>;
@@ -228,11 +228,11 @@ export const TranscriptItem = memo(function TranscriptItem({ resource, active = 
   const textRole = data.tool == null && data.artifact == null && data.progress == null &&
     ["grok_text", "claude", "claude_tool", "claude_progress", "claude_interruption"].every(key => !Object.hasOwn(data, key));
   const roleClass = textRole && data.role === "user" ? " message-user" : textRole && data.role === "assistant" ? " message-assistant" : "";
-  return <article className={`message${roleClass}`} aria-label={roleClass ? copy(data.role === "user" ? "session.userMessage" : "session.assistantMessage_8352f5") : copy("session.message_e9ca2b", { v0: text(data.role) || "Agent" })}>
+  const message = <article className={`message${roleClass}`} aria-label={roleClass ? copy(data.role === "user" ? "session.userMessage" : "session.assistantMessage_8352f5") : copy("session.message_e9ca2b", { v0: text(data.role) || "Agent" })}>
     {roleClass ? <ConversationStatus state={text(data.state)} /> : <header><strong>{text(data.role) || copy("session.extra.11b39c93777e")}</strong><small>{statusLabel(text(data.state))}</small></header>}
     {text(data.text) ? <pre>{text(data.text)}</pre> : null}
     {Number(data.context_revision ?? 0) < contextRevision ? <small>{copy("session.previousContext")}</small> : null}
-    {data.role==="user"?actions:null}
+    {data.role==="user"?<>{roleClass !== " message-user" ? revertAction : null}{actions}</>:null}
     <RetainedImages value={data.attachments} sessionId={resource.sessionId} active={active} />
     {toolStarted.kind === "image-view" ? <NativeImageView tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-builtin" ? <NativeBuiltin tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-todo" ? <NativeTodo tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-read" ? <NativeRead tool={tool} state={text(data.state)} /> : toolStarted.kind === "opencode-shell" ? <NativeShell tool={tool} state={text(data.state)} /> : Object.keys(tool).length ? <Disclosure><DisclosureSummary><LocalizedText id="session.tool_844a02" components={{ s0: <>{text(toolStarted.kind) || copy("session.extra.fa176576233d")}</>, s1: <>{text(toolCompleted.status) || text(toolStarted.status)}</> }} /></DisclosureSummary>
       {text(command.command) ? <pre>{text(command.command)}</pre> : null}
@@ -251,6 +251,9 @@ export const TranscriptItem = memo(function TranscriptItem({ resource, active = 
     </Disclosure> : null}
     {progress.kind === "codex-auto-review" ? <NativeAutoReview progress={progress} state={text(data.state)} /> : progress.kind === "native-compaction" ? <NativeContextCompaction progress={progress} state={text(data.state)} /> : progress.kind === "opencode-workspace" ? <NativeWorkspaceEvent progress={progress} state={text(data.state)} /> : progress.kind === "opencode-changes" ? <NativeChanges progress={progress} state={text(data.state)} turn={text(data.native_turn_id)} /> : progress.kind === "opencode-todo" ? <NativeTodoProgress progress={progress} state={text(data.state)} /> : Object.keys(progress).length ? <Disclosure open><DisclosureSummary><LocalizedText id="session.progress_a4d877" components={{ s0: <>{text(progress.kind)}</> }} /></DisclosureSummary><pre>{text(progress.diff) || text(plan.explanation)}</pre><ol>{items(plan.steps).map((step, index) => <li key={index}>{text(object(step).step)} · {text(object(step).status)}</li>)}</ol></Disclosure> : null}
   </article>;
+  // Keep one stable measured item when eligibility changes. The bubble remains
+  // content-sized; only Revert leaves it, while other turn actions stay inside.
+  return roleClass === " message-user" ? <div className="message-user-item">{message}{revertAction ? <div className="message-user-revert-row">{revertAction}</div> : null}</div> : message;
 });
 
 const submissionLabels = {
@@ -615,7 +618,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         <Failure failure={messages.error?.failure} />
         {messages.error && messages.data ? <p className="notice">{copy("session.retainedConversation")}</p> : null}
         {messages.isPending ? <p role="status">{copy("session.loadingConversation_5eb1e4")}</p> : rows.length || messages.rows.length || timing ? null : messages.error ? <p>{copy("session.conversationUnavailable")}</p> : progress ? null : projectedSubmissions.length ? null : <div className="session-empty"><SessionIcon kind={SessionIconKind.Conversation} /><h3>{copy("session.emptyConversation")}</h3><p>{copy("session.theConversationWillAppearHereAfter_24857a")}</p></div>}
-        {rows.length || messages.rows.length || timing ? <ToolTurnTranscript key={`tools:${id}`} sessionId={id} active={conversationActive} query={messages} live={live.resources} removed={live.removed} arrivals={live.newMessageIds} root={transcriptRoot} include={sidechatAnswerFilter(session)} current={timing} confirmed={timingConfirmed} render={row => <TranscriptItem key={row.id} resource={row} active={conversationActive} contextRevision={Number(data.context_revision ?? 0)} actions={<>{revert.action(row)}<SidechatRetryAction controller={retryQuestion} inputId={text(readDocument(row).input_id)}/></>}/>} /> : null}
+        {rows.length || messages.rows.length || timing ? <ToolTurnTranscript key={`tools:${id}`} sessionId={id} active={conversationActive} query={messages} live={live.resources} removed={live.removed} arrivals={live.newMessageIds} root={transcriptRoot} include={sidechatAnswerFilter(session)} current={timing} confirmed={timingConfirmed} render={row => <TranscriptItem key={row.id} resource={row} active={conversationActive} contextRevision={Number(data.context_revision ?? 0)} revertAction={revert.action(row)} actions={<SidechatRetryAction controller={retryQuestion} inputId={text(readDocument(row).input_id)}/>}/>} /> : null}
         {observeStartupOwner && !startupOwnerCurrent && !startupMachine.isPending && !inlineRecovery && !budgetBlocked && data.archive === "active" && ["not-started", "running"].includes(text(data.outcome)) ? <p role="status">{copy("session.connectionRequiresAttention_160d4a")}</p> : null}
         {progress ? <SessionProgressStatus phase={progress} operations={startupOperations(session, progress)} compact={Boolean(rows.length || messages.rows.length || projectedSubmissions.length)} /> : null}
         {items(data.sidechat_retries).length ? <Disclosure className="sidechat-answer-history"><DisclosureSummary>{copy("sidechat.retry.history")}</DisclosureSummary><p>{copy("sidechat.retry.retainedHistory")}</p><div className="sidechat-history-content" ref={historyRoot}><ToolTurnTranscript sessionId={id} active={conversationActive} query={{...messages,pages:messages.pages.map(page=>({...page,height:historyHeights.current.get(page.token)})),measure:(token,height)=>{historyHeights.current.set(token,height);}}} live={live.resources} removed={live.removed} arrivals={live.newMessageIds} root={historyRoot} include={sidechatAnswerFilter(session,true)} render={row=><TranscriptItem resource={row} active={conversationActive}/>} /></div></Disclosure> : null}
