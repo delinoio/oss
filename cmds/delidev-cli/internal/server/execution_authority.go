@@ -97,7 +97,7 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 	if err != nil || session.InitialExecution == nil || session.ActiveExecutionID != grant.ExecutionID || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.Dispatch != domain.DispatchClaimed || (session.Outcome != domain.ExecutionNotStarted && session.Outcome != domain.ExecutionRunning) {
 		return empty, executionDenied()
 	}
-	if input.Configuration.Subscription && session.Fork != nil && !session.IsSidechat() && !domain.ManagedForkSupported(machine.WorkerCapabilities) {
+	if input.Configuration.Subscription && !input.Configuration.IsOpenCodeGo() && session.Fork != nil && !session.IsSidechat() && !domain.ManagedForkSupported(machine.WorkerCapabilities) {
 		return empty, executionDenied()
 	}
 	if requireSidechatParent(tx, session) != nil || input.Configuration.SidechatPolicy != "" && (!slices.Contains(machine.WorkerCapabilities, domain.CodexReadOnlySidechatWorkerV1) || input.Configuration.Subscription && !domain.ManagedSidechatSupported(machine.WorkerCapabilities)) {

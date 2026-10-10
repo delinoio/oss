@@ -84,3 +84,50 @@ func TestManagedSidechatRetainsChatGPTSelectorAndReadOnlyOverlay(t *testing.T) {
 		}
 	}
 }
+
+func TestForkChildSnapshotInstructionsPreserveModeAndParent(t *testing.T) {
+	for _, mode := range []SessionMode{ExecuteMode, PlanMode} {
+		for _, prefix := range []string{DefaultBranchPrefix, "team/", ""} {
+			for _, purpose := range []ForkPurpose{SidechatFork, IndependentFork} {
+				t.Run(string(mode)+"/"+prefix+"/"+string(purpose), func(t *testing.T) {
+					template := AppliedTemplate{ID: NewID(), Revision: 1, Contents: "Frozen original template\n"}
+					configuration, err := resolveInlineFixture(NewID(), 1, Agent{Name: "Parent", Harness: Codex, ModelID: NewID(), Accounts: []WeightedAccount{{ID: NewID(), Weight: 1}}, Templates: []ID{template.ID}, Options: AgentOptions{Permission: PermissionWorkspaceWrite, ApprovalPolicy: "on-request"}}, 1, Model{Name: "Parent", NativeID: "parent-model", ProviderID: NewID(), Harnesses: []Harness{Codex}, MetadataSource: UserDeclared}, Priority, []AppliedTemplate{template})
+					if err != nil {
+						t.Fatal(err)
+					}
+					configuration.BranchPrefix = &BranchPrefixSelection{Version: 1, Prefix: prefix}
+					digest, err := configuration.Digest()
+					if err != nil {
+						t.Fatal(err)
+					}
+					parent := InitialExecution{Configuration: configuration, ConfigurationDigest: digest, InitialAccountID: NewID(), ConnectionID: NewID()}
+					before, _ := json.Marshal(parent)
+					input := ForkJobInput{Purpose: purpose, Snapshot: parent}
+					child, err := input.ChildSnapshot()
+					if err != nil {
+						t.Fatal(err)
+					}
+					instructions, err := child.Configuration.NativeInstructions(mode)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if purpose == IndependentFork && mode == ExecuteMode && prefix != "" {
+						want, err := parent.Configuration.NativeInstructions(mode)
+						if err != nil || instructions != want || instructions == template.Contents {
+							t.Fatal("writable Execute Fork lost its frozen branch-prefix instruction", err)
+						}
+					} else if instructions != template.Contents {
+						t.Fatal("Sidechat, Plan or disabled prefix changed original template bytes")
+					}
+					if purpose == SidechatFork && (child.Configuration.Options.Permission != PermissionReadOnly || child.Configuration.Options.ApprovalPolicy != "never") {
+						t.Fatal("Sidechat instructions replaced native read-only authority")
+					}
+					after, _ := json.Marshal(input.Snapshot)
+					if string(before) != string(after) || child.InitialAccountID != parent.InitialAccountID || child.ConnectionID != parent.ConnectionID {
+						t.Fatal("instruction composition changed parent snapshot or account ownership")
+					}
+				})
+			}
+		}
+	}
+}
