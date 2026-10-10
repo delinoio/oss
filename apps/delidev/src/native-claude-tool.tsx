@@ -1,5 +1,6 @@
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { LocalizedText, copy, useLocale } from "./localization";
+import { useGroupedTool } from "./tool-entry-context";
 import { object } from "./documents";
 
 enum State { Streaming = "streaming", Complete = "complete" }
@@ -47,11 +48,41 @@ function tool(value: unknown, state: string): Tool | undefined {
   return v as Tool;
 }
 
+export function validatedClaudeTool(content: unknown, state: string, id: string, native: string, parent: string) {
+  const retained = tool(content, state);
+  return retained && retained.reference.id === id && retained.reference.native_id === native && retained.native_message_id === parent ? retained : undefined;
+}
+export function claudeCommand(retained: NonNullable<ReturnType<typeof validatedClaudeTool>>): string | undefined {
+  if (retained.reference.name !== "Bash") return;
+  // Full validation precedes parsing; streamed fragments never supply commands.
+  const input = object(JSON.parse(retained.proposal?.applied ?? retained.initial_input));
+  return typeof input.command === "string" ? input.command : undefined;
+}
+
 export function NativeClaudeTool({ content, state, id, native, parent }: { content: unknown; state: string; id: string; native: string; parent: string }) {
   useLocale();
-  const retained = tool(content, state);
-  if (!retained || retained.reference.id !== id || retained.reference.native_id !== native || retained.native_message_id !== parent) return <section aria-label={copy("native-claude-tool.claudeToolUnavailable_fade0a")}><p>{copy("native-claude-tool.theRetainedClaudeToolIsUnavailable_552da4")}</p></section>;
+  const grouped = useGroupedTool();
+  const retained = validatedClaudeTool(content, state, id, native, parent);
+  if (!retained) return <section aria-label={copy("native-claude-tool.claudeToolUnavailable_fade0a")}><p>{copy("native-claude-tool.theRetainedClaudeToolIsUnavailable_552da4")}</p></section>;
   const result = retained.result;
+  if (grouped && claudeCommand(retained) !== undefined) return <section data-command-presentation aria-label={copy("native-claude-tool.claudeToolObservation_17c86c")}>
+    {result ? <section aria-label={copy("native-claude-tool.originalToolResult_2b1077")}>
+      <p><LocalizedText id="native-claude-tool.nativeErrorFlag_e3d9ff" components={{ s0: <>{result.is_error === null ? copy("native-claude-tool.notReported_adadfa") : result.is_error ? copy("native-claude-tool.errorReported_284ccd") : copy("native-claude-tool.noErrorReported_71376f")}</> }} /></p>
+      {result.non_execution ? <p>{result.non_execution.non_execution_kind === "user-rejected" ? copy("native-claude-tool.theOriginalUserRejectionPreventedThis_97b97e") : copy("native-claude-tool.nativePermissionPolicyPreventedThisTool_8e5f57")}</p> : null}
+      {result.text !== null ? <pre><code>{result.text}</code></pre> : null}
+      {result.blocks !== null ? <ol aria-label={copy("native-claude-tool.toolResultBlocks_7800be")}>{result.blocks.map((b,index)=><li key={index}><pre><code>{b.text}</code></pre></li>)}</ol> : null}
+      {result.text === null && result.blocks === null ? <p>{copy("session.commandOutputUnavailable")}</p> : null}
+    </section> : <p>{copy("native-claude-tool.noToolResultHasBeenObserved_39f5c0")}</p>}
+    <Disclosure><DisclosureSummary>{copy("session.commandDetails")}</DisclosureSummary>
+      <pre><code>{claudeCommand(retained)}</code></pre>
+      <p><LocalizedText id="native-claude-tool.providerBlockCaller_c07946" components={{ s0: <>{retained.index+1}</>, s1: <>{retained.caller === null ? copy("native-claude-tool.notReported_adadfa") : copy("native-claude-tool.direct_002c7c")}</> }} /></p>
+      <Disclosure><DisclosureSummary>{copy("native-claude-tool.initialInput_f6c601")}</DisclosureSummary><pre>{retained.initial_input}</pre></Disclosure>
+      {retained.input_delta !== null ? <Disclosure><DisclosureSummary>{copy("native-claude-tool.streamedInput_bafbd1")}</DisclosureSummary><pre>{retained.input_delta}</pre></Disclosure> : null}
+      {retained.proposal ? <><Disclosure><DisclosureSummary>{copy("native-claude-tool.originalProposedInput_0ecc84")}</DisclosureSummary><pre>{retained.proposal.proposed}</pre></Disclosure><Disclosure><DisclosureSummary>{copy("native-claude-tool.nativeAppliedInput_6397df")}</DisclosureSummary><pre>{retained.proposal.applied}</pre></Disclosure></> : null}
+      {result?.structured !== null && result?.structured !== undefined ? <Disclosure><DisclosureSummary>{copy("native-claude-tool.structuredNativeResult_762fc2")}</DisclosureSummary><pre>{result.structured}</pre></Disclosure> : null}
+      <p>{copy("native-claude-tool.proposalCompletionDoesNotEstablishApproval_0d9759")}</p>
+    </Disclosure>
+  </section>;
   return <section aria-label={copy("native-claude-tool.claudeToolObservation_17c86c")}><Disclosure appearanceKind="tool_disclosure">
     <DisclosureSummary>{retained.reference.name} · {result ? copy("native-claude-tool.resultObserved_447816") : retained.proposal ? copy("native-claude-tool.proposalComplete_1ebb0e") : copy("native-claude-tool.receivingProposal_2dfe67")}</DisclosureSummary>
     <p><LocalizedText id="native-claude-tool.providerBlockCaller_c07946" components={{ s0: <>{retained.index + 1}</>, s1: <>{retained.caller === null ? copy("native-claude-tool.notReported_adadfa") : copy("native-claude-tool.direct_002c7c")}</> }} /></p>

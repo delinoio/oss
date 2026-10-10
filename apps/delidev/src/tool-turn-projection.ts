@@ -3,7 +3,8 @@ import { messageTurn, messageTurnOwner, type TurnProjection } from "./turn-timin
 import { responseEvidence, type ResponseEvidence } from "./session-progress";
 import { EntityKind, type Resource } from "@delinoio/delidev-api-client";
 import { document as readDocument, object } from "./documents";
-import { claudeToolReference } from "./native-claude-tool";
+import { claudeToolReference, validatedClaudeTool } from "./native-claude-tool";
+import { retainedShell } from "./native-shell";
 import { validGrokTool } from "./native-grok-interactions";
 
 export interface ConversationProjection { id: string; revision: bigint; turnOwner?: string; turn?: TurnProjection; executionId?: string; inputId?: string; role?: string; inherited?: boolean; response?: ResponseEvidence; tool?: { owner: string; name: string; state: string } }
@@ -25,7 +26,7 @@ export function conversationProjection(row: Resource, sessionId: string): Conver
   let name = "", state = label(d.state);
   if (families[0] === "claude_tool") {
     const c = object(d.claude_tool), ref = claudeToolReference(c.reference);
-    if (!ref || ref.id !== row.id || ref.native_id !== d.native_id || c.native_message_id !== d.native_parent_id) return projection;
+    if (!ref || d.text !== "" || d.input_id != null || d.phase != null || !validatedClaudeTool(d.claude_tool, state, row.id, String(d.native_id ?? ""), String(d.native_parent_id ?? ""))) return projection;
     name = ref.name;
   } else if (families[0] === "grok_tool") {
     if (!validGrokTool(d)) return projection;
@@ -34,7 +35,7 @@ export function conversationProjection(row: Resource, sessionId: string): Conver
     state = label(update.status) || state;
   } else {
     const tool = object(d.tool), started = object(tool.started), completed = object(tool.completed);
-    if (!Object.keys(tool).length) return projection;
+    if (!Object.keys(tool).length || started.kind === "opencode-shell" && !retainedShell(tool, state)) return projection;
     const observations = Array.isArray(tool.states) ? tool.states : [];
     const latest = object(object(observations.at(-1)).snapshot);
     name = started.kind === "image-view" ? "view_image" : started.kind === "opencode-builtin" ? label(object(started.builtin).name) || label(started.kind) : nativeNames[label(started.kind)] || label(started.kind);

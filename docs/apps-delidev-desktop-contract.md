@@ -457,6 +457,51 @@ Conversation resources retain forward returned order and higher revisions;
 independently bounded live streams join new arrivals only after final coverage.
 The feature groups reached tool records by the original session/execution/native-thread/native-turn tuple. One initially collapsed **Tool calls** disclosure is anchored at the first reached tool position, including active execution and records separated by commentary. Non-tool rows retain their relative order; tool entries retain original observation order. Each entry starts collapsed and uses its original validated renderer for exact inert commands, arguments, patches, output and unavailable states. Grok observations remain separate entries without reconstructed unique-call attribution or numeric call counts. Missing, malformed, mixed or foreign ownership retains standalone rendering.
 
+Reached Tool calls use bare text disclosure rows with gray chevrons, semantic
+hover/focus treatment and 36px interaction heights. The scoped region removes
+resting borders, fills, rounded cards, shadows, duplicate Tool article headers
+and original primary triggers without changing shared disclosures elsewhere.
+Routine complete/completed decoration is suppressed; running, failure, rejection,
+interruption, unavailable evidence and reached-record coverage stay visible.
+Non-command names and validated original details remain unchanged.
+
+Command previews derive only from resident original payloads. Codex's exclusive
+command adapter hides only the exact leading `/bin/zsh -lc ` literal, preserving
+the complete suffix, whitespace, quotes and Unicode. Claude exact native Bash
+uses its full existing validator and validated applied command when available,
+otherwise validated initial input; streamed JSON fragments cannot supply a
+command. OpenCode uses existing immutable validated shell snapshots and their
+original input command. Other families, including Grok, retain original names
+without command inference. Adapter selection follows the original record family,
+never current session harness selection. Previews display literal muted monospace
+`> command` with visual single-line ellipsis and complete accessible text.
+
+Opening a recognized command presents literal inert pre/code output directly,
+without a secondary primary-output disclosure. Codex prefers a string completed
+aggregate, including empty output, then retained stream output; independent
+observations stay separate. Claude retains original result text or ordered text
+blocks, structured results, native error flags and non-execution evidence.
+OpenCode retains completed output, running preview or failed error, independent
+observations, exit information and visible interruption/truncation warnings.
+Empty output remains distinct from missing output and never implies success.
+Initially collapsed Details preserves full original command, directory, inputs
+and provenance-labeled additional observations with exact string values. Output
+and saved paths remain inert: no Markdown, HTML, links, ANSI interpretation,
+file reads or execution is added. Code surfaces use semantic subtle fills and
+approximately 8px corners, without enclosing Tool article cards.
+
+Original grouping, first-reached anchors, non-tool order, three-page payload
+limits, bounded live tails, exact page-token restoration, removals, reader gates
+and inactive-pane restrictions remain intact. Existing tool-disclosure initial
+preferences and later owner-local group/entry/nested-detail choices survive
+revisions, reconnect, locale changes and eviction. Evicted entries fall back to
+original tool names; command/output text never enters display projections,
+caches or new persistence. Approval/request controls, composer lifetime and
+native/execution authority remain separate. English/Korean and semantic themes
+share the scoped layout; wide/360px and 200% reflow require browser acceptance
+records separately from unit fixtures. No RPC, public API, schema, migration,
+native operation, dependency or feature flag is added.
+
 Conversation display projections may retain only bounded tool owner/name/status metadata in addition to identity/revision/order. Full documents remain in the original three-page payload window and independently bounded live stream. A group spans accepted pages and the final historical/live boundary; an evicted anchor still presents that group's projection. Evicted entry details restore only their original accepted page token. Expanding a group does not enumerate an entire turn or unread history. The list explicitly describes reached-record coverage; the existing history continuation controls retain admission, measured restoration, scroll anchors and focus protection. Disclosure choices, including nested output details, remain within the mounted session/connection owner across revisions, reconnect, localization and payload eviction; disposal resets them. Approval/questions remain expanded and independently actionable in the original tray. No execution, response, composer, artifact, account, protocol, migration or native ownership changes are introduced. English/Korean shared compact disclosures use semantic theme tokens and native keyboard/focus behavior.
 
 User-authored request, queue and review drafts remain scope-local under their

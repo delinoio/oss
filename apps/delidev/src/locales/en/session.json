@@ -140,5 +140,7 @@
   "session.revertHistoricalAttachments": "Earlier images and skill selections remain in history. Select them again for a new input; the restored prompt has not been submitted.",
   "session.previousContext": "Earlier context",
   "session.startupImageInput": "Keep the image draft and choose an Agent Worker and Runner Device that explicitly support images, or send text only.",
-  "session.sleepDuration": "Sleep duration: <s0/> milliseconds"
+  "session.sleepDuration": "Sleep duration: <s0/> milliseconds",
+  "session.commandDetails": "Details",
+  "session.commandOutputUnavailable": "No command output has been observed."
 }

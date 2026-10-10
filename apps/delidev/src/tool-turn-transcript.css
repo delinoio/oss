@@ -12,3 +12,23 @@
 .turn-time { margin: 0 0 8px; color: var(--muted); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 
 .turn-transcript-item { display: flex; flex-direction: column; min-width: 0; }
+
+/* The owning reached-tool region overrides shared disclosure chrome only here. */
+.tool-turn.disclosure.disclosure > .disclosure-header,
+.tool-turn .disclosure.disclosure > .disclosure-header {
+  min-height: 36px; padding: 7px 0; border: 0; border-radius: 0;
+  background: transparent; box-shadow: none;
+}
+.tool-turn.disclosure.disclosure > .disclosure-header:hover,
+.tool-turn .disclosure.disclosure > .disclosure-header:hover { background: var(--surface-hover); }
+.tool-turn .disclosure-chevron { color: var(--muted); }
+.tool-turn > .disclosure-native-content > ol { gap: 0; padding-left: 14px; border-left: 1px solid var(--border); }
+.tool-turn .tool-entry-payload .message { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.tool-turn .tool-entry-payload .message > header { display: none; }
+.tool-turn .tool-entry-payload .disclosure.disclosure[data-tool-primary] > .disclosure-header { display: none; }
+.tool-command-preview { display: block; min-width: 0; flex: 1; color: var(--muted); font-family: var(--font-mono, monospace); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tool-turn .tool-entry > .disclosure-header { display: flex; }
+.tool-turn .tool-entry > .disclosure-header small { flex-shrink: 0; }
+.tool-turn .tool-entry > .disclosure-header > .disclosure-chevron { flex-shrink: 0; }
+.tool-turn .tool-entry-payload [data-command-presentation] pre { min-width: 0; max-width: 100%; padding: 10px; margin: 8px 0; border: 0; border-radius: 8px; background: var(--surface-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.tool-turn .tool-entry-payload [data-command-presentation] code { font-family: var(--font-mono, monospace); white-space: inherit; }
