@@ -52,7 +52,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
   back: () => void;
   openSettings: () => void;
   open: (id: string) => void;
-  created: () => void;
+  created: (session: Resource) => void;
 }) {
   const language = useLocale();
   const generalChat = kind === NewSessionKind.GeneralChat;
@@ -113,7 +113,7 @@ export function NewSession({ kind = NewSessionKind.Session, active, ownsActivati
  setManualMode(false);
     skills.clearAccepted();
     setCreatedElsewhere(undefined);
-    created();
+    created(session);
     if (navigation.current.ownsActivation && navigation.current.activation === submittedActivation.current) {
       open(session.id);
     } else {
