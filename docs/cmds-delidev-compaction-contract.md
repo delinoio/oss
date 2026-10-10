@@ -439,6 +439,24 @@ including settled command/file changes. Bound cursors, distinct turns/items,
 Unknown, partial or changed evidence retains quarantine. Allocation and version
 metadata alone do not establish actual native support.
 
+The selected [official 0.162.0 item-list schema](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server-protocol/src/protocol/v2/thread.rs)
+returns an ordered stream of original `turnId`/`item` entries with required
+nullable item timestamps and pagination cursors. A Revert response's opaque
+item cursor is an inclusive descending anchor, not a turn filter or an exclusive
+item-ID anchor. The [native full-turn compatibility path](https://github.com/openai/codex/blob/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server/src/request_processors/thread_processor.rs)
+already hydrates every turn's item pages. Keep that complete projection and join
+it with an independent global item stream; both must match in turn/item identity,
+order and content. Never fill a mismatched full projection by guessing omitted
+items. Hydrate the original prefix before the durable claim, the returned
+turn/item anchors, and the independent current prefix. Replacement continuation
+and explicit original observation use the same complete join. Paginated history
+requires its item stream even with a null anchor; legacy full-item history retains
+its separate null-cursor proof, while a reported non-null item cursor must always
+be consumed. Missing pages, repeated cursors, duplicate/foreign items, malformed
+timestamps, unsettled commands/files or changed content cannot publish a partial
+checkpoint or authorize another send. Item timestamps are validated private
+observations; they do not replace original native ownership or cleanup proof.
+
 A Revert checkpoint binds its exact context revision and independent native
 rollout/history proof. A replacement verifies this proof before accepting a new
 input, including reverting before the first turn. Previous execution outcomes,

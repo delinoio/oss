@@ -53,7 +53,7 @@ func (c *Client) RevertThread(ctx context.Context, action domain.ID, source Cont
 	if err := c.noForkWorkLocked(ctx, c.thread); err != nil {
 		return result, err
 	}
-	history, err := c.contextTurnsLocked(ctx, "asc", nil, false)
+	history, err := c.revertTurnsLocked(ctx, "asc", nil, nil, false)
 	if err != nil {
 		return result, err
 	}
@@ -106,12 +106,12 @@ func (c *Client) RevertThread(ctx context.Context, action domain.ID, source Cont
 	if json.Unmarshal(wire.Turns, &cursor) != nil || json.Unmarshal(wire.Items, &items) != nil || cursor != nil && domain.Text(*cursor, "native revert cursor", 4096, true) != nil || items != nil && domain.Text(*items, "native item cursor", 4096, true) != nil || (index == 0) != (cursor == nil) {
 		return fail()
 	}
-	after, e := c.contextTurnsLocked(ctx, "desc", cursor, true)
+	after, e := c.revertTurnsLocked(ctx, "desc", cursor, items, true)
 	if e != nil || !slices.EqualFunc(after, history[:index], equivalentForkJSON) {
 		return fail()
 	}
 	// Re-read without the response cursor as an independent current-context check.
-	current, e := c.contextTurnsLocked(ctx, "asc", nil, true)
+	current, e := c.revertTurnsLocked(ctx, "asc", nil, nil, true)
 	if e != nil || !slices.EqualFunc(after, current, equivalentForkJSON) || c.checkNativeStateLocked(ctx, true) != nil {
 		return fail()
 	}
@@ -156,7 +156,7 @@ func (c *Client) verifyRevertedContinuation(ctx context.Context, request domain.
 	if c.checkNativeStateLocked(ctx, true) != nil || c.noForkWorkLocked(ctx, c.thread) != nil {
 		return fail()
 	}
-	turns, err := c.contextTurnsLocked(ctx, "asc", nil, true)
+	turns, err := c.revertTurnsLocked(ctx, "asc", nil, nil, true)
 	if err != nil || uint32(len(turns)) != p.TurnsCount || historyDigest(turns) != p.HistoryDigest {
 		return fail()
 	}
@@ -208,7 +208,7 @@ func (c *Client) ReconcileRevert(ctx context.Context, intent RevertIntent) (Comp
 	if c.problem != nil || c.execution.active != "" || len(c.execution.pending) != 0 || c.execution.interactions.blocksInput() || len(c.subagents) != 0 || c.checkNativeStateLocked(ctx, true) != nil || c.noForkWorkLocked(ctx, c.thread) != nil {
 		return CompactedCheckpoint{}, compactionUncertain()
 	}
-	history, err := c.contextTurnsLocked(ctx, "asc", nil, true)
+	history, err := c.revertTurnsLocked(ctx, "asc", nil, nil, true)
 	if err != nil || !slices.EqualFunc(history, intent.ExpectedHistory, equivalentForkJSON) {
 		return CompactedCheckpoint{}, compactionUncertain()
 	}

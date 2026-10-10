@@ -16,6 +16,8 @@ import (
 )
 
 type threadFixture struct {
+	revertIssued bool
+
 	skillRoots             []string
 	subagents              []map[string]any
 	mode                   string
