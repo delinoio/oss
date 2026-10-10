@@ -236,6 +236,13 @@ it("independently gates credit support without changing quota admission or other
  fireEvent.click(await screen.findByRole("button",{name:/Old server · 28% remaining/}));expect(screen.getByText("Paid credits")).toBeTruthy();expect(screen.queryByText("60,961.11")).toBeNull();expect(f.requests).toHaveBeenCalledOnce();
  fireEvent.keyDown(screen.getByRole("dialog"),{key:"Escape"});fireEvent.click(screen.getByRole("button",{name:/Claude · 28% remaining/}));expect(screen.queryByText("Paid credits")).toBeNull();
 });
+it("retains paid-credit history across temporary rail suspension", async () => {
+ const row=resource("Retained","chatgpt",{subscription:{generation:"original",paid_credits:[credit()]}});let sparse=false;
+ const f=mount(()=>{const data=JSON.parse(new TextDecoder().decode(row.documentJson));if(sparse)data.subscription={generation:"original"};return {resources:[create(ResourceSchema,{...row,documentJson:encode(data)})]};},true,true);
+ fireEvent.click(await screen.findByRole("button",{name:/Retained · 28% remaining/}));expect(screen.getByText("60,961.11")).toBeTruthy();
+ f.rerender(f.view(false));expect(screen.queryByRole("dialog")).toBeNull();sparse=true;f.rerender(f.view(true));
+ fireEvent.click(await screen.findByRole("button",{name:/Retained · 28% remaining/}));expect(screen.getByText("60,961.11")).toBeTruthy();expect(f.requests).toHaveBeenCalledTimes(2);
+});
 it("renders independent buckets without totals and preserves failed/sparse evidence until replacement", async () => {
  const row=resource("Retained","chatgpt",{subscription:{generation:"original",paid_credits:[credit(),credit(null,{id:"secondary",unlimited:true})]}});
  let mode="ready";const f=mount(()=>{if(mode==="failed")throw new ConnectError("saved read failed",Code.Unavailable);const data=JSON.parse(new TextDecoder().decode(row.documentJson));if(mode==="sparse")data.subscription={generation:"original"};if(mode==="replacement")data.subscription={generation:"original",paid_credits:[credit("0")]};return {resources:[create(ResourceSchema,{...row,documentJson:encode(data)})]};},true,true);

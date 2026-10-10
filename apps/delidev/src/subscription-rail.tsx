@@ -44,11 +44,11 @@ export function SubscriptionRail({ enabled, manage, focusFallback = () => undefi
   }, [query.error, query.loaded, query.loading, query.rows]);
   const [creditRows, setCreditRows] = useState<ReadonlyMap<string, RailAccount>>(() => new Map());
   useEffect(() => {
-    if (!enabled || authenticationLost || !creditsSupported) { setCreditRows(new Map()); return; }
+    if (authenticationLost || !creditsSupported) { setCreditRows(new Map()); return; }
     // Only the pagination owner's complete accepted range can replace evidence.
     // Retain no removed accounts, and never commit partially refreshed pages.
     if (query.loaded && !query.loading && !query.error) setCreditRows(previous => new Map(query.rows.map(row => [row.id, reconcileRailCredits(row, previous.get(row.id))])));
-  }, [enabled, authenticationLost, creditsSupported, query.loaded, query.loading, query.error, query.rows]);
+  }, [authenticationLost, creditsSupported, query.loaded, query.loading, query.error, query.rows]);
   const root = useRef<HTMLDivElement>(null);
   const [selection, setSelection] = useState<{ id: string; opener: HTMLButtonElement }>();
   const popup = useRef<HTMLDivElement>(null);
