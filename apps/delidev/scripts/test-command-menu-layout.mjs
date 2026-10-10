@@ -45,9 +45,45 @@ try {
     const dialog=page.getByRole("dialog",{name:t("command-menu.title"),exact:true}),input=dialog.getByRole("combobox");
     assert(await input.evaluate(node=>node===document.activeElement));
     const geometry=await dialog.evaluate(node=>{const box=node.getBoundingClientRect();return{left:box.left,right:box.right,top:box.top,bottom:box.bottom,width:box.width,radius:getComputedStyle(node).borderRadius,overflow:document.documentElement.scrollWidth>innerWidth,input:node.querySelector('input').getBoundingClientRect().height,rows:[...node.querySelectorAll('[cmdk-item]')].map(row=>row.getBoundingClientRect().height)};});
-    assert(geometry.left>=16&&geometry.right<=width-16+1&&geometry.top>=16&&geometry.bottom<=height-16+1&&geometry.width<=640&&geometry.radius==="8px"&&!geometry.overflow&&geometry.input>=40&&geometry.rows.every(value=>value>=40),JSON.stringify(geometry));
+    assert(geometry.left>=16&&geometry.right<=width-16+1&&geometry.top>=16&&geometry.bottom<=height-16+1&&geometry.width<=520&&geometry.radius==="8px"&&!geometry.overflow&&geometry.input>=40&&geometry.rows.every(value=>value>=40),JSON.stringify(geometry));
+    const measureSpacing = () => dialog.evaluate(node => {
+      const search = node.querySelector('.command-menu-search'), list = node.querySelector('[cmdk-list]');
+      const style = element => getComputedStyle(element);
+      const padding = element => ['paddingTop','paddingRight','paddingBottom','paddingLeft'].map(key => style(element)[key]);
+      const groups = [...list.querySelectorAll('[cmdk-group]')].filter(group => !group.hidden && group.querySelector('[cmdk-item], .command-menu-status:not(:empty)'));
+      const selected = list.querySelector('[cmdk-item][data-selected="true"]');
+      return {
+        searchHeight: search.getBoundingClientRect().height, searchPadding: padding(search), searchGap: style(search).gap,
+        listPadding: padding(list), listOverflow: style(list).overflowY, rootOverflow: style(node).overflowY,
+        close: search.querySelector('button').getBoundingClientRect().height,
+        headings: groups.map(group => padding(group.querySelector('[cmdk-group-heading]'))),
+        groupMargins: groups.map(group => style(group).marginTop),
+        selectedInset: selected ? selected.getBoundingClientRect().left - list.getBoundingClientRect().left : null,
+        selectedPadding: selected ? padding(selected) : null,
+        selectedGap: selected ? style(selected).gap : null,
+      };
+    });
+    const spacing = await measureSpacing();
+    assert.equal(spacing.searchHeight, 56);
+    assert.deepEqual(spacing.searchPadding, ['8px','16px','8px','16px']);
+    assert.equal(spacing.searchGap, '12px');
+    assert.deepEqual(spacing.listPadding, Array(4).fill('8px'));
+    assert.equal(spacing.listOverflow, 'auto'); assert.equal(spacing.rootOverflow, 'hidden');
+    assert(spacing.close >= 40); assert.equal(spacing.selectedInset, 8);
+    assert.deepEqual(spacing.selectedPadding, Array(4).fill('8px')); assert.equal(spacing.selectedGap, '8px');
+    assert(spacing.headings.length > 1);
+    assert(spacing.headings.every(padding => JSON.stringify(padding) === JSON.stringify(['12px','8px','8px','8px'])));
+    assert.deepEqual(spacing.groupMargins, spacing.headings.map((_, index) => index ? '8px' : '0px'));
+    const stationarySearch = await dialog.locator('.command-menu-search').boundingBox();
+    await page.keyboard.press('End');
+    await page.waitForFunction(() => document.querySelector('.command-menu [cmdk-list]')?.scrollTop > 0);
+    assert((await dialog.locator('[cmdk-list]').evaluate(node => node.scrollTop)) > 0, 'Offscreen keyboard selection scrolls the result list');
+    assert.deepEqual(await dialog.locator('.command-menu-search').boundingBox(), stationarySearch);
     const order=await dialog.locator('[cmdk-item]').evaluateAll(nodes=>nodes.map(node=>node.dataset.value));assert.equal(order.length,new Set(order).size);assert.deepEqual(order.slice(0,7),['sessions','pull-requests','usage','schedules','inbox','search','settings'].map(id=>`navigate:${id}`));
     await input.fill(language==="en"?"Appearance Language":"외관 언어");await dialog.locator('[data-value="settings:appearance:language"]').waitFor();
+    const filteredSpacing = await measureSpacing();
+    assert.deepEqual(filteredSpacing.listPadding, Array(4).fill('8px'));
+    assert.equal(filteredSpacing.groupMargins[0], '0px', 'Hidden empty groups add no leading gap');
     assert.deepEqual(await page.evaluate(()=>({...window.__commandMenuFixture})),counts,"Opening/filtering performs no RPC or writes");
     await page.keyboard.press("Tab");assert(await page.evaluate(()=>Boolean(document.activeElement.closest('.command-menu'))));await page.keyboard.press("Shift+Tab");assert(await input.evaluate(node=>node===document.activeElement));
     const primary=await page.evaluate(()=>/mac/i.test(navigator.platform)?"Meta":"Control");await page.keyboard.press(`${primary}+K`);assert.equal(await dialog.count(),0);assert(await opener.evaluate(node=>node===document.activeElement));
@@ -58,7 +94,7 @@ try {
     await opener.click();await input.fill(language==="en"?"Appearance Date format":"외관 날짜 형식");await dialog.locator('[data-value="settings:appearance:date-format"]').click();await page.waitForFunction(()=>document.activeElement?.getAttribute('data-settings-search-target')==='date-format');assert.equal(await languageControl.count(),1);
     await opener.click();await dialog.locator('[data-value="create:new-session"]').click();
     const composer=page.locator('textarea').filter({visible:true}).first();await composer.fill("Retained creation draft");const identity=await composer.evaluate(node=>{node.dataset.paletteDraft="original";return node.dataset.paletteDraft;});
-    await page.keyboard.press(`${primary}+K`);await input.fill("no bundled match");await page.keyboard.press("Escape");assert.equal(await composer.inputValue(),"Retained creation draft");assert.equal(await composer.getAttribute('data-palette-draft'),identity);assert(await composer.evaluate(node=>node===document.activeElement));
+    await page.keyboard.press(`${primary}+K`);await input.fill("no bundled match");assert.deepEqual((await measureSpacing()).listPadding, Array(4).fill("8px"));await page.keyboard.press("Escape");assert.equal(await composer.inputValue(),"Retained creation draft");assert.equal(await composer.getAttribute('data-palette-draft'),identity);assert(await composer.evaluate(node=>node===document.activeElement));
     assert.equal((await page.evaluate(()=>({...window.__commandMenuFixture}))).writes,0,"Creation entry and palette dismissal cannot submit");
     cases++;
   }
