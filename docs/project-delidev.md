@@ -421,3 +421,5 @@ workspace/process/native adapters own actual operation observations; desktop own
 the grouped conversation and compact disclosure. Follow the startup, workspace,
 process, protocol and desktop contracts. No telemetry observation grants input,
 credentials, retry, cleanup or execution authority, and no migration is added.
+
+- Native Codex Goals (#1996) compose System 85, Worker 57 and original Goal action control field 8 across the protocol, harness, sessions, desktop and API-client contracts. Only the original live joined execution admits native controls; optional actual enabled-feature observations, immutable claims, separate native iteration terminals, full non-active Goal history and readable no-resend recovery preserve original account/Worker/child/cleanup ownership. Goal-free continuation and ordinary Sidechat remain separate. No migration or idle-run authority is introduced.

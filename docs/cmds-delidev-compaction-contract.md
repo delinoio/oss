@@ -457,3 +457,5 @@ prefix, joins that observer and publishes only the original action checkpoint.
 It never sends Revert again, changes targets or retries native input. Missing
 intent, mismatched history, changed ownership or cleanup uncertainty remains
 quarantined. Ordinary context jobs keep their existing recovery restrictions.
+
+Native Goal-bearing checkpoints (#1996) are outside the legacy manual Compaction/Revert replacement-history profile, which has no closed Goal-state replacement proof. Reject them before credentials or Resume; Resume can itself continue an active Goal. Verified goal-free native histories retain ordinary context operations and check original absence without Resume before restoring the original thread. See the harness Goal contract for ordinary goal-bearing continuation and independent Fork.
