@@ -1904,6 +1904,25 @@ jobs:
           FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['delidev-frontend'] }}
         run: node scripts/ci/run-affected.mjs delidev-desktop ci:${{ matrix.phase }}
 
+      - name: Run hosted desktop browser fixtures
+        if: ${{ matrix.phase == 'checks' }}
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/delidev-browser-host/browsers
+          DELIDEV_BROWSER_PLAYWRIGHT_MODULE: ${{ runner.temp }}/delidev-browser-host/node_modules/playwright/index.mjs
+          DELIDEV_BROWSER_EVIDENCE_DIR: ${{ runner.temp }}/delidev-browser-evidence
+        run: |
+          npm install --prefix "$RUNNER_TEMP/delidev-browser-host" --ignore-scripts --no-audit --no-fund playwright@1.58.2
+          node "$RUNNER_TEMP/delidev-browser-host/node_modules/playwright/cli.js" install --with-deps chromium
+          node scripts/ci/run-delidev-browser.mjs
+
+      - name: Retain desktop browser fixture evidence
+        if: ${{ always() && matrix.phase == 'checks' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: delidev-browser-fixtures-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/delidev-browser-evidence/browser-evidence.jsonl
+          if-no-files-found: error
+
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5

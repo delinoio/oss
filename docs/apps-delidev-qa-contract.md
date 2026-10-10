@@ -234,6 +234,16 @@ user input. Print generated worker URLs and retained artifact locations only in
 the explicit run manifest. Record actual validation revision, commands, results
 and remaining browser/native/account limits in PRs, issues and CI artifacts.
 
+### Screenshot capture policy
+
+The automated browser entry accepts `DELIDEV_QA_SCREENSHOTS=enabled` or
+`disabled`. The default preserves its existing success/failure synthetic
+screenshots. `disabled` suppresses both capture paths and records that policy in
+the browser-validation result; every geometry, focus, lifecycle, isolation and
+cleanup assertion still runs. Hosted common frontend browser checks select
+`disabled` and retain structural validation records through the repository
+workflow contract. Neither policy admits real account or native-window coverage.
+
 ## Build and Test
 
 `pnpm test` in `apps/delidev` includes QA host/launcher tests. Integration tests

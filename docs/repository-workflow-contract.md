@@ -48,6 +48,33 @@ DeliDev source decomposition, independent evidence and stable numeric reservatio
 follow [the structure contract](cmds-delidev-structure-contract.md). These are source
 ownership changes; existing required checks and repository rulesets remain intact.
 
+DeliDev's frontend `checks` matrix entry retains its common affected checks and
+runs `scripts/ci/run-delidev-browser.mjs` for the existing automated QA browser,
+Worker model layout and command-menu layout entrypoints. The runner installs exact
+Playwright 1.58.2 and its matching Chromium only under `RUNNER_TEMP`; the browser
+package and download cache are temporary host tooling, not product dependencies.
+The helper configures both existing host-module interfaces and selects bundled
+Chromium. Missing tooling, empty acceptance records or unconfirmed original QA
+cleanup fail the check; no entry is skipped or replaced with a passing placeholder.
+
+The QA browser uses two independently paired temporary loopback servers/Workers
+and owned synthetic Git folders. It runs ordinary metadata/Settings mutations,
+Git inspection, explicit server/Worker lifecycle and revocation-isolation checks.
+Worker model layout uses synthetic markup with product CSS. Command-menu layout
+uses the existing settings entry with in-memory Connect fixtures. No check admits
+hosted accounts, AI execution, external repository mutation, a native application
+or installed-platform acceptance.
+
+`DELIDEV_QA_SCREENSHOTS=disabled` suppresses both success and failure captures in
+the QA browser without changing geometry, focus, lifecycle or cleanup assertions.
+Its default `enabled` retains the existing explicit QA workflow. Hosted checks
+always force `disabled` and upload only revision-bound structured JSONL results,
+assertion/case coverage and original cleanup classification. Raw child output,
+exceptions, tokens, private environment files and image files are not uploaded.
+Browser evidence remains separate from native CEF, real account, native IME and
+operating-system zoom acceptance. The helper retains failed evidence and returns
+nonzero when any required fixture fails.
+
 Repository workflows are reviewed as source-backed contracts. Workflow IDs, job IDs, artifact names, permissions, triggers, protected environments, and publication boundaries must match the checked-in YAML and the static workflow tests.
 
 DeliDev's manual `delidev-native-dry-run.yml` is a credential-free six-target native

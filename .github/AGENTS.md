@@ -6,6 +6,8 @@
 
 ## Owning contracts
 
+- [DeliDev parallel browser QA](../docs/apps-delidev-qa-contract.md)
+
 - [DeliDev native package verification](../docs/apps-delidev-packaging-contract.md)
 - [DeliDev provider and model catalog](../docs/cmds-delidev-catalog-contract.md)
 - [pnport](../docs/project-pnport.md)

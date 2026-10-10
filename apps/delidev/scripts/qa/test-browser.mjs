@@ -12,6 +12,9 @@ import { until } from "./processes.mjs";
 
 const module = process.env.DELIDEV_QA_PLAYWRIGHT_MODULE;
 const { chromium } = await import(module ? pathToFileURL(resolve(module)).href : "playwright");
+const screenshotPolicy = process.env.DELIDEV_QA_SCREENSHOTS ?? "enabled";
+assert(["enabled", "disabled"].includes(screenshotPolicy), "Invalid QA screenshot policy");
+const screenshotsEnabled = screenshotPolicy === "enabled";
 const run = new QaRun({ workers: 2 });
 let browser, stage = "startup", passed = false;
 const checks = [];
@@ -183,12 +186,12 @@ try {
   await pages[1].getByRole("button", { name: "Edit Parallel Project", exact: true }).waitFor();
   checks.push("server-failure-and-paired-auth-revocation-isolation");
   assert.equal(pageErrors.length, 0);
-  await Promise.all(pages.map((page, index) => page.screenshot({ path: join(run.artifacts, "screenshots", `worker-${index + 1}.png`) })));
+  if (screenshotsEnabled) await Promise.all(pages.map((page, index) => page.screenshot({ path: join(run.artifacts, "screenshots", `worker-${index + 1}.png`) })));
   passed = true;
 } finally {
-  if (!passed && browser && run.artifacts) await Promise.all(browser.contexts()[0].pages().map((page, index) => page.screenshot({ path: join(run.artifacts, "screenshots", `failed-worker-${index + 1}.png`) }).catch(() => {})));
+  if (screenshotsEnabled && !passed && browser && run.artifacts) await Promise.all(browser.contexts()[0].pages().map((page, index) => page.screenshot({ path: join(run.artifacts, "screenshots", `failed-worker-${index + 1}.png`) }).catch(() => {})));
   await browser?.close(); const cleanup = await run.close();
-  const record = { operation: "qa-browser-validation", command: "pnpm test:qa:browser", result: passed ? "passed" : "failed", stage, source: run.source, checks, cleanup: cleanup.environments, nativeAcceptance: "not-performed", accountAcceptance: "not-performed" };
+  const record = { operation: "qa-browser-validation", command: "pnpm test:qa:browser", result: passed ? "passed" : "failed", stage, source: run.source, checks, cleanup: cleanup.environments, nativeAcceptance: "not-performed", accountAcceptance: "not-performed", screenshots: screenshotPolicy };
   if (run.artifacts) await writeFile(join(run.artifacts, "browser-validation.json"), JSON.stringify(record, null, 2), { mode: 0o600 });
   console.log(JSON.stringify({ ...record, artifacts: run.artifacts }));
   if (passed) assert(cleanup.environments.every(environment => environment.state === "deleted"), "Original environment cleanup remains unconfirmed");
