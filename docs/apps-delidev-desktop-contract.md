@@ -3684,14 +3684,22 @@ uncertain states; Save and other mutations retain their original locks.
 Attachments and editors may grow rows; narrow rows wrap their actions. Keep
 Agent requests separate and the existing short-height scrolling budget.
 
-Hide the ordinary surface and its gap only after a successful current complete
-read with all relevant payloads resident establishes no waiting inputs. Failed
-reads, continuations and evicted payload restoration remain independently
-reachable without a zero-waiting claim. Image startup rejections and original
-pending/uncertain actions retain their recovery presentation. Drafts, mutation
-controllers and composer identity remain independent of row visibility. This
-presentation adds no movement controls, RPC, protocol, migration or native
-change. Durable reordering requires its separately negotiated feature.
+Hide the ordinary surface and its gap after a successful current complete
+read with all relevant payloads resident establishes no waiting inputs. During
+healthy background rereads of the same queue identity, preserve that retained
+empty no-card presentation and populated rows. Read activity alone must not
+insert or remove footer space. Announce refresh status outside the hidden queue
+container with screen-reader-only text that adds no normal-flow height. This
+cached presentation is not a fresh authoritative zero or mutation permission.
+Initial loading, failed reads and their explicit Retry/reload progress,
+continuations and evicted payload restoration remain visible and independently
+reachable. Actual arrivals/removals, attachments, editors and errors may change
+geometry. Image startup rejections and original pending/uncertain actions retain
+their recovery presentation. Drafts, mutation controllers, Agent requests and
+composer identity remain independent of row visibility. This rule applies to
+both legacy history-based and negotiated waiting queues under issue #2542;
+it adds no movement controls, RPC, protocol, migration or native change.
+Durable reordering requires its separately negotiated feature.
 
 ## Waiting input movement — issue #2142
 

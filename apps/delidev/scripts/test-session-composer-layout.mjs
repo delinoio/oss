@@ -27,7 +27,7 @@ try {
  await new Promise(done => server.listen(0, "127.0.0.1", done));
  browser = await chromium.launch({ headless: true, ...(process.env.DELIDEV_LAYOUT_BROWSER_CHANNEL ? { channel: process.env.DELIDEV_LAYOUT_BROWSER_CHANNEL } : {}) });
  const page = await browser.newPage(); page.on("pageerror", error => errors.push(error.message));
- const open = async (language, theme, width, height, state = "ready", workspace = "general-chat") => { await page.setViewportSize({ width, height }); await page.goto(`http://127.0.0.1:${server.address().port}/?language=${language}&theme=${theme}&state=${state}&workspace=${workspace}`); await page.locator(".composer textarea").waitFor(); await page.waitForFunction(() => document.querySelector(".composer-attach") && !document.querySelector(".composer-attach").disabled); };
+ const open = async (language, theme, width, height, state = "ready", workspace = "general-chat", queue = "") => { await page.setViewportSize({ width, height }); await page.goto(`http://127.0.0.1:${server.address().port}/?language=${language}&theme=${theme}&state=${state}&workspace=${workspace}&queue=${queue}`); await page.locator(".composer textarea").waitFor(); await page.waitForFunction(() => document.querySelector(".composer-attach") && !document.querySelector(".composer-attach").disabled); };
  const image = async () => { const bytes = await page.evaluate(async () => { const canvas = document.createElement("canvas"); canvas.width = 3; canvas.height = 2; canvas.getContext("2d").fillRect(0, 0, 3, 2); const blob = await new Promise(done => canvas.toBlob(done, "image/png")); return Array.from(new Uint8Array(await blob.arrayBuffer())); }); return { name: "synthetic.png", mimeType: "image/png", buffer: Buffer.from(bytes) }; };
  const geometry = async () => {
   const value = await page.locator(".composer").evaluate(node => { const rect = node.getBoundingClientRect(), textarea = node.querySelector("textarea"), submit = node.querySelector(".composer-submit").getBoundingClientRect(), controls = [...node.querySelectorAll(".composer-toolbar > button, .composer-toolbar > label")].map(control => control.getBoundingClientRect()); return { left: rect.left, right: rect.right, bottom: rect.bottom, width: node.clientWidth, scrollWidth: node.scrollWidth, input: textarea.clientHeight, max: Number.parseFloat(getComputedStyle(textarea).maxHeight), inputScroll: textarea.scrollHeight, submitBottom: submit.bottom, controls: controls.map(rect => ({ width: rect.width, height: rect.height })), viewportWidth: innerWidth, viewportHeight: innerHeight }; });
@@ -35,6 +35,35 @@ try {
   assert(value.controls.every(control => control.width >= 39 && control.height >= 39));
   return value;
  };
+ // Retained empty queues keep real SessionView/footer geometry through three healthy reads.
+ if (!guidanceOnly) for (const queue of ["legacy", "waiting"]) for (const language of ["en", "ko"]) for (const theme of ["light", "dark"]) for (const [width, height] of [[1500,900], [960,640], [640,480], [480,320]]) {
+  await open(language, theme, width, height, "ready", "general-chat", queue);
+  const surface = queue === "waiting" ? ".queue-compact-list" : ".queue-read-state";
+  await page.waitForFunction(selector => document.querySelector(selector)?.hidden, surface);
+  const input = page.locator(".composer textarea");
+  await input.fill("Retained multiline\ndraft for healthy rereads");
+  await input.focus();
+  await input.evaluate(node => node.setSelectionRange(5, 9));
+  await page.evaluate(() => { window.__queueOriginalComposer = document.querySelector(".composer"); window.__queueOriginalInput = document.querySelector(".composer textarea"); });
+  const geometry = () => page.evaluate(() => Object.fromEntries([".session-input-tray", ".requests", ".transcript", ".composer"].map(selector => { const box = document.querySelector(selector).getBoundingClientRect(); return [selector, [box.top, box.bottom, box.height]]; })));
+  const settled = await geometry();
+  for (let cycle = 0; cycle < 3; cycle++) {
+   await page.evaluate(() => window.__sessionComposerFixture.queue.begin());
+   await page.waitForFunction(() => window.__sessionComposerFixture.queue.pending > 0);
+   await page.waitForFunction(() => [...document.querySelectorAll(".queue-refresh-status")].some(node => node.textContent.length));
+   assert(await page.locator(surface).evaluate(node => node.hidden), `${queue}: retained empty surface stays hidden`);
+   for (const [selector, values] of Object.entries(await geometry())) values.forEach((value, index) => assert(Math.abs(value - settled[selector][index]) <= 1, `${queue}/${language}/${theme}/${width}: pending ${selector}`));
+   assert(await page.evaluate(() => document.querySelector(".composer") === window.__queueOriginalComposer && document.querySelector(".composer textarea") === window.__queueOriginalInput && document.activeElement === window.__queueOriginalInput));
+   assert.equal(await input.inputValue(), "Retained multiline\ndraft for healthy rereads");
+   assert.deepEqual(await input.evaluate(node => [node.selectionStart, node.selectionEnd]), [5, 9], "Rereads retain caret/selection");
+   assert(await page.locator(".queue-refresh-status[role=status]").evaluate(node => getComputedStyle(node).position === "absolute"), "Refresh status adds no flow height");
+   await page.evaluate(() => window.__sessionComposerFixture.queue.settle());
+   await page.waitForFunction(() => window.__sessionComposerFixture.queue.pending === 0 && [...document.querySelectorAll(".queue-refresh-status")].every(node => !node.textContent));
+   for (const [selector, values] of Object.entries(await geometry())) values.forEach((value, index) => assert(Math.abs(value - settled[selector][index]) <= 1, `${queue}: settled ${selector}`));
+  }
+  assert.equal(await page.evaluate(() => window.__sessionComposerFixture.events.length), 0, "Rereads never enqueue inputs");
+  cases++;
+ }
  // Reproduce the actual nested size-container geometry after compact Info reflow:
  // 320px original workspace, 72px conversation, and the same retained body/input.
  // A pointer click must succeed naturally; forced clicks would hide interception.

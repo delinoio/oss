@@ -3,10 +3,10 @@
 import { createRoot } from "react-dom/client";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
-import { TransportProvider } from "@connectrpc/connect-query";
+import { createQueryOptions, TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
-import { EntityKind, ResourceSchema, ResourceService, SessionService, SystemService, SystemCapability, WorkerCapability, AttachmentService, AttachmentState, ImageAttachmentSchema, AttachmentUploadSchema, newRequestId } from "@delinoio/delidev-api-client";
+import { EntityKind, ResourceSchema, ResourceService, SessionService, SystemService, SessionQuery, WatchEventsResponseSchema, EventAction, SystemCapability, WorkerCapability, AttachmentService, AttachmentState, ImageAttachmentSchema, AttachmentUploadSchema, newRequestId } from "@delinoio/delidev-api-client";
 import { ImageDraftProvider } from "./image-drafts";
 import { imageDigest } from "./image-input";
 import { encode } from "./documents";
@@ -25,6 +25,14 @@ const session = create(ResourceSchema, { id, sessionId: id, kind: EntityKind.SES
 const events: { requestId: string; prompt: string; mode: string; images: string[] }[] = [];
 Object.assign(window, { __sessionComposerFixture: { events } });
 let attempt = 0;
+let queueGate: Promise<void> | undefined, finishQueue: (() => void) | undefined;
+let queuePending = 0;
+const queueEvents: (() => void)[] = [];
+const queueFrames: ReturnType<typeof create<typeof WatchEventsResponseSchema>>[] = [];
+const emptyQueueRead = async () => {
+  if (queueGate) { queuePending++; await queueGate; queuePending--; }
+  return { inputs: [], currentQueueGeneration: session.revision, waitingCount: 0 };
+};
 const enqueue = async (request: { requestId: string; documentJson: Uint8Array; attachments: { id: string; machineId: string; mediaType: number; byteLength: bigint; sha256: string }[] }) => {
   const data = JSON.parse(new TextDecoder().decode(request.documentJson));
   events.push({ requestId: request.requestId, prompt: data.prompt, mode: data.mode, images: request.attachments.map(image => image.id) });
@@ -36,9 +44,17 @@ const enqueue = async (request: { requestId: string; documentJson: Uint8Array; a
 const uploads = new Map<string, ReturnType<typeof create<typeof AttachmentUploadSchema>>>();
 const bytes = new Map<string, Uint8Array>();
 const transport = createRouterTransport(router => {
- router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.IMAGE_INPUTS_V1] }) });
- router.service(SessionService, { listQueue: () => ({ inputs: [] }), getSessionBudget: () => ({ view: { session } }), enqueueInput: enqueue });
- router.service(ResourceService, { getResource: () => ({ resource: machine }), getSnapshot: () => ({ resources: [session], cursor: "synthetic" }), listResources: () => ({ resources: [] }), async *watchEvents(_request, context) { if (!context.signal.aborted) await new Promise<void>(done => context.signal.addEventListener("abort", () => done(), { once: true })); } });
+ router.service(SystemService, { getStatus: () => ({ capabilities: [SystemCapability.IMAGE_INPUTS_V1, ...(args.get("queue") === "waiting" ? [SystemCapability.WAITING_QUEUE_ORDER_V1] : [])] }) });
+ router.service(SessionService, { listQueue: emptyQueueRead, listWaitingQueue: emptyQueueRead, getSessionBudget: () => ({ view: { session } }), enqueueInput: enqueue });
+ router.service(ResourceService, { getResource: request => ({ resource: request.id === id ? session : machine }), getSnapshot: () => ({ resources: [session], cursor: "synthetic" }), listResources: () => ({ resources: [] }), async *watchEvents(_request, context) {
+   while (!context.signal.aborted) {
+    while (queueFrames.length) yield queueFrames.shift()!;
+    await new Promise<void>(done => {
+     const wake = () => { context.signal.removeEventListener("abort", wake); const index = queueEvents.indexOf(wake); if (index >= 0) queueEvents.splice(index, 1); done(); };
+     queueEvents.push(wake); context.signal.addEventListener("abort", wake, { once: true });
+    });
+   }
+  } });
  router.service(AttachmentService, {
   beginUpload: request => { const attachment = create(ImageAttachmentSchema, { id: newRequestId(), machineId: request.machineId, mediaType: request.mediaType, byteLength: request.byteLength, sha256: request.sha256 }); const upload = create(AttachmentUploadSchema, { attachment, state: AttachmentState.UPLOADING, draftId: request.draftId, operationId: request.operationId }); uploads.set(attachment.id, upload); bytes.set(attachment.id, new Uint8Array()); return { upload }; },
   writeChunk: async request => { const upload = uploads.get(request.attachmentId)!, prior = bytes.get(request.attachmentId)!; if (BigInt(prior.length) !== request.offset || await imageDigest(request.data) !== request.sha256) throw new Error("Synthetic invalid chunk"); const next = new Uint8Array(prior.length + request.data.length); next.set(prior); next.set(request.data, prior.length); bytes.set(request.attachmentId, next); upload.uploadedBytes = BigInt(next.length); return { upload }; },
@@ -48,5 +64,22 @@ const transport = createRouterTransport(router => {
  });
 });
 const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+// Synthetic controls exercise the actual retained presenter; no product actions are replayed.
+Object.assign((window as unknown as { __sessionComposerFixture: object }).__sessionComposerFixture, {
+ queue: {
+  get pending() { return queuePending; },
+  begin() {
+   queueGate = new Promise<void>(done => { finishQueue = done; });
+   if (args.get("queue") === "waiting") {
+    session.revision++;
+    queueFrames.push(create(WatchEventsResponseSchema, { id: newRequestId(), cursor: newRequestId(), entityId: id, kind: EntityKind.SESSION, sessionId: id, revision: session.revision, action: EventAction.UPDATED }));
+    for (const wake of [...queueEvents]) wake();
+   } else {
+    void client.invalidateQueries({ queryKey: createQueryOptions(SessionQuery.listQueue, { sessionId: id, pageSize: 50, pageToken: "" }, { transport }).queryKey });
+   }
+  },
+  settle() { finishQueue?.(); finishQueue = undefined; queueGate = undefined; },
+ },
+});
 function Fixture() { const [draft, setDraft] = useState(""); return <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><ImageDraftProvider><div className="session-container fixture-session-owner"><SessionView id={id} draft={draft} setDraft={setDraft} /></div></ImageDraftProvider></MutationIntents></QueryClientProvider></TransportProvider>; }
 void i18n.changeLanguage(args.get("language") === "ko" ? "ko" : "en").then(() => createRoot(document.getElementById("root")!).render(<Fixture />));

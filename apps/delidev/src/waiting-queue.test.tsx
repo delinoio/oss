@@ -56,3 +56,40 @@ it("retains movement when the response has no original acknowledgement",async()=
  expect(f.move.mock.calls[1][0]).toEqual(original);
  await waitFor(()=>expect(screen.queryByRole("button",{name:"Retry the same movement"})).toBeNull());
 });
+
+it("preserves retained empty presentation and accessible progress through three automatic revisions", async () => {
+ const f=fixture();f.replace([]);const view=render(f.view());
+ const surface=()=>document.querySelector<HTMLDivElement>(".queue-compact-list")!;
+ await waitFor(()=>expect(surface().hidden).toBe(true));
+ for(let cycle=0;cycle<3;cycle++) {
+  let release!:()=>void;
+  f.read.mockImplementationOnce(async()=>{await new Promise<void>(resolve=>{release=resolve;});return {inputs:[],nextPageToken:"",currentQueueGeneration:9007199254740993n,waitingCount:0};});
+  const before=f.read.mock.calls.length;view.rerender(f.view(String(cycle+2)));
+  await waitFor(()=>expect(f.read).toHaveBeenCalledTimes(before+1));
+  expect(surface().hidden).toBe(true);
+  expect(screen.getByText("Loading Queue pages…").className).toContain("sidebar-sr-only");
+  expect(screen.getByText("Loading Queue pages…").getAttribute("role")).toBe("status");
+  await act(async()=>release());
+  await waitFor(()=>expect(screen.queryByText("Loading Queue pages…")).toBeNull());
+  expect(surface().hidden).toBe(true);
+ }
+ expect(f.move).not.toHaveBeenCalled();
+ f.read.mockRejectedValueOnce(new ConnectError("Private read failure",Code.Unavailable));
+ view.rerender(f.view("5"));
+ await screen.findByRole("button",{name:"Retry"});expect(surface().hidden).toBe(false);
+ let recover!:()=>void;
+ f.read.mockImplementationOnce(async()=>{await new Promise<void>(resolve=>{recover=resolve;});return {inputs:[],nextPageToken:"",currentQueueGeneration:9007199254740993n,waitingCount:0};});
+ fireEvent.click(screen.getByRole("button",{name:"Retry"}));
+ await screen.findByText("Loading Queue pages…");
+ expect(surface().hidden).toBe(false);
+ await act(async()=>recover());await waitFor(()=>expect(surface().hidden).toBe(true));
+ f.replace(f.rows);view.rerender(f.view("6"));await screen.findByText("Third");expect(surface().hidden).toBe(false);
+ let populated!:()=>void;
+ f.read.mockImplementationOnce(async()=>{await new Promise<void>(resolve=>{populated=resolve;});return {inputs:f.rows,nextPageToken:"",currentQueueGeneration:9007199254740993n,waitingCount:3};});
+ view.rerender(f.view("7"));await screen.findByText("Loading Queue pages…");
+ expect(screen.getAllByRole("article")).toHaveLength(3);expect(surface().hidden).toBe(false);
+ expect(surface().querySelector(".sidebar-continuation [role=status]")).toBeNull();
+ await act(async()=>populated());
+ f.replace([]);view.rerender(f.view("8"));await waitFor(()=>expect(surface().hidden).toBe(true));
+ expect(f.move).not.toHaveBeenCalled();
+});

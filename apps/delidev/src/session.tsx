@@ -1,4 +1,5 @@
 import { WaitingQueue } from "./waiting-queue";
+import { useQueueBackgroundRead } from "./queue-refresh";
 
 import { FlatDisclosureScope } from "./disclosure";
 import { useSessionNameEditor } from "./session-name-editor";
@@ -479,7 +480,8 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   // Evicted payloads can contain waiting inputs. Keep their exact restoration
   // controls reachable; retained IDs alone cannot establish an empty queue.
   const completeQueuePayloads = queue.pages.every(page => queue.payloadPages.some(payload => payload.token === page.token));
-  const confirmedEmptyQueue = live.state === ConnectionState.Live && !live.error && Boolean(queue.data) && !queue.error && !queue.isPending && !queue.loading && !queue.nextPageToken && completeQueuePayloads && !queued.length;
+  const backgroundQueueRead = useQueueBackgroundRead(`history:${id}`, queue);
+  const retainedEmptyQueue = live.state === ConnectionState.Live && !live.error && Boolean(queue.data) && !queue.error && !queue.isPending && (!queue.loading || backgroundQueueRead) && !queue.nextPageToken && completeQueuePayloads && !queued.length;
   const presentedQueueIds = new Set(queue.payloadPages.flatMap(page => queueRows(page.payload, live.resources, live.removed, [], id, false).filter(row => isQueuedInput(row) || isImageStartupRejectedInput(row, session)).map(row => row.id)).concat(!queue.nextPageToken ? [...queued, ...imageRejected].filter(row => !queue.rows.some(known => known.id === row.id)).map(row => row.id) : []));
   const panelButtons = {
     [SessionPanel.Files]: filesButton, [SessionPanel.Diff]: diffButton,
@@ -637,10 +639,11 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         </Disclosure>
         <PendingQueueInputs sessionId={id} presentInputIds={presentedQueueIds} refresh={queue.refresh} />
         {waitingSupported ? <WaitingQueue sessionId={id} session={session} active={conversationActive} revision={waitingRevision} drafts={queueDrafts.values} saveDraft={queueDrafts.save} readOnly={live.state !== ConnectionState.Live || Boolean(live.error)} refreshHistory={queue.refresh} /> : null}
-        <div ref={queueRoot} className={`session-tray-content ${queued.some(isQueuedInput) ? "queue-compact-list" : "queue-read-state"}`} hidden={waitingSupported || confirmedEmptyQueue} aria-label={waitingSupported || confirmedEmptyQueue ? undefined : copy("queue.waitingInputs")}>
+        <p className="sidebar-sr-only queue-refresh-status" role={!waitingSupported && conversationActive && backgroundQueueRead ? "status" : undefined} aria-live="polite">{!waitingSupported && conversationActive && backgroundQueueRead ? copy("pagination.loading", { label: copy("session.queuePages_1acdd8") }) : ""}</p>
+        <div ref={queueRoot} className={`session-tray-content ${queued.some(isQueuedInput) ? "queue-compact-list" : "queue-read-state"}`} hidden={waitingSupported || retainedEmptyQueue} aria-label={waitingSupported || retainedEmptyQueue ? undefined : copy("queue.waitingInputs")}>
           {queue.isPending ? <p role="status">{copy("session.loadingQueue")}</p> : null}<Failure failure={queue.error?.failure} />
             <ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={queue} root={queueRoot} active={conversationActive}>{payload => queueRows(payload, live.resources, live.removed, [], id, false).filter(isQueuedInput).map(row => <QueuedInput compact active={conversationActive} key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />)}</ScrollPayloadWindow>{!queue.nextPageToken ? [...queued, ...imageRejected].filter(row => !queue.rows.some(known => known.id === row.id)).map(row => <QueuedInput compact active={conversationActive} key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />) : null}
-            <ScrollContinuation query={queue} root={queueRoot} active={conversationActive && !confirmedEmptyQueue} label={copy("session.queuePages_1acdd8")} />
+            <ScrollContinuation query={queue} root={queueRoot} active={conversationActive && !retainedEmptyQueue} label={copy("session.queuePages_1acdd8")} showInitial={!backgroundQueueRead} />
           </div>
         {imageRejected.length ? <section className="queue-startup-recovery" aria-label={copy("session.startupImageInput")}>
           {imageRejected.map(row => <QueuedInput key={row.id} resource={row} session={session} refresh={queue.refresh} active={conversationActive} readOnly />)}
