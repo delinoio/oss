@@ -92,6 +92,7 @@ type ExecutionToolUpdate struct {
 	NativeID       string                   `json:"native_id"`
 	NativeParentID string                   `json:"native_parent_id,omitempty"`
 	Snapshot       *ToolSnapshot            `json:"snapshot,omitempty"`
+	OutputKind     ToolKind                 `json:"output_kind,omitempty"`
 	Delta          *string                  `json:"delta,omitempty"`
 	Changes        *[]FileChangeObservation `json:"changes,omitempty"`
 	Input          *ToolInputObservation    `json:"input,omitempty"`
@@ -133,6 +134,9 @@ func (u ExecutionToolUpdate) Validate(kind ExecutionEventKind) error {
 	if u.ID.Validate() != nil || Text(u.NativeID, "native tool identity", 1024, true) != nil || Text(u.NativeParentID, "native tool parent", 1024, false) != nil {
 		return invalidTool()
 	}
+	if kind != ExecutionToolOutput && u.OutputKind != "" {
+		return invalidTool()
+	}
 	if (kind != ExecutionToolStarted && kind != ExecutionToolCompleted && kind != ExecutionToolUpdated && u.Snapshot != nil) || (kind != ExecutionToolOutput && u.Delta != nil) || (kind != ExecutionToolInput && u.Input != nil) || (kind != ExecutionToolPatch && u.Changes != nil) {
 		return invalidTool()
 	}
@@ -149,7 +153,7 @@ func (u ExecutionToolUpdate) Validate(kind ExecutionEventKind) error {
 			return invalidTool()
 		}
 	case ExecutionToolOutput:
-		if u.Delta == nil || Text(*u.Delta, "native tool delta", MaxMessageText, false) != nil {
+		if u.OutputKind != "" && u.OutputKind != CommandTool && u.OutputKind != PatchTool || u.Delta == nil || Text(*u.Delta, "native tool delta", MaxMessageText, false) != nil {
 			return invalidTool()
 		}
 	case ExecutionToolInput:

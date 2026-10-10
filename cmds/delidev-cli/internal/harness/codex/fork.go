@@ -458,12 +458,16 @@ func managedForkItem(raw json.RawMessage, kind string) bool {
 	if kind == "commandExecution" || kind == "fileChange" {
 		return settledForkTool(raw, kind)
 	}
+	if kind == "reasoning" {
+		_, err := decodeArtifact(raw, kind)
+		return err == nil
+	}
 	if kind == "agentMessage" {
+		// Use the same closed root-message profile as ordinary Fork history. This
+		// validates async delivery and embedded questions without granting reply
+		// authority, while populated memory citations remain private.
 		_, private, err := decodeAgentMessage(raw)
 		return err == nil && !private
-	}
-	if kind == "reasoning" {
-		return true
 	}
 	if kind != "userMessage" {
 		return false

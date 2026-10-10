@@ -324,14 +324,7 @@ func (s *Service) takeClaudeSubscription(ctx context.Context, req *connect.Reque
 		if st == nil || st.RecoveryRequired {
 			return nil, subscriptionDenied()
 		}
-		if st.NativeProfileID == "" || st.OwnerMachineID != input.Machine {
-			// Queued initial login cancellation retires its unused profile owner.
-			// Only the retained original canceled operation proves no native grant.
-			o := st.NativeOperation
-			if action == domain.SubscriptionExecute || st.Pending != nil || o == nil || o.ID != input.Operation || o.Action != action || o.MachineID != input.Machine || o.State != domain.SubscriptionCanceled {
-				return nil, subscriptionDenied()
-			}
-		}
+
 		if st.Lease != nil {
 			return nil, domain.Fail(domain.ResourceExhausted, "This Claude account is exclusively owned by another operation.", "Wait for that original operation and cleanup on this Runner Device.")
 		}
@@ -340,6 +333,29 @@ func (s *Service) takeClaudeSubscription(ctx context.Context, req *connect.Reque
 		}
 		if _, err := claudeSubscriptionInstallation(tx, input.Machine); err != nil {
 			return nil, err
+		}
+		if action != domain.SubscriptionExecute {
+			if err := tx.WorkerUpdateAdmission(input.Machine); err != nil {
+				return nil, err
+			}
+			op := st.Pending
+			if input.Revision > r.Revision || op != nil && (op.Phase != domain.SubscriptionQueued || op.Action != action) {
+				return nil, subscriptionDenied()
+			}
+			// A queued replacement owns its own profile and selected machine.
+			// Retire only this stale claim after the original Worker fences; never
+			// inspect or adopt the replacement's profile as this claim's authority.
+			if op != nil && op.ID != input.Operation {
+				return nil, subscriptionTakeNotAdmitted()
+			}
+		}
+		if st.NativeProfileID == "" || st.OwnerMachineID != input.Machine {
+			// Queued initial login cancellation retires its unused profile owner.
+			// Only the retained original canceled operation proves no native grant.
+			o := st.NativeOperation
+			if action == domain.SubscriptionExecute || st.Pending != nil || o == nil || o.ID != input.Operation || o.Action != action || o.MachineID != input.Machine || o.State != domain.SubscriptionCanceled {
+				return nil, subscriptionDenied()
+			}
 		}
 		if action == domain.SubscriptionExecute {
 			if st.Pending != nil || a.Connection == nil || st.Generation == "" || !a.Enabled || a.Health != domain.AccountReady || a.Removal != nil {
@@ -360,10 +376,7 @@ func (s *Service) takeClaudeSubscription(ctx context.Context, req *connect.Reque
 		} else {
 			op := st.Pending
 			o := st.NativeOperation
-			if err := tx.WorkerUpdateAdmission(input.Machine); err != nil {
-				return nil, err
-			}
-			if input.Revision > r.Revision || (op != nil && (op.Action != action || op.MachineID != input.Machine || op.Phase != domain.SubscriptionQueued)) {
+			if op != nil && op.MachineID != input.Machine {
 				return nil, subscriptionDenied()
 			}
 			if op == nil || op.ID != input.Operation || op.Canceled {

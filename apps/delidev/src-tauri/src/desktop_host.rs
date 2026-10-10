@@ -1529,9 +1529,13 @@ mod conflict_frame_tests {
     use super::*;
     #[test]
     fn legacy_and_correlated_startup_conflicts_keep_safe_inspection() {
+        use crate::localization::{Message, initial_startup_message};
+        let legacy =
+            host_result(br#"{"version":1,"error":{"code":"conflict"}}"#, true).unwrap_err();
+        assert_eq!(legacy, NativeFailure::StartupConflict);
         assert_eq!(
-            host_result(br#"{"version":1,"error":{"code":"conflict"}}"#, true).unwrap_err(),
-            NativeFailure::StartupConflict
+            initial_startup_message(legacy).key(),
+            Message::StartupConflict.key()
         );
         for (kind, expected) in [
             ("ownership", NativeFailure::OwnershipConflict),
@@ -1542,7 +1546,12 @@ mod conflict_frame_tests {
                 r#"{{"version":2,"id":"", "error":{{"code":"conflict","startup_conflict":"{kind}","message":"private secret path"}}}}"#
             );
             let reply: Reply = serde_json::from_str(&raw).unwrap();
-            assert_eq!(reply_result(reply, true).unwrap_err(), expected);
+            let failure = reply_result(reply, true).unwrap_err();
+            assert_eq!(failure, expected);
+            assert_eq!(
+                initial_startup_message(failure).key(),
+                Message::StartupConflict.key()
+            );
         }
         let unrelated: Reply =
             serde_json::from_str(r#"{"version":2,"id":"","error":{"code":"conflict"}}"#).unwrap();
