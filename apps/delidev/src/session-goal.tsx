@@ -31,9 +31,9 @@ export function SessionGoal({ session, changed, readOnly = false }: { session: R
   const originalScope = Boolean(view && text(execution.execution_id) === view.source_execution_id && text(execution.native_thread_id) === view.source_native_thread_id && (!data.current_execution || text(object(data.current_execution).id) === view.source_execution_id));
   const eligible = active && supported && !readOnly && !sidechat && harness === "codex" && workerSupported && originalScope && view?.enabled === true && !result.error && !result.isFetching;
   const [draft, setDraft] = useState<{ revision: bigint; execution: string; thread: string; objective: string; changeObjective: boolean; status: string; budgetMode: string; budget: string }>();
-  const mutation = useRetainedMutation(`native-goal:${session.id}`, SessionQuery.requestSessionGoalAction, reply => {
+  const mutation = useRetainedMutation(`native-goal:${session.id}`, SessionQuery.requestSessionGoalAction, (reply, request) => {
     if (reply.session) changed(reply.session);
-    setDraft(undefined);
+    if (request.action === NativeGoalAction.SET) setDraft(undefined);
     void result.refetch();
   }, (reply, request) => reply.requestId === request.mutation?.requestId && reply.session?.id === request.mutation?.id && reply.session?.kind === EntityKind.SESSION && Boolean(reply.action && reply.action.kind === EntityKind.JOB && document(reply.action).type === "native-goal-action" && reply.action.sessionId === request.mutation?.id && nativeGoalView(document(reply.session).native_goal)?.action_id === reply.action.id && nativeGoalView(document(reply.session).native_goal)?.source_execution_id === request.expectedExecutionId && nativeGoalView(document(reply.session).native_goal)?.source_native_thread_id === request.expectedNativeThreadId));
   const blocked = mutation.busy || mutation.uncertain || goalActionPending(view);

@@ -103,3 +103,14 @@ it("does not transfer an original edit to a substituted thread", async () => {
   expect((screen.getByRole("button", { name: "Set native goal" }) as HTMLButtonElement).disabled).toBe(true);
   expect(f.write).not.toHaveBeenCalled();
 });
+it("keeps an unsent edit through an explicit native READ admission", async () => {
+  const f = fixture(); render(f.render());
+  await waitFor(() => expect((screen.getByRole("button", { name: "Set or update goal" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Set or update goal" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Change objective" }));
+  fireEvent.change(screen.getByLabelText("Objective"), { target: { value: "Unsent original draft" } });
+  fireEvent.click(screen.getByRole("button", { name: "Refresh native goal" }));
+  await waitFor(() => expect(f.changed).toHaveBeenCalledTimes(1));
+  expect((screen.getByLabelText("Objective") as HTMLTextAreaElement).value).toBe("Unsent original draft");
+  expect(f.write.mock.calls[0][0].action).toBe(NativeGoalAction.READ);
+});
