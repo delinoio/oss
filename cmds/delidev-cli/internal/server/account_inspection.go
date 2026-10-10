@@ -45,7 +45,9 @@ func (s *Service) cancelAccountChecks(id domain.ID) {
 func (s *Service) cancelCatalogChecks(provider domain.ID) {
 	for _, checks := range s.accountChecks {
 		for _, check := range checks {
-			if check.providerID == provider && (check.operation == catalogInspection || check.operation == oauthInspection) {
+			// OAuth owns a durable once-only dispatch claim and settles provider
+			// changes through its own lifecycle; only catalog reads are canceled here.
+			if check.providerID == provider && check.operation == catalogInspection {
 				check.cancel()
 			}
 		}

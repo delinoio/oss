@@ -6,12 +6,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -399,6 +401,81 @@ func TestAccountOAuthRestartInterruptsAwaitingAndWorkerCannotStart(t *testing.T)
 	wantAccountCode(t, err, domain.PermissionDenied)
 	_, err = f.s.GetAccountOAuthStatus(worker, connect.NewRequest(&pb.GetAccountOAuthStatusRequest{AttemptId: a.Attempt.Id}))
 	wantAccountCode(t, err, domain.PermissionDenied)
+}
+
+func TestProviderDisablementDoesNotCancelInFlightOAuthExchange(t *testing.T) {
+	f := newOAuthFixture(t)
+	started := f.start(t)
+	entered := make(chan context.Context, 1)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseExchange := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseExchange()
+	var exchanges atomic.Int32
+	f.s.oauthExchange = oauthExchangeFunc(func(ctx context.Context, _, _ []byte) ([]byte, error) {
+		exchanges.Add(1)
+		entered <- ctx
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-release:
+			return []byte("provider-disable-fixture-key"), nil
+		}
+	})
+	type completion struct {
+		response *connect.Response[pb.CompleteAccountOAuthResponse]
+		err      error
+	}
+	completed := make(chan completion, 1)
+	completionRequest := domain.NewID()
+	go func() {
+		response, err := f.complete(started.Attempt, completionRequest, "provider-disable-code")
+		completed <- completion{response: response, err: err}
+	}()
+
+	var exchangeCtx context.Context
+	select {
+	case exchangeCtx = <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("OAuth exchange did not start")
+	}
+	providerRecord, err := f.s.Store.Get(f.ctx, domain.ProviderKind, domain.ID(f.provider.Id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := store.Decode[domain.Provider](providerRecord)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider.SetEnabled(false)
+	raw, err := json.Marshal(provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.s.SaveConfiguration(f.ctx, connect.NewRequest(&pb.SaveConfigurationRequest{
+		Mutation:      &pb.Mutation{Id: string(providerRecord.ID), ExpectedRevision: providerRecord.Revision, RequestId: string(domain.NewID())},
+		Kind:          pb.EntityKind_ENTITY_KIND_PROVIDER,
+		SchemaVersion: rpc.ResourceSchemaVersion(domain.ProviderKind, raw),
+		DocumentJson:  raw,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-exchangeCtx.Done():
+		releaseExchange()
+		<-completed
+		t.Fatal("provider disablement canceled the claimed OAuth exchange")
+	default:
+	}
+	releaseExchange()
+	result := <-completed
+	if result.err != nil || result.response == nil || result.response.Msg.Attempt.State != pb.AccountOAuthState_ACCOUNT_OAUTH_STATE_RECOVERY_REQUIRED {
+		t.Fatalf("provider revision was not settled after the exchange: response=%v err=%v", result.response, result.err)
+	}
+	if exchanges.Load() != 1 {
+		t.Fatalf("OAuth exchange count = %d, want 1", exchanges.Load())
+	}
 }
 
 func TestAccountOAuthUnownedDurableDispatchCannotRemainLiveOrResend(t *testing.T) {
