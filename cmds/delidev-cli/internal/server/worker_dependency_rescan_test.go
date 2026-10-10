@@ -18,11 +18,14 @@ import (
 
 func TestPrimaryWorkRescansOriginalDependencyBlockedStorage(t *testing.T) {
 	for _, scenario := range []struct {
-		name     string
-		recovery bool
-		terminal int
+		name         string
+		recovery     bool
+		terminal     int
+		blockedCount int
 	}{
 		{name: "cleanup"}, {name: "recovery", recovery: true}, {name: "later-terminal", terminal: 1}, {name: "across-pages", terminal: store.MaxPage + 1},
+		{name: "full-blocked-cleanup-page", blockedCount: store.MaxPage},
+		{name: "full-blocked-recovery-page", blockedCount: store.MaxPage, recovery: true},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			f := newStorageFixture(t)
@@ -54,6 +57,22 @@ func TestPrimaryWorkRescansOriginalDependencyBlockedStorage(t *testing.T) {
 				}
 				if _, err := tx.PutJob(blocked, 0, f.session, "", domain.Job{Type: domain.WorkspaceStorageJob, State: domain.JobQueued, MachineID: f.machine, Input: raw, AcceptedAt: time.Now().UTC()}); err != nil {
 					return nil, err
+				}
+				// A full consecutive page shares the original durable dependent. Each
+				// request still has its own operation identity and validated input bytes.
+				for i := 1; i < scenario.blockedCount; i++ {
+					next := input
+					next.OperationID = domain.NewID()
+					nextRaw, e := json.Marshal(next)
+					if e != nil {
+						return nil, e
+					}
+					if e := next.Validate(); e != nil {
+						return nil, e
+					}
+					if _, e := tx.PutJob(next.OperationID, 0, f.session, "", domain.Job{Type: domain.WorkspaceStorageJob, State: domain.JobQueued, MachineID: f.machine, Input: nextRaw, AcceptedAt: time.Now().UTC()}); e != nil {
+						return nil, e
+					}
 				}
 				for i := 0; i < scenario.terminal; i++ {
 					if _, err := tx.PutJob(domain.NewID(), 0, "", "", domain.Job{Type: domain.InspectRepositoryJob, State: domain.JobSucceeded, MachineID: f.machine, Input: []byte(`{}`), Output: []byte(`{}`), AcceptedAt: time.Now().UTC()}); err != nil {

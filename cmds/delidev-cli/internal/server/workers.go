@@ -483,6 +483,9 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 				}
 				if pending && (storageInput.Action == workspace.StorageCleanup || storageInput.Action == workspace.StorageRecover) {
 					rememberDependency()
+					// Advance the scan separately from the retained retry predecessor so a
+					// complete blocked page cannot starve later independent assignments.
+					after = record.ID
 					continue
 				}
 			}
@@ -615,6 +618,9 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 				}
 				if claimDependencyBlocked {
 					rememberDependency()
+					// Advance the scan separately from the retained retry predecessor so a
+					// complete blocked page cannot starve later independent assignments.
+					after = record.ID
 					continue
 				}
 			}

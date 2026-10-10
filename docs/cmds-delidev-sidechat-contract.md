@@ -51,7 +51,12 @@ Cleanup and recovery jobs remain queued while any durable Sidechat dependent
 exists. The primary work stream retains one earliest skipped predecessor cursor
 and revisits it after an in-flight assignment completes, a store change or its
 bounded heartbeat. Later independent work may progress, but there is still only
-one outstanding primary assignment. Every retry rechecks the original dependency
+one outstanding primary assignment. Each dependency skip advances the ordinary
+scan cursor, both at preflight and after the atomic claim-time recheck, while
+retaining the earliest predecessor separately for those revisits. A complete
+page of blocked jobs cannot repeat indefinitely or hide later independent work;
+an exhausted blocked scan reaches the existing heartbeat/cancellation wait.
+Every retry rechecks the original dependency
 gate before atomic claim; a scan wake never grants native cleanup authority.
 
 ### Project requirements
