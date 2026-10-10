@@ -298,3 +298,69 @@ it("does not publish an export failure after the original Settings controller is
  await act(async()=>reject(new ConnectError("old export generation",Code.ResourceExhausted)));
  render(value.view());expect(screen.queryByRole("alert")).toBeNull();expect(screen.queryByRole("textbox",{name:"Exported configuration"})).toBeNull();
 });
+
+
+it.each(["paste", "file"])("clears the previous export diagnostic throughout a successful %s import",async(input)=>{
+ const value=fixture();value.exported.mockRejectedValueOnce(new ConnectError("old export failure",Code.ResourceExhausted));value.state("succeeded");
+ render(value.view());fireEvent.click(screen.getByRole("button",{name:"Export configuration"}));await screen.findByRole("alert");
+ if(input==="paste")load(value.bundle);
+ else{
+  const file=new File([JSON.stringify(value.bundle)],"configuration.json",{type:"application/json"});
+  Object.defineProperty(file,"arrayBuffer",{value:async()=>encode(value.bundle).buffer});
+  fireEvent.change(screen.getByLabelText("Configuration file"),{target:{files:[file]}});
+ }
+ const preview=await screen.findByRole("button",{name:"Preview configuration changes"});
+ expect(screen.queryByRole("alert")).toBeNull();expect(screen.queryByText("Technical details")).toBeNull();
+ fireEvent.click(preview);fireEvent.click(await screen.findByRole("button",{name:"Apply reviewed configuration"}));
+ await screen.findByText(/Configuration import completed/);
+ expect(screen.queryByRole("alert")).toBeNull();expect(value.apply).toHaveBeenCalledOnce();
+ expect(Array.from((value.apply.mock.calls[0][0] as {previewJson:Uint8Array}).previewJson)).toEqual(Array.from(value.previewBytes));
+});
+
+it("preserves import validation and preview failures after clearing an export diagnostic",async()=>{
+ const value=fixture();value.exported.mockRejectedValueOnce(new ConnectError("old export failure",Code.ResourceExhausted));
+ render(value.view());fireEvent.click(screen.getByRole("button",{name:"Export configuration"}));await screen.findByRole("alert");
+ load("{}");expect(screen.getByRole("alert")).toBeTruthy();expect(screen.queryByText("Technical details")).toBeNull();expect(value.preview).not.toHaveBeenCalled();
+ load(value.bundle);expect(screen.queryByRole("alert")).toBeNull();
+ value.preview.mockRejectedValueOnce(new ConnectError("import preview unavailable",Code.Unavailable));
+ fireEvent.click(screen.getByRole("button",{name:"Preview configuration changes"}));await screen.findByRole("alert");
+ expect(screen.queryByRole("button",{name:"Apply reviewed configuration"})).toBeNull();expect(value.apply).not.toHaveBeenCalled();
+});
+
+it("clears a settled export diagnostic before rejecting an oversized paste",async()=>{
+ const value=fixture();value.exported.mockRejectedValueOnce(new ConnectError("old export failure",Code.ResourceExhausted));
+ render(value.view());fireEvent.click(screen.getByRole("button",{name:"Export configuration"}));await screen.findByRole("alert");
+ const draft=screen.getByRole("textbox",{name:"Configuration JSON"}) as HTMLTextAreaElement;
+ fireEvent.change(draft,{target:{value:"x".repeat(384*1024+1)}});
+ expect(screen.getByRole("alert").textContent).toContain("Use an export of at most 384 KiB.");
+ expect(screen.queryByText("Technical details")).toBeNull();expect(screen.queryByText("The DeliDev request could not complete.")).toBeNull();
+ expect(draft.value).toBe("");expect(value.preview).not.toHaveBeenCalled();expect(value.apply).not.toHaveBeenCalled();
+});
+
+it("fences a pending export failure when an oversized paste is rejected",async()=>{
+ const value=fixture();let reject!:(reason:unknown)=>void;value.exported.mockImplementationOnce(()=>new Promise((_resolve,rejected)=>{reject=rejected;}));
+ render(value.view());fireEvent.click(screen.getByRole("button",{name:"Export configuration"}));await waitFor(()=>expect(value.exported).toHaveBeenCalledOnce());
+ const draft=screen.getByRole("textbox",{name:"Configuration JSON"}) as HTMLTextAreaElement;
+ fireEvent.change(draft,{target:{value:"x".repeat(384*1024+1)}});
+ expect(screen.getByRole("alert").textContent).toContain("Use an export of at most 384 KiB.");
+ await act(async()=>reject(new ConnectError("stale export failure",Code.ResourceExhausted)));
+ await waitFor(()=>expect(draft.matches(":disabled")).toBe(false));
+ expect(screen.getByRole("alert").textContent).toContain("Use an export of at most 384 KiB.");
+ expect(screen.queryByText("Technical details")).toBeNull();expect(screen.queryByText("The DeliDev request could not complete.")).toBeNull();
+ expect(draft.value).toBe("");expect(value.preview).not.toHaveBeenCalled();expect(value.apply).not.toHaveBeenCalled();
+});
+
+it("fences a late export failure after an import draft event without releasing the pending operation",async()=>{
+ const value=fixture();let reject!:(reason:unknown)=>void;value.exported.mockImplementationOnce(()=>new Promise((_resolve,rejected)=>{reject=rejected;}));
+ render(value.view());fireEvent.click(screen.getByRole("button",{name:"Export configuration"}));await waitFor(()=>expect(value.exported).toHaveBeenCalledOnce());
+ const draft=screen.getByRole("textbox",{name:"Configuration JSON"}) as HTMLTextAreaElement;
+ expect(draft.matches(":disabled")).toBe(true);
+ // Deliver an already queued input event despite the pending export's disabled fieldset.
+ fireEvent.change(draft,{target:{value:JSON.stringify(value.bundle)}});
+ expect(draft.matches(":disabled")).toBe(true);expect(value.preview).not.toHaveBeenCalled();
+ await act(async()=>reject(new ConnectError("stale export failure",Code.ResourceExhausted)));
+ await waitFor(()=>expect(draft.matches(":disabled")).toBe(false));
+ expect(screen.queryByRole("alert")).toBeNull();expect(screen.queryByText("Technical details")).toBeNull();
+ fireEvent.click(screen.getByRole("button",{name:"Load configuration document"}));
+ expect(screen.getByRole("button",{name:"Preview configuration changes"})).toBeTruthy();expect(value.apply).not.toHaveBeenCalled();
+});
