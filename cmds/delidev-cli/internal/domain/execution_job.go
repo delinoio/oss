@@ -91,6 +91,9 @@ func (c ExecutionCompletion) ValidateForHarness(harness Harness) error {
 }
 
 func (i ExecutionJobInput) Validate() error {
+	if i.Configuration.CodexApps != nil && (i.Configuration.CodexApps.SessionID != i.SessionID || i.Configuration.CodexApps.AccountID != i.AccountID) {
+		return invalidCodexApps()
+	}
 	if i.SidechatRetry != nil && i.SidechatRetry.Validate(i) != nil {
 		return SidechatUnavailable()
 	}

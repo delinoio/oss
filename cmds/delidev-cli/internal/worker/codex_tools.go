@@ -99,14 +99,18 @@ func (c *CodexEventPublisher) publishTool(ctx context.Context, event codex.Event
 		return err
 	}
 	c.tools[event.ItemID] = retained
+	if event.InteractionState != nil {
+		return c.publishQuestionAcceptance(ctx, event)
+	}
 	return nil
 }
 
 func codexToolSnapshot(native codex.Tool) (domain.ToolSnapshot, error) {
 	result := domain.ToolSnapshot{
-		Kind:    map[codex.ToolKind]domain.ToolKind{codex.CommandTool: domain.CommandTool, codex.PatchTool: domain.PatchTool}[native.Kind],
-		Status:  map[codex.ToolStatus]domain.ToolStatus{codex.ToolRunning: domain.ToolRunning, codex.ToolCompleted: domain.ToolCompleted, codex.ToolFailed: domain.ToolFailed, codex.ToolDeclined: domain.ToolDeclined}[native.Status],
-		Changes: codexFileChanges(native.Changes),
+		Kind:     map[codex.ToolKind]domain.ToolKind{codex.CommandTool: domain.CommandTool, codex.PatchTool: domain.PatchTool, codex.CodexAppTool: domain.CodexAppTool}[native.Kind],
+		Status:   map[codex.ToolStatus]domain.ToolStatus{codex.ToolRunning: domain.ToolRunning, codex.ToolCompleted: domain.ToolCompleted, codex.ToolFailed: domain.ToolFailed, codex.ToolDeclined: domain.ToolDeclined}[native.Status],
+		Changes:  codexFileChanges(native.Changes),
+		CodexApp: native.CodexApp,
 	}
 	if n := native.Command; n != nil {
 		c := &domain.CommandObservation{Command: n.Command, Cwd: n.Cwd, Source: map[codex.CommandSource]domain.CommandSource{codex.AgentCommand: domain.AgentCommand, codex.UserShellCommand: domain.UserShellCommand, codex.ExecStartupCommand: domain.ExecStartupCommand, codex.ExecInputCommand: domain.ExecInputCommand}[n.Source], ProcessID: n.ProcessID, AggregatedOutput: n.AggregatedOutput, ExitCode: n.ExitCode, DurationMS: n.DurationMS, PluginID: n.PluginID, ScriptPath: n.ScriptPath}

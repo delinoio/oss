@@ -197,7 +197,7 @@ func (u ExecutionInteractionUpdate) Validate(kind ExecutionEventKind) error {
 				return invalidInteraction()
 			}
 		} else if u.Type == UserQuestionInteraction {
-			if u.Questions == nil || u.Approval != nil || u.Questions.Validate() != nil {
+			if u.Questions == nil || u.Approval != nil || u.Questions.Validate() != nil || u.Questions.CodexApp != nil && u.Questions.CodexApp.NativeCallID != u.NativeItemID {
 				return invalidInteraction()
 			}
 		} else if u.Approval == nil || u.Questions != nil || u.Approval.Validate() != nil {

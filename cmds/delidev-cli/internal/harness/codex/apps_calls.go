@@ -132,5 +132,12 @@ func (c *Client) observeCodexAppCallLocked(native nativewire.Event, turnID domai
 		}
 		c.apps.calls[tool.ID] = trackedAppCall{turn: turnID, identity: tool.CodexApp.Identity.Clone()}
 	}
-	return Event{Kind: kind, ThreadID: c.thread, TurnID: turnID, ItemID: tool.ID, Tool: tool, Correlated: true, Late: turn.Turn.Status.terminal()}, nil
+	var acceptance *InteractionStatus
+	if kind == ToolCompletedEvent {
+		acceptance, err = c.confirmAppQuestionLocked(turnID, tool)
+		if err != nil {
+			return Event{}, err
+		}
+	}
+	return Event{InteractionState: acceptance, Kind: kind, ThreadID: c.thread, TurnID: turnID, ItemID: tool.ID, Tool: tool, Correlated: true, Late: turn.Turn.Status.terminal()}, nil
 }

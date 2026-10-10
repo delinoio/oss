@@ -4,6 +4,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
+	"slices"
 )
 
 func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session store.Record, event domain.ExecutionEvent) error {
@@ -18,6 +19,13 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 		}
 		machine, err := store.Decode[domain.Machine](machineRow)
 		if err != nil || input.Configuration.Harness != domain.Codex || update.NativeParentID != "" || update.Snapshot.ImageView == nil || update.Snapshot.ImageView.ReferenceID != update.ID || workspace.ValidateImageViewReference(input, machine.OS, *update.Snapshot.ImageView) != nil {
+			return executionEventConflict()
+		}
+	}
+	if update.Snapshot != nil && update.Snapshot.Kind == domain.CodexAppTool {
+		original := input.Configuration.CodexApps
+		call := update.Snapshot.CodexApp
+		if original == nil || input.Configuration.Harness != domain.Codex || !input.Configuration.Subscription || update.NativeParentID != "" || call == nil || original.SessionID != input.SessionID || original.AccountID != input.AccountID || call.Identity.AccountID != input.AccountID || call.Identity.Generation != original.Generation || !slices.Contains(original.AppIDs, call.Identity.AppID) {
 			return executionEventConflict()
 		}
 	}
@@ -57,9 +65,18 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 				return executionEventConflict()
 			}
 		}
+		if tool.Started.Kind == domain.CodexAppTool {
+			prior := tool.Started
+			if len(tool.States) > 0 {
+				prior = tool.States[len(tool.States)-1].Snapshot
+			}
+			if update.Snapshot == nil || domain.ValidateCodexAppCallTransition(prior, *update.Snapshot) != nil {
+				return executionEventConflict()
+			}
+		}
 		switch event.Kind {
 		case domain.ExecutionToolUpdated:
-			if !tool.Started.Kind.IsOpenCode() || len(tool.States) >= 1024 {
+			if (!tool.Started.Kind.IsOpenCode() && tool.Started.Kind != domain.CodexAppTool) || len(tool.States) >= 1024 {
 				return executionEventConflict()
 			}
 			tool.States = append(tool.States, domain.SequencedToolState{Sequence: event.Sequence, Snapshot: *update.Snapshot})

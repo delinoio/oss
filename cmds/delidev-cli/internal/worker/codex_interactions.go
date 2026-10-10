@@ -44,7 +44,7 @@ func (c *CodexEventPublisher) publishInteraction(ctx context.Context, e codex.Ev
 			if i.Questions == nil || i.Approval != nil {
 				return publicationUncertain()
 			}
-			q := &domain.QuestionRequest{Blocking: i.Questions.Blocking, AutoResolutionMS: i.Questions.AutoResolutionMS, Questions: []domain.Question{}}
+			q := &domain.QuestionRequest{CodexApp: i.Questions.CodexApp, Blocking: i.Questions.Blocking, AutoResolutionMS: i.Questions.AutoResolutionMS, Questions: []domain.Question{}}
 			for _, source := range i.Questions.Questions {
 				question := domain.Question{ID: source.ID, Header: source.Header, Text: source.Text, Other: source.Other, Secret: source.Secret}
 				if source.Options != nil {
@@ -196,5 +196,8 @@ func (c *CodexEventPublisher) publishQuestionAcceptance(ctx context.Context, eve
 		return publicationUncertain()
 	}
 	update := domain.ExecutionQuestionAcceptanceUpdate{InteractionID: status.ID, ResponseID: status.ResponseID, ClaimID: delivery.ClaimID, NativeItemID: event.ItemID, Evidence: domain.NativeQuestionOutput}
+	if status.QuestionEvidence != "" {
+		update.Evidence = status.QuestionEvidence
+	}
 	return c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionQuestionAccepted, QuestionAcceptance: &update})
 }

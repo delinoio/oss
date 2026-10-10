@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"strconv"
+	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/nativewire"
@@ -59,6 +60,7 @@ type Question struct {
 	Options []QuestionOption
 }
 type QuestionRequest struct {
+	CodexApp         *domain.CodexAppApprovalContext
 	Blocking         bool
 	AutoResolutionMS *uint64
 	Questions        []Question
@@ -106,6 +108,19 @@ func (c *Client) observeInteractionLocked(native nativewire.Event) (Event, error
 		}
 		seen[question.ID] = true
 		request.Questions = append(request.Questions, question)
+	}
+	if len(request.Questions) == 1 && strings.HasPrefix(request.Questions[0].ID, domain.CodexAppApprovalQuestionPrefix) {
+		call, exists := trackedAppCall{}, false
+		if c.apps != nil {
+			call, exists = c.apps.calls[params.ItemID]
+		}
+		if !c.appsProfile || !exists || call.completed || call.turn != params.TurnID {
+			return Event{}, incompatible()
+		}
+		request.CodexApp = &domain.CodexAppApprovalContext{NativeCallID: params.ItemID, Identity: call.identity.Clone()}
+		if publicAppQuestion(request).Validate() != nil {
+			return Event{}, incompatible()
+		}
 	}
 	interaction := &Interaction{ID: native.Token, NativeID: nativeID, Kind: UserInputInteraction, Questions: request}
 	if err := c.retainInteractionLocked(native, params.TurnID, params.ItemID, interaction, known && !turn.Turn.Status.terminal()); err != nil {

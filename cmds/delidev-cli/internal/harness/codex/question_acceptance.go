@@ -85,6 +85,9 @@ func (c *Client) observeRawInteractionEvidenceLocked(native nativewire.Event) (E
 	if owned.kind == ApprovalInteraction {
 		return c.observePermissionAcceptanceLocked(owned, output, discarded)
 	}
+	if owned.questions != nil && owned.questions.CodexApp != nil {
+		return discarded, nil
+	}
 	// A duplicate exact observation can confirm an existing fact, but cannot
 	// create another publication or consume response accounting twice.
 	if output.Namespace != nil || (output.Name != nil && *output.Name != "request_user_input") {

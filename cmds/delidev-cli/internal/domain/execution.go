@@ -21,6 +21,7 @@ type AppliedTemplate struct {
 // Native defaults remain unspecified here; observed effective settings belong
 // to the native execution record and cannot rewrite this accepted selection.
 type ExecutionConfiguration struct {
+	CodexApps    *CodexAppConfiguration `json:"codex_apps,omitempty"`
 	BranchPrefix *BranchPrefixSelection `json:"branch_prefix,omitempty"`
 
 	ReviewerNativeModel string                  `json:"reviewer_native_model,omitempty"`
@@ -123,6 +124,9 @@ func (c ExecutionConfiguration) Digest() (string, error) {
 }
 
 func (c ExecutionConfiguration) Validate() error {
+	if c.CodexApps != nil && (c.CodexApps.Validate() != nil || c.Harness != Codex || !c.Subscription || c.SidechatPolicy != "") {
+		return invalidCodexApps()
+	}
 	if (ModelIdentity{ProviderID: c.ProviderID, SubscriptionService: c.SubscriptionService, NativeID: c.NativeModel}).Key() != c.ModelID {
 		return Fail(RecoveryRequired, "The original source model identity changed.", "Preserve the frozen exact source and native ID.")
 	}

@@ -184,6 +184,7 @@ func (u ExecutionQuestionResponseUpdate) Validate() error {
 // queue acceptance, pipe delivery, native request closure and disk persistence.
 type QuestionAcceptanceEvidence string
 
+const NativeCodexAppResult QuestionAcceptanceEvidence = "native-codex-app-result"
 const NativeQuestionOutput QuestionAcceptanceEvidence = "native-question-output"
 const NativeOpenCodeQuestionReply QuestionAcceptanceEvidence = "native-opencode-question-reply"
 const NativeOpenCodeQuestionRejected QuestionAcceptanceEvidence = "native-opencode-question-rejected"
@@ -214,7 +215,7 @@ func (u ExecutionQuestionAcceptanceUpdate) Validate() error {
 	if (u.Evidence == NativeOpenCodeQuestionReply || u.Evidence == NativeOpenCodeQuestionRejected) && u.OpenCode != nil {
 		return u.OpenCode.Validate(UserQuestionInteraction)
 	}
-	if u.OpenCode != nil || u.Evidence != NativeQuestionOutput {
+	if u.OpenCode != nil || (u.Evidence != NativeQuestionOutput && u.Evidence != NativeCodexAppResult) {
 		return Fail(InvalidArgument, "Unknown native question acceptance evidence.", "Use the exact owned native tool-output observation; transport or closure cannot substitute for acceptance.")
 	}
 	return nil

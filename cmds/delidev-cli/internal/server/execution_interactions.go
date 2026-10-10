@@ -13,6 +13,16 @@ func publishExecutionInteraction(tx *store.Tx, input domain.ExecutionJobInput, s
 		return false, executionEventConflict()
 	}
 	if event.Kind == domain.ExecutionInteractionRequested {
+		if u.Questions != nil && u.Questions.CodexApp != nil {
+			tool, err := tx.CodexAppCall(input.SessionID, input.ExecutionID, event.NativeThreadID, event.NativeTurnID, u.NativeItemID)
+			if err != nil {
+				return false, err
+			}
+			original := input.Configuration.CodexApps
+			if original == nil || tool.State != domain.MessageStreaming || tool.Tool.Completed != nil || tool.Tool.Started.CodexApp == nil || !tool.Tool.Started.CodexApp.Identity.SameOriginal(u.Questions.CodexApp.Identity) {
+				return false, executionEventConflict()
+			}
+		}
 		if u.Grok != nil {
 			if err := validateGrokInteraction(tx, input, event); err != nil {
 				return false, err

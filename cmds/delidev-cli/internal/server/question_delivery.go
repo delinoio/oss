@@ -85,6 +85,20 @@ func publishQuestionAcceptance(tx *store.Tx, job store.Record, input domain.Exec
 	if claim.ID != u.ClaimID || claim.JobID != job.ID || claim.InstanceID != claimedJob.InstanceID || claim.MachineID != input.MachineID || claim.DeviceID != actor {
 		return executionEventConflict()
 	}
+	if value.Questions != nil && value.Questions.CodexApp != nil {
+		if u.Evidence != domain.NativeCodexAppResult || len(response.Input.Answers) != 1 || len(response.Input.Answers[value.Questions.Questions[0].ID]) != 1 || response.Input.Answers[value.Questions.Questions[0].ID][0] != domain.CodexAppApprovalAllow {
+			return executionEventConflict()
+		}
+		tool, err := tx.CodexAppCall(input.SessionID, input.ExecutionID, event.NativeThreadID, event.NativeTurnID, u.NativeItemID)
+		if err != nil {
+			return err
+		}
+		if tool.State != domain.MessageComplete || tool.Tool.Completed == nil || tool.Tool.Completed.Status != domain.ToolCompleted || tool.Tool.Completed.CodexApp == nil || !tool.Tool.Completed.CodexApp.Identity.SameOriginal(value.Questions.CodexApp.Identity) || tool.LastSequence >= event.Sequence {
+			return executionEventConflict()
+		}
+	} else if u.Evidence == domain.NativeCodexAppResult {
+		return executionEventConflict()
+	}
 	response.State = domain.QuestionResponseAccepted
 	response.Acceptance = &domain.QuestionAcceptanceObservation{Evidence: u.Evidence, Sequence: event.Sequence, OpenCode: u.OpenCode}
 	progress.UnconfirmedResponses--

@@ -33,6 +33,7 @@ type InteractionStatus struct {
 	ResponseID       domain.ID
 	Delivery         QuestionDelivery
 	ApprovalEvidence ApprovalEvidence
+	QuestionEvidence domain.QuestionAcceptanceEvidence
 	Accepted         bool
 }
 
@@ -108,6 +109,11 @@ func requestKey(id NativeRequestID) string {
 
 func cloneQuestions(request *QuestionRequest) *QuestionRequest {
 	copy := *request
+	if request.CodexApp != nil {
+		value := *request.CodexApp
+		value.Identity = value.Identity.Clone()
+		copy.CodexApp = &value
+	}
 	if copy.AutoResolutionMS != nil {
 		value := *copy.AutoResolutionMS
 		copy.AutoResolutionMS = &value
@@ -337,6 +343,20 @@ func (c *Client) AnswerQuestions(ctx context.Context, responseID, interactionID,
 	response, err := validateQuestionAnswers(owned.questions, answers)
 	if err != nil {
 		return owned.status, err
+	}
+	if owned.questions.CodexApp != nil {
+		public := publicAppQuestion(owned.questions)
+		input := domain.QuestionResponseInput{Answers: answers.Answers}
+		if input.Validate(public) != nil {
+			return owned.status, interactionConflict()
+		}
+		for _, a := range input.Answers {
+			for _, label := range a {
+				if label == domain.CodexAppApprovalAllow && (c.apps == nil || !slices.Contains(c.apps.current.AppIDs, owned.questions.CodexApp.Identity.AppID)) {
+					return owned.status, interactionConflict()
+				}
+			}
+		}
 	}
 	if ctx.Err() != nil {
 		return owned.status, domain.SafeError(ctx.Err())
