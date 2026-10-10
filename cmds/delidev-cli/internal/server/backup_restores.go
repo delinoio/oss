@@ -22,11 +22,42 @@ func restoreMessage(v store.BackupRestore) *pb.BackupRestoreReceipt {
 	return &pb.BackupRestoreReceipt{RequestId: string(v.RequestID), BackupId: string(v.Input.Backup.ID), State: states[v.State], CreatedAt: v.CreatedAt.Format(time.RFC3339Nano)}
 }
 
+// Restore operations retain the original server epoch independently of the RPC
+// wait. Closing admission and joining under one mutex prevents WaitGroup Add
+// racing shutdown; cancellation still belongs to the original server lifecycle.
+func (s *Service) initializeBackupRestores(parent context.Context) {
+	s.backupRestoresMu.Lock()
+	defer s.backupRestoresMu.Unlock()
+	if s.backupRestoresContext == nil {
+		s.backupRestoresContext, s.backupRestoresCancel = context.WithCancel(parent)
+	}
+}
+
+func (s *Service) beginBackupRestore(actor domain.Principal) (context.Context, func(), error) {
+	s.backupRestoresMu.Lock()
+	defer s.backupRestoresMu.Unlock()
+	if s.backupRestoresContext == nil || s.backupRestoresClosing || s.stopping.Load() || s.backupRestoresContext.Err() != nil {
+		return nil, nil, domain.Fail(domain.Unavailable, "The server restore lifecycle is stopping.", "Inspect the original restore receipt after an explicit server restart; do not create another request.")
+	}
+	s.backupRestoresJobs.Add(1)
+	return domain.WithPrincipal(s.backupRestoresContext, actor), s.backupRestoresJobs.Done, nil
+}
+
+func (s *Service) closeBackupRestores() {
+	s.backupRestoresMu.Lock()
+	s.backupRestoresClosing = true
+	if s.backupRestoresCancel != nil {
+		s.backupRestoresCancel()
+	}
+	s.backupRestoresMu.Unlock()
+	s.backupRestoresJobs.Wait()
+}
+
 func (s *Service) RestoreBackup(ctx context.Context, req *connect.Request[pb.RestoreBackupRequest]) (*connect.Response[pb.RestoreBackupResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	if err := s.authorizeBackups(ctx); err != nil {
+	if err := s.Store.AuthorizeBackupRestore(ctx); err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
 	if err := domain.ID(req.Msg.RequestId).Validate(); err != nil {
@@ -47,13 +78,29 @@ func (s *Service) RestoreBackup(ctx context.Context, req *connect.Request[pb.Res
 	if err != nil {
 		return nil, rpc.Error(err, correlation)
 	}
-	defer unlock()
 	lifecycle, err := LockLifecycle(s.Store.Root())
 	if err != nil {
+		unlock()
 		return nil, rpc.Error(err, correlation)
 	}
-	defer lifecycle.Close()
+	if err := ctx.Err(); err != nil {
+		lifecycle.Close()
+		unlock()
+		return nil, rpc.Error(domain.SafeError(err), correlation)
+	}
+	operation, finish, err := s.beginBackupRestore(actor)
+	if err != nil {
+		lifecycle.Close()
+		unlock()
+		return nil, rpc.Error(err, correlation)
+	}
+	// Release gates before the join can permit dependency retirement. Only
+	// pre-admission checks use the bounded request wait; valid preparation,
+	// publication and recovery remain on the original server-owned context.
+	defer func() { lifecycle.Close(); unlock(); finish() }()
+	ctx = operation
 	input := store.BackupRestoreInput{Backup: store.Backup{ID: domain.ID(req.Msg.Backup.Id), Bytes: req.Msg.Backup.SizeBytes, ModifiedAt: modified.UTC()}, SHA256: req.Msg.Sha256, ExpectedRevision: *req.Msg.ExpectedRestoreRevision, ServerID: s.Identity.ServerID, Actor: actor}
+	s.logger.InfoContext(ctx, "backup_restore_admitted", "request_id", req.Msg.RequestId, "correlation_id", correlation)
 	epochStopped := false
 	v, replayed, err := s.Store.RestoreBackupWithBarrier(ctx, domain.ID(req.Msg.RequestId), input, func() error {
 		if err := writeStopped(s.Store.Root(), domain.ID(req.Msg.RequestId), configurationDigest(Config{})); err != nil {

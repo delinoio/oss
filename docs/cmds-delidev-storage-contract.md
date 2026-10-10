@@ -409,7 +409,15 @@ Receipt reads require the exact original owner or paired-client principal record
 in the external journal, including after rollback and restart. Another currently
 authorized actor cannot read the receipt by knowing its request UUID.
 
-The thirty-second cancellable operation holds both the managed-file gate and
+Request authorization, input checks and admission waits retain their thirty-second
+bound. After admission, the original restore runs under the joined server epoch
+with the exact actor and request identity, without a whole-operation deadline.
+Client wait cancellation or response loss cannot cancel preparation or manufacture
+rollback, replay or a new identity. Explicit server shutdown and listener failure
+cancel the original operation and join it before retiring account secrets, SQLite
+or the process lock. Stage failures remain explicit; existing prepared/published
+barriers, source images and receipts retain their original startup recovery.
+No automatic retry is added. The operation holds both the managed-file gate and
 exclusive store gate under the server's process lock. It checks original actor,
 server identity and exact event revision, then refuses live claimed/uncertain jobs,
 active/running/recovery/archiving sessions, uncertain/stopping workspace ownership,

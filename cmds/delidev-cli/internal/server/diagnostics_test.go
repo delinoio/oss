@@ -49,6 +49,8 @@ func newDoctorFixture(t *testing.T) (*Service, *doctorSecrets) {
 	t.Cleanup(func() { state.Close() })
 	secrets := &doctorSecrets{accountTestSecrets: &accountTestSecrets{values: map[credentials.Ref][]byte{}, removed: map[credentials.Ref]bool{}}}
 	service := &Service{Store: state, Identity: security.Identity{ServerID: domain.NewID()}, logger: slog.New(slog.NewJSONHandler(io.Discard, nil)), accountSecrets: secrets}
+	service.initializeBackupRestores(context.Background())
+	t.Cleanup(service.closeBackupRestores)
 	return service, secrets
 }
 func doctorPut(t *testing.T, s *Service, kind domain.Kind, id domain.ID, revision uint64, value any) {

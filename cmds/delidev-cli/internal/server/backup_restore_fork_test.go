@@ -15,6 +15,8 @@ import (
 
 func TestBackupRestoreRefusesClaimedForkWithoutChangingOwnership(t *testing.T) {
 	f, _, accepted := acceptedForkFixture(t)
+	f.service.initializeBackupRestores(context.Background())
+	t.Cleanup(f.service.closeBackupRestores)
 	job, _ := forkClaimFixture(t, f, accepted.Job.Id)
 	before := f.refresh(t)
 	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
