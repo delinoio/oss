@@ -334,8 +334,11 @@ status, immutable bounded page and cancellation operations. Request receipts bin
 original actors and exact machine/account revisions; Worker WatchWork/ReportWork
 retain original assignment/device/instance ownership. Generic public job resources
 omit executable paths and full observations. Generate service-specific Go and
-Connect Query bindings plus historical facades; subscription support remains typed
-unsupported until #1095 supplies its protected lifecycle.
+Connect Query bindings. Before complete protocol-2/baseline-32 reset activation,
+also generate the historical facades. At the current complete activation, retain the
+service-specific bindings and omit the retired historical import/reflection
+facades. Subscription support remains typed unsupported until #1095 supplies its
+protected lifecycle.
 
 ## Server-owned subscription login reservations
 
@@ -737,7 +740,7 @@ SystemService exposes owner/client backup creation, metadata pagination and expl
 
 ### Durable backup creation
 
-`RequestBackup`, `GetBackupCreation` and `ListBackupCreations` expose original durable jobs through Connect and generated queries. Current CLI and Settings use that path; the synchronous `CreateBackup` remains compatible. Keep pending acceptance separate from image publication, exact retries across navigation, typed failure/stale observations and integer precision. Jobs resume after server restart without client resubmission, and completed history does not assert current image availability. See the [storage contract](cmds-delidev-storage-contract.md).
+`RequestBackup`, `GetBackupCreation` and `ListBackupCreations` expose original durable jobs through Connect and generated queries. Current CLI and Settings use that path. Before complete protocol-2/baseline-32 reset activation, synchronous `CreateBackup` remains compatible; reservations alone do not change that behavior. At complete activation, the [reset contract](cmds-delidev-structure-contract.md#pre-release-compatibility-reset) retires synchronous support: the historical declaration preserves allocation provenance and returns `Unsupported` after authorization without a receipt, backup file or current job. Keep pending acceptance separate from image publication, exact retries across navigation, typed failure/stale observations and integer precision. Jobs resume after server restart without client resubmission, and completed history does not assert current image availability. See the [storage contract](cmds-delidev-storage-contract.md).
 
 `SystemService.GetBackupDeletion` is an owner/paired-client read of one original
 durable deletion job ID, independent of history pagination. It rechecks current
@@ -1001,11 +1004,14 @@ Issue #1809 records System `SERVER_SUBSCRIPTION_RESET_CREDITS_V1 = 49` with comp
 Record System 51 / Worker 27 `REPOSITORY_BRANCH_DISCOVERY_V1`, the closed
 `DiscoverRepositoryBranchesRequest`/`Response` fields and WorkerService method in
 the owning complete feature PR. System 50 retains separate server-quota ownership.
-Existing declarations and numbers remain unchanged. Regenerate Go/TypeScript
-bindings and compatibility facades from reconciled sources. The operation reuses
-the server-owned Worker job/claim/report lifecycle under the workspace contract,
-with project/repository/machine revision fences and original Worker authority.
-No migration, checkout authority or Git credential persistence is added.
+Existing declarations and numbers remain unchanged. Before complete
+protocol-2/baseline-32 reset activation, regenerate Go/TypeScript bindings and
+compatibility facades from reconciled sources. At the current complete activation, use the
+canonical split bindings and omit the retired historical facades. The operation
+reuses the server-owned Worker job/claim/report lifecycle under the workspace
+contract, with project/repository/machine revision fences and original Worker
+authority. No migration, checkout authority or Git credential persistence is
+added.
 
 ## Server quota V2 allocation — issue #1854
 
@@ -1069,7 +1075,9 @@ The complete feature owns System `UNREAD_INBOX_COUNT_V1 = 80`,
 `protos/delidev/allocations.json` records these closed declarations and the RPC.
 Preserve all prior numbers; this count-only owner/client read grants no
 notification, native, execution or migration authority. Generate Go and
-TypeScript bindings and legacy facades from the reconciled schemas. Older
+TypeScript bindings from the reconciled schemas. Before complete
+protocol-2/baseline-32 reset activation, also generate legacy facades. At the current complete
+activation, use the canonical split bindings without the retired facades. Older
 servers remain explicitly unavailable without an aggregate fallback.
 
 ## Protocol-2 inline source activation

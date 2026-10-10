@@ -88,16 +88,19 @@ cleanup blocks restore. Follow the account OAuth contract for HTTP and publicati
 
 ## Managed backup observation
 
-`SystemService.CreateBackup`, `ListBackups` and `InspectBackup` are available only
-to the owner and paired clients. Workers cannot invoke them. The existing
-actor-authenticated creation receipt reserves one backup UUID before filesystem
-work; the same request retries the original image instead of creating another.
+`SystemService.CreateBackup`, `ListBackups` and `InspectBackup` are restricted
+to the owner and paired clients. Workers cannot invoke them. Before complete
+reset activation, the actor-authenticated synchronous creation receipt reserves
+one backup UUID before filesystem work; the same request retries the original
+image instead of creating another. Current durable creation retains its original
+job and image identity under the durable path below.
 
 `delidev backup create [--wait]`, `backup list [--limit N] [--page-token TOKEN]` and
-`backup inspect --id ID` use those same RPCs. Ordinary commands never start a
-server. Settings > Backups provides creation, pagination and explicit integrity
+`backup inspect --id ID` use the owning creation, listing and inspection RPCs.
+Current creation uses `RequestBackup` rather than synchronous `CreateBackup`.
+Ordinary commands never start a server. Settings > Backups provides creation, pagination and explicit integrity
 inspection, retaining the exact creation request after an uncertain response.
-The legacy `CreateBackup` RPC retains its synchronous receipt behavior for existing clients; current CLI/desktop creation uses the durable path below. Backup sizes use decimal strings in CLI JSON and BigInt in the desktop.
+Before complete protocol-2/baseline-32 reset activation, the legacy `CreateBackup` RPC retains its synchronous receipt behavior for existing clients; reservations alone do not change that behavior. At complete activation, the [reset contract](cmds-delidev-structure-contract.md#pre-release-compatibility-reset) retires synchronous support: the historical declaration preserves allocation provenance and returns Unsupported after authorization without a receipt, backup file or current job. Current CLI/desktop creation uses the durable path below. Backup sizes use decimal strings in CLI JSON and BigInt in the desktop.
 
 Listing returns UUID, byte size and modification time only; it does not establish
 integrity, creation provenance or restoration eligibility. Default page size is
