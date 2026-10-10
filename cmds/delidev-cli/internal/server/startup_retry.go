@@ -53,7 +53,7 @@ func settleExecutionStartupFailure(tx *store.Tx, record store.Record, job domain
 
 // Resume creates a distinct attempt only from positively settled no-send proof.
 // It never reroutes, consumes another input, or rewrites the failed assignment.
-func queueExecutionStartupRetry(tx *store.Tx, sr store.Record, session domain.Session) (store.Record, error) {
+func queueExecutionStartupRetry(tx *store.Tx, sr store.Record, session domain.Session, actor domain.Principal) (store.Record, error) {
 	if session.Startup == nil || session.Startup.Failure == nil || session.Startup.Failure.Validate() != nil || session.Startup.Failure.State != domain.StartupFailed || session.ActiveExecutionID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.Dispatch != domain.DispatchPaused || session.PendingInputs != 0 || session.PendingInputBytes != 0 || !session.WorkspaceAvailable() || session.CompactionJobID != "" {
 		return store.Record{}, domain.StartupRejectionUncertain()
 	}
@@ -87,6 +87,9 @@ func queueExecutionStartupRetry(tx *store.Tx, sr store.Record, session domain.Se
 	instance, seen, err := tx.WorkerInstance(session.MachineID)
 	if err != nil || instance.Validate() != nil || time.Since(seen) > domain.WorkerConnectionTimeout || seen.After(time.Now().UTC().Add(time.Second)) {
 		return store.Record{}, domain.Fail(domain.Unavailable, "The original Runner Device is disconnected.", "Reconnect it before retrying this attempt.")
+	}
+	if err := tx.CheckExecutionStartupRetryCapacity(sr, actor); err != nil {
+		return store.Record{}, err
 	}
 	input.Retry = &domain.ExecutionStartupRetry{JobID: previous.ID, ExecutionID: input.ExecutionID, InputID: input.InputID}
 	input.ExecutionID, input.ThreadRequestID, input.TurnRequestID = domain.NewID(), domain.NewID(), domain.NewID()

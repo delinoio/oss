@@ -346,20 +346,13 @@ func TestSidechatQuestionRetryCapturedWorkerChangeFencesPublicationAndDeletionRe
 func TestSidechatQuestionRetryRetentionBoundRejectsBeforeNativeAdmission(t *testing.T) {
 	_, child := completedRetrySidechatFixture(t)
 	request := retryRequestFixture(t, child)
-	_, err := child.service.Store.Mutate(context.Background(), domain.NewID(), "test.retry-capacity", nil, func(tx *store.Tx) (any, error) {
-		for n := 0; n < 4094; n++ {
-			if _, e := tx.PutJob(domain.NewID(), 0, domain.ID(child.change.Session.Id), "", domain.Job{Type: domain.GenerateSessionTitleJob, State: domain.JobCanceled, MachineID: domain.ID(child.machine.Id), Input: json.RawMessage(`{}`), AcceptedAt: time.Now().UTC()}); e != nil {
-				return nil, e
-			}
-		}
-		return nil, nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	fillSessionJobsFixture(t, child.service.Store, domain.ID(child.change.Session.Id), domain.ID(child.machine.Id), 4094)
 	request.Mutation.ExpectedRevision = child.refresh(t).Revision
-	if _, err = sessionClient(child.accountFixture).RetrySidechatQuestion(context.Background(), ownerRequest(child.identity, request)); err == nil {
+	if _, err := sessionClient(child.accountFixture).RetrySidechatQuestion(context.Background(), ownerRequest(child.identity, request)); err == nil {
 		t.Fatal("history capacity granted fresh native work")
+	}
+	if count := sessionJobCountFixture(t, child.service.Store, domain.ID(child.change.Session.Id)); count != 4094 {
+		t.Fatal("rejected retry changed jobs", count)
 	}
 	if len(retryViewFixture(t, child, "").Generations) != 0 {
 		t.Fatal("exhausted retention admitted a generation")

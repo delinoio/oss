@@ -763,7 +763,8 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 				return nil, err
 			}
 			if value.Startup != nil && value.Startup.Failure != nil && value.Startup.Failure.State == domain.StartupFailed {
-				retry, err := queueExecutionStartupRetry(tx, r, value)
+				actor, _ := domain.PrincipalFrom(ctx)
+				retry, err := queueExecutionStartupRetry(tx, r, value, actor)
 				startupRetryJob = retry.ID
 				return sessionReceipt{SessionID: r.ID}, err
 			}

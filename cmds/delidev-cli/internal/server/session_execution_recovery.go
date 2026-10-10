@@ -77,6 +77,10 @@ func (s *Service) RecoverSessionExecution(ctx context.Context, req *connect.Requ
 		if err != nil {
 			return nil, err
 		}
+		if err := tx.CheckExecutionRecoveryCapacity(sr, actor); err != nil {
+			s.logger.WarnContext(ctx, "session_execution_recovery_rejected", "session_id", sr.ID, "phase", "retained-capacity", "code", domain.SafeError(err).Code)
+			return nil, err
+		}
 		recoveryID := domain.NewID()
 		if _, err := tx.PutJob(recoveryID, 0, sr.ID, sr.ProjectID, domain.Job{Type: domain.RecoverExecutionJob, State: domain.JobQueued, MachineID: session.MachineID, ParentID: input.JobID, Input: raw, AcceptedAt: time.Now().UTC()}); err != nil {
 			s.logger.WarnContext(ctx, "recovery_job_write_failed", "error", err)

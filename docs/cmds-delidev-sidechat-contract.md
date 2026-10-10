@@ -273,6 +273,24 @@ Independent Forks and parent files retain their separate ownership. Preserve the
 4 MiB outer deletion envelope and 4,096-copy bounds; never evict history or expand
 an envelope to admit another retry.
 
+Capacity admission under issue #2293 reserves three session jobs for each new
+same-question generation: the original Fork, its exact question execution and
+one original-history recovery. Count all retained jobs, including unclaimed and
+terminal jobs. Inspect the original parent and every dependent deletion plan in
+the same transaction, and retain serialized ownership-copy headroom for sibling
+generations that have not yet published their original metadata. Preserve the
+existing outer-journal margin. Insufficient count or envelope capacity creates no
+generation, queue input or job; history eviction and larger limits are forbidden.
+
+Execution recovery checks one new job against that same envelope after original
+ownership validation. Receipt replay and an already queued or claimed recovery
+return their original job before capacity admission. Existing startup retries
+require positive no-send and cleanup proof and reserve their new execution plus
+one recovery job before queue/job writes. A same-question retry assignment still
+rejects a simultaneous startup retry; capacity does not add send, recovery or
+replacement-account authority. A later explicit recovery or startup attempt
+requires fresh remaining capacity and cannot consume a settled receipt twice.
+
 The question action uses the issue's exact English/Korean explanation. Its
 noninteractive popover opens after 300 ms hover or immediately on focus, shares
 `aria-describedby`, stays open across its button and popover, and closes on

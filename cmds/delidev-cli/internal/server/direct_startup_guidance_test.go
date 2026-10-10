@@ -74,7 +74,7 @@ func TestDirectStartupAcknowledgedGuidanceRetainsRecoveryAndReceipt(t *testing.T
 		if session.Recovery != domain.NeedsRecovery || session.Startup == nil || session.Startup.JobID != f.job || session.Startup.ExecutionID != f.input.ExecutionID || *session.Startup.Failure != o {
 			t.Fatalf("acknowledgement erased original recovery facts: %+v", session)
 		}
-		if _, err := queueExecutionStartupRetry(tx, r, session); err == nil {
+		if _, err := queueExecutionStartupRetry(tx, r, session, domain.Principal{Type: domain.OwnerDevice}); err == nil {
 			t.Fatal("acknowledged failure authorized another input")
 		}
 		original, err := tx.Get(domain.JobKind, f.job)
