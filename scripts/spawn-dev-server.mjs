@@ -178,14 +178,28 @@ export async function spawnDevServer(
   command,
   args,
   options,
-  { terminateProcessTree = false } = {},
+  { terminateProcessTree = false, output } = {},
 ) {
   const managePosixProcessGroup = process.platform !== "win32" && terminateProcessTree;
+  const spawnOptions = output ? { ...options, stdio: [Array.isArray(options.stdio) ? options.stdio[0] : "inherit", "pipe", "pipe"] } : options;
   const child = spawn(
     command,
     args,
-    managePosixProcessGroup ? { ...options, detached: true } : options,
+    managePosixProcessGroup ? { ...spawnOptions, detached: true } : spawnOptions,
   );
+  // Captured callers must consume both pipes; ordinary dev servers retain
+  // their existing stdio and exit boundary.
+  const drains = [];
+  if (output) {
+    for (const name of ["stdout", "stderr"]) {
+      child[name].setEncoding("utf8");
+      child[name].on("data", chunk => output[name](chunk));
+      let flushed = false;
+      const flush = () => { if (!flushed) { flushed = true; output[name](null); } };
+      child[name].once("end", flush);
+      drains.push(new Promise(resolve => child[name].once("close", () => { flush(); resolve(); })));
+    }
+  }
   const signalHandlers = new Map();
   let forwardedSignal = null;
   const terminationPromises = [];
@@ -235,6 +249,21 @@ export async function spawnDevServer(
   try {
     const result = await childResult;
     await Promise.all(terminationPromises);
+    if (output) {
+      // Descendants can retain a pipe after the original child exits. Bound only
+      // diagnostic draining; this does not signal or adopt those descendants.
+      let deadline;
+      const drained = await Promise.race([
+        Promise.all(drains).then(() => true),
+        new Promise(resolve => { deadline = setTimeout(() => resolve(false), 1000); }),
+      ]);
+      clearTimeout(deadline);
+      if (!drained) {
+        output.incomplete?.();
+        child.stdout.destroy(); child.stderr.destroy();
+        await Promise.all(drains);
+      }
+    }
     return forwardedSignal ? { code: null, signal: forwardedSignal } : result;
   } finally {
     removeSignalHandlers();

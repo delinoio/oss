@@ -1,3 +1,4 @@
+import { desktopDiagnosticOutput } from "./desktop-diagnostics.mjs";
 import { tauriCommand } from "../../../scripts/tauri-cli.mjs";
 import { basename, join, resolve } from "node:path";
 import { homedir } from "node:os";
@@ -59,6 +60,7 @@ export async function runDesktop(args, {
   identityFor = async (options, command) => inspectDevelopmentIdentity(readSigningIdentity(), options, command),
   publish = publishDevelopmentBundle,
   lock = () => acquireNativeBuildLock(root),
+  diagnostics = { stdout: chunk => process.stdout.write(chunk), stderr: chunk => process.stderr.write(chunk) },
   log = entry => process.stderr.write(`${JSON.stringify(entry)}\n`),
 } = {}) {
   let stage = "prepare";
@@ -71,8 +73,11 @@ export async function runDesktop(args, {
       return { code: 1, signal: null };
     }
     const env = desktopEnvironment(platform, environment);
-    const options = { cwd: app, env, stdio: "inherit", shell: false };
-    const lifecycle = { terminateProcessTree: true };
+    // pnpm callers may include one explicit separator. Every remaining token is
+    // an application argument, never a Tauri/config/Cargo override.
+    const forwarded = args[0] === "--" ? args.slice(1) : args;
+    const options = { cwd: app, env, stdio: ["inherit", "pipe", "pipe"], shell: false };
+    const lifecycle = { terminateProcessTree: true, output: { ...desktopDiagnosticOutput(forwarded, diagnostics), incomplete: () => report("diagnostics-incomplete") } };
     const command = (executable, argv, opts) => signingCommand(executable, argv, opts, run);
     let identity;
     if (platform === "darwin") {
@@ -90,13 +95,10 @@ export async function runDesktop(args, {
     stage = platform === "darwin" ? "bundle" : "run";
     const selected = targets.find(target => target.platform === platform && target.arch === arch);
     const credits = platform === "darwin" ? creditsFor(selected, env) : undefined;
-    // pnpm callers may include one explicit separator. Every remaining token is
-    // an application argument, never a Tauri/config/Cargo override.
-    const forwarded = args[0] === "--" ? args.slice(1) : args;
     report("started");
     const cliArguments = desktopArguments(platform, forwarded, credits);
     const invocation = platform === "darwin" ? tauriCommand(cliArguments) : ["cargo", cliArguments];
-    let result = await run(...invocation, options, lifecycle);
+    let result = await run(...invocation, options, { ...lifecycle, output: { ...desktopDiagnosticOutput(forwarded, diagnostics), incomplete: () => report("diagnostics-incomplete") } });
     if (platform === "darwin" && result.code === 0 && result.signal === null) {
       stage = "sign-and-publish";
       report("started");
@@ -108,7 +110,7 @@ export async function runDesktop(args, {
       report("started");
       // An interrupted launcher may leave its Go server alive. Signal only the
       // original desktop child; never group-kill its crash-surviving sidecar.
-      result = await run(executable, forwarded, { ...options, detached: true }, { terminateProcessTree: false });
+      result = await run(executable, forwarded, { ...options, detached: true }, { terminateProcessTree: false, output: { ...desktopDiagnosticOutput(forwarded, diagnostics), incomplete: () => report("diagnostics-incomplete") } });
     }
     report(result.code === 0 && result.signal === null ? "exited" : "failed", result);
     return result;

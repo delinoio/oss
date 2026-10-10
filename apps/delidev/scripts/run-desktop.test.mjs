@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { desktopDiagnosticOutput } from "./desktop-diagnostics.mjs";
 import { desktopArguments, desktopEnvironment, runDesktop } from "./run-desktop.mjs";
 import { DevelopmentSigningError, developmentBundleDirectory } from "./development-signing.mjs";
 
@@ -40,7 +41,7 @@ test("macOS prepares a CEF bundle with embedded assets and preserves application
   assert.ok(!argv.includes(args[1]));
   assert.equal(calls[2][0], await macFixtures.publish());
   assert.deepEqual(calls[2][1], args);
-  assert.deepEqual(calls[2][3], { terminateProcessTree: false });
+  assert.equal(calls[2][3].terminateProcessTree, false); assert.equal(typeof calls[2][3].output.stderr, "function");
   assert.equal(calls[2][2].detached, true);
   assert.equal(released, true);
   const config = JSON.parse(argv[argv.indexOf("--config") + 1]);
@@ -171,7 +172,7 @@ test("SIGTERM reaches the active child during preparation and execution", { skip
         run: async (_command, _args, _options, lifecycle) => {
           calls++;
           if (${JSON.stringify(stage)} === 'run' && calls === 1) return { code: 0, signal: null };
-          const running = spawnDevServer(process.execPath, ['-e', ${JSON.stringify(childCode)}], { stdio: 'inherit', shell: false }, lifecycle);
+          const running = spawnDevServer(process.execPath, ['-e', ${JSON.stringify(childCode)}], { ..._options, shell: false }, lifecycle);
           process.stdout.write('wrapper-ready\\n');
           return running;
         }
@@ -197,4 +198,79 @@ test("SIGTERM reaches the active child during preparation and execution", { skip
     assert.equal(readFileSync(receipt, "utf8"), "terminated");
     if (vanishedProcess) assert.match(diagnostics, /vanished-process-observed/u);
   }
+});
+
+
+test("captured launcher diagnostics omit private argv and retain build/runtime failures", async () => {
+  const privatePath = "/absolute/private/fixture scope/한글";
+  const output = { stdout: "", stderr: "" };
+  const diagnostics = Object.fromEntries(Object.keys(output).map(name => [name, chunk => { output[name] += chunk; }]));
+  let call = 0;
+  const failure = { code: 23, signal: null };
+  const result = await runDesktop(["--data-dir", privatePath], {
+    platform: "linux", environment, diagnostics, log() {},
+    run: async (_command, argv, options, lifecycle) => {
+      assert.deepEqual(options.stdio, ["inherit", "pipe", "pipe"]);
+      if (++call === 1) {
+        lifecycle.output.stderr("Compiling fixture\nerror[E0001]: expected identifier\n");
+        lifecycle.output.stderr(null); lifecycle.output.stdout(null); return success;
+      }
+      assert.deepEqual(argv.slice(-2), ["--data-dir", privatePath]);
+      // Real small Node child exercises UTF-8 decoding, pipe draining and the
+      // shared signal/exit owner. No Cargo/native build or app is launched.
+      const { spawnDevServer } = await import("../../../scripts/spawn-dev-server.mjs");
+      const fixture = String.raw`
+        const value = process.argv[1];
+        process.stderr.write('    Running \x1b[32m\x60fixture --data-dir ' + value + '\x60\x1b[0m\n');
+        process.stdout.write('application ready\n');
+        const bytes = Buffer.from('application problem at ' + value + '\n');
+        process.stderr.write(bytes.subarray(0, bytes.length - 6));
+        process.stderr.write(bytes.subarray(bytes.length - 6));
+        process.stderr.write("error: process didn't exit successfully: \x60fixture " + value + "\x60 (exit status: 23)\n");
+        process.stdout.write('final diagnostic without newline');
+        process.exitCode = 23;
+      `;
+      return spawnDevServer(process.execPath, ["-e", fixture, privatePath], { ...options, env: process.env }, lifecycle);
+    },
+  });
+  assert.deepEqual(result, failure);
+  assert.doesNotMatch(output.stdout + output.stderr, /fixture scope|한글|absolute\/private/u);
+  assert.match(output.stderr, /error\[E0001\]: expected identifier/u);
+  assert.match(output.stderr, /application problem at \[private argument\]/u);
+  assert.match(output.stderr, /desktop command failed: exit status: 23/u);
+  assert.match(output.stdout, /application ready/u); assert.match(output.stdout, /final diagnostic without newline/u);
+});
+
+test("diagnostic filter handles escaped argv, chunk boundaries and oversized lines", () => {
+  const value = '/private/quote"\\folder\nsecond-line';
+  const captured = [];
+  const output = desktopDiagnosticOutput(["--scope=" + value], { stdout: chunk => captured.push(chunk), stderr: chunk => captured.push(chunk) });
+  const escaped = JSON.stringify(value).slice(1, -1);
+  output.stderr('safe warning ' + escaped.slice(0, 5)); output.stderr(escaped.slice(5) + '\n');
+  output.stdout('a'.repeat(32 * 1024) + '/private/oversized'); output.stdout(' discarded tail\nordinary runtime diagnostic\n');
+  output.stderr(null); output.stdout(null);
+  assert.deepEqual(captured, ['safe warning [private argument]\n', '[desktop diagnostic omitted: line too long]\n', 'ordinary runtime diagnostic\n']);
+});
+
+test("a descendant-held diagnostic pipe does not change original exit ownership", { timeout: 5000 }, async t => {
+  const { spawnDevServer } = await import("../../../scripts/spawn-dev-server.mjs");
+  let descendant;
+  t.after(() => { if (descendant) { try { process.kill(descendant, "SIGTERM"); } catch (error) { if (error.code !== "ESRCH") throw error; } } });
+  const output = desktopDiagnosticOutput([], {
+    stdout: line => { const match = /^descendant:(\d+)\n/u.exec(line); if (match) descendant = Number(match[1]); },
+    stderr() {},
+  });
+  let incomplete = false;
+  const fixture = String.raw`
+    const { spawn } = require('node:child_process');
+    const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 3000)'], { stdio: 'inherit' });
+    child.unref();
+    process.stdout.write('descendant:' + child.pid + '\n');
+    process.exitCode = 17;
+  `;
+  const result = await spawnDevServer(process.execPath, ["-e", fixture], { stdio: "inherit", shell: false }, {
+    terminateProcessTree: false, output: { ...output, incomplete: () => { incomplete = true; } },
+  });
+  assert.deepEqual(result, { code: 17, signal: null }); assert.equal(incomplete, true); assert.ok(descendant);
+  assert.doesNotThrow(() => process.kill(descendant, 0));
 });
