@@ -572,6 +572,9 @@ func (s *Store) AcknowledgeSessionDeletion(ctx context.Context, session, deletio
 // foreign keys cascade search/FTS, usage, estimates, assignments and grants.
 // Receipt identities remain but their results lose the deleted content.
 func (t *Tx) purgeSession(v SessionDeletion) error {
+	if err := t.PurgeSessionCodexApps(v.SessionID); err != nil {
+		return err
+	}
 	if _, err := t.tx.ExecContext(t.ctx, "DELETE FROM metadata WHERE key=?", queueOrderPrefix+string(v.SessionID)); err != nil {
 		return storageError(err)
 	}
@@ -866,6 +869,9 @@ func (s *Store) sessionDeletionReceipt(ctx context.Context, tx *sql.Tx, v Sessio
 }
 
 func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
+	if err := t.RequireSettledCodexApps(v.SessionID); err != nil {
+		return v, err
+	}
 	row, e := t.Get(domain.SessionKind, v.SessionID)
 	if e != nil {
 		return v, e

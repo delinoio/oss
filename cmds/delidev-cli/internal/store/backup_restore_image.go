@@ -52,6 +52,9 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 	if conflicting {
 		return backupUnavailable()
 	}
+	if err := restoreCodexAppsMetadata(ctx, tx); err != nil {
+		return err
+	}
 	// Only a current, still-connected original OAuth result retains vault
 	// authority across restore. Neither an older account image nor a disconnected
 	// current descriptor can recover an old credential generation.
