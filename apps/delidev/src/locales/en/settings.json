@@ -185,5 +185,6 @@
   "settings.savingProjectDefaults": "Saving project defaults…",
   "settings.projectDefaultsSaveOutcomeUnknown": "Project defaults save outcome is unknown.",
   "settings.unsavedProjectDefaults": "Unsaved project defaults",
-  "settings.networkPreferencesDescription": "Network settings for this server."
+  "settings.networkPreferencesDescription": "Network settings for this server.",
+  "settings.repositorySaveUnverified": "The original repository save could not be verified. Read its status again; do not repeat Save."
 }

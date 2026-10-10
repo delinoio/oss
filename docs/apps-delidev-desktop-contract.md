@@ -253,7 +253,7 @@ Show the first three arrivals and retain later arrivals in FIFO order. Countdown
 
 Success, information and warning content use polite status announcements; errors use assertive alerts. Include a non-color kind label for assistive technology and keep icons decorative. Creation never takes focus. Close supports pointer, Tab/Enter/Space and Escape within the toast, preserving global dialog Escape behavior. Explicit focused dismissal returns to the last connected, available external focus target or the main content fallback.
 
-Notification preferences and general configuration editors publish fixed safe success copy only from their existing acknowledged-save callbacks. A configuration response with a job takes precedence over any resource and remains an accepted operation, not an immediate save completion. Unknown acknowledgments, jobs, failed/uncertain requests, cancellation and late results from disposed Settings visits do not publish success. Original request IDs identify the toasts. Preserve existing mutation receipts/retry rules, query invalidation, focus handoffs, detailed errors and job inspection.
+Notification preferences and general configuration editors publish fixed safe success copy only from their existing acknowledged-save callbacks. A configuration response with a job takes precedence over any resource and remains an accepted operation, not an immediate save completion. Unknown acknowledgments, unverified jobs, failed/uncertain requests, cancellation and late results from disposed Settings visits do not publish success. Existing repository editing has the verified-job completion exception defined in [Repository editing sections](#repository-editing-sections); its toast uses the original job identity. Original request IDs identify the toasts. Preserve existing mutation receipts/retry rules, query invalidation, focus handoffs, detailed errors and job inspection.
 
 These toasts neither request OS permission nor claim/report native delivery, modify Inbox read state or enable session actions. OS notifications, durable Inbox reservations, synchronized preferences and native activation retain their existing owners and contracts. No Connect API, migration, storage, native permission or package dependency is added. Component and browser layout checks remain separate from packaged CEF/platform acceptance; record validation in pull requests, issues and CI artifacts rather than repository evidence files.
 
@@ -4289,6 +4289,26 @@ Settings > Repositories > Edit Repository uses the 960px workflow task shell wit
 Always show connected checkouts, resolving Runner Device display names while retaining exact IDs and complete wrapping paths. Empty editing shows No connected checkouts. Add a checkout and Advanced settings start collapsed. Their content and original controllers remain mounted: collapse does not reset drafts, inspection requests, accepted jobs or polling. Add a checkout contains the original selection, path, inspection, canonical-root addition, result and exact uncertain retry. Advanced retains preferred remote, independent base/starting references, fetch preference and every remediation inheritance/override field. Reveal section-local failures and invalid hidden fields before focusing them; global revision/read/save errors stay outside disclosures.
 
 Use existing semantic theme tokens, system fonts, 16px shell corners, 20px title, 16px section headings, 14px body, 12px hints, 40px controls and 8px control corners. Preserve narrow/200% reflow, fixed actions, modal focus containment, X/Escape dismissal and opener restoration. The top-level editor footer has Save Repository and any original exact retry controls; header dismissal owns closing. Page editors retain their ordinary cancellation. Preserve current schema/capability/revision gates, original request bytes, accepted server/native work, required checkout removal protection and protected credentials. This presentation adds no protocol, migration or native behavior.
+
+Existing repository editing closes automatically only after a completed,
+successful original-job status read verifies the original JOB identity and a
+non-regressing readable revision, with no pending read, read failure or visible
+job problem. Its succeeded output must pass the shared repository confirmation
+parser, match the submitted repository ID and advance the submitted expected
+revision. An acknowledgment or retained succeeded fallback is insufficient.
+Unverifiable success keeps localized guidance and the exact original status-read
+retry; it never repeats Save. Pending progress, failures, cancellation and
+Return to retained draft retain their existing authority. The verified successful
+path has no completion paragraph or Done action.
+
+An effect owned by the original job and mounted Settings opening publishes one
+localized repository-saved success toast with a stable original-job identity,
+then invokes the existing saved callback to close the task and refresh active
+inventory. Repeated observations and Strict Mode cannot repeat completion.
+Dismissal, inactive presentation and disposed Settings openings fence late
+results from notification, successor-task closure and focus changes. Existing
+opener restoration, cards, editing form, immediate-resource saves, repository
+registration and other configuration completion flows remain unchanged.
 
 An inert Settings Resource, API account, subscription or API provider inventory beneath its original edit/delete task suspends pagination readers and continuation while retaining at most its three resident payload pages and mounted row/disclosure owners. Dismissal restores the same opener and controllers. Settings visit or category departure disposes that owner; this retention grants no refresh, mutation or recovery replay.
 

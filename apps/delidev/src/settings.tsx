@@ -31,7 +31,7 @@ import { accountPreferencesDocument } from "./account-preferences";
 import { revealRepositoryInvalidControl } from "./repository-editor";
 import { ConfigurationFields, ResourceSelectionPending, editableKinds, kindNames, newConfiguration, ServerPreferenceSection } from "./configuration-fields";
 import { ConfigurationDeletion, RoutingPreview } from "./configuration-actions";
-import { JobState, TrackedJob } from "./jobs";
+import { JobState, TrackedJob, type TrackedJobObservation } from "./jobs";
 import { LocalWorkerControls, LocalWorkerPresentation, type ControlLocalWorker, type LocalWorkerAction } from "./local-worker-controls";
 import { SSHSetup } from "./ssh-setup";
 import { MachineSettings } from "./machine-settings";
@@ -50,9 +50,9 @@ import { PairingGrant, type PairingAuthority } from "./pairing-grant";
 import { AccountSettings, AccountSettingsSection, type AccountProviderPicker, type AccountProviderSummary } from "./account-settings";
 import { ApiProviderSettings, providerInventoryReady, type ProviderListState } from "./provider-model-settings";
 import { revealAgentInvalidControl } from "./agent-configuration";
-import { RepositoryRegistration, type ChooseRepositoryFolder } from "./repository-registration";
+import { RepositoryRegistration, confirmedRepository, type ChooseRepositoryFolder } from "./repository-registration";
 import type { ReadLocalWorkerProof } from "./local-worker";
-import { SettingsLifetime } from "./settings-lifetime";
+import { SettingsLifetime, useSettingsOpening } from "./settings-lifetime";
 import { ShortcutSettings } from "./shortcut-settings";
 import { DateFormatSettings } from "./date-format";
 import { AppearanceSettings } from "./appearance";
@@ -66,6 +66,24 @@ import "./api-account.css";
 import { SettingsTasks, SettingsTaskBackground, SettingsTaskDialog, SettingsTaskActions, SettingsDialogSize, SettingsDialogFocus } from "./settings-task";
 import { useSettingsTaskVisible, useInSettingsTask, useCloseSettingsTask } from "./settings-task-context";
 
+// Completion belongs to the original job and the currently mounted Settings
+// opening. Acknowledgment and retained succeeded fallbacks cannot close a task.
+function RepositoryEditCompletion({ job, state, output, observation, expected, active, saved }: { job: Resource; state: string; output: Document; observation: TrackedJobObservation; expected?: { id: string; revision: bigint }; active: boolean; saved: () => void }) {
+  const opening = useSettingsOpening(), notifications = useNotifications();
+  const completed = useRef(false), mounted = useRef(false);
+  useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const identity = confirmedRepository(output);
+  const confirmed = Boolean(state === JobState.Succeeded && observation.verified && expected && identity?.id === expected.id && identity.revision > expected.revision);
+  useEffect(() => {
+    if (!confirmed || !active || !mounted.current || opening?.disposed || completed.current) return;
+    completed.current = true;
+    notifications.notify({ kind: ToastKind.Success, message: ownedMessage("settings.savedKind.REPOSITORY"), id: `repository-save:${job.id}` });
+    saved();
+  }, [confirmed, active, opening, job.id, notifications, saved]);
+  if (state === JobState.Failed || state === JobState.Canceled) return null;
+  return state === JobState.Succeeded && !confirmed ? <><p role="alert">{copy("settings.repositorySaveUnverified")}</p>{!observation.error && !observation.unreadable ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={observation.loading} onClick={() => void observation.refetch()}>{copy("jobs.retryStatusRead")}</SettingsActionButton> : null}</> : null;
+}
+
 export enum ConfigurationEditorPresentation { Workflow, InlineServerPreferences }
 
 export function ConfigurationEditor({ kind, initial, initialData, subscriptionOnly = false, serverPreferenceSection = ServerPreferenceSection.All, active, saved, cancel, presentation = ConfigurationEditorPresentation.Workflow, preferencesObservation, registrationAdapters }: { kind: EntityKind; initial?: Resource; initialData?: Document; subscriptionOnly?: boolean; serverPreferenceSection?: ServerPreferenceSection; active: boolean; saved: () => void; cancel: () => void; presentation?: ConfigurationEditorPresentation; preferencesObservation?: ServerPreferencesObservation; registrationAdapters?: ProjectRegistrationAdapters }) {
@@ -78,6 +96,7 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
   const apiEditor = kind === EntityKind.ACCOUNT && Boolean(initial && document(initial).type === "api");
   const source = inline || apiEditor ? baseline : initial;
   const [data, setData] = useState<Document>(() => initial ? document(initial) : initialData ?? newConfiguration(kind));
+  const [repositorySave, setRepositorySave] = useState<{ id: string; revision: bigint }>();
   const [job, setJob] = useState<Resource | "unknown">();
   const [childPending, setChildPending] = useState(false);
   const pendingSelections = useRef(new Set<string>());
@@ -106,7 +125,10 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
         if (added.length) checkoutPreference.remember(text(added[added.length - 1].machine_id));
       }
     }
-    if (result.job) setJob(result.job);
+    if (result.job) {
+      if (kind === EntityKind.REPOSITORY && source && request.mutation?.id === source.id) setRepositorySave({ id: source.id, revision: request.mutation.expectedRevision });
+      setJob(result.job);
+    }
     else if (result.resource) {
       if (inline) { setBaseline(result.resource); setData(document(result.resource)); setProblem(""); }
       notifications.notify({ kind: ToastKind.Success, message: ownedMessage(savedKind[kind as keyof typeof savedKind] ?? "settings.savedKind.fallback"), id: request.mutation?.requestId }); saved();
@@ -157,7 +179,7 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
   const isApiEntry = kind === EntityKind.ACCOUNT && data.type === "api";
   const kindLabel = isApiEntry ? copy("settings.extra.1ebd6d7b3aeb") : kind === EntityKind.SETTINGS ? serverPreferenceLabel(serverPreferenceSection) : kindNames[kind];
   const apiEntryHeading = isApiEntry ? <header className="api-entry-heading"><h1 hidden={inTask}>{initial ? copy("settings.editPreferences_00b4cc") : copy("settings.newAiApiKeyEntry_5f978c")}</h1><p>{resourceName(initial)}</p><p className="api-entry-scope">{copy("settings.savedOnTheSelectedServer_93dbee")}</p></header> : null;
-  if (job) return <section className={isApiEntry ? "api-entry-workflow" : undefined}>{apiEntryHeading}{job === "unknown" ? <p role="alert">{copy("settings.theServerAcknowledgedThisRequestWithout_061fa2")}</p> : <TrackedJob initial={job} active={active}>{(state) => state === JobState.Succeeded ? <><p>{copy("settings.configurationSavedAfterWorkerValidation_d2b875")}</p><SettingsActionButton icon={SettingsActionIcon.Cancel} onClick={saved}>{copy("settings.done_11a676")}</SettingsActionButton></> : state === JobState.Failed || state === JobState.Canceled ? <SettingsActionButton icon={SettingsActionIcon.Back} onClick={() => setJob(undefined)}>{copy("settings.returnToRetainedDraft_213f1b")}</SettingsActionButton> : null}</TrackedJob>}</section>;
+  if (job) return <section className={isApiEntry ? "api-entry-workflow" : undefined}>{apiEntryHeading}{job === "unknown" ? <p role="alert">{copy("settings.theServerAcknowledgedThisRequestWithout_061fa2")}</p> : <TrackedJob initial={job} active={active}>{(state, output, observation) => kind === EntityKind.REPOSITORY && initial ? <><RepositoryEditCompletion key={job.id} job={job} state={state} output={output} observation={observation} expected={repositorySave} active={active && taskVisible} saved={saved} />{state === JobState.Failed || state === JobState.Canceled ? <SettingsActionButton icon={SettingsActionIcon.Back} onClick={() => setJob(undefined)}>{copy("settings.returnToRetainedDraft_213f1b")}</SettingsActionButton> : null}</> : state === JobState.Succeeded ? <><p>{copy("settings.configurationSavedAfterWorkerValidation_d2b875")}</p><SettingsActionButton icon={SettingsActionIcon.Cancel} onClick={saved}>{copy("settings.done_11a676")}</SettingsActionButton></> : state === JobState.Failed || state === JobState.Canceled ? <SettingsActionButton icon={SettingsActionIcon.Back} onClick={() => setJob(undefined)}>{copy("settings.returnToRetainedDraft_213f1b")}</SettingsActionButton> : null}</TrackedJob>}</section>;
   const validSubscriptionProvider = !subscriptionOnly || (kind === EntityKind.PROVIDER && data.protocol === "native-subscription" && data.authentication === "subscription" && text(data.endpoint) === "");
   const repositoryNeedsRemoteCapability = kind === EntityKind.REPOSITORY && typeof data.remote_url === "string" && data.remote_url !== "";
   const repositoryStatusPending = repositoryNeedsRemoteCapability && repositoryStatus.data === undefined && !repositoryStatus.error;

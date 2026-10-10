@@ -185,5 +185,6 @@
   "settings.savingProjectDefaults": "프로젝트 기본값 저장 중…",
   "settings.projectDefaultsSaveOutcomeUnknown": "프로젝트 기본값 저장 결과를 알 수 없습니다.",
   "settings.unsavedProjectDefaults": "저장되지 않은 프로젝트 기본값",
-  "settings.networkPreferencesDescription": "이 서버의 네트워크 설정입니다."
+  "settings.networkPreferencesDescription": "이 서버의 네트워크 설정입니다.",
+  "settings.repositorySaveUnverified": "원래 저장소 저장 결과를 확인할 수 없습니다. 상태를 다시 읽으세요. 저장을 반복하지 마세요."
 }
