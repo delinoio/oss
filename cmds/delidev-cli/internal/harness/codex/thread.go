@@ -104,10 +104,12 @@ type EffectiveSettings struct {
 // ThreadResult retains a proven native identity even when effective settings
 // fail validation. Such a result requires reconciliation, never another start.
 type ThreadResult struct {
-	SkillInputs []HistoricalInput `json:"-"`
-	RequestID   domain.ID
-	Thread      *Thread
-	Effective   *EffectiveSettings
+	// DirectorySources is Worker-private reload evidence, never public observation.
+	DirectorySources []string          `json:"-"`
+	SkillInputs      []HistoricalInput `json:"-"`
+	RequestID        domain.ID
+	Thread           *Thread
+	Effective        *EffectiveSettings
 }
 
 type threadMethod string
@@ -386,6 +388,15 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 	}
 	thread, effective, err := decodeBoundThreadProfile(response.Result, settings, threadID, method, c.version, c.revertHistory)
 	result.Thread, result.Effective = thread, effective
+	if settings.directorySource != nil && err == nil {
+		var reload boundThreadWire
+		if domain.Decode(response.Result, &reload) != nil || reload.InstructionSources == nil {
+			c.problem = directoryUncertain()
+			return result, c.problem
+		}
+		result.DirectorySources = slices.Clone(reload.InstructionSources)
+	}
+
 	if threadID != "" {
 		// A mismatched native response cannot replace the resumed identity's
 		// inspection authority, even while mutations are blocked for recovery.

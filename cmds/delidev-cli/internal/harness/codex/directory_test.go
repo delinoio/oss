@@ -120,3 +120,55 @@ func TestDirectoryResumeRejectsAuthorityDriftBeforeClaim(t *testing.T) {
 		})
 	}
 }
+
+func TestDirectoryBackgroundInventoryRequiresCompleteEmptyProof(t *testing.T) {
+	for _, fixture := range []struct {
+		raw   string
+		valid bool
+	}{
+		{`{"data":[],"nextCursor":null}`, true},
+		{`{"data":[{"processId":"9"}],"nextCursor":null}`, false},
+		{`{"data":[],"nextCursor":"more"}`, false},
+		{`{"data":[],"nextCursor":""}`, false},
+		{`{"data":[]}`, false}, {`{"data":null,"nextCursor":null}`, false},
+		{`{"nextCursor":null}`, false}, {`null`, false},
+	} {
+		if (emptyDirectoryBackgroundInventory(json.RawMessage(fixture.raw)) == nil) != fixture.valid {
+			t.Fatal("incomplete background proof accepted", fixture.raw)
+		}
+	}
+}
+
+func TestDirectoryInstructionEvidenceRejectsLinksAndChangedContent(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "AGENTS.md")
+	if err := os.WriteFile(path, []byte("first"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	first, err := directoryInstructionEvidence([]string{path})
+	if err != nil || len(first) != 1 {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("second"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	second, err := directoryInstructionEvidence([]string{path})
+	if err != nil || first[0].Digest == second[0].Digest {
+		t.Fatal("instruction change lost", err)
+	}
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(path, link); err != nil {
+		t.Fatal(err)
+	}
+	for _, paths := range [][]string{nil, {link}, {path, path}, {root}, {filepath.Join(root, "missing")}} {
+		if _, err := directoryInstructionEvidence(paths); err == nil {
+			t.Fatal("unproven instruction source accepted", paths)
+		}
+	}
+	if empty, err := directoryInstructionEvidence([]string{}); err != nil || empty == nil {
+		t.Fatal("proven empty source inventory", err)
+	}
+}
