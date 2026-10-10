@@ -158,6 +158,16 @@ it.each([170000,90000])("ignores desktop wall-clock skew and jumps (%s)",wall=>{
  const foreign=session({native_turn_id:"new-original-turn",turn_timing:{accepted_at:"1970-01-01T00:01:40Z"}});foreign.updatedAt="1970-01-01T00:01:50Z";rerender(<ToolTurnTranscript {...p} current={currentTurn(foreign,sessionId)}/>);expect(container.textContent).toContain("10s");
 });
 
+it("freezes a newer server observation until authority resumes",()=>{
+ vi.useFakeTimers();const row=session({turn_timing:{accepted_at:"1970-01-01T00:01:40Z"}});row.updatedAt="1970-01-01T00:01:50Z";
+ const p=view(query([]),currentTurn(row,sessionId));const {container,rerender}=render(<ToolTurnTranscript {...p}/>);
+ act(()=>vi.advanceTimersByTime(5000));expect(container.textContent).toContain("In progress · 15s");
+ rerender(<ToolTurnTranscript {...p} confirmed={false}/>);expect(container.textContent).toContain("Unconfirmed · 15s");expect(vi.getTimerCount()).toBe(0);
+ const newer={...row,revision:2n,updatedAt:"1970-01-01T00:02:05Z"};
+ rerender(<ToolTurnTranscript {...p} confirmed={false} current={currentTurn(newer,sessionId)}/>);expect(container.textContent).toContain("Unconfirmed · 15s");expect(vi.getTimerCount()).toBe(0);
+ rerender(<ToolTurnTranscript {...p} current={currentTurn(newer,sessionId)}/>);expect(container.textContent).toContain("In progress · 25s");expect(vi.getTimerCount()).toBe(1);
+});
+
 it.each([undefined,"","invalid","2026-02-30T00:00:00Z","2026-10-09T10:00:00.122Z"])("requires a valid, non-inverted RFC3339 server observation anchor %s",stamp=>{
  vi.useFakeTimers();const row=session();row.updatedAt=stamp as typeof row.updatedAt;
  const {container}=render(<ToolTurnTranscript {...view(query([]),currentTurn(row,sessionId))}/>);

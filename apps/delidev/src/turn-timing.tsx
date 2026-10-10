@@ -79,14 +79,14 @@ export function useTurnClock(turn: CurrentTurn | undefined, active: boolean, con
   const observation = turn?.observation;
   const key = turn && accepted !== undefined ? JSON.stringify([turn.owner, turn.inputId, accepted]) : "";
   useLayoutEffect(() => {
-    if (accepted === undefined || !observation || !key) return;
+    if (!confirmed || accepted === undefined || !observation || !key) return;
     const now = performance.now();
     const prior = frame.current;
     if (prior.key === key && (observation.revision === prior.revision && observation.updated !== prior.updated || observation.revision > prior.revision && observation.updated < prior.updated)) return;
     const advanced = prior.elapsed + (prior.anchor === undefined ? 0 : Math.max(0, now - prior.anchor));
     if (prior.key !== key) frame.current = { key, revision: observation.revision, updated: observation.updated, elapsed: observation.updated - accepted };
     else if (observation.revision > prior.revision && observation.updated >= prior.updated) frame.current = { key, revision: observation.revision, updated: observation.updated, elapsed: Math.max(advanced, observation.updated - accepted) };
-    if (!active || !confirmed) { redraw(value => value + 1); return; }
+    if (!active) { redraw(value => value + 1); return; }
     // Retained same/stale revisions cannot reset elapsed or include a hidden
     // interval. Only local monotonic advancement belongs to this active owner.
     frame.current.anchor = now;
