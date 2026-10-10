@@ -1,0 +1,11 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.session-goal { min-width: 0; }
+.session-goal .payload { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 12rem; overflow: auto; }
+.session-goal dl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.session-goal dd { margin: 0; overflow-wrap: anywhere; }
+.session-goal form, .session-goal fieldset { display: grid; gap: 12px; min-width: 0; }
+.session-goal fieldset { border: 0; padding: 0; margin: 0; }
+.session-goal label { display: grid; gap: 6px; }
+.session-goal label.checkbox { display: flex; align-items: center; }
+.session-goal textarea { resize: vertical; min-height: 80px; max-height: 240px; }
+.session-goal .actions { display: flex; flex-wrap: wrap; gap: 8px; }

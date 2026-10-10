@@ -17,7 +17,7 @@ import { currentTurn } from "./turn-timing";
 import { ToolTurnTranscript } from "./tool-turn-transcript";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { NativeImageView } from "./native-image-view";
-import { SessionHarness } from "./session-harness";
+import { SessionHarness, retainedSessionHarness } from "./session-harness";
 import { useSkillCompletion, type SkillTokenBinding } from "./skill-completion";
 import { acknowledgeSessionSubmission, nativeSubmissionInput, submissionQueueReadable, SubmissionPhase, useSessionSubmissions } from "./session-submissions";
 import { imageMime } from "./image-input";
@@ -59,6 +59,7 @@ import { NativeClaudeProgress } from "./native-claude-progress";
 import { NativeClaudeTool } from "./native-claude-tool";
 import { NativeReasoning } from "./native-reasoning";
 import { SessionContext } from "./session-context";
+import { SessionGoal } from "./session-goal";
 import { SessionBudget } from "./session-budget";
 import { ExecutionConfiguration } from "./execution-configuration";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -688,6 +689,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
           <section hidden={prEmpty} className="session-information-section"><h3>{copy("session.pullRequests")}</h3><SessionPullRequests key={id} session={session} emptyChanged={setPREmpty} diagnosticsTarget={diagnosticsTarget} /></section>
           <section className="session-information-section"><h3>{copy("session.executionSettings")}</h3><ExecutionConfiguration resource={session} diagnosticsTarget={diagnosticsTarget} /></section>
           <section className="session-information-section"><h3>{copy("session.context")}</h3><SessionContext key={id} session={session} /></section>
+          {retainedSessionHarness(session) === "codex" ? <section className="session-information-section"><h3>{copy("session-goal.title")}</h3><SessionGoal key={id} session={session} changed={setAcknowledged} readOnly={live.state !== ConnectionState.Live || Boolean(live.error) || tabs.tab.kind === SessionTabKind.Sidechat} /></section> : null}
           <section hidden={subagentsEmpty} className="session-information-section"><h3>{copy("session.subagents")}</h3><Subagents key={id} sessionId={id} revision={session.revision.toString()} emptyChanged={setSubagentsEmpty} diagnosticsTarget={diagnosticsTarget} /></section>
           <section ref={budgetDetails} className="session-information-section" tabIndex={-1}><h3>{copy("session.usageAndBudget")}</h3><NativeUsage session={session} diagnosticsTarget={diagnosticsTarget} /><SessionBudget resource={session} changed={setAcknowledged} blocked={setBudgetBlocked} /></section>
           <SessionStorageAction source={session} />

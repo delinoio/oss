@@ -969,3 +969,12 @@ Backup inspection pauses all three background inventory/history readers and refr
 
 - Issue #2112 / PR #2260 owns `CreateTerminalRequest.creation_mode` field 5, optional original-session candidate `preferred_terminal_id` field 6, and closed `TerminalCreationMode` values 0/1. Resolve every toolbar reuse-or-create in the original authenticated receipt transaction; inventory grants only a preference, never final selection. Revalidate the preferred candidate within the same session/current Worker instance before first-eligible fallback; preserve unspecified explicit additional creation and +, fields 1–4, existing capabilities, current Worker/workspace/revision checks and independent cleanup. Pending input/resize permits inspection reuse; close intent does not. Follow the terminal/protocol contracts; no migration or new native authority.
 - Startup presence retains the original closed Machine JSON shape for legacy strict readers. Read the original Machine lease and then existing System.GetOverview.observed_at on the same authenticated transport and original generation; compare only server-clock timestamps. Cancel on source/lifetime changes, fail closed on missing/failed/malformed reads and preserve the original instance, 60-second lease, revisions, storage, portable exclusions and execution authority.
+
+- Native Codex Goals (#1996) uses `session-goal.tsx` in the existing Session Info
+  drawer. Preserve System85/Worker57, actual original-source enabled observation,
+  Codex/non-Sidechat and exact execution/thread/revision gates. Joined saved reads
+  never send native work; explicit Set/status/READ/Clear owns immutable retained
+  receipt requests. Unknown/absent observations do not acknowledge uncertain
+  actions or cleanup. Keep original decimal counters, objective text, omitted
+  versus reset budget, scoped drafts and localized labels; never render internal
+  source IDs. Follow the desktop and native harness contracts.

@@ -3713,3 +3713,35 @@ Home on Sessions and both creation surfaces, including the shared compact drawer
 ### Desktop server protocol validation
 
 Native local startup, supervision and saved-connection verification require the active server protocol 2 and the compiled package version. The Go resident host reports its RPC version constants in the initial started response, matching later authenticated status observations. Private desktop control version 2 and CLI envelope version 1 remain separate from server compatibility. Reject older and newer server protocols without replacing pairing, changing lifecycle intent or granting Worker authority.
+
+## Native Codex goal management — issue #1996
+
+The existing Session Info drawer owns a bounded Native goal panel. Read the joined
+original Session and action through `GetSessionGoalState`; this observation read
+never sends another native operation. Show unknown, observed absence and the last
+observed native objective, six-state status, exact decimal token budget and usage,
+elapsed seconds and observation time separately from original action state.
+An absent goal or readable new observation never acknowledges an uncertain action
+or confirms execution cleanup. Keep native objectives as original user content;
+never display execution, thread or action identifiers as product labels.
+
+Explicit Set/status, Refresh native goal (`READ`) and Clear use
+`RequestSessionGoalAction` with the captured original Session revision, execution,
+native thread and immutable request identity. Require System85, the original
+Machine's Worker57 projection, original Codex ordinary-session scope and an actual
+source-bound enabled Goals observation. Missing, malformed, failed or replaced
+observations grant no new action authority. Preserve Sidechat restrictions and
+all independent native account, Worker, permission, generation and history gates.
+New actions stay disabled during accepted, claimed or uncertain original work.
+Reload saved goal state remains read-only. An uncertain admission may retry only
+the exact original server receipt request; it grants no second native send.
+
+Goal edits preserve the original draft across observation refreshes and locale
+changes. A changed Session revision requires explicit review/rebase; a replaced
+execution or thread cannot transfer the draft to another source. Omitted fields
+retain native values, explicit reset selects the native managed budget default,
+and explicit token budgets remain positive signed 64-bit integers. Objectives
+retain exact text within the native bound of 4,000 Unicode scalar values. Use typed bundled
+English/Korean copy and existing Info geometry, controls and focus ownership.
+Component fixtures, source checks and builds remain separate from installed-native
+or real-account acceptance.
