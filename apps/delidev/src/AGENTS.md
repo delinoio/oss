@@ -8,6 +8,8 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
+- Shortcut matching and capture must share physical primary letter/digit normalization under the [desktop shortcut contract](../../../docs/apps-delidev-desktop-contract.md#screen-shortcuts-and-help). Preserve logical Help, named-key fallback and active-composition protection.
+
 ## Owning contracts
 
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)
