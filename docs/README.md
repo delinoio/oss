@@ -209,3 +209,5 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 
 - [DeliDev signed updates](cmds-delidev-updates-contract.md)
 - [DeliDev SSH Worker setup](cmds-delidev-ssh-setup-contract.md)
+
+- [DeliDev Tailscale connections](cmds-delidev-tailscale-contract.md) owns discovery, explicit access and original approved pairing.

@@ -82,6 +82,7 @@ The desktop provides connection-scoped reusable [in-app toast notifications](app
  The standalone [Pull requests sidebar](apps-delidev-desktop-contract.md#standalone-pull-requests) uses name-only repository rows, separate read-free Details disclosures for configured GitHub identity and the complete local UUID, and native segmented state choices. Validated repository selection loads page one automatically; state/page-size changes apply immediately and valid trimmed search applies after a 300 ms IME-aware debounce; the shared shell, pending PR operations and connection-scoped lifetimes remain independently owned.
 
 ## Domain Contract Documents
+- [Tailscale connections](cmds-delidev-tailscale-contract.md), owned by `cmds/delidev-cli/internal/tailscale`, server Connect handlers and desktop Connections.
 - [Parallel browser QA](apps-delidev-qa-contract.md)
 - [macOS status widget](apps-delidev-widget-contract.md)
 - [Native package verification](apps-delidev-packaging-contract.md)
