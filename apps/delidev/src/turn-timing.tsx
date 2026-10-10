@@ -6,7 +6,7 @@ import { copy } from "./localization";
 
 export interface TurnTiming { accepted: number; terminal?: number }
 export interface TurnProjection { owner: string; inputId: string; timing?: TurnTiming; captured: boolean; inherited?: { sessionId: string; executionId: string; inputId: string } }
-export interface CurrentTurn extends TurnProjection { running: boolean }
+export interface CurrentTurn extends TurnProjection { running: boolean; observation?: { revision: bigint; at: number } }
 const uuid = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-7[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
 const identity = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0 && new TextEncoder().encode(value).length <= 1024 && !/[\u0000-\u001f\u007f\uD800-\uDFFF]/u.test(value);
 function utc(value: unknown): number | undefined {
@@ -53,26 +53,49 @@ export function currentTurn(row: Resource | undefined, sessionId: string): Curre
   // A terminal timestamp never fabricates a terminal outcome and a terminal
   // outcome without its retained end cannot fabricate a finished duration.
   const consistent = timing && bound && (running ? timing.terminal === undefined : timing.terminal !== undefined);
-  return { owner: owner(sessionId, e.execution_id, e.native_thread_id, e.native_turn_id), inputId: e.input_id, captured: Object.hasOwn(e, "turn_timing"), timing: consistent ? timing : undefined, running };
+  const observed = utc(row.updatedAt);
+  const observation = running && consistent && observed !== undefined && observed >= timing.accepted && Number.isSafeInteger(observed - timing.accepted) ? { revision: row.revision, at: observed } : undefined;
+  return { owner: owner(sessionId, e.execution_id, e.native_thread_id, e.native_turn_id), inputId: e.input_id, captured: Object.hasOwn(e, "turn_timing"), timing: consistent ? timing : undefined, running, observation };
 }
 
 /** Exactly one mounted timer; inactive/unconfirmed observations do no clock work. */
 export function useTurnClock(turn: CurrentTurn | undefined, active: boolean, confirmed: boolean) {
-  const frame = useRef<{ owner: string; seconds?: number }>({ owner: "" });
+  const frame = useRef<{ owner: string; inputId: string; accepted: number; revision: bigint; observed: number; elapsed: number; anchor?: number; seconds?: number } | undefined>(undefined);
   const [, redraw] = useState(0);
   const accepted = turn?.running ? turn.timing?.accepted : undefined;
+  const observed = turn?.observation?.at, revision = turn?.observation?.revision;
   useLayoutEffect(() => {
-    if (!active || !confirmed || accepted === undefined || !turn) return;
+    if (!active || !confirmed || accepted === undefined || observed === undefined || revision === undefined || !turn) return;
+    const previous = frame.current;
+    const same = previous !== undefined && previous.owner === turn.owner && previous.inputId === turn.inputId;
+    if (same && (previous.accepted !== accepted || revision === previous.revision && observed !== previous.observed)) return;
+    if (!same) {
+      frame.current = { owner: turn.owner, inputId: turn.inputId, accepted, revision, observed, elapsed: observed - accepted };
+    } else if (revision > previous.revision) {
+      // An advancing revision may refine the last-observed estimate, but a
+      // regressing server timestamp cannot supply a new clock anchor.
+      if (observed < previous.observed) return;
+      frame.current = { ...previous, revision, observed, elapsed: observed - accepted };
+    }
+    const current = frame.current!;
+    current.anchor = performance.now();
     const tick = () => {
-      const delta = Date.now() - accepted;
-      frame.current = { owner: turn.owner, seconds: Number.isSafeInteger(delta) && delta >= 0 ? Math.floor(delta / 1000) : undefined };
+      const delta = performance.now() - current.anchor!;
+      const elapsed = current.elapsed + delta;
+      current.seconds = Number.isFinite(elapsed) && delta >= 0 && Number.isSafeInteger(Math.floor(elapsed)) ? Math.floor(elapsed / 1000) : undefined;
       redraw(value => value + 1);
     };
     tick();
     const timer = setInterval(tick, 1000);
-    return () => clearInterval(timer);
-  }, [active, confirmed, turn?.owner, accepted]);
-  return turn && frame.current.owner === turn.owner ? frame.current.seconds : undefined;
+    return () => {
+      clearInterval(timer);
+      const delta = performance.now() - current.anchor!;
+      if (Number.isFinite(delta) && delta >= 0) current.elapsed += delta;
+      current.anchor = undefined;
+    };
+  }, [active, confirmed, turn?.owner, turn?.inputId, accepted, observed, revision]);
+  const current = frame.current;
+  return turn && current?.owner === turn.owner && current.inputId === turn.inputId && current.accepted === accepted && observed !== undefined && revision !== undefined && !(revision > current.revision && observed < current.observed) && !(revision === current.revision && observed !== current.observed) ? current.seconds : undefined;
 }
 export function turnDuration(seconds: number): string {
   const days = Math.floor(seconds / 86400), hours = Math.floor(seconds / 3600) % 24, minutes = Math.floor(seconds / 60) % 60, rest = seconds % 60;

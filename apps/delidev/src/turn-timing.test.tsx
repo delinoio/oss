@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
 import { EntityKind, ResourceSchema, newRequestId, type Resource } from "@delinoio/delidev-api-client";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import { createRef } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { encode } from "./documents";
 import { i18n } from "./localization";
 import { conversationProjection } from "./tool-turn-projection";
 import { ToolTurnTranscript } from "./tool-turn-transcript";
-import { currentTurn, messageTurn, retainedTurnTiming, turnDuration, type CurrentTurn } from "./turn-timing";
+import { currentTurn, messageTurn, retainedTurnTiming, turnDuration, useTurnClock, type CurrentTurn } from "./turn-timing";
 const sessionId=newRequestId(),executionId=newRequestId(),inputId=newRequestId(),jobId=newRequestId();
 const start="2026-10-09T10:00:00.123Z";
-function resource(kind:EntityKind,data:object,id=newRequestId(),revision=1n):Resource{return create(ResourceSchema,{kind,id,sessionId,revision,schemaVersion:1,documentJson:encode(data)});}
+function resource(kind:EntityKind,data:object,id=newRequestId(),revision=1n):Resource{return create(ResourceSchema,{kind,id,sessionId,revision,schemaVersion:1,updatedAt:start,documentJson:encode(data)});}
 function session(extra:object={}){return resource(EntityKind.SESSION,{initial_execution:{id:executionId,input_id:inputId},active_execution_id:executionId,execution:{execution_id:executionId,input_id:inputId,job_id:jobId,last_sequence:2,accepted_inputs:[{input_id:inputId,prompt_digest:"a".repeat(64)}],native_thread_id:"original-thread",native_turn_id:"original-turn",outcome:"running",turn_timing:{accepted_at:start},...extra}},sessionId);}
 function message(extra:object={},id=newRequestId(),revision=1n){return resource(EntityKind.MESSAGE,{role:"user",text:"Original native input",state:"complete",execution_id:executionId,input_id:inputId,native_thread_id:"original-thread",native_turn_id:"original-turn",first_sequence:3,last_sequence:4,turn_timing:{accepted_at:start},...extra},id,revision);}
 function query(pages:Resource[][]){return {pages:pages.map((rows,index)=>({token:index?`original-${index}`:"",nextPageToken:index<pages.length-1?`original-${index+1}`:"",rows:rows.map(row=>conversationProjection(row,sessionId))})),payloadPages:pages.map((payload,index)=>({token:index?`original-${index}`:"",payload})),nextPageToken:"",restore:vi.fn(),measure:vi.fn(),protect:vi.fn()};}
@@ -33,8 +33,8 @@ it("starts before the first message, advances through waits and moves one displa
 it("freezes disconnected/failed-read estimates and resumes authoritative observations without inventing an end",()=>{
  vi.useFakeTimers();vi.setSystemTime(new Date(start));const p=view();const {container,rerender,unmount}=render(<ToolTurnTranscript {...p}/>);act(()=>vi.advanceTimersByTime(12000));
  rerender(<ToolTurnTranscript {...p} confirmed={false}/>);expect(container.textContent).toContain("Unconfirmed · 12s");expect(vi.getTimerCount()).toBe(0);act(()=>vi.advanceTimersByTime(30000));expect(container.textContent).toContain("Unconfirmed · 12s");
- rerender(<ToolTurnTranscript {...p}/>);expect(container.textContent).toContain("In progress · 42s");expect(vi.getTimerCount()).toBe(1);
- rerender(<ToolTurnTranscript {...p} active={false}/>);act(()=>vi.advanceTimersByTime(60000));expect(vi.getTimerCount()).toBe(0);rerender(<ToolTurnTranscript {...p}/>);expect(container.textContent).toContain("1m 42s");unmount();expect(vi.getTimerCount()).toBe(0);
+ rerender(<ToolTurnTranscript {...p}/>);expect(container.textContent).toContain("In progress · 12s");expect(vi.getTimerCount()).toBe(1);
+ rerender(<ToolTurnTranscript {...p} active={false}/>);act(()=>vi.advanceTimersByTime(60000));expect(vi.getTimerCount()).toBe(0);rerender(<ToolTurnTranscript {...p}/>);expect(container.textContent).toContain("12s");unmount();expect(vi.getTimerCount()).toBe(0);
 });
 
 it.each(["succeeded","failed","stopped"])("freezes %s at the immutable terminal and preserves genuine zero",outcome=>{
@@ -77,4 +77,43 @@ it("anchors pre-user timing before the first original native row and relocates o
  act(()=>vi.advanceTimersByTime(12000));expect(before.textContent).toContain("12s");
  const primary=message({first_sequence:8,last_sequence:9});rerender(<ToolTurnTranscript {...p} query={query([[prior,foreign],[early,primary]])}/>);
  expect(container.querySelectorAll(".turn-time")).toHaveLength(1);expect(container.querySelector(".turn-time")?.nextElementSibling?.textContent).toContain(primary.id);expect(container.querySelector(".turn-time")?.textContent).toContain("12s");expect(vi.getTimerCount()).toBe(1);
+});
+
+it.each([170000,90000])("anchors the active estimate to server timestamps under desktop wall clock %s", wall => {
+ vi.useFakeTimers();vi.setSystemTime(wall);
+ const row=session({turn_timing:{accepted_at:"1970-01-01T00:01:40Z"}});row.updatedAt="1970-01-01T00:01:50Z";
+ const turn=currentTurn(row,sessionId)!;
+ const {result}=renderHook(()=>useTurnClock(turn,true,true));
+ expect(result.current).toBe(10);expect(vi.getTimerCount()).toBe(1);
+ vi.setSystemTime(wall+900000);act(()=>vi.advanceTimersByTime(5000));expect(result.current).toBe(15);
+});
+
+it("retains exact owner/input/revision anchors through rereads and frozen lifetimes",()=>{
+ vi.useFakeTimers();vi.setSystemTime(170000);
+ const row=session({turn_timing:{accepted_at:"1970-01-01T00:01:40Z"}});row.updatedAt="1970-01-01T00:01:50Z";
+ const original=currentTurn(row,sessionId)!;
+ const {result,rerender}=renderHook(({turn,active,confirmed})=>useTurnClock(turn,active,confirmed),{initialProps:{turn:original,active:true,confirmed:true}});
+ act(()=>vi.advanceTimersByTime(5000));expect(result.current).toBe(15);
+ rerender({turn:{...original},active:true,confirmed:true});expect(result.current).toBe(15);expect(vi.getTimerCount()).toBe(1);
+ const newer={...original,observation:{revision:2n,at:120000}};
+ rerender({turn:newer,active:true,confirmed:true});expect(result.current).toBe(20);
+ rerender({turn:original,active:true,confirmed:true});expect(result.current).toBe(20);
+ act(()=>vi.advanceTimersByTime(1000));expect(result.current).toBe(21);
+ rerender({turn:newer,active:true,confirmed:false});expect(vi.getTimerCount()).toBe(0);
+ act(()=>vi.advanceTimersByTime(30000));expect(result.current).toBe(21);
+ rerender({turn:newer,active:true,confirmed:true});expect(result.current).toBe(21);
+ rerender({turn:newer,active:false,confirmed:true});act(()=>vi.advanceTimersByTime(30000));expect(vi.getTimerCount()).toBe(0);
+ rerender({turn:newer,active:true,confirmed:true});expect(result.current).toBe(21);
+ rerender({turn:{...newer,observation:{revision:3n,at:119000}},active:true,confirmed:true});expect(result.current).toBeUndefined();expect(vi.getTimerCount()).toBe(0);
+ rerender({turn:{...newer,observation:{revision:2n,at:121000}},active:true,confirmed:true});expect(result.current).toBeUndefined();
+ rerender({turn:{...newer,inputId:newRequestId(),owner:"different-owner"},active:true,confirmed:true});expect(result.current).toBe(20);expect(vi.getTimerCount()).toBe(1);
+});
+
+it("requires consistent server observation anchors without changing terminal authority",()=>{
+ const row=session({turn_timing:{accepted_at:"1970-01-01T00:01:40Z"}});
+ for(const updatedAt of ["","bad","1970-01-01T00:01:39Z"]){row.updatedAt=updatedAt;expect(currentTurn(row,sessionId)?.observation).toBeUndefined();}
+ row.updatedAt="1970-01-01T00:01:50Z";
+ expect(currentTurn(row,sessionId)?.observation).toEqual({revision:1n,at:110000});
+ const terminal=session({outcome:"succeeded",turn_timing:{accepted_at:"1970-01-01T00:01:40Z",terminal_at:"1970-01-01T00:01:52Z"}});terminal.updatedAt="";
+ expect(currentTurn(terminal,sessionId)?.timing).toEqual({accepted:100000,terminal:112000});expect(currentTurn(terminal,sessionId)?.observation).toBeUndefined();
 });
