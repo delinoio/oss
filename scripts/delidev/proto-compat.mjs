@@ -11,6 +11,11 @@ export const layout = JSON.parse(readFileSync(new URL('./proto-layout.json', imp
 // Canonical service modules and immutable wire ownership stay independent.
 export function retireCompatibility() {
   const directory = resolve(root, 'packages/delidev-api-client/src/gen/delidev/v1');
+  // protoc-gen-es appends a blank EOF line. Normalize the new managed service
+  // module so generation stays reproducible without changing legacy outputs.
+  const managedService = resolve(directory, 'managed_mcp_pb.ts');
+  const managedSource = readFileSync(managedService, 'utf8');
+  writeFileSync(managedService, managedSource.replace(/\n+$/, '\n'));
   for (const filename of readdirSync(directory)) {
     if (filename === 'delidev_pb.ts' || /^delidev-.*_connectquery\.ts$/.test(filename)) rmSync(resolve(directory, filename), { force: true });
   }
