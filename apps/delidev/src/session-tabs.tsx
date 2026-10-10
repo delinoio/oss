@@ -97,7 +97,7 @@ export class SessionTabsStore {
   // Authoring is connection-owned, never part of a descriptor or Session RPC ID.
   private childDrafts = new Map<string, { text: string; start: number; end: number; focus: boolean }>();
   childDraft(id: string) { return this.childDrafts.get(id); }
-  takeChildFocus(id: string) { const value = this.childDrafts.get(id); if (value) value.focus = false; }
+  takeChildFocus(id: string) { this.childDrafts.delete(id); }
   publishSidechat(parent: string, requestId: string, tab: SidechatTab, draft: { text: string; start: number; end: number; focus: boolean }) {
     const previous = this.snapshot(parent);
     const key = sessionTabKey({ kind: SessionTabKind.PendingSidechat, requestId, name: "" });

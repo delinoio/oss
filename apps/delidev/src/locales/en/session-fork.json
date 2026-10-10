@@ -29,5 +29,6 @@
   "session-fork.retryProfileRead": "Recheck original fork profile",
   "session-fork.preparingSidechat": "Preparing Sidechat",
   "session-fork.sidechatDraftOnly": "Write your question while preparation completes. Sending and conversation tools become available after the original child is verified.",
-  "session-fork.discardSidechat": "Discard Sidechat draft"
+  "session-fork.discardSidechat": "Discard Sidechat draft",
+  "session-fork.sidechatPreparationFailed": "Sidechat preparation did not complete. Your draft is retained. Discard it only when the original operation is confirmed finished."
 }

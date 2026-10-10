@@ -29,5 +29,6 @@
   "session-fork.retryProfileRead": "원래 포크 프로필 다시 확인",
   "session-fork.preparingSidechat": "Sidechat 준비 중",
   "session-fork.sidechatDraftOnly": "준비하는 동안 질문을 작성하세요. 원래 하위 대화가 확인되면 전송과 대화 도구를 사용할 수 있습니다.",
-  "session-fork.discardSidechat": "Sidechat 초안 버리기"
+  "session-fork.discardSidechat": "Sidechat 초안 버리기",
+  "session-fork.sidechatPreparationFailed": "Sidechat 준비가 완료되지 않았습니다. 초안은 유지됩니다. 원래 작업의 종료가 확인된 경우에만 버리세요."
 }

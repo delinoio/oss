@@ -289,6 +289,37 @@ acceptance is owner-skipped for this batch and remains unperformed; local
 fixtures do not establish it. Record commands/revisions/results in PRs and CI,
 not repository evidence documents.
 
+## Direct desktop preparation
+
+The desktop places Open Sidechat after Diagnostics in the flat Open tool menu,
+independently of the ordinary Fork action in session overflow. The original
+server/Worker, managed authentication and completed source eligibility remain
+shared checks. Read retries observe only their original capability/Runner data;
+menu disclosure grants no creation authority. Embedded or selected children
+cannot silently use their parent's authority to create another Sidechat.
+
+An explicit Open Sidechat gesture immediately retains one original creation
+request and selects a frontend-only pending tab with an editable text draft.
+There is no name/Create form; retain the existing default 256-character name and
+original workspace choice. This controller shares the single outstanding Fork
+admission bound and is owned by the authenticated connection, not the tab.
+Pending identity grants no Session RPC, submission, image, skill or native action.
+The original accepted job continues to be observed while presentation is hidden,
+with the original polling bounds and stop conditions. Never replay uncertain
+native work automatically.
+
+Only verified original-job publication of the original-source child with its
+read-only overlay replaces the pending tab atomically. Preserve draft and text
+selection without sending input, resuming execution or transferring findings.
+A closed tab stays closed and background completion retains current navigation
+and focus. Only the active visible composer may transfer focus. Release completed
+preparation state; retain the child and its authoring controller under the parent.
+Failed/uncertain preparation keeps its draft and exact recovery identity. Explicit
+discard requires rejected or confirmed terminal ownership. Account/snapshot,
+metadata-only workspace references, native read-only enforcement and durable
+parent-dependent cleanup remain unchanged. Independent Fork keeps its separate
+form and native/workspace lifetime.
+
 ## Session-tab presentation
 
 A retained Sidechat is presented inside its original parent workspace as a typed
