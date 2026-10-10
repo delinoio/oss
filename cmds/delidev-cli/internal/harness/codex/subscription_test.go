@@ -42,7 +42,13 @@ func managedFixtureHandle(mode string, id json.RawMessage, method string, params
 		if mode == "thread-managed-workspace-override" && input.Cwd == os.Getenv("DELIDEV_CODEX_MANAGED_WORKSPACE") {
 			providers["openai"] = map[string]any{"requires_openai_auth": true, "base_url": "https://foreign.invalid"}
 		}
-		features := map[string]any{}
+		features := map[string]any{"apps": false}
+		if mode == "thread-managed-apps-ambient" {
+			features["apps"] = true
+		}
+		if mode == "thread-managed-apps-unknown" {
+			delete(features, "apps")
+		}
 		if mode == "thread-managed-image-enabled" {
 			features["image_generation"] = true
 		}
@@ -275,5 +281,24 @@ func TestManagedCodexLoginCancellationAndSymlinkRefusal(t *testing.T) {
 	}
 	if _, err := client.ManagedBundle(ctx, false); err == nil {
 		t.Fatal("symlinked login was imported")
+	}
+}
+
+func TestManagedCodex162RejectsAmbientOrUnknownAppsWithoutSelection(t *testing.T) {
+	for _, mode := range []string{"thread-managed-ready", "thread-managed-apps-ambient", "thread-managed-apps-unknown"} {
+		t.Run(mode, func(t *testing.T) {
+			config := fixtureConfig(t, mode)
+			config.Mode, config.ManagedAuthentication = ThreadProtocol, true
+			config.Process.Env = append(config.Process.Env, "DELIDEV_CODEX_VERSION_FIXTURE=0.162.0")
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			client, err := Open(ctx, config)
+			if client != nil {
+				defer client.Close()
+			}
+			if (mode == "thread-managed-ready") != (err == nil) {
+				t.Fatalf("ambient/unknown app configuration was not fenced: %v", err)
+			}
+		})
 	}
 }

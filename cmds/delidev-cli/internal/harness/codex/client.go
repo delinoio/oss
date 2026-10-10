@@ -170,6 +170,11 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 		config.Process.Args[1] = `cli_auth_credentials_store="file"`
 		config.Process.Args = append(config.Process.Args, "-c", `model_provider="openai"`, "-c", `forced_login_method="chatgpt"`)
 	}
+	if config.Mode == ThreadProtocol && !config.CodexAppsProfile {
+		// Native 0.162 enables Apps by default. A process without an explicit
+		// original selection must never borrow that ambient connector authority.
+		config.Process.Args = append(config.Process.Args, "-c", "features.apps=false")
+	}
 	if config.CodexAppsProfile {
 		// The original 0.162 profile exposes exact call IDs through the manual
 		// user-input approval route. Generic elicitation does not bind a call ID.

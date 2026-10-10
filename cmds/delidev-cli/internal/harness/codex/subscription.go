@@ -151,6 +151,13 @@ func (c *Client) verifyManagedConfig(ctx context.Context, cwd string) (returned 
 			return incompatible()
 		}
 	}
+	if c.mode == ThreadProtocol && c.version == "0.162.0" && !c.appsProfile {
+		var features map[string]json.RawMessage
+		var enabled *bool
+		if json.Unmarshal(result.Config["features"], &features) != nil || json.Unmarshal(features["apps"], &enabled) != nil || enabled == nil || *enabled {
+			return incompatible()
+		}
+	}
 	if c.appsProfile {
 		var features map[string]json.RawMessage
 		if json.Unmarshal(result.Config["features"], &features) != nil {
