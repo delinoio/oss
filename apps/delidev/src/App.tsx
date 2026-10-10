@@ -1,3 +1,4 @@
+import { QuestionPresentationProvider } from "./question-presentation";
 import { InboxBadgePresentation } from "./inbox-badge";
 import { SessionNameEditorProvider } from "./session-name-editor";
 import { SidebarPreference, SidebarPreferenceBoundary, SidebarPreferenceNotice, useSidebarPreference, useWideSidebar } from "./sidebar-preference";
@@ -207,7 +208,7 @@ export function App({ transport, localServer, serverPresentation, connectionSett
   const client = connection.client;
   useEffect(() => connection.activate(), [connection]);
   useEffect(() => { if (connectionReady) void client.invalidateQueries({ refetchType: "active" }); }, [client, connectionReady, connectionEpoch]);
-  return <SidebarPreferenceBoundary><TransportProvider transport={transport}><QueryClientProvider key={connection.id} client={client}><NotificationProvider><MutationIntents><SessionTabsProvider><SessionSubmissionsProvider><ImageDraftProvider><PRWorkflowProvider><ShortcutProvider><SessionNameEditorProvider><Shell connectionReady={connectionReady} pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} connectionSettings={connectionSettings} connectionTarget={connectionTarget} onConnectionHelp={onConnectionHelp} localServer={localServer} serverPresentation={serverPresentation} readLocalWorker={readLocalWorker} /></SessionNameEditorProvider></ShortcutProvider></PRWorkflowProvider></ImageDraftProvider></SessionSubmissionsProvider></SessionTabsProvider></MutationIntents></NotificationProvider></QueryClientProvider></TransportProvider></SidebarPreferenceBoundary>;
+  return <SidebarPreferenceBoundary><TransportProvider transport={transport}><QueryClientProvider key={connection.id} client={client}><NotificationProvider><MutationIntents><QuestionPresentationProvider><SessionTabsProvider><SessionSubmissionsProvider><ImageDraftProvider><PRWorkflowProvider><ShortcutProvider><SessionNameEditorProvider><Shell connectionReady={connectionReady} pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} connectionSettings={connectionSettings} connectionTarget={connectionTarget} onConnectionHelp={onConnectionHelp} localServer={localServer} serverPresentation={serverPresentation} readLocalWorker={readLocalWorker} /></SessionNameEditorProvider></ShortcutProvider></PRWorkflowProvider></ImageDraftProvider></SessionSubmissionsProvider></SessionTabsProvider></QuestionPresentationProvider></MutationIntents></NotificationProvider></QueryClientProvider></TransportProvider></SidebarPreferenceBoundary>;
 }
 
 // The connection owns submitted drafts even while another Session is mounted.

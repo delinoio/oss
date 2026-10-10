@@ -70,10 +70,11 @@ import {
   SyncKind, newRequestId, synchronizeResources, clientFailure, supportsResourceSchema, type ClientFailure, type Resource,
 } from "@delinoio/delidev-api-client";
 import { document as readDocument, encode, items, Mode, object, resourceName, text, Workspace } from "./documents";
-import { useRetainedMutation, useRetainedMutationNotifications } from "./mutation";
+import { useRetainedMutationIntents, useRetainedMutation, useRetainedMutationNotifications } from "./mutation";
 import { ServiceProblem, Failure, Problem, failureSummary } from "./ui";
 import { SessionActions, SessionIcon, SessionIconKind, SessionNotice } from "./session-presentation";
 import "./session.css";
+import { isQuestion, questionMutationKey, questionPresentation, QuestionPresentation, questionTrayEmpty, useObservedQuestions, useQuestionPresentationStore } from "./question-presentation";
 import { Interaction } from "./interactions";
 import { SessionTerminals } from "./session-terminals";
 import { SessionForkAction } from "./session-fork";
@@ -350,9 +351,19 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
  const [runnerRemediationPending, setRunnerRemediationPending] = useState(false);
   const queueDrafts = useConversationDrafts<QueuedInputDraft>();
   const requestDrafts = useConversationDrafts<InboxInteractionDraft>();
+  const questionStore = useQuestionPresentationStore();
+  const questionIntents = useRetainedMutationIntents("").filter(intent => /^(?:answer|claude-answer|opencode-answer|grok-answer):/.test(intent.key));
+  const pendingQuestionIds = new Set(questionIntents.flatMap(intent => { const request = intent.input as { mutation?: { id?: string } }; return request.mutation?.id ? [request.mutation.id] : []; }));
+  const requestFocus = useRef<HTMLElement | null>(null);
+  const restoreRequestFocus = () => {
+    const target = [...(requestsRoot.current?.querySelectorAll<HTMLElement>("article.interaction input, article.interaction textarea, article.interaction select, article.interaction button") ?? [])].find(node => !node.matches(":disabled") && !node.closest("fieldset:disabled, [hidden], [inert]"));
+    (target ?? composer.current)?.focus({ preventScroll: true });
+  };
+  useLayoutEffect(() => { if (requestFocus.current && !requestFocus.current.isConnected && document.activeElement === document.body) { requestFocus.current = null; restoreRequestFocus(); } });
   const interactionRow = (row: Resource) => {
+    row = questionStore.latest(row);
     const draft = requestDrafts.values.get(row.id) ?? initialInteractionDraft(row);
-    return <Interaction key={row.id} resource={row} refresh={interactions.refresh} draft={draft} saveDraft={editable => { if (draft) requestDrafts.save(row.id, { ...draft, editable }); }} clearDraft={() => requestDrafts.save(row.id)} submissionAllowed={!interactions.error && (!draft || draft.requestIdentity === interactionRequestIdentity(row))} />;
+    return <Interaction key={row.id} resource={row} activePresentation acceptedResource={value => questionStore.observe(value)} restoreFocus={restoreRequestFocus} refresh={interactions.refresh} draft={draft} saveDraft={editable => { if (draft) requestDrafts.save(row.id, { ...draft, editable }); }} clearDraft={() => requestDrafts.save(row.id)} submissionAllowed={!interactions.error && (!draft || draft.requestIdentity === interactionRequestIdentity(row))} />;
   };
   const transcriptRoot = useRef<HTMLDivElement>(null), requestsRoot = useRef<HTMLDivElement>(null), queueRoot = useRef<HTMLDivElement>(null);
   const [requestsOpen, setRequestsOpen] = useState(false);
@@ -476,7 +487,14 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     target?.scrollIntoView?.({ block: "nearest" });
     setRevealSubmission(undefined);
   }, [revealSubmission, active]);
-  const requests = interactionRows(interactions.data?.resources ?? [], live.resources, live.removed, live.newInteractionIds, id, !!interactions.data && !interactions.data.nextPageToken);
+  const observedRequests = interactionRows(interactions.data?.resources ?? [], live.resources, live.removed, live.newInteractionIds, id, !!interactions.data && !interactions.data.nextPageToken);
+  useObservedQuestions(questionStore, observedRequests);
+  const displayedRequest = (row: Resource) => !isQuestion(row) || questionPresentation(questionStore.latest(row), pendingQuestionIds.has(row.id)) !== QuestionPresentation.Hidden;
+  const requests = observedRequests.map(row => questionStore.latest(row)).filter(displayedRequest);
+  const retainedRequests = questionStore.retained(id, pendingQuestionIds).filter(row => !observedRequests.some(current => current.id === row.id) );
+  const requestCount = requests.length;
+  const emptyRequests = questionTrayEmpty(requests, retainedRequests.length > 0, interactions);
+  const autoRequestsOpen = [...requests, ...retainedRequests].some(row => !isQuestion(row) ? readDocument(row).closure === "open" : questionPresentation(row, pendingQuestionIds.has(row.id)) === QuestionPresentation.Form || pendingQuestionIds.has(row.id));
   const queued = pending.filter(isQueuedInput);
   const imageRejected = pending.filter(row => isImageStartupRejectedInput(row, session));
   // Evicted payloads can contain waiting inputs. Keep their exact restoration
@@ -632,12 +650,13 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         </article>)}
       </div>
       <div className="session-input-tray">
-        <Disclosure className="requests" open={requests.some(r => readDocument(r).closure === "open") || requestsOpen} onToggle={event => setRequestsOpen(event.currentTarget.open)}><DisclosureSummary>{interactions.isPending ? copy("session.loadingRequests") : <LocalizedText id="session.agentRequestsOnThisPage_5e8644" components={{ s0: <>{requests.length}</> }} />}</DisclosureSummary>
-          <div ref={requestsRoot} className="session-tray-content"><Failure failure={interactions.error?.failure} />
-            <ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={interactions} root={requestsRoot} active={conversationActive && requestsOpen}>{payload => interactionRows(payload, live.resources, live.removed, [], id, false).map(interactionRow)}</ScrollPayloadWindow>{!interactions.nextPageToken ? requests.filter(row => !interactions.rows.some(known => known.id === row.id)).map(interactionRow) : null}
-            <ScrollContinuation query={interactions} root={requestsRoot} active={conversationActive && requestsOpen} label={copy("session.requestPages_d06a30")} />
+        {!emptyRequests ? <Disclosure className="requests" open={autoRequestsOpen || requestsOpen} onToggle={event => setRequestsOpen(event.currentTarget.open)}><DisclosureSummary>{interactions.isPending ? copy("session.loadingRequests") : <LocalizedText id="session.agentRequestsOnThisPage_5e8644" components={{ s0: <>{requestCount}</> }} />}</DisclosureSummary>
+          <div ref={requestsRoot} className="session-tray-content" onFocusCapture={event => { requestFocus.current = event.target as HTMLElement; }} onBlurCapture={event => { if (event.relatedTarget instanceof HTMLElement) requestFocus.current = null; }}><Failure failure={interactions.error?.failure} />
+            <ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={interactions} root={requestsRoot} active={conversationActive && (autoRequestsOpen || requestsOpen)}>{payload => interactionRows(payload, live.resources, live.removed, [], id, false).map(row => questionStore.latest(row)).filter(displayedRequest).map(interactionRow)}</ScrollPayloadWindow>{!interactions.nextPageToken ? requests.filter(row => !interactions.rows.some(known => known.id === row.id)).map(interactionRow) : null}
+            {retainedRequests.map(interactionRow)}
+            <ScrollContinuation query={interactions} root={requestsRoot} active={conversationActive && (autoRequestsOpen || requestsOpen)} label={copy("session.requestPages_d06a30")} />
           </div>
-        </Disclosure>
+        </Disclosure> : null}
         <PendingQueueInputs sessionId={id} presentInputIds={presentedQueueIds} refresh={queue.refresh} />
         {waitingSupported ? <WaitingQueue sessionId={id} session={session} active={conversationActive} revision={waitingRevision} drafts={queueDrafts.values} saveDraft={queueDrafts.save} readOnly={live.state !== ConnectionState.Live || Boolean(live.error)} refreshHistory={queue.refresh} /> : null}
         <div ref={queueRoot} className={`session-tray-content ${queued.some(isQueuedInput) ? "queue-compact-list" : "queue-read-state"}`} hidden={waitingSupported || confirmedEmptyQueue} aria-label={waitingSupported || confirmedEmptyQueue ? undefined : copy("queue.waitingInputs")}>

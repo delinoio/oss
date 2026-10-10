@@ -2,10 +2,11 @@ import { Disclosure, DisclosureSummary } from "./disclosure";
 import { statusLabel } from "./product-status";
 import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
 import { NativeGrokInteraction } from "./native-grok-interactions";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { InteractionQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, items, object, text, type Document } from "./documents";
-import { useRetainedMutation } from "./mutation";
+import { isQuestion, questionMutationKey, questionPresentation, QuestionPresentation, useQuestionPresentationStore } from "./question-presentation";
+import { useRetainedMutationIntents, useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
 import { NativeInteraction } from "./native-interaction";
 import { NativeClaudeInteraction } from "./native-claude-interaction";
@@ -20,16 +21,29 @@ const decisionNames: Record<Decision, string> = {
 const responseLimit = 256 << 10;
 function own<T>(record: Record<string, T>, key: string): T | undefined { return Object.hasOwn(record, key) ? record[key] : undefined; }
 
-export function Interaction({ resource, refresh, draft, saveDraft, clearDraft, submissionAllowed = true, receiptRetryAllowed = true }: { resource: Resource; refresh: () => void; draft?: InboxInteractionDraft; saveDraft?: (value: InteractionDraftState) => void; clearDraft?: () => void; submissionAllowed?: boolean; receiptRetryAllowed?: boolean }) {
+export function Interaction({ resource, refresh, draft, saveDraft, clearDraft, submissionAllowed = true, receiptRetryAllowed = true, activePresentation = false, acceptedResource, restoreFocus }: { resource: Resource; refresh: () => void; draft?: InboxInteractionDraft; saveDraft?: (value: InteractionDraftState) => void; clearDraft?: () => void; submissionAllowed?: boolean; receiptRetryAllowed?: boolean; activePresentation?: boolean; acceptedResource?: (resource: Resource) => void; restoreFocus?: () => void }) {
   useLocale();
   const [accepted, setAccepted] = useState<Resource>();
   const current = accepted && accepted.id === resource.id && accepted.revision > resource.revision ? accepted : resource;
-  const data = document(current);
-  const changed = (result?: Resource) => { if (result) { setAccepted(result); clearDraft?.(); } refresh(); };
-  return <article className="interaction"><header><h3>{text(data.type) === InteractionType.Question ? copy("interactions.agentQuestion_1a6b3f") : copy("interactions.nativeApproval_c515b9")}</h3><small>{text(data.closure)}</small></header>
+  const store = useQuestionPresentationStore();
+  const projected = activePresentation ? store.latest(current) : current;
+  const data = document(projected);
+  const intents = useRetainedMutationIntents(questionMutationKey(projected));
+  const pending = intents.some(intent => intent.key === questionMutationKey(projected));
+  const presentation = isQuestion(projected) ? questionPresentation(projected, pending) : QuestionPresentation.Form;
+  const focus = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => { if (focus.current && !focus.current.isConnected && globalThis.document.activeElement === globalThis.document.body) restoreFocus?.(); });
+  const changed = (result?: Resource) => { if (result) { setAccepted(result); if (activePresentation) store.observe(result); acceptedResource?.(result); clearDraft?.(); } refresh(); };
+  if (activePresentation && isQuestion(projected) && presentation === QuestionPresentation.Hidden) return null;
+  return <article className="interaction" onFocusCapture={event => { focus.current = event.target as HTMLElement; }} onBlurCapture={event => { if (event.relatedTarget instanceof HTMLElement) focus.current = null; }}><header><h3>{text(data.type) === InteractionType.Question ? copy("interactions.agentQuestion_1a6b3f") : copy("interactions.nativeApproval_c515b9")}</h3><small>{text(data.closure)}</small></header>
     <p><LocalizedText id="interactions.response_83879c" components={{ s0: <>{statusLabel(text(object(data.response ?? data.approval_response).state)) || copy("interactions.extra.d3289e625281")}</> }} /></p>
-    {Object.hasOwn(data,"grok") ? <NativeGrokInteraction data={data} resource={current} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : data.claude != null ? <NativeClaudeInteraction data={data} resource={current} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : data.opencode != null ? <NativeInteraction data={data} resource={current} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : text(data.type) === InteractionType.Question ? <Questions resource={current} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : text(data.type) === InteractionType.Approval ? <Approval resource={current} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : <p>{copy("interactions.thisNativeRequestTypeIsNot_6fd7af")}</p>}
+    {activePresentation && isQuestion(projected) && presentation !== QuestionPresentation.Form ? <QuestionRecovery resource={projected} changed={changed} receiptRetryAllowed={receiptRetryAllowed} /> : Object.hasOwn(data,"grok") ? <NativeGrokInteraction data={data} resource={projected} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : data.claude != null ? <NativeClaudeInteraction data={data} resource={projected} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : data.opencode != null ? <NativeInteraction data={data} resource={projected} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : text(data.type) === InteractionType.Question ? <Questions resource={projected} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : text(data.type) === InteractionType.Approval ? <Approval resource={projected} accepted={changed} draft={draft?.editable} saveDraft={saveDraft} submissionAllowed={submissionAllowed} receiptRetryAllowed={receiptRetryAllowed} /> : <p>{copy("interactions.thisNativeRequestTypeIsNot_6fd7af")}</p>}
   </article>;
+}
+
+function QuestionRecovery({ resource, changed, receiptRetryAllowed }: { resource: Resource; changed: (resource?: Resource) => void; receiptRetryAllowed: boolean }) {
+  const mutation = useRetainedMutation(questionMutationKey(resource), InteractionQuery.respondQuestion, result => changed(result.interaction));
+  return <><Problem error={mutation.error} />{mutation.uncertain ? <button type="button" disabled={mutation.busy || !receiptRetryAllowed} onClick={mutation.retry}>{copy("interactions.retryTheSameAnswers_572a30")}</button> : null}</>;
 }
 
 function Questions({ resource, accepted, draft, saveDraft, submissionAllowed, receiptRetryAllowed }: { resource: Resource; accepted: (value?: Resource) => void; draft?: InteractionDraftState; saveDraft?: (value: InteractionDraftState) => void; submissionAllowed: boolean; receiptRetryAllowed: boolean }) {
