@@ -56,7 +56,7 @@ function AttachmentGuidance({ children, id, creation = false }: { children: Reac
     document.addEventListener("keydown", escape, true);
     return () => document.removeEventListener("keydown", escape, true);
   }, [open]);
-  return <span ref={trigger} className="composer-attach-trigger" onPointerEnter={enterTrigger} onPointerLeave={leave} onFocus={() => { if (!focus) setDismissed(false); setFocus(true); }} onBlur={() => setFocus(false)}>
+  return <span ref={trigger} className={creation ? "composer-attach-trigger composer-attach-trigger-creation" : "composer-attach-trigger"} onPointerEnter={enterTrigger} onPointerLeave={leave} onFocus={() => { if (!focus) setDismissed(false); setFocus(true); }} onBlur={() => setFocus(false)}>
     {typeof children === "function" ? children(open) : children}
     {/* Existing-session help retains its persistent accessible description. */}
     {!creation ? <span id={id} className="attachment-description">{copy("image-input.help")}</span> : null}
