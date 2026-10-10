@@ -84,3 +84,30 @@ func TestNativeAppCallRejectsDuplicateAndSubstitutedCompletion(t *testing.T) {
 		t.Fatal("completed native invocation replayed")
 	}
 }
+
+func TestNativeAppHistoryShapePreservesRemovedIDsWithoutLiveAuthority(t *testing.T) {
+	item := originalAppCallFixture(true)
+	item["appContext"].(map[string]any)["connectorId"] = "old-removed-original-app"
+	raw, _ := json.Marshal(item)
+	if _, err := decodeNativeCodexAppCall(raw, true); err != nil {
+		t.Fatal(err)
+	}
+	selection := domain.CodexAppConfiguration{Version: 1, SessionID: domain.NewID(), AccountID: domain.NewID(), Generation: domain.NewID(), AppIDs: []string{}}
+	if _, err := decodeCodexAppCall(raw, selection, true); err == nil {
+		t.Fatal("historical shape granted removed app live authority")
+	}
+	for _, mutate := range []func(map[string]any){
+		func(v map[string]any) { v["server"] = "external-mcp" },
+		func(v map[string]any) { v["status"] = "inProgress" },
+		func(v map[string]any) { v["arguments"] = nil; delete(v, "arguments") },
+		func(v map[string]any) { v["appContext"] = nil },
+		func(v map[string]any) { v["result"].(map[string]any)["content"] = nil },
+	} {
+		fixture := originalAppCallFixture(true)
+		mutate(fixture)
+		raw, _ := json.Marshal(fixture)
+		if _, err := decodeNativeCodexAppCall(raw, true); err == nil {
+			t.Fatalf("invalid private history accepted: %s", raw)
+		}
+	}
+}

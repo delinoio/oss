@@ -20,38 +20,63 @@ type trackedAppCall struct {
 // MCP App presentation are validated privately; only explicit result data and
 // the original selected connector identity enter the product tool observation.
 func decodeCodexAppCall(raw json.RawMessage, original domain.CodexAppConfiguration, completed bool) (*Tool, error) {
-	var item struct {
-		Type      string          `json:"type"`
-		ID        string          `json:"id"`
-		Server    string          `json:"server"`
-		Tool      string          `json:"tool"`
-		Status    ToolStatus      `json:"status"`
-		Arguments json.RawMessage `json:"arguments"`
-		Context   *struct {
-			AppID       string  `json:"connectorId"`
-			LinkID      *string `json:"linkId"`
-			ResourceURI *string `json:"resourceUri"`
-			AppName     *string `json:"appName"`
-			ActionName  *string `json:"actionName"`
-		} `json:"appContext"`
-		ResourceURI *string `json:"mcpAppResourceUri,omitempty"`
-		UI          *struct {
-			ResourceURI string `json:"resourceUri"`
-			Mode        string `json:"preferredModelDisplayMode"`
-		} `json:"mcpAppUi"`
-		PluginID *string `json:"pluginId"`
-		ReadOnly *bool   `json:"readOnlyHint"`
-		Result   *struct {
-			Content    []json.RawMessage `json:"content"`
-			Structured json.RawMessage   `json:"structuredContent"`
-			Metadata   json.RawMessage   `json:"_meta"`
-		} `json:"result"`
-		Error *struct {
-			Message *string `json:"message"`
-		} `json:"error"`
-		DurationMS *int64 `json:"durationMs"`
+	item, err := decodeNativeCodexAppCall(raw, completed)
+	if err != nil || original.Validate() != nil || !slices.Contains(original.AppIDs, item.Context.AppID) {
+		return nil, incompatible()
 	}
-	if original.Validate() != nil || domain.DecodeBounded(raw, &item, 512<<10) != nil || item.Type != "mcpToolCall" || item.Server != "codex_apps" || domain.Text(item.ID, "original app call identity", 1024, true) != nil || item.Context == nil || !slices.Contains(original.AppIDs, item.Context.AppID) || !slices.Contains([]ToolStatus{ToolRunning, ToolCompleted, ToolFailed}, item.Status) || completed == (item.Status == ToolRunning) {
+
+	call := &domain.CodexAppCallObservation{Identity: domain.CodexAppCallIdentity{AccountID: original.AccountID, Generation: original.Generation, AppID: item.Context.AppID, LinkID: item.Context.LinkID, Tool: item.Tool, Arguments: slices.Clone(item.Arguments), AppName: item.Context.AppName, ActionName: item.Context.ActionName, ReadOnly: item.ReadOnly}, ErrorPresent: item.Error != nil, DurationMS: item.DurationMS}
+	if item.Result != nil {
+		if len(item.Result.Metadata) == 0 || !json.Valid(item.Result.Metadata) {
+			return nil, incompatible()
+		}
+		call.Result = &domain.CodexAppResult{Content: item.Result.Content, Structured: item.Result.Structured}
+	}
+	status := map[ToolStatus]domain.ToolStatus{ToolRunning: domain.ToolRunning, ToolCompleted: domain.ToolCompleted, ToolFailed: domain.ToolFailed}[item.Status]
+	if call.Validate(status) != nil {
+		return nil, incompatible()
+	}
+	return &Tool{ID: item.ID, Kind: CodexAppTool, Status: item.Status, CodexApp: call}, nil
+}
+
+type nativeAppCall struct {
+	Type      string          `json:"type"`
+	ID        string          `json:"id"`
+	Server    string          `json:"server"`
+	Tool      string          `json:"tool"`
+	Status    ToolStatus      `json:"status"`
+	Arguments json.RawMessage `json:"arguments"`
+	Context   *struct {
+		AppID       string  `json:"connectorId"`
+		LinkID      *string `json:"linkId"`
+		ResourceURI *string `json:"resourceUri"`
+		AppName     *string `json:"appName"`
+		ActionName  *string `json:"actionName"`
+	} `json:"appContext"`
+	ResourceURI *string `json:"mcpAppResourceUri,omitempty"`
+	UI          *struct {
+		ResourceURI string `json:"resourceUri"`
+		Mode        string `json:"preferredModelDisplayMode"`
+	} `json:"mcpAppUi"`
+	PluginID *string `json:"pluginId"`
+	ReadOnly *bool   `json:"readOnlyHint"`
+	Result   *struct {
+		Content    []json.RawMessage `json:"content"`
+		Structured json.RawMessage   `json:"structuredContent"`
+		Metadata   json.RawMessage   `json:"_meta"`
+	} `json:"result"`
+	Error *struct {
+		Message *string `json:"message"`
+	} `json:"error"`
+	DurationMS *int64 `json:"durationMs"`
+}
+
+// History validation checks only the bounded native shape. It preserves private
+// original-thread content without interpreting old app IDs as a live selection.
+func decodeNativeCodexAppCall(raw json.RawMessage, completed bool) (*nativeAppCall, error) {
+	var item nativeAppCall
+
+	if domain.DecodeBounded(raw, &item, 512<<10) != nil || item.Type != "mcpToolCall" || item.Server != "codex_apps" || domain.Text(item.ID, "original app call identity", 1024, true) != nil || item.Context == nil || !slices.Contains([]ToolStatus{ToolRunning, ToolCompleted, ToolFailed}, item.Status) || completed == (item.Status == ToolRunning) {
 		return nil, incompatible()
 	}
 	var fields map[string]json.RawMessage
@@ -86,18 +111,28 @@ func decodeCodexAppCall(raw json.RawMessage, original domain.CodexAppConfigurati
 	if item.Error != nil && (item.Error.Message == nil || domain.Text(*item.Error.Message, "private native app error", domain.MaxMessageText, false) != nil) {
 		return nil, incompatible()
 	}
-	call := &domain.CodexAppCallObservation{Identity: domain.CodexAppCallIdentity{AccountID: original.AccountID, Generation: original.Generation, AppID: item.Context.AppID, LinkID: item.Context.LinkID, Tool: item.Tool, Arguments: slices.Clone(item.Arguments), AppName: item.Context.AppName, ActionName: item.Context.ActionName, ReadOnly: item.ReadOnly}, ErrorPresent: item.Error != nil, DurationMS: item.DurationMS}
-	if item.Result != nil {
-		if len(item.Result.Metadata) == 0 || !json.Valid(item.Result.Metadata) {
-			return nil, incompatible()
-		}
-		call.Result = &domain.CodexAppResult{Content: item.Result.Content, Structured: item.Result.Structured}
-	}
-	status := map[ToolStatus]domain.ToolStatus{ToolRunning: domain.ToolRunning, ToolCompleted: domain.ToolCompleted, ToolFailed: domain.ToolFailed}[item.Status]
-	if call.Validate(status) != nil {
+	if domain.Text(item.Tool, "original app tool", 1024, true) != nil || item.Context.AppID == "_default" || domain.Text(item.Context.AppID, "original app identity", 1024, true) != nil || len(item.Arguments) == 0 || len(item.Arguments) > domain.MaxMessageText || !json.Valid(item.Arguments) || item.DurationMS != nil && *item.DurationMS < 0 {
 		return nil, incompatible()
 	}
-	return &Tool{ID: item.ID, Kind: CodexAppTool, Status: item.Status, CodexApp: call}, nil
+	for _, value := range []*string{item.Context.LinkID, item.Context.AppName, item.Context.ActionName} {
+		if value != nil && domain.Text(*value, "original app provenance", 4096, false) != nil {
+			return nil, incompatible()
+		}
+	}
+	if item.Status == ToolRunning && (item.Result != nil || item.Error != nil || item.DurationMS != nil) || item.Status == ToolCompleted && (item.Result == nil || item.Error != nil) {
+		return nil, incompatible()
+	}
+	if item.Result != nil {
+		if item.Result.Content == nil || len(item.Result.Content) > 1024 || len(item.Result.Structured) == 0 || len(item.Result.Structured) > domain.MaxMessageText || !json.Valid(item.Result.Structured) || len(item.Result.Metadata) == 0 || !json.Valid(item.Result.Metadata) {
+			return nil, incompatible()
+		}
+		for _, content := range item.Result.Content {
+			if len(content) == 0 || len(content) > domain.MaxMessageText || !json.Valid(content) {
+				return nil, incompatible()
+			}
+		}
+	}
+	return &item, nil
 }
 
 func (c *Client) observeCodexAppCallLocked(native nativewire.Event, turnID domain.ID, raw json.RawMessage) (Event, error) {

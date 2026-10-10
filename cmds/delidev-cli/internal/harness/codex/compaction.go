@@ -431,6 +431,13 @@ func (c *Client) contextTurnsLocked(ctx context.Context, direction string, curso
 					if _, err := decodeTool(rawItem, item.Type, true); err != nil {
 						return nil, compactionUncertain()
 					}
+				case "mcpToolCall":
+					if !c.appsProfile || c.apps == nil || c.managedHome == "" || c.api != nil {
+						return nil, compactionUncertain()
+					}
+					if _, err := decodeNativeCodexAppCall(rawItem, true); err != nil {
+						return nil, compactionUncertain()
+					}
 				default:
 					return nil, compactionUncertain()
 				}
