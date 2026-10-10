@@ -4935,12 +4935,17 @@ this and later turns from working context, unchanged files, preserved prior
 history/usage/Fork/Sidechat snapshots, and replacement of the current draft.
 Preserve the exact source revision, context revision and retained mutation
 request; stale sources and uncertain outcomes cannot submit new input.
+The original connection retains action metadata and its busy/uncertain composer
+fence across conversation navigation. Other conversations remain independent;
+presenter disposal does not prove completion or authorize another request.
 
 Verified completion restores the original prompt text as an unsent draft and
 focuses the active composer. Automatic and explicit restoration preserve the
 current composer Plan/Execute choice; historical input mode remains validated
 evidence and does not select the next input mode. Preserve a draft edited during the operation or
-while the view was inactive; offer explicit restoration of the retained prompt
+while the view was inactive, including an edit followed by undo to the original
+text. Capture the connection draft owner's monotonic edit generation at confirmation
+and require that same generation before automatic restoration; offer explicit restoration of the retained prompt
 instead of overwriting it. Reopening the conversation can restore that same
 verified prompt without a new native mutation. Original image/skill metadata
 stays in historical input records; fresh selection/staging owns later input.

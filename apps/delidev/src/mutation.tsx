@@ -1,5 +1,5 @@
 import { useLocale } from "./localization";
-import { createContext, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { create, fromBinary, toBinary, type DescMessage, type DescMethodUnary, type MessageInitShape, type MessageShape } from "@bufbuild/protobuf";
 import { useMutation } from "@connectrpc/connect-query";
 import { Code, ConnectError } from "@connectrpc/connect";
@@ -17,6 +17,7 @@ class IntentRegistry {
   alive = true;
   revision = 0;
   entries = new Map<string, Intent>();
+  presentation = new Map<string, unknown>();
   listeners = new Set<() => void>();
   acceptedListeners = new Map<string, Set<() => void>>();
   acceptedObservers = new Set<(key: string, request: object, result: unknown) => void>();
@@ -67,6 +68,19 @@ export function useRetainedMutationIntents(prefix: string): RetainedMutationInte
     ? [{ key, busy: intent.busy, uncertain: intent.uncertain, input: intent.input, job: intent.job }]
     : []), [prefix, registry, revision]);
 }
+/** Metadata shares the original connection lifetime without changing RPC bytes. */
+export function useRetainedMutationPresentation<T>(key: string, initial: T) {
+  const registry = useIntentRegistry(key);
+  if (!registry) throw new Error("A connection-scoped mutation registry is required.");
+  const value = useSyncExternalStore(registry.subscribe, () => registry.presentation.get(key) as T | undefined);
+  const update = useCallback((change: (previous: T) => T) => {
+    if (!registry.alive) return;
+    registry.presentation.set(key, change((registry.presentation.get(key) as T | undefined) ?? initial));
+    registry.revision += 1;
+    for (const listener of registry.listeners) listener();
+  }, [registry, key, initial]);
+  return [value ?? initial, update] as const;
+}
 const Context = createContext<IntentRegistry | undefined>(undefined);
 const ConnectionContext = createContext<IntentRegistry | undefined>(undefined);
 export const repositoryConfigurationPrefix = `configuration:${EntityKind.REPOSITORY}:`;
@@ -85,7 +99,7 @@ export function MutationIntents({ children }: { children: ReactNode }) {
   const connection = useContext(ConnectionContext);
   const [registry] = useState(() => new IntentRegistry());
   useEffect(() => {
-    const dispose = () => { registry.alive = false; registry.entries.clear(); registry.acceptedListeners.clear(); registry.acceptedObservers.clear(); registry.outcomeObservers.clear(); };
+    const dispose = () => { registry.alive = false; registry.entries.clear(); registry.presentation.clear(); registry.acceptedListeners.clear(); registry.acceptedObservers.clear(); registry.outcomeObservers.clear(); };
     registry.alive = !opening?.disposed;
     opening?.controller.signal.addEventListener("abort", dispose, { once: true });
     return () => { opening?.controller.signal.removeEventListener("abort", dispose); dispose(); };
