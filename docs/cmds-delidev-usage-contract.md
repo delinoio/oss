@@ -176,6 +176,15 @@ Publication retains all existing session/input/job/account/connection/Worker and
 Budget writes log `session_budget_recorded` with correlation/session/request identities, replay state and explicit removal only, never thresholds or totals. Price writes log `model_pricing_recorded` with correlation, model/version UUIDs, revision and replay state only, excluding source, rates and amounts. Read completion uses `usage_summary_read_completed` with correlation ID and bounded group/response counts, never filter values, labels or token/cost totals. Structured `execution_event_committed` logs include the closed response-usage event kind, job/execution UUIDs, sequence and receipt replay classification. Exclude raw native bodies, response digests, amounts and token counters. Typed failures retain original ownership without logging provider diagnostics.
 
 ## Build and Test
+
+The desktop real-server filtered Usage fixture must observe the exact new General
+Chat request and its successful response before cleanup. Hold that response at
+the transport boundary to prove that applied labels and prior incomplete-coverage
+notices cannot complete the assertion. Require current loading/refreshing state
+to settle without an error and preserve unavailable actual cost and incomplete
+coverage. A rejected filtered response must reject the success proof. Synthetic
+probe tests do not establish native/account acceptance.
+
 Run package Go tests and vet from `cmds/delidev-cli`. Ordinary tests cover exact nullable counts, closed schema/privacy, ownership, duplicate identities, conflicting evidence, rollback, restart, session deletion and schema-13 backup/migration failure. Ordinary tests never run installed harnesses. Opt-in `TestManualNativeCodexUsesRegisteredServerRelay` accepts an explicit pinned executable and verifies the real structured response through the Worker outbox and server ledger using a private runtime and scripted loopback provider; it cannot establish hosted billing, subscription, child, or other-platform evidence.
 
 ## Dependencies and Integrations
