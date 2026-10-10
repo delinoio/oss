@@ -43,8 +43,13 @@ pricing contract](cmds-delidev-usage-contract.md#automatic-source-specific-token
 `AgentWorkerWizard` admits the current `AgentWorkerSourceWizard` only for protocol
 2 with `INLINE_WORKER_MODELS_V1`. Missing support shows checking/update guidance
 and dismissal; it cannot mount the retired saved-Model wizard. Current source
-routes save exact Provider-or-SubscriptionService/native-ID model identities and
-original Account revisions atomically, without Model resource creation or reads.
+routes save exact Provider-or-SubscriptionService/native-ID model identities
+atomically, without Model resource creation or reads. The renderer submits
+selected Account IDs, and Go resolves them to current Account records inside the
+same transaction before deriving each route's source identity. The request does
+not pin the Account revisions last observed by the wizard; the transaction rejects
+any staged inline metadata whose source identity no longer matches the current
+Account records.
 Historical Saved-over-Known precedence, saved Model IDs/revisions, saved-model
 pagination and older-server fallback above do not restore those retired APIs.
 
@@ -72,9 +77,11 @@ accessible active descendants, option visibility and narrow-width wrapping remai
 required. Source changes clear incompatible Account/model selections; ordered
 source-group keys retain their independent drafts and read/receipt lifetimes.
 Suggestion removal cannot delete saved Worker configuration or execution history.
-Keep original account/source revision checks, byte-identical uncertain save
-receipts and independent cleanup. Suggestions and browser fixtures establish no
-installed native/account/platform acceptance. Structured diagnostics retain closed
+Preserve the Worker's expected-revision guard, byte-identical uncertain save
+receipts and independent cleanup. API endpoint-hint reads retain their separate
+Account, Provider and connection revision bindings; route saves use the current
+transactional Account lookup described above. Suggestions and browser fixtures
+establish no installed native/account/platform acceptance. Structured diagnostics retain closed
 failure classifications without credentials, user state or raw native content.
 
 ## Desktop validation ownership
