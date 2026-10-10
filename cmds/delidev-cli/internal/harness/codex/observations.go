@@ -2,6 +2,7 @@ package codex
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"slices"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -11,16 +12,17 @@ import (
 type MetadataKind string
 
 const (
-	AutoReviewReplayChecked  MetadataKind = "auto-review-replay-checked"
-	ThreadIdentityChecked    MetadataKind = "thread-identity-checked"
-	ThreadSettingsChecked    MetadataKind = "thread-settings-checked"
-	RemoteControlDisabled    MetadataKind = "remote-control-disabled"
-	QuotaUnavailable         MetadataKind = "quota-unavailable"
-	RawSupplementDiscarded   MetadataKind = "raw-supplement-discarded"
-	NativeGoalAbsent         MetadataKind = "native-goal-absent"
-	ModelVerificationAbsent  MetadataKind = "model-verification-absent"
-	CodexAppsStartupObserved MetadataKind = "codex-apps-startup-observed"
-	SkillsChangedDiscarded   MetadataKind = "skills-changed-discarded"
+	AutoReviewReplayChecked    MetadataKind = "auto-review-replay-checked"
+	ThreadIdentityChecked      MetadataKind = "thread-identity-checked"
+	ThreadSettingsChecked      MetadataKind = "thread-settings-checked"
+	RemoteControlDisabled      MetadataKind = "remote-control-disabled"
+	QuotaUnavailable           MetadataKind = "quota-unavailable"
+	RawSupplementDiscarded     MetadataKind = "raw-supplement-discarded"
+	NativeGoalAbsent           MetadataKind = "native-goal-absent"
+	ModelVerificationAbsent    MetadataKind = "model-verification-absent"
+	CodexAppsStartupObserved   MetadataKind = "codex-apps-startup-observed"
+	SkillsChangedDiscarded     MetadataKind = "skills-changed-discarded"
+	FilesystemChangedDiscarded MetadataKind = "filesystem-changed-discarded"
 )
 
 type nativeMCPStartupState string
@@ -82,6 +84,23 @@ func (c *Client) metadata(kind MetadataKind) Event {
 
 func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 	switch native.Method {
+	case "fs/changed":
+		var params struct {
+			WatchID      string   `json:"watchId"`
+			ChangedPaths []string `json:"changedPaths"`
+		}
+		if domain.Decode(native.Params, &params) != nil || domain.Text(params.WatchID, "native watch identity", 1024, true) != nil || params.ChangedPaths == nil || len(params.ChangedPaths) > 1000 {
+			return Event{}, incompatible()
+		}
+		for _, path := range params.ChangedPaths {
+			if domain.Text(path, "native changed path", 4096, true) != nil || !filepath.IsAbs(path) {
+				return Event{}, incompatible()
+			}
+		}
+		// No fs/watch owner exists in this adapter. A valid watch ID or path cannot
+		// authorize file access, cache refresh or a replacement native operation.
+		// Validate the original ordered paths privately, then discard the payload.
+		return c.metadata(FilesystemChangedDiscarded), nil
 	case "skills/changed":
 		// The original process invalidated its own cache. Discard this passive
 		// notification without enumerating packages or changing selected input.

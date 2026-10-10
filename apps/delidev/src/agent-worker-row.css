@@ -18,3 +18,6 @@
 
 .agent-route-account-count { color: var(--muted); overflow-wrap: anywhere; }
 .agent-model-routes .agent-route-account-count { margin-inline-start: 8px; }
+
+.agent-reasoning-effort { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; max-width: 100%; color: var(--muted); }
+.agent-reasoning-effort-value { min-width: 0; max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }

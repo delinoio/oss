@@ -200,6 +200,27 @@ it.each([true, false])("requires independent OpenCode server and Unix Runner Dev
   expect(fork).not.toHaveBeenCalled();
 });
 
+it.each(["eligible", "server", "worker"])("uses only OpenCode capabilities for key-backed Go Fork: %s", async missing => {
+ const machineId = newRequestId();
+ const source = create(ResourceSchema, { kind: EntityKind.SESSION, id: newRequestId(), revision: 8n, schemaVersion: 1, documentJson: encode({ name: "OpenCode Go", machine_id: machineId, workspace: "general-chat", archive: "active", recovery: "none", outcome: "succeeded", initial_execution: { configuration: { harness: "opencode", subscription: true, subscription_service: "opencode_go", provider_id: "" } }, execution: { native_thread_id: "ses_01960dcbe1faABCDEFGHIJKLMN", native_turn_id: "msg_01960dcbe1fcABCDEFGHIJKLMN", cleanup_verified: true, observed: { opencode_agent: "build" } } }) });
+ const machine = create(ResourceSchema, { kind: EntityKind.MACHINE, id: machineId, revision: 1n, schemaVersion: 1, documentJson: encode({ os: "linux", worker_capabilities: ["opencode-go-subscriptions-v1", ...(missing === "worker" ? [] : ["opencode-general-chat-fork-v1"])] }) });
+ // Neither peer advertises any managed Codex capability.
+ const transport = createRouterTransport(router => {
+  router.service(SystemService, { getStatus: () => ({ capabilities: missing === "server" ? [] : [SystemCapability.OPENCODE_GENERAL_CHAT_FORK_V1] }) });
+  router.service(ResourceService, { getResource: request => ({ resource: request.kind === EntityKind.MACHINE ? machine : source }), listResources: () => ({ resources: openCodePlainMessages(source) }) });
+ });
+ const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionForkProvider openSession={vi.fn()}><SessionForkAction source={source} /></SessionForkProvider></MutationIntents></QueryClientProvider></TransportProvider>);
+ if (missing === "eligible") {
+  fireEvent.click(await screen.findByRole("button", { name: "Fork session" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Create fork" }) as HTMLButtonElement).disabled).toBe(false));
+ } else {
+  await waitFor(() => expect(client.getQueryCache().getAll().filter(query => query.state.status === "success").length).toBeGreaterThanOrEqual(2));
+  expect(screen.queryByRole("button", { name: "Fork session" })).toBeNull();
+ }
+ expect(screen.queryByRole("button", { name: "Open Sidechat" })).toBeNull();
+});
+
 function openCodePlainMessages(source: import("@delinoio/delidev-api-client").Resource) {
  const execution = object(document(source).execution);
  return ["user", "assistant"].map((role, index) => create(ResourceSchema, {kind:EntityKind.MESSAGE,id:newRequestId(),sessionId:source.id,schemaVersion:1,revision:1n,documentJson:encode({execution_id:newRequestId(),native_thread_id:execution.native_thread_id,native_turn_id:execution.native_turn_id,native_id:index ? "prt_01960dcbe1fbABCDEFGHIJKLMN" : "prt_01960dcbe1faABCDEFGHIJKLMN",native_parent_id:role === "user" ? execution.native_turn_id : "msg_01960dcbe1fdABCDEFGHIJKLMN",...(role === "user" ? {input_id:newRequestId()} : {}),role,text:"Original plain text",state:"complete",first_sequence:index+1,last_sequence:index+1})}));

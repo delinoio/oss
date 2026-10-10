@@ -116,7 +116,9 @@ try {
   await input.focus(); await plus.focus(); await tooltip.waitFor();
   await input.focus(); await tooltip.waitFor({state: "detached"});
   if (guidanceOnly) { cases++; continue; }
-  await input.fill("First line"); await input.press("End"); await input.press("Enter"); assert.equal(await input.inputValue(), "First line\n");
+  await input.fill("HelloWorld"); await input.evaluate(node => node.setSelectionRange(5,5)); await input.press("Shift+Enter");
+  assert.equal(await input.inputValue(), "Hello\nWorld"); assert.equal(await input.evaluate(node => node.selectionStart), 6);
+  assert.equal(await page.evaluate(() => window.__sessionComposerFixture.events.length), 0, "Native Shift+Enter does not send");
   await input.fill("A long multiline message\n".repeat(30)); const growing = await geometry(); assert(growing.input <= growing.max && growing.inputScroll > growing.input);
   await input.fill(""); assert.equal((await geometry()).input, 48);
   const file = await image(); await page.locator('input[type="file"]').setInputFiles(file); await page.waitForFunction(() => document.querySelectorAll(".image-preview-list img").length === 1);
@@ -132,7 +134,7 @@ try {
   await page.waitForFunction(() => !document.querySelector(".composer-submit").disabled);
   await input.evaluate(node => node.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", metaKey: true, ctrlKey: true, isComposing: true, bubbles: true, cancelable: true })));
   assert.equal(await page.evaluate(() => window.__sessionComposerFixture.events.length), 0, "IME cannot submit");
-  await input.press(await page.evaluate(() => /Mac/.test(navigator.platform)) ? "Meta+Enter" : "Control+Enter"); await page.waitForFunction(() => window.__sessionComposerFixture.events.length === 1); assert.equal(await page.locator(".image-preview-list img").count(), 0); assert.equal(await input.inputValue(), "");
+  await input.press("Enter"); await page.waitForFunction(() => window.__sessionComposerFixture.events.length === 1); assert.equal(await page.locator(".image-preview-list img").count(), 0); assert.equal(await input.inputValue(), "");
   cases++;
  }
  for (const language of ["en", "ko"]) for (const state of ["unsupported", "pending", "uncertain"]) {

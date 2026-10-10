@@ -22,8 +22,15 @@ async function wheelChaining(page, context) {
  };
  const outward=async delta=>{await prepare();const start=await owner.evaluate(n=>n.scrollTop);assert(await owner.evaluate((n,delta)=>delta<0?n.scrollTop>=150:n.scrollHeight-n.clientHeight-n.scrollTop>=150,delta),`${context}: parent has outward range`);await page.mouse.wheel(0,delta);try {await page.waitForFunction(({start,delta})=>delta<0?document.querySelector('#main').scrollTop<start:document.querySelector('#main').scrollTop>start,{start,delta});} catch(error) {console.log(JSON.stringify({operation:'usage-wheel-failure',context,delta,start,geometry:await table.evaluate(n=>({top:n.scrollTop,height:n.clientHeight,scroll:n.scrollHeight,parent:document.querySelector('#main').scrollTop}))}));throw error;}await page.waitForTimeout(300);};
  assert(await table.evaluate(n=>n.scrollHeight===n.clientHeight),`${context}: no vertical table overflow`);
- // Counterfactual verifies the original CSS boundary consumes the same native input.
- await table.evaluate(n=>n.style.overscrollBehaviorY='contain');await prepare();const blocked=await owner.evaluate(n=>n.scrollTop);await page.mouse.wheel(0,-150);await page.waitForTimeout(150);assert.equal(await owner.evaluate(n=>n.scrollTop),blocked,`${context}: original containment blocks chaining`);await table.evaluate(n=>n.style.overscrollBehaviorY='');
+ // Native/Grok accounting use this same direct-child structure without the
+ // response-only marker. Verify the real cascade, rather than forcing containment.
+ await table.evaluate(n=>n.classList.remove('usage-response-table'));
+ try {
+  assert.deepEqual(await table.evaluate(n=>[getComputedStyle(n).overscrollBehaviorX,getComputedStyle(n).overscrollBehaviorY]),['contain','contain'],`${context}: other Usage tables retain containment`);
+  for(const delta of [-150,150]) {
+   await prepare();const blocked=await owner.evaluate(n=>n.scrollTop);await page.mouse.wheel(0,delta);await page.waitForTimeout(300);assert.equal(await owner.evaluate(n=>n.scrollTop),blocked,`${context}: other Usage tables block outward chaining`);
+  }
+ } finally { await table.evaluate(n=>n.classList.add('usage-response-table')); }
  await outward(-150);await outward(150);
  if(await table.evaluate(n=>n.scrollWidth>n.clientWidth)) {
   await prepare();await page.mouse.wheel(150,0);await page.waitForFunction(()=>document.querySelector('.usage-detail > .usage-table').scrollLeft>0);await page.waitForTimeout(300);

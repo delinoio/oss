@@ -2,6 +2,8 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
+import appearancePalettes from "./appearance-palettes.json";
+import { visibleFocusColor } from "./appearance-preferences";
 
 const directory = join(process.cwd(), "src");
 const source = readFileSync(join(directory, "themes.css"), "utf8");
@@ -63,4 +65,28 @@ test("all native modal backdrops use the same subtle dimming token without surfa
     expect(rule.declarations, rule.filename).toMatch(/background:\s*var\(--backdrop\)/);
     expect(rule.declarations, rule.filename).not.toMatch(/backdrop-filter|animation|box-shadow/);
   }
+});
+
+
+test("accent-off user-message focus follows the selected palette without changing accent-on focus", () => {
+  // The root attribute gives this override greater specificity than the
+  // transcript rule, regardless of stylesheet order or custom token values.
+  expect(source).toContain(':root[data-session-accent="false"] .session-workspace .message-user :focus-visible { outline-color: var(--focus-on-selected, var(--focus)); }');
+  const session = readFileSync(join(directory, "session.css"), "utf8");
+  expect(session).toContain('.session-workspace .transcript .message-user :focus-visible { outline-color: var(--on-accent); outline-offset: 2px; }');
+  for (const [name, modes] of Object.entries(appearancePalettes)) {
+    for (const [mode, colors] of Object.entries(modes)) {
+      expect(contrast(colors.focus, colors["surface-selected"]), `${name} ${mode}: focus / surface-selected`).toBeGreaterThanOrEqual(3);
+    }
+  }
+});
+
+test("custom theme focus stays visible against the selected user-message surface", () => {
+  const surface = "#777777";
+  const fallback = visibleFocusColor(surface, surface);
+  expect(fallback).not.toBe(surface);
+  expect(contrast(fallback, surface)).toBeGreaterThanOrEqual(3);
+
+  const focus = "#2563d8";
+  expect(visibleFocusColor(focus, "#FFFFFF")).toBe(focus);
 });

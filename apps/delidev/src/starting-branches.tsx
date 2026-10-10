@@ -134,7 +134,7 @@ function StartingBranch({project,repositoryId,machineId,starting,change,active,s
       if(event.key==="Escape"){event.preventDefault();event.stopPropagation();close();input.current?.focus();}
       if(event.key==="Tab")close();
       if(event.target instanceof HTMLButtonElement&&event.target.hasAttribute("data-branch-refresh")&&(event.key==="ArrowUp"||event.key==="ArrowDown")){event.preventDefault();input.current?.focus();setHighlight(event.key==="ArrowUp"?candidates.length-1:0);}
-     }}><p>{text(document(repo).name)} <code>{repositoryId}</code></p><p>{manual?copy("new-session.manualStartingReference"):copy("new-session.branchInputHelp")}</p>
+     }}>{manual?<p>{copy("new-session.manualStartingReference")}</p>:null}
      <div id={`${id}-choices`} role="listbox" aria-label={label}>{candidates.map((candidate,index)=><button type="button" role="option" tabIndex={-1} key={`${candidate.name}:${index}`} id={`${id}-option-${index}`} aria-selected={highlight===index} disabled={!active||Boolean(candidate.name&&!managedRemote)} onPointerDown={event=>event.preventDefault()} onClick={()=>choose(candidate.name)}>{candidate.label}</button>)}</div>
      <button data-branch-refresh type="button" disabled={!capable||!machineId||busy||!active} onPointerDown={event=>event.preventDefault()} onClick={()=>{input.current?.focus();void lookup();}}>{copy("new-session.refreshBranches")}</button>
      {busy?<p role="status">{copy("new-session.loadingBranches")}</p>:null}

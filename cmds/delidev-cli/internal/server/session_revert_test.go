@@ -164,8 +164,8 @@ func TestRevertPublicRejectsActiveSteerForeignPromptAndMissingCapability(t *test
 }
 
 func TestRevertOriginalRecoveryPublishesOnlyExactFrozenAction(t *testing.T) {
-	for _, changed := range []bool{false, true} {
-		t.Run(map[bool]string{false: "original", true: "changed-target"}[changed], func(t *testing.T) {
+	for _, scenario := range []string{"original", "canceled", "changed-target", "changed-context", "changed-history", "missing-cleanup", "changed-assignment", "changed-account", "original-cleanup"} {
+		t.Run(scenario, func(t *testing.T) {
 			f, message := publicRevertFixture(t, domain.ExecutionSucceeded)
 			ctx := context.Background()
 			client := sessionClient(f.accountFixture)
@@ -192,6 +192,11 @@ func TestRevertOriginalRecoveryPublishesOnlyExactFrozenAction(t *testing.T) {
 				if e != nil {
 					return nil, e
 				}
+				if scenario != "original" {
+					if e = tx.RequestJobCancellation(row.ID); e != nil {
+						return nil, e
+					}
+				}
 				return finishSessionCompaction(tx, row, original, row.Revision, nil, domain.CompactionUncertain())
 			})
 			if err != nil {
@@ -212,12 +217,70 @@ func TestRevertOriginalRecoveryPublishesOnlyExactFrozenAction(t *testing.T) {
 				t.Fatal("recovery changed original identity")
 			}
 			result := domain.SessionCompactionResult{Version: 4, Harness: domain.Codex, ActionID: input.ActionID, ExecutionID: input.Assignment.ExecutionID, Outcome: domain.CompactionSucceeded, CleanupVerified: true, Checkpoint: domain.SessionCompactionRef{Revert: true, ContextRevision: 1, JobID: request.JobID, ActionID: input.ActionID, ExecutionID: input.Assignment.ExecutionID, CheckpointDigest: strings.Repeat("a", 64), NativeDigest: strings.Repeat("b", 64)}, Revert: &domain.SessionRevertResult{Target: *input.Revert, NativeThreadID: input.Completion.NativeThreadID, RetainedTurnIDs: []domain.NativeIdentity{}, HistoryDigest: strings.Repeat("c", 64), ContextRevision: 1}}
-			if changed {
+			switch scenario {
+			case "changed-target":
 				result.Revert.Target.MessageID = domain.NewID()
+			case "changed-context":
+				result.Revert.ContextRevision++
+			case "changed-history":
+				result.Revert.RetainedTurnIDs = []domain.NativeIdentity{input.Revert.NativeTurnID}
+			case "missing-cleanup":
+				result.CleanupVerified = false
+			}
+			if scenario == "changed-assignment" || scenario == "changed-account" || scenario == "original-cleanup" {
+				_, err = f.service.Store.Mutate(ctx, domain.NewID(), "fixture.revert-changed-owner", nil, func(tx *store.Tx) (any, error) {
+					if scenario == "changed-assignment" {
+						r, e := tx.Get(domain.JobKind, request.JobID)
+						if e != nil {
+							return nil, e
+						}
+						j, e := store.Decode[domain.Job](r)
+						if e != nil {
+							return nil, e
+						}
+						j.InstanceID = domain.NewID()
+						return tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, j)
+					}
+					r, state, e := sessionRecord(tx, f.input.SessionID)
+					if e != nil {
+						return nil, e
+					}
+					if scenario == "changed-account" {
+						state.InitialExecution.InitialAccountID = domain.NewID()
+					} else {
+						state.Execution.CleanupVerified = false
+					}
+					return tx.Put(r.Kind, r.ID, r.Revision, r.SessionID, r.ProjectID, state)
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if scenario == "canceled" {
+				late, _ := json.Marshal(result)
+				_, err = f.service.Store.Mutate(ctx, domain.NewID(), "fixture.revert-canceled-late-report", nil, func(tx *store.Tx) (any, error) {
+					r, e := tx.Get(domain.JobKind, request.JobID)
+					if e != nil {
+						return nil, e
+					}
+					j, e := store.Decode[domain.Job](r)
+					if e != nil {
+						return nil, e
+					}
+					return finishSessionCompaction(tx, r, j, r.Revision, late, nil)
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				latest, _ := store.Decode[domain.Session](f.refresh(t))
+				if latest.ContextRevision != 0 || latest.CompactionJobID != request.JobID || latest.Recovery != domain.NeedsRecovery {
+					t.Fatal("ordinary canceled Revert report released its quarantine")
+				}
 			}
 			evidence := domain.ExecutionRecoveryEvidence{Version: 2, JobID: request.JobID, ReportID: domain.NewID(), Revert: &result}
 			raw, _ := json.Marshal(evidence)
-			_, err = f.service.Store.Mutate(ctx, domain.NewID(), "fixture.revert-observed-recovery", nil, func(tx *store.Tx) (any, error) {
+			receipt := domain.NewID()
+			_, err = f.service.Store.Mutate(ctx, receipt, "fixture.revert-observed-recovery", nil, func(tx *store.Tx) (any, error) {
 				if e := validateExecutionRecoveryResult(tx, row, job, raw); e != nil {
 					return nil, e
 				}
@@ -225,18 +288,125 @@ func TestRevertOriginalRecoveryPublishesOnlyExactFrozenAction(t *testing.T) {
 				job.Output = raw
 				return nil, finishExecutionRecovery(tx, row, job)
 			})
-			if changed {
+			if scenario != "original" && scenario != "canceled" {
 				if err == nil {
-					t.Fatal("recovery adopted changed target")
+					t.Fatal("recovery adopted changed evidence or ownership")
+				}
+				latest, _ := store.Decode[domain.Session](f.refresh(t))
+				if latest.ContextRevision != 0 || latest.CompactionJobID != request.JobID || latest.Recovery == domain.NoRecovery {
+					t.Fatal("rejected recovery released original quarantine")
 				}
 				return
 			}
 			if err != nil {
 				t.Fatal(err)
 			}
+			beforeReplay := f.refresh(t)
+			replayed, replayErr := f.service.Store.Mutate(ctx, receipt, "fixture.revert-observed-recovery", nil, func(tx *store.Tx) (any, error) {
+				t.Fatal("receipt replay repeated recovery finalization")
+				return nil, nil
+			})
+			if replayErr != nil || !replayed.Replayed || f.refresh(t).Revision != beforeReplay.Revision {
+				t.Fatal("recovery receipt replay changed the checkpoint", replayErr)
+			}
+			if scenario == "canceled" {
+				if err := f.service.Store.Read(ctx, func(tx *store.Tx) error {
+					canceled, e := tx.JobCancellationRequested(request.JobID)
+					if e == nil && !canceled {
+						t.Error("recovery erased original cancellation")
+					}
+					return e
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
 			latest, _ := store.Decode[domain.Session](f.refresh(t))
-			if latest.Recovery != domain.NoRecovery || latest.ContextRevision != 1 || latest.CompactionJobID != "" || latest.ExecutionRecoveryJobID != "" || latest.Execution.ExecutionID != f.input.ExecutionID || latest.Dispatch != domain.DispatchPaused {
+			if latest.Recovery != domain.NoRecovery || latest.ContextRevision != 1 || latest.CompactionJobID != "" || latest.ExecutionRecoveryJobID != "" || latest.Execution.ExecutionID != f.input.ExecutionID || latest.Revert == nil || latest.Revert.ActionID != input.ActionID || latest.Revert.JobID != request.JobID || !reflect.DeepEqual(latest.Revert.Result, *result.Revert) || latest.Dispatch != domain.DispatchPaused {
 				t.Fatal("recovery changed execution or released without original checkpoint")
+			}
+		})
+	}
+}
+
+func TestRevertPreSendFailureReleasesOnlyExactOriginalContextJob(t *testing.T) {
+	for _, scenario := range []string{"original", "canceled-original", "generic-error", "claim-entered", "send-started", "cleanup-missing", "foreign-job", "foreign-action", "foreign-execution", "changed-input", "changed-context", "changed-thread", "unknown-outcome"} {
+		t.Run(scenario, func(t *testing.T) {
+			f, message := publicRevertFixture(t, domain.ExecutionSucceeded)
+			ctx := context.Background()
+			prior, _ := store.Decode[domain.Session](f.refresh(t))
+			accepted, err := sessionClient(f.accountFixture).RevertSession(ctx, ownerRequest(f.identity, &pb.RevertSessionRequest{Mutation: acctMutation(resourceForTest(f.refresh(t)), domain.NewID()), MessageId: string(message), BeforeTurnId: string(f.turn)}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var job domain.Job
+			var input domain.SessionCompactionInput
+			if domain.Decode(accepted.Msg.Job.DocumentJson, &job) != nil || domain.DecodeCompactionInput(job.Input, &input) != nil {
+				t.Fatal("original input")
+			}
+			result := domain.SessionRevertPreSendFailure{Version: 1, Outcome: domain.RevertFailedBeforeClaim, JobID: domain.ID(accepted.Msg.Job.Id), ActionID: input.ActionID, ExecutionID: input.Assignment.ExecutionID, InputDigest: continuationDigest(job.Input), ContextRevision: input.Revert.ContextRevision, NativeThreadID: input.Completion.NativeThreadID, ClaimNotInvoked: true, NativeSendNotStarted: true, CleanupVerified: true, FailureCode: domain.Conflict}
+			var problem *domain.Error
+			switch scenario {
+			case "generic-error":
+				problem = domain.CompactionUncertain()
+			case "claim-entered":
+				result.ClaimNotInvoked = false
+			case "send-started":
+				result.NativeSendNotStarted = false
+			case "cleanup-missing":
+				result.CleanupVerified = false
+			case "foreign-job":
+				result.JobID = domain.NewID()
+			case "foreign-action":
+				result.ActionID = domain.NewID()
+			case "foreign-execution":
+				result.ExecutionID = domain.NewID()
+			case "changed-input":
+				result.InputDigest = strings.Repeat("a", 64)
+			case "changed-context":
+				result.ContextRevision++
+			case "changed-thread":
+				result.NativeThreadID = domain.NativeIdentity(domain.NewID())
+			case "unknown-outcome":
+				result.Outcome = "unknown"
+			}
+			raw, _ := json.Marshal(result)
+			if problem != nil {
+				raw = nil
+			}
+			_, err = f.service.Store.Mutate(ctx, domain.NewID(), "fixture.revert-presend-result", nil, func(tx *store.Tx) (any, error) {
+				row, e := tx.Get(domain.JobKind, domain.ID(accepted.Msg.Job.Id))
+				if e != nil {
+					return nil, e
+				}
+				if scenario == "canceled-original" {
+					if e := tx.RequestJobCancellation(row.ID); e != nil {
+						return nil, e
+					}
+				}
+				return finishSessionCompaction(tx, row, job, row.Revision, raw, problem)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			after, _ := store.Decode[domain.Session](f.refresh(t))
+			row, err := f.service.Store.Get(ctx, domain.JobKind, domain.ID(accepted.Msg.Job.Id))
+			if err != nil {
+				t.Fatal(err)
+			}
+			final, _ := store.Decode[domain.Job](row)
+			if after.ContextRevision != prior.ContextRevision || !reflect.DeepEqual(after.Compaction, prior.Compaction) || !reflect.DeepEqual(after.Revert, prior.Revert) || !reflect.DeepEqual(after.Execution, prior.Execution) || after.Outcome != prior.Outcome {
+				t.Fatal("failed action rewrote original context or history")
+			}
+			if scenario == "original" || scenario == "canceled-original" {
+				if final.State != domain.JobFailed || final.Problem == nil || final.Problem.Code != domain.Conflict || after.CompactionJobID != "" || after.Recovery != domain.NoRecovery || after.Dispatch != domain.DispatchPaused {
+					t.Fatal("positive pre-send failure did not settle")
+				}
+			} else if final.State != domain.JobUncertain || after.CompactionJobID != row.ID || after.Recovery != domain.NeedsRecovery {
+				t.Fatal("missing original no-send/cleanup proof escaped quarantine")
+			}
+			historical, e := f.service.Store.Get(ctx, domain.MessageKind, message)
+			if e != nil || historical.Revision != 1 {
+				t.Fatal("immutable prior message changed", e)
 			}
 		})
 	}
