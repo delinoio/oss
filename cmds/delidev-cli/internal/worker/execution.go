@@ -365,7 +365,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	defer cancelNative()
 	cancelBeforeAcceptance := context.AfterFunc(ctx, cancelNative)
 	defer cancelBeforeAcceptance()
-	nativeConfig := codex.Config{EnableImageGeneration: input.NativeImageGeneration, RevertHistory: input.ContextRevision > 0 || checkpoint.Native.PaginatedHistory || checkpoint.Native.ContextRevision > 0 || compacted != nil && compacted.Revert != nil, ManagedForkHistory: input.Configuration.Subscription && input.Fork != nil && input.Configuration.SidechatPolicy == "", OrdinaryTools: ordinaryTools, SkillsRoot: config.Root, ImageRoot: config.Root, ImageMachineID: input.MachineID, Mode: codex.ThreadProtocol, Version: input.Installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token}, Process: process.Config{StartupObserver: config.progress.native, Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: config.Logger}}
+	nativeConfig := codex.Config{CodexAppsProfile: input.CodexApps != nil, EnableImageGeneration: input.NativeImageGeneration, RevertHistory: input.ContextRevision > 0 || checkpoint.Native.PaginatedHistory || checkpoint.Native.ContextRevision > 0 || compacted != nil && compacted.Revert != nil, ManagedForkHistory: input.Configuration.Subscription && input.Fork != nil && input.Configuration.SidechatPolicy == "", OrdinaryTools: ordinaryTools, SkillsRoot: config.Root, ImageRoot: config.Root, ImageMachineID: input.MachineID, Mode: codex.ThreadProtocol, Version: input.Installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token}, Process: process.Config{StartupObserver: config.progress.native, Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: config.Logger}}
 	if input.Configuration.SidechatPolicy == domain.CodexReadOnlySidechatV1 {
 		nativeConfig.Sidechat = codex.ReadOnlySidechatV1
 	}
@@ -432,6 +432,14 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	}
 	input.Installation.Version = client.Version()
 	publisher.nativeVersion = client.Version()
+	if input.CodexApps != nil {
+		if managed == nil {
+			return nil, publicationUncertain()
+		}
+		if err := client.PrepareCodexApps(ctx, input.CodexApps.Generation, *input.CodexApps, settings.Cwd); err != nil {
+			return nil, err
+		}
+	}
 	mapper := NewCodexEventPublisher(publisher)
 	var bound codex.ThreadResult
 	if c := input.Continuation; c != nil {
@@ -484,10 +492,14 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	}
 	config.startup.acknowledgeInput()
 	logger.InfoContext(ctx, "native_execution_input_accepted", "input_id", input.InputID)
+	finishApps := startCodexAppsController(ctx, nativeCtx, cancelNative, config.appsControls, mapper, client, settings.Cwd)
 	finishResponses := startQuestionResponseController(ctx, nativeCtx, cancelNative, config.questionControls, mapper, client)
 	finishApprovals := startApprovalResponseController(ctx, nativeCtx, cancelNative, config.approvalControls, mapper, client)
 	finishSteers := startSteerController(ctx, nativeCtx, cancelNative, config.steerControls, mapper, client)
 	defer func() {
+		if err := finishApps(); err != nil {
+			output, returned = nil, config.startup.cleanupFailure(returned, err)
+		}
 		if err := finishSteers(); err != nil {
 			output, returned = nil, config.startup.cleanupFailure(returned, err)
 		}
