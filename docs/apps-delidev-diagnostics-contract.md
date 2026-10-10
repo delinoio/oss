@@ -26,11 +26,11 @@ The feature removes the complete Doctor presentation from Settings Connections. 
 
 Runner Devices opens a shared read-only Local Worker problem dialog from the original LocalWorkerControls. Project its safe current management cause, state guidance, machine identity and safe control/read error; unknown failures use the existing fallback. Preserve inline warning/status/Refresh and original Stop/retry/service/uncertainty authority. Dialog presentation introduces no query, polling, control, registration or recovery action. Close/Escape restore the connected opener; category departure disposes presentation.
 
-Server information aligns version, OS/architecture, protocol version, database schema and bound endpoint in semantic label/value rows. Server identity is a closed native disclosure. Keep the owner-credential caveat visible.
+Server information aligns version, OS/architecture, protocol version, database schema and bound endpoint in semantic label/value rows. Server identity remains internal; its presentation uses the observed saved name or a localized unavailable label. Keep the owner-credential caveat visible.
 
 Server storage shows the exact result classification, safe code/guidance and all five byte fields: database file, write-ahead log, logical database size, filesystem capacity and space available to the server. Keep the separately-sampled/no-sum/no-reclaimable-space caveat visible. Retained resources contains bounded resource kind/count rows in a closed disclosure; unavailable/empty notices remain outside it. Partial storage measurements survive later measurement failures.
 
-Runner Devices occupies full width. Each always-open record shows its name, reported version/platform, observed stream state, enabled/disabled state, last contact and every retained harness installation/version/protocol classification within the existing four-entry bound. Failure codes and guidance stay inside the owning record and outside disclosures. Installation details contains machine identity, discovery timestamps and reported capabilities. The full original description preserves discovery, handshake, account-readiness and process-cleanup distinctions. Machine inventory availability and completeness notices stay visible.
+Runner Devices occupies full width. Each always-open record shows its name, reported version/platform, observed stream state, enabled/disabled state, last contact and every retained harness installation/version/protocol classification within the existing four-entry bound. Failure codes and guidance stay inside the owning record and outside disclosures. Installation details uses the observed machine name instead of its internal identity, discovery timestamps and reported capabilities. The full original description preserves discovery, handshake, account-readiness and process-cleanup distinctions. Machine inventory availability and completeness notices stay visible.
 
 ### Account-storage presentation
 
@@ -117,3 +117,41 @@ Successful empty inventory, loading, failed reads, retained stale observations, 
 ## Inline Connections presentation
 
 The feature exposes current connection and main-window saved-profile management inline in the stable `diagnostics` Settings category, named Connections/연결. `connections-page.tsx` owns presentation slots and stable movable hosts, never diagnostics or repair authority. Original desktop controllers retain requests, revisions, confirmations and uncertainty across page disposal. Advanced owns registration recovery, updates, installation inspection and removed-profile/retained Worker controls; its attention text remains visible when collapsed. Doctor stays absent. Saved inventory cannot claim remote authorization or readiness and cannot probe saved endpoints. Saved windows retain their pinned connect-only authority.
+
+## Product identity presentation
+
+This policy replaces earlier requirements to print internal IDs in product
+presentation. Other exact-identity requirements continue to govern internal
+records, requests and verification.
+
+DeliDev-generated desktop and mobile text, expanded details, titles, tooltips,
+accessibility descriptions, notifications, widgets and product-presentation
+clipboard output must not print internal UUIDs or abbreviated UUIDs. Use already
+authorized current or retained names and localized kind-specific unavailable
+labels. Add no read solely to obtain a display name. Where names can coincide,
+use a presentation number allocated against the original ID for the owning
+connection/view lifetime. Retain it across paging, reorder and refresh; do not
+recycle or persist it, and never accept it as operation authority.
+
+Remove UUID-only Project details and Repository ID rows, including Repository
+popups. Keep names, ordering, safe inert source metadata, status, loading/error
+states and existing actions. Backup inspection and deletion confirmation use the
+same stable numbered label with original timestamp and exact size; the original
+selected ID, accepted inspection object and proof still own confirmation.
+
+Application diagnostic text uses an explicit UUID-free presentation boundary;
+correlation rows are omitted. Preserve safe guidance, typed codes and supported
+actions. Preserve all original diagnostic records internally. User-authored
+names/messages, model/tool/terminal/native content and original external/native
+artifacts stay verbatim, including UUID-shaped text. Do not sanitize the rendered
+application tree. API/CLI payloads, logs, exports, backups and protected pairing
+documents retain exact IDs and schemas. Technical file/download operations keep
+machine-readable formats; product Copy actions omit internal identities.
+
+RPCs, receipts, authorization, deduplication, pending/uncertain controllers, cache
+and React keys, DOM control relationships, event cursors, selection bindings and
+immutable histories retain original IDs. Presentation grants no inspection,
+polling, mutation, execution or recovery authority. Server/machine/generation
+verification stays unchanged. Use bundled English/Korean strings, existing
+semantic tokens and keyboard/focus behavior. Fixture/static checks do not prove
+browser geometry, native, account, accessibility or platform acceptance.

@@ -55,7 +55,7 @@ it("owns the standalone Diagnostics heading, three independent observations and 
   expect(worker.querySelectorAll(".diagnostics-installations > li")).toHaveLength(4);
   expect(within(worker).getAllByText("Handshake not checked")).toHaveLength(4);
   allClosed(view.container);
-  expect(within(server).getByText(value.state.report.server_id as string).closest("details")?.open).toBe(false);
+  expect(server.textContent).not.toContain(value.state.report.server_id as string);
   expect(within(worker).getByText(/Machine identity:/).closest("details")?.open).toBe(false);
   expect(screen.queryByText(/healthy|reclaimable bytes|total storage|%/i)).toBeNull();
 });
@@ -179,7 +179,7 @@ for (const code of [Code.Unauthenticated, Code.PermissionDenied]) it(`keeps init
   value.doctor.mockRejectedValue(new ConnectError("Fixture authorization denied.", code, undefined, [{ desc: ErrorDetailSchema, value: create(ErrorDetailSchema, { code: code === Code.Unauthenticated ? "unauthenticated" : "permission_denied", guidance: "Inspect the selected authorized connection.", correlationId: reference }) }]));
   render(value.view(<Doctor active />)); await screen.findByRole("alert");
   expect(screen.queryByText("Read succeeded")).toBeNull(); expect(screen.queryByText(/No Workers|No accounts/)).toBeNull();
-  expect(screen.getByText("Inspect the selected authorized connection.")).toBeTruthy(); expect(screen.getByText(`Reference: ${reference}`)).toBeTruthy();
+  expect(screen.getByText("Inspect the selected authorized connection.")).toBeTruthy(); expect(screen.queryByText(`Reference: ${reference}`)).toBeNull();
 });
 
 for (const encoding of ["future", "json", "utf8", "oversized"]) it(`rejects ${encoding} reports without a summary`, async () => {

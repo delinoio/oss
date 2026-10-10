@@ -32,13 +32,13 @@ it("does not alter shared workflows outside Settings", () => {
   render(<SettingsActionButton icon={SettingsActionIcon.Delete} presentation={SettingsActionPresentation.Icon}>Delete entry</SettingsActionButton>);
   const button=screen.getByRole("button",{name:"Delete entry"}); expect(button.querySelector("svg")).toBeNull(); expect(button.getAttribute("data-settings-action")).toBeNull(); fireEvent.focus(button); expect(screen.queryByRole("tooltip")).toBeNull();
 });
-it("disambiguates same-name Projects with original IDs and retains exact supported-row callbacks", () => {
+it("disambiguates same-name Projects with presentation numbers and retains exact supported-row callbacks", () => {
   const row = (id: string, schemaVersion = 1) => create(ResourceSchema,{id,kind:EntityKind.PROJECT,schemaVersion,revision:1n,documentJson:encode({name:"Shared name",repositories:[]})});
   const a=row("original-a"), b=row("original-b"), unsupported=row("unsupported",99), edit=vi.fn(),remove=vi.fn();
   render(<SettingsActionScope><ProjectList resources={[a]} metadata={new Map()} edit={edit} remove={remove}/><ProjectList resources={[b,unsupported]} metadata={new Map()} edit={edit} remove={remove}/></SettingsActionScope>);
-  fireEvent.click(screen.getByRole("button",{name:"Edit Shared name · original-b"})); expect(edit).toHaveBeenCalledExactlyOnceWith(b);
-  fireEvent.click(screen.getByRole("button",{name:"Delete Shared name · original-a"})); expect(remove).toHaveBeenCalledExactlyOnceWith(a);
-  fireEvent.click(screen.getByRole("button",{name:`Delete ${resourceName(unsupported)} · ${unsupported.id}`})); expect(remove).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button",{name:"Edit Shared name · Item 2"})); expect(edit).toHaveBeenCalledExactlyOnceWith(b);
+  fireEvent.click(screen.getByRole("button",{name:"Delete Shared name · Item 1"})); expect(remove).toHaveBeenCalledExactlyOnceWith(a);
+  fireEvent.click(screen.getByRole("button",{name:`Delete ${resourceName(unsupported)} · Item 3`})); expect(remove).toHaveBeenCalledTimes(1);
 });
 it("preserves unsupported Repository and Agent Worker action guards", () => {
   const edit=vi.fn(),remove=vi.fn(),preview=vi.fn(), row=create(ResourceSchema,{id:"unsupported",schemaVersion:99,documentJson:encode({name:"Future resource"})});

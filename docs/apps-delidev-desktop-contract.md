@@ -5098,3 +5098,41 @@ Home on Sessions and both creation surfaces, including the shared compact drawer
 ### Desktop server protocol validation
 
 Native local startup, supervision and saved-connection verification require the active server protocol 2 and the compiled package version. The Go resident host reports its RPC version constants in the initial started response, matching later authenticated status observations. Private desktop control version 2 and CLI envelope version 1 remain separate from server compatibility. Reject older and newer server protocols without replacing pairing, changing lifecycle intent or granting Worker authority.
+
+## Product identity presentation
+
+This policy replaces earlier requirements to print internal IDs in product
+presentation. Other exact-identity requirements continue to govern internal
+records, requests and verification.
+
+DeliDev-generated desktop and mobile text, expanded details, titles, tooltips,
+accessibility descriptions, notifications, widgets and product-presentation
+clipboard output must not print internal UUIDs or abbreviated UUIDs. Use already
+authorized current or retained names and localized kind-specific unavailable
+labels. Add no read solely to obtain a display name. Where names can coincide,
+use a presentation number allocated against the original ID for the owning
+connection/view lifetime. Retain it across paging, reorder and refresh; do not
+recycle or persist it, and never accept it as operation authority.
+
+Remove UUID-only Project details and Repository ID rows, including Repository
+popups. Keep names, ordering, safe inert source metadata, status, loading/error
+states and existing actions. Backup inspection and deletion confirmation use the
+same stable numbered label with original timestamp and exact size; the original
+selected ID, accepted inspection object and proof still own confirmation.
+
+Application diagnostic text uses an explicit UUID-free presentation boundary;
+correlation rows are omitted. Preserve safe guidance, typed codes and supported
+actions. Preserve all original diagnostic records internally. User-authored
+names/messages, model/tool/terminal/native content and original external/native
+artifacts stay verbatim, including UUID-shaped text. Do not sanitize the rendered
+application tree. API/CLI payloads, logs, exports, backups and protected pairing
+documents retain exact IDs and schemas. Technical file/download operations keep
+machine-readable formats; product Copy actions omit internal identities.
+
+RPCs, receipts, authorization, deduplication, pending/uncertain controllers, cache
+and React keys, DOM control relationships, event cursors, selection bindings and
+immutable histories retain original IDs. Presentation grants no inspection,
+polling, mutation, execution or recovery authority. Server/machine/generation
+verification stays unchanged. Use bundled English/Korean strings, existing
+semantic tokens and keyboard/focus behavior. Fixture/static checks do not prove
+browser geometry, native, account, accessibility or platform acceptance.

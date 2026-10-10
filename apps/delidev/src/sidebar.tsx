@@ -1,3 +1,4 @@
+import { ProductIdentity, ProductKind, useProductLabels } from "./product-identity";
 import { useSessionNameEditor } from "./session-name-editor";
 import { ProjectSettingsMenu } from "./project-settings-menu";
 import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclosure";
@@ -38,7 +39,7 @@ enum ArchiveStatus {
 type TooltipPosition = { left: number; top: number };
 
 export function Icon({ name, className = "" }: { name: string; className?: string }) {
-  useLocale();
+  useLocale(); const productLabel=useProductLabels();
   const common = { "aria-hidden": true as const, className: `sidebar-icon ${className}`, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
   switch (name) {
     case "sidebar-toggle": return <svg {...common}><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>;
@@ -68,7 +69,7 @@ export function Icon({ name, className = "" }: { name: string; className?: strin
 }
 
 function SidebarButton({ label, icon, current, onClick, className = "" }: { label: string; icon: string; current?: boolean; onClick: (event: MouseEvent<HTMLButtonElement>) => void; className?: string }) {
-  useLocale();
+  useLocale(); const productLabel=useProductLabels();
   return <button type="button" aria-label={label} aria-current={current ? "page" : undefined} className={`sidebar-rail-button ${className}`} onClick={onClick}>
     <Icon name={icon} /><span className="sidebar-rail-tooltip" aria-hidden="true">{label}</span>
   </button>;
@@ -76,13 +77,13 @@ function SidebarButton({ label, icon, current, onClick, className = "" }: { labe
 
 type NavigationQuery = ReturnType<typeof useNavigationQuery>;
 function QueryProblem({ query, label, retryLabel }: { query: NavigationQuery; label: string; retryLabel: string }) {
-  useLocale();
+  useLocale(); const productLabel=useProductLabels();
   if (!query.error) return null;
   const { failure, stalled } = query.error;
   const reload = failure.code === FailureCode.CursorExpired || stalled;
   const message = reload ? `${label}: ${stalled ? copy("sidebar.extra.ad70acba0412") : copy("sidebar.extra.b36417b2a769")}` : query.loaded ? copy("sidebar.sentence.28902f557c4c", { v0: query.error.stage === ReadStage.Additional ? copy("sidebar.extra.de45c9bc43ff") : statusLabel("refresh"), v1: label }) : failure.code === FailureCode.PermissionDenied ? copy("sidebar.sentence.1c87008c72bf", { v0: label }) : copy("sidebar.sentence.3c9f0d81b95a", { v0: label });
   return <div className="sidebar-query-problem">
-    <span role="status">{message}{failure.correlationId ? copy("sidebar.correlation_3851eb", { v0: failure.correlationId }) : ""}</span>
+    <span role="status">{message}</span>
     <button type="button" aria-label={reload ? copy("sidebar.reloadList_83b8c9", { v0: label }) : retryLabel} disabled={Boolean(query.loading)} onClick={reload ? query.reload : query.retry}>{reload ? copy("sidebar.reloadList_095352") : copy("sidebar.retry_942087")}</button>
   </div>;
 }
@@ -122,7 +123,7 @@ function cardArchiveLabel(raw: string): string {
 }
 
 function StatusGlyph({ outcome, archive }: { outcome: string; archive: string }) {
-  useLocale();
+  useLocale(); const productLabel=useProductLabels();
   let execution: ReactNode;
   switch (outcome as ExecutionStatus) {
     case ExecutionStatus.NotStarted: execution = <svg className="sidebar-status-glyph" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"><circle cx="8" cy="8" r="5.25"/></svg>; break;
@@ -140,7 +141,7 @@ function StatusGlyph({ outcome, archive }: { outcome: string; archive: string })
 }
 
 function SessionRow({ row, selected, open }: { row: NavigationRow; selected: boolean; open: (id: string, sidechatParent?:string, name?:string) => void }) {
-  useLocale();
+  useLocale(); const productLabel=useProductLabels();
   const tooltipId = useId();
   const element = useRef<HTMLButtonElement>(null);
   const hover = useSessionHover(element);
@@ -188,7 +189,7 @@ const conversationKindIcons = {
 } as const;
 
 export function ConversationForest({ rows, home, selected, activation = 0, open }: { rows: readonly NavigationRow[]; home: HomeNavigation; selected: string; activation?: number; open: (id: string, parent?: string, name?: string) => void }) {
-  useLocale();
+  useLocale(); const productLabel=useProductLabels();
   const roots = useMemo(() => conversationForest(rows), [rows]);
   const contentPrefix = useId();
   const container = useRef<HTMLUListElement>(null);
@@ -246,7 +247,7 @@ export function ConversationForest({ rows, home, selected, activation = 0, open 
 function ProjectSessions({ projectId, label, fallback = false, fallbackRows, home, includeArchived, selected, activation, open, active, root }: {
   projectId: string; label: string; fallback?: boolean; fallbackRows: NavigationRow[]; home: HomeNavigation; includeArchived: boolean; selected: string; activation: number; open: (id: string, sidechatParent?:string, name?:string) => void; active: boolean; root: RefObject<HTMLDivElement | null>;
 }) {
-  useLocale();
+  useLocale(); const productLabel=useProductLabels();
   const sessions = useNavigationQuery(home.project(projectId), HomeScope.Sessions, projectId, includeArchived, active && !fallback);
   const rows = fallback || !sessions.loaded ? fallbackRows : sessions.rows;
   return <div className="sidebar-project-sessions">
@@ -264,12 +265,12 @@ function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], e
   newSession: (projectId: string) => void; projectSelectionBlocked: boolean;
 }) {
   const disclosureContentId1 = useId();
-  useLocale();
+  useLocale(); const productLabel=useProductLabels(); const labels=useProductLabels();
   return <section className={`sidebar-project-group${fallback ? "" : " has-new-session has-project-menu"}`} data-project-id={projectId}>
-    <DisclosureButton aria-controls={disclosureContentId1} density={DisclosureDensity.Compact} type="button" className="sidebar-project-row" title={label} aria-label={copy("sidebar.projectId_656c43", { v0: label, v1: projectId })} aria-expanded={expanded} onClick={toggle}>
+    <DisclosureButton aria-controls={disclosureContentId1} density={DisclosureDensity.Compact} type="button" className="sidebar-project-row" title={label} aria-label={copy("sidebar.projectId_656c43", { v0: label, v1: labels(projectId, ProductKind.Project) })} aria-expanded={expanded} onClick={toggle}>
       <Icon name="folder" className="sidebar-folder-icon" /><span className="sidebar-project-title">{label}</span><span className="sidebar-project-tooltip" aria-hidden="true">{label}</span>
     </DisclosureButton>
-    {!fallback ? <button type="button" className="sidebar-project-new-session" title={copy("sidebar.newSessionInProject", { v0: label })} aria-label={copy("sidebar.newSessionInProjectId", { v0: label, v1: projectId })} disabled={projectSelectionBlocked} onClick={(event) => { event.currentTarget.focus(); newSession(projectId); }}><Icon name="plus" /></button> : null}
+    {!fallback ? <button type="button" className="sidebar-project-new-session" title={copy("sidebar.newSessionInProject", { v0: label })} aria-label={copy("sidebar.newSessionInProjectId", { v0: label, v1: labels(projectId, ProductKind.Project) })} disabled={projectSelectionBlocked} onClick={(event) => { event.currentTarget.focus(); newSession(projectId); }}><Icon name="plus" /></button> : null}
     {!fallback ? <ProjectSettingsMenu projectId={projectId} label={label} active={active} /> : null}
     <DisclosureContent id={disclosureContentId1} hidden={!expanded}>{expanded ? <ProjectSessions projectId={projectId} label={label} fallback={fallback} fallbackRows={fallbackRows} home={home} includeArchived={includeArchived} selected={selected} activation={activation} open={open} active={active} root={root} /> : null}</DisclosureContent>
   </section>;
@@ -280,7 +281,7 @@ export function Sidebar({ collapsed = false, paneId, toggleRef, compactFocusRef,
   setContextTarget?: (target: HTMLElement | null) => void; drawerOpen?: boolean; setDrawerOpen?: (open: boolean) => void;
 }) {
   const disclosureContentId3 = useId();
-  useLocale();
+  useLocale(); const productLabel=useProductLabels();
   const [compact, setCompact] = useState(() => typeof window.matchMedia === "function" && window.matchMedia("(max-width: 759px)").matches);
   const drawer = useRef<HTMLDialogElement>(null);
   const rail = useRef<HTMLElement>(null);
@@ -489,7 +490,7 @@ export function Sidebar({ collapsed = false, paneId, toggleRef, compactFocusRef,
         <QueryProblem query={sessions} label={copy("sidebar.sessions_1225ae")} retryLabel={copy("sidebar.retryGlobalSessions_4d93c1")} />
         {!projects.loaded && !projects.error ? <p className="sidebar-query-state" role="status">{copy("sidebar.loadingProjects_6970a1")}</p> : null}
         {projects.loaded && !projects.error && projectRows.length === 0 && !projects.nextPageToken ? <div className="sidebar-empty"><p>{copy("sidebar.noProjectsLoaded_9b9e01")}</p><button type="button" onClick={(event) => { event.currentTarget.focus(); setDrawerOpen(false); setNewProjectTooltip(undefined); newProject(); }}>{copy("sidebar.createAProject_c52af0")}</button></div> : null}
-        {[...projectRows.map((project) => ({ id: project.id, label: project.name, fallback: false, rows: globalGroups.get(project.id) })), ...[...fallbackGroups].map(([id, rows]) => ({ id, label: copy("sidebar.sentence.7436726e0559", { v0: id }), fallback: true, rows }))].map((group) => <ProjectGroup key={group.id} projectId={group.id} label={group.label} fallback={group.fallback} fallbackRows={group.rows} expanded={group.fallback ? !collapsedFallbacks.has(group.id) : expandedProjects.has(group.id) || previousFallbacks.current.has(group.id) && !collapsedFallbacks.has(group.id)} toggle={() => group.fallback ? toggleFallback(group.id) : toggleProject(group.id)} newSession={chooseNewSession} projectSelectionBlocked={projectSelectionBlocked} home={home} includeArchived={includeArchived} selected={selectedRowId} activation={selectedSessionActivation} open={chooseSession} active={active} root={list} />)}
+        {[...projectRows.map((project) => ({ id: project.id, label: project.name, fallback: false, rows: globalGroups.get(project.id) })), ...[...fallbackGroups].map(([id, rows]) => ({ id, label: productLabel(id, ProductKind.Project), fallback: true, rows }))].map((group) => <ProjectGroup key={group.id} projectId={group.id} label={group.label} fallback={group.fallback} fallbackRows={group.rows} expanded={group.fallback ? !collapsedFallbacks.has(group.id) : expandedProjects.has(group.id) || previousFallbacks.current.has(group.id) && !collapsedFallbacks.has(group.id)} toggle={() => group.fallback ? toggleFallback(group.id) : toggleProject(group.id)} newSession={chooseNewSession} projectSelectionBlocked={projectSelectionBlocked} home={home} includeArchived={includeArchived} selected={selectedRowId} activation={selectedSessionActivation} open={chooseSession} active={active} root={list} />)}
         <ScrollContinuation showInitial={false} showErrors={false} query={projects} label={copy("sidebar.projects_2577c0")} root={list} active={active} />
         <section className="sidebar-project-group sidebar-general-chat has-new-session">
           <DisclosureButton aria-controls={disclosureContentId3} density={DisclosureDensity.Compact} type="button" className="sidebar-project-row sidebar-general-chat-heading" aria-expanded={generalExpanded} onClick={() => setGeneralExpanded((current) => !current)}><Icon name="chat" className="sidebar-folder-icon" /><span className="sidebar-project-title">{copy("sidebar.generalChat_f634bc")}</span></DisclosureButton>

@@ -32,7 +32,7 @@ it("renders exact HTTP provenance and zero latency while absent observations rem
   expect(screen.getByText("resp_original")).toBeTruthy();
   expect(screen.getByText("high")).toBeTruthy();
   expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(2);
-  expect(screen.getByText(f.row.accountId)).toBeTruthy();
+  expect(document.querySelector(".result")?.textContent).not.toContain(f.row.accountId); expect(screen.getByText(/Account name unavailable/)).toBeTruthy();
   expect(screen.getByText("9007199254740993")).toBeTruthy();
   expect(document.activeElement).toBe(screen.getByLabelText("Execution ID (optional)"));
 });

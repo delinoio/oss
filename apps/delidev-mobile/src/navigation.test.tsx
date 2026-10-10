@@ -119,7 +119,7 @@ it("does not carry conversation selection or drafts into a replacement profile",
   await openConversation();
   fireEvent.change(screen.getByLabelText(en.prompt), { target: { value: "Original profile draft" } });
   tab(en.settings);
-  fireEvent.click(await screen.findByRole("button", { name: "Other profile" }));
+  fireEvent.click(await screen.findByRole("button", { name: /^Other profile · / }));
   tab(en.sessions);
   await screen.findByRole("heading", { name: en.sessions });
   await openConversation();

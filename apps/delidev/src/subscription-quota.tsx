@@ -1,3 +1,4 @@
+import { ProductKind, useProductLabels } from "./product-identity";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclosure";
@@ -40,7 +41,7 @@ export function quotaAccountAvailable(data: Record<string, unknown>): boolean {
 }
 
 export function SubscriptionQuotaControls({ current, machine, active, accepted, busyChanged }: { current: Resource; machine: string; active: boolean; accepted: (resource: Resource) => void; busyChanged: (busy: boolean) => void }) {
-  useLocale();
+  useLocale(); const productLabel=useProductLabels();
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
   const workerQuotaSupported = status.data?.capabilities.includes(SystemCapability.SUBSCRIPTION_QUOTA_V1) === true;
   const serverSupported = status.data?.capabilities.includes(SystemCapability.SERVER_SUBSCRIPTION_QUOTA_V2) === true;
@@ -164,7 +165,7 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
         <p className="reset-credit-secondary">{details === null ? copy("subscription-quota.detailsUnavailable") : credits ? copy("subscription-quota.returnedDetailCount", { v0: credits.length }) : copy("subscription-quota.creditDetailsMalformed")}</p>
         <div className="reset-credit-rows">
           {credits?.map((credit, index) => <div className="reset-credit-row" key={text(credit.id) + ":" + index}>
-            <div><strong>{copy("subscription-quota.creditNumber", { v0: index + 1 })}</strong><span className="reset-credit-secondary">{copy("subscription-quota.creditId", { v0: text(credit.id) || copy("subscription-quota.extra.ca1844969742") })}</span><span className="reset-credit-secondary">{copy(credit.status === "available" ? "subscription-quota.creditAvailable" : "subscription-quota.creditUnavailable")}</span>{timestampInstant(text(credit.expires_at)) !== undefined ? <span className="reset-credit-secondary">{copy("subscription-quota.creditExpiry")} <Timestamp value={text(credit.expires_at)} /></span> : null}</div>
+            <div><strong>{copy("subscription-quota.creditNumber", { v0: index + 1 })}</strong><span className="reset-credit-secondary">{copy("subscription-quota.creditId", { v0: productLabel(text(credit.id)) })}</span><span className="reset-credit-secondary">{copy(credit.status === "available" ? "subscription-quota.creditAvailable" : "subscription-quota.creditUnavailable")}</span>{timestampInstant(text(credit.expires_at)) !== undefined ? <span className="reset-credit-secondary">{copy("subscription-quota.creditExpiry")} <Timestamp value={text(credit.expires_at)} /></span> : null}</div>
             {selectable.includes(credit) ? <SettingsActionButton icon={SettingsActionIcon.Inspect} type="button" disabled={!creditReady || originalActive || !inventoryAvailable} onClick={event => confirmCredit(text(credit.id), false, event.currentTarget, index + 1)} aria-label={copy("subscription-quota.selectCreditName", { v0: index + 1 })}>{copy("subscription-quota.selectCredit")}</SettingsActionButton> : null}
           </div>)}
         </div>
@@ -173,7 +174,7 @@ export function SubscriptionQuotaControls({ current, machine, active, accepted, 
         <h4 ref={confirmationHeading} tabIndex={-1}>{copy("subscription-quota.confirmResetCreditConsumption_1ce436")}</h4>
         <p>{copy("subscription-quota.confirmAccount", { v0: text(document(confirmation.account).alias) || copy("subscription-quota.extra.ca1844969742") })}</p>
         <p>{confirmation.next ? copy("subscription-quota.detailsUnavailableNext") : copy("subscription-quota.consumeResetCredit_7eb25b", { v0: confirmation.ordinal })}</p>
-        {!confirmation.next ? <p className="reset-credit-secondary">{copy("subscription-quota.creditId", { v0: confirmation.creditId })}</p> : null}
+        {!confirmation.next ? <p className="reset-credit-secondary">{copy("subscription-quota.creditId", { v0: productLabel(confirmation.creditId) })}</p> : null}
         <p className="reset-credit-secondary">{copy("subscription-quota.consumptionWarning")}</p>
         {!exactConfirmation ? <p role="alert">{copy("subscription-quota.theAccountOrInventoryChangedRefresh_e2f6b9")}</p> : null}
         <div className="actions"><SettingsActionButton icon={SettingsActionIcon.Confirm} type="button" className="primary" disabled={!creditReady || originalActive || !exactConfirmation || !inventoryAvailable} onClick={() => void observe.send({ mutation: { requestId: newRequestId(), id: confirmation.account.id, expectedRevision: confirmation.account.revision }, machineId: confirmation.machine, action: SubscriptionObservationAction.RESET_CREDIT, connectionId: confirmation.connection, generationId: confirmation.generation, creditsObservationId: confirmation.inventoryId, creditId: confirmation.creditId, nextCredit: confirmation.next, confirmed: true })}>{copy("subscription-quota.confirmCreditConsumption_251822")}</SettingsActionButton><SettingsActionButton icon={SettingsActionIcon.Cancel} type="button" disabled={busy} onClick={keepCredit}>{copy("subscription-quota.keepCredit_53e67f")}</SettingsActionButton></div>

@@ -1,3 +1,4 @@
+import { ProductKind, useProductLabels } from "./product-identity";
 // SPDX-License-Identifier: Apache-2.0
 import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclosure";
 import type { ReactNode } from "react";
@@ -58,7 +59,7 @@ const measureColumns = () => [
 ] as const;
 
 function MeasureCells({ totals }: { totals?: UsageTotals }) {
-  useLocale();
+  useLocale(); const productLabel=useProductLabels();
   return <>{measureColumns().map(([label, key]) => {
     const value = totals?.[key];
     return <td key={key}><strong>{exactText(value)}</strong><small><LocalizedText id="usage-chart.measuredUnavailable_6fb061" components={{ s0: <>{value?.measuredResponses ?? 0}</>, s1: <>{value?.unavailableResponses ?? 0}</> }} /></small><span className="usage-sr-only"><LocalizedText id="usage-chart.responsesFor_2359a5" components={{ s0: <>{label}</> }} /></span></td>;
@@ -79,12 +80,12 @@ function keyIndex(event: KeyboardEvent<SVGSVGElement>, index: number, count: num
 }
 
 function ViewData({ id, open, change }: { id: string; open: boolean; change: (value: boolean) => void }) {
-  useLocale();
+  useLocale(); const productLabel=useProductLabels();
   return <DisclosureButton density={DisclosureDensity.Details} type="button" className="usage-data-toggle" aria-expanded={open} aria-controls={id} onClick={() => change(!open)}>{open ? copy("usage-chart.hideData_3bfb0a") : copy("usage-chart.viewData_249495")}</DisclosureButton>;
 }
 
 function DailyViewData({ days, timeZone, id, open }: { days: UsageAnalyticsDay[]; timeZone: string; id: string; open: boolean }) {
-  useLocale();
+  useLocale(); const productLabel=useProductLabels();
   return <DisclosureContent id={id} className="usage-chart-table" role="region" aria-label={copy("usage-chart.dailyUsageDataTableScrollHorizontally_3f2b6c")} tabIndex={0} hidden={!open}><table><caption><LocalizedText id="usage-chart.allCalendarDayIntervalsAndExact_a9c769" components={{ s0: <>{timeZone}</> }} /></caption><thead><tr><th scope="col">{copy("usage-chart.from_218197")}</th><th scope="col">{copy("usage-chart.until_7caf85")}</th><th scope="col">{copy("usage-chart.responses_9b4c6d")}</th>{measureColumns().map(([label, key]) => <th scope="col" key={key}>{label}</th>)}</tr></thead><tbody>{days.map((day) => <tr key={`${day.fromUnixMs}:${day.untilUnixMs}`}>
     <td><Timestamp value={new Date(Number(day.fromUnixMs)).toISOString()} mode={TimestampMode.Absolute} timeZone={timeZone} /></td>
     <td><><Timestamp value={new Date(Number(day.untilUnixMs)).toISOString()} mode={TimestampMode.Absolute} timeZone={timeZone} /><span>{copy("usage-chart.exclusive_b71bef")}</span></></td>
@@ -93,7 +94,7 @@ function DailyViewData({ days, timeZone, id, open }: { days: UsageAnalyticsDay[]
 }
 
 export function DailyUsageChart({ days, timeZone }: { days: UsageAnalyticsDay[]; timeZone: string }) {
-  useLocale();
+  useLocale(); const productLabel=useProductLabels();
   const [selected, setSelected] = useState<number | null>(null);
   const [open, setOpen] = useState(false);
   const values = days.map((day) => exactTotal(day.totals?.total));
@@ -144,15 +145,15 @@ function modelRows(analytics: UsageAnalytics): ModelBar[] {
 }
 
 function ModelViewData({ models, otherModels, id, open }: { models: UsageAnalyticsModel[]; otherModels?: UsageOtherModels; id: string; open: boolean }) {
-  useLocale();
+  useLocale(); const productLabel=useProductLabels();
   return <DisclosureContent id={id} className="usage-chart-table" role="region" aria-label={copy("usage-chart.modelUsageDataTableScrollHorizontally_2489e8")} tabIndex={0} hidden={!open}><table><caption>{copy("usage-chart.everyOriginalProviderAndModelGroup_82fc11")}</caption><thead><tr><th scope="col">{copy("usage-chart.providerId_751108")}</th><th scope="col">{copy("usage-chart.provider_472590")}</th><th scope="col">{copy("usage-chart.modelId_089ef2")}</th><th scope="col">{copy("usage-chart.model_5e2c61")}</th><th scope="col">{copy("usage-chart.responses_9b4c6d")}</th>{measureColumns().map(([label, key]) => <th scope="col" key={key}>{label}</th>)}</tr></thead><tbody>
-    {models.map((model) => <tr key={`${model.providerId}:${model.subscriptionService}:${(model.model?.nativeId ?? "")}`}><td>{model.subscriptionService ? subscriptionServiceLabel(model.subscriptionService) : model.providerId}</td><td>{model.subscriptionService ? copy("usage-chart.subscriptionService_0e16df") : model.providerName || copy("usage-chart.extra.3947dfdaa0f8")}</td><td>{(model.model?.nativeId ?? "")}</td><td>{model.modelName || copy("usage-chart.extra.a99bc331d9ad")}</td><td>{model.totals?.responses ?? 0}</td><MeasureCells totals={model.totals} /></tr>)}
+    {models.map((model) => <tr key={`${model.providerId}:${model.subscriptionService}:${(model.model?.nativeId ?? "")}`}><td>{model.subscriptionService ? subscriptionServiceLabel(model.subscriptionService) : productLabel(model.providerId, ProductKind.Provider, model.providerName)}</td><td>{model.subscriptionService ? copy("usage-chart.subscriptionService_0e16df") : model.providerName || copy("usage-chart.extra.3947dfdaa0f8")}</td><td>{(model.model?.nativeId ?? "")}</td><td>{model.modelName || copy("usage-chart.extra.a99bc331d9ad")}</td><td>{model.totals?.responses ?? 0}</td><MeasureCells totals={model.totals} /></tr>)}
     {otherModels ? <tr><td colSpan={4}><LocalizedText id="usage-chart.otherModelsMeasuredGroups_01ba79" components={{ s0: <>{otherModels.modelCount}</> }} /></td><td>{otherModels.totals?.responses ?? 0}</td><MeasureCells totals={otherModels.totals} /></tr> : null}
   </tbody></table><p>{copy("usage-chart.unmeasuredGroupsAreExcludedFromRanking_223165")}</p></DisclosureContent>;
 }
 
 export function ModelUsageChart({ analytics }: { analytics: UsageAnalytics }) {
-  useLocale();
+  useLocale(); const productLabel=useProductLabels();
   const [selected, setSelected] = useState<number | null>(null);
   const [open, setOpen] = useState(false);
   const rows = modelRows(analytics);
@@ -175,15 +176,15 @@ export function ModelUsageChart({ analytics }: { analytics: UsageAnalytics }) {
       })}
       <text className="usage-axis-label" x={modelPlot.left} y="270" textAnchor="start">0</text><text className="usage-axis-label" x={modelPlot.right} y="270" textAnchor="end">{axisTotal(maximum)}</text>
     </svg> : <p className="usage-chart-empty">{copy("usage-chart.noModelGroupHasAKnown_2b483d")}</p>}
-    {rows.length ? <ol className="usage-model-labels">{rows.map((row, index) => <li key={row.key}><span className="usage-model-label-rank">{row.modelCount ? copy("usage-chart.otherModels_1b8bc2") : copy("usage-chart.message_2f5350", { v0: index + 1 })}</span><strong>{row.modelName || (row.modelCount ? copy("usage-chart.extra.1b8bc2ba488c") : copy("usage-chart.sentence.1d3a37cc1c5e", { v0: index + 1 }))}</strong><span>{row.modelCount ? copy("usage-chart.measuredModelGroupsNoMonetaryRollup_3a25fa", { v0: row.modelCount }) : copy("usage-chart.model_be9a1a", { v0: row.subscriptionService ? copy("usage-chart.subscriptionService_67a163", { v0: subscriptionServiceLabel(row.subscriptionService) }) : copy("usage-chart.apiProvider_f01871", { v0: row.providerName || row.providerId, v1: row.providerId }), v1: row.modelId })}</span><span className="usage-model-value"><LocalizedText id="usage-chart.tokens_a59f00" components={{ s0: <>{exactText(row.totals?.total)}</>, s1: <>{evidence(row.totals)}</> }} /></span></li>)}</ol> : null}
+    {rows.length ? <ol className="usage-model-labels">{rows.map((row, index) => <li key={row.key}><span className="usage-model-label-rank">{row.modelCount ? copy("usage-chart.otherModels_1b8bc2") : copy("usage-chart.message_2f5350", { v0: index + 1 })}</span><strong>{row.modelName || (row.modelCount ? copy("usage-chart.extra.1b8bc2ba488c") : copy("usage-chart.sentence.1d3a37cc1c5e", { v0: index + 1 }))}</strong><span>{row.modelCount ? copy("usage-chart.measuredModelGroupsNoMonetaryRollup_3a25fa", { v0: row.modelCount }) : copy("usage-chart.model_be9a1a", { v0: row.subscriptionService ? copy("usage-chart.subscriptionService_67a163", { v0: subscriptionServiceLabel(row.subscriptionService) }) : copy("usage-chart.apiProvider_f01871", { v0: productLabel(row.providerId, ProductKind.Provider, row.providerName), v1: productLabel(row.providerId, ProductKind.Provider, row.providerName) }), v1: row.modelId })}</span><span className="usage-model-value"><LocalizedText id="usage-chart.tokens_a59f00" components={{ s0: <>{exactText(row.totals?.total)}</>, s1: <>{evidence(row.totals)}</> }} /></span></li>)}</ol> : null}
     <p className="usage-chart-help" id="usage-model-help">{copy("usage-chart.focusTheChartToInspectRanked_30453a")}</p>
-    <p className="usage-chart-detail" role="status" aria-live="polite">{selectedRow ? <><LocalizedText id="usage-chart.tokens_eb2379" components={{ s0: <strong>{selectedRow.modelName || selectedRow.modelId || copy("usage-chart.extra.1b8bc2ba488c")}</strong>, s1: <>{selectedRow.modelCount ? copy("usage-chart.measuredGroups_0b5210", { v0: selectedRow.modelCount }) : copy("usage-chart.model_836ccd", { v0: selectedRow.subscriptionService ? copy("usage-chart.subscriptionService_67a163", { v0: subscriptionServiceLabel(selectedRow.subscriptionService) }) : copy("usage-chart.provider_7a7f6c", { v0: selectedRow.providerId }), v1: selectedRow.modelId })}</>, s2: <>{exactText(selectedRow.totals?.total)}</>, s3: <>{evidence(selectedRow.totals)}</> }} /></> : copy("usage-chart.moveFocusToAChartRow_839f35")}</p>
+    <p className="usage-chart-detail" role="status" aria-live="polite">{selectedRow ? <><LocalizedText id="usage-chart.tokens_eb2379" components={{ s0: <strong>{selectedRow.modelName || selectedRow.modelId || copy("usage-chart.extra.1b8bc2ba488c")}</strong>, s1: <>{selectedRow.modelCount ? copy("usage-chart.measuredGroups_0b5210", { v0: selectedRow.modelCount }) : copy("usage-chart.model_836ccd", { v0: selectedRow.subscriptionService ? copy("usage-chart.subscriptionService_67a163", { v0: subscriptionServiceLabel(selectedRow.subscriptionService) }) : copy("usage-chart.provider_7a7f6c", { v0: productLabel(selectedRow.providerId, ProductKind.Provider, selectedRow.providerName) }), v1: selectedRow.modelId })}</>, s2: <>{exactText(selectedRow.totals?.total)}</>, s3: <>{evidence(selectedRow.totals)}</> }} /></> : copy("usage-chart.moveFocusToAChartRow_839f35")}</p>
     <ModelViewData models={analytics.models} otherModels={analytics.otherModels} id={dataId} open={open} />
     {analytics.models.some((model) => exactTotal(model.totals?.total) === undefined) ? <p className="usage-unranked">{copy("usage-chart.unmeasuredModelsAreNotRankedTheir_7ac3b6")}</p> : null}
   </section>;
 }
 
 export function UsageCharts({ analytics, timeZone }: { analytics: UsageAnalytics; timeZone: string }) {
-  useLocale();
+  useLocale(); const productLabel=useProductLabels();
   return <div className="usage-charts"><DailyUsageChart days={analytics.days} timeZone={timeZone} /><ModelUsageChart analytics={analytics} /></div>;
 }

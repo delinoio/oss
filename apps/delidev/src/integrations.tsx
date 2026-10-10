@@ -1,3 +1,4 @@
+import { ProductIdentity, ProductKind, diagnosticText } from "./product-identity";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
@@ -166,7 +167,7 @@ function IntegrationConnection({ initial, active, close, initialRetry, initialPr
         <p className="integration-secondary">{tokenStorageNote()}</p>
         {retryIdentity || pending.operation === "replace-token" ? <p>{copy("integrations.reenterTheSameTokenToRetry_d082cd")}</p> : null}
       </fieldset><SettingsTaskActions form={tokenFormId}><SettingsActionButton icon={SettingsActionIcon.Retry} className="primary" disabled={blocked || deleting || Boolean(result.error) || !/^[!-~]{1,512}$/.test(token) || (pending.operation === "replace-token" && !original)}>{retryIdentity || pending.operation === "replace-token" ? copy("integrations.retryOriginalTokenReplacement_cdf40d") : copy("integrations.saveAndValidateToken_d79171")}</SettingsActionButton></SettingsTaskActions></form>
-      {retryIdentity ? <p><LocalizedText id="integrations.pendingRequest_2efde7" components={{ s0: <>{retryIdentity.requestId}</> }} /></p> : null}
+      {retryIdentity ? <p><LocalizedText id="integrations.pendingRequest_2efde7" components={{ s0: <>{<ProductIdentity id={retryIdentity.requestId} kind={ProductKind.Request} />}</> }} /></p> : null}
     </section>
     <section className="integration-section" aria-label={copy("integrations.validateIdentity_1ba57b")}><h4>{copy("integrations.identityValidation_657b2c")}</h4>
       <p>{copy("integrations.identityValidationDoesNotVerifyAccess_7be91f")}</p>
@@ -177,7 +178,7 @@ function IntegrationConnection({ initial, active, close, initialRetry, initialPr
       <SettingsActionButton icon={deleting ? SettingsActionIcon.Retry : SettingsActionIcon.Delete} presentation={deleting ? SettingsActionPresentation.Label : SettingsActionPresentation.Icon} className="integration-danger" disabled={blocked || Boolean(result.error) || (deleting && !original)} onClick={() => deleting && original ? void remove.send({ mutation: original }) : setConfirm(true)}>{deleting ? copy("integrations.retryOriginalProfileDeletion_861363") : copy("integrations.deleteProfile_47311a")}</SettingsActionButton>
       {confirm ? <SettingsTaskDialog title={copy("integrations.deleteProfile_47311a")} size={SettingsDialogSize.Confirmation} focus={SettingsDialogFocus.Cancel} close={() => setConfirm(false)}><div className="notice"><p>{copy("integrations.deleteThisProfileAndItsServer_d6827d")}</p><SettingsTaskActions className=""><SettingsActionButton icon={SettingsActionIcon.Confirm} className="integration-danger" disabled={blocked} onClick={() => void remove.send({ mutation: mutation() })}>{copy("integrations.confirmProfileDeletion_079ac8")}</SettingsActionButton><SettingsTaskDismissButton data-settings-task-cancel disabled={blocked} onClick={() => setConfirm(false)}>{copy("integrations.keepProfile_8e76f0")}</SettingsTaskDismissButton></SettingsTaskActions></div></SettingsTaskDialog> : null}
     </section>
-    {text(object(validation.problem).message) ? <ServiceProblem code={text(object(validation.problem).code) || text(object(validation.problem).problem_code)}><p role="alert">{text(object(validation.problem).message)} {text(object(validation.problem).guidance)}</p></ServiceProblem> : null}{problem ? <p role="alert">{text(problem.message)} {text(problem.guidance)}</p> : null}
+    {text(object(validation.problem).message) ? <ServiceProblem code={text(object(validation.problem).code) || text(object(validation.problem).problem_code)}><p role="alert">{text(object(validation.problem).message)} {text(object(validation.problem).guidance)}</p></ServiceProblem> : null}{problem ? <p role="alert">{diagnosticText(text(problem.message))} {diagnosticText(text(problem.guidance))}</p> : null}
     <Problem error={result.error || tokenError} />{[validate, remove].map((operation, index) => <div key={index}><Problem error={operation.error} />{operation.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} disabled={operation.busy} onClick={operation.retry}><LocalizedText id="integrations.retryTheSame_4cb78a" components={{ s0: <>{index === 0 ? copy("integrations.validation_98c41d") : copy("integrations.deletion_7770ba")}</> }} /></SettingsActionButton> : null}</div>)}
   </section>;
 }

@@ -1,3 +1,4 @@
+import { ProductIdentity, ProductKind } from "./product-identity";
 import { useTerminalTabShortcuts } from "./shortcut-provider";
 // SPDX-License-Identifier: Apache-2.0
 import "./terminal-dock.css";
@@ -255,7 +256,7 @@ function TerminalView({ resource, details, discarded, refresh, observe }: { reso
     <div ref={host} className="terminal-screen" data-shortcuts="passthrough" aria-label={copy("session-terminals.attribute.34ad7d49708a")} onKeyDown={event => event.stopPropagation()} />
     <footer role="status">{copy(`session-terminals.${state}`)} · {statusLabel(text(data.state))}</footer>
     <div className="terminal-resource-details" hidden={!details}>
-      <p><LocalizedText id="session-terminals.worker_5a5ff9" components={{ s0: <>{text(data.machine_id)}</>, s1: <br />, s2: <>{text(data.shell)}</>, s3: <br />, s4: <>{text(data.cwd)}</> }} /></p>
+      <p><LocalizedText id="session-terminals.worker_5a5ff9" components={{ s0: <>{<ProductIdentity id={text(data.machine_id)} kind={ProductKind.Runner} />}</>, s1: <br />, s2: <>{text(data.shell)}</>, s3: <br />, s4: <>{text(data.cwd)}</> }} /></p>
       <p>{data.cleanup_verified ? copy("session-terminals.processCleanupVerified_024000") : copy("session-terminals.processCleanupPending_efa78d")}</p>
     </div>
     <Problem error={error || control.error} />

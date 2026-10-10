@@ -979,10 +979,6 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
                     <dt>{copy("claude-subscription.failureCode")}</dt>
                     <dd>{d.code}</dd>
                   </div>
-                  <div>
-                    <dt>{copy("claude-subscription.reference")}</dt>
-                    <dd>{d.correlationId}</dd>
-                  </div>
                 </dl>
               ) : null}
               <SettingsTaskActions>

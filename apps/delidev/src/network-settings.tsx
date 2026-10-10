@@ -1,3 +1,4 @@
+import { ProductKind, useProductLabels } from "./product-identity";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import { DisclosureButton, DisclosureContent, DisclosureDensity, Disclosure, DisclosureSummary } from "./disclosure";
@@ -29,7 +30,7 @@ import "./network-settings.css";
 // Reads and write-only drafts live only in this Settings visit. Closing the
 // presentation never cancels an accepted server/native operation or retries it.
 export function NetworkSettings({ active, machine = "", authority, onPresentationChange }: { active: boolean; machine?: string; authority?: PairingAuthority; onPresentationChange?: (open: boolean) => void }) {
-  useLocale();
+  useLocale(); const productLabel=useProductLabels();
   const [open, setOpen] = useState(false);
   const workspaceId = useId();
   const disclosure = useRef<HTMLButtonElement>(null), workspace = useRef<HTMLDivElement>(null);
@@ -50,7 +51,7 @@ export function NetworkSettings({ active, machine = "", authority, onPresentatio
   </section>;
 }
 function NetworkWorkspace({ active, machine, authority, inline = false, headerActions }: { active: boolean; machine: string; authority?: PairingAuthority; inline?: boolean; headerActions?: HTMLElement | null }) {
-  useLocale();
+  useLocale(); const productLabel=useProductLabels();
   const [draft, setDraft] = useState<Resource | "new">();
   const [deleting, setDeleting] = useState<Resource>();
   const content = useRef<HTMLDivElement>(null), root = useScrollRoot(content);
@@ -122,7 +123,7 @@ function NetworkWorkspace({ active, machine, authority, inline = false, headerAc
   </div>;
 }
 function ProfileDeletion({ row, machine, close, deleted }: { row: Resource; machine: string; close: () => void; deleted: () => void }) {
-  useLocale();
+  useLocale(); const productLabel=useProductLabels();
   // The confirmation owns its exact request. Dismissal never leaves a retry in
   // the still-open inline workspace or cancels an accepted deletion.
   const remove = useRetainedMutation(`network-delete:${machine || "server"}`, NetworkQuery.deleteNetworkProfile, deleted);
@@ -131,7 +132,7 @@ function ProfileDeletion({ row, machine, close, deleted }: { row: Resource; mach
 }
 
 function ProfileEditor({ initial, saved, close }: { initial?: Resource; saved: () => void; close: () => void }) {
-  useLocale();
+  useLocale(); const productLabel=useProductLabels();
   const formId = useId();
   const data = document(initial);
   const [name, setName] = useState(text(data.name)), [mode, setMode] = useState((data.mode ?? ProxyMode.Direct) as ProxyMode);
@@ -156,7 +157,7 @@ function ProfileEditor({ initial, saved, close }: { initial?: Resource; saved: (
   </form>;
 }
 function EncryptedWorkerExport({ active, choicesActive, authority, machine }: { active: boolean; choicesActive: boolean; authority: PairingAuthority; machine: string }) {
-  useLocale();
+  useLocale(); const productLabel=useProductLabels();
   const opening = useSettingsOpening();
   const [recipient, setRecipient] = useState<WorkerRecipient>(), [problem, setProblem] = useProductMessage("");
   const [profile, setProfile] = useState(""), [output, setOutput] = useState<{ ciphertext: string; digest: string; generation: string }>();
@@ -170,7 +171,7 @@ function EncryptedWorkerExport({ active, choicesActive, authority, machine }: { 
     {machine ? <WorkerNetworkNative machine={machine} authority={authority} prepared={value => { ++readGeneration.current; setRecipient(value); setOutput(undefined); setProblem(""); }} /> : null}
     {recipient ? <label>{copy("network-settings.originalPublicRecipientJson_3365ca")}<textarea readOnly rows={4} value={JSON.stringify(recipient, null, 2)} onFocus={event => event.target.select()} /></label> : null}
     <label>{copy("network-settings.workerPublicRecipientDocument_680bad")}<input type="file" accept="application/json,.json" disabled={pending} onChange={event => { const file = event.target.files?.[0]; const generation = ++readGeneration.current; setRecipient(undefined); setOutput(undefined); setProblem(""); if (!file) return; if (file.size > 16384) { setProblem(ownedMessage("network-settings.extra.65c55c94d0e0")); return; } const read = async () => { try { const raw = opening ? await opening.native(() => file.text()) : await file.text(); if (opening?.disposed || generation !== readGeneration.current) return; const result = workerRecipient(JSON.parse(raw), authority, machine || undefined); if (!result) throw new Error("scope"); setRecipient(result); } catch { if (!opening?.disposed && generation === readGeneration.current) setProblem(ownedMessage("network-settings.extra.8264d06ae667")); } }; void read(); }} /></label>
-    {recipient ? <><p><LocalizedText id="network-settings.recipientRunnerDevice_cc7e62" components={{ s0: <>{recipient.authority.machine_id}</> }} /></p>{route.data && !route.data.route ? <ResourceChoice kind={EntityKind.NETWORK_PROFILE} emptyLabel={copy("network-settings.direct_002c7c")} active={choicesActive} disabled={pending} label={copy("network-settings.initialWorkerProfile_234823")} value={profile} change={(id, _data, resource) => { setProfile(id); setSelectedProfile(resource); }} /> : null}<SettingsActionButton icon={SettingsActionIcon.Download} disabled={pending || !route.data || Boolean(route.error) || profile !== "" && !selectedProfile} onClick={() => { if (!route.data || pending) return; const current = route.data.route; void exporting.send({ mutation: { requestId: newRequestId(), id: current?.id ?? "", expectedRevision: current?.revision ?? 0n }, machineId: recipient.authority.machine_id, deviceId: recipient.authority.device_id, pairingId: recipient.authority.pairing_id, endpoint: authority.endpoint, recipient: recipient.recipient, keyId: recipient.key_id, desiredGeneration: current?.revision ?? 0n, ...(!current ? { profileId: profile, profileRevision: selectedProfile?.revision ?? 0n } : {}) }); }}>{copy("network-settings.exportCurrentEncryptedConfiguration_3dc0e1")}</SettingsActionButton></> : null}
+    {recipient ? <><p><LocalizedText id="network-settings.recipientRunnerDevice_cc7e62" components={{ s0: <>{productLabel(recipient.authority.machine_id,ProductKind.Runner)}</> }} /></p>{route.data && !route.data.route ? <ResourceChoice kind={EntityKind.NETWORK_PROFILE} emptyLabel={copy("network-settings.direct_002c7c")} active={choicesActive} disabled={pending} label={copy("network-settings.initialWorkerProfile_234823")} value={profile} change={(id, _data, resource) => { setProfile(id); setSelectedProfile(resource); }} /> : null}<SettingsActionButton icon={SettingsActionIcon.Download} disabled={pending || !route.data || Boolean(route.error) || profile !== "" && !selectedProfile} onClick={() => { if (!route.data || pending) return; const current = route.data.route; void exporting.send({ mutation: { requestId: newRequestId(), id: current?.id ?? "", expectedRevision: current?.revision ?? 0n }, machineId: recipient.authority.machine_id, deviceId: recipient.authority.device_id, pairingId: recipient.authority.pairing_id, endpoint: authority.endpoint, recipient: recipient.recipient, keyId: recipient.key_id, desiredGeneration: current?.revision ?? 0n, ...(!current ? { profileId: profile, profileRevision: selectedProfile?.revision ?? 0n } : {}) }); }}>{copy("network-settings.exportCurrentEncryptedConfiguration_3dc0e1")}</SettingsActionButton></> : null}
     {output ? <><p><LocalizedText id="network-settings.exportedGenerationImportWithinFiveMinutes_569eb9" components={{ s0: <>{output.generation}</> }} /></p><label>{copy("network-settings.encryptedBundleBase64_81471f")}<textarea readOnly rows={4} spellCheck={false} value={output.ciphertext} onFocus={event => event.target.select()} /></label><label>{copy("network-settings.authenticatedCiphertextDigest_3026f9")}<input readOnly value={output.digest} onFocus={event => event.target.select()} /></label><p>{copy("network-settings.copyTheCiphertextToTheIntended_37e10e")}</p></> : null}
     {problem ? <p role="alert">{problem}</p> : null}<Problem error={route.error} summary={copy("network-settings.recipientRouteHelp")} />{recipient && route.error ? <SettingsActionButton icon={SettingsActionIcon.Retry} disabled={!active || pending || route.isFetching} onClick={() => void route.refetch()}>{copy("network-settings.recheckRecipientRoute")}</SettingsActionButton> : null}<Problem error={exporting.error} summary={copy("network-settings.exportHelp")} />{exporting.uncertain ? <SettingsActionButton icon={SettingsActionIcon.Retry} disabled={exporting.busy} onClick={exporting.retry}>{copy("network-settings.retryOriginalEncryptedExport_e22883")}</SettingsActionButton> : null}
   </section>;

@@ -1,3 +1,4 @@
+import { ProductIdentity, ProductKind } from "./product-identity";
 import { validBranchPrefix } from "./session-defaults";
 import { copy, useLocale } from "./localization";
 import { type SyntheticEvent } from "react";
@@ -41,7 +42,7 @@ export function ServerPreferencesUnavailable({ rows, section = ServerPreferenceS
       : rows.length === 1 && !readableServerPreferences(rows[0])
       ? `${label} contains unreadable or unsupported policy values. Policy values are unavailable.`
       : `The ${label.toLowerCase()} read is incomplete or does not identify one settings document. Refresh settings before editing.`}</p>
-    {rows.map(row => <small className="server-preferences-id" key={row.id}>{row.id}</small>)}
+    {rows.map(row => <small className="server-preferences-id" key={row.id}>{<ProductIdentity id={row.id} kind={ProductKind.Resource} />}</small>)}
   </section>;
 }
 
@@ -70,7 +71,7 @@ export function ServerPreferencesSummary({ row, section = ServerPreferenceSectio
   const data = document(row), policy = object(data.remediation);
   const shortLabel = serverPreferenceLabel(section).toLowerCase();
   return <article className="server-preferences-panel" aria-label={copy("server-preferences.savedPreferences", { v0: shortLabel })}>
-    <h2>{copy("server-preferences.savedPreferences", { v0: shortLabel })}</h2><small className="server-preferences-id">{row.id}</small>
+    <h2>{copy("server-preferences.savedPreferences", { v0: shortLabel })}</h2><small className="server-preferences-id">{<ProductIdentity id={row.id} kind={ProductKind.Resource} />}</small>
     {readableServerPreferences(row) ? <>
  {section === ServerPreferenceSection.ProjectDefaults && row.schemaVersion === 3 ? <dl><dt>{copy("configuration-fields.planModeDefault")}</dt><dd>{copy(data.plan_mode_default ? "configuration-fields.enabled" : "configuration-fields.disabled")}</dd></dl> : null}
  {section === ServerPreferenceSection.GitWorkflow && row.schemaVersion === 3 ? <section><h3>{copy("configuration-fields.branchPrefix")}</h3><p>{text(data.branch_prefix) || copy("configuration-fields.disabled")}</p><p>{copy("configuration-fields.branchPrefixHelp")}</p></section> : null}

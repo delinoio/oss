@@ -1,3 +1,4 @@
+import { diagnosticText } from "./product-identity";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { copy, useLocale } from "./localization";
 import type { ReactNode } from "react";
@@ -18,7 +19,7 @@ export function TrackedJob({ initial, active, children }: { initial: Resource; a
   const value = document(current), state = text(value.state), problem = object(value.problem);
   const unreadable = Boolean(result.data && (!latest || latest !== current));
   const attention = state !== JobState.Succeeded || Boolean(result.error) || unreadable || Boolean(text(problem.message));
-  return <>{attention ? <section className="notice" data-job-state={state}><OperationStatus state={state} />{unreadable ? <p role="alert">{copy("jobs.unreadableStatus")}</p> : null}{text(problem.message) ? <ServiceProblem code={text(problem.code) || text(problem.problem_code)}><p role="alert">{text(problem.message)} {text(problem.guidance)}</p></ServiceProblem> : null}<Problem error={result.error} />{result.error || unreadable ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={result.isFetching} onClick={() => void result.refetch()}>{copy("jobs.retryStatusRead")}</SettingsActionButton> : null}</section> : null}{children?.(state, object(value.output))}</>;
+  return <>{attention ? <section className="notice" data-job-state={state}><OperationStatus state={state} />{unreadable ? <p role="alert">{copy("jobs.unreadableStatus")}</p> : null}{text(problem.message) ? <ServiceProblem code={text(problem.code) || text(problem.problem_code)}><p role="alert">{diagnosticText(text(problem.message))} {diagnosticText(text(problem.guidance))}</p></ServiceProblem> : null}<Problem error={result.error} />{result.error || unreadable ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={result.isFetching} onClick={() => void result.refetch()}>{copy("jobs.retryStatusRead")}</SettingsActionButton> : null}</section> : null}{children?.(state, object(value.output))}</>;
 }
 
 // Presentation only: callers retain original query, polling and mutation ownership.

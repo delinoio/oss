@@ -1,3 +1,4 @@
+import { ProductKind, useProductLabels } from "./product-identity";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { LocalizedText, copy, useLocale } from "./localization";
@@ -15,16 +16,16 @@ export function defaultRemediationPolicy(): Document {
 }
 
 function PolicyChoice({ label, value, values, change, searchTarget }: { searchTarget?: string; label: string; value: unknown; values: string[]; change: (value: string) => void }) {
-  useLocale();
+  useLocale(); const productLabel=useProductLabels();
   const selected = text(value);
   return <label data-settings-search-target={searchTarget}>{label}<select required value={selected} onChange={event => change(event.target.value)}>
-    {!values.includes(selected) ? <option value={selected}>{selected ? copy("remediation-policy.unsupportedSelection_f0a19a", { v0: selected }) : copy("remediation-policy.selectAValue_019c6e")}</option> : null}
+    {!values.includes(selected) ? <option value={selected}>{selected ? copy("remediation-policy.unsupportedSelection_f0a19a", { v0: productLabel(selected) }) : copy("remediation-policy.selectAValue_019c6e")}</option> : null}
     {values.map(option => <option key={option} value={option}>{option}</option>)}
   </select></label>;
 }
 
 export function RemediationPolicyFields({ value, change, children, presentation = RemediationDetailPresentation.Expanded }: { value: Document; change: (value: Document) => void; children: ReactNode; presentation?: RemediationDetailPresentation }) {
-  useLocale();
+  useLocale(); const productLabel=useProductLabels();
   const helperId = useId();
   const field = (key: string, next: unknown) => change({ ...value, [key]: next });
   const selectors = items(value.reviewer_selectors).map(object);

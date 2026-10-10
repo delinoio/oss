@@ -19,8 +19,8 @@ it("shows distinct exact Grok totals in summary, day, model and session views wi
   expect(screen.queryByText("20")).toBeNull();
   expect(screen.getByText(/estimated-budget contribution are unavailable/)).toBeTruthy();
   const tables = screen.getAllByRole("table"); expect(tables).toHaveLength(3);
-  expect(within(tables[0]).getByText("original-account")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Original session" })); expect(open).toHaveBeenCalledWith("original-session");
+  expect(within(tables[0]).getByText(/Original account/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /Original session/ })); expect(open).toHaveBeenCalledWith("original-session");
 });
 
 it("distinguishes measured zero, missing units and an unnegotiated older server", () => {
@@ -71,13 +71,13 @@ it("retains original project IDs beside duplicate and renamed project labels", (
   });
   const view = render(<GrokAccounting data={data} open={() => {}} />);
   const table = screen.getByRole("table", { name: "Grok inputs by original session, account and model" });
-  expect(within(table).getAllByText("Shared project label")).toHaveLength(2);
-  for (const project of projects) expect(within(table).getByText(project)).toBeTruthy();
+  expect(within(table).getAllByText(/Shared project label/)).toHaveLength(2);
+  for (const project of projects) expect(table.textContent).not.toContain(project);
   data.groups[0].projectName = "Renamed project";
   view.rerender(<GrokAccounting data={data} open={() => {}} />);
-  expect(within(table).getByText("Renamed project")).toBeTruthy();
-  expect(within(table).getByText("Shared project label")).toBeTruthy();
-  for (const project of projects) expect(within(table).getByText(project)).toBeTruthy();
+  expect(within(table).getByText(/Renamed project/)).toBeTruthy();
+  expect(within(table).getByText(/Shared project label/)).toBeTruthy();
+  for (const project of projects) expect(table.textContent).not.toContain(project);
 });
 
 it.each(["duplicate", "unknown"])("does not render an invalid %s source as an empty supported source", kind => {

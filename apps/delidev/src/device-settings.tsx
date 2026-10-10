@@ -1,3 +1,4 @@
+import { ProductIdentity, ProductKind } from "./product-identity";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclosure";
@@ -42,8 +43,8 @@ function DeviceMetadata({ resource }: { resource: Resource }) {
   useLocale();
   const value = document(resource);
   return <dl className="paired-device-metadata">
-    <dt>{copy("device-settings.deviceId_6e0a0b")}</dt><dd>{resource.id}</dd>
-    {text(value.machine_id) ? <><dt>{copy("device-settings.runnerDeviceId_a03c92")}</dt><dd>{text(value.machine_id)}</dd></> : null}
+    <dt>{copy("device-settings.deviceId_6e0a0b")}</dt><dd>{<ProductIdentity id={resource.id} kind={ProductKind.Device} />}</dd>
+    {text(value.machine_id) ? <><dt>{copy("device-settings.runnerDeviceId_a03c92")}</dt><dd>{<ProductIdentity id={text(value.machine_id)} kind={ProductKind.Runner} />}</dd></> : null}
     <dt>{copy("device-settings.originalPairedTimestamp_7fae2b")}</dt><dd>{<Timestamp mode={TimestampMode.Exact} value={text(value.paired_at)} fallback={copy("device-settings.extra.b764cdc0eab7")} />}</dd>
     {value.revoked === true || text(value.revoked_at) ? <><dt>{copy("device-settings.originalRevokedTimestamp_c0f6f5")}</dt><dd>{<Timestamp mode={TimestampMode.Exact} value={text(value.revoked_at)} fallback={copy("device-settings.extra.b764cdc0eab7")} />}</dd></> : null}
     {text(value.type) && value.type !== "client" && value.type !== "worker" ? <><dt>{copy("device-settings.type_baaddf")}</dt><dd>{text(value.type)}</dd></> : null}

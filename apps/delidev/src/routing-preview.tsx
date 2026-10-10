@@ -1,3 +1,4 @@
+import { ProductIdentity, ProductKind, diagnosticText } from "./product-identity";
 // SPDX-License-Identifier: Apache-2.0
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { Timestamp, TimestampMode } from "./timestamp-display";
@@ -60,13 +61,13 @@ function AccountIdentity({ metadata }: { metadata?: RoutingAccountMetadata }) {
   return <div className="routing-account-identity"><strong>{loading ? copy("routing-preview.loadingAccount") : metadata.name || copy("routing-preview.accountUnavailable")}</strong><p>{loading || metadata?.sourceState === RoutingMetadataState.Loading ? copy("routing-preview.loadingSource") : metadata.source || copy("routing-preview.sourceUnavailable")}</p></div>;
 }
 function AccountId({ id }: { id: string }) {
-  return <Disclosure density={DisclosureDensity.Settings} className="routing-account-id"><DisclosureSummary>{copy("routing-preview.accountId")}</DisclosureSummary><code>{id}</code></Disclosure>;
+  return <Disclosure density={DisclosureDensity.Settings} className="routing-account-id"><DisclosureSummary>{copy("routing-preview.accountId")}</DisclosureSummary><ProductIdentity id={id} kind={ProductKind.Account} /></Disclosure>;
 }
 function Candidates({ route, metadata, active }: { route: Route; metadata: Map<string, RoutingAccountMetadata>; active: boolean }) {
   return !route.candidatesAvailable ? <p className="routing-empty">{copy("configuration-actions.routingEvidenceIsUnavailable_3f3ff4")}</p> : route.candidates.length ? <ul className="routing-candidates">{route.candidates.map(candidate => <li key={candidate.id} className="routing-candidate" data-selected={route.selected === candidate.id}>
     <div className="routing-candidate-heading"><AccountIdentity metadata={metadata.get(candidate.id)} /><span className="routing-eligibility" data-warning={candidate.eligibility !== "eligible"}>{eligibilityLabel(candidate.eligibility)}</span>{route.selected === candidate.id ? <span className="routing-selected-label">{copy("routing-preview.selectedAccount")}</span> : null}</div>
     <dl className="routing-candidate-evidence"><div><dt>{copy("routing-preview.weight")}</dt><dd>{candidate.weight}</dd></div><div><dt>{copy("routing-preview.quota")}</dt><dd>{statusLabel(candidate.quota_state)}</dd></div></dl>
-    <Disclosure density={DisclosureDensity.Settings} className="routing-account-id"><DisclosureSummary>{copy("routing-preview.accountId")}</DisclosureSummary><code>{candidate.id}</code><dl className="routing-detail-evidence">{typeof candidate.score === "number" ? <div><dt>{copy("routing-preview.score")}</dt><dd>{candidate.score}</dd></div> : null}{candidate.reset_at ? <div><dt>{copy("routing-preview.reset")}</dt><dd><Timestamp value={candidate.reset_at} active={active} mode={TimestampMode.QuotaCountdown} /></dd></div> : null}</dl></Disclosure>
+    <Disclosure density={DisclosureDensity.Settings} className="routing-account-id"><DisclosureSummary>{copy("routing-preview.accountId")}</DisclosureSummary><ProductIdentity id={candidate.id} kind={ProductKind.Account} name={metadata.get(candidate.id)?.name} /><dl className="routing-detail-evidence">{typeof candidate.score === "number" ? <div><dt>{copy("routing-preview.score")}</dt><dd>{candidate.score}</dd></div> : null}{candidate.reset_at ? <div><dt>{copy("routing-preview.reset")}</dt><dd><Timestamp value={candidate.reset_at} active={active} mode={TimestampMode.QuotaCountdown} /></dd></div> : null}</dl></Disclosure>
   </li>)}</ul> : <p className="routing-empty">{copy("routing-preview.noCandidates")}</p>;
 }
 // Object keys are representation details; ordered arrays and every supplied
@@ -84,7 +85,7 @@ function SourceLabel({ source, metadata }: { source: Source; metadata: Map<strin
 function Fallback({ route }: { route: Route }) { return route.fallback ? <p className="routing-fallback">{copy("configuration-actions.insufficientComparableQuotaEvidenceTheServer_95890b")}</p> : null; }
 function SourceNotices({ source, index, metadata, hideFallback }: { source: Source; index: number; metadata: Map<string, RoutingAccountMetadata>; hideFallback: boolean }) {
   if (!source.problem && source.route.candidatesAvailable && (!source.route.fallback || hideFallback)) return null;
-  return <div className="routing-source-notices"><p>{index + 1} · <SourceLabel source={source} metadata={metadata} /></p>{source.problem ? <ServiceProblem code={text(source.problem.code)}>{text(source.problem.message)}</ServiceProblem> : null}{!hideFallback ? <Fallback route={source.route} /> : null}{!source.route.candidatesAvailable ? <p role="alert">{copy("configuration-actions.routingEvidenceIsUnavailable_3f3ff4")}</p> : null}</div>;
+  return <div className="routing-source-notices"><p>{index + 1} · <SourceLabel source={source} metadata={metadata} /></p>{source.problem ? <ServiceProblem code={text(source.problem.code)}>{diagnosticText(text(source.problem.message))}</ServiceProblem> : null}{!hideFallback ? <Fallback route={source.route} /> : null}{!source.route.candidatesAvailable ? <p role="alert">{copy("configuration-actions.routingEvidenceIsUnavailable_3f3ff4")}</p> : null}</div>;
 }
 export function RoutingPreview({ agent, active, close }: { agent: Resource; active: boolean; close: () => void }) {
   useLocale();

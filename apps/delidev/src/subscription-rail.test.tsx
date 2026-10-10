@@ -172,7 +172,7 @@ it("retains duplicate-alias ownership and every native window in original order 
  const quota=(id:string)=>({id,state:"observed",remaining:.57,blocking:true,comparison_group:"shared",observed_at:new Date().toISOString()});
  const rows=["chatgpt","claude","grok"].flatMap(service=>[resource("Same alias",service,{quota:[quota(`${service}:second`),quota(`${service}:first`)]}),resource("Same alias",service,{quota:[quota(`${service}:other`)]})]);
  const f=mount(()=>({resources:rows}));await screen.findAllByRole("button",{name:/Same alias/});
- for(const row of rows){fireEvent.click(screen.getByRole("button",{name:new RegExp(row.id)}));const dialog=screen.getByRole("dialog");expect([...dialog.querySelectorAll(".subscription-quota-id")].map(node=>node.textContent)).toEqual(railAccount(row).windows.map(window=>window.id));expect(dialog.textContent).not.toContain(row.id);fireEvent.keyDown(dialog,{key:"Escape"});}
+ for(const [index,row] of rows.entries()){fireEvent.click(screen.getByRole("button",{name:new RegExp(` · ${index+1}$`)}));const dialog=screen.getByRole("dialog");expect([...dialog.querySelectorAll(".subscription-quota-id")].map(node=>node.textContent)).toEqual(railAccount(row).windows.map(window=>window.id));expect(dialog.textContent).not.toContain(row.id);fireEvent.keyDown(dialog,{key:"Escape"});}
  expect(f.requests).toHaveBeenCalledOnce();
 });
 
@@ -189,7 +189,7 @@ for(const [name,extra,percent,state] of [
  ["expired reset",{reset_at:new Date(Date.now()-60000).toISOString()},"57%","Stale observation"],
 ] as const)it(`retains truthful ${name} window presentation without restoring current evidence`,async()=>{
  const row=resource(name,"chatgpt",{quota:[Object.assign({id:"native:exact",state:"observed",remaining:.57,blocking:true,comparison_group:"primary",observed_at:new Date().toISOString()},extra)]});
- const f=mount(()=>({resources:[row]}));fireEvent.click(await screen.findByRole("button",{name:new RegExp(row.id)}));const dialog=screen.getByRole("dialog");expect(dialog.querySelector(".subscription-quota-value strong")?.textContent).toBe(percent);expect(dialog.textContent).toContain(state);expect(dialog.querySelectorAll(".subscription-quota-bar")).toHaveLength(percent===undefined?0:1);
+ const f=mount(()=>({resources:[row]}));fireEvent.click(await screen.findByRole("button",{name:/ · 1$/}));const dialog=screen.getByRole("dialog");expect(dialog.querySelector(".subscription-quota-value strong")?.textContent).toBe(percent);expect(dialog.textContent).toContain(state);expect(dialog.querySelectorAll(".subscription-quota-bar")).toHaveLength(percent===undefined?0:1);
  if(name!=="zero"&&name!=="full")expect(dialog.querySelector(".subscription-quota-historical")).toBeTruthy();expect(f.requests).toHaveBeenCalledOnce();
 });
 
@@ -202,7 +202,7 @@ it("keeps failed-read historical values and warning visible through a deferred s
 });
 
 it("close and outside dismissal retain the original opener without another read",async()=>{
- const row=resource("Original opener"),f=mount(()=>({resources:[row]}));const opener=await screen.findByRole("button",{name:new RegExp(row.id)});
+ const row=resource("Original opener"),f=mount(()=>({resources:[row]}));const opener=await screen.findByRole("button",{name:/ · 1$/});
  fireEvent.click(opener);fireEvent.click(screen.getByRole("button",{name:"Close quota details"}));expect(screen.queryByRole("dialog")).toBeNull();expect(document.activeElement).toBe(opener);
  fireEvent.click(opener);fireEvent.pointerDown(document.body);expect(screen.queryByRole("dialog")).toBeNull();expect(document.activeElement).toBe(opener);expect(f.requests).toHaveBeenCalledOnce();
 });

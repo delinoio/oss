@@ -73,13 +73,13 @@ it("rejects mismatched identities, schema, revision and names without substituti
   expect(repositoryDetails(repository("Legacy", ""), repository().id)).toBeUndefined();
   const legacy = repository("Legacy", ""); expect(repositoryDetails(legacy, legacy.id)?.url).toBe("");
 });
-it("shows first three ordered repositories, inert full URLs, explicit primary and collapsed exact identities", () => {
+it("shows first three ordered repositories, inert full URLs, explicit primary and no UUID disclosure", () => {
   const rows = Array.from({ length: 5 }, (_, index) => repository(`Repository ${index}`, `https://example.org/${"long-source-".repeat(12)}${index}.git`)), saved = project(rows);
   const metadata = new Map(rows.map(row => [row.id, repositoryDetails(row, row.id)!]));
   const edit = vi.fn(), remove = vi.fn();
   const mounted = render(<ProjectList resources={[saved]} metadata={metadata} edit={edit} remove={remove} />);
   expect(screen.getByText("5 repositories")).toBeTruthy(); expect(screen.queryByText("Repository 3")).toBeNull(); expect(screen.queryByText("Primary")).toBeNull();
-  const disclosure = mounted.container.querySelector("details")!; expect(disclosure.open).toBe(false); expect(within(disclosure).getByText(saved.id)).toBeTruthy();
+  expect(mounted.container.querySelector(".project-original-details")).toBeNull(); expect(mounted.container.textContent).not.toContain(saved.id);
   expect(screen.queryByRole("link")).toBeNull();
   const show = screen.getByRole("button", { name: "Show all repositories" }); show.focus(); fireEvent.click(show);
   expect(screen.getByText("Repository 4")).toBeTruthy(); expect(screen.getByText("Primary")).toBeTruthy(); expect(document.activeElement).toBe(show);
@@ -168,7 +168,7 @@ it("compacts only exact matching-name singleton metadata while retaining inert s
   expect(screen.queryByText("1 repository")).toBeNull(); expect(screen.queryByText("Primary")).toBeNull();
   expect(screen.getByText("git@example.org:team/Project.git")).toBeTruthy(); expect(screen.queryByRole("link")).toBeNull();
   const details = mounted.container.querySelector("details")!;
-  expect(details.open).toBe(false); expect(within(details).getByText(saved.id)).toBeTruthy(); expect(within(details).getByText(row.id)).toBeTruthy();
+  expect(mounted.container.querySelector(".project-original-details")).toBeNull(); expect(mounted.container.textContent).not.toContain(saved.id); expect(mounted.container.textContent).not.toContain(row.id);
   fireEvent.click(screen.getByRole("button", { name: "Edit Project" })); fireEvent.click(screen.getByRole("button", { name: "Delete Project" }));
   expect(edit).toHaveBeenCalledWith(saved); expect(remove).toHaveBeenCalledWith(saved);
 });
@@ -192,7 +192,7 @@ it.each([0, 2, 3])("keeps the saved count for %i references even when metadata i
   const mounted = render(<ProjectList resources={[saved]} metadata={new Map()} edit={() => {}} remove={() => {}} />);
   expect(screen.getByText(`${count} repositories`)).toBeTruthy();
   expect(mounted.container.querySelectorAll(".project-repository-rows > li")).toHaveLength(count);
-  for (const row of rows) expect(within(mounted.container.querySelector("details")!).getByText(row.id)).toBeTruthy();
+  expect(mounted.container.querySelector(".project-original-details")).toBeNull();
 });
 
 it("preserves disabled schema actions and unreadable original singleton references", () => {
@@ -200,15 +200,15 @@ it("preserves disabled schema actions and unreadable original singleton referenc
   const mounted = render(<ProjectList resources={[saved]} metadata={new Map()} edit={() => {}} remove={() => {}} />);
   expect(screen.getAllByRole("button")[0]!.hasAttribute("disabled")).toBe(true);
   expect(screen.getAllByRole("button")[1]!.hasAttribute("disabled")).toBe(true);
-  expect(within(mounted.container.querySelector("details")!).getByText(saved.id)).toBeTruthy();
+  expect(mounted.container.querySelector(".project-original-details")).toBeNull();
   expect(screen.getByText("0 repositories")).toBeTruthy();
 });
 
 
-it("keeps unreadable saved references in supported project details", () => {
+it("keeps unreadable saved references internal with truthful unavailable metadata", () => {
   const saved = { ...project([]), documentJson: encode({ name: "Project", repositories: ["unreadable-original-reference"] }) };
   const mounted = render(<ProjectList resources={[saved]} metadata={new Map([["unreadable-original-reference", { state: RepositoryDetailsState.Unavailable }]])} edit={() => {}} remove={() => {}} />);
-  expect(within(mounted.container.querySelector("details")!).getByText("unreadable-original-reference")).toBeTruthy();
+  expect(mounted.container.querySelector(".project-original-details")).toBeNull();
   expect(screen.getByText("Repository details unavailable")).toBeTruthy(); expect(screen.queryByText("1 repository")).toBeNull();
 });
 

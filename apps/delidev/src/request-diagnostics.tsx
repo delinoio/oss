@@ -1,3 +1,4 @@
+import { ProductIdentity, ProductKind, useProductLabels } from "./product-identity";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { Timestamp } from "./timestamp-display";
 import { useShortcuts } from "./shortcut-provider";
@@ -62,15 +63,15 @@ export function validateDiagnosticPage(response: ListRequestDiagnosticsResponse,
 }
 
 function DiagnosticRow({ value }: { value: RequestDiagnostic }) {
-  useLocale();
+  useLocale(); const labels=useProductLabels();
   const native = value.source === Source.NATIVE_INPUT;
   const state = State[value.state].toLowerCase().replaceAll("_", " ");
-  return <article className="result" aria-label={copy("request-diagnostics.message_42d375", { v0: native ? copy("request-diagnostics.nativeInput_f0007b") : copy("request-diagnostics.httpRequest_f1ee11"), v1: value.id })}>
+  return <article className="result" aria-label={copy("request-diagnostics.message_42d375", { v0: native ? copy("request-diagnostics.nativeInput_f0007b") : copy("request-diagnostics.httpRequest_f1ee11"), v1: labels(value.id,ProductKind.Request) })}>
     <h3>{native ? copy("request-diagnostics.nativeInput_f0007b") : Operation[value.operation].toLowerCase()} · {state}</h3>
     <dl>
-      <dt>{copy("request-diagnostics.request_59f03d")}</dt><dd>{value.id}</dd><dt>{copy("request-diagnostics.revision_2e516d")}</dt><dd>{value.revision.toString()}</dd><dt>{copy("request-diagnostics.execution_a45cd4")}</dt><dd>{value.executionId}</dd>
-      <dt>{copy("request-diagnostics.accountAtRequestTime_3521b7")}</dt><dd>{value.accountId}</dd><dt>{copy("request-diagnostics.connection_639a40")}</dt><dd>{value.connectionId}</dd>
-      <dt>{value.subscriptionService ? copy("request-diagnostics.subscriptionService_0e16df") : copy("request-diagnostics.provider_472590")}</dt><dd>{value.subscriptionService ? subscriptionServiceLabel(value.subscriptionService) : value.providerId}</dd><dt>{copy("request-diagnostics.model_5e2c61")}</dt><dd>{value.model?.nativeId}</dd><dt>{copy("request-diagnostics.purpose_d4e883")}</dt><dd>{value.purpose}</dd>
+      <dt>{copy("request-diagnostics.request_59f03d")}</dt><dd>{<ProductIdentity id={value.id} kind={ProductKind.Request} />}</dd><dt>{copy("request-diagnostics.revision_2e516d")}</dt><dd>{value.revision.toString()}</dd><dt>{copy("request-diagnostics.execution_a45cd4")}</dt><dd>{<ProductIdentity id={value.executionId} kind={ProductKind.Execution} />}</dd>
+      <dt>{copy("request-diagnostics.accountAtRequestTime_3521b7")}</dt><dd>{<ProductIdentity id={value.accountId} kind={ProductKind.Account} />}</dd><dt>{copy("request-diagnostics.connection_639a40")}</dt><dd>{<ProductIdentity id={value.connectionId} kind={ProductKind.Connection} />}</dd>
+      <dt>{value.subscriptionService ? copy("request-diagnostics.subscriptionService_0e16df") : copy("request-diagnostics.provider_472590")}</dt><dd>{value.subscriptionService ? subscriptionServiceLabel(value.subscriptionService) : <ProductIdentity id={value.providerId} kind={ProductKind.Provider} />}</dd><dt>{copy("request-diagnostics.model_5e2c61")}</dt><dd>{value.model?.nativeId}</dd><dt>{copy("request-diagnostics.purpose_d4e883")}</dt><dd>{value.purpose}</dd>
       <dt>{copy("request-diagnostics.observed_64fa8a")}</dt><dd><Timestamp value={value.observedAt} /></dd><dt>{copy("request-diagnostics.finished_7804f7")}</dt><dd><Timestamp value={value.finishedAt} fallback={copy("request-diagnostics.unavailable_ca1844")} /></dd>
       <dt>{copy("request-diagnostics.httpLatency_4cebf1")}</dt><dd>{value.durationMs === undefined ? copy("request-diagnostics.unavailable_ca1844") : copy("request-diagnostics.ms_d659ce", { v0: value.durationMs.toString() })}</dd>
       <dt>{copy("request-diagnostics.httpAttempt_4a264f")}</dt><dd>{value.httpAttempted === undefined ? copy("request-diagnostics.unavailable_ca1844") : value.httpAttempted ? copy("request-diagnostics.sendClaimedProviderAcceptanceIsUnconfirmed_0370a9") : copy("request-diagnostics.noHttpAttempt_56754e")}</dd>
@@ -81,14 +82,14 @@ function DiagnosticRow({ value }: { value: RequestDiagnostic }) {
       <dt>{native ? copy("request-diagnostics.nativeEffectiveServiceTier_d412ae") : copy("request-diagnostics.providerObservedServiceTier_01a40b")}</dt><dd>{value.effectiveServiceTier ?? copy("request-diagnostics.unavailable_ca1844")}</dd>
     </dl>
     <section><h3>{copy("request-diagnostics.originalIdentities_580b0d")}</h3><dl>{[
-      [copy("request-diagnostics.extra.406c0cd17230"), value.publicationRequestId], [copy("request-diagnostics.extra.5f1a25573a30"), value.correlationId], [copy("request-diagnostics.extra.ba2dea0965ff"), value.nativeRequestId],
+
       [copy("request-diagnostics.extra.45d8583658f2"), value.providerRequestId], [copy("request-diagnostics.extra.6e5cd62e3845"), value.nativeResponseId], [copy("request-diagnostics.extra.230d0da59fbf"), value.nativeThreadId], [copy("request-diagnostics.extra.a12de5a8959e"), value.nativeTurnId],
     ].map(([label, id], index) => <div key={index}><dt>{label}</dt><dd>{id || copy("request-diagnostics.extra.ca1844969742")}</dd></div>)}</dl></section>
   </article>;
 }
 
 export function RequestDiagnostics({ sessionId, close }: { sessionId: string; close: () => void }) {
-  useLocale();
+  useLocale(); const labels=useProductLabels();
   const panelRoot = useRef<HTMLElement>(null);
   const shortcuts = useShortcuts([{ id: ShortcutId.DiagnosticsClose, scope: Surface.Sessions, label: "shortcuts.closeDiagnostics", bindings: [{ key: "Escape" }], target: panelRoot, input: ShortcutInput.Target, run: close }]);
   const input = useRef<HTMLInputElement>(null);

@@ -1,3 +1,4 @@
+import { diagnosticText } from "./product-identity";
 import { WaitingQueue } from "./waiting-queue";
 
 import { FlatDisclosureScope } from "./disclosure";
@@ -610,7 +611,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
       {session ? <SessionActivityProvider active={active && tabs.tab.kind!==SessionTabKind.Sidechat}><SessionTools resource={session} changed={setAcknowledged} initiallyOpen diagnosticsTarget={diagnosticsTarget} target={infoToolsTarget} launcherTarget={inlineRecovery && conversationActive ? recoveryLauncherTarget : undefined} openRecovery={opener => showInfo(opener, InfoTarget.Recovery)}><div className="session-information-evidence" ref={infoEvidence} tabIndex={-1}>
           <Failure failure={live.error} />{live.state === ConnectionState.Failed ? <button onClick={live.retry}>{copy("session.refreshConnection_73791f")}</button> : null}
           {recovering ? <p className="notice"><LocalizedText id="session.recoveryExecutionRemainsUnderServerControl_d80aa1" components={{ s0: <>{statusLabel(text(data.recovery))}</> }} /></p> : null}
-          {text(problem.message) ? <ServiceProblem code={text(problem.code) || text(problem.problem_code)}><p>{text(problem.message)} {text(problem.guidance)}</p></ServiceProblem> : null}
+          {text(problem.message) ? <ServiceProblem code={text(problem.code) || text(problem.problem_code)}><p>{diagnosticText(text(problem.message))} {diagnosticText(text(problem.guidance))}</p></ServiceProblem> : null}
           <Problem error={control.error} />
           <Problem error={send.error} />
         </div></SessionTools></SessionActivityProvider> : null}

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 export const en = {
+  nameUnavailable: "Name unavailable",
+  sessionLabel: "Session",
   stale:
     "The server state changed. Inspect the current original target before retrying.",
   outcome: "Outcome",
@@ -126,7 +128,7 @@ export const en = {
   diagnostics: "Connection diagnostics",
   export: "Copy safe diagnostics",
   copied: "Safe diagnostics copied",
-  safe: "Diagnostics contain only operation names and opaque correlation identifiers.",
+  safe: "Diagnostics show operation names, saved connection names, and status.",
   notificationNote:
     "OS submission is not proof that you saw a notification. Inbox read state is separate.",
   localNote:
@@ -163,6 +165,8 @@ export const en = {
     "Original pairing is retained. Retry it without generating another credential.",
 } as const;
 export const ko: Record<keyof typeof en, string> = {
+  nameUnavailable: "이름을 사용할 수 없음",
+  sessionLabel: "세션",
   stale:
     "서버 상태가 변경되었습니다. 재시도하기 전에 현재 원래 대상을 확인하세요.",
   outcome: "실행 결과",
@@ -286,7 +290,7 @@ export const ko: Record<keyof typeof en, string> = {
   diagnostics: "연결 진단",
   export: "안전한 진단 복사",
   copied: "안전한 진단 복사됨",
-  safe: "진단에는 작업 이름과 불투명한 상관 식별자만 포함됩니다.",
+  safe: "진단에는 작업 이름, 저장된 연결 이름 및 상태가 표시됩니다.",
   notificationNote:
     "OS에 제출되었다고 알림을 보았다는 뜻은 아닙니다. 받은 편지함 읽음 상태는 별개입니다.",
   localNote:

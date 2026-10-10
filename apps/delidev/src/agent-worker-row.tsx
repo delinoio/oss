@@ -48,7 +48,6 @@ export function AgentWorkerRow({ row, edit, preview, remove }: { row: Resource; 
       {supported && modelIDs.length > 1 ? <DisclosureContent id={region} role="region" hidden={!expanded} aria-label={copy("agent-worker-row.configuredModels")}><ol className="agent-model-routes">{modelIDs.map((id, index) => <li key={index}>{model(index)}{accountCount(index)}</li>)}</ol></DisclosureContent> : null}
       {!supported && [1, 2, 3].includes(row.schemaVersion) ? <span className="agent-route-account-count">{copy("agent-worker-row.accountCountUnavailable")}</span> : null}
       {data.reconfiguration_required === true ? <p role="status">{copy("settings.reconfigurationRequired_a84a37")}</p> : null}
-      <small>{row.id}</small>
       </div>
     </div>
     <div className="actions settings-agent-actions">

@@ -272,7 +272,7 @@ it("retains sanitized typed export guidance and clears it for the next export ge
  render(value.view());fireEvent.click(screen.getByRole("button",{name:"Export configuration"}));
  await screen.findByText("A capacity limit was reached. Inspect capacity before submitting another request.");
  expect(screen.queryByText("Export failed.")).toBeNull();expect(screen.queryByRole("textbox",{name:"Exported configuration"})).toBeNull();
- fireEvent.click(screen.getByText("Technical details"));expect(screen.getByText(message)).toBeTruthy();expect(screen.getByText(guidance)).toBeTruthy();expect(screen.getByText("resource_exhausted")).toBeTruthy();expect(screen.getByText(new RegExp(reference))).toBeTruthy();
+ fireEvent.click(screen.getByText("Technical details"));expect(screen.getByText(message)).toBeTruthy();expect(screen.getByText(guidance)).toBeTruthy();expect(screen.getByText("resource_exhausted")).toBeTruthy();expect(screen.queryByText(new RegExp(reference))).toBeNull();
  let finish!: (result:{documentJson:Uint8Array})=>void;
  value.exported.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
  fireEvent.click(screen.getByRole("button",{name:"Export configuration"}));
