@@ -79,7 +79,13 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 	}
 	root := filepath.Join(m.Root, "workspaces", string(w.SessionID))
 	stage = "retained-proof"
-	proofPath := filepath.Join(m.Root, "session-deletions", string(w.SessionID)+"-workspace.json")
+	proofPath := SessionDeletionProofPath(m.Root, w, WorkspaceDeletionProof)
+	if err := MigrateSessionDeletionProof(m.Root, w, WorkspaceDeletionProof, 1<<20, func(raw []byte) bool {
+		var retained deletionWorkspaceProof
+		return domain.Decode(raw, &retained) == nil && retained.Version == 1 && retained.Digest == w.Digest()
+	}); err != nil {
+		return err
+	}
 	proof := deletionWorkspaceProof{Version: 1, Digest: w.Digest()}
 	b, e := security.ReadPrivate(proofPath, 1<<20)
 	if e == nil {
@@ -268,6 +274,31 @@ func writeDeletionWorkspaceProof(path string, v deletionWorkspaceProof) error {
 		return domain.SessionDeletionPending()
 	}
 	if e := security.WriteAtomic(path, b); e != nil {
+		return domain.SessionDeletionPending()
+	}
+	return nil
+}
+
+// Completed Worker replay includes the exact retained workspace obligation in
+// its proof inventory. A restored/missing/foreign proof cannot authorize cleanup.
+func (m *Manager) ConfirmDeletedWorkspaceProof(w domain.SessionDeletionWork) error {
+	if w.Validate() != nil {
+		return domain.SessionDeletionPending()
+	}
+	lock, err := security.TryLock(filepath.Join(m.Root, "locks", string(w.SessionID)+".lock"))
+	if err != nil {
+		return domain.SessionDeletionPending()
+	}
+	defer lock.Close()
+	if err := MigrateSessionDeletionProof(m.Root, w, WorkspaceDeletionProof, 1<<20, func(raw []byte) bool {
+		var proof deletionWorkspaceProof
+		return domain.Decode(raw, &proof) == nil && proof.Version == 1 && proof.Digest == w.Digest() && proof.Removed && proof.Manifest == nil
+	}); err != nil {
+		return err
+	}
+	raw, err := security.ReadPrivate(SessionDeletionProofPath(m.Root, w, WorkspaceDeletionProof), 1<<20)
+	var proof deletionWorkspaceProof
+	if err != nil || domain.Decode(raw, &proof) != nil || proof.Version != 1 || proof.Digest != w.Digest() || !proof.Removed || proof.Manifest != nil {
 		return domain.SessionDeletionPending()
 	}
 	return nil

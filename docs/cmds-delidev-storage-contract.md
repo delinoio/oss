@@ -282,7 +282,18 @@ ownership fails closed.
 A separate authenticated Worker polling/report lane survives an interrupted
 primary assignment stream. Work binds the original paired device/machine and
 immutable assignment instance/revision/hash; reports additionally require a live
-current instance and exact plan digest. One retained report UUID survives process
+current instance and exact plan digest. Worker report/lock and workspace proof paths bind the original deletion/session/device
+obligation under a session-scoped private directory. A directory remains a native
+admission tombstone for the whole session, independent of any single proof.
+Each original plan bounds device obligations by its retained job-owner capacity;
+proofs retain full immutable work digests and are not content-removal targets.
+Legacy session-only proofs move atomically only after exact original obligation
+validation under the original locks, preserving report UUIDs and removal stages.
+Foreign, conflicting or restored proof evidence stays pending; no legacy proof
+can authorize another device. Completed replay includes the exact workspace
+proof in its bounded ownership inventory, requiring removed state and no retained
+manifest in addition to original copy absence.
+One retained report UUID survives process
 replacement and lost acknowledgements. Exact acknowledged report retries reuse
 the matching actor/work-bound receipt without rewriting the external journal or
 changing its revision. Missing SQL receipts still recover from the original

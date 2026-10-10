@@ -97,12 +97,40 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	if e := security.PrivateDir(filepath.Join(root, "session-deletions")); e != nil {
 		return proof, domain.SessionDeletionPending()
 	}
-	lock, e := security.TryLock(filepath.Join(root, "session-deletions", string(w.SessionID)+".lock"))
+	if e := security.PrivateDir(workspace.SessionDeletionDirectory(root, w.SessionID)); e != nil {
+		return proof, domain.SessionDeletionPending()
+	}
+	path := workspace.SessionDeletionProofPath(root, w, workspace.WorkerDeletionProof)
+	lock, e := security.TryLock(path + ".lock")
 	if e != nil {
 		return proof, domain.SessionDeletionPending()
 	}
 	defer lock.Close()
-	path := sessionDeletionPath(root, w.SessionID)
+	// Share the old session lock only while reconciling a legacy obligation.
+	legacyLock, e := security.TryLock(filepath.Join(root, "session-deletions", string(w.SessionID)+".lock"))
+	if e != nil {
+		return proof, domain.SessionDeletionPending()
+	}
+	migration := workspace.MigrateSessionDeletionProof(root, w, workspace.WorkerDeletionProof, 4096, func(raw []byte) bool {
+		var retained sessionDeletionProof
+		if domain.Decode(raw, &retained) != nil || retained.Version != 1 || retained.ReportID.Validate() != nil {
+			return false
+		}
+		if retained.Digest == w.Digest() {
+			return true
+		}
+		// Existing untouched child-owner amendment remains limited to this work.
+		legacy := w
+		legacy.Copies = append([]domain.SessionDeletionCopy(nil), w.Copies...)
+		for i := range legacy.Copies {
+			legacy.Copies[i].UnpublishedChildProcessID = ""
+		}
+		return !retained.RemovalStarted && !retained.Complete && retained.Digest == legacy.Digest()
+	})
+	legacyLock.Close()
+	if migration != nil {
+		return proof, migration
+	}
 	raw, e := security.ReadPrivate(path, 4096)
 	if e == nil {
 		if domain.Decode(raw, &proof) != nil || proof.Version != 1 || proof.ReportID.Validate() != nil {
@@ -132,6 +160,11 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		}
 	}
 	if proof.Complete {
+		if len(w.Copies) != 0 || w.Fork != nil {
+			if err := (&workspace.Manager{Root: root, Logger: config.Logger}).ConfirmDeletedWorkspaceProof(w); err != nil {
+				return proof, err
+			}
+		}
 		if err := cleanupGeneratedCopies(root, w, true); err != nil {
 			return proof, err
 		}

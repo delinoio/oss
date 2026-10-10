@@ -1015,6 +1015,11 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 		if _, e := os.Lstat(sessionDeletionPath(config.Root, domain.ID(resource.SessionId))); !errors.Is(e, os.ErrNotExist) {
 			return journal{}, domain.SessionDeletionPending()
 		}
+		// Any obligation directory fences the whole original session, including
+		// before its first proof is persisted and after legacy proof migration.
+		if _, e := os.Lstat(workspace.SessionDeletionDirectory(config.Root, domain.ID(resource.SessionId))); !errors.Is(e, os.ErrNotExist) {
+			return journal{}, domain.SessionDeletionPending()
+		}
 	}
 	if job.Type == domain.ForkSessionJob {
 		var input domain.ForkJobInput
