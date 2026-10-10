@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { productDiagnosticText } from "./product-reference";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { ConfigurationQuery, EntityKind, ResourceQuery, SystemCapability, SystemQuery, newRequestId, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
@@ -44,7 +45,7 @@ export function PendingRepositoryConfiguration({ intent }: { intent: RetainedMut
     if (job && state === JobState.Succeeded && validOutput && output && fresh && fresh.revision >= output.revision) mutation.resolveJob(job.id);
   }, [job?.id, state, validOutput, output?.id, output?.revision, id, fresh, mutation.resolveJob]);
   return <article className="pending-pr-action"><strong>{copy("pull-requests.profileSavePending")}</strong>
-    {job ? <><OperationStatus state={state} />{unreadable ? <p role="alert">{copy("jobs.unreadableStatus")}</p> : null}{text(object(document(row).problem).message) ? <ServiceProblem code={text(object(document(row).problem).code)}><p>{text(object(document(row).problem).message)} {text(object(document(row).problem).guidance)}</p></ServiceProblem> : null}<Problem error={status.error} />
+    {job ? <><OperationStatus state={state} />{unreadable ? <p role="alert">{copy("jobs.unreadableStatus")}</p> : null}{text(object(document(row).problem).message) ? <ServiceProblem code={text(object(document(row).problem).code)}><p>{productDiagnosticText(text(object(document(row).problem).message))} {productDiagnosticText(text(object(document(row).problem).guidance))}</p></ServiceProblem> : null}<Problem error={status.error} />
       {state === JobState.Succeeded && !validOutput ? <p role="alert">{copy("pull-requests.profileSaveUnverified")}</p> : null}
       <Problem error={repository.error} />
       {status.error || unreadable ? <button type="button" onClick={() => void status.refetch()}>{copy("jobs.retryStatusRead")}</button> : null}

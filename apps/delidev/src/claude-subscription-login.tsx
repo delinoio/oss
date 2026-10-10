@@ -1,9 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
+import { ProductReferenceKind, ProductReference, productDiagnosticText } from "./product-reference";
 import "./wizard-presentation.css";
 import { useRunnerRemediation } from "./runner-remediation";
 import { claudeRunnerObservation, validRunnerObservation, type RunnerObservation } from "./runner-observation";
 import { Failure, Problem, InlineRemediation } from "./ui";
 import { RunnerWorkflow, useRunnerPreference } from "./runner-device-preferences";
-// SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
@@ -982,7 +983,7 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
                   </div>
                   <div>
                     <dt>{copy("claude-subscription.reference")}</dt>
-                    <dd>{d.correlationId}</dd>
+                    <dd><ProductReference value={d.correlationId} kind={ProductReferenceKind.Operation} /></dd>
                   </div>
                 </dl>
               ) : null}

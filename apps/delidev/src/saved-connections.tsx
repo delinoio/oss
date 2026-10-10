@@ -1,3 +1,4 @@
+import { ProductReference, ProductReferenceKind } from "./product-reference";
 import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import {  ownedMessage, useProductMessage, LocalizedText, copy, useLocale   } from "./localization";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
@@ -155,7 +156,7 @@ export function SavedConnections({ visible, close, actions, target, advancedTarg
     {target ? <p>{copy("settings.connections.authorization")}</p> : <SettingsActionButton icon={SettingsActionIcon.Refresh} presentation={SettingsActionPresentation.Icon} disabled={busy || fetching} onClick={() => void refresh()}>{copy("saved-connections.refreshSavedServers_91a8fa")}</SettingsActionButton>}
     {error && profiles ? <p role="status">{copy("settings.connections.stale")}</p> : null}
     {profiles ? profiles.length ? <ul className="connections-saved-list">{profiles.map((profile) => <li className="connections-saved-row" key={profile.id}><div>
-      <h3>{profile.name}</h3><p>{profile.endpoint}</p><p><LocalizedText id="saved-connections.server_90ff00" components={{ s0: <>{profile.server_id}</> }} /></p>
+      <h3>{profile.name}</h3><p>{profile.endpoint}</p><p><LocalizedText id="saved-connections.server_90ff00" components={{ s0: <><ProductReference value={profile.server_id} kind={ProductReferenceKind.Server} /></> }} /></p>
       <p>{profile.state === SavedConnectionState.Paired ? copy(target ? "settings.connections.saved" : "saved-connections.pairingSavedCurrentAuthorizationIsChecked_c6a54e") : profile.state === SavedConnectionState.Removing ? copy("saved-connections.removalAcceptedOriginalClientCredentialCleanup_31d574") : copy("saved-connections.originalPairingPendingRetryRetainsIts_240c96")}</p>
       </div><div className="connections-row-actions">{profile.state !== SavedConnectionState.Removing ? <>
         <SettingsActionButton icon={SettingsActionIcon.Retry} disabled={busy || Boolean(attempt || edit || removal)} onClick={() => void operate(profile)}>{profile.state === SavedConnectionState.Paired ? copy("saved-connections.open_afaef5", { v0: profile.name }) : copy("saved-connections.retry_37e45a", { v0: profile.name })}</SettingsActionButton>
@@ -180,7 +181,7 @@ export function SavedConnections({ visible, close, actions, target, advancedTarg
     <SavedConnectionTask title={copy("saved-connections.addAServerConnection_191cce")} inline={Boolean(target)} visible={visible && adding}><section><h3>{copy("saved-connections.addAServerConnection_191cce")}</h3><p>{copy("saved-connections.obtainAShortLivedClientPairing_e08e27")}</p>
       <label>{copy("saved-connections.connectionName_686d4d")}<input value={name} maxLength={256} disabled={busy || Boolean(attempt)} onChange={(event) => setName(event.target.value)} /></label>
       <label>{copy("saved-connections.privateClientPairingDocument_9a8297")}<input type="password" autoComplete="off" spellCheck={false} value={grant} maxLength={32768} disabled={busy || Boolean(attempt)} onChange={(event) => setGrant(event.target.value)} /></label>
-      {text(preview.endpoint) ? <p><LocalizedText id="saved-connections.pairingEndpoint_5b2ef5" components={{ s0: <>{text(preview.endpoint)}</> }} /></p> : null}{text(preview.server_id) ? <p><LocalizedText id="saved-connections.expectedServer_4ed0bf" components={{ s0: <>{text(preview.server_id)}</> }} /></p> : null}
+      {text(preview.endpoint) ? <p><LocalizedText id="saved-connections.pairingEndpoint_5b2ef5" components={{ s0: <>{text(preview.endpoint)}</> }} /></p> : null}{text(preview.server_id) ? <p><LocalizedText id="saved-connections.expectedServer_4ed0bf" components={{ s0: <><ProductReference value={text(preview.server_id)} kind={ProductReferenceKind.Server} /></> }} /></p> : null}
       <SettingsActionButton icon={SettingsActionIcon.Retry} disabled={busy || Boolean(edit || removal) || (!attempt && !valid)} onClick={() => void pair()}>{attempt ? copy("saved-connections.retryOriginalServerPairing_f5aad2") : copy("saved-connections.pairThisServer_bbbfaf")}</SettingsActionButton>
       {attempt ? <p>{copy("saved-connections.theOriginalRequestIsRetainedWhile_5fac3d")}</p> : null}
     </section></SavedConnectionTask>

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { ProductReference } from "./product-reference";
 import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclosure";
 import { useId, useState } from "react";
@@ -23,7 +24,7 @@ export function AgentWorkerRow({ row, edit, preview, remove }: { row: Resource; 
     return <span className="agent-route-account-count">{Array.isArray(accounts) ? copy("agent-worker-row.accountCount", { count: accounts.length }) : copy("agent-worker-row.accountCountUnavailable")}</span>;
   };
   const harness = text(data.harness), knownHarness = Object.hasOwn(workerHarnessNames, harness);
-  const model = (index: number) => { const metadata=object(routes[index]?.model); const id=text(metadata.native_id);const name=text(metadata.name);return <><code className="agent-model-native">{id}</code>{name && name!==id?<span className="agent-model-name">{name}</span>:null}</>; };
+  const model = (index: number) => { const metadata=object(routes[index]?.model); const id=text(metadata.native_id);const name=text(metadata.name);return <><code className="agent-model-native"><ProductReference value={id} /></code>{name && name!==id?<span className="agent-model-name">{name}</span>:null}</>; };
   let name = resourceName(row);
   // Unsupported schemas stay non-actionable. Only bounded inert name text is
   // projected within the Agent name's 256-byte UTF-8 limit for identifying the
@@ -48,7 +49,7 @@ export function AgentWorkerRow({ row, edit, preview, remove }: { row: Resource; 
       {supported && modelIDs.length > 1 ? <DisclosureContent id={region} role="region" hidden={!expanded} aria-label={copy("agent-worker-row.configuredModels")}><ol className="agent-model-routes">{modelIDs.map((id, index) => <li key={index}>{model(index)}{accountCount(index)}</li>)}</ol></DisclosureContent> : null}
       {!supported && [1, 2, 3].includes(row.schemaVersion) ? <span className="agent-route-account-count">{copy("agent-worker-row.accountCountUnavailable")}</span> : null}
       {data.reconfiguration_required === true ? <p role="status">{copy("settings.reconfigurationRequired_a84a37")}</p> : null}
-      <small>{row.id}</small>
+      <small><ProductReference value={row.id} /></small>
       </div>
     </div>
     <div className="actions settings-agent-actions">

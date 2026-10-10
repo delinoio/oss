@@ -1,5 +1,10 @@
 # DeliDev mobile client contract
 
+## Product reference presentation
+
+Follow the [cross-surface product reference policy](apps-delidev-desktop-contract.md#product-reference-presentation). Mobile resource selectors and missing-name fallbacks use original names/aliases or localized kind-specific numbered references from the owning profile/view map. Connection diagnostics use safe profile/server references. Original profile, server and generation verification, selection, pending operations and retry targets retain exact IDs. Product diagnostic text omits internal UUIDs; user messages and native/model/tool content remain verbatim. Existing notifications contain localized kind-only presentation and private Inbox/claim routing IDs. No new inspection, polling or platform authority follows from safe labels.
+
+
 ## Scope
 
 `apps/delidev-mobile` owns the separate iOS and Android remote client in the feature. Its identity is `io.delino.delidev.mobile`, and its display name is

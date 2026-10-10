@@ -1,5 +1,6 @@
-import { useSidebarPaneVisible } from "./sidebar-context";
 // SPDX-License-Identifier: Apache-2.0
+import { ProductReferenceKind, ProductReference } from "./product-reference";
+import { useSidebarPaneVisible } from "./sidebar-context";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
@@ -81,7 +82,7 @@ export function Search({ active, open }: { active: boolean; open: (id: string) =
     <section ref={content} hidden={!active} className="page"><h2>{copy("views.searchConversations_8abdf3")}</h2>
     {!query ? <p>{copy("views.chooseASearchTermAndFilters_99f204")}</p> : null}
     <Failure failure={result.error?.failure} />{query && !result.loaded && result.loading ? <p role="status">{copy("views.searching_c31723")}</p> : null}{query && result.error && result.loaded ? <p className="notice">{copy("views.theRefreshFailedTheseAreThe_22c320")}</p> : null}
-    <ScrollPayloadWindow identity={searchIdentity} revision={searchRevision} query={result} root={root} active={active}>{payload => payload.map((hit) => <article key={hit.message?.id} className="result"><button disabled={!hit.message?.sessionId} onClick={() => open(hit.message!.sessionId)}>{hit.sessionName}</button><p>{text(document(hit.message).text)}</p><small>{hit.message?.sessionId}</small></article>)}</ScrollPayloadWindow>
+    <ScrollPayloadWindow identity={searchIdentity} revision={searchRevision} query={result} root={root} active={active}>{payload => payload.map((hit) => <article key={hit.message?.id} className="result"><button disabled={!hit.message?.sessionId} onClick={() => open(hit.message!.sessionId)}>{hit.sessionName}</button><p>{text(document(hit.message).text)}</p><small><ProductReference value={hit.message?.sessionId} kind={ProductReferenceKind.Session} /></small></article>)}</ScrollPayloadWindow>
     {result.loaded && result.rows.length === 0 ? <p>{copy("views.noRetainedConversationMatches_b59f78")}</p> : null}<ScrollContinuation query={result} root={root} active={active} label={copy("views.searchConversations_8abdf3")} />
   </section></>;
 }

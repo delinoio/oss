@@ -1,3 +1,4 @@
+import { ProductReferenceKind, ProductReference } from "./product-reference";
 import { createPortal } from "react-dom";
 import { useSessionQuery as useQuery } from "./session-activity";
 import { LocalizedText, copy, useLocale } from "./localization";
@@ -66,7 +67,7 @@ export function NativeUsage({ session, diagnosticsTarget }: { session: Resource;
     <Problem error={result.error} summary={copy("native-usage.recheckHelp")} />
     {result.error ? <p>{copy("native-usage.refreshFailedAnyDisplayedObservationIs_9ff040")}</p> : null}
     {!id ? <p>{copy("native-usage.noNativeUsageHasBeenRetained_f51bbb")}</p> : result.isPending ? <p>{copy("native-usage.loadingNativeUsage_976abd")}</p> : !matches ? <p>{copy("native-usage.theMatchingNativeUsageObservationIs_14a62c")}</p> : <>
-      {diagnosticsTarget ? createPortal(<section><h3>{copy("session-name.executionReferences")}</h3><p>{id} · {retained?.revision.toString()}</p><p><LocalizedText id="native-usage.recordedExecution_2fdcd7" components={{ s0: <>{text(record.execution_id)}</> }} /></p></section>, diagnosticsTarget) : null}
+      {diagnosticsTarget ? createPortal(<section><h3>{copy("session-name.executionReferences")}</h3><p>{id} · {retained?.revision.toString()}</p><p><LocalizedText id="native-usage.recordedExecution_2fdcd7" components={{ s0: <><ProductReference value={text(record.execution_id)} kind={ProductReferenceKind.Execution} /></> }} /></p></section>, diagnosticsTarget) : null}
       {object(data.current_execution).id !== record.execution_id && data.current_execution != null ? <p>{copy("native-usage.thisObservationBelongsToAPreceding_165fda")}</p> : null}
       {grok ? <NativeGrokUsage value={object(record.grok_observation)} /> : claude ? <NativeClaudeUsage value={object(record.claude_observation)} /> : <NativeUsageObservation value={object(record.opencode_observation)} />}
       <p>{copy("native-usage.recheckHelp")}</p>

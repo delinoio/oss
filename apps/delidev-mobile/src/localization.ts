@@ -130,7 +130,7 @@ export const en = {
   diagnostics: "Connection diagnostics",
   export: "Copy safe diagnostics",
   copied: "Safe diagnostics copied",
-  safe: "Diagnostics contain only operation names and opaque correlation identifiers.",
+  safe: "Diagnostics contain operation names and safe presentation references.",
   notificationNote:
     "OS submission is not proof that you saw a notification. Inbox read state is separate.",
   localNote:

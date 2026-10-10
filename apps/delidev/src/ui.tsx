@@ -1,3 +1,4 @@
+import { productDiagnosticText } from "./product-reference";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { LocalizedText, copy, useLocale, type MessageKey } from "./localization";
@@ -21,7 +22,7 @@ export function Problem({ error, ...presentation }: { error: unknown } & InlineP
 export function Failure({ failure, summary, actions }: { failure?: ClientFailure } & InlineProblemPresentation) {
   useLocale();
   if (!failure) return null;
-  return <div role="alert" className="problem"><strong>{copy("ui.requestFailed")}</strong><p>{copy(failureGuidance[failure.code])}</p>{summary ? <div>{summary}</div> : null}{actions ? <div className="actions">{actions}</div> : null}<Disclosure><DisclosureSummary>{copy("ui.technicalDetails")}</DisclosureSummary><strong>{failure.message}</strong><p>{failure.guidance}</p><code>{failure.code}</code></Disclosure>{failure.correlationId ? <small><LocalizedText id="ui.reference_0eac07" components={{ s0: <>{failure.correlationId}</> }} /></small> : null}</div>;
+  return <div role="alert" className="problem"><strong>{copy("ui.requestFailed")}</strong><p>{copy(failureGuidance[failure.code])}</p>{summary ? <div>{summary}</div> : null}{actions ? <div className="actions">{actions}</div> : null}<Disclosure><DisclosureSummary>{copy("ui.technicalDetails")}</DisclosureSummary><strong>{productDiagnosticText(failure.message)}</strong><p>{productDiagnosticText(failure.guidance)}</p><code>{failure.code}</code></Disclosure></div>;
 }
 export function ServiceProblem({ code, children, summary, actions }: { code?: string; children: ReactNode } & InlineProblemPresentation) {
   useLocale();

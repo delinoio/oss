@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { ProductReferenceLabels, ProductReferenceKind, productDiagnosticText, resourceReferenceKind } from "@delinoio/delidev-api-client";
 import {
   createContext,
   useContext,
@@ -71,6 +72,13 @@ import { ConversationLane } from "./conversation-pages";
 import { useConversationPages } from "./use-conversation-pages";
 const owner = new ProtectedState(storage);
 const Copy = createContext<Labels>(en);
+const References = createContext<ProductReferenceLabels | undefined>(undefined);
+function useReferences() {
+  const labels = useContext(References);
+  const [local] = useState(() => new ProductReferenceLabels());
+  const c = useCopy();
+  return (id: string | undefined, kind = ProductReferenceKind.Resource) => (labels ?? local).label(id, kind, c === ko ? "ko" : "en");
+}
 const useCopy = () => useContext(Copy);
 function value(resource?: Resource): Record<string, unknown> {
   try {
@@ -87,8 +95,8 @@ function record(v: unknown): Record<string, unknown> {
     ? (v as Record<string, unknown>)
     : {};
 }
-function label(resource: Resource): string {
-  return text(value(resource).name) || resource.id;
+function label(resource: Resource, reference: ReturnType<typeof useReferences>): string {
+  return text(value(resource).name) || text(value(resource).alias) || reference(resource.id, resourceReferenceKind(resource.kind));
 }
 function observation(v: unknown, c: Labels): string {
   const key = text(v);
@@ -168,6 +176,7 @@ export function App({ state = owner }: { state?: ProtectedState }) {
     [active, setActive] = useState(document.visibilityState === "visible");
   // Composer drafts belong to the original profile/session, outside tab presentation.
   const drafts = useRef(new Map<string, Map<string, ConversationDraft>>());
+  const [references] = useState(() => new ProductReferenceLabels());
   const changed = () => {
     for (const id of drafts.current.keys())
       if (!state.state.profiles.some((profile) => profile.id === id))
@@ -205,7 +214,7 @@ export function App({ state = owner }: { state?: ProtectedState }) {
   }, [s.language, s.theme, revision]);
   const profile = s.profiles.find((p) => p.id === s.selectedProfile);
   return (
-    <Copy.Provider value={c}>
+    <References.Provider value={references}><Copy.Provider value={c}>
       <div className="shell">
         <header className="app-header">
           <h1>DeliDev</h1>
@@ -267,7 +276,7 @@ export function App({ state = owner }: { state?: ProtectedState }) {
           ))}
         </nav>
       </div>
-    </Copy.Provider>
+    </Copy.Provider></References.Provider>
   );
 }
 function Settings({
@@ -280,6 +289,7 @@ function Settings({
   active: boolean;
 }) {
   const c = useCopy(),
+    reference = useReferences(),
     [adding, setAdding] = useState(false),
     [name, setName] = useState(""),
     [origin, setOrigin] = useState(""),
@@ -423,7 +433,7 @@ function Settings({
           {JSON.stringify(
             {
               operation: "connection-profile",
-              profile_id: state.state.selectedProfile,
+              profile: reference(state.state.selectedProfile, ProductReferenceKind.Connection),
               paired: state.state.profiles.filter(
                 (p) => !p.pairing && !p.revoked,
               ).length,
@@ -436,7 +446,7 @@ function Settings({
           )}
         </pre>
       </details>
-      {error ? <p role="alert">{error}</p> : null}
+      {error ? <p role="alert">{productDiagnosticText(error)}</p> : null}
       {adding ? (
         <Modal title={c.add} close={() => setAdding(false)}>
           <form
@@ -649,6 +659,7 @@ function Connected({
   changed: () => void;
 }) {
   const c = useCopy(),
+    reference = useReferences(),
     [status, setStatus] = useState(Status.Connecting),
     [creation, setCreation] = useState(false),
     [project, setProject] = useState(""),
@@ -818,7 +829,7 @@ function Connected({
               {inspected === pending.request ? <p>{c.inspected}</p> : null}
             </aside>
           ) : null}
-          {error ? <p role="alert">{error}</p> : null}
+          {error ? <p role="alert">{productDiagnosticText(error)}</p> : null}
           {tab === "inbox" && !sessionId ? (
             <Inbox
               enabled={enabled}
@@ -869,7 +880,7 @@ function Connected({
           <details>
             <summary>{c.diagnostics}</summary>
             <p>
-              {c.identity}: {state.profile(id).serverId}
+              {c.identity}: {reference(state.profile(id).serverId, ProductReferenceKind.Server)}
             </p>
             <p>{status}</p>
             <button
@@ -927,6 +938,7 @@ function Choices({
   title: string;
 }) {
   const c = useCopy(),
+    reference = useReferences(),
     [page, setPage] = useState(""),
     [items, setItems] = useState<Resource[]>([]);
   const query = useQuery(
@@ -968,7 +980,7 @@ function Choices({
             )
             .map((r) => (
               <option key={r.id} value={r.id}>
-                {label(r)}
+                {label(r, reference)}
               </option>
             ))}
         </select>
@@ -999,6 +1011,7 @@ function Sessions({
   create: () => void;
 }) {
   const c = useCopy(),
+    reference = useReferences(),
     [page, setPage] = useState(""),
     [items, setItems] = useState<Resource[]>([]);
   const query = useQuery(
@@ -1049,7 +1062,7 @@ function Sessions({
         items.map((r) => (
           <article key={r.id}>
             <button className="row" onClick={() => open(r.id)}>
-              <strong>{label(r)}</strong>
+              <strong>{label(r, reference)}</strong>
               <span>
                 {observation(value(r).outcome, c)} ·{" "}
                 {observation(value(r).workspace, c)}
@@ -1190,7 +1203,7 @@ export function NewSession({
           />
         </label>
         {!modeReady ? <div><p role="status">{c.defaultsUnavailable}</p><button type="button" disabled={!enabled || status.isFetching || defaults.isFetching || selectedProject.isFetching} onClick={() => { void status.refetch(); if (supportsDefaults) void defaults.refetch(); if (supportsDefaults && project && workspace === "worktree") void selectedProject.refetch(); }}>{c.refresh}</button></div> : null}
-        {error ? <p role="alert">{error}</p> : null}
+        {error ? <p role="alert">{productDiagnosticText(error)}</p> : null}
         <button disabled={!valid}>{c.newSession}</button>
       </fieldset>
     </form>
@@ -1224,6 +1237,7 @@ function Conversation({
 }) {
   const transport = useTransport();
   const c = useCopy(),
+    reference = useReferences(),
     [page, setPage] = useState(""),
     [history, setHistory] = useState<Resource[]>([]),
     [prompt, setPrompt] = useState(draft.prompt),
@@ -1273,7 +1287,7 @@ function Conversation({
   return (
     <section>
       <button onClick={back}>{c.back}</button>
-      <h2>{resource ? label(resource) : c.loading}</h2>
+      <h2>{resource ? label(resource, reference) : c.loading}</h2>
       <details>
         <summary>{c.information}</summary>
         <dl>
@@ -1285,10 +1299,10 @@ function Conversation({
           ))}
         </dl>
         <p>
-          {c.runner}: {text(data.machine_id)}
+          {c.runner}: {reference(text(data.machine_id), ProductReferenceKind.Worker)}
         </p>
         <p>
-          {c.agent}: {text(data.agent_id)}
+          {c.agent}: {reference(text(data.agent_id), ProductReferenceKind.Worker)}
         </p>
       </details>
       {session.isError ? <p role="alert">{c.sessionGone}</p> : null}
@@ -1488,6 +1502,7 @@ function Inbox({
   open: (id: string) => void;
 }) {
   const c = useCopy(),
+    reference = useReferences(),
     [page, setPage] = useState(""),
     [items, setItems] = useState<InboxView[]>([]),
     [selected, setSelected] = useState("");
@@ -1526,7 +1541,7 @@ function Inbox({
         <article key={v.entry?.id}>
           <button className="row" onClick={() => setSelected(v.entry!.id)}>
             <strong>
-              {v.session ? label(v.session) : text(value(v.entry).source)}
+              {v.session ? label(v.session, reference) : text(value(v.entry).source)}
             </strong>
             <span>
               {observation(value(v.entry).source, c)} ·{" "}

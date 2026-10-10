@@ -1,5 +1,12 @@
 # DeliDev TypeScript client
 
+## Product reference presentation
+
+`ProductReferenceLabels` supplies typed resource-kind English/Korean labels and connection/view-owned presentation numbers. Its private original-ID map has no operation, storage or protocol authority. Caller owners must retain the instance for paging/reorder/refresh and dispose it with their connection/view. Names remain exact user content, even when they resemble UUIDs. Missing IDs use an unavailable kind label.
+
+`productDiagnosticText` is restricted to DeliDev-generated diagnostic prose. Do not apply it to native/user messages, names, output or exported artifacts. `productConfigurationReview` projects only typed import-plan reference paths and the private inspection token. It preserves original user/native strings and numeric tokens without a JS-number round trip; the original preview bytes remain Apply authority. No RPC, capability, dependency, persisted alias, migration or preference is introduced. Follow the [cross-surface policy](apps-delidev-desktop-contract.md#product-reference-presentation).
+
+
 ## Execution startup bindings
 
 The [direct startup contract](cmds-delidev-execution-startup-contract.md) activates the main-reserved System 43, Worker 23 and closed ReportExecutionStartup declarations. Generate Go, TypeScript and Connect Query outputs from the reconciled service schemas. The original Worker reports exact claimed revision/instance metadata; desktop presentation reads existing authenticated session resources. Additive observations do not grant client Worker authority, inference or credential access.

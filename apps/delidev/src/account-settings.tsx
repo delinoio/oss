@@ -1,5 +1,6 @@
-import "./wizard-presentation.css";
 // SPDX-License-Identifier: Apache-2.0
+import { ProductReferenceKind, ProductReference } from "./product-reference";
+import "./wizard-presentation.css";
 import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { LocalConnectionHelp } from "./local-connection-presentation";
@@ -748,7 +749,7 @@ function ApiAccountSettings({
     <SettingsHeading title={copy("account-settings.aiApiKeys_da1a0f")} description={copy("account-settings.manageAiApiKeysAndKeyless_372629")} actions={<>
       <SettingsActionButton icon={SettingsActionIcon.Add} ref={addAccountButton} className="primary" type="button" disabled={!accountTypeFilteringReady} onClick={() => { setWizardProvider(undefined); setWizardStartOAuth(true); onWorkflowReadyChange?.(true); setWizard(true); }}>{copy("account-settings.addAiApiKey_2c04a8")}</SettingsActionButton>
     </>} />
-    {providerIdFilter ? <div className="api-entry-filter"><p><LocalizedText id="account-settings.provider_bcf1a6" components={{ s0: <>{providersById.get(providerIdFilter)?.displayName || providerIdFilter}</> }} /></p><SettingsActionButton icon={SettingsActionIcon.Inspect} type="button" onClick={() => {  clearProviderFilter(); }}>{copy("account-settings.clearProviderFilter_e0b8c0")}</SettingsActionButton></div> : null}
+    {providerIdFilter ? <div className="api-entry-filter"><p><LocalizedText id="account-settings.provider_bcf1a6" components={{ s0: <>{providersById.get(providerIdFilter)?.displayName || <ProductReference value={providerIdFilter} kind={ProductReferenceKind.Provider} />}</> }} /></p><SettingsActionButton icon={SettingsActionIcon.Inspect} type="button" onClick={() => {  clearProviderFilter(); }}>{copy("account-settings.clearProviderFilter_e0b8c0")}</SettingsActionButton></div> : null}
     {accountTypeFilteringLoading ? <p role="status">{copy("account-settings.loadingProviderCapabilities_012324")}</p> : null}
     <Problem error={inventoryProblem} /><Failure failure={providerInventoryFailure} />
     {hasInventoryProblem ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={accountTypeFilteringFetching || providerSearchLoading} onClick={retryAccountCapabilities}>{copy("account-settings.retryProviderInventory_afa130")}</SettingsActionButton> : null}

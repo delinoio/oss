@@ -1,3 +1,4 @@
+import { ProductReference, ProductReferenceKind } from "./product-reference";
 import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
@@ -89,7 +90,7 @@ export function LocalWorkerControls({ control, active, changed, allowRegistratio
   // Process state and management must both agree before collapsing readiness guidance.
   const compactRunning = status?.state === LocalWorkerState.Running && (!management || management.state === LocalWorkerManagementState.Running);
   const generalExplanation = <p>{automatic ? copy("local-worker-controls.autoManaged") : copy("local-worker-controls.registrationIsSeparateFromStartupThe_f724cc")}</p>;
-  const machineIdentity = status?.machine_id ? <small><LocalizedText id="local-worker-controls.executionMachine_37d7c0" components={{ s0: <>{status.machine_id}</> }} /></small> : null;
+  const machineIdentity = status?.machine_id ? <small><LocalizedText id="local-worker-controls.executionMachine_37d7c0" components={{ s0: <><ProductReference value={status.machine_id} kind={ProductReferenceKind.Worker} /></> }} /></small> : null;
   const quitExplanation = management?.state === LocalWorkerManagementState.Running ? <p>{management.owned_by_app ? copy("local-worker-controls.autoQuitOwned") : copy("local-worker-controls.autoQuitBorrowed")}</p> : null;
   const stateGuidance = status ? <><p role={blocked ? "alert" : "status"} className={runnerDevices && (blocked || status.state === LocalWorkerState.Uncertain) ? "settings-runner-uncertain" : undefined}>{runnerDevices && (blocked || status.state === LocalWorkerState.Uncertain) ? <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 2 21h20L12 3ZM12 9v5m0 3h.01" /></svg> : null}{runnerDevices && status.state !== LocalWorkerState.Running && management?.state === LocalWorkerManagementState.Running ? descriptions[status.state] : managedDescription ?? descriptions[status.state]}</p>{runnerDevices && managedDescription && management?.state !== LocalWorkerManagementState.Running ? <p>{descriptions[status.state]}</p> : null}</> : automatic ? <p role="status">{copy("local-worker-controls.autoChecking")}</p> : null;
   const actions = <div className="actions"><SettingsActionButton icon={SettingsActionIcon.Refresh} presentation={SettingsActionPresentation.Icon} disabled={busy} onClick={() => void refresh(true)}>{copy("local-worker-controls.refreshLocalWorker_167e1d")}</SettingsActionButton>
@@ -117,7 +118,7 @@ export function LocalWorkerControls({ control, active, changed, allowRegistratio
       {badge ? <p role="status">{badge}</p> : null}
       {managedDescription ? <p>{managedDescription}</p> : null}
       {status ? <p>{descriptions[status.state]}</p> : null}
-      {status?.machine_id ? <p><LocalizedText id="local-worker-controls.executionMachine_37d7c0" components={{ s0: <>{status.machine_id}</> }} /></p> : null}
+      {status?.machine_id ? <p><LocalizedText id="local-worker-controls.executionMachine_37d7c0" components={{ s0: <><ProductReference value={status.machine_id} kind={ProductReferenceKind.Worker} /></> }} /></p> : null}
       {problem ? <p role="alert">{problem}</p> : null}
     </Modal> : null}
     {confirmation && !pendingStop ? <><p>{copy("local-worker-controls.stoppingThisWorkerInterruptsItsActive_09fca2")}</p>{stale ? <p role="alert">{copy("local-worker-controls.theWorkerGenerationChangedRefreshAnd_62391f")}</p> : null}<SettingsActionButton icon={SettingsActionIcon.Stop} disabled={busy || Boolean(stale)} onClick={() => void perform(LocalWorkerAction.Stop, confirmation)}>{copy("local-worker-controls.confirmWorkerStop_c7e9d5")}</SettingsActionButton><SettingsActionButton icon={SettingsActionIcon.Cancel} disabled={busy} onClick={() => setConfirmation(undefined)}>{copy("local-worker-controls.keepWorkerRunning_6abcfd")}</SettingsActionButton></> : null}

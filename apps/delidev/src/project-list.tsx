@@ -33,6 +33,5 @@ function ProjectRow({ row, metadata, edit, remove }: { row: Resource; metadata: 
       </li>;
     })}</ol>
     {ids.length > 3 ? <DisclosureButton density={DisclosureDensity.Settings} type="button" className="project-show-repositories" aria-controls={repositoriesId} aria-expanded={expanded} onClick={() => setExpanded(value => !value)} focusWhenCollapsing={element => { const row = element.closest("li"); return Boolean(row && [...row.parentElement!.children].indexOf(row) >= 3); }}>{copy(expanded ? "settings.projectRepositoriesShowFewer" : "settings.projectRepositoriesShowAll")}</DisclosureButton> : null}
-    <Disclosure density={DisclosureDensity.Settings} className="project-original-details"><DisclosureSummary>{copy("settings.projectDetails")}</DisclosureSummary><dl><dt>{copy("settings.projectOriginalID")}</dt><dd>{row.id}</dd><dt>{copy("settings.projectRepositoryOriginalIDs")}</dt><dd><ol>{ids.map((id, index) => <li key={`${id}:${index}`}>{id}</li>)}</ol></dd></dl></Disclosure>
   </article>;
 }

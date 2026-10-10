@@ -1,6 +1,7 @@
+// SPDX-License-Identifier: Apache-2.0
+import { ProductReferenceKind, ProductReference } from "./product-reference";
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
-// SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { SettingsTaskDialog, SettingsTaskScope, SettingsDialogSize, SettingsTaskActions } from "./settings-task";
 import { useEffect, useRef, useState, useId } from "react";
@@ -72,7 +73,7 @@ function SSHSetupTask({ active, close }: { active: boolean; close: () => void })
         </fieldset><SettingsTaskActions form={`${formId}-start`}><SettingsActionButton icon={SettingsActionIcon.Start} className="primary" disabled={blocked || uncertain || Boolean(submittedStartId) || !confirmed}>{copy("ssh-setup.installAndStartWorker_a7dc9a")}</SettingsActionButton></SettingsTaskActions></form> : null}
         {text(data.state) === "UNCERTAIN" && data.credential_removed !== true ? <SettingsActionButton icon={SettingsActionIcon.Retry} disabled={blocked} onClick={() => void reconcile.send({ mutation: mutation() })}>{copy("ssh-setup.reconcileOriginalSetup_611eeb")}</SettingsActionButton> : null}
         {data.credential_removed !== true ? <SettingsActionButton icon={SettingsActionIcon.Delete} disabled={blocked} onClick={() => void cancel.send({ mutation: mutation() })}>{copy("ssh-setup.cancelSetupAndRemoveSettledSsh_cc4a9c")}</SettingsActionButton> : null}
-        {result.running === true ? <p><LocalizedText id="ssh-setup.workerReadinessConfirmedMachine_699397" components={{ s0: <>{text(result.worker_version)}</>, s1: <>{text(result.machine_id)}</> }} /></p> : null}
+        {result.running === true ? <p><LocalizedText id="ssh-setup.workerReadinessConfirmedMachine_699397" components={{ s0: <>{text(result.worker_version)}</>, s1: <><ProductReference value={text(result.machine_id)} kind={ProductReferenceKind.Worker} /></> }} /></p> : null}
         {text(data.problem_code) ? <p role="alert"><LocalizedText id="ssh-setup.setupIsUnconfirmedReconcileTheOriginal_11b460" components={{ s0: <>{text(data.problem_code)}</> }} /></p> : null}
         {data.cancellation_requested === true ? <p>{copy("ssh-setup.cancellationRequestedADetachedWorkerKeeps_063704")}</p> : null}
       </section> : null}

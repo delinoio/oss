@@ -38,6 +38,5 @@ export function RepositoryRow({ row, edit, remove }: { row: Resource; edit: () =
     </dl> : null}
     {text(data.health) ? <p><LocalizedText id="settings.status_ae149d" components={{ s0: <>{text(data.health)}</> }} /></p> : null}
     {text(data.harness) ? <p><LocalizedText id="settings.harness_db1faa" components={{ s0: <>{text(data.harness)}</> }} /></p> : null}
-    <p className="repository-resource-id"><span>{copy("settings.repositoryId")}</span><code>{row.id}</code></p>
   </article>;
 }

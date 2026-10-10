@@ -1,3 +1,4 @@
+import { ProductReferenceKind, ProductReference, useProductReferences } from "./product-reference";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { paginationIdentity, paginationRevision } from "./scroll-pagination";
 import { useConversationDrafts } from "./conversation-drafts";
@@ -26,8 +27,8 @@ function useCommentDeletion(key: string, accepted?: () => void) {
 function PendingCommentDeletion({ intent, commentId, accepted }: { intent: RetainedMutationIntent; commentId: string; accepted: () => void }) {
   const mutation = useCommentDeletion(intent.key);
   useRetainedMutationAccepted(intent.key, accepted);
-  return <article aria-label={copy("local-reviews.pendingCommentDeletion", { v0: commentId })}>
-    <p>{copy("local-reviews.commentDeletion", { v0: commentId })}</p><p role="status">{intent.busy ? copy("local-reviews.waitingForCommentDeletionAcknowledgement") : copy("local-reviews.commentDeletionAcknowledgementIsUncertain")}</p>
+  return <article aria-label={copy("local-reviews.pendingCommentDeletion", { v0: reference(commentId) })}>
+    <p>{copy("local-reviews.commentDeletion", { v0: reference(commentId) })}</p><p role="status">{intent.busy ? copy("local-reviews.waitingForCommentDeletionAcknowledgement") : copy("local-reviews.commentDeletionAcknowledgementIsUncertain")}</p>
     <Problem error={mutation.error} />{intent.uncertain ? <button type="button" disabled={mutation.busy} onClick={mutation.retry}>{copy("local-reviews.retryOriginalCommentDeletion_db3527")}</button> : null}
   </article>;
 }
@@ -87,7 +88,7 @@ function CommentRow({ row, comment, sessionId, diff, selected, choose, refreshed
   return <article className="local-review-comment" aria-label={copy("local-reviews.reviewCommentOn_429062", { v0: anchor.selection.path })}>
     <label className="checkbox"><input type="checkbox" checked={Boolean(selected)} disabled={blocked} onChange={(e) => choose(e.target.checked ? { resource: row, comment } : undefined)} /><LocalizedText id="local-reviews.selectCommentOn_bfc20c" components={{ s0: <>{anchor.selection.path}</> }} /></label>
     <p>{anchor.selection.kind === AnchorKind.Lines ? copy("local-reviews.lines_0434c4", { v0: anchor.selection.side, v1: anchor.selection.start, v2: anchor.selection.end }) : copy("local-reviews.fileComment_f9fcbb")} · {freshness(anchor, diff)}</p>
-    <Disclosure><DisclosureSummary>{copy("local-reviews.originalReviewContext_f8890f")}</DisclosureSummary><p className="file-path"><LocalizedText id="local-reviews.repositoryDiffRevision_7f2d2f" components={{ s0: <>{anchor.repository_id}</>, s1: <br />, s2: <>{anchor.diff_revision}</> }} /></p>{anchor.context ? <pre>{anchor.context}</pre> : <p>{copy("local-reviews.wholeFileLocation_cf901e")}</p>}</Disclosure>
+    <Disclosure><DisclosureSummary>{copy("local-reviews.originalReviewContext_f8890f")}</DisclosureSummary><p className="file-path"><LocalizedText id="local-reviews.repositoryDiffRevision_7f2d2f" components={{ s0: <><ProductReference value={anchor.repository_id} kind={ProductReferenceKind.Repository} /></>, s1: <br />, s2: <>{anchor.diff_revision}</> }} /></p>{anchor.context ? <pre>{anchor.context}</pre> : <p>{copy("local-reviews.wholeFileLocation_cf901e")}</p>}</Disclosure>
     <p className="review-body">{comment.body}</p>
     {comment.last_submission_id ? <p><LocalizedText id="local-reviews.lastSubmittedContentRevision_d86b30" components={{ s0: <>{comment.last_submitted_content_revision}</>, s1: <>{comment.last_submitted_content_revision !== comment.content_revision ? copy("local-reviews.editedSinceSubmission_2161ce") : ""}</> }} /></p> : null}
     {selected && selected.resource.revision !== row.revision ? <p role="alert">{copy("local-reviews.anEarlierVersionIsSelectedDeselect_d7387d")}</p> : null}
@@ -97,7 +98,7 @@ function CommentRow({ row, comment, sessionId, diff, selected, choose, refreshed
 }
 
 export function LocalReviews({ sessionId, diff, reading, acceptedDeletionId }: { sessionId: string; diff: Diff; reading: boolean; acceptedDeletionId?: string }) {
-  useLocale();
+  useLocale(); const reference = useProductReferences();
   const [authoring, setAuthoring] = useState<Diff>(), [notice, setNotice] = useProductMessage("");
   const [selected, setSelected] = useState<Map<string, Selected>>(() => new Map()), [mode, setMode] = useState(Mode.Execute), [allowStale, setAllowStale] = useState(false);
   useEffect(() => {
@@ -113,7 +114,7 @@ export function LocalReviews({ sessionId, diff, reading, acceptedDeletionId }: {
   const reviewRoot = useRef<HTMLElement>(null);
   const list = useConversationPages(EntityKind.REVIEW, sessionId);
   const refresh = () => { void list.refresh(); };
-  const submit = useRetainedMutation(`review:submit:${sessionId}`, SessionQuery.submitLocalReview, (r) => { setSelected(new Map()); setAllowStale(false); setNotice(r.change?.input ? ownedMessage("local-reviews.sentence.72171603f37d", { v0: r.change.input.id }) : ownedMessage("local-reviews.extra.68459ebcb74e")); refresh(); });
+  const submit = useRetainedMutation(`review:submit:${sessionId}`, SessionQuery.submitLocalReview, (r) => { setSelected(new Map()); setAllowStale(false); setNotice(r.change?.input ? ownedMessage("local-reviews.sentence.72171603f37d", { v0: reference(r.change.input.id) }) : ownedMessage("local-reviews.extra.68459ebcb74e")); refresh(); });
   const blocked = submit.busy || submit.uncertain;
   const choose = (id: string, value?: Selected) => { if (blocked) return; if (value && selected.size >= 25 && !selected.has(id)) { setNotice(ownedMessage("local-reviews.extra.28df21a538c2")); return; } setSelected((previous) => { const next = new Map(previous); if (value) next.set(id, value); else next.delete(id); return next; }); };
   return <section ref={reviewRoot} aria-label={copy("local-reviews.localAgentReview_4069f1")} className="local-reviews conversation-page-scroll">
@@ -125,7 +126,7 @@ export function LocalReviews({ sessionId, diff, reading, acceptedDeletionId }: {
       const comment = readComment(row, sessionId);
       if (comment) return <CommentRow key={row.id} row={row} comment={comment} sessionId={sessionId} diff={diff} selected={selected.get(row.id)} choose={(v) => choose(row.id, v)} refreshed={refresh} submitting={blocked || Boolean(list.error)} draft={edits.values.get(row.id)} changeDraft={value => edits.save(row.id, value)} />;
       const submission = readSubmission(row, sessionId);
-      if (submission) return <Disclosure key={row.id}><DisclosureSummary><LocalizedText id="local-reviews.submittedReview_d16733" components={{ s0: <>{submission.mode}</>, s1: <>{row.id}</> }} /></DisclosureSummary><p className="file-path"><LocalizedText id="local-reviews.acceptedInput_d7512d" components={{ s0: <>{submission.input_id}</> }} /></p>{submission.comments.map((c) => <article key={c.id}><p><LocalizedText id="local-reviews.atSubmissionContentRevision_bcd985" components={{ s0: <>{c.anchor.selection.path}</>, s1: <>{c.freshness}</>, s2: <>{c.content_revision}</> }} /></p><p className="review-body">{c.body}</p>{c.anchor.context ? <pre>{c.anchor.context}</pre> : null}</article>)}</Disclosure>;
+      if (submission) return <Disclosure key={row.id}><DisclosureSummary><LocalizedText id="local-reviews.submittedReview_d16733" components={{ s0: <>{submission.mode}</>, s1: <><ProductReference value={row.id} /></> }} /></DisclosureSummary><p className="file-path"><LocalizedText id="local-reviews.acceptedInput_d7512d" components={{ s0: <><ProductReference value={submission.input_id} kind={ProductReferenceKind.Input} /></> }} /></p>{submission.comments.map((c) => <article key={c.id}><p><LocalizedText id="local-reviews.atSubmissionContentRevision_bcd985" components={{ s0: <>{c.anchor.selection.path}</>, s1: <>{c.freshness}</>, s2: <>{c.content_revision}</> }} /></p><p className="review-body">{c.body}</p>{c.anchor.context ? <pre>{c.anchor.context}</pre> : null}</article>)}</Disclosure>;
       return <p role="alert" key={row.id}>{copy("local-reviews.thisRetainedReviewRecordIsUnavailable_bfdee4")}</p>;
     })}</ScrollPayloadWindow></div> : <p>{copy("local-reviews.noLocalReviewsOnThisPage_55133f")}</p>}
     <ScrollContinuation query={list} root={reviewRoot} active={!blocked} label={copy("local-reviews.reviewPages_87ffd1")} />

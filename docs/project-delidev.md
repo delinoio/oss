@@ -1,5 +1,10 @@
 # Project: DeliDev
 
+## Product reference presentation
+
+Desktop, mobile, diagnostics, notifications and widgets share the [UUID-free product reference policy](apps-delidev-desktop-contract.md#product-reference-presentation) and [typed shared presenter](packages-delidev-api-client-contract.md#product-reference-presentation). Product labels are presentation only. Preserve exact private IDs, immutable request/selection/recovery authority and machine-readable interfaces; preserve user/native content verbatim. This policy requires no additional reads or protocol/schema changes.
+
+
 The desktop owns shared scroll-continuation state and presentation with domain
 adapters retaining response-validation, initial-read, payload-disposal and
 mutation authority. See the [shared desktop pagination contract](apps-delidev-desktop-contract.md#shared-scroll-continuation).

@@ -1,6 +1,7 @@
+// SPDX-License-Identifier: Apache-2.0
+import { ProductReferenceKind, ProductReference, useProductReferences } from "./product-reference";
 import { createPortal } from "react-dom";
 import { SessionActivityProvider, useSessionActive, useSessionQuery as useQuery } from "./session-activity";
-// SPDX-License-Identifier: Apache-2.0
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { Timestamp } from "./timestamp-display";
 import { ScrollContinuation } from "./scroll-continuation";
@@ -34,8 +35,9 @@ function PendingUnlink({ sessionId, associationId, refreshed }: { sessionId: str
   const remove = usePRUnlink(sessionId, associationId, refreshed);
   const original = remove.input as UnlinkSessionPullRequestRequest | undefined;
   const valid = original?.sessionId === sessionId && original.mutation?.id === associationId && uuid(original.mutation.requestId) && original.mutation.expectedRevision > 0n && original.mutation.expectedRevision < 1n << 63n;
-  return <article aria-label={`Pending PR unlink ${associationId}`}>
-    <p>{copy("session-pull-requests.inline.60c1498ca3")} {associationId}</p>
+  const reference = useProductReferences();
+  return <article aria-label={`${copy("session-pull-requests.inline.60c1498ca3")} ${reference(associationId)}`}>
+    <p>{copy("session-pull-requests.inline.60c1498ca3")} <ProductReference value={associationId} /></p>
     <p role="status">{remove.busy ? "Submitting original PR unlink…" : "PR unlink acknowledgment is uncertain."}</p>
     <Problem error={remove.error} />
     {!valid ? <p role="alert">{copy("session-pull-requests.inline.a4c646bacf")}</p> : remove.uncertain ? <button disabled={remove.busy} onClick={remove.retry}>{copy("session-pull-requests.retryOriginalPrUnlink_29e215")}</button> : null}
@@ -58,7 +60,7 @@ function LinkRow({ row, value, sessionId, refreshed, diagnosticsTarget }: { row:
   return <article aria-label={copy("session-pull-requests.linkedPr_299ef1", { v0: text(value.owner), v1: text(value.name), v2: text(value.number) })}>
     <h4>{text(value.owner)}/{text(value.name)}#{text(value.number)}</h4><p>{text(value.title)}</p>
     <p><LocalizedText id="session-pull-requests.linkedObservationCurrentPrStateAnd_e8d519" components={{ s0: <><Timestamp value={text(value.observed_at)} /></> }} /></p>
-    {diagnosticsTarget ? createPortal(<section><h3>{copy("session-pull-requests.originalPrIdentity_92b511")}</h3><p><LocalizedText id="session-pull-requests.repositoryIdPrIdNode_78f0da" components={{ s0: <>{text(value.remote_repository_id)}</>, s1: <>{text(value.pull_request_id)}</>, s2: <>{text(value.pull_request_node_id)}</> }} /></p><p><LocalizedText id="session-pull-requests.configuredRepository_6aa131" components={{ s0: <>{text(value.repository_id)}</> }} /></p><p>{`https://github.com/${text(value.owner)}/${text(value.name)}/pull/${text(value.number)}`}</p></section>, diagnosticsTarget) : null}
+    {diagnosticsTarget ? createPortal(<section><h3>{copy("session-pull-requests.originalPrIdentity_92b511")}</h3><p><LocalizedText id="session-pull-requests.repositoryIdPrIdNode_78f0da" components={{ s0: <>{text(value.remote_repository_id)}</>, s1: <>{text(value.pull_request_id)}</>, s2: <>{text(value.pull_request_node_id)}</> }} /></p><p><LocalizedText id="session-pull-requests.configuredRepository_6aa131" components={{ s0: <><ProductReference value={text(value.repository_id)} kind={ProductReferenceKind.Repository} /></> }} /></p><p>{`https://github.com/${text(value.owner)}/${text(value.name)}/pull/${text(value.number)}`}</p></section>, diagnosticsTarget) : null}
     <OpenPRProblemHistory routineRefresh={false} selection={{ repositoryId: text(value.repository_id), remoteRepositoryId: text(value.remote_repository_id), pullRequestId: text(value.pull_request_id), number: text(value.number) }} />
     <button disabled={remove.busy || remove.uncertain} onClick={() => void remove.send({ sessionId, mutation: { id: row.id, expectedRevision: row.revision, requestId: newRequestId() } })}><LocalizedText id="session-pull-requests.unlink_1c427a" components={{ s0: <>{text(value.number)}</> }} /></button>
     {!remove.busy && !remove.uncertain ? <Problem error={remove.error} /> : null}

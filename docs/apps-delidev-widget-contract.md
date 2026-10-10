@@ -1,5 +1,10 @@
 # DeliDev macOS status widget
 
+## Product reference presentation
+
+Follow the [cross-surface product reference policy](apps-delidev-desktop-contract.md#product-reference-presentation). Widget and native notification titles/bodies contain localized status/kind text and original user names, never internal UUID fallbacks. Keep private selection, Inbox routing, notification claim and server/profile verification IDs unchanged. The existing status widget and kind-only native notification format need no identity mutation or platform API change for this policy. Native rendering and OS delivery acceptance remain separate CI/platform evidence.
+
+
 ## Scope
 
 The feature adds the initial read-only macOS WidgetKit extension under
