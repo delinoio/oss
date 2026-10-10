@@ -27,9 +27,11 @@ interface QuestionObservation {
   id: string; sessionId: string; revision: bigint; closure: string; hasResponse: boolean;
   responseState: string; hasApproval: boolean; source: string; conflict: boolean;
 }
+const closures = new Set(["open", "native-closed", "turn-ended"]);
+const responseStates = new Set(["queued", "claimed", "transmitted", "uncertain", "canceled", "accepted", "not-sent", "failed"]);
 function observation(resource: Resource): QuestionObservation {
-  const data = document(resource);
-  return { id: resource.id, sessionId: resource.sessionId, revision: resource.revision, closure: text(data.closure), hasResponse: Object.hasOwn(data, "response"), responseState: text(object(data.response).state), hasApproval: data.approval_response != null, source: questionMutationKey(resource).split(":")[0]!, conflict: data.presentation_conflict === true };
+  const data = document(resource), closure = text(data.closure), state = text(object(data.response).state);
+  return { id: resource.id, sessionId: resource.sessionId, revision: resource.revision, closure: closures.has(closure) ? closure : "unknown", hasResponse: Object.hasOwn(data, "response"), responseState: responseStates.has(state) ? state : "unknown", hasApproval: data.approval_response != null, source: questionMutationKey(resource).split(":")[0]!, conflict: data.presentation_conflict === true };
 }
 function applyObservation(resource: Resource, value: QuestionObservation): Resource {
   const data: Document = { ...document(resource), closure: value.closure, presentation_conflict: value.conflict };

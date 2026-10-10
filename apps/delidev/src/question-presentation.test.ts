@@ -47,3 +47,11 @@ it("bounds lifecycle metadata and fails closed rather than returning an evicted 
  for (let index = 0; index < 4097; index++) store.observe(create(ResourceSchema, { ...row(9n), id: String(index) }));
  expect(questionPresentation(store.latest(row(9n)))).toBe(P.Recovery);
 });
+it("retains only closed lifecycle classifications rather than unknown source field contents", () => {
+ const store = new QuestionPresentationStore();
+ store.observe(row(9n, { closure: "future-closure", response: { state: "future-" + "x".repeat(2048), input: { answers: "Original retained bytes" } } }));
+ const recovered = store.retained("session", new Set(["question"]))[0];
+ expect(document(recovered).closure).toBe("unknown");
+ expect(document(recovered).response).toEqual({ state: "unknown" });
+ expect(questionPresentation(recovered, true)).toBe(P.Recovery);
+});
