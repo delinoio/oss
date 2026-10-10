@@ -8,6 +8,7 @@ fn main() {
         tauri_build::AppManifest::new().commands(&[
             "account_oauth_native",
             "desktop_update_context",
+            "open_app_information_link",
             "desktop_update_native",
             "desktop_credential_access",
             "choose_repository_folder",

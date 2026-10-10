@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Browser-only synthetic inventory. Never included in the product entry point.
+import { AppInformationUpdates } from "./app-information";
+import { type DesktopUpdateControls } from "./updates";
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { createRoot } from "react-dom/client";
@@ -225,6 +227,7 @@ const fixtureTransport = createRouterTransport(router => {
   }) : [], more_machines: false, more_credentials: false }) }; } });
 });
 const transport = fixtureTransport;
+const informationControls: DesktopUpdateControls = { readContext: async () => ({ current_version: "0.1.0", target: "darwin-arm64" }), control: async () => { throw new Error("The layout fixture has no native update authority"); } };
 // Isolated command-palette fixture counters observe ordinary destinations only.
 if (args.get("commandPalette") === "true") {
  const counts = { calls: 0, writes: 0 };
@@ -232,4 +235,4 @@ if (args.get("commandPalette") === "true") {
  transport.unary = (...parameters) => { counts.calls++; if (/^(create|save|update|submit|confirm)/i.test(parameters[0].name)) counts.writes++; return unary(...parameters); };
  Object.assign(window, { __commandMenuFixture: counts });
 }
-createRoot(document.getElementById("root")!).render(<LanguageProvider bridge={languageBridge}><AppearanceProvider bridge={{ read: async () => ({ revision: 1, theme, problem: null }), update: async next => ({ revision: 2, theme: next, problem: null }), subscribe: async () => () => {} }}><DateFormatProvider bridge={dateFormatBridge}>{notificationLayout ? <NotificationLayoutFixture transport={transport} /> : <App localServer={<WizardFixtureControls />} transport={transport} pairingAuthority={networkFixture ? { endpoint: "https://fixture.example", serverId } : undefined} currentDeviceId={currentDeviceId} connectionSettings={args.get("toast-controls") === "true" ? <ToastFixtureControls /> : <button>Connection controls</button>} controlLocalWorker={Object.assign(async () => fixtureWorker, { automatic: Boolean(automaticWorker) })} />}</DateFormatProvider></AppearanceProvider></LanguageProvider>);
+createRoot(document.getElementById("root")!).render(<LanguageProvider bridge={languageBridge}><AppearanceProvider bridge={{ read: async () => ({ revision: 1, theme, problem: null }), update: async next => ({ revision: 2, theme: next, problem: null }), subscribe: async () => () => {} }}><DateFormatProvider bridge={dateFormatBridge}>{notificationLayout ? <NotificationLayoutFixture transport={transport} /> : <App localServer={<><WizardFixtureControls /><AppInformationUpdates controls={informationControls} /></>} transport={transport} pairingAuthority={networkFixture ? { endpoint: "https://fixture.example", serverId } : undefined} currentDeviceId={currentDeviceId} connectionSettings={args.get("toast-controls") === "true" ? <ToastFixtureControls /> : <button>Connection controls</button>} controlLocalWorker={Object.assign(async () => fixtureWorker, { automatic: Boolean(automaticWorker) })} />}</DateFormatProvider></AppearanceProvider></LanguageProvider>);

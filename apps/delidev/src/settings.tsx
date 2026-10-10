@@ -4,6 +4,7 @@ import { defaultBranchPrefix, validBranchPrefix } from "./session-defaults";
 import { SettingsActionScope, SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import { DisclosureDensity, DisclosureDensityScope } from "./disclosure";
 import { SettingsCategory } from "./settings-category";
+import { AppInformation } from "./app-information";
 import { SettingsSearch, SettingsSearchFocus, SettingsSearchTarget, type SettingsSearchRequest } from "./settings-search";
 import { AgentWorkerRow } from "./agent-worker-row";
 import { useRunnerRemediation } from "./runner-remediation";
@@ -241,11 +242,12 @@ function ServerPreferencesWorkspace({ resources, nextPageToken, page, fetching, 
 
 export type SettingsNavigationEntry = SettingsEntryDestination | { category: SettingsCategory; target?: SettingsSearchTarget; generation: string; resourceId?: string; resourceKind?: EntityKind };
 export enum SettingsEntryDestination { ConnectionDiagnostics="connection-diagnostics", Repositories = "repositories", NewProject = "new-project", RunnerDevices = "runner-devices", GitProfiles = "git-profiles" }
-enum SettingsArea { Network, Configuration, Diagnostics, Notifications, Transfer, Integrations, Backups, Appearance, KeyboardShortcuts }
+enum SettingsArea { Network, Configuration, Diagnostics, Notifications, Transfer, Integrations, Backups, Appearance, KeyboardShortcuts, AppInformation }
 
 enum SettingsGroup { Ai = "AI", Coding = "Coding", Devices = "Device management", System = "System" }
 
 export const settingsCategories: Record<SettingsCategory, { label: string; description: string; kind?: EntityKind; area: SettingsArea }> = {
+  [SettingsCategory.AppInformation]: { get label() { return copy("app-information.title"); }, get description() { return copy("app-information.scope"); }, area: SettingsArea.AppInformation },
   [SettingsCategory.KeyboardShortcuts]: { get label() { return copy("shortcuts.title"); }, get description() { return copy("shortcut-settings.scope"); }, area: SettingsArea.KeyboardShortcuts },
   [SettingsCategory.Appearance]: { get label() { return copy("settings.appearance_3907fa"); }, get description() { return copy("settings.savedOnThisComputer_11cb50"); }, area: SettingsArea.Appearance },
   [SettingsCategory.Backups]: { get label() { return copy("settings.backups_3334fe"); }, get description() { return copy("settings.inspectManagedDatabaseImagesAndFollow_b28b20"); }, area: SettingsArea.Backups },
@@ -271,10 +273,11 @@ export const settingsGroups: { label: SettingsGroup; categories: SettingsCategor
   { label: SettingsGroup.Ai, categories: [SettingsCategory.SubscriptionAccounts, SettingsCategory.ApiAccounts, SettingsCategory.Providers, SettingsCategory.AgentWorkers, SettingsCategory.Instructions] },
   { label: SettingsGroup.Coding, categories: [SettingsCategory.ProjectDefaults, SettingsCategory.Projects, SettingsCategory.Repositories, SettingsCategory.Integrations] },
   { label: SettingsGroup.Devices, categories: [SettingsCategory.ExecutionWorkers, SettingsCategory.PairedDevices] },
-  { label: SettingsGroup.System, categories: [SettingsCategory.Appearance, SettingsCategory.KeyboardShortcuts, SettingsCategory.ServerPreferences, SettingsCategory.Diagnostics, SettingsCategory.Notifications, SettingsCategory.Transfer, SettingsCategory.Backups] },
+  { label: SettingsGroup.System, categories: [SettingsCategory.Appearance, SettingsCategory.KeyboardShortcuts, SettingsCategory.ServerPreferences, SettingsCategory.Diagnostics, SettingsCategory.Notifications, SettingsCategory.Transfer, SettingsCategory.Backups, SettingsCategory.AppInformation] },
 ];
 
 const settingsIcons: Record<SettingsCategory, string> = {
+ [SettingsCategory.AppInformation]: "M12 8h.01M12 11v6M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18",
  [SettingsCategory.ProjectDefaults]: "M4 6h16M4 12h16M4 18h16",
 
   [SettingsCategory.KeyboardShortcuts]: "M3 6h18v12H3zM6 9h1m3 0h1m3 0h1m3 0h1M7 15h10",
@@ -534,7 +537,8 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
           {area === SettingsArea.Transfer ? <div><ConfigurationTransfer active={visible} showCategoryIntro={false} /></div> : null}
           {notificationTarget&&notificationResource.error?<><Problem error={notificationResource.error}/><p role="status">{copy("inbox.operational.unavailable")}</p></>:null}
           {area === SettingsArea.Notifications ? <div><NotificationSettings active={visible} showCategoryIntro={false} openSubscriptions={()=>navigate(SettingsCategory.SubscriptionAccounts)} /></div> : null}
-          {area === SettingsArea.Diagnostics ? <div>{connectionSettings ?? <section data-settings-search-target="current-connection" aria-label={copy("settings.connections.current")}><h2>{copy("settings.connections.current")}</h2><p>{copy("settings.connectionUnavailable")}</p></section>}</div> : null}
+          {area === SettingsArea.AppInformation ? <AppInformation /> : null}
+          {area === SettingsArea.Diagnostics ? <div><SettingsActionButton icon={SettingsActionIcon.Inspect} type="button" onClick={() => navigate(SettingsCategory.AppInformation)}>{copy("app-information.title")}</SettingsActionButton>{connectionSettings ?? <section data-settings-search-target="current-connection" aria-label={copy("settings.connections.current")}><h2>{copy("settings.connections.current")}</h2><p>{copy("settings.connectionUnavailable")}</p></section>}</div> : null}
           {area === SettingsArea.Configuration ? <div>
             {controlLocalWorker && isRunnerDevices ? <div data-settings-search-target="local-worker"><LocalWorkerControls control={controlLocalWorker} presentation={LocalWorkerPresentation.RunnerDevices} active={visible && area === SettingsArea.Configuration && kind === EntityKind.MACHINE} changed={() => void client.invalidateQueries({ refetchType: "active" })} /></div> : null}
             {pairingAuthority && isPairedDevices ? <div><PairingGrant authority={pairingAuthority} active={visible && area === SettingsArea.Configuration && kind === EntityKind.DEVICE && !device} triggerContainer={pairingTriggerContainer} /></div> : null}

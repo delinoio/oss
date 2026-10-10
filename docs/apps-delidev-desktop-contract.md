@@ -3218,7 +3218,7 @@ Current connection shows This computer, Local server, the actual safe endpoint a
 
 Saved servers reads the bounded local inventory and exposes Refresh, Add server, Open or the original pending pairing retry, and a keyboard-operable row disclosure for Rename/Remove. Saved denotes persisted pairing, never remote readiness. Failed reads retain confirmed rows with stale guidance. The existing private pairing form stays masked and opens in a contained dialog. Rename, removal and pairing keep their original request bytes and confirmations across page movement. Menu Escape restores its summary. Task-dialog Close/Escape hides only presentation and leaves an explicit Continue action; original drafts, confirmations and uncertain requests remain retained. Deliberate Discard/Keep controls retain their original semantics. Dialog focus and restoration use the shared Modal owner.
 
-Advanced contains registration inspection/recovery, app updates and retained installation inspection, removed-profile history and independent retained Worker cleanup. An external text indicator exposes pending, failed or uncertain controller conditions while Advanced is collapsed. Expanding Advanced itself neither retries work nor admits native operations. Existing child disclosures retain their original read and operation gates. No RPC, protocol allocation, migration, dependency or native authority changes. Component and browser evidence remain separate from installed-native and real-account acceptance.
+Advanced contains registration inspection/recovery, removed-profile history and independent retained Worker cleanup. App updates and retained installation inspection are presented in App information; Connection & diagnostics offers a labeled navigation action. An external text indicator exposes pending, failed or uncertain controller conditions while Advanced is collapsed. Expanding Advanced itself neither retries work nor admits native operations. Existing child disclosures retain their original read and operation gates. No RPC, protocol allocation, migration, dependency or native authority changes. Component and browser evidence remain separate from installed-native and real-account acceptance.
 
 ### API Providers retained refresh — issue #1867
 
@@ -3713,3 +3713,40 @@ Home on Sessions and both creation surfaces, including the shared compact drawer
 ### Desktop server protocol validation
 
 Native local startup, supervision and saved-connection verification require the active server protocol 2 and the compiled package version. The Go resident host reports its RPC version constants in the initial started response, matching later authenticated status observations. Private desktop control version 2 and CLI envelope version 1 remain separate from server compatibility. Reject older and newer server protocols without replacing pairing, changing lifecycle intent or granting Worker authority.
+
+### App information — issue #2540
+
+App information / 앱 정보 is the last System category. Static Settings search and
+command entries cover app information, app updates, update recovery, releases,
+license and notices. Ordinary opening defaults and focus ownership do not change.
+The three understated bordered groups show app information, app updates and
+related information, in that order. Keep the shared 1040px left-aligned column,
+16px/24px section headings, 14px/20px body, 24px section gaps, 8px corners and
+40px action targets. Rows/actions stack below 600px without horizontal overflow.
+
+`desktop_update_context` supplies the running native app version and one of the
+six supported OS/architecture targets; server/Worker versions are not substitutes.
+Loading, unavailable and failure are localized and announced. An admitted
+disconnected window may read app metadata and links without server authority;
+removed/invalid saved scopes remain denied. Pre-connection Troubleshooting offers
+this read-only information without creating an updater or connection.
+
+The original desktop updater stays mounted in its connection mutation scope. Its
+stable portal host moves into Settings and a hidden outlet without changing DOM,
+drafts, native results or pending/uncertain requests. Category entry/search performs
+only context/support reads. App updates is direct, while Update recovery starts
+collapsed and reveals on attention, failure or uncertainty. Focus returns to its
+summary before focused recovery controls collapse. Installation uncertainty stays
+inspect-only for the original ID/revision, including exact bigint inspection without
+live signed-update negotiation. Worker updates and automatic checks remain unchanged.
+
+Related information opens only compiled `AppInformationLink` actions: official
+releases (`https://github.com/delinoio/oss/releases?q=delidev-v&expanded=true`),
+license (`https://github.com/delinoio/oss/blob/main/LICENSE`) and source notices
+(`https://github.com/delinoio/oss/tree/main/apps/delidev/public`). These are current
+repository sources, not a complete installed-package inventory. Existing packaged
+LICENSE/NOTICE/CEF/Chromium/asset notices remain unchanged. Native dispatch uses
+`browser_opener`, original admitted-window checks and stopped/Quit guards, accepts
+no renderer URL/path and reports localized failure without automatic retry. New
+structured logs contain only operation/phase/safe code. No business RPC, allocation,
+migration, persistence, dependency, channel or preference is added.

@@ -48,7 +48,7 @@ const screenshotPath = screenshot ? await ensureOutsideCheckout(screenshot) : nu
 const { chromium } = await import(playwright ? pathToFileURL(resolve(playwright)).href : "playwright");
 const directory = await mkdtemp(join(tmpdir(), "delidev-settings-layout-"));
 let browser, server;
-const categories = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Project defaults", "Projects", "Repositories", "Git Profiles", "Runner Devices", "Paired devices", "Appearance", "Keyboard shortcuts", "Server preferences", "Connections", "Notifications", "Import / Export", "Backups"];
+const categories = ["AI Subscription", "AI API Keys", "API Providers", "Agent Workers", "Instructions", "Project defaults", "Projects", "Repositories", "Git Profiles", "Runner Devices", "Paired devices", "Appearance", "Keyboard shortcuts", "Server preferences", "Connections", "Notifications", "Import / Export", "Backups", "App information"];
 const githubOnly = process.env.DELIDEV_LAYOUT_GITHUB_ONLY === "1";
 const wizardAccountsOnly = process.env.DELIDEV_LAYOUT_WIZARD_ACCOUNTS_ONLY === "1";
 const accountsOnly = process.env.DELIDEV_LAYOUT_ACCOUNTS_ONLY === "1";
@@ -69,7 +69,7 @@ const l = value => {
   if (value.startsWith("New ")) return messages.get("New {{v0}}").replace("{{v0}}", messages.get(value.slice(4)) ?? value.slice(4));
   return value;
 };
-const viewports = [[1920,1080], [1440,1000], [1440,900], [1280,820], [1280,800], [960,640], [640,480]];
+const viewports = [[1920,1080], [1440,1000], [1440,900], [1280,820], [1280,800], [1100,768], [960,640], [760,640], [640,480], [600,480]];
 let checked = 0, formsChecked = 0, harnessChecks = 0, gitChecks = 0, keyboardChecks = 0, hiddenChoicesChecked = 0, languagePickerChecks = 0;
 try {
   const build = await createRsbuild({ cwd: app, rsbuildConfig: { plugins: [pluginReact()], source: { entry: { index: join(app, "src/settings-layout.fixture.tsx") } }, html: { template: join(app, "index.html") }, output: { distPath: { root: directory }, assetPrefix: "/", sourceMap: false, cleanDistPath: true } } });
@@ -510,6 +510,16 @@ try {
     assert.deepEqual(await page.locator(".settings-nav-group h2").allTextContents(), ["AI", "Coding", "Device management", "System"].map(l));
     for (const category of categories) {
       await select(category);
+      if (category === "App information") {
+        const information = await page.locator(".app-information").evaluate(node => {
+          const groups = [...node.querySelectorAll(":scope > .app-information-group")];
+          return { gap: getComputedStyle(node).gap, overflow: node.scrollWidth > node.clientWidth, groups: groups.map(group => ({ radius: getComputedStyle(group).borderRadius, border: getComputedStyle(group).borderTopWidth, heading: getComputedStyle(group.querySelector("h2")).fontSize, actions: [...group.querySelectorAll("button")].every(action => action.getBoundingClientRect().height >= 39.5) })) };
+        });
+        assert.equal(information.groups.length, 3);
+        assert.equal(information.gap, "24px");
+        assert(!information.overflow, `App information reflow: ${JSON.stringify(information)}`);
+        assert(information.groups.every(group => group.radius === "8px" && group.border === "1px" && group.heading === "16px" && group.actions), `App information geometry: ${JSON.stringify(information)}`);
+      }
       const layout = await page.locator(".settings-content").evaluate(root => {
         const column = root.querySelector(".settings-content-column"), h1s = [...root.querySelectorAll("h1")].filter(node => node.getClientRects().length);
         const style = getComputedStyle(root), box = column.getBoundingClientRect();

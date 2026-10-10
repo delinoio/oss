@@ -1,0 +1,13 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.app-information { width: 100%; max-width: 1040px; display: grid; gap: 24px; min-width: 0; }
+.app-information-group { padding: 16px; border: 1px solid var(--border); border-radius: 8px; min-width: 0; background: var(--surface); }
+.app-information-group h2 { margin: 0 0 16px; font-size: 16px; line-height: 24px; }
+.app-information-group p, .app-information-group dl { font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
+.app-information-name { font-weight: 600; }
+.app-information-group dl { margin: 0; display: grid; gap: 12px; }
+.app-information-group dl > div { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(0, 3fr); gap: 16px; }
+.app-information-group dd { margin: 0; }
+.app-information-links { display: flex; flex-wrap: wrap; gap: 12px; }
+.app-information-links button { min-height: 40px; max-width: 100%; white-space: normal; }
+.app-information-group .disclosure { margin-top: 24px; }
+@media (max-width: 600px) { .app-information-group dl > div { grid-template-columns: minmax(0, 1fr); gap: 4px; } .app-information-links { flex-direction: column; align-items: stretch; } }

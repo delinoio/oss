@@ -324,6 +324,29 @@ async fn open_github(
     result
 }
 
+// The original admitted product window owns only this compiled presentation
+// action.
+#[tauri::command]
+async fn open_app_information_link(
+    window: WebviewWindow<CefRuntime>,
+    windows: tauri::State<'_, Arc<ProductWindows>>,
+    connector: tauri::State<'_, Arc<Connector>>,
+    action: delidev_desktop::app_information::AppInformationLink,
+) -> Result<(), NativeFailure> {
+    let original = capture_authority(&window)?;
+    let dispatch_authority = original.clone();
+    let windows = Arc::clone(windows.inner());
+    let connector = Arc::clone(connector.inner());
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        recheck_record(&windows, &dispatch_authority)?;
+        connector.open_app_information_link(action)
+    })
+    .await
+    .map_err(|_| NativeFailure::SidecarFailed)?;
+    recheck_authority(&window, &original)?;
+    result
+}
+
 // This is a closed presentation selector, never a renderer-supplied URL.
 #[tauri::command]
 async fn open_provider_guidance(
@@ -1933,6 +1956,7 @@ fn run() -> Result<(), NativeFailure> {
                 local_worker_control,
                 worker_network_control,
                 desktop_update_context,
+                open_app_information_link,
                 desktop_update_native,
                 connection_context,
                 saved_connections,
@@ -2304,7 +2328,7 @@ mod tests {
     }
 
     #[test]
-    fn generated_updater_acl_preserves_registered_trusted_webviews() {
+    fn generated_updater_and_information_acl_preserves_registered_trusted_webviews() {
         use delidev_desktop::window_registry::{Registry, Role};
         use tauri::{
             ipc::{Origin, RuntimeAuthority},
@@ -2321,8 +2345,19 @@ mod tests {
         )))
         .unwrap();
         let app = &manifests[APP_ACL_KEY];
-        let commands = ["desktop_update_context", "desktop_update_native"];
-        assert_eq!(app.permissions["desktop-update"].commands.allow, commands);
+        let commands = [
+            "desktop_update_context",
+            "desktop_update_native",
+            "open_app_information_link",
+        ];
+        assert_eq!(
+            app.permissions["desktop-update"].commands.allow,
+            ["desktop_update_context", "desktop_update_native"]
+        );
+        assert_eq!(
+            app.permissions["app-information"].commands.allow,
+            ["open_app_information_link"]
+        );
         assert_eq!(
             app.permissions["account-oauth"].commands.allow,
             ["account_oauth_native"]
@@ -2330,6 +2365,7 @@ mod tests {
         for permission in [
             "allow-desktop-update-context",
             "allow-desktop-update-native",
+            "allow-open-app-information-link",
         ] {
             assert!(
                 app.permissions.contains_key(permission)

@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "app-information"
+description = "Open only the compiled releases, license and source notices destinations from an admitted product window."
+commands.allow = ["open_app_information_link"]
