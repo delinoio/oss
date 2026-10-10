@@ -164,7 +164,7 @@ Keyboard shortcuts help permits eligible existing non-input-target actions from 
 Native IPC admission uses the closed `device-shortcuts` app permission and compiled read/update and closed capture command manifest, granted only to existing main/local-* and saved server-* product capabilities. Compiled ACL fixtures verify these admissions and remote/external/tray/auxiliary denial independently of retained original generation checks.
 
 Keyboard shortcuts is the System category after Appearance. Its static typed
-catalog lists Common, Session, New session / New general chat and Search
+catalog lists Common, Session, New session / New Chat and Search
 without visiting those screens. Help, NewSession, SessionFocus, SessionSend,
 NewSessionFocus, NewSessionSend and SearchFocus support one primary chord,
 optional Shift and an ASCII letter/digit or Enter, or an explicit disabled
