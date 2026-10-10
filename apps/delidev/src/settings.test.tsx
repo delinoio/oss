@@ -515,7 +515,7 @@ it("keeps repository save acknowledgment separate from completed Worker validati
   const repository = resource(EntityKind.REPOSITORY, { name: "Repository", remote_url: "https://github.com/fixture/repo.git", checkouts: [{ machine_id: newRequestId(), path: "/owned/checkout" }], base: {}, starting: {}, auto_fetch: true });
   const job = resource(EntityKind.JOB, { type: "save-repository", state: "queued" });
   const value = fixture([repository, job]), saved = vi.fn();
-  value.save.mockResolvedValue({ job });
+  value.save.mockImplementation(async request => ({ job, requestId: input(request).mutation.requestId }));
   render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={saved} cancel={() => {}} />));
   await waitFor(() => expect((screen.getByRole("button", { name: "Save Repository" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
