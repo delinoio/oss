@@ -147,6 +147,7 @@ type Message struct {
 }
 
 type Event struct {
+	CodeReview       *CodeReviewObservation
 	AutoReview       *domain.AutoReviewObservation
 	ImageGeneration  *ImageGeneration `json:"-"`
 	Compaction       *CompactionObservation
@@ -362,6 +363,16 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 				}
 				a.terminal = true
 			}
+			if a := c.codeReview; a != nil && a.turn == turn.ID {
+				if turn.Status == TurnCompleted {
+					entered, enteredOK := a.items[a.entered]
+					exited, exitedOK := a.items[a.exited]
+					if !enteredOK || !exitedOK || entered.completed == nil || exited.completed == nil {
+						return Event{}, codeReviewUncertain()
+					}
+				}
+				a.terminal = true
+			}
 			if err := c.endInteractionsLocked(turn.ID); err != nil {
 				return Event{}, err
 			}
@@ -534,6 +545,8 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 	}
 	message := &Message{}
 	switch kind {
+	case "enteredReviewMode", "exitedReviewMode":
+		return c.observeCodeReviewLocked(native, params.ThreadID, params.TurnID, params.Item, params.StartedAtMS, params.CompletedAtMS)
 	case "imageGeneration":
 		return c.observeImageGeneration(native, params.TurnID, params.Item)
 	case "contextCompaction":

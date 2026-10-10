@@ -159,6 +159,12 @@ func (c *Client) verifySidechat(ctx context.Context, cwd string, thread domain.I
 	if response.ErrorCode != nil || domain.Decode(response.Result, &config) != nil {
 		return sidechatMismatch("config-shape")
 	}
+	if c.codeReviewModel != "" {
+		var model string
+		if json.Unmarshal(config.Config["review_model"], &model) != nil || model != c.codeReviewModel {
+			return domain.NativeCodeReviewUnavailable()
+		}
+	}
 	if err := validateSidechatConfig(config.Config); err != nil {
 		return err
 	}

@@ -228,6 +228,9 @@ type startTurnParams struct {
 func (c *Client) StartTurn(ctx context.Context, requestID, inputID domain.ID, input domain.SessionInput) (diagnosticResult TurnResult, returned error) {
 	defer c.recordFailure(ctx, domain.CodexExecution, &returned)
 	result := TurnResult{RequestID: requestID, InputID: inputID}
+	if c.codeReviewModel != "" {
+		return result, domain.NativeCodeReviewUnavailable()
+	}
 	for _, id := range []domain.ID{requestID, inputID} {
 		if err := id.Validate(); err != nil {
 			return result, err
