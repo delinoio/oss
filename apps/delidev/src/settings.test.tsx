@@ -979,7 +979,7 @@ it("keeps repository continuation empties and failed refreshes distinct from a f
   fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
   await screen.findByText("Refresh failed. Showing the last successfully loaded results.");
   expect(screen.queryByRole("region", { name: "No repositories yet" })).toBeNull();
-  expect(screen.queryByText("No repositories on this page.")).toBeNull();
+  expect(screen.getByText("No repositories on this page.")).toBeTruthy();
   expect(screen.queryByText("No saved entries.")).toBeNull();
 });
 
@@ -1236,4 +1236,49 @@ it("reveals a hidden invalid Project branch prefix through complete-document Sav
  fireEvent.click(screen.getByRole("tab",{name:"Execution"}));const prefix=await screen.findByLabelText("Literal branch prefix");fireEvent.change(prefix,{target:{value:"bad..prefix"}});
  fireEvent.click(screen.getByRole("tab",{name:"General"}));const save=screen.getByRole("button",{name:"Save Project"});await waitFor(()=>expect(save).toHaveProperty("disabled",false));fireEvent.click(save);
  await waitFor(()=>expect(screen.getByRole("tab",{name:"Execution"}).getAttribute("aria-selected")).toBe("true"));await waitFor(()=>expect(document.activeElement).toBe(prefix));expect(f.save).not.toHaveBeenCalled();
+});
+
+it("retains cached empty repository guidance and the original continuation cursor through refresh failure", async () => {
+ let fail = false;
+ const repository = resource(EntityKind.REPOSITORY, { name: "Next original repository", path: "/synthetic/repository" });
+ const value = fixture([], { readResources: (kind, token) => {
+  if (kind !== EntityKind.REPOSITORY) return { resources: [] };
+  if (fail) throw new ConnectError("Synthetic repository read denied", Code.PermissionDenied);
+  return token ? { resources: [repository] } : { resources: [], nextPageToken: "original-repository-cursor" };
+ } });
+ render(value.view(<Settings />)); fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
+ await screen.findByText("No repositories on this page.");
+ fail = true; fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
+ await screen.findByText("Refresh failed. Showing the last successfully loaded results.");
+ expect(screen.getByText("No repositories on this page.")).toBeTruthy();
+ expect(screen.queryByRole("region", { name: "No repositories yet" })).toBeNull();
+ expect(screen.getByRole("button", { name: "Refresh settings" })).toHaveProperty("disabled", false);
+ fail = false; fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
+ await screen.findByRole("button", { name: "Load more Settings pages" });
+ fireEvent.click(screen.getByRole("button", { name: "Load more Settings pages" }));
+ await screen.findByRole("heading", { name: "Next original repository" });
+ expect(value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.REPOSITORY).map(([request]) => request.filter?.pageToken)).toEqual(["", "", "", "original-repository-cursor"]);
+ expect(screen.queryByText("No repositories on this page.")).toBeNull();
+ expect(value.save).not.toHaveBeenCalled(); expect(value.remove).not.toHaveBeenCalled();
+});
+it("keeps an initial repository read failure free of empty claims and retains read retry", async () => {
+ const value = fixture([], { readResources: kind => { if (kind === EntityKind.REPOSITORY) throw new ConnectError("Synthetic initial read denied", Code.PermissionDenied); return { resources: [] }; } });
+ render(value.view(<Settings />)); fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
+ await screen.findByRole("alert");
+ expect(screen.getByRole("button", { name: "Refresh settings" })).toHaveProperty("disabled", false);
+ expect(screen.queryByText("No repositories on this page.")).toBeNull();
+ expect(screen.queryByRole("region", { name: "No repositories yet" })).toBeNull();
+ expect(screen.queryByText("Refresh failed. Showing the last successfully loaded results.")).toBeNull();
+ expect(value.save).not.toHaveBeenCalled(); expect(value.remove).not.toHaveBeenCalled();
+});
+it("retains nonempty repository rows during failed refresh without an empty claim", async () => {
+ let fail = false; const repository = resource(EntityKind.REPOSITORY, { name: "Retained original repository", path: "/synthetic/repository" });
+ const value = fixture([repository], { readResources: kind => { if (kind !== EntityKind.REPOSITORY) return { resources: [] }; if (fail) throw new ConnectError("Synthetic refresh denied", Code.PermissionDenied); return { resources: [repository] }; } });
+ render(value.view(<Settings />)); fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
+ const heading = await screen.findByRole("heading", { name: "Retained original repository" });
+ fail = true; fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
+ await screen.findByText("Refresh failed. Showing the last successfully loaded results.");
+ expect(screen.getByRole("heading", { name: "Retained original repository" })).toBe(heading);
+ expect(screen.queryByText("No repositories on this page.")).toBeNull();
+ expect(value.save).not.toHaveBeenCalled(); expect(value.remove).not.toHaveBeenCalled();
 });

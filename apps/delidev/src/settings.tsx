@@ -558,7 +558,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
 
               </div>
               {selectedCategory === SettingsCategory.Repositories && successfulEmptyFirstPage ? <SettingsEmpty title={copy("settings.repositoryEmptyTitle")} icon={<RepositoryIcon />}><p>{copy("settings.repositoryEmptyHelp")}</p></SettingsEmpty>
-                : selectedCategory === SettingsCategory.Repositories ? result.data?.resources.length === 0 && !result.error ? <p>{copy("settings.repositoryPageEmpty")}</p> : null
+                : selectedCategory === SettingsCategory.Repositories ? result.data?.resources.length === 0 ? <p>{copy("settings.repositoryPageEmpty")}</p> : null
                 : isPreferenceCategory && (successfulEmptyFirstPage || retainedServerEmpty) ? <ServerPreferencesEmpty section={preferenceSection} />
                 : isPreferenceCategory ? result.data?.resources.length === 0 ? <p>{copy("settings.noPreferencesOnThisPage", { v0: preferenceLabel.toLowerCase() })}</p> : null
                 : isPairedDevices

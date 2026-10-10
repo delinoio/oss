@@ -3162,8 +3162,12 @@ task dialogs. No row render, reflow or language change performs GitHub reads,
 Worker inspection, mutations or native discovery.
 
 The successful final empty first page uses the shared empty panel and the single
-header Add repository action. Empty continuation pages and retained refresh
-failures remain distinct. Pagination preserves server order/cursors and shows
+header Add repository action. Verified cached empty repository results keep the
+page-scoped empty guidance alongside the previous-results warning after a failed
+refresh. An initial failed read without data makes no empty claim. Preserve the
+original continuation cursor, cached nonempty rows and read Retry controls; do
+not infer global repository absence from a retained page. Empty continuation
+pages and retained refresh failures remain distinct. Pagination preserves server order/cursors and shows
 only the number of repositories on the current returned page, never an inferred
 inventory total. This presentation does not change registration, cloning,
 configured source authority or original Local checkout ownership below.
