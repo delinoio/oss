@@ -6,6 +6,13 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
 
+// Reuse the original unanswered-interaction predicate for bounded session
+// presentation. Accepted responses clear it before native closure.
+const unansweredSessionInteraction = `i.kind='interaction' AND json_extract(i.body,'$.closure')='open'
+AND json_extract(i.body,'$.response') IS NULL AND json_extract(i.body,'$.approval_response') IS NULL
+AND json_extract(s.body,'$.archive')='active'
+AND json_extract(s.body,'$.active_execution_id')=json_extract(i.body,'$.execution_id')`
+
 type OverviewCounts struct {
 	ActiveSessions      uint64
 	PendingInteractions uint64
@@ -26,10 +33,7 @@ func (t *Tx) Overview(active map[domain.ID]bool, now time.Time) (OverviewCounts,
 	}{
 		{`SELECT COUNT(*) FROM entities WHERE kind='session' AND COALESCE(json_extract(body,'$.active_execution_id'),'')<>''`, &result.ActiveSessions},
 		{`SELECT COUNT(*) FROM entities i JOIN entities s ON s.id=i.session_id AND s.kind='session'
-WHERE i.kind='interaction' AND json_extract(i.body,'$.closure')='open'
-AND json_extract(i.body,'$.response') IS NULL AND json_extract(i.body,'$.approval_response') IS NULL
-AND json_extract(s.body,'$.archive')='active'
-AND json_extract(s.body,'$.active_execution_id')=json_extract(i.body,'$.execution_id')`, &result.PendingInteractions},
+WHERE ` + unansweredSessionInteraction, &result.PendingInteractions},
 		{`SELECT COUNT(*) FROM entities WHERE kind='machine'`, &result.RegisteredWorkers},
 	} {
 		if err := t.tx.QueryRowContext(t.ctx, query.sql).Scan(query.out); err != nil {

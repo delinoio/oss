@@ -78,5 +78,6 @@
   "sidebar.conversationFork": "Independent Fork",
   "sidebar.conversationSidechat": "Side Chat",
   "sidebar.conversationChildren": "Conversations beneath {{name}}",
-  "sidebar.projectActions": "Project actions · {{name}} · {{id}}"
+  "sidebar.projectActions": "Project actions · {{name}} · {{id}}",
+  "sidebar.awaitingResponse": "Waiting for your response"
 }

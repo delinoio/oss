@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 )
@@ -20,7 +21,11 @@ func (s *Store) Sessions(ctx context.Context, f SessionFilter) ([]Record, bool, 
 	var result []Record
 	more := false
 	err := s.Read(ctx, func(tx *Tx) error {
-		query := "SELECT " + recordColumns + " FROM entities WHERE kind='session' AND id>?"
+		// Compute one response-only JSON boolean in the existing page query. Its
+		// bytes participate in the original page bound; retained data/revisions do not change.
+		body := "CAST(json_set(s.body,'$.awaiting_user_response',json(CASE WHEN EXISTS(SELECT 1 FROM entities i WHERE i.session_id=s.id AND " + unansweredSessionInteraction + ") THEN 'true' ELSE 'false' END)) AS BLOB)"
+		columns := strings.Replace(recordColumns, ",body,", ","+body+",", 1)
+		query := "SELECT " + columns + " FROM entities s WHERE kind='session' AND id>?"
 		args := []any{f.After}
 		if f.ProjectID != "" {
 			query += " AND project_id=?"

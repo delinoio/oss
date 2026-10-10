@@ -72,6 +72,8 @@ button.sidebar-project-row:hover { background: var(--surface-hover); }
 .sidebar-session-row[aria-current="true"] { border-color: transparent; background: var(--surface-selected); color: var(--text); }
 .sidebar-workspace-icon { width: 14px; height: 14px; color: var(--text-subtle); }
 .sidebar-session-title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-response-indicator { display: block; flex: 0 0 14px; width: 14px; height: 14px; color: var(--link); }
+.sidebar-response-state { color: var(--link); }
 .sidebar-statuses { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; color: var(--muted); }
 .sidebar-status-glyph { display: block; width: 14px; height: 14px; }
 .sidebar-status-running { animation: sidebar-status-spin 1.2s linear infinite; }

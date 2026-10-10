@@ -155,13 +155,15 @@ function SessionRow({ row, selected, open }: { row: NavigationRow; selected: boo
   const titleStateDescription = titlePresentation ? [titleState, titlePresentation.detail].filter(Boolean).join(". ") : "";
   const titleStateSummary = titlePresentation ? [titleState?.replace(/^Title /, "").replace(/^[a-z]/, (letter) => letter.toUpperCase()), titlePresentation.shortDetail].filter(Boolean).join(" · ") : "";
   const kindLabel = copy(conversationKindLabels[row.conversationKind ?? ConversationKind.Unknown]);
-  const description = `${kindLabel}. ` + copy("sidebar.sentence.407326d462c1", { v0: workspace, v1: title, v2: executionLabel(outcome), v3: archiveLabel(archive), v4: workspace, v5: titleStateDescription ? ` ${titleStateDescription}.` : "" });
+  const responseDescription = row.awaitingUserResponse === true ? copy("sidebar.awaitingResponse") : "";
+  const description = (responseDescription ? `${responseDescription}. ` : "") + `${kindLabel}. ` + copy("sidebar.sentence.407326d462c1", { v0: workspace, v1: title, v2: executionLabel(outcome), v3: archiveLabel(archive), v4: workspace, v5: titleStateDescription ? ` ${titleStateDescription}.` : "" });
   const workspaceIcon = row.workspace === Workspace.Worktree ? "branch" : row.workspace === Workspace.Local ? "computer" : row.workspace === Workspace.GeneralChat ? "chat" : "unknown";
   return <div className="sidebar-session-container">
     <button ref={element} type="button" className="sidebar-session-row" data-session-id={row.id} data-conversation-kind={row.conversationKind ?? ConversationKind.Unknown} aria-current={selected ? "true" : undefined} aria-label={description} aria-describedby={tooltipId} onPointerEnter={actionMenuOpen ? undefined : hover.onPointerEnter} onPointerLeave={hover.onPointerLeave} onFocus={actionMenuOpen ? undefined : hover.onFocus} onBlur={hover.onBlur} onClick={() => { hover.dismiss(); if(row.sidechatParent)open(row.id,row.sidechatParent,row.name);else open(row.id); }}>
       <Icon name={conversationKindIcons[row.conversationKind ?? ConversationKind.Unknown]} className="sidebar-workspace-icon" />
       <span className="sidebar-session-title" onDoubleClick={event => { event.stopPropagation(); hover.dismiss(); editName?.(row.id, element.current ?? event.currentTarget); }}>{title}</span>
       {titleStateSummary ? <span className="sidebar-session-title-state">{titleStateSummary}</span> : null}
+      {row.awaitingUserResponse === true ? <svg className="sidebar-response-indicator" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6"/><path d="M6.3 5.6a1.8 1.8 0 0 1 3.5.6c0 1.3-1.8 1.4-1.8 2.6M8 11.3v.2"/></svg> : null}
       <StatusGlyph outcome={outcome} archive={archive} />
     </button>
     <SessionRowActions id={row.id} descriptionId={tooltipId} dismissHover={hover.dismiss} />
@@ -169,6 +171,7 @@ function SessionRow({ row, selected, open }: { row: NavigationRow; selected: boo
     {hover.visible ? <SessionHoverCard hover={hover}>
       <p className="sidebar-session-card-title">{title}</p>
       <p className="sidebar-session-card-workspace"><Icon name={workspaceIcon} className="sidebar-workspace-icon" />{workspace}</p>
+      {responseDescription ? <p className="sidebar-response-state">{responseDescription}</p> : null}
       <dl className="sidebar-session-card-states">
         <dt>{copy("sidebar.hover.execution")}</dt><dd><span className="sidebar-session-card-badge"><StatusGlyph outcome={outcome} archive={ArchiveStatus.Active} />{cardExecutionLabel(outcome)}</span></dd>
         <dt>{copy("sidebar.hover.archive")}</dt><dd><span className="sidebar-session-card-badge">{cardArchiveLabel(archive)}</span></dd>

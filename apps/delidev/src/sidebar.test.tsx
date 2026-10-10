@@ -940,3 +940,16 @@ it("keeps the drawer close affordance outside the compact Home header and creati
   const header = value.container.querySelector(".sidebar-header")!;
   expect(header.nextElementSibling?.className).toBe("sidebar-drawer-close");
 });
+
+it("shows awaiting-response state without replacing glyphs or adding focus stops",async()=>{
+ const session=resource(EntityKind.SESSION,"Response fixture","",{workspace:"general-chat",outcome:"running",archive:"archiving",awaiting_user_response:true});
+ const view=mountSidebar({projects:()=>({resources:[]}),sessions:()=>({sessions:[session]})});
+ const row=await screen.findByRole("button",{name:/Waiting for your response.*Response fixture/});
+ const indicator=row.querySelector('.sidebar-response-indicator')!;
+ expect(indicator.getAttribute("aria-hidden")).toBe("true");expect(indicator.getAttribute("focusable")).toBe("false");expect(indicator.hasAttribute("tabindex")).toBe(false);
+ expect(indicator.nextElementSibling?.classList.contains("sidebar-statuses")).toBe(true);expect(row.querySelectorAll(".sidebar-status-glyph")).toHaveLength(2);
+ act(()=>row.focus());expect(document.activeElement).toBe(row);expect(within(screen.getByRole("tooltip")).getByText("Waiting for your response")).toBeTruthy();
+ fireEvent.click(row);expect(view.openSession).toHaveBeenCalledWith(session.id);
+ await act(()=>i18n.changeLanguage(SupportedLanguage.Korean));expect(row.getAttribute("aria-label")).toContain("응답 대기 중");
+ await act(()=>i18n.changeLanguage(SupportedLanguage.English));
+});
