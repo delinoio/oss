@@ -589,6 +589,28 @@ operating-system chrome zoom or macOS/Windows/Ubuntu X11 acceptance.
 
 For the feature, record component and native validation separately in pull requests, issues and CI runs, including untested viewports and platforms.
 
+### Sidebar scroll boundaries
+
+All sidebar-owned scroll containers suppress both overscroll axes with CSS
+`overscroll-behavior: none`. This applies to the shared list, compact sidebar
+drawer, footer/server-management regions, Usage filters, session hover cards and
+action/options menus, subscription account rail/popovers and nested resource
+picker lists. The policy includes short or currently empty lists. It changes
+boundary affordances and ancestor chaining, while ordinary internal scrolling,
+continuation observers, keyboard navigation, focus/dismissal, modal ownership,
+selection, drafts and original query/controller lifetimes remain intact.
+
+Shared resource pickers use their actual sidebar DOM ownership, including
+manual top-layer popovers. Exclude independently owned task/recovery dialogs,
+even when their markup lives under a sidebar footer; the compact sidebar drawer
+is the sidebar owner. Pickers elsewhere retain their existing `contain` policy.
+Main content, analytics tables, transcripts, Settings task bodies and unrelated
+dialogs retain their prior behavior. Do not intercept wheel events globally or
+forward scroll gestures in JavaScript. New sidebar-owned popup scroll regions
+must use this boundary policy without acquiring navigation or mutation authority.
+Record static/component, headless layout and actual packaged trackpad/bounce
+acceptance separately; CSS/jsdom checks do not establish native gesture behavior.
+
 ### Project creation outside Settings
 
 Home **New project** and **Create a project** use a dedicated Shell callback and one independent project creation opening. Keep the current Sessions welcome/detail or New Session surface, rail selection, conversation/composer, New session draft and shared Home navigation mounted. Do not select `Surface.Settings`, mount a Settings category or read its inventories. Reuse the complete existing Project `ConfigurationEditor`, schema, validation and generated save RPC within the shared 768px form task dialog. Settings > Projects retains its current creation/editor flow and its category lifetime.
