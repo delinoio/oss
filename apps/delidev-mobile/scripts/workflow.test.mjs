@@ -2,6 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import yaml from "js-yaml";
 import { verifyProvenance } from "./provenance.mjs";
 const text = readFileSync(
@@ -16,6 +17,8 @@ test("mobile dispatch defaults to dry run; credentials are protected and ordinar
   assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
   assert.equal(workflow.on.workflow_dispatch.inputs.mode.default, "dry-run");
   assert.equal(workflow.concurrency["cancel-in-progress"], false);
+  assert.equal(workflow.concurrency.group, "delidev-mobile-beta");
+  assert.equal(workflow.on.workflow_dispatch.inputs.target.default, "both");
   for (const [name, job] of Object.entries(workflow.jobs)) {
     if (["package", "submit"].includes(name))
       assert.equal(job.environment, "delidev-mobile-beta");
@@ -34,6 +37,27 @@ test("mobile dispatch defaults to dry run; credentials are protected and ordinar
     JSON.stringify(workflow.jobs.submit),
     /pipeline.mjs build|signing.mjs/,
   );
+});
+test("dispatch validates exact iOS-only selection without Android input", () => {
+  const script = workflow.jobs.validate.steps[0].run;
+  const env = { ...process.env, MODE: "dry-run", GITHUB_SHA: "a".repeat(40),
+    DELIDEV_MOBILE_SOURCE_SHA: "a".repeat(40), DELIDEV_MOBILE_VERSION: "0.1.0",
+    DELIDEV_MOBILE_IOS_BUILD: "1", DELIDEV_MOBILE_ANDROID_CODE: "", DELIDEV_MOBILE_TARGET: "ios",
+    CANDIDATE: "", RECEIPTS: "" };
+  const run = (extra) => spawnSync(process.execPath, ["-e", script.split("node <<'JS'\n")[1].split("\nJS")[0]], {
+    env: { ...env, ...extra }, encoding: "utf8",
+  }).status;
+  assert.equal(run({}), 0);
+  assert.notEqual(run({ DELIDEV_MOBILE_TARGET: "both" }), 0);
+  assert.notEqual(run({ DELIDEV_MOBILE_ANDROID_CODE: "2" }), 0);
+  assert.notEqual(run({ DELIDEV_MOBILE_IOS_BUILD: "0" }), 0);
+  assert.equal(run({ DELIDEV_MOBILE_TARGET: "both", DELIDEV_MOBILE_ANDROID_CODE: "2" }), 0);
+  const input = { target: "ios", sourceSha: env.GITHUB_SHA, version: "0.1.0", iosBuild: "1" };
+  const artifact = { id: 1, name: `delidev-mobile-candidate-${env.GITHUB_SHA}-0.1.0-1-ios`,
+    workflow_run: { head_sha: env.GITHUB_SHA } };
+  const record = { head_sha: env.GITHUB_SHA, event: "workflow_dispatch", path: ".github/workflows/delidev-mobile-beta.yml", conclusion: "success" };
+  assert.equal(verifyProvenance(artifact, record, input).artifactId, 1);
+  assert.throws(() => verifyProvenance(artifact, record, { ...input, target: "both", androidCode: "1" }));
 });
 test("candidate provenance is exact source, trusted workflow and complete successful original package", () => {
   const input = {

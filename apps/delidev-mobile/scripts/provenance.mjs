@@ -4,7 +4,7 @@ import { Identity } from "./beta.mjs";
 export function verifyProvenance(artifact, run, input, receipt = false) {
   const prefix = receipt
     ? "delidev-mobile-receipts-"
-    : `delidev-mobile-candidate-${input.sourceSha}-${input.version}-${input.iosBuild}-${input.androidCode}`;
+    : `delidev-mobile-candidate-${input.sourceSha}-${input.version}-${input.iosBuild}-${input.target === "ios" ? "ios" : input.androidCode}`;
   if (
     !artifact ||
     artifact.expired ||
@@ -52,6 +52,7 @@ if (process.argv[1]?.endsWith("/provenance.mjs"))
           artifact,
           run,
           {
+            target: e.DELIDEV_MOBILE_TARGET ?? "both",
             sourceSha: e.DELIDEV_MOBILE_SOURCE_SHA,
             version: e.DELIDEV_MOBILE_VERSION,
             iosBuild: e.DELIDEV_MOBILE_IOS_BUILD,

@@ -103,6 +103,10 @@ prove that a person saw an alert or accepted a native request.
 
 ## Logging
 
+Beta provider failures record only provider, HTTP method, numeric status and
+closed transport outcome. Durable checkpoints report platform and stage; no
+provider URL, response body or raw exception is recorded.
+
 Platform failures log only the operation and sanitized outcome. Product
 connection diagnostics include opaque profile/server identifiers and status.
 Never log origins, authorization headers, pairing codes, prompts, messages,
@@ -130,11 +134,21 @@ All generated native projects and `dist` directories stay untracked; remove
 `dist` directories from final worktrees.
 
 Beta candidates pin one source SHA and semantic app version, with explicit iOS
-build and Android version-code inputs. Candidate manifests include identity,
+build and, for the default both-platform target, Android version-code inputs.
+An explicit `ios` target omits Android inputs and credentials. It produces a
+schema-2 manifest with exactly the iOS artifact; the default `both` target retains
+the schema-1 manifest. Provenance pins the target and cannot reinterpret a
+candidate across targets. All beta runs share one non-canceling concurrency group
+to serialize edits against the configured Google principal. Candidate manifests include identity,
 architectures, expected signer fingerprints, original artifact byte lengths and
 SHA-256 checksums. Conflicting candidate/version reuse is refused. Internal-only
-preflight and immutable provider receipts precede any future upload. Unknown
-upload outcomes require authoritative inspection of the original provider
+preflight and immutable provider receipts precede any future upload. All selected platform receipts are stored before any provider is contacted. A
+definitive preflight failure retains the unsubmitted platform as Ready; missing
+receipts during recovery remain Unknown. Apple proof reads the nested processing
+state and the complete bounded internal-group build inventory. Google proof
+distinguishes a new read-only edit from staged membership in the original
+writable edit; only committed internal distribution can complete the receipt.
+Unknown upload outcomes require authoritative inspection of the original provider
 operation; they cannot regenerate, re-sign or upload replacement artifacts.
 The default dry run has no credential or provider access. Account setup, actual
 signing/provisioning, store uploads and real device/account acceptance remain
@@ -184,7 +198,11 @@ Create separate Apple and Google app records for `io.delino.delidev.mobile`.
 Apple uses an internal TestFlight group whose `isInternalGroup` is true and whose
 public link is disabled. Only App Store Connect team members belong to this
 lane. Google uses the `internal` track and owner-selected internal testers.
-Neither adapter exposes an external-testing or production target.
+Neither adapter exposes an external-testing or production target. The Google
+account must be active, and a new app requires its first owner-controlled binary
+upload and required legal consents through Play Console before Publisher API
+submission can operate. An inactive or terminated account cannot be repaired by
+workflow retries.
 
 Protect the `delidev-mobile-beta` GitHub environment with trusted source branches
 and required owner review. Keep the following non-secret variables there:
@@ -227,7 +245,9 @@ Account/provisioning setup and hosted signing acceptance are owner work.
 Do not execute this procedure as ordinary validation. Select a trusted workflow
 ref whose HEAD is the exact `source_sha`. The workflow rejects a different
 workflow/source revision. Enter the same semantic `version`, positive explicit
-`ios_build` and canonical positive `android_code` for both platforms.
+`ios_build`. The default `both` target also requires canonical positive
+`android_code`; select `ios` and leave Android code empty for Apple-only work.
+Apple-only execution requires only Apple variables and secrets.
 
 1. Dispatch `dry-run` first. This mode has no store/signing secrets, no provider
    access and no publication. It runs frontend/shared-client fixtures and actual
@@ -236,7 +256,7 @@ workflow/source revision. Enter the same semantic `version`, positive explicit
 2. After owner review, dispatch `package` with the same inputs. Both candidates
    come from the same source and version. iOS exports an arm64 IPA with
    `testFlightInternalTestingOnly`; Android produces arm64-v8a/armeabi-v7a AAB.
-   The complete immutable artifact retains both bytes, metadata and source-bound
+   The complete immutable artifact retains selected platform bytes, metadata and source-bound
    SHA-256 manifest. Record its GitHub artifact ID. A package run cannot upload.
 3. Dispatch `submit` with that exact `candidate_artifact_id`. The workflow checks
    the original repository/run/source/workflow and successful package result.

@@ -7,6 +7,12 @@ on:
         default: dry-run
         options: [dry-run, package, submit, resume]
         required: true
+      target:
+        description: Selected immutable candidate platforms
+        type: choice
+        default: both
+        options: [both, ios]
+        required: true
       source_sha:
         description: Exact source commit for both platforms
         type: string
@@ -20,9 +26,10 @@ on:
         type: string
         required: true
       android_code:
-        description: Original explicit Android version code
+        description: Original explicit Android version code (both only)
         type: string
-        required: true
+        default: ""
+        required: false
       candidate_artifact_id:
         description: Original complete candidate artifact ID (submit/resume only)
         type: string
@@ -33,10 +40,11 @@ on:
         default: ""
 permissions: { contents: read, actions: read }
 concurrency:
-  group: delidev-mobile-beta-${{ inputs.version }}-${{ inputs.ios_build }}-${{ inputs.android_code }}
+  group: delidev-mobile-beta
   cancel-in-progress: false
 
 env:
+  DELIDEV_MOBILE_TARGET: ${{ inputs.target }}
   DELIDEV_MOBILE_SOURCE_SHA: ${{ inputs.source_sha }}
   DELIDEV_MOBILE_VERSION: ${{ inputs.version }}
   DELIDEV_MOBILE_IOS_BUILD: ${{ inputs.ios_build }}
@@ -60,7 +68,7 @@ jobs:
           node <<'JS'
           const e=process.env;
           if(e.DELIDEV_MOBILE_SOURCE_SHA!==e.GITHUB_SHA)throw Error('Workflow and original candidate must use the same exact source revision');
-          if(!/^[a-f0-9]{40}$/.test(e.DELIDEV_MOBILE_SOURCE_SHA)||!/^\d+\.\d+\.\d+$/.test(e.DELIDEV_MOBILE_VERSION)||!/^\d{1,18}$/.test(e.DELIDEV_MOBILE_IOS_BUILD)||!/^\d{1,10}$/.test(e.DELIDEV_MOBILE_ANDROID_CODE)||Number(e.DELIDEV_MOBILE_ANDROID_CODE)<1||Number(e.DELIDEV_MOBILE_ANDROID_CODE)>2100000000||!['dry-run','package','submit','resume'].includes(e.MODE))throw Error('Invalid mobile beta input');
+          if(!/^[a-f0-9]{40}$/.test(e.DELIDEV_MOBILE_SOURCE_SHA)||!/^\d+\.\d+\.\d+$/.test(e.DELIDEV_MOBILE_VERSION)||!/^[1-9]\d{0,17}$/.test(e.DELIDEV_MOBILE_IOS_BUILD)||!['both','ios'].includes(e.DELIDEV_MOBILE_TARGET)||(e.DELIDEV_MOBILE_TARGET==='both'&&(!/^[1-9]\d{0,9}$/.test(e.DELIDEV_MOBILE_ANDROID_CODE)||Number(e.DELIDEV_MOBILE_ANDROID_CODE)>2100000000))||(e.DELIDEV_MOBILE_TARGET==='ios'&&!!e.DELIDEV_MOBILE_ANDROID_CODE)||!['dry-run','package','submit','resume'].includes(e.MODE))throw Error('Invalid mobile beta input');
           if(['submit','resume'].includes(e.MODE)&&!/^\d+$/.test(e.CANDIDATE))throw Error('Original complete candidate artifact ID required');
           if(e.RECEIPTS&&!/^\d+$/.test(e.RECEIPTS))throw Error('Invalid original receipt artifact ID');
           if(e.MODE!=='resume'&&e.RECEIPTS)throw Error('Receipt reuse requires explicit resume');
@@ -70,7 +78,8 @@ jobs:
     if: inputs.mode == 'dry-run' || inputs.mode == 'package'
     strategy:
       fail-fast: false
-      matrix: { platform: [ios, android] }
+      matrix:
+        platform: ${{ fromJSON(inputs.target == 'ios' && '["ios"]' || '["ios","android"]') }}
     runs-on: ${{ matrix.platform == 'ios' && 'macos-26' || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v6
@@ -135,13 +144,18 @@ jobs:
       - uses: pnpm/action-setup@v5
         with: { version: 10.26.2 }
       - uses: actions/setup-java@v5
+        if: inputs.target == 'both'
         with: { distribution: temurin, java-version: "21" }
       - uses: android-actions/setup-android@v3
+        if: inputs.target == 'both'
       - run: |
           brew install xcodegen
-          sdkmanager 'platforms;android-37' 'build-tools;36.0.0' 'ndk;29.0.14206865'
-          echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
-          rustup target add aarch64-apple-ios aarch64-linux-android armv7-linux-androideabi
+          rustup target add aarch64-apple-ios
+          if [ '${{ inputs.target }}' = both ]; then
+            sdkmanager 'platforms;android-37' 'build-tools;36.0.0' 'ndk;29.0.14206865'
+            echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+            rustup target add aarch64-linux-android armv7-linux-androideabi
+          fi
       - run: pnpm install --frozen-lockfile
       - name: Validate pinned source and signing inputs
         run: node apps/delidev-mobile/scripts/pipeline.mjs plan
@@ -158,7 +172,7 @@ jobs:
         run: node apps/delidev-mobile/scripts/signing.mjs
       - uses: actions/upload-artifact@v7
         with:
-          name: delidev-mobile-candidate-${{ inputs.source_sha }}-${{ inputs.version }}-${{ inputs.ios_build }}-${{ inputs.android_code }}
+          name: delidev-mobile-candidate-${{ inputs.source_sha }}-${{ inputs.version }}-${{ inputs.ios_build }}-${{ inputs.target == 'ios' && 'ios' || inputs.android_code }}
           path: |
             apps/delidev-mobile/artifacts/DeliDev.ipa
             apps/delidev-mobile/artifacts/DeliDev.aab

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import { appleProvider, googleProvider } from "./providers.mjs";
-import { Identity } from "./beta.mjs";
+import { Identity, Stage, distribute } from "./beta.mjs";
 const pem = (type, options) =>
   generateKeyPairSync(type, options).privateKey.export({
     type: "pkcs8",
@@ -23,6 +23,7 @@ environment.DELIDEV_MOBILE_GOOGLE_SERVICE_ACCOUNT = JSON.stringify({
   private_key: pem("rsa", { modulusLength: 2048 }),
 });
 const manifest = {
+  candidateId: "fixture",
   identity: Identity,
   version: "0.1.0",
   iosBuild: "3",
@@ -34,6 +35,88 @@ const manifest = {
     android: { sha256: "b".repeat(64), bytes: 7 },
   },
 };
+
+test("Apple nested processing state and bounded group pagination preserve exact proof", async () => {
+  for (const scenario of ["second-page", "absent", "processing", "missing", "external", "hash-conflict", "foreign-next", "page-bound"]) {
+    let pages = 0, writes = 0;
+    const fetcher = async (url, options) => {
+      if (options.method !== "GET") writes++;
+      if (url.endsWith("/apps/12"))
+        return response({ data: { attributes: { bundleId: Identity } } });
+      if (url.includes("/betaGroups/owned?"))
+        return response({ data: { attributes: { isInternalGroup: true, publicLinkEnabled: false },
+          relationships: { app: { data: { id: "12" } } } } });
+      if (url.includes("/buildUploadFiles"))
+        return response({ data: [{ attributes: { uti: "com.apple.ipa", fileSize: 7,
+          sourceFileChecksums: { file: { algorithm: "SHA_256", hash: scenario === "hash-conflict" ? "wrong" : manifest.artifacts.ios.sha256 } } } }] });
+      if (url.includes("/betaGroups/owned/builds")) {
+        pages++;
+        return response({ data: scenario === "second-page" && pages === 2 ? [{ id: "build" }] : [],
+          links: { next: scenario === "foreign-next" ? "https://foreign.example/page" :
+            (scenario === "page-bound" || scenario === "second-page" && pages === 1) ?
+              `https://api.appstoreconnect.apple.com/v1/betaGroups/owned/builds?page=${pages + 1}` : null } });
+      }
+      return response({ data: { id: "upload", attributes: {
+        cfBundleShortVersionString: "0.1.0", cfBundleVersion: "3", platform: "IOS",
+        state: scenario === "missing" ? undefined : { state: scenario === "processing" ? "PROCESSING" : "COMPLETE" },
+      } }, included: [{ type: "builds", id: "build", attributes: {
+        buildAudienceType: scenario === "external" ? "APP_STORE_ELIGIBLE" : "INTERNAL_ONLY",
+      } }] });
+    };
+    const provider = appleProvider(environment, Buffer.from("fixture"), () => {}, fetcher);
+    await provider.preflight(manifest);
+    if (scenario === "foreign-next") await assert.rejects(provider.inspect(manifest, { providerId: "upload" }), /pagination/);
+    else {
+      const result = await provider.inspect(manifest, { providerId: "upload" });
+      assert.equal(result.state, ["second-page", "absent"].includes(scenario) ? "present" : "unknown", scenario);
+      if (result.state === "present") assert.equal(result.distributed, scenario === "second-page");
+    }
+    assert.equal(writes, 0);
+    if (scenario === "page-bound") assert.equal(pages, 20);
+  }
+});
+
+test("Google staged membership requires commit on exact retained edit before Distributed", async () => {
+  for (const scenario of ["success", "validation-failure", "lost-commit"]) {
+    let committed = false, uploads = 0, commits = 0, edits = 0;
+    const fetcher = async (url, options) => {
+      if (url.includes("oauth2")) return response({ access_token: "fake" });
+      if (url.includes("/upload")) { uploads++; assert.fail("replacement upload"); }
+      if (url.endsWith("/edits") && options.method === "POST") { edits++; return response({ id: "observation" }); }
+      if (committed && url.includes("/edits/original/")) return new Response("", { status: 404 });
+      if (url.endsWith("/bundles")) return response({ bundles: [{ versionCode: 4, sha256: manifest.artifacts.android.sha256 }] });
+      if (url.endsWith("/tracks/internal")) return response({ releases: [{ status: "completed", versionCodes: ["4"] }] });
+      if (url.endsWith(":validate")) {
+        assert.ok(url.includes("/edits/original:"));
+        return scenario === "validation-failure" ? new Response("", { status: 400 }) : response({});
+      }
+      if (url.endsWith(":commit")) {
+        assert.ok(url.includes("/edits/original:"));
+        commits++; committed = true;
+        if (scenario === "lost-commit") throw Error("lost acknowledgement with secret fixture");
+        return response({});
+      }
+      assert.fail("unexpected operation");
+    };
+    const changes = [], checkpoint = (r) => changes.push(structuredClone(r));
+    const provider = googleProvider(environment, Buffer.from("fixture"), checkpoint, fetcher);
+    const receipt = { candidateId: manifest.candidateId, platform: "android", stage: Stage.Uploaded,
+      providerId: "4", editId: "original" };
+    await provider.preflight(manifest);
+    assert.equal((await provider.inspect(manifest, receipt)).distributed, false);
+    if (scenario === "success") {
+      assert.equal((await distribute(manifest, receipt, provider, checkpoint, { dryRun: false })).stage, Stage.Distributed);
+    } else {
+      await assert.rejects(distribute(manifest, receipt, provider, checkpoint, { dryRun: false }));
+      assert.equal(changes.some((r) => r.stage === Stage.Distributed), false);
+      if (scenario === "lost-commit")
+        assert.equal((await distribute(manifest, receipt, provider, checkpoint, { dryRun: false })).stage, Stage.Distributed);
+    }
+    assert.equal(uploads, 0);
+    assert.equal(commits, scenario === "validation-failure" ? 0 : 1);
+    assert.equal(edits, scenario === "validation-failure" ? 0 : 1);
+  }
+});
 const response = (body) =>
   new Response(JSON.stringify(body), {
     headers: { "content-type": "application/json" },
@@ -98,7 +181,7 @@ test("Apple unknown upload only reconciles exact original source, build audience
           cfBundleShortVersionString: "0.1.0",
           cfBundleVersion: "3",
           platform: "IOS",
-          state: "COMPLETE",
+          state: { state: "COMPLETE" },
         },
       },
       included: [

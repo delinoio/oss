@@ -5,6 +5,7 @@ import {
   mkdirSync,
   existsSync,
   copyFileSync,
+  renameSync,
 } from "node:fs";
 import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,6 +49,7 @@ function capture(program, args) {
 export function inputs(e) {
   return validateInputs({
     identity: Identity,
+    target: e.DELIDEV_MOBILE_TARGET ?? "both",
     sourceSha: e.DELIDEV_MOBILE_SOURCE_SHA,
     version: e.DELIDEV_MOBILE_VERSION,
     iosBuild: e.DELIDEV_MOBILE_IOS_BUILD,
@@ -70,7 +72,7 @@ function config(input) {
     value = JSON.parse(original);
   value.version = input.version;
   value.bundle.iOS.bundleVersion = input.iosBuild;
-  value.bundle.android.versionCode = Number(input.androidCode);
+  if (input.target !== "ios") value.bundle.android.versionCode = Number(input.androidCode);
   writeFileSync(file, JSON.stringify(value, null, 2) + "\n");
   return () => writeFileSync(file, original);
 }
@@ -199,20 +201,35 @@ export function assemble(input, directory) {
   const manifest = candidate(
     input,
     artifact("ios", "DeliDev.ipa"),
-    artifact("android", "DeliDev.aab"),
+    input.target === "ios" ? undefined : artifact("android", "DeliDev.aab"),
   );
   retainCandidate(join(directory, "manifest.json"), manifest);
   return manifest;
 }
 async function submit(input, resume) {
-  credentials(process.env);
+  credentials(process.env, input.target);
   source(input);
   const manifest = JSON.parse(readFileSync(join(output, "manifest.json"))),
     actual = assemble(input, output);
   if (actual.candidateId !== manifest.candidateId)
     throw new Error("Original candidate changed");
-  for (const platform of ["ios", "android"]) {
-    const file = join(output, `${platform}-receipt.json`),
+  await submitPlatforms(manifest, output, resume, (platform, checkpoint) => {
+    const bytes = readFileSync(
+      join(output, platform === "ios" ? "DeliDev.ipa" : "DeliDev.aab"),
+    );
+    return platform === "ios"
+      ? appleProvider(process.env, bytes, checkpoint)
+      : googleProvider(process.env, bytes, checkpoint);
+  });
+}
+/** Preserve both original platform intents before any provider access. */
+export async function submitPlatforms(manifest, directory, resume, providerFor) {
+  const receipts = [];
+  const platforms = manifest.schema === 2 && manifest.target === "ios" ? ["ios"] : ["ios", "android"];
+  if (Object.keys(manifest.artifacts).join(",") !== platforms.join(","))
+    throw new Error("Original candidate platform mismatch");
+  for (const platform of platforms) {
+    const file = join(directory, `${platform}-receipt.json`),
       receipt = existsSync(file)
         ? JSON.parse(readFileSync(file))
         : {
@@ -222,35 +239,43 @@ async function submit(input, resume) {
           };
     if (
       receipt.candidateId !== manifest.candidateId ||
-      receipt.platform !== platform
+      receipt.platform !== platform ||
+      !Object.values(Stage).includes(receipt.stage)
     )
       throw new Error("Original receipt identity mismatch");
     const checkpoint = async (value) => {
       const temporary = file + ".tmp";
       writeFileSync(temporary, JSON.stringify(value) + "\n", { mode: 0o600 });
-      run(
-        "node",
-        [
-          "-e",
-          "require('node:fs').renameSync(process.argv[1],process.argv[2])",
-          temporary,
-          file,
-        ],
-        root,
-      );
+      renameSync(temporary, file);
+      process.stdout.write(JSON.stringify({
+        operation: "mobile-beta-checkpoint",
+        platform,
+        stage: value.stage,
+      }) + "\n");
     };
-    const bytes = readFileSync(
-        join(output, platform === "ios" ? "DeliDev.ipa" : "DeliDev.aab"),
-      ),
-      provider =
-        platform === "ios"
-          ? appleProvider(process.env, bytes, checkpoint)
-          : googleProvider(process.env, bytes, checkpoint);
+    receipts.push({ platform, file, receipt, checkpoint });
+  }
+  // Validate all retained identities first, then atomically persist each missing
+  // receipt before either platform can submit. Absence on resume stays Unknown.
+  for (const { file, receipt, checkpoint } of receipts)
+    if (!existsSync(file)) await checkpoint(receipt);
+  for (const { platform, receipt, checkpoint } of receipts) {
+    const provider = providerFor(platform, checkpoint);
     // All artifact hashes and retained source metadata are checked again before
     // this explicit upload boundary. Submission never rebuilds candidate bytes.
-    await distribute(manifest, receipt, provider, checkpoint, {
-      dryRun: false,
-    });
+    try {
+      await distribute(manifest, receipt, provider, checkpoint, {
+        dryRun: false,
+      });
+    } catch {
+      process.stderr.write(JSON.stringify({
+        operation: "mobile-beta-distribution",
+        platform,
+        stage: JSON.parse(readFileSync(join(directory, `${platform}-receipt.json`))).stage,
+        outcome: "failed-retain-original",
+      }) + "\n");
+      throw new Error("Original platform distribution failed");
+    }
   }
 }
 if (

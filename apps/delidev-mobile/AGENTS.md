@@ -18,3 +18,7 @@
   track, provision owner accounts or invent credentials as part of fixtures.
 
 - New session inherits current authenticated server/Project Plan defaults until an explicit mode choice. Missing, stale or invalid defaults retain drafts and require reinspection; frozen pending requests retain their original mode. Notification preference writes retain the original client revision and closed situation selection; legacy servers retain the combined-category compatibility shape.
+
+- Persist all selected candidate-bound platform receipts before provider access. Missing recovery receipts remain Unknown. Apple proof requires nested COMPLETE state and complete bounded group pagination; Google staged edit membership is not distribution proof. Mark observation edits writable before any track mutation, commit the original edit, and reconcile exact published bytes without replacement uploads.
+
+- Beta target defaults to both platforms. Explicit iOS-only candidates use schema 2 and require no Android code or credentials; preserve schema-1 both-platform candidates and exact target-bound provenance. Serialize all beta workflow runs without canceling original submissions.
