@@ -883,6 +883,11 @@ func (t *Tx) planSessionDeletion(v SessionDeletion) (SessionDeletion, error) {
 	if e != nil {
 		return v, e
 	}
+	// This check is inside deletion planning, before its irrevocable journal
+	// publication, under the same transaction as directory admission.
+	if value.DirectoryJobID != "" {
+		return v, domain.DirectoryUncertain()
+	}
 	if e := t.WorkerUpdateAdmission(value.MachineID); e != nil {
 		return v, e
 	}

@@ -40,22 +40,34 @@ func (r SessionDirectoryRef) Validate() error {
 }
 
 type SessionDirectoryInput struct {
-	Version            uint32               `json:"version"`
-	RequestID          ID                   `json:"request_id"`
-	GenerationID       ID                   `json:"generation_id"`
-	SourceJobID        ID                   `json:"source_job_id"`
-	HistoryExecutionID ID                   `json:"history_execution_id"`
-	Assignment         ExecutionJobInput    `json:"assignment"`
-	Completion         ExecutionCompletion  `json:"completion"`
-	PreviousExecution  ExecutionProgress    `json:"previous_execution"`
-	RepositoryID       ID                   `json:"repository_id"`
-	RelativePath       string               `json:"relative_path"`
-	Previous           *SessionDirectoryRef `json:"previous,omitempty"`
+	ContextAction      *SessionCompactionRef `json:"context_action,omitempty"`
+	ContextRevision    uint64                `json:"context_revision,omitempty"`
+	RequestingActor    Principal             `json:"requesting_actor"`
+	Version            uint32                `json:"version"`
+	RequestID          ID                    `json:"request_id"`
+	GenerationID       ID                    `json:"generation_id"`
+	SourceJobID        ID                    `json:"source_job_id"`
+	HistoryExecutionID ID                    `json:"history_execution_id"`
+	Assignment         ExecutionJobInput     `json:"assignment"`
+	Completion         ExecutionCompletion   `json:"completion"`
+	PreviousExecution  ExecutionProgress     `json:"previous_execution"`
+	RepositoryID       ID                    `json:"repository_id"`
+	RelativePath       string                `json:"relative_path"`
+	Previous           *SessionDirectoryRef  `json:"previous,omitempty"`
 }
 
 func (i SessionDirectoryInput) Validate() error {
 	a, done, p := i.Assignment, i.Completion, i.PreviousExecution
-	if i.Version != 1 || UniqueIDs([]ID{i.RequestID, i.GenerationID, i.SourceJobID, a.SessionID, a.ExecutionID, a.InputID}) != nil || i.HistoryExecutionID.Validate() != nil || !sessionDirectoryRepository(i.Assignment, i.RepositoryID) || ValidateSessionDirectoryPath(i.RelativePath) != nil || a.Validate() != nil || a.Configuration.Harness != Codex || a.Fork != nil || a.SidechatRetry != nil || a.Configuration.SidechatPolicy != "" || done.Version != 2 || done.Validate() != nil || done.Outcome != ExecutionSucceeded || done.ExecutionID != a.ExecutionID || done.InputID != a.InputID || p.JobID != i.SourceJobID || p.ExecutionID != done.ExecutionID || p.InputID != done.InputID || p.NativeThreadID != string(done.NativeThreadID) || p.NativeTurnID != string(done.NativeTurnID) || p.LastSequence != done.LastSequence || p.Outcome != done.Outcome || !p.CleanupVerified || p.ContextRevision != a.ContextRevision || p.Waiting != (NativeWaiting{}) || p.UnconfirmedResponses != 0 || len(p.Subagents) != 0 || !p.NativeCompactions.Closed() || !p.AutoReviews.Closed() || p.TurnTiming != nil || p.Observed.ValidateForInput(a.Configuration, a.Input.Mode) != nil {
+	if (i.RequestingActor.Type != OwnerDevice && i.RequestingActor.Type != ClientDevice || i.RequestingActor.Type == ClientDevice && i.RequestingActor.DeviceID.Validate() != nil) || i.Version != 1 || UniqueIDs([]ID{i.RequestID, i.GenerationID, i.SourceJobID, a.SessionID, a.ExecutionID, a.InputID}) != nil || i.HistoryExecutionID.Validate() != nil || !sessionDirectoryRepository(i.Assignment, i.RepositoryID) || ValidateSessionDirectoryPath(i.RelativePath) != nil || a.Validate() != nil || a.Configuration.Harness != Codex || a.SidechatRetry != nil || a.Configuration.SidechatPolicy != "" || done.Version != 2 || done.Validate() != nil || done.Outcome != ExecutionSucceeded || done.ExecutionID != a.ExecutionID || done.InputID != a.InputID || p.JobID != i.SourceJobID || p.ExecutionID != done.ExecutionID || p.InputID != done.InputID || p.NativeThreadID != string(done.NativeThreadID) || p.NativeTurnID != string(done.NativeTurnID) || p.LastSequence != done.LastSequence || p.Outcome != done.Outcome || !p.CleanupVerified || p.ContextRevision != a.ContextRevision || p.Waiting != (NativeWaiting{}) || p.UnconfirmedResponses != 0 || len(p.Subagents) != 0 || !p.NativeCompactions.Closed() || !p.AutoReviews.Closed() || p.TurnTiming != nil || p.Observed.ValidateForInput(a.Configuration, a.Input.Mode) != nil {
+		return DirectoryUncertain()
+	}
+	if i.ContextAction != nil && (i.ContextAction.Validate() != nil || i.ContextAction.ExecutionID != a.ExecutionID || i.ContextAction.RequiresResume) {
+		return DirectoryUncertain()
+	}
+	if i.ContextRevision != a.ContextRevision && (i.ContextAction == nil || !i.ContextAction.Revert || i.ContextAction.ContextRevision != i.ContextRevision || i.ContextRevision <= a.ContextRevision) {
+		return DirectoryUncertain()
+	}
+	if i.ContextAction != nil && i.ContextAction.Revert && i.ContextAction.ContextRevision != i.ContextRevision {
 		return DirectoryUncertain()
 	}
 	if _, err := CheckedExecutionInputs(a.InputID, BindSessionInput(a.InputID, a.Input).PromptDigest, p.AcceptedInputs); err != nil {

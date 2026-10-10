@@ -30,7 +30,7 @@ func compactionSource(tx *store.Tx, sr store.Record, session domain.Session, act
 func contextActionSource(tx *store.Tx, sr store.Record, session domain.Session, action domain.ID, revert bool) (domain.SessionCompactionInput, error) {
 	var empty domain.SessionCompactionInput
 	p := session.Execution
-	if !session.WorkspaceAvailable() || session.CompactionJobID != "" || session.InitialExecution == nil || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || session.ActiveExecutionID != "" || session.PendingSteerID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || p == nil || !p.CleanupVerified {
+	if !session.WorkspaceAvailable() || session.CompactionJobID != "" || session.DirectoryJobID != "" || session.InitialExecution == nil || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || session.ActiveExecutionID != "" || session.PendingSteerID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || p == nil || !p.CleanupVerified {
 		return empty, domain.CompactionUncertain()
 	}
 	h := session.InitialExecution.Configuration.Harness
@@ -95,6 +95,7 @@ func contextActionSource(tx *store.Tx, sr store.Record, session domain.Session, 
 		return empty, err
 	}
 	restored := original
+	restored.Directory = session.Directory
 	restored.ContextRevision = session.ContextRevision
 	restored.Version, restored.ExecutionID, restored.InputID = 2, action, domain.NewID()
 	if original.Version == 4 {
@@ -113,7 +114,7 @@ func contextActionSource(tx *store.Tx, sr store.Record, session domain.Session, 
 			intent = domain.ContinueExplicitly
 		}
 	}
-	restored.Continuation = &domain.ExecutionContinuation{HistoryExecutionID: session.NativeExecutionRoot(), HistoryRequestID: domain.NewID(), Previous: p.NativePublication(), Completion: done, AssignmentInputDigest: continuationDigest(j.Input), InputMode: original.Input.Mode, PromptDigest: domain.BindSessionInput(original.InputID, original.Input).PromptDigest, Intent: intent, Compaction: previous}
+	restored.Continuation = &domain.ExecutionContinuation{PreviousDirectory: original.Directory, HistoryExecutionID: session.NativeExecutionRoot(), HistoryRequestID: domain.NewID(), Previous: p.NativePublication(), Completion: done, AssignmentInputDigest: continuationDigest(j.Input), InputMode: original.Input.Mode, PromptDigest: domain.BindSessionInput(original.InputID, original.Input).PromptDigest, Intent: intent, Compaction: previous}
 	version := uint32(1)
 	if h == domain.Codex {
 		version = 2

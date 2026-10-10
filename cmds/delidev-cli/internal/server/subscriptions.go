@@ -536,6 +536,12 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 				}
 				execution = fork.SourceAssignment
 				forkRevision = jr.Revision
+			case domain.ChangeSessionDirectoryJob:
+				directory, _, _, e := directoryClaimSource(tx, jr, job)
+				if e != nil {
+					return nil, subscriptionDenied()
+				}
+				execution = directory.Assignment
 			case domain.CompactSessionJob:
 				var compact domain.SessionCompactionInput
 				if domain.DecodeCompactionInput(job.Input, &compact) != nil || compact.Validate() != nil || (compact.Version != 2 && compact.Version != 4) {

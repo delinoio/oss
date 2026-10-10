@@ -675,7 +675,7 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 	if job, ok := value.(domain.Job); ok && kind == domain.JobKind && job.Type == domain.DiscoverRepositoryBranchesJob {
 		maxBodyBytes = domain.MaxRepositoryBranchesJobBytes
 	}
-	if job, ok := value.(domain.Job); ok && kind == domain.JobKind && job.Type == domain.CompactSessionJob {
+	if job, ok := value.(domain.Job); ok && kind == domain.JobKind && (job.Type == domain.CompactSessionJob || job.Type == domain.ChangeSessionDirectoryJob) {
 		maxBodyBytes = maxCompactionJobEntityBytes
 	} else if job, ok := value.(domain.Job); ok && kind == domain.JobKind && job.Type != domain.DiscoverRepositoryBranchesJob {
 		maxBodyBytes = workspace.StorageJobDocumentLimit(job)
@@ -1101,7 +1101,7 @@ func Decode[T any](r Record) (T, error) {
 			if envelope.Type == domain.DiscoverRepositoryBranchesJob {
 				maxBytes = domain.MaxRepositoryBranchesJobBytes
 			}
-			if envelope.Type == domain.CompactSessionJob {
+			if envelope.Type == domain.CompactSessionJob || envelope.Type == domain.ChangeSessionDirectoryJob {
 				maxBytes = maxCompactionJobEntityBytes
 			} else if envelope.Type == domain.WorkspaceStorageJob {
 				var job domain.Job

@@ -191,6 +191,9 @@ func validateSessionSelection(tx *store.Tx, input domain.CreateSession) error {
 }
 
 func appendSessionInput(tx *store.Tx, id domain.ID, session *domain.Session, input domain.SessionInput, names ...map[domain.ID]string) (domain.ID, error) {
+	if err := directoryFence(*session); err != nil {
+		return "", err
+	}
 	if session.LastInputSequence >= 1<<63-2 || session.PendingInputs >= domain.MaxPendingInputs || session.PendingInputBytes > domain.MaxPendingInputBytes || session.PendingInputBytes+uint64(len(input.Prompt)) > domain.MaxPendingInputBytes {
 		return "", domain.Fail(domain.ResourceExhausted, "The retained input queue is full.", "Remove undelivered input or wait for confirmed native acceptance before adding more.")
 	}
@@ -578,6 +581,9 @@ func (s *Service) changeQueuedInput(ctx context.Context, meta *pb.Mutation, sess
 	}
 	result, err := s.Store.Mutate(ctx, domain.ID(meta.RequestId), "session.input.change", identity, func(tx *store.Tx) (any, error) {
 		sr, session, err := sessionRecord(tx, sessionID)
+		if err == nil {
+			err = directoryFence(session)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -720,6 +726,9 @@ func (s *Service) ControlSession(ctx context.Context, req *connect.Request[pb.Co
 	var deniedProviderID, startupRetryJob domain.ID
 	result, err := s.Store.Mutate(ctx, domain.ID(meta.RequestId), "session.control", identity, func(tx *store.Tx) (any, error) {
 		r, value, err := sessionRecord(tx, domain.ID(meta.Id))
+		if err == nil {
+			err = directoryFence(value)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -873,6 +882,9 @@ func (s *Service) RenameSession(ctx context.Context, req *connect.Request[pb.Ren
 	}{meta.Id, meta.ExpectedRevision, req.Msg.Name}
 	result, err := s.Store.Mutate(ctx, domain.ID(meta.RequestId), "session.rename", identity, func(tx *store.Tx) (any, error) {
 		r, value, err := sessionRecord(tx, domain.ID(meta.Id))
+		if err == nil {
+			err = directoryFence(value)
+		}
 		if err != nil {
 			return nil, err
 		}

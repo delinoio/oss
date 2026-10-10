@@ -46,7 +46,7 @@ func (a *executionAuthority) compactionScope(tx *store.Tx, g store.ExecutionGran
 		return denied()
 	}
 	sr, s, err := sessionRecord(tx, r.SessionID)
-	if err != nil || !s.WorkspaceAvailable() || s.CompactionJobID != r.ID || s.Archive != domain.NotArchived || s.Recovery != domain.NoRecovery || !s.OwnsExecution(i.Assignment) || s.ActiveExecutionID != "" {
+	if err != nil || (!s.WorkspaceAvailable() || s.DirectoryJobID != "") || s.CompactionJobID != r.ID || s.Archive != domain.NotArchived || s.Recovery != domain.NoRecovery || !s.OwnsExecution(i.Assignment) || s.ActiveExecutionID != "" {
 		return denied()
 	}
 	if err := checkedExecutionSource(tx, sr, s, machine, i.Assignment); err != nil {

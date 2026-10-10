@@ -123,6 +123,8 @@ func (s *Service) AttachWorker(ctx context.Context, req *connect.Request[pb.Atta
 			capabilities = append(capabilities, domain.NativeSessionCompactionV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1:
 			capabilities = append(capabilities, domain.OpenCodeSessionCompactionV1)
+		case pb.WorkerCapability_WORKER_CAPABILITY_SESSION_DIRECTORY_V1:
+			capabilities = append(capabilities, domain.SessionDirectoryV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1:
 			capabilities = append(capabilities, domain.CodexSessionRevertV1)
 		case pb.WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1:
@@ -517,6 +519,11 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 							return tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, j)
 						}
 					}
+					if j.Type == domain.ChangeSessionDirectoryJob {
+						if _, _, _, err := directoryClaimSource(tx, r, j); err != nil {
+							return nil, err
+						}
+					}
 					if j.Type == domain.PrepareWorkspaceJob {
 						var input workspace.PrepareRequest
 						if domain.Decode(j.Input, &input) != nil {
@@ -778,6 +785,9 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 		if job.Type == domain.CloneRepositoryJob {
 			return finishRepositoryClone(tx, record, job, meta.ExpectedRevision, req.Msg.OutputJson, problem)
 		}
+		if job.Type == domain.ChangeSessionDirectoryJob {
+			return finishSessionDirectory(tx, record, job, meta.ExpectedRevision, req.Msg.OutputJson, problem)
+		}
 		if job.Type == domain.CompactSessionJob {
 			return finishSessionCompaction(tx, record, job, meta.ExpectedRevision, req.Msg.OutputJson, problem)
 		}
@@ -976,7 +986,7 @@ func (s *Service) ReportWork(ctx context.Context, req *connect.Request[pb.Report
 			if err != nil {
 				return err
 			}
-			if job.MachineID != machine || job.InstanceID != instance || (job.Type != domain.ExecuteSessionJob && job.Type != domain.RecoverExecutionJob && job.Type != domain.CompactSessionJob) {
+			if job.MachineID != machine || job.InstanceID != instance || (job.Type != domain.ExecuteSessionJob && job.Type != domain.RecoverExecutionJob && job.Type != domain.CompactSessionJob && job.Type != domain.ChangeSessionDirectoryJob) {
 				return executionEventConflict()
 			}
 			return nil

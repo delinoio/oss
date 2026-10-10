@@ -109,6 +109,9 @@ func (s *Service) RecoverSessionExecution(ctx context.Context, req *connect.Requ
 // fresh execution authorization after this operation leaves dispatch paused.
 func executionRecoveryRequest(tx *store.Tx, serverID domain.ID, sr store.Record, session domain.Session) (domain.ExecutionRecoveryRequest, error) {
 	var result domain.ExecutionRecoveryRequest
+	if session.DirectoryJobID != "" {
+		return result, domain.DirectoryUncertain()
+	}
 	// A separate manual action owns its checkpoint and workspace until cleanup
 	// is proved. Original conversation recovery cannot release that ownership.
 	if session.CompactionJobID != "" {

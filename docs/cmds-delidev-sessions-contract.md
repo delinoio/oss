@@ -981,3 +981,14 @@ verified native continuation and cleanup. Preserve all historical assignments
 and checkpoints. A successor execution carries the current generation separately
 from its original history. Lost receipts are recovered by reading the original
 operation; lack of a receipt never permits repeating a native transition.
+
+The server retains the original requesting principal for operation reads and
+mutation replay. Current context revision and an exact succeeded context-action
+checkpoint remain separate from the historical assignment/publication. A
+completed compaction or Revert cannot be inferred from a directory choice.
+Successor and context-action restoration assignments freeze `PreviousDirectory`
+from the accepted predecessor independently of the currently promoted directory.
+Metadata credential registration reuses the original protected account scope,
+but the typed directory job cannot acquire an upstream inference request.
+Permanent deletion checks pending directory ownership inside its original
+planning transaction before publishing an irrevocable deletion journal.

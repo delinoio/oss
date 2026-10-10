@@ -77,6 +77,12 @@ func (i SessionCompactionInput) Validate() error {
 	// Its one-shot retry/Fork imports cannot run again during restoration.
 	c := i.Restore.Continuation
 	want := a
+	previousDirectory, _ := json.Marshal(c.PreviousDirectory)
+	originalDirectory, _ := json.Marshal(a.Directory)
+	if !bytes.Equal(previousDirectory, originalDirectory) {
+		return DirectoryUncertain()
+	}
+	want.Directory = i.Restore.Directory
 	want.Version, want.ExecutionID, want.InputID = 2, i.ActionID, i.Restore.InputID
 	if a.Version == 4 {
 		want.Version = 4

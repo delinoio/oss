@@ -30,7 +30,7 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	if err := tx.RequireNoSessionFork(sr.ID); err != nil {
 		return store.Record{}, err
 	}
-	if !session.WorkspaceAvailable() || session.InitialExecution == nil || session.ActiveExecutionID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || session.Execution == nil || !session.Execution.CleanupVerified || (session.Dispatch != domain.DispatchReady && session.Dispatch != domain.DispatchBlocked && !(explicit && session.Dispatch == domain.DispatchPaused)) {
+	if (!session.WorkspaceAvailable() || session.DirectoryJobID != "") || session.InitialExecution == nil || session.ActiveExecutionID != "" || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.Preparation == nil || session.Preparation.State != domain.PreparationReady || session.Execution == nil || !session.Execution.CleanupVerified || (session.Dispatch != domain.DispatchReady && session.Dispatch != domain.DispatchBlocked && !(explicit && session.Dispatch == domain.DispatchPaused)) {
 		return store.Record{}, continuationConflict()
 	}
 	if session.Outcome != domain.ExecutionSucceeded && session.Outcome != domain.ExecutionFailed && session.Outcome != domain.ExecutionStopped {
@@ -66,6 +66,7 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	account, connection := session.ContinuationAccount()
 	candidate := continuationAssignment(session, assignment, completion, assignmentDigest, intent, account, connection)
 	candidate.ContextRevision = session.ContextRevision
+	candidate.Directory = session.Directory
 	if session.Compaction != nil && session.Compaction.ExecutionID == assignment.ExecutionID {
 		candidate.Continuation.Compaction = session.Compaction
 	}
@@ -195,6 +196,7 @@ func checkedContinuationPredecessor(tx *store.Tx, sr store.Record, session domai
 
 func continuationAssignment(session domain.Session, assignment domain.ExecutionJobInput, completion domain.ExecutionCompletion, digest string, intent domain.ExecutionIntent, account, connection domain.ID) domain.ExecutionJobInput {
 	input := assignment
+	input.Directory = session.Directory
 	// A successor must not inherit the preceding one-shot PR Git authority.
 	input.Remediation, input.Retry, input.SidechatRetry = nil, nil, nil
 	input.Version, input.ExecutionID, input.InputID = 2, domain.NewID(), domain.NewID()
@@ -203,7 +205,7 @@ func continuationAssignment(session domain.Session, assignment domain.ExecutionJ
 	input.Fork = nil
 	input.ThreadRequestID, input.TurnRequestID = domain.NewID(), domain.NewID()
 	input.AccountID, input.ConnectionID = account, connection
-	input.Continuation = &domain.ExecutionContinuation{HistoryExecutionID: session.NativeExecutionRoot(), HistoryRequestID: domain.NewID(), Previous: session.Execution.NativePublication(), Completion: completion, AssignmentInputDigest: digest, InputMode: assignment.Input.Mode, PromptDigest: domain.BindSessionInput(assignment.InputID, assignment.Input).PromptDigest, Intent: intent}
+	input.Continuation = &domain.ExecutionContinuation{PreviousDirectory: assignment.Directory, HistoryExecutionID: session.NativeExecutionRoot(), HistoryRequestID: domain.NewID(), Previous: session.Execution.NativePublication(), Completion: completion, AssignmentInputDigest: digest, InputMode: assignment.Input.Mode, PromptDigest: domain.BindSessionInput(assignment.InputID, assignment.Input).PromptDigest, Intent: intent}
 	// A switch back may select the same account after its connection rotated.
 	// The checkpoint still belongs to the complete original account/connection.
 	if account != assignment.AccountID || connection != assignment.ConnectionID {
