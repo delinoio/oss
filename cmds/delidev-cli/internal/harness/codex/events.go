@@ -561,7 +561,7 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 			eventKind = ArtifactCompletedEvent
 		}
 		return Event{Kind: eventKind, ThreadID: c.thread, TurnID: params.TurnID, ItemID: artifact.ID, Artifact: artifact, Correlated: known, Late: turn.Turn.Status.terminal()}, nil
-	case "commandExecution", "fileChange", "imageView":
+	case "commandExecution", "fileChange", "imageView", "sleep":
 		tool, err := decodeTool(params.Item, kind, native.Method == "item/completed")
 		if err != nil {
 			return Event{}, err

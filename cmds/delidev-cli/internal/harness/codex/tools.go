@@ -18,6 +18,7 @@ const (
 	CommandTool   ToolKind = "command-execution"
 	PatchTool     ToolKind = "file-change"
 	ImageViewTool ToolKind = "image-view"
+	SleepTool     ToolKind = "sleep"
 
 	ToolRunning   ToolStatus = "inProgress"
 	ToolCompleted ToolStatus = "completed"
@@ -72,12 +73,13 @@ type FileChange struct {
 // work or imply that an entire turn succeeded. Native aggregate output may be
 // truncated independently from streamed deltas, so retain both observations.
 type Tool struct {
-	ID        string
-	Kind      ToolKind
-	Status    ToolStatus
-	Command   *CommandExecution
-	Changes   []FileChange
-	ImagePath string
+	ID              string
+	Kind            ToolKind
+	Status          ToolStatus
+	Command         *CommandExecution
+	Changes         []FileChange
+	SleepDurationMS *uint64
+	ImagePath       string
 }
 
 type ToolInput struct {
@@ -193,6 +195,16 @@ func decodeTool(raw json.RawMessage, kind string, completed bool) (*Tool, error)
 			command.Actions = append(command.Actions, action)
 		}
 		result.ID, result.Kind, result.Status, result.Command = item.ID, CommandTool, item.Status, command
+	case "sleep":
+		item, err := decodeSleep(raw)
+		if err != nil {
+			return nil, err
+		}
+		result.ID, result.Kind, result.SleepDurationMS = item.ID, SleepTool, item.DurationMS
+		result.Status = ToolRunning
+		if completed {
+			result.Status = ToolCompleted
+		}
 	case "imageView":
 		var item struct {
 			Type string  `json:"type"`

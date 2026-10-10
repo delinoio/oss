@@ -183,7 +183,15 @@ func (c *Client) forkTurnsLocked(ctx context.Context, thread domain.ID) ([]json.
 					}
 					seen["item:"+identity.ID] = true
 				}
-				if !slices.Contains([]string{"userMessage", "agentMessage", "reasoning"}, identity.Type) {
+				if identity.Type == "sleep" {
+					if seen["sleep:"+identity.ID] {
+						return nil, unsupportedFork()
+					}
+					seen["sleep:"+identity.ID] = true
+					if _, err := decodeSleep(item); err != nil {
+						return nil, unsupportedFork()
+					}
+				} else if !slices.Contains([]string{"userMessage", "agentMessage", "reasoning"}, identity.Type) {
 					if !c.managedForkHistory || !settledForkTool(item, identity.Type) {
 						return nil, unsupportedFork()
 					}
@@ -451,6 +459,10 @@ func settledForkTool(raw json.RawMessage, kind string) bool {
 }
 
 func managedForkItem(raw json.RawMessage, kind string) bool {
+	if kind == "sleep" {
+		_, err := decodeSleep(raw)
+		return err == nil
+	}
 	if kind == "commandExecution" || kind == "fileChange" {
 		return settledForkTool(raw, kind)
 	}

@@ -43,7 +43,7 @@ func (f *threadFixture) handleContinuation(id json.RawMessage, method string, ra
 		Direction string    `json:"sortDirection"`
 		View      string    `json:"itemsView"`
 	}
-	if domain.Decode(raw, &params) != nil || f.thread == nil || params.ThreadID != f.thread["id"] || !(params.Limit == 1 && params.Direction == "desc" || f.mode == "thread-continuation-sidechat" && params.Limit == 50 && params.Direction == "asc") || params.View != "full" {
+	if domain.Decode(raw, &params) != nil || f.thread == nil || params.ThreadID != f.thread["id"] || !(params.Limit == 1 && params.Direction == "desc" || (f.mode == "thread-continuation-sidechat" || f.mode == "thread-continuation-sleep") && params.Limit == 50 && params.Direction == "asc") || params.View != "full" {
 		os.Exit(61)
 	}
 	if file := os.Getenv("DELIDEV_CODEX_CAPTURE"); file != "" {
