@@ -33,6 +33,19 @@ func mcpDefinitions(q domain.ManagedMCPRequest, r domain.ManagedMCPResult) error
 		if r.Operation.ID.Validate() != nil || r.Operation.DefinitionID.Validate() != nil || q.Action != domain.MCPOperationRead && r.Operation.ID != q.RequestID {
 			return mcpUnavailable()
 		}
+		if q.Action == domain.MCPOperationRead && r.Operation.ID != q.AttemptID {
+			return mcpUnavailable()
+		}
+		expectedDefinition := q.DefinitionID
+		if q.Definition != nil {
+			expectedDefinition = q.Definition.ID
+		}
+		if expectedDefinition != "" && r.Operation.DefinitionID != expectedDefinition {
+			return mcpUnavailable()
+		}
+		if len(r.Definitions) > 1 || len(r.Definitions) == 1 && r.Definitions[0].ID != r.Operation.DefinitionID {
+			return mcpUnavailable()
+		}
 		switch r.Operation.State {
 		case domain.MCPOperationStarted, domain.MCPOperationCompleted, domain.MCPOperationAwaiting, domain.MCPOperationCanceled, domain.MCPOperationRecovery, domain.MCPOperationRejected:
 		default:

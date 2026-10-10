@@ -152,6 +152,14 @@ func (m Manager) Execute(ctx context.Context, q domain.ManagedMCPRequest) (domai
 		if !ok || r.ActorID != q.ActorID {
 			return empty, domain.Fail(domain.NotFound, "The original MCP operation was not found.", "Inspect the original request on its original Worker.")
 		}
+		// A read owns the exclusive catalog lock. A STARTED receipt surviving
+		// that acquisition therefore has no active local operation and cannot
+		// prove whether its native effect completed before interruption.
+		if r.Result.Operation != nil && r.Result.Operation.State == domain.MCPOperationStarted {
+			copy := *r.Result.Operation
+			copy.State = domain.MCPOperationRecovery
+			r.Result.Operation = &copy
+		}
 		return r.Result, nil
 	}
 	if prior, ok := c.Receipts[q.RequestID]; ok {

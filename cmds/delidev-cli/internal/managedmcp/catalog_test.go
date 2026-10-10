@@ -278,3 +278,49 @@ func TestManagedMCPOAuthExpiryCancellationAndLostExchange(t *testing.T) {
 type fixtureTransport func(*http.Request) (*http.Response, error)
 
 func (f fixtureTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestManagedMCPHTTPManualCredentialsBindEndpointGeneration(t *testing.T) {
+	m, q, d := fixture(t)
+	d.Transport = domain.MCPStreamableHTTP
+	d.Command = ""
+	d.Cwd = ""
+	d.Endpoint = "https://fixture.test/mcp"
+	q.Definition = &d
+	must(t, m, q)
+	auth := q
+	auth.Definition = nil
+	auth.DefinitionID = d.ID
+	auth.Action = domain.MCPAuthenticate
+	auth.ExpectedRevision = 1
+	auth.RequestID = domain.NewID()
+	auth.Secrets = &domain.MCPSecretInput{Headers: map[string]string{"Authorization": "Bearer private-header"}}
+	authenticated := must(t, m, auth).Definitions[0]
+	if authenticated.CredentialID == "" {
+		t.Fatal("manual header not sealed")
+	}
+	edit := q
+	edit.RequestID = domain.NewID()
+	edit.ExpectedRevision = 2
+	d.Revision = 3
+	d.Name = "Renamed"
+	edit.Definition = &d
+	renamed := must(t, m, edit).Definitions[0]
+	if renamed.CredentialID != authenticated.CredentialID {
+		t.Fatal("name edit erased original credential binding")
+	}
+	edit.RequestID = domain.NewID()
+	edit.ExpectedRevision = 3
+	d.Revision = 4
+	d.Endpoint = "https://other.test/mcp"
+	changed := must(t, m, edit).Definitions[0]
+	if changed.CredentialID != "" {
+		t.Fatal("changed resource adopted original authentication")
+	}
+	raw, _ := os.ReadFile(filepath.Join(m.Root, "managed-mcp", string(m.ServerID), string(m.WorkerDeviceID), "catalog.json"))
+	if strings.Contains(string(raw), "private-header") {
+		t.Fatal("manual HTTP secret persisted in metadata")
+	}
+	if len(m.Secrets.(*fixtureSecrets).values) != 1 {
+		t.Fatal("original credential generation lost")
+	}
+}
