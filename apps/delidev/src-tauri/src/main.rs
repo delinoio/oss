@@ -2360,7 +2360,11 @@ mod tests {
         let restricted = Resolved::resolve(&manifests, without_main, Target::current()).unwrap();
         let restricted_authority = RuntimeAuthority::new(
             #[cfg(debug_assertions)]
-            manifests.clone(),
+            serde_json::from_str(include_str!(concat!(
+                env!("OUT_DIR"),
+                "/acl-manifests.json"
+            )))
+            .unwrap(),
             restricted,
         );
         let resolved = Resolved::resolve(&manifests, capabilities, Target::current()).unwrap();
