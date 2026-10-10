@@ -48,3 +48,12 @@ it("retains fixed Session Enter with default, custom and disabled primary overri
  expect(readOnlyShortcutCatalog.find(action=>action.id===ShortcutId.SessionNewline)?.defaults).toEqual([{key:"Enter",shift:true}]);
  expect(editableShortcutCatalog).toHaveLength(7);
 });
+
+it("lets every saved custom E retain priority without adding an editable Files action",()=>{
+ const files={id:ShortcutId.SessionOpenFiles,scope:Surface.Sessions,label:"shortcuts.openFiles" as const,bindings:[{key:"e",primary:true}]};
+ expect(editableShortcutCatalog).toHaveLength(7);expect(editableShortcutCatalog.some(action=>action.id===ShortcutId.SessionOpenFiles)).toBe(false);
+ for(const action of editableShortcutCatalog){const overrides={[action.id]:{state:ShortcutOverrideState.Binding,chord:{key:"e",shift:false}}} as const;expect(()=>parseShortcutOverrides(overrides)).not.toThrow();expect(shortcutConflicts(overrides)).toEqual([]);const resolved=effectiveShortcutDefinitions([files],overrides)[0]!;expect(resolved.bindings).toEqual([]);expect(resolved.unavailableReason).toBe("shortcuts.openFilesSuppressed");}
+ expect(()=>parseShortcutOverrides({[ShortcutId.SessionOpenFiles]:{state:"disabled"}})).toThrow();
+ for(const overrides of [{[ShortcutId.SearchFocus]:{state:ShortcutOverrideState.Disabled}},{[ShortcutId.SearchFocus]:{state:ShortcutOverrideState.Binding,chord:{key:"e",shift:true}}}] as const)expect(effectiveShortcutDefinitions([files],overrides)[0]!.bindings).toEqual(files.bindings);
+ expect(effectiveShortcutDefinitions([files],{})[0]!.bindings).toEqual(files.bindings);
+});

@@ -12,6 +12,8 @@ import { i18n } from "./localization";
 import { SessionNameEditorProvider } from "./session-name-editor";
 import { MutationIntents } from "./mutation";
 import { SessionTabsProvider } from "./session-tabs";
+import { ShortcutPreferenceProvider, type ShortcutPreferenceBridge } from "./shortcut-preference-controller";
+import { ShortcutProvider } from "./shortcut-provider";
 import { SessionView } from "./session";
 
 vi.mock("./terminal-emulator", () => ({ openTerminalScreen: (host: HTMLElement) => {
@@ -76,7 +78,7 @@ function fixture(state = BudgetState.ALLOW_INCOMPLETE, problem = false, extra: R
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const draft = vi.fn();
-  const view = (value = "Original draft", active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionNameEditorProvider><SessionTabsProvider><SessionView id={id} draft={value} setDraft={draft} active={active} /></SessionTabsProvider></SessionNameEditorProvider></MutationIntents></QueryClientProvider></TransportProvider>;
+  const view = (value = "Original draft", active = true, embedded = false) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionNameEditorProvider><SessionTabsProvider><SessionView id={id} draft={value} setDraft={draft} active={active} embedded={embedded} /></SessionTabsProvider></SessionNameEditorProvider></MutationIntents></QueryClientProvider></TransportProvider>;
   return { session, client, view, listQueue, enqueue, rename, control, recover, budget, draft, list, publish, getResource, releaseTerminal, terminalControl, terminalCreate, terminalWatches, terminals };
 }
 
@@ -282,7 +284,7 @@ it.each([false, true])("shows only waiting queue inputs while retaining accepted
 it("keeps exactly five workspace tools and no Info action in either locale", async () => {
   const f = fixture(); render(f.view()); await screen.findByRole("heading", { name: "Original session" });
   const toolbar = document.querySelector(".session-tool-menu")!;
-  expect([...toolbar.querySelectorAll("button")].map(button => button.textContent)).toEqual(["Diff", "Files", "Terminals", "Browser", "Diagnostics"]);
+  expect([...toolbar.querySelectorAll("button")].map(button => button.querySelector(".session-tool-label")?.textContent ?? button.textContent)).toEqual(["Diff", "Files", "Terminals", "Browser", "Diagnostics"]);
   expect(screen.queryByRole("button", { name: "Info" })).toBeNull();
   const info = screen.getByRole("complementary", { name: "Session information" });
   const composer = screen.getByRole("textbox", { name: "Message" });
@@ -522,4 +524,23 @@ it("keeps evicted waiting payload restoration reachable even after all current v
  const input=await screen.findByLabelText("Session name"); await waitFor(()=>expect(input).toHaveProperty("value","Original session"));
  fireEvent.change(input,{target:{value:"Receipt name"}});fireEvent.click(screen.getByRole("button",{name:"Save"}));
  await screen.findByRole("heading",{name:"Receipt name"});expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("opens Files with primary+E from composer and parent tools without duplicating or changing mode/draft",async()=>{
+ const f=fixture();render(<ShortcutProvider>{f.view()}</ShortcutProvider>);const composer=await screen.findByRole("textbox",{name:"Message"});fireEvent.click(screen.getByRole("checkbox",{name:"Plan Mode"}));
+ fireEvent.keyDown(composer,{key:"e",ctrlKey:true});await screen.findByRole("tab",{name:"Files"});expect(screen.getByRole("tab",{name:"Files"}).getAttribute("aria-selected")).toBe("true");
+ const files=document.querySelector(".session-files")!;fireEvent.keyDown(document.body,{key:"e",ctrlKey:true});expect(screen.getAllByRole("tab",{name:"Files"})).toHaveLength(1);expect(document.querySelector(".session-files")).toBe(files);
+ fireEvent.click(screen.getByRole("button",{name:"Open tool"}));const entry=screen.getByRole("menuitem",{name:"Files"});expect(entry.getAttribute("aria-keyshortcuts")).toBe("Control+E");expect(entry.querySelector("kbd")?.textContent).toBe("Ctrl + E");fireEvent.click(screen.getByRole("menuitem",{name:"Diagnostics"}));
+ fireEvent.keyDown(document.body,{key:"e",ctrlKey:true});expect(screen.getByRole("tab",{name:"Files"}).getAttribute("aria-selected")).toBe("true");fireEvent.click(screen.getByRole("tab",{name:"Conversation"}));expect(composer).toHaveProperty("value","Original draft");expect(screen.getByRole("checkbox",{name:"Plan Mode"})).toHaveProperty("checked",true);expect(f.enqueue).not.toHaveBeenCalled();expect(f.draft).not.toHaveBeenCalled();
+});
+
+it.each(["inactive","embedded"])("does not register independent Files opening for %s sessions",async kind=>{
+ const f=fixture();render(<ShortcutProvider>{f.view("Original draft",kind!=="inactive",kind==="embedded")}</ShortcutProvider>);await act(async()=>{});fireEvent.keyDown(document.body,{key:"e",ctrlKey:true});expect(screen.queryByRole("tab",{name:"Files"})).toBeNull();expect(f.enqueue).not.toHaveBeenCalled();
+});
+
+it("omits Files guidance for a committed custom E in another scope and restores it without writes",async()=>{
+ let changed:(raw:unknown)=>void=()=>{};const bridge:ShortcutPreferenceBridge={read:async()=>({revision:1,problem:null,overrides:{"search-focus":{state:"binding",chord:{key:"e",shift:false}}}}),update:vi.fn(),subscribe:async listener=>{changed=listener;return()=>{};}};
+ const f=fixture();render(<ShortcutPreferenceProvider bridge={bridge}><ShortcutProvider>{f.view()}</ShortcutProvider></ShortcutPreferenceProvider>);await screen.findByRole("textbox",{name:"Message"});await act(async()=>{});
+ fireEvent.keyDown(document.body,{key:"e",ctrlKey:true});expect(screen.queryByRole("tab",{name:"Files"})).toBeNull();fireEvent.click(screen.getByRole("button",{name:"Open tool"}));const entry=screen.getByRole("menuitem",{name:"Files"});expect(entry.getAttribute("aria-keyshortcuts")).toBeNull();expect(entry.querySelector("kbd")).toBeNull();expect(entry.getAttribute("aria-description")).toContain("saved custom action");
+ act(()=>changed({revision:2,problem:null,overrides:{}}));expect(entry.getAttribute("aria-keyshortcuts")).toBe("Control+E");expect(entry.querySelector("kbd")).not.toBeNull();fireEvent.keyDown(document.body,{key:"e",ctrlKey:true});await screen.findByRole("tab",{name:"Files"});expect(bridge.update).not.toHaveBeenCalled();expect(f.enqueue).not.toHaveBeenCalled();
 });

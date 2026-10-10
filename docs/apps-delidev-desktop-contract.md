@@ -151,6 +151,27 @@ Dispatch and the read-only help use the same declarations. Match input-target re
 
 Common shortcuts are logical `?` for help and primary+Shift+N for New session. Primary means Command on the local macOS renderer and Control on Windows/Linux, independently of the selected server or Worker. Session and New session use primary+I to focus their message input and primary+Enter to submit only from that input. Session submission queues a message; New session submission creates through the original guarded form. The feature gives Session and General Chat follow-up composers fixed Enter submission and native Shift+Enter newline. Preserve New session's guarded Enter submission and native Shift+Enter newline. Search uses primary+I to focus the existing query and retains native Enter form submission. Search has no global entry shortcut. Primary+K opens the fixed command menu described below; it never submits a Search query. The sidebar Search button remains available without shortcut guidance. Ordinary Search entry retains its existing once-only autofocus; Search primary+I focuses the retained query and opens the existing compact drawer when needed. Files, Diff and Diagnostics register their existing focus-local Escape closure and original opener restoration. Other screens initially expose common shortcuts only. Control aria-keyshortcuts derives from the same platform-resolved bindings. The logical help binding carries a physical Shift+/ ARIA annotation for English/Korean slash-key layouts; it never changes logical character matching.
 
+Open Files is a typed Session-scoped primary+E action for the active nonembedded
+session, including other parent tool/resource tabs. It invokes the original Files
+callback once and selects the same retained Files tab on repeated activation,
+without toggling closure, duplicate tabs or refresh. Ordinary editable fields are
+admitted; IME, repeat, handled/modifier/modal/hidden/inert/capture, terminal
+passthrough and native child-view fences remain unchanged. Use the owned Help
+action-dismissal path before invoking the callback and keep Files' local Escape.
+Opening grants no execution or recovery authority and preserves draft, mode,
+request/session identity and existing read authorization, bounds and cancellation.
+
+Open Files remains outside the seven editable IDs and native storage schema.
+Any committed editable unshifted primary+E override, across all scopes, suppresses
+only its default E binding in memory. Disabled and Shift+E overrides do not.
+Conflict validation accepts existing custom E; dispatch, Help, the read-only
+Settings catalog, Files guidance and ARIA share this effective policy. Suppression
+has localized guidance and removal/change restores the default immediately.
+Preserve saved preference bytes, native validation/storage and release path. The
+existing Files entry has platform-local Command/Ctrl+E guidance (badge omitted
+with ARIA while suppressed), original geometry/icons/themes and narrow/zoom reflow.
+No new RPC, protocol, permission, OS-global shortcut, dependency or logging occurs.
+
 Logical `?` accepts the layout's producing Shift state and remains ordinary text in input, textarea, select, editable/combobox contexts. Ignore handled, composing, keyCode-229, AltGraph and repeated events. Ignore hidden/inert targets and terminal passthrough; external native child views receive no new bridge. Visible modals, including the compact sidebar drawer, suspend background dispatch and help opening. The owned help dialog has only the action-dismissal exception described below. The wide sidebar region is not a modal. The help dialog cannot stack over another modal; Escape and Close dismiss only help.
 
 The Settings-adjacent rail help button opens a 640px maximum-width central dialog with 24px padding, 12px corners and existing semantic light/dark tokens. Use Keyboard shortcuts / 키보드 단축키 and the localized current screen, followed by Common and screen-specific read-only lists. Show each registered binding, native behavior and disabled reason; show an explicit screen-specific empty state. Never execute a list row. English/Korean catalog changes update presentation without remounting the help or changing focus. On opening focus the named 40px Close button and contain Tab. On Escape or Close dismissal, restore the available opener or fall back to the current main. Retain 16px viewport margins, vertical scrolling and stacked rows at narrow widths/200% reflow. Device-local customization follows the preference boundary below; no dependency, API/schema/migration, OS permission or OS-global shortcut is added.

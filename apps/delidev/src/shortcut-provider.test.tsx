@@ -200,3 +200,8 @@ it("discloses the exact external browser numeric exception without disabling ord
  function TabHelp(){const open=useShortcutHelp();useShortcutSurface(Surface.Sessions);useShortcuts([{id:ShortcutId.SessionTab1,scope:Surface.Sessions,label:"shortcuts.tab1",bindings:[{key:"1",primary:true}],terminal:true,run:()=>{}}]);return <button onClick={open}>Tab help</button>;}
  render(<ShortcutProvider><TabHelp/></ShortcutProvider>);fireEvent.click(screen.getByRole("button",{name:"Tab help"}));expect(screen.getByText("On Windows and Linux, use the tab bar while an external browser page has focus. Number shortcuts work elsewhere in the app.")).toBeTruthy();expect(screen.getByText("Select tab 1")).toBeTruthy();
 });
+
+it("dismisses owned Help before Open Files once and preserves destination focus",()=>{
+ const run=vi.fn();function FilesOwner(){useShortcutSurface(Surface.Sessions);const open=useShortcutHelp(),destination=useRef<HTMLInputElement>(null);useShortcuts([{id:ShortcutId.SessionOpenFiles,scope:Surface.Sessions,label:"shortcuts.openFiles",bindings:[{key:"e",primary:true}],input:ShortcutInput.Allow,run:()=>{expect(screen.queryByRole("dialog")).toBeNull();run();destination.current?.focus();}}]);return <><button onClick={open}>Open shortcut Help</button><input ref={destination} aria-label="Files destination"/></>;}
+ render(<ShortcutProvider><FilesOwner/></ShortcutProvider>);fireEvent.click(screen.getByRole("button",{name:"Open shortcut Help"}));expect(screen.getByText("Open Files")).toBeTruthy();fireEvent.keyDown(screen.getByRole("button",{name:"Close keyboard shortcuts"}),{key:"e",ctrlKey:true});expect(run).toHaveBeenCalledTimes(1);expect(document.activeElement).toBe(screen.getByLabelText("Files destination"));
+});

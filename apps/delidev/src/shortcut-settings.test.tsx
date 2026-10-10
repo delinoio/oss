@@ -131,3 +131,9 @@ it.each([['en','Add message to queue','Fixed: Enter'],['ko','메시지 대기열
  expect(screen.getAllByText('Shift + Enter').length).toBeGreaterThan(0);
  await act(()=>i18n.changeLanguage('en'));
 });
+
+it("shows committed cross-scope E suppression in the read-only Files catalog and restores it",async()=>{
+ const f=fixture();f.publish({revision:1,problem:null,overrides:{[ShortcutId.SearchFocus]:{state:ShortcutOverrideState.Binding,chord:{key:"e",shift:false}}}});render(<Owner bridge={f.bridge}/>);await screen.findByText("Current saved shortcuts");
+ const row=screen.getByText("Open Files").closest("div")!;expect(within(row).getByText("Disabled")).toBeTruthy();expect(within(row).getByText(/Open Files has no shortcut/)).toBeTruthy();expect(screen.queryByRole("button",{name:"Capture shortcut for Open Files"})).toBeNull();
+ act(()=>f.publish({revision:2,problem:null,overrides:{}}));expect(within(row).getByText("Ctrl + E")).toBeTruthy();expect(within(row).queryByText(/Open Files has no shortcut/)).toBeNull();expect(f.bridge.update).not.toHaveBeenCalled();
+});

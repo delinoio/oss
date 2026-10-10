@@ -85,6 +85,8 @@ export function useShortcuts(definitions: readonly ShortcutDefinition[]) {
   useLayoutEffect(() => () => controller?.store.remove(owner), [controller, owner]);
   const platform = controller?.platform ?? shortcutPlatform();
   return {
+    keys: (id: ShortcutId) => resolved.filter(item => item.id === id).flatMap(item => item.bindings.map(binding => bindingKeys(binding, platform))),
+    reason: (id: ShortcutId) => resolved.find(item => item.id === id)?.unavailableReason,
     aria: (...ids: ShortcutId[]) => resolved.filter(item => ids.includes(item.id)).flatMap(item => item.bindings.map(binding => bindingAria(binding, platform))).join(" "),
     onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => {
       // Isolated forms keep their original keyboard behavior without a provider.

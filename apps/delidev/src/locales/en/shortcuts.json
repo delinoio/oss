@@ -79,5 +79,7 @@
   "shortcuts.tab7": "Select tab 7",
   "shortcuts.tab8": "Select tab 8",
   "shortcuts.tab9": "Select tab 9",
-  "shortcuts.externalBrowserTabLimit": "On Windows and Linux, use the tab bar while an external browser page has focus. Number shortcuts work elsewhere in the app."
+  "shortcuts.externalBrowserTabLimit": "On Windows and Linux, use the tab bar while an external browser page has focus. Number shortcuts work elsewhere in the app.",
+  "shortcuts.openFiles": "Open Files",
+  "shortcuts.openFilesSuppressed": "Open Files has no shortcut while a saved custom action uses Command/Ctrl+E. Change or remove that custom binding to restore the default."
 }

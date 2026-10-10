@@ -36,7 +36,7 @@ import { ScrollPayloadWindow } from "./scroll-payload-window";
 import { executionStartupFailure, canRetryExecutionStartup, startupCorrection, startupRecoveryGuidance, ExecutionStartupDetails } from "./execution-startup";
 
 import { useShortcuts } from "./shortcut-provider";
-import { ShortcutExecution, ShortcutId, ShortcutInput } from "./shortcuts";
+import { ShortcutExecution, ShortcutId, ShortcutInput, openFilesShortcutBindings } from "./shortcuts";
 import { Surface } from "./surface";
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
@@ -459,6 +459,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     void send.send({ requestId, sessionId: id, documentJson: original, skills: selections.length ? { selections } : undefined, attachments });
   };
   const shortcuts = useShortcuts([
+    { id: ShortcutId.SessionOpenFiles, scope: Surface.Sessions, label: "shortcuts.openFiles", bindings: openFilesShortcutBindings, input: ShortcutInput.Allow, active: active && !embedded, run: () => togglePanel(SessionPanel.Files) },
     ...(!embedded ? Array.from({length:9},(_,index)=>({id: tabShortcutIds[index]!,scope:Surface.Sessions,label:`shortcuts.tab${index+1}` as import("./localization").MessageKey,bindings:[{key:String(index+1),primary:true}],input:ShortcutInput.Allow,terminal:true,active,enabled:index<tabs.tabs.length,run:()=>{document.getElementById(`session-tab-${id}-${index}`)?.focus({preventScroll:true});tabs.store.position(id,index+1);}})) : []),
     { id: ShortcutId.SessionFocus, scope: Surface.Sessions, label: "shortcuts.focusMessage", bindings: [{ key: "i", primary: true }], input: ShortcutInput.Allow, active: conversationActive, enabled: !locked, unavailableReason: "shortcuts.pending", run: () => composer.current?.focus() },
     { id: ShortcutId.SessionSend, scope: Surface.Sessions, label: "shortcuts.queueMessage", bindings: [{ key: "Enter" }, { key: "Enter", primary: true }], target: composer, input: ShortcutInput.Target, active: conversationActive, enabled: canSend, unavailableReason: locked ? "shortcuts.pending" : text(data.archive) !== "active" ? "shortcuts.activeSessionRequired" : "shortcuts.messageRequired", run: () => composer.current?.form?.requestSubmit() },
@@ -588,7 +589,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         </SessionActions>
       </div>
     </header>
-    {!embedded ? <div className="session-navigation"><SessionTabBar id={id} tabs={tabs.tabs} selected={tabs.selected} select={key=>tabs.store.select(id,key)} close={closeTab}/><SessionToolMenu active={active}>{tools.map(tool => <button role="menuitem" key={tool.panel} type="button" ref={panelButtons[tool.panel]} disabled={tool.panel===SessionPanel.Terminals&&Boolean(object(data.fork).sidechat_parent_snapshot)} onClick={()=>togglePanel(tool.panel)}><SessionIcon kind={tool.icon}/>{tool.label}</button>)}</SessionToolMenu></div> : null}
+    {!embedded ? <div className="session-navigation"><SessionTabBar id={id} tabs={tabs.tabs} selected={tabs.selected} select={key=>tabs.store.select(id,key)} close={closeTab}/><SessionToolMenu active={active}>{tools.map(tool => <button role="menuitem" key={tool.panel} type="button" ref={panelButtons[tool.panel]} aria-label={tool.label} aria-keyshortcuts={tool.panel===SessionPanel.Files ? shortcuts.aria(ShortcutId.SessionOpenFiles) || undefined : undefined} aria-description={tool.panel===SessionPanel.Files && shortcuts.reason(ShortcutId.SessionOpenFiles) ? copy(shortcuts.reason(ShortcutId.SessionOpenFiles)!) : undefined} title={tool.panel===SessionPanel.Files && shortcuts.reason(ShortcutId.SessionOpenFiles) ? copy(shortcuts.reason(ShortcutId.SessionOpenFiles)!) : undefined} disabled={tool.panel===SessionPanel.Terminals&&Boolean(object(data.fork).sidechat_parent_snapshot)} onClick={()=>togglePanel(tool.panel)}><SessionIcon kind={tool.icon}/><span className="session-tool-label">{tool.label}</span>{tool.panel===SessionPanel.Files ? shortcuts.keys(ShortcutId.SessionOpenFiles).map((keys,index)=><kbd className="session-tool-shortcut" key={index}>{keys.join(" + ")}</kbd>) : null}</button>)}</SessionToolMenu></div> : null}
     <div className="session-content">
     <div id={`session-pane-${id}`} role={embedded ? undefined : "tabpanel"} aria-labelledby={embedded ? undefined : `session-tab-${id}-${tabs.tabs.findIndex(tab=>sessionTabKey(tab)===tabs.selected)}`} ref={upperContent} className="session-upper-content">
     <div ref={conversationRegion} className="session-conversation-region">

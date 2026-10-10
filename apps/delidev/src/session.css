@@ -344,3 +344,6 @@
 .session-name-dialog form, .session-name-dialog label { display:flex; flex-direction:column; gap:12px; }
 .session-name-dialog button, .session-name-dialog input { min-height:40px; }
 .session-name-dialog form > .primary { align-self:flex-end; }
+
+.session-tool-label { min-width:0; overflow-wrap:anywhere; }
+.session-tool-shortcut { margin-left:auto; max-width:100%; flex-shrink:0; font-size:.75rem; color:var(--muted); white-space:normal; overflow-wrap:anywhere; }

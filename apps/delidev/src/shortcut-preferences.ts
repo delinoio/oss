@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { globalShortcutBindings, ShortcutId, ShortcutInput, ShortcutPlatform, ShortcutScope, type ShortcutBinding, type ShortcutDefinition } from "./shortcuts";
+import { globalShortcutBindings, openFilesShortcutBindings, ShortcutId, ShortcutInput, ShortcutPlatform, ShortcutScope, type ShortcutBinding, type ShortcutDefinition } from "./shortcuts";
 import { Surface } from "./surface";
 import type { MessageKey } from "./localization";
 
@@ -20,6 +20,7 @@ export const editableShortcutCatalog: readonly CatalogAction[] = [
   { id: ShortcutId.SearchFocus, label: "shortcuts.focusSearch", group: ShortcutGroup.Search, scopes: [Surface.Search], priority: 1, input: ShortcutInput.Allow, defaults: [{ key: "i", primary: true }] },
 ];
 export const readOnlyShortcutCatalog: readonly CatalogAction[] = [
+  { id: ShortcutId.SessionOpenFiles, label: "shortcuts.openFiles", group: ShortcutGroup.Session, scopes: [Surface.Sessions], priority: 1, input: ShortcutInput.Allow, defaults: openFilesShortcutBindings },
   { id: ShortcutId.ToggleSidebar, label: "sidebar-preference.toggle", group: ShortcutGroup.Common, scopes: [ShortcutScope.Global], priority: 0, input: ShortcutInput.Allow, defaults: globalShortcutBindings[ShortcutId.ToggleSidebar] },
   { id: ShortcutId.CommandMenu, label: "command-menu.title", group: ShortcutGroup.Common, scopes: [ShortcutScope.Global], priority: 0, input: ShortcutInput.Allow, defaults: globalShortcutBindings[ShortcutId.CommandMenu] },
   { target: ShortcutTargetContext.SessionMessage, id: ShortcutId.SessionNewline, label: "shortcuts.newline", group: ShortcutGroup.Session, scopes: [Surface.Sessions], priority: 2, input: ShortcutInput.Target, defaults: [{ key: "Enter", shift: true }] },
@@ -46,12 +47,16 @@ export function validShortcutChord(chord: unknown): chord is ShortcutChord {
   // Fixed product and native editing chords remain unavailable for rebinding.
   return value.shift ? !/^[vz]$/.test(value.key) : !nativeReservedKeys.has(value.key) && !/^[bkn1-9acvxyz]$/.test(value.key);
 }
+export function openFilesShortcutSuppressed(overrides: ShortcutOverrides): boolean {
+  return editableShortcutCatalog.some(action => { const override = overrides[action.id]; return override?.state === ShortcutOverrideState.Binding && override.chord.key === "e" && !override.chord.shift; });
+}
 export function customizationBindings(id: ShortcutId, overrides: ShortcutOverrides): readonly ShortcutBinding[] {
+  if (id === ShortcutId.SessionOpenFiles) return openFilesShortcutSuppressed(overrides) ? [] : openFilesShortcutBindings;
   const override = overrides[id];
   return override?.state === ShortcutOverrideState.Disabled ? [] : override?.state === ShortcutOverrideState.Binding ? [{ ...override.chord, primary: true }] : shortcutCatalog.find(action => action.id === id)?.defaults ?? [];
 }
 export function effectiveShortcutDefinitions(definitions: readonly ShortcutDefinition[], overrides: ShortcutOverrides): ShortcutDefinition[] {
-  return definitions.map(action => !editableIds.has(action.id) ? action : { ...action, bindings: [...action.bindings.filter(binding => !binding.primary && binding.key !== "?"), ...customizationBindings(action.id, overrides)] });
+  return definitions.map(action => action.id === ShortcutId.SessionOpenFiles ? { ...action, bindings: customizationBindings(action.id, overrides), ...(openFilesShortcutSuppressed(overrides) ? {enabled:false, unavailableReason:"shortcuts.openFilesSuppressed" as const} : {}) } : !editableIds.has(action.id) ? action : { ...action, bindings: [...action.bindings.filter(binding => !binding.primary && binding.key !== "?"), ...customizationBindings(action.id, overrides)] });
 }
 export function shortcutConflicts(overrides: ShortcutOverrides): [ShortcutId, ShortcutId][] {
   const conflicts: [ShortcutId, ShortcutId][] = [];

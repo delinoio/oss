@@ -104,3 +104,12 @@ it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])("keeps fixed send and na
  }
  input.remove();
 });
+
+it("dispatches Open Files once from editable fields on each platform with the existing fences",()=>{
+ const field=document.createElement("textarea");document.body.append(field);const run=vi.fn();const action:ShortcutDefinition={id:ShortcutId.SessionOpenFiles,scope:Surface.Sessions,label:"shortcuts.openFiles",bindings:[{key:"e",primary:true}],input:ShortcutInput.Allow,run};
+ const send=(options:KeyboardEventInit,which=ShortcutPlatform.Other,handled=false)=>{const event=new KeyboardEvent("keydown",{bubbles:true,cancelable:true,key:"e",ctrlKey:which===ShortcutPlatform.Other,metaKey:which===ShortcutPlatform.Mac,...options});if(handled)event.preventDefault();field.addEventListener("keydown",()=>dispatchShortcut(event,[action],Surface.Sessions,which),{once:true});field.dispatchEvent(event);return event;};
+ expect(send({}).defaultPrevented).toBe(true);expect(send({},ShortcutPlatform.Mac).defaultPrevented).toBe(true);expect(run).toHaveBeenCalledTimes(2);
+ for(const options of [{repeat:true},{isComposing:true},{keyCode:229},{shiftKey:true},{altKey:true},{metaKey:true}] as KeyboardEventInit[])send(options);send({},ShortcutPlatform.Other,true);expect(run).toHaveBeenCalledTimes(2);
+ field.setAttribute("data-shortcuts","passthrough");send({});field.removeAttribute("data-shortcuts");field.setAttribute("inert","");send({});field.removeAttribute("inert");field.hidden=true;send({});field.hidden=false;expect(run).toHaveBeenCalledTimes(2);
+ expect(bindingAria(action.bindings[0]!,ShortcutPlatform.Mac)).toBe("Meta+E");expect(bindingAria(action.bindings[0]!,ShortcutPlatform.Other)).toBe("Control+E");field.remove();
+});
