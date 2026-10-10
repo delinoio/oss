@@ -1864,7 +1864,13 @@ connection/machine; proof never enters form state, queries or documents.
 Worktree exposes an initially collapsed **Starting reference overrides**
 disclosure with **Using saved project references**, or the override count. Keep
 its complete existing explanation, repositories, reference types/fields,
-addition/edit/removal, uniqueness and 1000-entry ceiling. Collapse keeps its
+addition/edit/removal, uniqueness and 1000-entry ceiling. Resolve the exact Project
+repository IDs and retained override IDs through the bounded repository-name
+resolver. Picker options, override legends and reference labels use names,
+original Project positions for duplicate/unavailable-name disambiguation and
+localized loading/read-retry guidance. Keep UUID values, keys, ordering, saved
+references and exact revisions unchanged. Name reads grant no save authority;
+failed or stale reads cannot substitute repositories or discard drafts. Collapse keeps its
 contents and drafts mounted; invalid hidden required references reopen for
 focus. Changing Project or selecting Local clears overrides. Local omits this
 read/form path and explains shared checkouts without fetch or starting overrides.
