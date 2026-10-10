@@ -325,6 +325,7 @@ test("a readback regression fails the portable fixture command and CI aggregate"
     "scripts/ci/from-root.mjs",
     "scripts/ci/buf-entry.mjs",
     "scripts/release/linux-packages.test.mjs",
+    "scripts/release/linux-packages-install.test.mjs",
     "scripts/release/linux-packages",
     "scripts/release/runmoor.mjs",
     "packaging/linux/pins.json",
