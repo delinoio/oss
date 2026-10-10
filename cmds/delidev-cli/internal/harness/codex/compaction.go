@@ -426,6 +426,10 @@ func (c *Client) contextTurnsLocked(ctx context.Context, direction string, curso
 				}
 				items[item.ID] = true
 				switch item.Type {
+				case "functionCallOutput":
+					if _, err := decodeFunctionOutput(rawItem); err != nil {
+						return nil, compactionUncertain()
+					}
 				case "userMessage", "agentMessage", "reasoning", "plan", "contextCompaction":
 				case "commandExecution", "fileChange", "imageView", "sleep":
 					if _, err := decodeTool(rawItem, item.Type, true); err != nil {

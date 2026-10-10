@@ -16,7 +16,7 @@ export function responseEvidence(row: Resource, sessionId: string): ResponseEvid
   const result: ResponseEvidence = { executionId: d.execution_id, threadId: d.native_thread_id, turnId: d.native_turn_id, kind: ResponseEvidenceKind.Unavailable };
   if (!count(d.first_sequence) || d.first_sequence === 0 || !count(d.last_sequence) || d.last_sequence < d.first_sequence || !["streaming", "complete"].includes(String(d.state)) || typeof d.text !== "string" || new TextEncoder().encode(d.text).length > 256 * 1024 || /[\u0000\uD800-\uDFFF]/u.test(d.text) || d.inherited != null) return result;
   result.lastSequence = d.last_sequence;
-  const families = ["tool", "artifact", "progress", "claude", "claude_tool", "claude_progress", "claude_interruption", "grok_tool", "grok_text", "grok_user"].filter(key => d[key] != null);
+  const families = ["codex_function_output", "tool", "artifact", "progress", "claude", "claude_tool", "claude_progress", "claude_interruption", "grok_tool", "grok_text", "grok_user"].filter(key => d[key] != null);
   if (d.role === "user") {
     if (!uuid(d.input_id) || families.some(key => key !== "grok_user")) return result;
     return { ...result, inputId: d.input_id, kind: ResponseEvidenceKind.InitialUser };

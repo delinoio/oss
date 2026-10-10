@@ -63,6 +63,16 @@ func (s *Service) PublishExecution(ctx context.Context, req *connect.Request[pb.
 		if domain.Decode(job.Input, &input) != nil || input.Validate() != nil || input.ExecutionID != event.ExecutionID || input.SessionID != jobRecord.SessionID || input.MachineID != identity.Machine {
 			return nil, executionEventConflict()
 		}
+		if event.Kind == domain.ExecutionCodexFunctionOutputObserved {
+			r, err := tx.Get(domain.MachineKind, input.MachineID)
+			if err != nil {
+				return nil, err
+			}
+			machine, err := store.Decode[domain.Machine](r)
+			if err != nil || !slices.Contains(machine.WorkerCapabilities, domain.CodexFunctionOutputV1) {
+				return nil, executionEventConflict()
+			}
+		}
 		sr, session, err := sessionRecord(tx, input.SessionID)
 		if err != nil {
 			return nil, err
@@ -456,6 +466,10 @@ func applyExecutionEventAt(tx *store.Tx, job store.Record, input domain.Executio
 				// process cleanup. Inbox read state never changes this evidence.
 				terminal := domain.InboxTerminal{JobID: job.ID, InputID: input.InputID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, Sequence: event.Sequence, Outcome: event.Outcome}
 				if _, err := tx.CreateInboxEntry(sr.ID, sr.ProjectID, domain.InboxEntry{Source: domain.ExecutionTerminalInbox, SourceID: input.ExecutionID, ReadState: domain.InboxUnread, Terminal: &terminal}); err != nil {
+					return err
+				}
+			} else if event.Kind == domain.ExecutionCodexFunctionOutputObserved {
+				if err := publishCodexFunctionOutput(tx, input, sr, event); err != nil {
 					return err
 				}
 			} else if event.Kind == domain.ExecutionGrokToolObserved {

@@ -1,3 +1,4 @@
+import { NativeCodexFunctionOutput } from "./native-codex-function-output";
 import { WaitingQueue } from "./waiting-queue";
 
 import { FlatDisclosureScope } from "./disclosure";
@@ -194,6 +195,7 @@ function ConversationStatus({ state }: { state: string }) {
 export const TranscriptItem = memo(function TranscriptItem({ resource, active = true, actions, contextRevision = 0 }: { resource: Resource; active?: boolean; actions?: ReactNode; contextRevision?: number }) {
   useLocale();
   const data = readDocument(resource);
+  if (Object.hasOwn(data,"codex_function_output")) return <NativeCodexFunctionOutput data={data} id={resource.id}/>;
   if (Object.hasOwn(data,"grok_tool")) return <NativeGrokTool data={data}/>;
  if (Object.hasOwn(data, "grok_user")) return <NativeGrokUser data={data} />;
   if (data.grok_text != null) return <NativeGrokText data={data} />;
@@ -228,7 +230,7 @@ export const TranscriptItem = memo(function TranscriptItem({ resource, active = 
   const progress = object(data.progress);
   const plan = object(progress.plan);
   const textRole = data.tool == null && data.artifact == null && data.progress == null &&
-    ["grok_text", "claude", "claude_tool", "claude_progress", "claude_interruption"].every(key => !Object.hasOwn(data, key));
+    ["codex_function_output", "grok_text", "claude", "claude_tool", "claude_progress", "claude_interruption"].every(key => !Object.hasOwn(data, key));
   const roleClass = textRole && data.role === "user" ? " message-user" : textRole && data.role === "assistant" ? " message-assistant" : "";
   return <article className={`message${roleClass}`} aria-label={roleClass ? copy(data.role === "user" ? "session.userMessage" : "session.assistantMessage_8352f5") : copy("session.message_e9ca2b", { v0: text(data.role) || "Agent" })}>
     {roleClass ? <ConversationStatus state={text(data.state)} /> : <header><strong>{text(data.role) || copy("session.extra.11b39c93777e")}</strong><small>{statusLabel(text(data.state))}</small></header>}

@@ -8,45 +8,46 @@ import (
 type ExecutionEventKind string
 
 const (
-	ExecutionSubagentObserved           ExecutionEventKind = "subagent-observed"
-	ExecutionGrokToolObserved           ExecutionEventKind = "grok-tool-observed"
-	ExecutionGrokTextObserved           ExecutionEventKind = "grok-text-observed"
-	ExecutionGrokUsageObserved          ExecutionEventKind = "grok-usage-observed"
-	ExecutionClaudeProgressObserved     ExecutionEventKind = "claude-progress-observed"
-	ExecutionClaudeInterruptionObserved ExecutionEventKind = "claude-interruption-observed"
-	ExecutionClaudeCallbackSettled      ExecutionEventKind = "claude-callback-settled"
-	ExecutionClaudeReplyEchoObserved    ExecutionEventKind = "claude-reply-echo-observed"
-	ExecutionClaudeMessageObserved      ExecutionEventKind = "claude-message-observed"
-	ExecutionClaudeUsageObserved        ExecutionEventKind = "claude-usage-observed"
-	ExecutionClaudeToolObserved         ExecutionEventKind = "claude-tool-observed"
-	ExecutionThreadBound                ExecutionEventKind = "thread-bound"
-	ExecutionInputAccepted              ExecutionEventKind = "input-accepted"
-	ExecutionMessageStarted             ExecutionEventKind = "message-started"
-	ExecutionTextAppended               ExecutionEventKind = "text-appended"
-	ExecutionMessageCompleted           ExecutionEventKind = "message-completed"
-	ExecutionTurnFinished               ExecutionEventKind = "turn-finished"
-	ExecutionUsageObserved              ExecutionEventKind = "usage-observed"
-	ExecutionOpenCodeUsageObserved      ExecutionEventKind = "opencode-usage-observed"
-	ExecutionResponseUsageObserved      ExecutionEventKind = "response-usage-observed"
-	ExecutionNoticeObserved             ExecutionEventKind = "notice-observed"
-	ExecutionToolStarted                ExecutionEventKind = "tool-started"
-	ExecutionToolUpdated                ExecutionEventKind = "tool-updated"
-	ExecutionToolCompleted              ExecutionEventKind = "tool-completed"
-	ExecutionToolOutput                 ExecutionEventKind = "tool-output"
-	ExecutionToolInput                  ExecutionEventKind = "tool-input"
-	ExecutionToolPatch                  ExecutionEventKind = "tool-patch"
-	ExecutionArtifactStarted            ExecutionEventKind = "artifact-started"
-	ExecutionArtifactCompleted          ExecutionEventKind = "artifact-completed"
-	ExecutionArtifactDelta              ExecutionEventKind = "artifact-delta"
-	ExecutionProgressObserved           ExecutionEventKind = "progress-observed"
-	ExecutionInteractionRequested       ExecutionEventKind = "interaction-requested"
-	ExecutionInteractionClosed          ExecutionEventKind = "interaction-closed"
-	ExecutionWaitingChanged             ExecutionEventKind = "waiting-changed"
-	ExecutionQuestionDeliveryObserved   ExecutionEventKind = "question-delivery-observed"
-	ExecutionApprovalDeliveryObserved   ExecutionEventKind = "approval-delivery-observed"
-	ExecutionQuestionAccepted           ExecutionEventKind = "question-accepted"
-	ExecutionApprovalAccepted           ExecutionEventKind = "approval-accepted"
-	ExecutionSteerObserved              ExecutionEventKind = "steer-observed"
+	ExecutionCodexFunctionOutputObserved ExecutionEventKind = "codex-function-output-observed"
+	ExecutionSubagentObserved            ExecutionEventKind = "subagent-observed"
+	ExecutionGrokToolObserved            ExecutionEventKind = "grok-tool-observed"
+	ExecutionGrokTextObserved            ExecutionEventKind = "grok-text-observed"
+	ExecutionGrokUsageObserved           ExecutionEventKind = "grok-usage-observed"
+	ExecutionClaudeProgressObserved      ExecutionEventKind = "claude-progress-observed"
+	ExecutionClaudeInterruptionObserved  ExecutionEventKind = "claude-interruption-observed"
+	ExecutionClaudeCallbackSettled       ExecutionEventKind = "claude-callback-settled"
+	ExecutionClaudeReplyEchoObserved     ExecutionEventKind = "claude-reply-echo-observed"
+	ExecutionClaudeMessageObserved       ExecutionEventKind = "claude-message-observed"
+	ExecutionClaudeUsageObserved         ExecutionEventKind = "claude-usage-observed"
+	ExecutionClaudeToolObserved          ExecutionEventKind = "claude-tool-observed"
+	ExecutionThreadBound                 ExecutionEventKind = "thread-bound"
+	ExecutionInputAccepted               ExecutionEventKind = "input-accepted"
+	ExecutionMessageStarted              ExecutionEventKind = "message-started"
+	ExecutionTextAppended                ExecutionEventKind = "text-appended"
+	ExecutionMessageCompleted            ExecutionEventKind = "message-completed"
+	ExecutionTurnFinished                ExecutionEventKind = "turn-finished"
+	ExecutionUsageObserved               ExecutionEventKind = "usage-observed"
+	ExecutionOpenCodeUsageObserved       ExecutionEventKind = "opencode-usage-observed"
+	ExecutionResponseUsageObserved       ExecutionEventKind = "response-usage-observed"
+	ExecutionNoticeObserved              ExecutionEventKind = "notice-observed"
+	ExecutionToolStarted                 ExecutionEventKind = "tool-started"
+	ExecutionToolUpdated                 ExecutionEventKind = "tool-updated"
+	ExecutionToolCompleted               ExecutionEventKind = "tool-completed"
+	ExecutionToolOutput                  ExecutionEventKind = "tool-output"
+	ExecutionToolInput                   ExecutionEventKind = "tool-input"
+	ExecutionToolPatch                   ExecutionEventKind = "tool-patch"
+	ExecutionArtifactStarted             ExecutionEventKind = "artifact-started"
+	ExecutionArtifactCompleted           ExecutionEventKind = "artifact-completed"
+	ExecutionArtifactDelta               ExecutionEventKind = "artifact-delta"
+	ExecutionProgressObserved            ExecutionEventKind = "progress-observed"
+	ExecutionInteractionRequested        ExecutionEventKind = "interaction-requested"
+	ExecutionInteractionClosed           ExecutionEventKind = "interaction-closed"
+	ExecutionWaitingChanged              ExecutionEventKind = "waiting-changed"
+	ExecutionQuestionDeliveryObserved    ExecutionEventKind = "question-delivery-observed"
+	ExecutionApprovalDeliveryObserved    ExecutionEventKind = "approval-delivery-observed"
+	ExecutionQuestionAccepted            ExecutionEventKind = "question-accepted"
+	ExecutionApprovalAccepted            ExecutionEventKind = "approval-accepted"
+	ExecutionSteerObserved               ExecutionEventKind = "steer-observed"
 )
 
 type MessageRole string
@@ -185,50 +186,51 @@ type ExecutionMessageUpdate struct {
 // envelope. Exactly one event kind owns its optional payload. Unknown native
 // extensions need dedicated adapters before they can enter this document.
 type ExecutionEvent struct {
-	Subagents          []SubagentObservation              `json:"subagents,omitempty"`
-	GrokTool           *ExecutionGrokToolUpdate           `json:"grok_tool,omitempty"`
-	GrokUserMessageID  ID                                 `json:"grok_user_message_id,omitempty"`
-	GrokStop           *GrokStopObservation               `json:"grok_stop,omitempty"`
-	GrokToolsTerminal  *GrokToolsTerminal                 `json:"grok_tools_terminal,omitempty"`
-	GrokTerminal       *GrokTextTerminal                  `json:"grok_terminal,omitempty"`
-	GrokText           *GrokTextUpdate                    `json:"grok_text,omitempty"`
-	GrokUsage          *GrokResponseUsage                 `json:"grok_usage,omitempty"`
-	ClaudeDenial       *ClaudeDenialCompletion            `json:"claude_denial,omitempty"`
-	ClaudeStop         *ClaudeStopObservation             `json:"claude_stop,omitempty"`
-	ClaudeTerminal     *ClaudeTerminalObservation         `json:"claude_terminal,omitempty"`
-	ClaudeProgress     *ExecutionClaudeProgress           `json:"claude_progress,omitempty"`
-	ClaudeInterruption *ExecutionClaudeInterruption       `json:"claude_interruption,omitempty"`
-	ClaudeSettlement   *ExecutionClaudeCallbackSettlement `json:"claude_settlement,omitempty"`
-	ClaudeReplyEcho    *ExecutionClaudeReplyEcho          `json:"claude_reply_echo,omitempty"`
-	ClaudeMessage      *ClaudeMessageUpdate               `json:"claude_message,omitempty"`
-	ClaudeUsage        *ClaudeUsageObservation            `json:"claude_usage,omitempty"`
-	ClaudeTool         *ClaudeToolUpdate                  `json:"claude_tool,omitempty"`
-	Version            uint32                             `json:"version"`
-	ExecutionID        ID                                 `json:"execution_id"`
-	Sequence           uint64                             `json:"sequence"`
-	Kind               ExecutionEventKind                 `json:"kind"`
-	NativeThreadID     string                             `json:"native_thread_id"`
-	NativeTurnID       string                             `json:"native_turn_id,omitempty"`
-	Observed           *ObservedExecutionSettings         `json:"observed,omitempty"`
-	Message            *ExecutionMessageUpdate            `json:"message,omitempty"`
-	Outcome            ExecutionOutcome                   `json:"outcome,omitempty"`
-	ProblemCode        Code                               `json:"problem_code,omitempty"`
-	OpenCodeUsage      *OpenCodeUsageObservation          `json:"opencode_usage,omitempty"`
-	OpenCodeStop       *OpenCodeStopObservation           `json:"opencode_stop,omitempty"`
-	Usage              *NativeTokenUsage                  `json:"usage,omitempty"`
-	ResponseUsage      *NativeResponseUsage               `json:"response_usage,omitempty"`
-	ObservationID      ID                                 `json:"observation_id,omitempty"`
-	Artifact           *ExecutionArtifactUpdate           `json:"artifact,omitempty"`
-	Progress           *ExecutionProgressUpdate           `json:"progress,omitempty"`
-	Tool               *ExecutionToolUpdate               `json:"tool,omitempty"`
-	Notice             NativeNotice                       `json:"notice,omitempty"`
-	Interaction        *ExecutionInteractionUpdate        `json:"interaction,omitempty"`
-	Waiting            *NativeWaiting                     `json:"waiting,omitempty"`
-	QuestionResponse   *ExecutionQuestionResponseUpdate   `json:"question_response,omitempty"`
-	ApprovalResponse   *ExecutionApprovalResponseUpdate   `json:"approval_response,omitempty"`
-	QuestionAcceptance *ExecutionQuestionAcceptanceUpdate `json:"question_acceptance,omitempty"`
-	ApprovalAcceptance *ExecutionApprovalAcceptanceUpdate `json:"approval_acceptance,omitempty"`
-	Steer              *ExecutionSteerUpdate              `json:"steer,omitempty"`
+	CodexFunctionOutput *CodexFunctionOutput               `json:"codex_function_output,omitempty"`
+	Subagents           []SubagentObservation              `json:"subagents,omitempty"`
+	GrokTool            *ExecutionGrokToolUpdate           `json:"grok_tool,omitempty"`
+	GrokUserMessageID   ID                                 `json:"grok_user_message_id,omitempty"`
+	GrokStop            *GrokStopObservation               `json:"grok_stop,omitempty"`
+	GrokToolsTerminal   *GrokToolsTerminal                 `json:"grok_tools_terminal,omitempty"`
+	GrokTerminal        *GrokTextTerminal                  `json:"grok_terminal,omitempty"`
+	GrokText            *GrokTextUpdate                    `json:"grok_text,omitempty"`
+	GrokUsage           *GrokResponseUsage                 `json:"grok_usage,omitempty"`
+	ClaudeDenial        *ClaudeDenialCompletion            `json:"claude_denial,omitempty"`
+	ClaudeStop          *ClaudeStopObservation             `json:"claude_stop,omitempty"`
+	ClaudeTerminal      *ClaudeTerminalObservation         `json:"claude_terminal,omitempty"`
+	ClaudeProgress      *ExecutionClaudeProgress           `json:"claude_progress,omitempty"`
+	ClaudeInterruption  *ExecutionClaudeInterruption       `json:"claude_interruption,omitempty"`
+	ClaudeSettlement    *ExecutionClaudeCallbackSettlement `json:"claude_settlement,omitempty"`
+	ClaudeReplyEcho     *ExecutionClaudeReplyEcho          `json:"claude_reply_echo,omitempty"`
+	ClaudeMessage       *ClaudeMessageUpdate               `json:"claude_message,omitempty"`
+	ClaudeUsage         *ClaudeUsageObservation            `json:"claude_usage,omitempty"`
+	ClaudeTool          *ClaudeToolUpdate                  `json:"claude_tool,omitempty"`
+	Version             uint32                             `json:"version"`
+	ExecutionID         ID                                 `json:"execution_id"`
+	Sequence            uint64                             `json:"sequence"`
+	Kind                ExecutionEventKind                 `json:"kind"`
+	NativeThreadID      string                             `json:"native_thread_id"`
+	NativeTurnID        string                             `json:"native_turn_id,omitempty"`
+	Observed            *ObservedExecutionSettings         `json:"observed,omitempty"`
+	Message             *ExecutionMessageUpdate            `json:"message,omitempty"`
+	Outcome             ExecutionOutcome                   `json:"outcome,omitempty"`
+	ProblemCode         Code                               `json:"problem_code,omitempty"`
+	OpenCodeUsage       *OpenCodeUsageObservation          `json:"opencode_usage,omitempty"`
+	OpenCodeStop        *OpenCodeStopObservation           `json:"opencode_stop,omitempty"`
+	Usage               *NativeTokenUsage                  `json:"usage,omitempty"`
+	ResponseUsage       *NativeResponseUsage               `json:"response_usage,omitempty"`
+	ObservationID       ID                                 `json:"observation_id,omitempty"`
+	Artifact            *ExecutionArtifactUpdate           `json:"artifact,omitempty"`
+	Progress            *ExecutionProgressUpdate           `json:"progress,omitempty"`
+	Tool                *ExecutionToolUpdate               `json:"tool,omitempty"`
+	Notice              NativeNotice                       `json:"notice,omitempty"`
+	Interaction         *ExecutionInteractionUpdate        `json:"interaction,omitempty"`
+	Waiting             *NativeWaiting                     `json:"waiting,omitempty"`
+	QuestionResponse    *ExecutionQuestionResponseUpdate   `json:"question_response,omitempty"`
+	ApprovalResponse    *ExecutionApprovalResponseUpdate   `json:"approval_response,omitempty"`
+	QuestionAcceptance  *ExecutionQuestionAcceptanceUpdate `json:"question_acceptance,omitempty"`
+	ApprovalAcceptance  *ExecutionApprovalAcceptanceUpdate `json:"approval_acceptance,omitempty"`
+	Steer               *ExecutionSteerUpdate              `json:"steer,omitempty"`
 }
 
 func (e ExecutionEvent) Validate() error {
@@ -253,6 +255,10 @@ func (e ExecutionEvent) Validate() error {
 		return invalidGrokContent()
 	}
 	switch e.Kind {
+	case ExecutionCodexFunctionOutputObserved:
+		if e.CodexFunctionOutput == nil || e.CodexFunctionOutput.Validate() != nil {
+			return invalidCodexFunctionOutput()
+		}
 	case ExecutionSubagentObserved:
 		if len(e.Subagents) == 0 || len(e.Subagents) > 128 {
 			return invalidSubagent()
@@ -463,7 +469,7 @@ func (e ExecutionEvent) Validate() error {
 	if e.ClaudeTerminal != nil && (e.Kind != ExecutionTurnFinished || e.ClaudeTerminal.Validate() != nil || e.Outcome != e.ClaudeTerminal.Outcome() || e.ProblemCode != "") {
 		return invalidClaudeTerminal()
 	}
-	if (e.Kind != ExecutionGrokToolObserved && e.GrokTool != nil) || (e.Kind != ExecutionGrokTextObserved && e.GrokText != nil) || (e.Kind != ExecutionGrokUsageObserved && e.GrokUsage != nil) || (e.Kind != ExecutionClaudeProgressObserved && e.ClaudeProgress != nil) || (e.Kind != ExecutionClaudeInterruptionObserved && e.ClaudeInterruption != nil) || (e.Kind != ExecutionClaudeCallbackSettled && e.ClaudeSettlement != nil) || (e.Kind != ExecutionClaudeReplyEchoObserved && e.ClaudeReplyEcho != nil) || (e.Kind != ExecutionClaudeToolObserved && e.ClaudeTool != nil) || (e.Kind != ExecutionClaudeUsageObserved && e.ClaudeUsage != nil) || (e.Kind != ExecutionClaudeMessageObserved && e.ClaudeMessage != nil) || (e.Kind != ExecutionOpenCodeUsageObserved && e.OpenCodeUsage != nil) || (e.Kind != ExecutionApprovalAccepted && e.ApprovalAcceptance != nil) || (e.Kind != ExecutionApprovalDeliveryObserved && e.ApprovalResponse != nil) || (e.Kind != ExecutionSteerObserved && e.Steer != nil) || (e.Kind != ExecutionQuestionAccepted && e.QuestionAcceptance != nil) || (e.Kind != ExecutionQuestionDeliveryObserved && e.QuestionResponse != nil) || (!e.Kind.IsInteraction() && e.Interaction != nil) || (e.Kind != ExecutionWaitingChanged && e.Waiting != nil) || (!e.Kind.IsArtifact() && e.Artifact != nil) || (e.Kind != ExecutionProgressObserved && e.Progress != nil) || (!e.Kind.IsTool() && e.Tool != nil) || (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && e.Usage != nil) || (e.Kind != ExecutionResponseUsageObserved && e.ResponseUsage != nil) || (e.Kind != ExecutionGrokUsageObserved && e.Kind != ExecutionClaudeUsageObserved && e.Kind != ExecutionOpenCodeUsageObserved && e.Kind != ExecutionUsageObserved && e.Kind != ExecutionResponseUsageObserved && e.ObservationID != "") || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
+	if (e.Kind != ExecutionCodexFunctionOutputObserved && e.CodexFunctionOutput != nil) || (e.Kind != ExecutionGrokToolObserved && e.GrokTool != nil) || (e.Kind != ExecutionGrokTextObserved && e.GrokText != nil) || (e.Kind != ExecutionGrokUsageObserved && e.GrokUsage != nil) || (e.Kind != ExecutionClaudeProgressObserved && e.ClaudeProgress != nil) || (e.Kind != ExecutionClaudeInterruptionObserved && e.ClaudeInterruption != nil) || (e.Kind != ExecutionClaudeCallbackSettled && e.ClaudeSettlement != nil) || (e.Kind != ExecutionClaudeReplyEchoObserved && e.ClaudeReplyEcho != nil) || (e.Kind != ExecutionClaudeToolObserved && e.ClaudeTool != nil) || (e.Kind != ExecutionClaudeUsageObserved && e.ClaudeUsage != nil) || (e.Kind != ExecutionClaudeMessageObserved && e.ClaudeMessage != nil) || (e.Kind != ExecutionOpenCodeUsageObserved && e.OpenCodeUsage != nil) || (e.Kind != ExecutionApprovalAccepted && e.ApprovalAcceptance != nil) || (e.Kind != ExecutionApprovalDeliveryObserved && e.ApprovalResponse != nil) || (e.Kind != ExecutionSteerObserved && e.Steer != nil) || (e.Kind != ExecutionQuestionAccepted && e.QuestionAcceptance != nil) || (e.Kind != ExecutionQuestionDeliveryObserved && e.QuestionResponse != nil) || (!e.Kind.IsInteraction() && e.Interaction != nil) || (e.Kind != ExecutionWaitingChanged && e.Waiting != nil) || (!e.Kind.IsArtifact() && e.Artifact != nil) || (e.Kind != ExecutionProgressObserved && e.Progress != nil) || (!e.Kind.IsTool() && e.Tool != nil) || (e.Kind != ExecutionThreadBound && e.Observed != nil) || (e.Kind != ExecutionMessageStarted && e.Kind != ExecutionTextAppended && e.Kind != ExecutionMessageCompleted && e.Message != nil) || (e.Kind != ExecutionTurnFinished && (e.Outcome != "" || e.ProblemCode != "")) || (e.Kind != ExecutionUsageObserved && e.Usage != nil) || (e.Kind != ExecutionResponseUsageObserved && e.ResponseUsage != nil) || (e.Kind != ExecutionGrokUsageObserved && e.Kind != ExecutionClaudeUsageObserved && e.Kind != ExecutionOpenCodeUsageObserved && e.Kind != ExecutionUsageObserved && e.Kind != ExecutionResponseUsageObserved && e.ObservationID != "") || (e.Kind != ExecutionNoticeObserved && e.Notice != "") {
 		return Fail(InvalidArgument, "An execution event contains another kind's payload.", "Publish one unambiguous typed event.")
 	}
 	if e.OpenCodeStop != nil && e.Kind != ExecutionTurnFinished {
@@ -547,30 +553,31 @@ type ForkMessageOrigin struct {
 }
 
 type ExecutionMessage struct {
-	ContextRevision    uint64                     `json:"context_revision,omitempty"`
-	TurnTiming         *TurnTiming                `json:"turn_timing,omitempty"`
-	Attachments        []ImageAttachment          `json:"attachments,omitempty"`
-	Inherited          *ForkMessageOrigin         `json:"inherited,omitempty"`
-	GrokTool           *GrokToolEvent             `json:"grok_tool,omitempty"`
-	GrokUser           *GrokUserHistory           `json:"grok_user,omitempty"`
-	GrokText           *GrokTextContent           `json:"grok_text,omitempty"`
-	ClaudeProgress     *ClaudeProgressObservation `json:"claude_progress,omitempty"`
-	ClaudeInterruption *ClaudeInterruption        `json:"claude_interruption,omitempty"`
-	ClaudeTool         *ClaudeToolContent         `json:"claude_tool,omitempty"`
-	Claude             *ClaudeMessageContent      `json:"claude,omitempty"`
-	ExecutionID        ID                         `json:"execution_id"`
-	NativeThreadID     string                     `json:"native_thread_id"`
-	NativeTurnID       string                     `json:"native_turn_id"`
-	NativeID           string                     `json:"native_id"`
-	NativeParentID     string                     `json:"native_parent_id,omitempty"`
-	Role               MessageRole                `json:"role"`
-	Phase              *MessagePhase              `json:"phase,omitempty"`
-	InputID            ID                         `json:"input_id,omitempty"`
-	Text               string                     `json:"text"`
-	State              MessageState               `json:"state"`
-	Tool               *ExecutionTool             `json:"tool,omitempty"`
-	Artifact           *ExecutionArtifact         `json:"artifact,omitempty"`
-	Progress           *NativeProgress            `json:"progress,omitempty"`
-	FirstSequence      uint64                     `json:"first_sequence"`
-	LastSequence       uint64                     `json:"last_sequence"`
+	CodexFunctionOutput *CodexFunctionOutput       `json:"codex_function_output,omitempty"`
+	ContextRevision     uint64                     `json:"context_revision,omitempty"`
+	TurnTiming          *TurnTiming                `json:"turn_timing,omitempty"`
+	Attachments         []ImageAttachment          `json:"attachments,omitempty"`
+	Inherited           *ForkMessageOrigin         `json:"inherited,omitempty"`
+	GrokTool            *GrokToolEvent             `json:"grok_tool,omitempty"`
+	GrokUser            *GrokUserHistory           `json:"grok_user,omitempty"`
+	GrokText            *GrokTextContent           `json:"grok_text,omitempty"`
+	ClaudeProgress      *ClaudeProgressObservation `json:"claude_progress,omitempty"`
+	ClaudeInterruption  *ClaudeInterruption        `json:"claude_interruption,omitempty"`
+	ClaudeTool          *ClaudeToolContent         `json:"claude_tool,omitempty"`
+	Claude              *ClaudeMessageContent      `json:"claude,omitempty"`
+	ExecutionID         ID                         `json:"execution_id"`
+	NativeThreadID      string                     `json:"native_thread_id"`
+	NativeTurnID        string                     `json:"native_turn_id"`
+	NativeID            string                     `json:"native_id"`
+	NativeParentID      string                     `json:"native_parent_id,omitempty"`
+	Role                MessageRole                `json:"role"`
+	Phase               *MessagePhase              `json:"phase,omitempty"`
+	InputID             ID                         `json:"input_id,omitempty"`
+	Text                string                     `json:"text"`
+	State               MessageState               `json:"state"`
+	Tool                *ExecutionTool             `json:"tool,omitempty"`
+	Artifact            *ExecutionArtifact         `json:"artifact,omitempty"`
+	Progress            *NativeProgress            `json:"progress,omitempty"`
+	FirstSequence       uint64                     `json:"first_sequence"`
+	LastSequence        uint64                     `json:"last_sequence"`
 }

@@ -1,0 +1,7 @@
+{
+  "nativeCodexFunctionOutput.unavailable": "Function output unavailable",
+  "nativeCodexFunctionOutput.image": "Image reference",
+  "nativeCodexFunctionOutput.audio": "Audio reference",
+  "nativeCodexFunctionOutput.encrypted": "Encrypted content present",
+  "nativeCodexFunctionOutput.label": "Codex function output"
+}

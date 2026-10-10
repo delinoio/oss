@@ -13,25 +13,27 @@ import (
 // must route them to another typed adapter or stop with an unsupported result.
 // This component never sends prompts, answers interactions or owns cleanup.
 type CodexEventPublisher struct {
-	children          domain.SubagentState
-	mu                sync.Mutex
-	publisher         *ExecutionPublisher
-	thread, turn      domain.ID
-	messages          map[string]domain.ExecutionMessageUpdate
-	tools             map[string]codexToolPublication
-	artifacts         map[string]codexArtifactPublication
-	interactions      map[domain.ID]domain.ExecutionInteractionUpdate
-	approvalKinds     map[domain.ID]domain.CodexApprovalKind
-	questionResponses map[domain.ID]domain.ExecutionQuestionResponseUpdate
-	approvalResponses map[domain.ID]domain.ExecutionApprovalResponseUpdate
-	acceptedInputs    []domain.ExecutionInputBinding
-	steers            map[domain.ID]domain.ExecutionSteerUpdate
-	waiting           domain.NativeWaiting
-	blocked, finished bool
+	functionOutputSupported bool
+	functionOutputs         map[string]domain.CodexFunctionOutput
+	children                domain.SubagentState
+	mu                      sync.Mutex
+	publisher               *ExecutionPublisher
+	thread, turn            domain.ID
+	messages                map[string]domain.ExecutionMessageUpdate
+	tools                   map[string]codexToolPublication
+	artifacts               map[string]codexArtifactPublication
+	interactions            map[domain.ID]domain.ExecutionInteractionUpdate
+	approvalKinds           map[domain.ID]domain.CodexApprovalKind
+	questionResponses       map[domain.ID]domain.ExecutionQuestionResponseUpdate
+	approvalResponses       map[domain.ID]domain.ExecutionApprovalResponseUpdate
+	acceptedInputs          []domain.ExecutionInputBinding
+	steers                  map[domain.ID]domain.ExecutionSteerUpdate
+	waiting                 domain.NativeWaiting
+	blocked, finished       bool
 }
 
 func NewCodexEventPublisher(publisher *ExecutionPublisher) *CodexEventPublisher {
-	return &CodexEventPublisher{publisher: publisher, messages: map[string]domain.ExecutionMessageUpdate{}, tools: map[string]codexToolPublication{}, artifacts: map[string]codexArtifactPublication{}, interactions: map[domain.ID]domain.ExecutionInteractionUpdate{}, approvalKinds: map[domain.ID]domain.CodexApprovalKind{}, questionResponses: map[domain.ID]domain.ExecutionQuestionResponseUpdate{}, approvalResponses: map[domain.ID]domain.ExecutionApprovalResponseUpdate{}, steers: map[domain.ID]domain.ExecutionSteerUpdate{}}
+	return &CodexEventPublisher{functionOutputs: map[string]domain.CodexFunctionOutput{}, publisher: publisher, messages: map[string]domain.ExecutionMessageUpdate{}, tools: map[string]codexToolPublication{}, artifacts: map[string]codexArtifactPublication{}, interactions: map[domain.ID]domain.ExecutionInteractionUpdate{}, approvalKinds: map[domain.ID]domain.CodexApprovalKind{}, questionResponses: map[domain.ID]domain.ExecutionQuestionResponseUpdate{}, approvalResponses: map[domain.ID]domain.ExecutionApprovalResponseUpdate{}, steers: map[domain.ID]domain.ExecutionSteerUpdate{}}
 }
 
 // The accepted authentication profile fixes native provider authority. Neither
@@ -161,6 +163,8 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 		return false, publicationUncertain()
 	}
 	switch event.Kind {
+	case codex.FunctionOutputEvent:
+		return true, c.publishFunctionOutput(ctx, event)
 	case codex.AutoReviewEvent:
 		if event.AutoReview == nil || c.publisher.input.Configuration.Options.ApprovalsReviewer != domain.CodexReviewerAuto || event.ThreadID != c.thread || event.TurnID != c.turn || !event.Correlated {
 			return false, publicationUncertain()

@@ -2265,3 +2265,44 @@ value grants readiness, native support, credential release or input acceptance.
 The original root may observe official `sleep` ThreadItems through the existing tool lifecycle. The shared closed decoder requires exactly `type`, bounded nonempty `id` and nonnegative uint64 `durationMs`, rejects duplicate/unknown fields and preserves the original item, thread and known turn. Lifecycle status comes only from original `item/started` and `item/completed`; duration is immutable across completion. Worker and server independently fence scope and changed duration. Public `sleep.duration_ms` is an exact decimal JSON string to preserve every native uint64 value through browser parsing. The existing tool disclosure displays the duration and original lifecycle status without a timer or controls.
 
 Complete continuation, context/compaction and permitted ordinary/managed Fork history share the same decoder and retain the original normalized native item JSON, sequence and history digest. Both Fork admission checks explicitly allow only this closed inert family; async/structured tool families and other restricted profiles remain separate. The synchronized outbox and server exact-request receipt replay preserve one observation after publication loss; uncertainty permits only replay of that original publication, never native sleep/input replay. Sleep completion settles only the tool. Original turn outcome, accepted input, native failure/interruption, cleanup and recovery remain independent. No protocol allocation, database migration or numeric native version gate is added.
+
+### Codex function output observations
+
+`CODEX_FUNCTION_OUTPUT_V1` identifies an independent observation profile: System
+capability 90 and Worker capability 59. Both declarations and their immutable
+allocation ownership accompany this implementation. No public RPC, entity kind,
+existing field number, protocol version or portable bundle version changes.
+Adapter capability is not installed-native or account acceptance evidence.
+
+One closed bounded decoder validates `functionCallOutput` in original live
+item start/completion, full context history, latest continuation history and
+Fork admission. Preserve exact original item identity, function name, nullable
+namespace, string versus ordered content-array output, image URL versus file-ID
+alternative, optional image detail, audio reference and encrypted content in the
+original protected native history. Never recreate history from public records;
+complete history comparison and digests still include all original content.
+The original item is bounded to 1 MiB, at most 128 content entries and 256 KiB
+of public text. Each private reference/encrypted string is bounded to 256 KiB.
+Unknown variants/fields, duplicate keys, null required values, conflicting image
+alternatives, invalid detail and excessive individual/aggregate text fail closed.
+Empty string output, empty content arrays and null/empty namespaces remain
+separate valid forms.
+
+Public version-1 `codex-function-output-observed` events and dedicated
+`ExecutionMessage.codex_function_output` ToolMessage projections retain original
+item/name/namespace and ordered output positions. Text stays inert; media retains
+only reference kind, optional detail and reference presence. Encrypted entries
+retain only type and presence. URLs, file IDs, data-URL content, encrypted bytes,
+native envelopes and credentials never enter public payloads or structured logs.
+Reference metadata grants no URL fetch, file/media read or byte authority. The
+existing Worker media owner remains independent.
+
+The original authenticated assignment and native thread/turn own each start and
+completion. The same public observation ID joins the two lifecycle states; name
+and namespace cannot change. Complete-before-start, duplicate, foreign, late,
+non-Codex, restricted Sidechat and unnegotiated publications fail closed. Original
+ordered outbox, synchronized pending request, receipt replay and publication
+uncertainty remain authoritative. A result cannot dispatch a function/tool, answer
+an interaction, infer tool success, settle the original root turn, publish usage,
+authorize another input or prove process/workspace cleanup. Deterministic fixtures
+are separate from actual native/account/platform acceptance.

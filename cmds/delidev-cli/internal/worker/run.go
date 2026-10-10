@@ -30,23 +30,24 @@ import (
 )
 
 type Config struct {
-	startupProgress          bool
-	progress                 *sessionStartupReporter
-	paidCredits              bool
-	imageClient              delidevv1connect.AttachmentServiceClient
-	branchReportClient       delidevv1connect.WorkerServiceClient
-	startup                  *executionStartupAttempt
-	nativeClaudeInstallation *domain.Installation
-	network                  *workerNetworkRuntime
-	observations             *managedObservationRegistry
-	quotaBlockSupported      bool
-	inspectionMetadata       bool
-	remoteWorkspaceClone     bool
-	repositoryClone          bool
-	updatesEnabled           bool
-	terminals                *terminalManager
-	Root                     string
-	StartupID                domain.ID
+	startupProgress              bool
+	progress                     *sessionStartupReporter
+	paidCredits                  bool
+	imageClient                  delidevv1connect.AttachmentServiceClient
+	branchReportClient           delidevv1connect.WorkerServiceClient
+	startup                      *executionStartupAttempt
+	nativeClaudeInstallation     *domain.Installation
+	network                      *workerNetworkRuntime
+	observations                 *managedObservationRegistry
+	quotaBlockSupported          bool
+	codexFunctionOutputSupported bool
+	inspectionMetadata           bool
+	remoteWorkspaceClone         bool
+	repositoryClone              bool
+	updatesEnabled               bool
+	terminals                    *terminalManager
+	Root                         string
+	StartupID                    domain.ID
 	// DesktopClientID enables proof only for authenticated ordinary desktop admission.
 	DesktopClientID domain.ID
 	Logger          *slog.Logger
@@ -268,7 +269,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		return err
 	}
 	instance, attachID := domain.NewID(), domain.NewID()
-	initialAttach := attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), ProtocolVersion: rpc.ProtocolVersion, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}, config)
+	initialAttach := attachNetworkObservation(&pb.AttachWorkerRequest{RequestId: string(attachID), MachineId: string(credential.MachineID), InstanceId: string(instance), ProtocolVersion: rpc.ProtocolVersion, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUT_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}}, config)
 	config.terminals = newTerminalManager(ctx, config, client, credential, instance)
 	defer config.terminals.close()
 	var capabilityAttachID domain.ID
@@ -284,6 +285,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		titleCapabilityExpected := false
 		managedCapabilityExpected := false
 		config.quotaBlockSupported = false
+		config.codexFunctionOutputSupported = false
 		claudeCapabilityExpected := false
 		metadataExpected := false
 		remoteCloneExpected := false
@@ -312,9 +314,13 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			sidechatExpected := slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1)
 			verifiedTitleProfile := true
 			managedCapabilityExpected = true
+			config.codexFunctionOutputSupported = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUT_V1)
 			config.quotaBlockSupported = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1)
 			titleCapabilityExpected = true
 			profile := "implemented-adapters-v1"
+			if config.codexFunctionOutputSupported {
+				profile += "\x00codex-function-output-v1"
+			}
 			if config.quotaBlockSupported {
 				profile += "\x00codex-quota-block-v1"
 			}
@@ -425,7 +431,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if capabilityAttachID == "" || capabilityProfile != profile {
 				capabilityAttachID, capabilityProfile = domain.NewID(), profile
 			}
-			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
+			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUT_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1)
 			}

@@ -91,6 +91,7 @@ func validationStage(method string) eventValidationStage {
 }
 
 const (
+	FunctionOutputEvent           EventKind = "function-output"
 	AutoReviewEvent               EventKind = "auto-review"
 	CompactionEvent               EventKind = "compaction"
 	SubagentEvent                 EventKind = "subagent"
@@ -150,6 +151,7 @@ type Message struct {
 }
 
 type Event struct {
+	FunctionOutput   *domain.CodexFunctionOutput
 	AutoReview       *domain.AutoReviewObservation
 	ImageGeneration  *ImageGeneration `json:"-"`
 	Compaction       *CompactionObservation
@@ -538,6 +540,19 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 	}
 	message := &Message{}
 	switch kind {
+	case "functionCallOutput":
+		output, err := decodeFunctionOutput(params.Item)
+		if err != nil {
+			return Event{}, err
+		}
+		turn, known := c.execution.turns[params.TurnID]
+		if !known && c.problem == nil {
+			return Event{}, incompatible()
+		}
+		if native.Method == "item/started" {
+			output.Stage = domain.CodexFunctionOutputStarted
+		}
+		return Event{Kind: FunctionOutputEvent, ThreadID: c.thread, TurnID: params.TurnID, ItemID: output.NativeID, FunctionOutput: output, Correlated: known, Late: turn.Turn.Status.terminal()}, nil
 	case "imageGeneration":
 		return c.observeImageGeneration(native, params.TurnID, params.Item)
 	case "contextCompaction":

@@ -509,3 +509,5 @@ Automated fixtures and builds validate these boundaries. Installed native, real-
 ## Inherited elapsed observations
 
 Completed inherited OpenCode user Messages copy original server-owned turn timing with their existing immutable `inherited_from` source session/execution/input/native provenance. Child remapping does not rewrite either observation, and later child input captures a separate interval. Timing is copied only after the original canonical/native mapping checks; it adds no Fork eligibility or native history proof. Fork creation/job/checkpoint/digest inputs omit display timing and retain their prior closed Worker shape.
+
+Codex Fork history uses the shared bounded function-output validator in the [harness contract](cmds-delidev-harness-contract.md#codex-function-output-observations). Preserve every original variant, content position, nullable namespace, media reference and encrypted byte in the protected complete-history comparison and digest. Admission never executes historical functions or retrieves references; public presence metadata cannot substitute for the original native history.

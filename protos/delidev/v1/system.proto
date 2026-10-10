@@ -132,6 +132,7 @@ enum SystemCapability {
   // Reserved for issue #1092 in the repository allocation ledger.
   SYSTEM_CAPABILITY_CODEX_SESSION_FORK_V1 = 13;
   SYSTEM_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1 = 16;
+  SYSTEM_CAPABILITY_CODEX_FUNCTION_OUTPUT_V1 = 90;
 }
 
 message StopServerRequest {

@@ -1,0 +1,7 @@
+{
+  "nativeCodexFunctionOutput.unavailable": "함수 출력 사용 불가",
+  "nativeCodexFunctionOutput.image": "이미지 참조",
+  "nativeCodexFunctionOutput.audio": "오디오 참조",
+  "nativeCodexFunctionOutput.encrypted": "암호화된 내용 있음",
+  "nativeCodexFunctionOutput.label": "Codex 함수 출력"
+}
