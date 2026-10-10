@@ -32,6 +32,64 @@ func sessionDeletionPath(root string, id domain.ID) string {
 	return filepath.Join(root, "session-deletions", string(id)+".json")
 }
 
+func sessionDeletionObligationPath(root string, w domain.SessionDeletionWork) string {
+	return filepath.Join(root, "session-deletions", w.ObligationKey()+".json")
+}
+
+// Keep the session-wide admission tombstone, but never share its report proof.
+// The short legacy lock serializes exact import and tombstone publication with
+// old Workers. Original job/workspace locks still own actual removal.
+func seedSessionDeletionProof(root string, w domain.SessionDeletionWork, fresh sessionDeletionProof) error {
+	lock, err := security.TryLock(filepath.Join(root, "session-deletions", string(w.SessionID)+".lock"))
+	if err != nil {
+		return domain.SessionDeletionPending()
+	}
+	defer lock.Close()
+	path := sessionDeletionObligationPath(root, w)
+	_, currentErr := security.ReadPrivate(path, 4096)
+	if currentErr != nil && !errors.Is(currentErr, os.ErrNotExist) {
+		return domain.SessionDeletionPending()
+	}
+	legacyPath := sessionDeletionPath(root, w.SessionID)
+	raw, err := security.ReadPrivate(legacyPath, 4096)
+	if err == nil {
+		var marker struct {
+			Version uint32 `json:"version"`
+		}
+		if domain.Decode(raw, &marker) == nil && marker.Version == 2 {
+			// Metadata-only tombstones grant no completion authority.
+		} else {
+			var legacy sessionDeletionProof
+			if domain.Decode(raw, &legacy) != nil || legacy.Version != 1 || legacy.ReportID.Validate() != nil || legacy.Digest != w.Digest() {
+				return domain.SessionDeletionPending()
+			}
+			if currentErr == nil {
+				var current sessionDeletionProof
+				b, e := security.ReadPrivate(path, 4096)
+				if e != nil || domain.Decode(b, &current) != nil || current != legacy {
+					return domain.SessionDeletionPending()
+				}
+			} else {
+				if err := writeJSON(path, legacy); err != nil {
+					return err
+				}
+				currentErr = nil
+			}
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return domain.SessionDeletionPending()
+	}
+	if errors.Is(currentErr, os.ErrNotExist) {
+		if err := writeJSON(path, fresh); err != nil {
+			return err
+		}
+	}
+	// Write only after the original receipt is durably retained in its own path.
+	return writeJSON(legacyPath, struct {
+		Version uint32 `json:"version"`
+	}{2})
+}
+
 func watchSessionDeletions(ctx context.Context, config Config, client delidevv1connect.WorkerServiceClient, credential Credential, instance domain.ID) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
@@ -97,12 +155,15 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	if e := security.PrivateDir(filepath.Join(root, "session-deletions")); e != nil {
 		return proof, domain.SessionDeletionPending()
 	}
-	lock, e := security.TryLock(filepath.Join(root, "session-deletions", string(w.SessionID)+".lock"))
+	lock, e := security.TryLock(filepath.Join(root, "session-deletions", w.ObligationKey()+".lock"))
 	if e != nil {
 		return proof, domain.SessionDeletionPending()
 	}
 	defer lock.Close()
-	path := sessionDeletionPath(root, w.SessionID)
+	if err := seedSessionDeletionProof(root, w, proof); err != nil {
+		return proof, err
+	}
+	path := sessionDeletionObligationPath(root, w)
 	raw, e := security.ReadPrivate(path, 4096)
 	if e == nil {
 		if domain.Decode(raw, &proof) != nil || proof.Version != 1 || proof.ReportID.Validate() != nil {
@@ -132,6 +193,11 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 		}
 	}
 	if proof.Complete {
+		if len(w.Copies) != 0 || w.Fork != nil {
+			if err := workspace.CheckDeletionProofAbsence(root, w); err != nil {
+				return proof, err
+			}
+		}
 		if err := cleanupGeneratedCopies(root, w, true); err != nil {
 			return proof, err
 		}
@@ -358,6 +424,11 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			return proof, err
 		}
 		if err := images.Removed(w.MachineID, ref); err != nil {
+			return proof, err
+		}
+	}
+	if len(w.Copies) != 0 || w.Fork != nil {
+		if err := workspace.CheckDeletionProofAbsence(root, w); err != nil {
 			return proof, err
 		}
 	}

@@ -151,6 +151,12 @@ func (w SessionDeletionWork) Validate() error {
 	return nil
 }
 
+// ObligationKey names one immutable original deletion/session/device owner.
+// The full digest still independently validates every retained copy.
+func (w SessionDeletionWork) ObligationKey() string {
+	return string(w.SessionID) + "-" + string(w.DeletionID) + "-" + string(w.DeviceID)
+}
+
 func (w SessionDeletionWork) Digest() string {
 	b, _ := json.Marshal(w)
 	h := sha256.Sum256(b)

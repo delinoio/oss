@@ -79,7 +79,10 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 	}
 	root := filepath.Join(m.Root, "workspaces", string(w.SessionID))
 	stage = "retained-proof"
-	proofPath := filepath.Join(m.Root, "session-deletions", string(w.SessionID)+"-workspace.json")
+	proofPath := filepath.Join(m.Root, "session-deletions", w.ObligationKey()+"-workspace.json")
+	if err := reconcileDeletionWorkspaceProof(m.Root, w); err != nil {
+		return err
+	}
 	proof := deletionWorkspaceProof{Version: 1, Digest: w.Digest()}
 	b, e := security.ReadPrivate(proofPath, 1<<20)
 	if e == nil {
@@ -268,6 +271,69 @@ func writeDeletionWorkspaceProof(path string, v deletionWorkspaceProof) error {
 		return domain.SessionDeletionPending()
 	}
 	if e := security.WriteAtomic(path, b); e != nil {
+		return domain.SessionDeletionPending()
+	}
+	return nil
+}
+
+// reconcileDeletionWorkspaceProof runs only under the original session lock.
+// Retain exact legacy authority before retiring its content; a failed marker
+// write can resume only when both copies still match, without changing receipt.
+func reconcileDeletionWorkspaceProof(root string, w domain.SessionDeletionWork) error {
+	legacyPath := filepath.Join(root, "session-deletions", string(w.SessionID)+"-workspace.json")
+	raw, err := security.ReadPrivate(legacyPath, 1<<20)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return domain.SessionDeletionPending()
+	}
+	var marker struct {
+		Version uint32 `json:"version"`
+	}
+	if domain.Decode(raw, &marker) == nil && marker.Version == 2 {
+		return nil
+	}
+	var legacy deletionWorkspaceProof
+	if domain.Decode(raw, &legacy) != nil || legacy.Version != 1 || legacy.Digest != w.Digest() {
+		return domain.SessionDeletionPending()
+	}
+	path := filepath.Join(root, "session-deletions", w.ObligationKey()+"-workspace.json")
+	current, err := security.ReadPrivate(path, 1<<20)
+	if err == nil {
+		var proof deletionWorkspaceProof
+		if domain.Decode(current, &proof) != nil {
+			return domain.SessionDeletionPending()
+		}
+		a, _ := json.Marshal(proof)
+		b, _ := json.Marshal(legacy)
+		if string(a) != string(b) {
+			return domain.SessionDeletionPending()
+		}
+	} else if errors.Is(err, os.ErrNotExist) {
+		if err := writeDeletionWorkspaceProof(path, legacy); err != nil {
+			return err
+		}
+	} else {
+		return domain.SessionDeletionPending()
+	}
+	return security.WriteAtomic(legacyPath, []byte(`{"version":2}`))
+}
+
+// CheckDeletionProofAbsence observes only the original obligation's bounded
+// proof paths. Restored content never grants a completed report fresh authority.
+func CheckDeletionProofAbsence(root string, w domain.SessionDeletionWork) error {
+	lock, err := security.TryLock(filepath.Join(root, "locks", string(w.SessionID)+".lock"))
+	if err != nil {
+		return domain.SessionDeletionPending()
+	}
+	defer lock.Close()
+	if err := reconcileDeletionWorkspaceProof(root, w); err != nil {
+		return err
+	}
+	raw, err := security.ReadPrivate(filepath.Join(root, "session-deletions", w.ObligationKey()+"-workspace.json"), 1<<20)
+	var proof deletionWorkspaceProof
+	if err != nil || domain.Decode(raw, &proof) != nil || proof.Version != 1 || proof.Digest != w.Digest() || proof.Manifest != nil {
 		return domain.SessionDeletionPending()
 	}
 	return nil
