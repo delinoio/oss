@@ -1,5 +1,83 @@
 # DeliDev desktop client
 
+## Known subscription model autocomplete
+
+The Agent Worker wizard retains the Model step, 720px maximum column, controls
+at least 40px high, theme, footer and narrow-width wrapping. The current inline
+model flow uses a `Model for {source}` form label and the helper
+`Choose a source suggestion or enter its exact native model ID.` This replaces
+the earlier shared `Choose a model` heading, `Model` label and saved-model search
+helper with one model choice per source. Follow the
+[inline Worker model contract](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation).
+
+System capability `KNOWN_SUBSCRIPTION_MODELS_V1 = 35` independently enables the
+known-model read for supported subscription services. Missing catalog support
+shows server-update guidance while retaining exact-ID entry. The inline Worker
+flow requires protocol 2 and `INLINE_WORKER_MODELS_V1 = 42`; otherwise the current
+client shows server-update guidance instead of opening the editor. This replaces
+the earlier saved/direct fallback for older servers. Known suggestions remain
+advisory, bounded read-only metadata, not native discovery, credential validation
+or proof of account entitlement.
+Reject invalid service echoes, catalog versions, dates, provenance categories,
+duplicate IDs and incomplete or oversized inventories before displaying them.
+
+Focus opens a keyboard-operated listbox with display names, exact native IDs and
+Known labels. Name/ID search filters the complete validated list of at most 200
+known candidates. Arrow keys, Home/End and Enter select through accessible active
+descendants; Escape dismisses the list and returns focus from the results region
+to the input. Keep the typed exact-ID option available when no suggestion matches.
+Loading or failure preserves typed input, and a failed known-catalog refresh may
+retain the last valid same-source candidates. Source/harness changes clear
+incompatible selections and prevent stale responses from becoming candidates.
+
+The independent saved Model registry and its autocomplete search, pagination,
+Saved labels and Saved-over-Known precedence are superseded by inline Worker
+models. API suggestions come only from the selected Provider endpoint and use
+Endpoint suggestion labels. There are no saved-list page controls or separate
+Model UUID/revision selections. Selecting a known or endpoint suggestion retains
+its exact native ID and applicable non-secret metadata until the atomic Worker
+save. Queries never register models. Preserve the original Worker revision
+checks, source/account validation and immutable execution attribution. Endpoint
+requests pin Account and Provider revisions and reject mismatched response
+identity; source, Account, connection-generation or editor-lifetime changes clear
+endpoint choices. Endpoint failure clears choices while permitting exact-ID entry.
+
+Show `Known models · Catalog updated {date}`, with `Built-in catalog` or
+`Cached catalog` when applicable, and
+`Availability depends on your plan and installed harness.` Do not show the
+unsupported subscription-discovery warning. The single current refresh control,
+`Refresh models from endpoint`, replaces `Reload models`: for subscriptions it
+rereads server catalog state without forcing an external download; for API
+sources it requests a fresh selected endpoint list. Do not merge saved records,
+persist endpoint catalogs or add background endpoint discovery. Recommendation
+removal cannot delete Worker configurations or immutable execution history;
+pricing and native-account lifecycle remain independently owned. These browser
+interactions do not establish installed native/account/platform acceptance.
+
+## Desktop validation ownership
+
+PR validation is owned by the desktop Turbo task graph. Cache type checks, pure
+UI/client assertions and deterministic frontend output using their declared
+inputs. Execute real Go-server integration, QA, widget and native packaging
+fixtures through uncached tasks. Client pure tests precede client Go integration;
+each desktop shard runs its cached pure UI assertions before its uncached Go
+integration assertions. The combined desktop integration task also follows
+client integration, and combined QA follows type checks, desktop unit/integration
+tests and the release check. The independent checks phase runs QA after its type
+checks and release check; the release check owns its frontend build dependency.
+Sharing a runner-built Go executable never shares fixture processes, credentials
+or data lifetimes.
+
+The current matrix has one checks phase and four complete Vitest shards, each
+with at most two jsdom workers on the shared two-core host. This supersedes the
+earlier four-worker ceiling without relaxing individual test or product
+deadlines. Local `pnpm test` retains the complete validation sequence, including
+client build, type checks, unit/integration tests, bundle/launch/widget/QA fixtures,
+frontend build and release check. Follow the
+[repository workflow contract](repository-workflow-contract.md) for exact task
+dependencies, affected selection, cache authentication and evidence limits.
+Fixtures and packaging do not establish native/account/platform acceptance.
+
 ## Startup Keychain access
 
 Each fresh macOS app launch shows the Keychain access notice and starts checking
