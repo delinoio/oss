@@ -420,6 +420,8 @@ function Shell({
     navigate(destination);
     pendingFocusDestination.current = destination;
   };
+  const sidebarShortcutEnabled =
+    !sidebarPreference.operation && !sidebarPreference.snapshot.problem;
   const shortcutDeclarations = useShortcuts([
     {
       id: ShortcutId.ToggleSidebar,
@@ -428,8 +430,7 @@ function Shell({
       bindings: globalShortcutBindings[ShortcutId.ToggleSidebar],
       input: ShortcutInput.Allow,
       active: wideSidebar,
-      enabled:
-        !sidebarPreference.operation && !sidebarPreference.snapshot.problem,
+      enabled: sidebarShortcutEnabled,
       run: toggleSidebar,
     },
     {
@@ -565,7 +566,7 @@ function Shell({
                       id="main"
                       tabIndex={-1}
                       aria-keyshortcuts={
-                        wideSidebar
+                        wideSidebar && sidebarShortcutEnabled
                           ? shortcutDeclarations.aria(ShortcutId.ToggleSidebar)
                           : undefined
                       }

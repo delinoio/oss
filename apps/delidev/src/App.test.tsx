@@ -3737,6 +3737,42 @@ it(
 );
 
 it(
+  "withholds the wide sidebar shortcut while its preference is unresolved",
+  async () => {
+    viewport();
+    const value = fixture();
+    const bridge = memorySidebarBridge();
+    let finishRead!: (snapshot: unknown) => void;
+    const read = new Promise<unknown>((resolve) => {
+      finishRead = resolve;
+    });
+    vi.spyOn(bridge, "read").mockReturnValue(read);
+    render(
+      <SidebarProvider bridge={bridge}>
+        <App transport={value.transport} />
+      </SidebarProvider>,
+    );
+    const main = screen.getByRole("main");
+    expect(main.getAttribute("aria-keyshortcuts")).toBeNull();
+
+    await act(async () => {
+      finishRead({
+        revision: 1,
+        sidebar_preference: "expanded",
+        problem: null,
+      });
+      await read;
+    });
+    await waitFor(() =>
+      expect(main.getAttribute("aria-keyshortcuts")).toMatch(
+        /^(Meta|Control)\+B$/,
+      ),
+    );
+  },
+  fullShellTimeoutMs,
+);
+
+it(
   "wide sidebar collapse retains composer selection and mounted navigation while moving only hidden focus",
   async () => {
     viewport();
