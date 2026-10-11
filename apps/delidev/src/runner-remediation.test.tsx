@@ -125,3 +125,22 @@ it("retains consuming gates for an original diagnostic after selector shortcuts 
   await waitFor(() => expect(discover).toHaveBeenCalledTimes(2)); expect(discover.mock.calls[1][0]).toEqual(original);
   client.clear();
 });
+it("releases the original workflow gate after a verified terminal inspection while keeping the result", async () => {
+  const row = machine("Settled Runner");
+  const job = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.JOB, schemaVersion: 1, revision: 2n, documentJson: encode({ state: "succeeded", output: {} }) });
+  const discover = vi.fn((_request: unknown) => ({ machine: row, job }));
+  const transport = createRouterTransport(router => { router.service(ResourceService, { getResource: request => ({ resource: request.id === job.id ? job : row }) }); router.service(WorkerService, { discoverHarnesses: discover }); });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function Surface() { const open = useRunnerRemediation(); return <><button onClick={() => open?.(row)}>Inspect settled</button><button disabled={open?.pendingFor(row.id)}>Start original workflow</button>{open?.body}</>; }
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><RunnerRemediationProvider active><Surface /></RunnerRemediationProvider></QueryClientProvider></TransportProvider>);
+  fireEvent.click(screen.getByText("Inspect settled"));
+  fireEvent.click(await screen.findByRole("button", { name: "Run optional diagnostics" }));
+  await screen.findByRole("button", { name: "Finish inspection" });
+  await waitFor(() => expect((screen.getByRole("button", { name: "Start original workflow" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Close Inspect installed harnesses" }));
+  expect((screen.getByRole("button", { name: "Start original workflow" }) as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(screen.getByText("Inspect settled"));
+  await screen.findByRole("button", { name: "Finish inspection" });
+  expect(discover).toHaveBeenCalledOnce();
+  client.clear();
+});

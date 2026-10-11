@@ -8,7 +8,7 @@ import { useState, useId, useMemo, useRef } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { installationObservation, validRunnerObservation } from "./runner-observation";
 import { useQuery } from "@connectrpc/connect-query";
-import { EntityKind, ResourceQuery, WorkerQuery, newRequestId, type Resource } from "@delinoio/delidev-api-client";
+import { EntityKind, ResourceQuery, WorkerQuery, newRequestId, supportsResourceSchema, type Resource } from "@delinoio/delidev-api-client";
 import { document, encode, items, object, resourceName, text } from "./documents";
 import { Harness, TextField } from "./configuration-fields";
 import { JobState, TrackedJob } from "./jobs";
@@ -29,14 +29,21 @@ export function useMachineSettingsController(initial: Resource, active: boolean)
   const [verifyEdited, setVerifyEdited] = useState(false);
   const setVerify = useMemo(() => (next: boolean) => { setVerifyValue(next); setVerifyEdited(next); }, []);
   const [job, setJob] = useState<Resource | "unknown">();
-  const discovery = useRetainedMutation(`machine-discovery:${initial.id}`, WorkerQuery.discoverHarnesses, (response) => { if (exact(response.machine)) setAcknowledged(response.machine); setJob(response.job ?? "unknown"); setVerifyEdited(false); });
-  const pending = discovery.busy || discovery.uncertain || Boolean(job);
+  const [submitted, setSubmitted] = useState<string>();
+  const discovery = useRetainedMutation(`machine-discovery:${initial.id}`, WorkerQuery.discoverHarnesses, (response, request) => { if (exact(response.machine)) setAcknowledged(response.machine); setJob(response.job ?? "unknown"); setSubmitted(request.selectionsJson?.length ? new TextDecoder().decode(request.selectionsJson) : undefined); setVerifyEdited(false); });
+  // Settlement needs a verified terminal observation of the exact original job.
+  // The read shares its cache entry with TrackedJob, so this adds no poller.
+  const tracked = job && job !== "unknown" ? job : undefined;
+  const jobRead = useQuery(ResourceQuery.getResource, { kind: EntityKind.JOB, id: tracked?.id ?? "" }, { enabled: active && Boolean(tracked) });
+  const observed = jobRead.data?.resource;
+  const settled = Boolean(tracked && observed && !jobRead.error && observed.id === tracked.id && observed.kind === EntityKind.JOB && observed.revision >= tracked.revision && supportsResourceSchema(observed) && [JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(text(document(observed).state) as JobState));
+  const pending = discovery.busy || discovery.uncertain || (Boolean(job) && !settled);
   const stale = Boolean(edit && edit.revision !== current?.revision);
   const readError = useMemo(() => result.error || (result.data && !exact(result.data.resource) ? new ConnectError("Runner observation is unavailable.", Code.DataLoss) : undefined), [result.error, result.data, initial.id]);
   const mutation = useRef(discovery); mutation.current = discovery;
   const actions = useMemo(() => ({ send: (...args: Parameters<typeof discovery.send>) => mutation.current.send(...args), retry: () => mutation.current.retry() }), []);
   const retainedDiscovery = useMemo(() => ({ ...actions, busy: discovery.busy, uncertain: discovery.uncertain, error: discovery.error }), [actions, discovery.busy, discovery.uncertain, discovery.error]);
-  return useMemo(() => ({ initial, current, data, edit, setEdit, verify, setVerify, job, setJob, discovery: retainedDiscovery, pending, stale, readError, refetch: result.refetch, loading: result.isFetching, locked: Boolean(edit || pending || verifyEdited) }), [initial, current, data, edit, verify, verifyEdited, setVerify, job, retainedDiscovery, pending, stale, readError, result.refetch, result.isFetching]);
+  return useMemo(() => ({ initial, current, data, edit, setEdit, verify, setVerify, job, setJob, discovery: retainedDiscovery, pending, stale, readError, refetch: result.refetch, loading: result.isFetching, locked: Boolean((edit && !(settled && submitted !== undefined && JSON.stringify({ executables: Object.values(Harness).map((harness) => ({ harness, path: edit.paths[harness] ?? "" })) }) === submitted)) || pending || verifyEdited) }), [initial, settled, submitted, current, data, edit, verify, verifyEdited, setVerify, job, retainedDiscovery, pending, stale, readError, result.refetch, result.isFetching]);
 }
 export type MachineSettingsController = ReturnType<typeof useMachineSettingsController>;
 export function MachineSettings({ initial, active, close, authority }: { initial: Resource; active: boolean; close: () => void; authority?: PairingAuthority }) {
