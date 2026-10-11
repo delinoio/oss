@@ -158,7 +158,6 @@ export function SessionPRStatus({
           selected.id !== repositoryId ||
           selected.kind !== EntityKind.REPOSITORY ||
           selected.schemaVersion !== 1 ||
-          selected.projectId !== row.projectId ||
           selected.revision <= 0n ||
           selected.revision >= 1n << 63n ||
           !uuid(config.integration_id) ||

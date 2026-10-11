@@ -164,6 +164,39 @@ it.each([
   },
 );
 
+it("reads PR state from a global repository for a project-owned association", async () => {
+  const f = fixture();
+  f.repository.projectId = "";
+  f.row.projectId = newRequestId();
+  f.item.state = "open";
+  const transport = createRouterTransport((router) => {
+    router.service(ResourceService, {
+      getResource: () => ({ resource: f.repository }),
+    });
+    router.service(IntegrationService, {
+      queryRepositoryIntegration: () => ({
+        schemaVersion: 1,
+        documentJson: encode(f.detail),
+      }),
+    });
+  });
+  render(
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={new QueryClient()}>
+        <SessionPRStatus
+          row={f.row}
+          association={f.association}
+          limiter={new PRReadLimiter()}
+          active
+        />
+      </QueryClientProvider>
+    </TransportProvider>,
+  );
+  expect(
+    await screen.findByRole("img", { name: "Pull request open" }),
+  ).toBeTruthy();
+});
+
 it("fences a late detail from the replaced original association owner", async () => {
   const f = fixture();
   let release!: () => void;
