@@ -722,7 +722,15 @@ export function ConfigurationEditor({
             {copy("settings.theServerAcknowledgedThisRequestWithout_061fa2")}
           </p>
         ) : (
-          <TrackedJob initial={job} active={active}>
+          <TrackedJob
+            initial={job}
+            active={active}
+            expectedType={
+              kind === EntityKind.REPOSITORY && source
+                ? "save-repository"
+                : undefined
+            }
+          >
             {(state, _output, observation) =>
               state === JobState.Succeeded &&
               kind === EntityKind.REPOSITORY &&

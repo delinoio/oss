@@ -151,13 +151,15 @@ type JobChildren = (
 export function TrackedJob({
   initial,
   active,
+  expectedType,
   children,
 }: {
   initial: Resource;
   active: boolean;
+  expectedType?: string;
   children?: JobChildren;
 }) {
-  const observation = useJobObservation(initial, active);
+  const observation = useJobObservation(initial, active, expectedType);
   return <ObservedJob observation={observation}>{children}</ObservedJob>;
 }
 // Presentation only: no second query or polling owner is created here.

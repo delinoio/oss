@@ -1640,6 +1640,61 @@ async function submitRepositorySave() {
   );
 }
 
+it.each(["missing", "different"] as const)(
+  "does not complete a repository save when the acknowledged job type is %s",
+  async (typeMode) => {
+    const { repository, job, saved, value } = repositorySaveFixture();
+    const suppliedType =
+      typeMode === "missing" ? undefined : "inspect-repository";
+    const supplied = create(ResourceSchema, {
+      ...job,
+      documentJson: encode({
+        ...(suppliedType ? { type: suppliedType } : {}),
+        state: "queued",
+      }),
+    });
+    value.resources[1] = supplied;
+    value.save.mockImplementation(async (request) => ({
+      job: supplied,
+      requestId: input(request).mutation.requestId,
+    }));
+    render(
+      <NotificationProvider>
+        {value.view(
+          <ConfigurationEditor
+            kind={EntityKind.REPOSITORY}
+            initial={repository}
+            active
+            saved={saved}
+            cancel={() => {}}
+          />,
+        )}
+      </NotificationProvider>,
+    );
+    await submitRepositorySave();
+    value.resources[1] = create(ResourceSchema, {
+      ...supplied,
+      revision: 2n,
+      documentJson: encode({
+        type: suppliedType ?? "save-repository",
+        state: "succeeded",
+        output: { id: repository.id, revision: 2 },
+      }),
+    });
+    await act(async () => {
+      await value.client.invalidateQueries();
+    });
+    expect(saved).not.toHaveBeenCalled();
+    expect(screen.queryByText("Repository saved.")).toBeNull();
+    expect(
+      screen.getByText(
+        "Accepted by the server. Waiting for the selected Worker to finish.",
+      ),
+    ).toBeTruthy();
+    value.client.clear();
+  },
+);
+
 it.each(["missing", "foreign", "equal", "older", "unsafe", "problem"])(
   "requires verified advanced original repository output after a %s completion",
   async (failure) => {
