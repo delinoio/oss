@@ -5220,3 +5220,17 @@ Native local startup, supervision and saved-connection verification require the 
 A current supported repository with saved GitHub owner/name and no profile presents one inline GitHub profile choice. It never selects the only profile automatically. The existing bounded selector verifies an explicit exact resource and allows supported disconnected profiles. Association grants no credential or repository-access authority. Profile creation and credential connection stay in GitHub profiles Settings. Missing owner/name opens resource-targeted Repository Settings only after a matching supported exact-resource read; inline setup has no owner, name, URL or token fields.
 
 Save retains the complete original document with only `integration_id` changed, the original repository ID/revision and one request ID. Existing repository configuration writes share a connection-owned mutation identity across Settings and Pull requests. Admission retains the original job and blocks competing saves through navigation. Uncertain acknowledgment permits only the original bytes/request retry. Pending PR actions owns recovery, sanitized failures and status reads. Verified job success with matching output identity/revision must precede a fresh original repository read before automatic PR loading can resume. Failed jobs require a fresh read and explicit review before releasing the save. Rejected saves require read/review before another draft. Unsent choices and selection reads are discarded on repository change or departure; late work cannot change another form or start its PR query. Remote repository capability, backend authorization/revision/checkout validation and normal configured queries remain authoritative. English/Korean semantic forms keep visible focus, 40px controls and wrapping actions.
+
+### Usage filter inline bounds
+
+At the existing 288px and 256px pane widths, Usage filter owners and label grid
+tracks shrink to the available inline width. Text, datetime, select and picker
+controls fit their label bounds with border-box sizing and retain 40px minimum
+height. Preserve native checkbox sizing and calendar appearance. Long labels,
+helpers, validation feedback and buttons wrap without hiding required content.
+The filter body has no horizontal movement after child geometry is constrained;
+its scroll width is at most its client width plus one pixel. Keep independent
+vertical scrolling, stable scrollbar gutter, overscroll protection and fixed
+Reset. Date precision, invalid drafts, presets, picker selection, query identity
+and mounted drafts retain their original owners. English/Korean, light/dark,
+compact drawer and effective 200% browser checks are synthetic evidence only.
