@@ -344,22 +344,22 @@ it("discloses one exact duplicate-name identity without selecting or reading it"
   expect(details.textContent).not.toContain(first.id);
   expect(firstButton.getAttribute("aria-label")).not.toContain(first.id);
   expect(within(details).getByText("owner/repo")).toBeTruthy();
-  const secondButton = pane.getByRole("button", {
+  const secondButton = screen.getByRole("button", {
     name: /^Details for Example repository · 2$/,
   });
   fireEvent.click(secondButton);
-  const expandedSecondButton = pane.getByRole("button", {
+  const expandedSecondButton = screen.getByRole("button", {
     name: /^Details for Example repository · 2$/,
   });
   expect(
-    pane
+    screen
       .getByRole("button", {
         name: /^Details for Example repository · 1$/,
       })
       .getAttribute("aria-expanded"),
   ).toBe("false");
   expect(expandedSecondButton.getAttribute("aria-expanded")).toBe("true");
-  details = pane.getByRole("region", {
+  details = screen.getByRole("region", {
     name: expandedSecondButton.getAttribute("aria-label")!,
   });
   expect(details.id).toBe(expandedSecondButton.getAttribute("aria-controls"));

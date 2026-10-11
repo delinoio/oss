@@ -1142,15 +1142,21 @@ it.each(["inventory", "creation", "deletion"])(
       kind === "inventory"
         ? screen
         : within(screen.getByRole("tabpanel", { name: label }));
-    const retainedId = safePresentation(f.backup.id, "Backup");
-    const duplicateId = safePresentation(nextID, "Backup");
-    await result.findByText(retainedId);
+    const labels = () =>
+      [
+        ...result.querySelectorAll(
+          kind === "inventory" ? ".backups-id" : ".backups-job h3",
+        ),
+      ].map(
+        (element) => element.textContent?.replace(/\s+/gu, " ").trim() ?? "",
+      );
+    await waitFor(() => expect(labels()).toHaveLength(1));
+    const retainedLabel = labels()[0];
     fireEvent.click(
       await screen.findByRole("button", { name: `Load more ${label}` }),
     );
     const retry = await screen.findByRole("button", { name: "Retry" });
-    expect(result.getByText(retainedId)).toBeTruthy();
-    expect(result.queryByText(duplicateId)).toBeNull();
+    expect(labels()).toEqual([retainedLabel]);
     expect(
       screen.queryByRole("button", { name: `Load more ${label}` }),
     ).toBeNull();
@@ -1159,8 +1165,8 @@ it.each(["inventory", "creation", "deletion"])(
       token,
     ]);
     fireEvent.click(retry);
-    await result.findByText(duplicateId);
-    expect(result.getByText(retainedId)).toBeTruthy();
+    await waitFor(() => expect(labels()).toHaveLength(2));
+    expect(labels()).toContain(retainedLabel);
     expect(owner.mock.calls.map(([request]) => request.pageToken)).toEqual([
       "",
       token,

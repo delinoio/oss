@@ -277,9 +277,9 @@ it("opens project creation shortcuts without toggling groups or reading collapse
       .name as string;
     const numberedName = name === "Same name" ? `${name} · ${index + 1}` : name;
     const group = await waitFor(() => {
-      const candidate = document.querySelector<HTMLElement>(
-        `[data-project-id="${CSS.escape(project.id)}"]`,
-      );
+      const candidate = [
+        ...document.querySelectorAll<HTMLElement>("[data-project-id]"),
+      ].find((element) => element.dataset.projectId === project.id);
       expect(candidate).toBeTruthy();
       return candidate!;
     });
