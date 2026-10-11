@@ -1,7 +1,7 @@
 import { create } from "@bufbuild/protobuf";
 import { expect, it } from "vitest";
 import { EntityKind, ResourceSchema } from "@delinoio/delidev-api-client";
-import { interactionRows, messageRows, queueRows, isQueuedInput } from "./session";
+import { requestTrayVisible, interactionRows, messageRows, queueRows, isQueuedInput } from "./session";
 
 it("appends newly streamed messages even when a replacement Worker generated an older UUID", () => {
   const sessionId = "session-a";
