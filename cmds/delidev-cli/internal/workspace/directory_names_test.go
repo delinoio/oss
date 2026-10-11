@@ -16,7 +16,7 @@ import (
 
 func TestPortableRepositoryDirectory(t *testing.T) {
 	for _, test := range []struct{ input, expected string }{
-		{"oss", "oss"}, {" OSS ", "OSS"}, {"a/b", "a_b"}, {"a\\b", "a_b"}, {"CON", "_CON"}, {"com1.txt", "_com1.txt"}, {"NUL", "_NUL"}, {" ... ", "repository"}, {"repo.  ", "repo"}, {"e\u0301", "é"}, {"a\x00b", "a_b"}, {strings.Repeat("界", 100), strings.Repeat("界", 85)},
+		{"oss", "oss"}, {" OSS ", "OSS"}, {"a/b", "a_b"}, {"a\\b", "a_b"}, {"CON", "_CON"}, {"com1.txt", "_com1.txt"}, {"NUL", "_NUL"}, {".git", "_git"}, {".GIT", "_GIT"}, {" ... ", "repository"}, {"repo.  ", "repo"}, {"e\u0301", "é"}, {"a\x00b", "a_b"}, {strings.Repeat("界", 100), strings.Repeat("界", 85)},
 	} {
 		t.Run(test.input, func(t *testing.T) {
 			actual, err := PortableRepositoryDirectory(test.input)
@@ -27,7 +27,7 @@ func TestPortableRepositoryDirectory(t *testing.T) {
 	}
 }
 func TestNamedDirectoryCollisionsHaveNoGitOrWorkspaceSideEffects(t *testing.T) {
-	for _, names := range [][2]string{{"a_b", "a_b"}, {"OSS", "oss"}, {"é", "é"}, {"manifest.json", "other"}} {
+	for _, names := range [][2]string{{"a_b", "a_b"}, {"OSS", "oss"}, {"é", "é"}, {"_git", "_GIT"}, {"manifest.json", "other"}} {
 		t.Run(names[0]+"-"+names[1], func(t *testing.T) {
 			m, input, marker := managedCloneFixture(t)
 			input.Repositories[0].DirectoryName = names[0]
@@ -99,7 +99,7 @@ func TestNamedDirectoryPrimaryReplayAndTampering(t *testing.T) {
 	if _, err := m.Prepare(context.Background(), changed); domain.SafeError(err).Code != domain.RecoveryRequired {
 		t.Fatal("rename rewrote accepted layout", err)
 	}
-	for _, name := range []string{"renamed", "../escape", "e\u0301", "manifest.json"} {
+	for _, name := range []string{"renamed", "../escape", "e\u0301", ".git", "manifest.json"} {
 		forged := manifest
 		forged.Repositories = append([]PreparedRepository(nil), manifest.Repositories...)
 		forged.Repositories[1].DirectoryName = name

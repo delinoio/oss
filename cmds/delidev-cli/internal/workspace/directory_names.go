@@ -38,6 +38,11 @@ func PortableRepositoryDirectory(name string) (string, error) {
 	if name == "" {
 		name = "repository"
 	}
+	// A managed child named .git is interpreted as Git administration metadata by snapshot storage.
+	// Keep the conversion scoped to that exact component; remove it only if storage stops reserving it.
+	if strings.EqualFold(name, ".git") {
+		name = "_" + name[1:]
+	}
 	stem := strings.ToUpper(strings.SplitN(name, ".", 2)[0])
 	if stem == "CON" || stem == "PRN" || stem == "AUX" || stem == "NUL" || len(stem) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) && stem[3] >= '1' && stem[3] <= '9' {
 		name = "_" + name
@@ -57,7 +62,7 @@ func directoryCollisionKey(name string) string {
 	return norm.NFC.String(cases.Fold().String(norm.NFC.String(name)))
 }
 func validDirectoryName(name string) bool {
-	return name == "" || norm.NFC.String(name) == name && domain.ValidateRepositoryCloneDirectory(name) == nil
+	return name == "" || norm.NFC.String(name) == name && !strings.EqualFold(name, ".git") && domain.ValidateRepositoryCloneDirectory(name) == nil
 }
 
 // An omitted component is the immutable version-1 UUID layout, including Fork.
