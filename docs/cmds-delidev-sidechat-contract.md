@@ -49,8 +49,9 @@ Sidechat's read-only authority.
 
 Cleanup and recovery jobs remain queued while any durable Sidechat dependent
 exists. The primary work stream retains one earliest skipped predecessor cursor
-and revisits it after an in-flight assignment completes, a store change or its
-bounded heartbeat. Later independent work may progress, but there is still only
+and advances its ordinary cursor past each excluded job, including a full blocked
+page. It revisits the retained predecessor after an in-flight assignment
+completes, a store change or its bounded heartbeat. Later independent work may progress, but there is still only
 one outstanding primary assignment. Every retry rechecks the original dependency
 gate before atomic claim; a scan wake never grants native cleanup authority.
 

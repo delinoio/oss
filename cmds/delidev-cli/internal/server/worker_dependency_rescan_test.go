@@ -18,11 +18,18 @@ import (
 
 func TestPrimaryWorkRescansOriginalDependencyBlockedStorage(t *testing.T) {
 	for _, scenario := range []struct {
-		name     string
-		recovery bool
-		terminal int
+		name          string
+		recovery      bool
+		terminal      int
+		blocked       int
+		allBlocked    bool
+		cancelBlocked bool
 	}{
 		{name: "cleanup"}, {name: "recovery", recovery: true}, {name: "later-terminal", terminal: 1}, {name: "across-pages", terminal: store.MaxPage + 1},
+		{name: "full-blocked-cleanup-page", blocked: store.MaxPage},
+		{name: "full-blocked-recovery-page", recovery: true, blocked: store.MaxPage},
+		{name: "all-blocked-change", blocked: store.MaxPage, allBlocked: true},
+		{name: "all-blocked-cancel", blocked: store.MaxPage, allBlocked: true, cancelBlocked: true},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			f := newStorageFixture(t)
@@ -36,6 +43,10 @@ func TestPrimaryWorkRescansOriginalDependencyBlockedStorage(t *testing.T) {
 				t.Fatal(err)
 			}
 			blocked, child, ordinary, later := domain.NewID(), domain.NewID(), domain.NewID(), domain.NewID()
+			blockedIDs := []domain.ID{blocked}
+			for len(blockedIDs) < scenario.blocked {
+				blockedIDs = append(blockedIDs, domain.NewID())
+			}
 			input := workspace.StorageRequest{Version: 1, OperationID: blocked, Action: workspace.StorageCleanup, PreviousState: domain.WorkspacePresent, SnapshotID: domain.NewID(), PreviewDigest: strings.Repeat("a", 64), Preparation: preparation, Manifest: manifest}
 			if scenario.recovery {
 				original := input
@@ -55,6 +66,20 @@ func TestPrimaryWorkRescansOriginalDependencyBlockedStorage(t *testing.T) {
 				if _, err := tx.PutJob(blocked, 0, f.session, "", domain.Job{Type: domain.WorkspaceStorageJob, State: domain.JobQueued, MachineID: f.machine, Input: raw, AcceptedAt: time.Now().UTC()}); err != nil {
 					return nil, err
 				}
+				for _, id := range blockedIDs[1:] {
+					queued := input
+					queued.OperationID = id
+					if err := queued.Validate(); err != nil {
+						return nil, err
+					}
+					bytes, err := json.Marshal(queued)
+					if err != nil {
+						return nil, err
+					}
+					if _, err := tx.PutJob(id, 0, f.session, "", domain.Job{Type: domain.WorkspaceStorageJob, State: domain.JobQueued, MachineID: f.machine, Input: bytes, AcceptedAt: time.Now().UTC()}); err != nil {
+						return nil, err
+					}
+				}
 				for i := 0; i < scenario.terminal; i++ {
 					if _, err := tx.PutJob(domain.NewID(), 0, "", "", domain.Job{Type: domain.InspectRepositoryJob, State: domain.JobSucceeded, MachineID: f.machine, Input: []byte(`{}`), Output: []byte(`{}`), AcceptedAt: time.Now().UTC()}); err != nil {
 						return nil, err
@@ -62,7 +87,11 @@ func TestPrimaryWorkRescansOriginalDependencyBlockedStorage(t *testing.T) {
 				}
 				// Allocate after the intervening terminal records to exercise stable pages.
 				ordinary, later = domain.NewID(), domain.NewID()
-				for _, id := range []domain.ID{ordinary, later} {
+				independent := []domain.ID{ordinary, later}
+				if scenario.allBlocked {
+					independent = nil
+				}
+				for _, id := range independent {
 					if _, err := tx.PutJob(id, 0, "", "", domain.Job{Type: domain.InspectRepositoryJob, State: domain.JobQueued, MachineID: f.machine, Input: []byte(`{"path":"/isolated/fixture","preferred_remote":"origin"}`), AcceptedAt: time.Now().UTC()}); err != nil {
 						return nil, err
 					}
@@ -77,7 +106,7 @@ func TestPrimaryWorkRescansOriginalDependencyBlockedStorage(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 			defer cancel()
 			stream, err := f.worker.WatchWork(ctx, ownerRequest(f.workerIdentity, &pb.WatchWorkRequest{MachineId: string(f.machine), InstanceId: string(f.instance)}))
 			if err != nil {
@@ -87,10 +116,6 @@ func TestPrimaryWorkRescansOriginalDependencyBlockedStorage(t *testing.T) {
 			if !stream.Receive() || !stream.Msg().Heartbeat {
 				t.Fatal("primary readiness missing", stream.Err())
 			}
-			if !stream.Receive() || stream.Msg().Job == nil || stream.Msg().Job.Id != string(ordinary) {
-				t.Fatal("later independent work did not progress", stream.Msg(), stream.Err())
-			}
-			assigned := stream.Msg().Job
 			assertQueued := func(id domain.ID) {
 				t.Helper()
 				row, err := f.service.Store.Get(context.Background(), domain.JobKind, id)
@@ -102,14 +127,39 @@ func TestPrimaryWorkRescansOriginalDependencyBlockedStorage(t *testing.T) {
 					t.Fatal("primary preclaimed blocked or later work", id, job.State, row.Revision, err)
 				}
 			}
-			assertQueued(blocked)
-			assertQueued(later)
-			_, err = f.service.Store.Mutate(f.ownerContext, domain.NewID(), "fixture.independent-cancel", nil, func(tx *store.Tx) (any, error) { return nil, tx.RequestJobCancellation(ordinary) })
-			if err != nil {
-				t.Fatal(err)
+			for _, id := range blockedIDs {
+				assertQueued(id)
 			}
-			if !stream.Receive() || stream.Msg().CancelJobId != string(ordinary) {
-				t.Fatal("targeted controls stalled behind dependency", stream.Msg(), stream.Err())
+			var assigned *pb.Resource
+			if scenario.allBlocked {
+				// A full excluded page must yield to the normal heartbeat and cancellation.
+				if !stream.Receive() || !stream.Msg().Heartbeat {
+					t.Fatal("all-blocked stream did not heartbeat", stream.Msg(), stream.Err())
+				}
+				for _, id := range blockedIDs {
+					assertQueued(id)
+				}
+				if scenario.cancelBlocked {
+					cancel()
+					if stream.Receive() || stream.Err() == nil {
+						t.Fatal("all-blocked stream ignored cancellation", stream.Err())
+					}
+					return
+				}
+			} else {
+				if !stream.Receive() || stream.Msg().Job == nil || stream.Msg().Job.Id != string(ordinary) {
+					t.Fatal("later independent work did not progress", stream.Msg(), stream.Err())
+				}
+				assigned = stream.Msg().Job
+				assertQueued(blocked)
+				assertQueued(later)
+				_, err = f.service.Store.Mutate(f.ownerContext, domain.NewID(), "fixture.independent-cancel", nil, func(tx *store.Tx) (any, error) { return nil, tx.RequestJobCancellation(ordinary) })
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !stream.Receive() || stream.Msg().CancelJobId != string(ordinary) {
+					t.Fatal("targeted controls stalled behind dependency", stream.Msg(), stream.Err())
+				}
 			}
 			// Represent completed independent retirement only in this isolated durable
 			// index fixture. No native cleanup is executed or claimed by this test.
@@ -140,12 +190,16 @@ func TestPrimaryWorkRescansOriginalDependencyBlockedStorage(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			assertQueued(blocked)
-			assertQueued(later)
+			if !scenario.allBlocked {
+				assertQueued(blocked)
+				assertQueued(later)
+			}
 			// Positively terminalize only B; A's original native operation stays unrun.
-			_, err = f.worker.ReportWork(context.Background(), ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: &pb.Mutation{Id: assigned.Id, ExpectedRevision: assigned.Revision, RequestId: string(domain.NewID())}, MachineId: string(f.machine), InstanceId: string(f.instance), Problem: &pb.ErrorDetail{Code: string(domain.Canceled)}}))
-			if err != nil {
-				t.Fatal(err)
+			if !scenario.allBlocked {
+				_, err = f.worker.ReportWork(context.Background(), ownerRequest(f.workerIdentity, &pb.ReportWorkRequest{Mutation: &pb.Mutation{Id: assigned.Id, ExpectedRevision: assigned.Revision, RequestId: string(domain.NewID())}, MachineId: string(f.machine), InstanceId: string(f.instance), Problem: &pb.ErrorDetail{Code: string(domain.Canceled)}}))
+				if err != nil {
+					t.Fatal(err)
+				}
 			}
 			if !stream.Receive() || stream.Msg().Job == nil || stream.Msg().Job.Id != string(blocked) {
 				t.Fatal("original stream did not revisit eligible storage", stream.Msg(), stream.Err())
@@ -153,7 +207,12 @@ func TestPrimaryWorkRescansOriginalDependencyBlockedStorage(t *testing.T) {
 			if stream.Msg().Job.Revision != 2 {
 				t.Fatal("original job was claimed more than once", stream.Msg().Job.Revision)
 			}
-			assertQueued(later)
+			for _, id := range blockedIDs[1:] {
+				assertQueued(id)
+			}
+			if !scenario.allBlocked {
+				assertQueued(later)
+			}
 		})
 	}
 }

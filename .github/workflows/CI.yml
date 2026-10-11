@@ -297,6 +297,14 @@ jobs:
           CI_GO_BASE: ${{ needs.changes.outputs.base }}
           CI_GO_HEAD: ${{ needs.changes.outputs.head }}
 
+      # Manual dispatch race validation supplements the ordinary full Go suite.
+      # Retain this path until ordinary CI guarantees equivalent race coverage.
+      - name: Run DeliDev Go race tests
+        if: ${{ github.event_name == 'workflow_dispatch' && matrix.os == 'ubuntu-latest' && matrix.shard == 'all' }}
+        run: |
+          go test -mod=readonly ./cmds/delidev-cli/internal/server -run '^TestPrimaryWorkRescansOriginalDependencyBlockedStorage$' -count=1
+          go test -mod=readonly -race -count=1 ./cmds/delidev-cli/...
+
       - name: Summarize Go test timings
         if: ${{ always() && hashFiles('.turbo/go-test/*.json') != '' }}
         run: node scripts/ci/go-test-report.mjs --summary ".turbo/go-test/${{ matrix.shard }}.json"
