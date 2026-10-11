@@ -575,7 +575,12 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 					dynamicDrainParent = readContext
 					readContext, dynamicDrainCancel = context.WithTimeout(dynamicDrainParent, 15*time.Second)
 				}
-				continue
+				// Successful completion needs settled dynamic evidence. Failed and
+				// interrupted outcomes are publishable with their original unsettled
+				// evidence, so publish those before continuing the bounded drain.
+				if event.Turn != nil && event.Turn.Status == codex.TurnCompleted {
+					continue
+				}
 			}
 		}
 		handled, err := mapper.PublishCore(publicationContext, event)
@@ -595,24 +600,26 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		if event.Kind == codex.TurnCompletedEvent {
 			terminalPublished = true
 		}
-		if parentTerminal != nil && !terminalPublished && mapper.dynamicToolsSettled() {
+		if parentTerminal != nil && mapper.dynamicToolsSettled() {
 			if dynamicDrainCancel != nil {
 				dynamicDrainCancel()
 				dynamicDrainCancel = nil
 				readContext = dynamicDrainParent
 				dynamicDrainParent = nil
 			}
-			handled, err := mapper.PublishCore(publicationContext, *parentTerminal)
-			if err != nil || !handled {
-				if err == nil {
-					err = publicationUncertain()
+			if !terminalPublished {
+				handled, err := mapper.PublishCore(publicationContext, *parentTerminal)
+				if err != nil || !handled {
+					if err == nil {
+						err = publicationUncertain()
+					}
+					return nil, err
 				}
-				return nil, err
+				terminalPublished = true
 			}
-			terminalPublished = true
 		}
 		hasChildren, childrenClosed := mapper.childState()
-		if parentTerminal == nil || !terminalPublished || !childrenClosed {
+		if parentTerminal == nil || !terminalPublished || !childrenClosed || !mapper.dynamicToolsSettled() {
 			continue
 		}
 
