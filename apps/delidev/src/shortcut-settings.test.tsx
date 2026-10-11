@@ -135,7 +135,7 @@ it("keeps capture guidance and labeled footer controls outside the localized cat
   ).toHaveLength(21);
   expect(within(catalog).queryByText("Current saved shortcuts")).toBeNull();
   for (const name of ["Restore all defaults", "Discard changes", "Save changes"]) {
-    const button = screen.getByRole("button", { name, exact: true });
+    const button = screen.getByRole("button", { name });
     expect(catalog.contains(button)).toBe(false);
     expect(button.getAttribute("data-settings-action-presentation")).toBe("label");
   }
