@@ -894,7 +894,7 @@ it("leaves unsupported inventory unknown without reads and fences replacement tr
   );
   await waitFor(() =>
     expect(countStatus(view).textContent).toBe(
-      "1 skill tokens are unavailable in this scope.",
+      "1 skill token is unavailable in this scope.",
     ),
   );
   const status = countStatus(view),
@@ -1032,7 +1032,7 @@ it("announces a deferred dismissed-panel count without moving focus and dedupes 
   await act(async () => release());
   await waitFor(() =>
     expect(status.textContent).toBe(
-      "1 skill tokens are unavailable in this scope.",
+      "1 skill token is unavailable in this scope.",
     ),
   );
   expect(countStatus(view)).toBe(status);
@@ -1040,7 +1040,7 @@ it("announces a deferred dismissed-panel count without moving focus and dedupes 
   expect(screen.queryByRole("listbox")).toBeNull();
   expect(
     screen.getByRole("textbox", {
-      description: "1 skill tokens are unavailable in this scope.",
+      description: "1 skill token is unavailable in this scope.",
     }),
   ).toBe(input);
   const text = status.firstChild;
@@ -1077,7 +1077,7 @@ it("announces a deferred dismissed-panel count without moving focus and dedupes 
 it.each([
   [
     SupportedLanguage.English,
-    "1 skill tokens are unavailable in this scope.",
+    "1 skill token is unavailable in this scope.",
     "No skill tokens are unavailable in this scope.",
   ],
   [
@@ -1155,6 +1155,51 @@ it.each([
   },
 );
 
+it("retires a historical live announcement instead of translating it on locale change", async () => {
+  await i18n.changeLanguage(SupportedLanguage.English);
+  const f = fixture();
+  const view = render(f.view());
+  const input = screen.getByRole("textbox"),
+    status = countStatus(view);
+  fireEvent.change(input, {
+    target: { value: "$missing ", selectionStart: 9 },
+  });
+  await waitFor(() =>
+    expect(status.textContent).toBe(
+      "1 skill token is unavailable in this scope.",
+    ),
+  );
+  const announcements: string[] = [];
+  const observer = new MutationObserver(() => {
+    if (status.textContent) announcements.push(status.textContent);
+  });
+  observer.observe(status, {
+    childList: true,
+    characterData: true,
+    subtree: true,
+  });
+  try {
+    await act(async () => {
+      await i18n.changeLanguage(SupportedLanguage.Korean);
+    });
+    await act(async () => {});
+    expect(status.textContent).toBe("");
+    expect(announcements).toEqual([]);
+    fireEvent.change(input, {
+      target: { value: "$add-issue ", selectionStart: 11 },
+    });
+    await waitFor(() =>
+      expect(status.textContent).toBe(
+        "현재 범위에서 사용할 수 없는 스킬 토큰이 없습니다.",
+      ),
+    );
+  } finally {
+    observer.disconnect();
+    view.unmount();
+    await i18n.changeLanguage(SupportedLanguage.English);
+  }
+});
+
 it("defers confirmed count publication during composition and suppresses locked outcomes", async () => {
   const f = fixture();
   let release!: () => void;
@@ -1178,7 +1223,7 @@ it("defers confirmed count publication during composition and suppresses locked 
   fireEvent.compositionEnd(input);
   await waitFor(() =>
     expect(countStatus(view).textContent).toBe(
-      "1 skill tokens are unavailable in this scope.",
+      "1 skill token is unavailable in this scope.",
     ),
   );
   view.rerender(f.view(machine, true));

@@ -157,7 +157,7 @@ export function useSkillCompletion({
   bindingsChanged?: (bindings: SkillTokenBinding[]) => void;
   retainTransportContext?: boolean;
 }) {
-  useLocale();
+  const locale = useLocale();
   const transport = useTransport(),
     id = useId();
   const scope = `${machineId}:${agentId}:${sessionId}:${projectId}`;
@@ -298,12 +298,19 @@ export function useSkillCompletion({
     transport: typeof transport;
     count?: number;
   }>({ scope, transport });
+  const announcementLocale = useRef(locale);
   const [announcement, setAnnouncement] = useState<{
     scope: string;
     transport: typeof transport;
+    locale: typeof locale;
     count: number;
   }>();
   useEffect(() => {
+    if (announcementLocale.current !== locale) {
+      announcementLocale.current = locale;
+      // Retire the historical live message instead of translating it in place.
+      setAnnouncement(undefined);
+    }
     if (
       confirmedCount.current.scope !== scope ||
       confirmedCount.current.transport !== transport
@@ -324,15 +331,24 @@ export function useSkillCompletion({
     // Do not announce an initial zero; a confirmed recovery from absence does
     // need a localized update even when the completion panel is dismissed.
     if (count > 0 || (previous !== undefined && previous > 0))
-      setAnnouncement({ scope, transport, count });
-  }, [scope, transport, inventoryKnown, composition, unavailable.length]);
+      setAnnouncement({ scope, transport, locale, count });
+  }, [
+    scope,
+    transport,
+    locale,
+    inventoryKnown,
+    composition,
+    unavailable.length,
+  ]);
   const announcedCount =
     inventoryKnown &&
     !composition &&
+    announcementLocale.current === locale &&
     confirmedCount.current.scope === scope &&
     confirmedCount.current.transport === transport &&
     announcement?.scope === scope &&
-    announcement.transport === transport
+    announcement.transport === transport &&
+    announcement.locale === locale
       ? announcement.count
       : undefined;
   const accept = (entry: SkillEntry) => {
