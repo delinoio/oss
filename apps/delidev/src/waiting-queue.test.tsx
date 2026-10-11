@@ -198,3 +198,41 @@ it("retains movement when the response has no original acknowledgement", async (
     ).toBeNull(),
   );
 });
+
+it("keeps the empty queue hidden while an automatic reread is pending", async () => {
+  const f = fixture();
+  f.replace([]);
+  const view = render(f.view());
+  await waitFor(() => expect(f.read).toHaveBeenCalledOnce());
+  await waitFor(() =>
+    expect(
+      view.container
+        .querySelector(".queue-compact-list")
+        ?.hasAttribute("hidden"),
+    ).toBe(true),
+  );
+  let release: () => void = () => {};
+  f.read.mockImplementationOnce(async () => {
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return {
+      inputs: [],
+      nextPageToken: "",
+      currentQueueGeneration: 1n,
+      waitingCount: 0,
+    };
+  });
+  view.rerender(f.view("2"));
+  await waitFor(() => expect(f.read).toHaveBeenCalledTimes(2));
+  expect(
+    view.container.querySelector(".queue-compact-list")?.hasAttribute("hidden"),
+  ).toBe(true);
+  expect(screen.getByText("Loading input queue…").className).toContain(
+    "sidebar-sr-only",
+  );
+  await act(async () => release());
+  await waitFor(() =>
+    expect(screen.queryByText("Loading input queue…")).toBeNull(),
+  );
+});

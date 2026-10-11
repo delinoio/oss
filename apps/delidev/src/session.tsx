@@ -53,7 +53,11 @@ import {
   sessionControlEligibility,
   useSessionControl,
 } from "./session-control";
-import { paginationIdentity, paginationRevision } from "./scroll-pagination";
+import {
+  paginationIdentity,
+  paginationRevision,
+  ReadStage,
+} from "./scroll-pagination";
 import { useConversationDrafts } from "./conversation-drafts";
 import {
   initialInteractionDraft,
@@ -1376,13 +1380,19 @@ export function SessionView({
   const completeQueuePayloads = queue.pages.every((page) =>
     queue.payloadPages.some((payload) => payload.token === page.token),
   );
+  const queueFailed = useRef(false);
+  if (queue.error) queueFailed.current = true;
+  else if (!queue.isPending && !queue.loading) queueFailed.current = false;
   const confirmedEmptyQueue =
+    !queueFailed.current &&
     live.state === ConnectionState.Live &&
     !live.error &&
     Boolean(queue.data) &&
     !queue.error &&
     !queue.isPending &&
-    !queue.loading &&
+    (!queue.loading ||
+      queue.loading === ReadStage.Refresh ||
+      queue.loading === ReadStage.Reload) &&
     !queue.nextPageToken &&
     completeQueuePayloads &&
     !queued.length;
@@ -2282,6 +2292,17 @@ export function SessionView({
                         }
                         refreshHistory={queue.refresh}
                       />
+                    ) : null}
+                    {!waitingSupported ? (
+                      <p
+                        className="sidebar-sr-only"
+                        role="status"
+                        aria-live="polite"
+                      >
+                        {confirmedEmptyQueue && queue.loading
+                          ? copy("session.loadingQueue")
+                          : ""}
+                      </p>
                     ) : null}
                     <div
                       ref={queueRoot}

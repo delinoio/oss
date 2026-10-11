@@ -5284,3 +5284,5 @@ vertical scrolling, stable scrollbar gutter, overscroll protection and fixed
 Reset. Date precision, invalid drafts, presets, picker selection, query identity
 and mounted drafts retain their original owners. English/Korean, light/dark,
 compact drawer and effective 200% browser checks are synthetic evidence only.
+
+Queue refresh footer stability: both queue presenters (legacy history-based and negotiated waiting queue) keep a retained complete empty presentation hidden during healthy automatic Refresh/Reload rereads of the same queue identity. Refresh status is announced through a screen-reader-only live region that adds no normal-flow height, so repeated rereads cannot shift the tray, Agent requests, transcript boundary or composer. Initial loading, failures with Retry, incomplete pagination, payload restoration and explicit boundary recovery stay visible. Retained emptiness is cached presentation, not fresh authoritative zero or mutation permission. Populated rows are retained during rereads. No API, protocol, migration or native change.

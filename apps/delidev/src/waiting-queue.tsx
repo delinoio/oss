@@ -17,6 +17,7 @@ import {
   usePaginationChain,
 } from "./scroll-pagination-query";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
+import { ReadStage } from "./scroll-pagination";
 import { ScrollContinuation } from "./scroll-continuation";
 import { QueuedInput, type QueuedInputDraft } from "./queue";
 import { useRetainedMutation } from "./mutation";
@@ -123,6 +124,12 @@ export function WaitingQueue({
     refreshHistory();
   }, [query.reload, refreshHistory]);
   // Session scope owns the original request even after row eviction or removal.
+  // Clear the one-shot announcement so later rereads cannot replay stale text.
+  useEffect(() => {
+    if (!announcement) return;
+    const timer = setTimeout(() => setAnnouncement(""), 4000);
+    return () => clearTimeout(timer);
+  }, [announcement]);
   const move = useRetainedMutation(
     `move-waiting:${sessionId}`,
     SessionQuery.moveQueuedInput,
@@ -242,16 +249,25 @@ export function WaitingQueue({
   const drop = (before: string) => {
     if (dragged) send(dragged, before);
   };
+  // A failure makes later Retry/recovery reads explicit: they stay visible until one settles.
+  const failed = useRef(false);
+  if (query.error) failed.current = true;
+  else if (query.loaded && !query.loading) failed.current = false;
   const completeEmpty =
     query.loaded &&
-    !query.loading &&
+    !failed.current &&
+    (!query.loading ||
+      query.loading === ReadStage.Refresh ||
+      query.loading === ReadStage.Reload) &&
     !query.error &&
     !query.nextPageToken &&
     !query.rows.length;
   return (
     <>
-      <p className="visually-hidden" role="status" aria-live="polite">
-        {announcement}
+      <p className="sidebar-sr-only" role="status" aria-live="polite">
+        {completeEmpty && query.loading
+          ? copy("session.loadingQueue")
+          : announcement}
       </p>
       <Problem error={move.error} />
       {move.uncertain ? (
