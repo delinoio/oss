@@ -1436,6 +1436,7 @@ export enum SettingsEntryDestination {
   ConnectionDiagnostics = "connection-diagnostics",
   Repositories = "repositories",
   NewProject = "new-project",
+  NewAgentWorker = "new-agent-worker",
   RunnerDevices = "runner-devices",
   GitProfiles = "git-profiles",
 }
@@ -1753,6 +1754,7 @@ interface SettingsProps {
 }
 enum SettingsEntryKind {
   NewProject,
+  NewAgentWorker,
   ManageAccounts,
   AddAccount,
   NotificationTarget,
@@ -1764,6 +1766,7 @@ type SettingsCategoryEntry =
       resourceKind: EntityKind;
     }
   | { kind: SettingsEntryKind.NewProject }
+  | { kind: SettingsEntryKind.NewAgentWorker }
   | {
       kind: SettingsEntryKind.ManageAccounts | SettingsEntryKind.AddAccount;
       providerId: string;
@@ -1809,14 +1812,18 @@ function entrySelection(
             ? SettingsCategory.ExecutionWorkers
             : destination === SettingsEntryDestination.Repositories
               ? SettingsCategory.Repositories
-              : destination === SettingsEntryDestination.NewProject
-                ? SettingsCategory.Projects
-                : SettingsCategory.SubscriptionAccounts,
+              : destination === SettingsEntryDestination.NewAgentWorker
+                ? SettingsCategory.AgentWorkers
+                : destination === SettingsEntryDestination.NewProject
+                  ? SettingsCategory.Projects
+                  : SettingsCategory.SubscriptionAccounts,
     key: newRequestId(),
     entry:
       destination === SettingsEntryDestination.NewProject
         ? { kind: SettingsEntryKind.NewProject }
-        : undefined,
+        : destination === SettingsEntryDestination.NewAgentWorker
+          ? { kind: SettingsEntryKind.NewAgentWorker }
+          : undefined,
   };
 }
 
@@ -2021,7 +2028,9 @@ function SettingsWorkspace({
   >(() =>
     entry?.kind === SettingsEntryKind.NewProject
       ? { key: newRequestId() }
-      : undefined,
+      : entry?.kind === SettingsEntryKind.NewAgentWorker
+        ? { kind: EntityKind.AGENT, key: newRequestId() }
+        : undefined,
   );
   const [machine, setMachine] = useState<Resource>();
   const runnerInspection = useRunnerRemediation({
@@ -2117,6 +2126,7 @@ function SettingsWorkspace({
   const [apiProviderID, setApiProviderID] = useState(() =>
     entry &&
     entry.kind !== SettingsEntryKind.NewProject &&
+    entry.kind !== SettingsEntryKind.NewAgentWorker &&
     entry.kind !== SettingsEntryKind.NotificationTarget
       ? entry.providerId
       : "",
@@ -2126,6 +2136,7 @@ function SettingsWorkspace({
   >(() =>
     entry &&
     entry.kind !== SettingsEntryKind.NewProject &&
+    entry.kind !== SettingsEntryKind.NewAgentWorker &&
     entry.kind !== SettingsEntryKind.NotificationTarget
       ? entry.provider
       : undefined,
