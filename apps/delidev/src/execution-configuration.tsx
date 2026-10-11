@@ -159,12 +159,26 @@ function NativeObservations({
                         <LocalizedText
                           id="execution-configuration.observedExecutionInput_e6a4af"
                           components={{
-                            s0: (<>
-                              {text(presentationLabels.identity(progress.execution_id, "record"))}
-                            </>),
-                            s1: (<>
-                              {text(presentationLabels.identity(progress.input_id, "input"))}
-                            </>),
+                            s0: (
+                              <>
+                                {text(
+                                  presentationLabels.identity(
+                                    progress.execution_id,
+                                    "record",
+                                  ),
+                                )}
+                              </>
+                            ),
+                            s1: (
+                              <>
+                                {text(
+                                  presentationLabels.identity(
+                                    progress.input_id,
+                                    "input",
+                                  ),
+                                )}
+                              </>
+                            ),
                           }}
                         />
                       </p>
@@ -513,7 +527,8 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({
                               initial.initial_account_id,
                               "account",
                             ),
-                          ) || copy("execution-configuration.extra.ca1844969742")}
+                          ) ||
+                            copy("execution-configuration.extra.ca1844969742")}
                         </dd>
                         <dt>
                           {copy(
@@ -526,20 +541,29 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({
                               selection.account_id,
                               "account",
                             ),
-                          ) || copy("execution-configuration.extra.ca1844969742")}
+                          ) ||
+                            copy("execution-configuration.extra.ca1844969742")}
                         </dd>
                         <dt>
                           {copy(
                             "execution-configuration.firstExecution_5294a1",
                           )}
                         </dt>
-                        <dd>{text(presentationLabels.identity(initial.id, "record"))}</dd>
+                        <dd>
+                          {text(
+                            presentationLabels.identity(initial.id, "record"),
+                          )}
+                        </dd>
                         <dt>
                           {copy(
                             "execution-configuration.selectedExecution_c6fa3c",
                           )}
                         </dt>
-                        <dd>{text(presentationLabels.identity(selection.id, "record"))}</dd>
+                        <dd>
+                          {text(
+                            presentationLabels.identity(selection.id, "record"),
+                          )}
+                        </dd>
                         <dt>
                           {copy("execution-configuration.agentWorker_a4caa7")}
                         </dt>
@@ -547,7 +571,16 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({
                           <LocalizedText
                             id="execution-configuration.revision_dfefbf"
                             components={{
-                              s0: <>{text(presentationLabels.identity(configuration.agent_id, "agent"))}</>,
+                              s0: (
+                                <>
+                                  {text(
+                                    presentationLabels.identity(
+                                      configuration.agent_id,
+                                      "agent",
+                                    ),
+                                  )}
+                                </>
+                              ),
                               s1: <>{integer(configuration.agent_revision)}</>,
                             }}
                           />
@@ -565,7 +598,14 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({
                         <dt>
                           {copy("execution-configuration.provider_472590")}
                         </dt>
-                        <dd>{text(presentationLabels.identity(configuration.provider_id, "provider"))}</dd>
+                        <dd>
+                          {text(
+                            presentationLabels.identity(
+                              configuration.provider_id,
+                              "provider",
+                            ),
+                          )}
+                        </dd>
                         <dt>
                           {copy("execution-configuration.acceptedAt_1b8950")}
                         </dt>
@@ -626,7 +666,6 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({
                 : null}
             </section>
           </TechnicalEvidence>
-
 
           <NativeObservations
             progress={object(data.execution)}
