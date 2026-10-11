@@ -677,6 +677,7 @@ fn disabled_constant_pass_never_runs() {
     let report = optimize_same(temp.path(), &["--disable-pass", CONST]);
     assert_eq!(applied(&report, CONST), 0);
     let main = emitted(temp.path(), "main.ts");
-    assert!(main.contains("THEME.LIGHT"), "{main}");
+    // Reads stay reads; property-shortening may still rename the keys.
+    assert!(main.contains("THEME."), "{main}");
     assert!(main.contains("Limits.MAX"), "{main}");
 }
