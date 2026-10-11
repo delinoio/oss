@@ -37,21 +37,32 @@ test("renders ordered inert text and reference markers without retrieval control
 });
 test("preserves empty string and array as distinct safe variants", () => {
   expect(
-    functionOutput({ name: "tool", namespace: null, structured: false, text: "" })
-      ?.structured,
+    functionOutput({
+      name: "tool",
+      namespace: null,
+      structured: false,
+      text: "",
+    })?.structured,
   ).toBe(false);
   expect(
-    functionOutput({ name: "tool", namespace: "", structured: true, content: [] })
-      ?.structured,
+    functionOutput({
+      name: "tool",
+      namespace: "",
+      structured: true,
+      content: [],
+    })?.structured,
   ).toBe(true);
   expect(
-    functionOutput({ name: "tool", namespace: null, structured: true })?.structured,
+    functionOutput({ name: "tool", namespace: null, structured: true })
+      ?.structured,
   ).toBe(true);
 });
 for (const [name, value] of Object.entries({
   ciphertext: {
     ...content,
-    content: [{ kind: "encrypted_content", encrypted_content: "private-sentinel" }],
+    content: [
+      { kind: "encrypted_content", encrypted_content: "private-sentinel" },
+    ],
   },
   locator: {
     ...content,
@@ -70,7 +81,12 @@ for (const [name, value] of Object.entries({
   namespace: { name: "tool", structured: false, text: "" },
   mixed: { ...content, text: "conflict" },
   null: { ...content, content: null },
-  surrogate: { name: "tool", namespace: null, structured: false, text: "\ud800" },
+  surrogate: {
+    name: "tool",
+    namespace: null,
+    structured: false,
+    text: "\ud800",
+  },
   oversized: {
     name: "tool",
     namespace: null,

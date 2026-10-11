@@ -58,7 +58,9 @@ export function functionOutput(value: unknown): Output | undefined {
             !keys(part, ["kind", "reference_kind", "detail"]) ||
             !["image_url", "file_id"].includes(String(part.reference_kind)) ||
             (Object.hasOwn(part, "detail") &&
-              !["auto", "low", "high", "original"].includes(String(part.detail)))
+              !["auto", "low", "high", "original"].includes(
+                String(part.detail),
+              ))
           )
             return;
           break;
@@ -78,7 +80,7 @@ export function functionOutput(value: unknown): Output | undefined {
     }
   } else if (!bounded(value.text, 256 << 10) || Object.hasOwn(value, "content"))
     return;
-  if (new TextEncoder().encode(JSON.stringify(value)).length > (512 << 10))
+  if (new TextEncoder().encode(JSON.stringify(value)).length > 512 << 10)
     return;
   return value as Output;
 }

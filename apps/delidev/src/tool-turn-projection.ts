@@ -94,9 +94,12 @@ export function conversationProjection(
     d.role !== "tool"
   )
     return projection;
-  const families = ["tool", "claude_tool", "grok_tool", "function_output"].filter(
-    (key) => Object.hasOwn(d, key),
-  );
+  const families = [
+    "tool",
+    "claude_tool",
+    "grok_tool",
+    "function_output",
+  ].filter((key) => Object.hasOwn(d, key));
   if (
     families.length !== 1 ||
     [

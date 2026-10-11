@@ -365,7 +365,9 @@ it("labels a function result without a fabricated execution-success badge", () =
   const projection = conversationProjection(original, sessionId);
   expect(projection.tool?.classification).toBe("function-result");
   expect(projection.tool?.name).toBe("original_namespace.original_tool");
-  const { container } = render(<ToolTurnTranscript {...props(query([[original]]))} />);
+  const { container } = render(
+    <ToolTurnTranscript {...props(query([[original]]))} />,
+  );
   expect(screen.getAllByText("Function result").length).toBeGreaterThan(0);
   expect(screen.queryByText("Complete")).toBeNull();
   const group = container.querySelector<HTMLDetailsElement>(".tool-turn")!;
@@ -373,5 +375,7 @@ it("labels a function result without a fabricated execution-success badge", () =
   const entry = group.querySelector<HTMLDetailsElement>("ol > li > details")!;
   expand(entry);
   expect(screen.getByText("<script>inert result</script>")).toBeTruthy();
-  expect(container.querySelectorAll("script,a,img,audio,video")).toHaveLength(0);
+  expect(container.querySelectorAll("script,a,img,audio,video")).toHaveLength(
+    0,
+  );
 });
