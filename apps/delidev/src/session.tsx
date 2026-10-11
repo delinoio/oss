@@ -797,6 +797,7 @@ export function SessionView({
   id,
   draft,
   setDraft,
+  draftGeneration,
   initialSkills,
   changeSkills,
   active = true,
@@ -804,7 +805,12 @@ export function SessionView({
 }: {
   id: string;
   draft: string;
-  setDraft: (value: string, bindings?: SkillTokenBinding[]) => boolean | void;
+  setDraft: (
+    value: string,
+    bindings?: SkillTokenBinding[],
+    userEdit?: boolean,
+  ) => boolean | void;
+  draftGeneration?: () => bigint;
   initialSkills?: SkillTokenBinding[];
   changeSkills?: (bindings: SkillTokenBinding[]) => void;
   active?: boolean;
@@ -1181,6 +1187,7 @@ export function SessionView({
       window.removeEventListener("resize", fit);
     };
   }, [session?.id]);
+  const localDraftGeneration = useRef(0n);
   const skills = useSkillCompletion({
     value: draft,
     change: (value, bindings) => {
@@ -1189,7 +1196,9 @@ export function SessionView({
         return false;
       }
       setImageTextLimit(false);
-      return setDraft(value, bindings);
+      const accepted = setDraft(value, bindings, true);
+      if (accepted !== false) localDraftGeneration.current += 1n;
+      return accepted;
     },
     textarea: composer,
     machineId: text(data.machine_id),
@@ -1205,6 +1214,7 @@ export function SessionView({
     session,
     active: conversationActive,
     draft,
+    draftGeneration: draftGeneration ?? (() => localDraftGeneration.current),
     composer,
     blocked: locked || images.images.length > 0,
     changed: setAcknowledged,
