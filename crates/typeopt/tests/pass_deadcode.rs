@@ -132,3 +132,255 @@ fn emitted_or_source(root: &std::path::Path, source: &str) -> String {
         std::fs::read_to_string(path).unwrap()
     }
 }
+
+// ---------------------------------------------------------------------------
+// unused-method-removal
+
+const METHODS: &[(&str, &str)] = &[
+    (
+        "main.ts",
+        r#"import { Counter, Other } from "./counter.ts";
+const counter = new Counter();
+counter.inc();
+counter.inc();
+const other = new Other();
+console.log(counter.value, other.shared(), counter.shared());
+"#,
+    ),
+    (
+        "counter.ts",
+        r#"export class Counter {
+  value = 0;
+  inc() { this.#bump(); }
+  #bump() { this.value += 1; }
+  /** Nobody calls this. */
+  unusedHelper(): number { return this.value * 2; }
+  static unusedStatic(): Counter { return new Counter(); }
+  get unusedAccessor(): number { return this.value; }
+  set unusedAccessor(v: number) { this.value = v; }
+  #unusedPrivate(): number { return this.#unusedPrivate(); }
+  unusedRecursive(n: number): number { return n <= 0 ? 0 : this.unusedRecursive(n - 1); }
+  shared() { return "counter"; }
+}
+export class Other {
+  shared() { return "other"; }
+}
+"#,
+    ),
+];
+
+#[test]
+fn methods_unused_members_are_removed_across_modules() {
+    let (temp, report) = run(METHODS, &[METHOD]);
+    assert!(applied(&report, METHOD) >= 5, "{report:#}");
+    let counter = emitted(temp.path(), "counter.ts");
+    for dead in [
+        "unusedHelper",
+        "unusedStatic",
+        "unusedAccessor",
+        "#unusedPrivate",
+        "unusedRecursive",
+        "Nobody calls",
+    ] {
+        assert!(!counter.contains(dead), "{dead} in {counter}");
+    }
+    for live in ["inc()", "#bump()", "shared()"] {
+        assert!(counter.contains(live), "{live} missing in {counter}");
+    }
+    assert!(saved(&report) > 0);
+}
+
+#[test]
+fn methods_with_all_passes_enabled() {
+    let (temp, report) = run_all(METHODS);
+    assert!(applied(&report, METHOD) >= 5, "{report:#}");
+    assert!(!emitted(temp.path(), "counter.ts").contains("unusedHelper"));
+}
+
+#[test]
+fn methods_disabled_never_runs() {
+    let (temp, report) = run(METHODS, &[FIELD, RESIDUAL]);
+    assert_eq!(applied(&report, METHOD), 0);
+    assert!(emitted_or_source(temp.path(), "counter.ts").contains("unusedHelper"));
+}
+
+/// Each method name below is spelled only in its declaration; something
+/// other than a name mention still reaches it.
+#[test]
+fn methods_reachable_without_static_mentions_stay() {
+    let (temp, report) = run(
+        &[
+            (
+                "main.ts",
+                r#"import { Dynamic, Reflected, Protocol } from "./dep.ts";
+const key = ["dyna", "micCall"].join("");
+const d = new Dynamic();
+console.log((d as any)[key]());
+const r = new Reflected();
+console.log(Object.getOwnPropertyNames(Object.getPrototypeOf(r)).join(","));
+const p = new Protocol();
+console.log(JSON.stringify({ p }), String(p));
+"#,
+            ),
+            (
+                "dep.ts",
+                r#"export class Dynamic { dynamicCall() { return "dynamic"; } }
+export class Reflected { reflectedOnly() { return 1; } }
+export class Protocol {
+  toJSON() { return "json"; }
+  toString() { return "text"; }
+}
+"#,
+            ),
+        ],
+        &[METHOD],
+    );
+    assert_eq!(applied(&report, METHOD), 0, "{report:#}");
+    let dep = emitted_or_source(temp.path(), "dep.ts");
+    for live in ["dynamicCall", "reflectedOnly", "toJSON", "toString"] {
+        assert!(dep.contains(live), "{live} missing in {dep}");
+    }
+    let reasons = skipped_reasons(&report, METHOD);
+    for reason in ["dynamic_access", "reflection", "special_property"] {
+        assert!(reasons.iter().any(|r| r == reason), "{reasons:?}");
+    }
+}
+
+#[test]
+fn methods_overrides_super_calls_and_extraction_stay() {
+    let (temp, report) = run(
+        &[
+            (
+                "main.ts",
+                r#"import { Derived, Holder } from "./dep.ts";
+const d = new Derived();
+console.log(d.describe());
+const h = new Holder();
+const extracted = h.callback;
+console.log(extracted.call(h), h.identity === h.identity);
+"#,
+            ),
+            (
+                "dep.ts",
+                r#"class Base {
+  greet() { return "base"; }
+  describe() { return this.greet(); }
+}
+export class Derived extends Base {
+  override greet() { return "derived+" + super.greet(); }
+}
+export class Holder {
+  tag = "holder";
+  callback() { return this.tag; }
+  identity() { return 1; }
+}
+"#,
+            ),
+        ],
+        &[METHOD],
+    );
+    assert_eq!(applied(&report, METHOD), 0, "{report:#}");
+    let dep = emitted_or_source(temp.path(), "dep.ts");
+    for live in ["greet()", "super.greet", "callback()", "identity()"] {
+        assert!(dep.contains(live), "{live} missing in {dep}");
+    }
+}
+
+#[test]
+fn methods_public_entry_exports_stay() {
+    let (temp, report) = run(
+        &[(
+            "main.ts",
+            r#"export class Api {
+  unusedButPublic() { return 1; }
+  used() { return 2; }
+}
+console.log(new Api().used());
+"#,
+        )],
+        &[METHOD],
+    );
+    assert_eq!(applied(&report, METHOD), 0);
+    assert!(skipped_reasons(&report, METHOD).contains(&"public_export".to_owned()));
+    assert!(emitted_or_source(temp.path(), "main.ts").contains("unusedButPublic"));
+}
+
+#[test]
+fn methods_interface_requirements_and_namespace_exposure_stay() {
+    let (temp, report) = run(
+        &[
+            (
+                "main.ts",
+                r#"import * as ns from "./dep.ts";
+import { make } from "./impl.ts";
+const all: Record<string, unknown> = { ...ns };
+console.log(Object.keys(all).length, make().run());
+"#,
+            ),
+            (
+                "dep.ts",
+                "export class Exposed { exposedOnly() { return 1; } }\n",
+            ),
+            (
+                "impl.ts",
+                r#"interface Runner { run(): number; required(): number }
+class Impl implements Runner {
+  run() { return 3; }
+  required() { return 4; }
+}
+export function make(): Runner { return new Impl(); }
+"#,
+            ),
+        ],
+        &[METHOD],
+    );
+    assert_eq!(applied(&report, METHOD), 0, "{report:#}");
+    assert!(emitted_or_source(temp.path(), "dep.ts").contains("exposedOnly"));
+    assert!(emitted_or_source(temp.path(), "impl.ts").contains("required()"));
+}
+
+/// Values that reach `any` or a generic parameter may meet computed-name
+/// lookups there. Numeric keys and keys from enumeration never name a
+/// method, so they do not block unrelated classes.
+#[test]
+fn methods_imprecise_flows_and_key_provenance() {
+    let (temp, report) = run(
+        &[
+            (
+                "main.ts",
+                r#"import { Escaping, Generic, Kept } from "./dep.ts";
+const escaping = new Escaping();
+const holder: any = escaping;
+console.log(holder[["esc", "aped"].join("")]());
+function invoke<T>(target: T, key: string): unknown {
+  return (target as any)[key]();
+}
+console.log(invoke(new Generic(), ["generic", "Call"].join("")));
+const kept = new Kept();
+const table: any = { a: 1, b: 2 };
+let sum = 0;
+for (const key in table) sum += table[key];
+const list: any = [1, 2, 3];
+for (let i = 0; i < list.length; i++) sum += list[i];
+console.log(sum, kept.live());
+"#,
+            ),
+            (
+                "dep.ts",
+                r#"export class Escaping { escaped() { return "escaped"; } }
+export class Generic { genericCall() { return "generic"; } }
+export class Kept {
+  live() { return "live"; }
+  removable() { return "gone"; }
+}
+"#,
+            ),
+        ],
+        &[METHOD],
+    );
+    assert_eq!(applied(&report, METHOD), 1, "{report:#}");
+    let dep = emitted(temp.path(), "dep.ts");
+    assert!(dep.contains("escaped()"), "{dep}");
+    assert!(dep.contains("genericCall()"), "{dep}");
+    assert!(!dep.contains("removable"), "{dep}");
+}

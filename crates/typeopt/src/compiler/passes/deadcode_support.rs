@@ -43,6 +43,13 @@ pub(super) const PROTOCOL_NAMES: &[&str] = &[
     "dispose",
     "asyncDispose",
     "default",
+    // Strings that numbers, booleans and nullish keys convert to.
+    "true",
+    "false",
+    "null",
+    "undefined",
+    "NaN",
+    "Infinity",
 ];
 
 /// Comment markers whose deletion could change the meaning of other code.
@@ -339,56 +346,332 @@ pub(super) fn within(node: Node, span: (usize, usize)) -> bool {
     at >= span.0 && at < span.1
 }
 
-/// Static types a class's values can have: its instance type and its
-/// constructor type.
-#[derive(Clone, Copy)]
-pub(super) struct ClassTypes {
-    pub instance: TypeId,
-    pub constructor: TypeId,
-}
-
-impl ClassTypes {
-    pub fn of(ctx: &mut Ctx, class_symbol: SymbolId) -> Self {
-        Self {
-            instance: ctx.checker.get_declared_type_of_symbol(class_symbol),
-            constructor: ctx.checker.get_type_of_symbol(class_symbol),
-        }
-    }
-}
-
-/// Type nomination of whether `expression` may evaluate to an instance,
-/// prototype or constructor of the class. Assertions are seen through: the
-/// value keeps the type of the asserted expression. `any`, `unknown`, type
-/// parameters and top object types may hold anything.
-pub(super) fn may_hold(ctx: &mut Ctx, expression: Node, class: ClassTypes) -> bool {
-    let inner = skip_outer(expression);
-    let ty = ctx.checker.get_type_at_location(inner);
-    type_may_hold(ctx, ty, class, 0)
-}
-
-fn type_may_hold(ctx: &mut Ctx, ty: TypeId, class: ClassTypes, depth: usize) -> bool {
+/// Whether a static type says nothing about its values: `any`, `unknown`,
+/// `object`, `{}` and unconstrained (or imprecisely constrained) type
+/// parameters, or a union with such a member.
+pub(super) fn imprecise(ctx: &mut Ctx, ty: TypeId, depth: usize) -> bool {
     if ty.is_nil() || depth > 8 {
         return true;
     }
     let flags = ctx.checker.ty(ty).flags();
-    if flags
-        .intersects(TypeFlags::ANY_OR_UNKNOWN | TypeFlags::INSTANTIABLE | TypeFlags::NON_PRIMITIVE)
-    {
+    if flags.intersects(TypeFlags::ANY_OR_UNKNOWN | TypeFlags::NON_PRIMITIVE) {
         return true;
     }
+    if flags.intersects(TypeFlags::UNION) {
+        let members = ctx.checker.ty(ty).types_list();
+        return members.iter().any(|&m| imprecise(ctx, m, depth + 1));
+    }
+    if flags.intersects(TypeFlags::INSTANTIABLE) {
+        let constraint = ctx.checker.get_base_constraint_of_type(ty);
+        return constraint.is_nil() || constraint == ty || imprecise(ctx, constraint, depth + 1);
+    }
+    flags.intersects(TypeFlags::OBJECT) && ctx.checker.is_empty_object_type(ty)
+}
+
+/// Value flows between static types of the application: a value of the
+/// source type is stored in a slot of the target type. Edges come from
+/// contextual typing (arguments, initializers, returns, assignments,
+/// properties, elements, JSX attributes, conditional branches), assertions,
+/// declared generic parameters of callees outside the standard library and
+/// callback parameters whose declared types differ from what the caller
+/// provides. Thrown values reach `catch` bindings of unknown type.
+pub(super) struct TypeFlows {
+    edges: Vec<(TypeId, TypeId)>,
+    thrown: Vec<TypeId>,
+    /// Application class declarations and their application base class.
+    bases: Vec<(Node, Node)>,
+}
+
+impl TypeFlows {
+    pub fn compute(ctx: &mut Ctx) -> Self {
+        let mut edges = HashSet::new();
+        let mut thrown = HashSet::new();
+        let mut bases = Vec::new();
+        for index in 0..ctx.files.len() {
+            if ctx.files[index].js {
+                continue;
+            }
+            let nodes = ctx.files[index].nodes.clone();
+            for node in nodes {
+                if matches!(
+                    node.kind(),
+                    SyntaxKind::ClassDeclaration | SyntaxKind::ClassExpression
+                ) {
+                    bases.push((node, base_class(ctx, node)));
+                }
+                let parent = node.parent();
+                if parent.is_some() && parent.kind() == SyntaxKind::ThrowStatement {
+                    thrown.insert(ctx.checker.get_type_at_location(node));
+                    continue;
+                }
+                for (source, target) in flows_of(ctx, node) {
+                    if source.is_some() && target.is_some() && source != target {
+                        edges.insert((source, target));
+                    }
+                }
+            }
+        }
+        let mut edges: Vec<_> = edges.into_iter().collect();
+        edges.sort();
+        let mut thrown: Vec<_> = thrown.into_iter().collect();
+        thrown.sort();
+        tracing::debug!(edges = edges.len(), "type flows computed");
+        Self {
+            edges,
+            thrown,
+            bases,
+        }
+    }
+
+    /// Static types that may hold an instance, the prototype or the
+    /// constructor of `class`: the class, its application ancestors and
+    /// descendants (inherited code sees instances through `this`), closed
+    /// over every value flow.
+    pub fn holders(&self, ctx: &mut Ctx, class: Node) -> Holders {
+        let mut related = vec![class];
+        let mut base = self.base_of(class);
+        while base.is_some() && !related.contains(&base) {
+            related.push(base);
+            base = self.base_of(base);
+        }
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for &(derived, base) in &self.bases {
+                if base.is_some() && related.contains(&base) && !related.contains(&derived) {
+                    related.push(derived);
+                    changed = true;
+                }
+            }
+        }
+        let mut types = HashSet::new();
+        for declaration in related {
+            let symbol = ctx.checker.get_symbol_of_declaration(declaration);
+            types.insert(ctx.checker.get_declared_type_of_symbol(symbol));
+            types.insert(ctx.checker.get_type_of_symbol(symbol));
+            // External bases see instances through their own types.
+            for clause in declaration.heritage_clauses().nodes().iter() {
+                if clause.token() == SyntaxKind::ExtendsKeyword {
+                    for heritage in clause.types().nodes().iter() {
+                        types.insert(ctx.checker.get_type_at_location(heritage));
+                    }
+                }
+            }
+        }
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for &(source, target) in &self.edges {
+                if !types.contains(&target) && holds(ctx, &types, source, 0) {
+                    types.insert(target);
+                    changed = true;
+                }
+            }
+        }
+        let mut escapes = self
+            .thrown
+            .iter()
+            .any(|&thrown| holds(ctx, &types, thrown, 0));
+        if !escapes {
+            let mut sorted: Vec<TypeId> = types.iter().copied().collect();
+            sorted.sort();
+            escapes = sorted.into_iter().any(|t| imprecise(ctx, t, 0));
+        }
+        Holders { types, escapes }
+    }
+
+    fn base_of(&self, class: Node) -> Node {
+        self.bases
+            .iter()
+            .find(|&&(declaration, _)| declaration == class)
+            .map_or(Node::NIL, |&(_, base)| base)
+    }
+}
+
+/// The application class declaration a class extends, or nil.
+fn base_class(ctx: &mut Ctx, class: Node) -> Node {
+    for clause in class.heritage_clauses().nodes().iter() {
+        if clause.token() != SyntaxKind::ExtendsKeyword {
+            continue;
+        }
+        for heritage in clause.types().nodes().iter() {
+            let expression = skip_outer(heritage.expression());
+            if expression.kind() != SyntaxKind::Identifier {
+                return Node::NIL;
+            }
+            let symbol = ctx.resolve(expression);
+            if symbol.is_nil() {
+                return Node::NIL;
+            }
+            let declaration = ctx.checker.sym(symbol).value_declaration;
+            if declaration.is_some()
+                && matches!(
+                    declaration.kind(),
+                    SyntaxKind::ClassDeclaration | SyntaxKind::ClassExpression
+                )
+            {
+                return declaration;
+            }
+        }
+    }
+    Node::NIL
+}
+
+/// The set of static types that may hold values of one class, and whether
+/// such values reach imprecise types, where any imprecisely typed value may
+/// be one of them.
+pub(super) struct Holders {
+    types: HashSet<TypeId>,
+    pub escapes: bool,
+}
+
+impl Holders {
+    /// Whether `expression` may evaluate to a value of the class.
+    /// Assertions are seen through: the value keeps the type of the asserted
+    /// expression.
+    pub fn may_hold(&self, ctx: &mut Ctx, expression: Node) -> bool {
+        let inner = skip_outer(expression);
+        let ty = ctx.checker.get_type_at_location(inner);
+        holds(ctx, &self.types, ty, 0) || (self.escapes && imprecise(ctx, ty, 0))
+    }
+}
+
+fn holds(ctx: &mut Ctx, types: &HashSet<TypeId>, ty: TypeId, depth: usize) -> bool {
+    if ty.is_nil() || depth > 8 {
+        return false;
+    }
+    if types.contains(&ty) {
+        return true;
+    }
+    let flags = ctx.checker.ty(ty).flags();
     if flags.intersects(TypeFlags::UNION_OR_INTERSECTION) {
         let members = ctx.checker.ty(ty).types_list();
-        return members
-            .iter()
-            .any(|&member| type_may_hold(ctx, member, class, depth + 1));
+        return members.iter().any(|&m| holds(ctx, types, m, depth + 1));
     }
-    if flags.intersects(TypeFlags::OBJECT) {
-        return ty == class.instance
-            || ty == class.constructor
-            || ctx.checker.is_type_assignable_to(class.instance, ty)
-            || ctx.checker.is_type_assignable_to(class.constructor, ty);
+    if flags.intersects(TypeFlags::INSTANTIABLE) {
+        let constraint = ctx.checker.get_base_constraint_of_type(ty);
+        return constraint.is_some()
+            && constraint != ty
+            && holds(ctx, types, constraint, depth + 1);
     }
     false
+}
+
+/// `(source, target)` value flows that `node` takes part in.
+fn flows_of(ctx: &mut Ctx, node: Node) -> Vec<(TypeId, TypeId)> {
+    let parent = node.parent();
+    if parent.is_nil() {
+        return Vec::new();
+    }
+    let position = match parent.kind() {
+        SyntaxKind::CallExpression | SyntaxKind::NewExpression => {
+            parent.expression() != node && parent.arguments().iter().any(|a| a == node)
+        }
+        SyntaxKind::AsExpression | SyntaxKind::TypeAssertionExpression => {
+            if parent.expression() != node {
+                return Vec::new();
+            }
+            return vec![(
+                ctx.checker.get_type_at_location(node),
+                ctx.checker.get_type_at_location(parent),
+            )];
+        }
+        SyntaxKind::VariableDeclaration
+        | SyntaxKind::PropertyDeclaration
+        | SyntaxKind::Parameter
+        | SyntaxKind::BindingElement => parent.initializer() == node,
+        SyntaxKind::BinaryExpression => {
+            parent.right() == node && parent.operator_token().kind() == SyntaxKind::EqualsToken
+        }
+        SyntaxKind::PropertyAssignment => parent.initializer() == node,
+        SyntaxKind::ShorthandPropertyAssignment => parent.name() == node,
+        SyntaxKind::ReturnStatement
+        | SyntaxKind::ArrayLiteralExpression
+        | SyntaxKind::JsxExpression
+        | SyntaxKind::YieldExpression
+        | SyntaxKind::SpreadElement => true,
+        SyntaxKind::ArrowFunction => parent.body() == node,
+        SyntaxKind::ConditionalExpression => parent.condition() != node,
+        _ => false,
+    };
+    if !position {
+        return Vec::new();
+    }
+    let mut flows = Vec::new();
+    let source = ctx.checker.get_type_at_location(node);
+    let target = ctx.checker.get_contextual_type(node, ContextFlags::NONE);
+    if target.is_some() {
+        flows.push((source, target));
+        flows.extend(callback_flows(ctx, source, target));
+    }
+    if matches!(
+        parent.kind(),
+        SyntaxKind::CallExpression | SyntaxKind::NewExpression
+    ) && let Some(declared) = generic_parameter(ctx, parent, node)
+    {
+        flows.push((source, declared));
+    }
+    flows
+}
+
+/// `(provided, declared)` parameter flows of a function value stored in a
+/// function-typed slot: callers provide the slot's parameter types to the
+/// function's own parameters.
+fn callback_flows(ctx: &mut Ctx, source: TypeId, target: TypeId) -> Vec<(TypeId, TypeId)> {
+    let mut flows = Vec::new();
+    let sources = ctx
+        .checker
+        .get_signatures_of_type(source, SignatureKind::CALL);
+    if sources.is_empty() {
+        return flows;
+    }
+    let targets = ctx
+        .checker
+        .get_signatures_of_type(target, SignatureKind::CALL);
+    for &own in sources.iter() {
+        for &context in targets.iter() {
+            let count = ctx
+                .checker
+                .get_parameter_count(own)
+                .min(ctx.checker.get_parameter_count(context));
+            for position in 0..count {
+                let declared = ctx.checker.get_type_at_position(own, position);
+                let provided = ctx.checker.get_type_at_position(context, position);
+                flows.push((provided, declared));
+            }
+        }
+    }
+    flows
+}
+
+/// The declared type of the parameter an argument binds, when it mentions
+/// type parameters of a callee outside the standard library: the value then
+/// reaches code that sees it through a type variable. Calls without a known
+/// declaration bind an unknown parameter.
+fn generic_parameter(ctx: &mut Ctx, call: Node, argument: Node) -> Option<TypeId> {
+    let signature = ctx.checker.get_resolved_signature_exported(call);
+    if signature.is_nil() {
+        return None;
+    }
+    let declaration = ctx.checker.sig(signature).declaration;
+    if declaration.is_nil() {
+        return None;
+    }
+    let file = source_file_info(get_source_file_of_node(declaration))
+        .file_name
+        .clone();
+    if file.starts_with("bundled:") {
+        return None;
+    }
+    let declared = ctx.checker.get_signature_from_declaration(declaration);
+    let position = call.arguments().iter().position(|a| a == argument)?;
+    let count = ctx.checker.get_parameter_count(declared);
+    if count == 0 {
+        return None;
+    }
+    let position = (position as i32).min(count - 1);
+    let ty = ctx.checker.get_type_at_position(declared, position);
+    ctx.checker.could_contain_type_variables(ty).then_some(ty)
 }
 
 /// Reflection and descriptor APIs that can list or read non-enumerable or
@@ -443,63 +726,380 @@ pub(super) fn reflective_call(node: Node) -> Option<NodeSlice> {
         .then(|| node.arguments())
 }
 
-/// Facts that make values of a class reachable by computed names: dynamic
-/// element accesses, `in` tests with computed keys, reflective calls and
-/// `for...in` whose subject may hold the class.
-pub(super) fn dynamically_observed(
-    ctx: &mut Ctx,
-    class: ClassTypes,
-) -> Option<crate::plan::Reason> {
-    use crate::plan::Reason;
-    let accesses: Vec<Node> = ctx.dynamic_accesses.iter().map(|a| a.node).collect();
-    for access in accesses {
-        if may_hold(ctx, access.expression(), class) {
-            return Some(Reason::DynamicAccess);
-        }
-    }
-    for index in 0..ctx.files.len() {
-        if ctx.files[index].js {
-            continue;
-        }
-        let nodes = ctx.files[index].nodes.clone();
-        for node in nodes {
-            match node.kind() {
-                SyntaxKind::CallExpression => {
-                    if let Some(arguments) = reflective_call(node) {
-                        for argument in arguments.iter() {
-                            let argument = if argument.kind() == SyntaxKind::SpreadElement {
-                                argument.expression()
-                            } else {
-                                argument
-                            };
-                            if may_hold(ctx, argument, class) {
-                                return Some(Reason::Reflection);
+/// Operations that look up a class member by a computed name: dynamic
+/// element accesses and `in` tests (with their keys), and reflective calls
+/// that list or read arbitrary own keys (without a key). `for...in` and
+/// `Object.keys`-style enumeration only produce enumerable keys, which never
+/// name a class method or accessor.
+pub(super) struct DynamicSites {
+    sites: Vec<(Node, Node, crate::plan::Reason)>,
+}
+
+impl DynamicSites {
+    pub fn compute(ctx: &Ctx) -> Self {
+        use crate::plan::Reason;
+        let mut sites: Vec<(Node, Node, Reason)> = ctx
+            .dynamic_accesses
+            .iter()
+            .map(|a| {
+                (
+                    a.node.expression(),
+                    a.node.argument_expression(),
+                    Reason::DynamicAccess,
+                )
+            })
+            .collect();
+        for file in &ctx.files {
+            if file.js {
+                continue;
+            }
+            for &node in &file.nodes {
+                match node.kind() {
+                    SyntaxKind::CallExpression => {
+                        if let Some(arguments) = reflective_call(node) {
+                            if enumerating_call(node) {
+                                continue;
+                            }
+                            for argument in arguments.iter() {
+                                let argument = if argument.kind() == SyntaxKind::SpreadElement {
+                                    argument.expression()
+                                } else {
+                                    argument
+                                };
+                                sites.push((argument, Node::NIL, Reason::Reflection));
                             }
                         }
                     }
-                }
-                SyntaxKind::BinaryExpression
-                    if node.operator_token().kind() == SyntaxKind::InKeyword =>
-                {
-                    let key = skip_outer(node.left());
-                    if !matches!(
-                        key.kind(),
-                        SyntaxKind::StringLiteral | SyntaxKind::PrivateIdentifier
-                    ) && may_hold(ctx, node.right(), class)
+                    SyntaxKind::BinaryExpression
+                        if node.operator_token().kind() == SyntaxKind::InKeyword =>
                     {
-                        return Some(Reason::ObservableOperation);
+                        let key = skip_outer(node.left());
+                        if key.kind() != SyntaxKind::PrivateIdentifier {
+                            sites.push((node.right(), key, Reason::ObservableOperation));
+                        }
                     }
+                    _ => {}
                 }
-                SyntaxKind::ForInStatement => {
-                    if may_hold(ctx, node.expression(), class) {
-                        return Some(Reason::Reflection);
-                    }
-                }
-                _ => {}
             }
         }
+        Self { sites }
     }
-    None
+
+    /// The first site that may look up a member of the class by a name that
+    /// is not spelled in the source.
+    pub fn observes(&self, ctx: &mut Ctx, holders: &Holders) -> Option<crate::plan::Reason> {
+        let mut provenance = KeyProvenance::default();
+        for &(receiver, key, reason) in &self.sites {
+            if (key.is_nil() || provenance.opaque(ctx, key, 0)) && holders.may_hold(ctx, receiver) {
+                return Some(reason);
+            }
+        }
+        None
+    }
+}
+
+/// `Object.keys`, `Object.values`, `Object.entries`, `JSON.stringify`,
+/// `Object.assign`, `Object.freeze` and similar calls that only see
+/// enumerable own properties or do not look properties up by name.
+fn enumerating_call(call: Node) -> bool {
+    let callee = skip_outer(call.expression());
+    let member = callee.name().text();
+    let receiver = skip_outer(callee.expression()).text();
+    matches!(
+        (receiver, member),
+        (
+            "Object",
+            "keys" | "values" | "entries" | "assign" | "freeze" | "seal"
+        ) | ("Object", "preventExtensions" | "groupBy")
+            | ("JSON", "stringify")
+    )
+}
+
+/// Runtime provenance of computed keys: whether a key may evaluate to a
+/// string that names a non-enumerable member and is not spelled as a
+/// literal anywhere. Numbers, literal strings and keys produced by
+/// enumerating enumerable properties cannot.
+#[derive(Default)]
+struct KeyProvenance {
+    bindings: HashMap<SymbolId, bool>,
+}
+
+impl KeyProvenance {
+    fn opaque(&mut self, ctx: &mut Ctx, key: Node, depth: usize) -> bool {
+        if depth > 8 {
+            return true;
+        }
+        let key = skip_outer(key);
+        match key.kind() {
+            SyntaxKind::NumericLiteral
+            | SyntaxKind::BigIntLiteral
+            | SyntaxKind::StringLiteral
+            | SyntaxKind::NoSubstitutionTemplateLiteral
+            | SyntaxKind::TrueKeyword
+            | SyntaxKind::FalseKeyword
+            | SyntaxKind::NullKeyword => false,
+            SyntaxKind::PrefixUnaryExpression | SyntaxKind::PostfixUnaryExpression => {
+                // `-x`, `+x`, `~x`, `!x`, `++x` and `x--` produce numbers,
+                // big integers or booleans.
+                false
+            }
+            SyntaxKind::BinaryExpression => {
+                let operator = key.operator_token().kind();
+                match operator {
+                    // `+` concatenates unless both operands are numeric.
+                    SyntaxKind::PlusToken => {
+                        !(self.numeric(ctx, key.left(), depth + 1)
+                            && self.numeric(ctx, key.right(), depth + 1))
+                    }
+                    SyntaxKind::CommaToken => self.opaque(ctx, key.right(), depth + 1),
+                    SyntaxKind::AmpersandAmpersandToken
+                    | SyntaxKind::BarBarToken
+                    | SyntaxKind::QuestionQuestionToken => {
+                        self.opaque(ctx, key.left(), depth + 1)
+                            || self.opaque(ctx, key.right(), depth + 1)
+                    }
+                    _ if is_assignment_operator(operator) => true,
+                    // Arithmetic, bitwise, comparison and `in`/`instanceof`
+                    // operators produce numbers, big integers or booleans.
+                    _ => false,
+                }
+            }
+            SyntaxKind::ConditionalExpression => {
+                self.opaque(ctx, key.when_true(), depth + 1)
+                    || self.opaque(ctx, key.when_false(), depth + 1)
+            }
+            SyntaxKind::PropertyAccessExpression | SyntaxKind::ElementAccessExpression => {
+                ctx.checker.get_constant_value(key).is_none()
+            }
+            SyntaxKind::Identifier => self.binding(ctx, key, depth),
+            _ => true,
+        }
+    }
+
+    /// Whether the expression evaluates to a number or big integer.
+    fn numeric(&mut self, ctx: &mut Ctx, node: Node, depth: usize) -> bool {
+        if depth > 8 {
+            return false;
+        }
+        let node = skip_outer(node);
+        match node.kind() {
+            SyntaxKind::NumericLiteral | SyntaxKind::BigIntLiteral => true,
+            SyntaxKind::PrefixUnaryExpression => {
+                !matches!(node.operator(), SyntaxKind::ExclamationToken)
+            }
+            SyntaxKind::PostfixUnaryExpression => true,
+            SyntaxKind::BinaryExpression => match node.operator_token().kind() {
+                SyntaxKind::PlusToken => {
+                    self.numeric(ctx, node.left(), depth + 1)
+                        && self.numeric(ctx, node.right(), depth + 1)
+                }
+                SyntaxKind::MinusToken
+                | SyntaxKind::AsteriskToken
+                | SyntaxKind::AsteriskAsteriskToken
+                | SyntaxKind::SlashToken
+                | SyntaxKind::PercentToken
+                | SyntaxKind::LessThanLessThanToken
+                | SyntaxKind::GreaterThanGreaterThanToken
+                | SyntaxKind::GreaterThanGreaterThanGreaterThanToken
+                | SyntaxKind::AmpersandToken
+                | SyntaxKind::BarToken
+                | SyntaxKind::CaretToken => true,
+                _ => false,
+            },
+            SyntaxKind::Identifier => {
+                // A binding whose every value is numeric, such as a loop
+                // counter.
+                let symbol = ctx.resolve(node);
+                symbol.is_some() && self.binding_values(ctx, symbol, depth, true)
+            }
+            _ => false,
+        }
+    }
+
+    fn binding(&mut self, ctx: &mut Ctx, identifier: Node, depth: usize) -> bool {
+        let symbol = ctx.resolve(identifier);
+        if symbol.is_nil() {
+            return true;
+        }
+        if let Some(&known) = self.bindings.get(&symbol) {
+            return known;
+        }
+        // Assume opaque while the binding is being resolved (cycles).
+        self.bindings.insert(symbol, true);
+        let opaque = !self.binding_values(ctx, symbol, depth, false);
+        self.bindings.insert(symbol, opaque);
+        opaque
+    }
+
+    /// Whether every value the binding can hold is transparent (or numeric
+    /// when `numeric`): its initializer, every assignment, and enumeration
+    /// of enumerable keys for loop and callback bindings.
+    fn binding_values(
+        &mut self,
+        ctx: &mut Ctx,
+        symbol: SymbolId,
+        depth: usize,
+        numeric: bool,
+    ) -> bool {
+        let declaration = ctx.checker.sym(symbol).value_declaration;
+        if declaration.is_nil() {
+            return false;
+        }
+        let check = |this: &mut Self, ctx: &mut Ctx, value: Node| {
+            if numeric {
+                this.numeric(ctx, value, depth + 1)
+            } else {
+                !this.opaque(ctx, value, depth + 1)
+            }
+        };
+        let initial = match declaration.kind() {
+            SyntaxKind::VariableDeclaration => {
+                let list = declaration.parent();
+                let holder = list.parent();
+                if holder.kind() == SyntaxKind::ForInStatement {
+                    // Enumerable string keys only.
+                    !numeric
+                } else if holder.kind() == SyntaxKind::ForOfStatement {
+                    !numeric && enumerated_keys(holder.expression())
+                } else if declaration.initializer().is_some() {
+                    check(self, ctx, declaration.initializer())
+                } else {
+                    true
+                }
+            }
+            SyntaxKind::BindingElement => {
+                // `for (const [key] of Object.entries(x))` and
+                // `Object.entries(x).forEach(([key]) => ...)`.
+                let pattern = declaration.parent();
+                pattern.kind() == SyntaxKind::ArrayBindingPattern
+                    && pattern.elements().first() == Some(declaration)
+                    && !numeric
+                    && {
+                        let holder = pattern.parent();
+                        (holder.kind() == SyntaxKind::VariableDeclaration
+                            && holder.parent().parent().kind() == SyntaxKind::ForOfStatement
+                            && entries_call(holder.parent().parent().expression()))
+                            || (holder.kind() == SyntaxKind::Parameter
+                                && enumeration_callback(holder, true))
+                    }
+            }
+            SyntaxKind::Parameter => !numeric && enumeration_callback(declaration, false),
+            _ => false,
+        };
+        if !initial {
+            return false;
+        }
+        // Every later write must keep the property.
+        let refs = ctx.refs(symbol).to_vec();
+        for r in refs {
+            if r.kind != RefKind::Write {
+                continue;
+            }
+            let outer = walk_up_outer(r.node);
+            let parent = outer.parent();
+            let fine = match parent.kind() {
+                SyntaxKind::PrefixUnaryExpression | SyntaxKind::PostfixUnaryExpression => true,
+                SyntaxKind::BinaryExpression if parent.left() == outer => {
+                    match parent.operator_token().kind() {
+                        SyntaxKind::EqualsToken => check(self, ctx, parent.right()),
+                        SyntaxKind::PlusEqualsToken => {
+                            self.numeric(ctx, parent.right(), depth + 1) && numeric
+                        }
+                        operator => {
+                            is_assignment_operator(operator)
+                                && !matches!(
+                                    operator,
+                                    SyntaxKind::AmpersandAmpersandEqualsToken
+                                        | SyntaxKind::BarBarEqualsToken
+                                        | SyntaxKind::QuestionQuestionEqualsToken
+                                )
+                        }
+                    }
+                }
+                _ => false,
+            };
+            if !fine {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+fn is_assignment_operator(kind: SyntaxKind) -> bool {
+    matches!(
+        kind,
+        SyntaxKind::EqualsToken
+            | SyntaxKind::PlusEqualsToken
+            | SyntaxKind::MinusEqualsToken
+            | SyntaxKind::AsteriskEqualsToken
+            | SyntaxKind::AsteriskAsteriskEqualsToken
+            | SyntaxKind::SlashEqualsToken
+            | SyntaxKind::PercentEqualsToken
+            | SyntaxKind::LessThanLessThanEqualsToken
+            | SyntaxKind::GreaterThanGreaterThanEqualsToken
+            | SyntaxKind::GreaterThanGreaterThanGreaterThanEqualsToken
+            | SyntaxKind::AmpersandEqualsToken
+            | SyntaxKind::BarEqualsToken
+            | SyntaxKind::CaretEqualsToken
+            | SyntaxKind::AmpersandAmpersandEqualsToken
+            | SyntaxKind::BarBarEqualsToken
+            | SyntaxKind::QuestionQuestionEqualsToken
+    )
+}
+
+/// `Object.<name>(...)` with one of the given names.
+fn object_call(node: Node, names: &[&str]) -> bool {
+    let node = skip_outer(node);
+    if node.kind() != SyntaxKind::CallExpression {
+        return false;
+    }
+    let callee = skip_outer(node.expression());
+    callee.kind() == SyntaxKind::PropertyAccessExpression
+        && skip_outer(callee.expression()).kind() == SyntaxKind::Identifier
+        && skip_outer(callee.expression()).text() == "Object"
+        && names.contains(&callee.name().text())
+}
+
+/// `Object.keys(x)`: an array of enumerable own string keys.
+fn enumerated_keys(node: Node) -> bool {
+    object_call(node, &["keys"])
+}
+
+/// `Object.entries(x)`: pairs whose first element is an enumerable key.
+fn entries_call(node: Node) -> bool {
+    object_call(node, &["entries"])
+}
+
+/// The first parameter (or the first element of its array pattern when
+/// `entries`) of a callback passed directly to an array method of
+/// `Object.keys(...)` (or `Object.entries(...)`).
+fn enumeration_callback(parameter: Node, entries: bool) -> bool {
+    let function = parameter.parent();
+    if !matches!(
+        function.kind(),
+        SyntaxKind::ArrowFunction | SyntaxKind::FunctionExpression
+    ) || function.parameters().first() != Some(parameter)
+    {
+        return false;
+    }
+    let call = walk_up_outer(function).parent();
+    if call.kind() != SyntaxKind::CallExpression
+        || call.arguments().first().map(skip_outer) != Some(function)
+    {
+        return false;
+    }
+    let callee = skip_outer(call.expression());
+    callee.kind() == SyntaxKind::PropertyAccessExpression
+        && matches!(
+            callee.name().text(),
+            "forEach" | "map" | "filter" | "some" | "every" | "find" | "findIndex" | "flatMap"
+        )
+        && if entries {
+            entries_call(callee.expression())
+        } else {
+            enumerated_keys(callee.expression())
+        }
 }
 
 /// Class symbol used in reference lookups, or nil for anonymous classes.
