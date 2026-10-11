@@ -1451,7 +1451,7 @@ it("keeps initial startup Info available for a reached original budget", async (
     initialResponseWaiting(),
   );
   const { container } = render(f.view());
-  const info = container.querySelector(".session-information")!;
+  const info = container.querySelector<HTMLElement>(".session-information")!;
   await screen.findByRole("complementary", { name: "Session information" });
   expect(within(info).getByRole("alert").textContent).toContain(
     "Budget threshold reached. New turns and Resume are blocked; pending input and accepted work are retained.",
