@@ -261,7 +261,10 @@ func (s *Service) runServerQuota(parent context.Context, id domain.ID) {
 					if readErr = s.checkQuotaBinding(ctx, id, original); readErr == nil {
 						observed, readErr = native.ReadExternalQuota(ctx, original.ID, auth)
 						if readErr == nil {
-							readErr = codex.ValidateQuotaSecrets(observed, parsed.Tokens.Access, parsed.Tokens.ID, parsed.Tokens.Refresh, identity.Account, identity.User, identity.Email, identity.DisplayName)
+							readErr = codex.ValidateQuotaSecrets(observed, parsed.Tokens.Access, parsed.Tokens.ID, parsed.Tokens.Refresh, identity.Account, identity.User, identity.Email)
+							if readErr == nil {
+								readErr = codex.ValidateQuotaDisplayName(observed, identity.DisplayName)
+							}
 						}
 					}
 				}

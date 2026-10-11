@@ -54,7 +54,7 @@ func quotaDisplayNameBundle(t *testing.T, name string, profile bool) []byte {
 
 func TestQuotaDisplayNameRejectsProtectedIdentifiers(t *testing.T) {
 	for _, profile := range []bool{false, true} {
-		for _, name := range []string{"Q", "Example", "+/名"} {
+		for _, name := range []string{"Q", "Example", "+/名", "available", "unlimited", "codexRateLimits"} {
 			home := t.TempDir()
 			if err := security.WriteAtomic(filepath.Join(home, "auth.json"), quotaDisplayNameBundle(t, name, profile)); err != nil {
 				t.Fatal(err)
@@ -83,6 +83,25 @@ func TestQuotaDisplayNameRejectsProtectedIdentifiers(t *testing.T) {
 					t.Fatal("unrelated short-name substring rejected", err)
 				}
 			}
+		}
+	}
+}
+
+func TestQuotaDisplayNameAllowsFixedQuotaMetadata(t *testing.T) {
+	for _, name := range []string{"available", "unlimited", "codexRateLimits"} {
+		home := t.TempDir()
+		if err := security.WriteAtomic(filepath.Join(home, "auth.json"), quotaDisplayNameBundle(t, name, false)); err != nil {
+			t.Fatal(err)
+		}
+		client := &Client{managedHome: home}
+		unlimited := true
+		credits := []domain.SubscriptionResetCreditDetail{{ID: "credit_1", ResetType: domain.CodexRateLimitsReset, Status: domain.SubscriptionCreditAvailable}}
+		value := domain.SubscriptionQuotaObservation{
+			Credits:     &domain.SubscriptionResetCredits{Credits: &credits},
+			PaidCredits: []domain.SubscriptionPaidCreditBucket{{ID: "codex", Unlimited: &unlimited}},
+		}
+		if err := client.validateQuotaReflection(value); err != nil {
+			t.Fatalf("fixed quota metadata %q was mistaken for a reflected display name: %v", name, err)
 		}
 	}
 }
