@@ -156,7 +156,7 @@ func (f *threadFixture) handleRevert(id json.RawMessage, method string, raw json
 			}
 		}
 		var itemCursor any
-		if index > 0 && strings.Contains(f.mode, "paginated-items-") && !strings.HasSuffix(f.mode, "null") && !strings.HasSuffix(f.mode, "missing-anchor") {
+		if index > 0 && f.thread["historyMode"] == string(PaginatedHistory) && !strings.HasSuffix(f.mode, "-null") && !strings.HasSuffix(f.mode, "-missing-anchor") {
 			itemCursor = "items-anchor"
 		}
 		write(id, map[string]any{"thread": observed, "turnsBackwardsCursor": cursor, "itemsBackwardsCursor": itemCursor})

@@ -102,7 +102,11 @@ func (f *threadFixture) handleRevertItems(id json.RawMessage, raw json.RawMessag
 
 func TestRevertJoinsOriginalToolItemsAndBothCursorDirections(t *testing.T) {
 	for _, mode := range []string{"ready", "null", "empty-projection"} {
-		for _, index := range []int{0, 2} {
+		indices := []int{0, 2}
+		if mode == "null" {
+			indices = []int{0}
+		}
+		for _, index := range indices {
 			t.Run(mode+strconv.Itoa(index), func(t *testing.T) {
 				c, capture, source, ids, inputs := revertFixture(t, "paginated-items-"+mode)
 				var intent RevertIntent
@@ -175,31 +179,35 @@ func TestRevertItemEvidenceFaultsQuarantineOriginalSend(t *testing.T) {
 }
 
 func TestRevertNonemptyPaginatedPrefixRequiresNativeItemAnchor(t *testing.T) {
-	c, capture, source, ids, inputs := revertFixture(t, "paginated-items-missing-anchor")
-	claims := 0
-	if _, err := c.RevertThread(context.Background(), domain.NewID(), source, inputs[2], ids[2], func(RevertIntent) error {
-		claims++
-		return nil
-	}); err == nil || claims != 1 || c.problem == nil || !c.execution.paused {
-		t.Fatal("nonempty retained prefix without an item anchor was accepted", err)
-	}
-	requests := capturedThreads(t, capture)
-	revertIndex := -1
-	for index, request := range requests {
-		if request["method"] == "thread/revert" {
-			if revertIndex != -1 {
-				t.Fatal("Revert mutation repeated")
+	for _, mode := range []string{"paginated-items-missing-anchor", "paginated-items-null"} {
+		t.Run(mode, func(t *testing.T) {
+			c, capture, source, ids, inputs := revertFixture(t, mode)
+			claims := 0
+			if _, err := c.RevertThread(context.Background(), domain.NewID(), source, inputs[2], ids[2], func(RevertIntent) error {
+				claims++
+				return nil
+			}); err == nil || claims != 1 || c.problem == nil || !c.execution.paused {
+				t.Fatal("nonempty retained prefix without an item anchor was accepted", err)
 			}
-			revertIndex = index
-		}
-	}
-	if revertIndex < 0 {
-		t.Fatal("Revert mutation was not sent")
-	}
-	for _, request := range requests[revertIndex+1:] {
-		if request["method"] == "thread/items/list" {
-			t.Fatal("missing item anchor reached retained-item reads")
-		}
+			requests := capturedThreads(t, capture)
+			revertIndex := -1
+			for index, request := range requests {
+				if request["method"] == "thread/revert" {
+					if revertIndex != -1 {
+						t.Fatal("Revert mutation repeated")
+					}
+					revertIndex = index
+				}
+			}
+			if revertIndex < 0 {
+				t.Fatal("Revert mutation was not sent")
+			}
+			for _, request := range requests[revertIndex+1:] {
+				if request["method"] == "thread/items/list" {
+					t.Fatal("missing item anchor reached retained-item reads")
+				}
+			}
+		})
 	}
 }
 
