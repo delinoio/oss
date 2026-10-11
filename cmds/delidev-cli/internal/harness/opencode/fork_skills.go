@@ -126,14 +126,16 @@ func prepareForkSkillPatches(ctx context.Context, source nativeCheckpoint, origi
 			}
 			var pkg skills.OpenCodeSelection
 			var output string
+			var originalLocation string
 			command := commands[part.ID]
 			if command != nil {
 				var ok bool
 				pkg, ok = selected[command.Name]
-				if !ok || command.Location != pkg.Path || command.ContentRevision != pkg.ContentRevision || command.PartSHA256 != mutationDigest(canonicalNative(rawPart)) || part.Text == nil || command.TextSHA256 != mutationDigest([]byte(part.Text.Text)) {
+				if !ok || !checkpointPath(command.Location) || filepath.Base(command.Location) != "SKILL.md" || filepath.Base(filepath.Dir(command.Location)) != pkg.Name || filepath.Base(filepath.Dir(filepath.Dir(command.Location))) != "skills" || filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(command.Location)))) != "opencode" || command.ContentRevision != pkg.ContentRevision || command.PartSHA256 != mutationDigest(canonicalNative(rawPart)) || part.Text == nil || command.TextSHA256 != mutationDigest([]byte(part.Text.Text)) {
 					return nil, sessionUncertain()
 				}
-				marker := "\n\nBase directory for this skill: " + filepath.Dir(pkg.Path) + "\nRelative paths in this skill (e.g., scripts/, references/) are relative to this base directory."
+				originalLocation = command.Location
+				marker := "\n\nBase directory for this skill: " + filepath.Dir(originalLocation) + "\nRelative paths in this skill (e.g., scripts/, references/) are relative to this base directory."
 				if strings.Count(part.Text.Text, marker) != 1 {
 					return nil, incompatible()
 				}
@@ -155,25 +157,27 @@ func prepareForkSkillPatches(ctx context.Context, source nativeCheckpoint, origi
 					return nil, incompatible()
 				}
 				metadata, err := shape(tool.Metadata, []string{"name", "dir"}, nil)
-				if err != nil || !scalar(metadata["name"], name) || !scalar(metadata["dir"], filepath.Dir(pkg.Path)) {
+				directory, valid := boundedString(metadata["dir"], 32768, true)
+				if err != nil || !valid || !scalar(metadata["name"], name) {
 					return nil, sessionUncertain()
 				}
 				observer := inputObserver{skillPackages: []skills.OpenCodeSelection{pkg}}
-				if observer.verifySkillTool(tool) != nil {
+				if observer.verifySkillToolAtDirectory(tool, directory) != nil {
 					return nil, sessionUncertain()
 				}
+				originalLocation = filepath.Join(directory, "SKILL.md")
 				prefix := "<skill_content name=\"" + name + "\">\n# Skill: " + name + "\n\n" + strings.TrimSpace(pkg.Content) + "\n\nBase directory for this skill: "
 				// Prefix length proves the generated base path position even when package
 				// content contains other absolute paths or matching prose.
 				suffix := "\nRelative paths in this skill (e.g., scripts/, reference/) are relative to this base directory.\nNote: file list is sampled.\n\n<skill_files>\n"
-				tail := strings.TrimPrefix(*tool.Output, prefix+filepath.Dir(pkg.Path)+suffix)
+				tail := strings.TrimPrefix(*tool.Output, prefix+directory+suffix)
 				closing := "\n</skill_files>\n</skill_content>"
 				list := strings.TrimSuffix(tail, closing)
 				entries := []string{}
 				if list != "" {
 					for _, entry := range strings.Split(list, "\n") {
 						path := strings.TrimSuffix(strings.TrimPrefix(entry, "<file>"), "</file>")
-						rel, err := filepath.Rel(filepath.Dir(pkg.Path), path)
+						rel, err := filepath.Rel(directory, path)
 						if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 							return nil, sessionUncertain()
 						}
@@ -188,7 +192,7 @@ func prepareForkSkillPatches(ctx context.Context, source nativeCheckpoint, origi
 			if err != nil {
 				return nil, err
 			}
-			proof := forkSkillRelocation{RequestID: domain.NewID(), MessageID: mapped.MessageID, PartID: mapped.ID, Name: pkg.Name, ContentRevision: pkg.ContentRevision, SourceLocation: pkg.Path, TargetLocation: targets[pkg.Name].Path, OriginalSHA256: mutationDigest(canonicalNative(rawPart)), BeforeSHA256: mutationDigest(canonicalNative(after[n]))}
+			proof := forkSkillRelocation{RequestID: domain.NewID(), MessageID: mapped.MessageID, PartID: mapped.ID, Name: pkg.Name, ContentRevision: pkg.ContentRevision, SourceLocation: originalLocation, TargetLocation: targets[pkg.Name].Path, OriginalSHA256: mutationDigest(canonicalNative(rawPart)), BeforeSHA256: mutationDigest(canonicalNative(after[n]))}
 			if command != nil {
 				fields["text"], _ = json.Marshal(output)
 				proof.TextSHA256 = mutationDigest([]byte(output))

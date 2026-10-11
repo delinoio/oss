@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
@@ -70,5 +71,26 @@ func TestNativeSkillPendingCannotGrantPackageAuthority(t *testing.T) {
 	pending.Input = json.RawMessage(`{"name":"foreign"}`)
 	if o.verifySkillTool(pending) == nil {
 		t.Fatal("running foreign package acquired authority")
+	}
+}
+
+func TestForkSkillToolAuthenticatesCurrentCopyAtRetainedDirectory(t *testing.T) {
+	observer, tool := nativeSkillToolFixture(t)
+	currentDirectory := filepath.Dir(observer.skillPackages[0].Path)
+	retiredDirectory := filepath.Join(t.TempDir(), "retired", "opencode", "skills", "selected")
+	output := strings.Replace(*tool.Output, currentDirectory, retiredDirectory, 1)
+	tool.Output = &output
+	tool.Metadata, _ = json.Marshal(map[string]string{"name": "selected", "dir": retiredDirectory})
+	if observer.verifySkillTool(tool) == nil {
+		t.Fatal("ordinary observation accepted a historical directory")
+	}
+	if err := observer.verifySkillToolAtDirectory(tool, retiredDirectory); err != nil {
+		t.Fatal("owned current copy could not authenticate retained output", err)
+	}
+	if err := os.WriteFile(filepath.Join(currentDirectory, "foreign"), []byte("changed"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if observer.verifySkillToolAtDirectory(tool, retiredDirectory) == nil {
+		t.Fatal("changed current package authenticated historical output")
 	}
 }

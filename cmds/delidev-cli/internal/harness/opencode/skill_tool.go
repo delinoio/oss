@@ -12,6 +12,13 @@ import (
 )
 
 func (o *inputObserver) verifySkillTool(tool *NativeToolPart) error {
+	return o.verifySkillToolAtDirectory(tool, "")
+}
+
+// Fork history retains the original generated directory after continuation.
+// Authenticate resources from the current owned copy, then compare their exact
+// relative names at the digest-bound historical directory without reading it.
+func (o *inputObserver) verifySkillToolAtDirectory(tool *NativeToolPart, retainedDirectory string) error {
 	if tool == nil || tool.Name != "skill" {
 		return nil
 	}
@@ -45,6 +52,20 @@ func (o *inputObserver) verifySkillTool(tool *NativeToolPart) error {
 	if err != nil {
 		return observerProblem()
 	}
+	directory := filepath.Dir(selected.Path)
+	if retainedDirectory != "" {
+		if !checkpointPath(retainedDirectory) || filepath.Base(retainedDirectory) != selected.Name || filepath.Base(filepath.Dir(retainedDirectory)) != "skills" || filepath.Base(filepath.Dir(filepath.Dir(retainedDirectory))) != "opencode" {
+			return observerProblem()
+		}
+		for i, resource := range resources {
+			relative, err := filepath.Rel(directory, resource)
+			if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+				return observerProblem()
+			}
+			resources[i] = filepath.Join(retainedDirectory, relative)
+		}
+		directory = retainedDirectory
+	}
 	if tool.State != ToolCompleted {
 		return nil
 	}
@@ -52,7 +73,7 @@ func (o *inputObserver) verifySkillTool(tool *NativeToolPart) error {
 		Name      string `json:"name"`
 		Directory string `json:"dir"`
 	}
-	if domain.Decode(tool.Metadata, &metadata) != nil || metadata.Name != selected.Name || metadata.Directory != filepath.Dir(selected.Path) || tool.Title == nil || *tool.Title != "Loaded skill: "+selected.Name || tool.Output == nil || len(tool.Attachments) != 0 {
+	if domain.Decode(tool.Metadata, &metadata) != nil || metadata.Name != selected.Name || metadata.Directory != directory || tool.Title == nil || *tool.Title != "Loaded skill: "+selected.Name || tool.Output == nil || len(tool.Attachments) != 0 {
 		return observerProblem()
 	}
 	prefix := "<skill_content name=\"" + selected.Name + "\">\n# Skill: " + selected.Name + "\n\n" + strings.TrimSpace(selected.Content) + "\n\nBase directory for this skill: " + metadata.Directory + "\nRelative paths in this skill (e.g., scripts/, reference/) are relative to this base directory.\nNote: file list is sampled.\n\n<skill_files>\n"

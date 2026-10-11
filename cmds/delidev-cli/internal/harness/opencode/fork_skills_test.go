@@ -3,6 +3,10 @@ package opencode
 
 import (
 	"context"
+	"encoding/json"
+	"path/filepath"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
 	"strings"
 	"testing"
 )
@@ -64,5 +68,34 @@ func TestForkSkillProofUpdatesOnlyAuthenticatedPartAndRetainsCommandIdentity(t *
 	proof.BeforeSHA256 = strings.Repeat("f", 64)
 	if _, err := applyForkSkillProofs(copyForkHistories(original), []forkSkillRelocation{proof}); err == nil {
 		t.Fatal("foreign original part digest authorized relocation")
+	}
+}
+
+func TestForkSkillCommandRelocatesRetainedHistoryAfterContinuation(t *testing.T) {
+	observer, _ := nativeSkillToolFixture(t)
+	current := observer.skillPackages[0]
+	target, err := skills.CopyOpenCodeRuntime(context.Background(), []skills.NativeSelection{current.NativeSelection}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	retiredLocation := filepath.Join(t.TempDir(), "retired", "opencode", "skills", current.Name, "SKILL.md")
+	marker := "\n\nBase directory for this skill: " + filepath.Dir(retiredLocation) + "\nRelative paths in this skill (e.g., scripts/, references/) are relative to this base directory."
+	unrelated := "\nRetain this original prose path: " + filepath.Dir(retiredLocation)
+	text := current.Content + marker + unrelated
+	part, _ := json.Marshal(fixturePart(TextPartKind, map[string]any{"text": text}))
+	raw, _ := json.Marshal(map[string]any{"parts": []json.RawMessage{part}})
+	command := &SkillCommandProof{Name: current.Name, Location: retiredLocation, ContentRevision: current.ContentRevision, PartID: fixturePartID, PartSHA256: mutationDigest(canonicalNative(part)), TextSHA256: mutationDigest([]byte(text))}
+	source := nativeCheckpoint{Skills: retainedCheckpointSkills(observer.skillPackages), Previous: []HistoryObservation{{SkillCommand: command}}}
+	patches, err := prepareForkSkillPatches(context.Background(), source, []json.RawMessage{raw}, []json.RawMessage{raw}, target)
+	if err != nil || len(patches) != 1 {
+		t.Fatalf("retained command relocation: %v", err)
+	}
+	patched, err := decodeNativePart(patches[0].body)
+	if err != nil || patched.Text == nil || patched.Text.Text != current.Content+strings.Replace(marker, filepath.Dir(retiredLocation), filepath.Dir(target[0].Path), 1)+unrelated || patches[0].proof.SourceLocation != retiredLocation {
+		t.Fatal("historical location or unrelated text was not retained", err)
+	}
+	command.PartSHA256 = strings.Repeat("f", 64)
+	if _, err := prepareForkSkillPatches(context.Background(), source, []json.RawMessage{raw}, []json.RawMessage{raw}, target); err == nil {
+		t.Fatal("changed original history authorized relocation")
 	}
 }
