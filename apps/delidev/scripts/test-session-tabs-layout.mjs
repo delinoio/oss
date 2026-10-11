@@ -239,6 +239,7 @@ try {
           .click();
         await page
           .getByRole("tab", { name: "https://example.com/", exact: true })
+          .last()
           .waitFor();
         await page.locator(".browser-viewport:visible").waitFor();
         const matrix = await page.evaluate(() => {
@@ -374,6 +375,7 @@ try {
         );
         await page
           .getByRole("tab", { name: "https://example.com/", exact: true })
+          .last()
           .click();
         await page.locator(".browser-viewport:visible").waitFor();
         assert.equal(
@@ -387,6 +389,7 @@ try {
         assert.equal(
           await page
             .getByRole("tab", { name: "https://example.com/", exact: true })
+            .first()
             .getAttribute("aria-selected"),
           "true",
         );
