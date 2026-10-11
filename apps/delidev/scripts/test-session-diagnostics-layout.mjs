@@ -57,6 +57,8 @@ try {
               portalNotice = host.lastElementChild;
             const labels = [...content.querySelectorAll("dt")],
               values = [...content.querySelectorAll("dd")];
+            const portalNoticeText = document.createRange();
+            portalNoticeText.selectNodeContents(portalNotice);
             const heading = first.querySelector("h3"),
               facts = first.querySelector("dl");
             return {
@@ -66,7 +68,8 @@ try {
               headingSize: getComputedStyle(heading).fontSize,
               headingGap: rect(facts).y - rect(heading).bottom,
               sectionGap: rect(next.querySelector("h3")).y - rect(first).bottom,
-              portalItemGap: rect(portalNotice).y - rect(next).bottom,
+              portalItemGap:
+                portalNoticeText.getBoundingClientRect().y - rect(next).bottom,
               contentWidth: rect(host).width,
               firstX: rect(first).x,
               requestX: rect(content.querySelector("aside")).x,
