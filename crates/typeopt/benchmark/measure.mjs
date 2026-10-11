@@ -2,6 +2,28 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { gzipSync, brotliCompressSync, constants } from "node:zlib";
+// Vite appends an 8-character content hash to chunk names. Content changes
+// alter the hash, so asset sets are compared by name without it.
+const CONTENT_HASH = /-[A-Za-z0-9_-]{8}(?=\.(?:js|mjs|cjs)$)/;
+function logicalAssets(result) {
+  return result.files.map((file) => file.path.replace(CONTENT_HASH, "")).sort();
+}
+function assetSetDifference(baseline, optimized) {
+  const counts = new Map();
+  for (const name of logicalAssets(baseline))
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  for (const name of logicalAssets(optimized))
+    counts.set(name, (counts.get(name) ?? 0) - 1);
+  const missing = [];
+  const extra = [];
+  for (const [name, count] of [...counts].sort(([a], [b]) =>
+    a.localeCompare(b, "en"),
+  )) {
+    for (let i = 0; i < count; i++) missing.push(name);
+    for (let i = 0; i < -count; i++) extra.push(name);
+  }
+  return { missing, extra };
+}
 async function measure(root) {
   const result = { files: [], raw: 0, gzip: 0, brotli: 0 };
   async function walk(directory) {
@@ -34,9 +56,13 @@ if (process.argv.length !== 4)
   throw new Error("Usage: node measure.mjs <baseline-build> <optimized-build>");
 const baseline = await measure(process.argv[2]);
 const optimized = await measure(process.argv[3]);
-const passed = ["raw", "gzip", "brotli"].every(
-  (key) => optimized[key] < baseline[key],
-);
+// Size totals are comparable only when both builds emit the same logical
+// JavaScript asset set; a missing chunk must not count as a reduction.
+const assetSet = assetSetDifference(baseline, optimized);
+const assetSetMatches = !assetSet.missing.length && !assetSet.extra.length;
+const passed =
+  assetSetMatches &&
+  ["raw", "gzip", "brotli"].every((key) => optimized[key] < baseline[key]);
 console.log(
   JSON.stringify(
     {
@@ -46,6 +72,9 @@ console.log(
       brotli: process.versions.brotli,
       baseline,
       optimized,
+      asset_set_matches: assetSetMatches,
+      missing_from_optimized: assetSet.missing,
+      extra_in_optimized: assetSet.extra,
       passed,
     },
     null,
