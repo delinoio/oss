@@ -35,6 +35,7 @@ func TestWindowsWarningCountsClassesAndReplayRemainBounded(t *testing.T) {
 		{[]string{strings.Repeat("p", maxWindowsSandboxText)}, 0, false, windowsWorldWritable},
 	} {
 		c, turn := observationClient()
+		c.execution.paused = false
 		beforeSettings, state := c.execution.settings, c.execution
 		beforeInputs, beforePending := len(state.inputs), len(state.pending)
 		raw, _ := json.Marshal(windowsWarningFixture(tc.paths, tc.extra, tc.failed))
@@ -77,6 +78,7 @@ func TestWindowsWarningCountsClassesAndReplayRemainBounded(t *testing.T) {
 
 func TestWindowsWarningsDeduplicateOnlyWithinOriginalProcess(t *testing.T) {
 	c, _ := observationClient()
+	c.execution.paused = false
 	for _, params := range []map[string]any{
 		windowsWarningFixture([]string{"private-first"}, 0, false),
 		windowsWarningFixture([]string{}, 0, true),
