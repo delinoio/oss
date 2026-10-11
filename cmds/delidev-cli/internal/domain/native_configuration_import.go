@@ -30,6 +30,9 @@ type NativeConfigurationScope struct {
 	// Only an explicitly named profile is inspected; profile selectors in native
 	// files never expand the selected read set.
 	Profile string `json:"profile,omitempty"`
+	// Claude rules and extension files are named individually; no manifest or
+	// directory can expand this explicitly reviewed read set.
+	Files []string `json:"files,omitempty"`
 }
 type NativeConfigurationTargetKind string
 
@@ -75,13 +78,27 @@ type NativeConfigurationPreviewSelection struct {
 }
 
 func (s NativeConfigurationPreviewSelection) Validate() error {
-	if s.Version != 1 || s.Harness != Codex || s.MachineID.Validate() != nil || s.MachineRevision == 0 || len(s.Scopes) == 0 || len(s.Scopes) > 16 || s.Target.Validate(s.Harness) != nil {
+	if s.Version != 1 || (s.Harness != Codex && s.Harness != ClaudeCode) || s.MachineID.Validate() != nil || s.MachineRevision == 0 || len(s.Scopes) == 0 || len(s.Scopes) > 16 || s.Target.Validate(s.Harness) != nil {
 		return NativeConfigurationInvalid()
 	}
 	seen := map[string]bool{}
 	projectSeen := false
 	for _, scope := range s.Scopes {
 		if !slices.Contains([]NativeConfigurationScopeKind{NativeConfigurationHome, NativeConfigurationProject}, scope.Kind) || Text(scope.Path, "selected source scope", 4096, true) != nil || strings.ContainsAny(scope.Path, "\x00\r\n") || scope.Profile != "" && !nativeConfigurationSelector.MatchString(scope.Profile) || seen[scope.Path] || scope.Kind == NativeConfigurationHome && (projectSeen || len(seen) != 0) {
+			return NativeConfigurationInvalid()
+		}
+		if s.Harness == ClaudeCode {
+			if scope.Profile != "" || len(scope.Files) > 64 {
+				return NativeConfigurationInvalid()
+			}
+			files := map[string]bool{}
+			for _, file := range scope.Files {
+				if !ClaudeConfigurationFile(scope.Kind, file) || files[file] {
+					return NativeConfigurationInvalid()
+				}
+				files[file] = true
+			}
+		} else if len(scope.Files) != 0 {
 			return NativeConfigurationInvalid()
 		}
 		seen[scope.Path] = true
@@ -213,20 +230,30 @@ func NativeConfigurationFiles(kind NativeConfigurationScopeKind) []string {
 }
 func (o NativeConfigurationObservation) Validate(s NativeConfigurationPreviewSelection) error {
 	raw, err := json.Marshal(o)
-	if err != nil || len(raw) > MaxNativeConfigurationObservationBytes || o.Version != 1 || len(o.Sources) != len(s.Scopes)*3 || o.Entries == nil || len(o.Entries) > 128 {
+	if err != nil || s.Validate() != nil || len(raw) > MaxNativeConfigurationObservationBytes || o.Version != 1 || o.Entries == nil || len(o.Entries) > 128 {
 		return NativeConfigurationInvalid()
 	}
 	sources := map[string]NativeConfigurationSource{}
-	for n, source := range o.Sources {
-		scope := n / 3
-		file := NativeConfigurationFiles(s.Scopes[scope].Kind)[n%3]
-		if source.ScopeIndex != uint32(scope) || source.File != file || !nativeExecutableDigest.MatchString(source.Digest) || !source.Present && source.Digest != HarnessEvidenceDigest(nil) {
-			return NativeConfigurationInvalid()
+	expected := 0
+	for scope, selected := range s.Scopes {
+		files := NativeConfigurationSourceFiles(s.Harness, selected)
+		for n, file := range files {
+			if expected >= len(o.Sources) {
+				return NativeConfigurationInvalid()
+			}
+			source := o.Sources[expected]
+			if source.ScopeIndex != uint32(scope) || source.File != file || !nativeExecutableDigest.MatchString(source.Digest) || !source.Present && source.Digest != HarnessEvidenceDigest(nil) {
+				return NativeConfigurationInvalid()
+			}
+			if source.Shadowed && (s.Harness != Codex || n != 2 || source.Present || !o.Sources[expected-1].Present || o.Sources[expected-1].Digest == HarnessEvidenceDigest(nil)) {
+				return NativeConfigurationInvalid()
+			}
+			sources[string(rune(scope))+file] = source
+			expected++
 		}
-		if source.Shadowed && (n%3 != 2 || source.Present || !o.Sources[n-1].Present || o.Sources[n-1].Digest == HarnessEvidenceDigest(nil)) {
-			return NativeConfigurationInvalid()
-		}
-		sources[string(rune(scope))+file] = source
+	}
+	if len(o.Sources) != expected {
+		return NativeConfigurationInvalid()
 	}
 	seen := map[string]bool{}
 	lastScope := uint32(0)
@@ -245,15 +272,15 @@ func (o NativeConfigurationObservation) Validate(s NativeConfigurationPreviewSel
 		}
 		switch entry.Kind {
 		case NativeConfigurationSetting:
-			if _, err := NativeConfigurationSettingValue(entry.Name, entry.Value); err != nil || entry.Contents != "" {
+			if _, err := NativeConfigurationSettingForHarness(s.Harness, entry.Name, entry.Value); err != nil || entry.Contents != "" {
 				return NativeConfigurationInvalid()
 			}
 		case NativeConfigurationInstruction:
-			if entry.Profile != "" || entry.Name != "instructions" || (entry.File != "AGENTS.md" && entry.File != "AGENTS.override.md") || len(entry.Value) != 0 || Text(entry.Contents, "imported instructions", MaxNativeConfigurationFileBytes, true) != nil || NativeConfigurationSecret(entry.Contents) || HarnessEvidenceDigest([]byte(entry.Contents)) != entry.SourceDigest {
+			if entry.Profile != "" || entry.Name != "instructions" || !NativeConfigurationInstructionFile(s.Harness, s.Scopes[entry.ScopeIndex].Kind, entry.File) || s.Harness == ClaudeCode && (!ClaudeConfigurationPlainInstruction(entry.Contents) || ClaudeConfigurationSensitive([]byte(entry.Contents))) || len(entry.Value) != 0 || Text(entry.Contents, "imported instructions", MaxNativeConfigurationFileBytes, true) != nil || NativeConfigurationSecret(entry.Contents) || HarnessEvidenceDigest([]byte(entry.Contents)) != entry.SourceDigest {
 				return NativeConfigurationInvalid()
 			}
 		case NativeConfigurationInertExtension:
-			if !slices.Contains([]string{"hooks", "plugins", "mcp_servers"}, entry.Name) || len(entry.Value) != 0 || entry.Contents != `{"execution_authority":false,"credential_authority":false,"trust":false}` {
+			if len(entry.Value) != 0 || !NativeConfigurationInertEntry(s.Harness, entry.Name, entry.Contents) {
 				return NativeConfigurationInvalid()
 			}
 		case NativeConfigurationUnsupported, NativeConfigurationExcluded:
@@ -311,6 +338,9 @@ func MergeNativeConfigurationSettings(target *HarnessSettings, selected HarnessS
 	if selected.Effort != nil {
 		target.Effort = selected.Effort
 	}
+	if selected.ClaudePermission != nil {
+		target.ClaudePermission = selected.ClaudePermission
+	}
 	if selected.Permission != nil {
 		target.Permission = selected.Permission
 	}
@@ -352,10 +382,10 @@ func (p *NativeImportedPackage) Validate(contents string) error {
 	if p == nil {
 		return nil
 	}
-	if p.Kind == NativeConfigurationInstruction && HarnessEvidenceDigest([]byte(contents)) != p.SourceDigest {
+	if p.Kind == NativeConfigurationInstruction && (HarnessEvidenceDigest([]byte(contents)) != p.SourceDigest || p.Harness == ClaudeCode && (!ClaudeConfigurationPlainInstruction(contents) || ClaudeConfigurationSensitive([]byte(contents)))) {
 		return NativeConfigurationInvalid()
 	}
-	if p.Version != 1 || p.Harness != Codex || !nativeExecutableDigest.MatchString(p.SourceDigest) || p.Order >= 128 || !slices.Contains([]NativeConfigurationEntryKind{NativeConfigurationInstruction, NativeConfigurationInertExtension}, p.Kind) || NativeConfigurationSecret(contents) || p.Kind == NativeConfigurationInertExtension && contents != `{"execution_authority":false,"credential_authority":false,"trust":false}` {
+	if p.Version != 1 || (p.Harness != Codex && p.Harness != ClaudeCode) || !nativeExecutableDigest.MatchString(p.SourceDigest) || p.Order >= 128 || !slices.Contains([]NativeConfigurationEntryKind{NativeConfigurationInstruction, NativeConfigurationInertExtension}, p.Kind) || NativeConfigurationSecret(contents) || p.Kind == NativeConfigurationInertExtension && !NativeConfigurationInertPackage(p.Harness, contents) {
 		return NativeConfigurationInvalid()
 	}
 	return nil

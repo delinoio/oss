@@ -258,7 +258,7 @@ func stageNativeConfiguration(tx *store.Tx, input domain.NativeConfigurationJobI
 			continue
 		}
 		if entry.Kind == domain.NativeConfigurationSetting {
-			selected, err := domain.NativeConfigurationSettingValue(entry.Name, entry.Value)
+			selected, err := domain.NativeConfigurationSettingForHarness(input.Preview.Harness, entry.Name, entry.Value)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -275,7 +275,7 @@ func stageNativeConfiguration(tx *store.Tx, input domain.NativeConfigurationJobI
 			}{entry, domain.NewID(), packageValue})
 		}
 	}
-	changed := settings.Model != nil || settings.Effort != nil || settings.Permission != nil || settings.ApprovalPolicy != nil || settings.ServiceTier != nil
+	changed := settings.Model != nil || settings.Effort != nil || settings.ClaudePermission != nil || settings.Permission != nil || settings.ApprovalPolicy != nil || settings.ServiceTier != nil
 	switch v := value.(type) {
 	case *domain.Agent:
 		if settings.Model != nil {

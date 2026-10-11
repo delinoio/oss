@@ -19,6 +19,9 @@ import (
 // No native process, environment lookup, trust file or authentication file is
 // used. Every read is confined to one explicitly selected directory descriptor.
 func inspectNativeConfiguration(ctx context.Context, selection domain.NativeConfigurationPreviewSelection) (domain.NativeConfigurationObservation, error) {
+	if selection.Harness == domain.ClaudeCode {
+		return inspectClaudeConfiguration(ctx, selection)
+	}
 	result := domain.NativeConfigurationObservation{Version: 1, Sources: []domain.NativeConfigurationSource{}, Entries: []domain.NativeConfigurationEntry{}}
 	if err := selection.Validate(); err != nil {
 		return result, err
