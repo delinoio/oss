@@ -136,3 +136,12 @@ it.each([{ isComposing: true }, { keyCode: 229 }, { repeat: true }, { shiftKey: 
   const event = dispatch([item], { key: "ㅏ", code: "KeyK", ...flags });
   expect(item.run).not.toHaveBeenCalled(); expect(event.defaultPrevented).toBe(false);
 });
+
+it("runs the close-tab chord from terminal input once and consumes it when disabled",()=>{
+ const input=document.createElement("textarea");input.dataset.shortcuts="passthrough";document.body.append(input);
+ const close=definition({id:ShortcutId.SessionCloseTab,input:ShortcutInput.Allow,terminal:true,bindings:[{key:"w",primary:true}]});
+ expect(dispatch([close],{key:"w"},input).defaultPrevented).toBe(true);expect(close.run).toHaveBeenCalledTimes(1);
+ dispatch([close],{key:"w",repeat:true},input);dispatch([close],{key:"w",shiftKey:true},input);dispatch([close],{key:"w",altKey:true},input);expect(close.run).toHaveBeenCalledTimes(1);
+ const disabled=definition({id:ShortcutId.SessionCloseTab,input:ShortcutInput.Allow,terminal:true,enabled:false,bindings:[{key:"w",primary:true}]});
+ expect(dispatch([disabled],{key:"w"},input).defaultPrevented).toBe(true);expect(disabled.run).not.toHaveBeenCalled();input.remove();
+});
