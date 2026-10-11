@@ -13,6 +13,7 @@ import {
   sessionCreatedAt,
   type LifetimeMeasure,
 } from "./session-lifetime-usage-model";
+import { document as readDocument, object, text } from "./documents";
 import { copy, useLocale } from "./localization";
 import { useSessionActive } from "./session-activity";
 import { Timestamp } from "./timestamp-display";
@@ -29,6 +30,9 @@ export function SessionLifetimeUsage({
   const transport = useTransport();
   const client = useQueryClient();
   const createdAt = sessionCreatedAt(session);
+  const responseUsageId = text(
+    object(readDocument(session).execution).latest_response_usage_id,
+  );
   const request = useMemo(
     () => ({
       sessionId: session.id,
@@ -47,8 +51,9 @@ export function SessionLifetimeUsage({
     () => [
       ...base.queryKey,
       { sessionLifetimeCreatedAt: createdAt?.toString() ?? "unavailable" },
+      { latestResponseUsageId: responseUsageId },
     ],
-    [base, createdAt],
+    [base, createdAt, responseUsageId],
   );
   const result = useQuery({
     queryKey: key,

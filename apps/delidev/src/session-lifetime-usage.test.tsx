@@ -245,6 +245,41 @@ it("retains only the previous complete summary on failed invalidation and retrie
     await i18n.changeLanguage("en");
   });
 });
+it("refreshes lifetime usage when the streamed response-usage generation advances", async () => {
+  const id = newRequestId();
+  const session = (revision: bigint, responseUsageId: string) =>
+    create(ResourceSchema, {
+      id,
+      kind: EntityKind.SESSION,
+      schemaVersion: 1,
+      revision,
+      createdAt: "2026-10-01T00:00:00Z",
+      documentJson: new TextEncoder().encode(
+        JSON.stringify({
+          execution: { latest_response_usage_id: responseUsageId },
+        }),
+      ),
+    });
+  const read = vi.fn(async () => summary());
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const transport = createRouterTransport((router) =>
+    router.service(UsageService, { getUsageSummary: read }),
+  );
+  const view = (resource: ReturnType<typeof session>) => (
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={client}>
+        <SessionLifetimeUsage session={resource} diagnosticsTarget={null} />
+      </QueryClientProvider>
+    </TransportProvider>
+  );
+  const mounted = render(view(session(1n, "response-1")));
+  await screen.findByText("9,007,199,254,740,993");
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+  mounted.rerender(view(session(2n, "response-2")));
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+});
 it("fences a delayed old-session result and pauses inactive readers", async () => {
   const oldSession = create(ResourceSchema, {
     id: newRequestId(),
