@@ -266,6 +266,7 @@ export function NewSession({
       endHistoryCycle.current();
       setPrompt("");
       setManualMode(false);
+      setDefaultRefreshFailed(false);
       skills.clearAccepted();
       setCreatedElsewhere(undefined);
       created(session);
