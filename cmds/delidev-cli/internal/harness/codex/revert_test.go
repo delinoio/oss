@@ -54,6 +54,22 @@ func (f *threadFixture) handleRevert(id json.RawMessage, method string, raw json
 		if json.Unmarshal(f.history, &page) != nil {
 			os.Exit(72)
 		}
+		// The item fixture deliberately omits settled tool items from the turn
+		// projection, while retaining them in the separate item pages.
+		if strings.Contains(f.mode, "paginated-items-") {
+			for n, raw := range page.Data {
+				var turn map[string]json.RawMessage
+				var items []json.RawMessage
+				json.Unmarshal(raw, &turn)
+				json.Unmarshal(turn["items"], &items)
+				if strings.HasSuffix(f.mode, "-empty-projection") && p.Limit == 50 {
+					turn["items"], _ = json.Marshal([]any{})
+				} else {
+					turn["items"], _ = json.Marshal(items[:1])
+				}
+				page.Data[n], _ = json.Marshal(turn)
+			}
+		}
 		capture()
 		if p.Direction == "desc" {
 			slices.Reverse(page.Data)
@@ -98,6 +114,8 @@ func (f *threadFixture) handleRevert(id json.RawMessage, method string, raw json
 		}
 		write(id, map[string]any{"data": data, "nextCursor": next, "backwardsCursor": nil})
 		return true
+	case "thread/items/list":
+		return f.handleRevertItems(id, raw, write, capture)
 	case "thread/revert":
 		capture()
 		var p struct {
@@ -124,7 +142,8 @@ func (f *threadFixture) handleRevert(id json.RawMessage, method string, raw json
 		}
 		page.Data = page.Data[:index]
 		f.history, _ = json.Marshal(page)
-		if f.mode == "thread-revert-lost" || f.mode == "thread-revert-paginated-lost" {
+		f.reverted = true
+		if f.mode == "thread-revert-lost" || f.mode == "thread-revert-paginated-lost" || f.mode == "thread-revert-paginated-items-lost" {
 			json.NewEncoder(os.Stdout).Encode(map[string]any{"id": id, "error": map[string]any{"code": -32603, "message": "lost acknowledgment"}})
 			return true
 		}
@@ -151,7 +170,11 @@ func (f *threadFixture) handleRevert(id json.RawMessage, method string, raw json
 				delete(observed, "canAcceptDirectInput")
 			}
 		}
-		write(id, map[string]any{"thread": observed, "turnsBackwardsCursor": cursor, "itemsBackwardsCursor": nil})
+		var itemCursor any
+		if index > 0 && f.thread["historyMode"] == string(PaginatedHistory) && !strings.HasSuffix(f.mode, "-null") && !strings.HasSuffix(f.mode, "-missing-anchor") {
+			itemCursor = "items-anchor"
+		}
+		write(id, map[string]any{"thread": observed, "turnsBackwardsCursor": cursor, "itemsBackwardsCursor": itemCursor})
 		if f.mode == "thread-revert-paginated-current-mode-change" {
 			f.thread["historyMode"] = "legacy"
 		}
@@ -174,6 +197,12 @@ func revertFixture(t *testing.T, mode string) (*Client, string, ContinuationChec
 		turn := fixtureTurn(id, TurnCompleted)
 		turn["itemsView"] = "full"
 		turn["items"] = []any{map[string]any{"type": "userMessage", "id": string(domain.NewID()), "clientId": input.ID, "content": []any{map[string]any{"type": "text", "text": text, "text_elements": []any{}}}}}
+		if len(turns) == 0 && strings.Contains(mode, "paginated-items-") {
+			command := commandFixture()
+			command["status"], command["aggregatedOutput"], command["exitCode"] = "completed", "original output", 0
+			patch := map[string]any{"type": "fileChange", "id": "retained-file", "status": "completed", "changes": []any{map[string]any{"path": "file.txt", "diff": "@@\n-before\n+after\n", "kind": map[string]any{"type": "update", "move_path": nil}}}}
+			turn["items"] = append(turn["items"].([]any), command, patch)
+		}
 		turns = append(turns, turn)
 	}
 	fixtureSignal(t, c, "history", map[string]any{"page": map[string]any{"data": turns, "nextCursor": nil, "backwardsCursor": nil}})
