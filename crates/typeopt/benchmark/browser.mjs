@@ -2,6 +2,7 @@
 import { chromium } from "playwright";
 import assert from "node:assert/strict";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 
 const [url, directory] = process.argv.slice(2);
@@ -14,9 +15,37 @@ if (
     "Usage: node browser.mjs <loopback-url> <evidence-directory>",
   );
 }
-await mkdir(directory, { recursive: true });
+const pin = JSON.parse(
+  await readFile(new URL("./pin.json", import.meta.url), "utf8"),
+);
+// Reject unpinned runtimes before running checks, so recorded evidence always
+// comes from the pinned browser stack.
+if (process.versions.node !== pin.node)
+  throw new Error(`Use pinned Node ${pin.node}`);
+const playwrightVersion = JSON.parse(
+  await readFile(
+    createRequire(import.meta.url).resolve("playwright/package.json"),
+    "utf8",
+  ),
+).version;
+if (playwrightVersion !== pin.playwright)
+  throw new Error(
+    `Installed Playwright ${playwrightVersion} does not match pinned ${pin.playwright}`,
+  );
 const browser = await chromium.launch({ headless: true });
 try {
+  if (browser.version() !== pin.chromium)
+    throw new Error(
+      `Chromium ${browser.version()} does not match pinned ${pin.chromium}; run playwright install chromium`,
+    );
+  // A new directory keeps earlier evidence intact and avoids mixing runs.
+  try {
+    await mkdir(directory);
+  } catch (error) {
+    if (error.code === "EEXIST")
+      throw new Error("Evidence directory already exists; use a new path");
+    throw error;
+  }
   const context = await browser.newContext({
     viewport: { width: 1280, height: 900 },
     locale: "en-US",
@@ -244,7 +273,16 @@ try {
   await writeFile(
     path.join(directory, "browser.json"),
     JSON.stringify(
-      { browser: browser.version(), observations, exports, passed: true },
+      {
+        schema_version: 0,
+        node: process.versions.node,
+        playwright: playwrightVersion,
+        browser: browser.version(),
+        observations,
+        exports,
+        // Per-run checks only; acceptance requires compare-browser.mjs.
+        checks_passed: true,
+      },
       null,
       2,
     ),
@@ -252,7 +290,7 @@ try {
   console.log(
     JSON.stringify({
       browser: browser.version(),
-      passed: true,
+      checks_passed: true,
       checks: Object.keys(observations),
       png: exports.png,
       svg_paths: exports.svg.paths,
