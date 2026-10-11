@@ -551,6 +551,34 @@ Conversation resources retain forward returned order and higher revisions;
 independently bounded live streams join new arrivals only after final coverage.
 The feature groups reached tool records by the original session/execution/native-thread/native-turn tuple. One initially collapsed **Tool calls** disclosure is anchored at the first reached tool position, including active execution and records separated by commentary. Non-tool rows retain their relative order; tool entries retain original observation order. Each entry starts collapsed and uses its original validated renderer for exact inert commands, arguments, patches, output and unavailable states. Grok observations remain separate entries without reconstructed unique-call attribution or numeric call counts. Missing, malformed, mixed or foreign ownership retains standalone rendering.
 
+Recognized tool groups use borderless text disclosure rows with gray chevrons,
+36px targets, semantic hover feedback and visible keyboard focus. Grouped entries
+omit the original article header and primary trigger; routine complete/completed
+labels are suppressed while running, failure, interruption, rejection and
+unavailable evidence remain. Expanded groups retain reached-record guidance.
+
+Command previews are transient views of resident validated payloads. Codex uses
+only the exclusive command adapter, Claude reuses the complete exact Bash
+validator (applied proposal before initial input), and OpenCode reuses immutable
+shell snapshots. Grok and malformed/partial records retain their original tool
+name/fallback. Muted monospace previews show a literal `> ` prefix with visual
+ellipsis and the complete accessible string. Only Codex's exact leading
+`/bin/zsh -lc ` is hidden in the preview; no shell parsing, trimming, unquoting or
+other rewriting occurs. The full original command remains in collapsed Details.
+
+Expanding a recognized command displays original output directly in inert
+`pre`/`code` blocks. Codex prefers completed aggregate output, including empty
+strings, otherwise the retained stream; distinct stream observations stay
+separate in Details. Claude preserves original text/block boundaries, structured
+results, error flags and non-execution evidence. OpenCode displays completed
+output, running preview or failed error with original exit, interruption and
+truncation warnings. Empty output differs from absent output. Inputs, working
+directory, provenance and additional observations remain in initially collapsed
+Details; paths are inert and grant no reads. Output is never parsed as Markdown,
+HTML, links, ANSI controls or execution instructions. Manual disclosure choices,
+focus and original restore tokens survive revision, locale, reconnect and payload
+eviction; no command/output enters display metadata or persistence.
+
 Conversation display projections may retain only bounded tool owner/name/status metadata in addition to identity/revision/order. Full documents remain in the original three-page payload window and independently bounded live stream. A group spans accepted pages and the final historical/live boundary; an evicted anchor still presents that group's projection. Evicted entry details restore only their original accepted page token. Expanding a group does not enumerate an entire turn or unread history. The list explicitly describes reached-record coverage; the existing history continuation controls retain admission, measured restoration, scroll anchors and focus protection. Disclosure choices, including nested output details, remain within the mounted session/connection owner across revisions, reconnect, localization and payload eviction; disposal resets them. Approval/questions remain expanded and independently actionable in the original tray. No execution, response, composer, artifact, account, protocol, migration or native ownership changes are introduced. English/Korean shared compact disclosures use semantic theme tokens and native keyboard/focus behavior.
 
 User-authored request, queue and review drafts remain scope-local under their

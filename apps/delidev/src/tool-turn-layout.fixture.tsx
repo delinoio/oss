@@ -36,21 +36,54 @@ const tool = (name: string, state = "streaming") => ({
   execution_id: execution,
   native_thread_id: "original-thread",
   native_turn_id: "original-turn",
-  tool: {
-    started: { kind: name },
-    completed: {
-      status: state,
-      command: {
-        command: "echo  exact\n  original",
-        aggregated_output: "aggregate\n  exact",
-      },
-    },
-    output: "<script>inert()</script>\n  original",
-  },
+  tool:
+    name === "command"
+      ? {
+          started: {
+            kind: "command",
+            status: "running",
+            changes: null,
+            command: {
+              command: "/bin/zsh -lc echo  exact\n  original",
+              cwd: "/workspace/project",
+              source: "agent",
+              actions: [],
+              process_id: null,
+              aggregated_output: null,
+              exit_code: null,
+              duration_ms: null,
+              plugin_id: null,
+              script_path: null,
+            },
+          },
+          ...(state === "complete"
+            ? {
+                completed: {
+                  kind: "command",
+                  status: "completed",
+                  changes: null,
+                  command: {
+                    command: "/bin/zsh -lc echo  exact\n  original",
+                    cwd: "/workspace/project",
+                    source: "agent",
+                    actions: [],
+                    process_id: null,
+                    aggregated_output: "aggregate\n  exact",
+                    exit_code: 0,
+                    duration_ms: 1,
+                    plugin_id: null,
+                    script_path: null,
+                  },
+                },
+              }
+            : {}),
+          output: "<script>inert()</script>\n  original",
+        }
+      : { started: { kind: name }, output: "original" },
 });
-const first = record(tool("command"), 3),
+const first = record(tool("command", "complete"), 3),
   second = record(tool("patch"), 5),
-  tail = record(tool("shell"), 7);
+  tail = record(tool("command"), 7);
 const pages = [
   [record({ role: "assistant", text: "Before" }, 4), first],
   [record({ role: "assistant", text: "Interleaved commentary" }, 6), second],
@@ -81,9 +114,7 @@ function Fixture() {
   const updated = {
     ...first,
     revision,
-    documentJson: encode(
-      tool("command", revision === 1n ? "streaming" : "complete"),
-    ),
+    documentJson: encode(tool("command", "complete")),
   };
   return (
     <main

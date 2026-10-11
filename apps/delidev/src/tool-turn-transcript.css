@@ -27,7 +27,7 @@
   border: 0;
   background: transparent;
 }
-.tool-entry-payload [data-tool-primary] > summary {
+.tool-turn .disclosure.disclosure[data-tool-primary] > .disclosure-header {
   display: none;
 }
 .tool-entry-payload pre {
@@ -48,4 +48,77 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+}
+
+/* Only reached tool groups use text rows; shared disclosures retain their style. */
+.tool-turn .disclosure.disclosure > .disclosure-header,
+.tool-turn.disclosure.disclosure > .disclosure-header {
+  min-height: 36px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.tool-turn .disclosure.disclosure > .disclosure-header:hover,
+.tool-turn.disclosure.disclosure > .disclosure-header:hover {
+  background: var(--surface-hover);
+}
+.tool-turn .disclosure-chevron {
+  color: var(--muted);
+}
+.tool-turn .disclosure-label {
+  flex: 1;
+  min-width: 0;
+}
+.tool-turn .tool-command-preview {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-weight: 400;
+}
+.tool-entry-payload {
+  margin-left: 15px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
+  min-width: 0;
+}
+.tool-entry-payload > .message {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.tool-entry-payload > .message > header {
+  display: none;
+}
+.tool-turn .tool-command-output {
+  margin: 4px 0 8px;
+  padding: 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--surface-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+.tool-command-details > .disclosure-header {
+  color: var(--muted);
+}
+.tool-turn .tool-command-notice {
+  color: var(--muted);
+}
+
+.tool-turn.disclosure,
+.tool-turn .disclosure {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }

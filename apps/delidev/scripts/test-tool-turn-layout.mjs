@@ -70,7 +70,7 @@ try {
   for (const language of ["en", "ko"])
     for (const theme of ["light", "dark", "system"])
       for (const kind of ["session", "general-chat"])
-        for (const width of [1440, 480, 320]) {
+        for (const width of [1440, 480, 360, 180]) {
           await page.setViewportSize({ width, height: 800 });
           await page.goto(
             `http://127.0.0.1:${server.address().port}/?language=${language}&theme=${theme}&kind=${kind}`,
@@ -96,9 +96,40 @@ try {
           await entry.locator("pre").first().waitFor({ state: "visible" });
           assert.equal(
             await entry.locator("pre").first().textContent(),
-            "echo  exact\n  original",
+            "aggregate\n  exact",
           );
-          // Original aggregate disclosure remains independently available; its exact localized title is owned by TranscriptItem.
+          // Direct output has no intermediate disclosure. Details remains independent.
+          assert.equal(
+            await trigger.locator(".tool-command-preview").textContent(),
+            "> echo  exact\n  original",
+          );
+          for (const row of [summary, trigger]) {
+            const styles = await row.evaluate((n) => {
+              const s = getComputedStyle(n);
+              return {
+                border: s.borderTopWidth,
+                background: s.backgroundColor,
+                minHeight: s.minHeight,
+                shadow: s.boxShadow,
+              };
+            });
+            assert.equal(styles.border, "0px");
+            assert.equal(styles.background, "rgba(0, 0, 0, 0)");
+            assert.equal(styles.minHeight, "36px");
+            assert.equal(styles.shadow, "none");
+          }
+          const code = entry.locator(".tool-command-output").first();
+          assert.equal(
+            await code.locator("code").textContent(),
+            "aggregate\n  exact",
+          );
+          assert.equal(await entry.locator("script").count(), 0);
+          assert.equal(
+            await trigger
+              .locator(".tool-command-preview")
+              .evaluate((n) => getComputedStyle(n).textOverflow),
+            "ellipsis",
+          );
           const nested = entry
             .locator("details:not([data-tool-primary])")
             .first();
