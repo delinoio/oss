@@ -4033,3 +4033,58 @@ it("Search focus waits for its opening generation and cannot survive reversal or
     vi.useRealTimers();
   }
 });
+
+it("preserves first Search autofocus after a hidden wide activation", async () => {
+  viewport();
+  const flushFrames = animationFrames();
+  const value = fixture();
+  render(
+    <SidebarProvider bridge={memorySidebarBridge()}>
+      <App transport={value.transport} />
+    </SidebarProvider>,
+  );
+  await act(async () => {});
+  fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
+  await waitFor(() =>
+    expect(document.querySelector(".app.sidebar-collapsed")).toBeTruthy(),
+  );
+
+  const navigate = async (name: "Search" | "Sessions") => {
+    fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
+    const menu = await screen.findByRole("dialog", { name: "Command menu" });
+    fireEvent.click(within(menu).getByRole("option", { name }));
+  };
+  await navigate("Search");
+  const input = screen.getByRole("textbox", { name: "Search conversations" });
+  flushFrames();
+  expect(document.activeElement).not.toBe(input);
+
+  await navigate("Sessions");
+  fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
+  await waitFor(() =>
+    expect(document.querySelector(".app.sidebar-collapsed")).toBeNull(),
+  );
+  fireEvent.click(headerAction("Search"));
+  flushFrames();
+  expect(document.activeElement).toBe(input);
+  expectNoNavigationWrites(value);
+});
+
+it("autofocuses visible Search after a wide sidebar preference read failure", async () => {
+  viewport();
+  const flushFrames = animationFrames();
+  const value = fixture();
+  const bridge = memorySidebarBridge();
+  vi.spyOn(bridge, "read").mockRejectedValue(new Error("read unavailable"));
+  render(
+    <SidebarProvider bridge={bridge}>
+      <App transport={value.transport} />
+    </SidebarProvider>,
+  );
+  await screen.findByRole("alert");
+  fireEvent.click(headerAction("Search"));
+  const input = screen.getByRole("textbox", { name: "Search conversations" });
+  flushFrames();
+  expect(document.activeElement).toBe(input);
+  expectNoNavigationWrites(value);
+});

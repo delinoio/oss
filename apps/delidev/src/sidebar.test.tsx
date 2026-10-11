@@ -160,8 +160,12 @@ function mountSidebar({
       <QueryClientProvider client={client}>
         <MutationIntents>
           {withApp ? (
-            <div className="app"><Harness /></div>
-          ) : <Harness />}
+            <div className="app">
+              <Harness />
+            </div>
+          ) : (
+            <Harness />
+          )}
         </MutationIntents>
       </QueryClientProvider>
     </TransportProvider>

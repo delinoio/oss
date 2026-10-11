@@ -95,6 +95,7 @@ export function Search({
   const root = useScrollRoot(content);
   const searchInput = useRef<HTMLInputElement>(null);
   const focusedOnce = useRef(false);
+  const activatedWhileWidePaneHidden = useRef(false);
   const requestedFocus = useRef<
     { generation: number; opening: boolean } | undefined
   >(undefined);
@@ -167,7 +168,10 @@ export function Search({
     presentation.focusAllowed,
   ]);
   useEffect(() => {
-    if (!active) return;
+    if (!active) {
+      activatedWhileWidePaneHidden.current = false;
+      return;
+    }
     // Activating Search behind a collapsed pane must not turn a later ordinary
     // wide expansion into a focus request. An explicit compact drawer opening
     // remains a focusable presentation of the retained Search surface.
@@ -176,10 +180,14 @@ export function Search({
         typeof window.matchMedia !== "function" ||
         !window.matchMedia("(max-width: 759px)").matches
       )
-        focusedOnce.current = true;
+        activatedWhileWidePaneHidden.current = true;
       return;
     }
-    if (!presentation.settled || presentationBlocked || focusedOnce.current)
+    if (
+      !presentation.settled ||
+      activatedWhileWidePaneHidden.current ||
+      focusedOnce.current
+    )
       return;
     if (compact && !drawerOpen) return;
     const frame = window.requestAnimationFrame(() => {
@@ -193,7 +201,6 @@ export function Search({
     paneVisible,
     presentation.settled,
     presentation.generation,
-    presentationBlocked,
     presentation.focusAllowed,
   ]);
   const shortcuts = useShortcuts([

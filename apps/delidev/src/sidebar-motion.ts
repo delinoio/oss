@@ -61,7 +61,11 @@ export class SidebarPaneMotion {
         focusAllowed: focusAllowed && !cancelled,
       });
     };
-    if (!animate || !Number.isFinite(current) || Math.abs(current - target) < 0.5) {
+    if (
+      !animate ||
+      !Number.isFinite(current) ||
+      Math.abs(current - target) < 0.5
+    ) {
       settle();
       return;
     }
@@ -71,7 +75,12 @@ export class SidebarPaneMotion {
     this.pane.hidden = false;
     this.pane.setAttribute("open", "");
     this.pane.dataset.sidebarMotion = collapsed ? "closing" : "opening";
-    this.changed({ generation: owned, settled: false, collapsed, focusAllowed });
+    this.changed({
+      generation: owned,
+      settled: false,
+      collapsed,
+      focusAllowed,
+    });
     this.app.getBoundingClientRect();
     this.app.classList.add("sidebar-motion");
     write(target);
@@ -104,11 +113,14 @@ export class SidebarPaneMotion {
     };
     // The actual CSS transition object distinguishes its cancellation from a
     // queued cancellation event belonging to an older, reversed transition.
-    const transition = this.app.getAnimations?.().find(
-      (value) =>
-        "transitionProperty" in value &&
-        (value as CSSTransition).transitionProperty === "grid-template-columns",
-    );
+    const transition = this.app
+      .getAnimations?.()
+      .find(
+        (value) =>
+          "transitionProperty" in value &&
+          (value as CSSTransition).transitionProperty ===
+            "grid-template-columns",
+      );
     if (transition)
       void transition.finished.then(
         () => settle(),
