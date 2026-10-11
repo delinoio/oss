@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { EntityKind, type Resource } from "@delinoio/delidev-api-client";
-import { document as readDocument, object } from "./documents";
+import { document as readDocument, object, Workspace } from "./documents";
 
 export enum SessionProgressPhase {
   Preparing = "preparing",
@@ -451,6 +451,74 @@ export function sessionProgress(
   )
     return;
   return SessionProgressPhase.Response;
+}
+
+/** Presentation only: a validated progress phase must still own the first input. */
+export function initialSessionStartup(
+  row: Resource | undefined,
+  phase: SessionProgressPhase | undefined,
+  queueCurrent: boolean,
+  queue: readonly Resource[],
+): boolean {
+  if (!row || phase === undefined) return false;
+  const d = readDocument(row),
+    initial = object(d.initial_execution),
+    selected = object(d.current_execution ?? d.initial_execution),
+    execution = object(d.execution);
+  if (
+    ![Workspace.Local, Workspace.Worktree, Workspace.GeneralChat].includes(
+      d.workspace as Workspace,
+    ) ||
+    (d.last_input_sequence !== undefined && d.last_input_sequence !== 1) ||
+    queue.some((input) => readDocument(input).sequence !== 1)
+  )
+    return false;
+  if (
+    phase === SessionProgressPhase.Preparing ||
+    phase === SessionProgressPhase.Queued
+  )
+    return (
+      d.initial_execution == null &&
+      d.current_execution == null &&
+      d.execution == null &&
+      d.last_input_sequence === 1 &&
+      d.pending_inputs === 1 &&
+      queueCurrent &&
+      queue.length === 1 &&
+      originalQueue(queue[0]!, row.id) &&
+      readDocument(queue[0]!).sequence === 1 &&
+      readDocument(queue[0]!).delivery === "queued" &&
+      readDocument(queue[0]!).execution_id == null &&
+      readDocument(queue[0]!).native_request_id == null
+    );
+  if (
+    !uuid(initial.id) ||
+    !uuid(initial.input_id) ||
+    initial.id !== d.active_execution_id ||
+    selected.id !== initial.id ||
+    selected.input_id !== initial.input_id
+  )
+    return false;
+  if (phase === SessionProgressPhase.Starting) return true;
+  // Multiple accepted inputs are a later turn, even on the initial execution.
+  if (Array.isArray(execution.accepted_inputs))
+    return (
+      execution.accepted_inputs.length === 1 &&
+      object(execution.accepted_inputs[0]).input_id === initial.input_id
+    );
+  // Legacy evidence needs the retained first queue row and first-input counter.
+  return (
+    d.last_input_sequence === 1 &&
+    queueCurrent &&
+    queue.some(
+      (input) =>
+        input.id === initial.input_id &&
+        originalQueue(input, row.id) &&
+        readDocument(input).sequence === 1 &&
+        readDocument(input).execution_id === initial.id &&
+        readDocument(input).delivery === "accepted",
+    )
+  );
 }
 
 /** Original claim/turn identity only; revisions never create a new response owner. */
