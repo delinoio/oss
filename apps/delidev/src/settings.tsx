@@ -353,8 +353,14 @@ function SettingsVisit({ entryDestination, destinationConsumed, ...props }: Sett
   const closeDrawer = useCloseSidebarDrawer();
   const [searchRequest, setSearchRequest] = useState<SettingsSearchRequest>();
   const [selection, setSelection] = useState(() => entrySelection(entryDestination));
+  const [protectedTransferWorkflow, setProtectedTransferWorkflow] = useState(false);
   const initialDestination = useRef(entryDestination);
   const handledDestination = useRef<SettingsNavigationEntry | undefined>(undefined);
+  const protectedTransferWorkflowRef = useRef(false);
+  const onConfigurationWorkflowReadyChange = useCallback((active: boolean) => {
+    protectedTransferWorkflowRef.current = active;
+    setProtectedTransferWorkflow(current => current === active ? current : active);
+  }, []);
   const navigate = useCallback<NavigateSettings>((category, entry) => {
     category = category === SettingsCategory.GitWorkflow ? SettingsCategory.ProjectDefaults : category;
     setSearchRequest(undefined);
@@ -364,6 +370,7 @@ function SettingsVisit({ entryDestination, destinationConsumed, ...props }: Sett
   useEffect(() => {
     if (!entryDestination) { handledDestination.current = undefined; return; }
     if (handledDestination.current === entryDestination) return;
+    if (protectedTransferWorkflowRef.current) return;
     handledDestination.current = entryDestination;
     if (initialDestination.current === entryDestination) initialDestination.current = undefined;
     else {
@@ -372,7 +379,7 @@ function SettingsVisit({ entryDestination, destinationConsumed, ...props }: Sett
     }
     if (typeof entryDestination === "object") setSearchRequest({ category: entryDestination.category === SettingsCategory.GitWorkflow ? SettingsCategory.ProjectDefaults : entryDestination.category, target: entryDestination.target ?? SettingsSearchTarget.Category, generation: entryDestination.generation });
     destinationConsumed?.();
-  }, [destinationConsumed, entryDestination, navigate]);
+  }, [destinationConsumed, entryDestination, navigate, protectedTransferWorkflow]);
   return <>
     <SidebarSurface active title={copy("settings.settings_74a883")} className="settings-navigation" showHeading={false}>
       <SettingsSearch categories={settingsGroups.flatMap(group => group.categories.map(category => ({ category, label: settingsCategories[category].label, help: settingsCategories[category].description })))} select={(target) => { navigate(target.category); setSearchRequest({ ...target, generation: newRequestId() }); }}>
@@ -388,11 +395,11 @@ function SettingsVisit({ entryDestination, destinationConsumed, ...props }: Sett
     </SidebarSurface>
     {/* Each category owns its waits and drafts. Disposal rejects late results
         without canceling or replaying already accepted server/native work. */}
-    <SettingsLifetime key={selection.key}>{opening => <MutationIntents><SettingsWorkspace {...props} searchRequest={searchRequest} selectedCategory={selection.category} entry={selection.entry} navigate={navigate} controlLocalWorker={props.controlLocalWorker ? Object.assign((action: LocalWorkerAction, generation?: string) => opening.native(() => props.controlLocalWorker!(action, generation)), { automatic: props.controlLocalWorker.automatic }) : undefined} /></MutationIntents>}</SettingsLifetime>
+    <SettingsLifetime key={selection.key}>{opening => <MutationIntents><SettingsWorkspace {...props} onConfigurationWorkflowReadyChange={onConfigurationWorkflowReadyChange} searchRequest={searchRequest} selectedCategory={selection.category} entry={selection.entry} navigate={navigate} controlLocalWorker={props.controlLocalWorker ? Object.assign((action: LocalWorkerAction, generation?: string) => opening.native(() => props.controlLocalWorker!(action, generation)), { automatic: props.controlLocalWorker.automatic }) : undefined} /></MutationIntents>}</SettingsLifetime>
   </>;
 }
 
-function SettingsWorkspace({ openUsage, connectionSettings, visible = true, controlLocalWorker, readLocalWorker, chooseRepositoryFolder, currentDeviceId, pairingAuthority, selectedCategory, searchRequest, entry, navigate }: SettingsProps & { searchRequest?: SettingsSearchRequest; selectedCategory: SettingsCategory; entry?: SettingsCategoryEntry; navigate: NavigateSettings }) {
+function SettingsWorkspace({ openUsage, connectionSettings, visible = true, controlLocalWorker, readLocalWorker, chooseRepositoryFolder, currentDeviceId, pairingAuthority, selectedCategory, searchRequest, entry, navigate, onConfigurationWorkflowReadyChange }: SettingsProps & { searchRequest?: SettingsSearchRequest; selectedCategory: SettingsCategory; entry?: SettingsCategoryEntry; navigate: NavigateSettings; onConfigurationWorkflowReadyChange: (active: boolean) => void }) {
   useLocale();
 
   const [device, setDevice] = useState<Resource>();
@@ -561,7 +568,7 @@ function SettingsWorkspace({ openUsage, connectionSettings, visible = true, cont
           {area === SettingsArea.Appearance ? <div><AppearanceSettings /><LanguageSettings /><DateFormatSettings /></div> : null}
           {area === SettingsArea.Backups ? <div><Backups active={visible} /></div> : null}
           {area === SettingsArea.Integrations ? <div><Integrations active={visible} showCategoryIntro={false} /></div> : null}
-          {area === SettingsArea.Transfer ? <div><ConfigurationTransfer active={visible} showCategoryIntro={false} /></div> : null}
+          {area === SettingsArea.Transfer ? <div><ConfigurationTransfer active={visible} showCategoryIntro={false} onWorkflowReadyChange={onConfigurationWorkflowReadyChange} /></div> : null}
           {notificationTarget&&notificationResource.error?<><Problem error={notificationResource.error}/><p role="status">{copy("inbox.operational.unavailable")}</p></>:null}
           {area === SettingsArea.Notifications ? <div><NotificationSettings active={visible} showCategoryIntro={false} openSubscriptions={()=>navigate(SettingsCategory.SubscriptionAccounts)} /></div> : null}
           {area === SettingsArea.Diagnostics ? <div>{connectionSettings ?? <section data-settings-search-target="current-connection" aria-label={copy("settings.connections.current")}><h2>{copy("settings.connections.current")}</h2><p>{copy("settings.connectionUnavailable")}</p></section>}</div> : null}

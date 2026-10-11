@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { SystemService, SystemCapability, configurationSchemaVersion, AccountService, ApiAuthentication, ApiProtocol, ConfigurationService, EntityKind, ProviderApiFormatSchema, ProviderInventoryCapability, ProviderInventoryEntrySchema, ProviderPresetId, ProviderService, ResourceSchema, ResourceService, WorkerService, newRequestId, type ListResourcesRequest, type ProviderInventoryEntry, type Resource } from "@delinoio/delidev-api-client";
-import { Settings, ConfigurationEditor } from "./settings";
+import { Settings, SettingsEntryDestination, ConfigurationEditor } from "./settings";
 import { AgentWorkerWizard } from "./agent-worker-wizard";
 import { copy, i18n, SupportedLanguage } from "./localization";
 import { RepositoryRow } from "./repository-list";
@@ -21,13 +21,14 @@ function fixture(resources: Resource[], options: { readResource?: (id: string) =
   const save = vi.fn(async (_request: unknown): Promise<{ resource?: Resource; job?: Resource }> => ({ resource: resources[0] }));
   const remove = vi.fn(async (_request: unknown) => ({}));
   const preview = vi.fn(async (_request: unknown) => ({ routeJson: encode({ policy: "remaining-quota", selected: "", candidates: [] }) }));
+  const exportConfiguration = vi.fn(async () => ({ documentJson: encode({ version: 4, entries: [], machines: [] }) }));
   const inspect = vi.fn(async (_request: unknown) => ({ job: resources.find((row) => row.kind === EntityKind.JOB) }));
   const connect = vi.fn(async (_request: unknown) => ({ account: resources.find((row) => row.kind === EntityKind.ACCOUNT) }));
   const disconnect = vi.fn(async (_request: unknown) => ({ account: resources.find((row) => row.kind === EntityKind.ACCOUNT) }));
   const list = vi.fn((request: ListResourcesRequest) => options.readResources?.(request.filter?.kind ?? EntityKind.UNSPECIFIED, request.filter?.pageToken ?? "") ?? ({ resources: resources.filter((row) => row.kind === request.filter?.kind) }));
   const transport = createRouterTransport((router) => {
     router.service(SystemService, { getDoctor: options.doctor ?? vi.fn(() => { throw new Error("Doctor is not requested by Settings"); }), getStatus: () => { if (options.systemStatusError) throw options.systemStatusError; return ({ protocolVersion: 2, capabilities: options.systemCapabilities ?? [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1, SystemCapability.REMOTE_REPOSITORIES_V1, SystemCapability.INLINE_WORKER_MODELS_V1] }); } });
-    router.service(ConfigurationService, { saveConfiguration: save, deleteConfiguration: remove, previewRouting: preview });
+    router.service(ConfigurationService, { saveConfiguration: save, deleteConfiguration: remove, previewRouting: preview, exportConfiguration });
     router.service(WorkerService, { inspectRepository: inspect });
     router.service(ResourceService, { listResources: list, getResource: (request) => options.readResource?.(request.id) ?? ({ resource: resources.find((row) => row.id === request.id) }) });
     router.service(AccountService, { getAccountStatus: (request) => ({ account: resources.find((row) => row.id === request.id) }), connectAccount: connect, disconnectAccount: disconnect });
@@ -42,7 +43,7 @@ function fixture(resources: Resource[], options: { readResource?: (id: string) =
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false, gcTime: 0 } } });
   const view = (children: React.ReactNode) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents>{children}</MutationIntents></QueryClientProvider></TransportProvider>;
-  return { resources, save, remove, preview, inspect, connect, disconnect, client, transport, list, view };
+  return { resources, save, remove, preview, exportConfiguration, inspect, connect, disconnect, client, transport, list, view };
 }
 function input(value: unknown) { return value as { mutation: { requestId: string; expectedRevision: bigint }; documentJson: Uint8Array }; }
 
@@ -963,6 +964,45 @@ it("scopes Transfer presentation and discards it on category departure", async (
   expect(screen.queryByRole("button", { name: "Preview configuration changes" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Retry the same configuration import" })).toBeNull();
   for (const button of within(screen.getByRole("navigation", { name: "Settings categories" })).getAllByRole("button")) expect((button as HTMLButtonElement).disabled).toBe(false);
+});
+
+it("defers targeted Repositories navigation until a protected export settles", async () => {
+  let rejectExport!: (error: ConnectError) => void;
+  const pendingExport = new Promise<{ documentJson: Uint8Array }>((_resolve, reject) => { rejectExport = reject; });
+  const value = fixture([]);
+  value.exportConfiguration.mockReturnValueOnce(pendingExport);
+  const destinationConsumed = vi.fn();
+  const rendered = render(value.view(<Settings />));
+  fireEvent.click(screen.getByRole("button", { name: "Import / Export" }));
+  fireEvent.click(screen.getByRole("button", { name: "Export configuration" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Export configuration" }) as HTMLButtonElement).disabled).toBe(true));
+
+  rendered.rerender(value.view(<Settings entryDestination={SettingsEntryDestination.Repositories} destinationConsumed={destinationConsumed} />));
+  expect(screen.getByRole("heading", { name: "Import / Export", level: 1 })).toBeTruthy();
+  expect((screen.getByRole("button", { name: "Repositories" }) as HTMLButtonElement).getAttribute("aria-pressed")).toBe("false");
+  expect(destinationConsumed).not.toHaveBeenCalled();
+
+  await act(async () => { rejectExport(new ConnectError("private-export-source", Code.Unavailable)); });
+  await waitFor(() => expect((screen.getByRole("button", { name: "Repositories" }) as HTMLButtonElement).getAttribute("aria-pressed")).toBe("true"));
+  expect(screen.queryByRole("heading", { name: "Import / Export", level: 1 })).toBeNull();
+  expect(value.exportConfiguration).toHaveBeenCalledOnce();
+  expect(destinationConsumed).toHaveBeenCalledOnce();
+});
+
+it("keeps a protected import draft active when a targeted destination arrives", async () => {
+  const value = fixture([]);
+  const destinationConsumed = vi.fn();
+  const rendered = render(value.view(<Settings />));
+  fireEvent.click(screen.getByRole("button", { name: "Import / Export" }));
+  const draft = '{"version":4,"entries":[],"machines":[]}';
+  fireEvent.change(screen.getByRole("textbox", { name: "Configuration JSON" }), { target: { value: draft } });
+
+  rendered.rerender(value.view(<Settings entryDestination={SettingsEntryDestination.Repositories} destinationConsumed={destinationConsumed} />));
+  expect(screen.getByRole("heading", { name: "Import / Export", level: 1 })).toBeTruthy();
+  expect((screen.getByRole("textbox", { name: "Configuration JSON" }) as HTMLTextAreaElement).value).toBe(draft);
+  expect((screen.getByRole("button", { name: "Repositories" }) as HTMLButtonElement).getAttribute("aria-pressed")).toBe("false");
+  expect(destinationConsumed).not.toHaveBeenCalled();
+  expect(value.exportConfiguration).not.toHaveBeenCalled();
 });
 
 it("keeps repository source metadata inert and preserves schema-bound actions", () => {
