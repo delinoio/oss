@@ -596,6 +596,7 @@ export function PullRequests({
     EntityKind.REPOSITORY,
     navigationActive,
   );
+  presentationLabels.observeResources(repositories.data?.resources ?? []);
   const selectedQuery = useQuery(
     ResourceQuery.getResource,
     { kind: EntityKind.REPOSITORY, id: repositoryId },
@@ -798,11 +799,11 @@ export function PullRequests({
               expanded={expandedRepositoryId === row.id}
               choose={() => chooseRepository(row)}
               dismissDetails={() => setExpandedRepositoryId("")}
-              toggleDetails={() =>
+              toggleDetails={() => {
                 setExpandedRepositoryId((current) =>
                   current === row.id ? "" : row.id,
-                )
-              }
+                );
+              }}
             />
           ))}
           {repositories.data?.resources.length === 0 ? (

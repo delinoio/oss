@@ -293,7 +293,9 @@ it("opens project creation shortcuts without toggling groups or reading collapse
     });
     expect(shortcut.parentElement).toBe(toggle.parentElement);
     expect(toggle.contains(shortcut)).toBe(false);
-    expect(shortcut.getAttribute("title")).toBe(`New session in ${name}`);
+    expect(shortcut.getAttribute("title")).toBe(
+      `New session in ${numberedName}`,
+    );
     fireEvent.click(shortcut);
     expect(value.newSession).toHaveBeenLastCalledWith(project.id);
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
