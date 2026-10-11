@@ -5,6 +5,7 @@ import {
   useId,
   useRef,
   useState,
+  useCallback,
   type KeyboardEvent,
   type ReactNode,
   type RefObject,
@@ -18,6 +19,10 @@ import {
   type SkillSelection,
 } from "@delinoio/delidev-api-client";
 import { copy, useLocale } from "./localization";
+import {
+  skillCompletionAnchorUsable,
+  useSkillCompletionOverlay,
+} from "./skill-completion-overlay";
 
 export interface SkillToken {
   start: number;
@@ -178,12 +183,10 @@ export function useSkillCompletion({
   const [composition, setComposition] = useState(false);
   const completion = useRef<HTMLDivElement>(null),
     keyboardNavigation = useRef(false);
+  const dismissCompletion = useCallback(() => setDismissed(true), []);
   editable.current = active && !disabled;
   const canEdit = () =>
-    editable.current &&
-    Boolean(textarea.current?.isConnected) &&
-    !textarea.current?.matches(":disabled") &&
-    !textarea.current?.closest("[inert], [hidden]");
+    editable.current && skillCompletionAnchorUsable(textarea.current);
   const token =
     !dismissed && !composing.current ? skillToken(value, caret) : undefined;
   const contextChanged =
@@ -230,6 +233,7 @@ export function useSkillCompletion({
     completeInventory(query.data.skills);
   const inventory = inventoryKnown ? query.data!.skills : [];
   const visible = active && !disabled && Boolean(token);
+  useSkillCompletionOverlay(completion, textarea, visible, dismissCompletion);
   const retained = useRef<{
     scope: string;
     transport: typeof transport;
@@ -385,7 +389,7 @@ export function useSkillCompletion({
     setDismissed(true);
     queueMicrotask(() => {
       if (!canEdit()) return;
-      textarea.current?.focus();
+      textarea.current?.focus({ preventScroll: true });
       textarea.current?.setSelectionRange(end, end);
     });
   };
@@ -521,7 +525,18 @@ export function useSkillCompletion({
       container.scrollTop += (row.bottom - bottom) / scale;
   }, [validIndex, visible, query.isFetching]);
   const list = visible ? (
-    <div ref={completion} className="skill-completion">
+    <div
+      ref={completion}
+      className="skill-completion"
+      popover="manual"
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
+        event.preventDefault();
+        event.stopPropagation();
+        dismissCompletion();
+        if (canEdit()) textarea.current?.focus({ preventScroll: true });
+      }}
+    >
       {enabled ? (
         query.isFetching ? (
           <p role="status">{copy("skills.loading")}</p>
@@ -530,6 +545,7 @@ export function useSkillCompletion({
             <p role="status">{copy("skills.unavailable")}</p>
             <button
               type="button"
+              onMouseDown={(event) => event.preventDefault()}
               onClick={() => {
                 if (
                   canEdit() &&
