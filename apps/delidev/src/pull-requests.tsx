@@ -67,7 +67,8 @@ function RepositoryNavigationRow({ row, selected, expanded, choose, toggleDetail
     const element = popup.current, anchor = heading.current;
     if (!expanded || !element || !anchor) return;
     const place = () => {
-      if (!anchor.isConnected || anchor.closest("[hidden]") || getComputedStyle(anchor).display === "none") { closeDetails(); return; }
+      // A hidden opener hides its descendant popup; connection memory keeps the identity for return.
+      if (!anchor.isConnected || anchor.closest("[hidden]") || getComputedStyle(anchor).display === "none") return;
       placeDetailsPopup(element, anchor);
     };
     place();
