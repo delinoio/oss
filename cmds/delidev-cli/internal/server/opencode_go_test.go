@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"runtime"
 	"slices"
 	"testing"
 	"time"
@@ -303,6 +304,12 @@ func TestOpenCodeGoIndependentForkRegistersFirstInputWithoutManagedCodex(t *test
 	}
 	source := f.refresh(t)
 	response, err := sessionClient(f.accountFixture).ForkSession(context.Background(), ownerRequest(f.identity, &pb.ForkSessionRequest{Mutation: acctMutation(resourceForTest(source), domain.NewID()), ExpectedTurnId: string(f.turn), Name: "Independent Go child", Workspace: pb.ForkWorkspace_FORK_WORKSPACE_GENERAL_CHAT}))
+	if runtime.GOOS == "windows" {
+		if connect.CodeOf(err) != connect.CodeUnimplemented || response != nil {
+			t.Fatal("Windows acquired unsupported OpenCode Fork authority", err)
+		}
+		return
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
 	"os"
 	"path/filepath"
@@ -117,10 +118,15 @@ func TestSkillForkCopiesOriginalPackagesAndRewritesProofsBeforeParentDeletion(t 
 }
 func testSkillForkCopiesOriginalPackages(t *testing.T, withImages bool) {
 	ctx := context.Background()
-	sourceHome, _ := filepath.EvalSymlinks(t.TempDir())
-	childHome, _ := filepath.EvalSymlinks(t.TempDir())
-	os.Chmod(sourceHome, 0700)
-	os.Chmod(childHome, 0700)
+	sourceHome := filepath.Join(t.TempDir(), "source")
+	childHome := filepath.Join(t.TempDir(), "child")
+	for _, home := range []string{sourceHome, childHome} {
+		if err := security.PrivateDir(home); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sourceHome, _ = filepath.EvalSymlinks(sourceHome)
+	childHome, _ = filepath.EvalSymlinks(childHome)
 	user := t.TempDir()
 	packagePath := filepath.Join(user, ".agents", "skills", "add-issue")
 	os.MkdirAll(packagePath, 0700)
@@ -171,7 +177,8 @@ func testSkillForkCopiesOriginalPackages(t *testing.T, withImages bool) {
 		t.Fatal("invalid remapped native proof")
 	}
 	// Literal user text is never rewritten merely because it resembles native tags.
-	if !bytes.Contains(child.turns[0], []byte(selected[0].Path)) {
+	quotedPath, _ := json.Marshal(selected[0].Path)
+	if !bytes.Contains(child.turns[0], quotedPath[1:len(quotedPath)-1]) {
 		t.Fatal("literal user path was rewritten")
 	}
 	// Source inventory edits and parent deletion cannot replace child resources.

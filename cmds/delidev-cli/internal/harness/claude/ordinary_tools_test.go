@@ -45,16 +45,22 @@ func assertOrdinaryGhTool(t *testing.T, env []string, directory string) {
 	if err := os.WriteFile(file, raw, 0600); err != nil {
 		t.Fatal(err)
 	}
+	// Cold gh startup reached the former five-second limit on Windows CI.
+	// Keep this fixture allowance separate from native protocol deadlines.
 	run := func(values []string) ([]byte, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		command := exec.CommandContext(ctx, binary, "auth", "token", "--hostname", "fixture.invalid")
 		command.Env = values
-		return command.Output()
+		output, err := command.Output()
+		if ctx.Err() != nil {
+			t.Fatal("synthetic gh command exceeded its startup allowance", ctx.Err())
+		}
+		return output, err
 	}
 	output, err := run(env)
 	if err != nil || strings.TrimSpace(string(output)) != token {
-		t.Fatal("ordinary tool did not locate its synthetic configuration")
+		t.Fatalf("ordinary tool did not locate its synthetic configuration: %v", err)
 	}
 	// gh may migrate its own file during an explicitly invoked command.
 	baseline, err := os.ReadFile(file)
