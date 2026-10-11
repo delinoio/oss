@@ -29,7 +29,10 @@ try {
   const drag = async (x1, y1, x2, y2) => {
     await page.mouse.move(x1, y1); await page.mouse.down(); await page.mouse.move(x2, y2, { steps: 8 }); await page.mouse.up();
   };
-  const normalize = (elements) => elements.map(({ type, x, y, width, height, angle, text, points, strokeColor, backgroundColor }) => ({ type, x, y, width, height, angle, text, points, strokeColor, backgroundColor }));
+  // Compare every persisted field except generated identity, sketch randomness,
+  // timestamps and mutation counters. Export checks cover deterministic roughness.
+  // Import canonicalizes absent bindings from null to an empty list.
+  const normalize = (elements) => elements.map(({ id, seed, created, updated, version, versionNonce, boundElements, ...element }) => ({ ...element, boundElements: boundElements ?? [] }));
   const observations = {};
   await page.getByTestId('toolbar-rectangle').click(); await drag(400, 300, 560, 400); await count(1);
   assert.equal((await scene())[0].type, 'rectangle');
