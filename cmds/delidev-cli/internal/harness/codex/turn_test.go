@@ -62,6 +62,9 @@ func (f *threadFixture) handleTurn(id json.RawMessage, method string, raw json.R
 		}
 	}
 	switch method {
+	case "fixture/current-time":
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"id": params["requestId"], "method": "currentTime/read", "params": params["params"]})
+		write(id, map[string]any{})
 	case "fixture/write-fence":
 		if len(id) != 0 {
 			os.Exit(37)

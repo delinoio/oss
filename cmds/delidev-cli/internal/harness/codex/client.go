@@ -44,6 +44,8 @@ type Config struct {
 	ManagedAuthentication bool
 }
 type Client struct {
+	currentTimeClock func() time.Time
+
 	managedForkHistory bool
 	quotaUsed          atomic.Bool
 	skillsRoot         string

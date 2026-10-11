@@ -199,6 +199,12 @@ func init() {
 				}
 				continue
 			}
+			if request.Method == "" && mode == "thread-turn-current-time" {
+				if !threads.currentTimeReply(request.ID, request.Result) {
+					os.Exit(34)
+				}
+				continue
+			}
 			if strings.HasPrefix(mode, "thread-") && threads.handle(request.ID, request.Method, request.Params, write) {
 				continue
 			}
