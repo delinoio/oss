@@ -6,6 +6,8 @@
 
 ## Owning contracts
 
+- [Persistent context-pane presentation and focus ownership](../../docs/apps-delidev-desktop-contract.md#persistent-context-pane-collapse)
+
 - [DeliDev desktop client](../../docs/apps-delidev-desktop-contract.md)
 - [DeliDev Diagnostics Presentation](../../docs/apps-delidev-diagnostics-contract.md)
 - [DeliDev desktop localization](../../docs/apps-delidev-localization-contract.md)

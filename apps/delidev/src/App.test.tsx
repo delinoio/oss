@@ -1,4 +1,4 @@
-import { SidebarProvider, memorySidebarBridge } from "./sidebar-preference";
+import { SidebarPreference, SidebarProvider, memorySidebarBridge } from "./sidebar-preference";
 import { sessionInputReceipt } from "./test-session-input";
 import { chooseScrollOption, scrollChoiceValue, waitScrollChoices } from "./test-scroll-picker";
 import { i18n } from "./localization";
@@ -1531,27 +1531,60 @@ it("wide sidebar collapse retains composer selection and mounted navigation whil
   fireEvent.change(draft, { target: { value: "original draft" } }); act(() => { draft.focus(); draft.setSelectionRange(2, 7); });
   const pane = document.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")!;
   const initialPane = pane, initialOutlet = pane.querySelector(".sidebar-surface-outlet");
-  await waitFor(() => expect(screen.getByRole("button", { name: "Collapse sidebar" }).getAttribute("aria-disabled")).toBe("false"));
+  await act(async () => {});
+  expect(document.querySelector(".sidebar-wide-toggle")).toBeNull();
   fireEvent.keyDown(draft, { key: "b", ctrlKey: true });
-  await screen.findByRole("button", { name: "Expand sidebar" });
+  await waitFor(() => expect(pane.hidden).toBe(true));
   expect(pane.hidden).toBe(true); expect(pane.inert).toBe(true); expect(document.activeElement).toBe(draft);
   expect([draft.selectionStart, draft.selectionEnd, draft.value]).toEqual([2, 7, "original draft"]);
-  fireEvent.keyDown(draft, { key: "b", ctrlKey: true }); await screen.findByRole("button", { name: "Collapse sidebar" });
+  fireEvent.keyDown(draft, { key: "b", ctrlKey: true }); await waitFor(() => expect(pane.hidden).toBe(false));
   expect(document.querySelector(".sidebar-pane-dialog")).toBe(initialPane); expect(pane.querySelector(".sidebar-surface-outlet")).toBe(initialOutlet);
   expect(pane.hidden).toBe(false); expect(document.activeElement).toBe(draft);
   const source = pane.querySelector<HTMLButtonElement>("button")!; act(() => source.focus());
-  fireEvent.keyDown(source, { key: "b", ctrlKey: true }); const toggle = await screen.findByRole("button", { name: "Expand sidebar" });
-  expect(document.activeElement).toBe(toggle); expectNoNavigationWrites(value);
+  fireEvent.keyDown(source, { key: "b", ctrlKey: true }); await waitFor(() => expect(pane.hidden).toBe(true));
+  expect(document.activeElement).toBe(document.querySelector(".sidebar-rail-button[aria-current='page']")); expectNoNavigationWrites(value);
 }, fullShellTimeoutMs);
 
 it("compact navigation never changes the retained wide collapse choice or dispatches its shortcut", async () => {
   const resize = viewport(); const value = fixture(); render(<SidebarProvider bridge={memorySidebarBridge()}><App transport={value.transport} /></SidebarProvider>);
-  await waitFor(() => expect(screen.getByRole("button", { name: "Collapse sidebar" }).getAttribute("aria-disabled")).toBe("false"));
-  fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" })); await screen.findByRole("button", { name: "Expand sidebar" });
+  await act(async () => {});
+  expect(document.querySelector(".sidebar-wide-toggle")).toBeNull();
+  const pane = document.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")!;
+  fireEvent.keyDown(document.body, { key: "b", ctrlKey: true }); await waitFor(() => expect(pane.hidden).toBe(true));
   act(() => resize(true)); fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
   const opener = document.querySelector<HTMLButtonElement>(".sidebar-context-trigger")!; fireEvent.click(opener);
   expect(document.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")!.open).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Close navigation" }));
-  act(() => resize(false)); expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeTruthy();
+  act(() => resize(false)); expect(document.querySelector(".sidebar-wide-toggle")).toBeNull();
   expect(document.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")!.hidden).toBe(true); expectNoNavigationWrites(value);
+}, fullShellTimeoutMs);
+
+
+it.each([false, true])("starts without a wide toggle and retires compact focus to the current rail (collapsed=%s)", async (collapsed) => {
+  const resize = viewport(); const value = fixture(); const bridge = memorySidebarBridge();
+  if (collapsed) await bridge.update(SidebarPreference.Collapsed, 1);
+  render(<SidebarProvider bridge={bridge}><App transport={value.transport} /></SidebarProvider>);
+  await act(async () => {});
+  const pane = document.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")!;
+  await waitFor(() => expect(pane.hidden).toBe(collapsed));
+  expect(document.querySelector(".sidebar-wide-toggle")).toBeNull();
+  act(() => resize(true)); fireEvent.click(document.querySelector<HTMLButtonElement>(".sidebar-context-trigger")!);
+  const control = pane.querySelector<HTMLButtonElement>("button")!; act(() => control.focus());
+  act(() => resize(false));
+  await waitFor(() => expect(pane.hidden).toBe(collapsed));
+  if (collapsed) await waitFor(() => expect(document.activeElement).toBe(document.querySelector(".sidebar-rail-button[aria-current='page']")));
+  expectNoNavigationWrites(value);
+}, fullShellTimeoutMs);
+
+it("falls back to the first rail item when hiding a pane without current navigation", async () => {
+  viewport(); const value = fixture(); render(<SidebarProvider bridge={memorySidebarBridge()}><App transport={value.transport} /></SidebarProvider>);
+  await act(async () => {});
+  const pane = document.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")!;
+  document.querySelectorAll(".sidebar-rail [aria-current]").forEach(node => node.removeAttribute("aria-current"));
+  const control = pane.querySelector<HTMLButtonElement>("button")!; act(() => control.focus());
+  fireEvent.keyDown(control, { key: "b", ctrlKey: true });
+  await waitFor(() => expect(pane.hidden).toBe(true));
+  expect(document.activeElement).toBe(document.querySelector(".sidebar-rail-button"));
+  expect(pane.getAttribute("aria-hidden")).toBe("true"); expect(pane.inert).toBe(true);
+  expectNoNavigationWrites(value);
 }, fullShellTimeoutMs);

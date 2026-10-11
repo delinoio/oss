@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { EntityKind, InboxService, IntegrationService, NotificationPreferencesSchema, ResourceSchema, ResourceService, SessionService, SystemService } from "@delinoio/delidev-api-client";
+import { SidebarPreference, SidebarProvider, memorySidebarBridge } from "./sidebar-preference";
 import { App } from "./App";
 import { AppearanceProvider, Theme } from "./appearance";
 import { encode } from "./documents";
@@ -36,4 +37,6 @@ const transport = createRouterTransport(router => {
   });
   router.service(IntegrationService, { queryRepositoryIntegration: () => { requests.github++; throw new ConnectError("Synthetic observation unavailable", Code.Unavailable); } });
 });
-createRoot(document.getElementById("root")!).render(<AppearanceProvider bridge={{ read: async () => ({ revision: 1, theme, problem: null }), update: async next => ({ revision: 2, theme: next, problem: null }), subscribe: async () => () => {} }}><App transport={transport} /></AppearanceProvider>);
+const sidebarBridge = memorySidebarBridge();
+if (args.get("collapsed") === "true") void sidebarBridge.update(SidebarPreference.Collapsed, 1);
+createRoot(document.getElementById("root")!).render(<SidebarProvider bridge={sidebarBridge}><AppearanceProvider bridge={{ read: async () => ({ revision: 1, theme, problem: null }), update: async next => ({ revision: 2, theme: next, problem: null }), subscribe: async () => () => {} }}><App transport={transport} /></AppearanceProvider></SidebarProvider>);

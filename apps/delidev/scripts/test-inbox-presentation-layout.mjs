@@ -117,6 +117,53 @@ try {
     assert.deepEqual(await page.evaluate(()=>({writes:window.__inboxFilterFixture.writes,answers:window.__inboxFilterFixture.answers})),{writes:0,answers:0},`${context} presentation no mutations`);
     checks++; console.log(JSON.stringify({operation:"inbox-presentation-layout-case",context,result:"passed"}));
   }
+  // Full-height Inbox starts at the main origin for either committed preference.
+  for (const [width, height] of [[1440, 900], [960, 640]]) for (const collapsed of [false, true]) for (const empty of [false, true]) {
+    await page.setViewportSize({ width, height });
+    await page.goto(`${origin}/?presentation=1&collapsed=${collapsed}&empty=${empty}&activeSession=true`);
+    await page.waitForFunction(expected => document.querySelector(".sidebar-pane-dialog")?.hidden === expected, collapsed);
+    const primary = await page.evaluate(() => /mac/i.test(navigator.platform) ? "Meta" : "Control");
+    if (collapsed) {
+      await page.locator(".sidebar-rail button").first().focus(); await page.keyboard.press(`${primary}+b`);
+      await page.waitForFunction(() => !document.querySelector(".sidebar-pane-dialog").hidden);
+    }
+    await page.getByRole("button", { name: "Inbox", exact: true }).click();
+    if (collapsed) {
+      await page.locator(".sidebar-rail button").first().focus(); await page.keyboard.press(`${primary}+b`);
+      await page.waitForFunction(() => document.querySelector(".sidebar-pane-dialog").hidden);
+    }
+    await page.waitForFunction(() => window.__inboxFilterFixture.requests.length > 0);
+    assert.equal(await page.locator(".sidebar-wide-toggle").count(), 0);
+    const geometry = await page.evaluate(() => {
+      const main = document.querySelector("#main"), surface = document.querySelector(".inbox-container");
+      const top = surface.getBoundingClientRect().top;
+      const retired = document.createElement("div"); retired.style.cssText = "display:grid;width:40px;height:40px;margin:12px 16px";
+      main.prepend(retired); const oldTop = surface.getBoundingClientRect().top; retired.remove();
+      return { reclaimed: oldTop - top, top, mainTop: main.getBoundingClientRect().top, bottom: surface.getBoundingClientRect().bottom, mainBottom: main.getBoundingClientRect().bottom };
+    });
+    assert.equal(geometry.reclaimed, 64); assert.equal(geometry.top, geometry.mainTop);
+    assert.ok(geometry.bottom <= geometry.mainBottom + 1);
+    await page.getByRole("button", { name: "Sessions", exact: true }).click();
+    if (collapsed) {
+      await page.locator(".sidebar-rail button").first().focus(); await page.keyboard.press(`${primary}+b`);
+      await page.waitForFunction(() => !document.querySelector(".sidebar-pane-dialog").hidden);
+    }
+    await page.locator('.sidebar-session-row[data-session-id="0195c9c0-7b13-7000-8000-000000000001"]').click();
+    await page.locator(".session-header").waitFor();
+    if (collapsed) {
+      await page.locator(".sidebar-rail button").first().focus(); await page.keyboard.press(`${primary}+b`);
+      await page.waitForFunction(() => document.querySelector(".sidebar-pane-dialog").hidden);
+    }
+    const sessionGeometry = await page.evaluate(() => {
+      const main = document.querySelector("#main"), surface = document.querySelector(".session-container");
+      const top = surface.getBoundingClientRect().top;
+      const retired = document.createElement("div"); retired.style.cssText = "display:grid;width:40px;height:40px;margin:12px 16px";
+      main.prepend(retired); const oldTop = surface.getBoundingClientRect().top; retired.remove();
+      return { reclaimed: oldTop - top, top, mainTop: main.getBoundingClientRect().top, bottom: surface.getBoundingClientRect().bottom, mainBottom: main.getBoundingClientRect().bottom };
+    });
+    assert.equal(sessionGeometry.reclaimed, 64); assert.equal(sessionGeometry.top, sessionGeometry.mainTop);
+    assert.ok(sessionGeometry.bottom <= sessionGeometry.mainBottom + 1); checks++;
+  }
   assert.deepEqual(failures, [], "No browser errors");
   console.log(JSON.stringify({ operation: "inbox-presentation-layout", source, result: "passed", checks, screenshots: screenshots ?? null }));
 } finally {

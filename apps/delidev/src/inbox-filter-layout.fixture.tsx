@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { create } from "@bufbuild/protobuf";
 import { createRouterTransport } from "@connectrpc/connect";
 import { EntityKind, InboxReadState, InboxService, InboxSource, InboxViewSchema, InteractionService, NotificationPreferencesSchema, ResourceSchema, ResourceService, SessionService, SystemService } from "@delinoio/delidev-api-client";
+import { SidebarPreference, SidebarProvider, memorySidebarBridge } from "./sidebar-preference";
 import { App } from "./App";
 import { AppearanceProvider, Theme } from "./appearance";
 import { encode } from "./documents";
@@ -37,15 +38,17 @@ const state = { reads: 0, answers: 0, requests: [] as { readState: InboxReadStat
 Object.defineProperty(window, "__inboxFilterFixture", { value: state });
 const transport = createRouterTransport(router => {
  router.service(SystemService, { getStatus: () => ({ protocolVersion: 1 }) });
- router.service(SessionService, { listSessions: () => ({ sessions: [] }) });
+ router.service(SessionService, { listSessions: () => ({ sessions: args.get("activeSession") === "true" ? [session] : [] }), listQueue: () => ({ inputs: [] }), getSessionBudget: () => ({ view: { session } }) });
  router.service(InboxService, { getNotificationPreferences: () => ({ preferences: create(NotificationPreferencesSchema, { revision: 1n }) }), listInbox: request => {
   state.requests.push({ readState: request.readState, source: request.source, projectId: request.projectId, sessionId: request.sessionId, pageToken: request.pageToken });
-  return { entries: presentation ? views.filter(item => {
+  return { entries: args.get("empty") === "true" ? [] : presentation ? views.filter(item => {
    const source = JSON.parse(new TextDecoder().decode(item.entry!.documentJson)).source;
    return request.readState !== InboxReadState.READ && (request.source === InboxSource.UNSPECIFIED || request.source === InboxSource.INTERACTION && source === "interaction" || request.source === InboxSource.EXECUTION_TERMINAL && source === "execution-terminal" || request.source === InboxSource.SUBSCRIPTION_RECOVERY && source === "subscription-recovery") && (!request.projectId || item.entry!.projectId === request.projectId) && (!request.sessionId || item.entry!.sessionId === request.sessionId);
   }) : request.readState === InboxReadState.READ || request.source === InboxSource.INTERACTION || request.source === InboxSource.SUBSCRIPTION_RECOVERY ? [] : [view], nextPageToken: "" };
  }, getInboxEntry: request => { state.reads++; const selected = views.find(item => item.entry!.id === request.id) ?? view; return { view: create(InboxViewSchema, { ...selected, entry: create(ResourceSchema, { ...selected.entry!, revision: BigInt(state.reads + 1) }) }) }; }, setInboxReadState: () => { state.writes++; return { view }; } });
  router.service(InteractionService, { respondQuestion: () => { state.answers++; return { interaction: views.find(item => item.interaction)?.interaction }; } });
- router.service(ResourceService, { listResources: request => ({ resources: request.filter?.kind === EntityKind.PROJECT ? [project] : request.filter?.kind === EntityKind.SESSION ? [session] : [] }), getResource: request => ({ resource: request.id === project.id ? project : session }) });
+ router.service(ResourceService, { getSnapshot: () => ({ resources: [session], cursor: "synthetic" }), async *watchEvents(_request, context) { if (!context.signal.aborted) await new Promise<void>(done => context.signal.addEventListener("abort", () => done(), { once: true })); }, listResources: request => ({ resources: request.filter?.kind === EntityKind.PROJECT ? [project] : request.filter?.kind === EntityKind.SESSION ? [session] : [] }), getResource: request => ({ resource: request.id === project.id ? project : session }) });
 });
-createRoot(document.getElementById("root")!).render(<AppearanceProvider bridge={{ read: async () => ({ revision: 1, theme, problem: null }), update: async value => ({ revision: 2, theme: value, problem: null }), subscribe: async () => () => {} }}><App transport={transport} /></AppearanceProvider>);
+const sidebarBridge = memorySidebarBridge();
+if (args.get("collapsed") === "true") void sidebarBridge.update(SidebarPreference.Collapsed, 1);
+createRoot(document.getElementById("root")!).render(<SidebarProvider bridge={sidebarBridge}><AppearanceProvider bridge={{ read: async () => ({ revision: 1, theme, problem: null }), update: async value => ({ revision: 2, theme: value, problem: null }), subscribe: async () => () => {} }}><App transport={transport} /></AppearanceProvider></SidebarProvider>);
