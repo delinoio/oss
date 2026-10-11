@@ -79,8 +79,11 @@ try {
   for (const language of ["en", "ko"])
     for (const theme of ["light", "dark"])
       for (const [width, height] of [
+        [1440, 900],
         [960, 640],
+        [640, 480],
         [480, 320],
+        [320, 240],
       ]) {
         const t = (key) => catalogs[language][key];
         await page.setViewportSize({ width, height });
@@ -88,6 +91,128 @@ try {
         await page
           .getByText(t("shortcut-settings.saved"), { exact: true })
           .waitFor();
+        assert.equal(
+          await page
+            .getByText(t("shortcut-settings.scope"), { exact: true })
+            .count(),
+          1,
+        );
+        const catalog = page.getByRole("region", {
+          name: t("shortcut-settings.catalog"),
+          exact: true,
+        });
+        assert.equal(await catalog.getAttribute("tabindex"), "0");
+        assert.equal(await catalog.locator(".shortcut-settings-row").count(), 7);
+        assert.equal(
+          await catalog
+            .locator('[data-settings-action-presentation="icon"]')
+            .count(),
+          21,
+        );
+        const footer = page.locator(".shortcut-settings-footer");
+        assert.equal(
+          await footer
+            .locator('[data-settings-action-presentation="icon"]')
+            .count(),
+          0,
+        );
+        assert.equal(
+          await catalog
+            .locator(".shortcut-settings-guidance, .shortcut-settings-footer")
+            .count(),
+          0,
+        );
+        for (const key of ["shortcut-settings.save", "shortcut-settings.discard"])
+          assert(
+            await page
+              .getByRole("button", { name: t(key), exact: true })
+              .isDisabled(),
+          );
+        assert(
+          await page
+            .getByRole("button", {
+              name: t("shortcut-settings.restoreAll"),
+              exact: true,
+            })
+            .isEnabled(),
+        );
+        const bounds = async () =>
+          page.evaluate(() => {
+            const main = document.querySelector("main"),
+              list = document.querySelector(".shortcut-settings-catalog"),
+              heading = document.querySelector(".settings-category-heading"),
+              footer = document.querySelector(".shortcut-settings-footer");
+            return {
+              mainScroll: main.scrollTop,
+              fits: main.scrollHeight <= main.clientHeight + 2,
+              listScroll: list.scrollTop,
+              headingTop: heading.getBoundingClientRect().top,
+              footerTop: footer.getBoundingClientRect().top,
+            };
+          });
+        const before = await bounds();
+        await catalog.hover();
+        await page.mouse.wheel(0, 400);
+        await page.waitForFunction(
+          () => document.querySelector(".shortcut-settings-catalog").scrollTop > 0,
+        );
+        await catalog.evaluate((node) => {
+          node.scrollTop = 0;
+        });
+        await catalog.focus();
+        await page.keyboard.press("PageDown");
+        await page.waitForFunction(
+          () => document.querySelector(".shortcut-settings-catalog").scrollTop > 0,
+        );
+        await catalog.evaluate((node) => {
+          node.scrollTop = node.scrollHeight;
+        });
+        const after = await bounds();
+        if (before.fits) {
+          assert.equal(
+            after.mainScroll,
+            before.mainScroll,
+            "Catalog keyboard/wheel scrolling must retain the outer owner",
+          );
+          assert.equal(
+            after.headingTop,
+            before.headingTop,
+            "Heading remains stationary",
+          );
+          assert.equal(
+            after.footerTop,
+            before.footerTop,
+            "Footer remains stationary",
+          );
+        }
+        const finalEntry = catalog.locator("dl > div").last();
+        const finalBounds = await finalEntry.boundingBox(),
+          listBounds = await catalog.boundingBox();
+        assert(
+          finalBounds.y >= listBounds.y &&
+            finalBounds.y + finalBounds.height <= listBounds.y + listBounds.height + 1,
+          "Final native shortcut must be reachable inside the catalog",
+        );
+        await catalog.evaluate((node) => {
+          node.scrollTop = 0;
+        });
+        const lastCapture = catalog.locator('[data-settings-action="edit"]').last();
+        await catalog.focus();
+        const tabStops = await catalog.locator("button:not(:disabled)").count();
+        for (let step = 0; step <= tabStops; step++) {
+          await page.keyboard.press("Tab");
+          if (
+            await lastCapture.evaluate((node) => node === document.activeElement)
+          )
+            break;
+        }
+        assert(await lastCapture.evaluate((node) => node === document.activeElement));
+        assert(
+          (await bounds()).listScroll > 0,
+          "Tab reveals an offscreen editable row through catalog scrolling",
+        );
+        if (before.fits)
+          assert.equal((await bounds()).mainScroll, before.mainScroll);
         const action = page.locator("[data-shortcut-action]");
         const original = await action.getAttribute("aria-keyshortcuts");
         const capture = page.getByRole("button", {
@@ -109,6 +234,13 @@ try {
           await page.locator("[data-shortcut-state]").textContent(),
           "0:0",
         );
+        const captureNode = await capture.elementHandle();
+        await page.setViewportSize({ width: Math.max(240, width - 16), height });
+        await page.setViewportSize({ width, height });
+        assert(
+          await captureNode.evaluate((node) => node.isConnected),
+          "Responsive reflow must retain the active capture opener",
+        );
         await page.keyboard.press("Escape");
         assert(
           await capture.evaluate((node) => node === document.activeElement),
@@ -119,6 +251,12 @@ try {
         await page
           .getByText(t("shortcut-settings.unsaved"), { exact: true })
           .waitFor();
+        await page.setViewportSize({ width: Math.max(240, width - 16), height });
+        await page.setViewportSize({ width, height });
+        assert(
+          await captureNode.evaluate((node) => node.isConnected),
+          "Responsive reflow must retain the dirty draft owner",
+        );
         assert.equal(
           await action.getAttribute("aria-keyshortcuts"),
           original,
@@ -183,6 +321,13 @@ try {
           JSON.stringify(geometry),
         );
         assert.equal(geometry.rows.length, 7);
+        for (const button of await footer.getByRole("button").all()) {
+          await button.scrollIntoViewIfNeeded();
+          assert(
+            await button.isVisible(),
+            "Every footer action remains reachable in fallback layouts",
+          );
+        }
         cases++;
       }
   assert.deepEqual(errors, []);

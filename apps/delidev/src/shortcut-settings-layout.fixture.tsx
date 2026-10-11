@@ -2,7 +2,8 @@
 // Isolated device preference adapters; no native storage or product mutation runs.
 import { createRoot } from "react-dom/client";
 import { useState } from "react";
-import { i18n } from "./localization";
+import { copy, i18n } from "./localization";
+import { SettingsActionScope } from "./settings-action";
 import {
   ShortcutPreferenceProvider,
   type ShortcutPreferenceSnapshot,
@@ -23,6 +24,7 @@ import {
 import "./themes.css";
 import "./styles.css";
 import "./settings-presentation.css";
+import "./settings-task.css";
 const args = new URLSearchParams(location.search);
 await i18n.changeLanguage(args.get("language") ?? "en");
 document.documentElement.dataset.theme = args.get("theme") ?? "light";
@@ -65,19 +67,35 @@ function Fixture() {
   ]);
   return (
     <main
-      className="settings-content"
-      style={{ width: "100%", padding: 24, minWidth: 0 }}
+      className="settings-content settings-shortcuts"
+      aria-label="Settings fixture"
+      style={{ height: "100dvh" }}
     >
-      <div className="settings-content-column">
-        <button data-shortcut-action aria-keyshortcuts={aria}>
-          Fixture action
-        </button>
-        <output data-shortcut-state>
-          {runs}:{writes}
-        </output>
-        <h1>Keyboard shortcuts</h1>
-        <ShortcutSettings />
-      </div>
+      <fieldset className="settings-task-background">
+        <div className="settings-content-column">
+          <div className="settings-shortcut-column">
+            <div className="settings-category-heading">
+              <div className="settings-category-title">
+                <h1>{copy("shortcuts.title")}</h1>
+                <p className="settings-scope">{copy("shortcut-settings.scope")}</p>
+              </div>
+              <div>
+                <button data-shortcut-action aria-keyshortcuts={aria}>
+                  Fixture action
+                </button>
+                <output data-shortcut-state>
+                  {runs}:{writes}
+                </output>
+              </div>
+            </div>
+            <div className="settings-panels">
+              <SettingsActionScope>
+                <ShortcutSettings />
+              </SettingsActionScope>
+            </div>
+          </div>
+        </div>
+      </fieldset>
     </main>
   );
 }

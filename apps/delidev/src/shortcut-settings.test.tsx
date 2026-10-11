@@ -124,6 +124,40 @@ const capture = async (name = "New session", key = "j") => {
     expect(screen.queryByRole("button", { name: "Cancel capture" })).toBeNull(),
   );
 };
+it("keeps capture guidance and labeled footer controls outside the localized catalog", async () => {
+  const f = fixture();
+  render(<Owner bridge={f.bridge} />);
+  await screen.findByText("Current saved shortcuts");
+  const catalog = screen.getByRole("region", { name: "Shortcut catalog" });
+  expect(catalog.getAttribute("tabindex")).toBe("0");
+  expect(
+    catalog.querySelectorAll('[data-settings-action-presentation="icon"]'),
+  ).toHaveLength(21);
+  expect(within(catalog).queryByText("Current saved shortcuts")).toBeNull();
+  for (const name of ["Restore all defaults", "Discard changes", "Save changes"]) {
+    const button = screen.getByRole("button", { name, exact: true });
+    expect(catalog.contains(button)).toBe(false);
+    expect(button.getAttribute("data-settings-action-presentation")).toBe("label");
+  }
+  fireEvent.click(
+    screen.getByRole("button", { name: "Capture shortcut for New session" }),
+  );
+  const cancel = await screen.findByRole("button", { name: "Cancel capture" });
+  expect(catalog.contains(cancel)).toBe(false);
+  await act(async () => {
+    await i18n.changeLanguage(SupportedLanguage.Korean);
+  });
+  expect(screen.getByRole("region", { name: "단축키 목록" })).toBe(catalog);
+  expect(screen.getByRole("button", { name: "단축키 입력 취소" })).toBe(cancel);
+  expect(f.bridge.update).not.toHaveBeenCalled();
+  await act(async () => {
+    await i18n.changeLanguage(SupportedLanguage.English);
+  });
+  fireEvent.click(cancel);
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Cancel capture" })).toBeNull(),
+  );
+});
 it("uses New Chat in the English creation heading while preserving Korean and shortcut dispatch", async () => {
   const f = fixture(),
     run = vi.fn();
