@@ -292,4 +292,3 @@ export enum NativeShellAccess {
  */
 export const NativeShellAccessSchema: GenEnum<NativeShellAccess> = /*@__PURE__*/
   enumDesc(file_delidev_v1_native_shell, 0);
-
