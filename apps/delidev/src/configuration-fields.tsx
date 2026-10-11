@@ -788,8 +788,10 @@ export function ResourceChoice({
   markRequired = false,
   resolvedChoice,
   selectionResetToken = 0,
+  emptyInventoryAction,
 }: {
   selectionResetToken?: number;
+  emptyInventoryAction?: { label: string; invoke: () => void };
   label: string;
   resourceLabel?: string;
   kind: EntityKind;
@@ -879,19 +881,39 @@ export function ResourceChoice({
     (token: string) => ({ filter: { kind, pageSize: 50, pageToken: token } }),
     [kind],
   );
+  interface InventoryEvidence {
+    count: number;
+    completeEmpty: boolean;
+    transport: typeof transport;
+  }
   const projectList = useCallback(
-    (response: MessageShape<typeof ResourceQuery.listResources.output>) => ({
+    (
+      response: MessageShape<typeof ResourceQuery.listResources.output>,
+      token: string,
+    ) => ({
+      // Validate the entire raw page before filtering. Filtered rows, a later
+      // empty page and retained display rows cannot prove inventory absence.
       rows: projectResources(response.resources),
       nextPageToken: response.nextPageToken,
+      payload: [
+        {
+          count: response.resources.length,
+          completeEmpty:
+            token === "" &&
+            response.resources.length === 0 &&
+            response.nextPageToken === "",
+          transport,
+        },
+      ],
     }),
-    [projectResources],
+    [projectResources, transport],
   );
   const resourceReader = useConnectPaginationReader(
     ResourceQuery.listResources,
     requestResources,
     projectList,
   );
-  const resources = usePaginationChain<ChoiceRow>(
+  const resources = usePaginationChain<ChoiceRow, InventoryEvidence>(
     `resource-choice:${kind}:${allowedKey}`,
     active && !disabled && !needsProviderCapability,
     resourceReader,
@@ -1205,31 +1227,61 @@ export function ResourceChoice({
       disabled: row.id === value && selectedProviderOff,
     })),
   ];
+  const firstInventory = resources.payloadPages.find(
+    (page) => page.token === "",
+  )?.payload[0];
+  const createFromEmptyInventory = Boolean(
+    emptyInventoryAction &&
+    kind === EntityKind.AGENT &&
+    active &&
+    !disabled &&
+    !value &&
+    !selectionBusy &&
+    !readProblem &&
+    resources.loaded &&
+    !resources.loading &&
+    resources.pages.length === 1 &&
+    !resources.nextPageToken &&
+    firstInventory?.transport === transport &&
+    firstInventory.completeEmpty,
+  );
   return (
     <div className="resource-choice">
-      <ScrollPicker
-        label={label}
-        options={options}
-        value={value}
-        selectedDecoration={decorate(selectedHarness)}
-        selectedLabel={
-          value
-            ? selectedResource
-              ? resourceName(selectedResource)
-              : copy("configuration-fields.sentence.38798a0275ce", {
-                  v0: resourceLabel,
-                })
-            : undefined
-        }
-        placeholder={emptyLabel}
-        change={(id) => void select(id)}
-        query={result}
-        active={active}
-        disabled={disabled || selectionBusy}
-        required={required}
-        autoFocus={autoFocus}
-        markRequired={markRequired}
-      />
+      {createFromEmptyInventory ? (
+        <div className="resource-empty-create">
+          <span>{label}</span>
+          <button type="button" onClick={emptyInventoryAction!.invoke}>
+            <svg aria-hidden="true" focusable="false" viewBox="0 0 16 16">
+              <path d="M8 3v10M3 8h10" />
+            </svg>
+            {emptyInventoryAction!.label}
+          </button>
+        </div>
+      ) : (
+        <ScrollPicker
+          label={label}
+          options={options}
+          value={value}
+          selectedDecoration={decorate(selectedHarness)}
+          selectedLabel={
+            value
+              ? selectedResource
+                ? resourceName(selectedResource)
+                : copy("configuration-fields.sentence.38798a0275ce", {
+                    v0: resourceLabel,
+                  })
+              : undefined
+          }
+          placeholder={emptyLabel}
+          change={(id) => void select(id)}
+          query={result}
+          active={active}
+          disabled={disabled || selectionBusy}
+          required={required}
+          autoFocus={autoFocus}
+          markRequired={markRequired}
+        />
+      )}
       {needsProviderCapability && active && !ready ? (
         <p role="status">
           {copy("configuration-fields.providerAndModelChoicesRequireA_5726bc")}
@@ -1246,12 +1298,17 @@ export function ResourceChoice({
       result.loaded &&
       !result.rows.length &&
       !result.error &&
-      !result.loading ? (
+      !result.loading &&
+      (!emptyInventoryAction ||
+        Boolean(result.nextPageToken) ||
+        (allowed !== undefined && (firstInventory?.count ?? 0) > 0)) ? (
         <p role="status">
           {copy(
             result.nextPageToken
               ? "configuration-fields.sentence.244a41434b15"
-              : "configuration-fields.sentence.9117e85a4bce",
+              : emptyInventoryAction
+                ? "configuration-fields.choices.projectRestricted"
+                : "configuration-fields.sentence.9117e85a4bce",
             { v0: resourceLabel },
           )}
         </p>

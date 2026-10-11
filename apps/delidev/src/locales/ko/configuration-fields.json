@@ -224,5 +224,6 @@
   "configuration-fields.projectEdit.repositories": "저장소",
   "configuration-fields.projectEdit.execution": "실행 설정",
   "configuration-fields.projectEdit.access": "사용 제한",
-  "configuration-fields.planApprovalHeading": "계획 승인"
+  "configuration-fields.planApprovalHeading": "계획 승인",
+  "configuration-fields.choices.projectRestricted": "이 페이지의 에이전트 워커 중 선택한 프로젝트의 제한에 맞는 워커가 없습니다."
 }
