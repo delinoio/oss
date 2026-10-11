@@ -120,6 +120,24 @@ test("Rstack owns exclusions and retains Markdown prose and embedded code", (t) 
   assert.equal(readFileSync(join(f.cwd, "guide.md"), "utf8"), md);
 });
 
+test("authored localization JSON remains eligible for formatting", (t) => {
+  const f = fixture(t);
+  const name = "apps/devhud-chrome-extension/public/_locales/en/messages.json";
+  const source = '{"title":{"message":"Browser context"}}\n';
+  f.write(name, source);
+  const head = f.commit();
+  const paths = changedFormatFiles(f.cwd, f.base, head);
+  assert.deepEqual(paths, [name]);
+  assert.equal(runFormatter(f.cwd, paths), 1);
+  assert.equal(readFileSync(join(f.cwd, name), "utf8"), source);
+  assert.equal(runFormatter(f.cwd, paths, "write"), 0);
+  assert.deepEqual(
+    JSON.parse(readFileSync(join(f.cwd, name), "utf8")),
+    JSON.parse(source),
+  );
+  assert.equal(runFormatter(f.cwd, paths), 0);
+});
+
 test("formatting is selected on all CI events for source, docs and configuration", () => {
   for (const event of Object.values(Event)) {
     for (const path of [
