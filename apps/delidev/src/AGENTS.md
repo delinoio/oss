@@ -8,6 +8,8 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
+- Browser Page close uses the original native resource-operation owner; other tool tab close remains presentation dismissal. Keep account/profile and pending operation owners mounted independently of their visible panes. Follow the [browser operation contract](../../../docs/cmds-delidev-browser-contract.md#direct-workspace-pages-and-original-native-operations).
+
 ## Owning contracts
 
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)

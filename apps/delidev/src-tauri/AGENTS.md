@@ -8,6 +8,8 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
+- Native Browser inventory and resource receipts belong to the original product-window instance and admitted profile, independently of presentation. Preserve worker-owned storage publication and original child cleanup; observation must not replay resource mutation. Follow the [browser operation contract](../../../docs/cmds-delidev-browser-contract.md#direct-workspace-pages-and-original-native-operations).
+
 ## Owning contracts
 
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)

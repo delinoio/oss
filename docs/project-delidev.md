@@ -69,6 +69,11 @@ Repositories use required remote URLs with optional Local folder connections und
 ## Domain Ownership Map
 
 - `apps/delidev`: desktop presentation and native host.
+  Direct Browser Page tabs and the explicit New browser page dialog follow the
+  [original browser-operation contract](cmds-delidev-browser-contract.md#direct-workspace-pages-and-original-native-operations).
+  Browser Page close is the resource-close exception; other tab dismissal remains
+  presentation-only. Native inventory, mutation receipts and exact child cleanup
+  remain independent of the visible page pane.
   The protected browser's `src-tauri/src/browser_child_lifetime.rs` owns exact
   child-close receipts; `src-tauri/src/browser_host.rs` owns CEF UI destruction
   and callback accounting under the [browser contract](cmds-delidev-browser-contract.md).

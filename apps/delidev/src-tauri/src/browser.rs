@@ -94,6 +94,19 @@ pub struct Policy {
     blocked_runtime_port: Option<u16>,
 }
 impl Policy {
+    /// Restore a profile without granting an address or creating a page.
+    pub fn empty(endpoint: &str) -> Result<Self> {
+        Ok(Self {
+            product_origin: connection_origin(endpoint)?,
+            loopback_origins: vec![],
+            protected_product_port: url::Url::parse(endpoint)
+                .ok()
+                .filter(loopback)
+                .and_then(|u| u.port_or_known_default()),
+            blocked_runtime_port: None,
+        })
+    }
+
     pub fn new(endpoint: &str, url: &str) -> Result<Self> {
         let product_origin = connection_origin(endpoint)?;
         let parsed = url::Url::parse(url).map_err(|_| NativeFailure::InvalidInput)?;

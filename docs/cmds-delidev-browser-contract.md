@@ -71,39 +71,66 @@ The CLI equivalents are `browser-profile capabilities`, `register --id SESSION
 for clients which actually completed native cleanup, not an automatic CLI action.
 `browser-storage prepare` only prepares the native client's private cache root.
 
-The session Browser button opens its singleton entry in the shared session-tab
-workspace. Each retained page opens/selects a tab keyed by original profile/page
-ID; observation state never changes identity. The selected page occupies the
-complete active content region beside persistent Info. Conversation/drafts remain
-mounted and inert while inactive. The Browser entry itself is a retained-page
-picker with explicit New page, not an unselected native page. The former Browser
-split, compact overlay and Expand/Restore presentation are superseded.
+### Direct workspace pages and original native operations
 
-The original account/profile manager remains mounted after presentation Close.
-Inactivity uses exact original Hide cleanup and retains failed/uncertain cleanup
-before any replacement. Reopen restores existing native pages without another
-registration or creation. Explicit picker actions restore the original presentation
-after cleanup and send the selected resource action once; failures do not create
-automatic retries. Profile explanation uses the original accessible Modal and
-native visibility boundary. Initial explicit registration retains the local-summary/
-address card and no empty viewport. Page labels derive only from retained URLs;
-no title/favicon discovery, URL logging, page scripts or generalized key bridge.
-Owned native action results and bounded state observations refresh only existing
-matching profile/page descriptors. URL-derived titles and accessible labels change
-in place without altering identity, order, selection or focus, creating a page or
-sending navigation. Unchanged observations publish no descriptor update; results
-from a replaced or inactive presentation cannot refresh labels or send native
-selection.
-After a busy action settles, reconcile the latest live shared page selection once
-against the current active profile/presentation and native page inventory. Preserve
-modal visibility gates and do not automatically retry a failed or uncertain
-selection acknowledgment. A completed action cannot reselect a superseded shared
-page. Only a validated original Close acknowledgment that confirms the exact page
-is absent removes its shared descriptor. Selected resource closure chooses an
-existing same-profile survivor or Browser; inactive resource closure preserves
-selection. Failed, uncertain or malformed replies retain the descriptor.
-The original 16-page gate and explicit resource Close remain separate from shared
-presentation Close. Numeric selection has only typed, original-owner fenced
+Every retained page in the current admitted account profile is a direct Page tab,
+keyed by its original profile/page IDs. Conversation stays pinned first. There is
+no Browser singleton or inner page-selection row. Inventory restores existing
+pages without creation, preserves descriptor order and selection, and appends new
+observations in native inventory order. URL-derived labels change in place; no
+scripts, title/favicon discovery, credentials or page content enter product RPCs.
+The selected page uses the complete active content region beside persistent Info.
+
+The shared strip's ordinary + button and Open tool → Browser open the same
+New browser page Modal. The dialog has one Address field, the account-sharing
+explanation, Cancel and Open page. Its maximum width is 480px with responsive
+bounds, 40px controls and 8px corners. Address receives focus; the dialog traps
+focus and restores its opener. Opening, Cancel, Escape and X create nothing.
+Explicit submission checks bounded HTTP(S), no credentials, 8192 characters and
+16 pages, and uses the original capability, account, Session revision and exact
+registration receipt before one native Create. Unsupported, loading, removal and
+failure guidance never creates a fallback page. Accepted registration and native
+operations survive dialog dismissal; reopening observes the original operation.
+
+The native-local `browser_pages` command accepts a closed Inventory/Create/Close/
+Observe request. It has no paths or generalized browser authority. The native host
+binds operation receipts to the trusted product-window instance and original
+Local revision or Saved connection, plus server/device/account/profile/revision.
+Fresh authenticated profile evidence and original-window fences precede worker
+storage preparation, atomic publication, UI cleanup and response publication.
+Inventory and presentation restoration preserve zero-page profiles. Only Create
+adds a page. Receipts serialize profile mutations, retain the original request,
+page identity and result, reject foreign identity reuse and distinguish metadata
+publication from native cleanup. The bounded process-local receipt store does not
+evict original operations to admit new writes; capacity exhaustion rejects them.
+Existing private tab documents remain compatible; there is no migration or RPC.
+
+Page × is the browser-specific resource-close exception. Other shared tab kinds
+keep their original presentation dismissal semantics. Close can target an inactive
+page without showing it or creating a child. It saves absence off the UI thread,
+then hides and closes only the original matching children. Outstanding child
+creation and superseded/hidden child callbacks retain their original identities.
+Metadata removal alone does not remove the descriptor: cleanup must settle before
+the original receipt confirms completion. Pending, failed, lost or malformed
+responses retain an accessible inline Observe original operation action. Observe
+can finish original native cleanup; it never replays Create or Close. Shared
+profile inventories reconcile completed absence without acquiring another owner's
+operation. Active closure selects/focuses the existing left neighbor; inactive
+closure preserves selection. The final browser page selects Conversation and
+leaves the account profile and its zero-page inventory intact.
+
+Original account/profile controllers remain mounted independently of the page
+pane and retain original pending work across account changes. Only the currently
+admitted account presents or adopts inventory; stale operation results cannot
+select a replacement account. Conversation/Sidechat drafts, persistent Info,
+terminal lifetimes and immutable execution attribution remain independently owned.
+Exact Hide, failed-Hide replacement fencing, modal visibility, protected storage,
+removal/shutdown accounting and external raw CEF isolation remain required.
+Structured operation/phase/failure logs contain no URLs, titles, credentials,
+native content or private paths. Fixtures and build results do not establish
+installed CEF, real-account or macOS/Windows/Linux acceptance.
+
+Numeric selection has only typed, original-owner fenced
 local presentation authority under the desktop shortcut contract. The owner
 approved deferring only Windows/Linux numeric forwarding while external browser
 content has focus; use the tab bar there. macOS forwarding requires original

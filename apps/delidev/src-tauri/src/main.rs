@@ -1528,6 +1528,62 @@ async fn open_connection(
     result
 }
 
+// Resource operations use a native-created original window identity, never a
+// renderer-supplied path or presentation handle.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri-injected state is separate from typed IPC input"
+)]
+#[tauri::command]
+async fn browser_pages(
+    window: WebviewWindow<CefRuntime>,
+    app: AppHandle<CefRuntime>,
+    connector: tauri::State<'_, Arc<Connector>>,
+    host: tauri::State<'_, Arc<browser_host::BrowserHost>>,
+    profile_id: String,
+    request: browser_host::PageRequest,
+) -> Result<browser_host::PageInventory, NativeFailure> {
+    let authority = capture_authority(&window)?;
+    canonical_id(&profile_id)?;
+    let scope = authority.saved.clone();
+    let original_owner = format!(
+        "{}:{}:{}",
+        authority.entry.label, authority.entry.instance, authority.local_revision
+    );
+    let worker_connector = Arc::clone(connector.inner());
+    let worker_host = Arc::clone(host.inner());
+    let worker_request = request.clone();
+    let worker_owner = original_owner.clone();
+    let windows = Arc::clone(app.state::<Arc<ProductWindows>>().inner());
+    let worker_authority = authority.clone();
+    let id = profile_id.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let record = worker_connector.browser_profile(scope.as_ref(), &id)?;
+        recheck_record(&windows, &worker_authority)?;
+        worker_host.prepare_inventory(scope, record.clone())?;
+        recheck_record(&windows, &worker_authority)?;
+        worker_host.prepare_pages(&worker_owner, &record, &worker_request, || {
+            recheck_record(&windows, &worker_authority)
+        })
+    })
+    .await
+    .map_err(|_| NativeFailure::SidecarFailed)??;
+    recheck_authority(&window, &authority)?;
+    let ui_host = Arc::clone(host.inner());
+    let (send, receive) = tokio::sync::oneshot::channel();
+    let copy = app.clone();
+    let original = authority.clone();
+    app.run_on_main_thread(move || {
+        let result = recheck_registered(&copy, &original)
+            .and_then(|()| ui_host.finish_pages(&original_owner, &profile_id, &request));
+        let _ = send.send(result);
+    })
+    .map_err(|_| NativeFailure::SidecarFailed)?;
+    let result = receive.await.map_err(|_| NativeFailure::SidecarFailed)?;
+    recheck_authority(&window, &authority)?;
+    result
+}
+
 // Tauri injects trusted framework state separately from the closed IPC fields.
 // Keep this exception on the command; remove it if those injected states are
 // consolidated.
@@ -1545,6 +1601,7 @@ async fn open_browser(
     profile_id: String,
     view_id: String,
     url: String,
+    page_id: String,
     bounds: browser_host::Bounds,
 ) -> Result<browser_host::BrowserState, NativeFailure> {
     let response_window = window.clone();
@@ -1589,7 +1646,19 @@ async fn open_browser(
         let label = window.label().to_string();
         let storage_view = view_id.clone();
         tauri::async_runtime::spawn_blocking(move || {
-            storage_host.prepare_open(&label, &storage_view, storage_scope, storage_record, &url)
+            storage_host.prepare_open(
+                &label,
+                &storage_view,
+                storage_scope,
+                storage_record.clone(),
+                &url,
+            )?;
+            storage_host.prepare_presentation_page(
+                &label,
+                &storage_view,
+                &storage_record.id,
+                &page_id,
+            )
         })
         .await
         .map_err(|_| NativeFailure::SidecarFailed)??;
@@ -1640,6 +1709,12 @@ async fn control_browser(
     tab_id: Option<String>,
     bounds: Option<browser_host::Bounds>,
 ) -> Result<browser_host::BrowserState, NativeFailure> {
+    if matches!(
+        action,
+        browser_host::Action::NewTab | browser_host::Action::CloseTab
+    ) {
+        return Err(NativeFailure::PermissionDenied);
+    }
     let response_window = window.clone();
     let original_authority = capture_authority(&response_window)?;
     let result = async {
@@ -1927,6 +2002,7 @@ fn run() -> Result<(), NativeFailure> {
                 open_browser,
                 control_browser,
                 browser_state,
+                browser_pages,
                 browser_tab_shortcuts,
                 open_github,
                 open_provider_guidance,

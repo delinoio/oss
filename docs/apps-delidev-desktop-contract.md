@@ -2201,11 +2201,11 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Import / Export presentation alone is owned by `configuration-transfer.tsx` and `configuration-transfer.css` for this feature and the desktop/portable-configuration contracts. Keep its left-aligned 1040px column, exact panel/input/guidance copy, noninteractive state-derived stages and complete mapping/review/retry/results. Preserve original JSON bytes, bigint revisions, every existing operation/guard and Settings-host lifetime/locks; styling/reflow cannot remount controllers or acquire shell ownership from . Record browser/component and native acceptance separately in PRs/issues/CI, never repository evidence files.
 
-- Browser and Terminals use the shared typed session-tab workspace with Files, Diff and Diagnostics. Preserve original account/profile/session/revision/capability checks, explicit resource mutation controls and independent cleanup. Presentation Close only removes a descriptor; retained managers and uncertain operations remain owned.
+- Browser and Terminals use the shared typed session-tab workspace with Files, Diff and Diagnostics. Preserve original account/profile/session/revision/capability checks, explicit resource mutation controls and independent cleanup. Presentation Close removes a descriptor except for Browser Page ×, which requests original native resource closure and retains its descriptor until absence and cleanup are confirmed. Retained managers and uncertain operations remain owned.
 
 - Session browser UI follows `cmds-delidev-browser-contract.md`. Require the generated browser capability and exact currently selected account, retain immutable uncertain registration requests, and bind every native open/control/cleanup to its presentation UUID. Keep the composer mounted and restore focus when the panel closes. Browser URLs and tabs remain native/device-local; never include them in RPC, query keys, logs, session messages, or workspace context. Hide native content while a modal or inert ancestor covers it, and require explicit retry after a native open failure. Account deletion displays tracked cleanup progress separately from the accepted configuration deletion.
 
-- Browser account selection follows the latest retained continuation account change before Resume, falling back to current/initial execution only when no selection change exists. Key the panel by that account so a pending switch closes the previous presentation while preserving the composer; historical execution attribution remains unchanged.
+- Browser account selection follows the latest retained continuation account change before Resume, falling back to current/initial execution only when no selection change exists. Retain a separate manager for each admitted account so a pending switch hides the previous presentation and preserves its original operations and the composer; historical execution attribution remains unchanged.
 
 - Browser presentation treats the retained closed compact sidebar dialog and open wide sidebar region as ordinary navigation. Hide the native child only for a currently visible dialog, hidden/inert ancestry or clipped geometry; reopening retains the original profile with a new presentation identity. Follow `cmds-delidev-browser-contract.md`.
 
@@ -3545,7 +3545,7 @@ editors. Connection replacement or app restart resets presentation state. Hidden
 retained views are inert and suspend observation reads. File/patch panes unmount,
 cancel publication and discard bytes through their original read owners. Accepted
 or uncertain mutations retain original connection-owned request/controller identity;
-selection, closure and reopening never create a resource or retry a mutation.
+selection, presentation dismissal and reopening never create a resource or retry a mutation. Browser Page × is the explicit resource-close exception, governed by original native receipts.
 
 Info remains persistent beside the active pane, with the original section focus,
 recovery and budget controls. At 900px available session width reserve its 360px
@@ -3558,19 +3558,24 @@ Tool labels and tabs remain reachable by scrolling at narrow/effective 200% layo
 Browser keeps its mounted original account/profile controller and releases its
 native child through exact Hide cleanup when a page becomes inactive. Failed or
 uncertain Hide prevents replacement; reactivation restores existing native pages
-without registration or page creation. The Browser entry lists retained pages and
-explicit New page; only a selected page presents native content. An explicit picker
-resource action restores its presentation after previous cleanup, sends that
-original action once and retains failures without automatic mutation retry.
-Owned native observations refresh only existing matching profile/page labels in
-place, preserving identity, order, selection and focus. Busy action completion
-reconciles the latest live shared selection once under active/profile/presentation,
-native-page and modal gates; failed or uncertain selection is not automatically
-retried. An original acknowledged native resource Close removes only its exact
-confirmed-absent descriptor and selects an existing same-profile page or Browser
-when needed. Failed, uncertain or malformed replies preserve the descriptor.
-Profile explanation, address/navigation, explicit resource Close, 16-page gate,
-original revision/account checks and uncertain registration retry remain unchanged.
+without registration or page creation. The shared + and Open tool → Browser open one explicit address-entry Modal;
+there is no Browser singleton or inner page row. The Modal follows the
+[original browser-operation contract](cmds-delidev-browser-contract.md#direct-workspace-pages-and-original-native-operations),
+including focus containment/restoration, bounded address validation, original
+registration recovery and exactly one explicit Create. Inventory/restoration and
+dismissal create no pages. Every retained native page appends once by original
+profile/page ID while existing order, selection and labels retain their identity.
+The + is an ordinary button after tab items, outside numeric tab positions.
+The pane header keeps profile information and navigation, without a second Close.
+Page × closes the original resource through retained native operations. Descriptor
+removal waits for confirmed absence and exact native cleanup; inactive closure
+preserves selection, active closure selects/focuses its existing left neighbor and
+final-page closure selects Conversation with zero pages retained. Pending or
+uncertain closure has accessible inline original-operation observation, never a
+blind resend. Only the current account presents inventory, while prior managers
+retain original pending owners without transferring authority. Native geometry,
+modal Hide, failed-Hide fencing, shared-profile observations, original account/
+revision checks and other tools' independent lifetimes remain unchanged.
 
 Each Sidechat is a child conversation tab inside its original parent. Its own
 Info, actions, findings, enqueue and original read-only restrictions bind that
