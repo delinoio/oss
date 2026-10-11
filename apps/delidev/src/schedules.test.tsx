@@ -709,7 +709,7 @@ it.each([
     ).toBe(timezone);
     expect(
       screen.getAllByText(
-        "Next run is calculated by the server after saving.",
+        "Saving confirms the actual next run. Scheduled times do not guarantee execution.",
       )[0],
     ).toBeTruthy();
     expect(screen.getAllByRole("alert").length).toBeGreaterThan(0);

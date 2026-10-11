@@ -463,3 +463,13 @@ the [Inbox contract](cmds-delidev-inbox-contract.md#foreground-session-acknowled
 for original replay and the
 [desktop contract](apps-delidev-desktop-contract.md#foreground-chat-inbox-acknowledgment)
 for foreground admission and retained query invalidation.
+
+## Schedule calendar preview
+
+`ScheduleQuery.previewScheduleCalendar` exposes the generated read-only RPC with
+only cron/timezone input, server calculation/next-run timestamps and typed sorted
+calendar constraints. Consumers preserve the closed AND/OR enum, exact draft and
+connection ownership. They localize normalized values without parsing cron or
+computing calendar instants. Unimplemented supports older servers without a new
+capability gate. Preview failure cannot authorize execution or modify retained
+save/retry bytes. Follow the [schedule contract](cmds-delidev-schedules-contract.md#unsaved-calendar-preview).

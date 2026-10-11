@@ -5318,6 +5318,8 @@ The single directly submitted text-only Sidechat question exposes Retry under Sy
 
 Present original native `view_image` observations in the existing collapsed tool transcript. Show the validated lifecycle status, immutable root-relative location and explicit unavailable preview. The reference retains an observation, not original bytes or access to the current file. Keep location text inert; add no image, link, preview/download, image-input or source-file deletion action. Reject mixed/unknown metadata and changed start/completion identity, Worker, manifest, root or location. Preserve localization and original tool-turn grouping.
 
+Preserve literal colon and backslash characters in admitted POSIX filenames. Do not reinterpret them as a drive, separator, URL or link. Continue rejecting absolute paths, UNC references, traversal, malformed segments and changed lifecycle metadata; original Worker-OS and manifest validation remain server-owned.
+
 ## Situation-specific notification presentation
 
 Notifications Settings renders saved, read-only choices under Requests, Execution, Connections and Operations. The twelve controls follow the approved 1,040-pixel body, 24-pixel group spacing, 16-pixel rows and 40-pixel actions. Edit retains the existing 720-pixel explicit Save/Cancel dialog, revision conflict and exact uncertain retry behavior, visit disposal and focus handoffs. Small screens stack through the shared 600-pixel breakpoint. EN/KO labels and Settings search targets cover each choice. Account quota recovery is a separate Managed per account row with an AI Subscription action. Missing granular support shows an explicit compatibility state.
@@ -5779,6 +5781,35 @@ dependency or native operation. Semantic themes, English/Korean, narrow widths
 and 200% reflow keep expanded text readable without horizontal overflow. Component
 and browser fixtures establish presentation only; installed CEF/native acceptance
 remains separate.
+
+## Schedule creation calendar preview
+
+Repeat and Review share a compact summary with separate Repeats, Scheduling starts
+and First run preview rows. English/Korean prose comes from server-normalized
+calendar constraints, including AND/OR day semantics. Simple patterns use familiar
+sentences; complex patterns state time, month and day constraints explicitly.
+The browser does not parse arbitrary cron. The exact original expression remains
+in an initially collapsed keyboard-accessible Cron details disclosure; Custom
+cron input is unchanged. Wrapped rows preserve the wizard's scrolling/footer.
+
+An enabled draft starts scheduling after save. Its provisional first occurrence
+shows a weekday, full date/time in the explicit schedule timezone and relative
+wording based on the returned server boundary plus monotonic elapsed time.
+Date display follows the device preference. A paused draft starts after enabling
+and states that no automatic run is scheduled. Saving confirms the actual next
+run; a scheduled time does not guarantee execution. The saved authoritative
+`next_run_at` supersedes the creation estimate through the existing success path.
+
+Connect Query scopes reads to the original transport and exact cron/timezone.
+Valid changed inputs debounce by 300 ms, immediately hiding obsolete dates.
+Repeat/Review refresh each minute, at the estimated occurrence boundary, on
+returning to the surface and on window focus. Disposed tasks, replaced connections
+and changed inputs cannot receive an old date. Polite status updates do not move
+focus or announce a per-second countdown. Invalid, calculating, unavailable and
+unsupported-server states retain the draft and original save validation.
+Unimplemented retains the preset summary and explains that saving determines
+the next run; no Custom interpretation is fabricated. All existing mutation,
+revision, fresh Local proof, pending/uncertain request bytes and retry owners remain.
 
 ## Active conversation question presentation
 

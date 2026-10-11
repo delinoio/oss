@@ -1,5 +1,22 @@
 # DeliDev v1 Connect contract
 
+## Read-only schedule calendar preview
+
+`ScheduleService.PreviewScheduleCalendar` accepts owner and paired-client
+credentials; Worker credentials cannot invoke it. Request fields are `cron = 1`
+and `timezone = 2`, with the existing 512- and 256-character limits. Response
+fields are the sampled server `calculated_at = 1`, strictly future UTC
+`next_run_at = 2`, and normalized `constraints = 3`. The constraints contain
+sorted allowed minutes, hours, days of month, months and weekdays in fields 1–5;
+Sunday is zero. Field 6 uses the closed day-match enum: unspecified zero, AND one,
+OR two. Clients render these constraints without parsing cron themselves.
+
+The operation creates no resource, receipt, timer or execution. Invalid or
+unreachable calendars return validation errors without an estimated date. Older
+servers return Unimplemented; clients preserve the draft and explain that saving
+determines the next run. No capability or database migration is added. The
+[schedule contract](cmds-delidev-schedules-contract.md) owns calendar behavior.
+
 ## Machine heartbeat read projection
 
 Machine Get, List and Snapshot Resources project the exact Machine's current
