@@ -754,6 +754,8 @@
       "pnpm-workspace.yaml",
       "turbo.json",
       "apps/delidev/**",
+      "docs/apps-delidev-*.md",
+      "docs/cmds-delidev-*.md",
       "packages/delidev-api-client/**",
       "cmds/delidev-cli/**",
       "protos/delidev/**/*.proto",

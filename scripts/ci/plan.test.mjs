@@ -811,6 +811,9 @@ test("DeliDev separates schema, client and complete desktop validation by depend
     assert.equal(screen.jobs["delidev-frontend"], true);
     assert.equal(screen.jobs["delidev-client"], false);
     assert.equal(screen.jobs["delidev-protocol"], false);
+    for (const contract of ["docs/apps-delidev-desktop-contract.md", "docs/cmds-delidev-catalog-contract.md"]) {
+      assert.equal(planJobs(event, [contract]).jobs["delidev-frontend"], true, contract);
+    }
     for (const input of ["packages/delidev-api-client/src/synchronization.ts", "cmds/delidev-cli/internal/server/resources.go", "protos/gen/go/delidev/v1/account.pb.go"]) {
       const plan = planJobs(event, [input]);
       for (const id of ["delidev-client", "delidev-frontend"]) assert.equal(plan.jobs[id], true, `${input}: ${id}`);
