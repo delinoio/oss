@@ -81,6 +81,21 @@ func (f *threadFixture) handleRevert(id json.RawMessage, method string, raw json
 		if f.mode == "thread-revert-cycle" && p.Limit == 50 {
 			next = "page-" + strconv.Itoa(offset+1)
 		}
+		if f.mode == "thread-revert-image-bounds" && p.Limit == 50 {
+			// Expand only the response page to test aggregate history limits
+			// without requiring an oversized fixture-control request.
+			for n, raw := range data {
+				var turn map[string]any
+				json.Unmarshal(raw, &turn)
+				for _, value := range turn["items"].([]any) {
+					item := value.(map[string]any)
+					if item["type"] == "imageGeneration" {
+						item["revisedPrompt"] = strings.Repeat("x", domain.MaxPromptBytes)
+					}
+				}
+				data[n], _ = json.Marshal(turn)
+			}
+		}
 		write(id, map[string]any{"data": data, "nextCursor": next, "backwardsCursor": nil})
 		return true
 	case "thread/revert":
