@@ -3795,6 +3795,10 @@ it.each([
     vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
     const value = fixture();
     render(<App transport={value.transport} />);
+    if (compact)
+      fireEvent.click(
+        screen.getByRole("button", { name: "Open session navigation" }),
+      );
     fireEvent.click(await screen.findByRole("button", { name: "New session" }));
     const input = await screen.findByRole("textbox", { name: "First message" });
     input.focus();
