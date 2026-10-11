@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { useSessionInboxRead } from "./session-inbox-read";
 import { WaitingQueue } from "./waiting-queue";
 
@@ -12,6 +13,7 @@ import { SessionTabBar } from "./session-tab-bar";
 import { useSessionTabs, SessionTabKind, sessionTabKey } from "./session-tabs";
 import {
   initialExecutionPending,
+  initialSessionStartup,
   SessionProgressPhase,
   sessionProgress,
   progressMessages,
@@ -106,7 +108,10 @@ import { NativeReasoning } from "./native-reasoning";
 import { CodexReasoning, codexReasoning } from "./codex-reasoning";
 import { SessionContext } from "./session-context";
 import { SessionBudget } from "./session-budget";
-import { ExecutionConfiguration } from "./execution-configuration";
+import {
+  ExecutionConfiguration,
+  SavedExecutionChips,
+} from "./execution-configuration";
 import {
   memo,
   useEffect,
@@ -180,6 +185,7 @@ import {
 } from "./sidechat-retry";
 import { SessionTools } from "./session-tools";
 import { SessionStorageAction } from "./session-storage";
+import { SessionLifetimeUsage } from "./session-lifetime-usage";
 import { SessionPullRequests } from "./session-pull-requests";
 import {
   PendingQueueInputs,
@@ -960,6 +966,8 @@ export function SessionView({
   const infoEvidence = useRef<HTMLDivElement>(null);
   const budgetDetails = useRef<HTMLElement>(null);
   const information = useRef<HTMLElement>(null);
+  const sessionHeading = useRef<HTMLHeadingElement>(null);
+  const [startupInfoHidden, setStartupInfoHidden] = useState(false);
   const [prEmpty, setPREmpty] = useState(false),
     [subagentsEmpty, setSubagentsEmpty] = useState(false);
   const [diagnosticsTarget, setDiagnosticsTarget] =
@@ -1909,6 +1917,42 @@ export function SessionView({
         : NaN,
     );
   const progress = startupOwnerCurrent ? observedProgress : undefined;
+  const hideStartupInfo =
+    active &&
+    conversationActive &&
+    !budgetBlocked &&
+    initialSessionStartup(
+      session,
+      progress,
+      Boolean(queue.data) &&
+        !queue.error &&
+        !queue.isPending &&
+        !queue.nextPageToken,
+      pending,
+    );
+  useLayoutEffect(() => {
+    // Commit visibility only after moving focus out of the still-visible Info.
+    // Keep the original controllers active; presentation must not recreate reads.
+    if (
+      hideStartupInfo &&
+      information.current?.contains(document.activeElement)
+    ) {
+      const input = composer.current;
+      if (
+        input?.isConnected &&
+        !input.disabled &&
+        !input.closest("[hidden], [inert]")
+      )
+        input.focus({ preventScroll: true });
+      else sessionHeading.current?.focus({ preventScroll: true });
+    }
+    setStartupInfoHidden(hideStartupInfo);
+  }, [hideStartupInfo]);
+  const infoHidden =
+    [SessionTabKind.Sidechat, SessionTabKind.PendingSidechat].includes(
+      tabs.tab.kind,
+    ) ||
+    (hideStartupInfo && startupInfoHidden);
   return (
     <SessionActivityProvider
       active={
@@ -1952,6 +1996,7 @@ export function SessionView({
             <SessionHarness resource={session}>
               <div className="session-heading-line">
                 <h2
+                  ref={sessionHeading}
                   tabIndex={-1}
                   onDoubleClick={(event) => {
                     if (session) editName?.(session.id, event.currentTarget);
@@ -2838,7 +2883,7 @@ export function SessionView({
                 </div>
               ) : null}
               {active && panel === SessionPanel.Diagnostics ? (
-                <div className="session-app-panel">
+                <div className="session-app-panel session-diagnostics-panel">
                   <div className="session-diagnostics">
                     <div ref={setDiagnosticsTarget} />
                     <FlatDisclosureScope>
@@ -2971,10 +3016,8 @@ export function SessionView({
             </div>
           </div>
           <aside
-            hidden={[
-              SessionTabKind.Sidechat,
-              SessionTabKind.PendingSidechat,
-            ].includes(tabs.tab.kind)}
+            hidden={infoHidden}
+            inert={infoHidden}
             ref={information}
             id={`info-${id}`}
             className="session-information"
@@ -2984,69 +3027,86 @@ export function SessionView({
               <h2 ref={infoHeading} tabIndex={-1} id={`info-title-${id}`}>
                 {copy("session.sessionInformation")}
               </h2>
+              {session ? <SavedExecutionChips resource={session} /> : null}
             </header>
-            <FlatDisclosureScope>
-              <div className="session-information-body">
-                <div ref={setInfoToolsTarget} tabIndex={-1} />
-                {session ? (
-                  <>
-                    <section
-                      hidden={prEmpty}
-                      className="session-information-section"
-                    >
-                      <h3>{copy("session.pullRequests")}</h3>
-                      <SessionPullRequests
-                        key={id}
-                        session={session}
-                        emptyChanged={setPREmpty}
-                        diagnosticsTarget={diagnosticsTarget}
-                      />
-                    </section>
-                    <section className="session-information-section">
-                      <h3>{copy("session.executionSettings")}</h3>
+            <SessionActivityProvider
+              active={
+                active &&
+                ![
+                  SessionTabKind.Sidechat,
+                  SessionTabKind.PendingSidechat,
+                ].includes(tabs.tab.kind)
+              }
+            >
+              <FlatDisclosureScope>
+                <div className="session-information-body">
+                  <div ref={setInfoToolsTarget} tabIndex={-1} />
+                  {session ? (
+                    <>
+                      <section
+                        hidden={prEmpty}
+                        className="session-information-section"
+                      >
+                        <h3>{copy("session.pullRequests")}</h3>
+                        <SessionPullRequests
+                          key={id}
+                          session={session}
+                          emptyChanged={setPREmpty}
+                          diagnosticsTarget={diagnosticsTarget}
+                        />
+                      </section>
+                      <section
+                        hidden={subagentsEmpty}
+                        className="session-information-section"
+                      >
+                        <h3>{copy("session.subagents")}</h3>
+                        <Subagents
+                          key={id}
+                          sessionId={id}
+                          revision={session.revision.toString()}
+                          emptyChanged={setSubagentsEmpty}
+                          diagnosticsTarget={diagnosticsTarget}
+                        />
+                      </section>
+                      <section className="session-information-section">
+                        <h3>{copy("session.context")}</h3>
+                        <SessionContext key={id} session={session} />
+                      </section>
+                      <section
+                        ref={budgetDetails}
+                        className="session-information-section"
+                        tabIndex={-1}
+                      >
+                        <h3>{copy("session.usageAndBudget")}</h3>
+                        <SessionLifetimeUsage
+                          session={session}
+                          diagnosticsTarget={diagnosticsTarget}
+                        />
+                        {diagnosticsTarget
+                          ? createPortal(
+                              <NativeUsage
+                                session={session}
+                                diagnosticsTarget={diagnosticsTarget}
+                              />,
+                              diagnosticsTarget,
+                            )
+                          : null}
+                        <SessionBudget
+                          resource={session}
+                          changed={setAcknowledged}
+                          blocked={setBudgetBlocked}
+                        />
+                      </section>
                       <ExecutionConfiguration
                         resource={session}
                         diagnosticsTarget={diagnosticsTarget}
                       />
-                    </section>
-                    <section className="session-information-section">
-                      <h3>{copy("session.context")}</h3>
-                      <SessionContext key={id} session={session} />
-                    </section>
-                    <section
-                      hidden={subagentsEmpty}
-                      className="session-information-section"
-                    >
-                      <h3>{copy("session.subagents")}</h3>
-                      <Subagents
-                        key={id}
-                        sessionId={id}
-                        revision={session.revision.toString()}
-                        emptyChanged={setSubagentsEmpty}
-                        diagnosticsTarget={diagnosticsTarget}
-                      />
-                    </section>
-                    <section
-                      ref={budgetDetails}
-                      className="session-information-section"
-                      tabIndex={-1}
-                    >
-                      <h3>{copy("session.usageAndBudget")}</h3>
-                      <NativeUsage
-                        session={session}
-                        diagnosticsTarget={diagnosticsTarget}
-                      />
-                      <SessionBudget
-                        resource={session}
-                        changed={setAcknowledged}
-                        blocked={setBudgetBlocked}
-                      />
-                    </section>
-                    <SessionStorageAction source={session} />
-                  </>
-                ) : null}
-              </div>
-            </FlatDisclosureScope>
+                      <SessionStorageAction source={session} />
+                    </>
+                  ) : null}
+                </div>
+              </FlatDisclosureScope>
+            </SessionActivityProvider>
           </aside>
         </div>
       </section>

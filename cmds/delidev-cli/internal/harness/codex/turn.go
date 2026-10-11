@@ -71,6 +71,7 @@ type inputAttempt struct {
 }
 
 type executionState struct {
+	windowsWarnings     uint8
 	strictReviewNotices map[strictReviewNoticeKey]bool
 
 	autoReviews         map[domain.ID]domain.AutoReviewState
