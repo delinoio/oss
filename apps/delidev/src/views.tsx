@@ -102,6 +102,10 @@ export function Search({
   const drawerOpen = useSidebarDrawerOpen();
   const paneVisible = useSidebarPaneVisible();
   const presentation = useSidebarPresentation();
+  const compact =
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(max-width: 759px)").matches;
+  const presentationBlocked = presentation.problem && !compact;
   const openDrawer = useOpenSidebarDrawer();
   const request = useCallback(
     (token: string) => ({
@@ -129,7 +133,7 @@ export function Search({
   );
   useEffect(() => {
     const request = requestedFocus.current;
-    if (!active || presentation.problem) {
+    if (!active || presentationBlocked) {
       requestedFocus.current = undefined;
       return;
     }
@@ -159,7 +163,7 @@ export function Search({
     paneVisible,
     presentation.settled,
     presentation.generation,
-    presentation.problem,
+    presentationBlocked,
     presentation.focusAllowed,
   ]);
   useEffect(() => {
@@ -175,14 +179,9 @@ export function Search({
         focusedOnce.current = true;
       return;
     }
-    if (!presentation.settled || presentation.problem || focusedOnce.current)
+    if (!presentation.settled || presentationBlocked || focusedOnce.current)
       return;
-    if (
-      typeof window.matchMedia === "function" &&
-      window.matchMedia("(max-width: 759px)").matches &&
-      !drawerOpen
-    )
-      return;
+    if (compact && !drawerOpen) return;
     const frame = window.requestAnimationFrame(() => {
       searchInput.current?.focus();
       focusedOnce.current = true;
@@ -194,7 +193,7 @@ export function Search({
     paneVisible,
     presentation.settled,
     presentation.generation,
-    presentation.problem,
+    presentationBlocked,
     presentation.focusAllowed,
   ]);
   const shortcuts = useShortcuts([
