@@ -2900,7 +2900,10 @@ with name and complete light/dark token maps, and always creates a new identity.
 Unknown fields/tokens, non-#RRGGBB colors and failing text/control contrast reject
 adoption. Terminal colors, backdrop, shadows and native OS surfaces are excluded.
 Validated tokens use an application-owned constructed CSS stylesheet without raw
-CSS injection or a CSP exception. Export captures one committed custom theme.
+CSS injection or a CSP exception. Selected maps override the static resolved-theme
+colors in both product and tray documents. Replacement and disposal remove only
+the original owned sheet; scoped previews retain their own selectors. Missing
+constructed-sheet support retains the static theme fallback. Export captures one committed custom theme.
 Deletion requires confirmation and atomically returns all selected references to
 Default. Cancel discards only the editor/import draft. Concurrent revisions keep
 dirty drafts visible and block save until explicit discard/reload.

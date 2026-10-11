@@ -51,7 +51,8 @@ export function appearanceIdentity(value: unknown): string {
 }
 
 /** Only application-owned selectors and previously validated colors reach CSSOM. */
-export function applyAppearanceColors(colors:ColorMap,selector=":root"):()=>void {
+// Match the static dark rule specificity; later adopted sheets apply the selected map.
+export function applyAppearanceColors(colors:ColorMap,selector=":root[data-theme]"):()=>void {
  if(typeof CSSStyleSheet.prototype.replaceSync!=="function")return ()=>{};
  const sheet=new CSSStyleSheet();sheet.replaceSync(`${selector} {}`);const rule=sheet.cssRules[0] as CSSStyleRule;
  for(const [token,value] of Object.entries(colors))rule.style.setProperty(`--${token}`,value);

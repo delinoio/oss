@@ -43,6 +43,7 @@
     "test:integration:1": "vitest run .integration.test. --shard=1/2",
     "test:integration:2": "vitest run .integration.test. --shard=2/2",
     "ci:qa": "node --test scripts/qa/*.test.mjs",
+    "test:appearance-colors": "node scripts/test-appearance-colors.mjs",
     "test:command-menu-layout": "node scripts/test-command-menu-layout.mjs"
   },
   "dependencies": {
