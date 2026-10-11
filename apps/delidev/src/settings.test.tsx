@@ -562,6 +562,9 @@ it("closes the repository edit, refreshes inventory and restores its opener auto
   expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Edit Repository" })));
   expect(value.save).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "Edit Repository" }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Save Repository" }) as HTMLButtonElement).disabled).toBe(false));
+  expect(screen.getAllByText("Repository saved.")).toHaveLength(1);
 });
 
 it("retries only an unreadable original repository status after a succeeded acknowledgment", async () => {
