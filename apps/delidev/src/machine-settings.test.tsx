@@ -166,6 +166,37 @@ it.each(["succeeded", "failed", "canceled"])(
   },
 );
 
+it("clears Verify dirtiness when restored to the initial value before submitting", () => {
+  const f = fixture();
+  act(() => {
+    f.hook.result.current.setVerify(true);
+    f.hook.result.current.setVerify(false);
+  });
+  expect(f.hook.result.current.verifyEdited).toBe(false);
+  expect(f.hook.result.current.locked).toBe(false);
+  f.hook.unmount();
+  f.client.clear();
+});
+
+it("clears settled Verify dirtiness when restored to the accepted value", async () => {
+  const f = fixture();
+  act(() => f.hook.result.current.setVerify(true));
+  await act(async () => {
+    await f.send();
+  });
+  act(() => f.hook.result.current.setVerify(false));
+  expect(f.hook.result.current.verifyEdited).toBe(true);
+  expect(f.hook.result.current.locked).toBe(true);
+  await f.refresh(f.terminal("succeeded"));
+  await waitFor(() => expect(f.hook.result.current.pending).toBe(false));
+  expect(f.hook.result.current.locked).toBe(true);
+  act(() => f.hook.result.current.setVerify(true));
+  expect(f.hook.result.current.verifyEdited).toBe(false);
+  expect(f.hook.result.current.locked).toBe(false);
+  f.hook.unmount();
+  f.client.clear();
+});
+
 it("settles only submitted edits and keeps later unsent path and Verify changes locked", async () => {
   const f = fixture();
   act(() => {

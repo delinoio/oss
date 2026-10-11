@@ -67,6 +67,7 @@ export function useMachineSettingsController(
   const submitted = useRef<
     | {
         edit: typeof edit;
+        verify: boolean;
         verifyGeneration: number;
       }
     | undefined
@@ -74,11 +75,10 @@ export function useMachineSettingsController(
   const [accepted, setAccepted] = useState<{
     jobId: string;
     edit: typeof edit;
+    verify: boolean;
     verifyGeneration: number;
   }>();
-  const verifyEdited = accepted
-    ? verifyGeneration.current !== accepted.verifyGeneration
-    : verify;
+  const verifyEdited = accepted ? verify !== accepted.verify : verify;
   const setVerify = useMemo(
     () => (next: boolean) => {
       setVerifyValue(next);
@@ -86,8 +86,12 @@ export function useMachineSettingsController(
     },
     [],
   );
-  const draft = useRef({ edit, verifyGeneration: verifyGeneration.current });
-  draft.current = { edit, verifyGeneration: verifyGeneration.current };
+  const draft = useRef({
+    edit,
+    verify,
+    verifyGeneration: verifyGeneration.current,
+  });
+  draft.current = { edit, verify, verifyGeneration: verifyGeneration.current };
   const discovery = useRetainedMutation(
     `machine-discovery:${initial.id}`,
     WorkerQuery.discoverHarnesses,
