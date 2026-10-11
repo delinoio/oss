@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use super::*;
+use crate::optimizer::{Object, Preservation};
 
 #[derive(Default, Clone)]
 struct Values {

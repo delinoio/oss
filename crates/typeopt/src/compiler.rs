@@ -1,13 +1,13 @@
-//! All access to the pinned compiler lives in this adapter. The allocator only
-//! receives closed-region facts and byte spans, never compiler-owned
-//! identities.
+//! All access to the pinned compiler lives in this adapter. The pipeline only
+//! receives plain candidates and byte spans, never compiler-owned identities.
 use std::{
     collections::{BTreeMap, HashMap},
+    hash::{Hash, Hasher},
     rc::Rc,
     sync::{Arc, Mutex},
 };
 
-use anyhow::{Result, bail, ensure};
+use anyhow::{Context as _, Result, bail, ensure};
 use ts_goport::{
     frontend::{
         bundled,
@@ -18,9 +18,15 @@ use ts_goport::{
     prelude::*,
 };
 
-use crate::optimizer::{Object, Occurrence, Preservation, Property};
+use crate::{
+    optimizer::Occurrence,
+    passes::PassSet,
+    plan::{Phase, Plan},
+};
 
+mod analysis;
 mod flow;
+mod passes;
 
 struct Host {
     fs: Rc<dyn Fs>,
@@ -36,11 +42,39 @@ impl ParseConfigHost for Host {
     }
 }
 
+/// Kind of a non-module analysis input recorded in the snapshot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InputKind {
+    /// tsconfig and extended configuration files.
+    Configuration,
+    /// Declarations, JSON and other program files outside the application
+    /// sources, including dependency declarations.
+    Dependency,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+pub struct Input {
+    pub path: String,
+    pub sha256: String,
+    pub kind: InputKind,
+}
+
+/// Everything the analysis read: application sources by absolute path and
+/// the other inputs whose change must invalidate the output.
+pub struct Snapshot {
+    pub sources: BTreeMap<String, String>,
+    pub inputs: Vec<Input>,
+}
+
 pub struct Project {
     config: Rc<ParsedCommandLine>,
     fs: Rc<dyn Fs>,
     cwd: String,
-    pub version: &'static GoProgram,
+    version: &'static GoProgram,
+    entries: Vec<String>,
+    config_files: Vec<String>,
+    size_options: CompilerOptions,
 }
 
 fn deny_write() -> ts_goport::frontend::vfs::FsError {
@@ -88,6 +122,10 @@ impl Project {
             config.parsed_config.content_mappers.is_empty(),
             "content mappers are unsupported; typeopt does not execute code"
         );
+        let mut config_files = vec![path.to_owned()];
+        config_files.extend(config.extended_source_files().iter().cloned());
+        config_files.sort();
+        config_files.dedup();
         let mut options = (**config.compiler_options()).clone();
         ensure!(
             !options.no_check.is_true() && !options.no_resolve.is_true(),
@@ -131,9 +169,14 @@ impl Project {
         options.source_root.clear();
         options.map_root.clear();
         options.out_dir = "/__typeopt_output__".into();
+        // Size evaluation uses the same emitter settings without maps, so the
+        // metric never includes source-map comments.
+        let mut size_options = options.clone();
+        size_options.source_map = Tristate::False;
+        size_options.out_dir.clear();
         // Include ambient declarations discovered by tsconfig, but root runtime
         // traversal at the explicit entries rather than every include match.
-        let mut roots = entries;
+        let mut roots = entries.clone();
         roots.extend(
             config
                 .file_names()
@@ -152,10 +195,14 @@ impl Project {
             fs,
             cwd,
             version,
+            entries,
+            config_files,
+            size_options,
         })
     }
 
-    pub fn analyze(&self) -> Result<(Vec<Object>, BTreeMap<String, String>)> {
+    /// Checks the original program and records the analysis snapshot.
+    pub fn snapshot(&self) -> Result<Snapshot> {
         let _scope = enter_program(Some(self.version));
         check_diagnostics(&get_config_file_parsing_diagnostics())?;
         check_diagnostics(&get_program_diagnostics())?;
@@ -173,11 +220,19 @@ impl Project {
             check_diagnostics(&get_syntactic_diagnostics(file))?;
             check_diagnostics(&get_semantic_diagnostics(file))?;
         }
-        let mut objects = Vec::new();
         let mut sources = BTreeMap::new();
+        let mut inputs = Vec::new();
+        for path in &self.config_files {
+            let text = std::fs::read(path).context("cannot read project configuration")?;
+            inputs.push(Input {
+                path: path.clone(),
+                sha256: sha256_hex(&text),
+                kind: InputKind::Configuration,
+            });
+        }
         for file in files {
             crate::app::check_cancelled()?;
-            let name = &source_file_info(file).file_name;
+            let name = source_file_info(file).file_name.clone();
             ensure!(
                 !name.ends_with(".cts")
                     || name.ends_with(".d.cts")
@@ -185,9 +240,15 @@ impl Project {
                 "CommonJS TypeScript (.cts) is unsupported; use an ESM source module"
             );
             if !is_application(file) {
+                if !name.starts_with("bundled:") {
+                    inputs.push(Input {
+                        sha256: sha256_hex(source_file_text(file).as_bytes()),
+                        path: name,
+                        kind: InputKind::Dependency,
+                    });
+                }
                 continue;
             }
-            let name = source_file_info(file).file_name.clone();
             sources.insert(name, source_file_text(file).to_string());
             // Check forbidden constructs even in untransformed application JS.
             let mut nodes = Vec::new();
@@ -213,43 +274,45 @@ impl Project {
                     "export = is unsupported; use an ESM export"
                 );
             }
-            if is_js(file) {
-                continue;
-            }
-            let facts =
-                with_type_checker_for_file(file, move |checker| analyze_file(file, checker));
-            objects.extend(facts?);
         }
         ensure!(
             !sources.is_empty(),
             "program contains no supported runtime source; select a TypeScript or JavaScript entry"
         );
-        Ok((objects, sources))
+        inputs.sort();
+        inputs.dedup();
+        Ok(Snapshot { sources, inputs })
     }
 
-    pub fn emit(
-        &self,
-        changed: BTreeMap<String, String>,
-    ) -> Result<BTreeMap<String, (String, String)>> {
-        crate::app::check_cancelled()?;
+    fn build_with(&self, texts: &BTreeMap<String, String>) -> &'static GoProgram {
         let base = self.fs.clone();
+        let texts = texts.clone();
         let fs = wrapvfs_wrap(
             self.fs.clone(),
             Replacements {
                 read_file: Some(Box::new(move |path| {
-                    changed
+                    texts
                         .get(path)
                         .map_or_else(|| base.read_file(path), |s| (s.clone(), true))
                 })),
                 ..Default::default()
             },
         );
+        build(self.config.clone(), fs, &self.cwd)
+    }
+
+    pub fn emit(
+        &self,
+        changed: &BTreeMap<String, String>,
+    ) -> Result<BTreeMap<String, (String, String)>> {
+        crate::app::check_cancelled()?;
         tracing::debug!("loading transformed program");
-        let version = build(self.config.clone(), fs, &self.cwd);
+        let version = self.build_with(changed);
         let result = (|| {
             let _scope = enter_program(Some(version));
-            // Recheck transformed files: this catches accidental structural
-            // constraints missed by the closed-region proof before publishing.
+            // Recheck transformed files before publishing anything.
+            check_diagnostics(&get_program_diagnostics())?;
+            check_diagnostics(&get_global_diagnostics())?;
             for file in source_files() {
                 crate::app::check_cancelled()?;
                 check_diagnostics(&get_syntactic_diagnostics(file))?;
@@ -302,6 +365,153 @@ impl Drop for Project {
     }
 }
 
+fn texts_key(texts: &BTreeMap<String, String>) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    texts.hash(&mut hasher);
+    hasher.finish()
+}
+
+/// Pipeline backend over the pinned compiler. Programs are rebuilt from the
+/// current in-memory texts; the last checked program is reused for the next
+/// planning round when the texts are unchanged.
+pub struct Backend<'a> {
+    project: &'a Project,
+    original: u64,
+    checked: Option<(u64, &'static GoProgram)>,
+    sizes: HashMap<(String, u64), usize>,
+}
+
+impl<'a> Backend<'a> {
+    pub fn new(project: &'a Project, snapshot: &Snapshot) -> Self {
+        Self {
+            project,
+            original: texts_key(&snapshot.sources),
+            checked: None,
+            sizes: HashMap::new(),
+        }
+    }
+
+    fn program_for(&mut self, texts: &BTreeMap<String, String>) -> (&'static GoProgram, bool) {
+        let key = texts_key(texts);
+        if key == self.original {
+            return (self.project.version, false);
+        }
+        if let Some((cached, version)) = self.checked
+            && cached == key
+        {
+            return (version, false);
+        }
+        (self.project.build_with(texts), true)
+    }
+
+    fn retain(&mut self, key: u64, version: &'static GoProgram) {
+        if let Some((_, old)) = self.checked.replace((key, version)) {
+            release_program(old);
+        }
+    }
+}
+
+impl Drop for Backend<'_> {
+    fn drop(&mut self) {
+        if let Some((_, version)) = self.checked.take() {
+            release_program(version);
+        }
+    }
+}
+
+impl crate::pipeline::Backend for Backend<'_> {
+    fn plan(
+        &mut self,
+        texts: &BTreeMap<String, String>,
+        phase: Phase,
+        enabled: &PassSet,
+    ) -> Result<Plan> {
+        let (version, fresh) = self.program_for(texts);
+        let result = (|| {
+            let _scope = enter_program(Some(version));
+            let files: Vec<Node> = source_files()
+                .into_iter()
+                .filter(|&f| is_application(f))
+                .collect();
+            let Some(&first) = files.first() else {
+                bail!("program contains no application module");
+            };
+            let entries = self.project.entries.clone();
+            let enabled = enabled.clone();
+            with_type_checker_for_file(first, move |checker| {
+                let mut ctx = analysis::Ctx::new(checker, files, &entries)?;
+                passes::plan(&mut ctx, phase, &enabled)
+            })
+        })();
+        if fresh {
+            release_program(version);
+        }
+        result
+    }
+
+    fn check(&mut self, texts: &BTreeMap<String, String>) -> Result<Vec<String>> {
+        let (version, fresh) = self.program_for(texts);
+        let result = (|| {
+            let _scope = enter_program(Some(version));
+            check_diagnostics(&get_program_diagnostics())?;
+            let mut failing = Vec::new();
+            for file in source_files() {
+                crate::app::check_cancelled()?;
+                check_diagnostics(&get_syntactic_diagnostics(file))?;
+                if !get_semantic_diagnostics(file).is_empty() {
+                    failing.push(source_file_info(file).file_name.clone());
+                }
+            }
+            if failing.is_empty() && !get_global_diagnostics().is_empty() {
+                failing.push(String::new());
+            }
+            Ok(failing)
+        })();
+        match (&result, fresh) {
+            (Ok(failing), true) if failing.is_empty() => self.retain(texts_key(texts), version),
+            (_, true) => release_program(version),
+            _ => {}
+        }
+        result
+    }
+
+    fn emitted_size(&mut self, file: &str, text: &str) -> Result<usize> {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        text.hash(&mut hasher);
+        let key = (file.to_owned(), hasher.finish());
+        if let Some(&size) = self.sizes.get(&key) {
+            return Ok(size);
+        }
+        if is_js_name(file) {
+            // JavaScript passes through unchanged and has no emitted form.
+            return Ok(text.len());
+        }
+        let output = ts_goport::transpile::transpile_module(
+            &ts_goport::gostd::context::background(),
+            text,
+            ts_goport::transpile::Options {
+                compiler_options: Some(self.project.size_options.clone()),
+                file_name: file.to_owned(),
+                report_diagnostics: true,
+            },
+        )
+        .context("size evaluation was cancelled")?;
+        let syntax: Vec<_> = output
+            .diagnostics
+            .iter()
+            .filter(|d| d.category == ts_goport::diagnostics::Category::Error)
+            .collect();
+        ensure!(
+            syntax.is_empty(),
+            "transformed module has syntax errors (TS{})",
+            syntax[0].code
+        );
+        let size = output.output_text.len();
+        self.sizes.insert(key, size);
+        Ok(size)
+    }
+}
+
 fn build(config: Rc<ParsedCommandLine>, fs: Rc<dyn Fs>, cwd: &str) -> &'static GoProgram {
     let _scope = enter_program(None);
     let np = Rc::new(new_program(ProgramOptions {
@@ -315,6 +525,14 @@ fn build(config: Rc<ParsedCommandLine>, fs: Rc<dyn Fs>, cwd: &str) -> &'static G
         skip_module_resolution: false,
     }));
     new_program_version(&np, None)
+}
+
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn check_diagnostics(diagnostics: &[Diagnostic]) -> Result<()> {
@@ -362,9 +580,11 @@ fn redacted_message(d: &Diagnostic) -> String {
     template.message_args = vec![REDACTED_ARGUMENT.to_owned(); d.message_args.len()];
     template.localize(&ts_goport::locale::DEFAULT)
 }
-fn is_js(file: Node) -> bool {
-    let n = &source_file_info(file).file_name;
+fn is_js_name(n: &str) -> bool {
     n.ends_with(".js") || n.ends_with(".jsx") || n.ends_with(".mjs") || n.ends_with(".cjs")
+}
+fn is_js(file: Node) -> bool {
+    is_js_name(&source_file_info(file).file_name)
 }
 fn is_application(file: Node) -> bool {
     let n = &source_file_info(file).file_name;
@@ -390,12 +610,16 @@ fn collect(node: Node, nodes: &mut Vec<Node>) {
     });
 }
 
+/// Start of the node's first token, excluding leading trivia.
+fn token_start(node: Node) -> usize {
+    ts_goport::scanner_util::get_token_pos_of_node(node, get_source_file_of_node(node), false)
+        as usize
+}
+
 fn span(node: Node, source: &str, shorthand: bool, quoted: bool) -> Occurrence {
     // Compiler positions are UTF-8 byte offsets including leading trivia.
     let end = node.end() as usize;
-    let start =
-        ts_goport::scanner_util::get_token_pos_of_node(node, get_source_file_of_node(node), false)
-            as usize;
+    let start = token_start(node);
     assert!(source.is_char_boundary(start) && source.is_char_boundary(end));
     Occurrence {
         start,
@@ -404,92 +628,4 @@ fn span(node: Node, source: &str, shorthand: bool, quoted: bool) -> Occurrence {
         quoted,
         erased: false,
     }
-}
-
-fn analyze_file(file: Node, checker: &mut Checker) -> Result<Vec<Object>> {
-    let source = source_file_text(file).to_string();
-    let name = source_file_info(file).file_name.clone();
-    let mut nodes = Vec::new();
-    collect(file, &mut nodes);
-    let mut objects = Vec::<Object>::new();
-    let mut allocations = HashMap::new();
-    for &node in &nodes {
-        if node.kind() != SyntaxKind::ObjectLiteralExpression {
-            continue;
-        }
-        let declaration = node.parent();
-        let local = declaration.kind() == SyntaxKind::VariableDeclaration
-            && declaration.initializer() == node
-            && declaration.name().kind() == SyntaxKind::Identifier;
-        let mut object = Object {
-            file: name.clone(),
-            start: node.pos() as usize,
-            properties: Vec::new(),
-            preservation: None,
-        };
-        if !is_external_module(file) {
-            object.preservation = Some(Preservation::Exported);
-        } else if local && declaration.type_().is_some() {
-            object.preservation = Some(Preservation::TypeConstraint);
-        }
-        for property in node.properties().iter() {
-            let property_name = property.name();
-            if !matches!(
-                property.kind(),
-                SyntaxKind::PropertyAssignment | SyntaxKind::ShorthandPropertyAssignment
-            ) || !matches!(
-                property_name.kind(),
-                SyntaxKind::Identifier | SyntaxKind::StringLiteral
-            ) {
-                object.preservation = Some(Preservation::ExternalOrUnsupportedShape);
-                continue;
-            }
-            let mut value_nodes = Vec::new();
-            if property.kind() == SyntaxKind::PropertyAssignment {
-                collect(property.initializer(), &mut value_nodes);
-            }
-            if value_nodes.iter().any(|n| {
-                matches!(
-                    n.kind(),
-                    SyntaxKind::FunctionExpression
-                        | SyntaxKind::ArrowFunction
-                        | SyntaxKind::ClassExpression
-                )
-            }) {
-                // Renaming an inferred function/class name changes .name.
-                object.preservation = Some(Preservation::ObservableOperation);
-            }
-            let key = property_name.text().to_string();
-            if ["__proto__", "constructor", "prototype", "then", "toJSON"].contains(&key.as_str()) {
-                object.preservation = Some(Preservation::SpecialProperty);
-            }
-            let occurrence = span(
-                property_name,
-                &source,
-                property.kind() == SyntaxKind::ShorthandPropertyAssignment,
-                property_name.kind() == SyntaxKind::StringLiteral,
-            );
-            if let Some(existing) = object.properties.iter_mut().find(|p| p.name == key) {
-                existing.occurrences.push(occurrence);
-            } else {
-                object.properties.push(Property {
-                    name: key,
-                    occurrences: vec![occurrence],
-                });
-            }
-        }
-        if local {
-            // Type evidence is necessary, but never sufficient: actual
-            // references below must also stay within this fresh
-            // object's closed region.
-            let ty = checker.get_type_at_location(declaration.name());
-            let typed_properties = checker.get_properties_of_type(ty);
-            if typed_properties.len() != object.properties.len() {
-                object.preservation = Some(Preservation::TypeConstraint);
-            }
-        }
-        allocations.insert(node, objects.len());
-        objects.push(object);
-    }
-    flow::analyze(&nodes, checker, &source, objects, allocations)
 }

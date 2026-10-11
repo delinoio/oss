@@ -212,7 +212,7 @@ fn check_analyzes_without_publishing_or_executing_input() {
         String::from_utf8_lossy(&output.stderr)
     );
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["schema_version"], 0);
+    assert_eq!(report["schema_version"], 1);
     assert!(!temp.path().join("out").exists());
 }
 
