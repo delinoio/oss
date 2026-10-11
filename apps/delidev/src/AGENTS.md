@@ -13,7 +13,6 @@ Changes to shared renderer shortcuts must update dispatch, Help, the Settings ca
 ## Owning contracts
 
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)
-- [Repository details overlay](../../../docs/apps-delidev-desktop-contract.md#repository-details-popup)
 - [Shared sidebar scroll ownership](../../../docs/apps-delidev-desktop-contract.md#sidebar-scroll-boundaries)
 - [DeliDev Diagnostics Presentation](../../../docs/apps-delidev-diagnostics-contract.md)
 - [DeliDev parallel browser QA](../../../docs/apps-delidev-qa-contract.md)
