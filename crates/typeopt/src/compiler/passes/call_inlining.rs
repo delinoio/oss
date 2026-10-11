@@ -76,10 +76,23 @@ pub(in crate::compiler) fn plan(ctx: &mut Ctx, enabled: &PassSet, out: &mut Plan
             }
         }
     }
-    let mut candidates = 0;
+    let mut planned = Vec::new();
     for target in &targets {
         crate::app::check_cancelled()?;
-        candidates += plan_target(ctx, &mut facts, enabled, target, out);
+        planned.push(collect_sites(ctx, &mut facts, target, out));
+    }
+    // A function that an inlined expression mentions is copied to new
+    // places this round, so it is not removed in the same round.
+    let mut copied: std::collections::HashSet<SymbolId> = std::collections::HashSet::new();
+    for (target, planned) in targets.iter().zip(&planned) {
+        if !planned.sites.is_empty() {
+            copied.extend(target.free.iter().map(|f| f.symbol));
+        }
+    }
+    let mut candidates = 0;
+    for (target, planned) in targets.iter().zip(planned) {
+        let removable = !copied.contains(&support::norm(ctx, target.symbol));
+        candidates += plan_target(ctx, &mut facts, enabled, target, planned, removable, out);
     }
     tracing::debug!(
         pass = %PASS,
@@ -640,15 +653,51 @@ struct Site {
     file: usize,
     call: Node,
     replacement: String,
+    /// Specifiers to add to existing imports of the site module.
+    imports: Vec<(Node, String)>,
 }
 
-fn plan_target(
-    ctx: &mut Ctx,
-    facts: &mut Facts,
-    enabled: &PassSet,
-    target: &Target,
-    out: &mut Plan,
-) -> usize {
+/// Specifiers added to import declarations, keyed by declaration.
+type Additions = std::collections::BTreeMap<(usize, usize), (usize, Node, Vec<String>)>;
+
+fn add_imports(additions: &mut Additions, file: usize, imports: &[(Node, String)]) {
+    for (declaration, specifier) in imports {
+        let entry = additions
+            .entry((file, Ctx::start(*declaration)))
+            .or_insert_with(|| (file, *declaration, Vec::new()));
+        if !entry.2.contains(specifier) {
+            entry.2.push(specifier.clone());
+        }
+    }
+}
+
+/// Insertions after the last named import of each declaration.
+fn addition_edits(ctx: &Ctx, additions: &Additions) -> Vec<FileEdit> {
+    additions
+        .values()
+        .filter_map(|(file, declaration, names)| {
+            let last = declaration
+                .import_clause()
+                .named_bindings()
+                .elements()
+                .last()?;
+            Some(FileEdit::insert(
+                &ctx.files[*file].name,
+                last.end() as usize,
+                format!(", {}", names.join(", ")),
+            ))
+        })
+        .collect()
+}
+
+/// Call sites of one target and whether its references allow removal.
+struct Planned {
+    sites: Vec<Site>,
+    specifiers: Vec<(usize, Node)>,
+    removable: bool,
+}
+
+fn collect_sites(ctx: &mut Ctx, facts: &mut Facts, target: &Target, out: &mut Plan) -> Planned {
     let refs = ctx.refs(target.symbol).to_vec();
     let mut sites = Vec::new();
     let mut removable = target.statement.is_some();
@@ -659,10 +708,11 @@ fn plan_target(
             RefKind::Call => {
                 let call = super::super::analysis::walk_up_outer(reference.node).parent();
                 match site(ctx, facts, target, reference.file, reference.node, call) {
-                    Ok(replacement) => sites.push(Site {
+                    Ok((replacement, imports)) => sites.push(Site {
                         file: reference.file,
                         call,
                         replacement,
+                        imports,
                     }),
                     Err(reason) => {
                         removable = false;
@@ -678,6 +728,28 @@ fn plan_target(
             _ => removable = false,
         }
     }
+    Planned {
+        sites,
+        specifiers,
+        removable,
+    }
+}
+
+fn plan_target(
+    ctx: &mut Ctx,
+    facts: &mut Facts,
+    enabled: &PassSet,
+    target: &Target,
+    planned: Planned,
+    removable: bool,
+    out: &mut Plan,
+) -> usize {
+    let Planned {
+        sites,
+        specifiers,
+        removable: references_removable,
+    } = planned;
+    let mut removable = removable && references_removable;
     if sites.is_empty() {
         return 0;
     }
@@ -709,7 +781,13 @@ fn plan_target(
         && enabled.contains(PassId::ResidualDependencyRemoval)
         && ctx.is_internal(target.symbol)
         && !(exported && facts.namespace_observed(ctx, target.file))
-        && let Some(removal) = removal_edits(ctx, facts, target, &specifiers)
+        && let Some(removal) = {
+            let mut additions = Additions::new();
+            for site in &sites {
+                add_imports(&mut additions, site.file, &site.imports);
+            }
+            removal_edits(ctx, target, &specifiers, additions)
+        }
     {
         let key = function_key(ctx, target.file, target.shape.name);
         let mut candidate = Candidate::new(PASS, key, ctx.location(target.file, target.shape.name));
@@ -739,6 +817,9 @@ fn plan_target(
             site.call.end() as usize,
             site.replacement.clone(),
         ));
+        let mut additions = Additions::new();
+        add_imports(&mut additions, site.file, &site.imports);
+        candidate.edits.extend(addition_edits(ctx, &additions));
         out.candidates.push(candidate);
         count += 1;
     }
@@ -770,9 +851,9 @@ fn site_key(ctx: &Ctx, target: &Target, file: usize, call: Node) -> String {
 /// `None` when an import cannot be removed exactly.
 fn removal_edits(
     ctx: &mut Ctx,
-    facts: &mut Facts,
     target: &Target,
     specifiers: &[(usize, Node)],
+    mut additions: Additions,
 ) -> Option<Vec<FileEdit>> {
     let parent = target.statement.parent().kind();
     if !matches!(parent, SyntaxKind::SourceFile | SyntaxKind::Block) {
@@ -794,7 +875,15 @@ fn removal_edits(
         }
         let name = &ctx.files[file].name.clone();
         let elements: Vec<Node> = named.elements().to_vec();
-        if elements.len() > 1 {
+        if let Some((_, _, names)) = additions.remove(&(file, Ctx::start(declaration))) {
+            // The new specifiers take the removed one's place.
+            edits.push(FileEdit::replace(
+                name,
+                Ctx::start(specifier),
+                specifier.end() as usize,
+                names.join(", "),
+            ));
+        } else if elements.len() > 1 {
             let position = elements.iter().position(|&e| e == specifier)?;
             if position + 1 < elements.len() {
                 edits.push(FileEdit::delete(
@@ -833,8 +922,8 @@ fn removal_edits(
                 ));
             }
         }
-        let _ = facts;
     }
+    edits.extend(addition_edits(ctx, &additions));
     support::keep_module_syntax(ctx, &mut edits);
     Some(edits)
 }
@@ -847,7 +936,7 @@ fn site(
     file: usize,
     reference: Node,
     call: Node,
-) -> Result<String, Reason> {
+) -> Result<(String, Vec<(Node, String)>), Reason> {
     if call.kind() != SyntaxKind::CallExpression
         || call.flags().intersects(NodeFlags::OPTIONAL_CHAIN)
         || call.question_dot_token().is_some()
@@ -896,13 +985,18 @@ fn site(
             return Err(Reason::SideEffects);
         }
     }
-    // Hygiene: every free name means the same binding here.
+    // Hygiene: every free name means the same binding here, or a module
+    // the site already imports at runtime exports it under that name.
+    let mut imports: Vec<(Node, String)> = Vec::new();
     for free in &target.free {
         if support::resolve_at(ctx, &free.name, call, free.meaning) != free.symbol
             || (free.meaning == SymbolFlags::VALUE
                 && support::type_only_alias_at(ctx, &free.name, call))
         {
-            return Err(Reason::UnsupportedSyntax);
+            let addition = import_for(ctx, facts, file, free).ok_or(Reason::UnsupportedSyntax)?;
+            if !imports.contains(&addition) {
+                imports.push(addition);
+            }
         }
     }
     let mut effectful = Vec::new();
@@ -1061,7 +1155,64 @@ fn site(
     if support::asi_hazard(ctx, file, call, &text) {
         return Err(Reason::UnsupportedSyntax);
     }
-    Ok(text)
+    Ok((text, imports))
+}
+
+/// An existing named import declaration of `file` whose module exports the
+/// free name's binding under the same name, with the specifier to add. The
+/// name must not occur anywhere in `file`, so it shadows nothing.
+fn import_for(
+    ctx: &mut Ctx,
+    facts: &mut Facts,
+    file: usize,
+    free: &FreeName,
+) -> Option<(Node, String)> {
+    if facts.mentions(ctx, file, &free.name) {
+        return None;
+    }
+    let statements: Vec<Node> = ctx.files[file].node.statements().to_vec();
+    for statement in statements {
+        if statement.kind() != SyntaxKind::ImportDeclaration {
+            continue;
+        }
+        let clause = statement.import_clause();
+        if clause.is_nil() {
+            continue;
+        }
+        let bindings = clause.named_bindings();
+        if bindings.is_nil()
+            || bindings.kind() != SyntaxKind::NamedImports
+            || bindings.elements().is_empty()
+        {
+            continue;
+        }
+        let module = ctx
+            .checker
+            .get_symbol_at_location(statement.module_specifier(), true);
+        if module.is_nil() {
+            continue;
+        }
+        let exports = ctx.checker.get_exports_of_symbol(module);
+        let exported = ctx.checker.symbols.get(exports, &free.name);
+        if exported.is_nil() || support::norm(ctx, exported) != free.symbol {
+            continue;
+        }
+        let value = free.meaning == SymbolFlags::VALUE;
+        if value {
+            // Only an import that already evaluates its module at runtime.
+            if clause.is_type_only() || !support::runtime_dependency(ctx, file, statement) {
+                continue;
+            }
+            return Some((statement, free.name.clone()));
+        }
+        let text = if clause.is_type_only() {
+            free.name.clone()
+        } else {
+            format!("type {}", free.name)
+        };
+        return Some((statement, text));
+    }
+    None
 }
 
 fn names_resolve(ctx: &mut Ctx, names: &[FreeName], location: Node) -> bool {

@@ -383,6 +383,11 @@ impl Facts {
         *unknown || observed.contains(&index)
     }
 
+    /// Whether any identifier of the module has this text.
+    pub fn mentions(&mut self, ctx: &Ctx, index: usize, name: &str) -> bool {
+        self.identifiers(ctx, index).contains(name)
+    }
+
     /// Every identifier text of a module, including private names.
     fn identifiers(&mut self, ctx: &Ctx, index: usize) -> &HashSet<String> {
         self.identifiers.entry(index).or_insert_with(|| {
@@ -842,7 +847,7 @@ pub(super) fn keep_module_syntax(ctx: &Ctx, edits: &mut Vec<crate::plan::FileEdi
 /// Whether an import or export-from declaration survives TypeScript's
 /// import elision and so evaluates its target at runtime. Unknown cases
 /// count as runtime dependencies.
-fn runtime_dependency(ctx: &mut Ctx, file: usize, statement: Node) -> bool {
+pub(super) fn runtime_dependency(ctx: &mut Ctx, file: usize, statement: Node) -> bool {
     if statement.module_specifier().is_nil() {
         return false;
     }

@@ -145,6 +145,34 @@ console.log(total, describeLongName("items", total));
     same_behavior(temp.path());
 }
 
+#[test]
+fn inlines_with_imports_of_exported_helpers() {
+    let temp = project(&[
+        (
+            "main.ts",
+            r#"import { toUnits } from "./units.ts";
+const input = 3;
+console.log(toUnits(input), toUnits(input + 1));
+"#,
+        ),
+        (
+            "units.ts",
+            r#"export const UNIT_FACTOR = 12;
+export function convertWithFactor(value: number) {
+  return value * UNIT_FACTOR + 1;
+}
+export const toUnits = (value: number) => convertWithFactor(value) * UNIT_FACTOR;
+"#,
+        ),
+    ]);
+    let report = optimize(temp.path(), &args(&only(&[INLINE, RESIDUAL])));
+    assert!(applied_count(&report, INLINE) > 0, "{report:#}");
+    let main = emitted(temp.path(), "main.ts");
+    assert!(main.contains("UNIT_FACTOR"), "{main}");
+    assert!(!main.contains("toUnits("), "{main}");
+    same_behavior(temp.path());
+}
+
 // ---------------------------------------------------------------------------
 // call-inlining: safety boundaries
 // ---------------------------------------------------------------------------
