@@ -28,6 +28,10 @@ mod app {
 
     use super::{compiler, optimizer, output};
 
+    /// Upstream compiler revision recorded in reports. It must match the
+    /// `ts_goport` pin in Cargo.toml; a unit test enforces this.
+    pub(crate) const COMPILER_REVISION: &str = "b4144b4769d13bbfe9e648840fe6297893981427";
+
     pub(crate) static CANCELLED: AtomicBool = AtomicBool::new(false);
     pub(crate) static VERBOSE: AtomicBool = AtomicBool::new(false);
     pub(crate) fn check_cancelled() -> Result<()> {
@@ -170,7 +174,7 @@ mod app {
         let mut report = Report {
             schema_version: 0,
             tool_version: env!("CARGO_PKG_VERSION"),
-            compiler_revision: "398b09f45dcf06cd67f8e9e18c8c22f95f81430f",
+            compiler_revision: COMPILER_REVISION,
             files: sources.len(),
             object_regions: objects.len(),
             analysis_scope: "module_local_interprocedural",
@@ -209,5 +213,20 @@ mod app {
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
         Ok(())
+    }
+
+    #[cfg(test)]
+    mod tests {
+        #[test]
+        fn compiler_revision_matches_cargo_pin() {
+            let manifest = include_str!("../Cargo.toml");
+            let pin = format!("rev = \"{}\"", super::COMPILER_REVISION);
+            assert!(
+                manifest
+                    .lines()
+                    .any(|line| line.starts_with("ts_goport ") && line.contains(&pin)),
+                "report compiler_revision must match the ts_goport pin"
+            );
+        }
     }
 }
