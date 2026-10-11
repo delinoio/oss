@@ -86,8 +86,16 @@ it("distinguishes creation and deletion tracking for the same backup", async () 
     }),
   );
   expect(dismissDeletion).toHaveBeenCalledTimes(1);
-  expect(screen.queryByText(safePresentation(creation.id))).toBeNull();
-  expect(screen.queryByText(safePresentation(deletion.id))).toBeNull();
+  expect(
+    screen.queryByRole("article", {
+      name: safePresentation(`Backup ${backupId} creation`),
+    }),
+  ).toBeNull();
+  expect(
+    screen.queryByRole("article", {
+      name: safePresentation(`Backup ${backupId} deletion`),
+    }),
+  ).toBeNull();
 });
 
 it.each([BackupJobKind.Creation, BackupJobKind.Deletion])(
