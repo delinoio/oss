@@ -54,12 +54,10 @@ export function useMachineSettingsController(
     id: string;
     current?: Resource;
     read?: typeof result.data;
-    readUpdatedAt: number;
     acknowledged?: Resource;
   }>(() => ({
     id: initial.id,
     read: result.data,
-    readUpdatedAt: result.dataUpdatedAt,
   }));
   const retained =
     observation.id === initial.id
@@ -67,7 +65,6 @@ export function useMachineSettingsController(
       : {
           id: initial.id,
           read: result.data,
-          readUpdatedAt: result.dataUpdatedAt,
         };
   let current = [retained?.current, initial, acknowledged]
     .filter(exact)
@@ -85,10 +82,7 @@ export function useMachineSettingsController(
   const freshRead =
     result.isSuccess &&
     !result.error &&
-    result.dataUpdatedAt > 0 &&
-    (result.dataUpdatedAt > (retained?.readUpdatedAt ?? 0) ||
-      (result.dataUpdatedAt === retained?.readUpdatedAt &&
-        result.data !== retained?.read));
+    result.data !== retained?.read;
   const readResource = result.data?.resource;
   const readExceedsAcknowledgement =
     exact(readResource) &&
@@ -114,10 +108,6 @@ export function useMachineSettingsController(
       id: initial.id,
       current,
       read: freshRead || newAcknowledgement ? result.data : retained?.read,
-      readUpdatedAt:
-        freshRead || newAcknowledgement
-          ? result.dataUpdatedAt
-          : (retained?.readUpdatedAt ?? 0),
       acknowledged,
     });
   const data = useMemo(() => document(current), [current]);

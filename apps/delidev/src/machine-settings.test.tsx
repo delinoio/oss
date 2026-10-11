@@ -99,6 +99,20 @@ it("accepts a fresh equal-revision heartbeat and keeps the business request revi
   });
 });
 
+it("accepts a new successful read when the wall clock moves backward", async () => {
+  const value = fixture();
+  await value.ready();
+  const earlierNow = Date.now() - 60_000;
+  const clock = vi.spyOn(Date, "now").mockReturnValue(earlierNow);
+  try {
+    await value.refresh(machine(value.initial.id, 7n, later));
+  } finally {
+    clock.mockRestore();
+  }
+  expect(value.result.current.data.last_seen).toBe(later);
+  expect(value.result.current.current?.revision).toBe(7n);
+});
+
 it("retains higher configuration and its observation after lower reads and read failures", async () => {
   const value = fixture();
   await value.ready();

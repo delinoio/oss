@@ -352,7 +352,8 @@ These toasts neither request OS permission nor claim/report native delivery, mod
 Runner Device settings retains the highest accepted business revision for its
 original Machine. A fresh successful same-ID read at that revision may replace
 the displayed observation because server-projected heartbeat timestamps advance
-without a configuration revision. Track successful response identity and query
+without a configuration revision. Detect a new successful query response by its
+data identity, not by requiring wall-clock timestamps to increase. Track query
 freshness separately from the business revision. At each Settings opening,
 baseline the query result already in cache so it cannot be mistaken for a read
 accepted during that Settings lifetime. Do not replay cached data over a newer
