@@ -56,6 +56,14 @@ func TestConfigurationImportProviderSelectionParity(t *testing.T) {
 					kind, value = domain.ProjectKind, providerSelectionProject(t, s, []domain.ID{agentID}, nil)
 				}
 				plan := providerSelectionPlan(kind, value)
+				if kind == domain.ProjectKind {
+					var imported domain.Project
+					if err := domain.Decode(plan.Changes[1].After, &imported); err != nil {
+						t.Fatal(err)
+					}
+					imported.Name += " import"
+					plan.Changes[1].After, _ = json.Marshal(imported)
+				}
 				raw, _ := json.Marshal(value)
 				_, directErr := SaveConfiguration(context.Background(), s.Store, ConfigurationMutation{RequestID: domain.NewID(), Kind: kind, Document: raw})
 				previewErr := s.Store.Read(context.Background(), func(tx *store.Tx) error { return validateConfigurationPlan(tx, plan) })

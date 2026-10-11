@@ -11,6 +11,14 @@ import (
 func TestConfigurationNamesSerializeConcurrentCreatesAndPreserveNamespaces(t *testing.T) {
 	s, _ := openTest(t)
 	ctx := context.Background()
+	initialEvents, err := s.Events(ctx, 0, "", MaxPage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialCursor := uint64(0)
+	if len(initialEvents) > 0 {
+		initialCursor = initialEvents[len(initialEvents)-1].Cursor
+	}
 	results := make(chan error, 2)
 	var joined sync.WaitGroup
 	for _, name := range []string{"Straße", " STRASSE "} {
@@ -38,15 +46,15 @@ func TestConfigurationNamesSerializeConcurrentCreatesAndPreserveNamespaces(t *te
 	if successes != 1 || collisions != 1 {
 		t.Fatalf("publications=%d collisions=%d", successes, collisions)
 	}
-	_, err := s.Mutate(ctx, domain.NewID(), "other.namespace", nil, func(tx *Tx) (any, error) {
+	events, err := s.Events(ctx, initialCursor, "", 20)
+	if err != nil || len(events) != 1 {
+		t.Fatalf("concurrent creates published %d events, want one successful create: %v", len(events), err)
+	}
+	_, err = s.Mutate(ctx, domain.NewID(), "other.namespace", nil, func(tx *Tx) (any, error) {
 		return tx.Put(domain.RepositoryKind, domain.NewID(), 0, "", "", map[string]string{"name": "STRASSE"})
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	events, err := s.Events(ctx, 0, "", 20)
-	if err != nil || len(events) != 2 {
-		t.Fatalf("collision emitted event: %d %v", len(events), err)
 	}
 }
 

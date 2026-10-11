@@ -29,9 +29,9 @@ func TestAccountDeletionRetainsEveryConfigurationAndSessionReference(t *testing.
 				session := domain.Session{Name: "Retained reference fixture", AgentID: initial.Configuration.AgentID, InitialExecution: initial, Archive: domain.Archived}
 				switch reference {
 				case "agent":
-					kind, value = domain.AgentKind, domain.Agent{Accounts: []domain.WeightedAccount{{ID: account, Weight: 1}}}
+					kind, value = domain.AgentKind, domain.Agent{Name: "Referenced agent", Accounts: []domain.WeightedAccount{{ID: account, Weight: 1}}}
 				case "project":
-					kind, value = domain.ProjectKind, domain.Project{Accounts: domain.Restriction{Configured: true, IDs: []domain.ID{account}}}
+					kind, value = domain.ProjectKind, domain.Project{Name: "Referenced project", Accounts: domain.Restriction{Configured: true, IDs: []domain.ID{account}}}
 				case "initial-selection":
 					initial.InitialAccountID = account
 				case "current-selection":

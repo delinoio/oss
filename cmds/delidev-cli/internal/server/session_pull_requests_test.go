@@ -144,7 +144,7 @@ func TestSessionPRLinkRechecksProjectScopeAndDeniesForeignActors(t *testing.T) {
 	if domain.Decode(repository.DocumentJson, &configured) != nil {
 		t.Fatal("repository fixture")
 	}
-	foreign := f.repository(configured.IntegrationID)
+	foreign := f.repositoryNamed(configured.IntegrationID, "Foreign fixture repository")
 	if _, err := client.LinkSessionPullRequest(context.Background(), ownerRequest(f.service.Identity, linkRequest(session, foreign, "17"))); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Fatal("repository outside project accepted", err)
 	}
@@ -229,7 +229,7 @@ func TestSessionPRLinksSpanProjectRepositoriesWithIndependentStableIdentities(t 
 	if domain.Decode(first.DocumentJson, &configured) != nil {
 		t.Fatal("repository fixture")
 	}
-	second := f.repository(configured.IntegrationID)
+	second := f.repositoryNamed(configured.IntegrationID, "Second fixture repository")
 	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
 	_, err := f.service.Store.Mutate(ctx, domain.NewID(), "test.multirepo", second.Id, func(tx *store.Tx) (any, error) {
 		other := configured
