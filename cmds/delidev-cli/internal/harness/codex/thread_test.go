@@ -27,6 +27,7 @@ type threadFixture struct {
 	historyChangeAfterRead bool
 	historyNotification    *fixtureHistoryNotification
 	sidechatDrift          string
+	reverted               bool
 }
 
 func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {

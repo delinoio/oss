@@ -395,6 +395,12 @@ func (c *Client) compactionTurnsLocked(ctx context.Context) ([]json.RawMessage, 
 	return c.contextTurnsLocked(ctx, "asc", nil, false)
 }
 func (c *Client) contextTurnsLocked(ctx context.Context, direction string, cursor *string, empty bool) ([]json.RawMessage, error) {
+	return c.contextTurnPagesLocked(ctx, direction, cursor, empty, false)
+}
+
+// Only Revert's independent item hydration may accept an empty projection.
+// Ordinary compaction still requires the existing complete full-item turn page.
+func (c *Client) contextTurnPagesLocked(ctx context.Context, direction string, cursor *string, empty, hydrateItems bool) ([]json.RawMessage, error) {
 	turns := []json.RawMessage{}
 	seen := map[string]bool{}
 	size := 0
@@ -417,7 +423,7 @@ func (c *Client) contextTurnsLocked(ctx context.Context, direction string, curso
 		for _, raw := range page.Data {
 			turn, err := decodeTurn(raw)
 			var wire turnWire
-			if err != nil || !turn.Status.terminal() || domain.DecodeBounded(raw, &wire, c.nativeFrameLimit()) != nil || wire.ItemsView != "full" || len(wire.Items) == 0 || seen[string(turn.ID)] {
+			if err != nil || !turn.Status.terminal() || domain.DecodeBounded(raw, &wire, c.nativeFrameLimit()) != nil || wire.ItemsView != "full" || !hydrateItems && len(wire.Items) == 0 || seen[string(turn.ID)] {
 				return nil, compactionUncertain()
 			}
 			seen[string(turn.ID)] = true
