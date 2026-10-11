@@ -11,7 +11,7 @@ const repositoryId = "0195c9c0-7b13-7000-8000-000000000001";
 function repository(name = "Example repository") {
   return create(ResourceSchema, { id: repositoryId, kind: EntityKind.REPOSITORY, revision: 1n, schemaVersion: 1, documentJson: encode({ name, integration_id: newRequestId(), github_owner: "owner", github_name: "repo" }) });
 }
-function fixture(rows = [repository()], setup?: { profiles: Resource[]; job: Resource; save: (request: { mutation?: { requestId: string } }) => Promise<{ requestId?: string; job: Resource }> }) {
+function fixture(rows = [repository()], setup?: { profiles: Resource[]; job: Resource; save: (request: { mutation?: { requestId: string } }) => Promise<{ requestId?: string; job: Resource }> }, pagination?: { repositoryNextPageToken?: string | null }) {
   let failure: Code | undefined;
   let gate: Promise<void> | undefined;
   const list = vi.fn(async (request: { filter?: { kind: EntityKind; pageToken: string } }) => {
@@ -19,7 +19,9 @@ function fixture(rows = [repository()], setup?: { profiles: Resource[]; job: Res
     if (request.filter?.kind !== EntityKind.REPOSITORY) return { resources: [] };
     if (gate) await gate;
     if (failure) throw new ConnectError("Catalog request failed", failure);
-    return request.filter.pageToken ? { resources: [] } : { resources: rows, ...(rows.length ? { nextPageToken: "repository-next" } : {}) };
+    if (request.filter.pageToken) return { resources: [] };
+    const nextPageToken = pagination?.repositoryNextPageToken === undefined ? (rows.length ? "repository-next" : "") : pagination.repositoryNextPageToken ?? "";
+    return { resources: rows, ...(nextPageToken ? { nextPageToken } : {}) };
   });
   const get = vi.fn(async (request: { id: string }) => ({ resource: [...rows, ...(setup ? [...setup.profiles, setup.job] : [])].find((row) => row.id === request.id) }));
   const query = vi.fn(async (request: { repositoryId: string; queryJson: Uint8Array }) => {
@@ -256,8 +258,8 @@ it.each([Code.PermissionDenied, Code.Unavailable])("distinguishes catalog failur
   expect(value.query).toHaveBeenCalledTimes(1);
 });
 
-it.each([Code.PermissionDenied, Code.Unavailable])("preserves cached empty repository guidance after refresh failure %s and retries the original cursor", async (code) => {
-  const value = fixture([]);
+it.each([Code.PermissionDenied, Code.Unavailable])("preserves cached empty repository guidance after refresh failure %s and retries within the accepted boundary", async (code) => {
+  const value = fixture([], undefined, { repositoryNextPageToken: null });
   render(<App transport={value.transport} />);
   const pane = await open();
   await pane.findByText("No repositories on this page.");
@@ -281,11 +283,43 @@ it.each([Code.PermissionDenied, Code.Unavailable])("preserves cached empty repos
   expect(pane.queryByText("No repositories on this page.")).toBeNull();
   expect(pane.queryByText("Refresh failed. Showing the previous repository page.")).toBeNull();
   expect(pane.queryByRole("alert")).toBeNull();
+  expect(pane.queryByRole("button", { name: "Load more Repositories" })).toBeNull();
+  expect(pane.getByRole("button", { name: `Example repository. Repository ID: ${repositoryId}` })).toBeTruthy();
+  expect(value.query).not.toHaveBeenCalled();
+  expect(value.mutation).not.toHaveBeenCalled();
+});
+
+it("requires Reload list when retrying an empty repository page observes a changed continuation boundary", async () => {
+  const value = fixture([]);
+  render(<App transport={value.transport} />);
+  const pane = await open();
+  await pane.findByText("No repositories on this page.");
+  const reads = () => value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.REPOSITORY);
+
+  value.fail(Code.Unavailable);
+  fireEvent.click(pane.getByRole("button", { name: "Refresh" }));
+  await pane.findByText("Refresh failed. Showing the previous repository page.");
+  expect(pane.getByText("No repositories on this page.")).toBeTruthy();
+
+  value.fail();
+  value.rows.push(repository());
+  fireEvent.click(pane.getByRole("button", { name: "Retry" }));
+  const reload = await pane.findByRole("button", { name: "Reload list" });
+  expect(pane.getByText("No repositories on this page.")).toBeTruthy();
+  expect(pane.queryByRole("button", { name: "Retry" })).toBeNull();
+  expect(reads().at(-1)?.[0].filter?.pageToken).toBe("");
+
+  const readCount = reads().length;
+  fireEvent.click(reload);
+  await pane.findByRole("button", { name: `Example repository. Repository ID: ${repositoryId}` });
+  await waitFor(() => expect(reads().length).toBeGreaterThan(readCount));
+  expect(reads()[readCount][0].filter?.pageToken).toBe("");
+  expect(pane.queryByText("No repositories on this page.")).toBeNull();
+  expect(pane.queryByText("Refresh failed. Showing the previous repository page.")).toBeNull();
 
   fireEvent.click(pane.getByRole("button", { name: "Load more Repositories" }));
   await waitFor(() => expect(reads().at(-1)?.[0].filter?.pageToken).toBe("repository-next"));
   await waitFor(() => expect(pane.queryByRole("button", { name: "Load more Repositories" })).toBeNull());
-  expect(pane.getByRole("button", { name: `Example repository. Repository ID: ${repositoryId}` })).toBeTruthy();
   expect(value.query).not.toHaveBeenCalled();
   expect(value.mutation).not.toHaveBeenCalled();
 });

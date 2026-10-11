@@ -653,8 +653,10 @@ last accepted repository page is empty. Show that guidance beside the original
 error and previous-page warning. An initial pending or failed read without
 accepted data makes no empty-page or previous-page claim. Retain cached rows,
 selected repository, filter drafts, exact cursor and explicit read Retry.
-Successful Retry replaces the accepted page and resumes its continuation; one
-empty page never proves global repository absence.
+Successful Retry within the accepted boundary replaces that page and resumes
+its unchanged continuation. If Retry detects cursor expiry or boundary drift,
+retain the accepted chain and require explicit Reload list before accepting the
+changed page. One empty page never proves global repository absence.
 
 The Pull requests rail item selects `Surface.PullRequests`; it does not open Settings. The sidebar appends bounded 50-resource repository catalog reads through shared scroll continuation; it retains safe display projections and at most three complete payload pages with original-token restoration. Repository selection remains keyed by exact local UUID, which stays in its accessible name and separate Details region rather than the visible name-only row. The initial state has no selected repository. Selection automatically loads page one only after current authenticated resource metadata validates its supported schema, selected profile and GitHub owner/name. Missing configuration shows existing guidance without a GitHub read.
 
