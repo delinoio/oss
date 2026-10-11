@@ -358,10 +358,13 @@ function SourceGroup({
         ? presentationLabels.resource(provider.data.resource)
         : presentationLabels.identity(source?.id, "provider") ||
           copy("agent-worker-wizard.chooseSource");
-  presentationLabels.observeResources([
-    ...rows.rows,
-    ...Object.values(known).filter((row): row is Resource => Boolean(row)),
-  ]);
+  presentationLabels.observeIds(
+    rows.rows.map((row) => row.id),
+    "account",
+  );
+  presentationLabels.observeResources(
+    Object.values(known).filter((row): row is Resource => Boolean(row)),
+  );
   const selectedRows = ids.flatMap((id) => (known[id] ? [known[id]!] : []));
   const refreshAccount = selectedRows.find(
     (row) =>
