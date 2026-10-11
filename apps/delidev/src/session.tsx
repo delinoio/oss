@@ -31,6 +31,8 @@ import { paginationIdentity, paginationRevision } from "./scroll-pagination";
 import { useConversationDrafts } from "./conversation-drafts";
 import { initialInteractionDraft, interactionRequestIdentity, type InboxInteractionDraft } from "./inbox-drafts";
 import { useConversationPages } from "./conversation-pagination";
+import { useForegroundSessionInboxRead } from "./session-inbox-read";
+import { conversationProvenance, ConversationKind } from "./home-navigation";
 import { ScrollContinuation } from "./scroll-continuation";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
 import { executionStartupFailure, canRetryExecutionStartup, startupCorrection, startupRecoveryGuidance, ExecutionStartupDetails } from "./execution-startup";
@@ -85,6 +87,8 @@ import { SessionStorageAction } from "./session-storage";
 import { SessionPullRequests } from "./session-pull-requests";
 import { PendingQueueInputs, QueuedInput, type QueuedInputDraft } from "./queue";
 import { StartupRejection } from "./startup-rejection";
+
+function sessionInboxReadSupported(capabilities: readonly SystemCapability[] | undefined): boolean { return capabilities?.includes(SystemCapability.SESSION_INBOX_READ_V1) === true; }
 
 function useSessionStream(id: string, active: boolean) {
   const transport = useTransport();
@@ -372,6 +376,13 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   const observed = live.resources.get(id);
   const original = acknowledged && (!observed || acknowledged.revision > observed.revision) ? acknowledged : observed;
   const { resource: session, control, action } = useSessionControl(id, original, active && ![SessionTabKind.Sidechat, SessionTabKind.PendingSidechat].includes(tabs.tab.kind));
+  // Foreground acknowledgment covers ordinary Project/General Chat and Fork conversations only.
+  const inboxReadKind = session ? conversationProvenance(session, readDocument(session)).conversationKind : ConversationKind.Unknown;
+  useForegroundSessionInboxRead({
+    sessionId: id,
+    eligible: !embedded && conversationActive && sessionInboxReadSupported(queueStatus.data?.capabilities) && [ConversationKind.GeneralChat, ConversationKind.WorkSession, ConversationKind.Fork].includes(inboxReadKind),
+    loaded: Boolean(session) && live.generation > 0 && !live.error && !messages.error && messages.data !== undefined,
+  });
   // A toolbar gesture can precede the initial session snapshot. Capture its
   // revision only after authenticated metadata arrives, while the same tool
   // remains selected; navigation cancels this unsent intent.

@@ -8,6 +8,8 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
+- Foreground chat Inbox acknowledgment (`session-inbox-read.ts`) follows `docs/apps-delidev-desktop-contract.md#foreground-chat-inbox-acknowledgment`: ordinary desktop conversations only, once per activation after successful loading, never decrementing the badge locally.
+
 ## Owning contracts
 
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)

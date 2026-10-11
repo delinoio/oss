@@ -39,3 +39,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - [DeliDev updates contract](../../docs/cmds-delidev-updates-contract.md)
 - [DeliDev current-user service contract](../../docs/cmds-delidev-user-services-contract.md)
 - [DeliDev v1 Connect contract](../../docs/protos-delidev-v1-contract.md)
+
+- Issue #2530 owns System capability 81 and `InboxService.MarkSessionInboxRead`
+  with its closed request/response fields. Preserve System 80 as count-only,
+  record allocations in the owning complete feature and regenerate bindings. No
+  migration, Worker allocation or native adapter change is implied.

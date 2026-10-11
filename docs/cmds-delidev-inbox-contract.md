@@ -129,3 +129,26 @@ gets a fresh uncached read, followed by ten-second background refreshes. An
 unsupported capability, Unimplemented RPC, disconnected or revoked authority,
 invalid result, failed read or initial replacement clears presentation. It must
 not substitute notification candidates or partial Inbox pages.
+
+## Foreground session acknowledgment
+
+Issue #2530. `InboxService.MarkSessionInboxRead` is authenticated
+owner/paired-client-only. The request carries `request_id = 1` and
+`session_id = 2` (both UUID-v7). The durable operation is `inbox.session-read`,
+bound to the actor and session. The original session must exist; its revision is
+neither required nor changed. One server transaction defines the acknowledgment
+instant and marks every current unread Inbox entry whose retained scope is that
+session read. It scans in internal pages of `store.MaxPage` (200), closes each
+page before updating, and preserves per-entry source consistency checks plus one
+revision/event per changed entry. There is no total cap.
+
+The receipt retains only the original session, `marked_count` and
+`observed_at`, committed atomically with the changes. A replay returns that
+result with `replayed = true` and never selects or marks again, so alerts that
+arrive later and explicit Mark unread changes stay unread. Authorization loss,
+cancellation, inconsistent retained sources and storage failures roll back the
+entire operation. Other sessions and unscoped operational or
+subscription-recovery alerts are untouched. The operation never answers an
+interaction, changes execution eligibility, claims notification delivery or
+grants recovery authority. `SYSTEM_CAPABILITY_SESSION_INBOX_READ_V1 = 81`
+advertises support; servers without it keep manual read behavior.

@@ -7,6 +7,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { InboxQuery, InboxService } from "@delinoio/delidev-api-client";
 import { useRetainedMutationNotifications } from "./mutation";
+import { sessionInboxReadPrefix } from "./session-inbox-read";
 interface Selection { scope: string; generation: number }
 // Serialize scope replacement across React StrictMode and connection remounts.
 let beginQueue: Promise<unknown> = Promise.resolve();
@@ -21,7 +22,13 @@ export function InboxBadgePresentation({ ready, supported }: { ready: boolean; s
   // This observer survives detail-pane disposal, but retires with the original
   // connection registry. Only acknowledged exact read-state mutations refresh.
   useRetainedMutationNotifications((key) => {
-    if (key.startsWith("inbox-read:")) void queryClient.invalidateQueries({ queryKey: createQueryOptions(InboxQuery.getUnreadInboxCount, {}, { transport }).queryKey });
+    if (key.startsWith("inbox-read:") || key.startsWith(sessionInboxReadPrefix)) void queryClient.invalidateQueries({ queryKey: createQueryOptions(InboxQuery.getUnreadInboxCount, {}, { transport }).queryKey });
+    // Foreground acknowledgments may settle after their chat was disposed. The
+    // authoritative aggregate and Inbox reads refresh; the badge is never decremented locally.
+    if (key.startsWith(sessionInboxReadPrefix)) {
+      void queryClient.invalidateQueries({ queryKey: createQueryOptions(InboxQuery.listInbox, {}, { transport }).queryKey });
+      void queryClient.invalidateQueries({ queryKey: createQueryOptions(InboxQuery.getInboxEntry, {}, { transport }).queryKey });
+    }
   });
   const service = useMemo(() => createClient(InboxService, transport), [transport]);
   const [selection, setSelection] = useState<Selection>();

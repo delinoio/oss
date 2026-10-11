@@ -5237,3 +5237,23 @@ vertical scrolling, stable scrollbar gutter, overscroll protection and fixed
 Reset. Date precision, invalid drafts, presets, picker selection, query identity
 and mounted drafts retain their original owners. English/Korean, light/dark,
 compact drawer and effective 200% browser checks are synthetic evidence only.
+
+## Foreground chat Inbox acknowledgment
+
+Issue #2530. Require `SESSION_INBOX_READ_V1` from `GetStatus`; otherwise keep the
+manual Inbox read behavior. Ordinary Project and General Chat conversations,
+including an independently opened Fork, call `MarkSessionInboxRead` once per
+activation (chat selection or return from background) after the authenticated
+session and initial transcript loaded without error, while the conversation is
+active, the document visible and the product window focused. Sidechat, embedded
+and unknown conversation kinds never submit. Re-renders, polling, reconnects,
+transcript pagination and newly arriving alerts create no further request in the
+same activation.
+
+The request uses the connection-owned retained mutation `session-inbox-read:<id>`
+(`session-inbox-read.ts`). An uncertain request blocks replacement for that
+session and permits only exact receipt retry. Accepted results invalidate Inbox
+and unread-count queries through the badge observer even after the chat is
+disposed; the badge is never decremented locally. Failed or uncertain outcomes
+preserve authoritative presentation and the manual controls. Add no settings,
+banner or badge control. Diagnostics log only a bounded admission classification.

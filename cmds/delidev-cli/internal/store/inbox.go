@@ -275,6 +275,52 @@ func (t *Tx) deleteAccountRecoveryInbox(account domain.ID) error {
 	}
 }
 
+// MarkSessionInboxRead marks every currently unread Inbox entry of one session
+// read in the caller's transaction and returns the count with the transaction
+// instant. Pages are closed before updates; the cursor advances by entry ID, so
+// the work is bounded per page but never capped in total. The verify callback
+// joins each retained source; any failure aborts the whole operation. The
+// session revision is deliberately neither required nor changed.
+func (t *Tx) MarkSessionInboxRead(session domain.ID, verify func(Record) error) (uint64, time.Time, error) {
+	if err := t.writeAllowed(); err != nil {
+		return 0, time.Time{}, err
+	}
+	if err := session.Validate(); err != nil {
+		return 0, time.Time{}, err
+	}
+	if _, err := t.Get(domain.SessionKind, session); err != nil {
+		return 0, time.Time{}, err
+	}
+	var marked uint64
+	after := domain.ID("")
+	for {
+		records, more, err := t.sessionPage(MaxPage, "SELECT "+recordColumns+" FROM entities WHERE kind='inbox' AND session_id=? AND id>? AND json_extract(body,'$.read_state')=? ORDER BY id LIMIT ?", session, after, domain.InboxUnread, MaxPage+1)
+		if err != nil {
+			return 0, time.Time{}, err
+		}
+		for _, record := range records {
+			entry, err := Decode[domain.InboxEntry](record)
+			if err != nil || entry.Validate() != nil || record.SessionID != session {
+				return 0, time.Time{}, inboxConflict()
+			}
+			if verify != nil {
+				if err := verify(record); err != nil {
+					return 0, time.Time{}, err
+				}
+			}
+			entry.ReadState = domain.InboxRead
+			if _, err := t.Put(record.Kind, record.ID, record.Revision, record.SessionID, record.ProjectID, entry); err != nil {
+				return 0, time.Time{}, err
+			}
+			marked++
+			after = record.ID
+		}
+		if !more || len(records) == 0 {
+			return marked, t.now, nil
+		}
+	}
+}
+
 // UnreadInboxCount reads every retained source in one transaction. Notification
 // preferences, source joins and delivery claims cannot filter this aggregate.
 func (t *Tx) UnreadInboxCount() (uint64, error) {

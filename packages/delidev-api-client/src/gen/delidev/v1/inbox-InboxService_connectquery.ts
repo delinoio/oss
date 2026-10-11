@@ -10,6 +10,11 @@ import { InboxService } from "./inbox_pb.js";
 export const getUnreadInboxCount = InboxService.method.getUnreadInboxCount;
 
 /**
+ * @generated from rpc delidev.v1.InboxService.MarkSessionInboxRead
+ */
+export const markSessionInboxRead = InboxService.method.markSessionInboxRead;
+
+/**
  * @generated from rpc delidev.v1.InboxService.GetInboxEntry
  */
 export const getInboxEntry = InboxService.method.getInboxEntry;

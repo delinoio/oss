@@ -36,6 +36,9 @@ const (
 	// InboxServiceGetUnreadInboxCountProcedure is the fully-qualified name of the InboxService's
 	// GetUnreadInboxCount RPC.
 	InboxServiceGetUnreadInboxCountProcedure = "/delidev.v1.InboxService/GetUnreadInboxCount"
+	// InboxServiceMarkSessionInboxReadProcedure is the fully-qualified name of the InboxService's
+	// MarkSessionInboxRead RPC.
+	InboxServiceMarkSessionInboxReadProcedure = "/delidev.v1.InboxService/MarkSessionInboxRead"
 	// InboxServiceGetInboxEntryProcedure is the fully-qualified name of the InboxService's
 	// GetInboxEntry RPC.
 	InboxServiceGetInboxEntryProcedure = "/delidev.v1.InboxService/GetInboxEntry"
@@ -67,6 +70,7 @@ const (
 // InboxServiceClient is a client for the delidev.v1.InboxService service.
 type InboxServiceClient interface {
 	GetUnreadInboxCount(context.Context, *connect.Request[v1.GetUnreadInboxCountRequest]) (*connect.Response[v1.GetUnreadInboxCountResponse], error)
+	MarkSessionInboxRead(context.Context, *connect.Request[v1.MarkSessionInboxReadRequest]) (*connect.Response[v1.MarkSessionInboxReadResponse], error)
 	GetInboxEntry(context.Context, *connect.Request[v1.GetInboxEntryRequest]) (*connect.Response[v1.GetInboxEntryResponse], error)
 	ListInbox(context.Context, *connect.Request[v1.ListInboxRequest]) (*connect.Response[v1.ListInboxResponse], error)
 	SetInboxReadState(context.Context, *connect.Request[v1.SetInboxReadStateRequest]) (*connect.Response[v1.SetInboxReadStateResponse], error)
@@ -93,6 +97,12 @@ func NewInboxServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			httpClient,
 			baseURL+InboxServiceGetUnreadInboxCountProcedure,
 			connect.WithSchema(inboxServiceMethods.ByName("GetUnreadInboxCount")),
+			connect.WithClientOptions(opts...),
+		),
+		markSessionInboxRead: connect.NewClient[v1.MarkSessionInboxReadRequest, v1.MarkSessionInboxReadResponse](
+			httpClient,
+			baseURL+InboxServiceMarkSessionInboxReadProcedure,
+			connect.WithSchema(inboxServiceMethods.ByName("MarkSessionInboxRead")),
 			connect.WithClientOptions(opts...),
 		),
 		getInboxEntry: connect.NewClient[v1.GetInboxEntryRequest, v1.GetInboxEntryResponse](
@@ -155,6 +165,7 @@ func NewInboxServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 // inboxServiceClient implements InboxServiceClient.
 type inboxServiceClient struct {
 	getUnreadInboxCount        *connect.Client[v1.GetUnreadInboxCountRequest, v1.GetUnreadInboxCountResponse]
+	markSessionInboxRead       *connect.Client[v1.MarkSessionInboxReadRequest, v1.MarkSessionInboxReadResponse]
 	getInboxEntry              *connect.Client[v1.GetInboxEntryRequest, v1.GetInboxEntryResponse]
 	listInbox                  *connect.Client[v1.ListInboxRequest, v1.ListInboxResponse]
 	setInboxReadState          *connect.Client[v1.SetInboxReadStateRequest, v1.SetInboxReadStateResponse]
@@ -169,6 +180,11 @@ type inboxServiceClient struct {
 // GetUnreadInboxCount calls delidev.v1.InboxService.GetUnreadInboxCount.
 func (c *inboxServiceClient) GetUnreadInboxCount(ctx context.Context, req *connect.Request[v1.GetUnreadInboxCountRequest]) (*connect.Response[v1.GetUnreadInboxCountResponse], error) {
 	return c.getUnreadInboxCount.CallUnary(ctx, req)
+}
+
+// MarkSessionInboxRead calls delidev.v1.InboxService.MarkSessionInboxRead.
+func (c *inboxServiceClient) MarkSessionInboxRead(ctx context.Context, req *connect.Request[v1.MarkSessionInboxReadRequest]) (*connect.Response[v1.MarkSessionInboxReadResponse], error) {
+	return c.markSessionInboxRead.CallUnary(ctx, req)
 }
 
 // GetInboxEntry calls delidev.v1.InboxService.GetInboxEntry.
@@ -219,6 +235,7 @@ func (c *inboxServiceClient) ReportNotification(ctx context.Context, req *connec
 // InboxServiceHandler is an implementation of the delidev.v1.InboxService service.
 type InboxServiceHandler interface {
 	GetUnreadInboxCount(context.Context, *connect.Request[v1.GetUnreadInboxCountRequest]) (*connect.Response[v1.GetUnreadInboxCountResponse], error)
+	MarkSessionInboxRead(context.Context, *connect.Request[v1.MarkSessionInboxReadRequest]) (*connect.Response[v1.MarkSessionInboxReadResponse], error)
 	GetInboxEntry(context.Context, *connect.Request[v1.GetInboxEntryRequest]) (*connect.Response[v1.GetInboxEntryResponse], error)
 	ListInbox(context.Context, *connect.Request[v1.ListInboxRequest]) (*connect.Response[v1.ListInboxResponse], error)
 	SetInboxReadState(context.Context, *connect.Request[v1.SetInboxReadStateRequest]) (*connect.Response[v1.SetInboxReadStateResponse], error)
@@ -241,6 +258,12 @@ func NewInboxServiceHandler(svc InboxServiceHandler, opts ...connect.HandlerOpti
 		InboxServiceGetUnreadInboxCountProcedure,
 		svc.GetUnreadInboxCount,
 		connect.WithSchema(inboxServiceMethods.ByName("GetUnreadInboxCount")),
+		connect.WithHandlerOptions(opts...),
+	)
+	inboxServiceMarkSessionInboxReadHandler := connect.NewUnaryHandler(
+		InboxServiceMarkSessionInboxReadProcedure,
+		svc.MarkSessionInboxRead,
+		connect.WithSchema(inboxServiceMethods.ByName("MarkSessionInboxRead")),
 		connect.WithHandlerOptions(opts...),
 	)
 	inboxServiceGetInboxEntryHandler := connect.NewUnaryHandler(
@@ -301,6 +324,8 @@ func NewInboxServiceHandler(svc InboxServiceHandler, opts ...connect.HandlerOpti
 		switch r.URL.Path {
 		case InboxServiceGetUnreadInboxCountProcedure:
 			inboxServiceGetUnreadInboxCountHandler.ServeHTTP(w, r)
+		case InboxServiceMarkSessionInboxReadProcedure:
+			inboxServiceMarkSessionInboxReadHandler.ServeHTTP(w, r)
 		case InboxServiceGetInboxEntryProcedure:
 			inboxServiceGetInboxEntryHandler.ServeHTTP(w, r)
 		case InboxServiceListInboxProcedure:
@@ -330,6 +355,10 @@ type UnimplementedInboxServiceHandler struct{}
 
 func (UnimplementedInboxServiceHandler) GetUnreadInboxCount(context.Context, *connect.Request[v1.GetUnreadInboxCountRequest]) (*connect.Response[v1.GetUnreadInboxCountResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.InboxService.GetUnreadInboxCount is not implemented"))
+}
+
+func (UnimplementedInboxServiceHandler) MarkSessionInboxRead(context.Context, *connect.Request[v1.MarkSessionInboxReadRequest]) (*connect.Response[v1.MarkSessionInboxReadResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.InboxService.MarkSessionInboxRead is not implemented"))
 }
 
 func (UnimplementedInboxServiceHandler) GetInboxEntry(context.Context, *connect.Request[v1.GetInboxEntryRequest]) (*connect.Response[v1.GetInboxEntryResponse], error) {

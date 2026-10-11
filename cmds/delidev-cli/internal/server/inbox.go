@@ -271,6 +271,63 @@ func (s *Service) SetInboxReadState(ctx context.Context, req *connect.Request[pb
 	return response, nil
 }
 
+type sessionInboxReadIdentity struct {
+	SessionID domain.ID
+	Actor     domain.Principal
+}
+
+// sessionInboxReadReceipt is the compact original result retained for replay.
+// Replays never select or mark entries again, so later alerts and explicit
+// mark-unread changes stay untouched.
+type sessionInboxReadReceipt struct {
+	SessionID   domain.ID `json:"session_id"`
+	MarkedCount uint64    `json:"marked_count"`
+	ObservedAt  string    `json:"observed_at"`
+}
+
+// MarkSessionInboxRead acknowledges every current unread Inbox entry that
+// belongs to one session in a single transaction. It never answers an
+// interaction, changes the Session revision or claims notification delivery.
+func (s *Service) MarkSessionInboxRead(ctx context.Context, req *connect.Request[pb.MarkSessionInboxReadRequest]) (*connect.Response[pb.MarkSessionInboxReadResponse], error) {
+	correlation := req.Header().Get(rpc.CorrelationHeader)
+	actor, err := inboxActor(ctx)
+	if err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	requestID, sessionID := domain.ID(req.Msg.RequestId), domain.ID(req.Msg.SessionId)
+	if err := requestID.Validate(); err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	if err := sessionID.Validate(); err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	identity := sessionInboxReadIdentity{SessionID: sessionID, Actor: actor}
+	result, err := s.Store.Mutate(ctx, requestID, "inbox.session-read", identity, func(tx *store.Tx) (any, error) {
+		count, observed, err := tx.MarkSessionInboxRead(sessionID, func(record store.Record) error {
+			// Validate each joined source before it is acknowledged so a broken
+			// retained reference rolls back the entire operation.
+			_, err := currentInboxView(tx, record)
+			return err
+		})
+		if err != nil {
+			return nil, err
+		}
+		return sessionInboxReadReceipt{SessionID: sessionID, MarkedCount: count, ObservedAt: observed.UTC().Format(time.RFC3339Nano)}, nil
+	})
+	if err != nil {
+		s.logger.WarnContext(ctx, "session_inbox_read_failed", "correlation_id", correlation, "session_id", sessionID, "request_id", requestID, "code", domain.SafeError(err).Code)
+		return nil, rpc.Error(err, correlation)
+	}
+	var receipt sessionInboxReadReceipt
+	if domain.Decode(result.Data, &receipt) != nil || receipt.SessionID != sessionID {
+		return nil, rpc.Error(domain.Fail(domain.Conflict, "The retained session Inbox receipt is invalid.", "Retry with a new request ID after refreshing the Inbox."), correlation)
+	}
+	s.logger.InfoContext(ctx, "session_inbox_read_recorded", "correlation_id", correlation, "session_id", sessionID, "request_id", result.RequestID, "marked_count", receipt.MarkedCount, "replayed", result.Replayed)
+	response := connect.NewResponse(&pb.MarkSessionInboxReadResponse{RequestId: string(result.RequestID), SessionId: string(sessionID), MarkedCount: receipt.MarkedCount, ObservedAt: receipt.ObservedAt, Replayed: result.Replayed})
+	rpc.CopyCorrelation(response, req.Header())
+	return response, nil
+}
+
 func (s *Service) GetUnreadInboxCount(ctx context.Context, req *connect.Request[pb.GetUnreadInboxCountRequest]) (*connect.Response[pb.GetUnreadInboxCountResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
 	if _, err := inboxActor(ctx); err != nil {

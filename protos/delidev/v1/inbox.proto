@@ -8,6 +8,7 @@ option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1"
 // Inbox read state belongs to the server owner and is shared by paired clients.
 service InboxService {
   rpc GetUnreadInboxCount(GetUnreadInboxCountRequest) returns (GetUnreadInboxCountResponse);
+  rpc MarkSessionInboxRead(MarkSessionInboxReadRequest) returns (MarkSessionInboxReadResponse);
   rpc GetInboxEntry(GetInboxEntryRequest) returns (GetInboxEntryResponse);
   rpc ListInbox(ListInboxRequest) returns (ListInboxResponse);
   rpc SetInboxReadState(SetInboxReadStateRequest) returns (SetInboxReadStateResponse);
@@ -234,4 +235,19 @@ message GetUnreadInboxCountRequest {}
 message GetUnreadInboxCountResponse {
   uint64 unread_count = 1;
   string observed_at = 2;
+}
+
+// Foreground-chat acknowledgment of every current unread Inbox entry of one
+// session. It never changes the Session revision or answers any interaction.
+message MarkSessionInboxReadRequest {
+  string request_id = 1;
+  string session_id = 2;
+}
+message MarkSessionInboxReadResponse {
+  string request_id = 1;
+  string session_id = 2;
+  uint64 marked_count = 3;
+  // UTC RFC 3339 instant of the original acknowledgment transaction.
+  string observed_at = 4;
+  bool replayed = 5;
 }
