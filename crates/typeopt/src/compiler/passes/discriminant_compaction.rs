@@ -406,6 +406,7 @@ fn global_symbols(file: Node, out: &mut Vec<SymbolId>) {
         if node.kind() == SyntaxKind::ModuleDeclaration
             && (node.name().kind() == SyntaxKind::StringLiteral
                 || is_global_scope_augmentation(node))
+            && node.body().is_some()
             && node.body().kind() == SyntaxKind::ModuleBlock
         {
             declared_symbols(node.body().statements(), out);
@@ -1821,6 +1822,9 @@ impl<'d> Proof<'d> {
                     {
                         Ok(())
                     }
+                    // A computed key could read the tag of a domain object;
+                    // containers without the tag only yield their elements.
+                    _ if !self.tag_of_type(ctx, apparent)? => Ok(()),
                     _ => Err(Reason::DynamicAccess),
                 }
             }

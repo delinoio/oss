@@ -763,6 +763,19 @@ fn serialization_logging_and_reflection_preserve_tags() {
 
 #[test]
 fn tag_values_used_as_strings_preserve_tags() {
+    // A computed key may read the tag.
+    tags_preserved(
+        "import { circle } from './shapes.ts';\nconst s = circle(1);\nconst key = ['kind', \
+         'radius'][Number(Math.random() > 2)] as keyof typeof s;\nconsole.log(s[key]);\n",
+        "dynamic_access",
+    );
+    // A tag assigned from an arbitrary string.
+    tags_preserved(
+        "import { circle, rectangle } from './shapes.ts';\nconst s = rectangle(1, 2);\nconst t = \
+         circle(1);\nconst name: string = 'circle';\nt.kind = name as \
+         'circle';\nconsole.log(t.kind === 'circle', s.width);\n",
+        "unproven_runtime_fact",
+    );
     tags_preserved(
         "import { circle } from './shapes.ts';\nconst s = circle(1);\nconsole.log(`shape: \
          ${s.kind}`);\n",
@@ -868,4 +881,29 @@ fn public_and_javascript_boundaries_preserve_tags() {
         skipped_reasons(&report, DISCRIMINANT).contains(&"external_boundary".to_owned()),
         "{report:#}"
     );
+}
+
+#[test]
+fn check_and_output_decisions_are_identical_and_deterministic() {
+    let temp = project(&[
+        (
+            "main.ts",
+            "import { area, circle } from './shapes.ts';\nfunction f(n: number) { const p = { x: \
+             n, y: n + 1, z: 0 }; return p.x * p.y; \
+             }\nconsole.log(area(circle(f(2))).toFixed(1));\n",
+        ),
+        ("shapes.ts", SHAPES),
+    ]);
+    let strip = |mut report: Value| {
+        report.as_object_mut().unwrap().remove("measurements");
+        report
+    };
+    let first = strip(check(temp.path(), &[]));
+    let second = strip(check(temp.path(), &[]));
+    assert_eq!(first, second);
+    let written = strip(optimize(temp.path(), &[]));
+    assert_eq!(first, written);
+    assert_eq!(applied(&written, DISCRIMINANT), 1, "{written:#}");
+    assert_eq!(applied(&written, AGGREGATE), 1, "{written:#}");
+    same_behavior(temp.path());
 }
