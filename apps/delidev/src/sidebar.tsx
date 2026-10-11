@@ -1191,8 +1191,13 @@ export function Sidebar({
         setDrawerOpen(false);
         requestAnimationFrame(() => {
           // Closing the native modal can restore its old opener. Reapply a
-          // visible wide target after that handoff, unless compact reopened.
-          if (window.matchMedia("(max-width: 759px)").matches) return;
+          // visible wide target unless compact reopened or a header handoff
+          // owns focus for the new destination.
+          if (
+            window.matchMedia("(max-width: 759px)").matches ||
+            focusHandoffPending
+          )
+            return;
           (element.hidden
             ? railTarget()
             : (element.querySelector<HTMLElement>("[aria-current='page']") ??
