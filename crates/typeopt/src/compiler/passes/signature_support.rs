@@ -305,6 +305,18 @@ pub(super) fn closure(
     if function.exported && observable.contains(function.file) {
         return Err(Reason::Escapes);
     }
+    // Script globals and namespace members are properties of objects that
+    // code can enumerate without naming the binding.
+    if !is_external_module(ctx.files[function.file].node) {
+        return Err(Reason::Escapes);
+    }
+    let mut ancestor = function.statement.parent();
+    while ancestor.is_some() {
+        if ancestor.kind() == SyntaxKind::ModuleDeclaration {
+            return Err(Reason::Escapes);
+        }
+        ancestor = ancestor.parent();
+    }
     let mut calls = Vec::new();
     let mut declared = false;
     for r in ctx.refs(symbol).to_vec() {

@@ -65,6 +65,11 @@ console.log(trailing(counter, String(tick("d"))));
 nothingKept(tick("e"));
 console.log(literalBefore(4, tick("f")));
 console.log(literalBefore(5, 0));
+function sandwich(left: number, kept: number, middle: string, right: number): number {
+  return kept;
+}
+console.log(sandwich(tick("g"), counter, "pure", tick("h")));
+console.log(sandwich(1, 2, String(tick("i")), 3));
 "#,
 )];
 
@@ -82,6 +87,10 @@ fn signature_reduction_removes_unused_parameters_keeping_argument_effects() {
     assert!(main.contains("(tick(\"e\"), nothingKept)()"), "{main}");
     assert!(main.contains("literalBefore((tick(\"f\"), 4))"), "{main}");
     assert!(!main.contains("a fairly long string"), "{main}");
+    assert!(
+        main.contains("sandwich((tick(\"g\"), [counter, tick(\"h\")][0]))"),
+        "{main}"
+    );
 }
 
 #[test]
@@ -347,6 +356,88 @@ console.log(shared(1, "x"), fromJs());
 }
 
 #[test]
+fn signature_reduction_keeps_finally_and_exceptions() {
+    let files: &[(&str, &str)] = &[(
+        "main.ts",
+        r#"export {};
+const events: string[] = [];
+function guarded(n: number, unused: string): number {
+  try {
+    events.push("try " + n);
+    if (n > 1) {
+      throw new Error("too large " + n);
+    }
+    return n;
+  } finally {
+    events.push("finally " + n);
+  }
+}
+guarded(1, "a");
+try {
+  guarded(2, "b");
+} catch (error) {
+  events.push((error as Error).message);
+}
+console.log(events.join(" | "));
+"#,
+    )];
+    let (temp, report) = run(files, &[SR]);
+    assert!(applied(&report, SR) >= 2, "{report:#}");
+    let main = emitted(temp.path(), "main.ts");
+    assert!(main.contains("function guarded(n)"), "{main}");
+    assert!(main.contains("return;"), "{main}");
+    assert!(main.contains("finally"), "{main}");
+}
+
+#[test]
+fn signature_reduction_preserves_namespace_observable_modules() {
+    let files: &[(&str, &str)] = &[
+        (
+            "main.ts",
+            r#"import { lazyHelper } from "./lazy.ts";
+import { listed } from "./listed.ts";
+console.log(lazyHelper(1, "one"), lazyHelper(2, "two"), listed(3, "three"), listed(4, "four"));
+const exported = Object.values(await import("./lazy.ts"));
+console.log(exported.map((f) => (f as (...args: unknown[]) => unknown).length));
+"#,
+        ),
+        (
+            "lazy.ts",
+            "export function lazyHelper(value: number, unused: string): number { return value; }\n",
+        ),
+        (
+            "listed.ts",
+            "function listed(value: number, unused: string): number { return value; }\nexport { \
+             listed };\n",
+        ),
+    ];
+    let (temp, report) = run(files, &[SR]);
+    assert!(
+        skipped_reasons(&report, SR).contains(&"escapes".to_owned()),
+        "{report:#}"
+    );
+    assert!(emitted(temp.path(), "lazy.ts").contains("lazyHelper(value, unused)"));
+    // An export list alone does not make a module observable.
+    assert!(emitted(temp.path(), "listed.ts").contains("function listed(value)"));
+}
+
+#[test]
+fn signature_reduction_preserves_namespace_members() {
+    // Node cannot strip namespaces, so this fixture is only analyzed.
+    let temp = project(&[(
+        "main.ts",
+        r#"export namespace Tools {
+  export function helper(value: number, unused: string): number { return value; }
+  export const run = () => helper(1, "x") + helper(2, "y");
+}
+console.log(Tools.run(), Object.values(Tools).map((f) => (f as Function).length));
+"#,
+    )]);
+    let report = check(temp.path(), &args(&only(&[SR])));
+    assert_eq!(applied(&report, SR), 0, "{report:#}");
+}
+
+#[test]
 fn signature_reduction_disabled_never_runs() {
     let temp = project(UNUSED_PARAMETERS);
     let report = optimize(temp.path(), &["--disable-pass", SR]);
@@ -550,6 +641,40 @@ console.log(escaping("on", 1), escaping("off", 2), handlers.length);
     }
     let main = emitted(temp.path(), "main.ts");
     assert!(main.contains("function mixed(mode, n)"), "{main}");
+}
+
+#[test]
+fn function_specialization_extends_export_lists() {
+    let files: &[(&str, &str)] = &[
+        (
+            "main.ts",
+            r#"import { pick } from "./dep.ts";
+console.log(pick("first", 1), pick("second", 2), pick("first", 3), pick("second", 4));
+console.log(pick("first", 5), pick("second", 6), pick("first", 7), pick("second", 8));
+"#,
+        ),
+        (
+            "dep.ts",
+            r#"type Which = "first" | "second";
+function pick(which: Which, n: number): string {
+  if (which === "first") {
+    return "the first implementation handles " + n;
+  } else {
+    return "the second implementation handles " + n * 2;
+  }
+}
+export { pick };
+"#,
+        ),
+    ];
+    let (temp, report) = run(files, &[FS, TDCF]);
+    assert_eq!(applied(&report, FS), 1, "{report:#}");
+    let dep = emitted(temp.path(), "dep.ts");
+    assert!(dep.contains("export { pick, pick_second }"), "{dep}");
+    assert!(
+        emitted(temp.path(), "main.ts").contains("import { pick, pick_second }"),
+        "{dep}"
+    );
 }
 
 #[test]
