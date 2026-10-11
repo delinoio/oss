@@ -539,7 +539,8 @@ impl<'c> Ctx<'c> {
                         .into_iter()
                         .all(|member| {
                             if !member.decorators().is_empty()
-                                || member.name().kind() == SyntaxKind::ComputedPropertyName
+                                || (member.name().is_some()
+                                    && member.name().kind() == SyntaxKind::ComputedPropertyName)
                             {
                                 return false;
                             }

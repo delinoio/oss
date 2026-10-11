@@ -34,8 +34,8 @@ use ts_goport::prelude::*;
 use super::{
     super::analysis::{Ctx, RefKind, skip_outer},
     runtime_facts::{
-        Facts, Kinds, Lit, contains, is_literal_node, precedence, read_safe, replace_expr,
-        same_type, span, string_value, test_scope, type_constituents,
+        Facts, Kinds, Lit, contains, guard_glue, initialized_before, is_literal_node, precedence,
+        read_safe, replace_expr, same_type, span, string_value, test_scope, type_constituents,
     },
 };
 use crate::{
@@ -151,6 +151,7 @@ impl Planner<'_> {
         let (start, end) = span(node);
         let mut candidate =
             Candidate::new(PASS, key(ctx, file, tag, node), ctx.location(file, node));
+        let text = guard_glue(&ctx.files[file].text, start, end, text);
         candidate.edits = vec![FileEdit::replace(&ctx.files[file].name, start, end, text)];
         self.out.candidates.push(candidate);
         self.candidates += 1;
@@ -561,7 +562,10 @@ impl Planner<'_> {
             return;
         }
         let initializer = node.initializer();
-        if initializer.kind() != SyntaxKind::ArrayLiteralExpression || node.type_().is_some() {
+        if initializer.is_nil()
+            || initializer.kind() != SyntaxKind::ArrayLiteralExpression
+            || node.type_().is_some()
+        {
             return;
         }
         let list = node.parent();
@@ -605,13 +609,40 @@ impl Planner<'_> {
                 return;
             }
         }
-        // Element-by-element binding reorders evaluation and binding; with
-        // pure elements (no TDZ read of the new bindings) it is
-        // unobservable.
-        for &value in &values {
-            if !self.facts.pure(ctx, value) {
+        // Element-by-element binding interleaves evaluation and binding.
+        // Elements without a binding disappear, so they must be pure. Later
+        // elements then run after earlier bindings exist; that is
+        // unobservable when every element is pure (a pure element cannot read
+        // a binding in its temporal dead zone) or when every reference to the
+        // new bindings runs only after the whole declaration completed.
+        let mut all_pure = true;
+        for (index, &value) in values.iter().enumerate() {
+            let bound = bindings
+                .get(index)
+                .is_some_and(|b| b.kind() != SyntaxKind::OmittedExpression);
+            if self.facts.pure(ctx, value) {
+                continue;
+            }
+            all_pure = false;
+            if !bound {
                 self.skip(ctx, file, "destructuring", node, Reason::SideEffects);
                 return;
+            }
+        }
+        if !all_pure {
+            for &binding in &bindings {
+                if binding.kind() == SyntaxKind::OmittedExpression {
+                    continue;
+                }
+                let symbol = ctx.resolve(binding.name());
+                let early = symbol.is_nil()
+                    || ctx.refs(symbol).iter().any(|r| {
+                        r.kind != RefKind::Declaration && !initialized_before(node, r.node)
+                    });
+                if early {
+                    self.skip(ctx, file, "destructuring", node, Reason::SideEffects);
+                    return;
+                }
             }
         }
         if self.array_patched(ctx, &[ITERATOR]) {
@@ -638,16 +669,37 @@ impl Planner<'_> {
             }
             let declared = ctx.checker.get_type_of_symbol(symbol);
             let actual = ctx.checker.get_type_at_location(value);
-            let widened = if !constant && is_literal_node(value) {
+            let literal = is_literal_node(value);
+            let widened = if literal {
                 ctx.checker.get_base_type_of_literal_type(actual)
             } else {
                 actual
             };
-            if declared.is_nil() || declared != widened {
+            let value_text = ctx.text(file, value);
+            if declared.is_some() && declared == actual {
+                parts.push(format!("{} = {value_text}", name.text()));
+            } else if declared.is_some() && declared == widened && !constant {
+                // `let`/`var` widen the literal type the same way.
+                parts.push(format!("{} = {value_text}", name.text()));
+            } else if declared.is_some() && declared == widened && literal {
+                // A `const` keeps the literal type; the destructured binding
+                // had the widened primitive type. The assertion is erased.
+                let flags = ctx.checker.ty(declared).flags();
+                let keyword = if flags.intersects(TypeFlags::NUMBER) {
+                    "number"
+                } else if flags.intersects(TypeFlags::STRING) {
+                    "string"
+                } else if flags.intersects(TypeFlags::BOOLEAN) {
+                    "boolean"
+                } else {
+                    self.skip(ctx, file, "destructuring", node, Reason::TypeConstraint);
+                    return;
+                };
+                parts.push(format!("{} = {value_text} as {keyword}", name.text()));
+            } else {
                 self.skip(ctx, file, "destructuring", node, Reason::TypeConstraint);
                 return;
             }
-            parts.push(format!("{} = {}", name.text(), ctx.text(file, value)));
         }
         if parts.is_empty() {
             return;

@@ -30,9 +30,9 @@ use ts_goport::prelude::*;
 use super::{
     super::analysis::{Ctx, skip_outer, walk_up_outer},
     runtime_facts::{
-        Fact, Facts, Kinds, Lit, in_test_context, lib_only, narrowing_neutral, number_literal,
-        precedence, replace_expr, same_type, span, string_literal, syntactically_uncertain,
-        test_scope, type_all, type_constituents,
+        Fact, Facts, Kinds, Lit, evaluate, guard_glue, in_test_context, lib_only,
+        narrowing_neutral, number_literal, precedence, replace_expr, same_type, span,
+        string_literal, syntactically_uncertain, test_scope, type_all, type_constituents,
     },
 };
 use crate::{
@@ -99,6 +99,7 @@ impl Planner<'_> {
         let (start, end) = span(node);
         let mut candidate =
             Candidate::new(PASS, key(ctx, file, tag, node), ctx.location(file, node));
+        let text = guard_glue(&ctx.files[file].text, start, end, text);
         candidate.edits = vec![FileEdit::replace(&ctx.files[file].name, start, end, text)];
         self.out.candidates.push(candidate);
         self.candidates += 1;
@@ -122,8 +123,16 @@ impl Planner<'_> {
             self.skip(ctx, file, tag, node, Reason::TypeConstraint);
             return;
         }
-        let text = replace_expr(node, ctx.text(file, value), precedence(value));
-        self.emit(ctx, file, tag, node, text);
+        // An identifier needs none of the parentheses around the replaced
+        // expression.
+        let mut target = node;
+        if skip_outer(value).kind() == SyntaxKind::Identifier && skip_outer(value) == value {
+            while target.parent().kind() == SyntaxKind::ParenthesizedExpression {
+                target = target.parent();
+            }
+        }
+        let text = replace_expr(target, ctx.text(file, value), precedence(value));
+        self.emit(ctx, file, tag, target, text);
     }
 
     /// `!!x` and `+n`.
@@ -276,7 +285,10 @@ impl Planner<'_> {
                     {
                         continue;
                     }
-                    if !same_type(ctx, node, value) {
+                    // For an all-boolean type, TypeScript narrows `x`, `!x`
+                    // and `x === true` identically, so test positions keep
+                    // their types; values must keep the checker type.
+                    if !in_test_context(node) && !same_type(ctx, node, value) {
                         self.skip(ctx, file, "boolean-compare", node, Reason::TypeConstraint);
                         return;
                     }
@@ -434,6 +446,13 @@ fn literal_context(ctx: &mut Ctx, node: Node, result: &Lit) -> bool {
                 | SyntaxKind::GreaterThanToken
                 | SyntaxKind::LessThanEqualsToken
                 | SyntaxKind::GreaterThanEqualsToken
+                | SyntaxKind::AmpersandToken
+                | SyntaxKind::BarToken
+                | SyntaxKind::CaretToken
+                | SyntaxKind::LessThanLessThanToken
+                | SyntaxKind::GreaterThanGreaterThanToken
+                | SyntaxKind::GreaterThanGreaterThanGreaterThanToken
+                | SyntaxKind::AsteriskAsteriskToken
         ),
         // Arguments of non-generic calls: the literal is checked against
         // the declared parameter type, and nothing is inferred from it.
@@ -447,121 +466,6 @@ fn literal_context(ctx: &mut Ctx, node: Node, result: &Lit) -> bool {
         }
         _ => false,
     }
-}
-
-/// JavaScript semantics of `a <operator> b` over primitive literals, when
-/// the result is exactly representable.
-fn evaluate(operator: SyntaxKind, a: &Lit, b: &Lit) -> Option<Lit> {
-    use SyntaxKind as K;
-    let number = |lit: &Lit| match lit {
-        Lit::Num(n) => Some(*n),
-        Lit::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
-        Lit::Null => Some(0.0),
-        Lit::Undefined => Some(f64::NAN),
-        // String-to-number conversion is not modeled.
-        Lit::Str(_) => None,
-    };
-    match operator {
-        K::EqualsEqualsEqualsToken => Some(Lit::Bool(a.strict_equals(b))),
-        K::ExclamationEqualsEqualsToken => Some(Lit::Bool(!a.strict_equals(b))),
-        K::EqualsEqualsToken | K::ExclamationEqualsToken => {
-            let equal = if a.kinds() == b.kinds() {
-                a.strict_equals(b)
-            } else {
-                let nullish = |l: &Lit| matches!(l, Lit::Undefined | Lit::Null);
-                if nullish(a) || nullish(b) {
-                    nullish(a) && nullish(b)
-                } else {
-                    return None;
-                }
-            };
-            Some(Lit::Bool(equal == (operator == K::EqualsEqualsToken)))
-        }
-        K::LessThanToken
-        | K::GreaterThanToken
-        | K::LessThanEqualsToken
-        | K::GreaterThanEqualsToken => {
-            let ordering = match (a, b) {
-                (Lit::Num(x), Lit::Num(y)) => x.partial_cmp(y),
-                (Lit::Str(x), Lit::Str(y)) if x.is_ascii() && y.is_ascii() => Some(x.cmp(y)),
-                _ => return None,
-            };
-            let result = match ordering {
-                // Any comparison with NaN is false.
-                None => false,
-                Some(o) => match operator {
-                    K::LessThanToken => o.is_lt(),
-                    K::GreaterThanToken => o.is_gt(),
-                    K::LessThanEqualsToken => o.is_le(),
-                    _ => o.is_ge(),
-                },
-            };
-            Some(Lit::Bool(result))
-        }
-        K::PlusToken => match (a, b) {
-            (Lit::Str(x), Lit::Str(y)) => Some(Lit::Str(format!("{x}{y}"))),
-            (Lit::Str(x), other) => Some(Lit::Str(format!("{x}{}", primitive_string(other)?))),
-            (other, Lit::Str(y)) => Some(Lit::Str(format!("{}{y}", primitive_string(other)?))),
-            _ => finite(number(a)? + number(b)?),
-        },
-        K::MinusToken => finite(number(a)? - number(b)?),
-        K::AsteriskToken => finite(number(a)? * number(b)?),
-        K::SlashToken => finite(number(a)? / number(b)?),
-        K::PercentToken => finite(number(a)? % number(b)?),
-        K::AmpersandToken => Some(Lit::Num(
-            (to_int32(number(a)?) & to_int32(number(b)?)) as f64,
-        )),
-        K::BarToken => Some(Lit::Num(
-            (to_int32(number(a)?) | to_int32(number(b)?)) as f64,
-        )),
-        K::CaretToken => Some(Lit::Num(
-            (to_int32(number(a)?) ^ to_int32(number(b)?)) as f64,
-        )),
-        K::LessThanLessThanToken => {
-            let shift = to_uint32(number(b)?) & 31;
-            Some(Lit::Num(to_int32(number(a)?).wrapping_shl(shift) as f64))
-        }
-        K::GreaterThanGreaterThanToken => {
-            let shift = to_uint32(number(b)?) & 31;
-            Some(Lit::Num((to_int32(number(a)?) >> shift) as f64))
-        }
-        K::GreaterThanGreaterThanGreaterThanToken => {
-            let shift = to_uint32(number(b)?) & 31;
-            Some(Lit::Num((to_uint32(number(a)?) >> shift) as f64))
-        }
-        _ => None,
-    }
-}
-
-fn finite(value: f64) -> Option<Lit> {
-    value.is_finite().then_some(Lit::Num(value))
-}
-
-/// `ToString` of a primitive whose result is certain (integers only for
-/// numbers, so no exponent formatting is involved).
-fn primitive_string(lit: &Lit) -> Option<String> {
-    match lit {
-        Lit::Undefined => Some("undefined".to_owned()),
-        Lit::Null => Some("null".to_owned()),
-        Lit::Bool(b) => Some(b.to_string()),
-        Lit::Num(n) if n.fract() == 0.0 && n.abs() < 9_007_199_254_740_992.0 => {
-            Some(format!("{}", *n as i64))
-        }
-        Lit::Num(_) => None,
-        Lit::Str(s) => Some(s.clone()),
-    }
-}
-
-fn to_uint32(value: f64) -> u32 {
-    if !value.is_finite() {
-        return 0;
-    }
-    let truncated = value.trunc();
-    truncated.rem_euclid(4_294_967_296.0) as u32
-}
-
-fn to_int32(value: f64) -> i32 {
-    to_uint32(value) as i32
 }
 
 #[cfg(test)]

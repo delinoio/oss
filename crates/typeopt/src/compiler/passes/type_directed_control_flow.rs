@@ -31,10 +31,10 @@ use ts_goport::prelude::*;
 use super::{
     super::analysis::{Ctx, skip_outer, walk_up_outer},
     runtime_facts::{
-        Facts, contains, declares_hoisted, deleted_statement, in_test_context, is_literal_node,
-        is_statement_list, narrowing_neutral, never_completes, precedence,
+        Facts, contains, declares_hoisted, deleted_statement, guard_glue, in_test_context,
+        is_literal_node, is_statement_list, narrowing_neutral, never_completes, precedence,
         removes_narrowing_writes, replace_expr, same_type, span, syntactically_uncertain,
-        terminated, test_scope, type_non_nullable,
+        terminated, test_scope, type_assertable, type_non_nullable,
     },
 };
 use crate::{
@@ -110,6 +110,7 @@ impl Planner<'_> {
 
     fn replace(ctx: &Ctx, file: usize, node: Node, text: impl Into<String>) -> FileEdit {
         let (start, end) = span(node);
+        let text = guard_glue(&ctx.files[file].text, start, end, text.into());
         FileEdit::replace(&ctx.files[file].name, start, end, text)
     }
 
@@ -258,6 +259,7 @@ impl Planner<'_> {
             _ => return,
         };
         let Some(value) = fact else {
+            self.neutral_right(ctx, file, node);
             return;
         };
         // Whether the result is the left operand (the right one is never
@@ -290,6 +292,40 @@ impl Planner<'_> {
         self.emit(ctx, file, "logical", node, vec![edit]);
     }
 
+    /// `a || false` and `a && true` in test positions: only `ToBoolean(a)`
+    /// is observed, which the constant right operand does not change.
+    fn neutral_right(&mut self, ctx: &mut Ctx, file: usize, node: Node) {
+        let operator = node.operator_token().kind();
+        let (left, right) = (node.left(), node.right());
+        let neutral = match operator {
+            SyntaxKind::AmpersandAmpersandToken => Some(true),
+            SyntaxKind::BarBarToken => Some(false),
+            _ => None,
+        };
+        if neutral.is_none() || !in_test_context(node) {
+            return;
+        }
+        if self.facts.expr(ctx, right).truthy() != neutral {
+            return;
+        }
+        if !self.facts.pure(ctx, right) {
+            self.skip(ctx, file, "logical", node, Reason::SideEffects);
+            return;
+        }
+        if !syntactically_uncertain(left) {
+            self.skip(ctx, file, "logical", node, Reason::TypeConstraint);
+            return;
+        }
+        let (scope, after) = test_scope(node);
+        if let Some(reason) = self.removal_obstacle(ctx, file, right, scope, right, after) {
+            self.skip(ctx, file, "logical", node, reason);
+            return;
+        }
+        let text = replace_expr(node, ctx.text(file, left), precedence(left));
+        let edit = Self::replace(ctx, file, node, text);
+        self.emit(ctx, file, "logical", node, vec![edit]);
+    }
+
     /// `x?.y`, `x?.[k]` and `x?.()` with a proven non-nullish `x`.
     fn optional_chain(&mut self, ctx: &mut Ctx, file: usize, node: Node) {
         let token = node.question_dot_token();
@@ -311,15 +347,21 @@ impl Planner<'_> {
                 return;
             }
         }
-        if !typed {
+        // When the checker type still admits `null`/`undefined`, the runtime
+        // proof is stated with a non-null assertion, which emits nothing.
+        let assertion = if typed {
+            ""
+        } else if type_assertable(ctx, receiver) {
+            "!"
+        } else {
             self.skip(ctx, file, "optional", node, Reason::TypeConstraint);
             return;
-        }
+        };
         let (start, end) = span(token);
         let replacement = if node.kind() == SyntaxKind::PropertyAccessExpression {
-            "."
+            format!("{assertion}.")
         } else {
-            ""
+            assertion.to_owned()
         };
         let edit = FileEdit::replace(&ctx.files[file].name, start, end, replacement);
         self.emit(ctx, file, "optional", node, vec![edit]);
@@ -418,6 +460,8 @@ impl Planner<'_> {
             } else {
                 ";".to_owned()
             }
+        } else if is_statement_list(node.parent()) && kept_statements.iter().all(|&s| joinable(s)) {
+            guard_asi(ctx, file, node, body.join("\n"))
         } else {
             format!("{{{}}}", body.join("\n"))
         };
@@ -466,20 +510,25 @@ impl Planner<'_> {
 /// A block whose statements can join the enclosing statement list: it
 /// declares nothing block-scoped.
 fn unwrappable(block: Node) -> bool {
-    block.kind() == SyntaxKind::Block
-        && block.statements().iter().all(|s| match s.kind() {
-            SyntaxKind::VariableStatement => !s
-                .declaration_list()
-                .flags()
-                .intersects(NodeFlags::BLOCK_SCOPED),
-            SyntaxKind::FunctionDeclaration
-            | SyntaxKind::ClassDeclaration
-            | SyntaxKind::EnumDeclaration
-            | SyntaxKind::ModuleDeclaration
-            | SyntaxKind::InterfaceDeclaration
-            | SyntaxKind::TypeAliasDeclaration => false,
-            _ => true,
-        })
+    block.kind() == SyntaxKind::Block && block.statements().iter().all(joinable)
+}
+
+/// A statement that declares nothing block-scoped, so it can move to the
+/// enclosing statement list.
+fn joinable(statement: Node) -> bool {
+    match statement.kind() {
+        SyntaxKind::VariableStatement => !statement
+            .declaration_list()
+            .flags()
+            .intersects(NodeFlags::BLOCK_SCOPED),
+        SyntaxKind::FunctionDeclaration
+        | SyntaxKind::ClassDeclaration
+        | SyntaxKind::EnumDeclaration
+        | SyntaxKind::ModuleDeclaration
+        | SyntaxKind::InterfaceDeclaration
+        | SyntaxKind::TypeAliasDeclaration => false,
+        _ => true,
+    }
 }
 
 /// Unreachable statements that can go without changing scoping.
@@ -585,7 +634,10 @@ fn statement_text(ctx: &Ctx, file: usize, statement: Node) -> String {
 }
 
 /// `expression;` as a statement that cannot be misparsed.
-fn expression_statement(ctx: &Ctx, file: usize, expression: Node) -> String {
+fn expression_statement(ctx: &Ctx, file: usize, mut expression: Node) -> String {
+    while expression.kind() == SyntaxKind::ParenthesizedExpression {
+        expression = expression.expression();
+    }
     let text = ctx.text(file, expression);
     let hazard = ["{", "function", "class", "let", "async"]
         .iter()
@@ -631,7 +683,7 @@ fn unproven_reason(ctx: &mut Ctx, receiver: Node) -> Reason {
             }
             _ => Node::NIL,
         };
-        if name.kind() == SyntaxKind::Identifier {
+        if name.is_some() && name.kind() == SyntaxKind::Identifier {
             let callee = ctx.resolve(name);
             if ctx.public.contains(&callee) {
                 return Reason::PublicExport;

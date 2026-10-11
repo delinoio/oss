@@ -417,7 +417,16 @@ impl Facts {
                 None => Fact::of(Kinds::BOOLEAN),
             },
             // Unary plus throws for BigInt and otherwise yields a number.
-            SyntaxKind::PlusToken => Fact::of(Kinds::NUMBER),
+            SyntaxKind::PlusToken => match operand.lit {
+                Some(Lit::Num(n)) => Fact::lit(Lit::Num(n)),
+                _ => Fact::of(Kinds::NUMBER),
+            },
+            SyntaxKind::MinusToken if matches!(operand.lit, Some(Lit::Num(_))) => {
+                let Some(Lit::Num(n)) = operand.lit else {
+                    unreachable!()
+                };
+                Fact::lit(Lit::Num(-n))
+            }
             SyntaxKind::MinusToken | SyntaxKind::TildeToken => {
                 if operand
                     .kinds
@@ -434,6 +443,19 @@ impl Facts {
 
     fn binary(&mut self, ctx: &mut Ctx, node: Node) -> Fact {
         let operator = node.operator_token().kind();
+        if matches!(binary_precedence(operator), 5..=14) {
+            // Arithmetic, bitwise, relational and equality operators over
+            // known primitives have an exactly computable result.
+            let left = self.expr(ctx, node.left());
+            if left.lit.is_some() {
+                let right = self.expr(ctx, node.right());
+                if let (Some(a), Some(b)) = (&left.lit, &right.lit)
+                    && let Some(result) = evaluate(operator, a, b)
+                {
+                    return Fact::lit(result);
+                }
+            }
+        }
         match operator {
             SyntaxKind::EqualsEqualsEqualsToken
             | SyntaxKind::ExclamationEqualsEqualsToken
@@ -1620,7 +1642,9 @@ fn lib_global_name(ctx: &mut Ctx, node: Node) -> Option<&'static str> {
         return None;
     }
     let declarations = ctx.checker.sym(symbol).declarations.to_vec();
-    lib_only(&declarations).then(|| node.text())
+    // The checker's `globalThis` symbol has no declaration.
+    (lib_only(&declarations) || (declarations.is_empty() && node.text() == "globalThis"))
+        .then(|| node.text())
 }
 
 /// For a read of a built-in global, whether it escapes as a value (anything
@@ -1677,6 +1701,30 @@ pub(super) fn type_non_nullable(ctx: &mut Ctx, node: Node) -> bool {
                 | TypeFlags::INSTANTIABLE,
         )
     })
+}
+
+/// A non-null assertion on `node` yields a type whose members can be
+/// accessed: no `unknown` or generic constituents and at least one
+/// non-nullish constituent.
+pub(super) fn type_assertable(ctx: &mut Ctx, node: Node) -> bool {
+    let t = ctx.checker.get_type_at_location(node);
+    if t.is_nil() {
+        return false;
+    }
+    let constituents = type_constituents(ctx, t);
+    let mut present = false;
+    for c in constituents {
+        let flags = ctx.checker.ty(c).flags();
+        if flags.intersects(TypeFlags::UNKNOWN | TypeFlags::INSTANTIABLE) {
+            return false;
+        }
+        if !flags
+            .intersects(TypeFlags::NULL | TypeFlags::UNDEFINED | TypeFlags::VOID | TypeFlags::NEVER)
+        {
+            present = true;
+        }
+    }
+    present
 }
 
 /// Every constituent of the checker type at `node` has one of `flags`.
@@ -1927,19 +1975,60 @@ pub(super) fn replace_expr(
         && parent.operator_token().kind() == SyntaxKind::AsteriskAsteriskToken
         && parent.left() == original
         && replacement_precedence < 16;
-    let fits = (replacement_precedence >= precedence(original)
-        && replacement_precedence >= 3
-        && !matches!(
-            parent.kind(),
-            SyntaxKind::BinaryExpression if parent.operator_token().kind() == SyntaxKind::QuestionQuestionToken
-                && replacement_precedence <= 4
-        ))
-        || accepts_assignment(original);
+    let coalesce_mix = parent.kind() == SyntaxKind::BinaryExpression
+        && ((parent.operator_token().kind() == SyntaxKind::QuestionQuestionToken
+            && matches!(replacement_precedence, 3 | 4))
+            || (matches!(
+                parent.operator_token().kind(),
+                SyntaxKind::BarBarToken | SyntaxKind::AmpersandAmpersandToken
+            ) && replacement.contains("??")));
+    // The left operand of a left-associative operator accepts the same
+    // precedence.
+    let left_operand = parent.kind() == SyntaxKind::BinaryExpression
+        && parent.left() == original
+        && parent.operator_token().kind() != SyntaxKind::AsteriskAsteriskToken
+        && binary_precedence(parent.operator_token().kind()) >= 3
+        && replacement_precedence >= binary_precedence(parent.operator_token().kind());
+    let fits = ((replacement_precedence >= precedence(original) && replacement_precedence >= 3)
+        || left_operand
+        || accepts_assignment(original))
+        && !coalesce_mix;
     if hazard || exponent_base || !fits {
         format!("({replacement})")
     } else {
         replacement.to_owned()
     }
+}
+
+/// Pads `text`, which replaces `source[start..end]`, with spaces where it
+/// would otherwise merge with the neighboring source into another token
+/// (`return(x)` to `returnx`, `a - (-1)` to `a--1`).
+pub(super) fn guard_glue(source: &str, start: usize, end: usize, text: String) -> String {
+    fn word(c: char) -> bool {
+        c.is_alphanumeric() || c == '_' || c == '$' || !c.is_ascii()
+    }
+    fn glues(a: char, b: char) -> bool {
+        (word(a) && word(b))
+            || (a == '+' && b == '+')
+            || (a == '-' && b == '-')
+            || (a == '/' && (b == '/' || b == '*'))
+            || (a == '.' && b.is_ascii_digit())
+            || (a.is_ascii_digit() && b == '.')
+    }
+    let before = source[..start].chars().next_back();
+    let after = source[end..].chars().next();
+    let mut text = text;
+    if let (Some(a), Some(b)) = (before, text.chars().next())
+        && glues(a, b)
+    {
+        text.insert(0, ' ');
+    }
+    if let (Some(a), Some(b)) = (text.chars().next_back(), after)
+        && glues(a, b)
+    {
+        text.push(' ');
+    }
+    text
 }
 
 /// Whether `node` begins an expression statement, an arrow function's
@@ -2219,6 +2308,121 @@ pub(super) fn string_literal(value: &str) -> String {
     }
     out.push('"');
     out
+}
+
+/// JavaScript semantics of `a <operator> b` over primitive literals, when
+/// the result is exactly representable.
+pub(super) fn evaluate(operator: SyntaxKind, a: &Lit, b: &Lit) -> Option<Lit> {
+    use SyntaxKind as K;
+    let number = |lit: &Lit| match lit {
+        Lit::Num(n) => Some(*n),
+        Lit::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
+        Lit::Null => Some(0.0),
+        Lit::Undefined => Some(f64::NAN),
+        // String-to-number conversion is not modeled.
+        Lit::Str(_) => None,
+    };
+    match operator {
+        K::EqualsEqualsEqualsToken => Some(Lit::Bool(a.strict_equals(b))),
+        K::ExclamationEqualsEqualsToken => Some(Lit::Bool(!a.strict_equals(b))),
+        K::EqualsEqualsToken | K::ExclamationEqualsToken => {
+            let equal = if a.kinds() == b.kinds() {
+                a.strict_equals(b)
+            } else {
+                let nullish = |l: &Lit| matches!(l, Lit::Undefined | Lit::Null);
+                if nullish(a) || nullish(b) {
+                    nullish(a) && nullish(b)
+                } else {
+                    return None;
+                }
+            };
+            Some(Lit::Bool(equal == (operator == K::EqualsEqualsToken)))
+        }
+        K::LessThanToken
+        | K::GreaterThanToken
+        | K::LessThanEqualsToken
+        | K::GreaterThanEqualsToken => {
+            let ordering = match (a, b) {
+                (Lit::Num(x), Lit::Num(y)) => x.partial_cmp(y),
+                (Lit::Str(x), Lit::Str(y)) if x.is_ascii() && y.is_ascii() => Some(x.cmp(y)),
+                _ => return None,
+            };
+            let result = match ordering {
+                // Any comparison with NaN is false.
+                None => false,
+                Some(o) => match operator {
+                    K::LessThanToken => o.is_lt(),
+                    K::GreaterThanToken => o.is_gt(),
+                    K::LessThanEqualsToken => o.is_le(),
+                    _ => o.is_ge(),
+                },
+            };
+            Some(Lit::Bool(result))
+        }
+        K::PlusToken => match (a, b) {
+            (Lit::Str(x), Lit::Str(y)) => Some(Lit::Str(format!("{x}{y}"))),
+            (Lit::Str(x), other) => Some(Lit::Str(format!("{x}{}", primitive_string(other)?))),
+            (other, Lit::Str(y)) => Some(Lit::Str(format!("{}{y}", primitive_string(other)?))),
+            _ => finite(number(a)? + number(b)?),
+        },
+        K::MinusToken => finite(number(a)? - number(b)?),
+        K::AsteriskToken => finite(number(a)? * number(b)?),
+        K::SlashToken => finite(number(a)? / number(b)?),
+        K::PercentToken => finite(number(a)? % number(b)?),
+        K::AmpersandToken => Some(Lit::Num(
+            (to_int32(number(a)?) & to_int32(number(b)?)) as f64,
+        )),
+        K::BarToken => Some(Lit::Num(
+            (to_int32(number(a)?) | to_int32(number(b)?)) as f64,
+        )),
+        K::CaretToken => Some(Lit::Num(
+            (to_int32(number(a)?) ^ to_int32(number(b)?)) as f64,
+        )),
+        K::LessThanLessThanToken => {
+            let shift = to_uint32(number(b)?) & 31;
+            Some(Lit::Num(to_int32(number(a)?).wrapping_shl(shift) as f64))
+        }
+        K::GreaterThanGreaterThanToken => {
+            let shift = to_uint32(number(b)?) & 31;
+            Some(Lit::Num((to_int32(number(a)?) >> shift) as f64))
+        }
+        K::GreaterThanGreaterThanGreaterThanToken => {
+            let shift = to_uint32(number(b)?) & 31;
+            Some(Lit::Num((to_uint32(number(a)?) >> shift) as f64))
+        }
+        _ => None,
+    }
+}
+
+fn finite(value: f64) -> Option<Lit> {
+    value.is_finite().then_some(Lit::Num(value))
+}
+
+/// `ToString` of a primitive whose result is certain (integers only for
+/// numbers, so no exponent formatting is involved).
+fn primitive_string(lit: &Lit) -> Option<String> {
+    match lit {
+        Lit::Undefined => Some("undefined".to_owned()),
+        Lit::Null => Some("null".to_owned()),
+        Lit::Bool(b) => Some(b.to_string()),
+        Lit::Num(n) if n.fract() == 0.0 && n.abs() < 9_007_199_254_740_992.0 => {
+            Some(format!("{}", *n as i64))
+        }
+        Lit::Num(_) => None,
+        Lit::Str(s) => Some(s.clone()),
+    }
+}
+
+fn to_uint32(value: f64) -> u32 {
+    if !value.is_finite() {
+        return 0;
+    }
+    let truncated = value.trunc();
+    truncated.rem_euclid(4_294_967_296.0) as u32
+}
+
+fn to_int32(value: f64) -> i32 {
+    to_uint32(value) as i32
 }
 
 #[cfg(test)]
