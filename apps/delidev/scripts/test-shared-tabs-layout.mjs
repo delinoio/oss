@@ -84,9 +84,6 @@ try {
       ? { channel: process.env.DELIDEV_LAYOUT_BROWSER_CHANNEL }
       : {}),
   });
-  const page = await browser.newPage();
-  page.setDefaultTimeout(5000);
-  page.on("pageerror", (error) => errors.push(error.message));
   const origin = `http://127.0.0.1:${server.address().port}`;
   const sizes = [
     { width: 1440, height: 900 },
@@ -98,9 +95,17 @@ try {
   for (const language of ["en", "ko"])
     for (const theme of ["light", "dark", "custom"])
       for (const size of sizes) {
-        await page.setViewportSize({ width: size.width, height: size.height });
+        // Browser zoom reduces the CSS viewport. A scaled device context models
+        // that reflow without CSS zoom distorting top-layer viewport units.
+        const scale = size.zoom ?? 1;
+        const page = await browser.newPage({
+          viewport: { width: size.width / scale, height: size.height / scale },
+          deviceScaleFactor: scale,
+        });
+        page.setDefaultTimeout(5000);
+        page.on("pageerror", (error) => errors.push(error.message));
         await page.goto(
-          `${origin}/?language=${language}&theme=${theme}&zoom=${size.zoom ?? 1}`,
+          `${origin}/?language=${language}&theme=${theme}&zoom=1`,
         );
         const dialog = page.getByRole("dialog", { name: "Edit project" });
         await dialog.waitFor();
@@ -153,7 +158,7 @@ try {
               row.padding === "16px" &&
               row.baseline === "1px" &&
               row.gap === "0px" &&
-              row.height >= 40 * (size.zoom ?? 1) - 1,
+              row.height >= 39,
           ),
           JSON.stringify(project),
         );
@@ -242,10 +247,7 @@ try {
         assert.equal(geometry.underline, "2px");
         assert.equal(geometry.overlap, false);
         assert.equal(geometry.visible, true);
-        assert(
-          geometry.closeWidth >= 40 * (size.zoom ?? 1) - 1 &&
-            geometry.closeHeight >= 40 * (size.zoom ?? 1) - 1,
-        );
+        assert(geometry.closeWidth >= 39 && geometry.closeHeight >= 39);
         assert(
           geometry.page <= geometry.viewport + 1,
           JSON.stringify(geometry),
@@ -265,7 +267,7 @@ try {
             (row) =>
               row.radius === "0px" &&
               row.underline === "2px" &&
-              row.height >= 40 * (size.zoom ?? 1) - 1 &&
+              row.height >= 39 &&
               row.wrap === "nowrap",
           ),
         );
@@ -279,6 +281,7 @@ try {
           }) + "\n",
         );
         cases++;
+        await page.close();
       }
   assert.deepEqual(errors, []);
   process.stdout.write(
