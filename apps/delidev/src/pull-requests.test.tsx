@@ -374,13 +374,17 @@ it("discloses one exact duplicate-name identity without selecting or reading it"
   );
   expect(pane.queryByRole("heading", { name: "Query options" })).toBeNull();
   expect(
-    pane
+    screen
       .getAllByRole("button", {
-        name: "Example repository",
-      })[0]
-      .getAttribute("aria-pressed"),
-  ).toBe("false");
-  fireEvent.click(secondButton);
+        name: /^Example repository · \d+$/,
+      })
+      .map((button) => button.getAttribute("aria-pressed")),
+  ).toEqual(["false", "false"]);
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: /^Details for Example repository · 2$/,
+    }),
+  );
   expect(pane.queryByRole("region", { name: /Details for/ })).toBeNull();
   expect(
     value.list.mock.calls.filter(

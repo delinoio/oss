@@ -325,7 +325,9 @@ it("opens project creation shortcuts without toggling groups or reading collapse
       ),
     }),
   ).toBe(disabled);
-  expect(disabled.getAttribute("title")).toBe("Same name 프로젝트의 새 세션");
+  expect(disabled.getAttribute("title")).toBe(
+    "Same name · 1 프로젝트의 새 세션",
+  );
 });
 
 it("keeps project creation shortcuts out of unknown-project and General Chat groups", async () => {
