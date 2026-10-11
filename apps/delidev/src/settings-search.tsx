@@ -65,6 +65,12 @@ export enum SettingsSearchTarget {
   RunnerInventory = "runner-inventory",
   GitProfiles = "git-profiles",
   CurrentConnection = "current-connection",
+  AppInformation = "app-information",
+  AppUpdates = "app-updates",
+  AppRecovery = "app-recovery",
+  AppReleases = "app-releases",
+  AppLicense = "app-license",
+  AppNotices = "app-notices",
 }
 interface StaticTarget {
   target: SettingsSearchTarget;
@@ -81,6 +87,20 @@ const target = (
 export const settingsSearchTargets: Partial<
   Record<Category, readonly StaticTarget[]>
 > = {
+  [Category.AppInformation]: [
+    target(
+      SettingsSearchTarget.AppInformation,
+      "settings.appInformation.title",
+    ),
+    target(SettingsSearchTarget.AppUpdates, "settings.appInformation.updates"),
+    target(SettingsSearchTarget.AppRecovery, "updates.recovery"),
+    target(
+      SettingsSearchTarget.AppReleases,
+      "settings.appInformation.releases",
+    ),
+    target(SettingsSearchTarget.AppLicense, "settings.appInformation.license"),
+    target(SettingsSearchTarget.AppNotices, "settings.appInformation.notices"),
+  ],
   [Category.ProjectDefaults]: [
     target(
       SettingsSearchTarget.PlanModeDefault,

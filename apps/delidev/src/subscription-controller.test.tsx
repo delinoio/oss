@@ -1015,7 +1015,9 @@ it("keeps retained paid-credit rows loading while the capability read is unresol
   const row = await screen.findByRole("article", {
     name: "Existing subscription",
   });
-  expect(within(row).getByText(/Paid credits: Unavailable/)).toBeTruthy();
+  const paidCredits = () =>
+    within(within(row).getByRole("region", { name: "Paid credits" }));
+  expect(paidCredits().getByText(/Unavailable/)).toBeTruthy();
   let release: (() => void) | undefined;
   value.status.mockImplementationOnce(async () => {
     await new Promise<void>((resolve) => {
@@ -1043,25 +1045,13 @@ it("keeps retained paid-credit rows loading while the capability read is unresol
     });
   });
   await waitFor(() =>
-    expect(
-      within(
-        screen.getByRole("article", { name: "Existing subscription" }),
-      ).getByText(/Paid credits: Loading paid-credit support/),
-    ).toBeTruthy(),
+    expect(paidCredits().getByText(/Loading paid-credit support/)).toBeTruthy(),
   );
-  expect(
-    within(
-      screen.getByRole("article", { name: "Existing subscription" }),
-    ).queryByText(/Paid credits: Unavailable/),
-  ).toBeNull();
+  expect(paidCredits().queryByText(/Unavailable/)).toBeNull();
   await act(async () => {
     release?.();
   });
   await waitFor(() =>
-    expect(
-      within(
-        screen.getByRole("article", { name: "Existing subscription" }),
-      ).getByText(/Paid credits: Balance unknown/),
-    ).toBeTruthy(),
+    expect(paidCredits().getByText(/Balance unknown/)).toBeTruthy(),
   );
 });

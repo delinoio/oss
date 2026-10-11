@@ -61,13 +61,27 @@ const rows = Array.from({ length: count }, (_, index) =>
         index % 4 === 2 ? "claude" : index % 4 === 3 ? "grok" : "chatgpt",
       connection: { id: "synthetic" },
       quota: quota(windows),
+      subscription: {
+        paid_credits: [
+          {
+            id: "codex",
+            has_credits: true,
+            unlimited: false,
+            balance: "60961.1135370000",
+            observed_at: new Date().toISOString(),
+          },
+        ],
+      },
     }),
   }),
 );
 const transport = createRouterTransport((router) => {
   router.service(SystemService, {
     getStatus: () => ({
-      capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1],
+      capabilities: [
+        SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
+        SystemCapability.SUBSCRIPTION_PAID_CREDITS_V1,
+      ],
     }),
   });
   router.service(ResourceService, {

@@ -1,10 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+import { AppInformation } from "./app-information";
 import {
   ConfigurationNameJobFailure,
   isConfigurationNameConflict,
 } from "./configuration-name-conflict";
 import { revealProjectInvalidControl } from "./project-edit-tabs";
 import { defaultBranchPrefix, validBranchPrefix } from "./session-defaults";
-// SPDX-License-Identifier: Apache-2.0
 import {
   SettingsActionScope,
   SettingsActionButton,
@@ -1450,6 +1451,7 @@ enum SettingsArea {
   Backups,
   Appearance,
   KeyboardShortcuts,
+  AppInformation,
 }
 
 enum SettingsGroup {
@@ -1480,6 +1482,15 @@ export const settingsCategories: Record<
       return copy("settings.savedOnThisComputer_11cb50");
     },
     area: SettingsArea.Appearance,
+  },
+  [SettingsCategory.AppInformation]: {
+    get label() {
+      return copy("settings.appInformation.title");
+    },
+    get description() {
+      return copy("settings.appInformation.description");
+    },
+    area: SettingsArea.AppInformation,
   },
   [SettingsCategory.Backups]: {
     get label() {
@@ -1687,11 +1698,14 @@ export const settingsGroups: {
       SettingsCategory.Notifications,
       SettingsCategory.Transfer,
       SettingsCategory.Backups,
+      SettingsCategory.AppInformation,
     ],
   },
 ];
 
 const settingsIcons: Record<SettingsCategory, string> = {
+  [SettingsCategory.AppInformation]:
+    "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18m0 5h.01M12 11v6",
   [SettingsCategory.ProjectDefaults]: "M4 6h16M4 12h16M4 18h16",
 
   [SettingsCategory.KeyboardShortcuts]:
@@ -1745,6 +1759,7 @@ interface SettingsProps {
   readLocalWorker?: ReadLocalWorkerProof;
   chooseRepositoryFolder?: ChooseRepositoryFolder;
   connectionSettings?: React.ReactNode;
+  appInformationSettings?: React.ReactNode;
   pairingAuthority?: PairingAuthority;
   visible?: boolean;
   controlLocalWorker?: ControlLocalWorker;
@@ -1991,6 +2006,7 @@ function SettingsWorkspace({
   chooseRepositoryFolder,
   currentDeviceId,
   pairingAuthority,
+  appInformationSettings,
   selectedCategory,
   searchRequest,
   entry,
@@ -2506,11 +2522,13 @@ function SettingsWorkspace({
                   ? "settings-content settings-api-keys"
                   : isRunnerDevices
                     ? "settings-content settings-runner-devices"
-                    : area === SettingsArea.Diagnostics
-                      ? "settings-content settings-connections"
-                      : area === SettingsArea.KeyboardShortcuts
-                        ? "settings-content settings-shortcuts"
-                        : "settings-content"
+                    : area === SettingsArea.AppInformation
+                      ? "settings-content settings-app-information"
+                      : area === SettingsArea.Diagnostics
+                        ? "settings-content settings-connections"
+                        : area === SettingsArea.KeyboardShortcuts
+                          ? "settings-content settings-shortcuts"
+                          : "settings-content"
         }
         aria-label={copy("settings.settingsContent_e4dcd3")}
       >
@@ -2678,8 +2696,17 @@ function SettingsWorkspace({
                     />
                   </div>
                 ) : null}
+                {area === SettingsArea.AppInformation
+                  ? (appInformationSettings ?? <AppInformation />)
+                  : null}
                 {area === SettingsArea.Diagnostics ? (
                   <div>
+                    <SettingsActionButton
+                      icon={SettingsActionIcon.Inspect}
+                      onClick={() => navigate(SettingsCategory.AppInformation)}
+                    >
+                      {copy("settings.appInformation.navigate")}
+                    </SettingsActionButton>
                     {connectionSettings ?? (
                       <section
                         data-settings-search-target="current-connection"

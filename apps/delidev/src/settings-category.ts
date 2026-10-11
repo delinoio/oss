@@ -19,4 +19,5 @@ export enum SettingsCategory {
   Notifications = "notifications",
   Transfer = "transfer",
   Backups = "backups",
+  AppInformation = "app-information",
 }

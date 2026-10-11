@@ -96,6 +96,7 @@ const categories = [
   "Notifications",
   "Import / Export",
   "Backups",
+  "App information",
 ];
 const githubOnly = process.env.DELIDEV_LAYOUT_GITHUB_ONLY === "1";
 const wizardAccountsOnly =
@@ -127,6 +128,9 @@ const viewports = [
   [1920, 1080],
   [1440, 1000],
   [1440, 900],
+  [1100, 768],
+  [760, 768],
+  [600, 768],
   [1280, 820],
   [1280, 800],
   [960, 640],
@@ -655,6 +659,9 @@ try {
         for (const zoom of [1, 2])
           for (const [width, height] of [
             [1440, 900],
+            [1100, 768],
+            [760, 768],
+            [600, 768],
             [1280, 820],
             [960, 640],
             [640, 480],
@@ -829,6 +836,9 @@ try {
         for (const ordered of [false, true])
           for (const [width, height] of [
             [1440, 900],
+            [1100, 768],
+            [760, 768],
+            [600, 768],
             [960, 640],
             [640, 480],
             [480, 320],
@@ -994,6 +1004,9 @@ try {
       for (const theme of ["light", "dark"])
         for (const [width, height] of [
           [1440, 900],
+          [1100, 768],
+          [760, 768],
+          [600, 768],
           [1280, 820],
           [960, 640],
           [640, 480],
@@ -1028,6 +1041,9 @@ try {
         for (const zoom of [1, 2])
           for (const [width, height] of [
             [1440, 900],
+            [1100, 768],
+            [760, 768],
+            [600, 768],
             [1280, 820],
             [960, 640],
             [640, 480],
@@ -1127,6 +1143,9 @@ try {
         for (const zoom of [1, 2])
           for (const [width, height] of [
             [1440, 900],
+            [1100, 768],
+            [760, 768],
+            [600, 768],
             [1280, 820],
             [960, 640],
             [640, 480],
@@ -1566,6 +1585,9 @@ try {
     // Half-size CSS viewports cover effective 200% layout, not native chrome zoom.
     for (const [width, height] of [
       [1440, 900],
+      [1100, 768],
+      [760, 768],
+      [600, 768],
       [960, 640],
       [640, 480],
       [720, 450],
@@ -1748,6 +1770,42 @@ try {
             );
             for (const category of categories) {
               await select(category);
+              if (category === "App information") {
+                await page.getByText("0.1.0", { exact: true }).waitFor();
+                assert.equal(
+                  await page.locator(".app-information-card").count(),
+                  3,
+                );
+                assert.equal(
+                  await page.evaluate(
+                    () => window.appInformationCounts.controls,
+                  ),
+                  0,
+                );
+                assert.deepEqual(
+                  await page.evaluate(() => window.appInformationCounts.opened),
+                  [],
+                );
+                const recovery = page.locator(".app-update-recovery");
+                assert.equal(
+                  await recovery.evaluate((node) => node.open),
+                  false,
+                );
+                await recovery.locator("summary").click();
+                const input = recovery.getByLabel(
+                  l("Retained desktop update ID"),
+                );
+                await input.focus();
+                await recovery.evaluate((node) => {
+                  node.open = false;
+                });
+                assert.equal(
+                  await recovery
+                    .locator("summary")
+                    .evaluate((node) => node === document.activeElement),
+                  true,
+                );
+              }
               const layout = await page
                 .locator(".settings-content")
                 .evaluate((root) => {
@@ -2368,6 +2426,9 @@ try {
     for (const theme of ["light", "dark"])
       for (const [width, height] of [
         [1440, 900],
+        [1100, 768],
+        [760, 768],
+        [600, 768],
         [1280, 820],
         [960, 640],
         [640, 480],
