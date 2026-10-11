@@ -33,33 +33,10 @@ func ValidateResult(input PrepareRequest, result Manifest, workerOS string) erro
 		return ResultUncertain()
 	}
 	normalize := func(value string) string {
-		if workerOS == "windows" {
-			return strings.ReplaceAll(value, "\\", "/")
-		}
-		return value
+		return normalizeWorkerPath(value, workerOS)
 	}
 	absolute := func(value string) bool {
-		if domain.Text(value, "workspace path", 4096, true) != nil {
-			return false
-		}
-		value = normalize(value)
-		if workerOS == "windows" {
-			if strings.HasPrefix(value, "//") {
-				parts := strings.Split(value[2:], "/")
-				if len(parts) < 3 || parts[0] == "" || parts[0] == "." || parts[0] == "?" || parts[1] == "" {
-					return false
-				}
-				value = value[1:]
-			} else {
-				if len(value) < 4 || !((value[0] >= 'A' && value[0] <= 'Z') || (value[0] >= 'a' && value[0] <= 'z')) || value[1:3] != ":/" {
-					return false
-				}
-				value = value[2:]
-			}
-		} else if workerOS != "darwin" && workerOS != "linux" {
-			return false
-		}
-		return path.IsAbs(value) && path.Clean(value) == value
+		return validWorkerAbsolutePath(value, workerOS)
 	}
 	if !absolute(result.PrimaryPath) {
 		return ResultUncertain()
