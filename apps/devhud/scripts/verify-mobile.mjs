@@ -6,7 +6,15 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assertGeneratedOverlays } from "./generate-mobile.mjs";
-import { assertAndroidArtifactEntries, assertAndroidArtifactManifest, assertAndroidNativeLibrary, assertMobileContracts, assertMobileDependencyClosures, assertMobileDependencyResolution, mobileCargoTreeDigest } from "./mobile-policy.mjs";
+import {
+  assertAndroidArtifactEntries,
+  assertAndroidArtifactManifest,
+  assertAndroidNativeLibrary,
+  assertMobileContracts,
+  assertMobileDependencyClosures,
+  assertMobileDependencyResolution,
+  mobileCargoTreeDigest,
+} from "./mobile-policy.mjs";
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(appRoot, "../..");
@@ -14,50 +22,117 @@ const text = (path) => readFileSync(join(appRoot, path), "utf8");
 const json = (path) => JSON.parse(text(path));
 
 function commandOutput(command, args, encoding = "utf8") {
-  const result = spawnSync(command, args, { encoding, maxBuffer: 64 * 1024 * 1024, shell: false });
-  if (result.status !== 0) throw new Error(`${command} failed while inspecting the Android artifact`);
+  const result = spawnSync(command, args, {
+    encoding,
+    maxBuffer: 64 * 1024 * 1024,
+    shell: false,
+  });
+  if (result.status !== 0)
+    throw new Error(`${command} failed while inspecting the Android artifact`);
   return result.stdout;
 }
 
 function mobileCargoTree(target) {
-  const result = spawnSync("cargo", [
-    "tree", "--locked", "--manifest-path", "apps/devhud/src-tauri/Cargo.toml", "-p", "devhud",
-    "--target", target, "--edges", "normal", "--prefix", "depth", "--format", "{p} {f}",
-  ], { cwd: repoRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, shell: false });
-  if (result.status !== 0) throw new Error(`cargo tree failed while resolving mobile target ${target}: ${result.stderr.trim()}`);
+  const result = spawnSync(
+    "cargo",
+    [
+      "tree",
+      "--locked",
+      "--manifest-path",
+      "apps/devhud/src-tauri/Cargo.toml",
+      "-p",
+      "devhud",
+      "--target",
+      target,
+      "--edges",
+      "normal",
+      "--prefix",
+      "depth",
+      "--format",
+      "{p} {f}",
+    ],
+    {
+      cwd: repoRoot,
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+      shell: false,
+    },
+  );
+  if (result.status !== 0)
+    throw new Error(
+      `cargo tree failed while resolving mobile target ${target}: ${result.stderr.trim()}`,
+    );
   return result.stdout;
 }
 
 function androidAapt() {
   const sdk = process.env.ANDROID_HOME ?? process.env.ANDROID_SDK_ROOT;
-  if (!sdk) throw new Error("ANDROID_HOME or ANDROID_SDK_ROOT is required for artifact verification");
+  if (!sdk)
+    throw new Error(
+      "ANDROID_HOME or ANDROID_SDK_ROOT is required for artifact verification",
+    );
   const buildTools = join(sdk, "build-tools");
   const versions = readdirSync(buildTools).toSorted().reverse();
-  const executable = versions.map((version) => join(buildTools, version, process.platform === "win32" ? "aapt.exe" : "aapt")).find(existsSync);
+  const executable = versions
+    .map((version) =>
+      join(
+        buildTools,
+        version,
+        process.platform === "win32" ? "aapt.exe" : "aapt",
+      ),
+    )
+    .find(existsSync);
   if (!executable) throw new Error("Android aapt was not found");
   return executable;
 }
 
 function assertAndroidArtifact(artifact, abis, bundletoolJar, widgetProvider) {
-  if (!existsSync(artifact)) throw new Error(`Android artifact is missing: ${artifact}`);
+  if (!existsSync(artifact))
+    throw new Error(`Android artifact is missing: ${artifact}`);
   commandOutput("unzip", ["-t", artifact]);
   const entries = commandOutput("unzip", ["-Z1", artifact]).trim().split("\n");
-  const format = artifact.endsWith(".aab") ? "aab" : artifact.endsWith(".apk") ? "apk" : "unknown";
+  const format = artifact.endsWith(".aab")
+    ? "aab"
+    : artifact.endsWith(".apk")
+      ? "apk"
+      : "unknown";
   assertAndroidArtifactEntries(entries, abis, format);
   const prefix = format === "aab" ? "base/" : "";
   const dexEntry = format === "aab" ? "base/dex/classes.dex" : "classes.dex";
 
-  const dex = commandOutput("unzip", ["-p", artifact, dexEntry], null).toString("latin1");
-  if (!dex.includes("Lio/delino/devhud/bridge/DevhudNativePlugin;") || !dex.includes("Landroid/webkit/WebView;")) throw new Error("Android native bridge or System WebView host is missing from the artifact");
+  const dex = commandOutput("unzip", ["-p", artifact, dexEntry], null).toString(
+    "latin1",
+  );
+  if (
+    !dex.includes("Lio/delino/devhud/bridge/DevhudNativePlugin;") ||
+    !dex.includes("Landroid/webkit/WebView;")
+  )
+    throw new Error(
+      "Android native bridge or System WebView host is missing from the artifact",
+    );
   for (const abi of abis) {
     const expectedLibrary = `${prefix}lib/${abi}/libdevhud_lib.so`;
-    const nativeLibrary = commandOutput("unzip", ["-p", artifact, expectedLibrary], null).toString("latin1");
+    const nativeLibrary = commandOutput(
+      "unzip",
+      ["-p", artifact, expectedLibrary],
+      null,
+    ).toString("latin1");
     assertAndroidNativeLibrary(nativeLibrary);
   }
 
   if (format === "aab") {
-    if (!bundletoolJar || !existsSync(bundletoolJar)) throw new Error("--bundletool-jar must reference the pinned bundletool JAR for App Bundle verification");
-    const manifest = commandOutput("java", ["-jar", bundletoolJar, "dump", "manifest", `--bundle=${artifact}`, "--module=base"]);
+    if (!bundletoolJar || !existsSync(bundletoolJar))
+      throw new Error(
+        "--bundletool-jar must reference the pinned bundletool JAR for App Bundle verification",
+      );
+    const manifest = commandOutput("java", [
+      "-jar",
+      bundletoolJar,
+      "dump",
+      "manifest",
+      `--bundle=${artifact}`,
+      "--module=base",
+    ]);
     assertAndroidArtifactManifest(manifest, {
       identity: platforms.identity,
       versionCode: releaseMetadata.storeBuildNumber,
@@ -68,18 +143,57 @@ function assertAndroidArtifact(artifact, abis, bundletoolJar, widgetProvider) {
 
   const aapt = androidAapt();
   const badging = commandOutput(aapt, ["dump", "badging", artifact]);
-  if (!badging.includes("package: name='io.delino.devhud'") || !badging.includes("sdkVersion:'29'")) throw new Error("Android artifact identity or minimum SDK changed");
-  if (!badging.includes("uses-permission: name='android.permission.INTERNET'") || !badging.includes("uses-permission: name='android.permission.POST_NOTIFICATIONS'")) throw new Error("Android artifact is missing required System WebView networking or notification permissions");
-  const manifest = commandOutput(aapt, ["dump", "xmltree", artifact, "AndroidManifest.xml"]);
-  for (const value of ['="devhud"', '="auth"', '="/callback"', '="deck"', "DevHudWidgetProvider"]) if (!manifest.includes(value)) throw new Error("Android artifact auth callback or widget registration changed");
+  if (
+    !badging.includes("package: name='io.delino.devhud'") ||
+    !badging.includes("sdkVersion:'29'")
+  )
+    throw new Error("Android artifact identity or minimum SDK changed");
+  if (
+    !badging.includes("uses-permission: name='android.permission.INTERNET'") ||
+    !badging.includes(
+      "uses-permission: name='android.permission.POST_NOTIFICATIONS'",
+    )
+  )
+    throw new Error(
+      "Android artifact is missing required System WebView networking or notification permissions",
+    );
+  const manifest = commandOutput(aapt, [
+    "dump",
+    "xmltree",
+    artifact,
+    "AndroidManifest.xml",
+  ]);
+  for (const value of [
+    '="devhud"',
+    '="auth"',
+    '="/callback"',
+    '="deck"',
+    "DevHudWidgetProvider",
+  ])
+    if (!manifest.includes(value))
+      throw new Error(
+        "Android artifact auth callback or widget registration changed",
+      );
 }
 
 const platforms = json("mobile-platforms.json");
-const releaseMetadata = JSON.parse(readFileSync(join(repoRoot, "packaging/devhud/release-metadata.json"), "utf8"));
+const releaseMetadata = JSON.parse(
+  readFileSync(
+    join(repoRoot, "packaging/devhud/release-metadata.json"),
+    "utf8",
+  ),
+);
 const iosReleaseConfig = json("src-tauri/tauri.ios.conf.json");
 const androidReleaseConfig = json("src-tauri/tauri.android.conf.json");
-if (iosReleaseConfig.bundle.iOS.bundleVersion !== String(releaseMetadata.storeBuildNumber) || androidReleaseConfig.bundle.android.versionCode !== releaseMetadata.storeBuildNumber) {
-  throw new Error("mobile store build numbers do not match DevHud release metadata");
+if (
+  iosReleaseConfig.bundle.iOS.bundleVersion !==
+    String(releaseMetadata.storeBuildNumber) ||
+  androidReleaseConfig.bundle.android.versionCode !==
+    releaseMetadata.storeBuildNumber
+) {
+  throw new Error(
+    "mobile store build numbers do not match DevHud release metadata",
+  );
 }
 assertMobileDependencyResolution(text("scripts/verify-mobile.mjs"));
 
@@ -89,18 +203,40 @@ assertMobileContracts({
   ios: iosReleaseConfig,
   android: androidReleaseConfig,
   cargo: text("src-tauri/Cargo.toml"),
-  androidManifest: text("mobile/overrides/android/app/src/main/AndroidManifest.xml"),
-  androidDebugManifest: text("mobile/overrides/android/app/src/debug/AndroidManifest.xml"),
-  androidBackupRules: text("mobile/overrides/android/app/src/main/res/xml/backup_rules.xml"),
-  androidDataExtractionRules: text("mobile/overrides/android/app/src/main/res/xml/data_extraction_rules.xml"),
-  androidPluginManifest: text("src-tauri/mobile/android/src/main/AndroidManifest.xml"),
-  androidNativeBridge: text("src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt"),
-  androidWidgetStore: text("src-tauri/mobile/android/src/main/java/io/delino/devhud/widget/DevHudWidgetStore.kt"),
-  androidChannelEnglish: text("mobile/overrides/android/app/src/main/res/values/devhud_strings.xml"),
-  androidChannelKorean: text("mobile/overrides/android/app/src/main/res/values-ko/devhud_strings.xml"),
+  androidManifest: text(
+    "mobile/overrides/android/app/src/main/AndroidManifest.xml",
+  ),
+  androidDebugManifest: text(
+    "mobile/overrides/android/app/src/debug/AndroidManifest.xml",
+  ),
+  androidBackupRules: text(
+    "mobile/overrides/android/app/src/main/res/xml/backup_rules.xml",
+  ),
+  androidDataExtractionRules: text(
+    "mobile/overrides/android/app/src/main/res/xml/data_extraction_rules.xml",
+  ),
+  androidPluginManifest: text(
+    "src-tauri/mobile/android/src/main/AndroidManifest.xml",
+  ),
+  androidNativeBridge: text(
+    "src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt",
+  ),
+  androidWidgetStore: text(
+    "src-tauri/mobile/android/src/main/java/io/delino/devhud/widget/DevHudWidgetStore.kt",
+  ),
+  androidChannelEnglish: text(
+    "mobile/overrides/android/app/src/main/res/values/devhud_strings.xml",
+  ),
+  androidChannelKorean: text(
+    "mobile/overrides/android/app/src/main/res/values-ko/devhud_strings.xml",
+  ),
   iosAppEntitlements: text("mobile/overrides/ios/DevHud.entitlements"),
-  iosNativeBridge: text("src-tauri/mobile/ios/Sources/DevhudNativePlugin.swift"),
-  iosWidgetStateStore: text("src-tauri/mobile/ios/Sources/WidgetStateStore.swift"),
+  iosNativeBridge: text(
+    "src-tauri/mobile/ios/Sources/DevhudNativePlugin.swift",
+  ),
+  iosWidgetStateStore: text(
+    "src-tauri/mobile/ios/Sources/WidgetStateStore.swift",
+  ),
   iosPlist: text("src-tauri/Info.ios.plist"),
   packageJson: json("package.json"),
   nativeBridge: text("src/native-bridge.ts"),
@@ -108,34 +244,74 @@ assertMobileContracts({
   workflow: readFileSync(join(repoRoot, ".github/workflows/CI.yml"), "utf8"),
 });
 
-const closureTargets = [...new Set(platforms.targets.map(({ rustTarget }) => rustTarget))];
-const dependencyClosures = Object.fromEntries(closureTargets.map((target) => [target, mobileCargoTreeDigest(mobileCargoTree(target), repoRoot)]));
+const closureTargets = [
+  ...new Set(platforms.targets.map(({ rustTarget }) => rustTarget)),
+];
+const dependencyClosures = Object.fromEntries(
+  closureTargets.map((target) => [
+    target,
+    mobileCargoTreeDigest(mobileCargoTree(target), repoRoot),
+  ]),
+);
 assertMobileDependencyClosures(platforms, dependencyClosures);
 
-if (existsSync(join(appRoot, "src-tauri/gen/android"))) assertGeneratedOverlays("android");
+if (existsSync(join(appRoot, "src-tauri/gen/android")))
+  assertGeneratedOverlays("android");
 
 const artifactIndex = process.argv.indexOf("--android-artifact");
-const abiIndexes = process.argv.flatMap((argument, index) => argument === "--android-abi" ? [index] : []);
+const abiIndexes = process.argv.flatMap((argument, index) =>
+  argument === "--android-abi" ? [index] : [],
+);
 const bundletoolIndex = process.argv.indexOf("--bundletool-jar");
-if ((artifactIndex === -1) !== (abiIndexes.length === 0)) throw new Error("--android-artifact and at least one --android-abi must be provided together");
-if (bundletoolIndex !== -1 && artifactIndex === -1) throw new Error("--bundletool-jar requires --android-artifact");
+if ((artifactIndex === -1) !== (abiIndexes.length === 0))
+  throw new Error(
+    "--android-artifact and at least one --android-abi must be provided together",
+  );
+if (bundletoolIndex !== -1 && artifactIndex === -1)
+  throw new Error("--bundletool-jar requires --android-artifact");
 if (artifactIndex !== -1) {
   const artifact = process.argv[artifactIndex + 1];
   const abis = abiIndexes.map((index) => process.argv[index + 1]);
-  const bundletoolJar = bundletoolIndex === -1 ? null : process.argv[bundletoolIndex + 1];
-  if (!artifact || artifact.startsWith("--") || abis.some((abi) => !abi || abi.startsWith("--")) || (bundletoolIndex !== -1 && (!bundletoolJar || bundletoolJar.startsWith("--")))) throw new Error("Android artifact verification arguments require values");
-  assertAndroidArtifact(resolve(artifact), abis, bundletoolJar && resolve(bundletoolJar), platforms.widgets.androidProvider);
+  const bundletoolJar =
+    bundletoolIndex === -1 ? null : process.argv[bundletoolIndex + 1];
+  if (
+    !artifact ||
+    artifact.startsWith("--") ||
+    abis.some((abi) => !abi || abi.startsWith("--")) ||
+    (bundletoolIndex !== -1 &&
+      (!bundletoolJar || bundletoolJar.startsWith("--")))
+  )
+    throw new Error("Android artifact verification arguments require values");
+  assertAndroidArtifact(
+    resolve(artifact),
+    abis,
+    bundletoolJar && resolve(bundletoolJar),
+    platforms.widgets.androidProvider,
+  );
 }
 
 const forbiddenMobileText = [
   text("src-tauri/mobile/android/build.gradle.kts"),
-  text("src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt"),
-  text("src-tauri/mobile/android/src/main/java/io/delino/devhud/widget/DevHudWidgetStore.kt"),
-  text("src-tauri/mobile/android/src/main/java/io/delino/devhud/widget/DevHudWidgetProvider.kt"),
+  text(
+    "src-tauri/mobile/android/src/main/java/io/delino/devhud/bridge/DevhudNativePlugin.kt",
+  ),
+  text(
+    "src-tauri/mobile/android/src/main/java/io/delino/devhud/widget/DevHudWidgetStore.kt",
+  ),
+  text(
+    "src-tauri/mobile/android/src/main/java/io/delino/devhud/widget/DevHudWidgetProvider.kt",
+  ),
   text("src-tauri/mobile/ios/Package.swift"),
   text("src-tauri/mobile/ios/Sources/DevhudNativePlugin.swift"),
   text("mobile/overrides/ios/DevHudWidget/DevHudWidget.swift"),
 ].join("\n");
-if (/cef|chromium|chrome-extension|browser-extension|global-hook|desktop-hook|okhttp|retrofit/iu.test(forbiddenMobileText)) throw new Error("forbidden mobile dependency or desktop hook detected");
+if (
+  /cef|chromium|chrome-extension|browser-extension|global-hook|desktop-hook|okhttp|retrofit/iu.test(
+    forbiddenMobileText,
+  )
+)
+  throw new Error("forbidden mobile dependency or desktop hook detected");
 
-console.log("devhud: verified synchronized iOS/Android contracts, system webviews, architectures, deep links, and least privileges");
+console.log(
+  "devhud: verified synchronized iOS/Android contracts, system webviews, architectures, deep links, and least privileges",
+);

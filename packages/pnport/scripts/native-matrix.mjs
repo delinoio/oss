@@ -11,8 +11,10 @@ const runners = Object.freeze({
 
 // The package registry owns the release set. Adding a platform also requires
 // explicitly choosing a native host; cross-compilation cannot fill that slot.
-export const nativeMatrix = Object.freeze({ include: targets.map(({ suffix, rust }) => {
-  const runner = runners[suffix];
-  if (!runner) throw new Error(`Missing pnport native runner: ${suffix}`);
-  return { runner, target: rust, suffix };
-}) });
+export const nativeMatrix = Object.freeze({
+  include: targets.map(({ suffix, rust }) => {
+    const runner = runners[suffix];
+    if (!runner) throw new Error(`Missing pnport native runner: ${suffix}`);
+    return { runner, target: rust, suffix };
+  }),
+});

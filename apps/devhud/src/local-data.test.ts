@@ -1,30 +1,75 @@
 import { describe, expect, it } from "vitest";
 import { StaticCapability } from "@delinoio/devhud-api-client";
-import { clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, clearGuestImportMarker, deviceLocalSettingsEqual, DeviceLocalSettingsMaximumBytes, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
-import { defaultDevHudSettings, parseDevHudSettings } from "./settings-contract";
+import {
+  clearAllContractedLocalData,
+  clearAuthenticatedOriginData,
+  clearAuthenticatedSettingsCache,
+  clearGuestImportMarker,
+  deviceLocalSettingsEqual,
+  DeviceLocalSettingsMaximumBytes,
+  hasGuestSettings,
+  readAuthenticatedSettingsCache,
+  readCachedIdentityBootstrap,
+  readGuestSettings,
+  writeAuthenticatedSettingsCache,
+  writeCachedIdentityBootstrap,
+  writeGuestSettings,
+} from "./local-data";
+import {
+  defaultDevHudSettings,
+  parseDevHudSettings,
+} from "./settings-contract";
 import { ShortcutActionId } from "./shortcuts";
 
 class MemoryStorage implements Storage {
   readonly #values = new Map<string, string>();
-  get length() { return this.#values.size; }
-  clear() { this.#values.clear(); }
-  getItem(key: string) { return this.#values.get(key) ?? null; }
-  key(index: number) { return [...this.#values.keys()][index] ?? null; }
-  removeItem(key: string) { this.#values.delete(key); }
-  setItem(key: string, value: string) { this.#values.set(key, value); }
+  get length() {
+    return this.#values.size;
+  }
+  clear() {
+    this.#values.clear();
+  }
+  getItem(key: string) {
+    return this.#values.get(key) ?? null;
+  }
+  key(index: number) {
+    return [...this.#values.keys()][index] ?? null;
+  }
+  removeItem(key: string) {
+    this.#values.delete(key);
+  }
+  setItem(key: string, value: string) {
+    this.#values.set(key, value);
+  }
 }
 
 describe("local identity data lifecycle", () => {
   it("isolates cached bootstrap and settings by API origin", () => {
     const storage = new MemoryStorage();
     const apiOrigin = "https://api.example";
-    const bootstrap = { issuer: "https://identity.example/", audience: "https://api.example", clientId: "desktop", redirectUri: "devhud://auth/callback" as const, publicAssetBaseUrl: "https://images.example/", officialUploadOrigin: null, capabilities: [StaticCapability.CRASH_REPORTS] };
+    const bootstrap = {
+      issuer: "https://identity.example/",
+      audience: "https://api.example",
+      clientId: "desktop",
+      redirectUri: "devhud://auth/callback" as const,
+      publicAssetBaseUrl: "https://images.example/",
+      officialUploadOrigin: null,
+      capabilities: [StaticCapability.CRASH_REPORTS],
+    };
     writeCachedIdentityBootstrap(storage, apiOrigin, bootstrap);
-    writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: defaultDevHudSettings, revision: 7n, cachedAt: "2026-08-17T00:00:00.000Z" });
+    writeAuthenticatedSettingsCache(storage, apiOrigin, {
+      settings: defaultDevHudSettings,
+      revision: 7n,
+      cachedAt: "2026-08-17T00:00:00.000Z",
+    });
 
     expect(readCachedIdentityBootstrap(storage, apiOrigin)).toEqual(bootstrap);
-    expect(readAuthenticatedSettingsCache(storage, apiOrigin)?.revision).toBe(7n);
-    expect(readCachedIdentityBootstrap(storage, "https://other.example")).toBeNull();
+    expect(readAuthenticatedSettingsCache(storage, apiOrigin)?.revision).toBe(
+      7n,
+    );
+    expect(
+      readCachedIdentityBootstrap(storage, "https://other.example"),
+    ).toBeNull();
 
     clearAuthenticatedOriginData(storage, apiOrigin);
     expect(readCachedIdentityBootstrap(storage, apiOrigin)).toBeNull();
@@ -41,9 +86,13 @@ describe("local identity data lifecycle", () => {
       redirectUri: "devhud://auth/callback" as const,
       capabilities: [StaticCapability.SETTINGS_SYNC],
     };
-    writeCachedIdentityBootstrap(storage, apiOrigin, { ...legacy, publicAssetBaseUrl: "http://127.0.0.1:9000" });
+    writeCachedIdentityBootstrap(storage, apiOrigin, {
+      ...legacy,
+      publicAssetBaseUrl: "http://127.0.0.1:9000",
+    });
     const cacheKey = storage.key(0);
-    if (cacheKey === null) throw new Error("bootstrap cache key was not written");
+    if (cacheKey === null)
+      throw new Error("bootstrap cache key was not written");
     storage.setItem(cacheKey, JSON.stringify(legacy));
 
     expect(readCachedIdentityBootstrap(storage, apiOrigin)).toMatchObject({
@@ -56,19 +105,35 @@ describe("local identity data lifecycle", () => {
   it("removes identity, guest, draft, cache, pairing, permission, and local-agent data on logout", () => {
     const storage = new MemoryStorage();
     writeGuestSettings(storage, defaultDevHudSettings);
-    for (const key of ["devhud.deck.v1", "devhud.draft.v1", "devhud.cache.v1", "devhud.pairing.v1", "devhud.permission.v1", "devhud.diagnostics.v1.events", "devhud.diagnostics.v1.correlations", "devhud.local-agent-consent.v1", "devhud.local-agent-executables.v1", "devhud-extension.session"]) storage.setItem(key, "sensitive");
+    for (const key of [
+      "devhud.deck.v1",
+      "devhud.draft.v1",
+      "devhud.cache.v1",
+      "devhud.pairing.v1",
+      "devhud.permission.v1",
+      "devhud.diagnostics.v1.events",
+      "devhud.diagnostics.v1.correlations",
+      "devhud.local-agent-consent.v1",
+      "devhud.local-agent-executables.v1",
+      "devhud-extension.session",
+    ])
+      storage.setItem(key, "sensitive");
     storage.setItem("devhud.shell.preferences.v1", "local-device-preferences");
 
     expect(clearAllContractedLocalData(storage)).toBe(true);
 
     expect(hasGuestSettings(storage)).toBe(false);
     expect(storage.length).toBe(1);
-    expect(storage.getItem("devhud.shell.preferences.v1")).toBe("local-device-preferences");
+    expect(storage.getItem("devhud.shell.preferences.v1")).toBe(
+      "local-device-preferences",
+    );
   });
 
   it("keeps bulk cleanup best-effort when Web Storage enumeration or removal fails", () => {
     const enumerationFailure = {
-      get length(): number { throw new DOMException("denied", "SecurityError"); },
+      get length(): number {
+        throw new DOMException("denied", "SecurityError");
+      },
       getItem: () => null,
       key: () => null,
       removeItem: () => {},
@@ -78,7 +143,9 @@ describe("local identity data lifecycle", () => {
       length: 1,
       getItem: () => null,
       key: () => "devhud.identity.v1.guest-settings",
-      removeItem: () => { throw new DOMException("denied", "SecurityError"); },
+      removeItem: () => {
+        throw new DOMException("denied", "SecurityError");
+      },
       setItem: () => {},
     };
 
@@ -87,13 +154,36 @@ describe("local identity data lifecycle", () => {
   });
 
   it("keeps authenticated cache writes best-effort when persistence rejects writes", () => {
-    const storage = { setItem: () => { throw new DOMException("quota exceeded", "QuotaExceededError"); } };
-    expect(() => writeCachedIdentityBootstrap(storage, "https://api.example", { issuer: "https://identity.example/", audience: "https://api.example", clientId: "desktop", redirectUri: "devhud://auth/callback", publicAssetBaseUrl: "https://images.example/", capabilities: [StaticCapability.CRASH_REPORTS] })).not.toThrow();
-    expect(writeAuthenticatedSettingsCache(storage, "https://api.example", { settings: defaultDevHudSettings, revision: 1n, cachedAt: "2026-08-17T00:00:00.000Z" })).toBe(false);
+    const storage = {
+      setItem: () => {
+        throw new DOMException("quota exceeded", "QuotaExceededError");
+      },
+    };
+    expect(() =>
+      writeCachedIdentityBootstrap(storage, "https://api.example", {
+        issuer: "https://identity.example/",
+        audience: "https://api.example",
+        clientId: "desktop",
+        redirectUri: "devhud://auth/callback",
+        publicAssetBaseUrl: "https://images.example/",
+        capabilities: [StaticCapability.CRASH_REPORTS],
+      }),
+    ).not.toThrow();
+    expect(
+      writeAuthenticatedSettingsCache(storage, "https://api.example", {
+        settings: defaultDevHudSettings,
+        revision: 1n,
+        cachedAt: "2026-08-17T00:00:00.000Z",
+      }),
+    ).toBe(false);
   });
 
   it("treats an unavailable guest marker as absent", () => {
-    const storage = { getItem: () => { throw new DOMException("denied", "SecurityError"); } };
+    const storage = {
+      getItem: () => {
+        throw new DOMException("denied", "SecurityError");
+      },
+    };
     expect(hasGuestSettings(storage)).toBe(false);
   });
 
@@ -110,9 +200,17 @@ describe("local identity data lifecycle", () => {
     const storage = {
       getItem: () => null,
       removeItem: () => {},
-      setItem: () => { throw new DOMException("quota exceeded", "QuotaExceededError"); },
+      setItem: () => {
+        throw new DOMException("quota exceeded", "QuotaExceededError");
+      },
     };
-    const settings = { ...defaultDevHudSettings, appearance: { ...defaultDevHudSettings.appearance, theme: "dark" as const } };
+    const settings = {
+      ...defaultDevHudSettings,
+      appearance: {
+        ...defaultDevHudSettings.appearance,
+        theme: "dark" as const,
+      },
+    };
 
     expect(writeGuestSettings(storage, settings)).toBe(false);
 
@@ -125,33 +223,77 @@ describe("local identity data lifecycle", () => {
 
   it("persists device-local fields outside the synchronized projection", () => {
     const storage = new MemoryStorage();
-    const prompt = { repository: { owner: "delinoio", name: "oss" }, body: "local-only prompt" };
+    const prompt = {
+      repository: { owner: "delinoio", name: "oss" },
+      body: "local-only prompt",
+    };
     const settings = parseDevHudSettings({
       ...defaultDevHudSettings,
-      agents: [{ id: "codex", enabled: true, kind: "codex", mode: "draft", repositoryPrompts: [prompt], profileRef: null }],
+      agents: [
+        {
+          id: "codex",
+          enabled: true,
+          kind: "codex",
+          mode: "draft",
+          repositoryPrompts: [prompt],
+          profileRef: null,
+        },
+      ],
     });
 
     writeGuestSettings(storage, settings);
 
-    expect(storage.getItem("devhud.identity.v1.guest-settings")).toContain(prompt.body);
-    expect(readGuestSettings(storage).agents[0]?.repositoryPrompts).toEqual([prompt]);
+    expect(storage.getItem("devhud.identity.v1.guest-settings")).toContain(
+      prompt.body,
+    );
+    expect(readGuestSettings(storage).agents[0]?.repositoryPrompts).toEqual([
+      prompt,
+    ]);
   });
 
   it("requires durable persistence only for actual device-local changes", () => {
-    const profile = { id: "018f47a2-7b3c-7def-8abc-1234567890ab", name: "Work", kind: "fine-grained" as const };
-    const prompt = { repository: { owner: "delinoio", name: "oss" }, body: "local-only prompt" };
+    const profile = {
+      id: "018f47a2-7b3c-7def-8abc-1234567890ab",
+      name: "Work",
+      kind: "fine-grained" as const,
+    };
+    const prompt = {
+      repository: { owner: "delinoio", name: "oss" },
+      body: "local-only prompt",
+    };
     const current = parseDevHudSettings({
       ...defaultDevHudSettings,
       github: { ...defaultDevHudSettings.github, profiles: [profile] },
-      agents: [{ id: "codex", enabled: true, kind: "codex", mode: "draft", repositoryPrompts: [prompt], profileRef: null }],
+      agents: [
+        {
+          id: "codex",
+          enabled: true,
+          kind: "codex",
+          mode: "draft",
+          repositoryPrompts: [prompt],
+          profileRef: null,
+        },
+      ],
     });
     const synchronizedAgentUpdate = parseDevHudSettings({
       ...current,
-      agents: [{ ...current.agents[0]!, enabled: false, mode: "direct", profileRef: profile.id }],
+      agents: [
+        {
+          ...current.agents[0]!,
+          enabled: false,
+          mode: "direct",
+          profileRef: profile.id,
+        },
+      ],
     });
     const promptUpdate = parseDevHudSettings({
       ...current,
-      agents: [{ ...current.agents[0]!, repositoryPrompts: [{ ...prompt, body: "updated local-only prompt" }] }],
+      agents: [
+        {
+          ...current.agents[0]!,
+          repositoryPrompts: [{ ...prompt, body: "updated local-only prompt" }],
+        },
+      ],
     });
     const shortcutUpdate = parseDevHudSettings({
       ...current,
@@ -159,44 +301,80 @@ describe("local identity data lifecycle", () => {
         ...current.shortcuts,
         desktop: {
           ...current.shortcuts.desktop,
-          [ShortcutActionId.CommandPalette]: { ...current.shortcuts.desktop[ShortcutActionId.CommandPalette], enabled: false },
+          [ShortcutActionId.CommandPalette]: {
+            ...current.shortcuts.desktop[ShortcutActionId.CommandPalette],
+            enabled: false,
+          },
         },
       },
     });
     const emptyAgentAddition = parseDevHudSettings({
       ...defaultDevHudSettings,
-      agents: [{ id: "codex", enabled: true, kind: "codex", mode: "draft", repositoryPrompts: [], profileRef: null }],
+      agents: [
+        {
+          id: "codex",
+          enabled: true,
+          kind: "codex",
+          mode: "draft",
+          repositoryPrompts: [],
+          profileRef: null,
+        },
+      ],
     });
 
-    expect(deviceLocalSettingsEqual(current, synchronizedAgentUpdate)).toBe(true);
+    expect(deviceLocalSettingsEqual(current, synchronizedAgentUpdate)).toBe(
+      true,
+    );
     expect(deviceLocalSettingsEqual(current, promptUpdate)).toBe(false);
     expect(deviceLocalSettingsEqual(current, shortcutUpdate)).toBe(false);
-    expect(deviceLocalSettingsEqual(defaultDevHudSettings, emptyAgentAddition)).toBe(true);
+    expect(
+      deviceLocalSettingsEqual(defaultDevHudSettings, emptyAgentAddition),
+    ).toBe(true);
   });
 
   it("rejects device-local settings above the aggregate UTF-8 limit", () => {
     const storage = new MemoryStorage();
     const oversized = parseDevHudSettings({
       ...defaultDevHudSettings,
-      agents: [{
-        id: "oversized-agent",
-        enabled: true,
-        kind: "codex",
-        mode: "draft",
-        profileRef: null,
-        repositoryPrompts: Array.from({ length: 33 }, (_, index) => ({ repository: { owner: "delinoio", name: `repository-${index}` }, body: "x".repeat(32 * 1024) })),
-      }],
+      agents: [
+        {
+          id: "oversized-agent",
+          enabled: true,
+          kind: "codex",
+          mode: "draft",
+          profileRef: null,
+          repositoryPrompts: Array.from({ length: 33 }, (_, index) => ({
+            repository: { owner: "delinoio", name: `repository-${index}` },
+            body: "x".repeat(32 * 1024),
+          })),
+        },
+      ],
     });
 
-    expect(new TextEncoder().encode(JSON.stringify({ shortcuts: oversized.shortcuts, agents: oversized.agents })).byteLength).toBeGreaterThan(DeviceLocalSettingsMaximumBytes);
+    expect(
+      new TextEncoder().encode(
+        JSON.stringify({
+          shortcuts: oversized.shortcuts,
+          agents: oversized.agents,
+        }),
+      ).byteLength,
+    ).toBeGreaterThan(DeviceLocalSettingsMaximumBytes);
     expect(() => writeGuestSettings(storage, oversized)).toThrow(/1 MiB/u);
-    expect(writeAuthenticatedSettingsCache(storage, "https://api.example", { settings: oversized, revision: 1n, cachedAt: "2026-08-17T00:00:00.000Z" })).toBe(false);
+    expect(
+      writeAuthenticatedSettingsCache(storage, "https://api.example", {
+        settings: oversized,
+        revision: 1n,
+        cachedAt: "2026-08-17T00:00:00.000Z",
+      }),
+    ).toBe(false);
   });
 
   it("keeps guest-marker removal best-effort when Web Storage throws", () => {
     const storage = {
       getItem: () => null,
-      removeItem: () => { throw new DOMException("denied", "SecurityError"); },
+      removeItem: () => {
+        throw new DOMException("denied", "SecurityError");
+      },
     };
 
     expect(() => clearGuestImportMarker(storage)).not.toThrow();
@@ -206,9 +384,21 @@ describe("local identity data lifecycle", () => {
   it("clears only the authenticated settings snapshot when a session becomes invalid", () => {
     const storage = new MemoryStorage();
     const apiOrigin = "https://api.example";
-    const bootstrap = { issuer: "https://identity.example/", audience: "https://api.example", clientId: "desktop", redirectUri: "devhud://auth/callback" as const, publicAssetBaseUrl: "https://images.example/", officialUploadOrigin: null, capabilities: [StaticCapability.CRASH_REPORTS] };
+    const bootstrap = {
+      issuer: "https://identity.example/",
+      audience: "https://api.example",
+      clientId: "desktop",
+      redirectUri: "devhud://auth/callback" as const,
+      publicAssetBaseUrl: "https://images.example/",
+      officialUploadOrigin: null,
+      capabilities: [StaticCapability.CRASH_REPORTS],
+    };
     writeCachedIdentityBootstrap(storage, apiOrigin, bootstrap);
-    writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: defaultDevHudSettings, revision: 7n, cachedAt: "2026-08-17T00:00:00.000Z" });
+    writeAuthenticatedSettingsCache(storage, apiOrigin, {
+      settings: defaultDevHudSettings,
+      revision: 7n,
+      cachedAt: "2026-08-17T00:00:00.000Z",
+    });
 
     clearAuthenticatedSettingsCache(storage, apiOrigin);
 
@@ -219,9 +409,20 @@ describe("local identity data lifecycle", () => {
   it("tombstones an invalid session cache when Web Storage rejects removal", () => {
     const storage = new MemoryStorage();
     const apiOrigin = "https://removal-failure.example";
-    writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: defaultDevHudSettings, revision: 7n, cachedAt: "2026-08-17T00:00:00.000Z" });
+    writeAuthenticatedSettingsCache(storage, apiOrigin, {
+      settings: defaultDevHudSettings,
+      revision: 7n,
+      cachedAt: "2026-08-17T00:00:00.000Z",
+    });
 
-    clearAuthenticatedSettingsCache({ removeItem: () => { throw new DOMException("denied", "SecurityError"); } }, apiOrigin);
+    clearAuthenticatedSettingsCache(
+      {
+        removeItem: () => {
+          throw new DOMException("denied", "SecurityError");
+        },
+      },
+      apiOrigin,
+    );
 
     expect(readAuthenticatedSettingsCache(storage, apiOrigin)).toBeNull();
   });

@@ -13,7 +13,6 @@ Disconnect clears all generations before the existing joined removal/enumeration
 procedure; pending cleanup blocks changes and replacement. Follow the
 [account generation contract](cmds-delidev-accounts-contract.md#connected-api-format-changes).
 
-
 OAuth seals only `Ref{Owner:reservedAccountID, ID:originalConnectID, Purpose:account-api}` after a durable staging claim. Keep account-less references and cleanup evidence across uncertain Put/SQLite outcomes. Explicit original local completion may read that reference without another exchange; missing/tombstoned material cannot be replaced. Cancel records denial and cleanup before removal, retains disconnected metadata and never claims upstream revocation. Follow the [OAuth contract](cmds-delidev-account-oauth-contract.md).
 
 ## Scope and ownership
@@ -52,12 +51,12 @@ Subscription `AccountLogin` read failures omit the private generation/reference 
 
 Each reference accepts 1–65,536 bytes. Its native OS record contains exactly 64 bytes: a random 256-bit wrapping root and a 256-bit keyed content commitment. Domain-separated HMAC-SHA256 derivation produces independent encryption and commitment keys. AES-256-GCM protects the payload with a fresh 96-bit nonce. Authenticated context binds the format/service version, server scope, owner, mutation and purpose. The private JSON record contains only that context, state and ciphertext. Neither a raw secret nor an unkeyed digest is persisted. The keyed commitment can bind internal receipt metadata; it is not an execution credential.
 
-| State | Permitted behavior |
-| --- | --- |
-| `staged` | Durable non-secret intent precedes the first native write. A retry reconciles the exact native record and content commitment before publishing ciphertext. Reads report recovery required. |
-| `sealed` | Reads require the exact native material and valid authenticated ciphertext. Identical writes reuse the bytes and commitment; different content conflicts. Missing material never causes automatic key regeneration. |
+| State      | Permitted behavior                                                                                                                                                                                                    |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `staged`   | Durable non-secret intent precedes the first native write. A retry reconciles the exact native record and content commitment before publishing ciphertext. Reads report recovery required.                            |
+| `sealed`   | Reads require the exact native material and valid authenticated ciphertext. Identical writes reuse the bytes and commitment; different content conflicts. Missing material never causes automatic key regeneration.   |
 | `deleting` | The private record has an irreversible deletion marker and no ciphertext. Reads and writes cannot use the reference. Native deletion may still require an available/unlocked OS store; retry uses the same reference. |
-| `deleted` | Native removal has completed. Repeated deletion succeeds; no later write can reuse the reference. |
+| `deleted`  | Native removal has completed. Repeated deletion succeeds; no later write can reuse the reference.                                                                                                                     |
 
 Native write acceptance and file publication are separate crash boundaries. Cancellation or an OS error may leave a staged intent and native key; these survive for exact retry. Deletion records its marker before removing native material and reports completion only after the final marker is durable. If a saved native key disappears, sealed reads/writes fail explicitly instead of silently replacing an account credential. Malformed records, altered authenticated context, wrong keys, ambiguous native matches and invalid material lengths also fail closed.
 
@@ -162,7 +161,6 @@ Before the first native write, persist the original staged intent. Native acknow
 
 Both profiles share exact-match, redacted-error and platform session constraints. macOS allows OS-owned authentication prompts as specified above; Linux and Windows retain their existing noninteractive behavior. Public profile metadata, current GitHub identity/access validation, immediate cancellation of active integration requests, replacement/delete coordination, RPC/CLI and desktop settings still require the server integration layer; primitive success alone proves none of those capabilities.
 
-
 The direct PAT primitive is now composed by [IntegrationService and its CLI/desktop clients](cmds-delidev-integrations-contract.md). That layer supplies actor-bound reference receipts, durable denial before native replacement/deletion, exact pending-generation recovery and joined identity-inspection cancellation. Native storage success remains separate from GitHub identity and repository feature authorization.
 
 ### Ordinary session gh authority
@@ -170,6 +168,7 @@ The direct PAT primitive is now composed by [IntegrationService and its CLI/desk
 The feature's bounded tool exception follows the [harness contract](cmds-delidev-harness-contract.md#ordinary-execution-github-cli-context). Only the executing Worker's in-memory gh directory selector reaches ordinary native session tool environments. gh owns all file/OS-store credential access and explicit configuration writes. DeliDev never reads, copies, logs, transfers or deletes those credentials/configuration, inherits `GH_TOKEN`/`GITHUB_TOKEN`, or substitutes server integration credentials. Native provider isolation and every protected execution/proxy exclusion remain unchanged; excluded auxiliary, inspection and Sidechat flows retain their isolation.
 
 ## Access-only server quota references
+
 System 50 quota reads retain the exact current sealed AccountLogin reference independently of an Execute writer. Go validates its original account/user commitment and narrows native input to access token, account and plan; ID and refresh tokens remain in Go and never reach the quota native process or managed files. Admission/reference capture use short account serialization, never a lock across native/network work. Worker completion may rotate the current generation but must protect the quota operation's captured generation until independent cleanup. An uncertain quota owner fences protected-reference deletion and restore without marking an original execution lease failed. Authentication renewal and writeback remain exclusively owned by the original lifecycle/execution controller. Follow the [V2 quota contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-quota-v2).
 
 ### Subscription vault initialization

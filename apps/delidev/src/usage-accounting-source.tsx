@@ -10,16 +10,54 @@ export interface AccountingDisclosures {
 }
 
 /** Keep a source's original units separate, including an explicitly unknown empty interval. */
-export function AccountingSource({ kind, title, count, children, disclosures }: { kind: AccountingUnitKind; title: string; count: number; children: ReactNode; disclosures?: AccountingDisclosures }) {
+export function AccountingSource({
+  kind,
+  title,
+  count,
+  children,
+  disclosures,
+}: {
+  kind: AccountingUnitKind;
+  title: string;
+  count: number;
+  children: ReactNode;
+  disclosures?: AccountingDisclosures;
+}) {
   useLocale();
   const [choice, setChoice] = useState<boolean>();
-  const expanded = (disclosures ? disclosures.expanded[kind] : choice) ?? count > 0;
-  return <section className="usage-accounting-source" aria-label={title}>
-    <Disclosure open={expanded} onToggle={(event) => { const next = event.currentTarget.open; if (disclosures) disclosures.change(kind, next); else setChoice(next); }}>
-      <DisclosureSummary><span className="usage-source-heading">{title}</span><span>{copy("usage.sourceRecords", { count: count.toLocaleString(displayLocale()) })}</span>{!count ? <span>{copy("usage.extra.ca1844969742")}</span> : null}</DisclosureSummary>
-      {!count ? <p className="usage-source-empty-warning">{copy("usage.emptySourceWarning")}</p> : null}
-      <div className="usage-source-details">{children}</div>
-    </Disclosure>
-    {!expanded && !count ? <p className="usage-source-empty-warning">{copy("usage.emptySourceWarning")}</p> : null}
-  </section>;
+  const expanded =
+    (disclosures ? disclosures.expanded[kind] : choice) ?? count > 0;
+  return (
+    <section className="usage-accounting-source" aria-label={title}>
+      <Disclosure
+        open={expanded}
+        onToggle={(event) => {
+          const next = event.currentTarget.open;
+          if (disclosures) disclosures.change(kind, next);
+          else setChoice(next);
+        }}
+      >
+        <DisclosureSummary>
+          <span className="usage-source-heading">{title}</span>
+          <span>
+            {copy("usage.sourceRecords", {
+              count: count.toLocaleString(displayLocale()),
+            })}
+          </span>
+          {!count ? <span>{copy("usage.extra.ca1844969742")}</span> : null}
+        </DisclosureSummary>
+        {!count ? (
+          <p className="usage-source-empty-warning">
+            {copy("usage.emptySourceWarning")}
+          </p>
+        ) : null}
+        <div className="usage-source-details">{children}</div>
+      </Disclosure>
+      {!expanded && !count ? (
+        <p className="usage-source-empty-warning">
+          {copy("usage.emptySourceWarning")}
+        </p>
+      ) : null}
+    </section>
+  );
 }

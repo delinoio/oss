@@ -53,11 +53,11 @@ export interface Diagnostic {
   readonly durationMs: number;
   readonly code?: ErrorCode;
   readonly location?: string;
-  readonly calls?:number;
-  readonly retries?:number;
-  readonly waitMs?:number;
-  readonly batches?:number;
-  readonly changes?:number;
+  readonly calls?: number;
+  readonly retries?: number;
+  readonly waitMs?: number;
+  readonly batches?: number;
+  readonly changes?: number;
 }
 
 export interface NodeHandle {
@@ -66,7 +66,13 @@ export interface NodeHandle {
 }
 
 export interface Geometry {
-  readonly coordinateSpace?: "word_flow" | "worksheet" | "mounted_region" | "page" | "sprite_frame" | "timeline";
+  readonly coordinateSpace?:
+    | "word_flow"
+    | "worksheet"
+    | "mounted_region"
+    | "page"
+    | "sprite_frame"
+    | "timeline";
   readonly x: number;
   readonly y: number;
   readonly width: number;
@@ -101,7 +107,10 @@ export interface Frame {
 }
 
 export type AssetSource = Uint8Array | { path: string };
-export interface AssetHandle { readonly assetId: string; readonly documentId: string }
+export interface AssetHandle {
+  readonly assetId: string;
+  readonly documentId: string;
+}
 
 export const limits = Object.freeze({
   sceneBytes: 256 * 1024 * 1024,

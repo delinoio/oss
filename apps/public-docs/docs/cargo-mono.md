@@ -77,6 +77,7 @@ When enabled, successful publish runs create local tags with `<crate>@v<version>
 `cargo-mono` is validated with command-level integration tests that run against temporary git workspaces.
 
 The suite verifies:
+
 - Stable `human` and `json` output behavior across commands.
 - Change detection contracts, including include/exclude path filters, direct-only mode, include-uncommitted mode, and global-impact file handling.
 - Release bump behavior, including internal dependency updates, workspace dependency updates, and release commit creation without tag creation.

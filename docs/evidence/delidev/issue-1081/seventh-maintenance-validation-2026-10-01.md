@@ -83,7 +83,7 @@ proved as their cause and no baseline dismissal is made.
 The explicit remaining steps passed:
 
 - `pnpm exec vitest run src/pr-fix.test.tsx src/session-fork.test.tsx
-  --maxWorkers=1`: ten cases in two files (6.193 command seconds).
+--maxWorkers=1`: ten cases in two files (6.193 command seconds).
 - `pnpm test:bundle-dry-run`: eight fixtures (0.822 seconds).
 - `pnpm test:desktop-launch`: sixteen fixtures (39.774 seconds).
 - `pnpm test:widget` (6.411 seconds).

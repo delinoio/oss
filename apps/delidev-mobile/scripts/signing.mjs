@@ -41,10 +41,14 @@ try {
     "DELIDEV_MOBILE_IOS_P12_PASSWORD",
     "DELIDEV_MOBILE_IOS_PROFILE",
     "DELIDEV_MOBILE_APPLE_TEAM",
-    ...(input.target === "ios" ? [] : ["DELIDEV_MOBILE_ANDROID_KEYSTORE",
-    "DELIDEV_MOBILE_ANDROID_KEY_ALIAS",
-    "DELIDEV_MOBILE_ANDROID_KEY_PASSWORD",
-    "DELIDEV_MOBILE_ANDROID_STORE_PASSWORD"]),
+    ...(input.target === "ios"
+      ? []
+      : [
+          "DELIDEV_MOBILE_ANDROID_KEYSTORE",
+          "DELIDEV_MOBILE_ANDROID_KEY_ALIAS",
+          "DELIDEV_MOBILE_ANDROID_KEY_PASSWORD",
+          "DELIDEV_MOBILE_ANDROID_STORE_PASSWORD",
+        ]),
   ])
     if (!environment[name]) throw new Error("Protected signing input missing");
   const directory = mkdtempSync(join(tmpdir(), "delidev-mobile-signing-")),
@@ -70,11 +74,12 @@ try {
       Buffer.from(environment.DELIDEV_MOBILE_IOS_PROFILE, "base64"),
       { mode: 0o600 },
     );
-    if (input.target !== "ios") writeFileSync(
-      keystore,
-      Buffer.from(environment.DELIDEV_MOBILE_ANDROID_KEYSTORE, "base64"),
-      { mode: 0o600 },
-    );
+    if (input.target !== "ios")
+      writeFileSync(
+        keystore,
+        Buffer.from(environment.DELIDEV_MOBILE_ANDROID_KEYSTORE, "base64"),
+        { mode: 0o600 },
+      );
     const plist = join(directory, "profile.plist");
     writeFileSync(plist, capture("security", ["cms", "-D", "-i", profile]), {
       mode: 0o600,
@@ -153,15 +158,15 @@ try {
     }
     const bundletool = join(directory, "bundletool.jar");
     if (input.target !== "ios") {
-    const response = await fetch(Bundletool.url);
-    if (!response.ok) throw new Error("Bundletool download failed");
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (
-      bytes.length > 100 << 20 ||
-      createHash("sha256").update(bytes).digest("hex") !== Bundletool.sha256
-    )
-      throw new Error("Bundletool checksum failed");
-    writeFileSync(bundletool, bytes, { mode: 0o600 });
+      const response = await fetch(Bundletool.url);
+      if (!response.ok) throw new Error("Bundletool download failed");
+      const bytes = Buffer.from(await response.arrayBuffer());
+      if (
+        bytes.length > 100 << 20 ||
+        createHash("sha256").update(bytes).digest("hex") !== Bundletool.sha256
+      )
+        throw new Error("Bundletool checksum failed");
+      writeFileSync(bundletool, bytes, { mode: 0o600 });
     }
     const env = {
       ...environment,

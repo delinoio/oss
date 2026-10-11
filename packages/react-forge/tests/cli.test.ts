@@ -13,35 +13,91 @@ const exec = promisify(execFile);
 test("workspace CLI runs TSX tasks and reports JSON, help, version and safe errors", async () => {
   const directory = await mkdtemp(join(tmpdir(), "react-forge-cli-"));
   const cli = fileURLToPath(new URL("../bin/react-forge.mjs", import.meta.url));
-  const task = fileURLToPath(new URL("../examples/presentation.tsx", import.meta.url));
+  const task = fileURLToPath(
+    new URL("../examples/presentation.tsx", import.meta.url),
+  );
   try {
-    const { stdout } = await exec(process.execPath, [cli, "run", task, "--output", join(directory, "result.pptx"), "--data", '{"title":"CLI test"}', "--json"]);
+    const { stdout } = await exec(process.execPath, [
+      cli,
+      "run",
+      task,
+      "--output",
+      join(directory, "result.pptx"),
+      "--data",
+      '{"title":"CLI test"}',
+      "--json",
+    ]);
     assert.equal(JSON.parse(stdout).ok, true);
-    assert.equal((await readFile(join(directory, "result.pptx"))).subarray(0, 2).toString(), "PK");
-    for (const [name, format] of [["document", "docx"], ["workbook", "xlsx"], ["pdf", "pdf"], ["zombie-gunshot", "wav"], ...(process.env.REACT_FORGE_SKIP_SCENE_TESTS === "1" ? [] : [["animated-character-glb", "glb"], ["animated-character-fbx", "fbx"]])]) {
-      const task = fileURLToPath(new URL(`../examples/${name}.tsx`, import.meta.url));
-      const { stdout } = await exec(process.execPath, [cli, "run", task, "--output", join(directory, `result.${format}`), "--json"]);
+    assert.equal(
+      (await readFile(join(directory, "result.pptx")))
+        .subarray(0, 2)
+        .toString(),
+      "PK",
+    );
+    for (const [name, format] of [
+      ["document", "docx"],
+      ["workbook", "xlsx"],
+      ["pdf", "pdf"],
+      ["zombie-gunshot", "wav"],
+      ...(process.env.REACT_FORGE_SKIP_SCENE_TESTS === "1"
+        ? []
+        : [
+            ["animated-character-glb", "glb"],
+            ["animated-character-fbx", "fbx"],
+          ]),
+    ]) {
+      const task = fileURLToPath(
+        new URL(`../examples/${name}.tsx`, import.meta.url),
+      );
+      const { stdout } = await exec(process.execPath, [
+        cli,
+        "run",
+        task,
+        "--output",
+        join(directory, `result.${format}`),
+        "--json",
+      ]);
       assert.equal(JSON.parse(stdout).format, format);
       assert.equal(JSON.parse(stdout).published, true);
     }
     // The returned session belongs to tsx's isolated module namespace. Its
     // typed error must survive that boundary instead of becoming a task error.
-    await assert.rejects(exec(process.execPath, [cli, "run", task, "--output", join(directory, "result.pptx"), "--json"]), (error: unknown) => {
-      const result = JSON.parse((error as { stdout: string }).stdout);
-      assert.equal(result.error.code, "conflict");
-      return true;
-    });
-    assert.match((await exec(process.execPath, [cli, "--help"])).stdout, /default task/);
-    assert.equal((await exec(process.execPath, [cli, "--version"])).stdout.trim(), packageManifest.version);
-    await assert.rejects(exec(process.execPath, [cli, "run", task, "--unknown", "--json"]), (error: unknown) => {
-      const result = JSON.parse((error as { stdout: string }).stdout);
-      assert.equal(result.ok, false);
-      assert.equal(result.error.code, "malformed_input");
-      return true;
-    });
-  } finally { await rm(directory, { recursive: true, force: true }); }
+    await assert.rejects(
+      exec(process.execPath, [
+        cli,
+        "run",
+        task,
+        "--output",
+        join(directory, "result.pptx"),
+        "--json",
+      ]),
+      (error: unknown) => {
+        const result = JSON.parse((error as { stdout: string }).stdout);
+        assert.equal(result.error.code, "conflict");
+        return true;
+      },
+    );
+    assert.match(
+      (await exec(process.execPath, [cli, "--help"])).stdout,
+      /default task/,
+    );
+    assert.equal(
+      (await exec(process.execPath, [cli, "--version"])).stdout.trim(),
+      packageManifest.version,
+    );
+    await assert.rejects(
+      exec(process.execPath, [cli, "run", task, "--unknown", "--json"]),
+      (error: unknown) => {
+        const result = JSON.parse((error as { stdout: string }).stdout);
+        assert.equal(result.ok, false);
+        assert.equal(result.error.code, "malformed_input");
+        return true;
+      },
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
-
 
 test("CLI task failures stay redacted and SIGINT/SIGTERM dispose pending sessions", async () => {
   const directory = await mkdtemp(join(tmpdir(), "react-forge-signals-"));
@@ -49,19 +105,36 @@ test("CLI task failures stay redacted and SIGINT/SIGTERM dispose pending session
   const entry = join(directory, "entry.tsx");
   const quote = JSON.stringify;
   try {
-    await writeFile(entry, 'export default function task() { throw new Error("PRIVATE_TASK_CONTENT_AND_PATH"); }');
-    await assert.rejects(exec(process.execPath, [cli, "run", entry, "--output", join(directory, "failure.pdf"), "--json"]), (error: unknown) => {
-      const stdout = (error as { stdout: string }).stdout;
-      assert.equal(JSON.parse(stdout).error.code, "render");
-      assert.doesNotMatch(stdout, /PRIVATE_TASK/);
-      return true;
-    });
+    await writeFile(
+      entry,
+      'export default function task() { throw new Error("PRIVATE_TASK_CONTENT_AND_PATH"); }',
+    );
+    await assert.rejects(
+      exec(process.execPath, [
+        cli,
+        "run",
+        entry,
+        "--output",
+        join(directory, "failure.pdf"),
+        "--json",
+      ]),
+      (error: unknown) => {
+        const stdout = (error as { stdout: string }).stdout;
+        assert.equal(JSON.parse(stdout).error.code, "render");
+        assert.doesNotMatch(stdout, /PRIVATE_TASK/);
+        return true;
+      },
+    );
     // Windows console events are exercised by the isolated native-console
     // integration. child.kill on Windows forcibly terminates without events.
-    for (const signal of (process.platform === "win32" ? [] : ["SIGINT", "SIGTERM"]) as ("SIGINT" | "SIGTERM")[]) {
+    for (const signal of (process.platform === "win32"
+      ? []
+      : ["SIGINT", "SIGTERM"]) as ("SIGINT" | "SIGTERM")[]) {
       const ready = join(directory, `${signal}.ready`);
       const cleaned = join(directory, `${signal}.cleaned`);
-      await writeFile(entry, `
+      await writeFile(
+        entry,
+        `
         import React, { Suspense, use, useEffect } from ${quote(createRequire(import.meta.url).resolve("react"))};
         import { writeFileSync } from "node:fs";
         import { createSession, Format } from ${quote(new URL("../dist/index.js", import.meta.url).href)};
@@ -77,49 +150,120 @@ test("CLI task failures stay redacted and SIGINT/SIGTERM dispose pending session
           await new Promise(resolve => setTimeout(resolve, 2500));
           const s = createSession(Format.Pdf); await s.render(React.createElement(App)); return s;
         }
-      `);
-      const child = spawn(process.execPath, [cli, "run", entry, "--output", join(directory, `${signal}.pdf`), "--json"], { stdio: ["ignore", "pipe", "pipe"] });
-      let stdout = ""; let stderr = "";
-      child.stdout.on("data", value => { stdout += value; });
-      child.stderr.on("data", value => { stderr += value; });
-      const exit = new Promise<number | null>((resolve, reject) => { child.once("error", reject); child.once("exit", resolve); });
+      `,
+      );
+      const child = spawn(
+        process.execPath,
+        [
+          cli,
+          "run",
+          entry,
+          "--output",
+          join(directory, `${signal}.pdf`),
+          "--json",
+        ],
+        { stdio: ["ignore", "pipe", "pipe"] },
+      );
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (value) => {
+        stdout += value;
+      });
+      child.stderr.on("data", (value) => {
+        stderr += value;
+      });
+      const exit = new Promise<number | null>((resolve, reject) => {
+        child.once("error", reject);
+        child.once("exit", resolve);
+      });
       try {
         let started = false;
         // Native/TSX startup under parallel CI load can exceed two seconds.
         // Bound only fixture readiness; keep signal and cleanup assertions intact.
         const startupDeadline = performance.now() + 30_000;
         while (performance.now() < startupDeadline) {
-          if (await readFile(ready).then(() => true, () => false)) { started = true; break; }
+          if (
+            await readFile(ready).then(
+              () => true,
+              () => false,
+            )
+          ) {
+            started = true;
+            break;
+          }
           if (child.exitCode !== null || child.signalCode !== null) break;
-          await new Promise(resolve => setTimeout(resolve, 20));
+          await new Promise((resolve) => setTimeout(resolve, 20));
         }
-        assert.ok(started, `CLI did not report readiness within 30 seconds (exit=${child.exitCode}, signal=${child.signalCode}).\n${stderr}${stdout}`);
+        assert.ok(
+          started,
+          `CLI did not report readiness within 30 seconds (exit=${child.exitCode}, signal=${child.signalCode}).\n${stderr}${stdout}`,
+        );
         child.kill(signal);
         assert.equal(await exit, signal === "SIGINT" ? 130 : 143);
         assert.equal(JSON.parse(stdout).error.code, "cancelled");
         assert.equal((await readFile(cleaned)).toString(), "cleaned");
-        assert.ok(!(await readdir(directory)).some(name => name.endsWith(".pdf") || name.endsWith(".tmp")));
-      } finally { if (child.exitCode === null) { child.kill("SIGKILL"); await exit; } }
+        assert.ok(
+          !(await readdir(directory)).some(
+            (name) => name.endsWith(".pdf") || name.endsWith(".tmp"),
+          ),
+        );
+      } finally {
+        if (child.exitCode === null) {
+          child.kill("SIGKILL");
+          await exit;
+        }
+      }
     }
-  } finally { await rm(directory, { recursive: true, force: true }); }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("malformed task results produce one typed diagnostic without cleanup exceptions", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "react-forge-malformed-task-"));
+  const directory = await mkdtemp(
+    join(tmpdir(), "react-forge-malformed-task-"),
+  );
   const cli = fileURLToPath(new URL("../bin/react-forge.mjs", import.meta.url));
   const entry = join(directory, "entry.tsx");
   try {
-    for (const result of ["null", "{}", "{ dispose: 1 }", "{ exportFile() {}, dispose: 'invalid' }"]) {
-      await writeFile(entry, `export default function task() { return (${result}); }`);
-      await assert.rejects(exec(process.execPath, [cli, "run", entry, "--output", join(directory, "result.pdf"), "--json"]), (error: unknown) => {
-        const failure = error as { code: number; stdout: string; stderr: string };
-        assert.equal(failure.code, 1);
-        assert.equal(failure.stdout.trim().split("\n").length, 1);
-        assert.equal(JSON.parse(failure.stdout).error.code, "malformed_input");
-        assert.equal(failure.stderr, "");
-        return true;
-      });
+    for (const result of [
+      "null",
+      "{}",
+      "{ dispose: 1 }",
+      "{ exportFile() {}, dispose: 'invalid' }",
+    ]) {
+      await writeFile(
+        entry,
+        `export default function task() { return (${result}); }`,
+      );
+      await assert.rejects(
+        exec(process.execPath, [
+          cli,
+          "run",
+          entry,
+          "--output",
+          join(directory, "result.pdf"),
+          "--json",
+        ]),
+        (error: unknown) => {
+          const failure = error as {
+            code: number;
+            stdout: string;
+            stderr: string;
+          };
+          assert.equal(failure.code, 1);
+          assert.equal(failure.stdout.trim().split("\n").length, 1);
+          assert.equal(
+            JSON.parse(failure.stdout).error.code,
+            "malformed_input",
+          );
+          assert.equal(failure.stderr, "");
+          return true;
+        },
+      );
       assert.deepEqual(await readdir(directory), ["entry.tsx"]);
     }
-  } finally { await rm(directory, { recursive: true, force: true }); }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

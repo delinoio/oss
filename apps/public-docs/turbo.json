@@ -1,7 +1,5 @@
 {
-  "extends": [
-    "//"
-  ],
+  "extends": ["//"],
   "tasks": {
     "build": {
       "inputs": [
@@ -31,10 +29,7 @@
     },
     "ci:routes": {
       "cache": true,
-      "dependsOn": [
-        "build:frontend",
-        "@delinoio/docs-site-switcher#test"
-      ],
+      "dependsOn": ["build:frontend", "@delinoio/docs-site-switcher#test"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",
@@ -54,15 +49,11 @@
         "$TURBO_ROOT$/scripts/install/pnport.ps1"
       ],
       "outputs": [],
-      "env": [
-        "CI_CACHE_CONTEXT"
-      ]
+      "env": ["CI_CACHE_CONTEXT"]
     },
     "ci:check": {
       "cache": false,
-      "dependsOn": [
-        "ci:routes"
-      ]
+      "dependsOn": ["ci:routes"]
     },
     "test": {
       "cache": false

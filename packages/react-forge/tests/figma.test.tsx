@@ -639,17 +639,29 @@ test("a failing setter on an existing node reports its confirmed partial changes
   }
 });
 
-
 test("batched variable creation refreshes the existing collection guard", async () => {
   const { Variable } = await import("../src/figma.js");
   const connection = new FakeConnection();
-  const collection = connection.canvas.api.variables.createVariableCollection("External tokens");
+  const collection =
+    connection.canvas.api.variables.createVariableCollection("External tokens");
   const session = await FigmaSession.open(FILE, {}, connection);
   try {
     await session.refresh({ resources: true });
-    await session.render(<Document>{Array.from({ length: 30 }, (_, i) =>
-      <Variable key={i} nodeKey={`token-${i}`} name={`Token ${i}`} collection={`@${collection.id}`} resolvedType="FLOAT" value={i} scopes={["GAP"]} />
-    )}</Document>);
+    await session.render(
+      <Document>
+        {Array.from({ length: 30 }, (_, i) => (
+          <Variable
+            key={i}
+            nodeKey={`token-${i}`}
+            name={`Token ${i}`}
+            collection={`@${collection.id}`}
+            resolvedType="FLOAT"
+            value={i}
+            scopes={["GAP"]}
+          />
+        ))}
+      </Document>,
+    );
     const receipt = await session.publish();
     assert.equal(receipt.status, PublishStatus.Complete);
     assert.equal(collection.variableIds.length, 30);
@@ -657,29 +669,54 @@ test("batched variable creation refreshes the existing collection guard", async 
     const writes = connection.writes;
     await session.publish();
     assert.equal(connection.writes, writes);
-  } finally { await session.dispose(); }
+  } finally {
+    await session.dispose();
+  }
 });
 
 test("variant reparenting refreshes component guards for subsequent edits", async () => {
   const { ComponentSet } = await import("../src/figma.js");
   const connection = new FakeConnection();
   const session = new FigmaSession(options, connection);
-  const design = (text: string) => <Page><ComponentSet name="Choices">{Array.from({ length: 16 }, (_, i) =>
-    <Component key={i} name={`Choice=${i}`}><Text>{text}</Text></Component>
-  )}</ComponentSet></Page>;
+  const design = (text: string) => (
+    <Page>
+      <ComponentSet name="Choices">
+        {Array.from({ length: 16 }, (_, i) => (
+          <Component key={i} name={`Choice=${i}`}>
+            <Text>{text}</Text>
+          </Component>
+        ))}
+      </ComponentSet>
+    </Page>
+  );
   try {
     await session.render(design("First"));
     await session.publish();
     await session.render(design("Second"));
     assert.equal((await session.publish()).status, PublishStatus.Complete);
     const nodes = [...connection.canvas.nodes.values()];
-    assert.equal(nodes.filter(n => n.type === "COMPONENT_SET").length, 1);
-    assert.equal(nodes.filter(n => n.type === "TEXT" && n.characters === "Second").length, 16);
-  } finally { await session.dispose(); }
+    assert.equal(nodes.filter((n) => n.type === "COMPONENT_SET").length, 1);
+    assert.equal(
+      nodes.filter((n) => n.type === "TEXT" && n.characters === "Second")
+        .length,
+      16,
+    );
+  } finally {
+    await session.dispose();
+  }
 });
 
 test("nested pages fail native planning before any remote creation", async () => {
-  for (const children of [<Page><Page /></Page>, <Page><Frame><Page /></Frame></Page>]) {
+  for (const children of [
+    <Page>
+      <Page />
+    </Page>,
+    <Page>
+      <Frame>
+        <Page />
+      </Frame>
+    </Page>,
+  ]) {
     const connection = new FakeConnection();
     const session = new FigmaSession(options, connection);
     try {
@@ -687,7 +724,9 @@ test("nested pages fail native planning before any remote creation", async () =>
       await assert.rejects(session.publish(), isCode(ErrorCode.InvalidTarget));
       assert.equal(connection.writes, 0);
       assert.equal(connection.canvas.root.children.length, 1);
-    } finally { await session.dispose(); }
+    } finally {
+      await session.dispose();
+    }
   }
 });
 
@@ -699,8 +738,15 @@ test("remounting transfers retained ownership without deleting omitted descendan
   const session = await FigmaSession.open(FILE, {}, connection);
   try {
     await session.refresh({ pageId: connection.canvas.page.id });
-    const target = session.inspect().targets.find(t => t.remoteId === frame.id)!;
-    const first = await session.mount(target, <Frame><Text name="Owned">First</Text></Frame>);
+    const target = session
+      .inspect()
+      .targets.find((t) => t.remoteId === frame.id)!;
+    const first = await session.mount(
+      target,
+      <Frame>
+        <Text name="Owned">First</Text>
+      </Frame>,
+    );
     await session.publish();
     const child = frame.children.find((n: any) => n.name === "Owned");
     await first.unmount();
@@ -712,7 +758,12 @@ test("remounting transfers retained ownership without deleting omitted descendan
     assert.equal(child.parent.id, frame.id);
     assert.equal(foreign.parent.id, frame.id);
     await second.unmount();
-    const third = await session.mount(target, <Frame><Text target={child.id}>Third</Text></Frame>);
+    const third = await session.mount(
+      target,
+      <Frame>
+        <Text target={child.id}>Third</Text>
+      </Frame>,
+    );
     const edited = await session.publish();
     assert.deepEqual(edited.createdNodeIds, []);
     assert.deepEqual(edited.deletedNodeIds, []);
@@ -723,12 +774,17 @@ test("remounting transfers retained ownership without deleting omitted descendan
     await session.publish();
     assert.equal(connection.stats.calls, calls);
     await third.unmount();
-  } finally { await session.dispose(); }
+  } finally {
+    await session.dispose();
+  }
 });
 
 test("concurrent image registration respects the aggregate budget and deduplicates bytes", async () => {
   const session = new FigmaSession(options, new FakeConnection());
-  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==", "base64");
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
+    "base64",
+  );
   // Padded one-pixel PNGs exercise the real encoded-byte boundary without large
   // decoded images. Distinct trailing bytes give each fixture its own hash.
   const padded = (mib: number, marker: number) => {
@@ -740,21 +796,30 @@ test("concurrent image registration respects the aggregate budget and deduplicat
   try {
     const first = padded(6, 1);
     const tasks = [session.registerImage(first), session.registerImage(first)];
-    for (let i = 0; i < 26; i++) tasks.push(session.registerImage(padded(10, i + 2)));
+    for (let i = 0; i < 26; i++)
+      tasks.push(session.registerImage(padded(10, i + 2)));
     const results = await Promise.allSettled(tasks);
-    assert.equal(results.filter(r => r.status === "fulfilled").length, 27);
-    const failed = results.filter(r => r.status === "rejected");
+    assert.equal(results.filter((r) => r.status === "fulfilled").length, 27);
+    const failed = results.filter((r) => r.status === "rejected");
     assert.equal(failed.length, 1);
     assert.equal(failed[0]!.reason.code, ErrorCode.ResourceLimit);
     assert.deepEqual(results[0], results[1]);
     const accepted = await session.registerImage(first);
-    assert.deepEqual(accepted, (results[0] as PromiseFulfilledResult<unknown>).value);
-  } finally { await session.dispose(); }
+    assert.deepEqual(
+      accepted,
+      (results[0] as PromiseFulfilledResult<unknown>).value,
+    );
+  } finally {
+    await session.dispose();
+  }
 });
 
 test("failed and cancelled image registrations do not block later work", async () => {
   const session = new FigmaSession(options, new FakeConnection());
-  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==", "base64");
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
+    "base64",
+  );
   const cancel = new AbortController();
   try {
     const invalid = session.registerImage(png.subarray(0, 8));
@@ -765,7 +830,15 @@ test("failed and cancelled image registrations do not block later work", async (
     assert.equal(results[0]!.status, "rejected");
     assert.equal(results[1]!.status, "rejected");
     assert.equal(results[2]!.status, "fulfilled");
-    assert.equal((results[0] as PromiseRejectedResult).reason.code, ErrorCode.MalformedInput);
-    assert.equal((results[1] as PromiseRejectedResult).reason.code, ErrorCode.Cancelled);
-  } finally { await session.dispose(); }
+    assert.equal(
+      (results[0] as PromiseRejectedResult).reason.code,
+      ErrorCode.MalformedInput,
+    );
+    assert.equal(
+      (results[1] as PromiseRejectedResult).reason.code,
+      ErrorCode.Cancelled,
+    );
+  } finally {
+    await session.dispose();
+  }
 });

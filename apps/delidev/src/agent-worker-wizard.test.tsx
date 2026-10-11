@@ -6,103 +6,596 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { ConfigurationService, EntityKind, KnownSubscriptionModelCatalogSource, ProviderInventoryCapability, ProviderService, ResourceSchema, ResourceService, SubscriptionServiceIdentity, SystemCapability, SystemService, newRequestId, type Resource, type SaveAgentWorkerRequest, type GetResourceRequest, type ListResourcesRequest, type ListEndpointModelsRequest } from "@delinoio/delidev-api-client";
+import {
+  ConfigurationService,
+  EntityKind,
+  KnownSubscriptionModelCatalogSource,
+  ProviderInventoryCapability,
+  ProviderService,
+  ResourceSchema,
+  ResourceService,
+  SubscriptionServiceIdentity,
+  SystemCapability,
+  SystemService,
+  newRequestId,
+  type Resource,
+  type SaveAgentWorkerRequest,
+  type GetResourceRequest,
+  type ListResourcesRequest,
+  type ListEndpointModelsRequest,
+} from "@delinoio/delidev-api-client";
 import { AgentWorkerWizard } from "./agent-worker-wizard";
 import { MutationIntents } from "./mutation";
 import { document, encode } from "./documents";
 import { chooseScrollOption } from "./test-scroll-picker";
-function fixture(supported=true){
- const row=(kind:EntityKind,data:Record<string,unknown>,schemaVersion=1)=>create(ResourceSchema,{kind,schemaVersion,id:newRequestId(),revision:1n,documentJson:encode(data)});
- const provider=row(EntityKind.PROVIDER,{name:"Original API",protocol:"openai-responses",endpoint:"https://fixture.test/v1",enabled:true,authentication:"keyless"});
- const accounts=["First account","Second account"].map(alias=>row(EntityKind.ACCOUNT,{alias,type:"api",provider_id:provider.id,health:"unverified",enabled:true,connection:{id:newRequestId(),authentication:"keyless"}}));
- const subscription=row(EntityKind.ACCOUNT,{alias:"Original subscription",type:"subscription",subscription_service:"chatgpt",health:"ready",enabled:true,connection:{id:newRequestId(),authentication:"subscription"}},2);
- const records=[provider,...accounts,subscription];const get=vi.fn((request:GetResourceRequest)=>({resource:records.find(row=>row.id===request.id)}));
- const list=vi.fn((request:ListResourcesRequest)=>({resources:request.filter?.kind===EntityKind.ACCOUNT?(request.subscriptionService===SubscriptionServiceIdentity.CHATGPT?[subscription]:request.providerId===provider.id?accounts:[]):[]}));
- const endpoint=vi.fn(async(request:ListEndpointModelsRequest)=>{const account=accounts.find(row=>row.id===request.accountId)!;return {accountId:account.id,accountRevision:account.revision,providerId:provider.id,providerRevision:provider.revision,connectionId:String((document(account).connection as Record<string,unknown>).id),models:[{nativeId:"exact-one",displayName:"Endpoint One",inputModalities:["text"]},{nativeId:"exact-two",displayName:"Endpoint Two",inputModalities:["text","image"]}]};});
- const known=vi.fn(()=>({subscriptionService:SubscriptionServiceIdentity.CHATGPT,models:[{nativeId:"gpt-exact",displayName:"Known GPT"}],catalogVersion:`sha256:${"a".repeat(64)}`,updatedAt:"2026-10-06",source:KnownSubscriptionModelCatalogSource.BUNDLED}));
- const save=vi.fn(async(request:SaveAgentWorkerRequest)=>({requestId:request.mutation!.requestId,resource:row(EntityKind.AGENT,JSON.parse(new TextDecoder().decode(request.documentJson)),4)}));
- const transport=createRouterTransport(router=>{router.service(SystemService,{getStatus:()=>({protocolVersion:2,capabilities:supported?[SystemCapability.INLINE_WORKER_MODELS_V1,SystemCapability.KNOWN_SUBSCRIPTION_MODELS_V1]:[]})});router.service(ProviderService,{listProviderInventory:()=>({entries:[{provider,providerId:provider.id,displayName:"Original API",enabled:true}],capabilities:[ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER,ProviderInventoryCapability.ACCOUNT_TYPE_FILTER]}),listEndpointModels:endpoint,listKnownSubscriptionModels:known});router.service(ResourceService,{listResources:list,getResource:get});router.service(ConfigurationService,{saveAgentWorker:save});});
- const client=new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity}}});const saved=vi.fn(),cancel=vi.fn();
- const view=(active=true,initial?:Resource)=><StrictMode><TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><AgentWorkerWizard active={active} initial={initial} saved={saved} cancel={cancel}/></MutationIntents></QueryClientProvider></TransportProvider></StrictMode>;
- return {row,provider,accounts,subscription,records,get,list,endpoint,known,save,saved,cancel,view,client};
+function fixture(supported = true) {
+  const row = (
+    kind: EntityKind,
+    data: Record<string, unknown>,
+    schemaVersion = 1,
+  ) =>
+    create(ResourceSchema, {
+      kind,
+      schemaVersion,
+      id: newRequestId(),
+      revision: 1n,
+      documentJson: encode(data),
+    });
+  const provider = row(EntityKind.PROVIDER, {
+    name: "Original API",
+    protocol: "openai-responses",
+    endpoint: "https://fixture.test/v1",
+    enabled: true,
+    authentication: "keyless",
+  });
+  const accounts = ["First account", "Second account"].map((alias) =>
+    row(EntityKind.ACCOUNT, {
+      alias,
+      type: "api",
+      provider_id: provider.id,
+      health: "unverified",
+      enabled: true,
+      connection: { id: newRequestId(), authentication: "keyless" },
+    }),
+  );
+  const subscription = row(
+    EntityKind.ACCOUNT,
+    {
+      alias: "Original subscription",
+      type: "subscription",
+      subscription_service: "chatgpt",
+      health: "ready",
+      enabled: true,
+      connection: { id: newRequestId(), authentication: "subscription" },
+    },
+    2,
+  );
+  const records = [provider, ...accounts, subscription];
+  const get = vi.fn((request: GetResourceRequest) => ({
+    resource: records.find((row) => row.id === request.id),
+  }));
+  const list = vi.fn((request: ListResourcesRequest) => ({
+    resources:
+      request.filter?.kind === EntityKind.ACCOUNT
+        ? request.subscriptionService === SubscriptionServiceIdentity.CHATGPT
+          ? [subscription]
+          : request.providerId === provider.id
+            ? accounts
+            : []
+        : [],
+  }));
+  const endpoint = vi.fn(async (request: ListEndpointModelsRequest) => {
+    const account = accounts.find((row) => row.id === request.accountId)!;
+    return {
+      accountId: account.id,
+      accountRevision: account.revision,
+      providerId: provider.id,
+      providerRevision: provider.revision,
+      connectionId: String(
+        (document(account).connection as Record<string, unknown>).id,
+      ),
+      models: [
+        {
+          nativeId: "exact-one",
+          displayName: "Endpoint One",
+          inputModalities: ["text"],
+        },
+        {
+          nativeId: "exact-two",
+          displayName: "Endpoint Two",
+          inputModalities: ["text", "image"],
+        },
+      ],
+    };
+  });
+  const known = vi.fn(() => ({
+    subscriptionService: SubscriptionServiceIdentity.CHATGPT,
+    models: [{ nativeId: "gpt-exact", displayName: "Known GPT" }],
+    catalogVersion: `sha256:${"a".repeat(64)}`,
+    updatedAt: "2026-10-06",
+    source: KnownSubscriptionModelCatalogSource.BUNDLED,
+  }));
+  const save = vi.fn(async (request: SaveAgentWorkerRequest) => ({
+    requestId: request.mutation!.requestId,
+    resource: row(
+      EntityKind.AGENT,
+      JSON.parse(new TextDecoder().decode(request.documentJson)),
+      4,
+    ),
+  }));
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, {
+      getStatus: () => ({
+        protocolVersion: 2,
+        capabilities: supported
+          ? [
+              SystemCapability.INLINE_WORKER_MODELS_V1,
+              SystemCapability.KNOWN_SUBSCRIPTION_MODELS_V1,
+            ]
+          : [],
+      }),
+    });
+    router.service(ProviderService, {
+      listProviderInventory: () => ({
+        entries: [
+          {
+            provider,
+            providerId: provider.id,
+            displayName: "Original API",
+            enabled: true,
+          },
+        ],
+        capabilities: [
+          ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER,
+          ProviderInventoryCapability.ACCOUNT_TYPE_FILTER,
+        ],
+      }),
+      listEndpointModels: endpoint,
+      listKnownSubscriptionModels: known,
+    });
+    router.service(ResourceService, { listResources: list, getResource: get });
+    router.service(ConfigurationService, { saveAgentWorker: save });
+  });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  const saved = vi.fn(),
+    cancel = vi.fn();
+  const view = (active = true, initial?: Resource) => (
+    <StrictMode>
+      <TransportProvider transport={transport}>
+        <QueryClientProvider client={client}>
+          <MutationIntents>
+            <AgentWorkerWizard
+              active={active}
+              initial={initial}
+              saved={saved}
+              cancel={cancel}
+            />
+          </MutationIntents>
+        </QueryClientProvider>
+      </TransportProvider>
+    </StrictMode>
+  );
+  return {
+    row,
+    provider,
+    accounts,
+    subscription,
+    records,
+    get,
+    list,
+    endpoint,
+    known,
+    save,
+    saved,
+    cancel,
+    view,
+    client,
+  };
 }
-async function accounts(f:ReturnType<typeof fixture>,subscription=false,multi=false){
- fireEvent.click(await screen.findByRole("radio",{name:"Codex"}));const picker=screen.getByRole("combobox",{name:"Account source 1"});await chooseScrollOption(picker,subscription?"subscription:chatgpt":`api:${f.provider.id}`);
- const rows=subscription?[f.subscription]:multi?f.accounts:[f.accounts[0]];
- for(const row of rows)fireEvent.click(await screen.findByRole("checkbox",{name:new RegExp(String(document(row).alias))}));
- await waitFor(()=>{for(const row of rows)expect(f.client.getQueryCache().getAll().some(q=>(q.state.data as {resource?:Resource}|undefined)?.resource?.id===row.id && q.state.status==="success" && q.state.fetchStatus==="idle")).toBe(true);});await act(async()=>{});
- fireEvent.click(screen.getByRole("button",{name:"Next"}));await screen.findByRole("heading",{name:"Model",level:3});return screen.getByRole("combobox",{name:/^Model for /}) as HTMLInputElement;
+async function accounts(
+  f: ReturnType<typeof fixture>,
+  subscription = false,
+  multi = false,
+) {
+  fireEvent.click(await screen.findByRole("radio", { name: "Codex" }));
+  const picker = screen.getByRole("combobox", { name: "Account source 1" });
+  await chooseScrollOption(
+    picker,
+    subscription ? "subscription:chatgpt" : `api:${f.provider.id}`,
+  );
+  const rows = subscription
+    ? [f.subscription]
+    : multi
+      ? f.accounts
+      : [f.accounts[0]];
+  for (const row of rows)
+    fireEvent.click(
+      await screen.findByRole("checkbox", {
+        name: new RegExp(String(document(row).alias)),
+      }),
+    );
+  await waitFor(() => {
+    for (const row of rows)
+      expect(
+        f.client
+          .getQueryCache()
+          .getAll()
+          .some(
+            (q) =>
+              (q.state.data as { resource?: Resource } | undefined)?.resource
+                ?.id === row.id &&
+              q.state.status === "success" &&
+              q.state.fetchStatus === "idle",
+          ),
+      ).toBe(true);
+  });
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByRole("heading", { name: "Model", level: 3 });
+  return screen.getByRole("combobox", {
+    name: /^Model for /,
+  }) as HTMLInputElement;
 }
-async function configure(input:HTMLInputElement,id="typed-exact") {fireEvent.change(input,{target:{value:id}});fireEvent.keyDown(input,{key:"Escape"});fireEvent.click(screen.getByRole("button",{name:"Next"}));await screen.findByRole("heading",{name:"Configure",level:3});fireEvent.change(screen.getByLabelText("Name"),{target:{value:"Inline Worker"}});}
-it.each(["Codex","Claude Code","OpenCode","Grok Build"])("confirms %s and focuses Accounts without saved Model reads",async name=>{const f=fixture();render(f.view());fireEvent.click(await screen.findByRole("radio",{name}));expect(screen.getByRole("heading",{name:"Accounts",level:3})).toBe(globalThis.document.activeElement);expect(f.endpoint).not.toHaveBeenCalled();expect(f.known).not.toHaveBeenCalled();expect(f.list.mock.calls.every(([request])=>request.filter?.kind!==EntityKind.MODEL)).toBe(true);expect(f.save).not.toHaveBeenCalled();});
-it("keeps unsupported protocol support unavailable",async()=>{const f=fixture(false);render(f.view());await screen.findByText(/Update.*server/);expect(screen.queryByRole("radio")).toBeNull();expect(f.save).not.toHaveBeenCalled();});
-it("gates inactive harness confirmation",async()=>{const f=fixture();const view=render(f.view());await screen.findByRole("radio",{name:"Codex"});view.rerender(f.view(false));expect(screen.getByRole("radio",{name:"Codex"})).toHaveProperty("disabled",true);expect(f.save).not.toHaveBeenCalled();});
-it("moves harness focus with keyboard without confirming",async()=>{const f=fixture();render(f.view());const codex=await screen.findByRole("radio",{name:"Codex"});codex.focus();fireEvent.keyDown(codex,{key:"ArrowRight"});expect(globalThis.document.activeElement).toBe(screen.getByRole("radio",{name:"Claude Code"}));expect(screen.getByRole("heading",{name:"Harness",level:3})).toBeTruthy();expect(f.save).not.toHaveBeenCalled();});
-it("saves ordered accounts and source-native model atomically only at Configure",async()=>{const f=fixture();render(f.view());const input=await accounts(f,false,true);expect(f.save).not.toHaveBeenCalled();fireEvent.click(screen.getByRole("button",{name:"Refresh models from endpoint"}));fireEvent.focus(input);fireEvent.click(await screen.findByRole("option",{name:/Endpoint Two/}));await configure(input,"exact-two");fireEvent.click(screen.getByRole("button",{name:"Save Agent Worker"}));await waitFor(()=>expect(f.save).toHaveBeenCalledTimes(1));const request=f.save.mock.calls[0][0];expect(request.schemaVersion).toBe(4);expect(request.model).toBeUndefined();expect(request.routeModels).toMatchObject([{selection:{case:"nativeId",value:"exact-two"}}]);const data=JSON.parse(new TextDecoder().decode(request.documentJson));expect(data.routes[0]).toMatchObject({model:{provider_id:f.provider.id,native_id:"exact-two"},accounts:f.accounts.map(row=>({id:row.id,weight:1}))});expect(data.model_id).toBeUndefined();expect(data.accounts).toBeUndefined();});
-it("accepts a typed exact native ID with failed endpoint hints",async()=>{const f=fixture();f.endpoint.mockRejectedValue(new ConnectError("Fixture read unavailable",Code.Unavailable));render(f.view());const input=await accounts(f);expect(f.endpoint).not.toHaveBeenCalled();fireEvent.click(screen.getByRole("button",{name:"Refresh models from endpoint"}));await waitFor(()=>expect(f.endpoint).toHaveBeenCalledTimes(1));await configure(input,"unlisted-exact-ID");fireEvent.click(screen.getByRole("button",{name:"Save Agent Worker"}));await waitFor(()=>expect(f.save).toHaveBeenCalledTimes(1));expect(f.save.mock.calls[0][0].routeModels[0].selection).toEqual({case:"nativeId",value:"unlisted-exact-ID"});expect(f.list.mock.calls.every(([request])=>request.filter?.kind!==EntityKind.MODEL)).toBe(true);});
-it("keeps subscription suggestions advisory and saves original service/native identity",async()=>{const f=fixture();render(f.view());const input=await accounts(f,true);fireEvent.focus(input);fireEvent.click(await screen.findByRole("option",{name:/Known GPT/}));await configure(input,"gpt-exact");fireEvent.click(screen.getByRole("button",{name:"Save Agent Worker"}));await waitFor(()=>expect(f.save).toHaveBeenCalledTimes(1));const route=JSON.parse(new TextDecoder().decode(f.save.mock.calls[0][0].documentJson)).routes[0];expect(route.model).toMatchObject({subscription_service:"chatgpt",native_id:"gpt-exact"});expect(route.model.provider_id).toBeUndefined();expect(f.endpoint).not.toHaveBeenCalled();});
-it("retains Configure draft through Back and active visibility changes",async()=>{const f=fixture();const view=render(f.view());const input=await accounts(f);await configure(input);view.rerender(f.view(false));view.rerender(f.view());fireEvent.click(screen.getByRole("button",{name:"Back"}));expect(screen.getByRole("combobox",{name:/^Model for /})).toHaveProperty("value","typed-exact");fireEvent.click(screen.getByRole("button",{name:"Next"}));expect(screen.getByLabelText("Name")).toHaveProperty("value","Inline Worker");});
-it("blocks invalid exact IDs before save and reveals Model",async()=>{const f=fixture();render(f.view());const input=await accounts(f);fireEvent.change(input,{target:{value:"x".repeat(257)}});fireEvent.click(screen.getByRole("button",{name:"Next"}));expect(screen.getByRole("heading",{name:"Model",level:3})).toBeTruthy();expect(f.save).not.toHaveBeenCalled();});
-it("ignores composing Enter in the native model picker",async()=>{const f=fixture();render(f.view());const input=await accounts(f);fireEvent.change(input,{target:{value:"original"}});fireEvent.keyDown(input,{key:"ArrowDown"});fireEvent.keyDown(input,{key:"Enter",isComposing:true});expect(input).toHaveProperty("value","original");expect(screen.getByRole("heading",{name:"Model",level:3})).toBeTruthy();expect(f.save).not.toHaveBeenCalled();});
-it("rejects endpoint metadata from another original account",async()=>{const f=fixture();f.endpoint.mockImplementation(async()=>({accountId:newRequestId(),accountRevision:1n,providerId:f.provider.id,providerRevision:1n,connectionId:newRequestId(),models:[{nativeId:"foreign",displayName:"Foreign model",inputModalities:["text"]}]}));render(f.view());const input=await accounts(f);fireEvent.click(screen.getByRole("button",{name:"Refresh models from endpoint"}));fireEvent.focus(input);await screen.findByText(/catalog page includes unsupported/);expect(screen.queryByRole("option",{name:/Foreign model/})).toBeNull();expect(f.save).not.toHaveBeenCalled();});
-it("preserves the exact uncertain atomic request across a hidden visit",async()=>{const f=fixture();f.save.mockRejectedValueOnce(new ConnectError("Lost receipt",Code.Unavailable));const view=render(f.view());const input=await accounts(f);await configure(input);fireEvent.click(screen.getByRole("button",{name:"Save Agent Worker"}));await screen.findByRole("button",{name:"Retry the same Worker save"});const original=f.save.mock.calls[0][0];view.rerender(f.view(false));view.rerender(f.view());expect(screen.getByRole("button",{name:"Save Agent Worker"})).toHaveProperty("disabled",true);fireEvent.click(screen.getByRole("button",{name:"Retry the same Worker save"}));await waitFor(()=>expect(f.save).toHaveBeenCalledTimes(2));expect(f.save.mock.calls[1][0]).toEqual(original);});
+async function configure(input: HTMLInputElement, id = "typed-exact") {
+  fireEvent.change(input, { target: { value: id } });
+  fireEvent.keyDown(input, { key: "Escape" });
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByRole("heading", { name: "Configure", level: 3 });
+  fireEvent.change(screen.getByLabelText("Name"), {
+    target: { value: "Inline Worker" },
+  });
+}
+it.each(["Codex", "Claude Code", "OpenCode", "Grok Build"])(
+  "confirms %s and focuses Accounts without saved Model reads",
+  async (name) => {
+    const f = fixture();
+    render(f.view());
+    fireEvent.click(await screen.findByRole("radio", { name }));
+    expect(screen.getByRole("heading", { name: "Accounts", level: 3 })).toBe(
+      globalThis.document.activeElement,
+    );
+    expect(f.endpoint).not.toHaveBeenCalled();
+    expect(f.known).not.toHaveBeenCalled();
+    expect(
+      f.list.mock.calls.every(
+        ([request]) => request.filter?.kind !== EntityKind.MODEL,
+      ),
+    ).toBe(true);
+    expect(f.save).not.toHaveBeenCalled();
+  },
+);
+it("keeps unsupported protocol support unavailable", async () => {
+  const f = fixture(false);
+  render(f.view());
+  await screen.findByText(/Update.*server/);
+  expect(screen.queryByRole("radio")).toBeNull();
+  expect(f.save).not.toHaveBeenCalled();
+});
+it("gates inactive harness confirmation", async () => {
+  const f = fixture();
+  const view = render(f.view());
+  await screen.findByRole("radio", { name: "Codex" });
+  view.rerender(f.view(false));
+  expect(screen.getByRole("radio", { name: "Codex" })).toHaveProperty(
+    "disabled",
+    true,
+  );
+  expect(f.save).not.toHaveBeenCalled();
+});
+it("moves harness focus with keyboard without confirming", async () => {
+  const f = fixture();
+  render(f.view());
+  const codex = await screen.findByRole("radio", { name: "Codex" });
+  codex.focus();
+  fireEvent.keyDown(codex, { key: "ArrowRight" });
+  expect(globalThis.document.activeElement).toBe(
+    screen.getByRole("radio", { name: "Claude Code" }),
+  );
+  expect(
+    screen.getByRole("heading", { name: "Harness", level: 3 }),
+  ).toBeTruthy();
+  expect(f.save).not.toHaveBeenCalled();
+});
+it("saves ordered accounts and source-native model atomically only at Configure", async () => {
+  const f = fixture();
+  render(f.view());
+  const input = await accounts(f, false, true);
+  expect(f.save).not.toHaveBeenCalled();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Refresh models from endpoint" }),
+  );
+  fireEvent.focus(input);
+  fireEvent.click(await screen.findByRole("option", { name: /Endpoint Two/ }));
+  await configure(input, "exact-two");
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
+  const request = f.save.mock.calls[0][0];
+  expect(request.schemaVersion).toBe(4);
+  expect(request.model).toBeUndefined();
+  expect(request.routeModels).toMatchObject([
+    { selection: { case: "nativeId", value: "exact-two" } },
+  ]);
+  const data = JSON.parse(new TextDecoder().decode(request.documentJson));
+  expect(data.routes[0]).toMatchObject({
+    model: { provider_id: f.provider.id, native_id: "exact-two" },
+    accounts: f.accounts.map((row) => ({ id: row.id, weight: 1 })),
+  });
+  expect(data.model_id).toBeUndefined();
+  expect(data.accounts).toBeUndefined();
+});
+it("accepts a typed exact native ID with failed endpoint hints", async () => {
+  const f = fixture();
+  f.endpoint.mockRejectedValue(
+    new ConnectError("Fixture read unavailable", Code.Unavailable),
+  );
+  render(f.view());
+  const input = await accounts(f);
+  expect(f.endpoint).not.toHaveBeenCalled();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Refresh models from endpoint" }),
+  );
+  await waitFor(() => expect(f.endpoint).toHaveBeenCalledTimes(1));
+  await configure(input, "unlisted-exact-ID");
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
+  expect(f.save.mock.calls[0][0].routeModels[0].selection).toEqual({
+    case: "nativeId",
+    value: "unlisted-exact-ID",
+  });
+  expect(
+    f.list.mock.calls.every(
+      ([request]) => request.filter?.kind !== EntityKind.MODEL,
+    ),
+  ).toBe(true);
+});
+it("keeps subscription suggestions advisory and saves original service/native identity", async () => {
+  const f = fixture();
+  render(f.view());
+  const input = await accounts(f, true);
+  fireEvent.focus(input);
+  fireEvent.click(await screen.findByRole("option", { name: /Known GPT/ }));
+  await configure(input, "gpt-exact");
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
+  const route = JSON.parse(
+    new TextDecoder().decode(f.save.mock.calls[0][0].documentJson),
+  ).routes[0];
+  expect(route.model).toMatchObject({
+    subscription_service: "chatgpt",
+    native_id: "gpt-exact",
+  });
+  expect(route.model.provider_id).toBeUndefined();
+  expect(f.endpoint).not.toHaveBeenCalled();
+});
+it("retains Configure draft through Back and active visibility changes", async () => {
+  const f = fixture();
+  const view = render(f.view());
+  const input = await accounts(f);
+  await configure(input);
+  view.rerender(f.view(false));
+  view.rerender(f.view());
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  expect(screen.getByRole("combobox", { name: /^Model for / })).toHaveProperty(
+    "value",
+    "typed-exact",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  expect(screen.getByLabelText("Name")).toHaveProperty(
+    "value",
+    "Inline Worker",
+  );
+});
+it("blocks invalid exact IDs before save and reveals Model", async () => {
+  const f = fixture();
+  render(f.view());
+  const input = await accounts(f);
+  fireEvent.change(input, { target: { value: "x".repeat(257) } });
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  expect(screen.getByRole("heading", { name: "Model", level: 3 })).toBeTruthy();
+  expect(f.save).not.toHaveBeenCalled();
+});
+it("ignores composing Enter in the native model picker", async () => {
+  const f = fixture();
+  render(f.view());
+  const input = await accounts(f);
+  fireEvent.change(input, { target: { value: "original" } });
+  fireEvent.keyDown(input, { key: "ArrowDown" });
+  fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+  expect(input).toHaveProperty("value", "original");
+  expect(screen.getByRole("heading", { name: "Model", level: 3 })).toBeTruthy();
+  expect(f.save).not.toHaveBeenCalled();
+});
+it("rejects endpoint metadata from another original account", async () => {
+  const f = fixture();
+  f.endpoint.mockImplementation(async () => ({
+    accountId: newRequestId(),
+    accountRevision: 1n,
+    providerId: f.provider.id,
+    providerRevision: 1n,
+    connectionId: newRequestId(),
+    models: [
+      {
+        nativeId: "foreign",
+        displayName: "Foreign model",
+        inputModalities: ["text"],
+      },
+    ],
+  }));
+  render(f.view());
+  const input = await accounts(f);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Refresh models from endpoint" }),
+  );
+  fireEvent.focus(input);
+  await screen.findByText(/catalog page includes unsupported/);
+  expect(screen.queryByRole("option", { name: /Foreign model/ })).toBeNull();
+  expect(f.save).not.toHaveBeenCalled();
+});
+it("preserves the exact uncertain atomic request across a hidden visit", async () => {
+  const f = fixture();
+  f.save.mockRejectedValueOnce(
+    new ConnectError("Lost receipt", Code.Unavailable),
+  );
+  const view = render(f.view());
+  const input = await accounts(f);
+  await configure(input);
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await screen.findByRole("button", { name: "Retry the same Worker save" });
+  const original = f.save.mock.calls[0][0];
+  view.rerender(f.view(false));
+  view.rerender(f.view());
+  expect(
+    screen.getByRole("button", { name: "Save Agent Worker" }),
+  ).toHaveProperty("disabled", true);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Retry the same Worker save" }),
+  );
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(2));
+  expect(f.save.mock.calls[1][0]).toEqual(original);
+});
 
 it("reads API endpoint hints only after explicit Refresh models and never on Model entry or cache invalidation", async () => {
-  const f=fixture(); const view=render(f.view()); const input=await accounts(f);
-  expect(f.endpoint).not.toHaveBeenCalled(); fireEvent.focus(input); fireEvent.change(input,{target:{value:"typed-native"}});
-  expect(f.endpoint).not.toHaveBeenCalled(); fireEvent.change(input,{target:{value:""}});
-  fireEvent.click(screen.getByRole("button",{name:"Refresh models from endpoint"})); await waitFor(()=>expect(f.endpoint).toHaveBeenCalledTimes(1));
-  await screen.findByRole("option",{name:/Endpoint One/});
-  await f.client.invalidateQueries(); view.rerender(f.view(false)); view.rerender(f.view());
-  expect(f.endpoint).toHaveBeenCalledTimes(1); expect(f.save).not.toHaveBeenCalled();
+  const f = fixture();
+  const view = render(f.view());
+  const input = await accounts(f);
+  expect(f.endpoint).not.toHaveBeenCalled();
+  fireEvent.focus(input);
+  fireEvent.change(input, { target: { value: "typed-native" } });
+  expect(f.endpoint).not.toHaveBeenCalled();
+  fireEvent.change(input, { target: { value: "" } });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Refresh models from endpoint" }),
+  );
+  await waitFor(() => expect(f.endpoint).toHaveBeenCalledTimes(1));
+  await screen.findByRole("option", { name: /Endpoint One/ });
+  await f.client.invalidateQueries();
+  view.rerender(f.view(false));
+  view.rerender(f.view());
+  expect(f.endpoint).toHaveBeenCalledTimes(1);
+  expect(f.save).not.toHaveBeenCalled();
 });
 
 it("preserves complete multimodal advisory metadata without new model authority", async () => {
- const f=fixture(), modalities=["text","image","audio","video","file"];
- const original=f.endpoint.getMockImplementation()!;
- f.endpoint.mockImplementation(async request=>{const response=await original(request);response.models[1].inputModalities=modalities;return response;});
- render(f.view());const input=await accounts(f);
- fireEvent.click(screen.getByRole("button",{name:"Refresh models from endpoint"}));fireEvent.focus(input);
- await screen.findByRole("option",{name:/Endpoint One/});
- fireEvent.click(await screen.findByRole("option",{name:/Endpoint Two/}));
- expect(input.value).toBe("exact-two");
- // Advance without editing the selected ID, retaining its suggestion metadata.
- fireEvent.keyDown(input,{key:"Escape"});fireEvent.click(screen.getByRole("button",{name:"Next"}));
- await screen.findByRole("heading",{name:"Configure",level:3});fireEvent.change(screen.getByLabelText("Name"),{target:{value:"Multimodal Worker"}});
- fireEvent.click(screen.getByRole("button",{name:"Save Agent Worker"}));await waitFor(()=>expect(f.save).toHaveBeenCalledTimes(1));
- const request=f.save.mock.calls[0][0], route=JSON.parse(new TextDecoder().decode(request.documentJson)).routes[0];
- expect(request.routeModels[0].selection).toEqual({case:"nativeId",value:"exact-two"});
- expect(route.model).toMatchObject({provider_id:f.provider.id,native_id:"exact-two",input_modalities:modalities,metadata_source:"user-declared"});
- expect(f.list.mock.calls.every(([request])=>request.filter?.kind!==EntityKind.MODEL)).toBe(true);
+  const f = fixture(),
+    modalities = ["text", "image", "audio", "video", "file"];
+  const original = f.endpoint.getMockImplementation()!;
+  f.endpoint.mockImplementation(async (request) => {
+    const response = await original(request);
+    response.models[1].inputModalities = modalities;
+    return response;
+  });
+  render(f.view());
+  const input = await accounts(f);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Refresh models from endpoint" }),
+  );
+  fireEvent.focus(input);
+  await screen.findByRole("option", { name: /Endpoint One/ });
+  fireEvent.click(await screen.findByRole("option", { name: /Endpoint Two/ }));
+  expect(input.value).toBe("exact-two");
+  // Advance without editing the selected ID, retaining its suggestion metadata.
+  fireEvent.keyDown(input, { key: "Escape" });
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByRole("heading", { name: "Configure", level: 3 });
+  fireEvent.change(screen.getByLabelText("Name"), {
+    target: { value: "Multimodal Worker" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
+  const request = f.save.mock.calls[0][0],
+    route = JSON.parse(new TextDecoder().decode(request.documentJson))
+      .routes[0];
+  expect(request.routeModels[0].selection).toEqual({
+    case: "nativeId",
+    value: "exact-two",
+  });
+  expect(route.model).toMatchObject({
+    provider_id: f.provider.id,
+    native_id: "exact-two",
+    input_modalities: modalities,
+    metadata_source: "user-declared",
+  });
+  expect(
+    f.list.mock.calls.every(
+      ([request]) => request.filter?.kind !== EntityKind.MODEL,
+    ),
+  ).toBe(true);
 });
 
 it.each([
- ["too many tokens",Array(17).fill("text")],
- ["empty token",[""]], ["oversized token",["a".repeat(33)]],
- ["uppercase",["Audio"]], ["digit",["audio2"]], ["underscore",["audio_input"]],
- ["Unicode",["오디오"]], ["whitespace",["audio "]],
-] as [string, string[]][])("rejects an entire endpoint response with %s",async(_name,modalities)=>{
- const f=fixture(), original=f.endpoint.getMockImplementation()!;
- f.endpoint.mockImplementation(async request=>{const response=await original(request);response.models[1].inputModalities=modalities;return response;});
- render(f.view());const input=await accounts(f);
- fireEvent.click(screen.getByRole("button",{name:"Refresh models from endpoint"}));fireEvent.focus(input);
- await screen.findByText(/catalog page includes unsupported/);
- expect(screen.queryByRole("option",{name:/Endpoint One/})).toBeNull();expect(f.save).not.toHaveBeenCalled();
-});
+  ["too many tokens", Array(17).fill("text")],
+  ["empty token", [""]],
+  ["oversized token", ["a".repeat(33)]],
+  ["uppercase", ["Audio"]],
+  ["digit", ["audio2"]],
+  ["underscore", ["audio_input"]],
+  ["Unicode", ["오디오"]],
+  ["whitespace", ["audio "]],
+] as [string, string[]][])(
+  "rejects an entire endpoint response with %s",
+  async (_name, modalities) => {
+    const f = fixture(),
+      original = f.endpoint.getMockImplementation()!;
+    f.endpoint.mockImplementation(async (request) => {
+      const response = await original(request);
+      response.models[1].inputModalities = modalities;
+      return response;
+    });
+    render(f.view());
+    const input = await accounts(f);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Refresh models from endpoint" }),
+    );
+    fireEvent.focus(input);
+    await screen.findByText(/catalog page includes unsupported/);
+    expect(screen.queryByRole("option", { name: /Endpoint One/ })).toBeNull();
+    expect(f.save).not.toHaveBeenCalled();
+  },
+);
 
-it.each(["accountId","providerId","connectionId","accountRevision","providerRevision","duplicateId","oversizedId"])("retains endpoint rejection for %s",async field=>{
- const f=fixture(), original=f.endpoint.getMockImplementation()!;
- f.endpoint.mockImplementation(async request=>{
-  const response=await original(request);
-  if(field==="accountId"||field==="providerId"||field==="connectionId")response[field]=newRequestId();
-  else if(field==="accountRevision"||field==="providerRevision")response[field]=0n;
-  else response.models[1].nativeId=field==="duplicateId"?response.models[0].nativeId:"x".repeat(257);
-  return response;
- });
- render(f.view());const input=await accounts(f);
- fireEvent.click(screen.getByRole("button",{name:"Refresh models from endpoint"}));fireEvent.focus(input);
- await screen.findByText(/catalog page includes unsupported/);expect(screen.queryByRole("option",{name:/Endpoint One/})).toBeNull();
- expect(f.save).not.toHaveBeenCalled();
+it.each([
+  "accountId",
+  "providerId",
+  "connectionId",
+  "accountRevision",
+  "providerRevision",
+  "duplicateId",
+  "oversizedId",
+])("retains endpoint rejection for %s", async (field) => {
+  const f = fixture(),
+    original = f.endpoint.getMockImplementation()!;
+  f.endpoint.mockImplementation(async (request) => {
+    const response = await original(request);
+    if (
+      field === "accountId" ||
+      field === "providerId" ||
+      field === "connectionId"
+    )
+      response[field] = newRequestId();
+    else if (field === "accountRevision" || field === "providerRevision")
+      response[field] = 0n;
+    else
+      response.models[1].nativeId =
+        field === "duplicateId" ? response.models[0].nativeId : "x".repeat(257);
+    return response;
+  });
+  render(f.view());
+  const input = await accounts(f);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Refresh models from endpoint" }),
+  );
+  fireEvent.focus(input);
+  await screen.findByText(/catalog page includes unsupported/);
+  expect(screen.queryByRole("option", { name: /Endpoint One/ })).toBeNull();
+  expect(f.save).not.toHaveBeenCalled();
 });

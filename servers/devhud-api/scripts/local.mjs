@@ -43,7 +43,8 @@ async function ossEnvironment(action) {
     apiContract.ossOverrideNames,
   );
   return {
-    DEVHUD_DATABASE_URL: "postgres://devhud:devhud@127.0.0.1:5432/devhud?sslmode=disable",
+    DEVHUD_DATABASE_URL:
+      "postgres://devhud:devhud@127.0.0.1:5432/devhud?sslmode=disable",
     DEVHUD_PUBLIC_API_URL: "http://127.0.0.1:46307",
     DEVHUD_LOGTO_ISSUER: defaultOssLogtoIssuer,
     DEVHUD_LOGTO_AUDIENCE: "urn:devhud:oss-unconfigured",
@@ -79,12 +80,7 @@ async function execute(action, environment) {
       : {};
   const assets = await executeArgv(
     pnpm.command,
-    [
-      ...pnpm.prefix,
-      "--filter",
-      "devhud-admin",
-      "build:embedded",
-    ],
+    [...pnpm.prefix, "--filter", "devhud-admin", "build:embedded"],
     {
       ...safeBaseEnvironment(environment),
       ...testingEnvironment,
@@ -94,7 +90,9 @@ async function execute(action, environment) {
   );
   if (assets.code !== 0 || assets.signal) return assets;
   const fakeGo =
-    process.env.DEVHUD_ENVIRONMENT_TESTING === "1" ? process.env.DEVHUD_TEST_GO : null;
+    process.env.DEVHUD_ENVIRONMENT_TESTING === "1"
+      ? process.env.DEVHUD_TEST_GO
+      : null;
   return executeArgv(
     fakeGo ? process.execPath : "go",
     [

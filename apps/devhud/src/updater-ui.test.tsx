@@ -1,9 +1,24 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { NativeBridgeError, NativeBridgeErrorCode, type DesktopUpdaterStatus, type NativeBridgeEventV1, type NativeBridgeRequestV1, type NativeBridgeResponseV1, type NativeBridgeV1 } from "./native-bridge";
+import {
+  NativeBridgeError,
+  NativeBridgeErrorCode,
+  type DesktopUpdaterStatus,
+  type NativeBridgeEventV1,
+  type NativeBridgeRequestV1,
+  type NativeBridgeResponseV1,
+  type NativeBridgeV1,
+} from "./native-bridge";
 import { DesktopUpdaterPanel } from "./updater-ui";
 
 const available: DesktopUpdaterStatus = {
@@ -11,22 +26,36 @@ const available: DesktopUpdaterStatus = {
   installedVersion: "0.1.0",
   target: "linux-x86_64",
   packageKind: "linux-appimage",
-  candidate: { version: "0.2.0", releaseNotes: { en: "English signed notes", ko: "한국어 서명 노트" } },
+  candidate: {
+    version: "0.2.0",
+    releaseNotes: { en: "English signed notes", ko: "한국어 서명 노트" },
+  },
   diagnostic: null,
 };
 
 function bridgeWithStatus(initial: DesktopUpdaterStatus) {
   let status = initial;
   const operations: string[] = [];
-  const request = vi.fn(async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
-    operations.push(value.operation);
-    if (value.operation === "updates.status") return { kind: "desktop-update-status", status };
-    if (value.operation === "updates.approve-download") status = { ...status, kind: "downloaded" };
-    if (value.operation === "updates.approve-installation") status = { ...status, kind: "installation-approved" };
-    if (value.operation === "updates.approve-restart") status = { ...status, kind: "restarting" };
-    return { kind: "desktop-update-status", status };
-  });
-  const bridge: NativeBridgeV1 = { request, async listen(_listener: (event: NativeBridgeEventV1) => void) { return () => {}; } };
+  const request = vi.fn(
+    async (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+      operations.push(value.operation);
+      if (value.operation === "updates.status")
+        return { kind: "desktop-update-status", status };
+      if (value.operation === "updates.approve-download")
+        status = { ...status, kind: "downloaded" };
+      if (value.operation === "updates.approve-installation")
+        status = { ...status, kind: "installation-approved" };
+      if (value.operation === "updates.approve-restart")
+        status = { ...status, kind: "restarting" };
+      return { kind: "desktop-update-status", status };
+    },
+  );
+  const bridge: NativeBridgeV1 = {
+    request,
+    async listen(_listener: (event: NativeBridgeEventV1) => void) {
+      return () => {};
+    },
+  };
   return { bridge, operations };
 }
 
@@ -41,33 +70,48 @@ describe("desktop updater approvals", () => {
 
     render(<DesktopUpdaterPanel bridge={bridge} language="en" />);
 
-    expect(screen.queryByRole("button", { name: "Check for updates" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Check for updates" }),
+    ).toBeNull();
     expect(bridge.request).not.toHaveBeenCalled();
   });
 
   it("shows an unsupported status without an actionable check button", async () => {
     const bridge: NativeBridgeV1 = {
-      request: vi.fn(async () => { throw new NativeBridgeError(NativeBridgeErrorCode.Unsupported); }),
-      async listen() { return () => {}; },
+      request: vi.fn(async () => {
+        throw new NativeBridgeError(NativeBridgeErrorCode.Unsupported);
+      }),
+      async listen() {
+        return () => {};
+      },
     };
 
     render(<DesktopUpdaterPanel bridge={bridge} language="en" />);
 
-    expect(await screen.findByText("This target or package is unsupported.")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Check for updates" })).toBeNull();
-    expect(bridge.request).toHaveBeenCalledWith({ operation: "updates.status" });
+    expect(
+      await screen.findByText("This target or package is unsupported."),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Check for updates" }),
+    ).toBeNull();
+    expect(bridge.request).toHaveBeenCalledWith({
+      operation: "updates.status",
+    });
   });
 
   it.each([
     ["en", "English signed notes", "Desktop updates"],
     ["ko", "한국어 서명 노트", "데스크톱 업데이트"],
-  ] as const)("renders accessible %s release notes", async (language, notes, title) => {
-    const { bridge } = bridgeWithStatus(available);
-    render(<DesktopUpdaterPanel bridge={bridge} language={language} />);
-    expect(await screen.findByRole("heading", { name: title })).toBeTruthy();
-    expect(screen.getByText(notes)).toBeTruthy();
-    expect(screen.getByRole("status")).toBeTruthy();
-  });
+  ] as const)(
+    "renders accessible %s release notes",
+    async (language, notes, title) => {
+      const { bridge } = bridgeWithStatus(available);
+      render(<DesktopUpdaterPanel bridge={bridge} language={language} />);
+      expect(await screen.findByRole("heading", { name: title })).toBeTruthy();
+      expect(screen.getByText(notes)).toBeTruthy();
+      expect(screen.getByRole("status")).toBeTruthy();
+    },
+  );
 
   it("requires separate download, installation, and restart confirmation", async () => {
     const { bridge, operations } = bridgeWithStatus(available);
@@ -81,26 +125,43 @@ describe("desktop updater approvals", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     await screen.findByRole("button", { name: "Approve installation" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Approve installation" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Approve installation" }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     await screen.findByRole("button", { name: "Install and restart" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Install and restart" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Install and restart" }),
+    );
     const confirm = screen.getByRole("button", { name: "Confirm" });
     expect(confirm).toBe(document.activeElement);
     fireEvent.click(confirm);
-    await waitFor(() => expect(operations).toEqual([
-      "updates.status", "updates.approve-download", "updates.approve-installation", "updates.approve-restart",
-    ]));
+    await waitFor(() =>
+      expect(operations).toEqual([
+        "updates.status",
+        "updates.approve-download",
+        "updates.approve-installation",
+        "updates.approve-restart",
+      ]),
+    );
   });
 
   it("registers the updater listener before reading the current status", async () => {
     let finishListening: (() => void) | undefined;
-    let nativeStatus: DesktopUpdaterStatus = { ...available, kind: "checking", candidate: null };
-    const request = vi.fn(async (_value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => ({
-      kind: "desktop-update-status",
-      status: nativeStatus,
-    }));
+    let nativeStatus: DesktopUpdaterStatus = {
+      ...available,
+      kind: "checking",
+      candidate: null,
+    };
+    const request = vi.fn(
+      async (
+        _value: NativeBridgeRequestV1,
+      ): Promise<NativeBridgeResponseV1> => ({
+        kind: "desktop-update-status",
+        status: nativeStatus,
+      }),
+    );
     const bridge: NativeBridgeV1 = {
       request,
       listen(_listener) {
@@ -115,26 +176,45 @@ describe("desktop updater approvals", () => {
     expect(request).not.toHaveBeenCalled();
 
     nativeStatus = { ...available, kind: "downloaded" };
-    await act(async () => { finishListening?.(); });
+    await act(async () => {
+      finishListening?.();
+    });
 
-    expect(await screen.findByRole("button", { name: "Approve installation" })).toBeTruthy();
+    expect(
+      await screen.findByRole("button", { name: "Approve installation" }),
+    ).toBeTruthy();
     expect(request).toHaveBeenCalledOnce();
     expect(request).toHaveBeenCalledWith({ operation: "updates.status" });
   });
 
   it("does not let a stale command response replace a newer updater event", async () => {
     let listener: ((event: NativeBridgeEventV1) => void) | undefined;
-    let resolveDownload: ((response: NativeBridgeResponseV1) => void) | undefined;
-    const request = vi.fn((value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
-      if (value.operation === "updates.status") return Promise.resolve({ kind: "desktop-update-status", status: available });
-      if (value.operation === "updates.approve-download") {
-        return new Promise((resolve) => { resolveDownload = resolve; });
-      }
-      return Promise.resolve({ kind: "desktop-update-status", status: available });
-    });
+    let resolveDownload:
+      ((response: NativeBridgeResponseV1) => void) | undefined;
+    const request = vi.fn(
+      (value: NativeBridgeRequestV1): Promise<NativeBridgeResponseV1> => {
+        if (value.operation === "updates.status")
+          return Promise.resolve({
+            kind: "desktop-update-status",
+            status: available,
+          });
+        if (value.operation === "updates.approve-download") {
+          return new Promise((resolve) => {
+            resolveDownload = resolve;
+          });
+        }
+        return Promise.resolve({
+          kind: "desktop-update-status",
+          status: available,
+        });
+      },
+    );
     const bridge: NativeBridgeV1 = {
       request,
-      async listen(next) { listener = next; return () => {}; },
+      async listen(next) {
+        listener = next;
+        return () => {};
+      },
     };
     render(<DesktopUpdaterPanel bridge={bridge} language="en" />);
     await screen.findByRole("button", { name: "Approve download" });
@@ -142,55 +222,94 @@ describe("desktop updater approvals", () => {
     fireEvent.click(screen.getByRole("button", { name: "Approve download" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     await waitFor(() => expect(resolveDownload).toBeTypeOf("function"));
-    listener?.({ version: 1, kind: "desktop-update-status", status: { ...available, kind: "downloaded" } });
-    expect(await screen.findByRole("button", { name: "Approve installation" })).toBeTruthy();
-
-    resolveDownload?.({ kind: "desktop-update-status", status: { ...available, kind: "downloading" } });
-    await waitFor(() => expect(screen.getByRole("button", { name: "Approve installation" })).toBeTruthy());
-    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
-  });
-
-  it.each(["before", "after"] as const)("closes stale download approval when an animation frame runs %s the status commit", async (frameOrder) => {
-    let listener: ((event: NativeBridgeEventV1) => void) | undefined;
-    const operations: string[] = [];
-    const bridge: NativeBridgeV1 = {
-      async request(value) {
-        operations.push(value.operation);
-        return { kind: "desktop-update-status", status: available };
-      },
-      async listen(next) { listener = next; return () => {}; },
-    };
-    render(<DesktopUpdaterPanel bridge={bridge} language="en" />);
-    await screen.findByText("English signed notes");
-
-    fireEvent.click(screen.getByRole("button", { name: "Approve download" }));
-    expect(screen.getByRole("dialog")).toBeTruthy();
-
-    const frames: FrameRequestCallback[] = [];
-    const animationFrame = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => frames.push(callback));
-    const runFrames = () => frames.splice(0).forEach((callback) => callback(0));
-    try {
-      act(() => {
-        listener?.({ version: 1, kind: "desktop-update-status", status: { ...available, kind: "checking", candidate: null } });
-        // A native event can yield to a browser frame before React commits its updates.
-        if (frameOrder === "before") runFrames();
-      });
-      if (frameOrder === "after") act(runFrames);
-    } finally {
-      animationFrame.mockRestore();
-    }
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    await waitFor(() => expect(screen.getByRole("region", { name: "Desktop updates" })).toBe(document.activeElement));
-
     listener?.({
       version: 1,
       kind: "desktop-update-status",
-      status: { ...available, candidate: { version: "0.3.0", releaseNotes: { en: "Replacement signed notes", ko: "교체된 서명 노트" } } },
+      status: { ...available, kind: "downloaded" },
     });
-    expect(await screen.findByText("Replacement signed notes")).toBeTruthy();
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(operations).toEqual(["updates.status"]);
+    expect(
+      await screen.findByRole("button", { name: "Approve installation" }),
+    ).toBeTruthy();
+
+    resolveDownload?.({
+      kind: "desktop-update-status",
+      status: { ...available, kind: "downloading" },
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Approve installation" }),
+      ).toBeTruthy(),
+    );
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
   });
+
+  it.each(["before", "after"] as const)(
+    "closes stale download approval when an animation frame runs %s the status commit",
+    async (frameOrder) => {
+      let listener: ((event: NativeBridgeEventV1) => void) | undefined;
+      const operations: string[] = [];
+      const bridge: NativeBridgeV1 = {
+        async request(value) {
+          operations.push(value.operation);
+          return { kind: "desktop-update-status", status: available };
+        },
+        async listen(next) {
+          listener = next;
+          return () => {};
+        },
+      };
+      render(<DesktopUpdaterPanel bridge={bridge} language="en" />);
+      await screen.findByText("English signed notes");
+
+      fireEvent.click(screen.getByRole("button", { name: "Approve download" }));
+      expect(screen.getByRole("dialog")).toBeTruthy();
+
+      const frames: FrameRequestCallback[] = [];
+      const animationFrame = vi
+        .spyOn(window, "requestAnimationFrame")
+        .mockImplementation((callback) => frames.push(callback));
+      const runFrames = () =>
+        frames.splice(0).forEach((callback) => callback(0));
+      try {
+        act(() => {
+          listener?.({
+            version: 1,
+            kind: "desktop-update-status",
+            status: { ...available, kind: "checking", candidate: null },
+          });
+          // A native event can yield to a browser frame before React commits its updates.
+          if (frameOrder === "before") runFrames();
+        });
+        if (frameOrder === "after") act(runFrames);
+      } finally {
+        animationFrame.mockRestore();
+      }
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      await waitFor(() =>
+        expect(screen.getByRole("region", { name: "Desktop updates" })).toBe(
+          document.activeElement,
+        ),
+      );
+
+      listener?.({
+        version: 1,
+        kind: "desktop-update-status",
+        status: {
+          ...available,
+          candidate: {
+            version: "0.3.0",
+            releaseNotes: {
+              en: "Replacement signed notes",
+              ko: "교체된 서명 노트",
+            },
+          },
+        },
+      });
+      expect(await screen.findByText("Replacement signed notes")).toBeTruthy();
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(operations).toEqual(["updates.status"]);
+    },
+  );
 
   it("cancels a confirmation with Escape without invoking a native action", async () => {
     const { bridge, operations } = bridgeWithStatus(available);
@@ -229,7 +348,13 @@ describe("desktop updater approvals", () => {
   it("reports approval state immediately and clears it on dismissal and unmount", async () => {
     const { bridge } = bridgeWithStatus(available);
     const onApprovalOpenChange = vi.fn();
-    const { unmount } = render(<DesktopUpdaterPanel bridge={bridge} language="en" onApprovalOpenChange={onApprovalOpenChange} />);
+    const { unmount } = render(
+      <DesktopUpdaterPanel
+        bridge={bridge}
+        language="en"
+        onApprovalOpenChange={onApprovalOpenChange}
+      />,
+    );
     await screen.findByText("English signed notes");
 
     fireEvent.click(screen.getByRole("button", { name: "Approve download" }));
@@ -247,17 +372,30 @@ describe("desktop updater approvals", () => {
       ...available,
       kind: "restart-required",
       packageKind: "linux-deb",
-      diagnostic: { code: "restart-failed", phase: "restart", target: "linux-x86_64", packageKind: "linux-deb", installedVersion: "0.1.0", candidateVersion: "0.2.0" },
+      diagnostic: {
+        code: "restart-failed",
+        phase: "restart",
+        target: "linux-x86_64",
+        packageKind: "linux-deb",
+        installedVersion: "0.1.0",
+        candidateVersion: "0.2.0",
+      },
     };
     const { bridge, operations } = bridgeWithStatus(restartRequired);
     render(<DesktopUpdaterPanel bridge={bridge} language="en" />);
 
-    expect((await screen.findByRole("alert")).textContent).toContain("The update is installed");
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "The update is installed",
+    );
     expect(screen.getByText("Running version")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry restart" }));
-    expect(screen.getByRole("dialog").textContent).toContain("without reinstalling");
+    expect(screen.getByRole("dialog").textContent).toContain(
+      "without reinstalling",
+    );
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
-    await waitFor(() => expect(operations).toEqual(["updates.status", "updates.approve-restart"]));
+    await waitFor(() =>
+      expect(operations).toEqual(["updates.status", "updates.approve-restart"]),
+    );
   });
 
   it("offers truthful restart-only recovery after an uncertain Debian install", async () => {
@@ -265,28 +403,50 @@ describe("desktop updater approvals", () => {
       ...available,
       kind: "restart-required",
       packageKind: "linux-deb",
-      diagnostic: { code: "installation-failed", phase: "installation", target: "linux-x86_64", packageKind: "linux-deb", installedVersion: "0.1.0", candidateVersion: "0.2.0" },
+      diagnostic: {
+        code: "installation-failed",
+        phase: "installation",
+        target: "linux-x86_64",
+        packageKind: "linux-deb",
+        installedVersion: "0.1.0",
+        candidateVersion: "0.2.0",
+      },
     };
     const { bridge, operations } = bridgeWithStatus(restartRequired);
     render(<DesktopUpdaterPanel bridge={bridge} language="en" />);
 
-    expect((await screen.findByRole("alert")).textContent).toContain("files may have changed");
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "files may have changed",
+    );
     expect(screen.getByText("Running version")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Restart DevHUD" }));
-    expect(screen.getByRole("dialog").textContent).toContain("without reinstalling");
+    expect(screen.getByRole("dialog").textContent).toContain(
+      "without reinstalling",
+    );
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
-    await waitFor(() => expect(operations).toEqual(["updates.status", "updates.approve-restart"]));
+    await waitFor(() =>
+      expect(operations).toEqual(["updates.status", "updates.approve-restart"]),
+    );
   });
 
   it("renders a localized typed diagnostic without transport details", async () => {
     const failed: DesktopUpdaterStatus = {
       ...available,
       kind: "failed",
-      diagnostic: { code: "invalid-signature", phase: "verification", target: "linux-x86_64", packageKind: "linux-appimage", installedVersion: "0.1.0", candidateVersion: "0.2.0" },
+      diagnostic: {
+        code: "invalid-signature",
+        phase: "verification",
+        target: "linux-x86_64",
+        packageKind: "linux-appimage",
+        installedVersion: "0.1.0",
+        candidateVersion: "0.2.0",
+      },
     };
     const { bridge } = bridgeWithStatus(failed);
     render(<DesktopUpdaterPanel bridge={bridge} language="ko" />);
-    expect((await screen.findByRole("alert")).textContent).toContain("업데이트 서명을 신뢰할 수 없습니다");
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "업데이트 서명을 신뢰할 수 없습니다",
+    );
     expect(screen.queryByText(/https?:/u)).toBeNull();
   });
 });

@@ -493,6 +493,7 @@ OpenCode lost-report recovery checks a child-owned immutable closed creation pro
 A settled eligible first child turn may become a manual compaction source under the compaction contract. Its new continuation restore clears the one-shot Fork import and retains the child-owned Fork runtime as history, preserving legacy 3-to-2 and startup 4-to-4 assignment profiles. Independent child lifetime and Sidechat dependent/read-only ownership remain separate.
 
 ## Managed ChatGPT independent Fork
+
 Record System capability 53 `MANAGED_CODEX_FORK_V1` and Worker capability 29 in the complete feature PR. Preserve existing ownership, including Sidechat 27/16, protected subscriptions 3 and managed Sidechat 47/26. These declarations compose complete runtime support; they alone prove no native/account/platform acceptance. No SQLite migration is added.
 
 Version 1 with explicit or omitted independent purpose retains the existing RPC and child publication format. Admission, claim, publication and child continuation require the separate managed Fork capability and original account/connection. Freeze original actor, source revision, completed native turn, immutable configuration and reviewer, generation, startup identity, Worker machine/device/instance and claimed job revision. Busy lease, pending lifecycle, recovery and active server/Worker observations refuse admission before protected credentials or native work. No new login, account fallback, sandbox expansion or reviewer substitution is permitted.
@@ -506,6 +507,7 @@ The child privately retains a complete inherited-history digest and count. Its f
 Existing workspace ownership applies unchanged: Worktree copies actual HEAD and dirty contents, General Chat copies owned files, and Local preserves its original machine rules. Publish paused with an empty queue. Independent parent deletion preserves child-owned checkpoint, runtime and workspace; later turns retain the original account and immutable reviewer/branch-prefix provenance. Parent-dependent read-only Sidechat remains a separate overlay and deletion profile.
 
 Automated fixtures and builds validate these boundaries. Installed native, real-account, remote-machine, platform and manual visual acceptance remain owner-assigned and are not claimed by those checks.
+
 ## Inherited elapsed observations
 
 Completed inherited OpenCode user Messages copy original server-owned turn timing with their existing immutable `inherited_from` source session/execution/input/native provenance. Child remapping does not rewrite either observation, and later child input captures a separate interval. Timing is copied only after the original canonical/native mapping checks; it adds no Fork eligibility or native history proof. Fork creation/job/checkpoint/digest inputs omit display timing and retain their prior closed Worker shape.

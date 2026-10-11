@@ -1,15 +1,19 @@
 # DeliDev owned process contract
 
 ## Scope
+
 `cmds/delidev-cli/internal/process` owns Worker-launched Git, native harness and terminal process lifecycles. The complete product requirements remain in [issue requirements](cmds-delidev-requirements.md); distinguish implementation from native-platform verification in pull requests, issues and CI logs/artifacts.
 
 ## Runtime and Language
+
 Go and OS process primitives. No container, additional application sandbox, or replacement for native harness permissions is introduced.
 
 ## Users and Operators
+
 Each launch belongs to an immutable UUID-v7 execution/job/session owner and a private execution scope. An owner may have several distinct process scopes. Worker shutdown and explicit Stop act only on owned processes.
 
 ## Interfaces and Contracts
+
 The [subagent observation profile](cmds-delidev-subagents-contract.md) preserves cleanup ownership for every live/unavailable descendant after parent completion. The Worker keeps the original process open while native children settle, without sending child-control operations. History reads and closed tree state do not independently prove process cleanup; a failed, canceled or uncertain inspection retains the existing owned-process cleanup/report boundary.
 
 A launch creates durable ownership and reaches a start barrier before receiving the actual command. Explicit resume crosses that barrier once. The shared admission boundary checks the original Start context synchronously; already-observable cancellation or deadline expiry refuses command transmission/suspended-child resume and independently joins the original owner before returning its typed result. Cleanup uncertainty retains RecoveryRequired precedence. Cancellation racing an already-admitted command keeps the original post-admission cleanup/uncertainty semantics. Command arguments, environment, input and output never enter ownership journals. Native stdin, stdout and stderr remain distinct byte streams with bounded framing and backpressure, preserving partial multibyte sequences for the adapter to decode.
@@ -48,6 +52,7 @@ The private supervisor transport is internal local IPC only and adds no remotely
 - Follow `cmds-delidev-process-contract.md` for Worker subprocesses. Persist execution ownership before the start barrier, record completed ownership after any output-pipe setup failure proven to precede native launch, retain separate native byte streams, and prove owned descendant termination before confirming stop or releasing credentials/workspaces. Never use PID absence alone as that proof or persist command/environment/input/output in ownership journals. Before enforcing owner recovery capacity, retire only platform-validated complete scopes after their controller lock is released; serialize and synchronize retirement, preserve incomplete journals, and retain the owner index.
 
 ## Storage
+
 Owner-ID directories index process scopes directly, so session recovery does not scan unrelated process history. Worker Git inspection/preparation/cleanup uses these scopes, and workspace rollback requires process reconciliation first. Private atomic ownership journals record version, execution owner, supervisor/process start identity, boot/kernel ownership identity, start-barrier state and reconciled completion. They contain no prompt, command/environment, upstream key, proxy token, or raw output. Keep incomplete journals for recovery. Owner reconciliation prunes only platform-validated completed scopes whose native controller lock has been released, before applying the 10,000 retained-scope bound. It reads bounded directory batches, serializes retirement with an owner maintenance lock, atomically renames each completed scope to a synchronized `.retired-<UUID>` entry and then removes it. Interrupted retired-directory removal is retryable; incomplete/invalid journals and journals still owned by an open Handle are retained. The generic reconciler retains the owner index even when empty; terminal ownership alone retires that empty index and its released recovery lock after synchronizing the independently verified cleanup report acknowledgement. Interrupted terminal retirement is locally retryable without server record availability; missing individual journals still cannot prove individual process completion. This cleanup cannot delete session workspaces.
 
 Controller preparation creates the UUID scope directory exclusively under its already-private owner. If controller creation fails before native startup is attempted, rollback compares the original directory identity, removes only that empty directory and synchronizes its parent. Existing, replaced or nonempty scopes (including partial lock files) are retained for recovery; failed synchronization is also explicit recovery uncertainty. This path never substitutes for cleanup proof after native startup begins.
@@ -63,17 +68,21 @@ Linux uses boot identity plus kernel start ticks. Missing procfs evidence alone 
 The Worker owns the private generation/scope/registration/desktop-client bindings and synchronized evidence publication. Fresh authenticated desktop admission rechecks that evidence under its final original locks; see [the CLI contract](cmds-delidev-contract.md#main-desktop-automatic-worker-management). Legacy missing proof is not reconstructed or migrated. Record actual platform acceptance separately from fixtures and builds.
 
 ## Logging
+
 Log execution/owner identifiers, stable lifecycle states and typed safe failure causes only. Raw native stderr and command/environment dumps are excluded.
 
 Windows classifies bad image format, invalid executable signatures/modules, marked-invalid images, machine-type mismatch and missing image subsystems as unsupported, using the [documented loader status codes](https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes--0-499-). Native executable launch failures distinguish missing files/interpreters, permission denial, incompatible executable formats and unavailable native resources through closed classifications. The private supervisor forwards only that classification, never an OS error string or command path; launch failure still requires the normal ownership reconciliation before dependent runtime cleanup.
 
 ## Build and Test
+
 Package race tests and vet; real temporary subprocesses must cover separate streams, stdin, partial bytes, natural exit, cancellation, daemonized descendants, start barriers, missing journals, unrelated processes, parent disconnect and crash recovery. Windows/Linux cross-compilation is not native lifecycle evidence. Native harness capability tests are separate from process-fixture tests.
 
 ## Dependencies and Integrations
+
 Platform ownership primitives follow [Linux subreaper semantics](https://man7.org/linux/man-pages/man2/PR_SET_CHILD_SUBREAPER.2const.html) and [Windows Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects) and [atomic Job List startup attributes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute). The initial Unix ownership implementation adapts the repository's existing async-commit-hook native scope mechanism; DeliDev adds execution ownership and distinct interactive streams without coupling either product's configuration or lifecycle state.
 
 ## Change Triggers
+
 Update this contract and scoped AGENTS when process ownership, proof of termination, journal contents or supported-platform behavior changes. Preserve uncertainty whenever native proof becomes unavailable.
 
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.

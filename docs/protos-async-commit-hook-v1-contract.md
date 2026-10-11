@@ -1,15 +1,19 @@
 # async-commit-hook v1 protocol contract
 
 ## Scope
+
 `protos/async_commit_hook/v1` owns package `async_commit_hook.v1`; committed Go and TypeScript bindings are tool-generated.
 
 ## Runtime and Language
+
 Protobuf and Connect over loopback HTTP. CLI/MCP call the same Go application service directly.
 
 ## Users and Operators
+
 Browsers visiting the local ach UI; trusted local processes.
 
 ## Interfaces and Contracts
+
 Typed v1 services expose repositories/worktrees/branches, changes/commits, runs/checks, logs/reports/failures, comparisons, inbox, acknowledgement, cancellation and existing-run reruns. Product identifiers are UUID v7. Pagination and log cursors are bounded and scope-validated. Reject unsupported API/state versions. Browser requests never carry arbitrary shell commands or unrestricted filesystem paths.
 
 `RerunResponse.run_id` is a durable acceptance receipt. Its additive optional `startup_diagnostic` reports post-acceptance runner startup failure while preserving a successful Connect response. The diagnostic uses `startup-failed`, a safe message and recovery hint. Pre-acceptance failures remain Connect errors with no receipt. Omitted diagnostics retain the existing successful-start response.
@@ -39,24 +43,31 @@ Typed v1 services expose repositories/worktrees/branches, changes/commits, runs/
 - OpenCode original question/permission request JSON uses a disjoint `opencode` payload, original `que_`/`per_` identities and observed tool-part/assistant/call ownership. Preserve ordered matrices without synthetic question IDs, optional native flags and exact permission scope/metadata. Commit original request uniqueness and unread inbox atomically, preserve independent read state and block tool/root completion with pending requests. Proposal publication cannot authorize Codex response encoding, response delivery or public execution. The separate direct-response union uses original ordered answer matrices and one-request `once` permissions through existing response/claim RPCs; bounded native reply evidence binds proposal/event/request/body digest to the current response claim and confirmed exact-body HTTP delivery before independent native closure. Keep reply content out of metadata, and reject missing/mixed proofs or unsupported cascade policies.
 
 ## Storage
+
 All results stay on the local machine. New stores do not create browser/pairing tables. Existing tables and results are preserved but legacy credentials are never consulted. The deprecated Pair RPC remains a wire-compatible tombstone returning Unimplemented (pairing-removed), without side effects.
 
 ## Security
+
 Bind 127.0.0.1 only and validate Host exactly against the configured port. Every RPC requires POST, Origin exactly `http://127.0.0.1:<api_port>`, and exactly one `X-Ach-Api-Version: 1` header. Missing, null, duplicate and other origins/versions fail before dispatch. Version rejection retains the `incompatible-version` diagnostic in a Connect error envelope so stale clients can render recovery guidance. There are no remote/development CORS grants or authentication exceptions. Static navigation is GET/HEAD and requires the same Host. Local processes are trusted; this is browser-origin isolation rather than per-browser or per-OS-user authentication. File reads remain scoped by stored execution/evidence IDs.
 
 ## Logging
+
 Stable error codes and correlation IDs; never log Authorization, pairing codes, request secrets or raw reports.
 
 ## Build and Test
+
 Buf format/lint/breaking/freshness, Go/TypeScript serialization and transport tests, same-origin, Host, method, version-header and retired-pairing tests. Generator filters keep DevHud and ach client outputs separate.
 
 ## Dependencies and Integrations
+
 Connect-Go, protobuf-es, Connect Query and the shared command service.
 
 ## Change Triggers
+
 Update project, command, app and client contracts with all wire changes.
 
 ## References
+
 - [Project](project-async-commit-hook.md)
 - [Repository defaults](repository-defaults.md)
 

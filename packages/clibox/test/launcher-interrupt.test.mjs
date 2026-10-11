@@ -33,7 +33,11 @@ function fixture() {
     }
   };
   const result = launch("synthetic-clibox", [], {
-    platform: "linux", parent, spawnChild: () => child, setTimer, clearTimer,
+    platform: "linux",
+    parent,
+    spawnChild: () => child,
+    setTimer,
+    clearTimer,
   });
   const interrupt = () => parent.emit("SIGINT");
   const ack = () => acknowledgement.emit("data", Buffer.from([1]));
@@ -44,7 +48,17 @@ function fixture() {
     assert.deepEqual(parent.eventNames(), []);
     assert.deepEqual(acknowledgement.eventNames(), []);
   };
-  return { parent, child, signals, timers, tick, interrupt, ack, finish, result };
+  return {
+    parent,
+    child,
+    signals,
+    timers,
+    tick,
+    interrupt,
+    ack,
+    finish,
+    result,
+  };
 }
 
 test("delayed acknowledgements cannot suppress subsequent launcher interrupts", async () => {
@@ -93,7 +107,10 @@ test("overlapping interrupts disable suppression before old bytes arrive", async
 
 test("falling back disables acknowledgement suppression before synchronous delivery", async () => {
   const f = fixture();
-  f.child.kill = (signal) => { f.signals.push(signal); f.ack(); };
+  f.child.kill = (signal) => {
+    f.signals.push(signal);
+    f.ack();
+  };
   f.interrupt();
   f.tick(10);
   f.interrupt();

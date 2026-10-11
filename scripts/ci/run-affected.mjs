@@ -1,16 +1,32 @@
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 
-import { cacheContext, cachePolicy, toolCacheContexts } from "./cache-context.mjs";
+import {
+  cacheContext,
+  cachePolicy,
+  toolCacheContexts,
+} from "./cache-context.mjs";
 
 const require = createRequire(import.meta.url);
 
 const [workspace, ...tasks] = process.argv.slice(2);
-if (!workspace || tasks.length === 0 || tasks.some((task) => task.startsWith("-"))) throw new Error("Expected a workspace and task names");
-const args = [require.resolve("turbo/bin/turbo"), "run", ...tasks, "--filter", workspace];
+if (
+  !workspace ||
+  tasks.length === 0 ||
+  tasks.some((task) => task.startsWith("-"))
+)
+  throw new Error("Expected a workspace and task names");
+const args = [
+  require.resolve("turbo/bin/turbo"),
+  "run",
+  ...tasks,
+  "--filter",
+  workspace,
+];
 if (process.env.FORCE_RUN !== "true") {
   for (const key of ["TURBO_SCM_BASE", "TURBO_SCM_HEAD"]) {
-    if (!/^[0-9a-f]{40}$/u.test(process.env[key] ?? "")) throw new Error(`${key} must come from the CI comparison`);
+    if (!/^[0-9a-f]{40}$/u.test(process.env[key] ?? ""))
+      throw new Error(`${key} must come from the CI comparison`);
   }
   args.push("--affected");
 }
@@ -18,9 +34,21 @@ process.env.CI_CACHE_CONTEXT = cacheContext();
 Object.assign(process.env, toolCacheContexts());
 const policy = cachePolicy();
 if (policy) args.push(`--cache=${policy}`, "--summarize");
-console.log(JSON.stringify({ event: "ci_workspace", workspace, tasks, forced: process.env.FORCE_RUN === "true", cache: policy ?? "configured-local-development", remoteAuth: process.env.TURBO_REMOTE_CACHE_AUTH === "true" }));
+console.log(
+  JSON.stringify({
+    event: "ci_workspace",
+    workspace,
+    tasks,
+    forced: process.env.FORCE_RUN === "true",
+    cache: policy ?? "configured-local-development",
+    remoteAuth: process.env.TURBO_REMOTE_CACHE_AUTH === "true",
+  }),
+);
 // Windows package-manager shims require a shell. Invoke the installed Turbo
 // Node entry point directly so paths and task arguments remain literal on all OSes.
-const result = spawnSync(process.execPath, args, { stdio: "inherit", shell: false });
+const result = spawnSync(process.execPath, args, {
+  stdio: "inherit",
+  shell: false,
+});
 if (result.error) throw result.error;
 process.exitCode = result.status ?? 1;

@@ -10,7 +10,17 @@ export function prebuiltCache(root, id, options) {
     key: `prebuilt-v1-${id}-${paths.dependency.release}-${paths.target}-${paths.asset.sha256}-${paths.asset.binarySha256}`,
   };
 }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url) && process.env.GITHUB_OUTPUT) {
-  const cache = prebuiltCache(resolve(process.env.GITHUB_WORKSPACE), "tauri-cli");
-  await appendFile(process.env.GITHUB_OUTPUT, `path=${cache.path}\nkey=${cache.key}\n`);
+if (
+  process.argv[1] &&
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url) &&
+  process.env.GITHUB_OUTPUT
+) {
+  const cache = prebuiltCache(
+    resolve(process.env.GITHUB_WORKSPACE),
+    "tauri-cli",
+  );
+  await appendFile(
+    process.env.GITHUB_OUTPUT,
+    `path=${cache.path}\nkey=${cache.key}\n`,
+  );
 }

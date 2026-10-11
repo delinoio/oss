@@ -1,19 +1,23 @@
 # Runmoor public documentation foundation
 
 ## Scope
+
 - Project/component: Runmoor public documentation content
 - Canonical path: `apps/public-docs/docs/runmoor`
 
 ## Runtime and Language
+
 - Runtime: Rspress static documentation app, aligned with the other repository documentation apps.
 - Primary language: English Markdown and TypeScript configuration.
 - Deployment target: the `apps/public-docs` static output published by the consolidated Cloudflare Pages site.
 
 ## Users and Operators
+
 - Runmoor users reading installation, configuration, runner execution, and operations guidance.
 - Maintainers reviewing and publishing the documentation.
 
 ## Interfaces and Contracts
+
 - The content is built by the `public-docs` Rspress application; there is no standalone Runmoor documentation package or workspace.
 - Canonical production URL: `https://oss.delino.io/runmoor`.
 - Stable clean routes: `/runmoor/`, `/runmoor/install`, `/runmoor/configuration`, `/runmoor/commands`, `/runmoor/docker`, `/runmoor/tart`, `/runmoor/host`, and `/runmoor/operations`.
@@ -80,11 +84,13 @@
 - Public package documentation includes the exact public fingerprint, supported systems, stable/preview registration, installation/update/removal, and explicit Runmoor service ownership. Keep R2, signing secrets, CI and recovery internals in `docs/`.
 
 ## Storage
+
 - Markdown sources live in `apps/public-docs/docs/runmoor`.
 - Static output is generated into the ignored `apps/public-docs/doc_build` directory.
 - No user data or credentials are stored by this documentation app.
 
 ## Security
+
 - Installation examples select one exact published release tag, derive archive download URLs and the tag-triggered signing identity from it, and verify both Sigstore bundles and the selected archive checksum before extraction. Manual-main signatures require their separately documented exact identity; never use an arbitrary-version identity wildcard. Keep the CLI README in sync.
 - Preserve the stable-release verification limits, credential-reference guidance, signature verification steps, trusted-workload restrictions, and third-party licensing boundaries.
 - Public configuration guidance identifies `RUNMOOR_PAT` as a GitHub PAT environment reference, explains where to create fine-grained and classic PATs and the repository/organization runner permissions, and distinguishes it from short-lived runner registration tokens. Ubuntu user-service guidance shows a user-owned mode 0600 credential file with an absolute TOML file reference, explains the systemd user-manager environment boundary and the explicit connection refresh/resume after token rotation, and preserves the user-session availability limit. An environment-backed service already running without the imported PAT requires stop/start and pool resume. Never place a PAT value in public examples, TOML, or service definitions.
@@ -96,11 +102,13 @@
 - Recursively inspect emitted CSS assets as well as HTML. Stylesheet resource URLs and imports use the same credential, internal-path, and clean-URL checks, resolved relative to the stylesheet's public location. Valid generated fonts, static assets, and external stylesheets remain permitted; diagnostics never echo rejected CSS or URL values.
 
 ## Logging
+
 - Build and validation logs identify the documentation app and failing route or output file.
 - Malformed links fail with a page-level classification; URL parser exceptions and their original input must never be emitted because malformed destinations may contain credentials.
 - Development port conflicts include recovery instructions. Logs contain no credentials.
 
 ## Build and Test
+
 - Development: `pnpm --filter public-docs dev`, independent of the DevHud team environment.
 - Build: `pnpm --filter public-docs build`.
 - Preview: use the `public-docs` preview command for the consolidated output.
@@ -109,11 +117,13 @@
 - CI: `node-public-docs-test` uses the consolidated documentation build and validation boundary, including the Runmoor content section.
 
 ## Dependencies and Integrations
+
 - Uses the repository's existing Rspress dependency version through the `public-docs` pnpm workspace.
 - `pnpm --filter public-docs build` produces the complete output, including `doc_build/runmoor`; no standalone Runmoor documentation output is published.
 - Operators may decommission the former standalone Runmoor Pages project and DNS record after consolidated route verification. No redirect or alias is added.
 
 ## Change Triggers
+
 - Update this contract, the Runmoor project index, relevant `AGENTS.md` files, and app README when routes, ownership, ports, commands, validation, or hosting change.
 - Keep public-docs navigation, removal checks, and contracts synchronized with this migration.
 - Update the documentation catalog when adding or renaming this contract.
@@ -121,6 +131,7 @@
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - `docs/project-runmoor.md`
 - `docs/cmds-runmoor-foundation.md`
 - `docs/apps-public-docs-foundation.md`

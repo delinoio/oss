@@ -52,11 +52,11 @@ automatically.
 
 ## Components and parameters
 
-| Component | Parameters |
-| --- | --- |
-| `Sound` | Required `duration`; optional `sampleRate`, `channels`, `gain` |
-| `Noise` | Common layer parameters, required `seed`, optional `lowPass` and `highPass` in Hz |
-| `Tone` | Common layer parameters, required `frequency`, optional `endFrequency` and `waveform` |
+| Component | Parameters                                                                            |
+| --------- | ------------------------------------------------------------------------------------- |
+| `Sound`   | Required `duration`; optional `sampleRate`, `channels`, `gain`                        |
+| `Noise`   | Common layer parameters, required `seed`, optional `lowPass` and `highPass` in Hz     |
+| `Tone`    | Common layer parameters, required `frequency`, optional `endFrequency` and `waveform` |
 
 Layer parameters are required `duration`, optional `start`, `gain`, `pan`,
 `attack`, `release` and `decay`. Times are seconds and gain is linear. Each

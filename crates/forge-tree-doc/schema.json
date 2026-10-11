@@ -2,21 +2,11 @@
   "patch": {
     "$defs": {
       "Align": {
-        "enum": [
-          "left",
-          "center",
-          "right",
-          "justify"
-        ],
+        "enum": ["left", "center", "right", "justify"],
         "type": "string"
       },
       "Anchor": {
-        "enum": [
-          "top",
-          "right",
-          "bottom",
-          "left"
-        ],
+        "enum": ["top", "right", "bottom", "left"],
         "type": "string"
       },
       "Cell": {
@@ -50,10 +40,7 @@
             "default": {}
           },
           "text": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         },
         "type": "object"
@@ -72,10 +59,7 @@
             "type": "integer"
           }
         },
-        "required": [
-          "row",
-          "column"
-        ],
+        "required": ["row", "column"],
         "type": "object"
       },
       "ChartData": {
@@ -94,32 +78,21 @@
             "type": "array"
           }
         },
-        "required": [
-          "categories",
-          "series"
-        ],
+        "required": ["categories", "series"],
         "type": "object"
       },
       "ChartType": {
-        "enum": [
-          "bar"
-        ],
+        "enum": ["bar"],
         "type": "string"
       },
       "Color": {
         "additionalProperties": false,
         "properties": {
           "color": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "color_ref": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         },
         "type": "object"
@@ -131,23 +104,15 @@
             "$ref": "#/$defs/Size"
           }
         },
-        "required": [
-          "width"
-        ],
+        "required": ["width"],
         "type": "object"
       },
       "ConnectorType": {
-        "enum": [
-          "straight",
-          "elbow"
-        ],
+        "enum": ["straight", "elbow"],
         "type": "string"
       },
       "DataLabels": {
-        "enum": [
-          "hidden",
-          "value"
-        ],
+        "enum": ["hidden", "value"],
         "type": "string"
       },
       "Endpoint": {
@@ -160,10 +125,7 @@
             "$ref": "#/$defs/Target"
           }
         },
-        "required": [
-          "target",
-          "anchor"
-        ],
+        "required": ["target", "anchor"],
         "type": "object"
       },
       "Frame": {
@@ -186,34 +148,19 @@
             "type": "number"
           }
         },
-        "required": [
-          "x",
-          "y",
-          "width",
-          "height"
-        ],
+        "required": ["x", "y", "width", "height"],
         "type": "object"
       },
       "ImageFit": {
-        "enum": [
-          "contain",
-          "cover"
-        ],
+        "enum": ["contain", "cover"],
         "type": "string"
       },
       "Legend": {
-        "enum": [
-          "hidden",
-          "bottom",
-          "right"
-        ],
+        "enum": ["hidden", "bottom", "right"],
         "type": "string"
       },
       "Marker": {
-        "enum": [
-          "bullet",
-          "number"
-        ],
+        "enum": ["bullet", "number"],
         "type": "string"
       },
       "Node": {
@@ -225,10 +172,7 @@
             "type": "string"
           },
           "asset_ref": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "chart_type": {
             "$ref": "#/$defs/ChartType",
@@ -311,10 +255,7 @@
           },
           "id": {
             "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "items": {
             "default": [],
@@ -324,10 +265,7 @@
             "type": "array"
           },
           "key": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "legend": {
             "$ref": "#/$defs/Legend",
@@ -339,16 +277,10 @@
           },
           "min_font_size": {
             "format": "double",
-            "type": [
-              "number",
-              "null"
-            ]
+            "type": ["number", "null"]
           },
           "opaque_ref": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "orientation": {
             "$ref": "#/$defs/Orientation",
@@ -371,10 +303,7 @@
             "type": "array"
           },
           "placeholder_ref": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "rows": {
             "default": [],
@@ -392,16 +321,10 @@
             "default": {}
           },
           "style_ref": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "text": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "to": {
             "anyOf": [
@@ -427,9 +350,7 @@
             ]
           }
         },
-        "required": [
-          "type"
-        ],
+        "required": ["type"],
         "type": "object"
       },
       "NodeKind": {
@@ -474,11 +395,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "op",
-              "target",
-              "text"
-            ],
+            "required": ["op", "target", "text"],
             "type": "object"
           },
           {
@@ -495,11 +412,7 @@
                 "$ref": "#/$defs/Target"
               }
             },
-            "required": [
-              "op",
-              "target",
-              "style"
-            ],
+            "required": ["op", "target", "style"],
             "type": "object"
           },
           {
@@ -519,11 +432,7 @@
                 "$ref": "#/$defs/Target"
               }
             },
-            "required": [
-              "op",
-              "target",
-              "properties"
-            ],
+            "required": ["op", "target", "properties"],
             "type": "object"
           },
           {
@@ -540,11 +449,7 @@
                 "$ref": "#/$defs/Target"
               }
             },
-            "required": [
-              "op",
-              "target",
-              "frame"
-            ],
+            "required": ["op", "target", "frame"],
             "type": "object"
           },
           {
@@ -566,12 +471,7 @@
                 "$ref": "#/$defs/Target"
               }
             },
-            "required": [
-              "op",
-              "parent",
-              "index",
-              "node"
-            ],
+            "required": ["op", "parent", "index", "node"],
             "type": "object"
           },
           {
@@ -585,10 +485,7 @@
                 "$ref": "#/$defs/Target"
               }
             },
-            "required": [
-              "op",
-              "target"
-            ],
+            "required": ["op", "target"],
             "type": "object"
           },
           {
@@ -610,12 +507,7 @@
                 "$ref": "#/$defs/Target"
               }
             },
-            "required": [
-              "op",
-              "target",
-              "parent",
-              "index"
-            ],
+            "required": ["op", "target", "parent", "index"],
             "type": "object"
           },
           {
@@ -632,11 +524,7 @@
                 "$ref": "#/$defs/Target"
               }
             },
-            "required": [
-              "op",
-              "target",
-              "data"
-            ],
+            "required": ["op", "target", "data"],
             "type": "object"
           },
           {
@@ -653,27 +541,17 @@
                 "$ref": "#/$defs/Target"
               }
             },
-            "required": [
-              "op",
-              "target",
-              "asset_ref"
-            ],
+            "required": ["op", "target", "asset_ref"],
             "type": "object"
           }
         ]
       },
       "Orientation": {
-        "enum": [
-          "vertical",
-          "horizontal"
-        ],
+        "enum": ["vertical", "horizontal"],
         "type": "string"
       },
       "Overflow": {
-        "enum": [
-          "error",
-          "shrink"
-        ],
+        "enum": ["error", "shrink"],
         "type": "string"
       },
       "Paragraph": {
@@ -690,15 +568,11 @@
             "type": "array"
           }
         },
-        "required": [
-          "runs"
-        ],
+        "required": ["runs"],
         "type": "object"
       },
       "PatchKind": {
-        "enum": [
-          "patch"
-        ],
+        "enum": ["patch"],
         "type": "string"
       },
       "Run": {
@@ -712,9 +586,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "text"
-        ],
+        "required": ["text"],
         "type": "object"
       },
       "Series": {
@@ -734,19 +606,11 @@
             "type": "array"
           }
         },
-        "required": [
-          "key",
-          "name",
-          "values"
-        ],
+        "required": ["key", "name", "values"],
         "type": "object"
       },
       "Shape": {
-        "enum": [
-          "rect",
-          "rounded_rect",
-          "ellipse"
-        ],
+        "enum": ["rect", "rounded_rect", "ellipse"],
         "type": "string"
       },
       "Size": {
@@ -761,10 +625,7 @@
         ]
       },
       "SizeMode": {
-        "enum": [
-          "hug",
-          "fill"
-        ],
+        "enum": ["hug", "fill"],
         "type": "string"
       },
       "StyleProperty": {
@@ -789,26 +650,18 @@
             "type": "array"
           }
         },
-        "required": [
-          "cells"
-        ],
+        "required": ["cells"],
         "type": "object"
       },
       "Target": {
         "additionalProperties": false,
         "properties": {
           "key": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "node_id": {
             "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         },
         "type": "object"
@@ -817,50 +670,29 @@
         "additionalProperties": false,
         "properties": {
           "color": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "color_ref": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "font_family": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "font_size": {
             "format": "double",
-            "type": [
-              "number",
-              "null"
-            ]
+            "type": ["number", "null"]
           },
           "font_weight": {
             "format": "uint16",
             "maximum": 65535,
             "minimum": 0,
-            "type": [
-              "integer",
-              "null"
-            ]
+            "type": ["integer", "null"]
           },
           "italic": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "underline": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           }
         },
         "type": "object"
@@ -906,21 +738,11 @@
   "presentation": {
     "$defs": {
       "Align": {
-        "enum": [
-          "left",
-          "center",
-          "right",
-          "justify"
-        ],
+        "enum": ["left", "center", "right", "justify"],
         "type": "string"
       },
       "Anchor": {
-        "enum": [
-          "top",
-          "right",
-          "bottom",
-          "left"
-        ],
+        "enum": ["top", "right", "bottom", "left"],
         "type": "string"
       },
       "AssetRef": {
@@ -930,9 +752,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "handle"
-        ],
+        "required": ["handle"],
         "type": "object"
       },
       "Cell": {
@@ -966,10 +786,7 @@
             "default": {}
           },
           "text": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         },
         "type": "object"
@@ -990,32 +807,21 @@
             "type": "array"
           }
         },
-        "required": [
-          "categories",
-          "series"
-        ],
+        "required": ["categories", "series"],
         "type": "object"
       },
       "ChartType": {
-        "enum": [
-          "bar"
-        ],
+        "enum": ["bar"],
         "type": "string"
       },
       "Color": {
         "additionalProperties": false,
         "properties": {
           "color": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "color_ref": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         },
         "type": "object"
@@ -1027,29 +833,19 @@
             "$ref": "#/$defs/Size"
           }
         },
-        "required": [
-          "width"
-        ],
+        "required": ["width"],
         "type": "object"
       },
       "ConnectorType": {
-        "enum": [
-          "straight",
-          "elbow"
-        ],
+        "enum": ["straight", "elbow"],
         "type": "string"
       },
       "DataLabels": {
-        "enum": [
-          "hidden",
-          "value"
-        ],
+        "enum": ["hidden", "value"],
         "type": "string"
       },
       "DocumentKind": {
-        "enum": [
-          "presentation"
-        ],
+        "enum": ["presentation"],
         "type": "string"
       },
       "Endpoint": {
@@ -1062,10 +858,7 @@
             "$ref": "#/$defs/Target"
           }
         },
-        "required": [
-          "target",
-          "anchor"
-        ],
+        "required": ["target", "anchor"],
         "type": "object"
       },
       "Frame": {
@@ -1088,34 +881,19 @@
             "type": "number"
           }
         },
-        "required": [
-          "x",
-          "y",
-          "width",
-          "height"
-        ],
+        "required": ["x", "y", "width", "height"],
         "type": "object"
       },
       "ImageFit": {
-        "enum": [
-          "contain",
-          "cover"
-        ],
+        "enum": ["contain", "cover"],
         "type": "string"
       },
       "Legend": {
-        "enum": [
-          "hidden",
-          "bottom",
-          "right"
-        ],
+        "enum": ["hidden", "bottom", "right"],
         "type": "string"
       },
       "Marker": {
-        "enum": [
-          "bullet",
-          "number"
-        ],
+        "enum": ["bullet", "number"],
         "type": "string"
       },
       "Node": {
@@ -1127,10 +905,7 @@
             "type": "string"
           },
           "asset_ref": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "chart_type": {
             "$ref": "#/$defs/ChartType",
@@ -1213,10 +988,7 @@
           },
           "id": {
             "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "items": {
             "default": [],
@@ -1226,10 +998,7 @@
             "type": "array"
           },
           "key": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "legend": {
             "$ref": "#/$defs/Legend",
@@ -1241,16 +1010,10 @@
           },
           "min_font_size": {
             "format": "double",
-            "type": [
-              "number",
-              "null"
-            ]
+            "type": ["number", "null"]
           },
           "opaque_ref": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "orientation": {
             "$ref": "#/$defs/Orientation",
@@ -1273,10 +1036,7 @@
             "type": "array"
           },
           "placeholder_ref": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "rows": {
             "default": [],
@@ -1294,16 +1054,10 @@
             "default": {}
           },
           "style_ref": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "text": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "to": {
             "anyOf": [
@@ -1329,9 +1083,7 @@
             ]
           }
         },
-        "required": [
-          "type"
-        ],
+        "required": ["type"],
         "type": "object"
       },
       "NodeKind": {
@@ -1351,17 +1103,11 @@
         "type": "string"
       },
       "Orientation": {
-        "enum": [
-          "vertical",
-          "horizontal"
-        ],
+        "enum": ["vertical", "horizontal"],
         "type": "string"
       },
       "Overflow": {
-        "enum": [
-          "error",
-          "shrink"
-        ],
+        "enum": ["error", "shrink"],
         "type": "string"
       },
       "Page": {
@@ -1376,10 +1122,7 @@
             "type": "number"
           }
         },
-        "required": [
-          "width",
-          "height"
-        ],
+        "required": ["width", "height"],
         "type": "object"
       },
       "Paragraph": {
@@ -1396,9 +1139,7 @@
             "type": "array"
           }
         },
-        "required": [
-          "runs"
-        ],
+        "required": ["runs"],
         "type": "object"
       },
       "Run": {
@@ -1412,9 +1153,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "text"
-        ],
+        "required": ["text"],
         "type": "object"
       },
       "Series": {
@@ -1434,19 +1173,11 @@
             "type": "array"
           }
         },
-        "required": [
-          "key",
-          "name",
-          "values"
-        ],
+        "required": ["key", "name", "values"],
         "type": "object"
       },
       "Shape": {
-        "enum": [
-          "rect",
-          "rounded_rect",
-          "ellipse"
-        ],
+        "enum": ["rect", "rounded_rect", "ellipse"],
         "type": "string"
       },
       "Size": {
@@ -1461,10 +1192,7 @@
         ]
       },
       "SizeMode": {
-        "enum": [
-          "hug",
-          "fill"
-        ],
+        "enum": ["hug", "fill"],
         "type": "string"
       },
       "Slide": {
@@ -1479,27 +1207,16 @@
           },
           "id": {
             "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "key": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "slide_layout_ref": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         },
-        "required": [
-          "content"
-        ],
+        "required": ["content"],
         "type": "object"
       },
       "TableRow": {
@@ -1512,26 +1229,18 @@
             "type": "array"
           }
         },
-        "required": [
-          "cells"
-        ],
+        "required": ["cells"],
         "type": "object"
       },
       "Target": {
         "additionalProperties": false,
         "properties": {
           "key": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "node_id": {
             "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           }
         },
         "type": "object"
@@ -1540,50 +1249,29 @@
         "additionalProperties": false,
         "properties": {
           "color": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "color_ref": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "font_family": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": ["string", "null"]
           },
           "font_size": {
             "format": "double",
-            "type": [
-              "number",
-              "null"
-            ]
+            "type": ["number", "null"]
           },
           "font_weight": {
             "format": "uint16",
             "maximum": 65535,
             "minimum": 0,
-            "type": [
-              "integer",
-              "null"
-            ]
+            "type": ["integer", "null"]
           },
           "italic": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           },
           "underline": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "type": ["boolean", "null"]
           }
         },
         "type": "object"
@@ -1613,9 +1301,7 @@
         "type": "object"
       },
       "Unit": {
-        "enum": [
-          "pt"
-        ],
+        "enum": ["pt"],
         "type": "string"
       }
     },
@@ -1663,11 +1349,7 @@
         "default": "pt"
       }
     },
-    "required": [
-      "dsl_version",
-      "kind",
-      "slides"
-    ],
+    "required": ["dsl_version", "kind", "slides"],
     "title": "Presentation",
     "type": "object"
   }

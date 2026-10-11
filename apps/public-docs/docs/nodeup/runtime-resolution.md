@@ -4,14 +4,14 @@ Nodeup resolves a runtime selector to either an installed Node.js version or a l
 
 ## Selector Forms
 
-| Selector | Meaning |
-| --- | --- |
-| `22.1.0` | Exact semantic version, normalized to `v22.1.0` |
-| `v22.1.0` | Exact semantic version |
-| `lts` | First LTS entry from the Node.js release index |
-| `current` | First entry from the Node.js release index |
-| `latest` | Alias of `current`; resolves to the first entry from the Node.js release index |
-| `work-node` | Linked runtime name |
+| Selector    | Meaning                                                                        |
+| ----------- | ------------------------------------------------------------------------------ |
+| `22.1.0`    | Exact semantic version, normalized to `v22.1.0`                                |
+| `v22.1.0`   | Exact semantic version                                                         |
+| `lts`       | First LTS entry from the Node.js release index                                 |
+| `current`   | First entry from the Node.js release index                                     |
+| `latest`    | Alias of `current`; resolves to the first entry from the Node.js release index |
+| `work-node` | Linked runtime name                                                            |
 
 Use `current` in examples and automation when you want the newest release-index entry. `latest` remains supported for compatibility and reports `canonical_selector: "current"` in JSON output.
 
@@ -90,12 +90,12 @@ For platform override tests, `NODEUP_FORCE_PLATFORM` accepts macOS aliases in ei
 `toolchain link` only requires the linked runtime to provide runnable `node`. Package-manager commands are optional and are checked per command later. Successful link output reports the required `node` check separately from optional availability for each managed shim command:
 
 | Shim command | Linked-runtime direct path on Unix | Linked-runtime direct path on Windows |
-| --- | --- | --- |
-| `node` | `bin/node` | `bin/node.exe` |
-| `npm` | `bin/npm` | `bin/npm.cmd` |
-| `npx` | `bin/npx` | `bin/npx.cmd` |
-| `yarn` | `bin/yarn` | `bin/yarn.cmd` |
-| `pnpm` | `bin/pnpm` | `bin/pnpm.cmd` |
+| ------------ | ---------------------------------- | ------------------------------------- |
+| `node`       | `bin/node`                         | `bin/node.exe`                        |
+| `npm`        | `bin/npm`                          | `bin/npm.cmd`                         |
+| `npx`        | `bin/npx`                          | `bin/npx.cmd`                         |
+| `yarn`       | `bin/yarn`                         | `bin/yarn.cmd`                        |
+| `pnpm`       | `bin/pnpm`                         | `bin/pnpm.cmd`                        |
 
 Missing linked-runtime commands fail when resolved by `which`, `run`, or a managed shim. JSON errors include the linked runtime name, checked paths, selected path, direct executable state, install-on-demand eligibility, and PATH/PATHEXT precedence guidance.
 
@@ -103,11 +103,11 @@ Missing linked-runtime commands fail when resolved by `which`, `run`, or a manag
 
 `nodeup run` and managed shim dispatch intentionally differ when a selected version runtime is missing:
 
-| Execution path | Selector source | Missing version runtime behavior | JSON diagnostic |
-| --- | --- | --- | --- |
-| `nodeup run <runtime> <command>` | Explicit argument | Fails unless `--install` is provided. | `install_on_demand_eligible: false` plus `retry_with_install`. |
-| Managed shim alias such as `node` or `npm` | Directory override or global default | Installs the missing selected version runtime before execution. | `install_on_demand_eligible: true` for version runtimes. |
-| Linked runtime selector | Explicit, override, or default | Never installed by Nodeup; linked paths are external. | `install_on_demand_eligible: false` and linked runtime fields. |
+| Execution path                             | Selector source                      | Missing version runtime behavior                                | JSON diagnostic                                                |
+| ------------------------------------------ | ------------------------------------ | --------------------------------------------------------------- | -------------------------------------------------------------- |
+| `nodeup run <runtime> <command>`           | Explicit argument                    | Fails unless `--install` is provided.                           | `install_on_demand_eligible: false` plus `retry_with_install`. |
+| Managed shim alias such as `node` or `npm` | Directory override or global default | Installs the missing selected version runtime before execution. | `install_on_demand_eligible: true` for version runtimes.       |
+| Linked runtime selector                    | Explicit, override, or default       | Never installed by Nodeup; linked paths are external.           | `install_on_demand_eligible: false` and linked runtime fields. |
 
 Use `nodeup run --install <runtime> <command>` when explicit runtime execution should provision a missing version. Use managed aliases when the active default or override should behave like a rustup-style shim.
 

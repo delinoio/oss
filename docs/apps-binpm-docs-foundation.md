@@ -1,11 +1,13 @@
 # binpm public documentation foundation
 
 ## Scope
+
 - Project/component: binpm documentation content contract
 - Canonical path: `apps/public-docs/docs/binpm`
 - Canonical production URL: `https://oss.delino.io/binpm`
 
 ## Runtime and Language
+
 - Runtime: Rspress static documentation app
 - Primary language: Markdown and TypeScript configuration with web build tooling
 - Build toolchain: Rspress, aligned with the repository default preference for Rsbuild/Rspress-style static documentation surfaces.
@@ -13,10 +15,12 @@
 - Production host: `https://oss.delino.io/binpm`.
 
 ## Users and Operators
+
 - External users reading binpm installation, local tooling, cache, verification, and CLI behavior documentation.
 - Internal maintainers publishing and reviewing binpm documentation updates.
 
 ## Interfaces and Contracts
+
 - The content is built by the `public-docs` Rspress application; there is no standalone binpm documentation package or workspace.
 - Stable documentation route IDs are `/binpm/`, `/binpm/installation`, `/binpm/getting-started`, `/binpm/commands`, `/binpm/local-tooling`, `/binpm/cache-and-verification`, `/binpm/releases`, `/binpm/troubleshooting`, and `/binpm/reference`.
 - Rspress clean URLs are enabled. Stable public route IDs must remain extensionless, each route ID must have a generated build output artifact, and generated internal links must not use `.html` suffixes for those route IDs.
@@ -69,11 +73,13 @@
 - If `apps/public-docs/docs/binpm` or `apps/public-docs/docs/nodeup` changes, run `pnpm --filter public-docs test` before finishing.
 
 ## Storage
+
 - Source documentation is versioned in-repo under `apps/public-docs/docs/binpm`.
 - Build artifacts are generated into `apps/public-docs/doc_build` and are not source-controlled.
 - The app does not introduce user-uploaded files or persistent application data.
 
 ## Security
+
 - Published content must not expose internal-only secrets, unpublished release credentials, private CI environment details, or source-provider tokens.
 - Published content must not expose internal architecture, operational, CI, or repository-layout details that are not part of a stable public contract.
 - Installation guidance must preserve the binpm HTTPS, sanitized URL persistence, cache validation, and `--require-verified` contracts.
@@ -84,22 +90,26 @@
 - Published content must be sourced from repository contracts and app documentation, not from assumptions about the current live contents of the canonical subpath.
 
 ## Logging
+
 - Build and deployment logs should include the workspace name, changed documentation paths, build status, and deployment status.
 - Log output must be safe for public CI surfaces.
 
 ## Build and Test
+
 - Development: `pnpm --filter public-docs dev`.
 - Local validation: `pnpm --filter public-docs test`, which builds the consolidated Rspress output, validates the binpm route artifacts and clean links, and verifies the public installer entrypoints match the canonical in-repo installer scripts.
 - Production build: `pnpm --filter public-docs build`.
 - CI alignment: `node-public-docs-test`.
 
 ## Dependencies and Integrations
+
 - Integrates with the `apps/public-docs` pnpm workspace.
 - Integrates with Rspress and its Rsbuild-based static-site pipeline.
 - Integrates directly with the `public-docs` build and its Cloudflare Pages publication.
 - Depends on `docs/project-binpm.md` and `docs/crates-binpm-foundation.md` for canonical binpm product and runtime contracts.
 
 ## Change Triggers
+
 - Update `docs/project-binpm.md`, this file, and `apps/AGENTS.md` when the content path, route IDs, theme repository-link surface, validation commands, toolchain, output directory, or publication target changes.
 - Update `docs/crates-binpm-foundation.md` and the relevant app pages when binpm runtime, source, target, local tooling, cache, verification, install, execution, release distribution, installer, diagnostic, or output behavior changes.
 - Update `docs/README.md` when adding, renaming, or removing this domain contract.
@@ -107,6 +117,7 @@
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - `docs/project-binpm.md`
 - `docs/crates-binpm-foundation.md`
 - `docs/repository-defaults.md`

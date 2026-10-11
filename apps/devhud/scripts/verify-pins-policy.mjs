@@ -5,10 +5,15 @@ function assert(condition, message) {
 }
 
 export function resolvedPackageClosure(metadata, rootPackageId) {
-  assert(metadata.resolve, "Cargo metadata did not include a resolved dependency graph");
+  assert(
+    metadata.resolve,
+    "Cargo metadata did not include a resolved dependency graph",
+  );
 
   const packagesById = new Map(metadata.packages.map((pkg) => [pkg.id, pkg]));
-  const nodesById = new Map(metadata.resolve.nodes.map((node) => [node.id, node]));
+  const nodesById = new Map(
+    metadata.resolve.nodes.map((node) => [node.id, node]),
+  );
   const packageIds = new Set();
   const pending = [rootPackageId];
 
@@ -18,7 +23,10 @@ export function resolvedPackageClosure(metadata, rootPackageId) {
       continue;
     }
 
-    assert(packagesById.has(packageId), `Cargo metadata is missing package ${packageId}`);
+    assert(
+      packagesById.has(packageId),
+      `Cargo metadata is missing package ${packageId}`,
+    );
     const node = nodesById.get(packageId);
     assert(node, `Cargo metadata is missing resolve node ${packageId}`);
     packageIds.add(packageId);
@@ -74,24 +82,40 @@ export function validateResolvedDependencySources(
 export function validateCiTargetMatrix(workflow, targets, plannedMatrices) {
   const matrix = workflow.jobs?.["devhud-desktop"]?.strategy?.matrix;
   if (plannedMatrices) {
-    assert(matrix === "${{ fromJSON(needs.changes.outputs.desktop_matrix) }}", "native CI must use the planned desktop matrix");
+    assert(
+      matrix === "${{ fromJSON(needs.changes.outputs.desktop_matrix) }}",
+      "native CI must use the planned desktop matrix",
+    );
   }
   const entries = plannedMatrices?.["devhud-desktop"] ?? matrix?.include;
   assert(Array.isArray(entries), "native CI matrix include list is missing");
   const packageKinds = {
     darwin: [{ suffix: "", os: "macos", bundle: "dmg", package: "macos-app" }],
     win32: [
-      { suffix: "-nsis", os: "windows", bundle: "nsis", package: "windows-nsis" },
+      {
+        suffix: "-nsis",
+        os: "windows",
+        bundle: "nsis",
+        package: "windows-nsis",
+      },
       { suffix: "-msi", os: "windows", bundle: "msi", package: "windows-msi" },
     ],
     linux: [
       { suffix: "-deb", os: "linux", bundle: "deb", package: "linux-deb" },
-      { suffix: "-appimage", os: "linux", bundle: "appimage", package: "linux-appimage" },
+      {
+        suffix: "-appimage",
+        os: "linux",
+        bundle: "appimage",
+        package: "linux-appimage",
+      },
     ],
   };
   const expectedEntries = targets.flatMap((target) => {
     const variants = packageKinds[target.os];
-    assert(variants, `native CI matrix has no package-kind contract for ${target.id}`);
+    assert(
+      variants,
+      `native CI matrix has no package-kind contract for ${target.id}`,
+    );
     return variants.map((variant) => ({
       ...variant,
       id: `${target.id}${variant.suffix}`,

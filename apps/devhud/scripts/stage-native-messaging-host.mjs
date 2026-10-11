@@ -2,7 +2,15 @@
 
 import { spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 import { fileURLToPath } from "node:url";
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -25,7 +33,8 @@ function run(command, args, options = {}) {
     stdio: options.capture ? ["ignore", "pipe", "inherit"] : "inherit",
   });
   if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error(`${command} exited ${result.status}`);
+  if (result.status !== 0)
+    throw new Error(`${command} exited ${result.status}`);
   return result.stdout ?? "";
 }
 
@@ -40,11 +49,11 @@ export function nativeMessagingHostExecutable(buildOutput) {
       continue;
     }
     if (
-      message.reason === "compiler-artifact"
-      && message.target?.name === nativeHostTarget
-      && message.target.kind?.includes("bin")
-      && typeof message.executable === "string"
-      && message.executable !== ""
+      message.reason === "compiler-artifact" &&
+      message.target?.name === nativeHostTarget &&
+      message.target.kind?.includes("bin") &&
+      typeof message.executable === "string" &&
+      message.executable !== ""
     ) {
       executables.add(message.executable);
     }
@@ -62,7 +71,10 @@ export function cargoTargetDirectory(metadataOutput) {
   } catch {
     throw new Error("unable to determine Cargo's target directory");
   }
-  if (typeof metadata.target_directory !== "string" || metadata.target_directory === "") {
+  if (
+    typeof metadata.target_directory !== "string" ||
+    metadata.target_directory === ""
+  ) {
     throw new Error("unable to determine Cargo's target directory");
   }
   return metadata.target_directory;
@@ -70,33 +82,55 @@ export function cargoTargetDirectory(metadataOutput) {
 
 export function workspaceCargoTargetDirectory() {
   return cargoTargetDirectory(
-    run("cargo", ["metadata", "--format-version=1", "--no-deps", "--locked"], { capture: true }),
+    run("cargo", ["metadata", "--format-version=1", "--no-deps", "--locked"], {
+      capture: true,
+    }),
   );
 }
 
-export function nativeMessagingHostArtifactTarget({ executable, targetDirectory, hostTriple, profile }) {
+export function nativeMessagingHostArtifactTarget({
+  executable,
+  targetDirectory,
+  hostTriple,
+  profile,
+}) {
   const executableName = basename(executable);
-  const executableSuffix = executableName === `${nativeHostTarget}.exe`
-    ? ".exe"
-    : executableName === nativeHostTarget
-      ? ""
-      : null;
+  const executableSuffix =
+    executableName === `${nativeHostTarget}.exe`
+      ? ".exe"
+      : executableName === nativeHostTarget
+        ? ""
+        : null;
   const artifactPath = relative(resolve(targetDirectory), resolve(executable));
-  if (executableSuffix === null || artifactPath === "" || isAbsolute(artifactPath) || artifactPath === ".." || artifactPath.startsWith(`..${sep}`)) {
-    throw new Error("unable to determine the Native Messaging host artifact target");
+  if (
+    executableSuffix === null ||
+    artifactPath === "" ||
+    isAbsolute(artifactPath) ||
+    artifactPath === ".." ||
+    artifactPath.startsWith(`..${sep}`)
+  ) {
+    throw new Error(
+      "unable to determine the Native Messaging host artifact target",
+    );
   }
   const components = artifactPath.split(sep);
   if (components.length === 2 && components[0] === profile) {
     return { triple: hostTriple, executableSuffix };
   }
-  const triple = components.length === 3 && components[1] === profile ? components[0] : null;
+  const triple =
+    components.length === 3 && components[1] === profile ? components[0] : null;
   if (!triple || !/^[a-z0-9_.-]+$/u.test(triple)) {
-    throw new Error("unable to determine the Native Messaging host artifact target");
+    throw new Error(
+      "unable to determine the Native Messaging host artifact target",
+    );
   }
   return { triple, executableSuffix };
 }
 
-export function stageNativeMessagingHost({ release, targetDirectory = workspaceCargoTargetDirectory() }) {
+export function stageNativeMessagingHost({
+  release,
+  targetDirectory = workspaceCargoTargetDirectory(),
+}) {
   const hostTriple = rustHostTriple(run("rustc", ["-vV"], { capture: true }));
   const cargoArgs = [
     "build",
@@ -106,9 +140,16 @@ export function stageNativeMessagingHost({ release, targetDirectory = workspaceC
     "--message-format=json-render-diagnostics",
   ];
   if (release) cargoArgs.push("--release");
-  const source = nativeMessagingHostExecutable(run("cargo", cargoArgs, { capture: true }));
+  const source = nativeMessagingHostExecutable(
+    run("cargo", cargoArgs, { capture: true }),
+  );
   const profile = release ? "release" : "debug";
-  const { triple, executableSuffix } = nativeMessagingHostArtifactTarget({ executable: source, targetDirectory, hostTriple, profile });
+  const { triple, executableSuffix } = nativeMessagingHostArtifactTarget({
+    executable: source,
+    targetDirectory,
+    hostTriple,
+    profile,
+  });
   const destination = join(
     appRoot,
     "src-tauri",
@@ -120,11 +161,16 @@ export function stageNativeMessagingHost({ release, targetDirectory = workspaceC
   return destination;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (
+  process.argv[1] &&
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
   try {
     stageNativeMessagingHost({ release: process.argv.includes("--release") });
   } catch (error) {
-    console.error(`devhud: unable to stage Native Messaging host: ${error.message}`);
+    console.error(
+      `devhud: unable to stage Native Messaging host: ${error.message}`,
+    );
     process.exit(1);
   }
 }

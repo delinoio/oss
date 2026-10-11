@@ -1,12 +1,15 @@
 # Project: clibox
 
 ## Goal
+
 Provide a Rust CLI that JavaScript projects can pin through npm and their lockfiles. The feature defines cross-platform environment execution, local port inspection/termination, resource opening, and text clipboard commands; the feature adds offline text replacement, time formatting/arithmetic, Base64 transformation, and hash generation/verification. The feature adds stateless TCP, HTTP, and regular-file readiness waits. The feature adds local configuration commands to list dotenv keys, merge dotenv layers, and normalize YAML references. The feature adds portable CPU counts. The feature adds local execution wrappers for rate limits, locks, HTTP service readiness, retries, and runtime/idle timeouts. The feature extends bounded Unix cleanup ownership across deeply nested native and mixed Node/native wrapper chains. The feature adds seven file-access workflows in source; they are not part of the published 0.2.0 packages. All command sets coexist with help/version in the source CLI.
 
 ## Project ID
+
 `clibox`
 
 ## Domain Ownership Map
+
 - `crates/clibox`: Rust executable, logging/panic initialization, and root CLI composition.
 - `crates/clibox-config`: dotenv/YAML command definitions, bounded processing, cancellation, and private atomic publication.
 - `crates/clibox-system`: OS command definitions, runtime, errors, and adapters.
@@ -17,12 +20,14 @@ Provide a Rust CLI that JavaScript projects can pin through npm and their lockfi
 - `apps/public-docs/docs/clibox`: English public guides published at `https://oss.delino.io/clibox`.
 
 ## Domain Contract Documents
+
 - [Rust foundation](crates-clibox-foundation.md)
 - [File-access workflow contract](crates-clibox-fspy-contract.md)
 - [npm distribution](packages-clibox-distribution-contract.md)
 - [Public documentation](apps-clibox-docs-foundation.md)
 
 ## Cross-Domain Invariants
+
 - The implemented CLI adopts the CLI consistency revision in the Rust contract: canonical names without old aliases, quiet/PID separation, explicit stdout output, validated force, complete help, and numeric owned-operation cancellation (130/143). Versioning remains in the manual release workflow.
 - The executable crate and command are `clibox`; the public npm entry point is `@delino/clibox`.
 - Native binaries and npm show command-specific help on stderr with exit code 2 when `run`, `port`, `clipboard`, `system`, `wait`, `text`, `time`, `base64`, `hash`, `dotenv`, or `yaml` is missing a subcommand. Root no-argument and explicit help remain successful stdout output and include the Cargo-derived version, Delino maintainer, repository, Apache-2.0 license, and GitHub Issues support URL; other invalid inputs retain redacted diagnostics. Subcommand help and `--version` output remain compact and compatible.
@@ -52,11 +57,13 @@ Provide a Rust CLI that JavaScript projects can pin through npm and their lockfi
 - `clibox` -> `crates/clibox`, `crates/clibox-config`, `crates/clibox-fspy`, `crates/clibox-system`, `crates/clibox-transform`, `crates/clibox-wait`, `packages/clibox`, `apps/public-docs/docs/clibox`
 
 ## Change Policy
+
 Update the relevant domain contracts, this index, relevant AGENTS files, version synchronization, platform fixtures, and release workflows together when these boundaries change.
 
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - [Repository defaults](repository-defaults.md)
 - [Repository workflow](repository-workflow-contract.md)
 - [Project template](project-template.md)

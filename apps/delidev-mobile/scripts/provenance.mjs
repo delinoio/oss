@@ -6,8 +6,10 @@ export function verifyProvenance(artifact, run, input, receipt = false) {
   const prefix = receipt
     ? "delidev-mobile-receipts-"
     : `delidev-mobile-candidate-${input.sourceSha}-${input.version}-${input.iosBuild}-${input.target === "ios" ? "ios" : input.androidCode}`;
-  const acceptedSource = receipt && input.recoverySha && run?.head_sha === input.recoverySha
-    ? input.recoverySha : input.sourceSha;
+  const acceptedSource =
+    receipt && input.recoverySha && run?.head_sha === input.recoverySha
+      ? input.recoverySha
+      : input.sourceSha;
   if (
     !artifact ||
     !Number.isSafeInteger(artifact.workflow_run?.id) ||
@@ -69,8 +71,11 @@ if (process.argv[1]?.endsWith("/provenance.mjs"))
           receipt,
         );
         // Cross-run downloads must use the verified owner, never the current run.
-        if (e.GITHUB_OUTPUT) appendFileSync(e.GITHUB_OUTPUT,
-          `${receipt ? "receipt" : "candidate"}_run_id=${proof.runId}\n`);
+        if (e.GITHUB_OUTPUT)
+          appendFileSync(
+            e.GITHUB_OUTPUT,
+            `${receipt ? "receipt" : "candidate"}_run_id=${proof.runId}\n`,
+          );
       }
   } catch {
     process.stderr.write(

@@ -261,33 +261,37 @@ export class FigmaSession {
     const signal = this.signal(options.signal);
     // Admission and validation share a queue so concurrent registrations cannot
     // all pass the aggregate check before any validated bytes are retained.
-    const task = this.assetQueue.catch(() => {}).then(async () => {
-      checkSignal(signal);
-      const { bytes } = await readSource(source, 10 * 1024 * 1024, signal);
-      const id = `sha256:${digest(bytes)}`;
-      if (
-        !this.assets.has(id) &&
-        [...this.assets.values()].reduce((a, b) => a + b.length, bytes.length) >
-          limits.officeBytes
-      )
-        throw new ForgeError(
-          ErrorCode.ResourceLimit,
-          "Figma images exceed the asset budget.",
-        );
-      if (
-        !bytes
-          .subarray(0, 8)
-          .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) &&
-        !bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255]))
-      )
-        throw new ForgeError(
-          ErrorCode.MalformedInput,
-          "Figma images must be PNG or JPEG.",
-        );
-      if (!this.assets.has(id)) await validateFigmaImage(bytes, signal);
-      this.assets.set(id, bytes);
-      return Object.freeze({ assetId: id, documentId: this.documentId });
-    });
+    const task = this.assetQueue
+      .catch(() => {})
+      .then(async () => {
+        checkSignal(signal);
+        const { bytes } = await readSource(source, 10 * 1024 * 1024, signal);
+        const id = `sha256:${digest(bytes)}`;
+        if (
+          !this.assets.has(id) &&
+          [...this.assets.values()].reduce(
+            (a, b) => a + b.length,
+            bytes.length,
+          ) > limits.officeBytes
+        )
+          throw new ForgeError(
+            ErrorCode.ResourceLimit,
+            "Figma images exceed the asset budget.",
+          );
+        if (
+          !bytes
+            .subarray(0, 8)
+            .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) &&
+          !bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255]))
+        )
+          throw new ForgeError(
+            ErrorCode.MalformedInput,
+            "Figma images must be PNG or JPEG.",
+          );
+        if (!this.assets.has(id)) await validateFigmaImage(bytes, signal);
+        this.assets.set(id, bytes);
+        return Object.freeze({ assetId: id, documentId: this.documentId });
+      });
     this.assetQueue = task;
     this.pendingAssets.add(task);
     void task.finally(() => this.pendingAssets.delete(task)).catch(() => {});
@@ -514,7 +518,9 @@ export class FigmaSession {
           this.retained.delete(key);
         }
       }
-      this.previous = this.previous.filter((entity) => !released.has(entity.key));
+      this.previous = this.previous.filter(
+        (entity) => !released.has(entity.key),
+      );
       let unmounted = false;
       return Object.freeze({
         render: (next: ReactNode) =>

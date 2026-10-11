@@ -39,7 +39,9 @@ test("accepts the fixed OSS loopback issuer and deduplicates a fixed API issuer"
     developmentLogtoOrigin("http://localhost:3001/oidc"),
     "http://localhost:3001",
   );
-  const policy = createDevHudDevelopmentCsp("https://devhud.api.delino.io/oidc");
+  const policy = createDevHudDevelopmentCsp(
+    "https://devhud.api.delino.io/oidc",
+  );
   assert.equal(policy.match(/https:\/\/devhud\.api\.delino\.io/gu)?.length, 1);
 });
 

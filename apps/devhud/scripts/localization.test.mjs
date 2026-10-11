@@ -2,7 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { messages, selectSupportedLanguage } from "../src/localization.ts";
-import { LanguagePreference, ThemePreference, completeOnboarding, defaultPreferences, hasCompletedOnboarding, isValidApiOrigin, readPreferences, resolveLanguage, resolveTheme, synchronizeDocumentPreferences } from "../src/shell.ts";
+import {
+  LanguagePreference,
+  ThemePreference,
+  completeOnboarding,
+  defaultPreferences,
+  hasCompletedOnboarding,
+  isValidApiOrigin,
+  readPreferences,
+  resolveLanguage,
+  resolveTheme,
+  synchronizeDocumentPreferences,
+} from "../src/shell.ts";
 
 test("selects English from an English platform locale", () => {
   assert.equal(selectSupportedLanguage(["en-US"]), "en");
@@ -16,17 +27,35 @@ test("selects Korean from Korean regional platform locales", () => {
 });
 
 test("keeps the responsive shell and accessibility copy complete in both languages", () => {
-  assert.deepEqual(Object.keys(messages.en).sort(), Object.keys(messages.ko).sort());
+  assert.deepEqual(
+    Object.keys(messages.en).sort(),
+    Object.keys(messages.ko).sort(),
+  );
   assert.equal(messages.en.skipToContent, "Skip to content");
   assert.equal(messages.ko.skipToContent, "콘텐츠로 건너뛰기");
   for (const language of ["en", "ko"]) {
-    for (const key of ["more", "back", "skipToContent", "availableTools"]) assert.ok(messages[language][key]);
+    for (const key of ["more", "back", "skipToContent", "availableTools"])
+      assert.ok(messages[language][key]);
   }
 });
 
 test("localizes scan-first Deck workspace and sheet cues", () => {
   for (const language of ["en", "ko"]) {
-    for (const key of ["deckSelected", "deckSettings", "deckConfiguration", "deckFresh", "deckRefreshing", "deckOfflineCached", "deckEmptyResults", "deckDraftsHidden", "deckDraftsHiddenSummary", "deckAuthor", "deckLabels", "deckUpdated"]) assert.ok(messages[language][key]);
+    for (const key of [
+      "deckSelected",
+      "deckSettings",
+      "deckConfiguration",
+      "deckFresh",
+      "deckRefreshing",
+      "deckOfflineCached",
+      "deckEmptyResults",
+      "deckDraftsHidden",
+      "deckDraftsHiddenSummary",
+      "deckAuthor",
+      "deckLabels",
+      "deckUpdated",
+    ])
+      assert.ok(messages[language][key]);
   }
   assert.match(messages.en.deckOfflineCached, /Offline/u);
   assert.match(messages.ko.deckOfflineCached, /오프라인/u);
@@ -35,33 +64,81 @@ test("localizes scan-first Deck workspace and sheet cues", () => {
 test("describes RealQA without claiming that available capture is disconnected", () => {
   assert.doesNotMatch(messages.en.realqaSummary, /not connected/iu);
   assert.doesNotMatch(messages.ko.realqaSummary, /연결되지/iu);
-  assert.match(messages.en.realqaSummary, /Capture displays, windows, regions, and toolbars/iu);
+  assert.match(
+    messages.en.realqaSummary,
+    /Capture displays, windows, regions, and toolbars/iu,
+  );
   assert.match(messages.ko.realqaSummary, /화면, 창, 영역, 도구 모음/iu);
 });
 
 test("resolves system preferences and safely falls back to defaults", () => {
   assert.equal(resolveLanguage(LanguagePreference.System, ["fr-FR"]), "en");
   assert.equal(resolveLanguage(LanguagePreference.System, ["ko-KR"]), "ko");
-  assert.equal(resolveTheme(ThemePreference.System, true), ThemePreference.Dark);
-  assert.equal(resolveTheme(ThemePreference.System, false), ThemePreference.Light);
-  assert.equal(readPreferences({ getItem: () => "not json" }).language, LanguagePreference.System);
-  assert.equal(resolveLanguage(LanguagePreference.System, ["en-US", "ko-KR"]), "en");
+  assert.equal(
+    resolveTheme(ThemePreference.System, true),
+    ThemePreference.Dark,
+  );
+  assert.equal(
+    resolveTheme(ThemePreference.System, false),
+    ThemePreference.Light,
+  );
+  assert.equal(
+    readPreferences({ getItem: () => "not json" }).language,
+    LanguagePreference.System,
+  );
+  assert.equal(
+    resolveLanguage(LanguagePreference.System, ["en-US", "ko-KR"]),
+    "en",
+  );
 });
 
 test("synchronizes the resolved language and theme onto the document before rendering", () => {
   const documentElement = { lang: "en", dataset: {} };
   assert.deepEqual(
-    synchronizeDocumentPreferences(documentElement, { ...defaultPreferences, language: LanguagePreference.Korean, theme: ThemePreference.System }, true, ["ko-KR"]),
+    synchronizeDocumentPreferences(
+      documentElement,
+      {
+        ...defaultPreferences,
+        language: LanguagePreference.Korean,
+        theme: ThemePreference.System,
+      },
+      true,
+      ["ko-KR"],
+    ),
     { language: "ko", theme: ThemePreference.Dark },
   );
-  assert.deepEqual(documentElement, { lang: "ko", dataset: { theme: ThemePreference.Dark } });
+  assert.deepEqual(documentElement, {
+    lang: "ko",
+    dataset: { theme: ThemePreference.Dark },
+  });
 });
 
 test("sanitizes each persisted preference independently", () => {
-  const stored = JSON.stringify({ version: 1, theme: "contrast", language: null, apiOrigin: "http://example.com", launchAtLogin: "yes" });
-  assert.deepEqual(readPreferences({ getItem: () => stored }), defaultPreferences);
-  const valid = JSON.stringify({ version: 1, theme: ThemePreference.Dark, language: LanguagePreference.Korean, apiOrigin: "http://127.0.0.1:46307/", launchAtLogin: true });
-  assert.deepEqual(readPreferences({ getItem: () => valid }), { version: 1, theme: ThemePreference.Dark, language: LanguagePreference.Korean, apiOrigin: "http://127.0.0.1:46307", launchAtLogin: true });
+  const stored = JSON.stringify({
+    version: 1,
+    theme: "contrast",
+    language: null,
+    apiOrigin: "http://example.com",
+    launchAtLogin: "yes",
+  });
+  assert.deepEqual(
+    readPreferences({ getItem: () => stored }),
+    defaultPreferences,
+  );
+  const valid = JSON.stringify({
+    version: 1,
+    theme: ThemePreference.Dark,
+    language: LanguagePreference.Korean,
+    apiOrigin: "http://127.0.0.1:46307/",
+    launchAtLogin: true,
+  });
+  assert.deepEqual(readPreferences({ getItem: () => valid }), {
+    version: 1,
+    theme: ThemePreference.Dark,
+    language: LanguagePreference.Korean,
+    apiOrigin: "http://127.0.0.1:46307",
+    launchAtLogin: true,
+  });
   assert.equal(isValidApiOrigin("http://127.0.0.2:46307/"), true);
   assert.equal(isValidApiOrigin("http://126.255.255.255:46307/"), false);
   assert.equal(isValidApiOrigin("https://devhud.api.delino.io/"), true);
@@ -83,13 +160,19 @@ test("localizes the staged Diagnostics privacy and disclosure flow", () => {
     assert.ok(messages[language].diagnosticsUnsupported);
     assert.ok(messages[language].diagnosticsDeletionPending);
   }
-  assert.match(messages.en.diagnosticsRetention, /7 days, 500 events, and 1 MiB/u);
+  assert.match(
+    messages.en.diagnosticsRetention,
+    /7 days, 500 events, and 1 MiB/u,
+  );
   assert.match(messages.en.diagnosticsRetention, /off by default/u);
   assert.match(messages.ko.diagnosticsRetention, /7일, 500개 이벤트, 1 MiB/u);
 });
 
 test("localizes recoverable notification permission failures", () => {
-  assert.match(messages.en.notificationPermissionFailed, /notification permission/u);
+  assert.match(
+    messages.en.notificationPermissionFailed,
+    /notification permission/u,
+  );
   assert.match(messages.ko.notificationPermissionFailed, /알림 권한/u);
 });
 
@@ -115,7 +198,10 @@ test("falls back to English when no platform language is supported", () => {
 
 test("keeps first-run completion separate from versioned preferences", () => {
   const storage = new Map();
-  const localStorage = { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) };
+  const localStorage = {
+    getItem: (key) => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value),
+  };
   assert.equal(hasCompletedOnboarding(localStorage), false);
   completeOnboarding(localStorage);
   assert.equal(hasCompletedOnboarding(localStorage), true);

@@ -4,10 +4,15 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+// Source assertions allow formatter-owned whitespace and trailing commas while
+// retaining the required selectors, values, handlers and accessibility attributes.
 const appRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const styles = readFileSync(join(appRoot, "src/styles.css"), "utf8");
 const app = readFileSync(join(appRoot, "src/App.tsx"), "utf8");
-const diagnosticsUi = readFileSync(join(appRoot, "src/diagnostics-ui.tsx"), "utf8");
+const diagnosticsUi = readFileSync(
+  join(appRoot, "src/diagnostics-ui.tsx"),
+  "utf8",
+);
 const identityUi = readFileSync(join(appRoot, "src/identity-ui.tsx"), "utf8");
 const foundation = readFileSync(join(appRoot, "src/ui-foundation.tsx"), "utf8");
 const deckUi = readFileSync(join(appRoot, "src/deck-ui.tsx"), "utf8");
@@ -56,7 +61,9 @@ test("eyebrow text meets WCAG AA contrast in light and dark themes", () => {
 
 test("active navigation buttons meet WCAG AA contrast in dark mode", () => {
   const darkTheme = themeBlocks[1];
-  assert(contrastRatio("#ffffff", customColor(darkTheme, "--button-accent")) >= 4.5);
+  assert(
+    contrastRatio("#ffffff", customColor(darkTheme, "--button-accent")) >= 4.5,
+  );
 });
 
 test("error messages meet WCAG AA contrast in light and dark themes", () => {
@@ -68,20 +75,41 @@ test("error messages meet WCAG AA contrast in light and dark themes", () => {
       `${error} does not have sufficient contrast against ${surface}`,
     );
   }
-  assert.match(styles, /\.external-message\[role="alert"\]\s*\{\s*color:var\(--error\)/u);
-  assert.match(styles, /\.native-setting-error\s*\{[^}]*color:var\(--error\)/u);
+  assert.match(
+    styles,
+    /\.external-message\[role="alert"\]\s*\s*\{\s*\s*color:\s*var\(\s*--error\s*\)/u,
+  );
+  assert.match(
+    styles,
+    /\.native-setting-error\s*\s*\{\s*[^}]*color:\s*var\(\s*--error\s*\)/u,
+  );
 });
 
 test("RealQA panels use the defined themed surface color", () => {
-  assert.doesNotMatch(styles, /var\(--panel\)/u);
-  assert.match(styles, /\.draft-list>li\{[^}]*background:var\(--surface\)/u);
-  assert.match(styles, /\.floating-capture-preview\{[^}]*background:var\(--surface\)/u);
-  assert.match(styles, /\.capture-dialog\{[^}]*background:var\(--surface\)/u);
-  assert.match(styles, /\.editor-controls\{[^}]*background:var\(--surface\)/u);
+  assert.doesNotMatch(styles, /var\(\s*--panel\s*\)/u);
+  assert.match(
+    styles,
+    /\.draft-list\s*>\s*li\s*\{\s*[^}]*background:\s*var\(\s*--surface\s*\)/u,
+  );
+  assert.match(
+    styles,
+    /\.floating-capture-preview\s*\{\s*[^}]*background:\s*var\(\s*--surface\s*\)/u,
+  );
+  assert.match(
+    styles,
+    /\.capture-dialog\s*\{\s*[^}]*background:\s*var\(\s*--surface\s*\)/u,
+  );
+  assert.match(
+    styles,
+    /\.editor-controls\s*\{\s*[^}]*background:\s*var\(\s*--surface\s*\)/u,
+  );
 });
 
 test("RealQA annotation text uses CSP-compatible static font styling", () => {
-  assert.match(styles, /\.annotation-text\{font-family:"DevHud RealQA Noto Sans KR";font-kerning:none\}/u);
+  assert.match(
+    styles,
+    /\.annotation-text\s*\{\s*font-family:\s*"DevHud\s*RealQA\s*Noto\s*Sans\s*KR";\s*font-kerning:\s*none;?\s*\}/u,
+  );
 });
 
 test("form-control boundaries meet non-text contrast in light and dark themes", () => {
@@ -96,243 +124,531 @@ test("form-control boundaries meet non-text contrast in light and dark themes", 
 });
 
 test("Diagnostics disclosures preserve exact text selection and fit contracted responsive viewports", () => {
-  assert.match(diagnosticsUi, /<details className="diagnostics-disclosure" open>/u);
-  assert.match(diagnosticsUi, /<details className="diagnostics-disclosure">/u);
-  assert.match(diagnosticsUi, /<section key=\{previewGeneration\} className="diagnostics-disclosures"/u);
-  assert.match(diagnosticsUi, /<pre className="diagnostics-preview"[^>]*tabIndex=\{0\}>\{bundle\.requestJson\}<\/pre>/u);
-  assert.match(diagnosticsUi, /<pre className="diagnostics-preview"[^>]*tabIndex=\{0\}>\{bundle\.exportJson\}<\/pre>/u);
-  assert.match(styles, /\.diagnostics-disclosure > summary \{[^}]*display:list-item/u);
-  assert.match(styles, /\.diagnostics-preview \{[^}]*max-height:min\(420px,45vh\);[^}]*overflow:auto;[^}]*font-family:ui-monospace[^}]*white-space:pre;[^}]*overflow-wrap:normal;[^}]*user-select:text/u);
-  assert.match(styles, /\.diagnostics-preview:focus-visible \{[^}]*outline:3px solid var\(--focus\)/u);
-  assert.match(styles, /\.diagnostics-runtime \{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/u);
-  assert.match(styles, /\.runtime-diagnostics \{[^}]*grid-template-columns:max-content minmax\(0,1fr\);[^}]*max-width:510px/u);
-  assert.match(styles, /\.runtime-diagnostics dt \{[^}]*font-weight:800/u);
-  assert.match(styles, /\.runtime-diagnostics dd \{[^}]*overflow-wrap:anywhere/u);
-  assert.match(styles, /@media \(max-width:700px\) \{[\s\S]*?\.diagnostics-runtime \{ grid-template-columns:minmax\(0,1fr\)/u);
+  assert.match(
+    diagnosticsUi,
+    /<details\s*className="diagnostics-disclosure"\s*open>/u,
+  );
+  assert.match(
+    diagnosticsUi,
+    /<details\s*className="diagnostics-disclosure">/u,
+  );
+  assert.match(
+    diagnosticsUi,
+    /<section\s*key=\{\s*previewGeneration\s*\}\s*className="diagnostics-disclosures"/u,
+  );
+  assert.match(
+    diagnosticsUi,
+    /<pre\s*className="diagnostics-preview"[^>]*tabIndex=\{\s*0\s*\}\s*>\s*\{\s*bundle\.requestJson\s*\}\s*<\/pre>/u,
+  );
+  assert.match(
+    diagnosticsUi,
+    /<pre\s*className="diagnostics-preview"[^>]*tabIndex=\{\s*0\s*\}\s*>\s*\{\s*bundle\.exportJson\s*\}\s*<\/pre>/u,
+  );
+  assert.match(
+    styles,
+    /\.diagnostics-disclosure\s*\s*>\s*\s*summary\s*\s*\{\s*[^}]*display:\s*list-item/u,
+  );
+  assert.match(
+    styles,
+    /\.diagnostics-preview\s*\s*\{\s*[^}]*max-height:\s*min\(\s*420px,\s*45vh\s*\);\s*[^}]*overflow:\s*auto;\s*[^}]*font-family:\s*ui-monospace[^}]*white-space:\s*pre;\s*[^}]*overflow-wrap:\s*normal;\s*[^}]*user-select:\s*text/u,
+  );
+  assert.match(
+    styles,
+    /\.diagnostics-preview:\s*focus-visible\s*\s*\{\s*[^}]*outline:\s*3px\s*solid\s*var\(\s*--focus\s*\)/u,
+  );
+  assert.match(
+    styles,
+    /\.diagnostics-runtime\s*\s*\{\s*[^}]*grid-template-columns:\s*repeat\(\s*3,\s*minmax\(\s*0,\s*1fr\s*\)\s*\)/u,
+  );
+  assert.match(
+    styles,
+    /\.runtime-diagnostics\s*\s*\{\s*[^}]*grid-template-columns:\s*max-content\s*minmax\(\s*0,\s*1fr\s*\);\s*[^}]*max-width:\s*510px/u,
+  );
+  assert.match(
+    styles,
+    /\.runtime-diagnostics\s*dt\s*\s*\{\s*[^}]*font-weight:\s*800/u,
+  );
+  assert.match(
+    styles,
+    /\.runtime-diagnostics\s*dd\s*\s*\{\s*[^}]*overflow-wrap:\s*anywhere/u,
+  );
+  assert.match(
+    styles,
+    /@media\s*\(\s*max-width:\s*700px\s*\)\s*\s*\{\s*[\s\S]*?\.diagnostics-runtime\s*\s*\{\s*\s*grid-template-columns:\s*minmax\(\s*0,\s*1fr\s*\)/u,
+  );
 });
 
 test("command palette uses buttons and has a localized empty state", () => {
   assert.doesNotMatch(app, /role="listbox"|role="option"/u);
-  assert.match(app, /actions\.length === 0/u);
+  assert.match(app, /actions\.length\s*===\s*0/u);
 });
 
 test("command palette shortcut is unavailable during onboarding", () => {
   assert.doesNotMatch(app, /MetaRight|ControlRight|event\.code === "KeyK"/u);
-  assert.match(app, /event\.kind === "shortcut-triggered"/u);
-  assert.match(app, /if \(context\.mobile \|\| context\.onboarding\) return;/u);
-  assert.match(app, /event\.action === ShortcutActionId\.CommandPalette/u);
-  assert.match(app, /actionRegistry\.find\(\(candidate\) => candidate\.id === event\.action\)/u);
+  assert.match(app, /event\.kind\s*===\s*"shortcut-triggered"/u);
+  assert.match(
+    app,
+    /if\s*\(\s*context\.mobile\s*\|\|\s*context\.onboarding,?\s*\)\s*return;\s*/u,
+  );
+  assert.match(app, /event\.action\s*===\s*ShortcutActionId\.CommandPalette/u);
+  assert.match(
+    app,
+    /actionRegistry\.find\(\s*\(\s*candidate,?\s*\)\s*=>\s*candidate\.id\s*===\s*event\.action,?\s*\)/u,
+  );
   assert.match(app, /ShortcutPaletteTrigger/u);
-  assert.match(identityUi, /binding\.enabled \? \[\.\.\.modifiers, copy\[shortcutKeyLabels\[binding\.key\]\]\]\.join/u);
+  assert.match(
+    identityUi,
+    /binding\.enabled\s*\?\s*\[\s*\.\.\.modifiers,\s*\s*copy\[\s*shortcutKeyLabels\[\s*binding\.key,?\s*\],?\s*\],?\s*\]\.join/u,
+  );
 });
 
 test("document preferences are synchronized before the first localized render", () => {
-  assert.match(main, /synchronizeDocumentPreferences\(document\.documentElement, preferences, matchMedia\("\(prefers-color-scheme: dark\)"\)\.matches, navigator\.languages\);\s*createRoot\(root\)\.render/u);
+  assert.match(
+    main,
+    /synchronizeDocumentPreferences\(\s*document\.documentElement,\s*\s*preferences,\s*\s*matchMedia\(\s*"\(\s*prefers-color-scheme:\s*dark,?\s*\)",?\s*\)\.matches,\s*\s*navigator\.languages,?\s*\);\s*\s*createRoot\(\s*root,?\s*\)\.render/u,
+  );
 });
 
 test("system language changes synchronize the rendered copy, document language, and tray", () => {
-  assert.match(app, /const \[systemLanguage, setSystemLanguage\] = useState\(\(\) => resolveLanguage\(LanguagePreference\.System, navigator\.languages\)\);/u);
-  assert.match(app, /addEventListener\("languagechange", updateSystemLanguage\);/u);
-  assert.match(app, /removeEventListener\("languagechange", updateSystemLanguage\);/u);
-  assert.match(app, /preferences\.language === LanguagePreference\.System \? systemLanguage : preferences\.language/u);
-  assert.match(app, /\}, \[preferences\.language, preferences\.theme, language\]\);/u);
+  assert.match(
+    app,
+    /const\s*\[\s*systemLanguage,\s*\s*setSystemLanguage,?\s*\]\s*=\s*useState\(\s*\(\s*,?\s*\)\s*=>\s*resolveLanguage\(\s*LanguagePreference\.System,\s*\s*navigator\.languages,?\s*\),?\s*\);\s*/u,
+  );
+  assert.match(
+    app,
+    /addEventListener\(\s*"languagechange",\s*\s*updateSystemLanguage,?\s*\);\s*/u,
+  );
+  assert.match(
+    app,
+    /removeEventListener\(\s*"languagechange",\s*\s*updateSystemLanguage,?\s*\);\s*/u,
+  );
+  assert.match(
+    app,
+    /preferences\.language\s*===\s*LanguagePreference\.System\s*\?\s*systemLanguage\s*:\s*preferences\.language/u,
+  );
+  assert.match(
+    app,
+    /\s*\},\s*\s*\[\s*preferences\.language,\s*\s*preferences\.theme,\s*\s*language,?\s*\],?\s*\);\s*/u,
+  );
 });
 
 test("resolved themes apply their native control color scheme", () => {
-  assert.match(themeBlocks[0], /color-scheme:light/u);
-  assert.match(themeBlocks[1], /color-scheme:dark/u);
+  assert.match(themeBlocks[0], /color-scheme:\s*light/u);
+  assert.match(themeBlocks[1], /color-scheme:\s*dark/u);
 });
 
 test("the palette trigger retains contrast while hovered", () => {
   assert.match(app, /className="palette-trigger"/u);
-  assert.match(styles, /\.shell-nav-item:hover,\.shell-navigation \.palette-trigger:hover\s*\{[^}]*border-color:var\(--line\);[^}]*background:var\(--surface-muted\)/u);
+  assert.match(
+    styles,
+    /\.shell-nav-item:\s*hover,\s*\.shell-navigation\s*\.palette-trigger:\s*hover\s*\s*\{\s*[^}]*border-color:\s*var\(\s*--line\s*\);\s*[^}]*background:\s*var\(\s*--surface-muted\s*\)/u,
+  );
 });
 
 test("external status remains localized and noopener does not report a false failure", () => {
   const shell = readFileSync(join(appRoot, "src/shell.ts"), "utf8");
-  assert.match(app, /type ExternalMessage = "opened" \| "failed" \| "invalid-api-origin"/u);
-  assert.match(app, /const externalMessageText = externalMessage === "invalid-api-origin"/u);
-  assert.doesNotMatch(shell, /ExternalLinkTarget\.Documentation|tree\/main\/docs/u);
+  assert.match(
+    app,
+    /type\s*ExternalMessage\s*=\s*"opened"\s*\|\s*"failed"\s*\|\s*"invalid-api-origin"/u,
+  );
+  assert.match(
+    app,
+    /const\s*externalMessageText\s*=\s*externalMessage\s*===\s*"invalid-api-origin"/u,
+  );
+  assert.doesNotMatch(
+    shell,
+    /ExternalLinkTarget\.Documentation|tree\/main\/docs/u,
+  );
   assert.doesNotMatch(shell, /if \(!window\.open/u);
-  assert.match(shell, /window\.open\(path, "_blank", "noopener,noreferrer"\);/u);
+  assert.match(
+    shell,
+    /window\.open\(\s*path,\s*\s*"_blank",\s*\s*"noopener,\s*noreferrer",?\s*\);\s*/u,
+  );
 });
 
 test("first run renders the localized local-choice controls and focuses the API origin", () => {
   assert.match(app, /onboarding/u);
-  assert.match(identityUi, /value=\{apiOrigin\} autoFocus onApply/u);
+  assert.match(identityUi, /value=\{\s*apiOrigin\s*\}\s*autoFocus\s*onApply/u);
   assert.match(identityUi, /copy\.signIn/u);
   assert.match(identityUi, /copy\.continueLocally/u);
   assert.match(identityUi, /copy\.customApiWarning/u);
-  assert.match(app, /if \(onboarding\) return boundary\(<main className="standalone-shell"/u);
-  assert.match(identityUi, /<Card className="onboarding-card">/u);
+  assert.match(
+    app,
+    /if\s*\(\s*onboarding,?\s*\)\s*return\s*boundary\(\s*<main\s*className="standalone-shell"/u,
+  );
+  assert.match(identityUi, /<Card\s*className="onboarding-card">/u);
 });
 
 test("Account focuses its API origin input when the surface opens or is reselected from the palette", () => {
-  assert.match(app, /const apiOriginInput = useRef<HTMLInputElement>\(null\);/u);
-  assert.match(app, /surface === SurfaceId\.Account\) apiOriginInput\.current\?\.focus\(\)/u);
-  assert.match(app, /inputRef=\{apiOriginInput\}/u);
-  assert.match(identityUi, /<input id=\{inputId\} ref=\{inputRef\} autoFocus=\{autoFocus\}/u);
-  assert.match(app, /closePalette\(action\?\.surface !== SurfaceId\.Account && !opensCaptureDialog\);/u);
-  assert.match(app, /action\?\.surface === SurfaceId\.Account\) requestAnimationFrame\(\(\) => apiOriginInput\.current\?\.focus\(\)\)/u);
+  assert.match(
+    app,
+    /const\s*apiOriginInput\s*=\s*useRef<HTMLInputElement>\(\s*null,?\s*\);\s*/u,
+  );
+  assert.match(
+    app,
+    /surface\s*===\s*SurfaceId\.Account,?\s*\)\s*apiOriginInput\.current\?\.focus\(\s*,?\s*\)/u,
+  );
+  assert.match(app, /inputRef=\{\s*apiOriginInput\s*\}/u);
+  assert.match(
+    identityUi,
+    /<input\s*id=\{\s*inputId\s*\}\s*ref=\{\s*inputRef\s*\}\s*autoFocus=\{\s*autoFocus\s*\}/u,
+  );
+  assert.match(
+    app,
+    /closePalette\(\s*action\?\.surface\s*!==\s*SurfaceId\.Account\s*&&\s*!opensCaptureDialog,?\s*\);\s*/u,
+  );
+  assert.match(
+    app,
+    /action\?\.surface\s*===\s*SurfaceId\.Account,?\s*\)\s*requestAnimationFrame\(\s*\(\s*,?\s*\)\s*=>\s*apiOriginInput\.current\?\.focus\(\s*,?\s*\),?\s*\)/u,
+  );
 });
 
 test("Account opener actions and invalidating edits ignore stale external completions", () => {
-  assert.match(app, /const externalAttempt = useRef\(0\);/u);
-  assert.match(app, /if \("apiOrigin" in next\) \{\s+externalAttempt\.current \+= 1;\s+setExternalMessage\(null\);/u);
-  assert.match(app, /const external = async \(target: ExternalLinkTarget\) => \{\s+const attempt = externalAttempt\.current \+ 1;\s+externalAttempt\.current = attempt;/u);
-  assert.match(app, /if \(attempt === externalAttempt\.current\) setExternalMessage\(message\);/u);
-  assert.match(app, /const finishOnboarding = \(\) => \{\s+externalAttempt\.current \+= 1;\s+setExternalMessage\(null\);/u);
-  assert.match(app, /clearIdentityForApiChange\(bridge, storage, preferences\.apiOrigin, identitySession\)/u);
-  assert.match(identityUi, /identity\.signIn\(\)/u);
+  assert.match(app, /const\s*externalAttempt\s*=\s*useRef\(\s*0,?\s*\);\s*/u);
+  assert.match(
+    app,
+    /if\s*\(\s*"apiOrigin"\s*in\s*next,?\s*\)\s*\{\s*\s+externalAttempt\.current\s*\+=\s*1;\s*\s+setExternalMessage\(\s*null,?\s*\);\s*/u,
+  );
+  assert.match(
+    app,
+    /const\s*external\s*=\s*async\s*\(\s*target:\s*ExternalLinkTarget,?\s*\)\s*=>\s*\{\s*\s+const\s*attempt\s*=\s*externalAttempt\.current\s*\+\s*1;\s*\s+externalAttempt\.current\s*=\s*attempt;\s*/u,
+  );
+  assert.match(
+    app,
+    /if\s*\(\s*attempt\s*===\s*externalAttempt\.current,?\s*\)\s*setExternalMessage\(\s*message,?\s*\);\s*/u,
+  );
+  assert.match(
+    app,
+    /const\s*finishOnboarding\s*=\s*\(\s*,?\s*\)\s*=>\s*\{\s*\s+externalAttempt\.current\s*\+=\s*1;\s*\s+setExternalMessage\(\s*null,?\s*\);\s*/u,
+  );
+  assert.match(
+    app,
+    /clearIdentityForApiChange\(\s*bridge,\s*\s*storage,\s*\s*preferences\.apiOrigin,\s*\s*identitySession,?\s*\)/u,
+  );
+  assert.match(identityUi, /identity\.signIn\(\s*,?\s*\)/u);
 });
 
 test("RealQA exposes unsupported capture actions as disabled controls", () => {
-  assert.match(app, /const unavailableCaptureActions = actionRegistry\.filter/u);
-  assert.match(app, /action\.required\.includes\(PlatformCapability\.Capture\)/u);
-  assert.match(app, /<div className="disabled-actions">\{unavailableCaptureActions\.map\(\(action\) => <button disabled/u);
+  assert.match(
+    app,
+    /const\s*unavailableCaptureActions\s*=\s*actionRegistry\.filter/u,
+  );
+  assert.match(
+    app,
+    /action\.required\.includes\(\s*PlatformCapability\.Capture,?\s*\)/u,
+  );
+  assert.match(
+    app,
+    /<div\s*className="disabled-actions">\s*\{\s*unavailableCaptureActions\.map\(\s*\(\s*action,?\s*\)\s*=>\s*(?:\(\s*)?<button\s*disabled/u,
+  );
 });
 
 test("tray localization failures are caught and recorded", () => {
   const shell = readFileSync(join(appRoot, "src/shell.ts"), "utf8");
-  assert.match(shell, /\?\? Promise\.resolve\(\)/u);
-  assert.match(app, /void setTrayLanguage\(language\)\.catch\(\(\) => \{\}\);/u);
+  assert.match(shell, /\?\?\s*Promise\.resolve\(\s*,?\s*\)/u);
+  assert.match(
+    app,
+    /void\s*setTrayLanguage\(\s*language,?\s*\)\.catch\(\s*\(\s*,?\s*\)\s*=>\s*\{\s*\s*\},?\s*\);\s*/u,
+  );
   assert.match(nativeHost, /event = "tray_language_update_failed"/u);
 });
 
 test("rejected external destinations emit a safe structured diagnostic", () => {
   assert.match(nativeHost, /event = "external_destination_rejected"/u);
-  assert.doesNotMatch(nativeHost, /external_destination_rejected[^\n]*api_origin/u);
+  assert.doesNotMatch(
+    nativeHost,
+    /external_destination_rejected[^\n]*api_origin/u,
+  );
 });
 
 test("Linux external links use bounded GIO dispatch rather than browser lifetime", () => {
   assert.match(nativeHost, /gio::AppInfo::launch_default_for_uri/u);
-  assert.match(nativeHost, /receiver\.recv_timeout\(EXTERNAL_OPENER_TIMEOUT\)/u);
+  assert.match(
+    nativeHost,
+    /receiver\.recv_timeout\(EXTERNAL_OPENER_TIMEOUT\)/u,
+  );
   assert.doesNotMatch(nativeHost, /Command::new\("xdg-open"\)/u);
 });
 
 test("internal overlays stack above every responsive navigation surface", () => {
-  assert.match(styles, /\.ui-overlay\s*\{[^}]*z-index:30/u);
-  assert.match(styles, /\.shell-navigation\s*\{[^}]*z-index:10/u);
-  assert.match(styles, /\.mobile-app-bar\s*\{[^}]*z-index:10/u);
-  assert.match(styles, /\.app-shell-bottom-bar\s*\{[^}]*z-index:10/u);
+  assert.match(styles, /\.ui-overlay\s*\s*\{\s*[^}]*z-index:\s*30/u);
+  assert.match(styles, /\.shell-navigation\s*\s*\{\s*[^}]*z-index:\s*10/u);
+  assert.match(styles, /\.mobile-app-bar\s*\s*\{\s*[^}]*z-index:\s*10/u);
+  assert.match(styles, /\.app-shell-bottom-bar\s*\s*\{\s*[^}]*z-index:\s*10/u);
 });
 
 test("the UI foundation encodes the semantic, sizing, and responsive contracts", () => {
   for (const block of themeBlocks) {
-    for (const token of ["--bg", "--surface", "--surface-muted", "--text", "--muted", "--accent", "--success", "--warning", "--error", "--info", "--line", "--focus"]) {
+    for (const token of [
+      "--bg",
+      "--surface",
+      "--surface-muted",
+      "--text",
+      "--muted",
+      "--accent",
+      "--success",
+      "--warning",
+      "--error",
+      "--info",
+      "--line",
+      "--focus",
+    ]) {
       assert.match(block, new RegExp(`${token}:`, "u"));
     }
   }
-  assert.match(themeBlocks[0], /--space-1:8px/u);
-  assert.match(themeBlocks[0], /--radius-control:12px/u);
-  assert.match(themeBlocks[0], /--radius-panel:16px/u);
-  assert.match(themeBlocks[0], /--target-min:44px/u);
-  assert.match(styles, /button\s*\{[^}]*min-width:var\(--target-min\);[^}]*min-height:var\(--target-min\)/u);
-  assert.match(styles, /\.ui-card-interactive > button\.data-row:focus-visible\s*\{[^}]*outline-offset:-4px/u);
-  assert.match(styles, /grid-template-columns:232px minmax\(0,1fr\)/u);
-  assert.match(styles, /grid-template-columns:72px minmax\(0,1fr\)/u);
-  assert.match(styles, /\.shell-navigation nav\s*\{[^}]*min-height:0;[^}]*overflow-y:auto/u);
-  assert.match(styles, /\.shell-navigation > \.palette-trigger\s*\{[^}]*margin-top:auto/u);
-  assert.match(styles, /\.content\s*\{[^}]*min-width:0;[^}]*max-width:1280px/u);
-  assert.match(styles, /--mobile-bottom-navigation-height:calc\(64px \+ env\(safe-area-inset-bottom\)\)/u);
-  assert.match(styles, /padding:[^;}]*calc\(var\(--mobile-bottom-navigation-height\) \+ var\(--space-3\)\)/u);
-  assert.match(styles, /@media \(min-width:701px\) and \(max-width:1023px\)/u);
-  assert.match(styles, /@media \(max-width:700px\)/u);
+  assert.match(themeBlocks[0], /--space-1:\s*8px/u);
+  assert.match(themeBlocks[0], /--radius-control:\s*12px/u);
+  assert.match(themeBlocks[0], /--radius-panel:\s*16px/u);
+  assert.match(themeBlocks[0], /--target-min:\s*44px/u);
+  assert.match(
+    styles,
+    /button\s*\s*\{\s*[^}]*min-width:\s*var\(\s*--target-min\s*\);\s*[^}]*min-height:\s*var\(\s*--target-min\s*\)/u,
+  );
+  assert.match(
+    styles,
+    /\.ui-card-interactive\s*\s*>\s*\s*button\.data-row:\s*focus-visible\s*\s*\{\s*[^}]*outline-offset:\s*-4px/u,
+  );
+  assert.match(
+    styles,
+    /grid-template-columns:\s*232px\s*minmax\(\s*0,\s*1fr\s*\)/u,
+  );
+  assert.match(
+    styles,
+    /grid-template-columns:\s*72px\s*minmax\(\s*0,\s*1fr\s*\)/u,
+  );
+  assert.match(
+    styles,
+    /\.shell-navigation\s*nav\s*\s*\{\s*[^}]*min-height:\s*0;\s*[^}]*overflow-y:\s*auto/u,
+  );
+  assert.match(
+    styles,
+    /\.shell-navigation\s*\s*>\s*\s*\.palette-trigger\s*\s*\{\s*[^}]*margin-top:\s*auto/u,
+  );
+  assert.match(
+    styles,
+    /\.content\s*\s*\{\s*[^}]*min-width:\s*0;\s*[^}]*max-width:\s*1280px/u,
+  );
+  assert.match(
+    styles,
+    /--mobile-bottom-navigation-height:\s*calc\(\s*64px\s*\+\s*env\(\s*safe-area-inset-bottom\s*\)\s*\)/u,
+  );
+  assert.match(
+    styles,
+    /padding:\s*[^;}]*calc\(\s*var\(\s*--mobile-bottom-navigation-height\s*\)\s*\+\s*var\(\s*--space-3\s*\)\s*\)/u,
+  );
+  assert.match(
+    styles,
+    /@media\s*\(\s*min-width:\s*701px\s*\)\s*and\s*\(\s*max-width:\s*1023px\s*\)/u,
+  );
+  assert.match(styles, /@media\s*\(\s*max-width:\s*700px\s*\)/u);
 });
 
 test("reduced motion preserves visibility transforms", () => {
-  const reducedMotion = styles.match(/@media \(prefers-reduced-motion: reduce\)\s*\{([^\n]*)\}/u)?.[1];
+  const reducedMotion = styles.match(
+    /@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\}/u,
+  )?.[1];
   assert.ok(reducedMotion);
-  assert.match(reducedMotion, /transition:none!important/u);
-  assert.match(reducedMotion, /animation:none!important/u);
-  assert.doesNotMatch(reducedMotion, /transform:none/u);
+  assert.match(reducedMotion, /transition:\s*none\s*!important/u);
+  assert.match(reducedMotion, /animation:\s*none\s*!important/u);
+  assert.doesNotMatch(reducedMotion, /transform:\s*none/u);
 });
 
 test("narrow layouts keep capture previews above the safe-area-aware navigation", () => {
-  assert.match(styles, /\.floating-capture-preview\{[^}]*bottom:1rem[^}]*\}[\s\S]*@media \(max-width:700px\)\{\.floating-capture-preview\{bottom:calc\(var\(--mobile-bottom-navigation-height, calc\(64px \+ env\(safe-area-inset-bottom\)\)\) \+ 1rem\)\}\}/u);
+  assert.match(
+    styles,
+    /\.floating-capture-preview\s*\{\s*[^}]*bottom:\s*1rem[^}]*;?\s*\}[\s\S]*@media\s*\(\s*max-width:\s*700px\s*\)\s*\{\s*\.floating-capture-preview\s*\{\s*bottom:\s*calc\(\s*var\(\s*--mobile-bottom-navigation-height,\s*\s*calc\(\s*64px\s*\+\s*env\(\s*safe-area-inset-bottom\s*\)\s*\)\s*\)\s*\+\s*1rem\s*\);?\s*\};?\s*\}/u,
+  );
 });
 
 test("Deck configuration scrolls inside a viewport-bounded sticky panel", () => {
-  assert.match(styles, /\.deck-configuration-panel\s*\{[^}]*position:sticky;[^}]*top:var\(--space-2\);[^}]*max-block-size:calc\(100vh - var\(--space-2\) - var\(--space-2\)\);[^}]*overflow-y:auto;/u);
+  assert.match(
+    styles,
+    /\.deck-configuration-panel\s*\s*\{\s*[^}]*position:\s*sticky;\s*[^}]*top:\s*var\(\s*--space-2\s*\);\s*[^}]*max-block-size:\s*calc\(\s*100vh\s*-\s*var\(\s*--space-2\s*\)\s*-\s*var\(\s*--space-2\s*\)\s*\);\s*[^}]*overflow-y:\s*auto;\s*/u,
+  );
 });
 
 test("constrained Deck results place status badges below their content", () => {
-  assert.match(styles, /\.deck-workspace\s*\{[^}]*container-type:inline-size;/u);
-  assert.match(styles, /@container \(max-width:40rem\)\s*\{\s*\.deck-results \.data-row\s*\{[^}]*grid-template-columns:auto minmax\(0,1fr\)[^}]*\}[^}]*\.deck-results \.data-row-trailing\s*\{[^}]*grid-column:2;[^}]*justify-content:start/u);
-  assert.match(styles, /\.deck-result-statuses \.status-badge\s*\{[^}]*max-width:100%;[^}]*white-space:normal;[^}]*overflow-wrap:anywhere;/u);
+  assert.match(
+    styles,
+    /\.deck-workspace\s*\s*\{\s*[^}]*container-type:\s*inline-size;\s*/u,
+  );
+  assert.match(
+    styles,
+    /@container\s*\(\s*max-width:\s*40rem\s*\)\s*\s*\{\s*\s*\.deck-results\s*\.data-row\s*\s*\{\s*[^}]*grid-template-columns:\s*auto\s*minmax\(\s*0,\s*1fr\s*\)[^}]*;?\s*\}[^}]*\.deck-results\s*\.data-row-trailing\s*\s*\{\s*[^}]*grid-column:\s*2;\s*[^}]*justify-content:\s*start/u,
+  );
+  assert.match(
+    styles,
+    /\.deck-result-statuses\s*\.status-badge\s*\s*\{\s*[^}]*max-width:\s*100%;\s*[^}]*white-space:\s*normal;\s*[^}]*overflow-wrap:\s*anywhere;\s*/u,
+  );
 });
 
 test("mobile Deck selection can shrink with enlarged text", () => {
-  assert.match(styles, /@media \(max-width: 700px\)\s*\{[\s\S]*?\.deck-workspace-controls \.ui-field\s*\{[^}]*flex:1 1 100%;[^}]*min-width:0;/u);
+  assert.match(
+    styles,
+    /@media\s*\(\s*max-width:\s*\s*700px\s*\)\s*\s*\{\s*[\s\S]*?\.deck-workspace-controls\s*\.ui-field\s*\s*\{\s*[^}]*flex:\s*1\s*1\s*100%;\s*[^}]*min-width:\s*0;\s*/u,
+  );
 });
 
 test("rail and lower-sidebar Deck headers stack and constrain their actions", () => {
-  assert.match(styles, /@media \(min-width:701px\) and \(max-width:1023px\)\s*\{[^}]*\.deck > \.page-header\s*\{\s*display:block;\s*\}[^}]*\.deck > \.page-header \.page-header-actions\s*\{[^}]*min-width:0;[^}]*width:100%;[^}]*\}[^}]*\.deck-workspace-controls\s*\{[^}]*justify-content:start;[^}]*min-width:0;[^}]*\}[^}]*\.deck-workspace-controls \.ui-field\s*\{[^}]*flex:1 1 11rem;[^}]*max-width:100%;/u);
-  assert.match(styles, /\.deck\s*\{\s*container-type:inline-size;\s*\}/u);
-  assert.match(styles, /@container \(max-width:64rem\)\s*\{[^}]*\.deck > \.page-header\s*\{\s*display:block;\s*\}[^}]*\.deck > \.page-header \.page-header-actions\s*\{[^}]*min-width:0;[^}]*width:100%;[^}]*\}[^}]*\.deck-workspace-controls\s*\{[^}]*justify-content:start;[^}]*min-width:0;[^}]*\}[^}]*\.deck-workspace-controls \.ui-field\s*\{[^}]*flex:1 1 11rem;[^}]*max-width:100%;/u);
+  assert.match(
+    styles,
+    /@media\s*\(\s*min-width:\s*701px\s*\)\s*and\s*\(\s*max-width:\s*1023px\s*\)\s*\s*\{\s*[^}]*\.deck\s*\s*>\s*\s*\.page-header\s*\s*\{\s*\s*display:\s*block;\s*\s*;?\s*\}[^}]*\.deck\s*\s*>\s*\s*\.page-header\s*\.page-header-actions\s*\s*\{\s*[^}]*min-width:\s*0;\s*[^}]*width:\s*100%;\s*[^}]*;?\s*\}[^}]*\.deck-workspace-controls\s*\s*\{\s*[^}]*justify-content:\s*start;\s*[^}]*min-width:\s*0;\s*[^}]*;?\s*\}[^}]*\.deck-workspace-controls\s*\.ui-field\s*\s*\{\s*[^}]*flex:\s*1\s*1\s*11rem;\s*[^}]*max-width:\s*100%;\s*/u,
+  );
+  assert.match(
+    styles,
+    /\.deck\s*\s*\{\s*\s*container-type:\s*inline-size;\s*\s*;?\s*\}/u,
+  );
+  assert.match(
+    styles,
+    /@container\s*\(\s*max-width:\s*64rem\s*\)\s*\s*\{\s*[^}]*\.deck\s*\s*>\s*\s*\.page-header\s*\s*\{\s*\s*display:\s*block;\s*\s*;?\s*\}[^}]*\.deck\s*\s*>\s*\s*\.page-header\s*\.page-header-actions\s*\s*\{\s*[^}]*min-width:\s*0;\s*[^}]*width:\s*100%;\s*[^}]*;?\s*\}[^}]*\.deck-workspace-controls\s*\s*\{\s*[^}]*justify-content:\s*start;\s*[^}]*min-width:\s*0;\s*[^}]*;?\s*\}[^}]*\.deck-workspace-controls\s*\.ui-field\s*\s*\{\s*[^}]*flex:\s*1\s*1\s*11rem;\s*[^}]*max-width:\s*100%;\s*/u,
+  );
 });
 
 test("the shell exposes a localized skip target and named rail tooltips", () => {
-  assert.match(foundation, /className="skip-link" href="#devhud-main-content"/u);
-  assert.match(foundation, /id="devhud-main-content" className="content" tabIndex=\{-1\}/u);
-  assert.match(app, /aria-describedby=\{compact \? tooltipId : undefined\}/u);
-  assert.match(app, /className="nav-tooltip rail-nav-tooltip" role="tooltip"/u);
-  assert.match(app, /createPortal\([^;]*document\.body\)/u);
-  assert.match(styles, /\.rail-nav-tooltip\[data-visible="true"\]\s*\{[^}]*opacity:1;[^}]*visibility:visible/u);
+  assert.match(
+    foundation,
+    /className="skip-link"\s*href="#devhud-main-content"/u,
+  );
+  assert.match(
+    foundation,
+    /id="devhud-main-content"\s*className="content"\s*tabIndex=\{\s*-1\s*\}/u,
+  );
+  assert.match(
+    app,
+    /aria-describedby=\{\s*compact\s*\?\s*tooltipId\s*:\s*undefined\s*\}/u,
+  );
+  assert.match(
+    app,
+    /className="nav-tooltip\s*rail-nav-tooltip"\s*role="tooltip"/u,
+  );
+  assert.match(app, /createPortal\(\s*[^;]*document\.body,?\s*\)/u);
+  assert.match(
+    styles,
+    /\.rail-nav-tooltip\[data-visible="true"\]\s*\s*\{\s*[^}]*opacity:\s*1;\s*[^}]*visibility:\s*visible/u,
+  );
 });
 
 test("measured shell geometry avoids CSP-blocked React style values", () => {
   assert.doesNotMatch(app, /style=\{tooltipPosition/u);
-  assert.match(app, /tooltipElement\.style\.setProperty\("inset-block-start"/u);
-  assert.match(app, /tooltipElement\.style\.setProperty\("inset-inline-start"/u);
+  assert.match(
+    app,
+    /tooltipElement\.style\.setProperty\(\s*"inset-block-start"/u,
+  );
+  assert.match(
+    app,
+    /tooltipElement\.style\.setProperty\(\s*"inset-inline-start"/u,
+  );
   assert.doesNotMatch(foundation, /const shellStyle/u);
-  assert.match(foundation, /shellElement\.style\.setProperty\("--mobile-bottom-navigation-height"/u);
+  assert.match(
+    foundation,
+    /shellElement\.style\.setProperty\(\s*"--mobile-bottom-navigation-height"/u,
+  );
 });
 
 test("mobile dialogs subtract their safe-area-aware top offset from the viewport", () => {
-  assert.match(styles, /\.ui-dialog\s*\{[^}]*max-height:calc\(100vh - 56px - env\(safe-area-inset-top\)\);[^}]*margin-top:calc\(40px \+ env\(safe-area-inset-top\)\)/u);
+  assert.match(
+    styles,
+    /\.ui-dialog\s*\s*\{\s*[^}]*max-height:\s*calc\(\s*100vh\s*-\s*56px\s*-\s*env\(\s*safe-area-inset-top\s*\)\s*\);\s*[^}]*margin-top:\s*calc\(\s*40px\s*\+\s*env\(\s*safe-area-inset-top\s*\)\s*\)/u,
+  );
 });
 
 test("modal primitives own focus trapping, Escape, and opener restoration", () => {
-  assert.match(foundation, /event\.key === "Escape"[\s\S]*onClose\(\)/u);
-  assert.match(foundation, /event\.shiftKey && document\.activeElement === first[\s\S]*last\.focus\(\)/u);
-  assert.match(foundation, /document\.activeElement === last[\s\S]*first\.focus\(\)/u);
-  assert.match(foundation, /returnFocusRef\?\.current \?\? capturedOpener\.current/u);
-  assert.match(foundation, /role = "dialog"/u);
-  assert.match(foundation, /role=\{role\} aria-modal="true"/u);
+  assert.match(
+    foundation,
+    /event\.key\s*===\s*"Escape"[\s\S]*onClose\(\s*,?\s*\)/u,
+  );
+  assert.match(
+    foundation,
+    /event\.shiftKey\s*&&\s*document\.activeElement\s*===\s*first[\s\S]*last\.focus\(\s*,?\s*\)/u,
+  );
+  assert.match(
+    foundation,
+    /document\.activeElement\s*===\s*last[\s\S]*first\.focus\(\s*,?\s*\)/u,
+  );
+  assert.match(
+    foundation,
+    /returnFocusRef\?\.current\s*\?\?\s*capturedOpener\.current/u,
+  );
+  assert.match(foundation, /role\s*=\s*"dialog"/u);
+  assert.match(foundation, /role=\{\s*role\s*\}\s*aria-modal="true"/u);
 });
 
 test("Deck keeps configuration in the desktop panel and a named mobile sheet", () => {
-  assert.match(deckUi, /!mobile && <aside className="deck-configuration-panel" aria-label=\{copy\.deckConfiguration\}/u);
-  assert.match(deckUi, /mobile && <Sheet open=\{settingsOpen\} inert=\{widgetConfirmationOpen\} title=\{isCreating \? copy\.deckCreate : copy\.deckConfiguration\} backLabel=\{copy\.back\}/u);
-  assert.match(deckUi, /backLabel=\{copy\.back\} returnFocusRef=\{sheetReturnFocus\} backButtonRef=\{settingsSheetBackButton\} onClose=\{closeSettings\}/u);
-  assert.match(deckUi, /sheetReturnFocus\.current = createDeckButton\.current;[\s\S]*setSettingsOpen\(false\)/u);
+  assert.match(
+    deckUi,
+    /!mobile\s*&&\s*(?:\(\s*)?<aside\s*className="deck-configuration-panel"\s*aria-label=\{\s*copy\.deckConfiguration\s*\}/u,
+  );
+  assert.match(
+    deckUi,
+    /mobile\s*&&\s*(?:\(\s*)?<Sheet\s*open=\{\s*settingsOpen\s*\}\s*inert=\{\s*widgetConfirmationOpen\s*\}\s*title=\{\s*isCreating\s*\?\s*copy\.deckCreate\s*:\s*copy\.deckConfiguration\s*\}\s*backLabel=\{\s*copy\.back\s*\}/u,
+  );
+  assert.match(
+    deckUi,
+    /backLabel=\{\s*copy\.back\s*\}\s*returnFocusRef=\{\s*sheetReturnFocus\s*\}\s*backButtonRef=\{\s*settingsSheetBackButton\s*\}\s*onClose=\{\s*closeSettings\s*\}/u,
+  );
+  assert.match(
+    deckUi,
+    /sheetReturnFocus\.current\s*=\s*createDeckButton\.current;\s*[\s\S]*setSettingsOpen\(\s*false,?\s*\)/u,
+  );
   assert.doesNotMatch(deckUi, /returnFocusRef=\{settingsTrigger\}/u);
-  assert.match(styles, /\.deck-workspace-layout\s*\{[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(20rem,24rem\)/u);
-  assert.match(styles, /@media \(min-width:701px\) and \(max-width:1023px\) \{[\s\S]*?\.deck-workspace-layout \{ grid-template-columns:minmax\(0,1fr\) minmax\(0,min\(24rem,42%\)\); \}/u);
-  assert.match(styles, /@media \(min-width:1024px\) and \(max-width:1279px\) \{[\s\S]*?\.deck-workspace-layout \{ grid-template-columns:minmax\(0,1fr\) minmax\(0,min\(24rem,42%\)\); \}/u);
-  assert.match(styles, /\.deck-workspace-layout\s*\{\s*grid-template-columns:minmax\(0,1fr\);\s*\}/u);
+  assert.match(
+    styles,
+    /\.deck-workspace-layout\s*\s*\{\s*[^}]*grid-template-columns:\s*minmax\(\s*0,\s*1fr\s*\)\s*minmax\(\s*20rem,\s*24rem\s*\)/u,
+  );
+  assert.match(
+    styles,
+    /@media\s*\(\s*min-width:\s*701px\s*\)\s*and\s*\(\s*max-width:\s*1023px\s*\)\s*\s*\{\s*[\s\S]*?\.deck-workspace-layout\s*\s*\{\s*\s*grid-template-columns:\s*minmax\(\s*0,\s*1fr\s*\)\s*minmax\(\s*0,\s*min\(\s*24rem,\s*42%\s*\)\s*\);\s*\s*;?\s*\}/u,
+  );
+  assert.match(
+    styles,
+    /@media\s*\(\s*min-width:\s*1024px\s*\)\s*and\s*\(\s*max-width:\s*1279px\s*\)\s*\s*\{\s*[\s\S]*?\.deck-workspace-layout\s*\s*\{\s*\s*grid-template-columns:\s*minmax\(\s*0,\s*1fr\s*\)\s*minmax\(\s*0,\s*min\(\s*24rem,\s*42%\s*\)\s*\);\s*\s*;?\s*\}/u,
+  );
+  assert.match(
+    styles,
+    /\.deck-workspace-layout\s*\s*\{\s*\s*grid-template-columns:\s*minmax\(\s*0,\s*1fr\s*\);\s*\s*;?\s*\}/u,
+  );
 });
 
 test("Deck checkbox labels retain the shared 44px interaction target", () => {
-  assert.match(deckUi, /<label className="check deck-check" htmlFor="deck-show-drafts">/u);
-  assert.match(deckUi, /<label className="check deck-check" htmlFor="deck-notifications">/u);
-  assert.match(styles, /\.check\s*\{[^}]*min-height:var\(--target-min\)/u);
-  assert.match(styles, /\.check input\s*\{[^}]*width:20px[^}]*min-height:20px[^}]*height:20px/u);
+  assert.match(
+    deckUi,
+    /<label\s*className="check\s*deck-check"\s*htmlFor="deck-show-drafts">/u,
+  );
+  assert.match(
+    deckUi,
+    /<label\s*className="check\s*deck-check"\s*htmlFor="deck-notifications">/u,
+  );
+  assert.match(
+    styles,
+    /\.check\s*\s*\{\s*[^}]*min-height:\s*var\(\s*--target-min\s*\)/u,
+  );
+  assert.match(
+    styles,
+    /\.check\s*input\s*\s*\{\s*[^}]*width:\s*20px[^}]*min-height:\s*20px[^}]*height:\s*20px/u,
+  );
 });
 
 test("foundation icons are repository-owned decorative SVGs", () => {
-  assert.match(icons, /return <svg/u);
-  assert.match(icons, /aria-hidden="true" focusable="false"/u);
+  assert.match(icons, /return\s*(?:\(\s*)?<svg/u);
+  assert.match(icons, /aria-hidden="true"\s*focusable="false"/u);
   assert.doesNotMatch(icons, /from "(?!react")/u);
 });
 
 test("updater confirmations stack above the persistent capture preview", () => {
-  assert.match(styles, /\.floating-capture-preview\{[^}]*z-index:20/u);
-  assert.match(styles, /\.updater-confirmation-backdrop\{[^}]*z-index:21/u);
+  assert.match(styles, /\.floating-capture-preview\s*\{\s*[^}]*z-index:\s*20/u);
+  assert.match(
+    styles,
+    /\.updater-confirmation-backdrop\s*\{\s*[^}]*z-index:\s*21/u,
+  );
 });
 
 test("capture dialogs reserve the overlay inset inside the viewport", () => {
-  assert.match(styles, /\.overlay\s*\{[^}]*--overlay-top:14vh;[^}]*padding:var\(--overlay-top\) 1rem 1rem/u);
-  assert.match(styles, /\.capture-dialog\{[^}]*max-height:calc\(100vh - var\(--overlay-top\) - 1rem\);[^}]*overflow:auto/u);
+  assert.match(
+    styles,
+    /\.overlay\s*\s*\{\s*[^}]*--overlay-top:\s*14vh;\s*[^}]*padding:\s*var\(\s*--overlay-top\s*\)\s*1rem\s*1rem/u,
+  );
+  assert.match(
+    styles,
+    /\.capture-dialog\s*\{\s*[^}]*max-height:\s*calc\(\s*100vh\s*-\s*var\(\s*--overlay-top\s*\)\s*-\s*1rem\s*\);\s*[^}]*overflow:\s*auto/u,
+  );
 });

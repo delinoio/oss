@@ -12,17 +12,20 @@ is accepted. Bound HTTP to 15 seconds/1 MiB and cancel/join on server shutdown.
 Structured logs contain catalog version/date and stable failure codes only;
 responses, transport errors, proxy addresses and secrets never enter logs.
 
-
 ## Scope
+
 The feature own explicit server/Worker routing, recipient-encrypted bootstrap and authenticated generation reconciliation. The feature owns the separately leased Codex API tunnel in `internal/nativeproxy`; native subscription traffic retains its independent original-owner scope.
 
 ## Runtime and Language
+
 Go, the existing server SQLite authority and Connect RPC. No ambient proxy discovery is permitted.
 
 ## Users and Operators
+
 Authenticated owners and paired clients configure named profiles and explicitly select a revision for the server or one registered Worker machine. Workers cannot invoke these owner operations.
 
 ## Interfaces and Contracts
+
 NetworkService exposes SaveNetworkProfile, DeleteNetworkProfile, SelectNetworkProfile, GetNetworkRoute and ExportWorkerNetworkMetadata. System status advertises the pre-reserved `SERVER_OUTBOUND_PROXY_V1 = 6` alongside its existing independent capabilities. `network.proto` owns the service and exclusive messages; shared profile/route enum numbers are 28/29. Resource kinds `network_profile` and `network_route` participate in normal authenticated reads, snapshots and metadata events; generic configuration writes cannot create them.
 
 Profiles use closed `direct`, `http`, `https`, `socks5` modes, a 128-byte name, canonical ASCII host/IP and nonzero port for proxies. Direct has no endpoint, bypass or credential. At most 128 profiles and 128 bypass entries per profile are permitted. Bypass entries contain exact host, literal IP or canonical CIDR plus optional port; no suffix, wildcard, environment or DNS-answer interpretation is allowed. DNS names are lowercase with no trailing dot; ambiguous numeric IPv4 spellings are rejected.
@@ -98,6 +101,7 @@ CLI: `network profile save|delete|list|get`, `network select`, `network status` 
 - Preserve atomic complete cache publication and monotonic generation; same-generation conflicting authority is recovery-required. Native runtimes retain independent bounded Go copies while new control attempts adopt the newly reconciled cache.
 
 ## Storage
+
 Accepted network receipts retain their original request identity and replay classification independently of the live resource. A later authoritative resource deletion returns `deleted = true` with no resource; it never recreates the entity or rewrites credentials. Authorization, cancellation and storage errors remain failures, and altered input cannot reuse the accepted receipt.
 
 An exact completed deletion retry checks existing private recovery metadata but creates no new cleanup intent and does not reopen the vault when no obligation remains. Existing pending accepted deletion intents still require independently confirmed cleanup before replay succeeds.
@@ -105,6 +109,7 @@ An exact completed deletion retry checks existing private recovery metadata but 
 Existing revisioned entities, events and actor-bound receipts hold public profile/configuration and opaque credential generation references. No SQL layout migration is required. Credentials use the protected server vault's `network-proxy` purpose and immutable profile/request UUID references. At most 256 unresolved credential generations per profile are retained, including pinned selections and exact uncertain retries; profile deletion commits denial before retryable native cleanup. Every network RPC has a 30-second cancellation bound; CLI response waits allow 35 seconds, with exact receipts retaining cleanup retries. Before public profile removal, the shared vault gate synchronizes one authenticated private deletion intent, capped at 64 KiB and bound to the server and original actor/request/revision. Save, Select and Delete reconcile that server-owned obligation under current owner/client authorization, independently of the original actor's later revocation. Only an accepted original deletion receipt plus an authoritative absent profile permits native cleanup; a proved absent receipt retires metadata without touching credentials, and uncertain proof or failed cleanup blocks new network mutations. A fresh authorized deletion of the same pending profile/revision may receive its own receipt after confirmed cleanup; it cannot reuse another actor's request ID. At most one unfinished profile deletion remains, survives restart, and clears only after confirmed native removal. Recovery runs within the initiating RPC and its cancellation bound. Before each native credential write, the shared vault gate synchronizes one authenticated private publication intent outside SQLite, capped at 64 KiB and bound to server, original actor/request/full input and immutable credential reference without secret bytes. At most one unpublished network generation may remain across all profiles. Exact retry preserves that original generation and rejects changed public or secret input. A distinct request first compares the original SQL receipt: an accepted publication clears only the intent, while a proved absent publication records cleanup denial and removes that native generation before a replacement write. Unknown receipt or cleanup proof blocks replacement; an abandoned generation cannot be reused. The intent survives cancellation, database failure and server restart, and successful publication clears it only after SQL commit. SQLite/configuration backups do not back up these credentials or their private publication/deletion intents. Configuration import/export does not acquire network authority. Managed database restore refuses unfinished private publication/deletion intents and preserves current profiles, immutable credential-generation references and server/Worker selections from its safety image, rather than restoring historical routing. It holds the shared credential gate through publication and never restores native credentials.
 
 ## Security
+
 Managed restore retains the current machine descriptors required by preserved
 Worker routes, including Workers added after the selected backup. Owners and
 paired clients can read and explicitly clear those routes and delete deselected
@@ -114,20 +119,25 @@ verifiers, leases, execution grants or native ownership.
 Only server selection affects catalog, credential validation, inference relay and every GitHub adapter. Worker selections never affect server routing or listener/account selection. Each HTTP attempt resolves one immutable route and obtains its exact protected credential. Requests have no direct or alternate-profile fallback, redirects or proxy-owned retries. Direct/exact-bypass routing pins localhost to actual loopback before invoking any caller base dialer, using the existing IPv4-then-IPv6 loopback policy. Cancellation stops that same-route family selection; the original request authority still owns HTTPS SNI and hostname verification. Ordinary nonlocal DNS remains owned by the caller dialer. Explicit proxy routing retains the destination authority. Plaintext loopback HTTP destinations are rejected before any connection when a selected proxy lacks an exact host/IP/CIDR and optional-port bypass; Direct and explicit bypasses keep their account keys on the server loopback. There is no automatic route change. Verified HTTPS loopback destinations may still use the selected proxy. HTTP/HTTPS proxies tunnel permitted destinations with CONNECT, keeping proxy authorization out of URLs and origin request headers. HTTPS proxy and destination TLS use normal certificate/hostname verification. SOCKS5 uses bounded context-aware authentication/dialing. CONNECT headers are bounded to 32 KiB; handshakes are bounded to ten seconds and cancellation closes owned connections. Existing client body/header/stream/deadline bounds remain in force. A bounded response guard withholds unresolved protected prefixes and rejects literal, JSON-escaped and Base64 credential reflections in headers/bodies. Body string matching incrementally decodes valid JSON escapes, including mixed spellings and surrogate pairs in names, values and JSON SSE data; it holds only bounded matching suffixes and incomplete escapes at their original wire offsets. SSE framing uses the response media type or bounded initial-field detection for typeless streams. Only joined data fields enter JSON decoding; comments and other metadata cannot alter string state. Each record resets that state, while literal protection covers all original body bytes. Allowed content retains its exact wire bytes, and a rejection closes the original body before catalog or response publication; forms shorter than eight bytes match complete byte tokens, with ASCII letters/digits/underscore/hyphen and non-ASCII bytes treated as token continuations. The guard retains complete short candidates until another byte or EOF establishes their right boundary, and tracks the preceding emitted byte across reads. Header values have independent complete-value boundaries, and header names match case-folded protected forms because HTTP canonicalizes field names. Credential-bearing routes suppress response trailers and their announcements on a separate caller response, preserving body streaming while the transport populates only its private trailer map at EOF. These clients do not acquire trailer-based authority. It does not claim substring protection for short forms inside unrelated tokens or arbitrary transformation detection.
 
 ## Logging
+
 Structured `network_profile_saved`, `network_profile_deleted` and `network_route_selected` metadata includes opaque profile/machine IDs, selected profile revision, closed mode for profile saves and replay classification. Publication recovery emits `network_save_cleanup_pending` and `network_save_cleanup_completed` with only opaque profile/request IDs and a stable error code for pending cleanup. Deletion recovery emits `network_delete_cleanup_pending` and `network_delete_cleanup_completed` with the same metadata limits. No credentials, endpoint host/URLs, bypass entries, raw network errors or export authentication values enter logs.
 
 ## Build and Test
+
 Run `go test -race ./cmds/delidev-cli/...`, `go vet ./cmds/delidev-cli/...`, and `pnpm proto:check`. Controlled CONNECT/SOCKS5/TLS fixtures must deny direct paths, prove exact bypass and no fallback, preserve cancellation and TLS verification, and cover all outbound client integrations plus Worker/server separation. For each outbound client, CONNECT and SOCKS5 fixtures deny direct access, return 302/307 to a second recorder, and prove the recorder receives no request. Transmitted cancellation joins the original origin and adapter without retry; relay revocation may abort the downstream response. Independent protocol capabilities, public snapshots, event history, SQLite and structured logs are checked for credential isolation. Use temporary state and injected test vaults only. Fixture success does not prove enterprise proxy, real provider/GitHub accounts, native OS credential or Worker bootstrap acceptance.
 
 ## Dependencies and Integrations
+
 Uses the existing server vault, resource authority and generated Go/TypeScript clients. Protocol implementation follows [Go HTTP transport](https://pkg.go.dev/net/http) and [context-aware SOCKS5](https://pkg.go.dev/golang.org/x/net/proxy).
 
 ## Change Triggers
+
 Update scoped command/protocol/package AGENTS, the project index, CLI and evidence contracts when routing, secret ownership, generations or export semantics change.
 
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - [Project](project-delidev.md)
 - [Protected credentials](cmds-delidev-credentials-contract.md)
 - [Native relay](cmds-delidev-proxy-contract.md)
@@ -138,7 +148,6 @@ Instruction-file updates in this requirement apply only to changes in developmen
 The feature adds `internal/workernetwork` for bounded age 1.3.2 X25519-only encryption/decryption and protected derivative storage. Its transfer binds the exact server origin/identity, machine, device, pending or original pairing, recipient/key identity, immutable route and monotonic generation. Import independently requires the SHA-256 ciphertext digest from the authenticated export response; encryption is not sender authentication. Transfer plaintext is capped at 48 KiB, ciphertext at 96 KiB and export validity at five minutes. Native keys and complete derivative contents use the existing OS-key-wrapped credential Vault with independent `worker-network-key` and `worker-network-config` purposes. Ordinary metadata retains only public recipient and opaque scope/reference/generation/ciphertext-digest fields. Missing protected material and locked key storage cannot create replacements or fallback.
 
 One private import gate serializes publication. The complete protected derivative is written before the atomic metadata pointer; failed publication retains either the old complete cache or the new complete cache, and an uncertain first key publication refuses regeneration. Same-generation identical authority reuses its original reference despite a fresh transfer nonce, while conflicting authority and older generations are refused. After successful publication, older derivative references are denied and cleaned; already running native owners may retain only their independent bounded Go memory copy until joined cleanup. Loading a cache alone grants no offline readiness, sender authority, dispatch or observed native route use. Authenticated export/control generation reconciliation and pairing independently admit this cache. Native API application has its own runtime claim and observation, described below; cache import alone cannot grant it. Fixture/build validation remains distinct from native/account/platform acceptance.
-
 
 ### Authenticated Worker generation admission
 
@@ -173,6 +182,7 @@ Forwarding control and traffic use the same protected route resolver and joined 
 Local registration endpoints remain immutable authority. Only a validated fixed Local Worker pairing may resolve a same-server private desktop execution target; every bearer request proves its generation first. Wrap the existing selected outbound transport for both proof and business requests without route fallback or ambient proxy discovery. Retired/missing authority after the durable opt-in marker fails closed; Saved/remote endpoints and execution eligibility remain unchanged.
 
 ## Provider reference token prices
+
 `internal/tokenprices` owns the separate bounded reference-price collector. It fetches only `https://models.dev/api.json` through the server-selected outbound route. Reject redirects, ambient proxies and direct fallback. Use a 15-second request deadline, 16 MiB response limit, at most 512 providers and 50,000 models, with 10,000 models per provider. Coalesce an ongoing refresh; keep the last valid private atomic cache after failure, including restart-stable failure backoff. Success checks are due after 24 hours; failed attempts cannot retry before one hour. The server joins this owner at shutdown.
 
 The collector grants no account, model or execution support. Automatic application requires the complete source/native-ID pricing and inline-model/reset activation in the catalog and usage contracts. Original source identity, manual policies and first-retention estimates remain independently authoritative. Log phase, duration, bounded counts and stable failure codes only; never emit downloaded content, credentials, endpoints, usage or user state.

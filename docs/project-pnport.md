@@ -58,18 +58,22 @@ dispatch, with fresh complete native validation, signing, integrity,
 native-before-launcher publication and immutable retry protection.
 
 ## Goal
+
 Run PnP-unaware subprocesses against an installed Yarn 4 dependency graph without installing a project node_modules dependency tree. The feature defines the complete staged acceptance boundary: 0.1.0 ships macOS/glibc Linux first, and 0.2.0 adds Windows. The owner-authorized experimental npm next channel permits an exact reviewed `0.1.0-next.N` candidate for external testing, without completing stable acceptance; the original Windows requirements remain in scope.
 
 ## Project ID
+
 `Pnport = "pnport"`.
 
 ## Domain Ownership Map
+
 - Rust: `crates/pnport`, `crates/pnport-core`, and `crates/pnport-preload`, plus the private fspy source fork. The macOS injection library is built from `fspy_preload_unix`; Linux and Windows retain `pnport-preload`.
 - Packages: `packages/pnport`, the private source of the npm launcher and four native optional packages for 0.1.0. Windows adds its two native packages in 0.2.0.
 - Apps: `apps/public-docs/docs/pnport`, the consolidated public guides at `https://oss.delino.io/pnport`, describing verified stable 0.1.2 availability with unresolved macOS and full-acceptance limits, and distinguishing the immutable experimental preview from stable distribution.
 - The public `/pnport/preview-testing` guide owns reproducible Turbopack and TypeScript 7 `tsc` commands for external preview testers, with exact published pnport/compiler versions and known platform and acceptance limits.
 
 ## Domain Contract Documents
+
 - [Rust foundation](crates-pnport-foundation.md)
 - [fspy source fork](crates-fspy-vendor-contract.md)
 - [Complete accepted requirements](crates-pnport-requirements.md)
@@ -77,6 +81,7 @@ Run PnP-unaware subprocesses against an installed Yarn 4 dependency graph withou
 - [Public documentation](apps-pnport-docs-foundation.md)
 
 ## Cross-Domain Invariants
+
 - The owner-authorized 2026-10-05 macOS admission amendment returns typed `ENOTSUP` for initially rejected protected/non-injectable descendant images before a native exec/spawn syscall. Callers may recover under the existing mediated view; never execute or replace the rejected image. Root rejection, privileged images, final identity changes and missing injection retain explicit failure boundaries. Keep default-config Vitest cache conformance on all four native hosts.
 - Development builds merge writable SOFT-root hidden tool caches with virtual dependencies under `node_modules`. Exclude `.bin` and graph/fallback names, preserve HARD package protection and actual package conflicts, and retain doctor JSON v1. Readers do not create project directories; cache writers may create the native container. This source change is not available in immutable 0.1.0 or 0.1.0-next.1 packages. Native and installed checks plus default-config Vitest conformance run on the four-target matrix.
 - Version 0.1.0 targets macOS 15+ and Ubuntu 22.04-equivalent glibc on x64/arm64. Version 0.2.0 adds Windows 10 22H2+ MSVC on x64/arm64 after its full native acceptance. Linux static children are a release gate. Musl hosts and mixed architectures are excluded.
@@ -110,11 +115,13 @@ The macOS multi-group ownership extension is implemented as defined in the Rust 
 - `pnport` -> `crates/pnport`, `crates/pnport-core`, `crates/pnport-preload`, macOS `crates/fspy_preload_unix`, `packages/pnport`, `apps/public-docs/docs/pnport`
 
 ## Change Policy
+
 Update this index, the relevant domain contracts and AGENTS files together. Record implemented behavior and outstanding release gates separately; preserve deferred Windows requirements and keep open until the complete scope is accepted.
 
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - [Requirements](crates-pnport-requirements.md)
 - [Repository defaults](repository-defaults.md)
 - [Repository workflow](repository-workflow-contract.md)

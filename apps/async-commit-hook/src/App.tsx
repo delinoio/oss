@@ -17,11 +17,7 @@ import {
   type Run,
   type Failure,
 } from "@delinoio/async-commit-hook-api-client";
-import {
-  readConnection,
-  transportFor,
-  describeError,
-} from "./connection";
+import { readConnection, transportFor, describeError } from "./connection";
 
 const stateNames: Record<number, string> = {
   [ExecutionState.QUEUED]: "Queued",
@@ -97,7 +93,13 @@ export function App() {
           </a>
           <div className="header-right">
             <span className="local-tag">Local to your computer</span>
-            <a href="https://oss.delino.io/async-commit-hook" target="_blank" rel="noreferrer">Documentation ↗</a>
+            <a
+              href="https://oss.delino.io/async-commit-hook"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Documentation ↗
+            </a>
           </div>
         </header>
         <Workspace initialRun={connection.run} />
@@ -107,15 +109,15 @@ export function App() {
 }
 
 type Tab = "checks" | "changes" | "commits" | "inbox";
-export function Workspace({
-  initialRun,
-}: {
-  initialRun: string;
-}) {
-  const repos = useInfiniteQuery(LocalQuery.listRepositories, { cursor: "", limit: 50 }, {
-    pageParamKey: "cursor",
-    getNextPageParam: (page) => page.nextCursor || undefined,
-  });
+export function Workspace({ initialRun }: { initialRun: string }) {
+  const repos = useInfiniteQuery(
+    LocalQuery.listRepositories,
+    { cursor: "", limit: 50 },
+    {
+      pageParamKey: "cursor",
+      getNextPageParam: (page) => page.nextCursor || undefined,
+    },
+  );
   const repositories = useMemo(() => {
     const merged = new Map<string, Repository>();
     for (const page of repos.data?.pages ?? []) {
@@ -158,23 +160,44 @@ export function Workspace({
   };
   // This shares RunDetail's query/cache entry, so a deep link can bind the page
   // identity without another fetch or a second polling/acknowledgement path.
-  const execution = useQuery(LocalQuery.getRun, { runId: run }, { enabled: Boolean(run) });
-  const openedRun = execution.data?.run?.id === run ? execution.data.run : undefined;
+  const execution = useQuery(
+    LocalQuery.getRun,
+    { runId: run },
+    { enabled: Boolean(run) },
+  );
+  const openedRun =
+    execution.data?.run?.id === run ? execution.data.run : undefined;
   const currentRepo = run
-    ? repositories.find((r) => r.id === openedRun?.repositoryId && r.worktrees.some((w) => w.id === openedRun.worktreeId))
+    ? repositories.find(
+        (r) =>
+          r.id === openedRun?.repositoryId &&
+          r.worktrees.some((w) => w.id === openedRun.worktreeId),
+      )
     : repositories.find((r) => r.worktrees.some((w) => w.id === worktree));
-  const selectedTree = currentRepo?.worktrees.find((w) => w.id === (run ? openedRun?.worktreeId : worktree));
+  const selectedTree = currentRepo?.worktrees.find(
+    (w) => w.id === (run ? openedRun?.worktreeId : worktree),
+  );
   // Suppress stale navigation identity until this execution's workspace is
   // loaded. Registry pagination stays explicit and evidence remains readable.
   const displayedWorktree = selectedTree?.id || "";
-  const displayedBranch = displayedWorktree === worktree ? branch : selectedTree?.branchId || selectedTree?.branch || "";
+  const displayedBranch =
+    displayedWorktree === worktree
+      ? branch
+      : selectedTree?.branchId || selectedTree?.branch || "";
   const branches = useInfiniteQuery(
     LocalQuery.listBranches,
     { worktreeId: displayedWorktree, cursor: "", limit: 50 },
-    { enabled: Boolean(displayedWorktree), pageParamKey: "cursor", getNextPageParam: (page) => page.nextCursor || undefined },
+    {
+      enabled: Boolean(displayedWorktree),
+      pageParamKey: "cursor",
+      getNextPageParam: (page) => page.nextCursor || undefined,
+    },
   );
   const branchOptions = useMemo(() => {
-    const merged = new Map<string, { value: string; name: string; id: string }>();
+    const merged = new Map<
+      string,
+      { value: string; name: string; id: string }
+    >();
     for (const page of branches.data?.pages ?? []) {
       for (const item of page.branches) {
         const value = item.id || item.name;
@@ -183,12 +206,19 @@ export function Workspace({
     }
     // Preserve the checkout identity before its branch page has loaded.
     if (displayedBranch && !merged.has(displayedBranch)) {
-      const current = (selectedTree?.branchId || selectedTree?.branch) === displayedBranch;
-      merged.set(displayedBranch, { value: displayedBranch, name: current ? selectedTree!.branch : displayedBranch, id: current ? selectedTree!.branchId : "" });
+      const current =
+        (selectedTree?.branchId || selectedTree?.branch) === displayedBranch;
+      merged.set(displayedBranch, {
+        value: displayedBranch,
+        name: current ? selectedTree!.branch : displayedBranch,
+        id: current ? selectedTree!.branchId : "",
+      });
     }
     return [...merged.values()];
   }, [branches.data, displayedBranch, selectedTree]);
-  const selectedBranch = branchOptions.find((item) => item.value === displayedBranch);
+  const selectedBranch = branchOptions.find(
+    (item) => item.value === displayedBranch,
+  );
   const branchId = selectedBranch?.id || "";
   const branchName = branchId ? "" : selectedBranch?.name || displayedBranch;
   useEffect(() => {
@@ -225,7 +255,9 @@ export function Workspace({
             <ErrorNotice
               error={repos.error}
               retry={() => {
-                void (repos.isFetchNextPageError ? repos.fetchNextPage() : repos.refetch());
+                void (repos.isFetchNextPageError
+                  ? repos.fetchNextPage()
+                  : repos.refetch());
               }}
             />
           </>
@@ -236,7 +268,9 @@ export function Workspace({
             {repo.worktrees.map((w) => (
               <button
                 key={w.id}
-                className={displayedWorktree === w.id ? "worktree selected" : "worktree"}
+                className={
+                  displayedWorktree === w.id ? "worktree selected" : "worktree"
+                }
                 aria-current={displayedWorktree === w.id ? "true" : undefined}
                 onClick={() => {
                   setWorktree(w.id);
@@ -260,9 +294,16 @@ export function Workspace({
           <button
             aria-busy={repos.isFetchingNextPage}
             aria-disabled={repos.isFetchingNextPage || !repos.hasNextPage}
-            onClick={() => { if (repos.hasNextPage && !repos.isFetchingNextPage) void repos.fetchNextPage(); }}
+            onClick={() => {
+              if (repos.hasNextPage && !repos.isFetchingNextPage)
+                void repos.fetchNextPage();
+            }}
           >
-            {repos.isFetchingNextPage ? "Loading workspaces…" : repos.hasNextPage ? "Load more workspaces" : "All workspaces loaded"}
+            {repos.isFetchingNextPage
+              ? "Loading workspaces…"
+              : repos.hasNextPage
+                ? "Load more workspaces"
+                : "All workspaces loaded"}
           </button>
         )}
         <div className="sidebar-footer">
@@ -281,11 +322,17 @@ export function Workspace({
             <p className="eyebrow">
               {tab === "inbox" ? "YOUR REVIEW QUEUE" : "WORKSPACE OVERVIEW"}
             </p>
-            <h1>{currentRepo?.name || (run ? "Execution workspace" : "Your workspaces")}</h1>
+            <h1>
+              {currentRepo?.name ||
+                (run ? "Execution workspace" : "Your workspaces")}
+            </h1>
             <p className="muted">
-              {selectedTree?.path || (run
-                ? execution.isPending ? "Resolving execution workspace…" : "Workspace details are not loaded. Load more workspaces or select one to browse; retained execution evidence remains available."
-                : "Register a repository with ach init to get started.")}
+              {selectedTree?.path ||
+                (run
+                  ? execution.isPending
+                    ? "Resolving execution workspace…"
+                    : "Workspace details are not loaded. Load more workspaces or select one to browse; retained execution evidence remains available."
+                  : "Register a repository with ach init to get started.")}
             </p>
           </div>
           {displayedWorktree && (
@@ -308,11 +355,30 @@ export function Workspace({
             </label>
           )}
         </div>
-        {branches.error && <ErrorNotice error={branches.error} retry={() => { void (branches.isFetchNextPageError ? branches.fetchNextPage() : branches.refetch()); }} />}
+        {branches.error && (
+          <ErrorNotice
+            error={branches.error}
+            retry={() => {
+              void (branches.isFetchNextPageError
+                ? branches.fetchNextPage()
+                : branches.refetch());
+            }}
+          />
+        )}
         {(branches.hasNextPage || (branches.data?.pages.length ?? 0) > 1) && (
-          <button aria-busy={branches.isFetchingNextPage} aria-disabled={branches.isFetchingNextPage || !branches.hasNextPage}
-            onClick={() => { if (branches.hasNextPage && !branches.isFetchingNextPage) void branches.fetchNextPage(); }}>
-            {branches.isFetchingNextPage ? "Loading branches…" : branches.hasNextPage ? "Load more branches" : "All branches loaded"}
+          <button
+            aria-busy={branches.isFetchingNextPage}
+            aria-disabled={branches.isFetchingNextPage || !branches.hasNextPage}
+            onClick={() => {
+              if (branches.hasNextPage && !branches.isFetchingNextPage)
+                void branches.fetchNextPage();
+            }}
+          >
+            {branches.isFetchingNextPage
+              ? "Loading branches…"
+              : branches.hasNextPage
+                ? "Load more branches"
+                : "All branches loaded"}
           </button>
         )}
         <nav className="tabs" aria-label="Workspace views">
@@ -349,9 +415,17 @@ export function Workspace({
             setCursor={setRunCursor}
           />
         ) : tab === "changes" ? (
-          <Changes worktree={worktree} branch={branchName} branchId={branchId} />
+          <Changes
+            worktree={worktree}
+            branch={branchName}
+            branchId={branchId}
+          />
         ) : (
-          <Commits worktree={worktree} branch={branchName} branchId={branchId} />
+          <Commits
+            worktree={worktree}
+            branch={branchName}
+            branchId={branchId}
+          />
         )}
       </main>
     </div>
@@ -405,7 +479,11 @@ export function RunList({
     row?.focus();
   }, [runs.data, focusRun]);
   if (!repository || !worktree)
-    return <p role="status" className="empty">Select a registered worktree to view its results.</p>;
+    return (
+      <p role="status" className="empty">
+        Select a registered worktree to view its results.
+      </p>
+    );
   if (runs.isPending)
     return (
       <p role="status" className="empty">
@@ -556,11 +634,21 @@ export function RunDetail({
           </p>
         </div>
         <div className="actions">
-          <button disabled={query.isFetching} onClick={() => { void query.refetch(); }}>
+          <button
+            disabled={query.isFetching}
+            onClick={() => {
+              void query.refetch();
+            }}
+          >
             Refresh execution
           </button>
           <button
-            disabled={active(run.state) || run.state === ExecutionState.UNSPECIFIED || Boolean(run.acknowledgedAt) || ack.isPending}
+            disabled={
+              active(run.state) ||
+              run.state === ExecutionState.UNSPECIFIED ||
+              Boolean(run.acknowledgedAt) ||
+              ack.isPending
+            }
             onClick={async () => {
               try {
                 await ack.mutateAsync({ runId: id });
@@ -578,7 +666,9 @@ export function RunDetail({
             <>
               <button
                 disabled={
-                  run.state === ExecutionState.EXPIRED || rerun.isPending || Boolean(rerun.data)
+                  run.state === ExecutionState.EXPIRED ||
+                  rerun.isPending ||
+                  Boolean(rerun.data)
                 }
                 onClick={async () => {
                   try {
@@ -595,7 +685,9 @@ export function RunDetail({
               <button
                 className="primary"
                 disabled={
-                  run.state === ExecutionState.EXPIRED || rerun.isPending || Boolean(rerun.data)
+                  run.state === ExecutionState.EXPIRED ||
+                  rerun.isPending ||
+                  Boolean(rerun.data)
                 }
                 onClick={async () => {
                   try {
@@ -640,7 +732,9 @@ export function RunDetail({
           <strong>Rerun accepted; startup needs attention</strong>
           <p>{rerun.data.startupDiagnostic.message}</p>
           <p>{rerun.data.startupDiagnostic.hint}</p>
-          <p>Accepted execution: <code>{rerun.data.runId}</code></p>
+          <p>
+            Accepted execution: <code>{rerun.data.runId}</code>
+          </p>
           <code>ach status --run {rerun.data.runId}</code>
           <p>
             <button onClick={() => onSelect(rerun.data!.runId)}>
@@ -754,7 +848,15 @@ export function FailureList({ failures }: { failures: Failure[] }) {
     </div>
   );
 }
-function Logs({ run, check, state }: { run: string; check: string; state: ExecutionState }) {
+function Logs({
+  run,
+  check,
+  state,
+}: {
+  run: string;
+  check: string;
+  state: ExecutionState;
+}) {
   const polling = active(state);
   const wasPolling = useRef(polling);
   const [offset, setOffset] = useState(0n);
@@ -774,7 +876,13 @@ function Logs({ run, check, state }: { run: string; check: string; state: Execut
     <div className="logs">
       <div className="section-heading">
         <h4>Check log</h4>
-        <button onClick={() => { void log.refetch(); }}>Refresh log</button>
+        <button
+          onClick={() => {
+            void log.refetch();
+          }}
+        >
+          Refresh log
+        </button>
         <span>Offset {String(offset)} · local data</span>
       </div>
       {log.error ? (
@@ -873,7 +981,15 @@ function Comparison({ run, previous }: { run: string; previous: string }) {
     </div>
   );
 }
-function Changes({ worktree, branch, branchId }: { worktree: string; branch: string; branchId: string }) {
+function Changes({
+  worktree,
+  branch,
+  branchId,
+}: {
+  worktree: string;
+  branch: string;
+  branchId: string;
+}) {
   const [base, setBase] = useState("");
   const [chosen, setChosen] = useState("");
   useEffect(() => {
@@ -935,7 +1051,15 @@ function Changes({ worktree, branch, branchId }: { worktree: string; branch: str
     </section>
   );
 }
-function Commits({ worktree, branch, branchId }: { worktree: string; branch: string; branchId: string }) {
+function Commits({
+  worktree,
+  branch,
+  branchId,
+}: {
+  worktree: string;
+  branch: string;
+  branchId: string;
+}) {
   const [offset, setOffset] = useState(0);
   useEffect(() => setOffset(0), [worktree, branch, branchId]);
   const commits = useQuery(

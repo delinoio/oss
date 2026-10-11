@@ -1,5 +1,8 @@
 import { assertUuidV7 } from "@delinoio/devhud-api-client";
-import { sanitizeChromeContext, type SanitizedBrowserContext } from "./browser-context.ts";
+import {
+  sanitizeChromeContext,
+  type SanitizedBrowserContext,
+} from "./browser-context.ts";
 import { normalizePublicAssetUrl } from "./identity-contract.ts";
 
 export const PublicImageWarning = Object.freeze({
@@ -19,7 +22,9 @@ export class IssueBodyTooLargeError extends TypeError {
 
 export class IssueTitleInvalidError extends TypeError {
   constructor() {
-    super("GitHub issue title must contain 1 to 256 characters after redaction");
+    super(
+      "GitHub issue title must contain 1 to 256 characters after redaction",
+    );
     this.name = "IssueTitleInvalidError";
   }
 }
@@ -42,82 +47,123 @@ export interface IssueBodyInput {
   readonly diagnosticsSummary: string;
 }
 
-export function editableBrowserDiagnostics(context: SanitizedBrowserContext): string {
+export function editableBrowserDiagnostics(
+  context: SanitizedBrowserContext,
+): string {
   return JSON.stringify(context, null, 2);
 }
 
-export function parseEditableBrowserDiagnostics(value: string): SanitizedBrowserContext {
+export function parseEditableBrowserDiagnostics(
+  value: string,
+): SanitizedBrowserContext {
   let decoded: unknown;
-  try { decoded = JSON.parse(value); } catch { throw new TypeError("Browser diagnostics must be valid JSON"); }
+  try {
+    decoded = JSON.parse(value);
+  } catch {
+    throw new TypeError("Browser diagnostics must be valid JSON");
+  }
   const redacted = redactUnknown(decoded, new WeakSet<object>());
   const sanitized = sanitizeChromeContext(redacted);
-  if (sanitized.kind !== "sanitized") throw new TypeError("Browser diagnostics do not match the sanitized context contract");
+  if (sanitized.kind !== "sanitized")
+    throw new TypeError(
+      "Browser diagnostics do not match the sanitized context contract",
+    );
   return sanitized.context;
 }
 
 export function composeIssueBody(input: IssueBodyInput): string {
   assertUuidV7(input.submissionId);
   const sections: string[] = [];
-  const userBody = redactText(input.userBody).replace(markerPattern, "[redacted submission marker]").trim();
+  const userBody = redactText(input.userBody)
+    .replace(markerPattern, "[redacted submission marker]")
+    .trim();
   if (userBody) sections.push(userBody);
   if (input.diagnostics !== null) {
     const diagnosticJson = JSON.stringify(input.diagnostics, null, 2);
-    sections.push(`<details>\n<summary>${escapeHtml(redactText(input.diagnosticsSummary))}</summary>\n\n<pre><code>${escapeHtml(redactText(diagnosticJson))}</code></pre>\n</details>`);
+    sections.push(
+      `<details>\n<summary>${escapeHtml(redactText(input.diagnosticsSummary))}</summary>\n\n<pre><code>${escapeHtml(redactText(diagnosticJson))}</code></pre>\n</details>`,
+    );
   }
   for (const [index, imageUrl] of input.imageUrls.entries()) {
-    sections.push(`![RealQA image ${index + 1}](${canonicalPublicImageUrl(imageUrl)})`);
+    sections.push(
+      `![RealQA image ${index + 1}](${canonicalPublicImageUrl(imageUrl)})`,
+    );
   }
   sections.push(`<!-- devhud-submission:${input.submissionId} -->`);
   const value = sections.join("\n\n");
-  if (value.length > GitHubIssueBodyMaximumCharacters) throw new IssueBodyTooLargeError();
+  if (value.length > GitHubIssueBodyMaximumCharacters)
+    throw new IssueBodyTooLargeError();
   return value;
 }
 
 export function sanitizeIssueTitle(value: string): string {
   const title = redactText(value).trim();
-  if (title === "" || [...title].length > GitHubIssueTitleMaximumCharacters) throw new IssueTitleInvalidError();
+  if (title === "" || [...title].length > GitHubIssueTitleMaximumCharacters)
+    throw new IssueTitleInvalidError();
   return title;
 }
 
 /** The GitHub provider owns the final marker write and reconciliation contract. */
-export function stripFinalSubmissionMarker(value: string, submissionId: string): string {
+export function stripFinalSubmissionMarker(
+  value: string,
+  submissionId: string,
+): string {
   assertUuidV7(submissionId);
   const marker = `<!-- devhud-submission:${submissionId} -->`;
   if (value === marker) return "";
   const suffix = `\n\n${marker}`;
-  if (!value.endsWith(suffix)) throw new TypeError("Issue body does not end with its submission marker");
+  if (!value.endsWith(suffix))
+    throw new TypeError("Issue body does not end with its submission marker");
   return value.slice(0, -suffix.length);
 }
 
 export function canonicalPublicImageUrl(value: string): string {
   const normalized = normalizePublicAssetUrl(value);
-  if (normalized === null) throw new TypeError("Public image URL must be HTTPS or loopback HTTP without credentials, query, or fragment");
+  if (normalized === null)
+    throw new TypeError(
+      "Public image URL must be HTTPS or loopback HTTP without credentials, query, or fragment",
+    );
   return normalized;
 }
 
 export function decodeSha256Hex(value: string): Uint8Array {
-  if (!/^[0-9a-f]{64}$/u.test(value)) throw new TypeError("SHA-256 must be lowercase hexadecimal");
-  return Uint8Array.from({ length: 32 }, (_, index) => Number.parseInt(value.slice(index * 2, index * 2 + 2), 16));
+  if (!/^[0-9a-f]{64}$/u.test(value))
+    throw new TypeError("SHA-256 must be lowercase hexadecimal");
+  return Uint8Array.from({ length: 32 }, (_, index) =>
+    Number.parseInt(value.slice(index * 2, index * 2 + 2), 16),
+  );
 }
 
 function redactUnknown(value: unknown, seen: WeakSet<object>): unknown {
   if (typeof value === "string") return redactText(value);
   if (value === null || typeof value !== "object") return value;
-  if (seen.has(value)) throw new TypeError("Browser diagnostics must not contain cycles");
+  if (seen.has(value))
+    throw new TypeError("Browser diagnostics must not contain cycles");
   seen.add(value);
   const output = Array.isArray(value)
     ? value.map((entry) => redactUnknown(entry, seen))
-    : Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, redactUnknown(entry, seen)]));
+    : Object.fromEntries(
+        Object.entries(value).map(([key, entry]) => [
+          key,
+          redactUnknown(entry, seen),
+        ]),
+      );
   seen.delete(value);
   return output;
 }
 
 function redactText(value: string): string {
   let redacted = value.replaceAll("\0", "");
-  for (const pattern of secretPatterns) redacted = redacted.replace(pattern, "[redacted]");
+  for (const pattern of secretPatterns)
+    redacted = redacted.replace(pattern, "[redacted]");
   return redacted;
 }
 
 function escapeHtml(value: string): string {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }

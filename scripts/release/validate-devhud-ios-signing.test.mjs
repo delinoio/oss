@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { iosBundles, validateIosSigningPolicy } from "./validate-devhud-ios-signing.mjs";
+import {
+  iosBundles,
+  validateIosSigningPolicy,
+} from "./validate-devhud-ios-signing.mjs";
 
 const teamId = "ABCDE12345";
 const prefix = teamId;
@@ -31,7 +34,9 @@ function validPolicy(bundle = iosBundles[0]) {
       "com.apple.developer.team-identifier": teamId,
       "com.apple.security.application-groups": [...bundle.applicationGroups],
       "get-task-allow": false,
-      "keychain-access-groups": bundle.keychainSuffixes.map((suffix) => `${prefix}.${suffix}`),
+      "keychain-access-groups": bundle.keychainSuffixes.map(
+        (suffix) => `${prefix}.${suffix}`,
+      ),
     },
     signer: {
       raw: certificate,
@@ -43,14 +48,18 @@ function validPolicy(bundle = iosBundles[0]) {
 }
 
 test("accepts App Store signing policy for the app and both extensions", () => {
-  for (const bundle of iosBundles) assert.doesNotThrow(() => validateIosSigningPolicy(validPolicy(bundle)));
+  for (const bundle of iosBundles)
+    assert.doesNotThrow(() => validateIosSigningPolicy(validPolicy(bundle)));
 });
 
 test("rejects development, ad-hoc, and enterprise provisioning profiles", () => {
   const development = validPolicy();
   development.profile.ProvisionedDevices = ["device"];
   development.profile.Entitlements["get-task-allow"] = true;
-  assert.throws(() => validateIosSigningPolicy(development), /not App Store|get-task-allow/u);
+  assert.throws(
+    () => validateIosSigningPolicy(development),
+    /not App Store|get-task-allow/u,
+  );
 
   const enterprise = validPolicy();
   enterprise.profile.ProvisionsAllDevices = true;
@@ -64,11 +73,17 @@ test("rejects wrong team, bundle, entitlement, and signer bindings", () => {
 
   const wrongBundle = validPolicy();
   wrongBundle.actualBundleId = "io.delino.other";
-  assert.throws(() => validateIosSigningPolicy(wrongBundle), /bundle identifier/u);
+  assert.throws(
+    () => validateIosSigningPolicy(wrongBundle),
+    /bundle identifier/u,
+  );
 
   const debugEntitlement = validPolicy();
   debugEntitlement.signedEntitlements["get-task-allow"] = true;
-  assert.throws(() => validateIosSigningPolicy(debugEntitlement), /get-task-allow/u);
+  assert.throws(
+    () => validateIosSigningPolicy(debugEntitlement),
+    /get-task-allow/u,
+  );
 
   const wrongSigner = validPolicy();
   wrongSigner.signer.raw = Buffer.from("other-certificate");
@@ -82,5 +97,8 @@ test("rejects expired profiles and non-distribution certificates", () => {
 
   const developmentCertificate = validPolicy();
   developmentCertificate.signer.subject = `CN=Apple Development: DevHud (${teamId})\nOU=${teamId}\nO=DevHud`;
-  assert.throws(() => validateIosSigningPolicy(developmentCertificate), /Apple Distribution/u);
+  assert.throws(
+    () => validateIosSigningPolicy(developmentCertificate),
+    /Apple Distribution/u,
+  );
 });

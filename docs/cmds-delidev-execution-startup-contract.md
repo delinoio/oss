@@ -50,15 +50,15 @@ Under the feature, the originating change reserved System `EXECUTION_STARTUP_V1 
 inline-model proposal in the originating change, including while that reservation is pending.
 The ledger preserves these declaration reservations with `newDeclaration: true`:
 
-| Declaration | Fields or enum members in numeric order |
-| --- | --- |
-| `ReportExecutionStartupRequest` | `mutation` 1, `machine_id` 2, `instance_id` 3, `observation` 4 |
-| `ReportExecutionStartupResponse` | `observation` 1, `replayed` 2 |
-| `ExecutionStartupObservation` | `state` 1, `phase` 2, `harness` 3, `native_version` 4, `executable_sha256` 5, `protocol` 6, `problem_code` 7, `correlation_id` 8, `input_delivery` 9, `cleanup` 10 |
-| `ExecutionStartupState` | UNSPECIFIED 0, READY 1, FAILED 2, UNCERTAIN 3 |
-| `ExecutionStartupPhase` | UNSPECIFIED 0, RESOLVE 1, LAUNCH 2, INITIALIZE 3, SETTINGS 4, INPUT 5, EXECUTION 6, CLEANUP 7 |
-| `ExecutionStartupInputDelivery` | UNSPECIFIED 0, NOT_SENT 1, CLAIMED 2, ACKNOWLEDGED 3, UNCERTAIN 4 |
-| `ExecutionStartupCleanup` | UNSPECIFIED 0, CONFIRMED 1, UNCERTAIN 2 |
+| Declaration                      | Fields or enum members in numeric order                                                                                                                            |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ReportExecutionStartupRequest`  | `mutation` 1, `machine_id` 2, `instance_id` 3, `observation` 4                                                                                                     |
+| `ReportExecutionStartupResponse` | `observation` 1, `replayed` 2                                                                                                                                      |
+| `ExecutionStartupObservation`    | `state` 1, `phase` 2, `harness` 3, `native_version` 4, `executable_sha256` 5, `protocol` 6, `problem_code` 7, `correlation_id` 8, `input_delivery` 9, `cleanup` 10 |
+| `ExecutionStartupState`          | UNSPECIFIED 0, READY 1, FAILED 2, UNCERTAIN 3                                                                                                                      |
+| `ExecutionStartupPhase`          | UNSPECIFIED 0, RESOLVE 1, LAUNCH 2, INITIALIZE 3, SETTINGS 4, INPUT 5, EXECUTION 6, CLEANUP 7                                                                      |
+| `ExecutionStartupInputDelivery`  | UNSPECIFIED 0, NOT_SENT 1, CLAIMED 2, ACKNOWLEDGED 3, UNCERTAIN 4                                                                                                  |
+| `ExecutionStartupCleanup`        | UNSPECIFIED 0, CONFIRMED 1, UNCERTAIN 2                                                                                                                            |
 
 Enum member names use their complete upper-snake declaration prefix. The
 reservation changed no active schema, generated binding, capability advertisement,
@@ -142,7 +142,6 @@ Cleanup reconciliation requires this attempt's original index ownership; an
 empty retained directory alone cannot grant proof. Resolution success advances
 to Launch before workspace/runtime admission; actual native opening advances to
 Initialize.
-
 
 Keep the existing sidebar, composer, semantic color tokens and information drawer.
 Support contained keyboard navigation, Escape, opener restoration, narrow
@@ -285,6 +284,7 @@ The conversation presents the original closed startup classification, safe cause
 - [Repository defaults](repository-defaults.md)
 
 ## Positive image rejection before input
+
 ExecutionStartupObservation field 11 carries the closed ExecutionStartupFailureKind enum: zero UNSPECIFIED is omitted, and IMAGE_INPUT_REJECTED is one. This optional classification adds no capability or migration and preserves legacy observation bytes and generic behavior. A generic Unsupported error does not prove image provenance. Only the original Codex image-preparation branch before turn/start may issue an opaque proof bound to the original request, input and complete ordered input digest. Successful sends, turn transport failures, acknowledgments and attachment-resolution failures carry no such proof.
 
 The Worker retains an exclusive synchronized metadata-only claim bound to the original authenticated server/device/instance, immutable assignment revision/digest, execution/input/request and input digest. Classification requires that unchanged claim plus separately confirmed process, workspace and protected credential cleanup. Missing, changed or uncertain evidence retains claimed/uncertain delivery and original recovery. It never retries by observation.
@@ -292,6 +292,7 @@ The Worker retains an exclusive synchronized metadata-only claim bound to the or
 The server accepts IMAGE_INPUT_REJECTED only for Failed/Input/Codex/Unsupported/NotSent/confirmed cleanup, original nonempty images, the unchanged ready process identity and native thread without an acknowledged turn, and the exact claimed queue execution/request/full input. Keep original public mutation receipts and assignment revisions. Normal finalization retains the original prompt, skill bindings and ordered image references as rejected, frees pending capacity and pauses without recovery. Explicit retry retains existing original-selection ownership checks. Desktop guidance identifies a new session with an explicitly image-capable Agent Worker and Runner Device, or a new text-only session, as the path for changing input or selection. Original-session retry keeps its original input and assignment; queued text continues to block that retry. Preserve visible original rejected input/images and never substitute attachments or start another send automatically.
 
 ## Operational startup progress
+
 System `SESSION_STARTUP_PROGRESS_V1 = 74` and Worker
 `SESSION_STARTUP_PROGRESS_V1 = 50` own the separately negotiated
 `ReportSessionStartupProgress` RPC. System 43/Worker 23 and all original startup

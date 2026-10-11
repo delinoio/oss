@@ -1,20 +1,24 @@
 # Nodeup public documentation foundation
 
 ## Scope
+
 - Project/component: Nodeup documentation content contract
 - Canonical path: `apps/public-docs/docs/nodeup`
 
 ## Runtime and Language
+
 - Runtime: Rspress static documentation app
 - Primary language: Markdown and TypeScript configuration with web build tooling
 - Build toolchain: Rspress, aligned with the repository default preference for Rsbuild/Rspress-style static documentation surfaces.
 - Deployment target: the `apps/public-docs` static output published by the consolidated Cloudflare Pages site.
 
 ## Users and Operators
+
 - External users reading Nodeup installation, runtime, and CLI behavior documentation
 - Internal maintainers publishing and reviewing Nodeup documentation updates
 
 ## Interfaces and Contracts
+
 - The content is built by the `public-docs` Rspress application; there is no standalone Nodeup documentation package or workspace.
 - The canonical production URL is `https://oss.delino.io/nodeup`.
 - Stable documentation route IDs are `/nodeup/`, `/nodeup/installation`, `/nodeup/getting-started`, `/nodeup/commands`, `/nodeup/runtime-resolution`, `/nodeup/shims-and-package-managers`, `/nodeup/output`, `/nodeup/completions`, `/nodeup/releases`, `/nodeup/troubleshooting`, and `/nodeup/reference`.
@@ -56,11 +60,13 @@
 - When Nodeup user-facing runtime, release, installer, shim, completion, package-manager, or color-control behavior changes, update related `apps/public-docs/docs/nodeup` pages in the same change set.
 
 ## Storage
+
 - Source documentation is versioned in-repo under `apps/public-docs/docs/nodeup`.
 - Build artifacts are generated into `apps/public-docs/doc_build` and are not source-controlled.
 - The app does not introduce user-uploaded files or persistent application data.
 
 ## Security
+
 - Published content must not expose internal-only secrets, unpublished release credentials, or private CI environment details.
 - Published content must not expose internal architecture, operational, CI, or repository-layout details that are not part of a stable public contract.
 - Installation guidance must preserve the Nodeup direct-installer verification contract for `SHA256SUMS`.
@@ -70,22 +76,26 @@
 - The consolidated `public-docs` publisher owns Cloudflare Pages credentials and the production tree; Nodeup content must not require a standalone hosting credential or deployment.
 
 ## Logging
+
 - Build and deployment logs should include the workspace name, changed documentation paths, build status, and deployment status.
 - Log output must be safe for public CI surfaces.
 
 ## Build and Test
+
 - Development: `pnpm --filter public-docs dev`.
 - Local validation: `pnpm --filter public-docs test`, which builds the consolidated Rspress output, validates the Nodeup route artifacts and clean links, and verifies the public installer files.
 - Production build: `pnpm --filter public-docs build`.
 - CI alignment: `node-public-docs-test`.
 
 ## Dependencies and Integrations
+
 - Integrates with the `apps/public-docs` pnpm workspace.
 - Integrates with Rspress and its Rsbuild-based static-site pipeline.
 - Integrates directly with the `public-docs` build and its Cloudflare Pages publication.
 - Depends on `docs/project-nodeup.md` and `docs/crates-nodeup-foundation.md` for canonical Nodeup product and runtime contracts.
 
 ## Change Triggers
+
 - Update `docs/project-nodeup.md`, this file, and `apps/AGENTS.md` when the content path, route IDs, theme repository-link surface, validation commands, toolchain, output directory, or publication target changes.
 - Update `docs/crates-nodeup-foundation.md` and the relevant app pages when Nodeup runtime, release, installer, shim, completion, package-manager, or color-control behavior changes.
 - Update `docs/README.md` when adding, renaming, or removing this domain contract.
@@ -93,6 +103,7 @@
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - `docs/project-nodeup.md`
 - `docs/crates-nodeup-foundation.md`
 - `docs/repository-defaults.md`

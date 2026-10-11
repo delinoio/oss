@@ -16,16 +16,21 @@ const copy = {
     subtitle: "Official operations console",
     skip: "Skip to main content",
     signIn: "Sign in with Logto",
-    signInError: "Sign-in could not start. Allow browser session storage, then try again.",
+    signInError:
+      "Sign-in could not start. Allow browser session storage, then try again.",
     signOut: "Sign out",
     loading: "Loading administrator data…",
     empty: "No records match these filters.",
     error: "We couldn’t load this view. Try again.",
-    sessionExpired: "Your administrator session expired. Sign out, then sign in again.",
-    paginationError: "These results changed or expired. Reload the first page to continue.",
-    unavailable: "The administrator service is temporarily unavailable. Try again.",
+    sessionExpired:
+      "Your administrator session expired. Sign out, then sign in again.",
+    paginationError:
+      "These results changed or expired. Reload the first page to continue.",
+    unavailable:
+      "The administrator service is temporarily unavailable. Try again.",
     correlationId: "Correlation ID",
-    mutationError: "The operation was not completed. Refresh the data and try again.",
+    mutationError:
+      "The operation was not completed. Refresh the data and try again.",
     permission: "You need the devhud-admin role to use this console.",
     users: "Users",
     uploads: "Uploads",
@@ -60,9 +65,11 @@ const copy = {
     quarantine: "Quarantine",
     delete: "Permanently delete",
     reason: "Reason",
-    reasonHelp: "Required. Do not include credentials, local paths, or private content.",
+    reasonHelp:
+      "Required. Do not include credentials, local paths, or private content.",
     reasonInvalid: "Enter a safe reason no longer than 4 KiB of UTF-8.",
-    conflict: "The record changed. Current data was reloaded; review it before trying again.",
+    conflict:
+      "The record changed. Current data was reloaded; review it before trying again.",
     cancel: "Cancel",
     confirm: "Confirm",
     destructive: "I understand this action is destructive.",
@@ -132,16 +139,21 @@ const copy = {
     subtitle: "공식 운영 콘솔",
     skip: "본문으로 건너뛰기",
     signIn: "Logto로 로그인",
-    signInError: "로그인을 시작하지 못했습니다. 브라우저 세션 저장소를 허용한 후 다시 시도해 주세요.",
+    signInError:
+      "로그인을 시작하지 못했습니다. 브라우저 세션 저장소를 허용한 후 다시 시도해 주세요.",
     signOut: "로그아웃",
     loading: "관리자 데이터를 불러오는 중…",
     empty: "조건에 맞는 기록이 없습니다.",
     error: "화면을 불러오지 못했습니다. 다시 시도해 주세요.",
-    sessionExpired: "관리자 세션이 만료되었습니다. 로그아웃한 후 다시 로그인해 주세요.",
-    paginationError: "검색 결과가 변경되었거나 만료되었습니다. 첫 페이지를 다시 불러와 주세요.",
-    unavailable: "관리자 서비스를 일시적으로 사용할 수 없습니다. 다시 시도해 주세요.",
+    sessionExpired:
+      "관리자 세션이 만료되었습니다. 로그아웃한 후 다시 로그인해 주세요.",
+    paginationError:
+      "검색 결과가 변경되었거나 만료되었습니다. 첫 페이지를 다시 불러와 주세요.",
+    unavailable:
+      "관리자 서비스를 일시적으로 사용할 수 없습니다. 다시 시도해 주세요.",
     correlationId: "상관관계 ID",
-    mutationError: "작업을 완료하지 못했습니다. 데이터를 새로 불러온 후 다시 시도해 주세요.",
+    mutationError:
+      "작업을 완료하지 못했습니다. 데이터를 새로 불러온 후 다시 시도해 주세요.",
     permission: "이 콘솔을 사용하려면 devhud-admin 역할이 필요합니다.",
     users: "사용자",
     uploads: "업로드",
@@ -176,9 +188,11 @@ const copy = {
     quarantine: "격리",
     delete: "영구 삭제",
     reason: "사유",
-    reasonHelp: "필수입니다. 자격 증명, 로컬 경로 또는 비공개 내용을 포함하지 마세요.",
+    reasonHelp:
+      "필수입니다. 자격 증명, 로컬 경로 또는 비공개 내용을 포함하지 마세요.",
     reasonInvalid: "UTF-8 기준 4 KiB 이하의 안전한 사유를 입력하세요.",
-    conflict: "기록이 변경되었습니다. 최신 데이터를 불러왔으니 다시 시도하기 전에 확인하세요.",
+    conflict:
+      "기록이 변경되었습니다. 최신 데이터를 불러왔으니 다시 시도하기 전에 확인하세요.",
     cancel: "취소",
     confirm: "확인",
     destructive: "이 작업이 되돌릴 수 없음을 이해합니다.",

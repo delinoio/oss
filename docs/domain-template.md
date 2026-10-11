@@ -1,60 +1,75 @@
 # Domain Contract Template
 
 ## Purpose
+
 This template defines runtime and integration contracts for a project component inside a single domain.
 Use this template for files like `docs/apps-<...>.md`, `docs/cmds-<...>.md`, `docs/servers-<...>.md`, `docs/crates-<...>.md`, `docs/protos-<...>.md`, or `docs/packages-<...>.md`.
 
 ## Required File Naming
+
 - File name format: `docs/<domain>-<project-or-component>-<contract>.md`
 - `<domain>` must be one of: `apps`, `cmds`, `servers`, `crates`, `protos`, `packages`.
 - `<project-or-component>` must be lowercase kebab-case.
 - `<contract>` must describe the contract purpose (for example: `foundation`, `api-contract`, `language-contract`).
 
 ## Required Sections
+
 All domain contract documents must include the sections below in this exact order.
 
 ## Scope
+
 Declare the project/component and canonical implementation paths owned by this document.
 
 ## Runtime and Language
+
 Declare runtime and primary language.
 If unspecified for a new project, the default primary language is Golang.
 For build tooling, prefer Rspack-family tools when they fit the runtime and deployment target.
 Static sites under `apps/` should use Rsbuild/Rspress-style toolchains and deploy to Cloudflare Pages by default unless documented otherwise.
 
 ## Users and Operators
+
 List primary users, operators, or system actors for this component.
 
 ## Interfaces and Contracts
+
 Document public interfaces and stable identifiers.
 Include route patterns, command shapes, RPC/API contracts, and component integration boundaries.
 New persisted entities should use UUID v7 identifiers by default unless a documented issue requires another ID shape.
 AI-based search should default to Cloudflare AI Search unless the contract documents another backend.
 
 ## Storage
+
 Document persistent data, cache, and local file contracts.
 File handling should default to Cloudflare R2 object storage plus signed URLs for upload and download access unless documented otherwise.
 
 ## Security
+
 Document trust boundaries, secrets handling, authorization, and data safety constraints.
 
 ## Logging
+
 Document required structured logs and troubleshooting expectations.
 
 ## Build and Test
+
 Define local validation commands and CI expectations for this component.
 
 ## Dependencies and Integrations
+
 Document upstream/downstream dependencies and cross-domain dependencies.
 
 ## Change Triggers
+
 Declare which related contracts must be updated when this contract changes. Update `AGENTS.md` only when development procedures, directory ownership or repository/domain development rules change; follow the [instruction-update policy](README.md#instruction-update-policy). Ordinary feature, bug-fix, test and behavior-contract changes update their owning contracts without duplicating requirements in instructions.
 
 ## References
+
 Link to the owning `docs/project-<id>.md` index and any related contract docs.
 Include `docs/repository-defaults.md`.
 
 ## Checklist for Domain Contract Docs
+
 - The file name follows domain prefix rules.
 - All required sections are present and in order.
 - Interfaces use stable identifiers where possible.

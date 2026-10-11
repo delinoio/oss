@@ -82,5 +82,4 @@ Real migration 30 follows real OAuth 29 and seeds only its explicit set of 26 ad
 Complete independent feature PRs may include their allocation records and merge
 after their implemented dependencies.
 
-
 Inventory uses the complete canonical registry's 35-entry bound independently of a presentation subset, reads one extra row to detect overflow, and rejects unknown/duplicate managed identities instead of overwriting them. Product order is the original six hosted entries, the 26 additions in issue-table order, then three local entries; custom providers follow under existing name/UUID pagination. Cursor scope `provider-inventory-v3` expires older ordering tokens. All counts use one authorized SQLite snapshot. TypeScript exports provide presentation identity/order only; they grant no availability or account authority.

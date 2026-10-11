@@ -170,7 +170,11 @@ jobs:
       run_attempt: ${{ steps.select.outputs.run_attempt }}
     steps:
       - uses: actions/checkout@v6
-        with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
+        with:
+          {
+            persist-credentials: false,
+            ref: "${{ needs.identity.outputs.revision }}",
+          }
       - name: Select retained or newly built candidate
         id: select
         env:
@@ -272,7 +276,12 @@ jobs:
       DEVHUD_PUBLIC_ASSET_BASE_URL: ${{ vars.DEVHUD_PUBLIC_ASSET_BASE_URL }}
     steps:
       - uses: actions/checkout@v6
-        with: { fetch-depth: 0, persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
+        with:
+          {
+            fetch-depth: 0,
+            persist-credentials: false,
+            ref: "${{ needs.identity.outputs.revision }}",
+          }
       - uses: actions/download-artifact@v8
         if: ${{ needs.identity.outputs.configuration_reused == 'true' }}
         with:
@@ -367,7 +376,11 @@ jobs:
       STORE_PROVIDER: ${{ matrix.provider }}
     steps:
       - uses: actions/checkout@v6
-        with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
+        with:
+          {
+            persist-credentials: false,
+            ref: "${{ needs.identity.outputs.revision }}",
+          }
       - name: Checkout immutable workflow tooling
         if: ${{ matrix.provider == 'apple' }}
         uses: actions/checkout@v6
@@ -431,7 +444,12 @@ jobs:
         if: ${{ matrix.provider == 'chrome-web-store' && needs.identity.outputs.retry != 'true' && (steps.store_state.outputs.status == 'unsubmitted' || steps.store_state.outputs.status == 'withdrawn') }}
         run: node scripts/release/devhud-store-release.mjs submit chrome-web-store --artifact private-artifacts/devhud-chrome-web-store.zip --output store-submission.json
       - uses: actions/upload-artifact@v7
-        with: { name: "devhud-store-submission-${{ matrix.provider }}-${{ github.run_attempt }}", path: store-submission.json, if-no-files-found: error }
+        with:
+          {
+            name: "devhud-store-submission-${{ matrix.provider }}-${{ github.run_attempt }}",
+            path: store-submission.json,
+            if-no-files-found: error,
+          }
 
   review_gate:
     name: Wait for every held store review
@@ -457,7 +475,11 @@ jobs:
       RELEASE_RETRY: ${{ needs.identity.outputs.retry }}
     steps:
       - uses: actions/checkout@v6
-        with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
+        with:
+          {
+            persist-credentials: false,
+            ref: "${{ needs.identity.outputs.revision }}",
+          }
       - name: Bind review identity to the validated preflight environment
         env:
           EXPECTED_STORE_IDENTITY_FINGERPRINT: ${{ needs.preflight.outputs.store_identity_fingerprint }}
@@ -486,7 +508,11 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-        with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
+        with:
+          {
+            persist-credentials: false,
+            ref: "${{ needs.identity.outputs.revision }}",
+          }
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with: { node-version-file: .nvmrc, cache: pnpm }
@@ -552,7 +578,11 @@ jobs:
       RELEASE_VERSION: ${{ needs.identity.outputs.version }}
     steps:
       - uses: actions/checkout@v6
-        with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
+        with:
+          {
+            persist-credentials: false,
+            ref: "${{ needs.identity.outputs.revision }}",
+          }
       - name: Bind registry configuration to the validated preflight environment
         env:
           EXPECTED_CONFIGURATION_FINGERPRINT: ${{ needs.preflight.outputs.release_configuration_fingerprint }}
@@ -631,7 +661,11 @@ jobs:
       DEVHUD_PUBLIC_DOCS_PROJECT_NAME: ${{ vars.DEVHUD_PUBLIC_DOCS_PROJECT_NAME }}
     steps:
       - uses: actions/checkout@v6
-        with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
+        with:
+          {
+            persist-credentials: false,
+            ref: "${{ needs.identity.outputs.revision }}",
+          }
       - name: Bind infrastructure configuration to the validated preflight environment
         env:
           EXPECTED_CONFIGURATION_FINGERPRINT: ${{ needs.preflight.outputs.release_configuration_fingerprint }}
@@ -709,7 +743,11 @@ jobs:
       DEVHUD_PUBLIC_DOCS_PROJECT_NAME: ${{ vars.DEVHUD_PUBLIC_DOCS_PROJECT_NAME }}
     steps:
       - uses: actions/checkout@v6
-        with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
+        with:
+          {
+            persist-credentials: false,
+            ref: "${{ needs.identity.outputs.revision }}",
+          }
       - name: Bind store-publication configuration to the validated preflight environment
         env:
           EXPECTED_CONFIGURATION_FINGERPRINT: ${{ needs.preflight.outputs.release_configuration_fingerprint }}
@@ -754,7 +792,12 @@ jobs:
       RELEASE_VERSION: ${{ needs.identity.outputs.version }}
     steps:
       - uses: actions/checkout@v6
-        with: { fetch-depth: 0, persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
+        with:
+          {
+            fetch-depth: 0,
+            persist-credentials: false,
+            ref: "${{ needs.identity.outputs.revision }}",
+          }
       - uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.candidate.outputs.artifact_id }}
@@ -845,7 +888,11 @@ jobs:
       DEVHUD_PUBLIC_DOCS_PROJECT_NAME: ${{ vars.DEVHUD_PUBLIC_DOCS_PROJECT_NAME }}
     steps:
       - uses: actions/checkout@v6
-        with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
+        with:
+          {
+            persist-credentials: false,
+            ref: "${{ needs.identity.outputs.revision }}",
+          }
       - name: Bind updater configuration to the validated preflight environment
         env:
           EXPECTED_CONFIGURATION_FINGERPRINT: ${{ needs.preflight.outputs.release_configuration_fingerprint }}
@@ -921,7 +968,11 @@ jobs:
       DEVHUD_RELEASE_AUTHORIZATION_REVISION: ${{ needs.identity.outputs.authorization_revision }}
     steps:
       - uses: actions/checkout@v6
-        with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
+        with:
+          {
+            persist-credentials: false,
+            ref: "${{ needs.identity.outputs.revision }}",
+          }
       - name: Bind public-docs configuration to the validated preflight environment
         env:
           EXPECTED_CONFIGURATION_FINGERPRINT: ${{ needs.preflight.outputs.release_configuration_fingerprint }}
@@ -1010,7 +1061,11 @@ jobs:
       DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN: ${{ secrets.DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN }}
     steps:
       - uses: actions/checkout@v6
-        with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
+        with:
+          {
+            persist-credentials: false,
+            ref: "${{ needs.identity.outputs.revision }}",
+          }
       - name: Reverify every exact store version remains public
         run: |
           set -euo pipefail
@@ -1128,7 +1183,11 @@ jobs:
       DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN: ${{ secrets.DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN }}
     steps:
       - uses: actions/checkout@v6
-        with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
+        with:
+          {
+            persist-credentials: false,
+            ref: "${{ needs.identity.outputs.revision }}",
+          }
       - name: Bind GA configuration to the validated preflight environment
         env:
           EXPECTED_CONFIGURATION_FINGERPRINT: ${{ needs.preflight.outputs.release_configuration_fingerprint }}
@@ -1229,7 +1288,17 @@ jobs:
            needs.registry.result == 'failure' || needs.registry.result == 'cancelled' ||
            needs.prepare_infrastructure.result == 'failure' || needs.prepare_infrastructure.result == 'cancelled')))
       }}
-    needs: [identity, preflight, submit_stores, review_gate, docs_candidate, registry, prepare_infrastructure, stores_public]
+    needs:
+      [
+        identity,
+        preflight,
+        submit_stores,
+        review_gate,
+        docs_candidate,
+        registry,
+        prepare_infrastructure,
+        stores_public,
+      ]
     runs-on: ubuntu-22.04
     environment: devhud-publication
     permissions:
@@ -1254,7 +1323,11 @@ jobs:
       DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN: ${{ secrets.DEVHUD_CHROME_WEB_STORE_REFRESH_TOKEN }}
     steps:
       - uses: actions/checkout@v6
-        with: { persist-credentials: false, ref: "${{ needs.identity.outputs.revision }}" }
+        with:
+          {
+            persist-credentials: false,
+            ref: "${{ needs.identity.outputs.revision }}",
+          }
       - name: Bind cleanup configuration to the validated preflight environment
         env:
           DEVHUD_APP_STORE_APP_ID: ${{ vars.DEVHUD_APP_STORE_APP_ID }}

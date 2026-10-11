@@ -9,7 +9,7 @@ const cliboxHeadings = {
     "Choose a version",
     "Distribution and verification",
     "Native package availability",
-    "Use an earlier version"
+    "Use an earlier version",
   ],
   "/clibox/troubleshooting": [
     "Troubleshooting clibox",
@@ -19,17 +19,14 @@ const cliboxHeadings = {
     "CPU counts",
     "Waits and configuration",
     "Diagnostics and support",
-    "Validation limits and recovery"
+    "Validation limits and recovery",
   ],
-  "/clibox/commands": [
-    "Command index",
-    "Help and version"
-  ],
+  "/clibox/commands": ["Command index", "Help and version"],
   "/clibox/output": [
     "Output and cancellation",
     "Input, output, and exit codes",
     "File replacement",
-    "Utility diagnostics and operation limits"
+    "Utility diagnostics and operation limits",
   ],
   "/clibox/install": [
     "Install clibox",
@@ -39,31 +36,29 @@ const cliboxHeadings = {
     "macOS Homebrew",
     "Linux release archives",
     "Linux APT and DNF",
-    "Desktop prerequisites"
+    "Desktop prerequisites",
   ],
-  "/clibox/migration": [
-    "Migrating older command syntax"
-  ],
+  "/clibox/migration": ["Migrating older command syntax"],
   "/clibox/getting-started": [
     "Getting started with clibox",
     "Install and check the version",
     "Try commands without changing files",
     "Use a package script",
-    "Process local configuration"
+    "Process local configuration",
   ],
   "/clibox/transformations": [
     "Text, time, Base64, and hashes",
     "Text replacement",
     "Time formatting and arithmetic",
     "Base64",
-    "Hashes and verification"
+    "Hashes and verification",
   ],
   "/clibox/": [
     "clibox",
     "What you can do",
     "Supported environments",
     "Predictable scripts",
-    "Learn more"
+    "Learn more",
   ],
   "/clibox/configuration": [
     "Configuration commands",
@@ -71,7 +66,7 @@ const cliboxHeadings = {
     "Merge dotenv files",
     "Normalize YAML",
     "Input limits and output safety",
-    "Exit codes and diagnostics"
+    "Exit codes and diagnostics",
   ],
   "/clibox/system": [
     "System commands",
@@ -79,52 +74,131 @@ const cliboxHeadings = {
     "Run with environment variables",
     "Inspect and terminate port owners",
     "Open a resource",
-    "Copy and paste text"
+    "Copy and paste text",
   ],
   "/clibox/wait": [
     "Readiness waits",
     "TCP",
     "HTTP",
     "Files",
-    "Results and cancellation"
-  ]
+    "Results and cancellation",
+  ],
 };
 
 const pnportHeadings = {
-  "/pnport/": ["pnport", "Release targets", "What the CLI is designed to do", "Guides"],
-  "/pnport/installation": ["Installation and availability", "Stable distribution", "Install 0.1.2", "Experimental npm next channel"],
-  "/pnport/getting-started": ["Getting started", "Check the project", "Run a command"],
-  "/pnport/preview-testing": ["Preview testing", "Install the preview", "Prepare a PnP project", "Run Turbopack", "Run TypeScript 7", "Report results"],
-  "/pnport/commands": ["Commands", "Global options", "Machine-readable doctor output"],
-  "/pnport/filesystem-and-processes": ["Filesystem and processes", "Dependency view", "Child processes and watches", "Current limits"],
-  "/pnport/editors": ["Editors and language servers", "Configure the executable", "Recovery"],
+  "/pnport/": [
+    "pnport",
+    "Release targets",
+    "What the CLI is designed to do",
+    "Guides",
+  ],
+  "/pnport/installation": [
+    "Installation and availability",
+    "Stable distribution",
+    "Install 0.1.2",
+    "Experimental npm next channel",
+  ],
+  "/pnport/getting-started": [
+    "Getting started",
+    "Check the project",
+    "Run a command",
+  ],
+  "/pnport/preview-testing": [
+    "Preview testing",
+    "Install the preview",
+    "Prepare a PnP project",
+    "Run Turbopack",
+    "Run TypeScript 7",
+    "Report results",
+  ],
+  "/pnport/commands": [
+    "Commands",
+    "Global options",
+    "Machine-readable doctor output",
+  ],
+  "/pnport/filesystem-and-processes": [
+    "Filesystem and processes",
+    "Dependency view",
+    "Child processes and watches",
+    "Current limits",
+  ],
+  "/pnport/editors": [
+    "Editors and language servers",
+    "Configure the executable",
+    "Recovery",
+  ],
   "/pnport/cache": ["Cache management", "Inspect the cache", "Prune or clean"],
-  "/pnport/diagnostics": ["Diagnostics and troubleshooting", "Start with doctor", "Exit codes and streams"],
+  "/pnport/diagnostics": [
+    "Diagnostics and troubleshooting",
+    "Start with doctor",
+    "Exit codes and streams",
+  ],
   "/pnport/benchmarks": ["Benchmarks", "Reproduction protocol"],
-  "/pnport/releases": ["Releases and rollback", "Published validation and known limits", "Explicit updates and rollback"],
+  "/pnport/releases": [
+    "Releases and rollback",
+    "Published validation and known limits",
+    "Explicit updates and rollback",
+  ],
 };
 
 const reactForgeHeadings = {
-  "/react-forge/": ["React Forge", "Start with a presentation", "Where it runs", "Choose a workflow"],
-  "/react-forge/installation": ["Install React Forge", "Requirements", "Verify the installation"],
+  "/react-forge/": [
+    "React Forge",
+    "Start with a presentation",
+    "Where it runs",
+    "Choose a workflow",
+  ],
+  "/react-forge/installation": [
+    "Install React Forge",
+    "Requirements",
+    "Verify the installation",
+  ],
   "/react-forge/getting-started": ["Getting started", "Next steps"],
-  "/react-forge/sessions": ["Sessions and common API", "Fonts and assets", "Inspection and measurement", "Lifecycle and diagnostics"],
+  "/react-forge/sessions": [
+    "Sessions and common API",
+    "Fonts and assets",
+    "Inspection and measurement",
+    "Lifecycle and diagnostics",
+  ],
   "/react-forge/formats/pptx/": ["Author PPTX presentations"],
   "/react-forge/formats/docx/": ["Author DOCX documents"],
   "/react-forge/formats/xlsx/": ["Author XLSX workbooks"],
   "/react-forge/formats/pdf/": ["Author tagged PDF"],
   "/react-forge/formats/sfx/": ["Game sound effects (WAV)"],
-  "/react-forge/formats/sprite/": ["Pixel sprites and animation", "Create an animated sprite", "Limits and boundaries"],
+  "/react-forge/formats/sprite/": [
+    "Pixel sprites and animation",
+    "Create an animated sprite",
+    "Limits and boundaries",
+  ],
   "/react-forge/office-editing": ["Edit existing Office files"],
-  "/react-forge/formats/figma/": ["Figma Design creation and editing", "Reopen and edit", "Publication outcomes and receipts"],
+  "/react-forge/formats/figma/": [
+    "Figma Design creation and editing",
+    "Reopen and edit",
+    "Publication outcomes and receipts",
+  ],
   "/react-forge/cli": ["One-shot CLI tasks"],
-  "/react-forge/mcp": ["Local MCP sessions", "Typical local document sequence", "Figma and failure recovery"],
-  "/react-forge/limits-and-troubleshooting": ["Limits and troubleshooting", "Common failures", "Boundaries"],
-  "/react-forge/releases": ["Releases and validation", "Choose by availability", "Validation scope", "Update or roll back"],
+  "/react-forge/mcp": [
+    "Local MCP sessions",
+    "Typical local document sequence",
+    "Figma and failure recovery",
+  ],
+  "/react-forge/limits-and-troubleshooting": [
+    "Limits and troubleshooting",
+    "Common failures",
+    "Boundaries",
+  ],
+  "/react-forge/releases": [
+    "Releases and validation",
+    "Choose by availability",
+    "Validation scope",
+    "Update or roll back",
+  ],
 };
 
 const stableRouteIds = [
-  ...Object.entries(projectRoutes).flatMap(([slug, routes]) => routes.map((route) => `/${slug}${route}`)),
+  ...Object.entries(projectRoutes).flatMap(([slug, routes]) =>
+    routes.map((route) => `/${slug}${route}`),
+  ),
   "/",
   "/getting-started",
   "/projects-overview",
@@ -142,7 +216,9 @@ const stableRouteIds = [
   "/derun",
   "/with-watch",
 ];
-const projectSlugs = Object.keys(projectRoutes).filter((slug) => slug !== "clibox" && slug !== "pnport" && slug !== "react-forge");
+const projectSlugs = Object.keys(projectRoutes).filter(
+  (slug) => slug !== "clibox" && slug !== "pnport" && slug !== "react-forge",
+);
 
 const outputDir = path.resolve("doc_build");
 const stableRoutePathPattern = stableRouteIds
@@ -152,15 +228,18 @@ const stableRoutePathPattern = stableRouteIds
   .join("|");
 const routeOutputFiles = stableRouteIds.map((routeId) => ({
   routeId,
-  outputFile:
-    routeId.endsWith("/")
-      ? path.join(outputDir, routeId.slice(1), "index.html")
-      : path.join(outputDir, `${routeId.slice(1)}.html`),
+  outputFile: routeId.endsWith("/")
+    ? path.join(outputDir, routeId.slice(1), "index.html")
+    : path.join(outputDir, `${routeId.slice(1)}.html`),
 }));
 const htmlRoutePaths = new Set(
-  routeOutputFiles.map(({ outputFile }) => `/${path.relative(outputDir, outputFile).split(path.sep).join("/")}`),
+  routeOutputFiles.map(
+    ({ outputFile }) =>
+      `/${path.relative(outputDir, outputFile).split(path.sep).join("/")}`,
+  ),
 );
-const urlAttributePattern = /\b(?:href|src|srcset|poster|action|formaction|data)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/giu;
+const urlAttributePattern =
+  /\b(?:href|src|srcset|poster|action|formaction|data)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`=<>]+))/giu;
 const cssUrlPattern = /\burl\s*\(\s*(?:"([^"]*)"|'([^']*)'|([^\s)]+))\s*\)/giu;
 const cssImportPattern = /@import\s+(?:"([^"]*)"|'([^']*)')/giu;
 const validatorOrigin = "https://public-docs.invalid";
@@ -178,7 +257,7 @@ async function collectCssFiles(directory) {
   const files = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const file = path.join(directory, entry.name);
-    if (entry.isDirectory()) files.push(...await collectCssFiles(file));
+    if (entry.isDirectory()) files.push(...(await collectCssFiles(file)));
     else if (entry.isFile() && entry.name.endsWith(".css")) files.push(file);
   }
   return files;
@@ -223,31 +302,187 @@ const requiredHeadings = new Map([
   ...Object.entries(pnportHeadings),
   ...Object.entries(reactForgeHeadings),
   ["/devhud", ["DevHud"]],
-  ["/devhud/install", ["Install and Verify DevHud", "Desktop", "Mobile stores", "Chrome extension"]],
-  ["/devhud/guide", ["Using DevHud", "First run and identity", "Settings and PAT profiles", "Capture, drafts, and browser context", "Decks and widgets"]],
-  ["/devhud/privacy", ["DevHud Privacy", "What is stored", "Public images", "Account deletion and recovery", "Diagnostics"]],
-  ["/devhud/security", ["DevHud Security", "Secure operation", "Updates and key rotation", "Custom API origins", "Reporting"]],
-  ["/devhud/support", ["DevHud Support", "Troubleshooting", "Uninstall", "Help and reports"]],
+  [
+    "/devhud/install",
+    [
+      "Install and Verify DevHud",
+      "Desktop",
+      "Mobile stores",
+      "Chrome extension",
+    ],
+  ],
+  [
+    "/devhud/guide",
+    [
+      "Using DevHud",
+      "First run and identity",
+      "Settings and PAT profiles",
+      "Capture, drafts, and browser context",
+      "Decks and widgets",
+    ],
+  ],
+  [
+    "/devhud/privacy",
+    [
+      "DevHud Privacy",
+      "What is stored",
+      "Public images",
+      "Account deletion and recovery",
+      "Diagnostics",
+    ],
+  ],
+  [
+    "/devhud/security",
+    [
+      "DevHud Security",
+      "Secure operation",
+      "Updates and key rotation",
+      "Custom API origins",
+      "Reporting",
+    ],
+  ],
+  [
+    "/devhud/support",
+    ["DevHud Support", "Troubleshooting", "Uninstall", "Help and reports"],
+  ],
   ["/devhud/admin", ["DevHud Administration"]],
   ["/devhud/releases", ["DevHud Releases"]],
 ]);
 const requiredLinks = new Map([
-  ["/clibox/", ["/clibox/install", "/clibox/getting-started", "/clibox/commands", "/clibox/migration"]],
-  ["/clibox/install", ["/clibox/releases", "https://oss.delino.io/linux-packages"]],
-  ["/clibox/commands", ["/clibox/system#query-cpu-counts", "/clibox/system#run-with-environment-variables", "/clibox/transformations#hashes-and-verification", "/clibox/wait#http", "/clibox/configuration#normalize-yaml"]],
-  ["/pnport/", ["/pnport/installation", "/pnport/getting-started", "/pnport/preview-testing", "/pnport/commands", "/pnport/filesystem-and-processes", "/pnport/editors", "/pnport/cache", "/pnport/diagnostics", "/pnport/benchmarks", "/pnport/releases"]],
-  ["/pnport/installation", ["/pnport/getting-started", "/pnport/preview-testing", "/pnport/commands", "/pnport/releases"]],
+  [
+    "/clibox/",
+    [
+      "/clibox/install",
+      "/clibox/getting-started",
+      "/clibox/commands",
+      "/clibox/migration",
+    ],
+  ],
+  [
+    "/clibox/install",
+    ["/clibox/releases", "https://oss.delino.io/linux-packages"],
+  ],
+  [
+    "/clibox/commands",
+    [
+      "/clibox/system#query-cpu-counts",
+      "/clibox/system#run-with-environment-variables",
+      "/clibox/transformations#hashes-and-verification",
+      "/clibox/wait#http",
+      "/clibox/configuration#normalize-yaml",
+    ],
+  ],
+  [
+    "/pnport/",
+    [
+      "/pnport/installation",
+      "/pnport/getting-started",
+      "/pnport/preview-testing",
+      "/pnport/commands",
+      "/pnport/filesystem-and-processes",
+      "/pnport/editors",
+      "/pnport/cache",
+      "/pnport/diagnostics",
+      "/pnport/benchmarks",
+      "/pnport/releases",
+    ],
+  ],
+  [
+    "/pnport/installation",
+    [
+      "/pnport/getting-started",
+      "/pnport/preview-testing",
+      "/pnport/commands",
+      "/pnport/releases",
+    ],
+  ],
   ["/pnport/getting-started", ["/pnport/preview-testing"]],
-  ["/pnport/preview-testing", ["/pnport/installation", "/pnport/commands", "/pnport/diagnostics", "https://github.com/delinoio/oss/issues/958", "https://www.typescriptlang.org/download/", "https://nextjs.org/docs/app/api-reference/cli/next"]],
+  [
+    "/pnport/preview-testing",
+    [
+      "/pnport/installation",
+      "/pnport/commands",
+      "/pnport/diagnostics",
+      "https://github.com/delinoio/oss/issues/958",
+      "https://www.typescriptlang.org/download/",
+      "https://nextjs.org/docs/app/api-reference/cli/next",
+    ],
+  ],
   ["/pnport/diagnostics", ["/pnport/cache"]],
-  ["/react-forge/", ["/react-forge/installation", "/react-forge/getting-started", "/react-forge/sessions", "/react-forge/formats/pptx/", "/react-forge/formats/docx/", "/react-forge/formats/xlsx/", "/react-forge/formats/pdf/", "/react-forge/office-editing", "/react-forge/formats/figma/", "/react-forge/cli", "/react-forge/mcp", "/react-forge/formats/sfx/", "/react-forge/formats/sprite/", "/react-forge/limits-and-troubleshooting", "/react-forge/releases"]],
-  ["/react-forge/installation", ["/react-forge/getting-started", "/react-forge/releases", "/react-forge/formats/figma/"]],
-  ["/react-forge/formats/figma/", ["/react-forge/cli", "/react-forge/mcp", "/react-forge/limits-and-troubleshooting"]],
+  [
+    "/react-forge/",
+    [
+      "/react-forge/installation",
+      "/react-forge/getting-started",
+      "/react-forge/sessions",
+      "/react-forge/formats/pptx/",
+      "/react-forge/formats/docx/",
+      "/react-forge/formats/xlsx/",
+      "/react-forge/formats/pdf/",
+      "/react-forge/office-editing",
+      "/react-forge/formats/figma/",
+      "/react-forge/cli",
+      "/react-forge/mcp",
+      "/react-forge/formats/sfx/",
+      "/react-forge/formats/sprite/",
+      "/react-forge/limits-and-troubleshooting",
+      "/react-forge/releases",
+    ],
+  ],
+  [
+    "/react-forge/installation",
+    [
+      "/react-forge/getting-started",
+      "/react-forge/releases",
+      "/react-forge/formats/figma/",
+    ],
+  ],
+  [
+    "/react-forge/formats/figma/",
+    [
+      "/react-forge/cli",
+      "/react-forge/mcp",
+      "/react-forge/limits-and-troubleshooting",
+    ],
+  ],
   ["/react-forge/mcp", ["/react-forge/formats/figma/"]],
-  ["/", ["https://oss.delino.io/runmoor/", "https://oss.delino.io/nodeup/", "https://oss.delino.io/binpm/", "https://oss.delino.io/async-commit-hook/", "https://oss.delino.io/clibox/", "https://oss.delino.io/pnport/", "https://oss.delino.io/react-forge/"]],
-  ["/projects-overview", ["https://oss.delino.io/runmoor/", "https://oss.delino.io/nodeup/", "https://oss.delino.io/binpm/", "https://oss.delino.io/async-commit-hook/", "https://oss.delino.io/clibox/", "https://oss.delino.io/pnport/", "https://oss.delino.io/react-forge/"]],
-  ["/devhud", ["/devhud/install", "/devhud/privacy", "/devhud/security", "/devhud/support"]],
-  ["/devhud/install", ["/devhud/releases", "/devhud/security", "/devhud/support"]],
+  [
+    "/",
+    [
+      "https://oss.delino.io/runmoor/",
+      "https://oss.delino.io/nodeup/",
+      "https://oss.delino.io/binpm/",
+      "https://oss.delino.io/async-commit-hook/",
+      "https://oss.delino.io/clibox/",
+      "https://oss.delino.io/pnport/",
+      "https://oss.delino.io/react-forge/",
+    ],
+  ],
+  [
+    "/projects-overview",
+    [
+      "https://oss.delino.io/runmoor/",
+      "https://oss.delino.io/nodeup/",
+      "https://oss.delino.io/binpm/",
+      "https://oss.delino.io/async-commit-hook/",
+      "https://oss.delino.io/clibox/",
+      "https://oss.delino.io/pnport/",
+      "https://oss.delino.io/react-forge/",
+    ],
+  ],
+  [
+    "/devhud",
+    [
+      "/devhud/install",
+      "/devhud/privacy",
+      "/devhud/security",
+      "/devhud/support",
+    ],
+  ],
+  [
+    "/devhud/install",
+    ["/devhud/releases", "/devhud/security", "/devhud/support"],
+  ],
   ["/devhud/guide", ["/devhud/privacy", "/devhud/security", "/devhud/support"]],
 ]);
 
@@ -260,23 +495,27 @@ function articleContent(contents) {
 
 function articleHeadings(contents) {
   return [...contents.matchAll(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/giu)].map(
-    ([, heading]) => heading
-      .replace(/<a\b[^>]*aria-hidden="true"[^>]*>[\s\S]*?<\/a>/giu, "")
-      .replace(/<[^>]*>/gu, " ")
-      .replace(/\s+/gu, " ")
-      .trim(),
+    ([, heading]) =>
+      heading
+        .replace(/<a\b[^>]*aria-hidden="true"[^>]*>[\s\S]*?<\/a>/giu, "")
+        .replace(/<[^>]*>/gu, " ")
+        .replace(/\s+/gu, " ")
+        .trim(),
   );
 }
 
 function visibleText(contents) {
-  return decodeHTML(contents
-    .replace(/<(?:script|style)\b[^>]*>[\s\S]*?<\/(?:script|style)>/giu, " ")
-    .replace(/<[^>]*>/gu, " "))
-    .replace(/\s+/gu, " ");
+  return decodeHTML(
+    contents
+      .replace(/<(?:script|style)\b[^>]*>[\s\S]*?<\/(?:script|style)>/giu, " ")
+      .replace(/<[^>]*>/gu, " "),
+  ).replace(/\s+/gu, " ");
 }
 
 function htmlComments(contents) {
-  return [...contents.matchAll(/<!--([\s\S]*?)-->/gu)].map(([, comment]) => comment).join(" ");
+  return [...contents.matchAll(/<!--([\s\S]*?)-->/gu)]
+    .map(([, comment]) => comment)
+    .join(" ");
 }
 
 function findHtmlRouteLinks(contents, htmlFile) {
@@ -294,7 +533,10 @@ function findHtmlRouteLinks(contents, htmlFile) {
     } catch {
       continue;
     }
-    if (resolvedUrl.origin === validatorOrigin && htmlRoutePaths.has(resolvedUrl.pathname)) {
+    if (
+      resolvedUrl.origin === validatorOrigin &&
+      htmlRoutePaths.has(resolvedUrl.pathname)
+    ) {
       invalidRoutes.push(resolvedUrl.pathname);
     }
   }
@@ -310,7 +552,12 @@ function containsCredentialBearingLink(contents, htmlFile) {
     const href = attributeValue(match);
     try {
       const resolvedUrl = new URL(decodeHTML(href), pageUrl);
-      if (resolvedUrl.username || resolvedUrl.password || containsCredentialBearingQuery(resolvedUrl)) return true;
+      if (
+        resolvedUrl.username ||
+        resolvedUrl.password ||
+        containsCredentialBearingQuery(resolvedUrl)
+      )
+        return true;
     } catch {
       // Invalid URLs are handled by the browser/build output and are not credential evidence.
     }
@@ -322,9 +569,16 @@ function containsCredentialBearingLink(contents, htmlFile) {
 function normalizedUrlPath(target, htmlFile) {
   const pagePath = `/${path.relative(outputDir, htmlFile).split(path.sep).join("/")}`;
   try {
-    const resolvedUrl = new URL(decodeHTML(target), new URL(pagePath, validatorOrigin));
+    const resolvedUrl = new URL(
+      decodeHTML(target),
+      new URL(pagePath, validatorOrigin),
+    );
     if (resolvedUrl.origin !== validatorOrigin) return null;
-    if (htmlRoutePaths.has(resolvedUrl.pathname) || /^(?:\/assets|\/static)\//u.test(resolvedUrl.pathname)) return null;
+    if (
+      htmlRoutePaths.has(resolvedUrl.pathname) ||
+      /^(?:\/assets|\/static)\//u.test(resolvedUrl.pathname)
+    )
+      return null;
     return decodeURIComponent(resolvedUrl.pathname);
   } catch {
     return null;
@@ -336,13 +590,15 @@ function hrefPathTargets(contents, htmlFile) {
   for (const match of contents.matchAll(urlAttributePattern)) {
     const target = decodeHTML(attributeValue(match));
     const normalizedPath = normalizedUrlPath(target, htmlFile);
-    if (normalizedPath || !/^(?:\/assets|\/static)\//u.test(target)) targets.push(target);
+    if (normalizedPath || !/^(?:\/assets|\/static)\//u.test(target))
+      targets.push(target);
     if (normalizedPath) targets.push(normalizedPath);
   }
   return targets;
 }
 
-const credentialQueryKey = /^(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key|password|secret|code|oauth_code)$/iu;
+const credentialQueryKey =
+  /^(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key|password|secret|code|oauth_code)$/iu;
 
 function containsCredentialBearingQuery(url) {
   return containsCredentialBearingParameters(url.searchParams);
@@ -351,14 +607,23 @@ function containsCredentialBearingQuery(url) {
 function containsCredentialBearingFragment(url) {
   if (!url.hash) return false;
   const fragment = url.hash.slice(1).replace(/^\?/u, "");
-  return containsCredentialBearingParameters(new URLSearchParams(fragment))
-    || (fragment.includes("?") && containsCredentialBearingParameters(new URLSearchParams(fragment.slice(fragment.indexOf("?") + 1))));
+  return (
+    containsCredentialBearingParameters(new URLSearchParams(fragment)) ||
+    (fragment.includes("?") &&
+      containsCredentialBearingParameters(
+        new URLSearchParams(fragment.slice(fragment.indexOf("?") + 1)),
+      ))
+  );
 }
 
 function containsCredentialBearingParameters(parameters) {
   for (const [key, value] of parameters) {
     const pair = `${key}=${value}`;
-    if (credentialQueryKey.test(key) || forbiddenContent.some((pattern) => pattern.test(pair))) return true;
+    if (
+      credentialQueryKey.test(key) ||
+      forbiddenContent.some((pattern) => pattern.test(pair))
+    )
+      return true;
   }
   return false;
 }
@@ -376,30 +641,43 @@ function resourceTargets(contents) {
       targets.push(value.trim());
     }
   }
-  for (const match of contents.matchAll(cssUrlPattern)) targets.push(attributeValue(match).trim());
-  for (const match of contents.matchAll(cssImportPattern)) targets.push(attributeValue(match).trim());
+  for (const match of contents.matchAll(cssUrlPattern))
+    targets.push(attributeValue(match).trim());
+  for (const match of contents.matchAll(cssImportPattern))
+    targets.push(attributeValue(match).trim());
   return targets;
 }
 
 function isApprovedPublicAsset(target, htmlFile) {
   try {
     const pagePath = `/${path.relative(outputDir, htmlFile).split(path.sep).join("/")}`;
-    const resolvedUrl = new URL(decodeHTML(target), new URL(pagePath, validatorOrigin));
-    return resolvedUrl.origin === validatorOrigin
-      && (/^\/(?:assets|static)\//u.test(resolvedUrl.pathname));
+    const resolvedUrl = new URL(
+      decodeHTML(target),
+      new URL(pagePath, validatorOrigin),
+    );
+    return (
+      resolvedUrl.origin === validatorOrigin &&
+      /^\/(?:assets|static)\//u.test(resolvedUrl.pathname)
+    );
   } catch {
     return false;
   }
 }
 
 function containsForbiddenResourcePath(contents, htmlFile) {
-  const resourceTargetsToCheck = resourceTargets(contents)
-    .filter((target) => !isApprovedPublicAsset(target, htmlFile));
-  return forbiddenPathContent.some((pattern) => resourceTargetsToCheck.some((target) => {
-    const decodedTarget = decodeHTML(target);
-    const normalizedPath = normalizedUrlPath(target, htmlFile);
-    return pattern.test(decodedTarget) || (normalizedPath !== null && pattern.test(normalizedPath));
-  }));
+  const resourceTargetsToCheck = resourceTargets(contents).filter(
+    (target) => !isApprovedPublicAsset(target, htmlFile),
+  );
+  return forbiddenPathContent.some((pattern) =>
+    resourceTargetsToCheck.some((target) => {
+      const decodedTarget = decodeHTML(target);
+      const normalizedPath = normalizedUrlPath(target, htmlFile);
+      return (
+        pattern.test(decodedTarget) ||
+        (normalizedPath !== null && pattern.test(normalizedPath))
+      );
+    }),
+  );
 }
 
 function containsCredentialBearingResource(contents, htmlFile) {
@@ -410,11 +688,12 @@ function containsCredentialBearingResource(contents, htmlFile) {
     try {
       const resolvedUrl = new URL(decodeHTML(target), pageUrl);
       if (
-        resolvedUrl.username
-        || resolvedUrl.password
-        || containsCredentialBearingQuery(resolvedUrl)
-        || containsCredentialBearingFragment(resolvedUrl)
-      ) return true;
+        resolvedUrl.username ||
+        resolvedUrl.password ||
+        containsCredentialBearingQuery(resolvedUrl) ||
+        containsCredentialBearingFragment(resolvedUrl)
+      )
+        return true;
     } catch {
       // Invalid URLs are handled by the browser/build output and are not credential evidence.
     }
@@ -435,22 +714,40 @@ const forbiddenContentFixtures = [
     '```json\n{"refresh_token":"abc123","password":"not-a-real-secret"}\n```',
   ],
   ["classic GitHub PAT", "ghp_1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJ"],
-  ["fine-grained GitHub PAT", "github_pat_11ABCDEFGHijklmnopQRSTUVwxyz0123456789"],
+  [
+    "fine-grained GitHub PAT",
+    "github_pat_11ABCDEFGHijklmnopQRSTUVwxyz0123456789",
+  ],
 ];
 // Only the package registration page may show these exact public installation paths.
 // Keep all other filesystem and repository-path checks unchanged.
-const packageInstallationPaths = ['/usr/share/keyrings/delino-packages.gpg', '/usr/share/keyrings', '/etc/apt/sources.list.d/delino.sources', '/etc/apt/sources.list.d/delino-preview.sources', '/etc/yum.repos.d/delino.repo', '/etc/yum.repos.d/delino-preview.repo'];
+const packageInstallationPaths = [
+  "/usr/share/keyrings/delino-packages.gpg",
+  "/usr/share/keyrings",
+  "/etc/apt/sources.list.d/delino.sources",
+  "/etc/apt/sources.list.d/delino-preview.sources",
+  "/etc/yum.repos.d/delino.repo",
+  "/etc/yum.repos.d/delino-preview.repo",
+];
 function publicPathText(text, htmlFile) {
-  if (path.relative(outputDir, htmlFile) !== 'linux-packages.html') return text;
-  for (const allowed of [...packageInstallationPaths].sort((a, b) => b.length - a.length)) {
-    text = text.replaceAll(new RegExp(RegExp.escape(allowed) + '(?=$|[\\s"\'<>])', 'gu'), 'public-installation-path');
+  if (path.relative(outputDir, htmlFile) !== "linux-packages.html") return text;
+  for (const allowed of [...packageInstallationPaths].sort(
+    (a, b) => b.length - a.length,
+  )) {
+    text = text.replaceAll(
+      new RegExp(RegExp.escape(allowed) + "(?=$|[\\s\"'<>])", "gu"),
+      "public-installation-path",
+    );
   }
   return text;
 }
 // The terminal boundary must apply to every alternative, not just static assets.
 const allowedPublicPathPattern = `(?:${stableRoutePathPattern}|pnport/install\\.(?:sh|ps1)|(?:assets|static)(?:[/\\\\][A-Za-z0-9._~-]+)*)`;
 const forbiddenPathContent = [
-  new RegExp(`(?:^|[\\s("'\\x60>])/(?!${allowedPublicPathPattern}(?:\\.html)?(?:[?#"'\\x60<\\s]|$))[A-Za-z0-9._~-]+(?:[/\\\\][^\\s"'\\x60<>]*)?`, "u"),
+  new RegExp(
+    `(?:^|[\\s("'\\x60>])/(?!${allowedPublicPathPattern}(?:\\.html)?(?:[?#"'\\x60<\\s]|$))[A-Za-z0-9._~-]+(?:[/\\\\][^\\s"'\\x60<>]*)?`,
+    "u",
+  ),
   /(?:^|[\s("'`>])(?:\.\.[\\/])+(?:[A-Za-z0-9._~-]+[\\/])+[^\s"'`<>]*/u,
   /(?:^|[\s("'`>])(?:apps|cmds|crates|docs|packaging|packages|protos|scripts|servers)(?:[\\/][^\s"'`<>]+)+/u,
   /(?:^|[\s("'`>])[A-Za-z]:[\\/][^\s"'`<>]*/u,
@@ -486,7 +783,7 @@ const forbiddenResourceFixtures = [
   '<img src="file:///etc/devhud/private.png">',
   '<img srcset="../../servers/devhud/private.png 1x">',
   '<img src = "file:///etc/devhud/private.png">',
-  '<img src=file:///etc/devhud/private.png>',
+  "<img src=file:///etc/devhud/private.png>",
   '<img src="file&colon;///etc/devhud/private.png">',
   '<video poster="file:///etc/devhud/private.png"></video>',
   '<form action="../../servers/devhud/private-endpoint"></form>',
@@ -500,7 +797,7 @@ const forbiddenCssResourceFixtures = [
 ];
 const credentialBearingResourceFixtures = [
   '<img src="https://alice:secret@example.com/image.png">',
-  '<img src = https://alice:secret@example.com/image.png>',
+  "<img src = https://alice:secret@example.com/image.png>",
   '<img src="https://example.com/image?token&equals;abc123">',
   '<img src="https://example.com/image#token&equals;abc123">',
   '<video poster="https://alice:secret@example.com/image.png"></video>',
@@ -554,15 +851,19 @@ function containsAffirmativeReleaseClaim(contents) {
       sentenceEndOffset === -1
         ? -1
         : match.index + match[0].length + sentenceEndOffset;
-    const sentence = contents.slice(sentenceStart, sentenceEnd === -1 ? contents.length : sentenceEnd);
+    const sentence = contents.slice(
+      sentenceStart,
+      sentenceEnd === -1 ? contents.length : sentenceEnd,
+    );
     const phraseOffset = match.index - sentenceStart;
     const prefix = sentence.slice(0, phraseOffset);
     const suffix = sentence.slice(phraseOffset + match[0].length);
     if (/\b(?:no|not|never|without)\s*$/iu.test(prefix)) continue;
     if (
-      negativeAvailabilityPredicate.test(suffix)
-      || unnegatedProhibitionPredicate.test(suffix)
-    ) continue;
+      negativeAvailabilityPredicate.test(suffix) ||
+      unnegatedProhibitionPredicate.test(suffix)
+    )
+      continue;
     return true;
   }
   return false;
@@ -570,7 +871,9 @@ function containsAffirmativeReleaseClaim(contents) {
 
 for (const [fixture, expected] of releaseAvailabilityFixtures) {
   if (containsAffirmativeReleaseClaim(fixture) !== expected) {
-    failures.push(`release availability fixture was classified incorrectly: ${fixture}`);
+    failures.push(
+      `release availability fixture was classified incorrectly: ${fixture}`,
+    );
   }
 }
 
@@ -586,7 +889,10 @@ for (const htmlFile of htmlFiles) {
   const contents = await readFile(htmlFile, "utf8");
   const renderedText = visibleText(contents);
   const commentText = htmlComments(contents);
-  const pageUrl = new URL(`/${path.relative(outputDir, htmlFile).split(path.sep).join("/")}`, validatorOrigin);
+  const pageUrl = new URL(
+    `/${path.relative(outputDir, htmlFile).split(path.sep).join("/")}`,
+    validatorOrigin,
+  );
   for (const match of contents.matchAll(urlAttributePattern)) {
     let target;
     try {
@@ -597,31 +903,49 @@ for (const htmlFile of htmlFiles) {
   }
 
   for (const htmlRoute of findHtmlRouteLinks(contents, htmlFile)) {
-    failures.push(`${path.relative(outputDir, htmlFile)} links to ${htmlRoute}`);
+    failures.push(
+      `${path.relative(outputDir, htmlFile)} links to ${htmlRoute}`,
+    );
   }
 
   for (const pattern of forbiddenContent) {
     if (pattern.test(contents) || pattern.test(renderedText)) {
-      failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
+      failures.push(
+        `${path.relative(outputDir, htmlFile)} contains prohibited public content`,
+      );
     }
   }
   if (containsCredentialBearingLink(contents, htmlFile)) {
-    failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
+    failures.push(
+      `${path.relative(outputDir, htmlFile)} contains prohibited public content`,
+    );
   }
   if (containsForbiddenResourcePath(contents, htmlFile)) {
-    failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
+    failures.push(
+      `${path.relative(outputDir, htmlFile)} contains prohibited public content`,
+    );
   }
   if (containsCredentialBearingResource(contents, htmlFile)) {
-    failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
+    failures.push(
+      `${path.relative(outputDir, htmlFile)} contains prohibited public content`,
+    );
   }
   for (const pattern of forbiddenPathContent) {
     const hrefTargets = hrefPathTargets(contents, htmlFile);
-    if (pattern.test(commentText) || pattern.test(publicPathText(renderedText, htmlFile)) || hrefTargets.some((target) => pattern.test(target))) {
-      failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
+    if (
+      pattern.test(commentText) ||
+      pattern.test(publicPathText(renderedText, htmlFile)) ||
+      hrefTargets.some((target) => pattern.test(target))
+    ) {
+      failures.push(
+        `${path.relative(outputDir, htmlFile)} contains prohibited public content`,
+      );
     }
   }
   if (containsAffirmativeReleaseClaim(renderedText)) {
-    failures.push(`${path.relative(outputDir, htmlFile)} contains prohibited public content`);
+    failures.push(
+      `${path.relative(outputDir, htmlFile)} contains prohibited public content`,
+    );
   }
 }
 
@@ -629,15 +953,18 @@ for (const cssFile of await collectCssFiles(outputDir)) {
   const contents = await readFile(cssFile, "utf8");
   const relativeFile = path.relative(outputDir, cssFile);
   if (
-    forbiddenContent.some((pattern) => pattern.test(contents))
-    || containsCredentialBearingResource(contents, cssFile)
-    || containsForbiddenResourcePath(contents, cssFile)
+    forbiddenContent.some((pattern) => pattern.test(contents)) ||
+    containsCredentialBearingResource(contents, cssFile) ||
+    containsForbiddenResourcePath(contents, cssFile)
   ) {
     failures.push(`${relativeFile} contains prohibited public content`);
   }
   for (const target of resourceTargets(contents)) {
     try {
-      const url = new URL(decodeHTML(target), new URL(`/${relativeFile}`, validatorOrigin));
+      const url = new URL(
+        decodeHTML(target),
+        new URL(`/${relativeFile}`, validatorOrigin),
+      );
       if (url.origin === validatorOrigin && htmlRoutePaths.has(url.pathname)) {
         failures.push(`${relativeFile} contains a non-clean route`);
       }
@@ -654,25 +981,41 @@ for (const [language, fixture] of forbiddenContentFixtures) {
 }
 
 for (const fixture of forbiddenLinkFixtures) {
-  if (!containsCredentialBearingLink(fixture, path.join(outputDir, "fixture.html"))) {
+  if (
+    !containsCredentialBearingLink(
+      fixture,
+      path.join(outputDir, "fixture.html"),
+    )
+  ) {
     failures.push("credential-bearing link fixture was not detected");
   }
 }
 
 for (const fixture of hrefAttributeFixtures) {
-  if (!containsCredentialBearingLink(fixture, path.join(outputDir, "fixture.html"))) {
+  if (
+    !containsCredentialBearingLink(
+      fixture,
+      path.join(outputDir, "fixture.html"),
+    )
+  ) {
     failures.push("credential-bearing href attribute fixture was not detected");
   }
 }
 
 for (const fixture of invalidRouteAttributeFixtures) {
-  if (findHtmlRouteLinks(fixture, path.join(outputDir, "fixture.html")).length === 0) {
+  if (
+    findHtmlRouteLinks(fixture, path.join(outputDir, "fixture.html")).length ===
+    0
+  ) {
     failures.push("invalid HTML route attribute fixture was not detected");
   }
 }
 
 for (const fixture of externalRouteFixtures) {
-  if (findHtmlRouteLinks(fixture, path.join(outputDir, "fixture.html")).length !== 0) {
+  if (
+    findHtmlRouteLinks(fixture, path.join(outputDir, "fixture.html")).length !==
+    0
+  ) {
     failures.push("external HTML route fixture was incorrectly rejected");
   }
 }
@@ -683,43 +1026,76 @@ for (const fixture of forbiddenPathFixtures) {
   }
 }
 
-const forbiddenCommentFixture = "<!-- repository path: servers/devhud/config -->";
-if (!forbiddenPathContent.some((pattern) => pattern.test(forbiddenCommentFixture))) {
+const forbiddenCommentFixture =
+  "<!-- repository path: servers/devhud/config -->";
+if (
+  !forbiddenPathContent.some((pattern) => pattern.test(forbiddenCommentFixture))
+) {
   failures.push("forbidden HTML comment path fixture was not detected");
 }
 
 for (const fixture of encodedForbiddenPathFixtures) {
-  if (!containsForbiddenResourcePath(fixture, path.join(outputDir, "fixture.html"))) {
+  if (
+    !containsForbiddenResourcePath(
+      fixture,
+      path.join(outputDir, "fixture.html"),
+    )
+  ) {
     failures.push("encoded forbidden resource path fixture was not detected");
   }
 }
 
-for (const fixture of ['<link rel="stylesheet" href="file:///etc/private.css">']) {
-  if (!forbiddenPathContent.some((pattern) => hrefPathTargets(fixture, path.join(outputDir, "fixture.html")).some((target) => pattern.test(target)))) {
+for (const fixture of [
+  '<link rel="stylesheet" href="file:///etc/private.css">',
+]) {
+  if (
+    !forbiddenPathContent.some((pattern) =>
+      hrefPathTargets(fixture, path.join(outputDir, "fixture.html")).some(
+        (target) => pattern.test(target),
+      ),
+    )
+  ) {
     failures.push("forbidden non-anchor href path fixture was not detected");
   }
 }
 
 for (const fixture of forbiddenResourceFixtures) {
-  if (!containsForbiddenResourcePath(fixture, path.join(outputDir, "fixture.html"))) {
+  if (
+    !containsForbiddenResourcePath(
+      fixture,
+      path.join(outputDir, "fixture.html"),
+    )
+  ) {
     failures.push("forbidden resource path fixture was not detected");
   }
 }
 
 for (const fixture of forbiddenCssResourceFixtures) {
-  if (!containsForbiddenResourcePath(fixture, path.join(outputDir, "fixture.html"))) {
+  if (
+    !containsForbiddenResourcePath(
+      fixture,
+      path.join(outputDir, "fixture.html"),
+    )
+  ) {
     failures.push("forbidden CSS resource path fixture was not detected");
   }
 }
 
 for (const fixture of credentialBearingResourceFixtures) {
-  if (!containsCredentialBearingResource(fixture, path.join(outputDir, "fixture.html"))) {
+  if (
+    !containsCredentialBearingResource(
+      fixture,
+      path.join(outputDir, "fixture.html"),
+    )
+  ) {
     failures.push("credential-bearing resource fixture was not detected");
   }
 }
 
 for (const fixture of approvedResourceFixtures) {
-  if (containsForbiddenResourcePath(fixture, path.join(outputDir, "fixture.html"))) {
+  if (
+    containsForbiddenResourcePath(fixture, path.join(outputDir, "fixture.html"))
+  ) {
     failures.push("approved public resource fixture was incorrectly rejected");
   }
 }
@@ -730,20 +1106,31 @@ for (const [routeId, headings] of requiredHeadings) {
   const contents = articleContent(pageContents);
   const headingsInArticle = new Set(articleHeadings(contents));
   for (const heading of headings) {
-    if (!headingsInArticle.has(heading)) failures.push(`${routeId} is missing required heading text: ${heading}`);
+    if (!headingsInArticle.has(heading))
+      failures.push(`${routeId} is missing required heading text: ${heading}`);
   }
-  if (!/<main\b[^>]*>/iu.test(pageContents)) failures.push(`${routeId} is missing a main landmark`);
+  if (!/<main\b[^>]*>/iu.test(pageContents))
+    failures.push(`${routeId} is missing a main landmark`);
 }
 
-for (const routeId of ["/react-forge/formats/glb/", "/react-forge/formats/fbx/", "/react-forge/formats/sfx/", "/react-forge/formats/sprite/"]) {
+for (const routeId of [
+  "/react-forge/formats/glb/",
+  "/react-forge/formats/fbx/",
+  "/react-forge/formats/sfx/",
+  "/react-forge/formats/sprite/",
+]) {
   const route = routeOutputFiles.find((entry) => entry.routeId === routeId);
   const contents = route ? await readFile(route.outputFile, "utf8") : "";
   const introduction = visibleText(articleContent(contents)).slice(0, 550);
   if (!/\bAvailable in npm 0\.2\.0\b/iu.test(introduction)) {
-    failures.push(`${routeId} is missing its main-content npm 0.2.0 availability notice`);
+    failures.push(
+      `${routeId} is missing its main-content npm 0.2.0 availability notice`,
+    );
   }
   if (/\bUnreleased\b|not included in npm/iu.test(introduction)) {
-    failures.push(`${routeId} still identifies the format as unreleased or unavailable`);
+    failures.push(
+      `${routeId} still identifies the format as unreleased or unavailable`,
+    );
   }
 }
 
@@ -753,7 +1140,10 @@ for (const [routeId, links] of requiredLinks) {
     ? articleContent(await readFile(route.outputFile, "utf8"))
     : "";
   for (const link of links) {
-    if (!contents.includes(`href="${link}"`) && !contents.includes(`href='${link}'`)) {
+    if (
+      !contents.includes(`href="${link}"`) &&
+      !contents.includes(`href='${link}'`)
+    ) {
       failures.push(`${routeId} is missing required link ${link}`);
     }
   }

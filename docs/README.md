@@ -3,10 +3,11 @@
 ## Purpose
 
 - [React Forge Figma contract](packages-react-forge-figma-contract.md).
-`docs/` is the source of truth for repository contracts.
-Each project must have one project index document and one or more domain contract documents.
+  `docs/` is the source of truth for repository contracts.
+  Each project must have one project index document and one or more domain contract documents.
 
 ## Repository Defaults
+
 - Repository-wide default technology choices and workflow defaults are defined in `docs/repository-defaults.md`.
 - Repository licensing and third-party notice boundaries are defined in `docs/repository-license-contract.md`.
 - Dependency security updates, audit evidence, and unresolved upstream constraints are recorded in [the dependency security contract](repository-dependency-security-contract.md).
@@ -20,6 +21,7 @@ Instruction files contain development procedures, directory ownership and contra
 Record new implementation status, validation results and unresolved limits in pull requests, issues and CI logs/artifacts. Include the source revision, commands, results and unperformed checks. Distinguish fixtures, builds and packaging from actual native/account/platform acceptance. Exclude secrets, user state and raw native content. Preserve existing validation records.
 
 ## Documentation Editing Rules
+
 - Do not add issue or pull-request links or identifying numbers to repository instruction files or documentation. Describe requirements directly and link to the owning repository-local contracts. Domain, service and technical-documentation links remain allowed; record issue/PR traceability in pull requests, issues or CI records instead.
 - DeliDev implementation status and validation results belong in pull requests, issues and CI logs/artifacts; do not add repository evidence documents. Project indexes route to domain contracts, and validation-only records do not require changes to project indexes or AGENTS files. See [source ownership](cmds-delidev-structure-contract.md).
 - These rules apply to documentation authoring and editing work, not general conversational summaries.
@@ -29,6 +31,7 @@ Record new implementation status, validation results and unresolved limits in pu
 - `docs/` remains the internal source of truth for contracts, architecture notes, repo-local paths, and implementation details. Public documentation is owned and built by `apps/public-docs`; the project content roots are `apps/public-docs/docs/{runmoor,nodeup,binpm,async-commit-hook,clibox,pnport,react-forge}`. Those pages must curate from these contracts without documenting repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
 
 ## Naming Rules
+
 - Project index docs: `docs/project-<project-id>.md`
 - Domain contract docs: `docs/<domain>-<project-or-component>-<contract>.md`
 - Domain prefix must be one of: `apps`, `cmds`, `servers`, `crates`, `protos`, `packages`
@@ -36,6 +39,7 @@ Record new implementation status, validation results and unresolved limits in pu
 - Use lowercase kebab-case identifiers and stable enum-style IDs in contract sections.
 
 ## Templates
+
 - `docs/repository-defaults.md`: repository-wide default technology choices and workflow defaults
 - `docs/project-template.md`: template for project index docs
 - `docs/domain-template.md`: template for domain contract docs
@@ -49,6 +53,7 @@ Record new implementation status, validation results and unresolved limits in pu
 ## Project Catalog
 
 ### delidev
+
 - [Mobile HTTPS client](apps-delidev-mobile-contract.md)
 - [Desktop English/Korean localization](apps-delidev-localization-contract.md)
 - [Parallel browser QA](apps-delidev-qa-contract.md)
@@ -103,6 +108,7 @@ Record new implementation status, validation results and unresolved limits in pu
 - [Complete feature requirements](cmds-delidev-requirements.md)
 
 ### React Forge
+
 - [Project index](project-react-forge.md)
 - [Public documentation](apps-react-forge-docs-foundation.md) (`apps/public-docs/docs/react-forge`, canonical URL `https://oss.delino.io/react-forge/`, eighteen user-guide routes)
 - [Complete issue requirements](packages-react-forge-requirements.md)
@@ -116,19 +122,23 @@ Record new implementation status, validation results and unresolved limits in pu
 - [Public npm release](packages-react-forge-release-contract.md)
 
 ### Forge
+
 - [Project index](project-forge.md)
 - [Rust DSL, PPTX, CLI and MCP foundation](crates-forge-foundation.md)
 
 ### binpm
+
 - `docs/project-binpm.md`
 - `docs/crates-binpm-foundation.md`
 - `docs/apps-binpm-docs-foundation.md` (`apps/public-docs/docs/binpm`, canonical URL `https://oss.delino.io/binpm`, routes published below `/binpm`: `/`, `/installation`, `/getting-started`, `/commands`, `/local-tooling`, `/cache-and-verification`, `/releases`, `/troubleshooting`, `/reference`)
 
 ### cargo-mono
+
 - `docs/project-cargo-mono.md`
 - `docs/crates-cargo-mono-foundation.md`
 
 ### clibox
+
 - `docs/project-clibox.md`
 - `docs/crates-clibox-foundation.md` (five private Rust crates: CLI composition, configuration, OS utilities, offline transformations, and TCP/HTTP/file readiness; npm/native distribution only)
 - `docs/crates-clibox-fspy-contract.md` (file-access workflows and observation requirements; implementation in progress)
@@ -136,40 +146,48 @@ Record new implementation status, validation results and unresolved limits in pu
 - `docs/apps-clibox-docs-foundation.md` (`apps/public-docs/docs/clibox`, canonical URL `https://oss.delino.io/clibox`, thirteen user-guide routes including the source-only fspy guide)
 
 ### nodeup
+
 - `docs/project-nodeup.md`
 - `docs/crates-nodeup-foundation.md`
 - `docs/apps-nodeup-docs-foundation.md` (`apps/public-docs/docs/nodeup`, canonical URL `https://oss.delino.io/nodeup`, routes published below `/nodeup`: `/`, `/installation`, `/getting-started`, `/commands`, `/runtime-resolution`, `/shims-and-package-managers`, `/output`, `/completions`, `/releases`, `/troubleshooting`, `/reference`)
 
 ### with-watch
+
 - `docs/project-with-watch.md`
 - `docs/crates-with-watch-foundation.md`
 
 ### runmoor
+
 - `docs/project-runmoor.md`
 - `docs/cmds-runmoor-foundation.md`
 - `docs/apps-runmoor-docs-foundation.md` (`apps/public-docs/docs/runmoor`, canonical URL `https://oss.delino.io/runmoor`, routes published below `/runmoor`: `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, `/host`, `/operations`)
 
 ### derun
+
 - `docs/project-derun.md`
 - `docs/cmds-derun-foundation.md`
 
 ### public-docs
+
 - `docs/project-public-docs.md`
 - `docs/apps-public-docs-foundation.md` (single `oss.delino.io` publisher, seven project subpaths, site selector, and stable `/devhud` section)
 - `docs/packages-docs-site-switcher-contract.md` (shared accessible documentation site selector package and fixed site registry)
 
 ### serde-feather
+
 - `docs/project-serde-feather.md`
 - `docs/crates-serde-feather-core-foundation.md`
 - `docs/crates-serde-feather-macros-foundation.md`
 
 ### rustia
+
 - `docs/project-rustia.md`
 - `docs/crates-rustia-core-foundation.md`
 - `docs/crates-rustia-llm-foundation.md`
 - `docs/crates-rustia-macros-foundation.md`
 
 ### devhud
+
 The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS/Android system-webview hosts, production WidgetKit/AppWidgetProvider Deck widgets with backup-excluded coordinated iOS state and trusted Android configuration entry, synchronized Settings boundary, direct-client GitHub.com provider/setup and RealQA issue submission, desktop RealQA capture/editor/encrypted drafts/direct uploads, least-privilege Chrome context picker, authenticated Native Messaging broker, administrator SPA, and Admin API are implemented; other product-result surfaces and the remaining DevHUD domains are planned.
 
 - `docs/project-devhud.md`
@@ -190,6 +208,7 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 - [Linux CLI package repositories](repository-linux-packages-contract.md): APT/DNF build compatibility, signing, publication, recovery and rollout.
 
 ### async-commit-hook
+
 - [Project index](project-async-commit-hook.md)
 - [Command](cmds-async-commit-hook-contract.md), [app](apps-async-commit-hook-contract.md), [protocol](protos-async-commit-hook-v1-contract.md), [client](packages-async-commit-hook-api-client-contract.md)
 - [Complete requirements](cmds-async-commit-hook-requirements.md)
@@ -198,6 +217,7 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 - `apps-async-commit-hook-docs-foundation.md`: Rspress public documentation owned at `apps/public-docs/docs/async-commit-hook`, published below `/async-commit-hook`, with installer routes, the `/docs` migration route, and validation contract.
 
 ### pnport
+
 - [Project index](project-pnport.md)
 - [Rust foundation](crates-pnport-foundation.md)
 - [fspy source fork and licensing](crates-fspy-vendor-contract.md)

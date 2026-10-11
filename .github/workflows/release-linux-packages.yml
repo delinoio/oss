@@ -3,10 +3,10 @@ name: Publish Linux CLI packages
 on:
   workflow_call:
     inputs:
-      project: {required: true, type: string}
-      version: {required: true, type: string}
-      revision: {required: true, type: string}
-      mode: {required: true, type: string}
+      project: { required: true, type: string }
+      version: { required: true, type: string }
+      revision: { required: true, type: string }
+      mode: { required: true, type: string }
   workflow_dispatch:
     inputs:
       project:
@@ -79,9 +79,24 @@ jobs:
       fail-fast: false
       matrix:
         host:
-          - {runner: ubuntu-latest, arch: amd64}
-          - {runner: ubuntu-24.04-arm, arch: arm64}
-        image: ['ubuntu:22.04', 'ubuntu:24.04', 'ubuntu:26.04', 'debian:12', 'debian:13', 'fedora:43', 'fedora:44', 'registry.access.redhat.com/ubi9/ubi:latest', 'registry.access.redhat.com/ubi10/ubi:latest', 'rockylinux:9', 'rockylinux/rockylinux:10', 'almalinux:9', 'almalinux:10']
+          - { runner: ubuntu-latest, arch: amd64 }
+          - { runner: ubuntu-24.04-arm, arch: arm64 }
+        image:
+          [
+            "ubuntu:22.04",
+            "ubuntu:24.04",
+            "ubuntu:26.04",
+            "debian:12",
+            "debian:13",
+            "fedora:43",
+            "fedora:44",
+            "registry.access.redhat.com/ubi9/ubi:latest",
+            "registry.access.redhat.com/ubi10/ubi:latest",
+            "rockylinux:9",
+            "rockylinux/rockylinux:10",
+            "almalinux:9",
+            "almalinux:10",
+          ]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -146,9 +161,24 @@ jobs:
       fail-fast: false
       matrix:
         host:
-          - {runner: ubuntu-latest, arch: amd64}
-          - {runner: ubuntu-24.04-arm, arch: arm64}
-        image: ['ubuntu:22.04', 'ubuntu:24.04', 'ubuntu:26.04', 'debian:12', 'debian:13', 'fedora:43', 'fedora:44', 'registry.access.redhat.com/ubi9/ubi:latest', 'registry.access.redhat.com/ubi10/ubi:latest', 'rockylinux:9', 'rockylinux/rockylinux:10', 'almalinux:9', 'almalinux:10']
+          - { runner: ubuntu-latest, arch: amd64 }
+          - { runner: ubuntu-24.04-arm, arch: arm64 }
+        image:
+          [
+            "ubuntu:22.04",
+            "ubuntu:24.04",
+            "ubuntu:26.04",
+            "debian:12",
+            "debian:13",
+            "fedora:43",
+            "fedora:44",
+            "registry.access.redhat.com/ubi9/ubi:latest",
+            "registry.access.redhat.com/ubi10/ubi:latest",
+            "rockylinux:9",
+            "rockylinux/rockylinux:10",
+            "almalinux:9",
+            "almalinux:10",
+          ]
     steps:
       - uses: actions/checkout@v6
         with:

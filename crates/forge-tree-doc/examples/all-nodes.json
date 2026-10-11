@@ -228,29 +228,17 @@
             "legend": "bottom",
             "data_labels": "value",
             "data": {
-              "categories": [
-                "Q1",
-                "Q2",
-                "Q3"
-              ],
+              "categories": ["Q1", "Q2", "Q3"],
               "series": [
                 {
                   "key": "actual",
                   "name": "Actual",
-                  "values": [
-                    12,
-                    24,
-                    18
-                  ]
+                  "values": [12, 24, 18]
                 },
                 {
                   "key": "target",
                   "name": "Target",
-                  "values": [
-                    16,
-                    20,
-                    24
-                  ]
+                  "values": [16, 20, 24]
                 }
               ]
             }

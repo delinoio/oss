@@ -1,13 +1,25 @@
 import net from "node:net";
 import { commandInvocation } from "../../../scripts/dev-environment/process.mjs";
-import { exitLikeChild, spawnDevServer } from "../../../scripts/spawn-dev-server.mjs";
+import {
+  exitLikeChild,
+  spawnDevServer,
+} from "../../../scripts/spawn-dev-server.mjs";
 
-if (process.argv.length > 2) throw new Error("ach development has a fixed localhost:46308 binding; address overrides are not supported");
+if (process.argv.length > 2)
+  throw new Error(
+    "ach development has a fixed localhost:46308 binding; address overrides are not supported",
+  );
 
 try {
   await new Promise((resolve, reject) => {
     const probe = net.createServer();
-    probe.once("error", () => reject(new Error("Port 46308 is occupied. Stop the conflicting server before starting ach development.")));
+    probe.once("error", () =>
+      reject(
+        new Error(
+          "Port 46308 is occupied. Stop the conflicting server before starting ach development.",
+        ),
+      ),
+    );
     probe.listen(46308, "localhost", () => probe.close(resolve));
   });
   const pnpm = commandInvocation("pnpm");

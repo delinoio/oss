@@ -10,14 +10,14 @@ Security updates must preserve the immutable DevHud Tauri/CEF revision and mobil
 
 GitHub reported 39 open Dependabot alerts at the start of this change. The changes below remove affected versions for 34 of those alerts. GitHub closes version-based alerts after the updated dependency graph reaches the default branch; opening a PR does not itself close them.
 
-| Dependency | Updated resolution | Coverage |
-| --- | --- | --- |
-| `js-yaml` | 4.3.2 in root, DevHud and pnpm override | Alerts 223, 224, 235 |
-| `body-parser` | 1.20.8 through Express 4.22.3 | Alert 265 |
-| `react-router` / `react-router-dom` | 7.18.4 | Alert 205 |
-| `pypdf` | 6.16.1 in test-only rendering requirements | Alerts 242–264 |
-| `hickory-resolver` / `hickory-proto` | 0.26.3 | Alerts 240, 241; preserve disabled DNSSEC, one attempt, no cache and both IP families; map fallible resolver construction to the existing redacted configuration error |
-| Docker SDK | Remove `github.com/docker/docker`; use official Moby client 0.6.0 / API 1.56.0 | Alerts 236–239; preserve local Unix sockets, API negotiation, ownership, resource budgets and cleanup |
+| Dependency                           | Updated resolution                                                             | Coverage                                                                                                                                                               |
+| ------------------------------------ | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `js-yaml`                            | 4.3.2 in root, DevHud and pnpm override                                        | Alerts 223, 224, 235                                                                                                                                                   |
+| `body-parser`                        | 1.20.8 through Express 4.22.3                                                  | Alert 265                                                                                                                                                              |
+| `react-router` / `react-router-dom`  | 7.18.4                                                                         | Alert 205                                                                                                                                                              |
+| `pypdf`                              | 6.16.1 in test-only rendering requirements                                     | Alerts 242–264                                                                                                                                                         |
+| `hickory-resolver` / `hickory-proto` | 0.26.3                                                                         | Alerts 240, 241; preserve disabled DNSSEC, one attempt, no cache and both IP families; map fallible resolver construction to the existing redacted configuration error |
+| Docker SDK                           | Remove `github.com/docker/docker`; use official Moby client 0.6.0 / API 1.56.0 | Alerts 236–239; preserve local Unix sockets, API negotiation, ownership, resource budgets and cleanup                                                                  |
 
 The existing Express and YAML overrides are advanced within their current major versions. The new React Router DOM override keeps Rspress on a patched compatible 7.x router pair; remove it when the owning upstream dependency enforces a safe minimum and a fresh lockfile audit remains clean. There is no override to Router 8.
 
@@ -36,11 +36,11 @@ All six DevHud mobile graphs were checked against their previous committed diges
 
 The following five Dependabot alerts still match packages in `Cargo.lock`:
 
-| Alerts | Dependency path | Constraint and evidence boundary |
-| --- | --- | --- |
-| 181 | DevHud → pinned Tauri/GTK3 → `glib` 0.18.5 | `VariantStrIter` is fixed in 0.20, which is incompatible with GTK3's 0.18 type graph. No 0.18.6 patch is published. Repository code and inspected GTK/Tauri consumers do not call `array_iter_str`, but this is source inspection, not a patched dependency or complete Linux binary reachability proof. |
-| 182 | Pinned Tauri/kuchikiki → selectors → phf code generation → `rand` 0.7.3 | No 0.7.4 patch is published. The consumer uses seeded `SmallRng`; the all-target/all-feature graph does not enable rand 0.7's `log` feature required by the advisory. The lockfile version still matches the alert. |
-| 212–214 | Pinned Tauri CLI/bundler → rpm 0.25.1 → pgp 0.19.0 → `ml-dsa` 0.0.4 | The patched ML-DSA API is incompatible with pgp 0.19; no compatible pgp 0.19.1 or rpm 0.25.2 release is published. DevHud's supported Linux packages are Debian and AppImage, but the optional Linux bundler graph still contains RPM signing code. |
+| Alerts  | Dependency path                                                         | Constraint and evidence boundary                                                                                                                                                                                                                                                                         |
+| ------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 181     | DevHud → pinned Tauri/GTK3 → `glib` 0.18.5                              | `VariantStrIter` is fixed in 0.20, which is incompatible with GTK3's 0.18 type graph. No 0.18.6 patch is published. Repository code and inspected GTK/Tauri consumers do not call `array_iter_str`, but this is source inspection, not a patched dependency or complete Linux binary reachability proof. |
+| 182     | Pinned Tauri/kuchikiki → selectors → phf code generation → `rand` 0.7.3 | No 0.7.4 patch is published. The consumer uses seeded `SmallRng`; the all-target/all-feature graph does not enable rand 0.7's `log` feature required by the advisory. The lockfile version still matches the alert.                                                                                      |
+| 212–214 | Pinned Tauri CLI/bundler → rpm 0.25.1 → pgp 0.19.0 → `ml-dsa` 0.0.4     | The patched ML-DSA API is incompatible with pgp 0.19; no compatible pgp 0.19.1 or rpm 0.25.2 release is published. DevHud's supported Linux packages are Debian and AppImage, but the optional Linux bundler graph still contains RPM signing code.                                                      |
 
 Fixing these dependency versions requires an upstream Tauri/GTK/packaging migration or an explicitly reviewed exception to the repository's pin/patch restrictions. This change adds neither a fork nor a prohibited Cargo patch and does not dismiss these alerts.
 

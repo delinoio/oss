@@ -5,12 +5,12 @@
   "executable": "ach",
   "site": "https://oss.delino.io/async-commit-hook",
   "targets": [
-    {"os": "darwin", "arch": "amd64", "minimum": "macOS 13"},
-    {"os": "darwin", "arch": "arm64", "minimum": "macOS 13"},
-    {"os": "windows", "arch": "amd64", "minimum": "Windows 10 22H2"},
-    {"os": "windows", "arch": "arm64", "minimum": "Windows 10 22H2"},
-    {"os": "linux", "arch": "amd64", "minimum": "Ubuntu 22.04 LTS"},
-    {"os": "linux", "arch": "arm64", "minimum": "Ubuntu 22.04 LTS"}
+    { "os": "darwin", "arch": "amd64", "minimum": "macOS 13" },
+    { "os": "darwin", "arch": "arm64", "minimum": "macOS 13" },
+    { "os": "windows", "arch": "amd64", "minimum": "Windows 10 22H2" },
+    { "os": "windows", "arch": "arm64", "minimum": "Windows 10 22H2" },
+    { "os": "linux", "arch": "amd64", "minimum": "Ubuntu 22.04 LTS" },
+    { "os": "linux", "arch": "arm64", "minimum": "Ubuntu 22.04 LTS" }
   ],
   "real_machine_validation": "not performed; explicitly excluded by owner",
   "publication": "manual only; not performed during implementation"

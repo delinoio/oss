@@ -1,16 +1,52 @@
 import { useLocale } from "./localization";
-import { createContext, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { create, fromBinary, toBinary, type DescMessage, type DescMethodUnary, type MessageInitShape, type MessageShape } from "@bufbuild/protobuf";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
+import {
+  create,
+  fromBinary,
+  toBinary,
+  type DescMessage,
+  type DescMethodUnary,
+  type MessageInitShape,
+  type MessageShape,
+} from "@bufbuild/protobuf";
 import { useMutation } from "@connectrpc/connect-query";
 import { Code, ConnectError } from "@connectrpc/connect";
-import { ConfigurationQuery, EntityKind, isEntityId, supportsResourceSchema, type Resource, clientFailure, FailureCode } from "@delinoio/delidev-api-client";
+import {
+  ConfigurationQuery,
+  EntityKind,
+  isEntityId,
+  supportsResourceSchema,
+  type Resource,
+  clientFailure,
+  FailureCode,
+} from "@delinoio/delidev-api-client";
 import { useSettingsOpening } from "./settings-lifetime";
 
-interface Intent { input?: object; bytes?: number; acknowledge?: (result: unknown) => boolean; busy: boolean; uncertain: boolean; error?: unknown; job?: Resource }
+interface Intent {
+  input?: object;
+  bytes?: number;
+  acknowledge?: (result: unknown) => boolean;
+  busy: boolean;
+  uncertain: boolean;
+  error?: unknown;
+  job?: Resource;
+}
 const empty: Intent = Object.freeze({ busy: false, uncertain: false });
 // Bind outside the hook so a retained verifier cannot keep the submitting
 // hook's mutation, presentation callback or view state alive.
-function bindAcknowledgement<I extends DescMessage, O extends DescMessage>(acknowledge: (result: MessageShape<O>, request: MessageShape<I>) => boolean, request: MessageShape<I>) {
+function bindAcknowledgement<I extends DescMessage, O extends DescMessage>(
+  acknowledge: (result: MessageShape<O>, request: MessageShape<I>) => boolean,
+  request: MessageShape<I>,
+) {
   return (result: unknown) => acknowledge(result as MessageShape<O>, request);
 }
 class IntentRegistry {
@@ -19,9 +55,18 @@ class IntentRegistry {
   entries = new Map<string, Intent>();
   listeners = new Set<() => void>();
   acceptedListeners = new Map<string, Set<() => void>>();
-  acceptedObservers = new Set<(key: string, request: object, result: unknown) => void>();
-  outcomeObservers = new Set<(key: string, request: object, phase: RetainedMutationPhase) => void>();
-  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
+  acceptedObservers = new Set<
+    (key: string, request: object, result: unknown) => void
+  >();
+  outcomeObservers = new Set<
+    (key: string, request: object, phase: RetainedMutationPhase) => void
+  >();
+  subscribe = (listener: () => void) => {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  };
   observeAccepted(key: string, listener: () => void) {
     const listeners = this.acceptedListeners.get(key) ?? new Set<() => void>();
     listeners.add(listener);
@@ -33,15 +78,28 @@ class IntentRegistry {
   }
   notifyAcceptedResult(key: string, request: object, result: unknown) {
     for (const observer of this.acceptedObservers) {
-      try { observer(key, request, result); } catch (error) { console.warn("delidev.mutation.accepted_observer_failed", { classification: clientFailure(error).code }); }
+      try {
+        observer(key, request, result);
+      } catch (error) {
+        console.warn("delidev.mutation.accepted_observer_failed", {
+          classification: clientFailure(error).code,
+        });
+      }
     }
   }
   notifyAccepted(key: string) {
-    for (const listener of [...(this.acceptedListeners.get(key) ?? [])]) listener();
+    for (const listener of [...(this.acceptedListeners.get(key) ?? [])])
+      listener();
   }
   notifyOutcome(key: string, request: object, phase: RetainedMutationPhase) {
     for (const observer of this.outcomeObservers) {
-      try { observer(key, request, phase); } catch (error) { console.warn("delidev.mutation.outcome_observer_failed", { classification: clientFailure(error).code }); }
+      try {
+        observer(key, request, phase);
+      } catch (error) {
+        console.warn("delidev.mutation.outcome_observer_failed", {
+          classification: clientFailure(error).code,
+        });
+      }
     }
   }
   put(key: string, value: Intent) {
@@ -50,34 +108,83 @@ class IntentRegistry {
     for (const listener of this.listeners) listener();
   }
   reserve(key: string, bytes: number) {
-    const used = [...this.entries].reduce((sum, [id, value]) => sum + (id === key ? 0 : value.bytes ?? 0), 0);
-    if (used + bytes > 8 << 20) throw new ConnectError("Resolve pending operations before retaining more input.", Code.ResourceExhausted);
+    const used = [...this.entries].reduce(
+      (sum, [id, value]) => sum + (id === key ? 0 : (value.bytes ?? 0)),
+      0,
+    );
+    if (used + bytes > 8 << 20)
+      throw new ConnectError(
+        "Resolve pending operations before retaining more input.",
+        Code.ResourceExhausted,
+      );
     if (this.entries.has(key) || this.entries.size < 1000) return;
-    for (const [id, value] of this.entries) if (!value.input && !value.busy) { this.entries.delete(id); return; }
-    throw new ConnectError("Inspect pending operations before starting more work.", Code.ResourceExhausted);
+    for (const [id, value] of this.entries)
+      if (!value.input && !value.busy) {
+        this.entries.delete(id);
+        return;
+      }
+    throw new ConnectError(
+      "Inspect pending operations before starting more work.",
+      Code.ResourceExhausted,
+    );
   }
 }
 
-export interface RetainedMutationIntent { key: string; busy: boolean; uncertain: boolean; input: object; job?: Resource }
-export function useRetainedMutationIntents(prefix: string): RetainedMutationIntent[] {
+export interface RetainedMutationIntent {
+  key: string;
+  busy: boolean;
+  uncertain: boolean;
+  input: object;
+  job?: Resource;
+}
+export function useRetainedMutationIntents(
+  prefix: string,
+): RetainedMutationIntent[] {
   const registry = useIntentRegistry(prefix);
-  if (!registry) throw new Error("A connection-scoped mutation registry is required.");
-  const revision = useSyncExternalStore(registry.subscribe, () => registry.revision, () => registry.revision);
-  return useMemo(() => [...registry.entries].flatMap(([key, intent]) => key.startsWith(prefix) && intent.input
-    ? [{ key, busy: intent.busy, uncertain: intent.uncertain, input: intent.input, job: intent.job }]
-    : []), [prefix, registry, revision]);
+  if (!registry)
+    throw new Error("A connection-scoped mutation registry is required.");
+  const revision = useSyncExternalStore(
+    registry.subscribe,
+    () => registry.revision,
+    () => registry.revision,
+  );
+  return useMemo(
+    () =>
+      [...registry.entries].flatMap(([key, intent]) =>
+        key.startsWith(prefix) && intent.input
+          ? [
+              {
+                key,
+                busy: intent.busy,
+                uncertain: intent.uncertain,
+                input: intent.input,
+                job: intent.job,
+              },
+            ]
+          : [],
+      ),
+    [prefix, registry, revision],
+  );
 }
 const Context = createContext<IntentRegistry | undefined>(undefined);
 const ConnectionContext = createContext<IntentRegistry | undefined>(undefined);
 export const repositoryConfigurationPrefix = `configuration:${EntityKind.REPOSITORY}:`;
-function existingRepositoryConfiguration(key: string) { return key.startsWith(repositoryConfigurationPrefix) && key !== `${repositoryConfigurationPrefix}new`; }
+function existingRepositoryConfiguration(key: string) {
+  return (
+    key.startsWith(repositoryConfigurationPrefix) &&
+    key !== `${repositoryConfigurationPrefix}new`
+  );
+}
 function useIntentRegistry(key: string) {
-  const local = useContext(Context), connection = useContext(ConnectionContext);
-  return existingRepositoryConfiguration(key) ? connection ?? local : local;
+  const local = useContext(Context),
+    connection = useContext(ConnectionContext);
+  return existingRepositoryConfiguration(key) ? (connection ?? local) : local;
 }
 export function useRepositoryConfigurationPending(id: string) {
   const intents = useRetainedMutationIntents(repositoryConfigurationPrefix);
-  return intents.some(intent => intent.key === `${repositoryConfigurationPrefix}${id}`);
+  return intents.some(
+    (intent) => intent.key === `${repositoryConfigurationPrefix}${id}`,
+  );
 }
 export function MutationIntents({ children }: { children: ReactNode }) {
   useLocale();
@@ -85,33 +192,73 @@ export function MutationIntents({ children }: { children: ReactNode }) {
   const connection = useContext(ConnectionContext);
   const [registry] = useState(() => new IntentRegistry());
   useEffect(() => {
-    const dispose = () => { registry.alive = false; registry.entries.clear(); registry.acceptedListeners.clear(); registry.acceptedObservers.clear(); registry.outcomeObservers.clear(); };
+    const dispose = () => {
+      registry.alive = false;
+      registry.entries.clear();
+      registry.acceptedListeners.clear();
+      registry.acceptedObservers.clear();
+      registry.outcomeObservers.clear();
+    };
     registry.alive = !opening?.disposed;
-    opening?.controller.signal.addEventListener("abort", dispose, { once: true });
-    return () => { opening?.controller.signal.removeEventListener("abort", dispose); dispose(); };
+    opening?.controller.signal.addEventListener("abort", dispose, {
+      once: true,
+    });
+    return () => {
+      opening?.controller.signal.removeEventListener("abort", dispose);
+      dispose();
+    };
   }, [registry, opening]);
-  return <ConnectionContext.Provider value={connection ?? registry}><Context.Provider value={registry}>{children}</Context.Provider></ConnectionContext.Provider>;
+  return (
+    <ConnectionContext.Provider value={connection ?? registry}>
+      <Context.Provider value={registry}>{children}</Context.Provider>
+    </ConnectionContext.Provider>
+  );
 }
 
 // Connection-owned attachment drafts observe the exact accepted request even
 // after its submitting conversation leaves the mounted surface.
-export function useRetainedMutationNotifications(accepted: (key: string, request: object, result: unknown) => void) {
+export function useRetainedMutationNotifications(
+  accepted: (key: string, request: object, result: unknown) => void,
+) {
   const registry = useContext(Context);
-  if (!registry) throw new Error("A connection-scoped mutation registry is required.");
-  const callback = useRef(accepted); callback.current = accepted;
-  useEffect(() => { const observer = (key: string, request: object, result: unknown) => callback.current(key, request, result); registry.acceptedObservers.add(observer); return () => { registry.acceptedObservers.delete(observer); }; }, [registry]);
+  if (!registry)
+    throw new Error("A connection-scoped mutation registry is required.");
+  const callback = useRef(accepted);
+  callback.current = accepted;
+  useEffect(() => {
+    const observer = (key: string, request: object, result: unknown) =>
+      callback.current(key, request, result);
+    registry.acceptedObservers.add(observer);
+    return () => {
+      registry.acceptedObservers.delete(observer);
+    };
+  }, [registry]);
 }
 
-export enum RetainedMutationPhase { Sending = "sending", Uncertain = "uncertain", Rejected = "rejected" }
+export enum RetainedMutationPhase {
+  Sending = "sending",
+  Uncertain = "uncertain",
+  Rejected = "rejected",
+}
 /** Outcomes belong to the original connection even after the sender unmounts. */
-export function useRetainedMutationOutcomes(observe: (key: string, request: object, phase: RetainedMutationPhase) => void) {
+export function useRetainedMutationOutcomes(
+  observe: (key: string, request: object, phase: RetainedMutationPhase) => void,
+) {
   const registry = useContext(Context);
-  if (!registry) throw new Error("A connection-scoped mutation registry is required.");
-  const callback = useRef(observe); callback.current = observe;
+  if (!registry)
+    throw new Error("A connection-scoped mutation registry is required.");
+  const callback = useRef(observe);
+  callback.current = observe;
   useEffect(() => {
-    const observer = (key: string, request: object, phase: RetainedMutationPhase) => callback.current(key, request, phase);
+    const observer = (
+      key: string,
+      request: object,
+      phase: RetainedMutationPhase,
+    ) => callback.current(key, request, phase);
     registry.outcomeObservers.add(observer);
-    return () => { registry.outcomeObservers.delete(observer); };
+    return () => {
+      registry.outcomeObservers.delete(observer);
+    };
   }, [registry]);
 }
 
@@ -120,17 +267,34 @@ export function useRetainedMutationOutcomes(observe: (key: string, request: obje
 // acknowledge a deletion after its comment row has left the page.
 export function useRetainedMutationAccepted(key: string, accepted: () => void) {
   const registry = useContext(Context);
-  if (!registry) throw new Error("A connection-scoped mutation registry is required.");
+  if (!registry)
+    throw new Error("A connection-scoped mutation registry is required.");
   const opening = useSettingsOpening();
   const callback = useRef(accepted);
   callback.current = accepted;
   const mounted = useRef(true);
-  const [localError, setLocalError] = useState<{ key: string; error: unknown }>();
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  useEffect(() => registry.observeAccepted(key, () => {
-    if (!registry.alive || opening?.disposed || !mounted.current) return;
-    try { callback.current(); } catch (error) { setLocalError({ key, error }); }
-  }), [key, opening, registry]);
+  const [localError, setLocalError] = useState<{
+    key: string;
+    error: unknown;
+  }>();
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  useEffect(
+    () =>
+      registry.observeAccepted(key, () => {
+        if (!registry.alive || opening?.disposed || !mounted.current) return;
+        try {
+          callback.current();
+        } catch (error) {
+          setLocalError({ key, error });
+        }
+      }),
+    [key, opening, registry],
+  );
   return localError?.key === key ? localError.error : undefined;
 }
 
@@ -140,43 +304,118 @@ export function useRetainedMutationAccepted(key: string, accepted: () => void) {
 // their intents, and late results cannot reach a replacement. Existing repository
 // configuration saves are the connection-owned exception: their original jobs
 // and uncertain bytes must remain recoverable across both entry points.
-export function useRetainedMutation<I extends DescMessage, O extends DescMessage>(key: string, method: DescMethodUnary<I, O>, accepted?: (result: MessageShape<O>, request: MessageShape<I>) => void, acknowledge?: (result: MessageShape<O>, request: MessageShape<I>) => boolean, retainOnError = false) {
+export function useRetainedMutation<
+  I extends DescMessage,
+  O extends DescMessage,
+>(
+  key: string,
+  method: DescMethodUnary<I, O>,
+  accepted?: (result: MessageShape<O>, request: MessageShape<I>) => void,
+  acknowledge?: (result: MessageShape<O>, request: MessageShape<I>) => boolean,
+  retainOnError = false,
+) {
   const registry = useIntentRegistry(key);
-  if (!registry) throw new Error("A connection-scoped mutation registry is required.");
+  if (!registry)
+    throw new Error("A connection-scoped mutation registry is required.");
   const localOpening = useSettingsOpening();
   // Existing repository saves belong to the connection across Settings and PR navigation.
   const sharedRepository = existingRepositoryConfiguration(key);
   const opening = sharedRepository ? undefined : localOpening;
-  const mutation = useMutation(method, { retry: false, meta: opening?.mutationMeta });
-  const [localError, setLocalError] = useState<{ key: string; error: unknown; rejected: boolean }>();
+  const mutation = useMutation(method, {
+    retry: false,
+    meta: opening?.mutationMeta,
+  });
+  const [localError, setLocalError] = useState<{
+    key: string;
+    error: unknown;
+    rejected: boolean;
+  }>();
   const mounted = useRef(true);
-  const state = useSyncExternalStore(registry.subscribe, () => registry.entries.get(key) ?? empty);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  const send = async (input?: MessageInitShape<I>, retainedAcknowledgement?: (result: MessageShape<O>, request: MessageShape<I>) => boolean) => {
+  const state = useSyncExternalStore(
+    registry.subscribe,
+    () => registry.entries.get(key) ?? empty,
+  );
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const send = async (
+    input?: MessageInitShape<I>,
+    retainedAcknowledgement?: (
+      result: MessageShape<O>,
+      request: MessageShape<I>,
+    ) => boolean,
+  ) => {
     const current = registry.entries.get(key) ?? empty;
-    if (current.job || current.busy || (current.input && input) || !registry.alive || opening?.disposed) return;
+    if (
+      current.job ||
+      current.busy ||
+      (current.input && input) ||
+      !registry.alive ||
+      opening?.disposed
+    )
+      return;
     if (!current.input && !input) return;
     let retained: MessageShape<I>;
     let bytes: number;
     try {
       // Clone the wire request before acceptance so later form edits cannot
       // change an uncertain request. Bound retained content across all screens.
-      const wire = toBinary(method.input, create(method.input, (current.input ?? input) as MessageInitShape<I>));
+      const wire = toBinary(
+        method.input,
+        create(method.input, (current.input ?? input) as MessageInitShape<I>),
+      );
       bytes = wire.byteLength;
       registry.reserve(key, bytes);
       retained = fromBinary(method.input, wire);
-    } catch (error) { setLocalError({ key, error, rejected: true }); registry.notifyOutcome(key, current.input ?? input!, RetainedMutationPhase.Rejected); return; }
+    } catch (error) {
+      setLocalError({ key, error, rejected: true });
+      registry.notifyOutcome(
+        key,
+        current.input ?? input!,
+        RetainedMutationPhase.Rejected,
+      );
+      return;
+    }
     // Recovery views must use the original request's validation authority even
     // when the submitting view has gone away or its current selection changed.
-    const repositoryAcknowledgement = sharedRepository && (method as unknown) === ConfigurationQuery.saveConfiguration ? (response: MessageShape<O>) => {
-      const result = response as unknown as MessageShape<typeof ConfigurationQuery.saveConfiguration.output>;
-      const request = retained as unknown as MessageShape<typeof ConfigurationQuery.saveConfiguration.input>;
-      return Boolean(result.requestId === request.mutation?.requestId && result.job?.kind === EntityKind.JOB && isEntityId(result.job.id) && result.job.revision > 0n && supportsResourceSchema(result.job));
-    } : undefined;
-    const originalAcknowledgement = retainedAcknowledgement ?? acknowledge ?? repositoryAcknowledgement;
-    const verify = current.acknowledge ?? (originalAcknowledgement ? bindAcknowledgement<I, O>(originalAcknowledgement, retained) : undefined);
+    const repositoryAcknowledgement =
+      sharedRepository &&
+      (method as unknown) === ConfigurationQuery.saveConfiguration
+        ? (response: MessageShape<O>) => {
+            const result = response as unknown as MessageShape<
+              typeof ConfigurationQuery.saveConfiguration.output
+            >;
+            const request = retained as unknown as MessageShape<
+              typeof ConfigurationQuery.saveConfiguration.input
+            >;
+            return Boolean(
+              result.requestId === request.mutation?.requestId &&
+              result.job?.kind === EntityKind.JOB &&
+              isEntityId(result.job.id) &&
+              result.job.revision > 0n &&
+              supportsResourceSchema(result.job),
+            );
+          }
+        : undefined;
+    const originalAcknowledgement =
+      retainedAcknowledgement ?? acknowledge ?? repositoryAcknowledgement;
+    const verify =
+      current.acknowledge ??
+      (originalAcknowledgement
+        ? bindAcknowledgement<I, O>(originalAcknowledgement, retained)
+        : undefined);
     setLocalError(undefined);
-    registry.put(key, { ...current, input: retained, bytes, acknowledge: verify, busy: true, error: undefined });
+    registry.put(key, {
+      ...current,
+      input: retained,
+      bytes,
+      acknowledge: verify,
+      busy: true,
+      error: undefined,
+    });
     registry.notifyOutcome(key, retained, RetainedMutationPhase.Sending);
     let result: MessageShape<O>;
     try {
@@ -188,41 +427,105 @@ export function useRetainedMutation<I extends DescMessage, O extends DescMessage
       const failure = clientFailure(error);
       // A rejected replay cannot establish whether an earlier uncertain request
       // was admitted. Keep opt-in original verification until a matching receipt.
-      const uncertain = retainOnError || Boolean(current.uncertain && current.acknowledge) || [FailureCode.Unavailable, FailureCode.ServerUnavailable, FailureCode.Canceled, FailureCode.Internal].includes(failure.code);
-      registry.put(key, { busy: false, uncertain, input: uncertain ? retained : undefined, bytes: uncertain ? bytes : undefined, acknowledge: uncertain ? verify : undefined, error });
-      registry.notifyOutcome(key, retained, uncertain ? RetainedMutationPhase.Uncertain : RetainedMutationPhase.Rejected);
+      const uncertain =
+        retainOnError ||
+        Boolean(current.uncertain && current.acknowledge) ||
+        [
+          FailureCode.Unavailable,
+          FailureCode.ServerUnavailable,
+          FailureCode.Canceled,
+          FailureCode.Internal,
+        ].includes(failure.code);
+      registry.put(key, {
+        busy: false,
+        uncertain,
+        input: uncertain ? retained : undefined,
+        bytes: uncertain ? bytes : undefined,
+        acknowledge: uncertain ? verify : undefined,
+        error,
+      });
+      registry.notifyOutcome(
+        key,
+        retained,
+        uncertain
+          ? RetainedMutationPhase.Uncertain
+          : RetainedMutationPhase.Rejected,
+      );
       return;
     }
     if (!registry.alive || opening?.disposed) return;
     if (verify || acknowledge) {
       try {
-        if (!(verify ? verify(result) : acknowledge!(result, retained))) throw new ConnectError("The accepted response could not be verified. Retry only the original request or inspect retained attempts.", Code.Internal);
+        if (!(verify ? verify(result) : acknowledge!(result, retained)))
+          throw new ConnectError(
+            "The accepted response could not be verified. Retry only the original request or inspect retained attempts.",
+            Code.Internal,
+          );
       } catch (error) {
-        registry.put(key, { busy: false, uncertain: true, input: retained, bytes, acknowledge: verify, error });
+        registry.put(key, {
+          busy: false,
+          uncertain: true,
+          input: retained,
+          bytes,
+          acknowledge: verify,
+          error,
+        });
         registry.notifyOutcome(key, retained, RetainedMutationPhase.Uncertain);
         return;
       }
     }
     // Publish verified result ownership before clearing the original intent.
     registry.notifyAcceptedResult(key, retained, result);
-    const job = sharedRepository ? (result as unknown as MessageShape<typeof ConfigurationQuery.saveConfiguration.output>).job : undefined;
-    registry.put(key, job ? { input: retained, bytes, job, busy: false, uncertain: false } : empty);
+    const job = sharedRepository
+      ? (
+          result as unknown as MessageShape<
+            typeof ConfigurationQuery.saveConfiguration.output
+          >
+        ).job
+      : undefined;
+    registry.put(
+      key,
+      job
+        ? { input: retained, bytes, job, busy: false, uncertain: false }
+        : empty,
+    );
     registry.notifyAccepted(key);
     // A presentation callback failure cannot turn an acknowledged RPC into an
     // uncertain mutation or authorize sending its side effect again.
     if (!mounted.current || !registry.alive || opening?.disposed) return;
-    try { accepted?.(result, retained); } catch (error) { setLocalError({ key, error, rejected: false }); }
+    try {
+      accepted?.(result, retained);
+    } catch (error) {
+      setLocalError({ key, error, rejected: false });
+    }
   };
   const clearRejected = () => {
     // Read the current owner, rather than a render snapshot: a late send or
     // uncertain receipt must never be discarded by presentation cleanup.
     const current = registry.entries.get(key) ?? empty;
-    if (!registry.alive || opening?.disposed || current.busy || current.uncertain || current.input) return;
+    if (
+      !registry.alive ||
+      opening?.disposed ||
+      current.busy ||
+      current.uncertain ||
+      current.input
+    )
+      return;
     if (current.error !== undefined) registry.put(key, empty);
-    setLocalError(previous => previous?.key === key && previous.rejected ? undefined : previous);
+    setLocalError((previous) =>
+      previous?.key === key && previous.rejected ? undefined : previous,
+    );
   };
   const resolveJob = (jobId: string) => {
     if (registry.entries.get(key)?.job?.id === jobId) registry.put(key, empty);
   };
-  return { resolveJob, send, retry: () => send(), clearRejected, ...state, busy: state.busy || Boolean(state.job), error: localError?.key === key ? localError.error : state.error };
+  return {
+    resolveJob,
+    send,
+    retry: () => send(),
+    clearRejected,
+    ...state,
+    busy: state.busy || Boolean(state.job),
+    error: localError?.key === key ? localError.error : state.error,
+  };
 }

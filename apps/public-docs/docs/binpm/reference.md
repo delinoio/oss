@@ -24,10 +24,10 @@ GitHub.com may use `BINPM_GITHUB_TOKEN_GITHUB_COM`, `BINPM_GITHUB_TOKEN`, or `GI
 
 GitHub Enterprise and self-managed GitLab use only host-scoped token variables. The host suffix uppercases ASCII letters and digits, and encodes every other UTF-8 byte as `_HH_` uppercase hexadecimal.
 
-| Source host | Expected variable |
-| --- | --- |
-| `ghe.example.com` | `BINPM_GITHUB_TOKEN_GHE_2E_EXAMPLE_2E_COM` |
-| `ghe-example.com` | `BINPM_GITHUB_TOKEN_GHE_2D_EXAMPLE_2E_COM` |
+| Source host       | Expected variable                                              |
+| ----------------- | -------------------------------------------------------------- |
+| `ghe.example.com` | `BINPM_GITHUB_TOKEN_GHE_2E_EXAMPLE_2E_COM`                     |
+| `ghe-example.com` | `BINPM_GITHUB_TOKEN_GHE_2D_EXAMPLE_2E_COM`                     |
 | `gitlab.例え.com` | `BINPM_GITLAB_TOKEN_GITLAB_2E__E4__BE__8B__E3__81__88__2E_COM` |
 
 Missing-auth diagnostics print the exact expected variable for explicit hosts. JSON error output exposes the same value in `error.diagnostic.expected_auth_env_var` and lists all safe candidates in `error.diagnostic.expected_auth_env_vars`; token values are not printed.

@@ -5,8 +5,18 @@ import {
   validateCanonicalSettingsJson,
 } from "@delinoio/devhud-api-client";
 import { SettingsTextLimit } from "./contract-limits.ts";
-import { ShortcutContractError, defaultDesktopShortcutBindings, parseDesktopShortcutBindings, type DesktopShortcutBindings } from "./shortcuts";
-import { configuredChromeOrigins, mappingAcceptsOrigin, parseUrlPattern, type UrlRepositoryMapping } from "./url-mapping";
+import {
+  ShortcutContractError,
+  defaultDesktopShortcutBindings,
+  parseDesktopShortcutBindings,
+  type DesktopShortcutBindings,
+} from "./shortcuts";
+import {
+  configuredChromeOrigins,
+  mappingAcceptsOrigin,
+  parseUrlPattern,
+  type UrlRepositoryMapping,
+} from "./url-mapping";
 
 export const LegacySettingsSchemaVersion = 1 as const;
 export const PreviousSettingsSchemaVersion = 2 as const;
@@ -55,18 +65,38 @@ export interface DevHudSettings {
     readonly query: string;
     readonly builder: DeckBuilder | null;
     readonly profileRef: string;
-    readonly display: { readonly groupBy: "none" | "repository" | "author"; readonly showDrafts: boolean };
+    readonly display: {
+      readonly groupBy: "none" | "repository" | "author";
+      readonly showDrafts: boolean;
+    };
     readonly refreshMinutes: 1 | 5 | 15 | 30;
     readonly notifications: readonly NotificationKind[];
   }[];
   readonly github: {
-    readonly profiles: readonly { readonly id: string; readonly name: string; readonly kind: GitHubCredentialKind }[];
+    readonly profiles: readonly {
+      readonly id: string;
+      readonly name: string;
+      readonly kind: GitHubCredentialKind;
+    }[];
     readonly pendingPatRemovals: readonly string[];
-    readonly repositories: readonly { readonly owner: string; readonly name: string; readonly profileRef: string | null }[];
-    readonly issueTracker: { readonly owner: string; readonly repository: string; readonly labels: readonly string[]; readonly profileRef: string | null } | null;
+    readonly repositories: readonly {
+      readonly owner: string;
+      readonly name: string;
+      readonly profileRef: string | null;
+    }[];
+    readonly issueTracker: {
+      readonly owner: string;
+      readonly repository: string;
+      readonly labels: readonly string[];
+      readonly profileRef: string | null;
+    } | null;
   };
   readonly urlMappings: readonly UrlRepositoryMapping[];
-  readonly shortcuts: Readonly<{ readonly desktop: DesktopShortcutBindings; readonly ios: Readonly<Record<string, never>>; readonly android: Readonly<Record<string, never>> }>;
+  readonly shortcuts: Readonly<{
+    readonly desktop: DesktopShortcutBindings;
+    readonly ios: Readonly<Record<string, never>>;
+    readonly android: Readonly<Record<string, never>>;
+  }>;
   readonly agents: readonly {
     readonly id: string;
     readonly enabled: boolean;
@@ -95,18 +125,29 @@ export interface DevHudSettings {
 /** Compatibility alias for callers written before the synchronized schema v4 migration. */
 export type DevHudSettingsV1 = DevHudSettings;
 
-export const defaultDevHudSettings: DevHudSettingsV1 = Object.freeze<DevHudSettingsV1>({
-  schemaVersion: SettingsSchemaVersion,
-  appearance: { theme: "system", language: "system" },
-  decks: [],
-  github: { profiles: [], pendingPatRemovals: [], repositories: [], issueTracker: null },
-  urlMappings: [],
-  shortcuts: { desktop: defaultDesktopShortcutBindings, ios: {}, android: {} },
-  agents: [],
-  uploads: { provider: "official", r2: null },
-});
+export const defaultDevHudSettings: DevHudSettingsV1 =
+  Object.freeze<DevHudSettingsV1>({
+    schemaVersion: SettingsSchemaVersion,
+    appearance: { theme: "system", language: "system" },
+    decks: [],
+    github: {
+      profiles: [],
+      pendingPatRemovals: [],
+      repositories: [],
+      issueTracker: null,
+    },
+    urlMappings: [],
+    shortcuts: {
+      desktop: defaultDesktopShortcutBindings,
+      ios: {},
+      android: {},
+    },
+    agents: [],
+    uploads: { provider: "official", r2: null },
+  });
 
-const sensitiveKeyPattern = /(?:^|[-_.])(?:api[-_.]?url|token|password|passwd|pwd|secret|pat|access[-_.]?key(?:[-_.]?id)?|private[-_.]?key|authorization|cookie|agent[-_.]?(?:path|version)|autostart|window|widget|draft|cache|pairing|permission)(?:$|[-_.])/iu;
+const sensitiveKeyPattern =
+  /(?:^|[-_.])(?:api[-_.]?url|token|password|passwd|pwd|secret|pat|access[-_.]?key(?:[-_.]?id)?|private[-_.]?key|authorization|cookie|agent[-_.]?(?:path|version)|autostart|window|widget|draft|cache|pairing|permission)(?:$|[-_.])/iu;
 const sensitiveValuePatterns = [
   /\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b/u,
   /\bAKIA[0-9A-Z]{16}\b/u,
@@ -115,7 +156,11 @@ const sensitiveValuePatterns = [
 ] as const;
 const safeDynamicKeyPattern = /^[a-zA-Z0-9._:-]{1,128}$/u;
 const profileRefPattern = /^[a-zA-Z0-9._-]{1,128}$/u;
-const prototypeSensitiveKeys = new Set(["__proto__", "constructor", "prototype"]);
+const prototypeSensitiveKeys = new Set([
+  "__proto__",
+  "constructor",
+  "prototype",
+]);
 const MaximumNativeMessagingJsonBytes = 256 * 1024;
 const NativeMessagingEnvelopeRequestId = "01900000-0000-7000-8000-000000000000";
 
@@ -138,97 +183,313 @@ export function parseDevHudSettings(value: unknown): DevHudSettingsV1 {
   return parseDevHudSettingsForScope(value, SettingsParseScope.DeviceLocal);
 }
 
-function parseDevHudSettingsForScope(value: unknown, scope: SettingsParseScope): DevHudSettingsV1 {
+function parseDevHudSettingsForScope(
+  value: unknown,
+  scope: SettingsParseScope,
+): DevHudSettingsV1 {
   rejectSensitiveContent(value, "$", new WeakSet());
   const unvalidatedRoot = record(value, "$");
-  const sourceSchemaVersion = integer(unvalidatedRoot.schemaVersion, "$.schemaVersion", LegacySettingsSchemaVersion, SettingsSchemaVersion);
-  const root = sourceSchemaVersion < SettingsSchemaVersion
-    ? object(value, "$", ["schemaVersion", "appearance", "decks", "github", "urlMappings", "shortcuts", "agents", "uploads"])
-    : scope === SettingsParseScope.Synchronized
-      ? object(value, "$", ["schemaVersion", "appearance", "decks", "github", "urlMappings", "agents", "uploads"])
-    : objectWithOptional(value, "$", ["schemaVersion", "appearance", "decks", "github", "urlMappings", "agents", "uploads"], ["shortcuts"]);
+  const sourceSchemaVersion = integer(
+    unvalidatedRoot.schemaVersion,
+    "$.schemaVersion",
+    LegacySettingsSchemaVersion,
+    SettingsSchemaVersion,
+  );
+  const root =
+    sourceSchemaVersion < SettingsSchemaVersion
+      ? object(value, "$", [
+          "schemaVersion",
+          "appearance",
+          "decks",
+          "github",
+          "urlMappings",
+          "shortcuts",
+          "agents",
+          "uploads",
+        ])
+      : scope === SettingsParseScope.Synchronized
+        ? object(value, "$", [
+            "schemaVersion",
+            "appearance",
+            "decks",
+            "github",
+            "urlMappings",
+            "agents",
+            "uploads",
+          ])
+        : objectWithOptional(
+            value,
+            "$",
+            [
+              "schemaVersion",
+              "appearance",
+              "decks",
+              "github",
+              "urlMappings",
+              "agents",
+              "uploads",
+            ],
+            ["shortcuts"],
+          );
   const legacy = sourceSchemaVersion === LegacySettingsSchemaVersion;
 
-  const appearance = object(root.appearance, "$.appearance", ["theme", "language"]);
+  const appearance = object(root.appearance, "$.appearance", [
+    "theme",
+    "language",
+  ]);
   const decks = array(root.decks, "$.decks");
-  if (decks.length > 25) throw new SettingsContractError("$.decks", "must contain at most 25 entries");
-  const previous = sourceSchemaVersion === PreviousSettingsSchemaVersion || sourceSchemaVersion === CollidingSettingsSchemaVersion && !hasCurrentDeckShape(decks[0]);
+  if (decks.length > 25)
+    throw new SettingsContractError(
+      "$.decks",
+      "must contain at most 25 entries",
+    );
+  const previous =
+    sourceSchemaVersion === PreviousSettingsSchemaVersion ||
+    (sourceSchemaVersion === CollidingSettingsSchemaVersion &&
+      !hasCurrentDeckShape(decks[0]));
   const legacyShortcuts = sourceSchemaVersion < StructuredSettingsSchemaVersion;
-  const github = object(root.github, "$.github", legacy ? ["repositories", "issueTracker"] : ["profiles", "pendingPatRemovals", "repositories", "issueTracker"]);
-  const githubProfiles = legacy ? [] : array(github.profiles, "$.github.profiles").map((entry, index) => parseGitHubProfile(entry, `$.github.profiles[${index}]`));
-  if (githubProfiles.length > 25) throw new SettingsContractError("$.github.profiles", "must contain at most 25 entries");
-  if (new Set(githubProfiles.map((profile) => profile.id)).size !== githubProfiles.length) throw new SettingsContractError("$.github.profiles", "must contain unique IDs");
-  const pendingPatRemovals = legacy ? [] : array(github.pendingPatRemovals, "$.github.pendingPatRemovals").map((entry, index) => parseGitHubProfileId(entry, `$.github.pendingPatRemovals[${index}]`));
-  if (pendingPatRemovals.length > 25) throw new SettingsContractError("$.github.pendingPatRemovals", "must contain at most 25 entries");
-  if (new Set(pendingPatRemovals).size !== pendingPatRemovals.length) throw new SettingsContractError("$.github.pendingPatRemovals", "must contain unique IDs");
+  const github = object(
+    root.github,
+    "$.github",
+    legacy
+      ? ["repositories", "issueTracker"]
+      : ["profiles", "pendingPatRemovals", "repositories", "issueTracker"],
+  );
+  const githubProfiles = legacy
+    ? []
+    : array(github.profiles, "$.github.profiles").map((entry, index) =>
+        parseGitHubProfile(entry, `$.github.profiles[${index}]`),
+      );
+  if (githubProfiles.length > 25)
+    throw new SettingsContractError(
+      "$.github.profiles",
+      "must contain at most 25 entries",
+    );
+  if (
+    new Set(githubProfiles.map((profile) => profile.id)).size !==
+    githubProfiles.length
+  )
+    throw new SettingsContractError(
+      "$.github.profiles",
+      "must contain unique IDs",
+    );
+  const pendingPatRemovals = legacy
+    ? []
+    : array(github.pendingPatRemovals, "$.github.pendingPatRemovals").map(
+        (entry, index) =>
+          parseGitHubProfileId(entry, `$.github.pendingPatRemovals[${index}]`),
+      );
+  if (pendingPatRemovals.length > 25)
+    throw new SettingsContractError(
+      "$.github.pendingPatRemovals",
+      "must contain at most 25 entries",
+    );
+  if (new Set(pendingPatRemovals).size !== pendingPatRemovals.length)
+    throw new SettingsContractError(
+      "$.github.pendingPatRemovals",
+      "must contain unique IDs",
+    );
   const githubProfileIds = new Set(githubProfiles.map((profile) => profile.id));
-  if (pendingPatRemovals.some((profileId) => githubProfileIds.has(profileId))) throw new SettingsContractError("$.github.pendingPatRemovals", "must not reference an active GitHub profile");
-  const shortcuts = root.shortcuts === undefined ? null : object(root.shortcuts, "$.shortcuts", [...Platform]);
+  if (pendingPatRemovals.some((profileId) => githubProfileIds.has(profileId)))
+    throw new SettingsContractError(
+      "$.github.pendingPatRemovals",
+      "must not reference an active GitHub profile",
+    );
+  const shortcuts =
+    root.shortcuts === undefined
+      ? null
+      : object(root.shortcuts, "$.shortcuts", [...Platform]);
   const uploads = object(root.uploads, "$.uploads", ["provider", "r2"]);
-  const uploadProvider = enumeration(uploads.provider, "$.uploads.provider", UploadProvider);
-  const parsedR2 = uploads.r2 === null ? null : parseR2(uploads.r2, sourceSchemaVersion, scope);
-  const migratedUploads: DevHudSettingsV1["uploads"] = sourceSchemaVersion < SettingsSchemaVersion && parsedR2 !== null && parsedR2.accountId === null
-    ? { provider: "official", r2: null }
-    : { provider: uploadProvider, r2: parsedR2 };
-  const parsedDecks = decks.flatMap((entry, index) => parseDeck(entry, `$.decks[${index}]`, legacy, previous));
-  if (new Set(parsedDecks.map((deck) => deck.id)).size !== parsedDecks.length) throw new SettingsContractError("$.decks", "must contain unique IDs");
-  const structuredMappings = sourceSchemaVersion >= StructuredSettingsSchemaVersion || sourceSchemaVersion === CollidingSettingsSchemaVersion && hasStructuredURLMappingShape(root.urlMappings);
-  const urlMappings = structuredMappings ? parseStructuredMappings(root.urlMappings) : parseLegacyMappings(root.urlMappings);
-  if (urlMappings.length > MaximumUrlRepositoryMappings) throw new SettingsContractError("$.urlMappings", `must contain at most ${MaximumUrlRepositoryMappings} entries`);
-  if (new Set(urlMappings.map((mapping) => mapping.id)).size !== urlMappings.length) throw new SettingsContractError("$.urlMappings", "must not contain duplicate mapping IDs");
-  const agents = array(root.agents, "$.agents").map((entry, index) => parseAgent(entry, `$.agents[${index}]`, sourceSchemaVersion, scope));
-  const migratedAgents = sourceSchemaVersion < AgentPromptSettingsSchemaVersion
-    ? agents.map((agent) => agent.profileRef !== null && !githubProfileIds.has(agent.profileRef) ? { ...agent, profileRef: null } : agent)
-    : agents;
+  const uploadProvider = enumeration(
+    uploads.provider,
+    "$.uploads.provider",
+    UploadProvider,
+  );
+  const parsedR2 =
+    uploads.r2 === null
+      ? null
+      : parseR2(uploads.r2, sourceSchemaVersion, scope);
+  const migratedUploads: DevHudSettingsV1["uploads"] =
+    sourceSchemaVersion < SettingsSchemaVersion &&
+    parsedR2 !== null &&
+    parsedR2.accountId === null
+      ? { provider: "official", r2: null }
+      : { provider: uploadProvider, r2: parsedR2 };
+  const parsedDecks = decks.flatMap((entry, index) =>
+    parseDeck(entry, `$.decks[${index}]`, legacy, previous),
+  );
+  if (new Set(parsedDecks.map((deck) => deck.id)).size !== parsedDecks.length)
+    throw new SettingsContractError("$.decks", "must contain unique IDs");
+  const structuredMappings =
+    sourceSchemaVersion >= StructuredSettingsSchemaVersion ||
+    (sourceSchemaVersion === CollidingSettingsSchemaVersion &&
+      hasStructuredURLMappingShape(root.urlMappings));
+  const urlMappings = structuredMappings
+    ? parseStructuredMappings(root.urlMappings)
+    : parseLegacyMappings(root.urlMappings);
+  if (urlMappings.length > MaximumUrlRepositoryMappings)
+    throw new SettingsContractError(
+      "$.urlMappings",
+      `must contain at most ${MaximumUrlRepositoryMappings} entries`,
+    );
+  if (
+    new Set(urlMappings.map((mapping) => mapping.id)).size !==
+    urlMappings.length
+  )
+    throw new SettingsContractError(
+      "$.urlMappings",
+      "must not contain duplicate mapping IDs",
+    );
+  const agents = array(root.agents, "$.agents").map((entry, index) =>
+    parseAgent(entry, `$.agents[${index}]`, sourceSchemaVersion, scope),
+  );
+  const migratedAgents =
+    sourceSchemaVersion < AgentPromptSettingsSchemaVersion
+      ? agents.map((agent) =>
+          agent.profileRef !== null && !githubProfileIds.has(agent.profileRef)
+            ? { ...agent, profileRef: null }
+            : agent,
+        )
+      : agents;
 
   const parsed: DevHudSettingsV1 = {
     schemaVersion: SettingsSchemaVersion,
     appearance: {
       theme: enumeration(appearance.theme, "$.appearance.theme", Theme),
-      language: enumeration(appearance.language, "$.appearance.language", Language),
+      language: enumeration(
+        appearance.language,
+        "$.appearance.language",
+        Language,
+      ),
     },
     decks: parsedDecks,
     github: {
       profiles: githubProfiles,
       pendingPatRemovals,
-      repositories: array(github.repositories, "$.github.repositories").map((entry, index) => {
-        const path = `$.github.repositories[${index}]`;
-        const repository = object(entry, path, legacy ? ["owner", "name"] : ["owner", "name", "profileRef"]);
-        return { owner: text(repository.owner, `${path}.owner`), name: text(repository.name, `${path}.name`), profileRef: legacy ? null : parseProfileRef(repository.profileRef, `${path}.profileRef`) };
-      }),
-      issueTracker: github.issueTracker === null ? null : parseIssueTracker(github.issueTracker, legacy),
+      repositories: array(github.repositories, "$.github.repositories").map(
+        (entry, index) => {
+          const path = `$.github.repositories[${index}]`;
+          const repository = object(
+            entry,
+            path,
+            legacy ? ["owner", "name"] : ["owner", "name", "profileRef"],
+          );
+          return {
+            owner: text(repository.owner, `${path}.owner`),
+            name: text(repository.name, `${path}.name`),
+            profileRef: legacy
+              ? null
+              : parseProfileRef(repository.profileRef, `${path}.profileRef`),
+          };
+        },
+      ),
+      issueTracker:
+        github.issueTracker === null
+          ? null
+          : parseIssueTracker(github.issueTracker, legacy),
     },
     // Prefix mappings cannot identify a repository or credential. They are deliberately
     // discarded rather than guessed during the approved v1/v2 -> v3 migration.
     urlMappings,
     shortcuts: {
-      desktop: shortcuts === null ? defaultDesktopShortcutBindings : desktopShortcutMap(shortcuts.desktop, legacyShortcuts),
-      ios: shortcuts === null ? {} : legacyShortcuts ? legacyShortcutMap(shortcuts.ios, "$.shortcuts.ios") : emptyShortcutMap(shortcuts.ios, "$.shortcuts.ios"),
-      android: shortcuts === null ? {} : legacyShortcuts ? legacyShortcutMap(shortcuts.android, "$.shortcuts.android") : emptyShortcutMap(shortcuts.android, "$.shortcuts.android"),
+      desktop:
+        shortcuts === null
+          ? defaultDesktopShortcutBindings
+          : desktopShortcutMap(shortcuts.desktop, legacyShortcuts),
+      ios:
+        shortcuts === null
+          ? {}
+          : legacyShortcuts
+            ? legacyShortcutMap(shortcuts.ios, "$.shortcuts.ios")
+            : emptyShortcutMap(shortcuts.ios, "$.shortcuts.ios"),
+      android:
+        shortcuts === null
+          ? {}
+          : legacyShortcuts
+            ? legacyShortcutMap(shortcuts.android, "$.shortcuts.android")
+            : emptyShortcutMap(shortcuts.android, "$.shortcuts.android"),
     },
     agents: migratedAgents,
     uploads: migratedUploads,
   };
-  for (const [index, repository] of parsed.github.repositories.entries()) validateGitHubProfileRef(repository.profileRef, `$.github.repositories[${index}].profileRef`, githubProfileIds);
-  validateGitHubProfileRef(parsed.github.issueTracker?.profileRef ?? null, "$.github.issueTracker.profileRef", githubProfileIds);
-  for (const [index, deck] of parsed.decks.entries()) validateGitHubProfileRef(deck.profileRef, `$.decks[${index}].profileRef`, githubProfileIds);
-  for (const [index, mapping] of parsed.urlMappings.entries()) validateGitHubProfileRef(mapping.credentialProfileRef, `$.urlMappings[${index}].credentialProfileRef`, githubProfileIds);
-  if (parsed.agents.length > 25) throw new SettingsContractError("$.agents", "must contain at most 25 entries");
-  if (new Set(parsed.agents.map((agent) => agent.id)).size !== parsed.agents.length) throw new SettingsContractError("$.agents", "must contain unique IDs");
-  for (const [index, agent] of parsed.agents.entries()) validateGitHubProfileRef(agent.profileRef, `$.agents[${index}].profileRef`, githubProfileIds);
+  for (const [index, repository] of parsed.github.repositories.entries())
+    validateGitHubProfileRef(
+      repository.profileRef,
+      `$.github.repositories[${index}].profileRef`,
+      githubProfileIds,
+    );
+  validateGitHubProfileRef(
+    parsed.github.issueTracker?.profileRef ?? null,
+    "$.github.issueTracker.profileRef",
+    githubProfileIds,
+  );
+  for (const [index, deck] of parsed.decks.entries())
+    validateGitHubProfileRef(
+      deck.profileRef,
+      `$.decks[${index}].profileRef`,
+      githubProfileIds,
+    );
+  for (const [index, mapping] of parsed.urlMappings.entries())
+    validateGitHubProfileRef(
+      mapping.credentialProfileRef,
+      `$.urlMappings[${index}].credentialProfileRef`,
+      githubProfileIds,
+    );
+  if (parsed.agents.length > 25)
+    throw new SettingsContractError(
+      "$.agents",
+      "must contain at most 25 entries",
+    );
+  if (
+    new Set(parsed.agents.map((agent) => agent.id)).size !==
+    parsed.agents.length
+  )
+    throw new SettingsContractError("$.agents", "must contain unique IDs");
+  for (const [index, agent] of parsed.agents.entries())
+    validateGitHubProfileRef(
+      agent.profileRef,
+      `$.agents[${index}].profileRef`,
+      githubProfileIds,
+    );
   if (!nativeMessagingConfigurationEnvelopesFit(parsed.urlMappings)) {
-    throw new SettingsContractError("$.urlMappings", "projected Native Messaging configuration must fit the 256 KiB response envelope");
+    throw new SettingsContractError(
+      "$.urlMappings",
+      "projected Native Messaging configuration must fit the 256 KiB response envelope",
+    );
   }
   return parsed;
 }
 
-function nativeMessagingConfigurationEnvelopesFit(mappings: readonly UrlRepositoryMapping[]): boolean {
-  const configuration = { origins: configuredChromeOrigins(mappings), language: "en" };
+function nativeMessagingConfigurationEnvelopesFit(
+  mappings: readonly UrlRepositoryMapping[],
+): boolean {
+  const configuration = {
+    origins: configuredChromeOrigins(mappings),
+    language: "en",
+  };
   const envelopes = [
-    { version: 1, schema_version: 1, request_id: NativeMessagingEnvelopeRequestId, accepted: true, error: null, payload: configuration },
-    { version: 1, schema_version: 1, request_id: NativeMessagingEnvelopeRequestId, ok: true, state: "accepted", payload: configuration },
+    {
+      version: 1,
+      schema_version: 1,
+      request_id: NativeMessagingEnvelopeRequestId,
+      accepted: true,
+      error: null,
+      payload: configuration,
+    },
+    {
+      version: 1,
+      schema_version: 1,
+      request_id: NativeMessagingEnvelopeRequestId,
+      ok: true,
+      state: "accepted",
+      payload: configuration,
+    },
   ];
-  return envelopes.every((envelope) => new TextEncoder().encode(JSON.stringify(envelope)).byteLength <= MaximumNativeMessagingJsonBytes);
+  return envelopes.every(
+    (envelope) =>
+      new TextEncoder().encode(JSON.stringify(envelope)).byteLength <=
+      MaximumNativeMessagingJsonBytes,
+  );
 }
 
 function parseLegacyMappings(value: unknown): readonly [] {
@@ -241,75 +502,175 @@ function parseLegacyMappings(value: unknown): readonly [] {
   return [];
 }
 
-function parseStructuredMappings(value: unknown): readonly UrlRepositoryMapping[] {
+function parseStructuredMappings(
+  value: unknown,
+): readonly UrlRepositoryMapping[] {
   return array(value, "$.urlMappings").map(parseUrlMapping);
 }
 
 function parseUrlMapping(value: unknown, index: number): UrlRepositoryMapping {
   const path = `$.urlMappings[${index}]`;
-  const mapping = object(value, path, ["id", "pattern", "repository", "credentialProfileRef", "priority", "chromeOrigin", "updatedAt"]);
+  const mapping = object(value, path, [
+    "id",
+    "pattern",
+    "repository",
+    "credentialProfileRef",
+    "priority",
+    "chromeOrigin",
+    "updatedAt",
+  ]);
   const id = text(mapping.id, `${path}.id`);
-  try { assertUuidV7(id); } catch { throw new SettingsContractError(`${path}.id`, "must be a canonical lowercase RFC 9562 UUID v7"); }
+  try {
+    assertUuidV7(id);
+  } catch {
+    throw new SettingsContractError(
+      `${path}.id`,
+      "must be a canonical lowercase RFC 9562 UUID v7",
+    );
+  }
   const pattern = text(mapping.pattern, `${path}.pattern`);
-  try { parseUrlPattern(pattern); } catch (error) { throw new SettingsContractError(`${path}.pattern`, error instanceof Error ? error.message : "is invalid"); }
-  const repository = object(mapping.repository, `${path}.repository`, ["owner", "name"]);
-  const credentialProfileRef = text(mapping.credentialProfileRef, `${path}.credentialProfileRef`);
-  if (!profileRefPattern.test(credentialProfileRef)) throw new SettingsContractError(`${path}.credentialProfileRef`, "is invalid");
+  try {
+    parseUrlPattern(pattern);
+  } catch (error) {
+    throw new SettingsContractError(
+      `${path}.pattern`,
+      error instanceof Error ? error.message : "is invalid",
+    );
+  }
+  const repository = object(mapping.repository, `${path}.repository`, [
+    "owner",
+    "name",
+  ]);
+  const credentialProfileRef = text(
+    mapping.credentialProfileRef,
+    `${path}.credentialProfileRef`,
+  );
+  if (!profileRefPattern.test(credentialProfileRef))
+    throw new SettingsContractError(
+      `${path}.credentialProfileRef`,
+      "is invalid",
+    );
   const updatedAt = text(mapping.updatedAt, `${path}.updatedAt`);
-  if (!Number.isFinite(Date.parse(updatedAt)) || new Date(updatedAt).toISOString() !== updatedAt) throw new SettingsContractError(`${path}.updatedAt`, "must be a canonical UTC timestamp");
-  const normalizedChromeOrigin = mapping.chromeOrigin === null ? null : chromeOrigin(mapping.chromeOrigin, `${path}.chromeOrigin`);
-  if (normalizedChromeOrigin !== null && !mappingAcceptsOrigin({ pattern }, normalizedChromeOrigin)) {
-    throw new SettingsContractError(`${path}.chromeOrigin`, "must be covered by the mapping pattern scheme, host, and port");
+  if (
+    !Number.isFinite(Date.parse(updatedAt)) ||
+    new Date(updatedAt).toISOString() !== updatedAt
+  )
+    throw new SettingsContractError(
+      `${path}.updatedAt`,
+      "must be a canonical UTC timestamp",
+    );
+  const normalizedChromeOrigin =
+    mapping.chromeOrigin === null
+      ? null
+      : chromeOrigin(mapping.chromeOrigin, `${path}.chromeOrigin`);
+  if (
+    normalizedChromeOrigin !== null &&
+    !mappingAcceptsOrigin({ pattern }, normalizedChromeOrigin)
+  ) {
+    throw new SettingsContractError(
+      `${path}.chromeOrigin`,
+      "must be covered by the mapping pattern scheme, host, and port",
+    );
   }
   return {
     id,
     pattern,
-    repository: { owner: text(repository.owner, `${path}.repository.owner`), name: text(repository.name, `${path}.repository.name`) },
+    repository: {
+      owner: text(repository.owner, `${path}.repository.owner`),
+      name: text(repository.name, `${path}.repository.name`),
+    },
     credentialProfileRef,
-    priority: integer(mapping.priority, `${path}.priority`, -1_000_000, 1_000_000),
+    priority: integer(
+      mapping.priority,
+      `${path}.priority`,
+      -1_000_000,
+      1_000_000,
+    ),
     chromeOrigin: normalizedChromeOrigin,
     updatedAt,
   };
 }
 
 export function encodeDevHudSettings(value: unknown): Uint8Array {
-  return encodeCanonicalSettingsJson(synchronizedSettings(parseDevHudSettings(value)));
+  return encodeCanonicalSettingsJson(
+    synchronizedSettings(parseDevHudSettings(value)),
+  );
 }
 
 export function decodeDevHudSettings(value: Uint8Array): DevHudSettingsV1 {
   return decodeDevHudSettingsSnapshot(value).settings;
 }
 
-export function decodeDevHudSettingsSnapshot(value: Uint8Array): { readonly sourceSchemaVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7; readonly settings: DevHudSettingsV1 } {
+export function decodeDevHudSettingsSnapshot(value: Uint8Array): {
+  readonly sourceSchemaVersion: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+  readonly settings: DevHudSettingsV1;
+} {
   const canonical = validateCanonicalSettingsJson(value);
-  const settings = parseDevHudSettingsForScope(canonical, SettingsParseScope.Synchronized);
-  const sourceSchemaVersion = (canonical as { readonly schemaVersion: unknown }).schemaVersion;
-  if (sourceSchemaVersion !== LegacySettingsSchemaVersion && sourceSchemaVersion !== PreviousSettingsSchemaVersion && sourceSchemaVersion !== CollidingSettingsSchemaVersion && sourceSchemaVersion !== StructuredSettingsSchemaVersion && sourceSchemaVersion !== R2SettingsSchemaVersion && sourceSchemaVersion !== AgentPromptSettingsSchemaVersion && sourceSchemaVersion !== SettingsSchemaVersion) throw new SettingsContractError("$.schemaVersion", "is unsupported");
+  const settings = parseDevHudSettingsForScope(
+    canonical,
+    SettingsParseScope.Synchronized,
+  );
+  const sourceSchemaVersion = (canonical as { readonly schemaVersion: unknown })
+    .schemaVersion;
+  if (
+    sourceSchemaVersion !== LegacySettingsSchemaVersion &&
+    sourceSchemaVersion !== PreviousSettingsSchemaVersion &&
+    sourceSchemaVersion !== CollidingSettingsSchemaVersion &&
+    sourceSchemaVersion !== StructuredSettingsSchemaVersion &&
+    sourceSchemaVersion !== R2SettingsSchemaVersion &&
+    sourceSchemaVersion !== AgentPromptSettingsSchemaVersion &&
+    sourceSchemaVersion !== SettingsSchemaVersion
+  )
+    throw new SettingsContractError("$.schemaVersion", "is unsupported");
   return { sourceSchemaVersion, settings };
 }
 
-export function decodeVersionedDevHudSettings(value: Uint8Array, envelopeSchemaVersion: number): DevHudSettingsV1 {
+export function decodeVersionedDevHudSettings(
+  value: Uint8Array,
+  envelopeSchemaVersion: number,
+): DevHudSettingsV1 {
   const decoded = validateCanonicalSettingsJson(value);
-  const embeddedSchemaVersion = decoded !== null && typeof decoded === "object" && !Array.isArray(decoded) ? (decoded as Record<string, unknown>).schemaVersion : undefined;
-  if (embeddedSchemaVersion !== undefined && embeddedSchemaVersion !== envelopeSchemaVersion) {
-    throw new SettingsContractError("$.schemaVersion", "must match the snapshot envelope schema version");
+  const embeddedSchemaVersion =
+    decoded !== null && typeof decoded === "object" && !Array.isArray(decoded)
+      ? (decoded as Record<string, unknown>).schemaVersion
+      : undefined;
+  if (
+    embeddedSchemaVersion !== undefined &&
+    embeddedSchemaVersion !== envelopeSchemaVersion
+  ) {
+    throw new SettingsContractError(
+      "$.schemaVersion",
+      "must match the snapshot envelope schema version",
+    );
   }
   return parseDevHudSettingsForScope(decoded, SettingsParseScope.Synchronized);
 }
 
 export function canonicalDevHudSettings(value: unknown): string {
-  return canonicalizeSettingsJson(synchronizedSettings(parseDevHudSettings(value)));
+  return canonicalizeSettingsJson(
+    synchronizedSettings(parseDevHudSettings(value)),
+  );
 }
 
 /** Rehydrates fields that are intentionally device-local onto a server snapshot. */
-export function withDeviceLocalSettings(synchronized: DevHudSettingsV1, deviceLocal: DevHudSettingsV1): DevHudSettingsV1 {
-  const localAgents = new Map(deviceLocal.agents.map((agent) => [`${agent.id}\u0000${agent.kind}`, agent]));
+export function withDeviceLocalSettings(
+  synchronized: DevHudSettingsV1,
+  deviceLocal: DevHudSettingsV1,
+): DevHudSettingsV1 {
+  const localAgents = new Map(
+    deviceLocal.agents.map((agent) => [
+      `${agent.id}\u0000${agent.kind}`,
+      agent,
+    ]),
+  );
   return {
     ...synchronized,
     shortcuts: deviceLocal.shortcuts,
     agents: synchronized.agents.map((agent) => ({
       ...agent,
-      repositoryPrompts: localAgents.get(`${agent.id}\u0000${agent.kind}`)?.repositoryPrompts ?? [],
+      repositoryPrompts:
+        localAgents.get(`${agent.id}\u0000${agent.kind}`)?.repositoryPrompts ??
+        [],
     })),
   };
 }
@@ -321,97 +682,261 @@ function synchronizedSettings(settings: DevHudSettingsV1): unknown {
     decks: settings.decks,
     github: settings.github,
     urlMappings: settings.urlMappings,
-    agents: settings.agents.map(({ repositoryPrompts: _repositoryPrompts, ...agent }) => agent),
+    agents: settings.agents.map(
+      ({ repositoryPrompts: _repositoryPrompts, ...agent }) => agent,
+    ),
     uploads: {
       provider: settings.uploads.provider,
-      r2: settings.uploads.r2 === null ? null : (({ endpoint: _endpoint, ...r2 }) => r2)(settings.uploads.r2),
+      r2:
+        settings.uploads.r2 === null
+          ? null
+          : (({ endpoint: _endpoint, ...r2 }) => r2)(settings.uploads.r2),
     },
   };
 }
 
 function hasCurrentDeckShape(value: unknown): boolean {
-  return value !== null && typeof value === "object" && !Array.isArray(value) && "name" in value;
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    "name" in value
+  );
 }
 
 function hasStructuredURLMappingShape(value: unknown): boolean {
   const mappings = array(value, "$.urlMappings");
-  return mappings.some((mapping) => mapping !== null && typeof mapping === "object" && !Array.isArray(mapping) && "id" in mapping);
+  return mappings.some(
+    (mapping) =>
+      mapping !== null &&
+      typeof mapping === "object" &&
+      !Array.isArray(mapping) &&
+      "id" in mapping,
+  );
 }
 
-function parseDeck(value: unknown, path: string, legacy: boolean, previous: boolean): readonly DevHudSettingsV1["decks"][number][] {
-  const deck = object(value, path, legacy ? ["id", "title", "query", "repository", "display", "refreshMinutes", "notifications"] : previous ? ["id", "title", "query", "repository", "profileRef", "display", "refreshMinutes", "notifications"] : ["id", "name", "query", "builder", "profileRef", "display", "refreshMinutes", "notifications"]);
-  const display = object(deck.display, `${path}.display`, ["groupBy", "showDrafts"]);
+function parseDeck(
+  value: unknown,
+  path: string,
+  legacy: boolean,
+  previous: boolean,
+): readonly DevHudSettingsV1["decks"][number][] {
+  const deck = object(
+    value,
+    path,
+    legacy
+      ? [
+          "id",
+          "title",
+          "query",
+          "repository",
+          "display",
+          "refreshMinutes",
+          "notifications",
+        ]
+      : previous
+        ? [
+            "id",
+            "title",
+            "query",
+            "repository",
+            "profileRef",
+            "display",
+            "refreshMinutes",
+            "notifications",
+          ]
+        : [
+            "id",
+            "name",
+            "query",
+            "builder",
+            "profileRef",
+            "display",
+            "refreshMinutes",
+            "notifications",
+          ],
+  );
+  const display = object(deck.display, `${path}.display`, [
+    "groupBy",
+    "showDrafts",
+  ]);
   const refresh = integer(deck.refreshMinutes, `${path}.refreshMinutes`, 1, 30);
-  if (![1, 5, 15, 30].includes(refresh)) throw new SettingsContractError(`${path}.refreshMinutes`, "must be 1, 5, 15, or 30");
+  if (![1, 5, 15, 30].includes(refresh))
+    throw new SettingsContractError(
+      `${path}.refreshMinutes`,
+      "must be 1, 5, 15, or 30",
+    );
   const id = text(deck.id, `${path}.id`);
   try {
     assertUuidV7(id);
   } catch {
-    throw new SettingsContractError(`${path}.id`, "must be a canonical lowercase RFC 9562 UUID v7");
+    throw new SettingsContractError(
+      `${path}.id`,
+      "must be a canonical lowercase RFC 9562 UUID v7",
+    );
   }
-  const profileRef = legacy ? null : parseProfileRef(deck.profileRef, `${path}.profileRef`);
+  const profileRef = legacy
+    ? null
+    : parseProfileRef(deck.profileRef, `${path}.profileRef`);
   // v1/v2 entries without a local credential are deliberately removed during migration.
   if (profileRef === null) {
     if (legacy || previous) return [];
-    throw new SettingsContractError(`${path}.profileRef`, "must select a local GitHub credential profile");
+    throw new SettingsContractError(
+      `${path}.profileRef`,
+      "must select a local GitHub credential profile",
+    );
   }
-  if (previous && deck.repository === null) throw new SettingsContractError(`${path}.repository`, "must be selected when a credential profile is selected");
+  if (previous && deck.repository === null)
+    throw new SettingsContractError(
+      `${path}.repository`,
+      "must be selected when a credential profile is selected",
+    );
   const rawQuery = text(deck.query, `${path}.query`, true);
-  const legacyRepository = previous && deck.repository !== null ? text(deck.repository, `${path}.repository`) : null;
-  let query = hasPositivePullRequestQualifier(rawQuery) ? rawQuery : appendDeckQualifier(rawQuery, "is:pr");
-  if (legacyRepository !== null && !hasExactRepositoryQualifier(query, legacyRepository)) query = appendDeckQualifier(query, `repo:${legacyRepository}`);
-  if (!legacy && !hasRepositoryQualifier(query)) throw new SettingsContractError(`${path}.query`, "must contain a repository qualifier when a credential profile is selected");
-  if (!hasPositivePullRequestQualifier(query)) throw new SettingsContractError(`${path}.query`, "must contain a standalone positive is:pr qualifier");
-  const builder = legacy ? null : previous ? deckBuilderProjection(query) : parseDeckBuilder(deck.builder, `${path}.builder`);
-  if (!legacy && !previous && builder !== null && !sameDeckBuilder(builder, deckBuilderProjection(query))) {
-    throw new SettingsContractError(`${path}.builder`, "must be the lossless projection of the query");
+  const legacyRepository =
+    previous && deck.repository !== null
+      ? text(deck.repository, `${path}.repository`)
+      : null;
+  let query = hasPositivePullRequestQualifier(rawQuery)
+    ? rawQuery
+    : appendDeckQualifier(rawQuery, "is:pr");
+  if (
+    legacyRepository !== null &&
+    !hasExactRepositoryQualifier(query, legacyRepository)
+  )
+    query = appendDeckQualifier(query, `repo:${legacyRepository}`);
+  if (!legacy && !hasRepositoryQualifier(query))
+    throw new SettingsContractError(
+      `${path}.query`,
+      "must contain a repository qualifier when a credential profile is selected",
+    );
+  if (!hasPositivePullRequestQualifier(query))
+    throw new SettingsContractError(
+      `${path}.query`,
+      "must contain a standalone positive is:pr qualifier",
+    );
+  const builder = legacy
+    ? null
+    : previous
+      ? deckBuilderProjection(query)
+      : parseDeckBuilder(deck.builder, `${path}.builder`);
+  if (
+    !legacy &&
+    !previous &&
+    builder !== null &&
+    !sameDeckBuilder(builder, deckBuilderProjection(query))
+  ) {
+    throw new SettingsContractError(
+      `${path}.builder`,
+      "must be the lossless projection of the query",
+    );
   }
-  const notificationValues = array(deck.notifications, `${path}.notifications`).map((item, index) => enumeration(item, `${path}.notifications[${index}]`, NotificationKind));
-  if (!legacy && !previous && new Set(notificationValues).size !== notificationValues.length) throw new SettingsContractError(`${path}.notifications`, "must contain unique values");
-  const notifications = legacy || previous ? [...new Set(notificationValues)] : notificationValues;
-  const name = previous || legacy ? text(deck.title, `${path}.title`).trim() : text(deck.name, `${path}.name`);
-  if (name.trim() !== name || name.length === 0) throw new SettingsContractError(`${path}.name`, "must be a trimmed nonblank string");
-  return [{
-    id,
-    name,
-    query,
-    builder,
-    profileRef,
-    display: {
-      groupBy: enumeration(display.groupBy, `${path}.display.groupBy`, ["none", "repository", "author"] as const),
-      showDrafts: boolean(display.showDrafts, `${path}.display.showDrafts`),
+  const notificationValues = array(
+    deck.notifications,
+    `${path}.notifications`,
+  ).map((item, index) =>
+    enumeration(item, `${path}.notifications[${index}]`, NotificationKind),
+  );
+  if (
+    !legacy &&
+    !previous &&
+    new Set(notificationValues).size !== notificationValues.length
+  )
+    throw new SettingsContractError(
+      `${path}.notifications`,
+      "must contain unique values",
+    );
+  const notifications =
+    legacy || previous ? [...new Set(notificationValues)] : notificationValues;
+  const name =
+    previous || legacy
+      ? text(deck.title, `${path}.title`).trim()
+      : text(deck.name, `${path}.name`);
+  if (name.trim() !== name || name.length === 0)
+    throw new SettingsContractError(
+      `${path}.name`,
+      "must be a trimmed nonblank string",
+    );
+  return [
+    {
+      id,
+      name,
+      query,
+      builder,
+      profileRef,
+      display: {
+        groupBy: enumeration(display.groupBy, `${path}.display.groupBy`, [
+          "none",
+          "repository",
+          "author",
+        ] as const),
+        showDrafts: boolean(display.showDrafts, `${path}.display.showDrafts`),
+      },
+      refreshMinutes: refresh as 1 | 5 | 15 | 30,
+      notifications,
     },
-    refreshMinutes: refresh as 1 | 5 | 15 | 30,
-    notifications,
-  }];
+  ];
 }
 
 function parseDeckBuilder(value: unknown, path: string): DeckBuilder | null {
   if (value === null) return null;
-  const builder = object(value, path, ["repository", "author", "review", "label", "state"]);
+  const builder = object(value, path, [
+    "repository",
+    "author",
+    "review",
+    "label",
+    "state",
+  ]);
   return {
     repository: nullableTrimmedText(builder.repository, `${path}.repository`),
     author: nullableTrimmedText(builder.author, `${path}.author`),
-    review: builder.review === null ? null : enumeration(builder.review, `${path}.review`, ["approved", "changes-requested", "required"] as const),
+    review:
+      builder.review === null
+        ? null
+        : enumeration(builder.review, `${path}.review`, [
+            "approved",
+            "changes-requested",
+            "required",
+          ] as const),
     label: nullableTrimmedText(builder.label, `${path}.label`),
-    state: builder.state === null ? null : enumeration(builder.state, `${path}.state`, ["open", "closed", "merged"] as const),
+    state:
+      builder.state === null
+        ? null
+        : enumeration(builder.state, `${path}.state`, [
+            "open",
+            "closed",
+            "merged",
+          ] as const),
   };
 }
 
-function sameDeckBuilder(left: DeckBuilder, right: DeckBuilder | null): boolean {
-  return right !== null && left.repository === right.repository && left.author === right.author && left.review === right.review && left.label === right.label && left.state === right.state;
+function sameDeckBuilder(
+  left: DeckBuilder,
+  right: DeckBuilder | null,
+): boolean {
+  return (
+    right !== null &&
+    left.repository === right.repository &&
+    left.author === right.author &&
+    left.review === right.review &&
+    left.label === right.label &&
+    left.state === right.state
+  );
 }
 
 function nullableTrimmedText(value: unknown, path: string): string | null {
   if (value === null) return null;
   const result = text(value, path);
-  if (result.trim() !== result) throw new SettingsContractError(path, "must be trimmed");
+  if (result.trim() !== result)
+    throw new SettingsContractError(path, "must be trimmed");
   return result;
 }
 
 export function hasPositivePullRequestQualifier(query: string): boolean {
   const branches = deckQueryBranches(query);
-  return branches !== null && branches.every((branch) => branch.hasPullRequestQualifier);
+  return (
+    branches !== null &&
+    branches.every((branch) => branch.hasPullRequestQualifier)
+  );
 }
 
 export function hasRepositoryQualifier(query: string): boolean {
@@ -419,12 +944,24 @@ export function hasRepositoryQualifier(query: string): boolean {
   return repositories !== null && repositories.length > 0;
 }
 
-function hasExactRepositoryQualifier(query: string, repository: string): boolean {
+function hasExactRepositoryQualifier(
+  query: string,
+  repository: string,
+): boolean {
   const repositories = deckRepositories(query);
-  return repositories !== null && repositories.some((item) => `${item.owner}/${item.name}`.toLowerCase() === repository.toLowerCase());
+  return (
+    repositories !== null &&
+    repositories.some(
+      (item) =>
+        `${item.owner}/${item.name}`.toLowerCase() === repository.toLowerCase(),
+    )
+  );
 }
 
-export interface DeckRepositoryRef { readonly owner: string; readonly name: string }
+export interface DeckRepositoryRef {
+  readonly owner: string;
+  readonly name: string;
+}
 
 export const DeckRepositoryLimit = 10 as const;
 export const GitHubSearchQueryTextLimit = 256 as const;
@@ -434,13 +971,24 @@ const githubOwnerIdentifier = /^[A-Za-z0-9-]{1,39}$/u;
 const githubRepositoryIdentifier = /^[A-Za-z0-9._-]{1,100}$/u;
 
 function isGitHubOwnerIdentifier(value: string): boolean {
-  return githubOwnerIdentifier.test(value) && !value.startsWith("-") && !value.endsWith("-") && !value.includes("--");
+  return (
+    githubOwnerIdentifier.test(value) &&
+    !value.startsWith("-") &&
+    !value.endsWith("-") &&
+    !value.includes("--")
+  );
 }
 
 /** Returns null unless every Boolean branch is scoped to valid GitHub repositories. */
-export function deckRepositories(query: string): readonly DeckRepositoryRef[] | null {
+export function deckRepositories(
+  query: string,
+): readonly DeckRepositoryRef[] | null {
   const branches = deckQueryBranches(query);
-  if (branches === null || branches.some((branch) => branch.repositories.size === 0)) return null;
+  if (
+    branches === null ||
+    branches.some((branch) => branch.repositories.size === 0)
+  )
+    return null;
   const repositories = new Map<string, DeckRepositoryRef>();
   for (const branch of branches) {
     for (const [key, repository] of branch.repositories) {
@@ -451,7 +999,11 @@ export function deckRepositories(query: string): readonly DeckRepositoryRef[] | 
   return [...repositories.values()];
 }
 
-export interface DeckQueryToken { readonly value: string; readonly start: number; readonly end: number; }
+export interface DeckQueryToken {
+  readonly value: string;
+  readonly start: number;
+  readonly end: number;
+}
 
 /** Returns the editable builder fields only when the query contains builder-owned qualifiers. */
 export function deckBuilderProjection(query: string): DeckBuilder | null {
@@ -462,28 +1014,83 @@ export function deckBuilderProjection(query: string): DeckBuilder | null {
   const label = deckBuilderValue(tokens, "label:");
   const review = deckBuilderValue(tokens, "review:");
   const state = deckBuilderValue(tokens, "is:");
-  const normalizedReview: DeckReviewFilter | null = review?.toLowerCase() === "changes_requested" ? "changes-requested" : review?.toLowerCase() === "approved" || review?.toLowerCase() === "required" ? review.toLowerCase() as DeckReviewFilter : null;
-  const normalizedState: DeckPullRequestState | null = state?.toLowerCase() === "open" || state?.toLowerCase() === "closed" || state?.toLowerCase() === "merged" ? state.toLowerCase() as DeckPullRequestState : null;
-  if ([repository, author, label, normalizedReview, normalizedState].every((value) => value === null)) return null;
-  return { repository, author, label, review: normalizedReview, state: normalizedState };
+  const normalizedReview: DeckReviewFilter | null =
+    review?.toLowerCase() === "changes_requested"
+      ? "changes-requested"
+      : review?.toLowerCase() === "approved" ||
+          review?.toLowerCase() === "required"
+        ? (review.toLowerCase() as DeckReviewFilter)
+        : null;
+  const normalizedState: DeckPullRequestState | null =
+    state?.toLowerCase() === "open" ||
+    state?.toLowerCase() === "closed" ||
+    state?.toLowerCase() === "merged"
+      ? (state.toLowerCase() as DeckPullRequestState)
+      : null;
+  if (
+    [repository, author, label, normalizedReview, normalizedState].every(
+      (value) => value === null,
+    )
+  )
+    return null;
+  return {
+    repository,
+    author,
+    label,
+    review: normalizedReview,
+    state: normalizedState,
+  };
 }
 
-export function deckBuilderToken(query: string, prefix: "repo:" | "author:" | "review:" | "label:" | "is:"): DeckQueryToken | null {
-  return deckQueryTokens(query).find((token) => token.value.slice(0, prefix.length).toLowerCase() === prefix && builderTokenIsSupported(token.value, prefix)) ?? null;
+export function deckBuilderToken(
+  query: string,
+  prefix: "repo:" | "author:" | "review:" | "label:" | "is:",
+): DeckQueryToken | null {
+  return (
+    deckQueryTokens(query).find(
+      (token) =>
+        token.value.slice(0, prefix.length).toLowerCase() === prefix &&
+        builderTokenIsSupported(token.value, prefix),
+    ) ?? null
+  );
 }
 
-function deckBuilderValue(tokens: readonly DeckQueryToken[], prefix: "repo:" | "author:" | "review:" | "label:" | "is:"): string | null {
-  const token = tokens.find((item) => item.value.slice(0, prefix.length).toLowerCase() === prefix && builderTokenIsSupported(item.value, prefix));
-  return token === undefined ? null : unquoteDeckQualifier(token.value.slice(prefix.length));
+function deckBuilderValue(
+  tokens: readonly DeckQueryToken[],
+  prefix: "repo:" | "author:" | "review:" | "label:" | "is:",
+): string | null {
+  const token = tokens.find(
+    (item) =>
+      item.value.slice(0, prefix.length).toLowerCase() === prefix &&
+      builderTokenIsSupported(item.value, prefix),
+  );
+  return token === undefined
+    ? null
+    : unquoteDeckQualifier(token.value.slice(prefix.length));
 }
 
-function builderTokenIsSupported(value: string, prefix: "repo:" | "author:" | "review:" | "label:" | "is:"): boolean {
+function builderTokenIsSupported(
+  value: string,
+  prefix: "repo:" | "author:" | "review:" | "label:" | "is:",
+): boolean {
   const token = value.slice(prefix.length);
   const normalized = token.toLowerCase();
-  return prefix === "review:" ? normalized === "approved" || normalized === "changes_requested" || normalized === "required" : prefix === "is:" ? normalized === "open" || normalized === "closed" || normalized === "merged" : token.length > 0;
+  return prefix === "review:"
+    ? normalized === "approved" ||
+        normalized === "changes_requested" ||
+        normalized === "required"
+    : prefix === "is:"
+      ? normalized === "open" ||
+        normalized === "closed" ||
+        normalized === "merged"
+      : token.length > 0;
 }
 
-function unquoteDeckQualifier(value: string): string { return value.startsWith("\"") && value.endsWith("\"") ? value.slice(1, -1).replaceAll(/\\(.)/gu, "$1") : value; }
+function unquoteDeckQualifier(value: string): string {
+  return value.startsWith('"') && value.endsWith('"')
+    ? value.slice(1, -1).replaceAll(/\\(.)/gu, "$1")
+    : value;
+}
 
 function appendDeckQualifier(query: string, qualifier: string): string {
   const source = hasDeckBooleanQuerySyntax(query) ? `(${query})` : query;
@@ -495,12 +1102,23 @@ interface DeckQueryBranch {
   readonly hasPullRequestQualifier: boolean;
 }
 
-type DeckBooleanToken = { readonly kind: "term"; readonly value: string } | { readonly kind: "open" | "close" | "not" };
-const deckQueryWhitespace = /[\u0009-\u000D\u0020\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]/u;
+type DeckBooleanToken =
+  | { readonly kind: "term"; readonly value: string }
+  | { readonly kind: "open" | "close" | "not" };
+const deckQueryWhitespace =
+  /[\u0009-\u000D\u0020\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]/u;
 
 export function hasDeckBooleanQuerySyntax(query: string): boolean {
   const tokens = deckBooleanTokens(query);
-  return tokens !== null && tokens.some((token) => token.kind !== "term" || token.value.toLowerCase() === "and" || token.value.toLowerCase() === "or");
+  return (
+    tokens !== null &&
+    tokens.some(
+      (token) =>
+        token.kind !== "term" ||
+        token.value.toLowerCase() === "and" ||
+        token.value.toLowerCase() === "or",
+    )
+  );
 }
 
 /** Matches GitHub Search's text and Boolean-operator limits without charging qualifiers. */
@@ -516,13 +1134,18 @@ export function hasGitHubSearchQueryLimits(query: string): boolean {
       excludedLength += token.end - token.start;
     }
   }
-  return operators <= GitHubSearchQueryOperatorLimit && query.length - excludedLength <= GitHubSearchQueryTextLimit;
+  return (
+    operators <= GitHubSearchQueryOperatorLimit &&
+    query.length - excludedLength <= GitHubSearchQueryTextLimit
+  );
 }
 
 function isGitHubSearchQualifier(value: string): boolean {
   const source = value.startsWith("-") ? value.slice(1) : value;
   const separator = source.indexOf(":");
-  return separator > 0 && /^[A-Za-z][A-Za-z0-9-]*$/u.test(source.slice(0, separator));
+  return (
+    separator > 0 && /^[A-Za-z][A-Za-z0-9-]*$/u.test(source.slice(0, separator))
+  );
 }
 
 /** Parses GitHub's Boolean search grammar to prove every reachable branch is repository-scoped. */
@@ -531,16 +1154,34 @@ function deckQueryBranches(query: string): readonly DeckQueryBranch[] | null {
   if (tokens === null || tokens.length === 0) return null;
   let index = 0;
   const peek = () => tokens[index];
-  const isOperator = (token: DeckBooleanToken | undefined, value: "and" | "or") => token?.kind === "term" && token.value.toLowerCase() === value;
-  const isPrimary = (token: DeckBooleanToken | undefined) => token?.kind === "open" || token?.kind === "not" || token?.kind === "term" && !isOperator(token, "and") && !isOperator(token, "or");
-  const combineAnd = (left: readonly DeckQueryBranch[], right: readonly DeckQueryBranch[]): readonly DeckQueryBranch[] | null => {
+  const isOperator = (
+    token: DeckBooleanToken | undefined,
+    value: "and" | "or",
+  ) => token?.kind === "term" && token.value.toLowerCase() === value;
+  const isPrimary = (token: DeckBooleanToken | undefined) =>
+    token?.kind === "open" ||
+    token?.kind === "not" ||
+    (token?.kind === "term" &&
+      !isOperator(token, "and") &&
+      !isOperator(token, "or"));
+  const combineAnd = (
+    left: readonly DeckQueryBranch[],
+    right: readonly DeckQueryBranch[],
+  ): readonly DeckQueryBranch[] | null => {
     const combined: DeckQueryBranch[] = [];
-    for (const leftBranch of left) for (const rightBranch of right) {
-      const repositories = new Map(leftBranch.repositories);
-      for (const [key, repository] of rightBranch.repositories) repositories.set(key, repository);
-      combined.push({ repositories, hasPullRequestQualifier: leftBranch.hasPullRequestQualifier || rightBranch.hasPullRequestQualifier });
-      if (combined.length > DeckQueryBranchLimit) return null;
-    }
+    for (const leftBranch of left)
+      for (const rightBranch of right) {
+        const repositories = new Map(leftBranch.repositories);
+        for (const [key, repository] of rightBranch.repositories)
+          repositories.set(key, repository);
+        combined.push({
+          repositories,
+          hasPullRequestQualifier:
+            leftBranch.hasPullRequestQualifier ||
+            rightBranch.hasPullRequestQualifier,
+        });
+        if (combined.length > DeckQueryBranchLimit) return null;
+      }
     return combined;
   };
   const parsePrimary = (): readonly DeckQueryBranch[] | null => {
@@ -557,13 +1198,27 @@ function deckQueryBranches(query: string): readonly DeckQueryBranch[] | null {
       index += 1;
       return nested;
     }
-    if (token?.kind !== "term" || isOperator(token, "and") || isOperator(token, "or")) return null;
+    if (
+      token?.kind !== "term" ||
+      isOperator(token, "and") ||
+      isOperator(token, "or")
+    )
+      return null;
     index += 1;
     const repository = deckRepositoryQualifier(token.value);
     if (repository === undefined) return null;
     const repositories = new Map<string, DeckRepositoryRef>();
-    if (repository !== null) repositories.set(`${repository.owner}/${repository.name}`.toLowerCase(), repository);
-    return [{ repositories, hasPullRequestQualifier: token.value.toLowerCase() === "is:pr" }];
+    if (repository !== null)
+      repositories.set(
+        `${repository.owner}/${repository.name}`.toLowerCase(),
+        repository,
+      );
+    return [
+      {
+        repositories,
+        hasPullRequestQualifier: token.value.toLowerCase() === "is:pr",
+      },
+    ];
   };
   const parseAnd = (): readonly DeckQueryBranch[] | null => {
     let result = parsePrimary();
@@ -584,7 +1239,8 @@ function deckQueryBranches(query: string): readonly DeckQueryBranch[] | null {
     while (isOperator(peek(), "or")) {
       index += 1;
       const next = parseAnd();
-      if (next === null || result.length + next.length > DeckQueryBranchLimit) return null;
+      if (next === null || result.length + next.length > DeckQueryBranchLimit)
+        return null;
       result = [...result, ...next];
     }
     return result;
@@ -594,13 +1250,26 @@ function deckQueryBranches(query: string): readonly DeckQueryBranch[] | null {
 }
 
 /** Returns undefined for invalid positive repo qualifiers and null for non-repository terms. */
-function deckRepositoryQualifier(value: string): DeckRepositoryRef | null | undefined {
+function deckRepositoryQualifier(
+  value: string,
+): DeckRepositoryRef | null | undefined {
   if (value.slice(0, "repo:".length).toLowerCase() !== "repo:") return null;
   const repositoryValue = value.slice("repo:".length);
   const separator = repositoryValue.indexOf("/");
-  if (separator < 1 || separator !== repositoryValue.lastIndexOf("/") || separator === repositoryValue.length - 1) return undefined;
-  const repository = { owner: repositoryValue.slice(0, separator), name: repositoryValue.slice(separator + 1) };
-  return isGitHubOwnerIdentifier(repository.owner) && githubRepositoryIdentifier.test(repository.name) ? repository : undefined;
+  if (
+    separator < 1 ||
+    separator !== repositoryValue.lastIndexOf("/") ||
+    separator === repositoryValue.length - 1
+  )
+    return undefined;
+  const repository = {
+    owner: repositoryValue.slice(0, separator),
+    name: repositoryValue.slice(separator + 1),
+  };
+  return isGitHubOwnerIdentifier(repository.owner) &&
+    githubRepositoryIdentifier.test(repository.name)
+    ? repository
+    : undefined;
 }
 
 function deckBooleanTokens(query: string): readonly DeckBooleanToken[] | null {
@@ -608,29 +1277,52 @@ function deckBooleanTokens(query: string): readonly DeckBooleanToken[] | null {
   let index = 0;
   while (index < query.length) {
     const character = query[index] as string;
-    if (deckQueryWhitespace.test(character)) { index += 1; continue; }
-    if (character === "(") { tokens.push({ kind: "open" }); index += 1; continue; }
-    if (character === ")") { tokens.push({ kind: "close" }); index += 1; continue; }
+    if (deckQueryWhitespace.test(character)) {
+      index += 1;
+      continue;
+    }
+    if (character === "(") {
+      tokens.push({ kind: "open" });
+      index += 1;
+      continue;
+    }
+    if (character === ")") {
+      tokens.push({ kind: "close" });
+      index += 1;
+      continue;
+    }
     let value = "";
     let quoted = false;
     let escaped = false;
     while (index < query.length) {
       const next = query[index] as string;
-      if (escaped) { value += next; escaped = false; index += 1; continue; }
-      if (quoted) {
+      if (escaped) {
         value += next;
-        if (next === "\\") escaped = true;
-        else if (next === "\"") quoted = false;
+        escaped = false;
         index += 1;
         continue;
       }
-      if (next === "\"") { value += next; quoted = true; index += 1; continue; }
+      if (quoted) {
+        value += next;
+        if (next === "\\") escaped = true;
+        else if (next === '"') quoted = false;
+        index += 1;
+        continue;
+      }
+      if (next === '"') {
+        value += next;
+        quoted = true;
+        index += 1;
+        continue;
+      }
       if (deckQueryWhitespace.test(next) || next === "(" || next === ")") break;
       value += next;
       index += 1;
     }
     if (quoted || value.length === 0) return null;
-    tokens.push(value.toLowerCase() === "not" ? { kind: "not" } : { kind: "term", value });
+    tokens.push(
+      value.toLowerCase() === "not" ? { kind: "not" } : { kind: "term", value },
+    );
   }
   return tokens;
 }
@@ -643,12 +1335,14 @@ function deckQueryTokens(query: string): readonly DeckQueryToken[] {
   let quoted = false;
   let escaped = false;
   const flush = () => {
-    if (token.length > 0) tokens.push({ value: token, start, end: start + token.length });
+    if (token.length > 0)
+      tokens.push({ value: token, start, end: start + token.length });
     token = "";
   };
   for (let index = 0; index < query.length; index += 1) {
     const character = query[index] as string;
-    if (token.length === 0 && !quoted && !deckQueryWhitespace.test(character)) start = index;
+    if (token.length === 0 && !quoted && !deckQueryWhitespace.test(character))
+      start = index;
     if (escaped) {
       token += character;
       escaped = false;
@@ -657,10 +1351,10 @@ function deckQueryTokens(query: string): readonly DeckQueryToken[] {
     if (quoted) {
       token += character;
       if (character === "\\") escaped = true;
-      else if (character === "\"") quoted = false;
+      else if (character === '"') quoted = false;
       continue;
     }
-    if (character === "\"") {
+    if (character === '"') {
       token += character;
       quoted = true;
     } else if (deckQueryWhitespace.test(character)) {
@@ -673,23 +1367,47 @@ function deckQueryTokens(query: string): readonly DeckQueryToken[] {
   return tokens;
 }
 
-function parseIssueTracker(value: unknown, legacy: boolean): NonNullable<DevHudSettingsV1["github"]["issueTracker"]> {
+function parseIssueTracker(
+  value: unknown,
+  legacy: boolean,
+): NonNullable<DevHudSettingsV1["github"]["issueTracker"]> {
   const path = "$.github.issueTracker";
-  const tracker = object(value, path, legacy ? ["owner", "repository", "labels"] : ["owner", "repository", "labels", "profileRef"]);
+  const tracker = object(
+    value,
+    path,
+    legacy
+      ? ["owner", "repository", "labels"]
+      : ["owner", "repository", "labels", "profileRef"],
+  );
   return {
     owner: text(tracker.owner, `${path}.owner`),
     repository: text(tracker.repository, `${path}.repository`),
-    labels: array(tracker.labels, `${path}.labels`).map((item, index) => text(item, `${path}.labels[${index}]`)),
-    profileRef: legacy ? null : parseProfileRef(tracker.profileRef, `${path}.profileRef`),
+    labels: array(tracker.labels, `${path}.labels`).map((item, index) =>
+      text(item, `${path}.labels[${index}]`),
+    ),
+    profileRef: legacy
+      ? null
+      : parseProfileRef(tracker.profileRef, `${path}.profileRef`),
   };
 }
 
-function parseGitHubProfile(value: unknown, path: string): DevHudSettingsV1["github"]["profiles"][number] {
+function parseGitHubProfile(
+  value: unknown,
+  path: string,
+): DevHudSettingsV1["github"]["profiles"][number] {
   const profile = object(value, path, ["id", "name", "kind"]);
   const id = parseGitHubProfileId(profile.id, `${path}.id`);
   const name = text(profile.name, `${path}.name`);
-  if (name.trim() !== name || name.length > 80) throw new SettingsContractError(`${path}.name`, "must be a trimmed string of at most 80 characters");
-  return { id, name, kind: enumeration(profile.kind, `${path}.kind`, GitHubCredentialKind) };
+  if (name.trim() !== name || name.length > 80)
+    throw new SettingsContractError(
+      `${path}.name`,
+      "must be a trimmed string of at most 80 characters",
+    );
+  return {
+    id,
+    name,
+    kind: enumeration(profile.kind, `${path}.kind`, GitHubCredentialKind),
+  };
 }
 
 function parseGitHubProfileId(value: unknown, path: string): string {
@@ -697,7 +1415,10 @@ function parseGitHubProfileId(value: unknown, path: string): string {
   try {
     assertUuidV7(id);
   } catch {
-    throw new SettingsContractError(path, "must be a canonical lowercase RFC 9562 UUID v7");
+    throw new SettingsContractError(
+      path,
+      "must be a canonical lowercase RFC 9562 UUID v7",
+    );
   }
   return id;
 }
@@ -705,43 +1426,112 @@ function parseGitHubProfileId(value: unknown, path: string): string {
 function parseProfileRef(value: unknown, path: string): string | null {
   if (value === null) return null;
   const profileRef = text(value, path);
-  if (!profileRefPattern.test(profileRef)) throw new SettingsContractError(path, "is invalid");
+  if (!profileRefPattern.test(profileRef))
+    throw new SettingsContractError(path, "is invalid");
   return profileRef;
 }
 
-function validateGitHubProfileRef(value: string | null, path: string, profileIds: ReadonlySet<string>): void {
-  if (value !== null && !profileIds.has(value)) throw new SettingsContractError(path, "must reference a configured GitHub profile");
+function validateGitHubProfileRef(
+  value: string | null,
+  path: string,
+  profileIds: ReadonlySet<string>,
+): void {
+  if (value !== null && !profileIds.has(value))
+    throw new SettingsContractError(
+      path,
+      "must reference a configured GitHub profile",
+    );
 }
 
-function parseAgent(value: unknown, path: string, sourceSchemaVersion: number, scope: SettingsParseScope): DevHudSettingsV1["agents"][number] {
-  const agent = sourceSchemaVersion < SettingsSchemaVersion
-    ? object(value, path, ["id", "enabled", "kind", "mode", "repositoryPrompts", "profileRef"])
-    : scope === SettingsParseScope.Synchronized
-      ? object(value, path, ["id", "enabled", "kind", "mode", "profileRef"])
-    : objectWithOptional(value, path, ["id", "enabled", "kind", "mode", "profileRef"], ["repositoryPrompts"]);
-  const profileRef = agent.profileRef === null ? null : text(agent.profileRef, `${path}.profileRef`);
-  if (profileRef !== null && !profileRefPattern.test(profileRef)) throw new SettingsContractError(`${path}.profileRef`, "is invalid");
+function parseAgent(
+  value: unknown,
+  path: string,
+  sourceSchemaVersion: number,
+  scope: SettingsParseScope,
+): DevHudSettingsV1["agents"][number] {
+  const agent =
+    sourceSchemaVersion < SettingsSchemaVersion
+      ? object(value, path, [
+          "id",
+          "enabled",
+          "kind",
+          "mode",
+          "repositoryPrompts",
+          "profileRef",
+        ])
+      : scope === SettingsParseScope.Synchronized
+        ? object(value, path, ["id", "enabled", "kind", "mode", "profileRef"])
+        : objectWithOptional(
+            value,
+            path,
+            ["id", "enabled", "kind", "mode", "profileRef"],
+            ["repositoryPrompts"],
+          );
+  const profileRef =
+    agent.profileRef === null
+      ? null
+      : text(agent.profileRef, `${path}.profileRef`);
+  if (profileRef !== null && !profileRefPattern.test(profileRef))
+    throw new SettingsContractError(`${path}.profileRef`, "is invalid");
   let repositoryPrompts: DevHudSettingsV1["agents"][number]["repositoryPrompts"];
   if (sourceSchemaVersion < AgentPromptSettingsSchemaVersion) {
     boolean(agent.repositoryPrompts, `${path}.repositoryPrompts`);
     repositoryPrompts = [];
   } else {
-    repositoryPrompts = (agent.repositoryPrompts === undefined ? [] : array(agent.repositoryPrompts, `${path}.repositoryPrompts`)).map((entry, index) => {
+    repositoryPrompts = (
+      agent.repositoryPrompts === undefined
+        ? []
+        : array(agent.repositoryPrompts, `${path}.repositoryPrompts`)
+    ).map((entry, index) => {
       const promptPath = `${path}.repositoryPrompts[${index}]`;
       const prompt = object(entry, promptPath, ["repository", "body"]);
-      const repository = object(prompt.repository, `${promptPath}.repository`, ["owner", "name"]);
+      const repository = object(prompt.repository, `${promptPath}.repository`, [
+        "owner",
+        "name",
+      ]);
       const owner = text(repository.owner, `${promptPath}.repository.owner`);
       const name = text(repository.name, `${promptPath}.repository.name`);
-      if (typeof prompt.body !== "string") throw new SettingsContractError(`${promptPath}.body`, "must be a string");
+      if (typeof prompt.body !== "string")
+        throw new SettingsContractError(
+          `${promptPath}.body`,
+          "must be a string",
+        );
       const body = prompt.body;
-      if (!/^(?!-)(?!.*--)[A-Za-z0-9-]{1,39}(?<!-)$/u.test(owner)) throw new SettingsContractError(`${promptPath}.repository.owner`, "is invalid");
-      if (!/^(?!\.\.?$)[A-Za-z0-9._-]{1,100}$/u.test(name)) throw new SettingsContractError(`${promptPath}.repository.name`, "is invalid");
-      if (new TextEncoder().encode(body).byteLength > 32 * 1024) throw new SettingsContractError(`${promptPath}.body`, "must contain at most 32 KiB of UTF-8 text");
+      if (!/^(?!-)(?!.*--)[A-Za-z0-9-]{1,39}(?<!-)$/u.test(owner))
+        throw new SettingsContractError(
+          `${promptPath}.repository.owner`,
+          "is invalid",
+        );
+      if (!/^(?!\.\.?$)[A-Za-z0-9._-]{1,100}$/u.test(name))
+        throw new SettingsContractError(
+          `${promptPath}.repository.name`,
+          "is invalid",
+        );
+      if (new TextEncoder().encode(body).byteLength > 32 * 1024)
+        throw new SettingsContractError(
+          `${promptPath}.body`,
+          "must contain at most 32 KiB of UTF-8 text",
+        );
       return { repository: { owner, name }, body };
     });
   }
-  if (repositoryPrompts.length > 100) throw new SettingsContractError(`${path}.repositoryPrompts`, "must contain at most 100 entries");
-  if (new Set(repositoryPrompts.map((prompt) => `${prompt.repository.owner.toLowerCase()}/${prompt.repository.name.toLowerCase()}`)).size !== repositoryPrompts.length) throw new SettingsContractError(`${path}.repositoryPrompts`, "must contain unique repositories");
+  if (repositoryPrompts.length > 100)
+    throw new SettingsContractError(
+      `${path}.repositoryPrompts`,
+      "must contain at most 100 entries",
+    );
+  if (
+    new Set(
+      repositoryPrompts.map(
+        (prompt) =>
+          `${prompt.repository.owner.toLowerCase()}/${prompt.repository.name.toLowerCase()}`,
+      ),
+    ).size !== repositoryPrompts.length
+  )
+    throw new SettingsContractError(
+      `${path}.repositoryPrompts`,
+      "must contain unique repositories",
+    );
   return {
     id: identifier(agent.id, `${path}.id`),
     enabled: boolean(agent.enabled, `${path}.enabled`),
@@ -752,30 +1542,100 @@ function parseAgent(value: unknown, path: string, sourceSchemaVersion: number, s
   };
 }
 
-function parseR2(value: unknown, sourceSchemaVersion: number, scope: SettingsParseScope): NonNullable<DevHudSettingsV1["uploads"]["r2"]> {
+function parseR2(
+  value: unknown,
+  sourceSchemaVersion: number,
+  scope: SettingsParseScope,
+): NonNullable<DevHudSettingsV1["uploads"]["r2"]> {
   const path = "$.uploads.r2";
   const current = sourceSchemaVersion >= R2SettingsSchemaVersion;
-  const r2 = sourceSchemaVersion < SettingsSchemaVersion
-    ? object(value, path, current
-      ? ["profileRef", "name", "endpoint", "accountId", "bucket", "publicBaseUrl", "prefix"]
-      : ["profileRef", "bucket", "endpoint", "region", "publicBaseUrl"])
-    : scope === SettingsParseScope.Synchronized
-      ? object(value, path, ["profileRef", "name", "accountId", "bucket", "publicBaseUrl", "prefix"])
-    : objectWithOptional(value, path, ["profileRef", "name", "accountId", "bucket", "publicBaseUrl", "prefix"], ["endpoint"]);
+  const r2 =
+    sourceSchemaVersion < SettingsSchemaVersion
+      ? object(
+          value,
+          path,
+          current
+            ? [
+                "profileRef",
+                "name",
+                "endpoint",
+                "accountId",
+                "bucket",
+                "publicBaseUrl",
+                "prefix",
+              ]
+            : ["profileRef", "bucket", "endpoint", "region", "publicBaseUrl"],
+        )
+      : scope === SettingsParseScope.Synchronized
+        ? object(value, path, [
+            "profileRef",
+            "name",
+            "accountId",
+            "bucket",
+            "publicBaseUrl",
+            "prefix",
+          ])
+        : objectWithOptional(
+            value,
+            path,
+            [
+              "profileRef",
+              "name",
+              "accountId",
+              "bucket",
+              "publicBaseUrl",
+              "prefix",
+            ],
+            ["endpoint"],
+          );
   const profileRef = text(r2.profileRef, `${path}.profileRef`);
-  if (!profileRefPattern.test(profileRef)) throw new SettingsContractError(`${path}.profileRef`, "is invalid");
-  const legacyEndpoint = sourceSchemaVersion < SettingsSchemaVersion ? url(r2.endpoint, `${path}.endpoint`, true) : null;
-  const declaredAccountId = current ? nullableR2Identifier(r2.accountId, `${path}.accountId`) : null;
-  const candidateAccountId = sourceSchemaVersion < SettingsSchemaVersion && !isCloudflareAccountId(declaredAccountId)
-    ? accountIdFromEndpoint(legacyEndpoint!)
-    : declaredAccountId;
-  const expectedEndpoint = candidateAccountId === null ? "" : `https://${candidateAccountId}.r2.cloudflarestorage.com/`;
-  const accountId = sourceSchemaVersion < SettingsSchemaVersion && r2.endpoint !== expectedEndpoint ? null : candidateAccountId;
-  if (sourceSchemaVersion >= SettingsSchemaVersion && !isCloudflareAccountId(accountId)) throw new SettingsContractError(`${path}.accountId`, "must be a lowercase 32-character Cloudflare account ID");
-  const endpoint = accountId === null ? "" : `https://${accountId}.r2.cloudflarestorage.com/`;
-  if (sourceSchemaVersion >= SettingsSchemaVersion && r2.endpoint !== undefined && url(r2.endpoint, `${path}.endpoint`, true) !== endpoint) throw new SettingsContractError(`${path}.endpoint`, "must match the exact Cloudflare account endpoint");
+  if (!profileRefPattern.test(profileRef))
+    throw new SettingsContractError(`${path}.profileRef`, "is invalid");
+  const legacyEndpoint =
+    sourceSchemaVersion < SettingsSchemaVersion
+      ? url(r2.endpoint, `${path}.endpoint`, true)
+      : null;
+  const declaredAccountId = current
+    ? nullableR2Identifier(r2.accountId, `${path}.accountId`)
+    : null;
+  const candidateAccountId =
+    sourceSchemaVersion < SettingsSchemaVersion &&
+    !isCloudflareAccountId(declaredAccountId)
+      ? accountIdFromEndpoint(legacyEndpoint!)
+      : declaredAccountId;
+  const expectedEndpoint =
+    candidateAccountId === null
+      ? ""
+      : `https://${candidateAccountId}.r2.cloudflarestorage.com/`;
+  const accountId =
+    sourceSchemaVersion < SettingsSchemaVersion &&
+    r2.endpoint !== expectedEndpoint
+      ? null
+      : candidateAccountId;
+  if (
+    sourceSchemaVersion >= SettingsSchemaVersion &&
+    !isCloudflareAccountId(accountId)
+  )
+    throw new SettingsContractError(
+      `${path}.accountId`,
+      "must be a lowercase 32-character Cloudflare account ID",
+    );
+  const endpoint =
+    accountId === null ? "" : `https://${accountId}.r2.cloudflarestorage.com/`;
+  if (
+    sourceSchemaVersion >= SettingsSchemaVersion &&
+    r2.endpoint !== undefined &&
+    url(r2.endpoint, `${path}.endpoint`, true) !== endpoint
+  )
+    throw new SettingsContractError(
+      `${path}.endpoint`,
+      "must match the exact Cloudflare account endpoint",
+    );
   const bucket = r2Identifier(r2.bucket, `${path}.bucket`);
-  const publicBaseUrl = r2.publicBaseUrl === null ? null : url(r2.publicBaseUrl, `${path}.publicBaseUrl`, true);
+  const publicBaseUrl =
+    r2.publicBaseUrl === null
+      ? null
+      : url(r2.publicBaseUrl, `${path}.publicBaseUrl`, true);
   const prefix = current ? r2Prefix(r2.prefix, `${path}.prefix`) : "";
   return {
     profileRef,
@@ -788,9 +1648,17 @@ function parseR2(value: unknown, sourceSchemaVersion: number, scope: SettingsPar
   };
 }
 
-function boundedTrimmedText(value: unknown, path: string, maximum: number): string {
+function boundedTrimmedText(
+  value: unknown,
+  path: string,
+  maximum: number,
+): string {
   const parsed = text(value, path);
-  if (parsed.trim() !== parsed || parsed.length > maximum) throw new SettingsContractError(path, `must be a trimmed string of at most ${maximum} characters`);
+  if (parsed.trim() !== parsed || parsed.length > maximum)
+    throw new SettingsContractError(
+      path,
+      `must be a trimmed string of at most ${maximum} characters`,
+    );
   return parsed;
 }
 
@@ -801,14 +1669,27 @@ function nullableR2Identifier(value: unknown, path: string): string | null {
 
 function r2Identifier(value: unknown, path: string): string {
   const parsed = text(value, path);
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(parsed)) throw new SettingsContractError(path, "is invalid");
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(parsed))
+    throw new SettingsContractError(path, "is invalid");
   return parsed;
 }
 
 function r2Prefix(value: unknown, path: string): string {
-  if (typeof value !== "string" || new TextEncoder().encode(value).byteLength > 512 || value.startsWith("/") || value.endsWith("/") || value.includes("\\") || value.split("/").some((segment) => segment === "" || segment === "." || segment === "..")) {
+  if (
+    typeof value !== "string" ||
+    new TextEncoder().encode(value).byteLength > 512 ||
+    value.startsWith("/") ||
+    value.endsWith("/") ||
+    value.includes("\\") ||
+    value
+      .split("/")
+      .some((segment) => segment === "" || segment === "." || segment === "..")
+  ) {
     if (value === "") return "";
-    throw new SettingsContractError(path, "must be an empty or normalized relative object-key prefix");
+    throw new SettingsContractError(
+      path,
+      "must be an empty or normalized relative object-key prefix",
+    );
   }
   return value;
 }
@@ -823,92 +1704,168 @@ function isCloudflareAccountId(value: string | null): value is string {
   return value !== null && /^[0-9a-f]{32}$/u.test(value);
 }
 
-function object(value: unknown, path: string, allowed: readonly string[]): Record<string, unknown> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new SettingsContractError(path, "must be an object");
+function object(
+  value: unknown,
+  path: string,
+  allowed: readonly string[],
+): Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value))
+    throw new SettingsContractError(path, "must be an object");
   const record = value as Record<string, unknown>;
   const allowedSet = new Set(allowed);
-  for (const key of Object.keys(record)) if (!allowedSet.has(key)) throw new SettingsContractError(`${path}.${key}`, "unknown field");
-  for (const key of allowed) if (!(key in record)) throw new SettingsContractError(`${path}.${key}`, "is required");
+  for (const key of Object.keys(record))
+    if (!allowedSet.has(key))
+      throw new SettingsContractError(`${path}.${key}`, "unknown field");
+  for (const key of allowed)
+    if (!(key in record))
+      throw new SettingsContractError(`${path}.${key}`, "is required");
   return record;
 }
 
-function objectWithOptional(value: unknown, path: string, required: readonly string[], optional: readonly string[]): Record<string, unknown> {
+function objectWithOptional(
+  value: unknown,
+  path: string,
+  required: readonly string[],
+  optional: readonly string[],
+): Record<string, unknown> {
   const recordValue = record(value, path);
   const allowed = new Set([...required, ...optional]);
-  for (const key of Object.keys(recordValue)) if (!allowed.has(key)) throw new SettingsContractError(`${path}.${key}`, "unknown field");
-  for (const key of required) if (!(key in recordValue)) throw new SettingsContractError(`${path}.${key}`, "is required");
+  for (const key of Object.keys(recordValue))
+    if (!allowed.has(key))
+      throw new SettingsContractError(`${path}.${key}`, "unknown field");
+  for (const key of required)
+    if (!(key in recordValue))
+      throw new SettingsContractError(`${path}.${key}`, "is required");
   return recordValue;
 }
 
 function record(value: unknown, path: string): Record<string, unknown> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new SettingsContractError(path, "must be an object");
+  if (value === null || typeof value !== "object" || Array.isArray(value))
+    throw new SettingsContractError(path, "must be an object");
   return value as Record<string, unknown>;
 }
 
 function array(value: unknown, path: string): readonly unknown[] {
-  if (!Array.isArray(value)) throw new SettingsContractError(path, "must be an array");
+  if (!Array.isArray(value))
+    throw new SettingsContractError(path, "must be an array");
   return value;
 }
 
 function text(value: unknown, path: string, allowEmpty = false): string {
-  if (typeof value !== "string" || (!allowEmpty && value.length === 0) || value.length > SettingsTextLimit) throw new SettingsContractError(path, "must be a bounded string");
+  if (
+    typeof value !== "string" ||
+    (!allowEmpty && value.length === 0) ||
+    value.length > SettingsTextLimit
+  )
+    throw new SettingsContractError(path, "must be a bounded string");
   return value;
 }
 
 function identifier(value: unknown, path: string): string {
   const parsed = text(value, path);
-  if (!safeDynamicKeyPattern.test(parsed)) throw new SettingsContractError(path, "is invalid");
+  if (!safeDynamicKeyPattern.test(parsed))
+    throw new SettingsContractError(path, "is invalid");
   return parsed;
 }
 
-function integer(value: unknown, path: string, minimum: number, maximum: number): number {
-  if (!Number.isInteger(value) || (value as number) < minimum || (value as number) > maximum) throw new SettingsContractError(path, `must be an integer from ${minimum} through ${maximum}`);
+function integer(
+  value: unknown,
+  path: string,
+  minimum: number,
+  maximum: number,
+): number {
+  if (
+    !Number.isInteger(value) ||
+    (value as number) < minimum ||
+    (value as number) > maximum
+  )
+    throw new SettingsContractError(
+      path,
+      `must be an integer from ${minimum} through ${maximum}`,
+    );
   return value as number;
 }
 
 function boolean(value: unknown, path: string): boolean {
-  if (typeof value !== "boolean") throw new SettingsContractError(path, "must be a boolean");
+  if (typeof value !== "boolean")
+    throw new SettingsContractError(path, "must be a boolean");
   return value;
 }
 
-function enumeration<const Values extends readonly string[]>(value: unknown, path: string, values: Values): Values[number] {
-  if (typeof value !== "string" || !values.includes(value)) throw new SettingsContractError(path, `must be one of ${values.join(", ")}`);
+function enumeration<const Values extends readonly string[]>(
+  value: unknown,
+  path: string,
+  values: Values,
+): Values[number] {
+  if (typeof value !== "string" || !values.includes(value))
+    throw new SettingsContractError(
+      path,
+      `must be one of ${values.join(", ")}`,
+    );
   return value as Values[number];
 }
 
-function legacyShortcutMap(value: unknown, path: string): Readonly<Record<string, never>> {
+function legacyShortcutMap(
+  value: unknown,
+  path: string,
+): Readonly<Record<string, never>> {
   validateLegacyShortcutMap(value, path);
   return {};
 }
 
-function emptyShortcutMap(value: unknown, path: string): Readonly<Record<string, never>> {
+function emptyShortcutMap(
+  value: unknown,
+  path: string,
+): Readonly<Record<string, never>> {
   validateLegacyShortcutMap(value, path);
-  if (Object.keys(value as Record<string, unknown>).length !== 0) throw new SettingsContractError(path, "must be empty");
+  if (Object.keys(value as Record<string, unknown>).length !== 0)
+    throw new SettingsContractError(path, "must be empty");
   return {};
 }
 
 function validateLegacyShortcutMap(value: unknown, path: string): void {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new SettingsContractError(path, "must be an object");
+  if (value === null || typeof value !== "object" || Array.isArray(value))
+    throw new SettingsContractError(path, "must be an object");
   for (const [key, item] of Object.entries(value)) {
-    if (!safeDynamicKeyPattern.test(key) || sensitiveKeyPattern.test(key) || prototypeSensitiveKeys.has(key)) throw new SettingsContractError(`${path}.${key}`, "is not an allowed shortcut action");
+    if (
+      !safeDynamicKeyPattern.test(key) ||
+      sensitiveKeyPattern.test(key) ||
+      prototypeSensitiveKeys.has(key)
+    )
+      throw new SettingsContractError(
+        `${path}.${key}`,
+        "is not an allowed shortcut action",
+      );
     text(item, `${path}.${key}`);
   }
 }
 
-function desktopShortcutMap(value: unknown, legacy: boolean): DesktopShortcutBindings {
-  if (!legacy && value !== null && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0) throw new SettingsContractError("$.shortcuts.desktop", "malformed");
+function desktopShortcutMap(
+  value: unknown,
+  legacy: boolean,
+): DesktopShortcutBindings {
+  if (
+    !legacy &&
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.keys(value).length === 0
+  )
+    throw new SettingsContractError("$.shortcuts.desktop", "malformed");
   try {
     return parseDesktopShortcutBindings(value);
   } catch (error) {
     if (!legacy) {
-      const detail = error instanceof ShortcutContractError ? error.code : "malformed";
+      const detail =
+        error instanceof ShortcutContractError ? error.code : "malformed";
       throw new SettingsContractError("$.shortcuts.desktop", detail);
     }
     try {
       validateLegacyShortcutMap(value, "$.shortcuts.desktop");
       return defaultDesktopShortcutBindings;
     } catch {
-      const detail = error instanceof ShortcutContractError ? error.code : "malformed";
+      const detail =
+        error instanceof ShortcutContractError ? error.code : "malformed";
       throw new SettingsContractError("$.shortcuts.desktop", detail);
     }
   }
@@ -918,10 +1875,22 @@ function url(value: unknown, path: string, httpsOnly = false): string {
   const parsed = text(value, path);
   try {
     const candidate = new URL(parsed);
-    if (candidate.username || candidate.password || candidate.href.includes("?") || candidate.href.includes("#") || (httpsOnly && candidate.protocol !== "https:")) throw new Error();
+    if (
+      candidate.username ||
+      candidate.password ||
+      candidate.href.includes("?") ||
+      candidate.href.includes("#") ||
+      (httpsOnly && candidate.protocol !== "https:")
+    )
+      throw new Error();
     return candidate.toString();
   } catch {
-    throw new SettingsContractError(path, httpsOnly ? "must be an HTTPS URL without credentials, query, or fragment" : "must be a URL without credentials, query, or fragment");
+    throw new SettingsContractError(
+      path,
+      httpsOnly
+        ? "must be an HTTPS URL without credentials, query, or fragment"
+        : "must be a URL without credentials, query, or fragment",
+    );
   }
 }
 
@@ -929,24 +1898,61 @@ function chromeOrigin(value: unknown, path: string): string {
   const parsed = text(value, path);
   try {
     const candidate = new URL(parsed);
-    if (candidate.protocol !== "http:" && candidate.protocol !== "https:") throw new Error();
-    if (candidate.username || candidate.password || candidate.search || candidate.hash || candidate.pathname !== "/" || candidate.hostname.includes("*")) throw new Error();
+    if (candidate.protocol !== "http:" && candidate.protocol !== "https:")
+      throw new Error();
+    if (
+      candidate.username ||
+      candidate.password ||
+      candidate.search ||
+      candidate.hash ||
+      candidate.pathname !== "/" ||
+      candidate.hostname.includes("*")
+    )
+      throw new Error();
     return candidate.origin;
-  } catch { throw new SettingsContractError(path, "must be a concrete HTTP(S) origin without credentials, path, query, or fragment"); }
+  } catch {
+    throw new SettingsContractError(
+      path,
+      "must be a concrete HTTP(S) origin without credentials, path, query, or fragment",
+    );
+  }
 }
 
-function rejectSensitiveContent(value: unknown, path: string, seen: WeakSet<object>): void {
+function rejectSensitiveContent(
+  value: unknown,
+  path: string,
+  seen: WeakSet<object>,
+): void {
   if (typeof value === "string") {
-    if (sensitiveValuePatterns.some((pattern) => pattern.test(value))) throw new SettingsContractError(path, "contains secret material");
+    if (sensitiveValuePatterns.some((pattern) => pattern.test(value)))
+      throw new SettingsContractError(path, "contains secret material");
     return;
   }
   if (value === null || typeof value !== "object") return;
-  if (seen.has(value)) throw new SettingsContractError(path, "must not contain cycles");
+  if (seen.has(value))
+    throw new SettingsContractError(path, "must not contain cycles");
   seen.add(value);
   for (const [key, item] of Object.entries(value)) {
-    const isContractedShortcutAction = path === "$.shortcuts.desktop" && ["shell.command-palette", "realqa.capture.display", "realqa.capture.active-window", "realqa.capture.all-displays", "realqa.capture.selection", "realqa.capture.toolbar"].includes(key);
-    if (!isContractedShortcutAction && sensitiveKeyPattern.test(key)) throw new SettingsContractError(`${path}.${key}`, "device-local or secret field is forbidden");
-    rejectSensitiveContent(item, Array.isArray(value) ? `${path}[${key}]` : `${path}.${key}`, seen);
+    const isContractedShortcutAction =
+      path === "$.shortcuts.desktop" &&
+      [
+        "shell.command-palette",
+        "realqa.capture.display",
+        "realqa.capture.active-window",
+        "realqa.capture.all-displays",
+        "realqa.capture.selection",
+        "realqa.capture.toolbar",
+      ].includes(key);
+    if (!isContractedShortcutAction && sensitiveKeyPattern.test(key))
+      throw new SettingsContractError(
+        `${path}.${key}`,
+        "device-local or secret field is forbidden",
+      );
+    rejectSensitiveContent(
+      item,
+      Array.isArray(value) ? `${path}[${key}]` : `${path}.${key}`,
+      seen,
+    );
   }
   seen.delete(value);
 }

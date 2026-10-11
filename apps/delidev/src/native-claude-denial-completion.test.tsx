@@ -5,12 +5,38 @@ import { NativeClaudeDenialCompletion } from "./native-claude-denial-completion"
 import { object, type Document } from "./documents";
 
 function fixture(): Document {
-  const input = newRequestId(), interaction = newRequestId(), context = newRequestId(), result = newRequestId();
-  return { execution_id: newRequestId(), input_id: input, native_thread_id: newRequestId(), native_turn_id: newRequestId(), outcome: "stopped", claude_interruption: { interaction_id: interaction, context_id: context, result_id: result }, claude_denial: { input_id: input, interaction_id: interaction, arrival_id: newRequestId(), context_id: context, result_id: result, command_native_id: newRequestId(), idle_native_id: newRequestId(), native_input_id: null, cleanup_verified: true } };
+  const input = newRequestId(),
+    interaction = newRequestId(),
+    context = newRequestId(),
+    result = newRequestId();
+  return {
+    execution_id: newRequestId(),
+    input_id: input,
+    native_thread_id: newRequestId(),
+    native_turn_id: newRequestId(),
+    outcome: "stopped",
+    claude_interruption: {
+      interaction_id: interaction,
+      context_id: context,
+      result_id: result,
+    },
+    claude_denial: {
+      input_id: input,
+      interaction_id: interaction,
+      arrival_id: newRequestId(),
+      context_id: context,
+      result_id: result,
+      command_native_id: newRequestId(),
+      idle_native_id: newRequestId(),
+      native_input_id: null,
+      cleanup_verified: true,
+    },
+  };
 }
 
 test("keeps original denied-run cleanup separate from absent input result and later workspace report", () => {
-  const p = fixture(), view = render(<NativeClaudeDenialCompletion progress={p} />);
+  const p = fixture(),
+    view = render(<NativeClaudeDenialCompletion progress={p} />);
   expect(screen.getByText(/without an input result identity/)).toBeTruthy();
   expect(screen.getByText("Confirmed")).toBeTruthy();
   expect(screen.getByText("Not confirmed")).toBeTruthy();
@@ -21,8 +47,23 @@ test("keeps original denied-run cleanup separate from absent input result and la
   expect(screen.queryByRole("button")).toBeNull();
 });
 
-test.each(["input", "result", "arrival", "reused", "turn", "native-input", "missing-null", "cleanup", "report", "outcome", "mixed", "stop", "extra"])("rejects unproved denial cleanup: %s", (change) => {
-  const p = fixture(), v = object(p.claude_denial);
+test.each([
+  "input",
+  "result",
+  "arrival",
+  "reused",
+  "turn",
+  "native-input",
+  "missing-null",
+  "cleanup",
+  "report",
+  "outcome",
+  "mixed",
+  "stop",
+  "extra",
+])("rejects unproved denial cleanup: %s", (change) => {
+  const p = fixture(),
+    v = object(p.claude_denial);
   if (change === "input") v.input_id = newRequestId();
   if (change === "result") v.result_id = newRequestId();
   if (change === "arrival") v.arrival_id = "foreign";

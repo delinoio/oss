@@ -1,13 +1,9 @@
 {
-  "extends": [
-    "//"
-  ],
+  "extends": ["//"],
   "tasks": {
     "ci:format": {
       "cache": false,
-      "dependsOn": [
-        "devhud-admin#build:embedded"
-      ],
+      "dependsOn": ["devhud-admin#build:embedded"],
       "passThroughEnv": [
         "GOCACHE",
         "GOPATH",
@@ -21,9 +17,7 @@
     },
     "ci:vet": {
       "cache": false,
-      "dependsOn": [
-        "devhud-admin#build:embedded"
-      ],
+      "dependsOn": ["devhud-admin#build:embedded"],
       "passThroughEnv": [
         "GOCACHE",
         "GOPATH",
@@ -37,9 +31,7 @@
     },
     "ci:build": {
       "cache": false,
-      "dependsOn": [
-        "devhud-admin#build:embedded"
-      ],
+      "dependsOn": ["devhud-admin#build:embedded"],
       "passThroughEnv": [
         "GOCACHE",
         "GOPATH",
@@ -53,9 +45,7 @@
     },
     "ci:unit": {
       "cache": false,
-      "dependsOn": [
-        "devhud-admin#build:embedded"
-      ],
+      "dependsOn": ["devhud-admin#build:embedded"],
       "passThroughEnv": [
         "GOCACHE",
         "GOPATH",
@@ -69,9 +59,7 @@
     },
     "ci:migrations": {
       "cache": false,
-      "dependsOn": [
-        "devhud-admin#build:embedded"
-      ],
+      "dependsOn": ["devhud-admin#build:embedded"],
       "passThroughEnv": [
         "GOCACHE",
         "GOPATH",
@@ -85,9 +73,7 @@
     },
     "ci:integration": {
       "cache": false,
-      "dependsOn": [
-        "devhud-admin#build:embedded"
-      ],
+      "dependsOn": ["devhud-admin#build:embedded"],
       "passThroughEnv": [
         "GOCACHE",
         "GOPATH",
@@ -101,9 +87,7 @@
     },
     "ci:api": {
       "cache": false,
-      "dependsOn": [
-        "devhud-admin#build:embedded"
-      ],
+      "dependsOn": ["devhud-admin#build:embedded"],
       "passThroughEnv": [
         "GOCACHE",
         "GOPATH",
@@ -117,9 +101,7 @@
     },
     "ci:sweeper": {
       "cache": false,
-      "dependsOn": [
-        "devhud-admin#build:embedded"
-      ],
+      "dependsOn": ["devhud-admin#build:embedded"],
       "passThroughEnv": [
         "GOCACHE",
         "GOPATH",
@@ -133,9 +115,7 @@
     },
     "ci:oci": {
       "cache": false,
-      "dependsOn": [
-        "devhud-admin#build:embedded"
-      ],
+      "dependsOn": ["devhud-admin#build:embedded"],
       "passThroughEnv": [
         "GOCACHE",
         "GOPATH",
@@ -149,9 +129,7 @@
     },
     "ci:oci:integration": {
       "cache": false,
-      "dependsOn": [
-        "devhud-admin#build:embedded"
-      ],
+      "dependsOn": ["devhud-admin#build:embedded"],
       "passThroughEnv": [
         "GOCACHE",
         "GOPATH",

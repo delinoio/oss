@@ -167,6 +167,7 @@ Keep the existing focus trap, trigger restoration, scrolling body/fixed footer,
 themes and 200% zoom. Browser/component fixtures and generated preview boards
 do not establish packaged CEF or actual account/platform acceptance. The
 approved preview is design input only and must not enter repository assets.
+
 ## Automatic failed-login cleanup
 
 `subscription-cleanup.tsx` owns the explicit capability-41 action and metadata-only generated Connect Query status reads. Your subscriptions places Auto cleanup / 자동 정리 immediately before Refresh all / 모두 새로고침, with shared 40px controls, 8px corners and an 8px wrapping gap. The idle help is Deletes failed login and disconnected subscription accounts. / 실패한 로그인 계정과 연결 해제된 구독 계정을 삭제합니다. The server selects fully disconnected subscription configurations for every supported service, in addition to failed initial ChatGPT logins; referenced or unconfirmed-cleanup accounts remain retained with reasons. There is no confirmation dialog. Missing capability, unreadable permission/connection, stopping server or another account workflow disables admission with a readable reason.
@@ -174,7 +175,6 @@ approved preview is design input only and must not enter repository assets.
 Pending admission/job status shows Cleaning up… / 정리 중… and processed/total counts above the rows. Account mutations and duplicate batches are blocked, while Settings navigation stays available. A terminal observation refreshes the current inventory once and reports deleted/retained counts or No accounts to clean up. / 정리할 계정이 없습니다. A native disclosure exposes retained accounts/reasons with original 50-result pages. Status uses a polite atomic live region without automatic focus movement; both languages and semantic themes retain narrow-screen wrapping.
 
 Uncertain acceptance retains only its original UUID/wire request for an explicit retry. An admitted job never offers mutation replay for failed status reads: its explicit retry reads that original ID. Polling stops on read/shape failures and terminal states; focus, reconnect, mount and language changes cannot submit work. Category disposal drops local queries, retries and late callbacks without canceling accepted server work. Reopening does not recreate a batch. The server alone freezes the complete target inventory and owns cleanup/deletion; this UI has no vault, native login or callback authority.
-
 
 ## Explicit failed-login account deletion
 
@@ -193,7 +193,6 @@ The desktop contract's the feature rail independently reads saved subscription r
 Subscription onboarding, management and deletion preserve typed safe causes and original recovery actions in their current task. API/OAuth failures retain selected provider/account/profile, original request and once-only exchange authority; native authorization and immutable referenced profiles remain independent. Cleanup uncertainty never permits replacement login, logout or deletion. Terminal attempts retain fresh explicit confirmation where required.
 
 Claude selection retains bounded original machine observations and the typed inventory error. Loading, failed reads, final successful emptiness, current-page exclusions, continuation and stale or malformed evidence remain distinct. Excluded machines expose only validated closed enabled/capability/installation/version/protocol facts; raw native output and paths do not become diagnosis. Selection still requires capability 20 and exactly one verified Claude Code 2.1.236 installation, with unchanged protocol, account owner and server checks. Claude selection exposes no Inspect this Runner shortcut or shortcut-owned dialog for selected or excluded machines. Protocol guidance directs explicit diagnostic work through Runner Devices. Keep the shared original Runner controller, explicit installation/path/protocol diagnostics and original session failure recovery. Pending and uncertain inspections from a retained diagnostic surface still block conflicting Start/save effects for the exact machine; removing presentation grants no eligibility or automatic inspection.
-
 
 ## Server quota controls
 
@@ -224,6 +223,7 @@ English/Korean strings and shared keyboard focus containment remain unchanged. R
 The saved quota rail popover reports each retained window’s actual observation state and timestamp. It does not display a generic failed-operation warning merely because saved details are open. Saved-read failures and incomplete aggregate evidence retain their owning explanations; Recheck reads saved resources without starting quota collection or proving recovery.
 
 ### Compact reset-credit presentation
+
 The account-management reset-credit section shows the authoritative available
 count and one Use action. Details start collapsed. Use expands exact-credit
 selection and focuses its heading; it never automatically selects or consumes a
@@ -265,6 +265,7 @@ they grant no installed-native, real-account or platform acceptance. Add no RPC,
 allocation, migration, persistent preference or native behavior.
 
 ## Server quota V2 negotiation
+
 Individual row/detail Refresh and Refresh all require System 50 and send an omitted machine selector even when the account retains Worker ownership or an Execute lease. The selected server owns five-minute quota maintenance. An absent or disconnected Runner Device does not disable this quota lane; lifecycle/recovery/removal and independent quota/reset-credit obligations still fence competing work. Older servers receive update guidance and no expanded request. Preserve exact retained mutation bytes, last-success evidence, failed/stale status and observed-recovery preferences. Reset-credit confirmation keeps its original idle server versus explicit Worker ownership and is not widened by quota availability. No broad settings redesign is introduced.
 
 ## Consolidated Manage refresh
@@ -303,9 +304,11 @@ content and widgets are unchanged. No protocol, capability, migration, native
 behavior, persistent preference or rollout flag is added.
 
 ## OpenCode Go subscriptions
+
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.
 
 ## Paid-credit observations
+
 System `SUBSCRIPTION_PAID_CREDITS_V1 = 76` and Worker `SUBSCRIPTION_PAID_CREDITS_V1 = 51` independently negotiate the narrow ChatGPT/Codex paid-credit projection. Reuse authenticated original quota reads, leases, connection/credential generations, actor checks, joined native cleanup and existing refresh actions. No RPC, purchase, consumption action or SQLite migration is added. An older Worker omits these fields; the server rejects a paid-credit publication from a Worker without capability 51.
 
 Each native bucket owns its exact bounded ID, required hasCredits/unlimited flags, nullable balance and successful observation timestamp. Accept nonnegative plain decimal strings of at most 64 bytes without numeric conversion. Explicit null is unknown, zero is a real value, and unlimited takes presentation precedence. Never sum buckets or infer balance from quota, reset credits, plan type or hasCredits. Omitted credits/balance fields retain the last successful bucket and its timestamp; failed, malformed or reflected reads retain evidence without refreshing it. Credential-generation replacement clears observations. Ordinary configuration saves and legacy clients cannot replace protected subscription observations. Original identity/token reflection checks include paid bucket IDs and exact balance strings, including short/encoded secrets. Raw responses, unrelated billing/display text and credentials remain private.

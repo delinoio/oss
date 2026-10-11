@@ -8,14 +8,14 @@ The desktop updater is implemented in the native `apps/devhud` host. Mobile upda
 
 Discovery is fixed to `https://devhud.api.delino.io/updates/stable/{platform}/{architecture}.json`. Bootstrap, synchronized settings, environment variables, frontend input, redirects, and remote configuration cannot replace that origin, channel, target, or path. Native target selection has exactly these mappings:
 
-| Native target | Manifest target |
-| --- | --- |
-| macOS x64 | `darwin/x86_64` |
-| macOS arm64 | `darwin/aarch64` |
-| Windows x64 | `windows/x86_64` |
+| Native target | Manifest target   |
+| ------------- | ----------------- |
+| macOS x64     | `darwin/x86_64`   |
+| macOS arm64   | `darwin/aarch64`  |
+| Windows x64   | `windows/x86_64`  |
 | Windows arm64 | `windows/aarch64` |
-| Linux x64 | `linux/x86_64` |
-| Linux arm64 | `linux/aarch64` |
+| Linux x64     | `linux/x86_64`    |
+| Linux arm64   | `linux/aarch64`   |
 
 Linux package builds require exactly one explicit Debian or AppImage bundle selection; the build wrapper compiles the matching `linux-deb` or `linux-appimage` marker and rejects default, mixed, or conflicting selections. Private macOS builds compile `macos-app` explicitly. AppImage selection additionally requires its environment to correlate to the running executable, and release smoke supplies absolute `APPIMAGE` and `APPDIR` paths for the installed image and its extracted executable layout. A Linux binary without a compiled marker and without a correlated AppImage environment is unsupported instead of assuming a Debian installation.
 

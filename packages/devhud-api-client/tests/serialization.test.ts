@@ -1,4 +1,10 @@
-import { create, fromBinary, fromJsonString, toBinary, toJsonString } from "@bufbuild/protobuf";
+import {
+  create,
+  fromBinary,
+  fromJsonString,
+  toBinary,
+  toJsonString,
+} from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -7,7 +13,10 @@ import {
 } from "../src/gen/devhud/v1/upload_pb.js";
 import { UploadContentType } from "../src/gen/devhud/v1/common_pb.js";
 import { ReplaceSettingsRequestSchema } from "../src/gen/devhud/v1/settings_pb.js";
-import { assertSha256, validateCanonicalSettingsJson } from "../src/validation.js";
+import {
+  assertSha256,
+  validateCanonicalSettingsJson,
+} from "../src/validation.js";
 
 const uuid = "018f47a2-7b3c-7def-8abc-1234567890ab";
 
@@ -30,7 +39,9 @@ describe("protobuf serialization", () => {
 
     const json = toJsonString(FinalizeUploadRequestSchema, message);
     expect(json).toContain('"stagingGeneration":"42"');
-    expect(json).toContain('"expectedSha256":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="');
+    expect(json).toContain(
+      '"expectedSha256":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="',
+    );
     expect(fromJsonString(FinalizeUploadRequestSchema, json)).toEqual(message);
   });
 
@@ -52,7 +63,9 @@ describe("protobuf serialization", () => {
   });
 
   it("preserves canonical settings bytes and uint64 revisions", () => {
-    const canonicalJson = new TextEncoder().encode('{"language":"en","theme":"system"}');
+    const canonicalJson = new TextEncoder().encode(
+      '{"language":"en","theme":"system"}',
+    );
     const message = create(ReplaceSettingsRequestSchema, {
       schemaVersion: 3,
       canonicalJson,

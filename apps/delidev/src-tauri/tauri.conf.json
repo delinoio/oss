@@ -6,9 +6,7 @@
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://127.0.0.1:46311",
-    "features": [
-      "desktop-host"
-    ]
+    "features": ["desktop-host"]
   },
   "app": {
     "windows": [
@@ -25,11 +23,7 @@
       }
     ],
     "security": {
-      "capabilities": [
-        "main",
-        "saved",
-        "tray-status"
-      ],
+      "capabilities": ["main", "saved", "tray-status"],
       "csp": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src ipc: http://ipc.localhost; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'",
       "devCsp": "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src ipc: http://ipc.localhost ws://127.0.0.1:46311; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'"
     }
@@ -42,14 +36,8 @@
       "../../../NOTICE": "notices/NOTICE",
       "notices/CEF-LICENSE.txt": "notices/CEF-LICENSE.txt"
     },
-    "icon": [
-      "icons/icon.png",
-      "icons/icon-source@2x.png",
-      "icons/icon.ico"
-    ],
-    "externalBin": [
-      "binaries/delidev"
-    ],
+    "icon": ["icons/icon.png", "icons/icon-source@2x.png", "icons/icon.ico"],
+    "externalBin": ["binaries/delidev"],
     "macOS": {
       "minimumSystemVersion": "13.0",
       "entitlements": "entitlements.plist",

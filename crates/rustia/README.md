@@ -62,6 +62,7 @@ struct Product {
 ```
 
 Supported nesting tags:
+
 - `items(tags(...))`
 - `keys(tags(...))`
 - `values(tags(...))`

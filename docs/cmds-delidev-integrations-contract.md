@@ -96,7 +96,6 @@ Search preserves exact total count and `incomplete_results`; neither a timeout n
 
 The desktop has a standalone Pull requests surface. Repository Settings owns saved configuration and management only, with no GitHub content browser or content read on entry/revisit. The sidebar selects one exact repository resource and automatically loads page one only after its current authenticated metadata validates the supported schema, selected profile and GitHub mapping. Selection of a different repository resets Open state, empty search and 20 rows. State and page-size changes apply immediately; valid trimmed plain title/body search applies after 300 ms without edits and only after IME composition ends. Equivalent trimmed terms, same-repository selection, Details, locale and layout changes do not repeat a read. Invalid search cancels pending application and leaves prior results labeled with their last applied conditions. Capacity recovery permits 1/5/10/20 rows with cumulative scroll continuation. It never aggregates repositories or exposes GitHub query syntax. A changed repository drops old observations immediately. Leaving the surface cancels timers and disposable reads; returning automatically reloads page one with retained filters. The connection-scoped bounded mutation registry retains exact original dismissal, collection and allowance-resumption requests as Pending PR actions. Retries reuse original bytes and never need refreshed rows. Unsent confirmations cannot authorize a fresh mutation without matching current evidence. Existing explicit detail, observation, refresh, Open on GitHub and operation/server authorization remain unchanged. Automatic activation never closes the drawer or changes focus. Generated Connect Query cancellation and original scope/query/revision fences reject late responses.
 
-
 The retained standalone Pull requests results provide explicit detail/back/refresh and observation actions through generated Connect Query. It validates the whole observation before rendering, marks previous observations during refresh/failure, distinguishes search incompleteness and unknown mergeability, and cancels/discards queries on close/inactivation. Bodies remain inert text. Validated detail addresses offer an explicit native Open on GitHub button, disabled while refreshing or after a read error. Entering Repository Settings from the PR sidebar uses the shared Settings navigation and selects Repositories immediately, disposing the previous category presentation without replaying or canceling accepted effects. Evaluated-commit/reviewer evidence and remediation remain required separately.
 
 ## PR Diff, Checks and Commit Statuses
@@ -363,7 +362,6 @@ Feedback schema references: [GitHub GraphQL pull requests](https://docs.github.c
 
 Reviewer identity reference: [Get a user using their durable ID](https://docs.github.com/en/rest/users/users#get-a-user-using-their-id). The single-user collaborator and comment APIs above define the separate permission and App-attribution observations.
 
-
 ## Remediation prerequisite and attempt coordination core
 
 Schema v20 adds an internal original-attempt journal with a typed index and an optional durable chain on the existing stable PR set. A partial unique index permits one reserved, bound, running or uncertain attempt per remote PR, independent of local repository alias, session and observed head. The original request actor, exact problem/content references, selected complete policy, input identity/content digest, execution identity and lifecycle times remain retained. Reservations and canceled preparations do not consume automatic attempts. The ordinary execution claim and fresh remediation gate must commit together; a shared queue-commit invariant rejects ordinary FIFO/Resume paths that try to claim a bound input without the matching remediation start.
@@ -378,7 +376,6 @@ A started attempt normally requires the exact server-retained native assignment,
 
 This increment is an internal coordination and validation core. These internal primitives alone do not supply public execution. Manual Fix now, session selection, direct-harness commit/push and verified local handling are composed below; automatic execution is composed below, while provider-resolved publication remains required. Retained attempt history and explicit allowance resumption are implemented below. The private PR-head preparation/startup preflight and assignment-bound rejection report are implemented separately; explicit interrupted-Worker startup recovery is also implemented through the existing execution recovery operation, while the automatic coordinator below composes those existing gates. No persistence primitive alone can dispatch work. No real remediation, Git write or PAT acceptance is claimed by the coordination tests.
 
-
 ## Original PR source repository and Git target identity
 
 Fresh PR detail and every detail-bound observation retain the head repository independently from the base repository. `head_repository` records available original GitHub provider/numeric/node/name/private/default-branch metadata, or explicit `unavailable` when GitHub returns a null head repository. Historical observations may omit the field; omitted and unavailable observations remain readable but neither permits Git-target construction. Never infer the source from the PR author, branch name, base repository or stored alias. Contradictory numeric/node/name namespaces and noncanonical clone/SSH transport metadata are rejected. Repeat the original source identity check after diff, CI, rules and feedback reads even when the head SHA is unchanged.
@@ -387,12 +384,9 @@ The internal version-1 `PRGitTarget` snapshot binds the stable original PR, sour
 
 Desktop detail validates and displays original source names and exact IDs with separate unavailable and historical-unobserved states. Existing retained CI proofs that predate this additive field remain readable. The generic JSON read envelope is unchanged; there is no protobuf or database migration in this increment.
 
-
 The Worker workspace engine now accepts the original Git target through an explicit PR-only Worktree preparation profile. It verifies the selected base transport, exact current remote base/head refs and original fork before and after object fetch, then retains target provenance in the detached worktree manifest. No user ref, remote configuration or FETCH_HEAD is changed. The [workspace contract](cmds-delidev-workspace-contract.md) defines native authentication, cancellation and publication checks. The manual Fix now operation below now issues this profile; preparation itself still supplies no native Git write authority.
 
-
 Fresh first execution of the explicit PR-prepared Worktree now uses the common Worker lease's read-only original-head/base/remote/cleanliness preflight before native execution ownership is created. Its synchronized original startup phase distinguishes positive pre-native rejection from interrupted or uncertain inspection. The same job/execution cannot restart after rejection; a separately authorized fresh pair requires current reads and no unresolved prior phase, while preserving blocked files and original history; see the workspace contract. This private proof still needs immutable-assignment-bound Worker reporting and server reconciliation. It does not supply reused-session authority, a public Fix now action or native Git write credentials.
-
 
 ### Public remediation history and explicit allowance resumption
 
@@ -407,7 +401,6 @@ The internal linked-session query uses an explicitly selected project, local rep
 The internal new-workspace planner requires the policy's explicit Agent/machine and an explicit live project containing the target repository. It reuses the ordinary configuration/template/account routing resolver without reserving an account or advancing rotation, verifies current account validation, native installation/protocol, project restrictions, connected Worker and every project checkout, and rejects read-only Agent permissions and currently unsupported repository harness profiles. The target repository receives the exact current PR base/head commits, original fork identity and explicit fetch. Companion repositories retain their ordinary preparation/fetch policy and order, and the project's primary cwd remains unchanged. Planning creates no session/input/job, does not retrieve GitHub credentials and supplies no native Git authority. Acceptance must replan in its own mutation, while actual dispatch resolves current configuration/account selection again. These primitives alone do not grant execution or publication; the manual composition below supplies separate assignment-bound Git proof. Automatic execution uses the coordinator below and repeats these checks at acceptance and dispatch.
 
 The separate private Worker matching read now observes the actual prepared Local/Worktree path against current original PR head/branch/remotes and clean state, retaining exclusive request-bound metadata without fetching or changing native execution ownership. The server rechecks original candidate revision, current project scope and stable association after the read; pause, Archive, unlink or changed activity invalidates it. See the [workspace matching contract](cmds-delidev-workspace-contract.md#current-native-matching-for-an-existing-pr-session). This is current candidate evidence only: selecting/coalescing the newest eligible session and fresh execution-time Git/API authorization remain controller responsibilities.
-
 
 ## Manual PR fix execution
 
@@ -461,6 +454,7 @@ while retaining tracked and ordinary untracked source checks. Typed capability
 consumers accept their known profile alongside additive unknown entries.
 
 ### Explicit outbound routing
+
 All production GitHub identity, repository access and content/rules/check/reviewer adapters use the shared server-selected outbound transport under [the network contract](cmds-delidev-network-contract.md). The fixed official GitHub origin, PAT scope, destination TLS and redirect refusal remain unchanged. Worker profiles cannot alter this route.
 
 ## Bounded automatic PR remediation

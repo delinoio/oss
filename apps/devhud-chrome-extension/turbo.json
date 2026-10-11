@@ -1,8 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "extends": [
-    "//"
-  ],
+  "extends": ["//"],
   "tasks": {
     "build": {
       "inputs": [
@@ -29,9 +27,7 @@
         "$TURBO_ROOT$/go.sum"
       ],
       "outputs": [],
-      "env": [
-        "CI_CACHE_CONTEXT"
-      ]
+      "env": ["CI_CACHE_CONTEXT"]
     },
     "test:package": {
       "cache": false,
@@ -49,9 +45,7 @@
     },
     "build:test": {
       "cache": true,
-      "dependsOn": [
-        "test:package"
-      ],
+      "dependsOn": ["test:package"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",
@@ -62,20 +56,12 @@
         "$TURBO_ROOT$/go.sum",
         "$TURBO_ROOT$/apps/devhud/src-tauri/icons/icon.png"
       ],
-      "outputs": [
-        "dist/**",
-        "build/**",
-        "artifacts/**"
-      ],
-      "env": [
-        "CI_CACHE_CONTEXT"
-      ]
+      "outputs": ["dist/**", "build/**", "artifacts/**"],
+      "env": ["CI_CACHE_CONTEXT"]
     },
     "ci:zip": {
       "cache": true,
-      "dependsOn": [
-        "build:test"
-      ],
+      "dependsOn": ["build:test"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",
@@ -86,9 +72,7 @@
         "$TURBO_ROOT$/go.sum"
       ],
       "outputs": [],
-      "env": [
-        "CI_CACHE_CONTEXT"
-      ]
+      "env": ["CI_CACHE_CONTEXT"]
     },
     "ci:check": {
       "cache": false,

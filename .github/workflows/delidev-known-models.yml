@@ -3,7 +3,7 @@ name: Update DeliDev known subscription models
 on:
   schedule:
     # 04:17 Asia/Seoul, every day.
-    - cron: '17 19 * * *'
+    - cron: "17 19 * * *"
   workflow_dispatch:
 permissions:
   contents: read

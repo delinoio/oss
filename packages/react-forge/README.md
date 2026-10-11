@@ -12,13 +12,13 @@ npm install @delino/react-forge
 
 Alpine/musl and other architectures are unsupported. Linux runtime font discovery needs Fontconfig. Install appropriate CJK, RTL, and color emoji fonts or register caller fonts. `capabilities.runtime.hosts` enumerates the supported hosts. Document generation does not require Office, LibreOffice, Python, or an external conversion service.
 
-| Import | Authoring capabilities |
-| --- | --- |
-| `@delino/react-forge/pptx` | Rich text/lists, PNG/JPEG, shapes, merged tables, editable bar charts, connectors, row/column/canvas layout |
-| `@delino/react-forge/docx` | Paragraphs/headings/lists, merged tables, images, hyperlinks, sections, page breaks, headers/footers, editable bar/line/pie charts |
-| `@delino/react-forge/xlsx` | Typed cells/formulas, formatting, merges, dimensions, freeze panes, filters, links, editable bar/line/pie charts, five conditional-format and seven validation families |
-| `@delino/react-forge/figma` | Remote editable pages, Auto Layout, text, vectors, images, components/variants/instances, variables and styles |
-| `@delino/react-forge/pdf` | Independent pages, flow text/lists/tables, automatic pagination, repeated headers, images/shapes/links and semantic tags |
+| Import                      | Authoring capabilities                                                                                                                                                  |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@delino/react-forge/pptx`  | Rich text/lists, PNG/JPEG, shapes, merged tables, editable bar charts, connectors, row/column/canvas layout                                                             |
+| `@delino/react-forge/docx`  | Paragraphs/headings/lists, merged tables, images, hyperlinks, sections, page breaks, headers/footers, editable bar/line/pie charts                                      |
+| `@delino/react-forge/xlsx`  | Typed cells/formulas, formatting, merges, dimensions, freeze panes, filters, links, editable bar/line/pie charts, five conditional-format and seven validation families |
+| `@delino/react-forge/figma` | Remote editable pages, Auto Layout, text, vectors, images, components/variants/instances, variables and styles                                                          |
+| `@delino/react-forge/pdf`   | Independent pages, flow text/lists/tables, automatic pagination, repeated headers, images/shapes/links and semantic tags                                                |
 
 ```tsx
 import React from "react";
@@ -73,14 +73,14 @@ Pass `AbortSignal` to import, asset, measurement or export options. Unresolved w
 
 `ForgeError.code` distinguishes malformed input, unsupported packages/edits, invalid targets, conflicts, resource limits, missing fonts, overflow, cancellation, disposed sessions, I/O and React-render failures. Safe context includes applicable stage, format, revision and bounded model location. Diagnostic subscriptions include operation/stage, revision, duration and classification. Native tracing is operation-scoped without a global subscriber; callback exceptions cannot change outcomes. Events exclude document text, XML, bytes, credentials and host paths.
 
-| Resource | Ceiling |
-| --- | ---: |
-| Office input/output and PDF output | 256 MiB |
-| Expanded Office package | 512 MiB |
-| ZIP entries / individual part | 10,000 / 64 MiB |
-| XML depth / nodes per part | 128 / 1,000,000 |
-| Newly rendered tree bytes / depth / nodes | 16 MiB / 48 / 20,000 |
-| Individual image | 64 MiB and 64,000,000 pixels |
+| Resource                                  |                      Ceiling |
+| ----------------------------------------- | ---------------------------: |
+| Office input/output and PDF output        |                      256 MiB |
+| Expanded Office package                   |                      512 MiB |
+| ZIP entries / individual part             |              10,000 / 64 MiB |
+| XML depth / nodes per part                |              128 / 1,000,000 |
+| Newly rendered tree bytes / depth / nodes |         16 MiB / 48 / 20,000 |
+| Individual image                          | 64 MiB and 64,000,000 pixels |
 
 `limits` and `capabilities` expose these budgets. All registered assets together are bounded to 256 MiB, with 64 MiB per explicit font. Applicable existing PPTX constraints remain, including 1,000 slides and tables of at most 1,000 rows × 128 columns. Chart data expansion is bounded to 200,000 cells and XLSX merge expansion to 250,000 cells. Opaque imported content uses package budgets. Integrators own authentication, isolation and process-wide resource governance.
 
@@ -141,7 +141,6 @@ react-forge run ./travel-figma-edit.tsx --data '{"fileKey":"YOUR_FILE_KEY"}' --o
 ```
 
 The generation task creates a new screen page; use the edit task for subsequent runs. The edit task explicitly reuses the existing note when run again. Image provenance is shared with the travel investor example.
-
 
 ## Local MCP sessions
 

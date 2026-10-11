@@ -8,7 +8,20 @@ on:
         description: Project to release
         required: true
         type: choice
-        options: [binpm, cargo-mono, nodeup, with-watch, derun, runmoor, clibox, pnport, async-commit-hook, react-forge, delidev]
+        options:
+          [
+            binpm,
+            cargo-mono,
+            nodeup,
+            with-watch,
+            derun,
+            runmoor,
+            clibox,
+            pnport,
+            async-commit-hook,
+            react-forge,
+            delidev,
+          ]
       bump:
         description: SemVer increment (next is pnport only)
         required: true

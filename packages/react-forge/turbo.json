@@ -1,7 +1,5 @@
 {
-  "extends": [
-    "//"
-  ],
+  "extends": ["//"],
   "tasks": {
     "build": {
       "dependsOn": [],
@@ -11,24 +9,15 @@
         "RUSTUP_HOME",
         "REACT_FORGE_NATIVE_PROFILE"
       ],
-      "outputs": [
-        "dist/**"
-      ]
+      "outputs": ["dist/**"]
     },
     "test": {
-      "dependsOn": [
-        "build"
-      ],
+      "dependsOn": ["build"],
       "cache": false,
-      "passThroughEnv": [
-        "npm_execpath",
-        "REACT_FORGE_SKIP_SCENE_TESTS"
-      ]
+      "passThroughEnv": ["npm_execpath", "REACT_FORGE_SKIP_SCENE_TESTS"]
     },
     "test:render": {
-      "dependsOn": [
-        "build"
-      ],
+      "dependsOn": ["build"],
       "cache": false,
       "passThroughEnv": [
         "REACT_FORGE_SOFFICE",
@@ -37,31 +26,17 @@
       ]
     },
     "benchmark": {
-      "dependsOn": [
-        "build"
-      ],
+      "dependsOn": ["build"],
       "cache": false
     },
     "test:scenes": {
-      "dependsOn": [
-        "build"
-      ],
+      "dependsOn": ["build"],
       "cache": false,
-      "passThroughEnv": [
-        "REACT_FORGE_BLENDER",
-        "CARGO_HOME",
-        "RUSTUP_HOME"
-      ]
+      "passThroughEnv": ["REACT_FORGE_BLENDER", "CARGO_HOME", "RUSTUP_HOME"]
     },
     "ci:host": {
       "cache": false,
-      "dependsOn": [
-        "build",
-        "typecheck",
-        "lint",
-        "test",
-        "typecheck:examples"
-      ],
+      "dependsOn": ["build", "typecheck", "lint", "test", "typecheck:examples"],
       "passThroughEnv": [
         "REACT_FORGE_TARGET",
         "REACT_FORGE_SKIP_SCENE_TESTS",
@@ -77,9 +52,7 @@
       ]
     },
     "typecheck:examples": {
-      "dependsOn": [
-        "build"
-      ],
+      "dependsOn": ["build"],
       "cache": false
     }
   }

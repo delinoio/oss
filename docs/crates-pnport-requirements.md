@@ -63,11 +63,11 @@ The product must distinguish supported virtualized execution from unsupported in
 
 Support x64 and arm64 on:
 
-| Platform | Minimum supported environment |
-|---|---|
-| macOS | macOS 15+ |
-| Windows (planned for 0.2.0) | Windows 10 22H2+, native MSVC targets |
-| Linux | Ubuntu 22.04-equivalent glibc and kernel capabilities |
+| Platform                    | Minimum supported environment                         |
+| --------------------------- | ----------------------------------------------------- |
+| macOS                       | macOS 15+                                             |
+| Windows (planned for 0.2.0) | Windows 10 22H2+, native MSVC targets                 |
+| Linux                       | Ubuntu 22.04-equivalent glibc and kernel capabilities |
 
 Linux support includes dynamically linked and fully static child executables. Musl hosts and mixed-architecture execution are excluded.
 
@@ -81,15 +81,15 @@ The executable belongs under `crates/pnport`. Required companion crates must hav
 
 Provide:
 
-| Interface | Behavior |
-|---|---|
-| `pnport run -- <command> [args...]` | Execute a command inside the selected PnP filesystem view. |
-| `pnport doctor [--json]` | Diagnose project data, platform capabilities, injection prerequisites, and cache access. |
-| `pnport cache path` | Print the effective cache location. |
-| `pnport cache list` | List retained cache entries and their state. |
-| `pnport cache prune` | Remove abandoned incomplete entries and obsolete cache-format entries. |
-| `pnport cache clean` | Remove all entries not in use. |
-| `--help`, `--version` | Describe the installed CLI and version. |
+| Interface                           | Behavior                                                                                 |
+| ----------------------------------- | ---------------------------------------------------------------------------------------- |
+| `pnport run -- <command> [args...]` | Execute a command inside the selected PnP filesystem view.                               |
+| `pnport doctor [--json]`            | Diagnose project data, platform capabilities, injection prerequisites, and cache access. |
+| `pnport cache path`                 | Print the effective cache location.                                                      |
+| `pnport cache list`                 | List retained cache entries and their state.                                             |
+| `pnport cache prune`                | Remove abandoned incomplete entries and obsolete cache-format entries.                   |
+| `pnport cache clean`                | Remove all entries not in use.                                                           |
+| `--help`, `--version`               | Describe the installed CLI and version.                                                  |
 
 Configuration uses flags rather than a configuration file:
 
@@ -152,12 +152,12 @@ Do not permit intentionally detached descendants to outlive the supervised execu
 
 Normal execution has no timeout and no automatic retry. Propagate child exit status; use conventional signal-derived status where applicable. pnport-originated failures use:
 
-| Failure | Exit code |
-|---|---:|
-| Invalid arguments | 2 |
-| Command not found | 127 |
-| Command cannot be executed | 126 |
-| pnport initialization/runtime failure or required restart | 125 |
+| Failure                                                   | Exit code |
+| --------------------------------------------------------- | --------: |
+| Invalid arguments                                         |         2 |
+| Command not found                                         |       127 |
+| Command cannot be executed                                |       126 |
+| pnport initialization/runtime failure or required restart |       125 |
 
 Stable stderr diagnostic codes distinguish pnport failures from a child returning the same numeric status. Ordinary filesystem misses remain normal child-visible errors rather than automatically terminating the supervisor.
 

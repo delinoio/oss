@@ -22,7 +22,7 @@ Exports are explicit. Sessions exist in memory until disposed; starting a new pr
 - **Edit an Office file:** [Mount a supported region](/react-forge/office-editing) of an imported PPTX, DOCX, or XLSX while preserving unrelated content.
 - **Work in Figma:** [Create or edit Figma Design files](/react-forge/formats/figma/) with explicit publication and a receipt that records remote outcomes.
 - **Choose an entry point:** Run one-shot tasks with the [CLI](/react-forge/cli), or retain sessions through the [local stdio MCP server](/react-forge/mcp).
-Before adopting a workflow, check its [limits and troubleshooting](/react-forge/limits-and-troubleshooting) and [release and validation status](/react-forge/releases).
+  Before adopting a workflow, check its [limits and troubleshooting](/react-forge/limits-and-troubleshooting) and [release and validation status](/react-forge/releases).
 
 React Forge is Apache-2.0 licensed. Report problems through [Delino OSS issues](https://github.com/delinoio/oss/issues).
 

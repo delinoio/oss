@@ -1,17 +1,21 @@
 # React Forge Native Contract
 
 ## Scope
+
 Shared `forge-package` and `forge-document`, format-specific `forge-docx`, `forge-xlsx`, `forge-pdf`, and dedicated `react-forge-node` adapter. `forge-document` owns reusable text/style, image and native chart/data primitives without merging format-specific document models. Reuse `forge-tree-doc` and `forge-pptx` for presentations. Complete scope is preserved in [requirements](packages-react-forge-requirements.md).
 
 `forge-figma` adds an independent pure revision planner. It validates Figma entities and references, differences declared ownership and partitions dependency-ordered operations by page, UTF-16 code size and a bounded result count. The Node layer owns authentication, SDK transport, rate admission, guarded canvas execution and recovery. N-API also validates Figma image bytes with the existing bounded native image decoder. See the [remote contract](packages-react-forge-figma-contract.md).
 
 ## Runtime and Language
+
 Rust on the repository-pinned toolchain. Engines do not depend on N-API, Office, LibreOffice, Python, external converters or runtime installation. Rust is selected over repository-default Go to reuse the Forge engines and native document libraries.
 
 ## Users and Operators
+
 The Node session library and repository engine developers; existing Forge CLI/MCP consumers retain their interfaces and font defaults.
 
 ## Interfaces and Contracts
+
 Four separate document models share bounded package, style, font and asset infrastructure where applicable. Office charts remain editable, including their associated data. Spreadsheet formulas retain optional caller-provided cached values and request application recalculation; no formula calculation engine exists. PDF authoring is independent of Office and includes flow pagination, repeated table headers, actionable indivisible-content overflow and semantic reading-order tags; PDF import/editing and PDF/UA claims are excluded.
 
 Imports retain unsupported content as opaque bytes. Edit only provably owned supported regions; preserve all unrelated package payloads and outside-region XML bytes. Reject encrypted/signed/macro/legacy/Strict packages, ambiguous identities, dangling references and unsafe edits. Positive externally authored fixtures must demonstrate actual supported edits, including charts and spreadsheet rules.
@@ -75,37 +79,46 @@ React Forge defaults to system font discovery/fallback with explicit caller font
 - clibox Windows run env and wrappers expand supported executable dollar references against the prepared child environment before native PATH/PATHEXT lookup. Preserve literal argument conversion, parent-only assignment values and deferred workload resolution after wrapper admission.
 
 ## Storage
+
 Memory-only native operations and explicit local files; no database/cache/recovery archive. Local storage is an explicit R2 exception. File publication belongs to the session's revision/cancellation boundary, with same-filesystem temporary output and truthful publication results.
 
 ## Security
+
 Bound before expensive parsing/decoding; reject unsafe ZIP paths, duplicate identities, DTDs/entities, malformed structures and invalid references. Never execute embedded content or follow remote relationships. JavaScript values, functions, hooks and callbacks never enter worker computations. Native cancellation flags are scoped to each synchronous operation and restored on return or unwind; independent workers never share implicit cancellation state. Checkpoints interrupt ZIP inflation/compression in 64 KiB chunks, XML preflight and traversal, font/run/glyph work, layout nodes/pages/rows, and Office generation/import/edit loops. Third-party parser, shaping and final serialization calls remain indivisible bounded units; cancellation is checked around them rather than claiming preemption inside those libraries.
 
 ## Logging
+
 Operation-scoped tracing without global logger installation. Emit safe operation/stage/format/revision/duration/error fields, never parser messages containing contents, host paths or bytes.
 
 ## Build and Test
+
 Run root `cargo test` after required generated app prerequisites, plus targeted native and Node integration tests. Cover package resource/security limits, unchanged bytes, native chart/workbook edits, spreadsheet rules, fonts and PDF semantics. Test-only LibreOffice/Poppler may render outputs; record versions and font provenance. Such evidence is not Microsoft Office validation.
 
 DOCX paragraph and run backgrounds emit RGB run shading (`w:shd`), with paragraph defaults inherited into runs and explicit run colors taking precedence ([Open XML shading](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.shading?view=openxml-3.0.1)). The DOCX engine has structural tests for rich text, headings, lists, sections, headers/footers, page breaks, merged cells, images and native bar/line/pie charts with editable embedded workbooks. Its python-docx 1.2.0 fixture verifies supported paragraph/cell edits and exact preservation of unselected parts and XML, plus opaque-equation refusal. The complementary renderer evidence and reproduction commands are recorded in [validation](packages-react-forge-validation.md).
 
 ## Dependencies and Integrations
+
 Forge foundation from the originating change is a repository dependency. Shared extraction must retain its regression coverage. All new crates remain unpublished. Native output is generated, untracked and rebuilt explicitly.
 
 ## Change Triggers
+
 Update the Node contract, project index, Forge foundation when shared behavior changes, relevant ownership rules and evidence in the same change.
 
 ## References
+
 - [Project](project-react-forge.md).
 - [Requirements](packages-react-forge-requirements.md).
 - [Forge foundation](crates-forge-foundation.md).
 - [Repository defaults](repository-defaults.md).
 
 ## Spreadsheet Engine
+
 `forge-xlsx` owns independent workbook models and native worksheet/chart emission. Formula caches are caller-provided and typed; omitted caches remain absent, and workbook calculation properties request application recalculation. Five conditional-format families and seven validation families have independent generation and external-fixture edit tests. Supported cell edits preserve original styles unless an explicit replacement format is supplied; replacement formats append resources without rewriting existing style children. Chart replacement adds isolated worksheet data and retains unrelated source data and chart parts. Spreadsheet charts containing foreign element or attribute namespaces remain opaque, including markup-compatibility alternatives. Imported cells and rules retain their original address/range. Validation edits preserve imported input/error message visibility, including absent false defaults. Unmodeled validation titles, non-stop error styles, hidden dropdowns, unknown attributes and formula attributes remain opaque. Conditional rules also whitelist attributes on every nested element; stop-if-true precedence, threshold inclusivity, bar lengths, icon percentage mode, tinted/theme colors and other unmodeled properties remain opaque. Unknown extensions remain opaque.
 
 The external workbook fixture is generated with openpyxl 3.1.5; its generator and provenance are committed beside the fixture. These structural and preservation checks are not renderer or Microsoft Office validation.
 
 ## PDF and Font Engine
+
 `forge-document::fonts` uses pinned Parley 0.9.0/Fontique 0.9.0 for operation-local system discovery, caller-provided fonts, shaping and fallback. It checks shaped glyphs and color-emoji representations. PDF subset embedding rejects restricted, no-subsetting and bitmap-only embedding permissions instead of bypassing them. Office output references font families; it does not embed caller/system font files. Office applications own final fallback, layout and pagination.
 
 Color-capable caller families and the platform emoji generic take precedence over general text families only on complete emoji graphemes. This avoids Fontconfig selecting a monochrome DejaVu glyph before Noto Color Emoji. Classification uses the same pinned Unicode properties as Parley; segmentation preserves joined sequences, ordinary digits/spacing and explicit text presentation selectors. Caller-only emoji generics contain color-capable registered families, while normal text retains caller ordering. Selected glyphs still undergo color and embedding validation.
@@ -117,7 +130,6 @@ The presentation engine exposes operation-owned text measurement and an explicit
 Current validation includes structural PDF pagination/tagging, system CJK/RTL/color-emoji output, explicit-font and missing-font behavior, and React PDF export/measurement. Poppler page rendering and pypdf extraction have also been inspected locally. Reproducible renderer, benchmark, CLI and CI evidence is recorded in the validation contract.
 
 Office font validation materializes the selected fallback family into newly authored Word runs while preserving logical text, run styles and hyperlinks. Macintosh-only font name records are decoded as well as Unicode records. Standalone Word chart series use explicit RGB colors so imported documents do not require a theme rewrite for visible data.
-
 
 Preservation hardening allocates Word drawing/list IDs against existing packages, appends numbering definitions without renumbering existing lists, and retains selected cell wrappers/namespaces. Explicitly empty authored section headers/footers suppress Word inheritance. External python-docx/openpyxl chart fixtures exercise all three Word chart replacement families. Foreign spreadsheet rule attributes remain opaque. New chart data and worksheet merges are bounded before XML expansion (200,000 chart data cells; 250,000 expanded worksheet merge cells). Duplicate dimensions fail, hidden chart-data sheets remain plotted, and appended differential number formats receive unused custom IDs. Boolean text styles retain explicit false overrides.
 
@@ -160,6 +172,7 @@ Imported DOCX targets retain a source flow width in points. Body mounts use thei
 The generation-only GLB/FBX extension follows [the scene contract](packages-react-forge-scene-contract.md). `SceneSession` shares local publication and MCP lifecycle, uses independent world-space bounds and native scene engines, and introduces no runtime conversion dependency.
 
 ## Sprite Engine Extension
+
 `forge-sprite` adds an independent bounded pixel model, deterministic CPU RGBA rasterization, PNG encoding and ZIP assembly; `react-forge-node/src/sprite.rs` connects the shared generation worker and diagnostics. It reuses cancellation and bounded ZIP output while preserving Office models and all existing font behavior. It does not use the OOXML-specific package reader. Follow the [sprite contract](packages-react-forge-sprite-contract.md) for exact dimensions, work/memory bounds, color/sampling semantics and archive metadata. Raster output is authored only; sprite import is rejected.
 
 ## SFX extension

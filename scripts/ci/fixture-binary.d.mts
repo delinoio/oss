@@ -1,1 +1,4 @@
-export function fixtureBinary(fallback: string, env?: NodeJS.ProcessEnv): Promise<string>;
+export function fixtureBinary(
+  fallback: string,
+  env?: NodeJS.ProcessEnv,
+): Promise<string>;

@@ -4,11 +4,11 @@ inputs:
   cache-scope:
     description: Optional validation scope isolating independently saved Go caches
     required: false
-    default: ''
+    default: ""
   cache-fallback-scope:
     description: Optional prior producer scope to restore after the current scope
     required: false
-    default: ''
+    default: ""
 outputs:
   cache-key:
     description: Exact cache key for a successful main job to save

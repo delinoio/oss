@@ -10,8 +10,13 @@ import { hasExecutableRemoteLoad } from "./frontend-output-policy.mjs";
 
 const appRoot = fileURLToPath(new URL("..", import.meta.url));
 const distRoot = join(appRoot, "dist");
-const annotationFont = join(appRoot, "src-tauri/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf");
-const annotationFontSha256 = createHash("sha256").update(readFileSync(annotationFont)).digest("hex");
+const annotationFont = join(
+  appRoot,
+  "src-tauri/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf",
+);
+const annotationFontSha256 = createHash("sha256")
+  .update(readFileSync(annotationFont))
+  .digest("hex");
 
 function build(platform) {
   const result = spawnSync("pnpm", ["run", "build:frontend"], {
@@ -42,7 +47,9 @@ function snapshot() {
     const name = relative(distRoot, path).replaceAll("\\", "/");
     const text = contents.toString("utf8");
     if (hasExecutableRemoteLoad(text)) {
-      throw new Error(`remote URL found in deterministic frontend output: ${name}`);
+      throw new Error(
+        `remote URL found in deterministic frontend output: ${name}`,
+      );
     }
     return {
       name,
@@ -53,18 +60,24 @@ function snapshot() {
 }
 
 function outputContains(value) {
-  return filesUnder(distRoot).some((path) => readFileSync(path, "utf8").includes(value));
+  return filesUnder(distRoot).some((path) =>
+    readFileSync(path, "utf8").includes(value),
+  );
 }
 
 for (const platform of ["android", "ios"]) {
   build(platform);
   const mobile = snapshot();
   if (mobile.some(({ sha256 }) => sha256 === annotationFontSha256)) {
-    console.error(`devhud: desktop-only RealQA font leaked into ${platform} frontend output`);
+    console.error(
+      `devhud: desktop-only RealQA font leaked into ${platform} frontend output`,
+    );
     process.exit(1);
   }
   if (outputContains("native_messaging_")) {
-    console.error(`devhud: Native Messaging command paths leaked into ${platform} frontend output`);
+    console.error(
+      `devhud: Native Messaging command paths leaked into ${platform} frontend output`,
+    );
     process.exit(1);
   }
 }
@@ -72,18 +85,24 @@ for (const platform of ["android", "ios"]) {
 build("linux");
 const first = snapshot();
 if (!first.some(({ sha256 }) => sha256 === annotationFontSha256)) {
-  console.error("devhud: desktop frontend output is missing the RealQA annotation font");
+  console.error(
+    "devhud: desktop frontend output is missing the RealQA annotation font",
+  );
   process.exit(1);
 }
 if (!outputContains("native_messaging_")) {
-  console.error("devhud: desktop frontend output is missing Native Messaging command paths");
+  console.error(
+    "devhud: desktop frontend output is missing Native Messaging command paths",
+  );
   process.exit(1);
 }
 build("linux");
 const second = snapshot();
 
 if (JSON.stringify(first) !== JSON.stringify(second)) {
-  console.error("devhud: frontend output changed between consecutive clean builds");
+  console.error(
+    "devhud: frontend output changed between consecutive clean builds",
+  );
   console.error(JSON.stringify({ first, second }, null, 2));
   process.exit(1);
 }

@@ -57,9 +57,9 @@ Windows behavior differs because symlink creation may require privileges. Nodeup
 
 Windows shim aliases and runtime package-manager executables are separate files:
 
-| Layer | Example | Meaning |
-| --- | --- | --- |
-| Nodeup shim alias | `npm.exe` | A copy or link of the Nodeup binary whose executable name lets Nodeup dispatch by `argv[0]`. |
+| Layer                        | Example       | Meaning                                                                                            |
+| ---------------------------- | ------------- | -------------------------------------------------------------------------------------------------- |
+| Nodeup shim alias            | `npm.exe`     | A copy or link of the Nodeup binary whose executable name lets Nodeup dispatch by `argv[0]`.       |
 | Delegated runtime executable | `bin/npm.cmd` | The package-manager command inside the selected Node.js runtime that Nodeup runs after resolution. |
 
 The recommended first-party setup copies the Nodeup binary to `.exe` aliases such as `node.exe`, `npm.exe`, `npx.exe`, `yarn.exe`, and `pnpm.exe`. The alias file only controls how Windows starts Nodeup; it does not change which executable Nodeup checks inside the selected runtime. A batch file that calls `nodeup.exe` does not preserve the batch file name as Nodeup's `argv[0]`, so use copied or linked executable aliases for managed shim dispatch.

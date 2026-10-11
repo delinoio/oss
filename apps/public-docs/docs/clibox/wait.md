@@ -51,13 +51,13 @@ Default success output is one summary, such as `tcp ready after 1250 ms (3 attem
 
 `kind` is `tcp`, `http`, or `file`. `status` is `ready`, `timeout`, `failed`, or `cancelled`. `elapsed_ms` is nonnegative elapsed milliseconds; `attempts` counts started checks. Failures replace `error` with an object containing a stable `code` and a safe, actionable `message`. Timeout messages include the last retryable failure classification when available. CLI validation failures produce stderr diagnostics and no JSON.
 
-| Outcome | Exit code |
-|---|---:|
-| Ready | 0 |
-| Runtime failure or overall timeout | 1 |
-| Invalid CLI input | 2 |
-| Ctrl+C, or Ctrl+Break on Windows | 130 |
-| Unix SIGTERM | 143 |
+| Outcome                            | Exit code |
+| ---------------------------------- | --------: |
+| Ready                              |         0 |
+| Runtime failure or overall timeout |         1 |
+| Invalid CLI input                  |         2 |
+| Ctrl+C, or Ctrl+Break on Windows   |       130 |
+| Unix SIGTERM                       |       143 |
 
 Ctrl+C, Ctrl+Break on Windows, and Unix SIGTERM stop waiting and release owned resources without terminating the target service or changing the target file. Wait commands never consume stdin or launch subsequent commands. They do not support reverse waiting, multiple targets, or continuous monitoring. They create no persistent application state, configuration, cache, or operation history.
 

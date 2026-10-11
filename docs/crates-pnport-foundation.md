@@ -27,14 +27,17 @@ tag and earlier published bytes remain immutable. Keep open and preserve
 the complete Windows 0.2.0 requirements.
 
 ## Scope
+
 `crates/pnport` owns the private CLI and process supervision. `crates/pnport-core` owns the shared data-only PnP graph, virtual filesystem, executable admission and local cache. [The complete issue requirements](crates-pnport-requirements.md) are mandatory release gates.
 
 `crates/fspy_preload_unix` owns the macOS pnport-mode cdylib. `crates/pnport-preload` remains the Linux/Windows companion. The source fork and licenses follow [the fspy vendor contract](crates-fspy-vendor-contract.md).
 
 ## Runtime and Language
+
 Rust on the root nightly-2026-01-01 toolchain; explicit Cargo workspace membership, publish = false. Native interception must not upgrade the toolchain or alter protected dependencies. Retain upstream fspy attribution for adapted code.
 
 ## Users and Operators
+
 Local developers and CI users running finite commands, servers, watchers and language servers; no hosted operators.
 
 ## Interfaces and Contracts
@@ -348,19 +351,23 @@ Doctor JSON schema v1 is a single ANSI-free object on stdout: `schemaVersion: 1`
 - pnport macOS supports libc group/session changes only after durable native birth/version admission. Register parent images before fork/spawn and child images before group changes/readiness; preserve native invalid-target errors and environment replacement. Signal additional groups only by kernel-checked audit generations, never reusable inventory PIDs or unreserved group IDs. Retain full native detached/job-control acceptance as a stable gate.
 
 ## Storage
+
 Use a private OS user cache, optionally overridden with --cache-dir. Content and format identity prevent stale reuse. Atomic publication, confined extraction, archive integrity/path/link validation, cross-process materialization locking and active leases are mandatory. Retain completed entries until explicit cleanup; no eviction, expiry or quota. Cache commands work without a project. Clean removes inactive owned entries; prune removes abandoned incomplete and obsolete-format entries. Preserve unknown ownership and active leases and report retained entries/deletion failures. Never destructively migrate another format. Disk, permissions and publication failures are explicit.
 
 Before extracting a missing entry, stream the archive into a private temporary file inside the locked staging directory and hash the exact copied bytes. A digest mismatch rejects publication. Extraction reads only that verified snapshot, so rewriting and restoring the source archive during extraction cannot bind different content to the earlier digest. The temporary copy is removed on close; existing complete entries do not require it.
 
 ## Security
+
 Current-user permissions only. Injection artifacts, local IPC and cache ownership stay private. No remote control, runtime network or telemetry. Validate archive arithmetic and path containment, including symlinks, before publication. This is compatibility tooling, not a security sandbox. Incompatible interception must not appear successful.
 
 ## Logging
+
 Explicit run debug logging records closed preparation stages from project loading through command resolution, followed by command-image preparation and native admission. Startup failures before the process owner or preload exists retain their original stable code and exit class. Terminal-fixture diagnostic summaries whitelist those stages and all failure codes, with bounded reads; they never publish the underlying native log or child output. Missing and non-executable image controls exercise the pre-launch boundary. The terminal fixture uses its shell parent as the sole process-group placement owner and releases its blocked child only after placement, avoiding the duplicate parent/child group-change path; the child verifies its group before exec. A reproduced fixture-side pre-exec failure is distinct from unresolved product initializer failures and does not waive stable acceptance.
 
 Use tracing on stderr; errors/necessary notices by default. Explicit debug covers initialization, graph identity, interception, translation failures, cache, invalidation and cleanup. Paths may appear at debug level. Never log file bytes, environment values, argv vectors or child streams. Stable error codes cover malformed data, resolution, conflicts, unsupported operations, injection, archive corruption, cache, graph changes and cleanup.
 
 ## Build and Test
+
 Run focused pnport tests, root cargo test, cargo fmt and Clippy. Native execution gates run on all four macOS/glibc Linux 0.1.0 targets. Windows x64/arm64 remains a full 0.2.0 acceptance requirement. Conformance uses PnP-unaware C/Rust plus Linux static Go fixtures and pinned Yarn 4 inline/split generation. Cover the entire requirements test matrix, including cache concurrency/recovery, active cleanup, signals/detachment, environment replacement, stdio/privacy canaries and source watches. Publish reproducible cold/warm execution, filesystem, memory and disk benchmarks without a numeric SLA. Remove generated repository-owned dist directories after verification.
 
 The repository toolchain is `nightly-2026-09-28`. macOS supervisor unit fixtures locate the explicitly built injection companion in their own Cargo profile directory, accepting the old `deps` and new `build/pnport/<unit-hash>/out` unit-executable layouts. They retain native architecture and ABI-marker validation. Installed and development application binaries continue to require a validated adjacent companion; test lookup does not add a production fallback.
@@ -457,14 +464,17 @@ That exact official development version (whose npm command is `tsc`, the native 
 The [repeatable package-owned suite](packages-pnport-distribution-contract.md#official-native-typescript-conformance) now generates both inline and split Yarn graphs from a committed immutable lockfile. Both pass npm compiler entrypoint execution, direct native execution, workspace reference builds, JavaScript/declaration emission, unchanged incremental builds, and intentional type errors. Its negative control proves the same prepared project cannot resolve ZIP-backed Node types without pnport. Preparation is separate from offline execution; the official compiler digest remains unchanged throughout.
 
 ## Dependencies and Integrations
+
 pnp = 0.12.12. fspy input revision 3aac49e31fba6905bb0b3d0e29d7755493241e9c. Native artifacts must include their matched injection companions. Distribution and release readiness follow the package contract; Rust crates never publish to crates.io.
 
 ## Change Triggers
+
 Update the project index, requirements traceability, npm/public documentation contracts, relevant AGENTS files and native conformance gates together.
 
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - [Project](project-pnport.md)
 - [Requirements](crates-pnport-requirements.md)
 - [Repository defaults](repository-defaults.md)

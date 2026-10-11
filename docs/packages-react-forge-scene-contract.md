@@ -115,7 +115,6 @@ LFS repositories still applies; this does not add LFS support to that tool.
 
 Require Khronos GLB validation, independent ufbx FBX parsing, and Blender re-imports with no material/mesh repair as local acceptance evidence. Product samples additionally require independent local web GLB viewing and actual image inspection. Evidence records exact tool versions, output hashes, structure checks and observed differences. React, installed CLI/MCP and existing document regressions remain part of the React Forge host matrix; the React scene test suite is skipped there. Scene engine tests/Clippy, interoperability, visual inspection, and render jobs are removed from React Forge CI and release host validation by the originating change. Render tools are local acceptance dependencies; generated exports, screenshots and dist are untracked. GLB and FBX were included in the published `@delino/react-forge` `0.2.0` release; the successful release workflow does not claim identical behavior in every FBX application.
 
-
 Animation acceptance uses the original `examples/animated-character*.tsx` tasks:
 seven explicit joints, three skinned meshes, an expression morph, idle/walk/wave,
 callback sampling, manual cubic group motion, and camera/light tracks. Use

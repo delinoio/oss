@@ -1,15 +1,19 @@
 # DeliDev Saved Client Connections
 
 ## Scope
+
 `cmds/delidev-cli/internal/connections`, the local `connection` CLI commands and the existing Worker/device pairing primitive own named client-side server pairings. They provide the durable authority boundary for desktop remote selection. The desktop now opens a separately pinned native window per saved profile under the desktop contract; actual remote TLS/streaming/platform evidence remains distinct from loopback fixture acceptance.
 
 ## Runtime and Language
+
 Go owns profile validation, exact pairing identity, private persistence and authenticated status verification. Native desktop infrastructure may call the same bounded commands and retrieve only the fixed profile's paired credential after their verification. Product traffic remains direct TypeScript/Go Connect RPC; a saved profile is not an agent-traffic proxy.
 
 ## Users and Operators
+
 A user with an explicitly supplied short-lived client pairing grant may add a connection on this computer. Server owners or authorized clients create grants through the existing Device service. This local infrastructure does not read server owner credentials or change remote listeners/services. Explicit profile-owned Worker registration uses only that paired client's Device authority to register this computer.
 
 ## Interfaces and Contracts
+
 - `connection list` reads at most 32 active or cleanup-pending profiles without initializing absent state. It validates at most 256 retained profile directories, including completed removal records. A malformed/foreign/inaccessible entry fails the inventory; it is never silently omitted as if the remaining list were complete.
 - `connection pair --id <uuid-v7> --name <name> --code-stdin` accepts one private grant of at most 32 KiB. The caller retains the explicit profile ID across retries. Name, exact grant/endpoint/server/pairing identity and creation time are pinned before any PairDevice request. Reusing an ID with different input conflicts.
 - `connection inspect --id <id>` is offline metadata inspection. `pending` means local pairing completion has not been pinned; `paired` means this original device credential was durably retained, not that it is authorized or online now.
@@ -30,6 +34,7 @@ Profile endpoints must be unambiguous HTTP loopback or HTTPS origins: no userinf
 - Saved client profiles follow `cmds-delidev-connections-contract.md`. Pin the original grant/profile/device, retry only retained pairing ownership, never adopt missing/damaged credentials or another server, and keep metadata output secret-free. Verify exact authority/version through read-only authenticated status without local/remote startup. Saved-profile origins must remain unambiguous for native CSP selection.
 
 ## Storage
+
 Under the explicitly selected local data root, `connections.lock` serializes profile pairing and display-name edits and each `connections/<profile-id>/connection.json` is an atomically written private intent. It retains the original single-use/expiring client grant until an explicit removal marker atomically clears its code. This file is private input state, never product metadata. Its paired device lives in that profile's `client` subdirectory using the existing `device.json`, pairing lock and pending journal.
 
 Record the original device ID after PairDevice and credential persistence. If profile completion publication fails, retry reuses the already retained credential. Once completion is pinned, a missing/damaged/mismatched credential is recovery-required and cannot be replaced by replaying the grant. Existing unexplained profile directories or missing intent records are not adopted. Inspect/list/verify/retry cannot initialize missing profiles; ordinary pairing is the only creator. Neither profile removal nor server revocation is inferred from local absence. Display-name edits retain the original pairing name and grant; retrying the original pairing returns the latest display name. The private record atomically retains at most 1,024 exact rename receipts and is bounded to 1 MiB. Public metadata revision starts at one and advances once per accepted new edit. No receipt is discarded to make room; the bounded limit fails explicitly. A rename requires the intact original credential evidence and cannot repair damaged pairing. A removal receipt may add at most 4 KiB beyond the original 1 MiB record bound so a record already at its prior name-edit limit can still be removed. Native selection continues using the original exact identity.
@@ -39,25 +44,31 @@ An explicit Worker registration adds private `local-worker.json` intent and a se
 Removal holds the profile lock and the client pairing lock, revalidates original authority after acquiring both, and pins each known client file's SHA-256 digest before cleanup. Missing files are permitted only as the original observed absence or idempotent progress; replaced/non-private/symlinked files remain untouched and keep cleanup pending. Synchronize the client directory even when an earlier attempt already unlinked a file. Never recursively remove a profile, Worker, runtime, ownership journal, workspace or original Local checkout. The original `connection.json` persists with no client grant code and with complete rename/removal receipts. Independent Worker registration material belongs to that Worker's retained authority and remains private. Client removal is offline and does not revoke remote devices, copied tokens or already-running external clients; use the separate authenticated device revocation operation when that is intended. A desktop removal closes its selected native window explicitly; a CLI removal does not claim termination of unrelated app processes. The desktop protected browser retains a local purge scope before native credential removal and discovers completed CLI removals from retained non-secret tombstones. Browser scope deletion waits for independently completed CEF shutdown under `docs/cmds-delidev-browser-contract.md`; local purge is separate from server account acknowledgment.
 
 ## Security
+
 Every path component owned by this boundary must be a private real directory and every record a private regular file. IDs are canonical UUID-v7, never path fragments supplied as arbitrary filesystem locations. Network input uses the existing durable pairing request/token identity and validates acknowledged server/device ownership. Retrying a pending Worker/device pairing now also checks its original request ID and server/endpoint/pairing ownership before any request.
 
 Keep private grant/token documents out of normal output and logs. Clear temporary raw input/persistence buffers after use; Go strings and process memory are not promised as locked memory. Never use another saved profile, server owner token or system login as fallback. Revoked credentials remain retained but verification fails; status failure cannot create an alternate device. No server database, owner identity, default Worker scope or listener is initialized by these commands. Only explicit `worker-register` creates its profile-owned Worker state.
 
 ## Logging
+
 The CLI emits structured `client_connection` observations to stderr with closed operation, opaque connection ID and stable result/error code. Names, endpoints, grants, tokens and raw native/network error strings are excluded. Stdout remains one versioned JSON envelope.
 
 ## Build and Test
+
 Run package Go tests with race detection and `go vet ./cmds/delidev-cli/...`. Tests use private real servers and client data roots, a loopback proxy that drops successful CreatePairing/PairDevice responses, and no user credentials/inference. Verify identical replay request bytes, separate owner/client/profile-Worker scopes across servers, persisted completion, independent client/Worker revocation, missing/foreign credential refusal, damaged/lost pending journal refusal, strict origins, bounded inventories, stale/foreign name-edit refusal, superseded exact retries and secret-free CLI output. Native fixtures exercise detached profile Worker start, generation-bound stop, fixed Local proof, client removal during the same Worker generation and separate retained Worker lifecycle. Cleanup tests cover marker-only/partially unlinked interruption, replacement/symlink refusal, removed paging, slot accounting and preserved request ownership across removal. Windows/Linux cross-builds prove compilation only; remote desktop TLS/streaming and actual platform UX require their own evidence.
 
 ## Dependencies and Integrations
+
 Uses the existing System/Device Connect services, private filesystem primitives and Worker/device pairing implementation. No new server RPC, schema migration, credential broker, OS service or remote supervisor is introduced.
 
 ## Change Triggers
+
 Update this contract, scoped CLI/desktop AGENTS, project index and evidence whenever profile lifecycle, endpoint rules, credential persistence/removal, native selection or per-server cache ownership changes.
 
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - [DeliDev project](project-delidev.md)
 - [Complete requirements](cmds-delidev-requirements.md)
 - [CLI/server/Worker contract](cmds-delidev-contract.md)

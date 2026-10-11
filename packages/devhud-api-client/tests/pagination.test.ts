@@ -24,10 +24,12 @@ describe("bounded opaque pagination", () => {
   });
 
   it("bounds tokens by UTF-8 byte length", () => {
-    expect(createPageRequest(50, "x".repeat(MAX_PAGE_TOKEN_BYTES)).pageToken).toHaveLength(
-      MAX_PAGE_TOKEN_BYTES,
-    );
-    expect(() => createPageRequest(50, "한".repeat(MAX_PAGE_TOKEN_BYTES))).toThrow(RangeError);
+    expect(
+      createPageRequest(50, "x".repeat(MAX_PAGE_TOKEN_BYTES)).pageToken,
+    ).toHaveLength(MAX_PAGE_TOKEN_BYTES);
+    expect(() =>
+      createPageRequest(50, "한".repeat(MAX_PAGE_TOKEN_BYTES)),
+    ).toThrow(RangeError);
   });
 
   it("rejects malformed Unicode without changing valid opaque tokens", () => {

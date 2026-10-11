@@ -2,7 +2,6 @@
 
 ## Missing native package or version mismatch
 
-
 If the native package is missing, reinstall with optional dependencies enabled (`npm install --include=optional` or `pnpm install` without `--no-optional`). Do not copy `node_modules` between operating systems, architectures, or Linux libc environments; reinstall from your lockfile on the destination machine. If a lockfile omits the destination's optional package, regenerate it with your package manager and commit the corrected lockfile.
 
 If versions disagree, reinstall the dependency so `@delino/clibox` and its selected platform package have the same exact version.
@@ -10,7 +9,6 @@ If versions disagree, reinstall the dependency so `@delino/clibox` and its selec
 The package provides the `clibox` command only, with no public JavaScript import API.
 
 ## Arguments, timestamps, and files
-
 
 - Invalid-argument errors intentionally omit your values; compare options with command help. Check explicit timestamp units, regex references, or the selected digest encoding/length.
 - For DST errors, choose a valid calendar time or supply an explicit offset when parsing an ambiguous instant.

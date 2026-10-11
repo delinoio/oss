@@ -58,7 +58,11 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with: { ref: '${{ needs.inspect.outputs.revision }}', persist-credentials: false }
+        with:
+          {
+            ref: "${{ needs.inspect.outputs.revision }}",
+            persist-credentials: false,
+          }
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with: { node-version-file: .nvmrc, package-manager-cache: false }
       - name: Validate signing configuration before native builds
@@ -93,7 +97,12 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with: { ref: '${{ needs.inspect.outputs.revision }}', lfs: true, persist-credentials: false }
+        with:
+          {
+            ref: "${{ needs.inspect.outputs.revision }}",
+            lfs: true,
+            persist-credentials: false,
+          }
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
@@ -178,9 +187,18 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with: { ref: '${{ needs.inspect.outputs.revision }}', persist-credentials: false }
+        with:
+          {
+            ref: "${{ needs.inspect.outputs.revision }}",
+            persist-credentials: false,
+          }
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with: { node-version-file: .nvmrc, architecture: '${{ matrix.arch }}', package-manager-cache: false }
+        with:
+          {
+            node-version-file: .nvmrc,
+            architecture: "${{ matrix.arch }}",
+            package-manager-cache: false,
+          }
       - name: Restore the original signed candidate from this release run
         id: retained
         env:
@@ -232,7 +250,11 @@ jobs:
       actions: read
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with: { ref: '${{ needs.inspect.outputs.revision }}', persist-credentials: false }
+        with:
+          {
+            ref: "${{ needs.inspect.outputs.revision }}",
+            persist-credentials: false,
+          }
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with: { node-version-file: .nvmrc, package-manager-cache: false }
       - name: Download original candidates

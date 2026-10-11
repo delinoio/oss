@@ -8,20 +8,33 @@ describe("Native Messaging request bounds", () => {
       context: { title: "safe", outerHtml: "x".repeat(MaximumJsonBytes) },
     });
     expect(bounded.withinLimit).toBe(true);
-    expect((bounded.request.payload as { context: { outerHtml: string } }).context.outerHtml).toBe("");
+    expect(
+      (bounded.request.payload as { context: { outerHtml: string } }).context
+        .outerHtml,
+    ).toBe("");
   });
 
   it("rejects an outbound request that still exceeds the shared ceiling", () => {
-    expect(createBoundedRequest("ping", { value: "x".repeat(MaximumJsonBytes) }).withinLimit).toBe(false);
+    expect(
+      createBoundedRequest("ping", { value: "x".repeat(MaximumJsonBytes) })
+        .withinLimit,
+    ).toBe(false);
   });
 
   it("reserves space for the signed IPC request envelope", () => {
-    const basePayload = { mappingId: "mapping", context: { url: "", outerHtml: "" } };
+    const basePayload = {
+      mappingId: "mapping",
+      context: { url: "", outerHtml: "" },
+    };
     const base = createBoundedRequest("capture", basePayload);
-    const byteLength = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
+    const byteLength = (value: unknown) =>
+      new TextEncoder().encode(JSON.stringify(value)).byteLength;
     const url = "x".repeat(MaximumJsonBytes - byteLength(base.request));
 
-    const bounded = createBoundedRequest("capture", { mappingId: "mapping", context: { url, outerHtml: "" } });
+    const bounded = createBoundedRequest("capture", {
+      mappingId: "mapping",
+      context: { url, outerHtml: "" },
+    });
 
     expect(byteLength(bounded.request)).toBe(MaximumJsonBytes);
     expect(bounded.withinLimit).toBe(false);
@@ -29,9 +42,18 @@ describe("Native Messaging request bounds", () => {
 
   it("rejects an oversized redacted path without replacing its structure", () => {
     const url = `https://example.com/${"<redacted>/".repeat(MaximumJsonBytes)}`;
-    const bounded = createBoundedRequest("capture", { mappingId: "mapping", context: { url, outerHtml: "optional" } });
+    const bounded = createBoundedRequest("capture", {
+      mappingId: "mapping",
+      context: { url, outerHtml: "optional" },
+    });
 
     expect(bounded.withinLimit).toBe(false);
-    expect((bounded.request.payload as { context: { url: string; outerHtml: string } }).context).toEqual({ url, outerHtml: "" });
+    expect(
+      (
+        bounded.request.payload as {
+          context: { url: string; outerHtml: string };
+        }
+      ).context,
+    ).toEqual({ url, outerHtml: "" });
   });
 });
