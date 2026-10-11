@@ -284,6 +284,14 @@ impl Project {
     }
 
     fn build_with(&self, texts: &BTreeMap<String, String>) -> &'static GoProgram {
+        self.build_with_config(self.config.clone(), texts)
+    }
+
+    fn build_with_config(
+        &self,
+        config: Rc<ParsedCommandLine>,
+        texts: &BTreeMap<String, String>,
+    ) -> &'static GoProgram {
         let base = self.fs.clone();
         let texts = texts.clone();
         let fs = wrapvfs_wrap(
@@ -297,7 +305,7 @@ impl Project {
                 ..Default::default()
             },
         );
-        build(self.config.clone(), fs, &self.cwd)
+        build(config, fs, &self.cwd)
     }
 
     pub fn emit(
@@ -306,7 +314,22 @@ impl Project {
     ) -> Result<BTreeMap<String, (String, String)>> {
         crate::app::check_cancelled()?;
         tracing::debug!("loading transformed program");
-        let version = self.build_with(changed);
+        // Root every original application module: a transformation may
+        // remove the last import of a module whose initialization was
+        // proven unobservable, and that module must still be emitted.
+        let mut roots = self.config.file_names().to_vec();
+        {
+            let _scope = enter_program(Some(self.version));
+            roots.extend(
+                source_files()
+                    .into_iter()
+                    .filter(|&f| is_application(f))
+                    .map(|f| source_file_info(f).file_name.clone()),
+            );
+        }
+        roots.sort();
+        roots.dedup();
+        let version = self.build_with_config(Rc::new(self.config.with_file_names(roots)), changed);
         let result = (|| {
             let _scope = enter_program(Some(version));
             // Recheck transformed files before publishing anything.

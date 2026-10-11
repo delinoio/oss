@@ -14,6 +14,8 @@ use crate::{
 mod aggregate_elimination;
 mod aggregates_support;
 mod call_inlining;
+mod calls_init;
+mod calls_support;
 mod constant_property_inlining;
 mod constants_support;
 mod deadcode_support;
