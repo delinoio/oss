@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   realpath,
   rm,
@@ -13,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createClient } from "@connectrpc/connect";
 import { request as httpRequest } from "node:http";
-import { QaRun, workersArgument, app } from "./run.mjs";
+import { QaRun, buildQaFrontend, workersArgument, app } from "./run.mjs";
 import { Processes, until } from "./processes.mjs";
 import { auditVault, cleanup, list } from "./cleanup.mjs";
 import { document, Environment } from "./environment.mjs";
@@ -29,6 +30,20 @@ test("worker arguments have a closed 1..8 range", () => {
     ["--data-dir", "/tmp"],
   ])
     assert.throws(() => workersArgument(args));
+});
+
+test("QA frontend emits Ghostty WASM as one same-origin asset", async () => {
+  const root = await mkdtemp(join(tmpdir(), "delidev-qa-build-test-"));
+  try {
+    await buildQaFrontend(root);
+    const wasm = (await readdir(join(root, "static/wasm"))).filter((name) =>
+      name.endsWith(".wasm"),
+    );
+    assert.equal(wasm.length, 1);
+    assert.match(wasm[0], /^ghostty-vt\.[a-f0-9]{8}\.wasm$/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("host rejects foreign origins, hosts, paths and overlapping controls", async () => {

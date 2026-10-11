@@ -29,7 +29,7 @@ import { MutationIntents, useRetainedMutation } from "./mutation";
 import { SessionTabsProvider, useSessionTabsStore } from "./session-tabs";
 import { SessionTerminals } from "./session-terminals";
 
-// Component tests use a text fixture; real parser/WebGL/CSP acceptance runs in
+// Component tests use a text fixture; real Ghostty parser/CSP acceptance runs in
 // the external Chrome fixture. This adapter exercises input ownership only.
 vi.mock("./terminal-emulator", () => ({
   openTerminalScreen: (
