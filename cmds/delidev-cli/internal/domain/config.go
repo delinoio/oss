@@ -79,6 +79,7 @@ func UniqueIDs(ids []ID) error {
 }
 
 type Project struct {
+	HarnessDefaults   *HarnessDefaults `json:"harness_defaults,omitempty"`
 	Settings          *ProjectBehavior `json:"settings,omitempty"`
 	Name              string           `json:"name"`
 	Repositories      []ID             `json:"repositories"`
@@ -88,6 +89,9 @@ type Project struct {
 }
 
 func (p Project) Validate() error {
+	if err := p.HarnessDefaults.Validate(); err != nil {
+		return err
+	}
 	if p.Settings != nil {
 		if err := p.Settings.Validate(); err != nil {
 			return err
@@ -275,27 +279,38 @@ type WeightedAccount struct {
 	Weight uint32 `json:"weight"`
 }
 type AgentSourceRoute struct {
-	ModelID  ID                `json:"-"`
-	Model    *InlineModel      `json:"model"`
-	Accounts []WeightedAccount `json:"accounts,omitempty"`
-	Routing  *RoutingPolicy    `json:"routing,omitempty"`
+	ModelSelection *HarnessSetting[string] `json:"model_selection,omitempty"`
+	ModelID        ID                      `json:"-"`
+	Model          *InlineModel            `json:"model"`
+	Accounts       []WeightedAccount       `json:"accounts,omitempty"`
+	Routing        *RoutingPolicy          `json:"routing,omitempty"`
 }
 
 type Agent struct {
-	ReconfigurationRequired bool               `json:"reconfiguration_required,omitempty"`
-	Name                    string             `json:"name"`
-	Harness                 Harness            `json:"harness"`
-	ModelID                 ID                 `json:"-"`
-	Model                   *InlineModel       `json:"-"`
-	Effort                  string             `json:"effort,omitempty"`
-	Accounts                []WeightedAccount  `json:"accounts,omitempty"`
-	Routes                  []AgentSourceRoute `json:"routes,omitempty"`
-	Routing                 *RoutingPolicy     `json:"routing,omitempty"`
-	Templates               []ID               `json:"templates"`
-	Options                 AgentOptions       `json:"options"`
+	SelectedModelSetting    *HarnessSetting[string] `json:"-"`
+	HarnessSettings         *HarnessSettings        `json:"harness_settings,omitempty"`
+	ReconfigurationRequired bool                    `json:"reconfiguration_required,omitempty"`
+	Name                    string                  `json:"name"`
+	Harness                 Harness                 `json:"harness"`
+	ModelID                 ID                      `json:"-"`
+	Model                   *InlineModel            `json:"-"`
+	Effort                  string                  `json:"effort,omitempty"`
+	Accounts                []WeightedAccount       `json:"accounts,omitempty"`
+	Routes                  []AgentSourceRoute      `json:"routes,omitempty"`
+	Routing                 *RoutingPolicy          `json:"routing,omitempty"`
+	Templates               []ID                    `json:"templates"`
+	Options                 AgentOptions            `json:"options"`
 }
 
 func (a Agent) Validate() error {
+	if a.HarnessSettings != nil {
+		if err := a.HarnessSettings.Validate(); err != nil {
+			return err
+		}
+		if a.Effort != "" || a.Options != (AgentOptions{Permission: PermissionDefault}) {
+			return Fail(InvalidArgument, "Inherited Agent settings cannot retain legacy selections.", "Edit the typed harness selectors; legacy effort and options must remain empty/default.")
+		}
+	}
 	if err := Text(a.Name, "Agent Worker name", 256, true); err != nil {
 		return err
 	}
@@ -310,7 +325,7 @@ func (a Agent) Validate() error {
 		if route.Model == nil {
 			return Fail(MissingInput, "An inline model is required.", "Select an exact native ID for every account source.")
 		}
-		if err := route.Model.Validate(a.Harness); err != nil {
+		if _, err := route.RoutingModel(a.Harness, a.HarnessSettings != nil); err != nil {
 			return err
 		}
 		if route.Routing != nil && !route.Routing.Valid() {
@@ -369,7 +384,7 @@ func (a Agent) SourceRoutes() []AgentSourceRoute {
 		}
 		return routes
 	}
-	return []AgentSourceRoute{{ModelID: a.ModelID, Model: a.Model, Accounts: a.Accounts, Routing: a.Routing}}
+	return []AgentSourceRoute{{ModelID: a.ModelID, Model: a.Model, Accounts: a.Accounts, Routing: a.Routing, ModelSelection: a.SelectedModelSetting}}
 }
 func (a Agent) AllAccounts() []WeightedAccount {
 	result := []WeightedAccount{}
@@ -390,6 +405,7 @@ func (a Agent) ModelIDs() []ID {
 func (a Agent) WithSource(route AgentSourceRoute) Agent {
 	a.Routes = nil
 	a.ModelID, a.Model, a.Accounts, a.Routing = route.ModelID, route.Model, route.Accounts, route.Routing
+	a.SelectedModelSetting = route.ModelSelection
 	return a
 }
 
@@ -830,7 +846,7 @@ func (m Machine) Validate() error {
 	}
 	seenCapabilities := map[WorkerCapability]bool{}
 	for _, capability := range m.WorkerCapabilities {
-		if (capability != CodexQuotaBlockV1 && capability != InlineModelExecutionV1 && capability != SessionStartupProgressV1 && capability != NativeImageGenerationV1 && capability != CodexSessionRevertV1 && capability != SidechatQuestionRetryV1 && capability != ManagedCodexForkV1 && capability != OpenCodeGoSubscriptionsV1 && capability != CodexApprovalReviewV1 && capability != BranchPrefixInstructionsV1 && capability != RepositoryBranchDiscoveryV1 && capability != ImageInputsV1 && capability != NativeSkillsV1 && capability != NativeClaudeSubscriptionsV1 && capability != ExecutionStartupV1 && capability != RemoteWorkspaceCloneV1 && capability != RepositoryCloneV1 && capability != SignedWorkerUpdatesV1 && capability != CodexReadOnlySidechatWorkerV1 && capability != ManagedCodexSidechatV1 && capability != OpenCodeGeneralChatForkV1 && capability != OpenCodeSessionCompactionV1 && capability != NativeSessionCompactionV1 && capability != CodexSessionCompactionV1 && capability != OpenCodeForegroundSubagentsV1 && capability != CodexSubagentConfigurationV1 && capability != NetworkBootstrapV1 && capability != CodexAPIProxyV1 && capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1 && capability != SubscriptionObservationsV1 && capability != SubscriptionPaidCreditsV1) || seenCapabilities[capability] {
+		if (capability != CodexQuotaBlockV1 && capability != InlineModelExecutionV1 && capability != HarnessDefaultsV1 && capability != SessionStartupProgressV1 && capability != NativeImageGenerationV1 && capability != CodexSessionRevertV1 && capability != SidechatQuestionRetryV1 && capability != ManagedCodexForkV1 && capability != OpenCodeGoSubscriptionsV1 && capability != CodexApprovalReviewV1 && capability != BranchPrefixInstructionsV1 && capability != RepositoryBranchDiscoveryV1 && capability != ImageInputsV1 && capability != NativeSkillsV1 && capability != NativeClaudeSubscriptionsV1 && capability != ExecutionStartupV1 && capability != RemoteWorkspaceCloneV1 && capability != RepositoryCloneV1 && capability != SignedWorkerUpdatesV1 && capability != CodexReadOnlySidechatWorkerV1 && capability != ManagedCodexSidechatV1 && capability != OpenCodeGeneralChatForkV1 && capability != OpenCodeSessionCompactionV1 && capability != NativeSessionCompactionV1 && capability != CodexSessionCompactionV1 && capability != OpenCodeForegroundSubagentsV1 && capability != CodexSubagentConfigurationV1 && capability != NetworkBootstrapV1 && capability != CodexAPIProxyV1 && capability != NativeModelsV1 && capability != AutomaticTitlesCodexV1 && capability != SessionTerminalsV1 && capability != SessionForwardingV1 && capability != RepositoryInspectionMetadataV1 && capability != ManagedCodexSubscriptionsV1 && capability != SubscriptionObservationsV1 && capability != SubscriptionPaidCreditsV1) || seenCapabilities[capability] {
 			return Fail(InvalidArgument, "Unknown or duplicate Worker capability.", "Report only directly verified auxiliary native capabilities.")
 		}
 		seenCapabilities[capability] = true
@@ -839,6 +855,7 @@ func (m Machine) Validate() error {
 }
 
 type Settings struct {
+	HarnessDefaults       *HarnessDefaults  `json:"harness_defaults,omitempty"`
 	PlanModeDefault       bool              `json:"plan_mode_default"`
 	BranchPrefix          *string           `json:"branch_prefix,omitempty"`
 	AutomaticPlanApproval bool              `json:"automatic_plan_approval"`
@@ -853,6 +870,9 @@ func DefaultSettings() Settings {
 	return Settings{BranchPrefix: &prefix, DefaultRouting: SequentialExhaustion, Notifications: true, AutomaticFetch: true, Remediation: DefaultRemediationPolicy()}
 }
 func (s Settings) Validate() error {
+	if err := s.HarnessDefaults.Validate(); err != nil {
+		return err
+	}
 	if s.BranchPrefix != nil {
 		if err := ValidateBranchPrefix(*s.BranchPrefix); err != nil {
 			return err

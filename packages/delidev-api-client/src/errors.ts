@@ -12,6 +12,7 @@ export enum FailureCode {
   ServerUnavailable = "server_unavailable",
   ConfirmationRequired = "confirmation_required",
   MissingInput = "missing_input",
+  HarnessDefaultUnverified = "harness_default_unverified",
   Unsupported = "unsupported",
   RecoveryRequired = "recovery_required",
   BudgetReached = "budget_reached",

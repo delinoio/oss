@@ -121,6 +121,9 @@ func (i ExecutionJobInput) Validate() error {
 	if err := i.Configuration.Validate(); err != nil {
 		return err
 	}
+	if p := i.Configuration.HarnessProvenance; p != nil && i.Continuation == nil && i.Fork == nil && i.Retry == nil && (p.AccountID != i.AccountID || p.ConnectionID != i.ConnectionID) {
+		return Fail(RecoveryRequired, "The original harness provenance account changed.", "Preserve the accepted source and connection before input.")
+	}
 	if !slices.ContainsFunc(i.Configuration.Accounts, func(account WeightedAccount) bool { return account.ID == i.AccountID }) {
 		return Fail(Unsupported, "The execution lacks matching account or native installation evidence.", "Revalidate the accepted configuration on its owning Worker.")
 	}

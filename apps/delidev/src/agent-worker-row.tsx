@@ -57,7 +57,10 @@ export function AgentWorkerRow({
     knownHarness = Object.hasOwn(workerHarnessNames, harness);
   const model = (index: number) => {
     const metadata = object(routes[index]?.model);
-    const id = text(metadata.native_id);
+    const id =
+      object(routes[index]?.model_selection).mode === "inherit"
+        ? copy("agent-worker-wizard.inheritModel")
+        : text(metadata.native_id);
     const name = text(metadata.name);
     return (
       <>
@@ -130,7 +133,12 @@ export function AgentWorkerRow({
                   <span>{copy("agent-worker-row.reasoningEffort")}</span>
                   <span className="agent-reasoning-effort-value">
                     {configuredEffort(
-                      data.effort,
+                      data.harness_settings
+                        ? object(object(data.harness_settings).effort).mode ===
+                          "override"
+                          ? object(object(data.harness_settings).effort).value
+                          : copy("agent-worker-row.inheritEffort")
+                        : data.effort,
                       copy("reasoning-effort.nativeDefault"),
                       copy("agent-worker-row.effortUnavailable"),
                     )}

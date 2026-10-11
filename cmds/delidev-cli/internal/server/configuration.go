@@ -24,6 +24,17 @@ type validatable interface{ Validate() error }
 
 func configurationValue(kind domain.Kind, raw []byte, requireRepositoryURL bool) (validatable, error) {
 	var value validatable
+	if kind == domain.AgentKind || kind == domain.ProjectKind || kind == domain.SettingsKind {
+		var fields map[string]json.RawMessage
+		if err := domain.Decode(raw, &fields); err != nil {
+			return nil, err
+		}
+		for _, field := range []string{"harness_settings", "harness_defaults"} {
+			if v, ok := fields[field]; ok && bytes.Equal(bytes.TrimSpace(v), []byte("null")) {
+				return nil, domain.Fail(domain.InvalidArgument, "Harness selectors cannot be cleared with null.", "Use a version-1 settings object and explicit inherit selectors.")
+			}
+		}
+	}
 	if kind == domain.ProjectKind || kind == domain.SettingsKind {
 		var fields map[string]json.RawMessage
 		if err := domain.Decode(raw, &fields); err != nil {
@@ -48,7 +59,7 @@ func configurationValue(kind domain.Kind, raw []byte, requireRepositoryURL bool)
 	case domain.RepositoryKind:
 		value = &domain.Repository{AutoFetch: true}
 	case domain.AgentKind:
-		value = &domain.Agent{}
+		value = &domain.Agent{Options: domain.AgentOptions{Permission: domain.PermissionDefault}}
 	case domain.AccountKind:
 		value = &domain.Account{}
 	case domain.ProviderKind:
@@ -105,13 +116,16 @@ func SaveConfiguration(ctx context.Context, s *store.Store, input ConfigurationM
 		if id == "" {
 			id = domain.NewID()
 		}
-		if input.ExpectedRevision > 0 && (input.Kind == domain.ProjectKind || input.Kind == domain.SettingsKind) {
+		if input.ExpectedRevision > 0 && (input.Kind == domain.ProjectKind || input.Kind == domain.SettingsKind || input.Kind == domain.AgentKind) {
 			previous, err := tx.Get(input.Kind, id)
 			if err != nil {
 				return nil, err
 			}
+			if previous.Revision != input.ExpectedRevision {
+				return nil, domain.Fail(domain.Conflict, "The configuration changed.", "Reload its current revision before saving.")
+			}
 			if rpc.ResourceSchemaVersion(input.Kind, previous.Data) > rpc.ResourceSchemaVersion(input.Kind, input.Document) {
-				return nil, domain.Fail(domain.Unsupported, "Project behavior settings require a current client.", "Preserve the current schema and all behavior settings when editing.")
+				return nil, domain.Fail(domain.Unsupported, "Typed configuration settings require a current client.", "Preserve the current schema and all harness and behavior selectors when editing.")
 			}
 		}
 		if project, ok := value.(*domain.Project); ok {
@@ -125,6 +139,11 @@ func SaveConfiguration(ctx context.Context, s *store.Store, input ConfigurationM
 		if settings, ok := value.(*domain.Settings); ok && settings.BranchPrefix == nil {
 			prefix := domain.DefaultBranchPrefix
 			settings.BranchPrefix = &prefix
+		}
+		if agent, ok := value.(*domain.Agent); ok && agent.HarnessSettings == nil {
+			if err := domain.NormalizeNewAgentHarnessSettings(agent, input.Document); err != nil {
+				return nil, err
+			}
 		}
 		if provider, ok := value.(*domain.Provider); ok {
 			if err := preserveProviderActivation(tx, input, id, provider); err != nil {
@@ -290,6 +309,9 @@ func validateNewProviderSelections(tx configurationView, input ConfigurationMuta
 			}
 		}
 	case *domain.Project:
+		if err := validateHarnessDefaultRelationships(tx, v.HarnessDefaults); err != nil {
+			return err
+		}
 		oldAgents, err := previousIDs(domain.AgentKind)
 		if err != nil {
 			return err
@@ -439,6 +461,9 @@ func all(tx configurationView, kind domain.Kind) ([]store.Record, error) {
 func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID, expected uint64, value validatable) error {
 	switch v := value.(type) {
 	case *domain.Project:
+		if err := validateHarnessDefaultRelationships(tx, v.HarnessDefaults); err != nil {
+			return err
+		}
 		if v.Settings != nil && v.Settings.Remediation != nil {
 			if err := validateRemediationRelationships(tx, *v.Settings.Remediation); err != nil {
 				return err
@@ -486,10 +511,10 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 		}
 		sources := map[string]bool{}
 		for _, route := range v.SourceRoutes() {
-			if route.Model == nil || route.Model.Validate(v.Harness) != nil {
+			model, modelErr := route.RoutingModel(v.Harness, v.HarnessSettings != nil)
+			if modelErr != nil {
 				return domain.Fail(domain.InvalidArgument, "An exact inline source model is required.", "Keep the current schema-4 route and explicit native metadata.")
 			}
-			model := route.Model.AsModel(v.Harness)
 
 			key := "api:" + string(model.ProviderID)
 			if model.SourceKind == domain.SubscriptionModel {
@@ -559,6 +584,41 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 				harnessChanged = *previous.SubscriptionHarness != *v.SubscriptionHarness
 			}
 			if previous.LegacyAPIFormat() != v.LegacyAPIFormat() || !slices.Equal(providers.APIFormats(previous), providers.APIFormats(*v)) || harnessChanged {
+				for _, defaultsKind := range []domain.Kind{domain.ProjectKind, domain.SettingsKind} {
+					rows, err := all(tx, defaultsKind)
+					if err != nil {
+						return err
+					}
+					for _, row := range rows {
+						var owner struct {
+							Defaults *domain.HarnessDefaults `json:"harness_defaults"`
+						}
+						if err := domain.Decode(row.Data, &owner); err != nil {
+							return err
+						}
+						if owner.Defaults == nil {
+							continue
+						}
+						for _, entry := range owner.Defaults.Entries {
+							if entry.Scope.ProviderID != id || entry.Scope.APIProtocol == "" {
+								continue
+							}
+							find := func(p domain.Provider) (domain.ProviderAPIFormat, bool) {
+								for _, profile := range providers.APIFormats(p) {
+									if profile.Protocol == entry.Scope.APIProtocol {
+										return profile, true
+									}
+								}
+								return domain.ProviderAPIFormat{}, false
+							}
+							before, had := find(previous)
+							after, has := find(*v)
+							if !had || !has || before != after {
+								return domain.Fail(domain.Conflict, "A harness-default API profile cannot be replaced or removed.", "Remove its explicit default references before changing the connection profile.")
+							}
+						}
+					}
+				}
 				accounts, err := all(tx, domain.AccountKind)
 				if err != nil {
 					return err
@@ -695,6 +755,9 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 			}
 		}
 	case *domain.Settings:
+		if err := validateHarnessDefaultRelationships(tx, v.HarnessDefaults); err != nil {
+			return err
+		}
 		records, err := tx.List(store.Filter{Kind: domain.SettingsKind, Limit: 2})
 		if err != nil {
 			return err
@@ -703,6 +766,37 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 			return domain.Fail(domain.Conflict, "The server already has settings.", "Edit the existing settings ID and revision.")
 		}
 		return validateRemediationRelationships(tx, v.Remediation)
+	}
+	return nil
+}
+
+func validateHarnessDefaultRelationships(tx configurationView, defaults *domain.HarnessDefaults) error {
+	if defaults == nil {
+		return nil
+	}
+	for _, entry := range defaults.Entries {
+		if entry.Scope.ProviderID == "" {
+			continue
+		}
+		record, err := tx.Get(domain.ProviderKind, entry.Scope.ProviderID)
+		if err != nil {
+			return err
+		}
+		provider, err := store.Decode[domain.Provider](record)
+		if err != nil {
+			return err
+		}
+		if entry.Scope.APIProtocol != "" {
+			found := false
+			for _, profile := range providers.APIFormats(provider) {
+				if profile.Protocol == entry.Scope.APIProtocol && providers.HarnessMatches(entry.Scope.Harness, profile.Protocol) {
+					found = true
+				}
+			}
+			if !found {
+				return domain.Fail(domain.Unsupported, "The harness default references an unavailable API profile.", "Select a declared compatible profile from this provider.")
+			}
+		}
 	}
 	return nil
 }

@@ -1,4 +1,5 @@
 {
+  "agent-worker-row.inheritEffort": "상속",
   "agent-worker-row.configuredModel": "설정된 모델",
   "agent-worker-row.configuredModels": "저장된 순서의 설정된 모델",
   "agent-worker-row.moreModels": "+{{count}}개 더 보기",

@@ -124,7 +124,7 @@ function readBundle(raw: string): Bundle {
     throw new ProductError("validation.0c01933238f8");
   const value = object(JSON.parse(raw));
   if (
-    value.version !== 4 ||
+    value.version !== 7 ||
     !Array.isArray(value.entries) ||
     !Array.isArray(value.machines) ||
     value.entries.length > 256 ||
@@ -186,7 +186,7 @@ function readPreview(bytes: Uint8Array): Preview {
     plan = object(value.plan);
   if (
     !text(value.token) ||
-    plan.version !== 4 ||
+    plan.version !== 7 ||
     !Array.isArray(plan.changes) ||
     !plan.changes.length ||
     plan.changes.length > 256 ||

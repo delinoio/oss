@@ -1,5 +1,66 @@
 # DeliDev provider and model catalog
 
+## Harness defaults and live inheritance
+
+System `HARNESS_DEFAULTS_V1 = 81` activates typed harness defaults. Agent resource
+schema 5 stores `harness_settings` version 1 and per-route `model_selection`.
+Project and Settings resources with `harness_defaults` version 1 use schema 4.
+The Settings list and Project list contain at most 128 unique scopes each. Scopes
+select a harness, API/subscription source family, optional Provider or service,
+and an optional exact declared API protocol for a Provider. These settings remain
+separate from Project behavior inheritance.
+
+A field omitted or selected as `inherit` continues to resolve from its enclosing
+layer. An `override` requires a non-null value, including an explicit empty string
+or zero where that field supports it. Resolve each applicable field in order:
+Agent, Project, server defaults, verified native evidence. Within a defaults list,
+exact API profile wins over Provider/service, source family and harness scope.
+Select the actual account and connection/profile before resolving settings; never
+choose a default using the first configured account or another source. Supported
+fields follow the execution interface: model for all harnesses; effort except
+Grok; Claude permission only for Claude; Codex sandbox, approval, reviewer,
+subagent, concurrency and service-tier settings only for Codex. Explicit
+unavailable native options remain saved and fail execution rather than vanish.
+
+Opening a current database upgrades all existing live Agent documents in one
+transaction. Every former model, effort and option selection, including an
+owner-selected model, becomes inherited. Source order, original Provider/service
+identities, account links/weights, routing overrides, templates and companion
+extension fields remain. The same transaction adds empty version-1 harness-default
+markers to existing Project/Settings documents without altering their behavior or
+other values. A failed write rolls back the full set; repeat opens do not rewrite
+current documents. This document conversion adds no SQLite migration. Historical
+execution snapshots, digests, Usage, sessions and portable files are not converted.
+
+A new legacy-client Agent create is normalized immediately to schema 5: only
+actually submitted model, effort and option fields become overrides; omitted
+fields inherit. The saved marker keeps later explicit choices stable across
+restart. Legacy updates cannot erase current typed selectors. Current edits and
+portable imports retain each selector exactly, including empty and zero. A
+Project/Settings create preserves its original behavior values; supplied harness
+defaults receive their current marker immediately. Provider/profile removal is
+blocked while explicit defaults reference it.
+
+Frozen execution provenance retains the selected source, account/connection,
+API profile digest and each effective field's Agent/Project/Settings revision or
+trusted native observation digest. Later configuration edits cannot change this
+snapshot. Worker `HARNESS_DEFAULTS_V1 = 53` is required only for assignments with
+this provenance; historical assignments with no marker keep their original bytes.
+
+Existing accepted Codex model observations can prove the selected model's native
+effort and service-tier default. They are read only and bound to the exact account,
+connection, Provider, current installation/machine/account revisions and authorized
+original client. They cannot prove a default model, sandbox or unrelated options.
+Missing applicable evidence fails with `HARNESS_DEFAULT_UNVERIFIED` before input,
+with no settings probe, process launch, account fallback or invented default.
+Saving and reading defaults do not launch a harness or connect an account.
+
+Follow the [startup contract](cmds-delidev-execution-startup-contract.md) and
+[portable contract](cmds-delidev-configuration-transfer-contract.md) for admission
+and version-7 import/export. The desktop's existing Agent editor retains typed
+selectors through unrelated edits; full Project/server Harness configuration
+surfaces remain separately owned by the desktop contract.
+
 ## Key-preserving API format change reservations
 
 The originating change established the complete reservations on main before activation.

@@ -23,6 +23,13 @@ import (
 )
 
 func transferEntry(kind domain.Kind, value any) domain.ConfigurationEntry {
+	if a, ok := value.(domain.Agent); ok {
+		raw, _ := json.Marshal(a)
+		if err := domain.NormalizeNewAgentHarnessSettings(&a, raw); err != nil {
+			panic(err)
+		}
+		value = a
+	}
 	raw, _ := json.Marshal(value)
 	return domain.ConfigurationEntry{ID: domain.NewID(), Kind: kind, Document: raw}
 }
@@ -32,7 +39,7 @@ func transferSelection() domain.ConfigurationImportSelection {
 	account := transferEntry(domain.AccountKind, domain.Account{Alias: "Fresh account", ProviderID: provider.ID, Type: domain.APIAccount, Enabled: true, Health: domain.AccountDisconnected, Quota: []domain.QuotaWindow{}})
 	template := transferEntry(domain.TemplateKind, domain.Template{Name: "Exact instructions", Contents: "Keep every line.\n한국어 <script>inert</script>\n"})
 	agent := transferEntry(domain.AgentKind, domain.Agent{Name: "Agent", Harness: domain.Codex, Routes: []domain.AgentSourceRoute{{Model: model, Accounts: []domain.WeightedAccount{{ID: account.ID, Weight: 3}}}}, Templates: []domain.ID{template.ID}, Options: domain.AgentOptions{Permission: domain.PermissionDefault}})
-	return domain.ConfigurationImportSelection{Bundle: domain.ConfigurationBundle{Version: 4, Entries: []domain.ConfigurationEntry{agent, template, account, provider}, Machines: []domain.ConfigurationMachine{}}, Bindings: []domain.ConfigurationBinding{}, Machines: []domain.ConfigurationMachineBinding{}, Checkouts: []domain.ConfigurationCheckoutBinding{}}
+	return domain.ConfigurationImportSelection{Bundle: domain.ConfigurationBundle{Version: domain.ConfigurationBundleVersion, Entries: []domain.ConfigurationEntry{agent, template, account, provider}, Machines: []domain.ConfigurationMachine{}}, Bindings: []domain.ConfigurationBinding{}, Machines: []domain.ConfigurationMachineBinding{}, Checkouts: []domain.ConfigurationCheckoutBinding{}}
 }
 func transferOwner() context.Context {
 	return domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
@@ -406,7 +413,7 @@ func TestConfigurationImportRejectsManagedPresetCollisionsAtPreviewAndApply(t *t
 	managed := presets[len(presets)-3].Provider // Ollama remains virtual until explicitly saved.
 	single := func() domain.ConfigurationImportSelection {
 		provider := transferEntry(domain.ProviderKind, managed)
-		return domain.ConfigurationImportSelection{Bundle: domain.ConfigurationBundle{Version: 4, Entries: []domain.ConfigurationEntry{provider}, Machines: []domain.ConfigurationMachine{}}, Bindings: []domain.ConfigurationBinding{}, Machines: []domain.ConfigurationMachineBinding{}, Checkouts: []domain.ConfigurationCheckoutBinding{}}
+		return domain.ConfigurationImportSelection{Bundle: domain.ConfigurationBundle{Version: domain.ConfigurationBundleVersion, Entries: []domain.ConfigurationEntry{provider}, Machines: []domain.ConfigurationMachine{}}, Bindings: []domain.ConfigurationBinding{}, Machines: []domain.ConfigurationMachineBinding{}, Checkouts: []domain.ConfigurationCheckoutBinding{}}
 	}
 	t.Run("duplicate bundle", func(t *testing.T) {
 		s, _ := newDoctorFixture(t)
@@ -694,7 +701,7 @@ func TestConfigurationImportExplicitReuseAndDeletedReceiptCannotRecreate(t *test
 		}
 	}
 	// A single newly created instruction can be removed without dependency links.
-	single := domain.ConfigurationImportSelection{Bundle: domain.ConfigurationBundle{Version: 4, Entries: []domain.ConfigurationEntry{transferEntry(domain.TemplateKind, domain.Template{Name: "Disposable", Contents: "no retained copy"})}}}
+	single := domain.ConfigurationImportSelection{Bundle: domain.ConfigurationBundle{Version: domain.ConfigurationBundleVersion, Entries: []domain.ConfigurationEntry{transferEntry(domain.TemplateKind, domain.Template{Name: "Disposable", Contents: "no retained copy"})}}}
 	preview := transferPreview(t, s, single)
 	request := domain.NewID()
 	created := transferApply(t, s, preview, request)
@@ -725,7 +732,7 @@ func TestConfigurationImportExplicitReuseAndDeletedReceiptCannotRecreate(t *test
 func TestPortableSourceRoutesRemapEveryModelAndAccount(t *testing.T) {
 	s, _ := newDoctorFixture(t)
 	selection := transferSelection()
-	selection.Bundle.Version = 4
+	selection.Bundle.Version = domain.ConfigurationBundleVersion
 	provider := transferEntry(domain.ProviderKind, domain.Provider{Name: "Responses fallback", Endpoint: "https://fallback.example.test/v1", Protocol: domain.OpenAIResponses, Authentication: domain.BearerAuth})
 	model := &domain.InlineModel{ModelIdentity: domain.ModelIdentity{ProviderID: provider.ID, NativeID: "fallback"}, Name: "Fallback model", MetadataSource: domain.Unknown}
 	account := transferEntry(domain.AccountKind, domain.Account{Alias: "Fallback", ProviderID: provider.ID, Type: domain.APIAccount, Enabled: true, Health: domain.AccountDisconnected, Quota: []domain.QuotaWindow{}})
@@ -738,7 +745,7 @@ func TestPortableSourceRoutesRemapEveryModelAndAccount(t *testing.T) {
 			t.Fatal(err)
 		}
 		priority := domain.Priority
-		agent.Routes = []domain.AgentSourceRoute{agent.Routes[0], {Model: model, Accounts: []domain.WeightedAccount{{ID: account.ID, Weight: 7}}, Routing: &priority}}
+		agent.Routes = []domain.AgentSourceRoute{agent.Routes[0], {Model: model, ModelSelection: domain.OverrideHarnessSetting("fallback"), Accounts: []domain.WeightedAccount{{ID: account.ID, Weight: 7}}, Routing: &priority}}
 		agent.ModelID, agent.Accounts, agent.Routing = "", nil, nil
 		selection.Bundle.Entries[i].Document, _ = json.Marshal(agent)
 	}
@@ -749,7 +756,7 @@ func TestPortableSourceRoutesRemapEveryModelAndAccount(t *testing.T) {
 		t.Fatal(err)
 	}
 	original := selection.Bundle.Version
-	for _, version := range []uint32{1, 2, 3, 5, 6} {
+	for _, version := range []uint32{1, 2, 3, 4, 5, 6} {
 		selection.Bundle.Version = version
 		raw, _ = json.Marshal(selection)
 		_, err := s.PreviewConfigurationImport(transferOwner(), connect.NewRequest(&pb.PreviewConfigurationImportRequest{SelectionJson: raw}))

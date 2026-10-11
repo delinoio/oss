@@ -37,7 +37,7 @@ func TestProjectBehaviorLegacyWritesCannotEraseSettings(t *testing.T) {
 	}
 }
 func TestProjectBehaviorPortableVersionFourAndRetiredImports(t *testing.T) {
-	for _, version := range []uint32{1, 2, 3, 5, 6} {
+	for _, version := range []uint32{1, 2, 3, 4, 5, 6} {
 		s, _ := newDoctorFixture(t)
 		selection := transferSelection()
 		selection.Bundle.Version = version

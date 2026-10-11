@@ -34,7 +34,9 @@ func TestSubscriptionDispatchRequiresManagedWorkerCapability(t *testing.T) {
 					if err != nil {
 						return nil, err
 					}
+					agent = fixtureProjectHarnessSelectors(agent)
 					agent.Options.Permission = permission
+					fixtureCaptureHarnessSelectors(&agent)
 					if _, err := tx.Put(domain.AgentKind, agents[0].ID, agents[0].Revision, "", "", agent); err != nil {
 						return nil, err
 					}

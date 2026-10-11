@@ -88,7 +88,7 @@ func Error(err error, correlation string) error {
 		code = connect.CodePermissionDenied
 	case domain.Unavailable, domain.ServerUnavailable:
 		code = connect.CodeUnavailable
-	case domain.ConfirmationRequired, domain.RecoveryRequired, domain.BudgetReached, domain.ProviderDisabled:
+	case domain.ConfirmationRequired, domain.RecoveryRequired, domain.BudgetReached, domain.ProviderDisabled, domain.HarnessDefaultUnverified:
 		code = connect.CodeFailedPrecondition
 	case domain.Unsupported:
 		code = connect.CodeUnimplemented
@@ -130,6 +130,15 @@ func CopyCorrelation[T any](response *connect.Response[T], request http.Header) 
 }
 
 func ResourceSchemaVersion(kind domain.Kind, raw []byte) uint32 {
+	if kind == domain.AgentKind || kind == domain.ProjectKind || kind == domain.SettingsKind {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(raw, &fields) == nil && (fields["harness_settings"] != nil || fields["harness_defaults"] != nil) {
+			if kind == domain.AgentKind {
+				return 5
+			}
+			return 4
+		}
+	}
 	if kind == domain.AgentKind {
 		return 4
 	}

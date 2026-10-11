@@ -1,4 +1,5 @@
 {
+  "agent-worker-row.inheritEffort": "Inherit",
   "agent-worker-row.configuredModel": "Configured model",
   "agent-worker-row.configuredModels": "Configured models in saved order",
   "agent-worker-row.moreModels": "+{{count}} more",

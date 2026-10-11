@@ -182,13 +182,21 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 		return empty, err
 	}
 	agent, model := preview.Agent, preview.Model
+	settingsRecord, settings, err := t.SessionDefaultSettings()
+	if err != nil {
+		return empty, err
+	}
+	agent, model, harnessProvenance, err := t.resolveAgentHarnessDefaults(ar, projectRecord, settingsRecord, agent, project, settings, preview, session.MachineID)
+	if err != nil {
+		return empty, err
+	}
 	configuration, err := domain.ResolveExecutionConfiguration(ar.ID, ar.Revision, agent, preview.ModelRevision, model, preview.Route.Policy, templates)
 	if err != nil {
 		return empty, err
 	}
-	settingsRecord, settings, err := t.SessionDefaultSettings()
-	if err != nil {
-		return empty, err
+	configuration.HarnessProvenance = harnessProvenance
+	if preview.Route.SourceIndex != nil && int(*preview.Route.SourceIndex) < len(preview.Route.Sources) {
+		preview.Route.Sources[*preview.Route.SourceIndex].NativeModel = configuration.NativeModel
 	}
 	configuration.BranchPrefix = &domain.BranchPrefixSelection{Version: 1, Prefix: project.EffectiveBranchPrefix(settings.EffectiveBranchPrefix()), SettingsID: settingsRecord.ID, SettingsRevision: settingsRecord.Revision, ProjectID: projectRecord.ID, ProjectRevision: projectRecord.Revision}
 	if err := configuration.Validate(); err != nil {

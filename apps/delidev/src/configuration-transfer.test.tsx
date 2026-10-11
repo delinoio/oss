@@ -32,7 +32,7 @@ function fixture() {
     target = newRequestId(),
     jobId = newRequestId();
   const bundle = {
-    version: 4,
+    version: 7,
     entries: [
       {
         id: source,
@@ -47,7 +47,7 @@ function fixture() {
   };
   const previewDocument = {
     plan: {
-      version: 4,
+      version: 7,
       changes: [
         {
           source_id: source,
@@ -413,7 +413,7 @@ it("keeps both inputs mounted and exposes state-derived stages without navigatio
 it("selects the exact exported Unicode and uint64 document for copying without importing", async () => {
   const value = fixture();
   const raw = JSON.stringify({
-    version: 4,
+    version: 7,
     entries: [
       {
         id: newRequestId(),
@@ -494,7 +494,7 @@ it("loads a UTF-8 file immediately and retains editable input after invalid UTF-
 it("accepts current service-native v4 exports and preserves original preview bytes", async () => {
   const value = fixture();
   const body = {
-    version: 4,
+    version: 7,
     entries: [
       {
         id: value.bundle.entries[0].id,
@@ -511,7 +511,7 @@ it("accepts current service-native v4 exports and preserves original preview byt
   const preview = encode({
     token: "server-preview",
     plan: {
-      version: 4,
+      version: 7,
       changes: [
         {
           source_id: body.entries[0].id,
@@ -577,7 +577,7 @@ it("refuses retired Model entries in the current portable layout", () => {
 it("separates capability-read failure from unsupported repository imports and offers retry", async () => {
   const value = fixture();
   const repositoryBundle = {
-    version: 4,
+    version: 7,
     entries: [
       {
         id: newRequestId(),
@@ -624,7 +624,7 @@ it("separates capability-read failure from unsupported repository imports and of
 it("keeps legacy checkout-backed repository imports available without capability 37", async () => {
   const value = fixture();
   const repositoryBundle = {
-    version: 4,
+    version: 7,
     entries: [
       {
         id: newRequestId(),

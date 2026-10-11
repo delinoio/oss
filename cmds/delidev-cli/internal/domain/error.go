@@ -59,7 +59,7 @@ func SafeError(err error) *Error {
 
 func (e *Error) ExitCode() int {
 	switch e.Code {
-	case InvalidArgument, MissingInput:
+	case InvalidArgument, MissingInput, HarnessDefaultUnverified:
 		return 2
 	case Unauthenticated, PermissionDenied:
 		return 3

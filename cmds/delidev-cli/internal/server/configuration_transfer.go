@@ -70,6 +70,9 @@ func portableValue(kind domain.Kind, raw []byte, incoming bool) (validatable, er
 	}
 	switch v := value.(type) {
 	case *domain.Agent:
+		if v.HarnessSettings == nil {
+			return nil, domain.Fail(domain.Unsupported, "Portable Agents require current typed harness selectors.", "Export current live configuration using the version-7 bundle shape.")
+		}
 		if v.ReconfigurationRequired {
 			return nil, domain.AgentReconfigurationRequired()
 		}
@@ -464,6 +467,19 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 			}
 
 		case *domain.Project:
+			if v.HarnessDefaults != nil {
+				for i := range v.HarnessDefaults.Entries {
+					scope := &v.HarnessDefaults.Entries[i].Scope
+					if scope.ProviderID != "" {
+						if err = rewrite(&scope.ProviderID, domain.ProviderKind); err != nil {
+							break
+						}
+					}
+				}
+				if err != nil {
+					break
+				}
+			}
 			if err = rewriteIDs(v.Repositories, domain.RepositoryKind); err == nil {
 				err = rewrite(&v.PrimaryRepository, domain.RepositoryKind)
 			}
@@ -489,6 +505,19 @@ func buildConfigurationPlan(tx *store.Tx, selection domain.ConfigurationImportSe
 			}
 			err = rewriteRemediation(v.Remediation)
 		case *domain.Settings:
+			if v.HarnessDefaults != nil {
+				for i := range v.HarnessDefaults.Entries {
+					scope := &v.HarnessDefaults.Entries[i].Scope
+					if scope.ProviderID != "" {
+						if err = rewrite(&scope.ProviderID, domain.ProviderKind); err != nil {
+							break
+						}
+					}
+				}
+				if err != nil {
+					break
+				}
+			}
 			err = rewriteRemediation(&v.Remediation)
 		}
 		if err != nil {
@@ -603,6 +632,9 @@ func validateConfigurationPlan(tx *store.Tx, plan domain.ConfigurationImportPlan
 		case domain.ConfigurationReuse, domain.ConfigurationReplace:
 			if !exists || old.Kind != change.Kind || old.Revision != change.ExpectedRevision || change.Kind == domain.AccountKind || (change.Action == domain.ConfigurationReplace && change.Kind != domain.SettingsKind) {
 				return transferConflict()
+			}
+			if change.Action == domain.ConfigurationReplace && rpc.ResourceSchemaVersion(change.Kind, old.Data) > rpc.ResourceSchemaVersion(change.Kind, change.After) {
+				return domain.Fail(domain.Unsupported, "Portable replacement would remove inherited harness defaults.", "Preserve the complete version-7 settings shape.")
 			}
 			before, err := portableDocument(old.Kind, old.Data)
 			if err != nil {

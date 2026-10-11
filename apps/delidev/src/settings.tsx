@@ -698,7 +698,7 @@ export function ConfigurationEditor({
   );
   const defaultsUnsupported =
     [EntityKind.PROJECT, EntityKind.SETTINGS].includes(kind) &&
-    source?.schemaVersion === 3 &&
+    (source?.schemaVersion === 3 || source?.schemaVersion === 4) &&
     !supportsSessionDefaults;
   const prefixValue =
     kind === EntityKind.SETTINGS

@@ -128,7 +128,7 @@ function fixture(supported = true) {
     resource: row(
       EntityKind.AGENT,
       JSON.parse(new TextDecoder().decode(request.documentJson)),
-      4,
+      request.schemaVersion,
     ),
   }));
   const transport = createRouterTransport((router) => {
@@ -138,6 +138,7 @@ function fixture(supported = true) {
         capabilities: supported
           ? [
               SystemCapability.INLINE_WORKER_MODELS_V1,
+              SystemCapability.HARNESS_DEFAULTS_V1,
               SystemCapability.KNOWN_SUBSCRIPTION_MODELS_V1,
             ]
           : [],
@@ -598,4 +599,37 @@ it.each([
   await screen.findByText(/catalog page includes unsupported/);
   expect(screen.queryByRole("option", { name: /Endpoint One/ })).toBeNull();
   expect(f.save).not.toHaveBeenCalled();
+});
+
+it("saves an inherited model as schema 5 without an invented native ID", async () => {
+  const f = fixture();
+  render(f.view());
+  const input = await accounts(f);
+  fireEvent.click(
+    await screen.findByRole("checkbox", {
+      name: "Inherit model",
+    }),
+  );
+  expect(input).toHaveProperty("disabled", true);
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByRole("heading", { name: "Configure", level: 3 });
+  fireEvent.change(screen.getByLabelText("Name"), {
+    target: { value: "Inherited Worker" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save Agent Worker" }));
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
+  const request = f.save.mock.calls[0][0];
+  expect(request.schemaVersion).toBe(5);
+  const value = JSON.parse(new TextDecoder().decode(request.documentJson));
+  expect(value.harness_settings.version).toBe(1);
+  expect(value.routes[0].model_selection).toEqual({ mode: "inherit" });
+  expect(value.routes[0].model).toEqual({
+    native_id: "",
+    metadata_source: "unknown",
+    provider_id: f.provider.id,
+  });
+  expect(request.routeModels[0].selection).toEqual({
+    case: "nativeId",
+    value: "",
+  });
 });

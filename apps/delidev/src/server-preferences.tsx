@@ -24,12 +24,17 @@ export function readableServerPreferences(row: Resource): boolean {
     isEntityId(row.id) &&
     row.revision > 0n &&
     row.documentJson.byteLength <= 1 << 20 &&
-    [1, 2, 3].includes(row.schemaVersion) &&
-    (row.schemaVersion !== 3 ||
+    [1, 2, 3, 4].includes(row.schemaVersion) &&
+    ((!Object.hasOwn(data, "plan_mode_default") &&
+      !Object.hasOwn(data, "branch_prefix") &&
+      row.schemaVersion === 4) ||
+      row.schemaVersion < 3 ||
       (typeof data.plan_mode_default === "boolean" &&
         typeof data.branch_prefix === "string" &&
         validBranchPrefix(data.branch_prefix))) &&
     (row.schemaVersion === 1 ||
+      (row.schemaVersion === 4 &&
+        !Object.hasOwn(data, "automatic_plan_approval")) ||
       typeof data.automatic_plan_approval === "boolean") &&
     Object.values(Routing).includes(data.default_routing as Routing) &&
     typeof data.automatic_fetch === "boolean" &&
@@ -88,7 +93,7 @@ export function ServerPreferencesUnavailable({
       aria-label={`${label} unavailable`}
     >
       <p role="status">
-        {rows.length === 1 && ![1, 2, 3].includes(rows[0].schemaVersion)
+        {rows.length === 1 && ![1, 2, 3, 4].includes(rows[0].schemaVersion)
           ? `Unsupported ${label.toLowerCase()} schema. Policy values are unavailable.`
           : rows.length === 1 && !readableServerPreferences(rows[0])
             ? `${label} contains unreadable or unsupported policy values. Policy values are unavailable.`
@@ -186,7 +191,7 @@ export function ServerPreferencesSummary({
       {readableServerPreferences(row) ? (
         <>
           {section === ServerPreferenceSection.ProjectDefaults &&
-          row.schemaVersion === 3 ? (
+          row.schemaVersion >= 3 ? (
             <dl>
               <dt>{copy("configuration-fields.planModeDefault")}</dt>
               <dd>
@@ -199,7 +204,7 @@ export function ServerPreferencesSummary({
             </dl>
           ) : null}
           {section === ServerPreferenceSection.GitWorkflow &&
-          row.schemaVersion === 3 ? (
+          row.schemaVersion >= 3 ? (
             <section>
               <h3>{copy("configuration-fields.branchPrefix")}</h3>
               <p>
@@ -280,7 +285,7 @@ export function ServerPreferencesSummary({
         </>
       ) : (
         <p role="status">
-          {![1, 2, 3].includes(row.schemaVersion)
+          {![1, 2, 3, 4].includes(row.schemaVersion)
             ? copy(
                 "server-preferences.unsupportedServerPreferencesSchemaPolicyValues_86046f",
               )

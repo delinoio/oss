@@ -5286,3 +5286,17 @@ and mounted drafts retain their original owners. English/Korean, light/dark,
 compact drawer and effective 200% browser checks are synthetic evidence only.
 
 Queue refresh footer stability: both queue presenters (legacy history-based and negotiated waiting queue) keep a retained complete empty presentation hidden during healthy automatic Refresh/Reload rereads of the same queue identity. Refresh status is announced through a screen-reader-only live region that adds no normal-flow height, so repeated rereads cannot shift the tray, Agent requests, transcript boundary or composer. Initial loading, failures with Retry, incomplete pagination, payload restoration and explicit boundary recovery stay visible. Retained emptiness is cached presentation, not fresh authoritative zero or mutation permission. Populated rows are retained during rereads. No API, protocol, migration or native change.
+
+## Agent editor harness-selector compatibility
+
+Follow [harness defaults](cmds-delidev-catalog-contract.md#harness-defaults-and-live-inheritance).
+The existing source wizard reads and saves schema-5 Agents. It retains inherited
+and explicit selectors through unrelated edits; projected control values are not
+new overrides. Actual field edits preserve explicit empty strings and zero. Each
+source offers model inheritance when System 81 is advertised, retaining the draft
+explicit model while switching modes. Inherited routes show an inheritance label
+and send no invented native ID or advisory metadata. Agent summaries distinguish
+inherited effort from native-default/explicit effort. New legacy-client creation
+and current typed editing retain their server-owned compatibility boundaries.
+Current import/export review accepts version 7. Full server and Project Harness
+configuration remain separate surfaces under this contract.

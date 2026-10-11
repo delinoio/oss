@@ -72,7 +72,7 @@ export function decodeResourceDocument(
     resource.kind === EntityKind.JOB && resource.schemaVersion === 1;
   if (
     size > (typedJob ? 4 << 20 : 1 << 20) ||
-    ![1, 2, 3, 4].includes(resource.schemaVersion)
+    ![1, 2, 3, 4, 5].includes(resource.schemaVersion)
   )
     return;
   try {
@@ -97,9 +97,36 @@ function supportsDocumentSchema(
   value: ResourceDocument,
 ): boolean {
   if (resource.kind === EntityKind.MODEL) return false;
+  const harnessShape = configurationSchemaVersion(resource.kind, value);
+  if (resource.kind === EntityKind.AGENT && resource.schemaVersion === 5) {
+    if (!harnessSettings(value.harness_settings)) return false;
+  }
+  if (
+    [EntityKind.PROJECT, EntityKind.SETTINGS].includes(resource.kind) &&
+    resource.schemaVersion === 4
+  ) {
+    if (!harnessDefaults(value.harness_defaults)) return false;
+    const legacy = { ...value };
+    delete legacy.harness_defaults;
+    return supportsDocumentSchema(
+      {
+        ...resource,
+        schemaVersion: configurationSchemaVersion(resource.kind, legacy),
+      },
+      legacy,
+    );
+  }
+  if (
+    harnessShape >= 4 &&
+    [EntityKind.PROJECT, EntityKind.SETTINGS].includes(resource.kind)
+  )
+    return false;
+  if (resource.schemaVersion === 5 && resource.kind !== EntityKind.AGENT)
+    return false;
   if (resource.kind === EntityKind.AGENT)
     return (
-      resource.schemaVersion === 4 &&
+      ((resource.schemaVersion === 4 && harnessShape === 4) ||
+        (resource.schemaVersion === 5 && harnessShape === 5)) &&
       Array.isArray(value.routes) &&
       value.routes.length > 0 &&
       value.routes.length <= 1000 &&
@@ -118,7 +145,17 @@ function supportsDocumentSchema(
         const model = route.model;
         return (
           typeof model.native_id === "string" &&
-          model.native_id.length > 0 &&
+          (resource.schemaVersion === 4
+            ? model.native_id.length > 0
+            : object(route.model_selection) &&
+              (model.native_id.length > 0
+                ? route.model_selection.mode === "override" &&
+                  route.model_selection.value === model.native_id
+                : inheritedModel(route.model_selection) &&
+                  model.metadata_source === "unknown" &&
+                  !Object.hasOwn(model, "name") &&
+                  !Object.hasOwn(model, "context_limit") &&
+                  !Object.hasOwn(model, "input_modalities"))) &&
           new TextEncoder().encode(model.native_id).length <= 256 &&
           ((!Object.hasOwn(model, "subscription_service") &&
             typeof model.provider_id === "string" &&
@@ -215,6 +252,13 @@ export function configurationSchemaVersion(
   kind: EntityKind,
   value: Record<string, unknown>,
 ): number {
+  if (kind === EntityKind.AGENT && Object.hasOwn(value, "harness_settings"))
+    return 5;
+  if (
+    [EntityKind.PROJECT, EntityKind.SETTINGS].includes(kind) &&
+    Object.hasOwn(value, "harness_defaults")
+  )
+    return 4;
   if (
     (kind === EntityKind.SETTINGS &&
       (Object.hasOwn(value, "plan_mode_default") ||
@@ -246,6 +290,136 @@ export function configurationSchemaVersion(
       value.source_kind === NativeModelSourceKind.Subscription)
     ? 2
     : 1;
+}
+
+const harnessSettingFields = [
+  "model",
+  "effort",
+  "permission",
+  "claude_permission",
+  "approval_policy",
+  "approvals_reviewer",
+  "subagent_model",
+  "subagent_effort",
+  "max_concurrency",
+  "approval_review_model",
+  "service_tier",
+];
+function inheritedModel(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (object(value) &&
+      value.mode === "inherit" &&
+      !Object.hasOwn(value, "value"))
+  );
+}
+function harnessSettings(value: unknown): boolean {
+  return (
+    object(value) &&
+    value.version === 1 &&
+    Object.keys(value).every(
+      (key) => key === "version" || harnessSettingFields.includes(key),
+    ) &&
+    harnessSettingFields.every((key) => {
+      const selection = value[key];
+      if (selection === undefined) return true;
+      if (
+        !object(selection) ||
+        Object.keys(selection).some((key) => !["mode", "value"].includes(key))
+      )
+        return false;
+      if (selection.mode === "inherit")
+        return !Object.hasOwn(selection, "value");
+      if (selection.mode !== "override") return false;
+      return key === "max_concurrency"
+        ? Number.isInteger(selection.value) &&
+            Number(selection.value) >= 0 &&
+            Number(selection.value) <= 4294967295
+        : typeof selection.value === "string" &&
+            new TextEncoder().encode(selection.value).length <= 256;
+    })
+  );
+}
+function harnessDefaults(value: unknown): boolean {
+  return (
+    object(value) &&
+    Object.keys(value).every((key) => ["version", "entries"].includes(key)) &&
+    value.version === 1 &&
+    Array.isArray(value.entries) &&
+    value.entries.length <= 128 &&
+    new Set(
+      value.entries.map((entry) =>
+        object(entry) && object(entry.scope)
+          ? JSON.stringify([
+              entry.scope.harness,
+              entry.scope.source,
+              entry.scope.provider_id,
+              entry.scope.subscription_service,
+              entry.scope.api_protocol,
+            ])
+          : "",
+      ),
+    ).size === value.entries.length &&
+    value.entries.every((entry) => {
+      if (
+        !object(entry) ||
+        Object.keys(entry).some(
+          (key) => !["scope", "settings"].includes(key),
+        ) ||
+        !object(entry.scope) ||
+        Object.keys(entry.scope).some(
+          (key) =>
+            ![
+              "harness",
+              "source",
+              "provider_id",
+              "subscription_service",
+              "api_protocol",
+            ].includes(key),
+        ) ||
+        !harnessSettings(entry.settings)
+      )
+        return false;
+      const scope = entry.scope;
+      if (
+        !["codex", "claude-code", "opencode", "grok-build"].includes(
+          scope.harness as string,
+        ) ||
+        !["any", "api", "subscription"].includes(scope.source as string)
+      )
+        return false;
+      if (
+        scope.provider_id !== undefined &&
+        (typeof scope.provider_id !== "string" ||
+          !isEntityId(scope.provider_id))
+      )
+        return false;
+      if (
+        scope.subscription_service !== undefined &&
+        (!subscriptionService(scope.subscription_service) ||
+          subscriptionServiceHarnesses[
+            scope.subscription_service as SubscriptionServiceId
+          ] !== scope.harness)
+      )
+        return false;
+      if (scope.api_protocol !== undefined && !apiFormat(scope.api_protocol))
+        return false;
+      if (scope.source === "any")
+        return (
+          scope.provider_id === undefined &&
+          scope.subscription_service === undefined &&
+          scope.api_protocol === undefined
+        );
+      if (scope.source === "api")
+        return (
+          scope.subscription_service === undefined &&
+          (scope.api_protocol === undefined || scope.provider_id !== undefined)
+        );
+      return (
+        scope.provider_id === undefined && scope.api_protocol === undefined
+      );
+    })
+  );
 }
 
 export function subscriptionServiceFromWire(
