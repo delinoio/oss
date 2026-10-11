@@ -35,6 +35,7 @@ import { SessionNameEditorProvider } from "./session-name-editor";
 import { MutationIntents } from "./mutation";
 import { SessionTabsProvider } from "./session-tabs";
 import { SessionView } from "./session";
+import { ShortcutProvider, useShortcutHelp } from "./shortcut-provider";
 
 vi.mock("./terminal-emulator", () => ({
   openTerminalScreen: (host: HTMLElement) => {
@@ -270,7 +271,7 @@ function fixture(
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   const draft = vi.fn();
-  const view = (value = "Original draft", active = true) => (
+  const view = (value = "Original draft", active = true, embedded = false) => (
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
         <MutationIntents>
@@ -281,6 +282,7 @@ function fixture(
                 draft={value}
                 setDraft={draft}
                 active={active}
+                embedded={embedded}
               />
             </SessionTabsProvider>
           </SessionNameEditorProvider>
@@ -1685,4 +1687,129 @@ it("returns selected shared File close to retained Files and preserves inactive 
   fireEvent.click(screen.getByRole("button", { name: "Close note.txt tab" }));
   expect(diagnostics.getAttribute("aria-selected")).toBe("true");
   expect(document.activeElement).toBe(diagnostics);
+});
+
+function TerminalShortcutHelp() {
+  const open = useShortcutHelp();
+  return <button onClick={open}>Terminal shortcut help</button>;
+}
+
+it.each([
+  { platform: "MacIntel", modifiers: { metaKey: true }, aria: "Meta+`" },
+  { platform: "Win32", modifiers: { ctrlKey: true }, aria: "Control+`" },
+  { platform: "Linux x86_64", modifiers: { ctrlKey: true }, aria: "Control+`" },
+])(
+  "opens the original terminal from the composer on $platform without changing its draft",
+  async ({ platform, modifiers, aria }) => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
+    const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {}, () => [], true);
+    const mounted = render(
+      <ShortcutProvider>
+        <TerminalShortcutHelp />
+        {f.view()}
+      </ShortcutProvider>,
+    );
+    try {
+      const composer = await screen.findByRole("textbox", { name: "Message" });
+      fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+      expect(
+        screen
+          .getByRole("menuitem", { name: "Terminals" })
+          .getAttribute("aria-keyshortcuts"),
+      ).toBe(aria);
+      fireEvent.keyDown(screen.getByRole("menuitem", { name: "Terminals" }), {
+        key: "Escape",
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: "Terminal shortcut help" }),
+      );
+      const help = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
+      expect(within(help).getByText("Open terminals")).toBeTruthy();
+      expect(within(help).getByText("`")).toBeTruthy();
+      await act(() => i18n.changeLanguage("ko"));
+      expect(within(help).getByText("터미널 열기")).toBeTruthy();
+      await act(() => i18n.changeLanguage("en"));
+      fireEvent.keyDown(
+        within(help).getByRole("button", { name: "Close keyboard shortcuts" }),
+        { key: "Escape" },
+      );
+      composer.focus();
+      fireEvent.keyDown(composer, {
+        key: "`",
+        code: "IntlBackslash",
+        ...modifiers,
+      });
+      const terminalTab = await screen.findByRole("tab", {
+        name: "Terminal 1",
+      });
+      await waitFor(() => expect(f.terminalCreate).toHaveBeenCalledOnce());
+      expect(f.terminalCreate.mock.calls[0]?.[0]).toMatchObject({
+        creationMode: TerminalCreationMode.REUSE_OR_CREATE,
+        mutation: { id: f.session.id, expectedRevision: 7n },
+      });
+      await waitFor(() =>
+        expect(terminalTab.getAttribute("aria-selected")).toBe("true"),
+      );
+      expect(document.activeElement).toBe(terminalTab);
+      expect(composer).toHaveProperty("value", "Original draft");
+      await waitFor(() => expect(f.terminalWatches).toHaveBeenCalled());
+      const watches = f.terminalWatches.mock.calls.length;
+      fireEvent.keyDown(terminalTab, { key: "`", ...modifiers });
+      await waitFor(() =>
+        expect(terminalTab.getAttribute("aria-selected")).toBe("true"),
+      );
+      expect(screen.getByRole("tab", { name: "Terminal 1" })).toBe(terminalTab);
+      expect(f.terminalWatches).toHaveBeenCalledTimes(watches);
+      expect(f.draft).not.toHaveBeenCalled();
+      expect(f.enqueue).not.toHaveBeenCalled();
+      expect(f.terminalControl).not.toHaveBeenCalled();
+    } finally {
+      mounted.unmount();
+      f.releaseTerminal();
+      f.client.clear();
+    }
+  },
+);
+
+it.each([false, true])(
+  "does not open terminals in an inactive session or a Sidechat snapshot (snapshot %s)",
+  async (snapshot) => {
+    const f = fixture(
+      BudgetState.ALLOW_INCOMPLETE,
+      false,
+      snapshot ? { fork: { sidechat_parent_snapshot: true } } : {},
+      () => [],
+      true,
+    );
+    const mounted = render(
+      <ShortcutProvider>{f.view("Original draft", snapshot)}</ShortcutProvider>,
+    );
+    try {
+      await screen.findByRole("heading", { name: "Original session" });
+      fireEvent.keyDown(document.body, { key: "`", ctrlKey: true });
+      expect(f.terminalCreate).not.toHaveBeenCalled();
+      expect(screen.queryByRole("tab", { name: "Terminal 1" })).toBeNull();
+    } finally {
+      mounted.unmount();
+      f.releaseTerminal();
+      f.client.clear();
+    }
+  },
+);
+
+it("does not register original terminal opening in an embedded session", async () => {
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {}, () => [], true);
+  const mounted = render(
+    <ShortcutProvider>{f.view("Original draft", true, true)}</ShortcutProvider>,
+  );
+  try {
+    await screen.findByRole("heading", { name: "Original session" });
+    fireEvent.keyDown(document.body, { key: "`", ctrlKey: true });
+    expect(f.terminalCreate).not.toHaveBeenCalled();
+    expect(screen.queryByRole("tab", { name: "Terminal 1" })).toBeNull();
+  } finally {
+    mounted.unmount();
+    f.releaseTerminal();
+    f.client.clear();
+  }
 });

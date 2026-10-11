@@ -229,6 +229,21 @@ Dispatch and the read-only help use the same declarations. Match input-target re
 
 Common shortcuts are logical `?` for help and primary+Shift+N for New session. Primary means Command on the local macOS renderer and Control on Windows/Linux, independently of the selected server or Worker. Session and New session use primary+I to focus their message input and primary+Enter to submit only from that input. Session submission queues a message; New session submission creates through the original guarded form. The feature gives Session and General Chat follow-up composers fixed Enter submission and native Shift+Enter newline. Preserve New session's guarded Enter submission and native Shift+Enter newline. Search uses primary+I to focus the existing query and retains native Enter form submission. Search has no global entry shortcut. Primary+K opens the fixed command menu described below; it never submits a Search query. The sidebar Search button remains available without shortcut guidance. Ordinary Search entry retains its existing once-only autofocus; Search primary+I focuses the retained query and opens the existing compact drawer when needed. Files, Diff and Diagnostics register their existing focus-local Escape closure and original opener restoration. Other screens initially expose common shortcuts only. Control aria-keyshortcuts derives from the same platform-resolved bindings. The logical help binding carries a physical Shift+/ ARIA annotation for English/Korean slash-key layouts; it never changes logical character matching.
 
+The fixed Session `OpenTerminals` action uses primary+logical grave (`event.key`).
+Command applies on macOS and Control on Windows/Linux. It is active only for the
+selected, active, nonembedded session and allows ordinary text fields. It calls
+the same Terminals Open tool callback and retains its Sidechat parent-snapshot
+restriction, original request/revision identity, inventory, Worker ownership,
+cleanup and pending/uncertain recovery. Reopening selects the original terminal
+without closing it or adding an independent creation/retry path. Terminal input
+remains passthrough, and focused native Browser pages receive no new forwarding.
+The read-only Session catalog, Help and Terminals entry ARIA derive from the same
+platform binding, with Open terminals / 터미널 열기 labels. Plain grave,
+opposite/extra modifiers, Shift, AltGraph, repeats, composition, handled events,
+capture, unrelated modals and hidden/inert targets do not activate the action.
+The logical grave has no physical Backquote fallback. Seven editable actions and
+native preference bytes remain unchanged.
+
 Primary letter/digit matching and capture share one canonical resolver. Physical `KeyA`–`KeyZ` and `Digit0`–`Digit9` codes resolve to lowercase ASCII letters and digits before translated logical keys. Recognized codes take precedence over inconsistent `event.key`; unavailable or unrecognized codes retain the existing logical fallback, including Numpad behavior. Named Enter/Escape and default logical Help retain their existing rules and held-key release ownership. Stored `{key, shift}` chords, editable IDs, reservations and preference bytes remain unchanged. Input-layout selection alone does not block dispatch or capture; active composition remains excluded.
 
 Logical `?` accepts the layout's producing Shift state and remains ordinary text in input, textarea, select, editable/combobox contexts. Ignore handled, composing, keyCode-229, AltGraph and repeated events. Ignore hidden/inert targets and terminal passthrough, except target-bound `TerminalCreate` (primary+T) from its terminal input host, and the fixed `SessionCloseTab` (primary+W) and numeric tab actions, which remain eligible from terminal focus and Keyboard Help; external native child views receive no new bridge. Visible modals, including the compact sidebar drawer, suspend background dispatch and help opening. The owned help dialog has only the action-dismissal exception described below. The wide sidebar region is not a modal. The help dialog cannot stack over another modal; Escape and Close dismiss only help.

@@ -678,8 +678,7 @@ export const TranscriptItem = memo(function TranscriptItem({
                     {text(delta.kind)}
                     {typeof delta.index === "number"
                       ? ` ${delta.index}`
-                      : ""}:{" "}
-                    {text(delta.text)}
+                      : ""}: {text(delta.text)}
                   </pre>
                 );
               })}
@@ -1262,6 +1261,16 @@ export function SessionView({
     });
   };
   const shortcuts = useShortcuts([
+    {
+      id: ShortcutId.OpenTerminals,
+      scope: Surface.Sessions,
+      label: "shortcuts.openTerminals",
+      bindings: [{ key: "`", primary: true }],
+      input: ShortcutInput.Allow,
+      active: active && !embedded && Boolean(id),
+      enabled: !object(data.fork).sidechat_parent_snapshot,
+      run: () => togglePanel(SessionPanel.Terminals),
+    },
     ...(!embedded
       ? Array.from({ length: 9 }, (_, index) => ({
           id: tabShortcutIds[index]!,
@@ -1844,6 +1853,11 @@ export function SessionView({
                     disabled={
                       tool.panel === SessionPanel.Terminals &&
                       Boolean(object(data.fork).sidechat_parent_snapshot)
+                    }
+                    aria-keyshortcuts={
+                      tool.panel === SessionPanel.Terminals
+                        ? shortcuts.aria(ShortcutId.OpenTerminals)
+                        : undefined
                     }
                     onClick={() => togglePanel(tool.panel)}
                   >

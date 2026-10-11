@@ -120,6 +120,15 @@ export const editableShortcutCatalog: readonly CatalogAction[] = [
 ];
 export const readOnlyShortcutCatalog: readonly CatalogAction[] = [
   {
+    id: ShortcutId.OpenTerminals,
+    label: "shortcuts.openTerminals",
+    group: ShortcutGroup.Session,
+    scopes: [Surface.Sessions],
+    priority: 1,
+    input: ShortcutInput.Allow,
+    defaults: [{ key: "`", primary: true }],
+  },
+  {
     target: ShortcutTargetContext.Terminal,
     id: ShortcutId.TerminalCreate,
     label: "shortcuts.createTerminal",

@@ -506,3 +506,69 @@ it("consumes fixed terminal creation only inside its target and never falls thro
   expect(dispatch([create], { key: "t" }, input).defaultPrevented).toBe(false);
   host.remove();
 });
+
+it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])(
+  "opens terminals once with the logical grave and local primary modifier on %s",
+  (localPlatform) => {
+    const input = document.createElement("textarea");
+    input.value = "Retained draft";
+    document.body.append(input);
+    const run = vi.fn();
+    const item = definition({
+      id: ShortcutId.OpenTerminals,
+      scope: Surface.Sessions,
+      label: "shortcuts.openTerminals",
+      bindings: [{ key: "`", primary: true }],
+      input: ShortcutInput.Allow,
+      run,
+    });
+    const modifiers =
+      localPlatform === ShortcutPlatform.Mac
+        ? { metaKey: true }
+        : { ctrlKey: true };
+    const send = (target: HTMLElement, flags: KeyboardEventInit = {}) => {
+      const event = new KeyboardEvent("keydown", {
+        key: "`",
+        code: "IntlBackslash",
+        bubbles: true,
+        cancelable: true,
+        ...modifiers,
+        ...flags,
+      });
+      target.addEventListener(
+        "keydown",
+        () => dispatchShortcut(event, [item], Surface.Sessions, localPlatform),
+        { once: true },
+      );
+      target.dispatchEvent(event);
+      return event;
+    };
+    expect(send(input).defaultPrevented).toBe(true);
+    expect(run).toHaveBeenCalledOnce();
+    expect(input.value).toBe("Retained draft");
+    expect(send(document.body).defaultPrevented).toBe(true);
+    expect(run).toHaveBeenCalledTimes(2);
+    for (const flags of [
+      { key: "~", code: "Backquote" },
+      { ctrlKey: false, metaKey: false },
+      { ctrlKey: true, metaKey: true },
+      { shiftKey: true },
+      { altKey: true },
+      { repeat: true },
+      { isComposing: true },
+      { keyCode: 229 },
+    ])
+      expect(send(input, flags).defaultPrevented).toBe(false);
+    input.dataset.shortcuts = "passthrough";
+    expect(send(input).defaultPrevented).toBe(false);
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(bindingAria(item.bindings[0]!, localPlatform)).toBe(
+      localPlatform === ShortcutPlatform.Mac ? "Meta+`" : "Control+`",
+    );
+    expect(bindingKeys(item.bindings[0]!, localPlatform)).toEqual([
+      localPlatform === ShortcutPlatform.Mac ? "⌘" : "Ctrl",
+      "`",
+    ]);
+    input.remove();
+  },
+);

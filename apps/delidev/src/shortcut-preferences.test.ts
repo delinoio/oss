@@ -10,9 +10,15 @@ import {
   shortcutConflicts,
   ShortcutOverrideState,
   ShortcutTargetContext,
+  ShortcutGroup,
   validShortcutChord,
 } from "./shortcut-preferences";
-import { ShortcutId, ShortcutPlatform, ShortcutScope } from "./shortcuts";
+import {
+  ShortcutId,
+  ShortcutInput,
+  ShortcutPlatform,
+  ShortcutScope,
+} from "./shortcuts";
 import { Surface } from "./surface";
 const chord = {
   state: ShortcutOverrideState.Binding,
@@ -299,4 +305,26 @@ it("keeps terminal creation fixed and preserves all seven custom primary-T targe
     expect(shortcutConflicts(overrides)).toEqual([]);
     expect(parseShortcutOverrides(overrides)).toEqual(overrides);
   }
+});
+
+it("keeps logical grave opening read-only and preserves the editable preference format", () => {
+  expect(
+    readOnlyShortcutCatalog.find(
+      (action) => action.id === ShortcutId.OpenTerminals,
+    ),
+  ).toMatchObject({
+    label: "shortcuts.openTerminals",
+    group: ShortcutGroup.Session,
+    scopes: [Surface.Sessions],
+    priority: 1,
+    input: ShortcutInput.Allow,
+    defaults: [{ key: "`", primary: true }],
+  });
+  expect(editableShortcutCatalog).toHaveLength(7);
+  expect(
+    editableShortcutCatalog.some(
+      (action) => action.id === ShortcutId.OpenTerminals,
+    ),
+  ).toBe(false);
+  expect(validShortcutChord({ key: "`", shift: false })).toBe(false);
 });
