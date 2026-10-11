@@ -165,9 +165,14 @@ export function Search({
   useEffect(() => {
     if (!active) return;
     // Activating Search behind a collapsed pane must not turn a later ordinary
-    // expansion into a focus request. The explicit shortcut owns that request.
+    // wide expansion into a focus request. An explicit compact drawer opening
+    // remains a focusable presentation of the retained Search surface.
     if (!paneVisible) {
-      focusedOnce.current = true;
+      if (
+        typeof window.matchMedia !== "function" ||
+        !window.matchMedia("(max-width: 759px)").matches
+      )
+        focusedOnce.current = true;
       return;
     }
     if (!presentation.settled || presentation.problem || focusedOnce.current)

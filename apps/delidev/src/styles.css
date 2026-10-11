@@ -5727,9 +5727,6 @@ dialog nav {
 }
 /* Keep the rail and mounted pane independent of the wide preference. */
 @media (min-width: 760px) {
-  .app {
-    --sidebar-expanded-width: 288px;
-  }
   .app > .sidebar {
     min-width: 0;
     grid-template-columns: 52px minmax(0, 1fr);
@@ -5739,7 +5736,7 @@ dialog nav {
   }
   .app .sidebar-pane {
     flex: none;
-    width: var(--sidebar-expanded-width);
+    width: 288px;
   }
   .app.sidebar-motion {
     transition: grid-template-columns 180ms cubic-bezier(0.2, 0, 0, 1);
@@ -5752,8 +5749,8 @@ dialog nav {
   }
 }
 @media (min-width: 760px) and (max-width: 1100px) {
-  .app {
-    --sidebar-expanded-width: 256px;
+  .app .sidebar-pane {
+    width: 256px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
