@@ -1911,6 +1911,7 @@ fn create_child(
         profile,
         request.clone(),
         policy,
+        Arc::new(Mutex::new(ChildClose::default())),
     );
     if browser_host_create_browser(
         Some(&info),
@@ -1938,12 +1939,12 @@ fn create_child(
     };
     Ok(())
 }
-cef::wrap_client! {struct ExternalClient{host:Arc<BrowserHost>,app:AppHandle<CefRuntime>,profile:String,request:ViewRequest,policy:Arc<Mutex<Policy>>,}impl Client{
+cef::wrap_client! {struct ExternalClient{host:Arc<BrowserHost>,app:AppHandle<CefRuntime>,profile:String,request:ViewRequest,policy:Arc<Mutex<Policy>>,close:Arc<Mutex<ChildClose>>,}impl Client{
  // The pinned runtime installs a renderer-wide JavaScript message stub. Raw
  // external children have no Tauri browser-side handler: reject every process
  // message here so that stub cannot acquire product/native authority.
  fn on_process_message_received(&self,_browser:Option<&mut Browser>,_frame:Option<&mut Frame>,_source_process:ProcessId,_message:Option<&mut ProcessMessage>)->i32{0}
- fn life_span_handler(&self)->Option<LifeSpanHandler>{Some(ExternalLife::new(Arc::clone(&self.host),self.app.clone(),self.profile.clone(),self.request.clone()))}
+ fn life_span_handler(&self)->Option<LifeSpanHandler>{Some(ExternalLife::new(Arc::clone(&self.host),self.app.clone(),self.profile.clone(),self.request.clone(),self.close.clone()))}
  fn request_handler(&self)->Option<RequestHandler>{Some(ExternalRequests::new(self.policy.clone()))}
  fn display_handler(&self)->Option<DisplayHandler>{Some(ExternalDisplay::new(Arc::clone(&self.host),self.profile.clone(),self.request.clone()))}
  fn permission_handler(&self)->Option<PermissionHandler>{Some(DenyPermissions::new())}
@@ -2032,15 +2033,188 @@ fn native_composition_clear(browser: &Browser) -> bool {
         false
     }
 }
-cef::wrap_life_span_handler! {struct ExternalLife{host:Arc<BrowserHost>,app:AppHandle<CefRuntime>,profile:String,request:ViewRequest,}impl LifeSpanHandler{
+// CEF can request a fresh handler interface for each callback. Keep close
+// ownership on the original client so duplicate interfaces share one receipt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ChildIdentity {
+    browser_id: i32,
+    generation: u64,
+    child: usize,
+    parent: usize,
+}
+
+#[derive(Default)]
+struct ChildClose {
+    original: Option<ChildIdentity>,
+    destroy_queued: bool,
+    closed: bool,
+}
+impl ChildClose {
+    fn bind(&mut self, original: ChildIdentity) -> bool {
+        // Never let a repeated creation callback adopt a replacement browser.
+        if self.original.is_some() || self.closed {
+            return false;
+        }
+        self.original = Some(original);
+        true
+    }
+
+    #[cfg(any(target_os = "macos", windows, test))]
+    fn request_destroy(&mut self, original: ChildIdentity) -> bool {
+        if self.original != Some(original) || self.closed || self.destroy_queued {
+            return false;
+        }
+        self.destroy_queued = true;
+        true
+    }
+
+    #[cfg(any(target_os = "macos", windows, test))]
+    fn retry_destroy(&mut self, original: ChildIdentity) {
+        // Failure keeps the original live-child obligation. A later original
+        // close attempt may retry; failure must never settle the receipt.
+        if self.original == Some(original) && !self.closed {
+            self.destroy_queued = false;
+        }
+    }
+
+    #[cfg(any(target_os = "macos", windows, test))]
+    fn owns_native_child(&self, original: ChildIdentity, child: usize) -> bool {
+        self.original == Some(original)
+            && !self.closed
+            && self.destroy_queued
+            && child != 0
+            && child == original.child
+            && child != original.parent
+            && original.parent != 0
+    }
+
+    fn finish(&mut self, browser_id: i32, generation: u64) -> bool {
+        if self.original.is_none_or(|original| {
+            original.browser_id != browser_id || original.generation != generation
+        }) || self.closed
+        {
+            return false;
+        }
+        self.closed = true;
+        true
+    }
+}
+
+fn native_child_handle(handle: cef::sys::cef_window_handle_t) -> usize {
+    #[cfg(windows)]
+    return handle.0 as usize;
+    #[cfg(not(windows))]
+    return handle as usize;
+}
+
+#[cfg(any(target_os = "macos", windows))]
+cef::wrap_task! {struct DestroyExternalChild{browser:Browser,original:ChildIdentity,close:Arc<Mutex<ChildClose>>,}impl Task{
+ fn execute(&self){
+   let result=(||{
+     let close=self.close.lock().map_err(|_|NativeFailure::Busy)?;
+     // A retained Browser plus its immutable receipt excludes replacement and
+     // sibling handles before any native pointer is dereferenced.
+     if self.browser.identifier()!=self.original.browser_id{return Err(NativeFailure::InvalidEvidence);}
+     let host=self.browser.host().ok_or(NativeFailure::InvalidEvidence)?;
+     let handle=host.window_handle();
+     if !close.owns_native_child(self.original,native_child_handle(handle)){return Err(NativeFailure::InvalidEvidence);}
+     drop(close);
+     // Native destruction may synchronously deliver on_before_close.
+     destroy_external_child(handle,self.original.parent)
+   })();
+   match result{
+     Ok(())=>tracing::info!(operation="browser_child_close",state="native_destroy_requested",generation=self.original.generation),
+     Err(code)=>{
+       if let Ok(mut close)=self.close.lock(){close.retry_destroy(self.original);}
+       tracing::error!(operation="browser_child_close",state="destroy_failed",generation=self.original.generation,?code);
+     },
+   }
+ }
+}}
+
+#[cfg(any(target_os = "macos", windows))]
+fn destroy_external_child(handle: cef::sys::cef_window_handle_t, parent: usize) -> Result<()> {
+    if cef::currently_on(ThreadId::UI) != 1 {
+        return Err(NativeFailure::InvalidEvidence);
+    }
+    // Pinned Tauri uses these same child destruction operations. CEF's native
+    // view dealloc / WM_NCDESTROY then drives on_before_close. Never close the
+    // containing NSWindow or product HWND. Remove this override only if raw CEF
+    // gains a supported child-only close contract on both platforms.
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSView;
+        let child =
+            unsafe { (handle as *mut NSView).as_ref() }.ok_or(NativeFailure::InvalidEvidence)?;
+        let original_parent = unsafe { child.superview() }.ok_or(NativeFailure::InvalidEvidence)?;
+        if std::ptr::from_ref(&*original_parent) as usize != parent || handle as usize == parent {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        child.removeFromSuperview();
+        Ok(())
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{DestroyWindow, GetParent};
+        let child = handle.0 as windows_sys::Win32::Foundation::HWND;
+        if child.is_null()
+            || child as usize == parent
+            || unsafe { GetParent(child) } as usize != parent
+        {
+            return Err(NativeFailure::InvalidEvidence);
+        }
+        if unsafe { DestroyWindow(child) } == 0 {
+            return Err(NativeFailure::SidecarFailed);
+        }
+        Ok(())
+    }
+}
+
+cef::wrap_life_span_handler! {struct ExternalLife{host:Arc<BrowserHost>,app:AppHandle<CefRuntime>,profile:String,request:ViewRequest,close:Arc<Mutex<ChildClose>>,}impl LifeSpanHandler{
  fn on_after_created(&self,browser:Option<&mut Browser>){
    let Some(b)=browser else{return};
+   let original=ChildIdentity{browser_id:b.identifier(),generation:self.request.generation,child:b.host().map(|host|native_child_handle(host.window_handle())).unwrap_or(0),parent:self.request.parent};
+   let Ok(mut close)=self.close.lock() else{return};
+   if !close.bind(original){
+     tracing::warn!(operation="browser_child_close",state="duplicate_creation");
+     return;
+   }
+   drop(close);
    self.host.finish_child_created(&self.profile,&self.request,
      self.host.child_created(&self.profile,&self.request,b),
      ||{let _=hide_browser(b,&self.request);});
  }
  fn on_before_popup(&self,_browser:Option<&mut Browser>,_frame:Option<&mut Frame>,_popup_id:i32,_target_url:Option<&CefString>,_target_frame_name:Option<&CefString>,_target_disposition:WindowOpenDisposition,_user_gesture:i32,_popup_features:Option<&PopupFeatures>,_window_info:Option<&mut WindowInfo>,_client:Option<&mut Option<Client>>,_settings:Option<&mut BrowserSettings>,_extra_info:Option<&mut Option<DictionaryValue>>,_no_javascript_access:Option<&mut i32>)->i32{1}
- fn on_before_close(&self,_browser:Option<&mut Browser>){
+ fn do_close(&self,browser:Option<&mut Browser>)->i32{
+   let Some(browser)=browser else{return 0};
+   if browser.is_popup()!=0{return 0;}
+   #[cfg(any(target_os="macos",windows))]
+   {
+     let Ok(mut close)=self.close.lock() else {
+       tracing::error!(operation="browser_child_close",state="ownership_unavailable");
+       return 1;
+     };
+     let Some(original)=close.original else{return 1;};
+     if original.browser_id!=browser.identifier()||original.generation!=self.request.generation||!close.request_destroy(original){return 1;}
+     drop(close);
+     // The task retains the original browser, never a current-view lookup.
+     let mut task=DestroyExternalChild::new(browser.clone(),original,self.close.clone());
+     if cef::post_task(ThreadId::UI,Some(&mut task))!=1{
+       if let Ok(mut close)=self.close.lock(){close.retry_destroy(original);}
+       tracing::error!(operation="browser_child_close",state="schedule_failed");
+     }else{
+       tracing::info!(operation="browser_child_close",state="scheduled",generation=self.request.generation);
+     }
+     return 1;
+   }
+   #[cfg(not(any(target_os="macos",windows)))]
+   0
+ }
+ fn on_before_close(&self,browser:Option<&mut Browser>){
+   let Some(browser)=browser else{return};
+   let Ok(mut close)=self.close.lock() else{return};
+   if !close.finish(browser.identifier(),self.request.generation){return;}
+   drop(close);
    let exit = self.host.child_closed(&self.request);
    tracing::info!(operation="browser_view",state="closed");
    if let Some(code)=exit{self.app.exit(code);}
@@ -2259,6 +2433,134 @@ mod tests {
     use delidev_desktop::browser::Profile;
 
     use super::*;
+
+    fn child_identity() -> ChildIdentity {
+        ChildIdentity {
+            browser_id: 17,
+            generation: 3,
+            child: 100,
+            parent: 200,
+        }
+    }
+
+    #[test]
+    fn child_close_receipt_rejects_duplicate_and_foreign_callbacks() {
+        let original = child_identity();
+        let shared = Arc::new(Mutex::new(ChildClose::default()));
+        let second_handler = shared.clone();
+        assert!(shared.lock().unwrap().bind(original));
+        let foreign = ChildIdentity {
+            browser_id: 18,
+            ..original
+        };
+        assert!(!second_handler.lock().unwrap().request_destroy(foreign));
+        assert!(shared.lock().unwrap().request_destroy(original));
+        assert!(!second_handler.lock().unwrap().request_destroy(original));
+        assert!(
+            !second_handler
+                .lock()
+                .unwrap()
+                .finish(18, original.generation)
+        );
+        assert!(shared.lock().unwrap().finish(17, original.generation));
+        assert!(
+            !second_handler
+                .lock()
+                .unwrap()
+                .finish(17, original.generation)
+        );
+        assert!(!second_handler.lock().unwrap().request_destroy(original));
+    }
+
+    #[test]
+    fn native_child_close_rejects_parent_foreign_and_changed_generation() {
+        let original = child_identity();
+        let mut receipt = ChildClose::default();
+        assert!(receipt.bind(original));
+        assert!(!receipt.bind(ChildIdentity {
+            browser_id: 18,
+            ..original
+        }));
+        assert!(!receipt.owns_native_child(original, original.child));
+        assert!(receipt.request_destroy(original));
+        assert!(receipt.owns_native_child(original, original.child));
+        for handle in [0, original.parent, original.child + 1] {
+            assert!(!receipt.owns_native_child(original, handle));
+        }
+        let replacement = ChildIdentity {
+            generation: original.generation + 1,
+            ..original
+        };
+        assert!(!receipt.owns_native_child(replacement, original.child));
+        assert!(!receipt.finish(original.browser_id, replacement.generation));
+        receipt.retry_destroy(replacement);
+        assert!(!receipt.request_destroy(original));
+        assert!(receipt.finish(original.browser_id, original.generation));
+        assert!(!receipt.owns_native_child(original, original.child));
+    }
+
+    #[test]
+    fn child_close_failures_retain_accounting_and_allow_only_original_retry() {
+        let (_temp, host, _record, _view_id, request) = active_storage_fixture();
+        host.state.lock().unwrap().live = 1;
+        let original = ChildIdentity {
+            generation: request.generation,
+            ..child_identity()
+        };
+        let mut receipt = ChildClose::default();
+        assert!(receipt.bind(original));
+        // Both failed posting and failed native destruction use this same
+        // transition. Neither operation is evidence of on_before_close.
+        for _ in 0..2 {
+            assert!(receipt.request_destroy(original));
+            receipt.retry_destroy(original);
+            assert_eq!(host.state.lock().unwrap().live, 1);
+            assert!(!receipt.closed);
+        }
+        assert!(receipt.request_destroy(original));
+        assert!(receipt.finish(original.browser_id, original.generation));
+        host.child_closed(&request);
+        receipt.retry_destroy(original);
+        assert!(!receipt.request_destroy(original));
+        assert_eq!(host.state.lock().unwrap().live, 0);
+    }
+
+    #[test]
+    fn old_child_close_settles_once_without_releasing_replacement_or_sibling() {
+        let (_temp, host, record, _view_id, request) = active_storage_fixture();
+        let mut replacement = request.clone();
+        replacement.generation += 1;
+        {
+            let mut state = host.state.lock().unwrap();
+            let view = state.views.get_mut(&request.window).unwrap();
+            view.generation = replacement.generation;
+            view.request = replacement.clone();
+            let mut sibling = view.clone();
+            sibling.request.window = "sibling".into();
+            state.views.insert("sibling".into(), sibling);
+            state.live = 3;
+        }
+        let mut receipt = ChildClose {
+            original: Some(ChildIdentity {
+                generation: request.generation,
+                ..child_identity()
+            }),
+            ..Default::default()
+        };
+        for _ in 0..2 {
+            if receipt.finish(17, request.generation) {
+                host.child_closed(&request);
+            }
+        }
+        let state = host.state.lock().unwrap();
+        assert_eq!(state.live, 2);
+        assert_eq!(
+            state.views[&request.window].generation,
+            replacement.generation
+        );
+        assert_eq!(state.views["sibling"].profile, record.id);
+        assert!(!state.views[&request.window].closing);
+    }
 
     struct CloseProbe {
         host: std::sync::Weak<BrowserHost>,
