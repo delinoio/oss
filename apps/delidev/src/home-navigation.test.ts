@@ -65,6 +65,7 @@ it("retains more than 5,000 projected rows with original identity/revision and n
         "workspace",
         "outcome",
         "archive",
+        "awaitingUserResponse",
         "title",
         "conversationKind",
       ]);
@@ -401,4 +402,49 @@ it("retains only a valid original Sidechat parent hint and leaves independent Fo
       sidechat_parent_snapshot: { configuration: {} },
     }).sidechatParent,
   ).toBeUndefined();
+});
+
+it("projects only a literal supported session response-waiting boolean", () => {
+  for (const value of [undefined, false, "true", 1, {}, true]) {
+    const received = create(ResourceSchema, {
+      id: newRequestId(),
+      kind: EntityKind.SESSION,
+      schemaVersion: 1,
+      documentJson: encode({ awaiting_user_response: value }),
+    });
+    expect(navigationRow(received).awaitingUserResponse).toBe(value === true);
+    expect(
+      navigationRow({ ...received, kind: EntityKind.PROJECT })
+        .awaitingUserResponse,
+    ).toBe(false);
+    expect(
+      navigationRow({ ...received, schemaVersion: 999 }).awaitingUserResponse,
+    ).toBe(false);
+    expect(
+      navigationRow({ ...received, documentJson: encode("invalid") })
+        .awaitingUserResponse,
+    ).toBe(false);
+  }
+});
+
+it("refreshes derived waiting state at the same resource revision without replacing row identity or ordering", async () => {
+  const chain = new NavigationChain();
+  chain.activate();
+  const first = row(),
+    second = row();
+  const waiting = { ...first, awaitingUserResponse: true };
+  await chain.refresh(async () => ({
+    rows: [waiting, second],
+    nextPageToken: "",
+  }));
+  await chain.refresh(async () => ({
+    rows: [{ ...waiting, awaitingUserResponse: false }, second],
+    nextPageToken: "",
+  }));
+  expect(chain.getSnapshot().rows.map(({ id }) => id)).toEqual([
+    first.id,
+    second.id,
+  ]);
+  expect(chain.getSnapshot().rows[0].revision).toBe(first.revision);
+  expect(chain.getSnapshot().rows[0].awaitingUserResponse).toBe(false);
 });

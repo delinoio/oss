@@ -370,9 +370,11 @@ function cardArchiveLabel(raw: string): string {
 function StatusGlyph({
   outcome,
   archive,
+  awaitingUserResponse = false,
 }: {
   outcome: string;
   archive: string;
+  awaitingUserResponse?: boolean;
 }) {
   useLocale();
   let execution: ReactNode;
@@ -380,7 +382,7 @@ function StatusGlyph({
     case ExecutionStatus.NotStarted:
       execution = (
         <svg
-          className="sidebar-status-glyph"
+          className="sidebar-execution-glyph sidebar-status-glyph"
           viewBox="0 0 16 16"
           fill="none"
           stroke="currentColor"
@@ -393,7 +395,7 @@ function StatusGlyph({
     case ExecutionStatus.Running:
       execution = (
         <svg
-          className="sidebar-status-glyph sidebar-status-running"
+          className="sidebar-execution-glyph sidebar-status-glyph sidebar-status-running"
           viewBox="0 0 16 16"
           fill="none"
           stroke="currentColor"
@@ -407,7 +409,7 @@ function StatusGlyph({
     case ExecutionStatus.Succeeded:
       execution = (
         <svg
-          className="sidebar-status-glyph"
+          className="sidebar-execution-glyph sidebar-status-glyph"
           viewBox="0 0 16 16"
           fill="none"
           stroke="currentColor"
@@ -420,7 +422,7 @@ function StatusGlyph({
     case ExecutionStatus.Failed:
       execution = (
         <svg
-          className="sidebar-status-glyph"
+          className="sidebar-execution-glyph sidebar-status-glyph"
           viewBox="0 0 16 16"
           fill="none"
           stroke="currentColor"
@@ -434,7 +436,7 @@ function StatusGlyph({
     case ExecutionStatus.Stopped:
       execution = (
         <svg
-          className="sidebar-status-glyph"
+          className="sidebar-execution-glyph sidebar-status-glyph"
           viewBox="0 0 16 16"
           fill="none"
           stroke="currentColor"
@@ -445,7 +447,11 @@ function StatusGlyph({
       );
       break;
     default:
-      execution = <span className="sidebar-status-unknown">?</span>;
+      execution = (
+        <span className="sidebar-execution-glyph sidebar-status-unknown">
+          ?
+        </span>
+      );
   }
   let archiveGlyph: ReactNode = null;
   if (archive === ArchiveStatus.Archiving)
@@ -483,6 +489,20 @@ function StatusGlyph({
       data-outcome={outcome}
       aria-hidden="true"
     >
+      {awaitingUserResponse ? (
+        <svg
+          className="sidebar-status-glyph sidebar-response-waiting"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <circle cx="8" cy="8" r="6" />
+          <path d="M6.1 5.6a1.9 1.9 0 0 1 3.8.2c0 1.4-1.9 1.5-1.9 2.9M8 11v.2" />
+        </svg>
+      ) : null}
       {execution}
       {archiveGlyph}
     </span>
@@ -508,6 +528,9 @@ function SessionRow({
   const outcome = row.outcome;
   const archive = row.archive;
   const workspace = workspaceLabel(row.workspace);
+  const responseState = row.awaitingUserResponse
+    ? copy("sidebar.waitingForResponse")
+    : "";
   const titlePresentation = row.title;
   const titleState = titlePresentation?.label;
   const titleStateDescription = titlePresentation
@@ -534,7 +557,10 @@ function SessionRow({
       v2: executionLabel(outcome),
       v3: archiveLabel(archive),
       v4: workspace,
-      v5: titleStateDescription ? ` ${titleStateDescription}.` : "",
+      v5: [titleStateDescription, responseState]
+        .filter(Boolean)
+        .map((state) => ` ${state}.`)
+        .join(""),
     });
   const workspaceIcon =
     row.workspace === Workspace.Worktree
@@ -590,7 +616,11 @@ function SessionRow({
             {titleStateSummary}
           </span>
         ) : null}
-        <StatusGlyph outcome={outcome} archive={archive} />
+        <StatusGlyph
+          outcome={outcome}
+          archive={archive}
+          awaitingUserResponse={row.awaitingUserResponse}
+        />
       </button>
       <SessionRowActions
         id={row.id}
@@ -622,6 +652,9 @@ function SessionRow({
               </span>
             </dd>
           </dl>
+          {responseState ? (
+            <p className="sidebar-session-card-response">{responseState}</p>
+          ) : null}
           {titlePresentation ? (
             <div className="sidebar-session-card-title-state">
               <p>{titleState}</p>
