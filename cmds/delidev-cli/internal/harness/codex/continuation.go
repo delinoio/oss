@@ -201,7 +201,7 @@ func sameEffectiveSettings(a, b EffectiveSettings) bool {
 		}
 	}
 
-	if a.Model != b.Model || a.Provider != b.Provider || !equalOptional(a.Effort, b.Effort) || !equalOptional(a.ServiceTier, b.ServiceTier) || !nativePathEqual(a.Cwd, b.Cwd) || a.ApprovalPolicy != b.ApprovalPolicy || a.ApprovalsReviewer != b.ApprovalsReviewer || a.Sandbox.Type != b.Sandbox.Type || a.Sandbox.NetworkAccess != b.Sandbox.NetworkAccess || a.Sandbox.ExcludeSlashTmp != b.Sandbox.ExcludeSlashTmp || a.Sandbox.ExcludeTmpdirEnvVar != b.Sandbox.ExcludeTmpdirEnvVar || len(a.Sandbox.WritableRoots) != len(b.Sandbox.WritableRoots) {
+	if a.WebSearch != b.WebSearch || a.Model != b.Model || a.Provider != b.Provider || !equalOptional(a.Effort, b.Effort) || !equalOptional(a.ServiceTier, b.ServiceTier) || !nativePathEqual(a.Cwd, b.Cwd) || a.ApprovalPolicy != b.ApprovalPolicy || a.ApprovalsReviewer != b.ApprovalsReviewer || a.Sandbox.Type != b.Sandbox.Type || a.Sandbox.NetworkAccess != b.Sandbox.NetworkAccess || a.Sandbox.ExcludeSlashTmp != b.Sandbox.ExcludeSlashTmp || a.Sandbox.ExcludeTmpdirEnvVar != b.Sandbox.ExcludeTmpdirEnvVar || len(a.Sandbox.WritableRoots) != len(b.Sandbox.WritableRoots) {
 		return false
 	}
 	for i, root := range a.Sandbox.WritableRoots {

@@ -51,5 +51,13 @@
   "harness-settings.saving": "Saving Codex defaults…",
   "harness-settings.saveUnknown": "Codex defaults save outcome unknown. Keep this draft and inspect the original save before trying again.",
   "harness-settings.unsaved": "Unsaved Codex defaults",
-  "harness-settings.reviewerHelp": "AI auto-review requires the on-request approval policy. The server verifies the effective policy and Runner Device support before execution."
+  "harness-settings.reviewerHelp": "AI auto-review requires the on-request approval policy. The server verifies the effective policy and Runner Device support before execution.",
+  "harness-settings.webSearch": "Web search",
+  "harness-settings.useInherited": "Use inherited setting",
+  "harness-settings.searchDisabled": "Disabled",
+  "harness-settings.searchCached": "Cached",
+  "harness-settings.searchLive": "Live",
+  "harness-settings.searchSourceUnavailable": "Native search support is unavailable for this source. Choose a ChatGPT subscription scope to configure Cached or Live.",
+  "harness-settings.searchPolicy": "Native account support, project restrictions and permission policy are verified before input. Changes apply to future executions.",
+  "harness-settings.retryRead": "Retry settings read"
 }

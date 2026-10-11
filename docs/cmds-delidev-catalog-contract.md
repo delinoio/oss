@@ -799,3 +799,17 @@ contents. Inert extension packages cannot become Agent instructions through save
 portable imports or execution. Selected Agent instructions retain native order;
 model import changes only its explicit selected route. Existing account links,
 weights, behavior selectors and accepted execution generations remain unchanged.
+
+### Codex web-search selector
+
+`web_search` is an optional typed Harness selector with closed values `disabled`,
+`cached` and `live`. An inherit selector carries no value and resolves through
+original Agent, Project, server and verified native evidence layers. Do not fill
+missing evidence with Cached. Historical absence keeps its original semantics
+and grants no search authority. Explicit empty, null or unknown modes fail strict
+validation. Existing version-1 Harness settings and Agent/Project/Settings
+resource schemas remain unchanged. Writes and observations require the separately
+negotiated native web-search capability. Effective accepted options and original
+field/source provenance remain frozen for each execution; native policy and
+actual selected account support remain independent checks under the
+[harness contract](cmds-delidev-harness-contract.md#native-codex-web-search).

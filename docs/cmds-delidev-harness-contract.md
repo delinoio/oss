@@ -2475,3 +2475,50 @@ Supported value parsing, native instruction override precedence, immutable packa
 publication and source digest checks are independent of native execution readiness.
 Inert extension descriptors cannot enable hooks, plugins or MCP. Active private
 runtimes and immutable execution settings are not modified by imports.
+
+## Native Codex web search
+
+The independently negotiated Codex web-search adapter accepts explicit
+`disabled`, `cached` and `live` modes. Omission remains unknown historical
+selection; it does not become Cached. Current settings can inherit a selected
+mode through the existing source-aware Harness defaults owner. An explicit
+inherit selector with no verified ancestor remains unavailable. Accepted
+execution options and their field provenance remain immutable after a default
+changes. Native policy, approvals and prepared project restrictions still apply.
+
+Enabled modes require the original managed ChatGPT account and verified built-in
+OpenAI provider. The native API relay's provider profile does not prove account
+search support or implement the native standalone endpoint. API sources remain
+unavailable for Cached/Live; Disabled is supported. Do not enable search from a
+model advertisement, provider name, arbitrary endpoint or menu capability. There
+is no sidecar search or fallback. Sidechat retains its native disabled search
+policy, including a child copied from an enabled-search parent.
+
+Pin the accepted mode in the owned process configuration. Read the effective
+configuration for the original working directory and the native requirements
+before thread binding and each ordinary input/Steer. Require the exact mode,
+provider and allowed policy. Missing, malformed or changed evidence blocks input;
+policy denial stays separate from unsupported source and unknown defaults. These
+reads never create a search or retry a mutation. Historical omitted checkpoints
+remain readable and cannot acquire new web-search observation authority.
+
+The pinned [native item declaration](https://github.com/openai/codex/blob/1f3f93473394b620b35580859b7e6864f7a9f948/codex-rs/app-server-protocol/src/protocol/v2/item.rs)
+and [web action union](https://github.com/openai/codex/blob/1f3f93473394b620b35580859b7e6864f7a9f948/codex-rs/ext/items/src/web_search.rs)
+provide original item ID, query, nullable action and nullable opaque results.
+Search has optional query/ordered queries; Open page has optional URL; Find text
+has optional URL/pattern; Other carries no additional fields. Preserve missing
+fields without inventing queries, URLs, results or citations. Keep opaque results
+as exact bounded JSON text so native integer precision survives browser reads.
+The original started/completed snapshots retain native order, actual mode and
+provider from verified immutable settings, under original execution, account,
+Worker, thread and turn ownership. Tool completion never establishes turn
+completion. Reject malformed actions, disabled-search observations, foreign
+turns, changed source and duplicate publication. Existing durable outbox request
+identity and read-only uncertain recovery prevent acknowledgment loss from
+creating another search or record. Settled native Fork/compaction history retains
+the original complete search JSON; history inspection cannot perform searches.
+
+The [native configuration and requirement declarations](https://github.com/openai/codex/blob/1f3f93473394b620b35580859b7e6864f7a9f948/codex-rs/app-server-protocol/src/protocol/v2/config.rs)
+own effective `web_search` and `allowed_web_search_modes`. The optional typed
+settings/tool additions use their current document envelopes. No SQL migration,
+new RPC or API relay request shape is required for this supported account profile.

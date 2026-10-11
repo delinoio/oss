@@ -19,6 +19,7 @@ const (
 	PatchTool     ToolKind = "file-change"
 	ImageViewTool ToolKind = "image-view"
 	SleepTool     ToolKind = "sleep"
+	WebSearchTool ToolKind = "web-search"
 
 	ToolRunning   ToolStatus = "inProgress"
 	ToolCompleted ToolStatus = "completed"
@@ -73,6 +74,7 @@ type FileChange struct {
 // work or imply that an entire turn succeeded. Native aggregate output may be
 // truncated independently from streamed deltas, so retain both observations.
 type Tool struct {
+	WebSearch       *domain.CodexWebSearchObservation
 	ID              string
 	Kind            ToolKind
 	Status          ToolStatus
@@ -195,6 +197,16 @@ func decodeTool(raw json.RawMessage, kind string, completed bool) (*Tool, error)
 			command.Actions = append(command.Actions, action)
 		}
 		result.ID, result.Kind, result.Status, result.Command = item.ID, CommandTool, item.Status, command
+	case "webSearch":
+		item, err := decodeWebSearch(raw)
+		if err != nil {
+			return nil, err
+		}
+		result.ID, result.Kind, result.WebSearch = item.ID, WebSearchTool, &item.Observation
+		result.Status = ToolRunning
+		if completed {
+			result.Status = ToolCompleted
+		}
 	case "sleep":
 		item, err := decodeSleep(raw)
 		if err != nil {

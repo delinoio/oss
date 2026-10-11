@@ -42,6 +42,12 @@ interface SettingField {
   numeric?: boolean;
 }
 const fields: readonly SettingField[] = [
+  {
+    key: "web_search",
+    label: "harness-settings.webSearch",
+    choices: ["disabled", "cached", "live"],
+    capability: SystemCapability.CODEX_WEB_SEARCH_V1,
+  },
   { key: "model", label: "harness-settings.model" },
   { key: "effort", label: "harness-settings.effort" },
   {
@@ -205,13 +211,33 @@ export function HarnessSettingsEditor({
       <h3 id={`${id}-title`}>{copy("harness-settings.codex")}</h3>
       <p>{copy("harness-settings.help")}</p>
       <Problem error={status.error || server.error} />
+      {status.error || server.error ? (
+        <button
+          type="button"
+          onClick={() => {
+            if (status.error) void status.refetch();
+            else void server.refetch();
+          }}
+        >
+          {copy("harness-settings.retryRead")}
+        </button>
+      ) : null}
       {!supported || malformed ? (
         <p role="status">{copy("harness-settings.updateRequired")}</p>
       ) : null}
       {owner === HarnessSettingsOwner.Agent ? (
         <p>{copy("harness-settings.agentScopeHelp")}</p>
       ) : null}
-      <fieldset disabled={!supported || malformed} className="harness-scope">
+      <fieldset
+        disabled={
+          !active ||
+          !supported ||
+          malformed ||
+          ancestryUnavailable ||
+          Boolean(status.error || server.error)
+        }
+        className="harness-scope"
+      >
         <legend>
           {copy(
             owner === HarnessSettingsOwner.Agent
@@ -370,7 +396,13 @@ export function HarnessSettingsEditor({
         <p role="status">{copy("harness-settings.ancestryUnavailable")}</p>
       ) : null}
       <fieldset
-        disabled={!supported || malformed}
+        disabled={
+          !active ||
+          !supported ||
+          malformed ||
+          ancestryUnavailable ||
+          Boolean(status.error || server.error)
+        }
         className="harness-setting-fields"
       >
         <legend>{copy(ownerLabels[owner])}</legend>
@@ -404,6 +436,11 @@ export function HarnessSettingsEditor({
             overridden &&
             field.choices &&
             !field.choices.includes(String(controlValue));
+          const webSearch = field.key === "web_search";
+          const nativeSearchSource =
+            scope.source === HarnessScopeSource.Subscription &&
+            (!scope.subscription_service ||
+              scope.subscription_service === SubscriptionServiceId.ChatGPT);
           const settingId = `${id}-${field.key}`;
           const set = (
             mode: HarnessSettingMode,
@@ -415,6 +452,8 @@ export function HarnessSettingsEditor({
           ) => {
             if (
               !active ||
+              ancestryUnavailable ||
+              Boolean(status.error || server.error) ||
               !supported ||
               malformed ||
               routeModel ||
@@ -430,7 +469,51 @@ export function HarnessSettingsEditor({
               data-settings-search-target={`codex-${field.key}`}
             >
               <h4>{copy(field.label)}</h4>
-              {routeModel ? (
+              {webSearch ? (
+                <label htmlFor={settingId}>
+                  {copy("harness-settings.webSearch")}
+                  <select
+                    id={settingId}
+                    aria-label={copy("harness-settings.webSearch")}
+                    value={overridden ? String(controlValue) : "inherit"}
+                    disabled={!available}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      if (value === "inherit") set(HarnessSettingMode.Inherit);
+                      else if (
+                        value === "disabled" ||
+                        (nativeSearchSource &&
+                          ["cached", "live"].includes(value))
+                      )
+                        set(HarnessSettingMode.Override, value);
+                    }}
+                  >
+                    <option value="inherit">
+                      {copy("harness-settings.useInherited")}
+                    </option>
+                    {unsupportedValue ? (
+                      <option value={String(controlValue)} disabled>
+                        {String(controlValue)} ·{" "}
+                        {copy("harness-settings.unsupported")}
+                      </option>
+                    ) : null}
+                    <option value="disabled">
+                      {copy("harness-settings.searchDisabled")}
+                    </option>
+                    <option value="cached" disabled={!nativeSearchSource}>
+                      {copy("harness-settings.searchCached")}
+                    </option>
+                    <option value="live" disabled={!nativeSearchSource}>
+                      {copy("harness-settings.searchLive")}
+                    </option>
+                  </select>
+                  {!nativeSearchSource ? (
+                    <p>{copy("harness-settings.searchSourceUnavailable")}</p>
+                  ) : (
+                    <p>{copy("harness-settings.searchPolicy")}</p>
+                  )}
+                </label>
+              ) : routeModel ? (
                 <p>{copy("harness-settings.routeModel")}</p>
               ) : (
                 <div className="harness-setting-actions">
@@ -465,7 +548,7 @@ export function HarnessSettingsEditor({
                   </button>
                 </div>
               )}
-              {!routeModel ? (
+              {!routeModel && !webSearch ? (
                 <label htmlFor={settingId}>
                   {copy("harness-settings.value")}
                   {field.choices ? (

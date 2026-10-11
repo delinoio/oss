@@ -73,6 +73,7 @@ func (s *HarnessSetting[T]) Validate() error {
 }
 
 type HarnessSettings struct {
+	WebSearch           *HarnessSetting[WebSearchMode]        `json:"web_search,omitempty"`
 	Version             uint32                                `json:"version"`
 	Model               *HarnessSetting[string]               `json:"model,omitempty"`
 	Effort              *HarnessSetting[string]               `json:"effort,omitempty"`
@@ -110,7 +111,7 @@ func (s HarnessSettings) Validate() error {
 	if s.Version != 1 {
 		return Fail(Unsupported, "Unsupported harness settings shape.", "Preserve version 1 and every typed selector.")
 	}
-	for _, err := range []error{s.Model.Validate(), s.Effort.Validate(), s.Permission.Validate(), s.ClaudePermission.Validate(), s.ApprovalPolicy.Validate(), s.ApprovalsReviewer.Validate(), s.SubagentModel.Validate(), s.SubagentEffort.Validate(), s.MaxConcurrency.Validate(), s.ApprovalReviewModel.Validate(), s.ServiceTier.Validate()} {
+	for _, err := range []error{s.Model.Validate(), s.Effort.Validate(), s.Permission.Validate(), s.ClaudePermission.Validate(), s.ApprovalPolicy.Validate(), s.ApprovalsReviewer.Validate(), s.SubagentModel.Validate(), s.SubagentEffort.Validate(), s.MaxConcurrency.Validate(), s.ApprovalReviewModel.Validate(), s.ServiceTier.Validate(), s.WebSearch.Validate()} {
 		if err != nil {
 			return err
 		}
@@ -119,6 +120,9 @@ func (s HarnessSettings) Validate() error {
 		if field != nil && field.Value != nil && Text(*field.Value, "harness setting", 256, false) != nil {
 			return Fail(InvalidArgument, "Invalid harness setting value.", "Keep the complete bounded value; no value is truncated.")
 		}
+	}
+	if s.WebSearch != nil && s.WebSearch.Value != nil && !s.WebSearch.Value.Valid() {
+		return Fail(InvalidArgument, "Invalid web search mode.", "Choose disabled, cached or live, or inherit without a value.")
 	}
 	if s.Permission != nil && s.Permission.Value != nil && !slices.Contains([]PermissionMode{PermissionDefault, PermissionReadOnly, PermissionWorkspaceWrite, PermissionFullAccess}, *s.Permission.Value) {
 		return Fail(InvalidArgument, "Invalid permission override.", "Use a supported permission mode.")
@@ -216,7 +220,7 @@ func HarnessFieldApplicable(harness Harness, field string) bool {
 		return harness != GrokBuild
 	case "claude_permission":
 		return harness == ClaudeCode
-	case "permission", "approval_policy", "approvals_reviewer", "subagent_model", "subagent_effort", "max_concurrency", "service_tier":
+	case "permission", "approval_policy", "approvals_reviewer", "subagent_model", "subagent_effort", "max_concurrency", "service_tier", "web_search":
 		return harness == Codex
 	default:
 		return false
@@ -344,6 +348,15 @@ func ResolveHarnessSettings(layers []HarnessSettingsLayer, provenance HarnessSet
 	if err != nil {
 		return "", "", options, provenance, err
 	}
+	for _, layer := range layers {
+		if layer.Settings.WebSearch != nil {
+			options.WebSearch, err = resolveHarnessField("web_search", layers, func(s HarnessSettings) *HarnessSetting[WebSearchMode] { return s.WebSearch }, &provenance)
+			if err != nil {
+				return "", "", options, provenance, err
+			}
+			break
+		}
+	}
 	if _, present := provenance.Fields["permission"]; !present {
 		options.Permission = PermissionDefault
 	}
@@ -351,10 +364,10 @@ func ResolveHarnessSettings(layers []HarnessSettingsLayer, provenance HarnessSet
 }
 
 func (p HarnessSettingsProvenance) Validate(c ExecutionConfiguration) error {
-	if p.Version != 1 || p.Source.Validate() != nil || p.Source.Source == HarnessAnySource || p.Source.Source == HarnessAPISource && (p.Source.APIProtocol == "" || c.Subscription) || p.Source.Source == HarnessSubscriptionSource && !c.Subscription || !slices.ContainsFunc(c.Accounts, func(a WeightedAccount) bool { return a.ID == p.AccountID }) || p.Source.Harness != c.Harness || p.Source.ProviderID != c.ProviderID || p.Source.SubscriptionService != c.SubscriptionService || p.AccountID.Validate() != nil || p.ConnectionID.Validate() != nil || p.Source.Source == HarnessAPISource && !lowerDigest(p.ProfileDigest) || p.Source.Source == HarnessSubscriptionSource && p.ProfileDigest != "" || len(p.Fields) > 11 {
+	if p.Version != 1 || p.Source.Validate() != nil || p.Source.Source == HarnessAnySource || p.Source.Source == HarnessAPISource && (p.Source.APIProtocol == "" || c.Subscription) || p.Source.Source == HarnessSubscriptionSource && !c.Subscription || !slices.ContainsFunc(c.Accounts, func(a WeightedAccount) bool { return a.ID == p.AccountID }) || p.Source.Harness != c.Harness || p.Source.ProviderID != c.ProviderID || p.Source.SubscriptionService != c.SubscriptionService || p.AccountID.Validate() != nil || p.ConnectionID.Validate() != nil || p.Source.Source == HarnessAPISource && !lowerDigest(p.ProfileDigest) || p.Source.Source == HarnessSubscriptionSource && p.ProfileDigest != "" || len(p.Fields) > 12 {
 		return Fail(RecoveryRequired, "Invalid frozen harness provenance.", "Preserve the immutable configuration and selected account profile.")
 	}
-	fields := []string{"model", "effort", "permission", "claude_permission", "approval_policy", "approvals_reviewer", "subagent_model", "subagent_effort", "max_concurrency", "approval_review_model", "service_tier"}
+	fields := []string{"model", "effort", "permission", "claude_permission", "approval_policy", "approvals_reviewer", "subagent_model", "subagent_effort", "max_concurrency", "approval_review_model", "service_tier", "web_search"}
 	for field := range p.Fields {
 		if !slices.Contains(fields, field) {
 			return Fail(RecoveryRequired, "Unknown frozen harness field.", "Preserve the original supported provenance shape.")
@@ -362,7 +375,7 @@ func (p HarnessSettingsProvenance) Validate(c ExecutionConfiguration) error {
 	}
 	for _, field := range fields {
 		origin, ok := p.Fields[field]
-		if !ok && !HarnessFieldApplicable(c.Harness, field) {
+		if !ok && (field == "web_search" && c.Options.WebSearch == "" || !HarnessFieldApplicable(c.Harness, field)) {
 			continue
 		}
 		if !ok || origin.Layer == HarnessAgentLayer && (origin.ID != c.AgentID || origin.Revision != c.AgentRevision) || origin.ID.Validate() != nil || origin.Revision == 0 || !slices.Contains([]HarnessSettingLayer{HarnessAgentLayer, HarnessProjectLayer, HarnessServerLayer, HarnessNativeLayer}, origin.Layer) || origin.Scope != nil && (origin.Scope.Validate() != nil || !origin.Scope.matches(p.Source)) || origin.Layer == HarnessNativeLayer && !lowerDigest(origin.EvidenceDigest) {
@@ -436,6 +449,9 @@ func NormalizeNewAgentHarnessSettings(agent *Agent, raw []byte) error {
 	}
 	if _, present := options["approval_review_model"]; present {
 		settings.ApprovalReviewModel = OverrideHarnessSetting(agent.Options.ApprovalReviewModel)
+	}
+	if _, present := options["web_search"]; present {
+		settings.WebSearch = OverrideHarnessSetting(agent.Options.WebSearch)
 	}
 	if _, present := options["service_tier"]; present {
 		settings.ServiceTier = OverrideHarnessSetting(agent.Options.ServiceTier)

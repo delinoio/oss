@@ -5347,3 +5347,32 @@ search indexes bundled Codex labels and help only, with targets for model,
 effort, permissions, approval, subagents and tier. English and Korean catalogs
 cover labels, draft/save states, source guidance, unverified and unsupported
 states. Controls remain at least 40 pixels high with 8-pixel corners.
+
+## Codex native web search presentation
+
+The shared Codex Harness editor adds a Web search section with one native select:
+Use inherited setting, Disabled, Cached and Live. Require the independent
+web-search capability. Keep unknown native defaults and the configured value's
+source/revision visible; never assume Cached. Cached/Live are selectable only in
+the supported ChatGPT subscription source scope. Unsupported API source choices
+remain disabled with a reason. Native account support, project restrictions and
+permission policy still require verification before execution. Preserve saved
+unsupported values, original Save/Discard, stale-save drafts and uncertain-save
+request ownership. A failed settings read permits a read retry only. Disable
+editing during initial or unavailable ancestor reads. Changes affect future
+executions and cannot replace an active execution's immutable settings.
+
+Session search tools start collapsed, independently of a preference that expands
+other tools. Their names are Web search, Open page and Find text. Expanded content
+shows the original query, action, source and native result as inert bounded text.
+Do not render fabricated citations, timestamps, costs, fetched content or turn
+completion. Keep actual mode/source in durable records without session mode
+labels, badges or missing-mode notices. Hide routine success labels in both the
+compact transcript and original message renderer. Native progress and missing
+result guidance remain available when needed. There is no retransmission action.
+Retain the existing scroll, payload window and disclosure owners across reads,
+locale changes and pagination. English/Korean labels, keyboard disclosures,
+existing semantic light/dark tokens, 40-pixel controls, 8-pixel corners and
+wrapping below 640 pixels follow the surrounding shared editor/session contract.
+Native/account/platform acceptance remains separate from fixtures and browser
+presentation checks.

@@ -169,3 +169,49 @@ it("does not offer editing authority when inherited settings capability is absen
   fireEvent.change(field, { target: { value: "override" } });
   expect(change).not.toHaveBeenCalled();
 });
+
+it("uses one native search control and preserves inherited unknowns and explicit modes", async () => {
+  const change = mount(
+    { harness_defaults: { version: 1, entries: [] } },
+    HarnessSettingsOwner.Server,
+    [
+      SystemCapability.HARNESS_DEFAULTS_V1,
+      SystemCapability.CODEX_WEB_SEARCH_V1,
+    ],
+  );
+  const control = screen.getByRole("combobox", { name: "Web search" });
+  await waitFor(() =>
+    expect(control.closest("fieldset")?.disabled).toBe(false),
+  );
+  expect((control as HTMLSelectElement).value).toBe("inherit");
+  expect(change).not.toHaveBeenCalled();
+  expect(
+    (
+      within(control).getByRole("option", {
+        name: "Cached",
+      }) as HTMLOptionElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.change(screen.getByRole("combobox", { name: "Account source" }), {
+    target: { value: "subscription" },
+  });
+  expect(
+    (
+      within(control).getByRole("option", {
+        name: "Cached",
+      }) as HTMLOptionElement
+    ).disabled,
+  ).toBe(false);
+  for (const mode of ["disabled", "cached", "live"]) {
+    fireEvent.change(control, { target: { value: mode } });
+    expect(
+      change.mock.lastCall?.[0].harness_defaults.entries.at(-1).settings
+        .web_search,
+    ).toEqual({ mode: "override", value: mode });
+  }
+  fireEvent.change(control, { target: { value: "inherit" } });
+  expect(
+    change.mock.lastCall?.[0].harness_defaults.entries.at(-1).settings
+      .web_search,
+  ).toEqual({ mode: "inherit" });
+});

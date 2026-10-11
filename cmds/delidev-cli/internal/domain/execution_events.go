@@ -79,6 +79,7 @@ const MaxExecutionEvents = 100000
 // Observations remain distinct from the immutable requested configuration.
 // Nil effort/tier means unavailable, not a manufactured native default.
 type ObservedExecutionSettings struct {
+	WebSearch         WebSearchMode        `json:"web_search,omitempty"`
 	ApprovalsReviewer ApprovalsReviewer    `json:"approvals_reviewer,omitempty"`
 	Model             string               `json:"model"`
 	Effort            *string              `json:"effort"`
@@ -163,6 +164,9 @@ func (o ObservedExecutionSettings) ValidateForInput(configuration ExecutionConfi
 		if pair.requested != "" && (pair.observed == nil || *pair.observed != pair.requested) {
 			return Fail(RecoveryRequired, "The native setting differs from its immutable selection.", "Stop and reconcile the original native thread.")
 		}
+	}
+	if configuration.Options.WebSearch != "" && (configuration.Harness != Codex || o.WebSearch != configuration.Options.WebSearch) || o.WebSearch != "" && (!o.WebSearch.Valid() || configuration.Harness != Codex) {
+		return invalidObservation()
 	}
 	if (configuration.Options.Permission != PermissionDefault && configuration.Options.Permission != o.Permission) || (configuration.Options.ApprovalPolicy != "" && configuration.Options.ApprovalPolicy != o.ApprovalPolicy) {
 		return Fail(RecoveryRequired, "The native permission or approval policy changed.", "Stop and reconcile the original native thread.")

@@ -203,11 +203,11 @@ func (c *Client) verifySidechat(ctx context.Context, cwd string, thread domain.I
 }
 
 func sidechatSettings(settings ThreadSettings) bool {
-	return settings.Options.Permission == domain.PermissionReadOnly && settings.Options.ApprovalPolicy == string(ApprovalNever) && settings.Options.ApprovalReviewModel == "" && settings.Options.ClaudePermission == ""
+	return (settings.Options.WebSearch == "" || settings.Options.WebSearch == domain.WebSearchDisabled) && settings.Options.Permission == domain.PermissionReadOnly && settings.Options.ApprovalPolicy == string(ApprovalNever) && settings.Options.ApprovalReviewModel == "" && settings.Options.ClaudePermission == ""
 }
 
 func sidechatEffective(settings EffectiveSettings) bool {
-	return settings.ApprovalPolicy == ApprovalNever && settings.ApprovalsReviewer == "user" && settings.Sandbox.Type == ReadOnly && !settings.Sandbox.NetworkAccess && len(settings.Sandbox.WritableRoots) == 0 && !settings.Sandbox.ExcludeSlashTmp && !settings.Sandbox.ExcludeTmpdirEnvVar
+	return (settings.WebSearch == "" || settings.WebSearch == domain.WebSearchDisabled) && settings.ApprovalPolicy == ApprovalNever && settings.ApprovalsReviewer == "user" && settings.Sandbox.Type == ReadOnly && !settings.Sandbox.NetworkAccess && len(settings.Sandbox.WritableRoots) == 0 && !settings.Sandbox.ExcludeSlashTmp && !settings.Sandbox.ExcludeTmpdirEnvVar
 }
 
 func (c *Client) forkDefaults(source, child EffectiveSettings) bool {

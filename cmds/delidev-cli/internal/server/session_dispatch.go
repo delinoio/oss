@@ -163,6 +163,14 @@ func checkedExecutionConfiguration(tx *store.Tx, session domain.Session, machine
 	}
 	var empty domain.Installation
 	c := input.Configuration
+	if c.Options.WebSearch != "" {
+		if !slices.Contains(machine.WorkerCapabilities, domain.CodexWebSearchV1) {
+			return domain.Installation{}, domain.Fail(domain.Unsupported, "Native Codex web search requires an updated Runner Device.", "Update and reconnect the original Runner Device.")
+		}
+		if c.Options.WebSearch != domain.WebSearchDisabled && (!c.Subscription || c.SubscriptionService != domain.SubscriptionChatGPT || c.SidechatPolicy != "") {
+			return domain.Installation{}, domain.Fail(domain.Unsupported, "Native web search support is unavailable for this account source.", "Keep the saved mode; select a supported original account or explicitly disable search.")
+		}
+	}
 	if c.HarnessProvenance != nil && !slices.Contains(machine.WorkerCapabilities, domain.HarnessDefaultsV1) {
 		return empty, domain.Fail(domain.Unsupported, "This Runner Device cannot preserve frozen harness defaults.", "Update and reconnect the selected Runner Device before input is sent.")
 	}

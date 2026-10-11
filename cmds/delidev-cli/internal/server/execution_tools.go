@@ -1,6 +1,8 @@
 package server
 
 import (
+	"slices"
+
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
@@ -23,6 +25,17 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 	}
 	if update.Snapshot != nil && update.Snapshot.Kind == domain.SleepTool && (input.Configuration.Harness != domain.Codex || update.NativeParentID != "") {
 		return executionEventConflict()
+	}
+	if update.Snapshot != nil && update.Snapshot.Kind == domain.WebSearchTool {
+		mr, err := tx.Get(domain.MachineKind, input.MachineID)
+		if err != nil {
+			return err
+		}
+		m, err := store.Decode[domain.Machine](mr)
+		w := update.Snapshot.WebSearch
+		if err != nil || !slices.Contains(m.WorkerCapabilities, domain.CodexWebSearchV1) || input.Configuration.Harness != domain.Codex || !input.Configuration.Subscription || input.Configuration.SubscriptionService != domain.SubscriptionChatGPT || input.Configuration.SidechatPolicy != "" || update.NativeParentID != "" || w == nil || w.Mode != input.Configuration.Options.WebSearch || w.Source != "openai" {
+			return executionEventConflict()
+		}
 	}
 	var value domain.ExecutionMessage
 	var revision uint64
@@ -110,6 +123,9 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 				return executionEventConflict()
 			}
 			if tool.Started.Kind == domain.SleepTool && (tool.Started.Sleep == nil || tool.Started.Sleep.DurationMS == nil || update.Snapshot.Sleep == nil || update.Snapshot.Sleep.DurationMS == nil || *tool.Started.Sleep.DurationMS != *update.Snapshot.Sleep.DurationMS) {
+				return executionEventConflict()
+			}
+			if tool.Started.Kind == domain.WebSearchTool && (tool.Started.WebSearch.Mode != update.Snapshot.WebSearch.Mode || tool.Started.WebSearch.Source != update.Snapshot.WebSearch.Source) {
 				return executionEventConflict()
 			}
 			tool.Completed = update.Snapshot

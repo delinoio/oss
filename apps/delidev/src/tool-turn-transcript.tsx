@@ -51,7 +51,8 @@ function ToolEntry({
   if (!choices.entries.has(row.id))
     choices.entries.set(
       row.id,
-      preferences.tool_disclosure === DisclosureDefault.Expanded,
+      !row.tool?.webSearch &&
+        preferences.tool_disclosure === DisclosureDefault.Expanded,
     );
   const node = useRef<HTMLDivElement>(null),
     open = choices.entries.get(row.id) ?? false;
@@ -101,7 +102,10 @@ function ToolEntry({
       >
         <DisclosureSummary>
           <span>{row.tool?.name || copy("session.tool_7c9bbe")}</span>
-          <small>{statusLabel(row.tool?.state ?? "")}</small>
+          {!row.tool?.webSearch ||
+          !["complete", "completed"].includes(row.tool?.state ?? "") ? (
+            <small>{statusLabel(row.tool?.state ?? "")}</small>
+          ) : null}
         </DisclosureSummary>
         {payload ? (
           <div className="tool-entry-payload" ref={node}>

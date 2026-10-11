@@ -163,6 +163,9 @@ func (c *Client) checkNativeStateLocked(ctx context.Context, requireIdle bool) e
 		return err
 	}
 	s := c.execution.settings
+	if err := c.verifyWebSearch(ctx, ThreadSettings{Provider: s.Provider, Cwd: s.Cwd, Options: domain.AgentOptions{WebSearch: s.WebSearch}}); err != nil {
+		return err
+	}
 	if native.Cwd != s.Cwd && !nativePathEqual(native.Cwd, s.Cwd) || native.ModelProvider != s.Provider || native.SessionID != c.execution.thread.SessionID || native.HistoryMode != LegacyHistory || native.CanAcceptDirectInput == nil || !*native.CanAcceptDirectInput {
 		c.problem = turnUncertain()
 		return c.problem
