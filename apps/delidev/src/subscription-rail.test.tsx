@@ -828,7 +828,9 @@ it("retains duplicate-alias ownership and every native window in original order 
   await screen.findAllByRole("button", { name: /Same alias/ });
   for (const row of rows) {
     fireEvent.click(
-      screen.getByRole("button", { name: safePresentation(row.id) }),
+      screen.getByRole("button", {
+        name: safePresentation(row.id, "Account"),
+      }),
     );
     const dialog = screen.getByRole("dialog");
     expect(
@@ -908,7 +910,9 @@ for (const [name, extra, percent, state] of [
     });
     const f = mount(() => ({ resources: [row] }));
     fireEvent.click(
-      await screen.findByRole("button", { name: safePresentation(row.id) }),
+      await screen.findByRole("button", {
+        name: safePresentation(row.id, "Account"),
+      }),
     );
     const dialog = screen.getByRole("dialog");
     expect(
@@ -989,7 +993,7 @@ it("close and outside dismissal retain the original opener without another read"
   const row = resource("Original opener"),
     f = mount(() => ({ resources: [row] }));
   const opener = await screen.findByRole("button", {
-    name: safePresentation(row.id),
+    name: safePresentation(row.id, "Account"),
   });
   fireEvent.click(opener);
   fireEvent.click(screen.getByRole("button", { name: "Close quota details" }));

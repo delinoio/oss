@@ -98,6 +98,7 @@ function ProjectRow({
             icon={SettingsActionIcon.Edit}
             presentation={SettingsActionPresentation.Icon}
             targetId={row.id}
+            targetKind="project"
             type="button"
             disabled={!supportsResourceSchema(row)}
             aria-label={copy("settings.edit_f1be7e", { v0: name })}
@@ -109,6 +110,7 @@ function ProjectRow({
             icon={SettingsActionIcon.Delete}
             presentation={SettingsActionPresentation.Icon}
             targetId={row.id}
+            targetKind="project"
             type="button"
             disabled={!supportsResourceSchema(row)}
             aria-label={copy("settings.delete_cd822e", { v0: name })}

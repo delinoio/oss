@@ -108,8 +108,7 @@ it("labels each historical category with its original currency without inventing
     ],
   });
   render(<NativeAccounting data={data} open={vi.fn()} />);
-  expect(document.body.textContent).not.toContain("session");
-  expect(document.body.textContent).toContain("Session 1");
+  expect(screen.getByText("session", { exact: true })).toBeTruthy();
   const table = screen.getByRole("table", {
     name: "Original price versions for Claude main-loop inputs",
   });

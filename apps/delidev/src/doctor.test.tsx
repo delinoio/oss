@@ -192,9 +192,12 @@ it("owns the standalone Diagnostics heading, three independent observations and 
   ).toHaveLength(4);
   expect(within(worker).getAllByText("Handshake not checked")).toHaveLength(4);
   allClosed(view.container);
+  const serverId = value.state.report.server_id;
+  if (typeof serverId !== "string")
+    throw new TypeError("Fixture server identity must be a string");
   expect(
     within(server)
-      .getByText(safePresentation(value.state.report.server_id))
+      .getByText(safePresentation(serverId, "Server"))
       .closest("details")?.open,
   ).toBe(false);
   expect(

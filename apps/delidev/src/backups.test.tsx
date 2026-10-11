@@ -788,7 +788,7 @@ it("retains cached inventory during an updating read and its failed refresh", as
   );
   fireEvent.click(screen.getByRole("button", { name: "Refresh backups" }));
   await screen.findByText("Updating managed backups…");
-  expect(screen.getByText(safePresentation(f.id))).toBeTruthy();
+  expect(screen.getByText(safePresentation(f.id, "Backup"))).toBeTruthy();
   expect(
     (
       screen.getByRole("button", {

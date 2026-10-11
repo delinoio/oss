@@ -343,13 +343,7 @@ function NativeSummary({
                         >
                           {model.model?.nativeId ?? ""}
                         </button>
-                        <p>
-                          {model.providerName ||
-                            presentationLabels.identity(
-                              model.providerId,
-                              "provider",
-                            )}
-                        </p>
+                        <p>{model.providerId}</p>
                       </td>
                       <td>
                         {model.totals?.units.toLocaleString(displayLocale())}

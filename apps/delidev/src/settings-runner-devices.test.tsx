@@ -277,7 +277,9 @@ it("retains original order, parser fallback, full IDs and schema-gated inspect a
     ),
   ).toEqual(["Zulu", "Alpha", "Unnamed"]);
   for (const row of rows)
-    expect(within(inventory).getByText(safePresentation(row.id))).toBeTruthy();
+    expect(
+      within(inventory).getByText(safePresentation(row.id, "Runner Device")),
+    ).toBeTruthy();
   expect(
     (
       within(inventory).getAllByRole("button", {

@@ -80,6 +80,7 @@ export function RepositoryRow({
             icon={SettingsActionIcon.Edit}
             presentation={SettingsActionPresentation.Icon}
             targetId={row.id}
+            targetKind="repository"
             type="button"
             disabled={row.schemaVersion !== 1}
             aria-label={copy("settings.edit_f1be7e", { v0: name })}
@@ -91,6 +92,7 @@ export function RepositoryRow({
             icon={SettingsActionIcon.Delete}
             presentation={SettingsActionPresentation.Icon}
             targetId={row.id}
+            targetKind="repository"
             type="button"
             className="repository-delete"
             disabled={row.schemaVersion !== 1}

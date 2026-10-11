@@ -346,6 +346,7 @@ export function ApiProviderSettings({
                 presentation={SettingsActionPresentation.Icon}
                 targetName={presentationLabels.resource(entry.provider!)}
                 targetId={entry.provider!.id}
+                targetKind="provider"
                 type="button"
                 disabled={Boolean(result.error)}
                 onClick={() => editCustom(entry.provider!)}
@@ -357,6 +358,7 @@ export function ApiProviderSettings({
                 presentation={SettingsActionPresentation.Icon}
                 targetName={presentationLabels.resource(entry.provider!)}
                 targetId={entry.provider!.id}
+                targetKind="provider"
                 type="button"
                 disabled={Boolean(result.error)}
                 onClick={() => deleteCustom(entry.provider!)}
@@ -889,6 +891,7 @@ export function ActiveModelSettings({
                             presentation={SettingsActionPresentation.Icon}
                             targetName={presentationLabels.resource(model)}
                             targetId={model.id}
+                            targetKind="model"
                             type="button"
                             disabled={
                               Boolean(models.error) ||

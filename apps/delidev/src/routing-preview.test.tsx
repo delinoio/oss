@@ -134,7 +134,9 @@ it("uses a saved alias and service, keeping the full identity in a closed disclo
   expect(
     dialog.querySelector(".routing-account-id")?.hasAttribute("open"),
   ).toBe(false);
-  expect(within(dialog).getByText(safePresentation(row.id))).toBeTruthy();
+  expect(
+    within(dialog).getByText(safePresentation(row.id, "Account")),
+  ).toBeTruthy();
   expect(within(dialog).getByText("Weight")).toBeTruthy();
   expect(within(dialog).getByText("unknown")).toBeTruthy();
   expect(value.get).toHaveBeenCalledTimes(1);

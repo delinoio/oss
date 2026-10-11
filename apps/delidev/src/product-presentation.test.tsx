@@ -33,6 +33,9 @@ it("assigns labels to identity-only references without requiring resource docume
   labels.observeIds([first, second], "account");
   expect(labels.identity(first, "account")).toBe("Account 1");
   expect(labels.identity(second, "account")).toBe("Account 2");
+  expect(labels.identity("native-account-id", "account")).toBe(
+    "native-account-id",
+  );
 });
 it("projects only owned observation keys while preserving native/user bytes and original metadata", () => {
   const labels = new PresentationLabels();
@@ -85,12 +88,14 @@ it("removes repository UUID text and accessible action UUIDs without changing th
   );
   expect(mounted.container.textContent).not.toContain(first);
   expect(mounted.container.querySelector(".repository-resource-id")).toBeNull();
-  const button = screen.getByRole("button", { name: /Edit oss · Record 1/ });
+  const button = screen.getByRole("button", {
+    name: /Edit oss · Repository 1/,
+  });
   expect(button.getAttribute("aria-label")).not.toContain(first);
   fireEvent.click(button);
   expect(edit).toHaveBeenCalledWith(first);
   fireEvent.click(
-    screen.getByRole("button", { name: /Delete oss · Record 1/ }),
+    screen.getByRole("button", { name: /Delete oss · Repository 1/ }),
   );
   expect(remove).toHaveBeenCalledWith(first);
 });

@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-import { usePresentationLabels } from "./product-presentation";
+import {
+  usePresentationLabels,
+  type PresentationKind,
+} from "./product-presentation";
 import {
   createContext,
   useContext,
@@ -97,6 +100,7 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
   decorativePrefix?: string;
   targetName?: string;
   targetId?: string;
+  targetKind?: PresentationKind;
   "data-settings-task-cancel"?: boolean;
 }
 /** Native element identity, callbacks, guards and form ownership stay with callers. */
@@ -108,6 +112,7 @@ export function SettingsActionButton({
   decorativePrefix,
   targetName,
   targetId,
+  targetKind,
   ...props
 }: Props) {
   const presentationLabels = usePresentationLabels();
@@ -134,7 +139,9 @@ export function SettingsActionButton({
       ? [
           originalName ?? (typeof children === "string" ? children : undefined),
           targetName,
-          targetId ? presentationLabels.identity(targetId) : undefined,
+          targetId
+            ? presentationLabels.identity(targetId, targetKind)
+            : undefined,
         ]
           .filter(Boolean)
           .join(" · ")

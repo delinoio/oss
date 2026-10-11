@@ -39,6 +39,8 @@ export function presentationKind(kind?: EntityKind): PresentationKind {
   return kind === undefined ? "record" : (kinds[kind] ?? "record");
 }
 const uuid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+const identityUuid =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Call only for DeliDev-owned diagnostics. User/native text must bypass this projection. */
 export function diagnosticPresentation(value: unknown): string {
@@ -65,7 +67,9 @@ export class PresentationLabels {
   identity(value: unknown, kind: PresentationKind = "record"): string {
     if (typeof value !== "string" || !value) return "";
     // External/native identifiers are retained verbatim by their owners. This
-    // method receives only explicitly selected internal identity fields.
+    // method receives only explicitly selected internal identity fields. Keep
+    // opaque, non-UUID identifiers in their original form.
+    if (!identityUuid.test(value)) return value;
     return copy(`documents.kind.${kind}`, { number: this.number(value, kind) });
   }
   observe(value: string, name: string, kind: PresentationKind = "record") {

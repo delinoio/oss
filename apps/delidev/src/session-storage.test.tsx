@@ -524,7 +524,9 @@ it.each([Code.NotFound, Code.Unavailable])(
         })[1]!,
       );
       expect(
-        await screen.findByText(safePresentation(`Next session.*${next.id}`)),
+        await screen.findByText(
+          safePresentation(`Next session. ${next.id}`, "Session"),
+        ),
       ).not.toBeNull();
     } else {
       expect(

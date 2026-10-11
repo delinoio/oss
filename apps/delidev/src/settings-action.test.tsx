@@ -151,16 +151,16 @@ it("disambiguates same-name Projects with safe stable numbers and retains exact 
     </PresentationLabelsProvider>,
   );
   fireEvent.click(
-    screen.getByRole("button", { name: /Edit Shared name · 2 · Record/ }),
+    screen.getByRole("button", { name: /Edit Shared name · 2 · Project 2/ }),
   );
   expect(edit).toHaveBeenCalledExactlyOnceWith(b);
   fireEvent.click(
-    screen.getByRole("button", { name: /Delete Shared name · Record/ }),
+    screen.getByRole("button", { name: /Delete Shared name · 1 · Project 1/ }),
   );
   expect(remove).toHaveBeenCalledExactlyOnceWith(a);
   fireEvent.click(
     screen.getByRole("button", {
-      name: /Delete Shared name · 3 · Record/,
+      name: /Delete Shared name · 3 · Project 3/,
     }),
   );
   expect(remove).toHaveBeenCalledTimes(1);
