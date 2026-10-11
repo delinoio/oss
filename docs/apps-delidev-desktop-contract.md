@@ -5685,7 +5685,6 @@ revision. Do not add polling, telemetry, question-content logs or a feature
 flag. The session contract owns the authoritative derived predicate; presentation
 never grants response, execution or mutation authority.
 
-
 ### Codex reasoning summary disclosure
 
 Ordinary Session and General Chat retain Codex reasoning in its original resource and
