@@ -102,6 +102,7 @@ function Shell({
   serverPresentation,
   connectionReady,
   connectionSettings,
+  appInformationSettings,
   connectionTarget,
   onConnectionHelp,
   readLocalWorker,
@@ -118,6 +119,7 @@ function Shell({
   serverPresentation?: ServerPresentation;
   connectionReady: boolean;
   connectionSettings?: ReactNode;
+  appInformationSettings?: ReactNode;
   connectionTarget?: HTMLElement;
   onConnectionHelp?: (target: HTMLElement | undefined) => void;
   readLocalWorker?: ReadLocalWorkerProof;
@@ -798,6 +800,7 @@ function Shell({
                         openUsage={openAccountUsage}
                         readLocalWorker={readLocalWorker}
                         connectionSettings={connectionSettings}
+                        appInformationSettings={appInformationSettings}
                         pairingAuthority={pairingAuthority}
                         currentDeviceId={currentDeviceId}
                         controlLocalWorker={controlLocalWorker}
@@ -827,6 +830,7 @@ export function App({
   localServer,
   serverPresentation,
   connectionSettings,
+  appInformationSettings,
   connectionTarget,
   onConnectionHelp,
   connectionReady = true,
@@ -846,6 +850,7 @@ export function App({
   localServer?: ReactNode;
   serverPresentation?: ServerPresentation;
   connectionSettings?: ReactNode;
+  appInformationSettings?: ReactNode;
   connectionTarget?: HTMLElement;
   onConnectionHelp?: (target: HTMLElement | undefined) => void;
   connectionReady?: boolean;
@@ -890,6 +895,7 @@ export function App({
                               controlLocalWorker={controlLocalWorker}
                               chooseRepositoryFolder={chooseRepositoryFolder}
                               connectionSettings={connectionSettings}
+                              appInformationSettings={appInformationSettings}
                               connectionTarget={connectionTarget}
                               onConnectionHelp={onConnectionHelp}
                               localServer={localServer}

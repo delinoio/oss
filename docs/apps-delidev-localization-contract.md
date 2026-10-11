@@ -67,7 +67,7 @@ native content is not made available by localization. A disclosure contains only
 original details already admitted by the owning diagnostic contract. A translation
 never replaces original evidence or creates retry permission.
 
-The Appearance category retains all 18 categories, theme choices,
+The Appearance category retains all 19 categories, theme choices,
 colors, navigation and visit lifetime. A divider below Theme introduces Language.
 Use an editable search combobox at most 320 CSS pixels wide and at least 40 pixels
 tall, with 8-pixel corners and full available width below 640 pixels. Keep System
@@ -174,7 +174,7 @@ Run app-local `pnpm test`, root `cargo test`, native compilation, widget fixture
 `pnpm ci:contracts`, `pnpm ci:workflows` and changed-dependency security checks.
 Test System resolution, restart, new/multiple windows, delayed events, conflict,
 failed/uncertain writes, malformed-file preservation and retained drafts/focus/
-operations without added product RPCs. Inspect every screen and all 18 categories
+operations without added product RPCs. Inspect every screen and all 19 categories
 in both languages; verify widget sizes, selection, offline/stale/storage failures.
 `test-settings-layout.mjs` checks both catalogs across all existing categories,
 forms, themes and effective 200% viewports, then primary surfaces and an Appearance
@@ -273,3 +273,7 @@ English and Korean. Theme names and semantic token identifiers remain original
 user/machine values. Locale changes preserve device revisions, dirty custom drafts,
 exact pending saves, focus and committed color/layout preferences. Synthetic theme
 previews use bundled example text and contain no live conversation data.
+
+## App information copy
+
+Bundled English/Korean Settings catalogs define the final System App information category, its native version/platform labels, all six local platform names, loading/unavailable/read failures, fixed related-link labels and source-notices explanation. Updates copy distinguishes unchecked, confirmed no matching candidate, checking, available, preparing, prepared, installing, installed, failed and unconfirmed observations. Recovery labels and exact-original inspection guidance remain localized. Static Settings/command search reuses these bundled labels; server metadata and native destination strings do not become search content.

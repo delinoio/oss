@@ -74,6 +74,7 @@ export interface NavigationRow {
   workspace: string;
   outcome: string;
   archive: string;
+  awaitingUserResponse?: boolean;
   title?: ReturnType<typeof sessionTitlePresentation>;
   conversationKind: ConversationKind;
   parentId?: string;
@@ -90,6 +91,8 @@ export function navigationRow(row: Resource): NavigationRow {
     workspace: text(data.workspace),
     outcome: text(data.outcome),
     archive: text(data.archive),
+    awaitingUserResponse:
+      row.kind === EntityKind.SESSION && data.awaiting_user_response === true,
     title: sessionTitlePresentation(data),
     ...provenance,
   };

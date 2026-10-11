@@ -17,6 +17,7 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, Zeroizing};
 
+pub mod app_information;
 pub mod appearance;
 mod browser_opener;
 pub mod date_format;
@@ -332,6 +333,27 @@ impl Connector {
         match &result {
             Ok(()) => tracing::info!(operation = "provider_guidance", phase = "dispatched"),
             Err(code) => tracing::warn!(operation = "provider_guidance", phase = "failed", ?code),
+        }
+        result
+    }
+
+    pub fn open_app_information_link(
+        &self,
+        action: app_information::AppInformationLink,
+    ) -> Result<()> {
+        let result = browser_opener::dispatch(action.destination(), &self.exiting);
+        match &result {
+            Ok(()) => tracing::info!(
+                operation = "app_information_link",
+                phase = "dispatched",
+                ?action
+            ),
+            Err(code) => tracing::warn!(
+                operation = "app_information_link",
+                phase = "failed",
+                ?action,
+                ?code
+            ),
         }
         result
     }

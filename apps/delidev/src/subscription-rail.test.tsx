@@ -9,6 +9,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import {
@@ -58,7 +59,7 @@ function resource(name: string, service = "chatgpt", extra = {}): Resource {
           id: "weekly",
           remaining: 0.28,
           state: "observed",
-          observed_at: new Date().toISOString(),
+          observed_at: new Date(now).toISOString(),
           comparison_group: "weekly",
           blocking: true,
         },
@@ -111,8 +112,11 @@ it("projects safe independent identities and excludes disconnected/removal/recov
   expect(Object.keys(railAccount(a)).sort()).toEqual([
     "alias",
     "connected",
+    "connectionId",
     "disabled",
     "id",
+    "paidCreditState",
+    "paidCredits",
     "revision",
     "service",
     "windows",
@@ -125,6 +129,7 @@ function mount(
     | { resources: Resource[]; nextPageToken?: string }
     | Promise<{ resources: Resource[]; nextPageToken?: string }>,
   capable = true,
+  paidCapable: boolean | (() => boolean) = false,
 ) {
   const requests = vi.fn(read),
     manage = vi.fn(),
@@ -133,7 +138,14 @@ function mount(
     router.service(SystemService, {
       getStatus: () => ({
         capabilities: capable
-          ? [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1]
+          ? [
+              SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1,
+              ...((
+                typeof paidCapable === "function" ? paidCapable() : paidCapable
+              )
+                ? [SystemCapability.SUBSCRIPTION_PAID_CREDITS_V1]
+                : []),
+            ]
           : [],
       }),
     });
@@ -315,7 +327,7 @@ it("refreshes reached pages atomically without discovering an unseen tail", asyn
                 id: "weekly",
                 remaining: 0.64,
                 state: "observed",
-                observed_at: new Date().toISOString(),
+                observed_at: new Date(now).toISOString(),
                 comparison_group: "weekly",
                 blocking: true,
               },
@@ -544,7 +556,7 @@ it("shows sidebar reset countdowns without quota or account operations", async (
         id: "weekly",
         remaining: 0.28,
         state: "observed",
-        observed_at: new Date().toISOString(),
+        observed_at: new Date(now).toISOString(),
         reset_at: reset,
         comparison_group: "weekly",
         blocking: true,
@@ -588,7 +600,7 @@ it.each([
         id: "weekly",
         remaining: 0.28,
         state: "observed",
-        observed_at: new Date().toISOString(),
+        observed_at: new Date(now).toISOString(),
         comparison_group: "weekly",
         blocking: true,
       },
@@ -616,7 +628,7 @@ it.each([
         id: "weekly",
         remaining: 0.28,
         state: "failed",
-        observed_at: new Date().toISOString(),
+        observed_at: new Date(now).toISOString(),
         comparison_group: "weekly",
         blocking: true,
       },
@@ -803,7 +815,7 @@ it("retains duplicate-alias ownership and every native window in original order 
     remaining: 0.57,
     blocking: true,
     comparison_group: "shared",
-    observed_at: new Date().toISOString(),
+    observed_at: new Date(now).toISOString(),
   });
   const rows = ["chatgpt", "claude", "grok"].flatMap((service) => [
     resource("Same alias", service, {
@@ -885,7 +897,7 @@ for (const [name, extra, percent, state] of [
             remaining: 0.57,
             blocking: true,
             comparison_group: "primary",
-            observed_at: new Date().toISOString(),
+            observed_at: new Date(now).toISOString(),
           },
           extra,
         ),
@@ -985,4 +997,317 @@ it("close and outside dismissal retain the original opener without another read"
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(document.activeElement).toBe(opener);
   expect(f.requests).toHaveBeenCalledOnce();
+});
+
+const paidBucket = (
+  balance: string | null = "60961.1135370000",
+  extra = {},
+) => ({
+  id: "codex",
+  has_credits: true,
+  unlimited: false,
+  balance,
+  observed_at: new Date(now).toISOString(),
+  ...extra,
+});
+const withCredits = (buckets = [paidBucket()], extra = {}) =>
+  resource("Personal", "chatgpt", {
+    subscription: { paid_credits: buckets, ...extra },
+  });
+async function openPersonal() {
+  const opener = await screen.findByRole("button", {
+    name: /ChatGPT · Personal/,
+  });
+  fireEvent.click(opener);
+  return {
+    opener,
+    popup: screen.getByRole("dialog", { name: "ChatGPT · Personal" }),
+  };
+}
+it("shows selected saved paid credits above quota with exact disclosure and unchanged actions", async () => {
+  const f = mount(
+    () => ({
+      resources: [
+        withCredits(),
+        resource("Other", "chatgpt", {
+          subscription: { paid_credits: [paidBucket("12")] },
+        }),
+        resource("Claude", "claude", {
+          subscription: { paid_credits: [paidBucket("99")] },
+        }),
+      ],
+    }),
+    true,
+    true,
+  );
+  const { opener, popup } = await openPersonal();
+  const card = popup.querySelector(".subscription-paid-credits")!;
+  expect(within(popup).getByText("60,961.11")).toBeTruthy();
+  expect(within(popup).queryByText("12.00")).toBeNull();
+  expect(
+    card.compareDocumentPosition(
+      popup.querySelector(".subscription-quota-id")!,
+    ) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(within(popup).getByText("28%")).toBeTruthy();
+  expect(
+    within(popup).getByRole("button", { name: "Recheck saved quota evidence" }),
+  ).toBeTruthy();
+  const info = within(popup).getByRole("button", {
+    name: "Show exact paid-credit balance",
+  });
+  fireEvent.focus(info);
+  expect(within(popup).getByRole("tooltip").textContent).toContain(
+    "60961.1135370000",
+  );
+  fireEvent.keyDown(info, { key: "Escape" });
+  expect(screen.getByRole("dialog")).toBe(popup);
+  expect(within(popup).queryByRole("tooltip")).toBeNull();
+  fireEvent.keyDown(popup, { key: "Escape" });
+  expect(document.activeElement).toBe(opener);
+  fireEvent.click(
+    await screen.findByRole("button", { name: /Claude · Claude/ }),
+  );
+  expect(
+    screen.getByRole("dialog").querySelector(".subscription-paid-credits"),
+  ).toBeNull();
+  expect(f.requests).toHaveBeenCalledOnce();
+});
+it("projects validated credit evidence without numerical coercion or quota effects", () => {
+  const longest = "9".repeat(60) + ".001";
+  const values = [
+    paidBucket("0"),
+    paidBucket(null, { id: "unknown" }),
+    paidBucket(longest, { id: "long" }),
+  ];
+  const projected = railAccount(withCredits(values));
+  expect(projected.paidCredits.map((b) => b.balance)).toEqual([
+    "0",
+    null,
+    longest,
+  ]);
+  expect(remainingBadge(projected.windows, Date.now())).toBe(28);
+  for (const value of [
+    paidBucket("bad"),
+    paidBucket("1".repeat(65)),
+    paidBucket("1", { observed_at: "bad" }),
+    paidBucket("1", { unlimited: "true" }),
+  ]) {
+    expect(railAccount(withCredits([value])).paidCredits).toEqual([]);
+  }
+  expect(
+    railAccount(
+      resource("Other", "claude", { subscription: { paid_credits: values } }),
+    ).paidCredits,
+  ).toEqual([]);
+});
+it.each([
+  ["0", {}, "0.00"],
+  [null, {}, "Balance unknown"],
+  ["0.001", {}, "<0.01"],
+  ["42", { unlimited: true }, "Unlimited credits"],
+])(
+  "keeps distinct paid balance %s in the rail",
+  async (balance, extra, label) => {
+    mount(
+      () => ({ resources: [withCredits([paidBucket(balance, extra)])] }),
+      true,
+      true,
+    );
+    const { popup } = await openPersonal();
+    expect(within(popup).getByText(label)).toBeTruthy();
+  },
+);
+it("renders each paid bucket in source order with separate original observations", async () => {
+  mount(
+    () => ({
+      resources: [
+        withCredits([
+          paidBucket("3", { id: "first" }),
+          paidBucket("7", { id: "second" }),
+        ]),
+      ],
+    }),
+    true,
+    true,
+  );
+  const { popup } = await openPersonal();
+  expect(
+    [...popup.querySelectorAll(".subscription-paid-bucket")].map(
+      (n) => n.textContent,
+    ),
+  ).toEqual(["first", "second"]);
+  expect(within(popup).getByText("3.00")).toBeTruthy();
+  expect(within(popup).getByText("7.00")).toBeTruthy();
+  expect(within(popup).queryByText("10.00")).toBeNull();
+});
+it("retains credit values and timestamps across failed and deferred reads until complete replacement", async () => {
+  const original = withCredits();
+  const replacement = {
+    ...withCredits([
+      paidBucket("12", { observed_at: new Date(now + 1000).toISOString() }),
+    ]),
+    id: original.id,
+    revision: 2n,
+  };
+  let phase = 0;
+  let finish!: (value: { resources: Resource[] }) => void;
+  const f = mount(
+    () => {
+      if (phase === 1) throw new ConnectError("read failed", Code.Unavailable);
+      if (phase === 2)
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      return { resources: [original] };
+    },
+    true,
+    true,
+  );
+  const { popup } = await openPersonal();
+  const originalTimes = [
+    ...popup.querySelectorAll(".subscription-paid-observation time"),
+  ].map((n) => n.getAttribute("datetime"));
+  phase = 1;
+  fireEvent.click(
+    within(popup).getByRole("button", { name: "Recheck saved quota evidence" }),
+  );
+  await within(popup).findByText(/Refresh failed; retained observation/);
+  expect(within(popup).getByText("60,961.11")).toBeTruthy();
+  expect(
+    [...popup.querySelectorAll(".subscription-paid-observation time")].map(
+      (n) => n.getAttribute("datetime"),
+    ),
+  ).toEqual(originalTimes);
+  phase = 2;
+  fireEvent.click(
+    screen.getByRole("button", { name: "Explain subscription read problem" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await waitFor(() => expect(f.requests).toHaveBeenCalledTimes(3));
+  expect(
+    within(popup).getByText(/Refresh failed; retained observation/),
+  ).toBeTruthy();
+  await act(async () => finish({ resources: [replacement] }));
+  await within(popup).findByText("12.00");
+  expect(within(popup).queryByText("60,961.11")).toBeNull();
+  expect(
+    within(popup).queryByText(/Refresh failed; retained observation/),
+  ).toBeNull();
+});
+it.each([now - 300001, now + 60000])(
+  "marks stale/future paid observation independently of fresh quota",
+  async (at) => {
+    mount(
+      () => ({
+        resources: [
+          withCredits([
+            paidBucket("9", { observed_at: new Date(at).toISOString() }),
+          ]),
+        ],
+      }),
+      true,
+      true,
+    );
+    const { popup } = await openPersonal();
+    expect(within(popup).getByText("Stale observation")).toBeTruthy();
+    expect(within(popup).getByText("28%")).toBeTruthy();
+  },
+);
+it("removes paid display support independently without new saved-resource reads", async () => {
+  let supported = true;
+  const f = mount(
+    () => ({ resources: [withCredits()] }),
+    true,
+    () => supported,
+  );
+  const { popup } = await openPersonal();
+  expect(within(popup).getByText("60,961.11")).toBeTruthy();
+  supported = false;
+  await act(async () => {
+    await f.client.invalidateQueries({
+      predicate: (q) => JSON.stringify(q.queryKey).includes("GetStatus"),
+    });
+  });
+  await within(popup).findByText(
+    "Unavailable. Update the server and original Runner Device.",
+  );
+  expect(within(popup).queryByText("60,961.11")).toBeNull();
+  expect(within(popup).getByText("28%")).toBeTruthy();
+  expect(f.requests).toHaveBeenCalledOnce();
+});
+it("clears credits on credential replacement and authentication loss", async () => {
+  const first = withCredits();
+  let phase = 0;
+  mount(
+    () => {
+      if (phase === 2) throw new ConnectError("auth", Code.Unauthenticated);
+      return {
+        resources: [
+          phase ? { ...withCredits([]), id: first.id, revision: 2n } : first,
+        ],
+      };
+    },
+    true,
+    true,
+  );
+  const { popup } = await openPersonal();
+  fireEvent.focus(
+    within(popup).getByRole("button", {
+      name: "Show exact paid-credit balance",
+    }),
+  );
+  phase = 1;
+  fireEvent.click(
+    within(popup).getByRole("button", { name: "Recheck saved quota evidence" }),
+  );
+  await within(popup).findByText("Balance unknown");
+  expect(within(popup).queryByRole("tooltip")).toBeNull();
+  phase = 2;
+  fireEvent.click(
+    within(popup).getByRole("button", { name: "Recheck saved quota evidence" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(screen.queryByText("60,961.11")).toBeNull();
+});
+
+it.each([
+  {},
+  { quota_state: "failed" },
+  { paid_credits: [paidBucket("invalid")] },
+])(
+  "never manufactures a balance for sparse, failed or malformed saved evidence %j",
+  async (subscription) => {
+    mount(
+      () => ({
+        resources: [resource("Personal", "chatgpt", { subscription })],
+      }),
+      true,
+      true,
+    );
+    const { popup } = await openPersonal();
+    expect(
+      within(popup).getByText(
+        "quota_state" in subscription
+          ? "Balance unavailable"
+          : "Balance unknown",
+      ),
+    ).toBeTruthy();
+    expect(within(popup).queryByText("0.00")).toBeNull();
+  },
+);
+it("preserves a 64-character source decimal in the selected rail disclosure", async () => {
+  const balance = "9".repeat(60) + ".001";
+  mount(
+    () => ({ resources: [withCredits([paidBucket(balance)])] }),
+    true,
+    true,
+  );
+  const { popup } = await openPersonal();
+  fireEvent.focus(
+    within(popup).getByRole("button", {
+      name: "Show exact paid-credit balance",
+    }),
+  );
+  expect(within(popup).getByRole("tooltip").textContent).toContain(balance);
 });

@@ -1,3 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
+import {
+  AppInformation,
+  AppInformationSlot,
+  retainedDesktopContext,
+  type OpenAppInformationLink,
+} from "./app-information";
 import { QuitConnectionProvider, useQuitConnection } from "./quit-confirmation";
 import { createDesktopFetch } from "./desktop-runtime";
 import { copy, useLocale } from "./localization";
@@ -10,7 +17,11 @@ import { type Transport } from "@connectrpc/connect";
 import { createDeliDevTransport } from "@delinoio/delidev-api-client";
 import { Updates, type DesktopUpdateControls } from "./updates";
 import { App } from "./App";
-import { ConnectionsPage, type ConnectionPageSlots } from "./connections-page";
+import {
+  PersistentConnectionView,
+  ConnectionsPage,
+  type ConnectionPageSlots,
+} from "./connections-page";
 import { LocalConnectionPresentation } from "./local-connection-presentation";
 import { Modal, Problem } from "./ui";
 import {
@@ -91,6 +102,8 @@ function LocalDesktop() {
     useState<HTMLElement>();
   const [showConnection, setShowConnection] = useState(false);
   const [pageSlots, setPageSlots] = useState<ConnectionPageSlots>();
+  const [appInformationTarget, setAppInformationTarget] =
+    useState<HTMLElement>();
   const [connectionTarget, setConnectionTarget] =
     useState<HTMLDivElement | null>(null);
   const [recoveryTarget, setRecoveryTarget] = useState<HTMLDivElement | null>(
@@ -346,7 +359,9 @@ function LocalDesktop() {
   const connectionSettings = <ConnectionsPage local onSlots={setPageSlots} />;
   const updateControls = useMemo<DesktopUpdateControls>(
     () => ({
-      readContext: () => invoke("desktop_update_context"),
+      readContext: retainedDesktopContext(() =>
+        invoke("desktop_update_context"),
+      ),
       control: async (action, id, revision) => {
         const selected = previous.current;
         if (!selected) throw "invalid-evidence";
@@ -375,15 +390,18 @@ function LocalDesktop() {
         busy={busy}
         problem={problem}
       />
-      <LocalConnectionPresentation
-        diagnosticsOnly
-        destination={showConnection ? undefined : pageSlots?.advanced}
-      >
-        <Updates
-          active={showConnection || Boolean(pageSlots)}
-          controls={updateControls}
-        />
-      </LocalConnectionPresentation>
+      <PersistentConnectionView target={appInformationTarget} hidden>
+        <AppInformation
+          active={Boolean(appInformationTarget)}
+          controls={isTauri() ? updateControls : undefined}
+          openLink={isTauri() ? openAppInformationLink : undefined}
+        >
+          <Updates
+            active={Boolean(appInformationTarget)}
+            controls={isTauri() ? updateControls : undefined}
+          />
+        </AppInformation>
+      </PersistentConnectionView>
     </>
   );
   const oauthServer = previous.current?.server_id ?? "";
@@ -433,6 +451,9 @@ function LocalDesktop() {
                 }
                 connectionEpoch={connectionEpoch}
                 connectionSettings={connectionSettings}
+                appInformationSettings={
+                  <AppInformationSlot onTarget={setAppInformationTarget} />
+                }
                 connectionTarget={
                   showConnection
                     ? (connectionTarget ?? undefined)
@@ -569,6 +590,8 @@ function SavedDesktop({ profile }: { profile: SavedConnection }) {
   useLocale();
   const [showConnection, setShowConnection] = useState(false);
   const [pageSlots, setPageSlots] = useState<ConnectionPageSlots>();
+  const [appInformationTarget, setAppInformationTarget] =
+    useState<HTMLElement>();
   const [connectionTarget, setConnectionTarget] =
     useState<HTMLDivElement | null>(null);
   const [transport, setTransport] = useState<Transport>();
@@ -665,7 +688,9 @@ function SavedDesktop({ profile }: { profile: SavedConnection }) {
   };
   const updateControls = useMemo<DesktopUpdateControls>(
     () => ({
-      readContext: () => invoke("desktop_update_context"),
+      readContext: retainedDesktopContext(() =>
+        invoke("desktop_update_context"),
+      ),
       control: async (action, id, revision) => {
         const selected = previous.current;
         if (!selected) throw "invalid-evidence";
@@ -700,15 +725,18 @@ function SavedDesktop({ profile }: { profile: SavedConnection }) {
     </LocalConnectionPresentation>
   );
   const updateView = (
-    <LocalConnectionPresentation
-      diagnosticsOnly
-      destination={showConnection ? undefined : pageSlots?.advanced}
-    >
-      <Updates
-        active={showConnection || Boolean(pageSlots)}
+    <PersistentConnectionView target={appInformationTarget} hidden>
+      <AppInformation
+        active={Boolean(appInformationTarget)}
         controls={updateControls}
-      />
-    </LocalConnectionPresentation>
+        openLink={openAppInformationLink}
+      >
+        <Updates
+          active={Boolean(appInformationTarget)}
+          controls={updateControls}
+        />
+      </AppInformation>
+    </PersistentConnectionView>
   );
   const oauthServer = profile.server_id;
   const controlOAuth = useCallback<OAuthNativeControl>(
@@ -759,6 +787,9 @@ function SavedDesktop({ profile }: { profile: SavedConnection }) {
                 currentDeviceId={profile.device_id}
                 connectionEpoch={epoch}
                 connectionSettings={<ConnectionsPage onSlots={setPageSlots} />}
+                appInformationSettings={
+                  <AppInformationSlot onTarget={setAppInformationTarget} />
+                }
               />
             </WorkerNetworkControlProvider>
           </OAuthNativeProvider>
@@ -869,3 +900,6 @@ export function Desktop() {
     </QuitConnectionProvider>
   );
 }
+
+const openAppInformationLink: OpenAppInformationLink = (action) =>
+  invoke("open_app_information_link", { action });

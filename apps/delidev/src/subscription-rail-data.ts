@@ -1,9 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 import {
   subscriptionService,
+  SubscriptionServiceId,
   type Resource,
 } from "@delinoio/delidev-api-client";
 import { document, items, object, resourceName, text } from "./documents";
+import {
+  paidCreditProjection,
+  PaidCreditState,
+  type PaidCreditBucket,
+} from "./subscription-paid-credits";
 import { serviceAccount } from "./subscription-resource";
 export interface RailWindow {
   id: string;
@@ -23,17 +29,34 @@ export interface RailAccount {
   connected: boolean;
   disabled: boolean;
   windows: RailWindow[];
+  paidCredits: PaidCreditBucket[];
+  paidCreditState: PaidCreditState;
+  connectionId: string;
 }
 export function railAccount(resource: Resource): RailAccount {
   if (!serviceAccount(resource))
     throw new Error("Invalid subscription resource");
   const data = document(resource);
+  const subscription = object(data.subscription);
+  const paidCredits =
+    subscriptionService(data.subscription_service) ===
+    SubscriptionServiceId.ChatGPT
+      ? paidCreditProjection(subscription)
+      : [];
   return {
     id: resource.id,
     revision: resource.revision,
     alias: resourceName(resource),
     service: subscriptionService(data.subscription_service)!,
     disabled: data.enabled === false,
+    connectionId: text(object(data.connection).id),
+    paidCredits,
+    paidCreditState:
+      subscription.quota_state === "failed"
+        ? PaidCreditState.Failed
+        : paidCredits.length
+          ? PaidCreditState.Observed
+          : PaidCreditState.Unknown,
     connected:
       !data.removal &&
       object(data.subscription).recovery_required !== true &&

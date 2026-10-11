@@ -1,10 +1,19 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 .subscription-paid-credits {
-  padding: 16px;
+  padding: 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
   margin-block: 16px;
   min-width: 0;
+  background: var(--surface-muted);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.subscription-paid-credits h3 {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
 }
 .subscription-paid-credits ul {
   list-style: none;
@@ -12,17 +21,77 @@
   margin: 0;
 }
 .subscription-paid-credits li {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
+  display: grid;
+  gap: 6px;
   padding-block: 8px;
   min-width: 0;
-  overflow-wrap: anywhere;
 }
-.subscription-paid-credits li small {
+.subscription-paid-bucket {
+  font-size: 12px;
+}
+.subscription-paid-value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  min-width: 0;
+}
+.subscription-paid-balance {
+  min-width: 0;
+  font-size: 24px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+.subscription-paid-unit,
+.subscription-paid-observation {
+  color: var(--muted);
+  font-size: 12px;
+}
+.subscription-paid-observation {
+  display: block;
+  margin-top: 6px;
+}
+.subscription-paid-info {
+  display: inline-flex;
+  align-self: center;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+}
+.subscription-paid-info:hover {
+  background: var(--surface-hover);
+}
+.subscription-paid-info:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.subscription-paid-info svg {
+  width: 18px;
+  height: 18px;
+}
+.subscription-paid-exact {
   flex-basis: 100%;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.subscription-paid-empty {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
 }
 .subscription-paid-summary {
   grid-column: 1 / -1;
-  overflow-wrap: anywhere;
+  margin-block: 0 8px;
 }
