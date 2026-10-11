@@ -1,0 +1,56 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.message.message-codex-reasoning,
+.session-workspace .transcript .message.message-codex-reasoning {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.codex-reasoning.disclosure {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.codex-reasoning.disclosure > .disclosure-header {
+  min-height: 36px;
+  padding: 7px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 14px;
+}
+.codex-reasoning-summary {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.codex-reasoning-body {
+  min-width: 0;
+  margin-left: 6px;
+  padding-left: 20px;
+  border-left: 1px solid var(--border-subtle);
+}
+.codex-reasoning-body section + section {
+  margin-top: 16px;
+}
+.codex-reasoning-body h4,
+.codex-reasoning-body small {
+  color: var(--muted);
+  font-weight: 400;
+}
+.codex-reasoning-body h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+.codex-reasoning-body pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
