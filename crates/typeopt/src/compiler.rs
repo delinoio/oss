@@ -391,6 +391,7 @@ fn span(node: Node, source: &str, shorthand: bool, quoted: bool) -> Occurrence {
         end,
         shorthand,
         quoted,
+        erased: false,
     }
 }
 

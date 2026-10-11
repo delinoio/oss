@@ -417,6 +417,7 @@ pub(super) fn analyze(
                     member.name(),
                     source,
                     false,
+                    true,
                 );
             }
         }
@@ -430,6 +431,7 @@ pub(super) fn analyze(
                         member.name(),
                         source,
                         false,
+                        true,
                     );
                 }
             }
@@ -500,7 +502,7 @@ pub(super) fn analyze(
                     {
                         preserve(&mut objects, values, Preservation::ObservableOperation);
                     }
-                    access(&mut objects, values, key, source, false);
+                    access(&mut objects, values, key, source, false, false);
                 }
                 true
             }
@@ -534,6 +536,7 @@ pub(super) fn analyze(
                             key,
                             source,
                             element.property_name().is_nil(),
+                            false,
                         );
                     }
                 }
@@ -576,19 +579,28 @@ pub(super) fn analyze(
     }
     Ok(merged.into_values().collect())
 }
-fn access(objects: &mut [Object], values: &Values, key: Node, source: &str, shorthand: bool) {
+fn access(
+    objects: &mut [Object],
+    values: &Values,
+    key: Node,
+    source: &str,
+    shorthand: bool,
+    erased: bool,
+) {
     for &index in &values.objects {
         if let Some(property) = objects[index]
             .properties
             .iter_mut()
             .find(|p| p.name == key.text())
         {
-            property.occurrences.push(span(
+            let mut occurrence = span(
                 key,
                 source,
                 shorthand,
                 key.kind() == SyntaxKind::StringLiteral,
-            ));
+            );
+            occurrence.erased = erased;
+            property.occurrences.push(occurrence);
         } else {
             objects[index].preservation = Some(Preservation::ObservableOperation);
         }

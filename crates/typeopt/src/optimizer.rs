@@ -23,6 +23,9 @@ pub struct Occurrence {
     pub end: usize,
     pub shorthand: bool,
     pub quoted: bool,
+    /// Type-only occurrence (for example an inline parameter type) that is
+    /// renamed for consistency but removed from emitted JavaScript.
+    pub erased: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -88,10 +91,11 @@ pub fn allocate(
                         break name;
                     }
                 };
-                let old_size: usize = property.occurrences.iter().map(|o| o.end - o.start).sum();
-                let new_size: usize = property
-                    .occurrences
-                    .iter()
+                // Only emitted occurrences affect output size; erased type
+                // spans must not make a rename look profitable.
+                let runtime = || property.occurrences.iter().filter(|o| !o.erased);
+                let old_size: usize = runtime().map(|o| o.end - o.start).sum();
+                let new_size: usize = runtime()
                     .map(|o| {
                         candidate.len()
                             + if o.shorthand {
@@ -164,6 +168,7 @@ mod tests {
                     end: i * 30 + name.len(),
                     shorthand: false,
                     quoted: false,
+                    erased: false,
                 })
                 .collect(),
         }
