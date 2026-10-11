@@ -206,7 +206,10 @@ test.each(["<", ">", "&", "\u2028", "\u2029", "<>&\u2028\u2029"])(
   "enforces exact escaped aggregate boundaries for %j",
   (characters) => {
     for (const offset of [-1, 0, 1]) {
-      const data = fetchWithRetainedBytes(retainedWebLimit + offset, characters);
+      const data = fetchWithRetainedBytes(
+        retainedWebLimit + offset,
+        characters,
+      );
       expect(validNativeClaudeMessage(data, "complete")).toBe(offset <= 0);
     }
   },
