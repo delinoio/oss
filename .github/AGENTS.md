@@ -4,6 +4,8 @@
 - This file covers `.github/` and its descendants unless a more specific instruction file applies.
 - Read the owning contracts below before changing behavior, including affected cross-domain consumers.
 
+- Resolve CI platform matrices before runner allocation. Do not allocate macOS or iOS runners in CI; retain owning release gates.
+
 ## Owning contracts
 
 - [DeliDev native package verification](../docs/apps-delidev-packaging-contract.md)

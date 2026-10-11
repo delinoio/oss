@@ -24,6 +24,11 @@ jobs:
       rust_packages: ${{ steps.rust.outputs.rust_packages || '[]' }}
       forced: ${{ steps.plan.outputs.forced }}
       event: ${{ steps.plan.outputs.event }}
+      mode: ${{ steps.plan.outputs.mode }}
+      main_sha: ${{ steps.plan.outputs.main_sha }}
+      environment_matrix: ${{ steps.plan.outputs.environment_matrix }}
+      forge_matrix: ${{ steps.plan.outputs.forge_matrix }}
+      clibox_matrix: ${{ steps.plan.outputs.clibox_matrix }}
       go_test_matrix: ${{ steps.plan.outputs.go_test_matrix }}
       desktop_matrix: ${{ steps.plan.outputs.desktop_matrix }}
       react_forge_matrix: ${{ steps.plan.outputs.react_forge_matrix }}
@@ -75,6 +80,8 @@ jobs:
           CI_HEAD: ${{ steps.plan.outputs.head }}
           CI_JOBS: ${{ steps.plan.outputs.jobs }}
           CI_FORCED: ${{ steps.plan.outputs.forced }}
+          CI_MODE: ${{ steps.plan.outputs.mode }}
+          CI_MAIN_SHA: ${{ steps.plan.outputs.main_sha }}
           CARGO_MONO_BINARY: ${{ steps.cargo-mono.outputs.binary }}
         run: node scripts/ci/rust-affected.mjs plan
 
@@ -98,7 +105,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-latest, windows-latest]
+        os: [ubuntu-22.04, windows-latest]
     permissions:
       contents: read
       pull-requests: read
@@ -208,7 +215,7 @@ jobs:
       - name: Check Go formatting and vet
         env:
           FORCE_RUN: 'true'
-          CI_GO_MODE: ${{ github.event_name == 'pull_request' && !fromJSON(needs.changes.outputs.forced)['go-quality'] && 'affected' || 'full' }}
+          CI_GO_MODE: ${{ (github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && needs.changes.outputs.mode == 'affected')) && !fromJSON(needs.changes.outputs.forced)['go-quality'] && 'affected' || 'full' }}
           CI_GO_BASE: ${{ needs.changes.outputs.base }}
           CI_GO_HEAD: ${{ needs.changes.outputs.head }}
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:go:quality
@@ -286,7 +293,7 @@ jobs:
         env:
           CI_GO_TEST_SHARD: ${{ matrix.shard }}
           FORCE_RUN: 'true'
-          CI_GO_MODE: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && matrix.os != 'ubuntu-latest')) && !fromJSON(needs.changes.outputs.forced)['go-test'] && 'affected' || 'full' }}
+          CI_GO_MODE: ${{ (github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && needs.changes.outputs.mode == 'affected') || (github.event_name == 'push' && matrix.os != 'ubuntu-latest')) && !fromJSON(needs.changes.outputs.forced)['go-test'] && 'affected' || 'full' }}
           CI_GO_BASE: ${{ needs.changes.outputs.base }}
           CI_GO_HEAD: ${{ needs.changes.outputs.head }}
 
@@ -333,11 +340,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
-          - windows-latest
+      matrix: ${{ fromJSON(needs.changes.outputs.environment_matrix) }}
     permissions:
       contents: read
       pull-requests: read
@@ -598,8 +601,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+      matrix: ${{ fromJSON(needs.changes.outputs.forge_matrix) }}
     permissions:
       contents: read
       pull-requests: read
@@ -1521,73 +1523,6 @@ jobs:
           path: .turbo/runs/*.json
           if-no-files-found: ignore
 
-  devhud-ios-simulator:
-    needs: changes
-    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['devhud-ios-simulator'] }}
-    name: DevHUD iOS simulator (${{ matrix.target }})
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: aarch64
-            runner: macos-15
-          - target: aarch64-sim
-            runner: macos-15
-          - target: x86_64
-            runner: macos-15-intel
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Setup Node.js
-        id: ci-node
-        uses: ./.github/actions/setup-ci-node
-
-      # The pinned Tauri bundler embeds a universal macOS CEF helper even when
-      # its host CLI is invoked only to generate or build an iOS project.
-      - name: Prepare immutable host Tauri CLI
-        id: prebuilt
-        uses: ./.github/actions/setup-prebuilt
-
-
-      - name: Install macOS Rust targets
-        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Generate pinned iOS project
-        run: pnpm --filter devhud mobile:generate -- --platform ios
-
-      # cargo-mobile2 selects a named simulator on Intel. Initialize
-      # CoreSimulator first so Xcode exposes devices instead of placeholders.
-      - name: Initialize Intel iOS simulators
-        if: ${{ matrix.target == 'x86_64' }}
-        run: xcrun simctl list > /dev/null
-
-      - name: Build iOS host
-        working-directory: apps/devhud
-        run: node scripts/run-mobile.mjs ios build --target ${{ matrix.target }} --ci --no-sign
-
-      - name: Save pnpm cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v5
-        with:
-          path: ${{ steps.ci-node.outputs.cache-path }}
-          key: ${{ steps.ci-node.outputs.cache-key }}
-
-      - name: Save verified CLI after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.prebuilt.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: ${{ steps.prebuilt.outputs.cache-path }}
-          key: ${{ steps.prebuilt.outputs.cache-key }}
-
-
   devhud-android-emulator:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['devhud-android-emulator'] }}
@@ -2383,8 +2318,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
-      matrix:
-        os: [ubuntu-22.04, macos-14, windows-latest]
+      matrix: ${{ fromJSON(needs.changes.outputs.clibox_matrix) }}
     permissions:
       contents: read
       pull-requests: read
@@ -2589,7 +2523,6 @@ jobs:
       - devhud-security
       - devhud-desktop
       - devhud-mobile-contracts
-      - devhud-ios-simulator
       - devhud-android-emulator
       - delidev-protocol
       - delidev-client

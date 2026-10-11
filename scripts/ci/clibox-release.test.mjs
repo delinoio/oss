@@ -108,7 +108,7 @@ test("clibox input changes select its aggregated consumer checks and force exter
   const id = "node-clibox-test";
   assert.equal(jobPaths[id].workspace, "@delino/clibox");
   assert.ok(ci.jobs["ci-result"].needs.includes(id));
-  assert.deepEqual(ci.jobs[id].strategy.matrix.os, ["ubuntu-22.04", "macos-14", "windows-latest"]);
+  assert.equal(ci.jobs[id].strategy.matrix, "${{ fromJSON(needs.changes.outputs.clibox_matrix) }}");
   assert.equal(ci.jobs[id].steps.filter(({ run }) => run === "node scripts/ci/run-affected.mjs @delinoio/ci ci:clibox:native").length, 1);
   const smoke = source("packages/clibox/scripts/smoke.mjs");
   for (const command of ["text", "time", "base64", "hash"]) assert.ok(smoke.includes('invoke(["' + command + '"'));

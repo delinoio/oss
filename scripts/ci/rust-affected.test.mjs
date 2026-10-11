@@ -66,9 +66,8 @@ for (const [path, reason] of [["Cargo.toml", "shared-input"], [".cargo/config.to
   const f = rustFixture(t); f.write(path, path === "Cargo.toml" ? f.read(path) + "\n# fixture\n" : "fixture"); f.commit();
   const result = select(f); assert.equal(result.reason, reason); assert.deepEqual(result.packages, all);
 });
-test("manual and forced CI retain full selection", t => {
+test("forced CI retains full selection", t => {
   const f = rustFixture(t);
-  assert.deepEqual(select(f, { event: Event.Manual }).packages, all);
   assert.equal(select(f, { plan: { ...f.plan, forced: { "rust-test": true } } }).reason, "forced");
 });
 test("pnport preload changes include the runtime test owner", t => {
@@ -100,4 +99,12 @@ test("Rust checks preserve flags, literal arguments and Cargo failures", t => {
   }
   assert.throws(() => runRustCheck("test", ["app"], { cwd: f.cwd, stepSummary, run: () => ({ error: new Error("spawn failed"), status: null }) }), /spawn failed/u);
   for (const packages of [[], ["--workspace"], ["forge-scene"], ["app", "app"]]) assert.throws(() => runRustCheck("test", packages));
+});
+
+test("affected manual Rust validation selects only changed packages", t => {
+  const f = rustFixture(t);
+  f.write("unrelated/fixture.txt", "change"); f.commit();
+  const result = select(f, { event: Event.Manual });
+  assert.equal(result.mode, "affected");
+  assert.deepEqual(result.packages, ["unrelated"]);
 });

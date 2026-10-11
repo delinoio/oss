@@ -29,7 +29,7 @@ test("native and mobile consumers restore/verify before building and save only s
   assert.ok(steps.some(step => step.run === "node scripts/tauri-cli.mjs --print-path"));
   assert.ok(!steps.some(step => step.uses?.includes("cache/save")));
   const ci = workflow("workflows/CI.yml");
-  for (const name of ["devhud-desktop", "devhud-ios-simulator", "devhud-android-emulator"]) {
+  for (const name of ["devhud-desktop", "devhud-android-emulator"]) {
     const job = ci.jobs[name];
     const prepare = job.steps.findIndex(step => step.uses === "./.github/actions/setup-prebuilt");
     const build = job.steps.findIndex(step => /mobile:generate|scripts\/run-tauri|pnpm.*devhud build|Build DevHUD/u.test(step.run ?? step.name ?? ""));

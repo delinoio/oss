@@ -13,7 +13,7 @@ Repository developers and CI maintainers reproducing document, preservation and 
 - `pnpm exec turbo run build typecheck lint test --filter=@delino/react-forge` builds and validates the real library plus workspace and packed-consumer CLI.
 - `pnpm --filter @delino/react-forge test:render --output <directory>` creates four formats, edits three external Office fixtures, renders their originals for comparison, and independently verifies package XML, extracted text, native chart visibility, CJK and PDF semantics.
 - `pnpm --filter @delino/react-forge benchmark --output <report.json>` records eleven fresh-process workload samples.
-- CI `react-forge` runs on six native platform/architecture runners. Its native/system-font work is uncached and its seven-day artifacts contain Office/PDF files, page PNGs, provenance and benchmark reports.
+- CI `react-forge` runs on Windows x64 and Linux x64/arm64. The exact-tag release retains all six native platform/architecture runners. Its native/system-font work is uncached and its seven-day artifacts contain Office/PDF files, page PNGs, provenance and benchmark reports.
 
 ## Storage
 Committed `packages/react-forge/tests/evidence` JSON records contain local observation data and version/font checksums. Rendered artifacts are explicitly requested local output or short-lived CI artifacts; no system fonts are copied or redistributed. Existing external fixture bytes and their reproducible generators remain under their owning native crate tests. Generated package dist is removed from final worktrees.

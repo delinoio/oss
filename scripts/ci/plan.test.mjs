@@ -5,12 +5,12 @@ import { tmpdir } from "node:os";
 import { dirname, join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { changedFiles, Event, jobPaths, matchesPath, matricesForEvent, nativeMatrices, planJobs, previousJobPaths } from "./plan.mjs";
+import { changedFiles, Event, Mode, executionMode, jobPaths, matchesPath, matricesForEvent, nativeMatrices, planJobs, previousJobPaths } from "./plan.mjs";
 import { validateResults } from "./result.mjs";
 
 const native = Object.entries(jobPaths).filter(([, rule]) => rule.native).map(([id]) => id);
-const devhudNative = ["devhud-desktop", "devhud-ios-simulator", "devhud-android-emulator"];
-const selected = (event, paths) => Object.entries(planJobs(event, paths).jobs).filter(([, run]) => run).map(([id]) => id);
+const devhudNative = ["devhud-desktop", "devhud-android-emulator"];
+const selected = (event, paths, mode = Mode.Affected) => Object.entries(planJobs(event, paths, jobPaths, mode).jobs).filter(([, run]) => run).map(([id]) => id);
 
 test("rustfmt configuration selects only formatting on PRs and main pushes", () => {
   for (const event of [Event.PullRequest, Event.Push]) {
@@ -127,7 +127,7 @@ test("Go runner changes select validation without adding native Go runners to PR
     for (const path of ["scripts/ci/go-test.mjs", "scripts/ci/go-test.test.mjs", "scripts/ci/go-affected.mjs", "scripts/ci/go-quality.mjs"]) {
       assert.deepEqual(selected(event, [path]), ["go-quality", "go-test"]);
       assert.deepEqual(matricesForEvent(event).goTestMatrix.include,
-        nativeMatrices[event === Event.PullRequest ? "go-test-pr" : "go-test"]);
+        nativeMatrices[event === Event.PullRequest ? "go-test-pr" : "go-test"].filter(row => !row.os.startsWith("macos")));
     }
   }
 });
@@ -189,7 +189,7 @@ test("shared CI execution inputs exercise every eligible workspace job", () => {
   for (const event of [Event.PullRequest, Event.Push]) {
     for (const path of ["scripts/ci/run-affected.mjs", "scripts/ci/buf-entry.mjs"]) {
       const plan = planJobs(event, [path]);
-      const expected = Object.keys(jobPaths).filter((id) => id !== "devhud-ios-simulator" && (event !== Event.PullRequest || !native.includes(id)));
+      const expected = Object.keys(jobPaths).filter((id) => (event !== Event.PullRequest || !native.includes(id)));
       assert.deepEqual(Object.entries(plan.jobs).filter(([, run]) => run).map(([id]) => id), expected, `${event}: ${path}`);
       for (const id of expected) assert.equal(plan.forced[id], true, `${event}: ${path}: ${id}`);
     }
@@ -199,7 +199,7 @@ test("shared CI execution inputs exercise every eligible workspace job", () => {
 test("Git LFS attribute changes force every eligible job", () => {
   for (const event of [Event.PullRequest, Event.Push]) {
     const plan = planJobs(event, [".gitattributes"]);
-    const expected = Object.keys(jobPaths).filter((id) => id !== "devhud-ios-simulator" && (event !== Event.PullRequest || !native.includes(id)));
+    const expected = Object.keys(jobPaths).filter((id) => (event !== Event.PullRequest || !native.includes(id)));
     assert.deepEqual(Object.entries(plan.jobs).filter(([, run]) => run).map(([id]) => id), expected);
     for (const id of expected) assert.equal(plan.forced[id], true, `${event}: ${id}`);
   }
@@ -212,18 +212,18 @@ test("pnport installer changes select four-host native verification on main", ()
   }
 });
 
-test("main selects affected non-Mac native jobs; manual selects every job", () => {
+test("main selects affected non-Mac native jobs; manual skips native jobs", () => {
   for (const path of ["apps/devhud/src/App.tsx", "apps/devhud/src-tauri/src/main.rs", "protos/devhud/v1/settings.proto", "pnpm-lock.yaml", ".gitattributes", ".github/workflows/CI.yml"]) {
     for (const id of ["devhud-desktop", "devhud-android-emulator"]) assert.ok(selected(Event.Push, [path]).includes(id), `${path}: ${id}`);
     assert.ok(!selected(Event.Push, [path]).includes("devhud-ios-simulator"), path);
   }
-  assert.deepEqual(selected(Event.Manual, []), Object.keys(jobPaths));
+  assert.deepEqual(selected(Event.Manual, []), []);
   assert.deepEqual(selected(Event.Push, ["docs/project-with-watch.md"]), []);
   assert.deepEqual(selected(Event.PullRequest, ["docs/project-with-watch.md"]), []);
   assert.deepEqual(selected(Event.Push, []), []);
 });
 
-test("Linux packages run on affected main pushes and manual dispatch, never on PRs", () => {
+test("Linux packages run on affected main pushes, never on PRs or manual CI", () => {
   for (const path of [
     "crates/binpm/src/main.rs", "crates/cargo-mono/src/main.rs",
     "crates/nodeup/src/main.rs", "crates/with-watch/src/main.rs",
@@ -237,7 +237,7 @@ test("Linux packages run on affected main pushes and manual dispatch, never on P
     assert.equal(planJobs(Event.PullRequest, [path]).jobs["linux-packages"], false, path);
     assert.equal(planJobs(Event.Push, [path]).jobs["linux-packages"], true, path);
   }
-  assert.equal(planJobs(Event.Manual, []).jobs["linux-packages"], true);
+  assert.equal(planJobs(Event.Manual, []).jobs["linux-packages"], false);
   for (const paths of [[], ["docs/project-with-watch.md"], ["apps/devhud/src/App.tsx"]]) {
     assert.equal(planJobs(Event.Push, paths).jobs["linux-packages"], false);
   }
@@ -541,7 +541,7 @@ test("DeliDev protocol validation selects DeliDev and shared inputs independentl
       "packages/delidev-api-client/src/synchronization.ts",
     ]) assert.equal(planJobs(event, [path]).jobs["delidev-protocol"], false, `${event}: ${path}`);
   }
-  const manual = planJobs(Event.Manual, []).jobs;
+  const manual = planJobs(Event.Manual, ["protos/delidev/v1/delidev.proto"]).jobs;
   assert.equal(manual["delidev-protocol"], true);
   assert.equal(Object.hasOwn(manual, "devhud-protocol"), false);
 });
@@ -617,7 +617,7 @@ test("missing, malformed, and unavailable revisions fail rather than skip checks
     assert.throws(() => changedFiles(Event.Push, { before }, f.initial, f.cwd));
   }
   assert.throws(() => changedFiles(Event.PullRequest, {}, f.initial, f.cwd));
-  assert.deepEqual(changedFiles(Event.Manual, {}, f.initial, f.cwd), { base: f.initial, head: f.initial, paths: [] });
+  assert.throws(() => changedFiles(Event.Manual, {}, f.initial, f.cwd));
   assert.throws(() => previousJobPaths("bad", f.cwd), /40-character commit SHA/u);
   assert.throws(() => previousJobPaths("f".repeat(40), f.cwd));
 });
@@ -635,24 +635,24 @@ test("historical path rules are read from the exact comparison base", (t) => {
   assert.throws(() => previousJobPaths(bad, f.cwd), SyntaxError);
 });
 
-function results(event, paths) {
-  const { jobs } = planJobs(event, paths);
-  const matrices = matricesForEvent(event);
+function results(event, paths, mode = Mode.Affected) {
+  const { jobs } = planJobs(event, paths, jobPaths, mode);
+  const matrices = matricesForEvent(event, mode);
   return {
-    changes: { result: "success", outputs: { jobs: JSON.stringify(jobs), rust_packages: JSON.stringify(jobs["rust-test"] || jobs["rust-clippy"] ? ["fixture-package"] : []), event, go_test_matrix: JSON.stringify(matrices.goTestMatrix), desktop_matrix: JSON.stringify(matrices.desktopMatrix), react_forge_matrix: JSON.stringify(matrices.reactForgeMatrix), delidev_frontend_matrix: JSON.stringify(matrices.delidevFrontendMatrix) } },
+    changes: { result: "success", outputs: { mode, environment_matrix: JSON.stringify(matrices.environmentMatrix), forge_matrix: JSON.stringify(matrices.forgeMatrix), clibox_matrix: JSON.stringify(matrices.cliboxMatrix), pnport_matrix: JSON.stringify(matrices.pnportMatrix), jobs: JSON.stringify(jobs), rust_packages: JSON.stringify(jobs["rust-test"] || jobs["rust-clippy"] ? ["fixture-package"] : []), event, go_test_matrix: JSON.stringify(matrices.goTestMatrix), desktop_matrix: JSON.stringify(matrices.desktopMatrix), react_forge_matrix: JSON.stringify(matrices.reactForgeMatrix), delidev_frontend_matrix: JSON.stringify(matrices.delidevFrontendMatrix) } },
     "ci-contracts": { result: "success" },
     ...Object.fromEntries(Object.entries(jobs).map(([id, run]) => [id, { result: run ? "success" : "skipped" }])),
   };
 }
 
-test("aggregate requires Linux package skips on PRs and success when selected on main or manually", () => {
+test("aggregate requires Linux package skips on PRs/manual CI and success when selected on main", () => {
   const id = "linux-packages";
   for (const path of ["Cargo.lock", ".github/workflows/CI.yml"]) {
     for (const event of Object.values(Event)) {
       const needs = results(event, [path]);
-      assert.equal(needs[id].result, event === Event.PullRequest ? "skipped" : "success");
+      assert.equal(needs[id].result, event !== Event.Push ? "skipped" : "success");
       assert.equal(validateResults(needs), true);
-      const unexpected = event === Event.PullRequest ? "success" : "skipped";
+      const unexpected = event !== Event.Push ? "success" : "skipped";
       for (const result of ["failure", "cancelled", unexpected, undefined]) {
         needs[id].result = result;
         assert.throws(() => validateResults(needs), /linux-packages/u);
@@ -711,11 +711,7 @@ test("event matrices retain only the authorized native hosts", () => {
     const { desktopMatrix, reactForgeMatrix } = matricesForEvent(event);
     assert.deepEqual(desktopMatrix.include.map(({ id }) => id), nativeMatrices["devhud-desktop"].filter(({ os }) => os !== "macos").map(({ id }) => id));
     assert.deepEqual(reactForgeMatrix.include.map(({ id }) => id), ["linux-x64-gnu", "linux-arm64-gnu", "win32-x64-msvc"]);
-    assert.equal(planJobs(event, [".github/workflows/CI.yml"]).jobs["devhud-ios-simulator"], false);
   }
-  assert.deepEqual(matricesForEvent(Event.Manual).desktopMatrix.include, nativeMatrices["devhud-desktop"]);
-  assert.deepEqual(matricesForEvent(Event.Manual).reactForgeMatrix.include.map(({ id }) => id), ["darwin-x64", "darwin-arm64", "linux-x64-gnu", "linux-arm64-gnu", "win32-x64-msvc"]);
-  assert.equal(planJobs(Event.Manual, []).jobs["devhud-ios-simulator"], true);
 });
 
 test("Go matrix contains only Ubuntu on PRs, including dependency and forced configuration changes", () => {
@@ -724,11 +720,10 @@ test("Go matrix contains only Ubuntu on PRs, including dependency and forced con
     assert.equal(planJobs(Event.PullRequest, [path]).jobs["go-test"], true, path);
     assert.deepEqual(matricesForEvent(Event.PullRequest).goTestMatrix, { include: ["core", "server", "harness", "worker", "workspace"].map((shard) => ({ os: "ubuntu-latest", shard, label: `ubuntu-latest, ${shard}` })) }, path);
   }
-  const complete = [ubuntu, { os: "macos-latest", shard: "all", label: "macos-latest" },
+  const complete = [ubuntu,
     ...["core", "server", "harness", "worker", "workspace"].map((shard) => ({ os: "windows-latest", shard, label: `windows-latest, ${shard}` }))];
-  for (const event of [Event.Push, Event.Manual]) {
-    assert.deepEqual(matricesForEvent(event).goTestMatrix, { include: complete });
-  }
+  assert.deepEqual(matricesForEvent(Event.Push).goTestMatrix, { include: complete.filter(row => !row.os.startsWith("macos")) });
+  assert.deepEqual(matricesForEvent(Event.Manual).goTestMatrix, matricesForEvent(Event.PullRequest).goTestMatrix);
 });
 
 test("planner publishes the event Go matrix from real Git comparisons", (t) => {
@@ -739,6 +734,7 @@ test("planner publishes the event Go matrix from real Git comparisons", (t) => {
   for (const path of ["cmds/derun/example.go", "go.mod", ".github/workflows/CI.yml"]) {
     f.write(path, "fixture\n");
     const head = f.commit();
+    f.git("update-ref", "refs/remotes/origin/main", f.initial);
     for (const event of Object.values(Event)) {
       writeFileSync(eventPath, JSON.stringify(event === Event.PullRequest
         ? { pull_request: { base: { sha: f.initial }, head: { sha: head } } }
@@ -746,7 +742,7 @@ test("planner publishes the event Go matrix from real Git comparisons", (t) => {
       writeFileSync(outputPath, "");
       execFileSync(process.execPath, [script], { cwd: f.cwd, env: {
         ...process.env, GITHUB_EVENT_NAME: event, GITHUB_EVENT_PATH: eventPath,
-        GITHUB_SHA: head, GITHUB_OUTPUT: outputPath, GITHUB_STEP_SUMMARY: "",
+        GITHUB_REF: "refs/heads/feature", GITHUB_SHA: head, GITHUB_OUTPUT: outputPath, GITHUB_STEP_SUMMARY: "",
       } });
       const outputs = Object.fromEntries(readFileSync(outputPath, "utf8").trim().split("\n").map((line) => {
         const index = line.indexOf("=");
@@ -754,7 +750,7 @@ test("planner publishes the event Go matrix from real Git comparisons", (t) => {
       }));
       assert.equal(JSON.parse(outputs.jobs)["go-test"], true, `${event}: ${path}`);
       assert.deepEqual(JSON.parse(outputs.go_test_matrix), matricesForEvent(event).goTestMatrix);
-      assert.equal(outputs.base, event === Event.Manual ? head : f.initial);
+      assert.equal(outputs.base, f.initial);
       assert.equal(outputs.head, head);
     }
   }
@@ -765,7 +761,7 @@ test("CI Result rejects altered or missing Go matrices and every unsuccessful se
     for (const value of [undefined, "{", "{}", "null", JSON.stringify({ include: [] }),
       JSON.stringify({ include: matricesForEvent(event).goTestMatrix.include.slice(1) }),
       JSON.stringify({ include: [...matricesForEvent(event).goTestMatrix.include, matricesForEvent(event).goTestMatrix.include[0]] }),
-      JSON.stringify(matricesForEvent(event === Event.PullRequest ? Event.Push : Event.PullRequest).goTestMatrix),
+      JSON.stringify(matricesForEvent(event === Event.Push ? Event.PullRequest : Event.Push).goTestMatrix),
       JSON.stringify({ include: [...matricesForEvent(event).goTestMatrix.include, nativeMatrices["go-test"][0]] })]) {
       const needs = results(event, ["cmds/derun/example.go"]);
       needs.changes.outputs.go_test_matrix = value;
@@ -795,7 +791,6 @@ test("path-rule edits force only changed eligible jobs", () => {
   for (const path of [".github/workflows/CI.yml", "scripts/ci/plan.mjs", "scripts/ci/native-matrices.json"]) {
     const plan = planJobs(Event.Push, [path]);
     assert.equal(plan.jobs["react-forge"], true, path);
-    assert.equal(plan.jobs["devhud-ios-simulator"], false, path);
   }
 });
 
@@ -847,4 +842,61 @@ test("aggregate rejects missing, excluded and inconsistent Rust package selectio
   const needs = results(Event.PullRequest, ["docs/project-with-watch.md"]);
   needs.changes.outputs.rust_packages = '["fixture-package"]';
   assert.throws(() => validateResults(needs), /Rust package selection/u);
+});
+
+test("manual selection matches PR scope without macOS or native packaging", () => {
+  for (const paths of [[], ["cmds/derun/example.go"], ["crates/binpm/src/main.rs"], [".github/workflows/CI.yml"], ["go.mod"], ["docs/project-with-watch.md"]]) {
+    assert.deepEqual(planJobs(Event.Manual, paths), planJobs(Event.PullRequest, paths));
+    assert.deepEqual(matricesForEvent(Event.Manual), matricesForEvent(Event.PullRequest));
+    assert.equal(validateResults(results(Event.Manual, paths)), true);
+  }
+  for (const event of Object.values(Event)) {
+    assert.doesNotMatch(JSON.stringify(matricesForEvent(event)), /macos|darwin|apple/u);
+  }
+});
+
+test("manual affected comparison pins main and uses the complete branch merge-base range", t => {
+  const f = fixture(t);
+  f.git("switch", "-c", "feature");
+  f.write("cmds/derun/first.go", "first"); f.commit();
+  f.write("crates/binpm/second.rs", "second"); const head = f.commit();
+  f.git("switch", "main"); f.write("main-only.txt", "main"); const mainSha = f.commit();
+  const range = changedFiles(Event.Manual, {}, head, f.cwd, { ref: "refs/heads/feature", mainSha });
+  assert.deepEqual(range, { base: f.initial, head, paths: ["cmds/derun/first.go", "crates/binpm/second.rs"] });
+  f.write("later-main.txt", "later"); f.commit();
+  assert.deepEqual(changedFiles(Event.Manual, {}, head, f.cwd, { ref: "refs/heads/feature", mainSha }), range);
+  assert.deepEqual(changedFiles(Event.Manual, {}, mainSha, f.cwd, { ref: "refs/heads/main" }), { base: f.initial, head: mainSha, paths: ["main-only.txt"] });
+});
+
+test("manual affected comparison and mode errors fail closed", t => {
+  const f = fixture(t);
+  assert.throws(() => changedFiles(Event.Manual, {}, f.initial, f.cwd, { ref: "refs/heads/main" }));
+  for (const mainSha of [undefined, "", "0".repeat(40), "--help", "f".repeat(40)]) {
+    assert.throws(() => changedFiles(Event.Manual, {}, f.initial, f.cwd, { ref: "refs/heads/feature", mainSha }));
+  }
+  assert.throws(() => changedFiles(Event.Manual, {}, f.initial, f.cwd, { ref: "refs/tags/v1", mainSha: f.initial }));
+  for (const mode of ["", "invalid", "full", null, true]) assert.throws(() => executionMode(Event.Manual, mode));
+  for (const event of [Event.PullRequest, Event.Push]) assert.throws(() => executionMode(event, "full"));
+});
+
+test("CI Result rejects missing modes, native execution on affected manual CI, and every altered platform matrix", () => {
+  for (const mode of [undefined, "", "invalid", null]) {
+    const needs = results(Event.Manual, []); needs.changes.outputs.mode = mode;
+    assert.throws(() => validateResults(needs));
+  }
+  for (const output of ["environment_matrix", "forge_matrix", "clibox_matrix", "pnport_matrix", "desktop_matrix", "react_forge_matrix"]) {
+    for (const value of [undefined, "{", "{}", "null", "[]"]) {
+      const needs = results(Event.Manual, []); needs.changes.outputs[output] = value;
+      assert.throws(() => validateResults(needs));
+    }
+    const needs = results(Event.Manual, []);
+    const matrix = JSON.parse(needs.changes.outputs[output]);
+    const rows = matrix.include ?? matrix.os; rows.push(rows[0]);
+    needs.changes.outputs[output] = JSON.stringify(matrix);
+    assert.throws(() => validateResults(needs), new RegExp(output, "u"));
+  }
+  const needs = results(Event.Manual, []);
+  const jobs = JSON.parse(needs.changes.outputs.jobs); jobs["pnport-native"] = true;
+  needs.changes.outputs.jobs = JSON.stringify(jobs); needs["pnport-native"].result = "success";
+  assert.throws(() => validateResults(needs), /pnport-native/u);
 });
