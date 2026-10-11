@@ -157,6 +157,36 @@ try {
             assert(presentation.scroll);
             assert(presentation.windows.at(-1).includes("window:11:"));
           }
+          const credits = popup.locator(".subscription-paid-credits");
+          assert.equal(await credits.count(), 1);
+          assert.equal(
+            await credits.locator(".subscription-paid-balance").textContent(),
+            "60,961.11",
+          );
+          assert(
+            await popup.evaluate((node) =>
+              Boolean(
+                node
+                  .querySelector(".subscription-paid-credits")
+                  .compareDocumentPosition(
+                    node.querySelector(".subscription-quota-id"),
+                  ) & Node.DOCUMENT_POSITION_FOLLOWING,
+              ),
+            ),
+          );
+          const info = credits.locator(".subscription-paid-info");
+          await info.focus();
+          assert(
+            (await credits.locator('[role="tooltip"]').textContent()).includes(
+              "60961.1135370000",
+            ),
+          );
+          await page.keyboard.press("Escape");
+          assert.equal(await popup.count(), 1);
+          assert.equal(await credits.locator('[role="tooltip"]').count(), 0);
+          assert(
+            await info.evaluate((node) => document.activeElement === node),
+          );
           const actions = popup.locator(".subscription-account-actions button");
           await actions.last().focus();
           assert(
@@ -165,6 +195,7 @@ try {
               .evaluate((node) => document.activeElement === node),
           );
           if (windows === "many") {
+            await page.keyboard.press("Shift+Tab");
             await page.keyboard.press("Shift+Tab");
             await page.keyboard.press("Shift+Tab");
             assert(

@@ -178,3 +178,14 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
+
+/* Reuse the saved credit presentation without the Settings row summary count. */
+.subscription-rail-paid-credits .subscription-paid-credits {
+  margin-block: 12px;
+}
+.subscription-rail-paid-credits li:only-child .subscription-paid-bucket {
+  display: none;
+}
+.subscription-rail-paid-credits li:only-child {
+  padding-block: 0;
+}
