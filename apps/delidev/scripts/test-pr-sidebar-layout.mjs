@@ -112,9 +112,7 @@ try {
       return {
         overflow: node.scrollWidth > node.clientWidth,
         outside: [
-          ...node.querySelectorAll(
-            "button, input:not([type=radio]), select",
-          ),
+          ...node.querySelectorAll("button, input:not([type=radio]), select"),
         ]
           .filter((item) => item.getClientRects().length)
           .some((item) => {
@@ -223,36 +221,39 @@ try {
       ),
       `${context}: ${JSON.stringify(disclosures)}`,
     );
-
   };
   const snapshot = async (pane) =>
     pane.evaluate((node) => {
-    const owner = node.closest(".sidebar-list");
-    return {
-      metrics: [owner.scrollHeight, owner.clientHeight, owner.scrollTop],
-      rectangles: [...node.querySelectorAll(
-        ".pr-repository-heading, .sidebar-query-options, .pr-state-field, .pr-search-input, .sidebar-form select, .pr-repository-settings",
-      )].map((item) => {
-        const box = item.getBoundingClientRect();
-        return [box.x, box.y, box.width, box.height];
-      }),
-      values: [...node.querySelectorAll("input, select")].map((item) => [
-        item.value,
-        item.checked,
-      ]),
-      selection: [...node.querySelectorAll(".sidebar-repository-row")].map(
-        (item) => item.getAttribute("aria-pressed"),
-      ),
-      reads: { ...window.__prSidebarFixture },
-    };
-  });
+      const owner = node.closest(".sidebar-list");
+      return {
+        metrics: [owner.scrollHeight, owner.clientHeight, owner.scrollTop],
+        rectangles: [
+          ...node.querySelectorAll(
+            ".pr-repository-heading, .sidebar-query-options, .pr-state-field, .pr-search-input, .sidebar-form select, .pr-repository-settings",
+          ),
+        ].map((item) => {
+          const box = item.getBoundingClientRect();
+          return [box.x, box.y, box.width, box.height];
+        }),
+        values: [...node.querySelectorAll("input, select")].map((item) => [
+          item.value,
+          item.checked,
+        ]),
+        selection: [...node.querySelectorAll(".sidebar-repository-row")].map(
+          (item) => item.getAttribute("aria-pressed"),
+        ),
+        reads: { ...window.__prSidebarFixture },
+      };
+    });
   const unchanged = async (before, pane) => {
     const after = await snapshot(pane);
     for (const key of ["metrics", "rectangles"])
       assert(
-        before[key].flat().every(
-          (value, index) => Math.abs(value - after[key].flat()[index]) <= 1,
-        ),
+        before[key]
+          .flat()
+          .every(
+            (value, index) => Math.abs(value - after[key].flat()[index]) <= 1,
+          ),
         `Details preserves ${key}: ${JSON.stringify({ before, after })}`,
       );
     for (const key of ["values", "selection", "reads"])
@@ -283,7 +284,11 @@ try {
       presentation.topLayer && presentation.fixed && presentation.contained,
       JSON.stringify(presentation),
     );
-    assert(!/0195c9c0-7b13-7000-8000-/.test(presentation.content + presentation.names));
+    assert(
+      !/0195c9c0-7b13-7000-8000-/.test(
+        presentation.content + presentation.names,
+      ),
+    );
     assert(!(await trigger.getAttribute("aria-label")).includes("0195c9c0"));
     return panel;
   };
@@ -307,7 +312,10 @@ try {
         await row.waitFor();
         assert.equal(await row.textContent(), "oss");
         await assertLayout(pane, `${language}/${theme}/${width}: unselected`);
-        assert.deepEqual(await page.evaluate(() => window.__prSidebarFixture), { github: 0, repository: 0 });
+        assert.deepEqual(await page.evaluate(() => window.__prSidebarFixture), {
+          github: 0,
+          repository: 0,
+        });
         const refresh = pane.getByRole("button", {
           name: language === "ko" ? "새로고침" : "Refresh",
           exact: true,
@@ -356,7 +364,9 @@ try {
           .waitFor();
         await assertPopup(details);
         await unchanged(beforeDetails, pane);
-        const secondDetails = pane.locator(".pr-repository-details-toggle").nth(1);
+        const secondDetails = pane
+          .locator(".pr-repository-details-toggle")
+          .nth(1);
         await secondDetails.focus();
         const beforeSecondDetails = await snapshot(pane);
         await secondDetails.press("Enter");
@@ -444,9 +454,14 @@ try {
         if (width < 760) {
           await details.click();
           await page.keyboard.press("Escape");
-          assert(await pane.isVisible(), "First Escape retains the compact drawer");
+          assert(
+            await pane.isVisible(),
+            "First Escape retains the compact drawer",
+          );
           assert.equal(await details.getAttribute("aria-expanded"), "false");
-          assert(await details.evaluate((node) => node === document.activeElement));
+          assert(
+            await details.evaluate((node) => node === document.activeElement),
+          );
           await page.keyboard.press("Escape");
           assert.equal(
             await pane.isVisible(),
@@ -499,13 +514,21 @@ try {
   const missingPane = await enter("en");
   await missingPane.getByRole("button", { name: "oss", exact: true }).click();
   await page.waitForFunction(() => window.__prSidebarFixture.repository > 0);
-  await page.getByText("Loading repository settings…", { exact: true }).waitFor({ state: "hidden" });
-  const missingTrigger = missingPane.getByRole("button", { name: "Details for oss", exact: true });
+  await page
+    .getByText("Loading repository settings…", { exact: true })
+    .waitFor({ state: "hidden" });
+  const missingTrigger = missingPane.getByRole("button", {
+    name: "Details for oss",
+    exact: true,
+  });
   await missingTrigger.focus();
   const missingBefore = await snapshot(missingPane);
   await missingTrigger.press("Enter");
   const missingPopup = await assertPopup(missingTrigger);
-  assert.equal(await missingPopup.locator("dd").textContent(), "Not configured");
+  assert.equal(
+    await missingPopup.locator("dd").textContent(),
+    "Not configured",
+  );
   await unchanged(missingBefore, missingPane);
   const outside = missingPane.getByRole("textbox");
   await outside.click();
@@ -517,7 +540,9 @@ try {
   await assertPopup(missingTrigger);
   await page.keyboard.press("Escape");
   await unchanged(beforeEscape, missingPane);
-  assert(await missingTrigger.evaluate((node) => node === document.activeElement));
+  assert(
+    await missingTrigger.evaluate((node) => node === document.activeElement),
+  );
   checks++;
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${origin}/?empty=true`);
