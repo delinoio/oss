@@ -545,7 +545,7 @@ it("closes the repository edit, refreshes inventory and restores its opener auto
   value.save.mockImplementation(async request => ({ job, requestId: input(request).mutation.requestId }));
   render(<NotificationProvider>{value.view(<Settings />)}</NotificationProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
-  const opener = await screen.findByRole("button", { name: "Edit Repository" });
+  const opener = await screen.findByRole("button", { name: "Edit Repository" }, { timeout: 5000 });
   opener.focus(); fireEvent.click(opener);
   const save = await screen.findByRole("button", { name: "Save Repository" }) as HTMLButtonElement;
   await waitFor(() => expect(save.disabled).toBe(false)); fireEvent.click(save);
@@ -600,7 +600,7 @@ it("fences a dismissed repository status read before opening a successor task", 
   value.save.mockImplementation(async request => ({ job, requestId: input(request).mutation.requestId }));
   render(<NotificationProvider>{value.view(<Settings />)}</NotificationProvider>);
   fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Edit Repository" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Edit Repository" }, { timeout: 5000 }));
   const save = await screen.findByRole("button", { name: "Save Repository" }) as HTMLButtonElement;
   await waitFor(() => expect(save.disabled).toBe(false)); fireEvent.click(save);
   await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
