@@ -1359,8 +1359,6 @@
   border-bottom: 1px solid var(--border-subtle);
 }
 .session-information-section > h3,
-.session-diagnostics h3,
-.session-diagnostics h4,
 .session-information-section h3,
 .session-information-section h4 {
   margin: 0 0 8px;
@@ -1370,6 +1368,124 @@
 }
 .session-information-section[hidden] {
   display: none;
+}
+
+/* Keep the existing panel as scroll owner. Available panel width determines
+   Diagnostics reflow beside Session information, independent of window width. */
+.session-diagnostics-panel {
+  container: session-diagnostics / inline-size;
+}
+.session-diagnostics {
+  padding: 32px;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.session-diagnostics > * {
+  width: 100%;
+  max-width: 1040px;
+  min-width: 0;
+}
+.session-diagnostics > div > section {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.session-diagnostics > div > :not(:first-child),
+.session-diagnostics > .session-files {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+.session-diagnostics h3,
+.session-diagnostics h4,
+.session-workspace .session-diagnostics h2 {
+  margin: 0 0 16px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+.session-diagnostics p {
+  margin: 0 0 12px;
+}
+.session-diagnostics section > :last-child {
+  margin-bottom: 0;
+}
+.session-diagnostics dl {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  column-gap: 24px;
+  row-gap: 12px;
+  margin: 0;
+}
+.session-diagnostics dl > div {
+  display: contents;
+}
+.session-diagnostics dt {
+  color: var(--muted);
+}
+.session-diagnostics dt,
+.session-diagnostics dd {
+  min-width: 0;
+  margin: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.session-diagnostics dd > :last-child {
+  margin-bottom: 0;
+}
+.session-diagnostics ol {
+  margin: 12px 0 0 200px;
+  padding-left: 24px;
+}
+.session-diagnostics li + li {
+  margin-top: 12px;
+}
+.session-diagnostics > .session-files {
+  height: auto;
+  padding-inline: 0;
+  padding-bottom: 0;
+  gap: 16px;
+}
+.session-diagnostics .session-files header,
+.session-diagnostics .session-files form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+}
+.session-diagnostics .session-files header h2 {
+  margin-bottom: 0;
+}
+.session-diagnostics .session-files form > label {
+  flex: 1;
+  min-width: 0;
+}
+.session-diagnostics :is(button, input, select, summary) {
+  min-height: 40px;
+  max-width: 100%;
+}
+.session-diagnostics .disclosure[data-disclosure-density] > .disclosure-header {
+  min-height: 40px;
+}
+.session-diagnostics :focus-visible:not(:where(input, textarea, select)) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+@container session-diagnostics (width < 640px) {
+  .session-diagnostics {
+    padding: 16px;
+  }
+  .session-diagnostics dl {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 4px;
+  }
+  .session-diagnostics dl > div:not(:last-child) > dd {
+    margin-bottom: 8px;
+  }
+  .session-diagnostics ol {
+    margin-left: 0;
+  }
 }
 .context-capacity {
   height: 6px;

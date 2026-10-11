@@ -2821,7 +2821,7 @@ export function SessionView({
                 </div>
               ) : null}
               {active && panel === SessionPanel.Diagnostics ? (
-                <div className="session-app-panel">
+                <div className="session-app-panel session-diagnostics-panel">
                   <div className="session-diagnostics">
                     <div ref={setDiagnosticsTarget} />
                     <FlatDisclosureScope>

@@ -375,6 +375,31 @@ and follow the [heartbeat projection contract](protos-delidev-v1-contract.md#mac
 
 The feature adds an explicit Diagnostics panel beside the retained session conversation. It uses generated owner/client Connect Query after `REQUEST_DIAGNOSTICS_V1` capability validation, with an optional exact execution UUID filter, explicit refresh and 50-record pages. Validate the entire page's original session/execution, closed source/operation/state/error/settings, identity spelling, timestamps and precise counters before rendering. Keep native input selection/effective settings separate from proxy request/provider observations, and unavailable fields separate from zero/false. A send claim cannot prove provider acceptance; native terminal metadata cannot confirm native cleanup. Historical absence cannot be reconstructed. Escape/Close returns focus to Diagnostics and preserves the composer; inactive diagnostic queries are canceled/disposed. No mutation intent, automatic retry, payload display, usage reconstruction or public opener is introduced. See the [diagnostics contract](cmds-delidev-diagnostics-contract.md) and validation records in the integration PR.
 
+## Session Diagnostics spacing
+
+Session Diagnostics shares one 32px outer inset and left-aligned 1040px maximum
+content width across the original technical portal and request diagnostics.
+Top-level sections use normal semantic-theme dividers and 32px spacing. Headings
+use 16px text with 16px below; body text uses 14px and 1.5 line height. Fact rows
+use a 200px label column, a flexible value column, a 24px column gap and a 12px
+row gap without default definition-value indentation. Complete references wrap;
+ordered accounts keep their original numbering and order.
+
+Below 640px of available Diagnostics panel width, the inset is 16px and facts
+stack with 4px between each label and value and 12px between pairs. Request
+diagnostics has no second inset. Controls remain at least 40px high with visible
+keyboard focus. Use existing system fonts and semantic light/dark theme tokens.
+Preserve English/Korean text, notices, original section order, filters, pagination,
+disclosures, close controls, confirmations and recovery gates. Keep the original
+portal, query/mutation owners, tab lifecycle, scrolling and focus behavior. Other
+tool tabs, Session information, Settings Connections and standalone Doctor retain
+their layouts. This presentation adds no RPC, native change, logging or persistence.
+
+The synthetic browser regression in
+`apps/delidev/scripts/test-session-diagnostics-layout.mjs` checks wide/narrow
+geometry, long references, ordered accounts, themes, both languages and effective
+200% reflow independently of component behavior and installed-native acceptance.
+
 ## Scope
 
 `apps/delidev` owns the React desktop presentation and native Tauri host for DeliDev. The full desktop requirements in the feature remain normative; record implemented surfaces and remaining native/product work in pull requests, issues and CI logs/artifacts.
