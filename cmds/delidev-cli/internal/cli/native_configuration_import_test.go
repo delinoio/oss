@@ -41,7 +41,7 @@ func (s nativeImportSystemClient) GetStatus(context.Context, *connect.Request[pb
 }
 func TestCLINativeImportPreservesOriginalWireSelectionAndRequest(t *testing.T) {
 	requestID, previewID := domain.NewID(), domain.NewID()
-	raw := []byte("{\n \"version\":1, \"machine_revision\":\"9007199254740993\"\n}")
+	raw := []byte(`{"version":1,"harness":"claude-code","machine_revision":"9007199254740993","scopes":[{"kind":"home","path":"/explicit/.claude","files":["skills/review/SKILL.md"]}],"target":{"kind":"project","revision":"9007199254740993"}}`)
 	observation := json.RawMessage(`{"version":1,"sources":[],"entries":[]}`)
 	document, _ := json.Marshal(domain.Job{Type: domain.NativeConfigurationPreviewJob, State: domain.JobSucceeded, Input: json.RawMessage(`{}`), Output: observation})
 	job := &pb.Resource{Id: string(previewID), Kind: pb.EntityKind_ENTITY_KIND_JOB, SchemaVersion: 1, DocumentJson: document}

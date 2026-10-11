@@ -2469,11 +2469,14 @@ Complete continuation, context/compaction and permitted ordinary/managed Fork hi
 Native configuration import follows the
 [configuration transfer contract](cmds-delidev-configuration-transfer-contract.md#explicit-worker-local-codex-imports).
 The credential-free Worker reader inspects only explicit directory scopes and
-fixed files. It launches no harness and does not read authentication, managed
+fixed Codex files or fixed Claude files plus individually selected Claude rule,
+skill and plugin files. It launches no harness and does not read authentication, managed
 restrictions, generated memory, transcript or automatically discovered ancestors.
 Supported value parsing, native instruction override precedence, immutable package
 publication and source digest checks are independent of native execution readiness.
-Inert extension descriptors cannot enable hooks, plugins or MCP. Active private
+Claude source mapping and inert contents follow the
+[Claude import contract](cmds-delidev-configuration-transfer-contract.md#explicit-worker-local-claude-imports).
+Inert extension packages cannot enable hooks, plugins, skills or MCP. Active private
 runtimes and immutable execution settings are not modified by imports.
 
 ## Native Codex web search

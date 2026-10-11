@@ -255,3 +255,69 @@ secret exclusion, independent entry selection, all three destinations, source an
 destination conflicts, original Worker replacement/revocation, atomic publication,
 immutable/inert packages, portable preservation, exact replay and unchanged
 active snapshots. Fixtures do not establish installed-native/account acceptance.
+
+## Explicit Worker-local Claude imports
+
+The same version-1 preview/apply RPCs, CLI commands, capabilities, receipts and
+transaction boundaries also accept `harness: "claude-code"`. The caller explicitly
+selects the source directories and one destination: server defaults, a selected
+Project, or a selected Agent Worker route. Destination scopes must identify Claude
+Code and retain their current revision. Settings, instructions and extension
+packages remain independently selectable. No account, provider, native runtime,
+active execution snapshot or host source is changed by preview.
+
+A home scope names the Claude configuration directory itself and reads only
+`settings.json` and `CLAUDE.md`. Each selected project directory reads
+`.claude/settings.json`, then `.claude/settings.local.json`, followed by
+`CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md` and `.mcp.json`. Selected project
+scopes form an explicit ancestor-to-descendant chain. Settings retain that source
+order; selecting later values overrides selected earlier values of the same field.
+Instruction files are additive and retain their exact UTF-8 bytes and order. The
+[Claude settings documentation](https://code.claude.com/docs/en/settings) describes
+the separate user/project/local settings layers; the
+[Claude memory documentation](https://code.claude.com/docs/en/memory) describes
+instruction files, rules and native file imports.
+
+A Claude scope may additionally name at most 64 individual relative `files` under
+`rules/`, `skills/<name>/` or `plugins/<name>/`; project names include the `.claude/`
+prefix. Rule files must end in `.md`. These exact files follow the fixed candidates
+in the descriptor's reviewed order. Profile selectors, absolute paths, traversal,
+credential/managed/memory filenames and links are rejected. No directory scan,
+manifest reference, native `@import`, marketplace, plugin cache or skill reference
+can expand the read set. Auxiliary extension files must be individually selected.
+The bounded regular-file reader retains presence and original SHA-256 for every
+candidate, including absent files. Adding, deleting or changing any selected source
+invalidates the complete preview before atomic publication. The existing source,
+observation, entry and descriptor bounds apply. Malformed settings/MCP JSON fails;
+non-UTF-8 auxiliary files are classified as unsupported without their contents.
+
+Supported ordinary values are `model`, `effortLevel` and
+`permissions.defaultMode`. Effort accepts `low`, `medium`, `high`, `xhigh` and `max`.
+Native permission modes retain their exact Claude values in `claude_permission`;
+they are never translated into Codex sandbox or approval settings. Extra permission
+rules, directories and unknown native options remain unsupported. Unsupported and
+excluded entries disclose neither native key names nor values. Native login,
+`.credentials.json`, hybrid `.claude.json` state, managed restrictions, generated
+memory, environment maps, credential keys and credential-bearing URLs or text are
+excluded. Import does not establish account readiness or permission availability
+in an installed native version.
+
+Selected non-secret hooks, enabled plugin declarations, MCP declarations, skill
+files and plugin files become immutable inert packages. Each closed envelope keeps
+a category, exact selected UTF-8 contents and their SHA-256, with
+`execution_authority`, `credential_authority` and `trust` fixed to false. An envelope
+must fit the 128 KiB package bound; larger encoded content is unsupported. The
+Worker and portable package validator apply the same credential exclusion. Rules
+with frontmatter or native file import directives also retain their bytes as inert
+packages, so conditional instructions cannot become unconditional Agent prompts.
+Plain selected rules can become instruction packages. No selected extension can
+be attached to an Agent or executed through import, direct save or portable
+transfer; later activation requires its separate trust and credential contract.
+
+Claude regression fixtures cover ordered user/project/local layers, original
+instruction bytes, exact selected rules/skills/plugins, secret exclusion, inert
+conditional rules/import directives, link/bound/malformed-file rejection and source
+presence drift. Shared transaction fixtures exercise both harnesses at all three
+destinations, revocation/cancellation/replacement, destination conflicts, rollback,
+immutable portable packages and exact receipt replay after expiry/restart/deletion.
+These fixtures are separate from installed native, account and platform acceptance.
