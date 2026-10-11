@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-import { Terminal } from "@xterm/xterm";
-import { WebglAddon } from "@xterm/addon-webgl";
-import { FitAddon } from "@xterm/addon-fit";
-import { binaryInput } from "./terminal-input-queue";
-import "@xterm/xterm/css/xterm.css";
+import { WTerm, type TerminalLabels } from "@wterm/dom";
+import { GhosttyCore } from "@wterm/ghostty";
+import ghosttyWasm from "@wterm/ghostty/ghostty-vt.wasm?url";
+import { copy, i18n } from "./localization";
+import "@wterm/dom/css";
 import "./terminal-dock.css";
 
 export interface TerminalScreen {
@@ -12,6 +12,32 @@ export interface TerminalScreen {
   focus(): void;
   dispose(): void;
 }
+
+enum RendererStage {
+  Load = "load",
+  Initialize = "initialize",
+  Parse = "parse",
+  Measure = "measure",
+}
+const palette = [
+  0x222a33, 0xef8181, 0x8bd49c, 0xe8c77a, 0x80b7ef, 0xc4a0e8, 0x7fd0d0,
+  0xe5e9f0, 0x778390, 0xffa0a0, 0xa9e9b5, 0xffe1a2, 0xacd2ff, 0xe2baff,
+  0xa5eeee, 0xffffff,
+];
+function labels(): TerminalLabels {
+  return {
+    terminal: copy("session-terminals.inputLabel"),
+    keyboardExit: copy("session-terminals.keyboardExit"),
+    output: copy("session-terminals.outputLabel"),
+    announcementLimit: copy("session-terminals.announcementLimit"),
+    selecting: copy("session-terminals.selecting"),
+    selectionFailed: copy("session-terminals.selectionFailed"),
+    selectionChanged: copy("session-terminals.selectionChanged"),
+  };
+}
+
+// The synchronous facade retains the controller's attachment lifetime. Only
+// this adapter waits for the emitted same-origin WASM and owns DOM listeners.
 export function openTerminalScreen(
   host: HTMLElement,
   input: (bytes: Uint8Array) => void,
@@ -19,130 +45,170 @@ export function openTerminalScreen(
   unavailable: () => void,
   tabShortcut?: (event: KeyboardEvent) => boolean,
 ): TerminalScreen {
-  const terminal = new Terminal({
-    allowProposedApi: true,
-    scrollback: 5000,
-    fontSize: 14,
-    fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
-    screenReaderMode: true,
-    logLevel: "off",
-    disableStdin: true,
-    linkHandler: { activate: () => {}, hover: () => {}, leave: () => {} },
-    theme: {
-      background: "#14191f",
-      foreground: "#e5e9f0",
-      cursor: "#e5e9f0",
-      black: "#222a33",
-      red: "#ef8181",
-      green: "#8bd49c",
-      yellow: "#e8c77a",
-      blue: "#80b7ef",
-      magenta: "#c4a0e8",
-      cyan: "#7fd0d0",
-      white: "#e5e9f0",
-      brightBlack: "#778390",
-      brightRed: "#ffa0a0",
-      brightGreen: "#a9e9b5",
-      brightYellow: "#ffe1a2",
-      brightBlue: "#acd2ff",
-      brightMagenta: "#e2baff",
-      brightCyan: "#a5eeee",
-      brightWhite: "#ffffff",
-    },
-  });
-  terminal.attachCustomKeyEventHandler((event) => !tabShortcut?.(event));
-  const webgl = new WebglAddon(),
-    fit = new FitAddon();
   let alive = true,
-    writable = false;
+    writable = false,
+    requestedFocus = false;
+  let core: GhosttyCore | undefined, terminal: WTerm | undefined;
+  let stage = RendererStage.Load;
+  let ordered = Promise.resolve();
   const pending = new Set<() => void>();
-  const subscriptions = [
-    terminal.parser.registerOscHandler(52, () => true),
-    terminal.parser.registerOscHandler(8, () => true),
-    terminal.onData((value) => {
-      if (writable) input(new TextEncoder().encode(value));
-    }),
-    terminal.onBinary((value) => {
-      if (writable) input(binaryInput(value));
-    }),
-    webgl.onContextLoss(() => {
-      writable = false;
-      terminal.options.disableStdin = true;
-      unavailable();
-    }),
-  ];
-  const measure = () => {
-    if (!alive || !host.clientWidth || !host.clientHeight) return;
-    try {
-      const dimensions = fit.proposeDimensions();
-      if (!dimensions) return;
-      const rows = Math.min(500, Math.max(1, dimensions.rows)),
-        columns = Math.min(1000, Math.max(1, dimensions.cols));
-      if (terminal.rows !== rows || terminal.cols !== columns)
-        terminal.resize(columns, rows);
-      resized(rows, columns);
-    } catch {
-      writable = false;
-      terminal.options.disableStdin = true;
-      unavailable();
-    }
-  };
-  // Intercept the browser paste once. xterm owns bracketed-paste framing and
-  // the callback atomically admits or rejects the complete emitted byte string.
-  const paste = (event: ClipboardEvent) => {
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    if (writable)
-      terminal.paste(event.clipboardData?.getData("text/plain") ?? "");
-  };
-  host.addEventListener("paste", paste, true);
+  const encoder = new TextEncoder();
   const observer = new ResizeObserver(measure);
-  try {
-    terminal.loadAddon(webgl);
-    terminal.loadAddon(fit);
-    terminal.open(host);
-    observer.observe(host);
-    measure();
-  } catch (error) {
-    alive = false;
+  const translate = () => terminal?.setAccessibilityLabels(labels());
+  const disposeResources = () => {
     observer.disconnect();
     host.removeEventListener("paste", paste, true);
-    terminal.dispose();
-    for (const subscription of subscriptions) subscription.dispose();
-    throw error;
+    host.removeEventListener("keydown", shortcut, true);
+    host.ownerDocument.fonts?.removeEventListener("loadingdone", measure);
+    i18n.off("languageChanged", translate);
+    // WTerm intentionally does not own supplied cores. Release both owners on
+    // all paths, including failed init and a load that finishes after disposal.
+    try {
+      terminal?.destroy();
+    } catch {
+      console.error({
+        event: "terminal-renderer-disposal",
+        category: "renderer-disposal",
+      });
+    }
+    try {
+      core?.dispose();
+    } catch {
+      console.error({
+        event: "terminal-core-disposal",
+        category: "core-disposal",
+      });
+    }
+    for (const settle of pending) settle();
+  };
+  const fail = (failureStage: RendererStage) => {
+    if (!alive) return;
+    alive = false;
+    writable = false;
+    console.error({
+      event: "terminal-renderer-unavailable",
+      stage: failureStage,
+      category: "renderer-unavailable",
+    });
+    disposeResources();
+    unavailable();
+  };
+  function measure() {
+    if (!alive || !terminal || !host.clientWidth || !host.clientHeight) return;
+    try {
+      terminal.fit();
+      // The patched fit/resize clamps before the core and DOM allocate a grid.
+      resized(terminal.rows, terminal.cols);
+    } catch {
+      fail(RendererStage.Measure);
+    }
   }
+  function paste(event: ClipboardEvent) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (alive && writable)
+      terminal?.paste(event.clipboardData?.getData("text/plain") ?? "");
+  }
+  function shortcut(event: KeyboardEvent) {
+    if (alive && tabShortcut?.(event)) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+  }
+  host.addEventListener("paste", paste, true);
+  host.addEventListener("keydown", shortcut, true);
+  i18n.on("languageChanged", translate);
+  const ready = (async () => {
+    try {
+      core = await GhosttyCore.load({
+        wasmPath: new URL(ghosttyWasm, host.ownerDocument.baseURI).href,
+        scrollbackLimit: 5000,
+        discardClipboard: true,
+        imageStorageLimit: 0,
+        foregroundColor: "#e5e9f0",
+        backgroundColor: "#14191f",
+      });
+      if (!alive) {
+        core.dispose();
+        return;
+      }
+      stage = RendererStage.Initialize;
+      terminal = new WTerm(host, {
+        core,
+        autoResize: false,
+        autoFocus: false,
+        inputEnabled: false,
+        linksEnabled: false,
+        debug: false,
+        announceOutput: true,
+        labels: labels(),
+        onData: (value) => {
+          if (alive && writable) input(encoder.encode(value));
+        },
+        onBinary: (value) => {
+          if (alive && writable) input(value);
+        },
+      });
+      await terminal.init();
+      if (!alive) {
+        terminal.destroy();
+        core.dispose();
+        return;
+      }
+      terminal.setThemeColors({
+        foreground: 0xe5e9f0,
+        background: 0x14191f,
+        cursor: 0xe5e9f0,
+        palette,
+      });
+      terminal.setInputEnabled(writable);
+      observer.observe(host);
+      host.ownerDocument.fonts?.addEventListener("loadingdone", measure);
+      measure();
+      if (alive && requestedFocus) terminal.focus();
+    } catch {
+      fail(stage);
+    }
+  })();
   return {
     write(bytes, gap) {
-      return new Promise((resolve) => {
-        if (!alive) {
-          resolve();
-          return;
-        }
-        if (gap) terminal.reset();
-        const settled = () => {
-          pending.delete(settled);
+      if (!alive) return Promise.resolve();
+      // Copy admitted raw bytes before waiting: callers may reuse transport views.
+      const admitted = bytes.slice();
+      return new Promise<void>((resolve) => {
+        const settle = () => {
+          pending.delete(settle);
           resolve();
         };
-        pending.add(settled);
-        terminal.write(bytes, settled);
+        pending.add(settle);
+        ordered = ordered
+          .then(() => ready)
+          .then(() => {
+            if (!alive || !terminal) return;
+            try {
+              if (gap) terminal.reset();
+              terminal.write(admitted);
+            } catch {
+              fail(RendererStage.Parse);
+            }
+          })
+          .finally(settle);
       });
     },
     enabled(value) {
       writable = alive && value;
-      terminal.options.disableStdin = !writable;
+      terminal?.setInputEnabled(writable);
     },
     focus() {
-      if (alive) terminal.focus();
+      if (!alive) return;
+      requestedFocus = true;
+      terminal?.focus();
     },
     dispose() {
       if (!alive) return;
       alive = false;
       writable = false;
-      observer.disconnect();
-      host.removeEventListener("paste", paste, true);
-      for (const subscription of subscriptions) subscription.dispose();
-      /* Dispose the terminal first: addon disposal must never install the patched DOM fallback. */ terminal.dispose();
-      for (const settled of pending) settled();
+      disposeResources();
     },
   };
 }
