@@ -47,3 +47,5 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - [DeliDev Worker workspace contract](../../../docs/cmds-delidev-workspace-contract.md)
 - [Project: DeliDev](../../../docs/project-delidev.md)
 - [DeliDev v1 Connect contract](../../../docs/protos-delidev-v1-contract.md)
+
+- Keep the session Diagnostics tab styling scoped to `.session-diagnostics` in `session.css`: 32px inset (16px below 640px container width), 1040px left-aligned cap, 32px section gaps, 200px/flexible definition columns that stack when narrow, theme tokens only, presentation-only. See `docs/apps-delidev-desktop-contract.md#session-diagnostics-tab-spacing`.

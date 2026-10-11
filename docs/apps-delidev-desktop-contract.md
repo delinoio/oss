@@ -5237,3 +5237,9 @@ vertical scrolling, stable scrollbar gutter, overscroll protection and fixed
 Reset. Date precision, invalid drafts, presets, picker selection, query identity
 and mounted drafts retain their original owners. English/Korean, light/dark,
 compact drawer and effective 200% browser checks are synthetic evidence only.
+
+## Session Diagnostics tab spacing
+
+- The session Diagnostics tab body (`.session-diagnostics` in `apps/delidev/src/session.css`) uses static, presentation-only styles: 32px outer padding, a left-aligned 1040px maximum content width, 32px gaps between top-level sections, 16px section headings with 16px below, 14px body text at 1.5 line height, existing theme tokens and system fonts.
+- Definition lists use a 200px label column, flexible value column, 24px column gap and 12px row gap, with the default `dd` indentation reset. Below 640px of available panel width (container query) the outer padding is 16px and pairs stack with a 4px within-pair gap and 12px between pairs. Long references wrap completely; numbered account order, labels, values, guidance and section order are unchanged.
+- RequestDiagnostics shares the same inset without nested padding. Controls stay at least 40px high with visible keyboard focus. Original portal hosts, query/mutation owners, confirmations, recovery gates, tab lifecycle, scrolling and focus behavior are preserved. No RPC, protocol, migration, native, dependency, persistence, feature flag or logging change. Session information (#2548), Settings Connections and standalone Doctor keep their layouts.
