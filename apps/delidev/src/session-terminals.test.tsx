@@ -555,20 +555,27 @@ it("keeps terminal input enabled while one control is pending and never steals f
     fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() => expect(controlTerminal).toHaveBeenCalledTimes(1));
     expect(input.disabled).toBe(false);
-    // jsdom retains disabled focus; model the browser's focus loss explicitly.
-    const columns = screen.getByRole("button", { name: "Create terminal" });
-    columns.focus();
+    // Pending input keeps creation gated, but the owned selector stays focusable.
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Create terminal",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    const selector = screen.getByRole("tab", { name: /Terminal 1/ });
+    selector.focus();
     expect(document.activeElement).not.toBe(input);
     await act(async () => acknowledge());
     await waitFor(() => expect(input.disabled).toBe(false));
-    expect(document.activeElement).toBe(columns);
+    expect(document.activeElement).toBe(selector);
     expect(controlTerminal).toHaveBeenCalledTimes(1);
     // A metadata poll must not steal focus while controls remain available.
-    columns.focus();
+    selector.focus();
     await act(async () => {
       await client.invalidateQueries();
     });
-    expect(document.activeElement).toBe(columns);
+    expect(document.activeElement).toBe(selector);
   } finally {
     acknowledge();
     view.unmount();

@@ -35,7 +35,16 @@ export function useSharedTabReveal(
       );
     reveal();
     if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(reveal);
+    const observer = new ResizeObserver(() => {
+      const focused = document.activeElement;
+      if (
+        focused instanceof HTMLElement &&
+        focused.matches(".shared-tab-control") &&
+        focused.closest(".shared-tab-strip") === strip
+      )
+        revealSharedTab(focused);
+      else reveal();
+    });
     observer.observe(strip);
     return () => observer.disconnect();
   }, [root, selected]);

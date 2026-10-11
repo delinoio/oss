@@ -34,11 +34,6 @@ import { encode } from "./documents";
 import { ProjectEditTab, ProjectEditTabs } from "./project-edit-tabs";
 import { readFileSync } from "node:fs";
 const sharedTabStyles = readFileSync("src/shared-tabs.css", "utf8");
-const taskStyles = readFileSync("src/settings-task.css", "utf8");
-const presentationStyles = readFileSync(
-  "src/settings-presentation.css",
-  "utf8",
-);
 const projectTabStyles = readFileSync("src/project-edit-tabs.css", "utf8");
 
 function renderTask(children: ReactNode) {
@@ -527,9 +522,7 @@ it("constrains the saved Project tab body through the mounted task wrapper", () 
       size={SettingsDialogSize.Form}
       close={() => {}}
     >
-      <style>
-        {sharedTabStyles + taskStyles + presentationStyles + projectTabStyles}
-      </style>
+      <style>{sharedTabStyles + projectTabStyles}</style>
       <form className="project-editor">
         <ProjectEditTabs
           disabled={false}
