@@ -188,7 +188,7 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 			if g.cloneDiagnostics {
 				value := strings.ToLower(diagnostic.String())
 				if strings.Contains(value, "authentication failed") || strings.Contains(value, "permission denied (publickey") || strings.Contains(value, "could not read username") || strings.Contains(value, "could not read password") {
-					return nil, exit.ExitCode(), &domain.Error{Code: domain.PermissionDenied, Message: "Git authentication failed.", Guidance: "Configure this computer's Git credentials or SSH key, then retry.", Cause: "clone_authentication"}
+					return nil, exitCode, &domain.Error{Code: domain.PermissionDenied, Message: "Git authentication failed.", Guidance: "Configure this computer's Git credentials or SSH key, then retry.", Cause: "clone_authentication"}
 				}
 			}
 			if g.Logger != nil {
