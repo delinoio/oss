@@ -110,6 +110,7 @@ const (
 	UsageEvent                    EventKind = "usage"
 	ResponseUsageEvent            EventKind = "response-usage"
 	NoticeEvent                   EventKind = "notice"
+	FunctionCallOutputEvent       EventKind = "function-call-output"
 	ToolStartedEvent              EventKind = "tool-started"
 	ToolCompletedEvent            EventKind = "tool-completed"
 	ToolOutputEvent               EventKind = "tool-output"
@@ -153,41 +154,42 @@ type Message struct {
 }
 
 type Event struct {
-	NativeError      *NativeErrorObservation `json:"-"`
-	AutoReview       *domain.AutoReviewObservation
-	ImageGeneration  *ImageGeneration `json:"-"`
-	Compaction       *CompactionObservation
-	AgentThreadID    domain.ID
-	Subagents        []domain.SubagentObservation
-	Kind             EventKind
-	ThreadID         domain.ID
-	TurnID           domain.ID
-	Turn             *Turn
-	Status           *ThreadStatus
-	Message          *Message
-	TextDelta        string
-	ItemID           string
-	RequestID        domain.ID
-	InputID          domain.ID
-	Action           TurnAction
-	Problem          *domain.Error
-	Late             bool
-	Correlated       bool
-	EmittedAtMS      *int64
-	Metadata         MetadataKind
-	Usage            *domain.NativeTokenUsage
-	ResponseUsage    *domain.NativeResponseUsage
-	Notice           domain.NativeNotice
-	ToolOutputKind   ToolKind
-	Tool             *Tool
-	ToolInput        *ToolInput
-	Artifact         *Artifact
-	ArtifactDelta    *ArtifactDelta
-	Plan             *PlanUpdate
-	Diff             *string
-	Interaction      *Interaction
-	InteractionState *InteractionStatus
-	Steer            *SteerObservation
+	NativeError        *NativeErrorObservation `json:"-"`
+	AutoReview         *domain.AutoReviewObservation
+	ImageGeneration    *ImageGeneration `json:"-"`
+	Compaction         *CompactionObservation
+	AgentThreadID      domain.ID
+	Subagents          []domain.SubagentObservation
+	Kind               EventKind
+	ThreadID           domain.ID
+	TurnID             domain.ID
+	Turn               *Turn
+	Status             *ThreadStatus
+	Message            *Message
+	TextDelta          string
+	ItemID             string
+	RequestID          domain.ID
+	InputID            domain.ID
+	Action             TurnAction
+	Problem            *domain.Error
+	Late               bool
+	Correlated         bool
+	EmittedAtMS        *int64
+	Metadata           MetadataKind
+	Usage              *domain.NativeTokenUsage
+	ResponseUsage      *domain.NativeResponseUsage
+	Notice             domain.NativeNotice
+	ToolOutputKind     ToolKind
+	FunctionCallOutput *domain.FunctionCallOutputObservation
+	Tool               *Tool
+	ToolInput          *ToolInput
+	Artifact           *Artifact
+	ArtifactDelta      *ArtifactDelta
+	Plan               *PlanUpdate
+	Diff               *string
+	Interaction        *Interaction
+	InteractionState   *InteractionStatus
+	Steer              *SteerObservation
 	// Native is present only for a still-private extension, including unrelated
 	// subagent events. It must pass a dedicated typed adapter before publication;
 	// neither it nor raw provider errors may be serialized as a product event.
@@ -571,6 +573,16 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 			eventKind = ArtifactCompletedEvent
 		}
 		return Event{Kind: eventKind, ThreadID: c.thread, TurnID: params.TurnID, ItemID: artifact.ID, Artifact: artifact, Correlated: known, Late: turn.Turn.Status.terminal()}, nil
+	case "functionCallOutput":
+		id, output, err := decodeFunctionCallOutput(params.Item)
+		if err != nil || native.Method != "item/completed" {
+			return Event{}, incompatible()
+		}
+		turn, known := c.execution.turns[params.TurnID]
+		if !known && c.problem == nil {
+			return Event{}, incompatible()
+		}
+		return Event{Kind: FunctionCallOutputEvent, ThreadID: c.thread, TurnID: params.TurnID, ItemID: id, FunctionCallOutput: output, Correlated: known, Late: turn.Turn.Status.terminal()}, nil
 	case "commandExecution", "fileChange", "imageView", "sleep":
 		tool, err := decodeTool(params.Item, kind, native.Method == "item/completed")
 		if err != nil {

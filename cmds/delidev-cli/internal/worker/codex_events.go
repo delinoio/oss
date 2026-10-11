@@ -233,6 +233,8 @@ func (c *CodexEventPublisher) PublishCore(ctx context.Context, event codex.Event
 			return false, publicationUncertain()
 		}
 		return true, c.publish(ctx, domain.ExecutionEvent{Kind: domain.ExecutionProgressObserved, Progress: &domain.ExecutionProgressUpdate{ID: domain.NewID(), Progress: domain.NativeProgress{Kind: domain.NativeCompactionProgress, Compaction: v}}})
+	case codex.FunctionCallOutputEvent:
+		return true, c.publishFunctionCallOutput(ctx, event)
 	case codex.ToolStartedEvent, codex.ToolCompletedEvent, codex.ToolOutputEvent, codex.ToolInputEvent, codex.ToolPatchEvent:
 		return true, c.publishTool(ctx, event)
 	case codex.MessageStartedEvent, codex.MessageCompletedEvent:

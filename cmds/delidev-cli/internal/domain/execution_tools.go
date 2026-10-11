@@ -12,20 +12,22 @@ type CommandActionKind string
 type FileChangeKind string
 
 const (
-	CommandTool         ToolKind = "command"
-	PatchTool           ToolKind = "patch"
-	ImageViewTool       ToolKind = "image-view"
-	SleepTool           ToolKind = "sleep"
-	OpenCodeReadTool    ToolKind = "opencode-read"
-	OpenCodeShellTool   ToolKind = "opencode-shell"
-	OpenCodeTodoTool    ToolKind = "opencode-todo"
-	OpenCodeBuiltinTool ToolKind = "opencode-builtin"
+	FunctionCallOutputTool ToolKind = "function-call-output"
+	CommandTool            ToolKind = "command"
+	PatchTool              ToolKind = "patch"
+	ImageViewTool          ToolKind = "image-view"
+	SleepTool              ToolKind = "sleep"
+	OpenCodeReadTool       ToolKind = "opencode-read"
+	OpenCodeShellTool      ToolKind = "opencode-shell"
+	OpenCodeTodoTool       ToolKind = "opencode-todo"
+	OpenCodeBuiltinTool    ToolKind = "opencode-builtin"
 
-	ToolPending   ToolStatus = "pending"
-	ToolRunning   ToolStatus = "running"
-	ToolCompleted ToolStatus = "completed"
-	ToolFailed    ToolStatus = "failed"
-	ToolDeclined  ToolStatus = "declined"
+	ToolResultObserved ToolStatus = "observed"
+	ToolPending        ToolStatus = "pending"
+	ToolRunning        ToolStatus = "running"
+	ToolCompleted      ToolStatus = "completed"
+	ToolFailed         ToolStatus = "failed"
+	ToolDeclined       ToolStatus = "declined"
 
 	AgentCommand       CommandSource = "agent"
 	UserShellCommand   CommandSource = "user-shell"
@@ -78,16 +80,17 @@ type SleepObservation struct {
 }
 
 type ToolSnapshot struct {
-	Sleep     *SleepObservation           `json:"sleep,omitempty"`
-	ImageView *ImageViewObservation       `json:"image_view,omitempty"`
-	Builtin   *OpenCodeBuiltinObservation `json:"builtin,omitempty"`
-	Todo      *OpenCodeTodoObservation    `json:"todo,omitempty"`
-	Kind      ToolKind                    `json:"kind"`
-	Status    ToolStatus                  `json:"status"`
-	Command   *CommandObservation         `json:"command,omitempty"`
-	Changes   []FileChangeObservation     `json:"changes"`
-	Read      *OpenCodeReadObservation    `json:"read,omitempty"`
-	Shell     *OpenCodeShellObservation   `json:"shell,omitempty"`
+	FunctionCallOutput *FunctionCallOutputObservation `json:"function_call_output,omitempty"`
+	Sleep              *SleepObservation              `json:"sleep,omitempty"`
+	ImageView          *ImageViewObservation          `json:"image_view,omitempty"`
+	Builtin            *OpenCodeBuiltinObservation    `json:"builtin,omitempty"`
+	Todo               *OpenCodeTodoObservation       `json:"todo,omitempty"`
+	Kind               ToolKind                       `json:"kind"`
+	Status             ToolStatus                     `json:"status"`
+	Command            *CommandObservation            `json:"command,omitempty"`
+	Changes            []FileChangeObservation        `json:"changes"`
+	Read               *OpenCodeReadObservation       `json:"read,omitempty"`
+	Shell              *OpenCodeShellObservation      `json:"shell,omitempty"`
 }
 
 type ToolInputObservation struct {
@@ -153,7 +156,11 @@ func (u ExecutionToolUpdate) Validate(kind ExecutionEventKind) error {
 		if u.Snapshot == nil || u.Snapshot.Validate() != nil {
 			return invalidTool()
 		}
-		if u.Snapshot.Kind.IsOpenCode() {
+		if u.Snapshot.Kind == FunctionCallOutputTool {
+			if kind != ExecutionToolCompleted {
+				return invalidTool()
+			}
+		} else if u.Snapshot.Kind.IsOpenCode() {
 			if kind == ExecutionToolStarted && u.Snapshot.Status != ToolPending || kind == ExecutionToolUpdated && u.Snapshot.Status != ToolPending && u.Snapshot.Status != ToolRunning || kind == ExecutionToolCompleted && u.Snapshot.Status != ToolCompleted && u.Snapshot.Status != ToolFailed {
 				return invalidTool()
 			}
@@ -185,6 +192,15 @@ func (u ExecutionToolUpdate) Validate(kind ExecutionEventKind) error {
 }
 
 func (s ToolSnapshot) Validate() error {
+	if s.Kind == FunctionCallOutputTool {
+		if s.FunctionCallOutput == nil || s.FunctionCallOutput.Validate() != nil || s.Status != ToolResultObserved || s.Sleep != nil || s.ImageView != nil || s.Builtin != nil || s.Todo != nil || s.Command != nil || s.Changes != nil || s.Read != nil || s.Shell != nil {
+			return invalidTool()
+		}
+		return nil
+	}
+	if s.FunctionCallOutput != nil {
+		return invalidTool()
+	}
 	if s.Kind == SleepTool {
 		if s.Sleep == nil || s.Sleep.DurationMS == nil || s.Command != nil || s.Changes != nil || s.Read != nil || s.Shell != nil || s.Todo != nil || s.Builtin != nil || s.ImageView != nil || (s.Status != ToolRunning && s.Status != ToolCompleted) {
 			return invalidTool()

@@ -183,7 +183,15 @@ func (c *Client) forkTurnsLocked(ctx context.Context, thread domain.ID) ([]json.
 					}
 					seen["item:"+identity.ID] = true
 				}
-				if identity.Type == "sleep" {
+				if identity.Type == "functionCallOutput" {
+					if seen["function-result:"+identity.ID] {
+						return nil, unsupportedFork()
+					}
+					seen["function-result:"+identity.ID] = true
+					if _, _, err := decodeFunctionCallOutput(item); err != nil {
+						return nil, unsupportedFork()
+					}
+				} else if identity.Type == "sleep" {
 					if seen["sleep:"+identity.ID] {
 						return nil, unsupportedFork()
 					}
@@ -459,6 +467,10 @@ func settledForkTool(raw json.RawMessage, kind string) bool {
 }
 
 func managedForkItem(raw json.RawMessage, kind string) bool {
+	if kind == "functionCallOutput" {
+		_, _, err := decodeFunctionCallOutput(raw)
+		return err == nil
+	}
 	if kind == "sleep" {
 		_, err := decodeSleep(raw)
 		return err == nil

@@ -94,6 +94,17 @@ runtime with fresh scoped credentials and unchanged original account/model.
 Persist a single native send claim before the request. Lost responses and exact
 product retries inspect retained original state without another native request.
 
+## Function-call output in retained history
+
+Complete Codex history accepts bounded original function-call outputs through the
+same closed validator as live tool-result evidence. Preserve ordered text, media
+references and encrypted content in the original protected native history; public
+projections omit encrypted bytes and do not replace those records. Continuation,
+compaction and Fork compare the original normalized history and its digest.
+Reading this evidence performs no media retrieval or tool execution and grants no
+successful context, input send or independent cleanup authority. See the
+[harness contract](cmds-delidev-harness-contract.md#codex-function-call-output-evidence).
+
 ## Native observations and successful context
 
 Each adapter must publish its original compaction observations with the original

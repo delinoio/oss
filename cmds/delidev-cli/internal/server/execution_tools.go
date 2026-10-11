@@ -26,7 +26,14 @@ func publishExecutionTool(tx *store.Tx, input domain.ExecutionJobInput, session 
 	}
 	var value domain.ExecutionMessage
 	var revision uint64
-	if event.Kind == domain.ExecutionToolStarted {
+	if update.Snapshot != nil && update.Snapshot.Kind == domain.FunctionCallOutputTool {
+		if input.Configuration.Harness != domain.Codex || update.NativeParentID != "" || event.Kind != domain.ExecutionToolCompleted {
+			return executionEventConflict()
+		}
+		output := update.Snapshot.FunctionCallOutput.InertText()
+		// Started is the legacy initial-snapshot container, not a fabricated native start.
+		value = domain.ExecutionMessage{ContextRevision: input.ContextRevision, ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeID: update.NativeID, Role: domain.ToolMessage, State: domain.MessageComplete, FirstSequence: event.Sequence, Tool: &domain.ExecutionTool{Started: *update.Snapshot, Completed: update.Snapshot, Output: &output}}
+	} else if event.Kind == domain.ExecutionToolStarted {
 		if update.Snapshot.Kind.IsOpenCode() {
 			exists, err := tx.HasOpenCodeToolCall(input.ExecutionID, update.Snapshot.OpenCodeCallID())
 			if err != nil {

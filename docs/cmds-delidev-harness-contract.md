@@ -14,6 +14,28 @@ Codex `0.151.0` API and Claude `2.1.236` API now publish the bounded original ch
 
 `machine discover --protocol` binds a non-inference native validation request to the same durable machine discovery generation as its executable selections. Detected installations receive a protocol observation with `verified`, `unsupported` or `failed` state. Missing/denied installations do not claim a handshake. An ordinary version-only discovery cannot publish native protocol observations. Only locally supported installed-version profiles can report verified; raw remote errors are reconstructed into safe diagnostics by the server. Current handshake observations never populate execution capabilities or authorize an account.
 
+### Codex function-call output evidence
+
+The original root's completed `functionCallOutput` item publishes one bounded
+completion-only tool record. Preserve the native item ID, name, nullable namespace,
+string-versus-array variant and ordered content. Use the closed `input_text`,
+`input_image`, `input_audio` and `encrypted_content` union. Images retain exactly
+one `image_url` or `file_id`, with optional closed detail; audio retains its native
+reference. These descriptors grant no URL retrieval, file access or byte ownership.
+
+Publish text as inert transcript output. Public encrypted entries contain only their
+type; opaque content remains exclusively in protected original native history.
+Reject unknown or duplicate fields, conflicting alternatives, null required content
+and excessive bounds. Live, continuation, complete context and Fork readers share
+this validator without rebuilding the original history or changing its digest.
+
+The `observed` tool status records evidence without inventing a native running,
+successful or failed operation. The existing initial-snapshot container stores the
+same immutable observation as its completed container; both share one sequence.
+Original outbox receipts and native identity binding prevent duplicate publication
+and permit exact lost-acknowledgment replay. Observation grants no dispatch,
+approval success, root-turn completion, cleanup or input replay authority.
+
 ### Codex private thread lifecycle and metadata
 
 The original execution process consumes the pinned closed notification envelopes for thread name, attachment created/deleted, queue, project created/updated/deleted, nullable thread project, environment connection/disconnection, prediction and read-state revisions. Validate bounds, duplicate/unknown fields, required nullable fields and each exact union before discarding descriptors. Prediction completed text may be absent, null or a bounded string; failed has no text field. Read state permits absent/null first-unread, thread-start or an exact native turn position and requires the opaque revision. Prediction source turns must belong to the original root execution. Foreign threads retain their unsupported boundary; already owned child notifications retain the existing child observation and content-free supplement routing.
