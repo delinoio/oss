@@ -58,6 +58,12 @@ func (t threadWire) summary() Thread {
 	}
 	return Thread{ID: t.ID, SessionID: t.SessionID, Status: t.Status, History: history, DirectInput: t.CanAcceptDirectInput}
 }
+
+// History admission belongs to the initialized profile, not a version guess.
+func historyModeAllowed(mode HistoryMode, revert bool) bool {
+	return mode == LegacyHistory || mode == PaginatedHistory && revert
+}
+
 func decodeThread(raw json.RawMessage, version string) (threadWire, error) {
 	var thread threadWire
 	if domain.Decode(raw, &thread) != nil || thread.ID.Validate() != nil || thread.SessionID.Validate() != nil || thread.CLIVersion != version || thread.CreatedAt == nil || thread.UpdatedAt == nil || *thread.CreatedAt < 0 || *thread.UpdatedAt < *thread.CreatedAt || thread.Ephemeral == nil || *thread.Ephemeral || thread.Preview == nil || len(thread.ProjectID) == 0 || len(thread.Source) == 0 || thread.Turns == nil || len(thread.Turns) != 0 || (thread.HistoryMode != "" && thread.HistoryMode != LegacyHistory && thread.HistoryMode != PaginatedHistory) {
@@ -114,7 +120,7 @@ func decodeBoundThreadProfile(raw json.RawMessage, settings ThreadSettings, expe
 		return nil, nil, err
 	}
 	thread := wire.summary()
-	if thread.History != LegacyHistory && !revert {
+	if !historyModeAllowed(thread.History, revert) {
 		return &thread, nil, incompatible()
 	}
 	if expectedID != "" && wire.ID != expectedID {

@@ -109,7 +109,7 @@ func (f *threadFixture) handleRevert(id json.RawMessage, method string, raw json
 		}
 		page.Data = page.Data[:index]
 		f.history, _ = json.Marshal(page)
-		if f.mode == "thread-revert-lost" {
+		if f.mode == "thread-revert-lost" || f.mode == "thread-revert-paginated-lost" {
 			json.NewEncoder(os.Stdout).Encode(map[string]any{"id": id, "error": map[string]any{"code": -32603, "message": "lost acknowledgment"}})
 			return true
 		}
@@ -259,5 +259,111 @@ func TestRevertPreClaimHistoryAndBoundsFailuresNeverReachClaimOrWire(t *testing.
 				t.Fatal("original native cleanup not joined", err)
 			}
 		})
+	}
+}
+
+func TestRevertPaginatedInitialResultAndReplacement(t *testing.T) {
+	for _, index := range []int{0, 1, 2} {
+		t.Run(strconv.Itoa(index), func(t *testing.T) {
+			c, capture, source, ids, inputs := revertFixture(t, "paginated")
+			if c.execution.thread.History != PaginatedHistory {
+				t.Fatal("fixture did not bind original paginated metadata")
+			}
+			claims := 0
+			proof, err := c.RevertThread(context.Background(), domain.NewID(), source, inputs[index], ids[index], func(RevertIntent) error { claims++; return nil })
+			if err != nil || proof.Revert == nil || proof.TurnsCount != uint32(index) || claims != 1 || len(requestsOf(t, capture, "thread/revert")) != 1 {
+				t.Fatal("paginated original or result rejected", err, claims)
+			}
+			// Simulate fresh execution tracking over the retained fixture history.
+			// This checks replacement admission, not installed-process cleanup.
+			c.execution = newExecutionState(c.execution.thread, c.execution.settings)
+			c.execution.continuationPending = true
+			if _, err := c.VerifyCompactedContinuation(context.Background(), domain.NewID(), proof); err != nil {
+				t.Fatal("paginated replacement rejected", err)
+			}
+			if c.execution.continuationPending || c.execution.paused || len(requestsOf(t, capture, "thread/revert")) != 1 {
+				t.Fatal("replacement did not release the exact context or resent mutation")
+			}
+		})
+	}
+}
+
+func TestRevertPaginatedLostResponseObservation(t *testing.T) {
+	c, capture, source, ids, inputs := revertFixture(t, "paginated-lost")
+	claims := 0
+	var intent RevertIntent
+	if _, err := c.RevertThread(context.Background(), domain.NewID(), source, inputs[1], ids[1], func(v RevertIntent) error { claims++; intent = v; return nil }); err == nil || claims != 1 {
+		t.Fatal("lost response did not retain the original claim", err, claims)
+	}
+	// Retain native history while simulating the fresh observation owner.
+	c.problem = nil
+	c.execution = newExecutionState(c.execution.thread, c.execution.settings)
+	proof, err := c.ReconcileRevert(context.Background(), intent)
+	if err != nil || proof.TurnsCount != 1 || VerifyRevertIntent(intent, proof) != nil || len(requestsOf(t, capture, "thread/revert")) != 1 {
+		t.Fatal("paginated recovery rejected or resent the original mutation", err)
+	}
+}
+
+func TestNativeStateHistoryAdmissionRetainsProfileAndOriginalMetadata(t *testing.T) {
+	for _, scenario := range []string{"legacy-profile", "legacy-to-paginated", "paginated-to-legacy", "unknown", "cwd", "provider", "session", "thread", "parent", "direct-input", "active"} {
+		t.Run(scenario, func(t *testing.T) {
+			mode := "paginated"
+			if scenario == "legacy-to-paginated" {
+				mode = "ready"
+			}
+			c, capture, source, ids, inputs := revertFixture(t, mode)
+			metadata := map[string]any{}
+			switch scenario {
+			case "legacy-profile":
+				c.revertHistory = false
+			case "legacy-to-paginated":
+				metadata["historyMode"] = "paginated"
+			case "paginated-to-legacy":
+				metadata["historyMode"] = "legacy"
+			case "unknown":
+				metadata["historyMode"] = "foreign"
+			case "cwd":
+				metadata["cwd"] = "/foreign"
+			case "provider":
+				metadata["modelProvider"] = "foreign"
+			case "session":
+				metadata["sessionId"] = domain.NewID()
+			case "thread":
+				metadata["id"] = domain.NewID()
+			case "parent":
+				metadata["parentThreadId"] = domain.NewID()
+			case "direct-input":
+				metadata["canAcceptDirectInput"] = false
+			case "active":
+				metadata["status"] = map[string]any{"type": "active", "activeFlags": []any{}}
+			}
+			fixtureSignal(t, c, "metadata", metadata)
+			if err := c.checkNativeStateLocked(context.Background(), true); err == nil {
+				t.Fatal("common state check admitted foreign metadata")
+			}
+			claims := 0
+			if _, err := c.RevertThread(context.Background(), domain.NewID(), source, inputs[0], ids[0], func(RevertIntent) error { claims++; return nil }); err == nil || claims != 0 || len(requestsOf(t, capture, "thread/revert")) != 0 {
+				t.Fatal("invalid original metadata reached claim or mutation", err, claims)
+			}
+		})
+	}
+}
+
+func TestNativeStateHistoryAdmissionNormalizesOmittedLegacy(t *testing.T) {
+	c, _, _, _, _ := revertFixture(t, "ready")
+	fixtureSignal(t, c, "metadata", map[string]any{"historyMode": ""})
+	if err := c.checkNativeStateLocked(context.Background(), true); err != nil {
+		t.Fatal("omitted legacy mode changed original normalized identity", err)
+	}
+}
+
+func TestNativeStateHistoryProfilePredicateIsClosed(t *testing.T) {
+	for _, revert := range []bool{false, true} {
+		for _, mode := range []HistoryMode{LegacyHistory, PaginatedHistory, "", "foreign"} {
+			want := mode == LegacyHistory || revert && mode == PaginatedHistory
+			if got := historyModeAllowed(mode, revert); got != want {
+				t.Fatalf("mode %q under Revert profile %v: got %v, want %v", mode, revert, got, want)
+			}
+		}
 	}
 }
