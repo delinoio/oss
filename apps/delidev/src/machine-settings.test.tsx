@@ -7,7 +7,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import { EntityKind, ResourceSchema, ResourceService, WorkerService, newRequestId, type Resource } from "@delinoio/delidev-api-client";
-import { encode } from "./documents";
+import { document, encode } from "./documents";
 import { useMachineSettingsController } from "./machine-settings";
 import { MutationIntents } from "./mutation";
 
@@ -51,14 +51,25 @@ it.each(["succeeded", "failed", "canceled"])("settles %s original inspection and
   expect(f.hook.result.current.locked).toBe(true);
   await f.refresh(f.terminal(state));
   await waitFor(() => expect(f.hook.result.current.locked).toBe(false));
-  expect(f.hook.result.current.job).toEqual(f.initial);
+  const acceptedJob = f.hook.result.current.job;
+  expect(acceptedJob).toMatchObject({
+    id: f.initial.id,
+    kind: EntityKind.JOB,
+    revision: f.initial.revision,
+  });
+  expect(document(acceptedJob as Resource).state).toBe("queued");
   expect(f.hook.result.current.jobObservation.state).toBe(state);
   if (state === "failed")
     expect(f.hook.result.current.jobObservation.problem.message).toBe("Original inspection failed");
   expect(f.hook.result.current.edit).toBeUndefined();
   f.hook.rerender({ active: false });
   expect(f.hook.result.current.pending).toBe(false);
-  expect(f.hook.result.current.job).toEqual(f.initial);
+  expect(f.hook.result.current.job).toMatchObject({
+    id: f.initial.id,
+    kind: EntityKind.JOB,
+    revision: f.initial.revision,
+  });
+  expect(document(f.hook.result.current.job as Resource).state).toBe("queued");
   expect(f.hook.result.current.jobObservation.state).toBe(state);
   expect(f.discover).toHaveBeenCalledOnce();
   expect(f.read.mock.calls.filter(([request]) => request.kind === EntityKind.JOB).every(([request]) => request.id === f.initial.id)).toBe(true);
