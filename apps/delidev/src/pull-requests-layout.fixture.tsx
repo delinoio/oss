@@ -21,7 +21,7 @@ Object.defineProperty(window, "__prSidebarCatalogReads", { get: () => catalogRea
 Object.defineProperty(window, "__prSidebarFixture", { value: requests });
 const rows = args.get("empty") === "true" ? [] : ["oss", "delidev", args.get("long") === "true" ? "long-repository-name-".repeat(18) : "docs"].map((name, index) => create(ResourceSchema, {
   id: `0195c9c0-7b13-7000-8000-00000000000${index + 1}`, kind: EntityKind.REPOSITORY, schemaVersion: 1, revision: 1n,
-  documentJson: encode({ name, integration_id: "0195c9c0-7b13-7000-8000-000000000010", github_owner: args.get("long") === "true" ? "long-owner-".repeat(8) : "delinoio", github_name: name }),
+  documentJson: encode({ name, integration_id: "0195c9c0-7b13-7000-8000-000000000010", github_owner: args.get("unconfigured") === "true" ? "" : args.get("long") === "true" ? "long-owner-".repeat(8) : "delinoio", github_name: name }),
 }));
 const transport = createRouterTransport(router => {
   router.service(SystemService, { getStatus: () => ({ protocolVersion: 1 }) });

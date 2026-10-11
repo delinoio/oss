@@ -46,8 +46,13 @@ try {
   const assertLayout = async (pane, context) => {
     const geometry = await pane.evaluate(node => {
       const box = node.getBoundingClientRect();
-      return { overflow: node.scrollWidth > node.clientWidth, outside: [...node.querySelectorAll("button, input:not([type=radio]), select, .pr-repository-details")].filter(item => item.getClientRects().length).some(item => { const rect = item.getBoundingClientRect(); return rect.left < box.left - 1 || rect.right > box.right + 1 || item.scrollWidth > item.clientWidth + 1; }), targets: [...node.querySelectorAll("button, .pr-state-choice")].filter(item => item.getClientRects().length).every(item => item.getBoundingClientRect().height >= 40) };
+      return { overflow: node.scrollWidth > node.clientWidth, outside: [...node.querySelectorAll("button, input:not([type=radio]), select")].filter(item => item.getClientRects().length).some(item => { const rect = item.getBoundingClientRect(); return rect.left < box.left - 1 || rect.right > box.right + 1 || item.scrollWidth > item.clientWidth + 1; }), targets: [...node.querySelectorAll("button, .pr-state-choice")].filter(item => item.getClientRects().length).every(item => item.getBoundingClientRect().height >= 40) };
     });
+    const popup = pane.locator('.pr-repository-details:popover-open');
+    if (await popup.count()) assert(await popup.evaluate(node => {
+      const rect = node.getBoundingClientRect();
+      return rect.left >= 7 && rect.top >= 7 && rect.right <= innerWidth - 7 && rect.bottom <= innerHeight - 7 && node.scrollWidth <= node.clientWidth + 1;
+    }), `${context}: popup stays inside viewport`);
     assert(!geometry.overflow && !geometry.outside && geometry.targets, `${context}: ${JSON.stringify(geometry)}`);
     const titleRow = pane.locator(".pr-sidebar-title");
     assert.equal(await pane.locator("h2").count(), 1, `${context}: one sidebar title`);
@@ -89,11 +94,27 @@ try {
     if (screenshots && width === 1440) { await mkdir(resolve(screenshots), { recursive: true }); await page.screenshot({ path: join(resolve(screenshots), `pr-${language}-${theme}-unselected.png`) }); }
     const details = pane.getByRole("button", { name: language === "ko" ? `oss 상세. 저장소 ID: ${id}` : `Details for oss. Repository ID: ${id}`, exact: true });
     await details.hover(); await assertLayout(pane, `${language}/${theme}/${width}: hover`);
+    const snapshot = () => pane.evaluate(node => ({
+      rectangles: [...node.querySelectorAll('.pr-repository-heading, .sidebar-query-options, .sidebar-form fieldset, .sidebar-form label, .pr-repository-settings')].map(item => { const r = item.getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; }),
+      scroll: [node.parentElement.scrollHeight, node.parentElement.clientHeight, node.parentElement.scrollTop],
+    }));
+    const closedGeometry = await snapshot();
     await details.focus(); await details.press("Enter");
     await pane.getByRole("region", { name: await details.getAttribute("aria-label"), exact: true }).waitFor();
     assert.equal(await row.getAttribute("aria-pressed"), "false");
     await assertLayout(pane, `${language}/${theme}/${width}: details`);
+    assert.deepEqual(await snapshot(), closedGeometry, "Popup leaves sibling rectangles and scroll metrics unchanged");
+    assert.equal(await pane.locator('.pr-repository-details:popover-open dd').count(), 1, "Only GitHub identity is displayed");
+    const secondDetails = pane.locator('.pr-repository-details-toggle').nth(1);
+    await secondDetails.click();
+    assert.equal(await pane.locator('.pr-repository-details:popover-open').count(), 1, "Opening another repository replaces the popup");
+    assert.equal(await pane.locator('.pr-repository-details:popover-open dd').textContent(), "delinoio/delidev");
+    await page.keyboard.press("Escape");
+    assert.equal(await secondDetails.evaluate(node => node === document.activeElement), true, "Escape restores exact trigger focus");
+    assert(await pane.isVisible(), "First Escape preserves compact drawer");
+    await details.click();
     await details.press("Space");
+    assert.deepEqual(await snapshot(), closedGeometry, "Closing leaves layout unchanged");
     await row.click();
     const open = pane.getByRole("radio", { name: language === "ko" ? "열림" : "Open", exact: true });
     const closed = pane.getByRole("radio", { name: language === "ko" ? "닫힘" : "Closed", exact: true });
@@ -101,8 +122,13 @@ try {
     assert(await closed.isChecked(), "Native arrows select the next draft state");
     assert.equal(await closed.evaluate(node => getComputedStyle(node.nextElementSibling).backgroundColor), theme === "light" ? "rgb(255, 255, 255)" : "rgb(27, 33, 43)");
     await assertLayout(pane, `${language}/${theme}/${width}: selected`);
+    const selectedGeometry = await snapshot();
     await details.click();
+    assert.deepEqual(await snapshot(), selectedGeometry, "Selected query controls and scroll metrics stay unchanged");
     const detailsRegion = pane.getByRole("region", { name: await details.getAttribute("aria-label"), exact: true });
+    await closed.click();
+    assert.equal(await detailsRegion.isVisible(), false, "Outside click dismisses popup");
+    assert.equal(await closed.evaluate(node => node === document.activeElement), true, "Outside click preserves clicked control focus");
     for (const activation of ["mouse", "Enter", "Space"]) {
       const beforeRefresh = await page.evaluate(() => window.__prSidebarCatalogReads);
       if (activation === "mouse") await refresh.click();
@@ -111,7 +137,7 @@ try {
       await page.waitForFunction(() => !document.querySelector(".pr-sidebar-refresh").disabled);
       assert.equal(await row.getAttribute("aria-pressed"), "true", "Refresh retains selection");
       assert(await closed.isChecked(), "Refresh retains filter state");
-      assert(await detailsRegion.isVisible(), "Refresh retains Details expansion");
+      assert.equal(await detailsRegion.isVisible(), false, "Outside refresh keeps Details dismissed");
     }
     await refresh.blur();
     await page.mouse.move(0, 0);
@@ -137,10 +163,28 @@ try {
     // Fixture-only long title proves that localization can wrap beside the fixed action.
     await pane.locator(".pr-sidebar-title h2").evaluate(node => { node.textContent = node.textContent.repeat(8); });
     await assertLayout(pane, `${language}: long name/details at effective 200%`);
-    assert.equal(await pane.getByRole("region", { name: await details.getAttribute("aria-label"), exact: true }).locator("dd").last().textContent(), "0195c9c0-7b13-7000-8000-000000000003");
+    assert.equal(await pane.getByRole("region", { name: await details.getAttribute("aria-label"), exact: true }).locator("dd").textContent(), `${"long-owner-".repeat(8)}/${"long-repository-name-".repeat(18)}`);
     checks++;
   }
   await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${origin}/?unconfigured=true`);
+  const unconfiguredPane = await enter("en");
+  await unconfiguredPane.locator('.sidebar-repository-row').first().click();
+  await unconfiguredPane.getByRole("heading", { name: "Query options" }).waitFor();
+  const measureUnconfigured = () => unconfiguredPane.evaluate(node => ({
+    rectangles: [...node.querySelectorAll('.pr-repository-heading, .sidebar-query-options, .sidebar-form fieldset, .sidebar-form label, .pr-repository-settings')].map(item => { const r = item.getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; }),
+    scroll: [node.parentElement.scrollHeight, node.parentElement.clientHeight, node.parentElement.scrollTop],
+  }));
+  const beforeUnconfigured = await measureUnconfigured();
+  const readCounts = await page.evaluate(() => ({ ...window.__prSidebarFixture }));
+  const unconfiguredDetails = unconfiguredPane.locator('.pr-repository-details-toggle').first();
+  await unconfiguredDetails.click();
+  await unconfiguredPane.locator('.pr-repository-details:popover-open').getByText("Not configured", { exact: true }).waitFor();
+  assert.deepEqual(await measureUnconfigured(), beforeUnconfigured, "Missing configuration popup preserves lower control and sidebar geometry");
+  await unconfiguredDetails.click();
+  assert.deepEqual(await measureUnconfigured(), beforeUnconfigured, "Missing configuration close preserves geometry");
+  assert.deepEqual(await page.evaluate(() => ({ ...window.__prSidebarFixture })), readCounts, "Details causes no RPC with missing configuration");
+  checks++;
   await page.goto(`${origin}/?empty=true`);
   const emptyPane = await enter("en");
   await emptyPane.getByText("No repositories on this page.", { exact: true }).waitFor();

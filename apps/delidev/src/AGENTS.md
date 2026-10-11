@@ -8,6 +8,8 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
+- Sidebar detail overlays must preserve original selection, query and connection-memory ownership, remain outside layout flow, and follow the [repository details overlay contract](../../../docs/apps-delidev-desktop-contract.md#repository-details-overlay).
+
 ## Owning contracts
 
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)

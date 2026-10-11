@@ -1,9 +1,9 @@
-import { useSidebarPaneVisible } from "./sidebar-context";
+import { useSidebarPaneVisible, useSidebarActivity } from "./sidebar-context";
 import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclosure";
 import { ScrollContinuation } from "./scroll-continuation";
 import { paginationError, useGitHubCatalog, useGitHubScrollRoot } from "./github-scroll";
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { EntityKind, IntegrationQuery, PullRequestFixQuery, ResourceQuery, type Resource, newRequestId } from "@delinoio/delidev-api-client";
 import { document, resourceName, text } from "./documents";
@@ -32,11 +32,62 @@ interface LoadedPullRequests {
 
 const plainSearch = (value: string) => value.length <= 120 && /^[\p{L}\p{N} ._-]*$/u.test(value);
 
-function RepositoryNavigationRow({ row, selected, expanded, choose, toggleDetails }: {
-  row: Resource; selected: boolean; expanded: boolean; choose: () => void; toggleDetails: () => void;
+function RepositoryNavigationRow({ row, selected, expanded, choose, toggleDetails, dismissDetails }: {
+  row: Resource; selected: boolean; expanded: boolean; choose: () => void; toggleDetails: () => void; dismissDetails: () => void;
 }) {
   useLocale();
   const detailsId = useId();
+  const visible = useSidebarActivity();
+  const opener = useRef<HTMLButtonElement>(null), popup = useRef<HTMLDivElement>(null);
+  const close = useRef(dismissDetails); close.current = dismissDetails;
+  useLayoutEffect(() => {
+    const panel = popup.current, trigger = opener.current;
+    if (!expanded || !visible || !panel || !trigger) return;
+    // DOM-only component fixtures lack the browser's native top-layer API.
+    if (typeof panel.showPopover !== "function" || typeof CSSStyleSheet.prototype.replaceSync !== "function") return;
+    // A manual native popover escapes sidebar clipping while remaining inside
+    // the drawer DOM and preserving its original disclosure ownership.
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(`#${CSS.escape(detailsId)} {}`);
+    const style = (sheet.cssRules[0] as CSSStyleRule).style;
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    panel.showPopover();
+    const position = () => {
+      const bounds = trigger.parentElement!.getBoundingClientRect();
+      if (!trigger.isConnected || !trigger.getClientRects().length) { close.current(); return; }
+      style.setProperty("max-height", `${Math.max(1, window.innerHeight - 16)}px`);
+      let left = bounds.right + 8, top = bounds.top;
+      if (left + panel.offsetWidth > window.innerWidth - 8) {
+        left = bounds.left;
+        const below = Math.max(1, window.innerHeight - bounds.bottom - 16), above = Math.max(1, bounds.top - 16);
+        const useBelow = panel.offsetHeight <= below || below >= above;
+        style.setProperty("max-height", `${useBelow ? below : above}px`);
+        top = useBelow ? bounds.bottom + 8 : bounds.top - panel.offsetHeight - 8;
+      }
+      style.setProperty("left", `${Math.max(8, Math.min(left, window.innerWidth - panel.offsetWidth - 8))}px`);
+      style.setProperty("top", `${Math.max(8, Math.min(top, window.innerHeight - panel.offsetHeight - 8))}px`);
+    };
+    position();
+    const outside = (event: PointerEvent) => {
+      if (!panel.contains(event.target as Node) && !trigger.contains(event.target as Node)) close.current();
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      close.current(); trigger.focus({ preventScroll: true });
+    };
+    const observer = new ResizeObserver(position); observer.observe(panel); observer.observe(trigger);
+    const intersection = new IntersectionObserver(entries => { if (!entries[0].isIntersecting) close.current(); }); intersection.observe(trigger);
+    document.addEventListener("pointerdown", outside, true);
+    document.addEventListener("keydown", escape, true);
+    document.addEventListener("scroll", position, true); window.addEventListener("resize", position);
+    return () => {
+      observer.disconnect(); intersection.disconnect(); panel.hidePopover();
+      document.adoptedStyleSheets = document.adoptedStyleSheets.filter(value => value !== sheet);
+      document.removeEventListener("pointerdown", outside, true); document.removeEventListener("keydown", escape, true);
+      document.removeEventListener("scroll", position, true); window.removeEventListener("resize", position);
+    };
+  }, [expanded, visible, detailsId]);
   const name = resourceName(row);
   const config = document(row);
   const owner = text(config.github_owner), repository = text(config.github_name);
@@ -47,13 +98,12 @@ function RepositoryNavigationRow({ row, selected, expanded, choose, toggleDetail
         <svg className="sidebar-icon sidebar-repository-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M5 3h14v18H5zM9 3v18M13 7h3M13 11h3" /></svg>
         <span className="sidebar-repository-info">{name}</span>
       </button>
-      <DisclosureButton density={DisclosureDensity.Compact} type="button" className="pr-repository-details-toggle" aria-label={detailsLabel} aria-expanded={expanded} aria-controls={detailsId} onClick={toggleDetails}>
+      <DisclosureButton ref={opener} density={DisclosureDensity.Compact} type="button" className="pr-repository-details-toggle" aria-label={detailsLabel} aria-expanded={expanded} aria-controls={detailsId} onClick={toggleDetails}>
         <span className="sidebar-sr-only">{detailsLabel}</span>
       </DisclosureButton>
     </div>
-    <DisclosureContent id={detailsId} className="pr-repository-details" role="region" aria-label={detailsLabel} hidden={!expanded}>
-      <dl><dt>{copy("pull-requests.githubRepository")}</dt><dd>{owner && repository ? `${owner}/${repository}` : copy("pull-requests.repositoryNotConfigured")}</dd>
-        <dt>{copy("pull-requests.repositoryIdentifier")}</dt><dd>{row.id}</dd></dl>
+    <DisclosureContent ref={popup} popover="manual" id={detailsId} className="pr-repository-details" role="region" aria-label={detailsLabel} hidden={!expanded || !visible}>
+      <dl><dt>{copy("pull-requests.githubRepository")}</dt><dd>{owner && repository ? `${owner}/${repository}` : copy("pull-requests.repositoryNotConfigured")}</dd></dl>
     </DisclosureContent>
   </div>;
 }
@@ -196,7 +246,7 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
       <Problem error={paginationError(repositories.error?.failure)} />
       {repositories.isPending && active ? <p role="status">{copy("pull-requests.loadingRepositories_460ca9")}</p> : null}
       {repositories.error && repositories.data ? <p className="sidebar-help">{copy("pull-requests.refreshFailedShowingThePreviousRepository_6c5a34")}</p> : null}
-      {repositories.data?.resources.map((row) => <RepositoryNavigationRow key={row.id} row={row} selected={repositoryId === row.id} expanded={expandedRepositoryId === row.id} choose={() => chooseRepository(row)} toggleDetails={() => setExpandedRepositoryId((current) => current === row.id ? "" : row.id)} />)}
+      {repositories.data?.resources.map((row) => <RepositoryNavigationRow key={row.id} row={row} selected={repositoryId === row.id} expanded={expandedRepositoryId === row.id} choose={() => chooseRepository(row)} dismissDetails={() => setExpandedRepositoryId("")} toggleDetails={() => setExpandedRepositoryId((current) => current === row.id ? "" : row.id)} />)}
       {!repositories.error && repositories.data?.resources.length === 0 ? <div className="sidebar-repository-empty"><svg className="sidebar-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h7l2 2h9v11H3z" /></svg><p>{copy("pull-requests.noRepositoriesOnThisPage_249a41")}</p></div> : null}
       <ScrollContinuation query={repositories} root={root} active={active} label={copy("pull-requests.repositories_1e32af")} showInitial={false} /></div>
       {repositoryId ? <>

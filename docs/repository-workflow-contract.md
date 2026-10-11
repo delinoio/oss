@@ -769,3 +769,7 @@ Release automation baseline:
 - Go formatting inventory uses NUL-separated Git paths and passes literal arguments to the formatter. Preserve source bytes and Git, formatter, missing-scope and empty-inventory failures; cover quoted non-ASCII and newline names in the central contract fixtures.
 
 - Runner-owned DeliDev Go fixture preparation uses a five-minute cold-build watchdog, separate from fixture lifetimes, product deadlines and Go package watchdogs. Publish structured start/failure timing; share only the resulting executable path.
+
+## Repository sidebar popup browser checks
+
+The DeliDev frontend checks phase installs exact Playwright 1.64.0 into a runner-temporary directory without workspace dependency changes, prepares its Chromium browser, and runs `node apps/delidev/scripts/test-pr-sidebar-layout.mjs` after normal desktop checks prepare the API client and localization. The fixture uses only synthetic in-process transport, enforces its own CSP and records the exact source revision and dirty status with its result. Its geometry, scroll, viewport, localized theme and dismissal checks do not establish installed CEF, native account or platform acceptance.

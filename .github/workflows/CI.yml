@@ -1904,6 +1904,17 @@ jobs:
           FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['delidev-frontend'] }}
         run: node scripts/ci/run-affected.mjs delidev-desktop ci:${{ matrix.phase }}
 
+      - name: Install isolated repository popup browser runner
+        if: ${{ matrix.phase == 'checks' }}
+        run: |
+          npm install --prefix "$RUNNER_TEMP/delidev-popup-browser" --ignore-scripts --no-audit --no-fund --package-lock=false playwright@1.64.0
+          node "$RUNNER_TEMP/delidev-popup-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Verify repository popup layout and dismissal
+        if: ${{ matrix.phase == 'checks' }}
+        env:
+          DELIDEV_LAYOUT_PLAYWRIGHT_MODULE: ${{ runner.temp }}/delidev-popup-browser/node_modules/playwright/index.mjs
+        run: node apps/delidev/scripts/test-pr-sidebar-layout.mjs
+
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
