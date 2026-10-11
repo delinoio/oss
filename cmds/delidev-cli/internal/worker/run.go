@@ -1186,6 +1186,9 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		if err := workspace.DecodeStorageRequest(job.Input, &input); err != nil {
 			return nil, err
 		}
+		if !config.namedManagedDirectories && slices.ContainsFunc(input.Manifest.Repositories, func(r workspace.PreparedRepository) bool { return r.DirectoryName != "" }) {
+			return nil, domain.Fail(domain.Unsupported, "Named managed workspace directories were not negotiated.", "Update and reconnect the original Worker.")
+		}
 		if input.Action == workspace.StorageRecover {
 			if input.Recovery == nil {
 				return nil, workspace.ResultUncertain()

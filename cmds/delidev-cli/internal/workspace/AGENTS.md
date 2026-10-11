@@ -3,7 +3,6 @@
 - Follow the root instruction-update policy and the nearest parent instructions.
 - This file covers `cmds/delidev-cli/internal/workspace/` and its descendants unless a more specific instruction file applies.
 - Read the owning contracts below before changing behavior, including affected cross-domain consumers.
-- Derive every owned managed checkout path through `ownedRepositoryPath` / `PreparedRepository.ownedPath` using the immutable `directory_name`; never join the repository UUID directly. Omitted names keep the legacy UUID path (see the workspace contract's Named Managed Checkout Directories section).
 
 ## Owning contracts
 

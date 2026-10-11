@@ -519,9 +519,12 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 							return tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, j)
 						}
 					}
-					if j.Type == domain.ExecuteSessionJob || j.Type == domain.ForkSessionJob {
+					if j.Type == domain.ExecuteSessionJob || j.Type == domain.ForkSessionJob || j.Type == domain.WorkspaceStorageJob {
 						named := false
-						if j.Type == domain.ExecuteSessionJob {
+						if j.Type == domain.WorkspaceStorageJob {
+							var input workspace.StorageRequest
+							named = workspace.DecodeStorageRequest(j.Input, &input) == nil && slices.ContainsFunc(input.Manifest.Repositories, func(r workspace.PreparedRepository) bool { return r.DirectoryName != "" })
+						} else if j.Type == domain.ExecuteSessionJob {
 							var input domain.ExecutionJobInput
 							named = domain.Decode(j.Input, &input) == nil && workspace.ManifestHasNamedDirectories(input.Manifest)
 						} else {

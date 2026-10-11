@@ -44,7 +44,7 @@ func managedDirectoryKey(name string) string {
 // directory side effect. Collisions use NFC plus Unicode default case folding
 // and include workspace metadata names and legacy UUID-named siblings.
 func validateDirectoryNames(workspaceType domain.WorkspaceType, repositories []RepositorySpec) error {
-	seen := map[string]bool{managedDirectoryKey("manifest.json"): true, managedDirectoryKey("chat"): true}
+	seen := map[string]bool{managedDirectoryKey("manifest.json"): true, managedDirectoryKey("chat"): true, managedDirectoryKey(".git"): true}
 	for _, repo := range repositories {
 		if repo.DirectoryName != "" && (workspaceType != domain.Worktree || !repo.SourceKind.managed() || !validManagedDirectoryName(repo.DirectoryName)) {
 			return domain.Fail(domain.InvalidArgument, "A managed repository directory name is invalid.", "Use the registered repository name conversion.")

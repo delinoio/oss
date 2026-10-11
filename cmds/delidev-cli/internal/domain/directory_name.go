@@ -28,8 +28,7 @@ func PortableDirectoryName(name string) string {
 	if value == "" {
 		value = DefaultManagedDirectoryName
 	}
-	stem := strings.ToUpper(strings.SplitN(value, ".", 2)[0])
-	if stem == "CON" || stem == "PRN" || stem == "AUX" || stem == "NUL" || (len(stem) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) && stem[3] >= '1' && stem[3] <= '9') {
+	if reservedDeviceName(value) || strings.EqualFold(value, ".git") {
 		value = trimManagedDirectoryName(truncateManagedDirectoryName("_" + value))
 	}
 	if value == "" || ValidateRepositoryCloneDirectory(value) != nil {
@@ -51,4 +50,21 @@ func truncateManagedDirectoryName(value string) string {
 		cut--
 	}
 	return value[:cut]
+}
+
+// reservedDeviceName reports Windows device names, including the superscript
+// digit forms that Windows also reserves.
+func reservedDeviceName(value string) bool {
+	stem := strings.ToUpper(strings.SplitN(value, ".", 2)[0])
+	switch stem {
+	case "CON", "PRN", "AUX", "NUL":
+		return true
+	}
+	if strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT") {
+		switch strings.TrimPrefix(strings.TrimPrefix(stem, "COM"), "LPT") {
+		case "1", "2", "3", "4", "5", "6", "7", "8", "9", "\u00b9", "\u00b2", "\u00b3":
+			return true
+		}
+	}
+	return false
 }
