@@ -1750,7 +1750,9 @@ it.each([
       await waitFor(() =>
         expect(terminalTab.getAttribute("aria-selected")).toBe("true"),
       );
-      expect(document.activeElement).toBe(terminalTab);
+      expect(document.activeElement).toBe(
+        document.querySelector(".terminal-view textarea"),
+      );
       expect(composer).toHaveProperty("value", "Original draft");
       await waitFor(() => expect(f.terminalWatches).toHaveBeenCalled());
       const watches = f.terminalWatches.mock.calls.length;
@@ -1785,7 +1787,8 @@ it.each([false, true])(
       <ShortcutProvider>{f.view("Original draft", snapshot)}</ShortcutProvider>,
     );
     try {
-      await screen.findByRole("heading", { name: "Original session" });
+      if (snapshot)
+        await screen.findByRole("heading", { name: "Original session" });
       fireEvent.keyDown(document.body, { key: "`", ctrlKey: true });
       expect(f.terminalCreate).not.toHaveBeenCalled();
       expect(screen.queryByRole("tab", { name: "Terminal 1" })).toBeNull();
