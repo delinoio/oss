@@ -19,6 +19,7 @@ import {
   ErrorDetailSchema,
   ProviderService,
   ResourceSchema,
+  ErrorDetailSchema,
   ResourceService,
   newRequestId,
   type Resource,
@@ -779,4 +780,49 @@ it("refreshes only the active category metadata through the shared Settings head
   expect(
     value.get.mock.calls.filter(([id]) => id === repository.id),
   ).toHaveLength(repositoryReads + 1);
+});
+
+it("reveals General and retains the Project draft after a confirmed name collision", async () => {
+  const item = project("Editable project");
+  item.documentJson = encode({
+    name: "Editable project",
+    repositories: [creationRepository.id],
+    primary_repository: creationRepository.id,
+    agents: { configured: false, ids: [] },
+    accounts: { configured: false, ids: [] },
+  });
+  const f = fixture([item, creationRepository]);
+  f.save.mockRejectedValueOnce(
+    new ConnectError("Collision", Code.Aborted, undefined, [
+      {
+        desc: ErrorDetailSchema,
+        value: create(ErrorDetailSchema, {
+          code: "conflict",
+          cause: "configuration_name_conflict",
+        }),
+      },
+    ]),
+  );
+  openProjects(f);
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: `Edit Editable project · ${item.id}`,
+    }),
+  );
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
+    target: { value: " alpha " },
+  });
+  fireEvent.click(screen.getByRole("tab", { name: "Access" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
+  await screen.findByText(
+    "A project with this name already exists. Choose another name.",
+  );
+  const input = screen.getByRole("textbox", {
+    name: "Name",
+  }) as HTMLInputElement;
+  await waitFor(() => expect(document.activeElement).toBe(input));
+  expect(input.value).toBe(" alpha ");
+  expect(
+    screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected"),
+  ).toBe("true");
 });

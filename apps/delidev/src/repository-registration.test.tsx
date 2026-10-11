@@ -22,6 +22,7 @@ import {
   SystemCapability,
   EntityKind,
   ResourceSchema,
+  ErrorDetailSchema,
   ResourceService,
   WorkerService,
   newRequestId,
@@ -2166,4 +2167,155 @@ it("preserves shared footer spacing when a nested remediation owns ordinary acti
   expect(footer.matches(selector)).toBe(false);
   nested.remove();
   footer.append(registrationActions);
+});
+
+it("keeps a rejected repository name editable with localized field guidance", async () => {
+  const f = fixture();
+  f.save.mockRejectedValueOnce(
+    new ConnectError("Collision", Code.Aborted, undefined, [
+      {
+        desc: ErrorDetailSchema,
+        value: create(ErrorDetailSchema, {
+          code: "conflict",
+          cause: "configuration_name_conflict",
+        }),
+      },
+    ]),
+  );
+  f.mount();
+  await f.chooseAndReview();
+  const input = screen.getByRole("textbox", {
+    name: "Repository name",
+  }) as HTMLInputElement;
+  fireEvent.change(input, { target: { value: " alpha " } });
+  fireEvent.click(
+    within(screen.getByRole("dialog", { name: "Add repository" })).getByRole(
+      "button",
+      { name: "Add repository" },
+    ),
+  );
+  const message =
+    "A repository with this name already exists. Choose another name.";
+  await screen.findByText(message);
+  await waitFor(() => expect(document.activeElement).toBe(input));
+  expect(input.value).toBe(" alpha ");
+  expect(input.getAttribute("aria-describedby")).toBe(
+    screen.getByText(message).id,
+  );
+  await act(async () => {
+    await i18n.changeLanguage(SupportedLanguage.Korean);
+  });
+  expect(
+    screen.getByText(
+      "이 이름의 저장소가 이미 있습니다. 다른 이름을 입력하세요.",
+    ),
+  ).toBeTruthy();
+  await act(async () => {
+    await i18n.changeLanguage(SupportedLanguage.English);
+  });
+  fireEvent.change(input, { target: { value: "Beta" } });
+  expect(screen.queryByText(message)).toBeNull();
+  fireEvent.click(
+    within(screen.getByRole("dialog", { name: "Add repository" })).getByRole(
+      "button",
+      { name: "Add repository" },
+    ),
+  );
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(2));
+  expect(
+    JSON.parse(new TextDecoder().decode(f.save.mock.calls[1][0].documentJson))
+      .name,
+  ).toBe("Beta");
+});
+
+it("returns a verified deferred save name collision to its retained draft", async () => {
+  const f = fixture();
+  f.save.mockImplementationOnce(async () => {
+    const job = row(EntityKind.JOB, {
+      state: "failed",
+      problem: {
+        code: "conflict",
+        cause: "configuration_name_conflict",
+        message: "Collision",
+      },
+    });
+    f.resources.set(job.id, job);
+    return { job };
+  });
+  f.mount();
+  await f.chooseAndReview();
+  const input = screen.getByRole("textbox", {
+    name: "Repository name",
+  }) as HTMLInputElement;
+  fireEvent.change(input, { target: { value: "Alpha" } });
+  fireEvent.click(
+    within(screen.getByRole("dialog", { name: "Add repository" })).getByRole(
+      "button",
+      { name: "Add repository" },
+    ),
+  );
+  await screen.findByText(
+    "A repository with this name already exists. Choose another name.",
+  );
+  const retained = screen.getByRole("textbox", {
+    name: "Repository name",
+  }) as HTMLInputElement;
+  await waitFor(() => expect(document.activeElement).toBe(retained));
+  expect(retained.value).toBe("Alpha");
+  expect(f.inspected).toHaveBeenCalledTimes(1);
+  fireEvent.change(retained, { target: { value: "Beta" } });
+  expect(
+    within(screen.getByRole("dialog", { name: "Add repository" }))
+      .getByRole("button", { name: "Add repository" })
+      .hasAttribute("disabled"),
+  ).toBe(false);
+});
+
+it("corrects a completed clone registration collision using its existing Local checkout", async () => {
+  const f = fixture(metadata, true);
+  f.clone.mockImplementationOnce(async (request) => {
+    const job = row(EntityKind.JOB, {
+      type: "clone-repository",
+      machine_id: request.machineId,
+      state: "failed",
+      output: { inspection: { ...metadata, root: "/parent/oss" } },
+      problem: {
+        code: "conflict",
+        cause: "configuration_name_conflict",
+        message: "Collision",
+      },
+    });
+    f.resources.set(job.id, job);
+    return { job, requestId: request.requestId };
+  });
+  f.mount();
+  await f.add();
+  cloneInputs();
+  const button = screen.getByRole("button", { name: "Clone & add repository" });
+  await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+  fireEvent.click(button);
+  await screen.findByText(
+    "A repository with this name already exists. Choose another name.",
+  );
+  const input = screen.getByRole("textbox", {
+    name: "Repository name",
+  }) as HTMLInputElement;
+  await waitFor(() => expect(document.activeElement).toBe(input));
+  fireEvent.change(input, { target: { value: "Different name" } });
+  fireEvent.click(
+    within(screen.getByRole("dialog", { name: "Add repository" })).getByRole(
+      "button",
+      { name: "Add repository" },
+    ),
+  );
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
+  const saved = JSON.parse(
+    new TextDecoder().decode(f.save.mock.calls[0][0].documentJson),
+  );
+  expect(saved.checkouts).toEqual([
+    { machine_id: f.machine.id, path: "/parent/oss" },
+  ]);
+  expect(saved.name).toBe("Different name");
+  expect(f.clone).toHaveBeenCalledTimes(1);
+  expect(f.inspected).not.toHaveBeenCalled();
 });
