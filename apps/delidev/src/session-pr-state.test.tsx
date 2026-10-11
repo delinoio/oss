@@ -285,7 +285,7 @@ it("keeps current-state reads inactive when hidden and neutral after failed refr
     await client.invalidateQueries();
   });
   expect(
-    screen.getByRole("img", {
+    await screen.findByRole("img", {
       name: "Pull request state unavailable or stale",
     }),
   ).toBeTruthy();
