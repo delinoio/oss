@@ -273,3 +273,7 @@ English and Korean. Theme names and semantic token identifiers remain original
 user/machine values. Locale changes preserve device revisions, dirty custom drafts,
 exact pending saves, focus and committed color/layout preferences. Synthetic theme
 previews use bundled example text and contain no live conversation data.
+
+## App information copy
+
+Bundled English/Korean Settings catalogs define the final System App information category, its native version/platform labels, all six local platform names, loading/unavailable/read failures, fixed related-link labels and source-notices explanation. Updates copy distinguishes unchecked, confirmed no matching candidate, checking, available, preparing, prepared, installing, installed, failed and unconfirmed observations. Recovery labels and exact-original inspection guidance remain localized. Static Settings/command search reuses these bundled labels; server metadata and native destination strings do not become search content.

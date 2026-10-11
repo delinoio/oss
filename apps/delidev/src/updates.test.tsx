@@ -27,7 +27,12 @@ import {
 import { MutationIntents } from "./mutation";
 import { encode } from "./documents";
 import { Updates, NativeUpdateAction, NativeUpdatePhase } from "./updates";
-function fixture(supported = true, revision = 1n, id = newRequestId()) {
+function fixture(
+  supported = true,
+  revision = 1n,
+  id = newRequestId(),
+  hasCandidate = true,
+) {
   const resource = create(ResourceSchema, {
     id,
     kind: EntityKind.UPDATE,
@@ -53,7 +58,7 @@ function fixture(supported = true, revision = 1n, id = newRequestId()) {
       };
     },
   );
-  const check = vi.fn(() => ({ update: resource }));
+  const check = vi.fn(() => ({ update: hasCandidate ? resource : undefined }));
   const transport = createRouterTransport((r) => {
     r.service(SystemService, {
       getStatus: () => ({
@@ -92,7 +97,6 @@ function fixture(supported = true, revision = 1n, id = newRequestId()) {
       </QueryClientProvider>
     </TransportProvider>,
   );
-  fireEvent.click(screen.getByText("Desktop updates"));
   return { control, check, id };
 }
 it("gates all update effects on negotiated support", async () => {
@@ -106,7 +110,7 @@ it("gates all update effects on negotiated support", async () => {
 it("keeps a lost install outcome inspect-only without repeating installation", async () => {
   const f = fixture();
   const check = await screen.findByRole("button", {
-    name: "Check for desktop update",
+    name: "Check for updates",
   });
   await vi.waitFor(() =>
     expect((check as HTMLButtonElement).disabled).toBe(false),
@@ -131,7 +135,9 @@ it("keeps a lost install outcome inspect-only without repeating installation", a
       name: "Inspect original desktop installation",
     }),
   );
-  await screen.findByText("Desktop installation: uncertain");
+  await screen.findByText(
+    "Desktop installation: The original response is unconfirmed.",
+  );
   expect(
     f.control.mock.calls.filter(
       ([action]) => action === NativeUpdateAction.Install,
@@ -147,6 +153,7 @@ it("inspects the exact retained local installation without live negotiated suppo
   await screen.findByText(
     "This server or Worker requires an update to support signed updates.",
   );
+  fireEvent.click(screen.getByText("Update recovery"));
   fireEvent.change(screen.getByLabelText("Retained desktop update ID"), {
     target: { value: f.id },
   });
@@ -156,7 +163,9 @@ it("inspects the exact retained local installation without live negotiated suppo
   fireEvent.click(
     screen.getByRole("button", { name: "Inspect retained local installation" }),
   );
-  await screen.findByText("Retained desktop 0.2.0: uncertain");
+  await screen.findByText(
+    "Retained desktop 0.2.0: The original response is unconfirmed.",
+  );
   expect(f.control).toHaveBeenCalledExactlyOnceWith(
     NativeUpdateAction.Inspect,
     f.id,
@@ -171,7 +180,7 @@ it("inspects the exact retained local installation without live negotiated suppo
 it("preserves the exact desktop recovery pair for a later unsupported-server visit", async () => {
   const original = fixture(true, 9007199254740993n);
   const check = await screen.findByRole("button", {
-    name: "Check for desktop update",
+    name: "Check for updates",
   });
   await vi.waitFor(() =>
     expect((check as HTMLButtonElement).disabled).toBe(false),
@@ -180,8 +189,9 @@ it("preserves the exact desktop recovery pair for a later unsupported-server vis
   const candidate = await screen.findByRole("region", {
     name: "Original update",
   });
-  const id = within(candidate).getByText(original.id).textContent!;
-  const revision = within(candidate).getByText("9007199254740993").textContent!;
+  fireEvent.click(screen.getByText("Update recovery"));
+  const id = screen.getByText(original.id).textContent!;
+  const revision = screen.getByText("9007199254740993").textContent!;
   fireEvent.click(
     within(candidate).getByRole("button", {
       name: "Download verified desktop update",
@@ -198,6 +208,7 @@ it("preserves the exact desktop recovery pair for a later unsupported-server vis
   await screen.findByText(
     "This server or Worker requires an update to support signed updates.",
   );
+  fireEvent.click(screen.getByText("Update recovery"));
   fireEvent.change(screen.getByLabelText("Retained desktop update ID"), {
     target: { value: id },
   });
@@ -207,7 +218,9 @@ it("preserves the exact desktop recovery pair for a later unsupported-server vis
   fireEvent.click(
     screen.getByRole("button", { name: "Inspect retained local installation" }),
   );
-  await screen.findByText("Retained desktop 0.2.0: uncertain");
+  await screen.findByText(
+    "Retained desktop 0.2.0: The original response is unconfirmed.",
+  );
   expect(recovery.control).toHaveBeenCalledExactlyOnceWith(
     NativeUpdateAction.Inspect,
     id,
@@ -281,9 +294,8 @@ it("keeps original native update uncertainty and drafts while its presentation h
     </TransportProvider>
   );
   const mounted = render(view());
-  fireEvent.click(screen.getByText("Desktop updates"));
   const check = await screen.findByRole<HTMLButtonElement>("button", {
-    name: "Check for desktop update",
+    name: "Check for updates",
   });
   await vi.waitFor(() => expect(check.disabled).toBe(false));
   fireEvent.click(check);
@@ -315,4 +327,21 @@ it("keeps original native update uncertainty and drafts while its presentation h
   mounted.unmount();
   target.remove();
   client.clear();
+});
+
+it("distinguishes unchecked from a successful explicit check with no signed candidate", async () => {
+  const f = fixture(true, 1n, newRequestId(), false);
+  await screen.findByText("Updates have not been checked yet.");
+  expect(f.check).not.toHaveBeenCalled();
+  expect(f.control).not.toHaveBeenCalled();
+  const recovery = screen.getByText("Update recovery").closest("details")!;
+  expect(recovery.open).toBe(false);
+  const check = screen.getByRole<HTMLButtonElement>("button", {
+    name: "Check for updates",
+  });
+  await vi.waitFor(() => expect(check.disabled).toBe(false));
+  fireEvent.click(check);
+  await screen.findByText("No newer signed update was found.");
+  expect(f.check).toHaveBeenCalledTimes(1);
+  expect(f.control).not.toHaveBeenCalled();
 });

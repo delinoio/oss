@@ -1,8 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
+import { PersistentConnectionView } from "./connections-page";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
   InstallationQuery,
@@ -54,7 +56,9 @@ function UpdateCandidate({
   active,
   worker,
   controls,
+  recoveryTarget,
 }: {
+  recoveryTarget?: HTMLElement;
   current: Resource;
   active: boolean;
   worker?: boolean;
@@ -63,6 +67,7 @@ function UpdateCandidate({
   useLocale();
   const [local, setLocal] = useState<NativeUpdateResult>(),
     [busy, setBusy] = useState(false),
+    [nativeAction, setNativeAction] = useState<NativeUpdateAction>(),
     [uncertain, setUncertain] = useState(false),
     [error, setError] = useState<unknown>();
   const alive = useRef(true);
@@ -105,6 +110,7 @@ function UpdateCandidate({
     )
       return;
     setBusy(true);
+    setNativeAction(action);
     setError(undefined);
     try {
       const result = await controls.control(action, row.id, row.revision);
@@ -157,14 +163,6 @@ function UpdateCandidate({
           }}
         />
       </p>
-      {!worker ? (
-        <dl>
-          <dt>{copy("updates.retainedDesktopUpdateId_acb1d6")}</dt>
-          <dd>{row.id}</dd>
-          <dt>{copy("updates.retainedDesktopUpdateRevision_a8ee1a")}</dt>
-          <dd>{row.revision.toString()}</dd>
-        </dl>
-      ) : null}
       {worker ? (
         <>
           <p>{copy("updates.updatesWaitForActiveWorkTerminals_ac7bf1")}</p>
@@ -212,12 +210,23 @@ function UpdateCandidate({
               {copy("updates.reviewAndInstallDesktopUpdate_2f844d")}
             </SettingsActionButton>
           ) : null}
+          {busy ? (
+            <p role="status">
+              {copy(
+                nativeAction === NativeUpdateAction.Prepare
+                  ? "updates.preparing"
+                  : nativeAction === NativeUpdateAction.Install
+                    ? "updates.installing"
+                    : "updates.inspecting",
+              )}
+            </p>
+          ) : null}
           {local ? (
             <p role="status">
               <LocalizedText
                 id="updates.desktopInstallation_cc279d"
                 components={{
-                  s0: <>{local.phase}</>,
+                  s0: <>{nativePhaseLabel(local.phase)}</>,
                   s1: (
                     <>
                       {local.phase === NativeUpdatePhase.Installed
@@ -236,13 +245,21 @@ function UpdateCandidate({
               )}
             </p>
           ) : null}
-          <SettingsActionButton
-            icon={SettingsActionIcon.Retry}
-            disabled={busy || !active}
-            onClick={() => void native(NativeUpdateAction.Inspect)}
-          >
-            {copy("updates.inspectOriginalDesktopInstallation_5849fa")}
-          </SettingsActionButton>
+          <PersistentConnectionView target={recoveryTarget} hidden>
+            <dl>
+              <dt>{copy("updates.retainedDesktopUpdateId_acb1d6")}</dt>
+              <dd>{row.id}</dd>
+              <dt>{copy("updates.retainedDesktopUpdateRevision_a8ee1a")}</dt>
+              <dd>{row.revision.toString()}</dd>
+            </dl>
+            <SettingsActionButton
+              icon={SettingsActionIcon.Retry}
+              disabled={busy || !active}
+              onClick={() => void native(NativeUpdateAction.Inspect)}
+            >
+              {copy("updates.inspectOriginalDesktopInstallation_5849fa")}
+            </SettingsActionButton>
+          </PersistentConnectionView>
         </>
       )}
       {request.uncertain ? (
@@ -373,7 +390,7 @@ function LocalInstallationInspection({
             id="updates.retainedDesktop_312269"
             components={{
               s0: <>{result.release_version}</>,
-              s1: <>{result.phase}</>,
+              s1: <>{nativePhaseLabel(result.phase)}</>,
               s2: (
                 <>
                   {result.phase === NativeUpdatePhase.Installed
@@ -399,7 +416,9 @@ export function Updates({
   controls?: DesktopUpdateControls;
 }) {
   useLocale();
-  const [expanded, setExpanded] = useState(false),
+  const [expanded, setExpanded] = useState(!machine),
+    [checked, setChecked] = useState(false),
+    [recoveryTarget, setRecoveryTarget] = useState<HTMLElement>(),
     [candidate, setCandidate] = useState<Resource>(),
     [id, setId] = useState(""),
     [nativeContext, setNativeContext] = useState<{
@@ -407,6 +426,35 @@ export function Updates({
       target: string;
     }>(),
     [error, setError] = useState<unknown>();
+  const recoverySlot = useCallback(
+    (node: HTMLDivElement | null) => setRecoveryTarget(node ?? undefined),
+    [],
+  );
+  const desktopRoot = useRef<HTMLDivElement>(null);
+  const recovery = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (machine || !desktopRoot.current) return;
+    const root = desktopRoot.current;
+    const reveal = () => {
+      if (
+        recovery.current &&
+        (root.dataset.connectionAttention === "true" ||
+          root.querySelector(
+            '[role="alert"], [data-connection-attention="true"]',
+          ))
+      )
+        recovery.current.open = true;
+    };
+    const observer = new MutationObserver(reveal);
+    observer.observe(root, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["data-connection-attention", "role"],
+    });
+    reveal();
+    return () => observer.disconnect();
+  }, [machine]);
   const status = useQuery(
     SystemQuery.getStatus,
     {},
@@ -434,7 +482,11 @@ export function Updates({
     `update:check:${machine?.id ?? "desktop"}`,
     InstallationQuery.checkUpdate,
     (response) => {
-      if (response.update) {
+      if (!machine) {
+        setChecked(true);
+        setCandidate(response.update);
+        setId(response.update?.id ?? "");
+      } else if (response.update) {
         setCandidate(response.update);
         setId(response.update.id);
       }
@@ -462,52 +514,66 @@ export function Updates({
     !machine ||
     (Array.isArray(data?.worker_capabilities) &&
       data.worker_capabilities.includes("signed-worker-updates-v1"));
-  return (
-    <Disclosure
-      density={DisclosureDensity.Settings}
-      data-connection-attention={Boolean(
-        check.busy || check.uncertain || check.error || read.error || error,
-      )}
-      onToggle={(event) => setExpanded(event.currentTarget.open)}
-    >
-      <DisclosureSummary>
-        {machine
-          ? copy("updates.workerUpdates_86b3ca")
-          : copy("updates.desktopUpdates_1431d4")}
-      </DisclosureSummary>
-      {expanded ? (
+  const content = (
+    <>
+      {!supported || !knownWorker ? (
+        <p>
+          {status.isPending
+            ? copy("updates.checkingUpdateSupport_9f8283")
+            : copy("updates.thisServerOrWorkerRequiresAn_e35658")}
+        </p>
+      ) : (
         <>
-          {!supported || !knownWorker ? (
-            <p>
-              {status.isPending
-                ? copy("updates.checkingUpdateSupport_9f8283")
-                : copy("updates.thisServerOrWorkerRequiresAn_e35658")}
-            </p>
-          ) : (
-            <>
-              <p>{copy("updates.onlySignedStableDelidevReleasesAre_fdf83e")}</p>
-              <SettingsActionButton
-                icon={SettingsActionIcon.Confirm}
-                disabled={
-                  !active ||
-                  !targets[target] ||
-                  !version ||
-                  check.busy ||
-                  check.uncertain
-                }
-                onClick={() =>
-                  void check.send({
-                    requestId: newRequestId(),
-                    component: machine
-                      ? UpdateComponent.WORKER
-                      : UpdateComponent.DESKTOP,
-                    target: targets[target],
-                    currentVersion: version,
-                    machineId: machine?.id ?? "",
-                    expectedMachineRevision: machine?.revision ?? 0n,
-                  })
-                }
-              >
+          <p>{copy("updates.onlySignedStableDelidevReleasesAre_fdf83e")}</p>
+          <div
+            className={!machine ? "app-update-status" : "worker-update-check"}
+          >
+            {!machine ? (
+              <p role="status">
+                {copy(
+                  check.busy
+                    ? "updates.checking"
+                    : check.uncertain
+                      ? "updates.uncertain"
+                      : check.error
+                        ? "updates.failed"
+                        : selected
+                          ? "updates.available"
+                          : checked
+                            ? "updates.current"
+                            : "updates.unchecked",
+                )}
+              </p>
+            ) : null}
+            <SettingsActionButton
+              icon={
+                machine
+                  ? SettingsActionIcon.Confirm
+                  : SettingsActionIcon.Refresh
+              }
+              disabled={
+                !active ||
+                !targets[target] ||
+                !version ||
+                check.busy ||
+                check.uncertain
+              }
+              onClick={() =>
+                void check.send({
+                  requestId: newRequestId(),
+                  component: machine
+                    ? UpdateComponent.WORKER
+                    : UpdateComponent.DESKTOP,
+                  target: targets[target],
+                  currentVersion: version,
+                  machineId: machine?.id ?? "",
+                  expectedMachineRevision: machine?.revision ?? 0n,
+                })
+              }
+            >
+              {!machine ? (
+                copy("updates.check")
+              ) : (
                 <LocalizedText
                   id="updates.checkForUpdate_8ac71d"
                   components={{
@@ -520,60 +586,140 @@ export function Updates({
                     ),
                   }}
                 />
-              </SettingsActionButton>
-              {check.uncertain ? (
-                <SettingsActionButton
-                  icon={SettingsActionIcon.Retry}
-                  disabled={check.busy || !active}
-                  onClick={check.retry}
-                >
-                  {copy("updates.retryTheSameUpdateCheck_919af6")}
-                </SettingsActionButton>
-              ) : null}
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void read.refetch();
-                }}
-              >
-                <label>
-                  {copy("updates.originalUpdateId_51ae1b")}
-                  <input
-                    value={id}
-                    maxLength={36}
-                    onChange={(event) => {
-                      setId(event.target.value);
-                      setCandidate(undefined);
-                    }}
-                  />
-                </label>
-                <SettingsActionButton
-                  icon={SettingsActionIcon.Retry}
-                  disabled={!active || !id}
-                >
-                  {copy("updates.inspectOriginalUpdate_3b2c2e")}
-                </SettingsActionButton>
-              </form>
-              {selected ? (
-                <UpdateCandidate
-                  key={selected.id}
-                  current={selected}
-                  active={active && expanded}
-                  worker={Boolean(machine)}
-                  controls={controls}
+              )}
+            </SettingsActionButton>
+          </div>
+          {check.uncertain ? (
+            <SettingsActionButton
+              icon={SettingsActionIcon.Retry}
+              disabled={check.busy || !active}
+              onClick={check.retry}
+            >
+              {copy("updates.retryTheSameUpdateCheck_919af6")}
+            </SettingsActionButton>
+          ) : null}
+          {machine ? (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void read.refetch();
+              }}
+            >
+              <label>
+                {copy("updates.originalUpdateId_51ae1b")}
+                <input
+                  value={id}
+                  maxLength={36}
+                  onChange={(event) => {
+                    setId(event.target.value);
+                    setCandidate(undefined);
+                  }}
                 />
-              ) : null}
-              <Problem error={check.error || read.error || error} />
-            </>
-          )}
-          {controls && !machine ? (
-            <LocalInstallationInspection
+              </label>
+              <SettingsActionButton
+                icon={SettingsActionIcon.Retry}
+                disabled={!active || !id}
+              >
+                {copy("updates.inspectOriginalUpdate_3b2c2e")}
+              </SettingsActionButton>
+            </form>
+          ) : null}
+          {selected ? (
+            <UpdateCandidate
+              key={selected.id}
+              current={selected}
               active={active && expanded}
+              worker={Boolean(machine)}
               controls={controls}
+              recoveryTarget={recoveryTarget}
             />
           ) : null}
+          <Problem error={check.error || read.error || error} />
         </>
+      )}
+      {!machine ? (
+        <Disclosure
+          ref={recovery}
+          density={DisclosureDensity.Settings}
+          className="app-update-recovery"
+        >
+          <DisclosureSummary data-settings-search-target="app-recovery">
+            {copy("updates.recovery")}
+          </DisclosureSummary>
+          <div>
+            {supported ? (
+              <>
+                {" "}
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void read.refetch();
+                  }}
+                >
+                  <label>
+                    {copy("updates.originalUpdateId_51ae1b")}
+                    <input
+                      value={id}
+                      maxLength={36}
+                      onChange={(event) => {
+                        setId(event.target.value);
+                        setCandidate(undefined);
+                      }}
+                    />
+                  </label>
+                  <SettingsActionButton
+                    icon={SettingsActionIcon.Retry}
+                    disabled={!active || !id}
+                  >
+                    {copy("updates.inspectOriginalUpdate_3b2c2e")}
+                  </SettingsActionButton>
+                </form>
+              </>
+            ) : null}
+            <div ref={recoverySlot} />
+            {controls ? (
+              <LocalInstallationInspection
+                active={active}
+                controls={controls}
+              />
+            ) : null}
+          </div>
+        </Disclosure>
       ) : null}
-    </Disclosure>
+    </>
   );
+  const attention = Boolean(
+    check.busy || check.uncertain || check.error || read.error || error,
+  );
+  return machine ? (
+    <Disclosure
+      density={DisclosureDensity.Settings}
+      data-connection-attention={attention}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+    >
+      <DisclosureSummary>
+        {copy("updates.workerUpdates_86b3ca")}
+      </DisclosureSummary>
+      {expanded ? content : null}
+    </Disclosure>
+  ) : (
+    <div ref={desktopRoot} data-connection-attention={attention}>
+      {content}
+    </div>
+  );
+}
+
+function nativePhaseLabel(phase: NativeUpdatePhase) {
+  switch (phase) {
+    case NativeUpdatePhase.Prepared:
+      return copy("updates.prepared");
+    case NativeUpdatePhase.Installing:
+      return copy("updates.installing");
+    case NativeUpdatePhase.Installed:
+      return copy("updates.installed");
+    case NativeUpdatePhase.Failed:
+      return copy("updates.failed");
+    case NativeUpdatePhase.Uncertain:
+      return copy("updates.uncertain");
+  }
 }
