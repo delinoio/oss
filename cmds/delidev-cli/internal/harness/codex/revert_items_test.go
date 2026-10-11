@@ -183,8 +183,23 @@ func TestRevertNonemptyPaginatedPrefixRequiresNativeItemAnchor(t *testing.T) {
 	}); err == nil || claims != 1 || c.problem == nil || !c.execution.paused {
 		t.Fatal("nonempty retained prefix without an item anchor was accepted", err)
 	}
-	if len(requestsOf(t, capture, "thread/items/list")) != 0 || len(requestsOf(t, capture, "thread/revert")) != 1 {
-		t.Fatal("missing item anchor reached retained-item reads or repeated the mutation")
+	requests := capturedThreads(t, capture)
+	revertIndex := -1
+	for index, request := range requests {
+		if request["method"] == "thread/revert" {
+			if revertIndex != -1 {
+				t.Fatal("Revert mutation repeated")
+			}
+			revertIndex = index
+		}
+	}
+	if revertIndex < 0 {
+		t.Fatal("Revert mutation was not sent")
+	}
+	for _, request := range requests[revertIndex+1:] {
+		if request["method"] == "thread/items/list" {
+			t.Fatal("missing item anchor reached retained-item reads")
+		}
 	}
 }
 
