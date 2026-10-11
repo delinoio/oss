@@ -618,8 +618,9 @@ fn verbose_diagnostics_redact_source_derived_arguments() {
 fn erased_type_spans_do_not_make_renames_profitable() {
     // Only the erased parameter annotation would shrink; the emitted shorthand
     // would grow to `a: longProperty`, so the property must keep its name.
+    // `v` stays a runtime use so that signature-reduction keeps the argument.
     let code = "export {}; const longProperty = 1; function size(v: {longProperty: number}) { \
-                return 0; } console.log(size({longProperty}));";
+                return v ? 0 : 1; } console.log(size({longProperty}));";
     let temp = fixture(code);
     success(run(temp.path(), "out"));
     compare(temp.path());
