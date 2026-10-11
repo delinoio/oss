@@ -480,7 +480,8 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
     resultText: string | RegExp,
     retainedDraft: string | undefined,
   ) => {
-    for (let attempt = 0; attempt < 3; attempt++) {
+    const maxRevisionRecoveries = 3;
+    for (let attempt = 0; attempt <= maxRevisionRecoveries; attempt++) {
       fireEvent.click(
         screen.getByRole("button", { name: "Save session budget" }),
       );
@@ -514,6 +515,9 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
           ).checked,
         ).toBe(false);
       }
+      if (attempt === maxRevisionRecoveries) {
+        throw new Error("Budget session revision kept changing after retries");
+      }
       fireEvent.click(
         screen.getByRole("button", {
           name: "Use latest revision with this draft",
@@ -529,7 +533,6 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
         ).toBe(false),
       );
     }
-    await screen.findByText(resultText);
   };
   await editCurrentBudget();
   change("Estimated-cost threshold", "12.345678901234567");
