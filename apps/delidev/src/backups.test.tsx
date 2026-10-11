@@ -1142,18 +1142,15 @@ it.each(["inventory", "creation", "deletion"])(
       kind === "inventory"
         ? screen
         : within(screen.getByRole("tabpanel", { name: label }));
-    const idText =
-      (ordinal: number) => (_content: string, element: Element | null) =>
-        element?.tagName === "H3" &&
-        element.textContent?.replace(/\s+/gu, " ").trim() ===
-          `Backup Backup ${ordinal}`;
-    await result.findByText(idText(1));
+    const retainedId = safePresentation(f.backup.id, "Backup");
+    const duplicateId = safePresentation(nextID, "Backup");
+    await result.findByText(retainedId);
     fireEvent.click(
       await screen.findByRole("button", { name: `Load more ${label}` }),
     );
     const retry = await screen.findByRole("button", { name: "Retry" });
-    expect(result.getByText(idText(1))).toBeTruthy();
-    expect(result.queryByText(idText(2))).toBeNull();
+    expect(result.getByText(retainedId)).toBeTruthy();
+    expect(result.queryByText(duplicateId)).toBeNull();
     expect(
       screen.queryByRole("button", { name: `Load more ${label}` }),
     ).toBeNull();
@@ -1162,8 +1159,8 @@ it.each(["inventory", "creation", "deletion"])(
       token,
     ]);
     fireEvent.click(retry);
-    await result.findByText(idText(2));
-    expect(result.getByText(idText(1))).toBeTruthy();
+    await result.findByText(duplicateId);
+    expect(result.getByText(retainedId)).toBeTruthy();
     expect(owner.mock.calls.map(([request]) => request.pageToken)).toEqual([
       "",
       token,

@@ -348,12 +348,21 @@ it("discloses one exact duplicate-name identity without selecting or reading it"
     name: /^Details for Example repository · 2$/,
   });
   fireEvent.click(secondButton);
-  expect(firstButton.getAttribute("aria-expanded")).toBe("false");
-  expect(secondButton.getAttribute("aria-expanded")).toBe("true");
-  details = pane.getByRole("region", {
-    name: secondButton.getAttribute("aria-label")!,
+  const expandedSecondButton = pane.getByRole("button", {
+    name: /^Details for Example repository · 2$/,
   });
-  expect(details.id).toBe(secondButton.getAttribute("aria-controls"));
+  expect(
+    pane
+      .getByRole("button", {
+        name: /^Details for Example repository · 1$/,
+      })
+      .getAttribute("aria-expanded"),
+  ).toBe("false");
+  expect(expandedSecondButton.getAttribute("aria-expanded")).toBe("true");
+  details = pane.getByRole("region", {
+    name: expandedSecondButton.getAttribute("aria-label")!,
+  });
+  expect(details.id).toBe(expandedSecondButton.getAttribute("aria-controls"));
   expect(details.textContent).not.toContain(second.id);
   expect(pane.queryAllByRole("region", { name: /Details for/ })).toHaveLength(
     1,

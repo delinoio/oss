@@ -264,6 +264,7 @@ it("keeps equal-name projects separate, includes empty projects, and only reads 
 });
 
 it("opens project creation shortcuts without toggling groups or reading collapsed sessions", async () => {
+  await act(() => i18n.changeLanguage(SupportedLanguage.English));
   const first = resource(EntityKind.PROJECT, "Same name");
   const second = resource(EntityKind.PROJECT, "Same name");
   const empty = resource(EntityKind.PROJECT, "Empty project");
@@ -275,10 +276,17 @@ it("opens project creation shortcuts without toggling groups or reading collapse
     const name = JSON.parse(new TextDecoder().decode(project.documentJson))
       .name as string;
     const numberedName = name === "Same name" ? `${name} · ${index + 1}` : name;
-    const toggle = await screen.findByRole("button", {
+    const group = await waitFor(() => {
+      const candidate = document.querySelector<HTMLElement>(
+        `[data-project-id="${CSS.escape(project.id)}"]`,
+      );
+      expect(candidate).toBeTruthy();
+      return candidate!;
+    });
+    const toggle = within(group).getByRole("button", {
       name: safePresentation(`${numberedName}. Project ID: ${project.id}`),
     });
-    const shortcut = screen.getByRole("button", {
+    const shortcut = within(group).getByRole("button", {
       name: safePresentation(
         `New session in ${numberedName}. Project ID: ${project.id}`,
       ),

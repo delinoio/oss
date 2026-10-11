@@ -549,7 +549,7 @@ it.each(["empty-continuation", "singleton-continuation", "multiple"])(
     render(value.view(<Settings />));
     choosePreferences();
     await screen.findByRole("region", { name: "Project defaults unavailable" });
-    expect(screen.getAllByText(/^Record \d+$/)).toHaveLength(rows.length);
+    expect(screen.queryAllByText(/^Record \d+$/)).toHaveLength(rows.length);
     expect(screen.queryByRole("form")).toBeNull();
     expect(
       screen.queryByRole("navigation", { name: "Settings pages" }),

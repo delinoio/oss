@@ -914,9 +914,13 @@ for (const [name, extra, percent, state] of [
       ],
     });
     const f = mount(() => ({ resources: [row] }));
+    const railQuota = state === "Observed" ? percent : undefined;
     fireEvent.click(
       await screen.findByRole("button", {
-        name: `ChatGPT · ${name} · ${percent ? `${percent} remaining` : "Quota unavailable"} · Account 1`,
+        name: safePresentation(
+          `ChatGPT · ${name} · ${railQuota ? `${railQuota} remaining` : "Quota unavailable"} · ${row.id}`,
+          "Account",
+        ),
       }),
     );
     const dialog = screen.getByRole("dialog");

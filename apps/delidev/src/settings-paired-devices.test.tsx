@@ -28,6 +28,7 @@ import {
 import { Settings } from "./settings";
 import { deviceDate } from "./device-settings";
 import { document, encode } from "./documents";
+import { safePresentation } from "./product-presentation-test-support";
 
 const ids = [1, 2, 3, 4].map(
   (value) => `019a0000-0000-7000-8000-${String(value).padStart(12, "0")}`,
@@ -177,7 +178,9 @@ it("renders the approved server order and local Details without an RPC or inferr
     control.getAttribute("aria-controls")!,
   )!;
   expect(disclosure.hidden).toBe(false);
-  expect(within(disclosure).getByText("Device 2")).toBeTruthy();
+  expect(
+    within(disclosure).getByText(safePresentation(ids[1]!, "Device")),
+  ).toBeTruthy();
   expect(within(disclosure).getByText("Runner Device 1")).toBeTruthy();
   expect(within(disclosure).getByText("Runner Device ID")).toBeTruthy();
   expect(

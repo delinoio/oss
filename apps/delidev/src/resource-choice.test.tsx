@@ -494,7 +494,7 @@ it.each([false, true])(
     expect(
       (
         await screen.findByRole("option", {
-          name: "Equal name · 1",
+          name: "Equal name · 2",
         })
       ).querySelector("[data-harness=codex]"),
     ).toBeTruthy();
