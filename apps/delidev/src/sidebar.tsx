@@ -88,13 +88,6 @@ export function Icon({
     strokeLinejoin: "round" as const,
   };
   switch (name) {
-    case "sidebar-toggle":
-      return (
-        <svg {...common}>
-          <rect x="3" y="4" width="18" height="16" rx="2" />
-          <path d="M9 4v16" />
-        </svg>
-      );
     case "sessions":
       return (
         <svg {...common}>
@@ -1007,9 +1000,8 @@ function ProjectGroup({
 
 export function Sidebar({
   collapsed = false,
-  paneId,
-  toggleRef,
   compactFocusRef,
+  focusHandoffPending = false,
   openCommandMenu,
   surface,
   selectedSessionId,
@@ -1030,9 +1022,8 @@ export function Sidebar({
   setDrawerOpen = () => undefined,
 }: {
   collapsed?: boolean;
-  paneId?: string;
-  toggleRef?: RefObject<HTMLButtonElement | null>;
   compactFocusRef?: RefObject<HTMLButtonElement | null>;
+  focusHandoffPending?: boolean;
   openCommandMenu?: () => void;
   surface: Surface;
   selectedSessionId: string;
@@ -1158,9 +1149,20 @@ export function Sidebar({
   useLayoutEffect(() => {
     const element = drawer.current;
     if (!element) return;
+    const railTarget = () =>
+      rail.current?.querySelector<HTMLButtonElement>(
+        ".sidebar-rail-button[aria-current='page']",
+      ) ??
+      rail.current?.querySelector<HTMLButtonElement>(".sidebar-rail-button");
     const hidden = compact ? !drawerOpen : collapsed;
-    if (hidden && element.contains(document.activeElement)) {
-      (compact ? compactFocusRef : toggleRef)?.current?.focus({
+    if (
+      hidden &&
+      element.contains(document.activeElement) &&
+      !focusHandoffPending
+    ) {
+      // The rail remains visible when the wide pane collapses. Move only pane
+      // focus, before applying hidden/inert, so composer selection is untouched.
+      (compact ? compactFocusRef?.current : railTarget())?.focus({
         preventScroll: true,
       });
     }
@@ -1187,23 +1189,29 @@ export function Sidebar({
       else element.setAttribute("open", "");
       if (wasModal) {
         setDrawerOpen(false);
-        requestAnimationFrame(() =>
-          (collapsed
-            ? toggleRef?.current
-            : (drawer.current?.querySelector<HTMLElement>(
-                "[aria-current='page']",
-              ) ??
-              rail.current?.querySelector<HTMLElement>("[aria-current='page']"))
-          )?.focus(),
-        );
+        requestAnimationFrame(() => {
+          // Closing the native modal can restore its old opener. Reapply a
+          // visible wide target unless compact reopened or a header handoff
+          // owns focus for the new destination.
+          if (
+            window.matchMedia("(max-width: 759px)").matches ||
+            focusHandoffPending
+          )
+            return;
+          (element.hidden
+            ? railTarget()
+            : (element.querySelector<HTMLElement>("[aria-current='page']") ??
+              railTarget())
+          )?.focus({ preventScroll: true });
+        });
       }
     }
   }, [
     compact,
     drawerOpen,
     collapsed,
+    focusHandoffPending,
     setDrawerOpen,
-    toggleRef,
     compactFocusRef,
   ]);
   useLayoutEffect(() => {
@@ -1432,7 +1440,6 @@ export function Sidebar({
             />
           </nav>
           <dialog
-            id={paneId}
             ref={drawer}
             role={compact ? "dialog" : "region"}
             className={`sidebar-pane-dialog${compact && drawerOpen ? " is-drawer" : ""}`}

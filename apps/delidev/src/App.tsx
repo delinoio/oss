@@ -28,7 +28,6 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
-  useId,
   useMemo,
   useRef,
   useState,
@@ -69,7 +68,7 @@ import { TrayDestination } from "./tray";
 import { NotificationPresentation } from "./notification-presentation";
 import { NotificationProvider } from "./toast-notifications";
 import { refreshCreatedSessionNavigation } from "./home-navigation-query";
-import { Sidebar, Icon } from "./sidebar";
+import { Sidebar } from "./sidebar";
 import type { ChooseRepositoryFolder } from "./repository-registration";
 import {
   SettingsEntryDestination,
@@ -155,8 +154,6 @@ function Shell({
     sidebarPreference.snapshot.sidebar_preference ===
     SidebarPreference.Collapsed;
   const sidebarPaneVisible = wideSidebar ? !sidebarCollapsed : drawerOpen;
-  const sidebarToggle = useRef<HTMLButtonElement>(null);
-  const sidebarPaneId = useId();
   const toggleSidebar = () =>
     sidebarPreference.select(
       sidebarCollapsed
@@ -423,7 +420,9 @@ function Shell({
     navigate(destination);
     pendingFocusDestination.current = destination;
   };
-  const sidebarShortcuts = useShortcuts([
+  const sidebarShortcutEnabled =
+    !sidebarPreference.operation && !sidebarPreference.snapshot.problem;
+  const shortcutDeclarations = useShortcuts([
     {
       id: ShortcutId.ToggleSidebar,
       scope: ShortcutScope.Global,
@@ -431,8 +430,7 @@ function Shell({
       bindings: globalShortcutBindings[ShortcutId.ToggleSidebar],
       input: ShortcutInput.Allow,
       active: wideSidebar,
-      enabled:
-        !sidebarPreference.operation && !sidebarPreference.snapshot.problem,
+      enabled: sidebarShortcutEnabled,
       run: toggleSidebar,
     },
     {
@@ -469,10 +467,17 @@ function Shell({
   ]);
   useLayoutEffect(() => {
     const destination = pendingFocusDestination.current;
+    if (!destination) return;
+    if (destination !== surface) {
+      pendingFocusDestination.current = undefined;
+      return;
+    }
+    // The compact drawer closes in a child layout effect. Keep this request
+    // until that state update lets the wide destination receive focus.
+    if (drawerOpen) return;
     pendingFocusDestination.current = undefined;
-    if (!destination || destination !== surface || drawerOpen) return;
-    // Child layout effects close the drawer first. Consuming here keeps Search's
-    // existing first-entry animation frame authoritative, with no later handoff.
+    // Search's existing first-entry animation frame remains authoritative, with
+    // no later focus handoff after the visible destination receives focus.
     const compact =
       typeof window.matchMedia === "function" &&
       window.matchMedia("(max-width: 759px)").matches;
@@ -523,9 +528,10 @@ function Shell({
                     </a>
                     <Sidebar
                       collapsed={sidebarCollapsed}
-                      paneId={sidebarPaneId}
-                      toggleRef={sidebarToggle}
                       compactFocusRef={contextOpener}
+                      focusHandoffPending={
+                        pendingFocusDestination.current !== undefined
+                      }
                       openCommandMenu={toggleCommandMenu}
                       connectionReady={connectionReady}
                       serverPresentation={serverPresentation}
@@ -559,34 +565,16 @@ function Shell({
                         })}
                       />
                     ) : null}
-                    <main ref={main} id="main" tabIndex={-1}>
-                      <button
-                        ref={sidebarToggle}
-                        type="button"
-                        className="sidebar-wide-toggle"
-                        aria-label={copy(
-                          sidebarCollapsed
-                            ? "sidebar-preference.expand"
-                            : "sidebar-preference.collapse",
-                        )}
-                        title={copy(
-                          sidebarCollapsed
-                            ? "sidebar-preference.expand"
-                            : "sidebar-preference.collapse",
-                        )}
-                        aria-expanded={!sidebarCollapsed}
-                        aria-controls={sidebarPaneId}
-                        aria-keyshortcuts={sidebarShortcuts.aria(
-                          ShortcutId.ToggleSidebar,
-                        )}
-                        aria-disabled={Boolean(
-                          sidebarPreference.operation ||
-                          sidebarPreference.snapshot.problem,
-                        )}
-                        onClick={toggleSidebar}
-                      >
-                        <Icon name="sidebar-toggle" />
-                      </button>
+                    <main
+                      ref={main}
+                      id="main"
+                      tabIndex={-1}
+                      aria-keyshortcuts={
+                        wideSidebar && sidebarShortcutEnabled
+                          ? shortcutDeclarations.aria(ShortcutId.ToggleSidebar)
+                          : undefined
+                      }
+                    >
                       <SidebarPreferenceNotice />
                       <button
                         ref={contextOpener}

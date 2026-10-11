@@ -1365,7 +1365,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Skill availability presentation follows the desktop explicit skill completion contract. Only complete successful current authenticated scope inventory confirms absence; retain unknown on loading/error/unsupported scope. Keep native textarea overlays aligned and noninteractive, skip disabled retained rows, bound panel retention to 256 and discard on dismissal/scope change. Prompt history remains text-only and supplies no completion candidates or binding authority.
 
-- Persistent sidebar collapse follows the desktop contract for : computer-local native preference above connection lifetimes, retained 52px rail and mounted pane controllers, wide-only 40px toggle/primary+B, compact drawer independence and explicit failure reload. Preserve independent Appearance and shortcut preferences; add no server RPC, protocol/migration or OS-global shortcut authority.
+- Persistent sidebar collapse follows the desktop contract for : computer-local native preference above connection lifetimes, retained 52px rail and mounted pane controllers, wide-only primary+B shortcut with no shell toggle or spacer, compact drawer independence and explicit failure reload. Preserve independent Appearance and shortcut preferences; add no server RPC, protocol/migration or OS-global shortcut authority.
 
 - Reset-credit row names follow the subscription Settings contract: localized one-based ordinals include unavailable returned details, full original IDs remain secondary, and confirmation captures the selected ordinal with the original identity and revision bindings. Reorder and locale changes cannot transfer selection or grant consumption authority. Preserve count-only native-next, once-only confirmation, exact uncertain requests, cleanup gates and native title privacy; add no durable identity or protocol field.
 
@@ -2469,7 +2469,7 @@ All three backup list adapters reject an entire page with duplicate nonempty IDs
 
 - The feature image startup guidance requires validated closed settled provenance. Present the exact original rejected input and images. English/Korean guidance directs users to start a new session with an explicitly image-capable Agent Worker and Runner Device, or start a new text-only session; retrying the rejected session retains its original input and selection. Queuing text in that session does not repair its startup retry admission. Keep generic/unverified failures under existing generic guidance; preserve current drafts, attachment identities and explicit retry/recovery guards. Missing or mixed metadata cannot offer image-specific retry. Follow the image-input and direct startup contracts.
 
-- Persistent sidebar collapse follows the feature and the desktop contract. Keep the rail, original controllers, portals, drafts and request identities mounted; explicitly hide/inert the pane and suspend only hidden navigation activity. The persistent 40px shell toggle and fixed primary+B share dispatch/help/ARIA, ordinary-input admission and existing exclusions. Preserve focus/caret, compact drawer independence, visible navigation handoffs and explicit reload after failed/uncertain computer-local writes. SidebarProvider stays above connection/Settings lifetimes; browser fixtures use memory only.
+- Persistent sidebar collapse follows the feature and the desktop contract. Keep the rail, original controllers, portals, drafts and request identities mounted; explicitly hide/inert the pane and suspend only hidden navigation activity. The fixed primary+B shortcut shares dispatch/help/ARIA, ordinary-input admission and existing exclusions; the shell has no expand/collapse toggle or replacement spacer. Preserve focus/caret, compact drawer independence, visible navigation handoffs and explicit reload after failed/uncertain computer-local writes. SidebarProvider stays above connection/Settings lifetimes; browser fixtures use memory only.
 
 - The feature per-turn timing uses bounded original owner/input/timestamp metadata and one mounted active timer isolated from transcript payload rendering. Anchor a pre-user line before the first bounded original matching native record, then relocate it before the primary input; reject foreign/earlier/inherited scope. Freeze retained terminal timing and unconfirmed disconnect estimates, preserve zero/unavailable, inherited source attribution, Steer identity, three-page anchors/tokens/scroll/focus and drafts. READY/pre-send states cannot create timing. Keep localized semantic wrapping and aria-live off; display timing grants no control/native authority.
 
@@ -5213,12 +5213,12 @@ Refresh reads the captured interval again; choosing the same preset captures a n
 
 ## Persistent context-pane collapse
 
-At widths of at least 760px, the 40px icon button at the beginning of the main
-shell and logical primary+B toggle only the context pane. The 52px rail and its
-navigation/subscription actions remain available. Collapse releases the pane's
-288px (256px through 1100px) grid track. The localized button shares typed
-shortcut/help/ARIA declarations and controls the original mounted pane. It has
-visible focus and `aria-expanded`; it remains available across page changes.
+At widths of at least 760px, logical primary+B toggles only the context pane.
+The main shell has no expand/collapse button or replacement spacer: remove its
+complete 64px row while retaining each surface's own padding and scroll root.
+The 52px rail and its navigation/subscription actions remain available. Collapse
+releases the pane's 288px (256px through 1100px) grid track. Keep the localized
+shortcut Help declaration and original mounted pane across page changes.
 
 Keep Sidebar, portals, filters, scroll snapshots, selected resources, drafts and
 pending/uncertain controllers mounted. Set the hidden pane's `hidden`, `inert`
@@ -5226,14 +5226,15 @@ and `aria-hidden` boundaries explicitly; closing a nonmodal dialog alone does no
 hide its CSS flex layout. Suspend Home navigation polling, hover timers,
 sidebar selectors, repository/schedule navigation refresh and continuation through
 existing activity gates. Main content observation keeps its independent owner.
-Before hiding a focused pane descendant, focus the persistent toggle. Preserve
-composer focus/caret/selection otherwise; expansion never steals focus.
+Before hiding a focused pane descendant, focus the current rail navigation
+button, falling back to the first rail navigation button. Preserve composer
+focus/caret/selection otherwise; expansion never steals focus.
 
-Below 760px retain the purpose-named compact opener and modal drawer. Hide the
-wide toggle and deactivate primary+B. Drawer opening/closing never saves the
-wide preference. On return to wide layout, reapply the committed choice, retire
-any modal drawer and use a visible toggle/rail fallback for focus. Search initial
-focus cannot target a hidden pane; explicit Search focus may request the original
+Below 760px retain the purpose-named compact opener and modal drawer. Deactivate
+primary+B. Drawer opening/closing never saves the wide preference. On return to
+wide layout, reapply the committed choice, retire any modal drawer and use the
+same current/first rail fallback when collapsed. Search initial focus cannot
+target a hidden pane; explicit Search focus may request the original
 pane opening and waits for visible committed presentation.
 
 `sidebar_preference.json` is an independent computer-local, bounded 4096-byte

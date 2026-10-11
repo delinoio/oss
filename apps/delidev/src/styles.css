@@ -5734,22 +5734,6 @@ dialog nav {
     grid-template-columns: 52px;
   }
 }
-.sidebar-wide-toggle {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  min-width: 40px;
-  height: 40px;
-  min-height: 40px;
-  padding: 0;
-  margin: 12px 16px;
-  border-radius: 8px;
-  background: var(--surface);
-}
-.sidebar-wide-toggle:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
 .sidebar-preference-notice {
   margin: 12px 16px;
   max-width: 680px;
@@ -5758,12 +5742,6 @@ dialog nav {
 .sidebar-preference-notice button {
   min-height: 40px;
 }
-@media (max-width: 759px) {
-  .sidebar-wide-toggle {
-    display: none;
-  }
-}
-
 /* Home groups remain shared disclosures, with a bounded flat navigation surface. */
 .sidebar-project-group
   > button.sidebar-project-row.disclosure-header.disclosure-header {

@@ -2141,3 +2141,57 @@ it("keeps the drawer close affordance outside the compact Home header and creati
   const header = value.container.querySelector(".sidebar-header")!;
   expect(header.nextElementSibling?.className).toBe("sidebar-drawer-close");
 });
+
+it.each([Surface.PullRequests, Surface.Inbox])(
+  "returns pane focus to the current or first rail item before collapsing %s",
+  (surface) => {
+    const view = mountSidebar({
+      projects: () => ({ resources: [] }),
+      sessions: () => ({ sessions: [] }),
+      props: { surface },
+    });
+    const pane = view.container.querySelector<HTMLDialogElement>(
+      ".sidebar-pane-dialog",
+    )!;
+    const originalPane = pane;
+    const control = pane.querySelector<HTMLButtonElement>("button")!;
+    control.focus();
+    const rail = view.container.querySelector(".sidebar-rail")!;
+    const target =
+      rail.querySelector("[aria-current='page']") ??
+      rail.querySelector(".sidebar-rail-button");
+    let hiddenAtFocus: boolean | undefined;
+    target!.addEventListener("focus", () => {
+      hiddenAtFocus = pane.hidden;
+    });
+    view.setProps({ collapsed: true });
+    expect(document.activeElement).toBe(target);
+    expect(hiddenAtFocus).toBe(false);
+    expect(pane.hidden).toBe(true);
+    expect(pane.inert).toBe(true);
+    expect(pane.getAttribute("aria-hidden")).toBe("true");
+    view.setProps({ collapsed: false });
+    expect(view.container.querySelector(".sidebar-pane-dialog")).toBe(
+      originalPane,
+    );
+    expect(document.activeElement).toBe(target);
+  },
+);
+
+it("preserves an external composer selection through collapse and expansion", () => {
+  const view = mountSidebar({
+    projects: () => ({ resources: [] }),
+    sessions: () => ({ sessions: [] }),
+  });
+  const composer = document.createElement("textarea");
+  view.container.append(composer);
+  composer.value = "Unsent draft";
+  composer.focus();
+  composer.setSelectionRange(2, 8);
+  view.setProps({ collapsed: true });
+  view.setProps({ collapsed: false });
+  expect(document.activeElement).toBe(composer);
+  expect(composer.value).toBe("Unsent draft");
+  expect(composer.selectionStart).toBe(2);
+  expect(composer.selectionEnd).toBe(8);
+});
