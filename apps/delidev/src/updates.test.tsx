@@ -58,7 +58,9 @@ function fixture(
       };
     },
   );
-  const check = vi.fn(() => ({ update: hasCandidate ? resource : undefined }));
+  const check = vi.fn((_request: unknown) => ({
+    update: hasCandidate ? resource : undefined,
+  }));
   const transport = createRouterTransport((r) => {
     r.service(SystemService, {
       getStatus: () => ({
@@ -368,6 +370,6 @@ it("retains the exact failed-check request for explicit retry and never claims c
   fireEvent.click(retry);
   await screen.findByText("No newer signed update was found.");
   expect(f.check).toHaveBeenCalledTimes(2);
-  expect(f.check.mock.calls[1]).toEqual(f.check.mock.calls[0]);
+  expect(f.check.mock.calls[1][0]).toEqual(f.check.mock.calls[0][0]);
   expect(f.control).not.toHaveBeenCalled();
 });
