@@ -5056,6 +5056,8 @@ The existing Configure permissions section adds a separate localized User / AI a
 
 ### Claude native web-tool transcript
 
+The combined web metadata and text retention limit remains 256 KiB. Count each web metadata block with Go-compatible JSON escaping, including `<`, `>`, `&`, U+2028 and U+2029, before adding it to the aggregate. Citation metadata uses the same byte-counting helper under its separate unchanged bound. Reject an overbound message before rendering; never truncate native content to fit.
+
 The existing native Claude message renderer displays original server-side web-search and web-fetch calls/results in provider block order through the shared collapsed disclosure family. Retain the native name, block lifecycle state, exact query/URL JSON, ordered search sources and available original fetched text/metadata. Native errors display their closed original code; private document bodies show a localized unavailable-content explanation. URLs, titles and document text remain inert text, with no fetch action, HTML execution or local extraction. Complete strict validation rejects foreign/mixed/duplicated calls, unknown families/private fields, malformed results and unclosed complete histories before rendering. Existing source citations and usage remain independent; no citation-display redesign, cost estimate, completion inference or additional request is introduced. English and Korean use the existing catalog and disclosure/focus ownership.
 
 ## Same-question Sidechat retry
