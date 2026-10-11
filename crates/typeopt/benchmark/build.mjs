@@ -80,13 +80,16 @@ try {
   if (error.code !== "ENOENT") throw error;
 }
 const require = createRequire(path.join(checkout, "package.json"));
+// Ignored node_modules are outside the verified tree, so check the bundler
+// that will actually run.
+const vitePackage = require.resolve("vite/package.json");
+const viteVersion = JSON.parse(await readFile(vitePackage, "utf8")).version;
+if (viteVersion !== pin.vite)
+  throw new Error(
+    `Installed Vite ${viteVersion} does not match pinned ${pin.vite}`,
+  );
 const { build, loadConfigFromFile } = await import(
-  pathToFileURL(
-    path.join(
-      path.dirname(require.resolve("vite/package.json")),
-      "dist/node/index.js",
-    ),
-  ).href
+  pathToFileURL(path.join(path.dirname(vitePackage), "dist/node/index.js")).href
 );
 const root = path.join(checkout, "excalidraw-app");
 process.chdir(root);
@@ -95,6 +98,45 @@ const loaded = await loadConfigFromFile(
   path.join(root, "vite.config.mts"),
 );
 if (!loaded) throw new Error("Excalidraw Vite configuration was not found");
+// Vite embeds prefixed variables and reads .env files. Allow only the pinned
+// environment so both builds share one recorded effective environment.
+// Errors list names only; values may be secrets.
+const envPrefixes = [loaded.config.envPrefix ?? "VITE_"].flat();
+const buildVariable = (name) =>
+  name === "NODE_ENV" || envPrefixes.some((prefix) => name.startsWith(prefix));
+const unpinned = Object.keys(process.env)
+  .filter((name) => buildVariable(name) && !(name in pin.environment))
+  .sort();
+if (unpinned.length)
+  throw new Error(
+    `Unset build variables that are not pinned: ${unpinned.join(", ")}`,
+  );
+const envFiles = execFileSync(
+  "git",
+  [
+    "-C",
+    checkout,
+    "ls-files",
+    "--others",
+    "--ignored",
+    "--exclude-standard",
+    "--directory",
+    "-z",
+  ],
+  { encoding: "utf8" },
+)
+  .split("\0")
+  .filter((file) => /^\.env/.test(path.basename(file)));
+if (envFiles.length)
+  throw new Error(
+    `Remove ignored .env files outside the verified tree: ${envFiles.join(", ")}`,
+  );
+const environment = Object.fromEntries(
+  Object.keys(process.env)
+    .filter(buildVariable)
+    .sort()
+    .map((name) => [name, process.env[name]]),
+);
 await build({
   ...loaded.config,
   root,
@@ -121,9 +163,10 @@ await writeFile(
       source_tree: sourceTree,
       yarn_lock_sha256: yarnLockSha256,
       node: process.versions.node,
+      vite: viteVersion,
       mode: "production",
       sourcemap: true,
-      environment: pin.environment,
+      environment,
       optimized: Boolean(optimized),
       elapsed_ms: performance.now() - started,
       peak_rss_bytes: process.resourceUsage().maxRSS * 1024,
