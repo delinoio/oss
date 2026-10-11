@@ -177,10 +177,13 @@ async function open() {
   await pane.findByRole("button", { name: /^Refresh$/ });
   return pane;
 }
+function accessibleName(value: string) {
+  return value.trim().replace(/\s+/gu, " ");
+}
 async function choose(row: Resource) {
   fireEvent.click(
     await screen.findByRole("button", {
-      name: resourceName(row).trim().replace(/\s+/gu, " "),
+      name: accessibleName(resourceName(row)),
     }),
   );
   await waitFor(() =>
@@ -453,7 +456,7 @@ it("retains expanded details and enum drafts through paging, navigation, reconne
   const view = render(<App transport={value.transport} />);
   let pane = await open();
   await choose(row);
-  const detailsName = `Details for ${resourceName(row)}`;
+  const detailsName = `Details for ${accessibleName(resourceName(row))}`;
   fireEvent.click(pane.getByRole("button", { name: detailsName }));
   fireEvent.click(pane.getByRole("radio", { name: "Closed" }));
   fireEvent.change(pane.getByLabelText("Search title and body"), {
@@ -485,7 +488,7 @@ it("retains expanded details and enum drafts through paging, navigation, reconne
   expect(
     pane
       .getByRole("button", {
-        name: `${resourceName(row).trim()} 상세`,
+        name: `${accessibleName(resourceName(row))} 상세`,
       })
       .getAttribute("aria-expanded"),
   ).toBe("true");
