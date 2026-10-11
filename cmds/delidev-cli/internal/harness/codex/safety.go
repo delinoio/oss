@@ -27,13 +27,13 @@ type modelRerouteReason string
 
 const highRiskCyberActivity modelRerouteReason = "highRiskCyberActivity"
 
-type safetyBuffering struct {
+type safetyBufferingEvidence struct {
 	model             string
 	useCases, reasons []string
 	showUI            bool
 	fasterModel       *string
 }
-type safetyReroute struct {
+type safetyRerouteEvidence struct {
 	from, to string
 	reason   modelRerouteReason
 }
@@ -45,9 +45,9 @@ type ModelSafetyObservation struct {
 	kind          modelSafetyKind
 	thread, turn  domain.ID
 	verifications []modelVerification
-	buffering     *safetyBuffering
+	buffering     *safetyBufferingEvidence
 	moderation    json.RawMessage
-	reroute       *safetyReroute
+	reroute       *safetyRerouteEvidence
 	canonical     json.RawMessage
 }
 
@@ -209,7 +209,7 @@ func decodeSafety(method string, raw json.RawMessage) (*ModelSafetyObservation, 
 			o.verifications = append(o.verifications, modelVerification(value))
 		}
 	case safetyBuffering:
-		b := &safetyBuffering{}
+		b := &safetyBufferingEvidence{}
 		var err error
 		if b.model, err = text("model", true); err != nil {
 			return nil, err
@@ -230,7 +230,7 @@ func decodeSafety(method string, raw json.RawMessage) (*ModelSafetyObservation, 
 		// Decode validates duplicate keys and nesting before preserving JSONValue.
 		o.moderation = slices.Clone(fields["metadata"])
 	case safetyReroute:
-		r := &safetyReroute{}
+		r := &safetyRerouteEvidence{}
 		var err error
 		if r.from, err = text("fromModel", true); err != nil {
 			return nil, err
