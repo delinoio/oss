@@ -34,7 +34,7 @@ Code and mappings are deterministic for identical source paths, contents, config
 
 ## Safety and supported input
 
-Supply explicit application entries and one tsconfig. Workspace imports and declaration files use the compiler's resolver. Project-reference orchestration, CommonJS output, compiler plugins/content mappers, `eval` (including aliases), `with`, `noCheck`, `noResolve`, `outFile`, declaration-only output and preserved JSX are rejected. Set an ESM module mode and `jsx: "react-jsx"` or `"react"` for TSX. Syntax and type errors fail before publication. Unsupported upstream settings produce compiler diagnostics; they are not silently reinterpreted.
+Supply explicit application entries and one tsconfig. Workspace imports and declaration files use the compiler's resolver. Project-reference orchestration, CommonJS output, compiler plugins/content mappers, `eval` (including aliases), `with`, `import x = require()`, `export =`, `noCheck`, `noResolve`, `outFile`, declaration-only output and preserved JSX are rejected. Set an ESM module mode and `jsx: "react-jsx"` or `"react"` for TSX. Syntax and type errors fail before publication. Unsupported upstream settings produce compiler diagnostics; they are not silently reinterpreted.
 
 The CLI owns emission controls: it overrides `noEmit`, declaration/incremental/composite output, output locations and source-map output settings. It does not change the input tsconfig. JavaScript and node_modules are not transformed; imported JSON and other assets stay in the original project.
 

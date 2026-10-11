@@ -627,3 +627,35 @@ fn erased_type_spans_do_not_make_renames_profitable() {
     let emitted = fs::read_to_string(temp.path().join("out/0.js")).unwrap();
     assert!(emitted.contains("size({ longProperty })"), "{emitted}");
 }
+
+#[test]
+fn preserve_module_rejects_commonjs_syntax() {
+    let preserve = r#"{"compilerOptions":{"module":"preserve","target":"ES2022","moduleResolution":"bundler","strict":true}}"#;
+    for (code, message) in [
+        (
+            "import value = require('./value'); console.log(value.longProperty);",
+            "import = require()",
+        ),
+        ("const obj = {longProperty: 1}; export = obj;", "export ="),
+    ] {
+        let temp = fixture(code);
+        fs::write(temp.path().join("tsconfig.json"), preserve).unwrap();
+        fs::write(
+            temp.path().join("value.ts"),
+            "export const longProperty = 1;",
+        )
+        .unwrap();
+        let output = run(temp.path(), "out");
+        assert!(!output.status.success(), "{code}");
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains(message),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(!temp.path().join("out").exists());
+    }
+    let temp = fixture("export {}; const obj = {longProperty: 1}; console.log(obj.longProperty);");
+    fs::write(temp.path().join("tsconfig.json"), preserve).unwrap();
+    success(run(temp.path(), "out"));
+    compare(temp.path());
+}

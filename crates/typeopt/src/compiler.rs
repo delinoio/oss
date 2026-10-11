@@ -201,6 +201,17 @@ impl Project {
                     !(node.kind() == SyntaxKind::Identifier && node.text() == "eval"),
                     "eval is unsupported (including aliases); remove it before optimizing"
                 );
+                // module: Preserve emits these forms as require/module.exports,
+                // which breaks the ESM output contract.
+                ensure!(
+                    !(node.kind() == SyntaxKind::ImportEqualsDeclaration
+                        && node.module_reference().kind() == SyntaxKind::ExternalModuleReference),
+                    "import = require() is unsupported; use an ESM import"
+                );
+                ensure!(
+                    !(node.kind() == SyntaxKind::ExportAssignment && node.is_export_equals()),
+                    "export = is unsupported; use an ESM export"
+                );
             }
             if is_js(file) {
                 continue;
