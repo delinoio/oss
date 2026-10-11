@@ -183,6 +183,43 @@ try {
         await page.keyboard.press("Space");
         const toolMenu = page.getByRole("menu", { name: toolLabel });
         await toolMenu.waitFor();
+        const filesEntry = toolMenu.getByRole("menuitem", {
+          name: language === "en" ? "Files" : "파일",
+          exact: true,
+        });
+        const filesShortcut = await filesEntry.evaluate((node) => {
+          const badge = node.querySelector("kbd"),
+            box = node.getBoundingClientRect(),
+            hint = badge.getBoundingClientRect(),
+            icon = node.querySelector("svg").getBoundingClientRect();
+          return {
+            text: badge.textContent,
+            aria: node.getAttribute("aria-keyshortcuts"),
+            expected: /mac/i.test(navigator.platform) ? "Meta+E" : "Control+E",
+            label:
+              node.getAttribute("aria-label") ??
+              node.textContent.replace(badge.textContent, "").trim(),
+            inside: hint.left >= box.left && hint.right <= box.right + 1,
+            noOverlap: icon.right < hint.left,
+            nowrap: getComputedStyle(badge).whiteSpace,
+            height: box.height,
+            width: box.width,
+            scrollWidth: node.scrollWidth,
+          };
+        });
+        assert.equal(filesShortcut.aria, filesShortcut.expected);
+        assert.equal(
+          filesShortcut.text,
+          filesShortcut.expected === "Meta+E" ? "⌘ E" : "Ctrl E",
+        );
+        assert.equal(filesShortcut.nowrap, "nowrap");
+        assert.equal(filesShortcut.inside, true);
+        assert.equal(filesShortcut.noOverlap, true);
+        assert(filesShortcut.height >= 44);
+        assert(
+          filesShortcut.scrollWidth <= filesShortcut.width + 1,
+          JSON.stringify(filesShortcut),
+        );
         assert(
           await toolMenu.evaluate((node) =>
             node.contains(document.activeElement),
@@ -405,6 +442,7 @@ try {
             theme,
             ...size,
             geometry: matrix,
+            filesShortcut,
           }) + "\n",
         );
         cases++;

@@ -38,7 +38,6 @@ import {
   SessionTabsProvider,
   SessionTabKind,
   useSessionTabsStore,
-  type SessionTabIntent,
 } from "./session-tabs";
 import { ShortcutSettings } from "./shortcut-settings";
 import {
@@ -56,6 +55,10 @@ import {
   useShortcutHelp,
   useShortcuts,
 } from "./shortcut-provider";
+
+type WorkspaceTabIntent = Parameters<
+  ReturnType<typeof useSessionTabsStore>["open"]
+>[1];
 
 vi.mock("./terminal-emulator", () => ({
   openTerminalScreen: (host: HTMLElement) => {
@@ -323,7 +326,7 @@ function fixture(
     client,
     view,
     workspace,
-    openTab: (tab: SessionTabIntent) => tabStore.open(id, tab),
+    openTab: (tab: WorkspaceTabIntent) => tabStore.open(id, tab),
     listQueue,
     enqueue,
     rename,
@@ -1953,7 +1956,7 @@ it.each(["MacIntel", "Win32", "Linux x86_64"])(
           label: "Fixture page",
         },
         { kind: SessionTabKind.Diagnostics },
-      ] as SessionTabIntent[]) {
+      ] as WorkspaceTabIntent[]) {
         await act(() => f.openTab(tab));
         fireEvent.keyDown(
           screen.getByRole("heading", { name: "Original session" }),
