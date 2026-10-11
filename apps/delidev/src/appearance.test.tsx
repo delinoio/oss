@@ -582,3 +582,54 @@ test("custom theme save waits for the positively committed native map identity",
   expect(screen.queryByRole("textbox", { name: "Theme name" })).toBeNull();
   expect(screen.getAllByText("Confirmed theme").length).toBeGreaterThan(0);
 });
+
+test("keeps described settings, separate disclosure choices and unavailable renderers", async () => {
+  scheme(false);
+  const value = fixture();
+  const view = render(
+    <AppearanceProvider bridge={value.bridge}>
+      <AppearanceSettings />
+    </AppearanceProvider>,
+  );
+  await screen.findByText("Theme saved.");
+  expect(screen.getByText("Changes save automatically.")).toBeTruthy();
+  expect(
+    Array.from(
+      view.container.querySelectorAll(
+        ".appearance-settings > fieldset > legend",
+      ),
+    ).map((legend) => legend.textContent),
+  ).toEqual(["Theme", "Composer", "Session status", "Display", "Images"]);
+  for (const control of view.container.querySelectorAll(
+    ".appearance-row input, .appearance-row select",
+  )) {
+    const label = control.getAttribute("aria-labelledby");
+    const help = control.getAttribute("aria-describedby");
+    expect(label && document.getElementById(label)?.textContent).toBeTruthy();
+    expect(help && document.getElementById(help)?.textContent).toBeTruthy();
+  }
+  const disclosures = view.container.querySelector(
+    ".appearance-disclosure-controls",
+  )!;
+  expect(Array.from(disclosures.querySelectorAll("select"))).toHaveLength(3);
+  for (const name of [
+    "Tool details default",
+    "Reasoning default",
+    "Compaction history default",
+  ])
+    expect(
+      within(disclosures as HTMLElement).getByRole("combobox", { name }),
+    ).toBeTruthy();
+  for (const name of [
+    "Markdown",
+    "Mermaid diagrams",
+    "SVG visualizations",
+    "Automatic table charts",
+  ])
+    expect(
+      (screen.getByRole("checkbox", { name }) as HTMLInputElement).matches(
+        ":disabled",
+      ),
+    ).toBe(true);
+  expect(value.bridge.update).not.toHaveBeenCalled();
+});
