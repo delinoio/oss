@@ -84,16 +84,17 @@ The build helper fails unless the checkout `HEAD` and `yarn.lock` SHA-256 match 
 node crates/typeopt/benchmark/measure.mjs /absolute/baseline-build /absolute/optimized-build
 ```
 
-The command sums every production `.js`, `.mjs` and `.cjs` file, excluding source maps. It uses gzip level 9 and Brotli quality 11. It fails unless both `typeopt-build.json` files have identical provenance (revision, source tree, lockfile, Node, Vite, mode, source maps and environment) with a non-optimized baseline and an optimized build, both builds emit the same logical asset set (file paths without the Vite content hash) and all three totals decrease; the output lists missing and extra assets. Record the result with source revision, exact commands, tool versions, execution time and peak RSS. Fixture results do not substitute for application acceptance.
+The command sums every production `.js`, `.mjs` and `.cjs` file, excluding source maps. It requires the pinned Node, which also fixes the bundled zlib and Brotli, and uses gzip level 9 and Brotli quality 11. It fails unless both `typeopt-build.json` files have identical provenance (revision, source tree, lockfile, Node, Vite, mode, source maps and environment) with a non-optimized baseline and an optimized build, both builds emit the same logical asset set (file paths without the Vite content hash) and all three totals decrease; the output lists missing and extra assets. Record the result with source revision, exact commands, tool versions, execution time and peak RSS. Fixture results do not substitute for application acceptance.
 
 Install browser tooling with `pnpm --dir crates/typeopt/benchmark install --ignore-workspace --frozen-lockfile` and `pnpm --dir crates/typeopt/benchmark exec playwright install chromium`. Serve each build on a separate loopback HTTP port, then run:
 
 ```sh
 node crates/typeopt/benchmark/browser.mjs http://127.0.0.1:48180 /absolute/baseline-browser
 node crates/typeopt/benchmark/browser.mjs http://127.0.0.1:48182 /absolute/optimized-browser
+node crates/typeopt/benchmark/compare-browser.mjs /absolute/baseline-browser /absolute/optimized-browser
 ```
 
-Compare the two `browser.json` observations and export summaries. The harness normalizes sketch seeds in the imported scene so PNG pixels and SVG geometry can be compared despite time-seeded drawing roughness. It uses the application's download/file-input fallback; it does not validate native OS file pickers. It retains actual scene, PNG and SVG downloads for inspection. Run the same Chromium checks on both builds: draw shapes/freehand, add/edit text, move/resize, undo/redo, save/reload/import a scene, and export PNG/SVG. Compare scene data and exported results. Native platform acceptance requires actual macOS arm64 and Linux x64 execution; an emulated container is not native evidence.
+`browser.mjs` fails unless Node, Playwright and Chromium match `pin.json`, and it requires a new evidence directory. Its `checks_passed` covers only that run. Browser acceptance passes only when `compare-browser.mjs` finds identical normalized observations and PNG/SVG export summaries in both runs; it lists any mismatched checks. The harness normalizes sketch seeds in the imported scene so PNG pixels and SVG geometry can be compared despite time-seeded drawing roughness. It uses the application's download/file-input fallback; it does not validate native OS file pickers. It retains actual scene, PNG and SVG downloads for inspection. Run the same Chromium checks on both builds: draw shapes/freehand, add/edit text, move/resize, undo/redo, save/reload/import a scene, and export PNG/SVG. Compare scene data and exported results. Native platform acceptance requires actual macOS arm64 and Linux x64 execution; an emulated container is not native evidence.
 
 ## Licensing and support
 
