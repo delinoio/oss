@@ -8,8 +8,6 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
-- Keep Runner inspection reads in the retained machine controller and share its verified original-job observation with presentation; preserve submitted snapshots, later unsent changes and connection ownership under the [desktop remediation contract](../../../docs/apps-delidev-desktop-contract.md#inline-workflow-remediation).
-
 ## Owning contracts
 
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)
