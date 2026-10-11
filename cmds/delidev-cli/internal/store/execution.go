@@ -186,6 +186,10 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 	if err != nil {
 		return empty, err
 	}
+	configuration.ManagedSkills, err = t.ResolveManagedSkillGeneration(agent.ManagedSkills, session.MachineID, agent.Harness)
+	if err != nil {
+		return empty, err
+	}
 	configuration.MCPDefinitions, err = t.ResolveMCPGeneration(agent.MCP, session.MachineID, agent.Harness)
 	if err != nil {
 		return empty, err

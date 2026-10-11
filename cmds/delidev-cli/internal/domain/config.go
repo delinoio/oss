@@ -282,21 +282,25 @@ type AgentSourceRoute struct {
 }
 
 type Agent struct {
-	MCP                     *MCPSelectionList  `json:"mcp,omitempty"`
-	ReconfigurationRequired bool               `json:"reconfiguration_required,omitempty"`
-	Name                    string             `json:"name"`
-	Harness                 Harness            `json:"harness"`
-	ModelID                 ID                 `json:"-"`
-	Model                   *InlineModel       `json:"-"`
-	Effort                  string             `json:"effort,omitempty"`
-	Accounts                []WeightedAccount  `json:"accounts,omitempty"`
-	Routes                  []AgentSourceRoute `json:"routes,omitempty"`
-	Routing                 *RoutingPolicy     `json:"routing,omitempty"`
-	Templates               []ID               `json:"templates"`
-	Options                 AgentOptions       `json:"options"`
+	ManagedSkills           *ManagedSkillSelectionList `json:"managed_skills,omitempty"`
+	MCP                     *MCPSelectionList          `json:"mcp,omitempty"`
+	ReconfigurationRequired bool                       `json:"reconfiguration_required,omitempty"`
+	Name                    string                     `json:"name"`
+	Harness                 Harness                    `json:"harness"`
+	ModelID                 ID                         `json:"-"`
+	Model                   *InlineModel               `json:"-"`
+	Effort                  string                     `json:"effort,omitempty"`
+	Accounts                []WeightedAccount          `json:"accounts,omitempty"`
+	Routes                  []AgentSourceRoute         `json:"routes,omitempty"`
+	Routing                 *RoutingPolicy             `json:"routing,omitempty"`
+	Templates               []ID                       `json:"templates"`
+	Options                 AgentOptions               `json:"options"`
 }
 
 func (a Agent) Validate() error {
+	if err := ValidateManagedSkillSelections(a.ManagedSkills); err != nil {
+		return err
+	}
 	if err := ValidateMCPSelections(a.MCP); err != nil {
 		return err
 	}

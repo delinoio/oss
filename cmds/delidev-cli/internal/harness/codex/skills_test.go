@@ -28,6 +28,10 @@ func (f *threadFixture) handleSkills(id json.RawMessage, method string, raw json
 			}
 		}
 	}
+	if method == "config/read" && (f.mode == "managed-skills" || f.mode == "managed-skills-foreign-discovery") {
+		write(id, map[string]any{"config": map[string]any{"features": map[string]any{"skip_host_skill_discovery": f.mode == "managed-skills"}}, "origins": map[string]any{}, "layers": nil})
+		return true
+	}
 	switch method {
 	case "skills/extraRoots/set":
 		var params struct {
@@ -186,5 +190,49 @@ func testSkillForkCopiesOriginalPackages(t *testing.T, withImages bool) {
 	_, inputs, err := decodeLatestTurnInputs(marshalForkPage(child.turns), imageClient.nativeImageInput)
 	if err != nil || inputs[0] != child.checkpoint.Inputs[0] {
 		t.Fatal("child history proof changed", err)
+	}
+}
+
+func TestManagedSkillDiscoveryIsNativeAndLeavesLiteralTokensAsText(t *testing.T) {
+	ctx := context.Background()
+	source := t.TempDir()
+	if err := os.WriteFile(filepath.Join(source, "SKILL.md"), []byte("---\nname: add-issue\ndescription: fixture\n---\nAutomatic native marker\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	manager := skills.Manager{Root: t.TempDir()}
+	q := domain.ManagedSkillRequest{ServerID: domain.NewID(), ActorID: domain.NewID(), MachineID: domain.NewID(), WorkerDeviceID: domain.NewID(), WorkerInstanceID: domain.NewID(), RequestID: domain.NewID(), Mutation: domain.ManagedSkillMutation{Version: 1, Action: domain.ManagedSkillImport, PackageID: domain.NewID(), SourceDirectory: source}}
+	managed, err := manager.Managed(ctx, q)
+	if err != nil || managed.State != domain.MCPSucceeded {
+		t.Fatal(managed, err)
+	}
+	for _, mode := range []string{"managed-skills", "managed-skills-foreign-discovery"} {
+		t.Run(mode, func(t *testing.T) {
+			c, _, _, _ := boundTurnFixture(t, mode)
+			c.skillsRoot = manager.Root
+			c.managedSkills, err = manager.ManagedRuntime(ctx, q.ServerID, q.WorkerDeviceID, managed.Packages, c.home)
+			if err != nil {
+				t.Fatal(err)
+			}
+			in := input(domain.ExecuteMode)
+			in.Prompt = "Use $add-issue as ordinary literal text."
+			result, err := c.StartTurn(ctx, domain.NewID(), domain.NewID(), in)
+			if mode != "managed-skills" {
+				if err == nil {
+					t.Fatal("host discovery drift accepted")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			message := nextKind(t, c, MessageCompletedEvent)
+			if message.Message == nil || message.Message.Text != in.Prompt {
+				t.Fatal(message)
+			}
+			proofs, err := c.SkillInputProofs(ctx)
+			if err != nil || len(proofs) != 1 || proofs[0].ID != result.InputID || proofs[0].SkillDigest != ([32]byte{}) {
+				t.Fatal("automatic roots became explicit input", proofs, err)
+			}
+		})
 	}
 }

@@ -5308,3 +5308,26 @@ clear-all and imported-reference rebinding. Internal IDs remain hidden. Dialogs
 preserve Esc/focus return; narrow layouts stack rows/actions, and all product text
 has English and Korean catalog entries with existing theme tokens. Synthetic
 fixtures do not establish actual native/account/platform or layout acceptance.
+
+## Skills Settings and Agent selections
+
+Skills follows MCP in AI Settings and preserves the remaining navigation. Its
+Runner selector, search, import, read-only view, enable/disable and confirmed delete
+use the original Settings/connection lifetime. Disabled rows use neutral styling.
+Rows show bounded names/descriptions, provenance, revision, per-harness adapter
+status and referencing Agent names. No internal package or Worker UUID is shown.
+Read-only `SKILL.md` is inert text, including embedded HTML; the bounded resource
+manifest shows paths, byte counts, digest and executable status.
+
+Import accepts an explicit directory on the selected Worker. Remote selection
+never reads renderer-local files. Loading, empty, offline, permission, unsupported,
+stale-package and revision conflicts retain their ordinary typed failure display.
+Uncertain outcomes retain the original request and permit explicit inspection;
+no navigation, Settings save or status read replays a mutation. Referenced deletion
+is blocked. Agent selections support unselection, explicit clear and portable
+reference rebinding. Changes affect future execution generations.
+
+Dialogs support Esc and focus return, and the single import input receives focus.
+Rows/actions reflow on narrow layouts using existing theme tokens. All new copy has
+English/Korean entries. Synthetic fixtures and parser checks do not establish
+installed desktop, screen-reader, native-runtime or effective-200% acceptance.

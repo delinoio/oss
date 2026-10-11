@@ -365,7 +365,11 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	defer cancelNative()
 	cancelBeforeAcceptance := context.AfterFunc(ctx, cancelNative)
 	defer cancelBeforeAcceptance()
-	nativeConfig := codex.Config{EnableImageGeneration: input.NativeImageGeneration, RevertHistory: input.ContextRevision > 0 || checkpoint.Native.PaginatedHistory || checkpoint.Native.ContextRevision > 0 || compacted != nil && compacted.Revert != nil, ManagedForkHistory: input.Configuration.Subscription && input.Fork != nil && input.Configuration.SidechatPolicy == "", OrdinaryTools: ordinaryTools, SkillsRoot: config.Root, ImageRoot: config.Root, ImageMachineID: input.MachineID, Mode: codex.ThreadProtocol, Version: input.Installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token}, Process: process.Config{StartupObserver: config.progress.native, Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: config.Logger}}
+	managedSkills, err := (skills.Manager{Root: config.Root}).ManagedRuntime(ctx, connection.Credential.ServerID, connection.Credential.DeviceID, input.Configuration.ManagedSkills, nativeHome)
+	if err != nil {
+		return nil, err
+	}
+	nativeConfig := codex.Config{ManagedSkills: managedSkills, EnableImageGeneration: input.NativeImageGeneration, RevertHistory: input.ContextRevision > 0 || checkpoint.Native.PaginatedHistory || checkpoint.Native.ContextRevision > 0 || compacted != nil && compacted.Revert != nil, ManagedForkHistory: input.Configuration.Subscription && input.Fork != nil && input.Configuration.SidechatPolicy == "", OrdinaryTools: ordinaryTools, SkillsRoot: config.Root, ImageRoot: config.Root, ImageMachineID: input.MachineID, Mode: codex.ThreadProtocol, Version: input.Installation.Version, Home: nativeHome, API: &codex.APIConfig{ServerOrigin: connection.Credential.Endpoint, Token: token}, Process: process.Config{StartupObserver: config.progress.native, Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: settings.Cwd, Env: env, Logger: config.Logger}}
 	if input.Configuration.SidechatPolicy == domain.CodexReadOnlySidechatV1 {
 		nativeConfig.Sidechat = codex.ReadOnlySidechatV1
 	}

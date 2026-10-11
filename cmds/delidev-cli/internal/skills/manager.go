@@ -237,6 +237,21 @@ func (m Manager) List(ctx context.Context, scope domain.SkillReadRequest, projec
 	inv := inventory{Scope: scope}
 	id := domain.NewID()
 	seen := map[string]bool{}
+	for _, managed := range scope.ManagedPackages {
+		if managed.Validate() != nil || managed.WorkerDeviceID != scope.WorkerDeviceID || scope.ManagedServerID.Validate() != nil {
+			return result, unavailable()
+		}
+		path := filepath.Join(managedRoot(m.Root, scope.ManagedServerID, scope.WorkerDeviceID), "retained", string(managed.ID))
+		_, digest, e := packageFiles(ctx, path)
+		if e != nil || digest != managed.ContentRevision {
+			return result, unavailable()
+		}
+		item := domain.SkillEntry{WorkerDeviceID: scope.WorkerDeviceID, InventoryID: id, SkillID: domain.NewID(), ContentRevision: digest, Name: managed.Name, Description: managed.Description, Provenance: "user"}
+		inv.Packages = append(inv.Packages, packageRecord{Entry: item, Path: path})
+		result.Entries = append(result.Entries, item)
+		seen[path] = true
+	}
+
 	roots := []struct{ path, provenance string }{{filepath.Join(m.Home, ".agents", "skills"), "user"}, {filepath.Join(m.Home, ".codex", "skills"), "user"}}
 	for _, p := range projectRoots {
 		roots = append(roots, struct{ path, provenance string }{filepath.Join(p, ".agents", "skills"), "project"}, struct{ path, provenance string }{filepath.Join(p, ".codex", "skills"), "project"})
@@ -306,7 +321,7 @@ func snapshotPath(root string, id domain.ID) string {
 	return filepath.Join(root, "skill-snapshots", string(id))
 }
 
-type NativeSelection struct{ Name, Path string }
+type NativeSelection struct{ Name, Path, ContentRevision string }
 
 func (m Manager) Resolve(ctx context.Context, bindings []domain.SkillBinding) ([]NativeSelection, error) {
 	if domain.ValidateSkills(bindings) != nil {
@@ -374,7 +389,7 @@ func (m Manager) CopyToRuntime(ctx context.Context, bindings []domain.SkillBindi
 		if e = writeJSON(filepath.Join(runtime, "selected-skill-proofs", string(s.SkillID)+".json"), s); e != nil {
 			return nil, unavailable()
 		}
-		out = append(out, NativeSelection{Name: entries[i].Name, Path: filepath.Join(target, "SKILL.md")})
+		out = append(out, NativeSelection{Name: entries[i].Name, Path: filepath.Join(target, "SKILL.md"), ContentRevision: s.ContentRevision})
 	}
 	return out, nil
 }

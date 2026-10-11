@@ -451,3 +451,14 @@ remain independently paginated. No new business RPC or transport authority is
 added. Follow the [mobile contract](apps-delidev-mobile-contract.md).
 
 Current schema-4 Agent routes embed exact source/native identity and non-secret metadata. The shared parser rejects Model resources, mixed UUID routes and older Agent schemas. Other currently activated Project, Settings and API-profile schemas remain supported. Protocol-2 connection verification rejects protocol 1 without adopting its state.
+
+## Managed skill client boundary
+
+`SkillQuery` exposes the management list, mutation, original receipt inspection and
+read-only view alongside composer `ListSkills`. Management uses closed versioned
+Worker documents and exact uint64 revisions. `SkillMutationState` preserves pending,
+succeeded, recovery-required and failed outcomes. The desktop retains original
+mutation messages; response loss permits inspection without replacement mutation.
+Safe package projection and read-only text have separate bounded decoders.
+Presence-aware Agent managed selections preserve old-client omission and explicit
+clear. Imported references require explicit Worker/package rebinding.

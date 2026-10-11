@@ -21,6 +21,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 )
 
@@ -294,7 +295,11 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	// From this attempt onward the runtime may contain native child state. Even
 	// an Open failure cannot justify deleting it through pre-native rollback.
 	phase = forkChildNativePossible
-	nativeConfig := codex.Config{RevertHistory: checkpoint.Native.PaginatedHistory, ManagedForkHistory: assignment.Configuration.Subscription && input.Purpose == domain.IndependentFork, ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: filepath.Join(home, "codex"), API: &codex.APIConfig{ServerOrigin: config.execution.Credential.Endpoint, Token: apiproxy.TokenPrefix + rawToken}, Process: processConfig}
+	managedSkills, err := (skills.Manager{Root: config.Root}).ManagedRuntime(ctx, config.execution.Credential.ServerID, config.execution.Credential.DeviceID, assignment.Configuration.ManagedSkills, filepath.Join(home, "codex"))
+	if err != nil {
+		return nil, err
+	}
+	nativeConfig := codex.Config{ManagedSkills: managedSkills, RevertHistory: checkpoint.Native.PaginatedHistory, ManagedForkHistory: assignment.Configuration.Subscription && input.Purpose == domain.IndependentFork, ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: filepath.Join(home, "codex"), API: &codex.APIConfig{ServerOrigin: config.execution.Credential.Endpoint, Token: apiproxy.TokenPrefix + rawToken}, Process: processConfig}
 	if input.Purpose != domain.SidechatFork {
 		nativeConfig.OrdinaryTools = ordinaryTools
 	}

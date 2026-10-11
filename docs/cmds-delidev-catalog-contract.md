@@ -753,3 +753,26 @@ paired Worker, an enabled definition, authentication eligibility and separately
 verified harness support. Catalog edits cannot rewrite accepted execution or
 history. Native adapters own final launch/configuration verification and original
 cleanup; saved metadata alone cannot provide those proofs.
+
+## Worker-owned managed skill packages
+
+Skills follow MCP in AI Settings. The selected authenticated Worker imports an
+explicit absolute package directory into its own private catalog. It copies all
+regular resources and leaves the source unchanged. Management is independent of
+composer inventory and native runtime capability. Package metadata includes name,
+description, immutable content revision, current catalog revision, enablement,
+Worker-import provenance, adapter profile status and current Agent references.
+
+Import bounds are 1,024 resources, 1 MiB UTF-8 `SKILL.md`, 16 MiB per package and
+64 MiB per native generation. Complete resource bytes and normalized executable
+modes belong to the digest. Confined reads reject escaping links, nonregular
+resources, incomplete copies and changed source identities/digests. Native names
+must be unique without case ambiguity. No marketplace, URL installation, source
+adoption, automatic download or package editing is authorized.
+
+Only explicit Agent selections are resolved. Old-client omission preserves saved
+selections; explicit-empty clears them. Catalog deletion is blocked while current
+Agents reference the package. Accepted mutation intents also fence concurrent new
+selection writes. References are server-derived, never supplied by the client.
+Disablement changes future generation eligibility. Accepted package copies retain
+independent execution and history ownership.

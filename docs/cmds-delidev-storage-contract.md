@@ -1444,3 +1444,21 @@ Unfinished synchronized intent remains recovery-required. Recovered receipt stat
 returns current safe catalog metadata, so an old acknowledgement cannot roll a
 newer catalog projection back. Pending Server intents fence fresh generation
 resolution until an explicit observation confirms their outcome.
+
+## Managed skill retention
+
+Safe package metadata and original management intent digests use existing private
+metadata. No SQLite migration is added. The Worker stores its server/device-bound
+catalog and receipts under `managed-skills`. Imported catalog bytes, immutable
+retained bytes and runtime generation bytes have separate directories and owners.
+Catalog deletion removes only its package directory after Agent unselection;
+source directories, retained package bytes and native runtime/history copies are
+outside that deletion authority. Retained package bytes are bounded by original
+receipt retention and are not garbage-collected without independent ownership
+proof. Existing runtime, Fork and Sidechat directory cleanup covers their copies.
+
+A durable pending receipt precedes copy or catalog cleanup. An interrupted copy or
+cleanup remains recovery-required and is never replayed automatically. Inspection
+uses the original actor/request and fences a proved undelivered identity. Metadata
+projection is bounded separately from read-only Markdown/manifest bytes; raw
+package contents never enter server mutation records, exports or logs.

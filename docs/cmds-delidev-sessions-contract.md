@@ -1016,3 +1016,24 @@ jobs and remains available at the retention bound. These checks grant no native
 replay or new execution authority; original ownership and settled no-send proof
 remain required. See the [Sidechat contract](cmds-delidev-sidechat-contract.md#same-question-retry)
 for the five-job admission reservation.
+
+## Managed skill generations
+
+Agent `managed_skills` is a presence-aware selection list independent of input-level
+`skills`. An omitted field preserves saved selections; an explicit empty list clears
+them. Each selection names its original Worker and immutable imported package.
+Portable references require explicit rebinding before execution.
+
+First execution resolution captures selected enabled packages into the immutable
+execution configuration. Disabled packages are omitted from future generations.
+Existing accepted configuration, continuation, history, ordinary Fork and read-only
+Sidechat retain their original package content revision. Every native runtime gets
+an independent verified copy. Current source or catalog changes cannot rewrite it.
+
+Managed packages are available through the explicit composer inventory as well as
+Codex automatic discovery. An explicit selection still produces a structured native
+skill input and independent accepted snapshot; a typed literal token remains text.
+Only the actual native package's invocation policy controls implicit invocation.
+Existing explicit-only package policy, accepted-input proofs and dependent cleanup
+remain authoritative. Unsupported harness adapters refuse execution without prompt
+emulation.

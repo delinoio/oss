@@ -146,3 +146,12 @@ private catalog generations are excluded. Imported references cannot authorize
 execution until the user explicitly binds each to a current selected Runner
 catalog. Existing bundle versions remain unchanged; the optional presence-bearing
 Agent field does not reinterpret omitted legacy fields or erase live selections.
+
+## Portable managed skill selections
+
+Agent managed-skill selections export only safe package identity/name metadata.
+Export removes Worker binding and marks each selection unresolved. Import never
+copies resources, reads local/remote source paths, downloads packages or adopts
+host-native configuration. The user must explicitly choose a package from the
+selected authenticated Runner catalog before the reference grants generation
+eligibility. Omitted old-client Agent fields cannot erase saved managed selections.

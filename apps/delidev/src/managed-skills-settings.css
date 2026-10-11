@@ -1,0 +1,10 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.managed-skill-markdown {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 55vh;
+  overflow: auto;
+}
+.mcp-row p {
+  overflow-wrap: anywhere;
+}

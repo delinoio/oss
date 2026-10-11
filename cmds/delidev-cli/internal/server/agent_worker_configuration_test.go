@@ -169,3 +169,41 @@ func TestMCPSelectionsPreserveLegacyOmissionAndPortableRebinding(t *testing.T) {
 		t.Fatal("portable selection retained Worker authority or lost safe metadata")
 	}
 }
+
+func TestManagedSkillSelectionsPreserveLegacyOmissionAndPortableRebinding(t *testing.T) {
+	s, _ := newDoctorFixture(t)
+	id, definition, worker := domain.NewID(), domain.NewID(), domain.NewID()
+	agent := domain.Agent{Name: "Portable managed skill Agent", Harness: domain.Codex, Routes: []domain.AgentSourceRoute{{Model: &domain.InlineModel{ModelIdentity: domain.ModelIdentity{ProviderID: domain.NewID(), NativeID: "fixture"}, MetadataSource: domain.UserDeclared}, Accounts: []domain.WeightedAccount{{ID: domain.NewID(), Weight: 1}}}}, Options: domain.AgentOptions{Permission: domain.PermissionDefault}, ManagedSkills: &domain.ManagedSkillSelectionList{Selections: []domain.ManagedSkillSelection{{PackageID: definition, WorkerDeviceID: worker, Unresolved: true, Name: "Original safe name"}}}}
+	doctorPut(t, s, domain.AgentKind, id, 0, agent)
+	err := s.Store.Read(context.Background(), func(tx *store.Tx) error {
+		legacy := agent
+		legacy.ManagedSkills = nil
+		if err := preserveManagedSkillSelections(tx, id, 1, &legacy); err != nil {
+			return err
+		}
+		if legacy.ManagedSkills == nil || len(legacy.ManagedSkills.Selections) != 1 {
+			t.Fatal("legacy omission erased managed skill")
+		}
+		clear := agent
+		clear.ManagedSkills = &domain.ManagedSkillSelectionList{Selections: []domain.ManagedSkillSelection{}}
+		if err := preserveManagedSkillSelections(tx, id, 1, &clear); err != nil {
+			return err
+		}
+		if len(clear.ManagedSkills.Selections) != 0 {
+			t.Fatal("explicit clear was replaced")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(agent)
+	portable, err := portableValue(domain.AgentKind, raw, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected := portable.(*domain.Agent).ManagedSkills.Selections[0]
+	if selected.WorkerDeviceID != "" || !selected.Unresolved || selected.PackageID != definition || selected.Name != "Original safe name" {
+		t.Fatal("portable selection retained Worker authority or lost safe metadata")
+	}
+}

@@ -2476,3 +2476,26 @@ retain native request/process ownership through independent cleanup. Disabled,
 unresolved, unauthenticated or unsupported selections fail before execution;
 configuration-only management does not advertise native acceptance. Built-in
 session MCP must compose without name/identity collisions with selected entries.
+
+## Managed native skill discovery
+
+Worker management and native skill discovery negotiate independently. Codex's
+managed adapter disables ambient host discovery with the native
+`features.skip_host_skill_discovery` setting and verifies that setting through
+`config/read` before input. It uses the existing process-local
+`skills/extraRoots/set` and actual
+`skills/list` verification. The Worker first copies complete selected immutable
+packages into the original private native runtime. Before `turn/start`, the adapter
+checks exact enabled name/path identity and rechecks complete content/mode digests.
+Managed packages contribute discovery roots; only explicit composer selections
+contribute structured skill inputs. Equal-name explicit/managed roots compose only
+when their complete content revision agrees. Foreign collisions fail closed.
+
+The management catalog exposes Codex's adapter profile as requiring verification,
+not installed native acceptance. Unsupported Claude Code, OpenCode and Grok
+profiles stay unavailable until their independently accepted adapters consume this
+same immutable generation boundary. Existing explicit invocation, original history,
+continuation and independent ordinary Fork/Sidechat cleanup retain their authority.
+No host configuration, native authentication or prompt-text skill emulation is
+introduced. Code inspection and fixtures cannot establish installed native,
+remote-Worker, account or platform acceptance.

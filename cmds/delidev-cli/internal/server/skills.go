@@ -121,6 +121,10 @@ func (s *Service) observeSkills(ctx context.Context, scope domain.SkillReadReque
 			return readErr
 		}
 		scope.AgentRevision = row.Revision
+		frozenManaged := false
+		if len(scope.Selections) == 0 {
+			scope.ManagedServerID = s.Identity.ServerID
+		}
 		if scope.SessionID != "" {
 			_, session, readErr := sessionRecord(tx, scope.SessionID)
 			if readErr != nil {
@@ -128,6 +132,20 @@ func (s *Service) observeSkills(ctx context.Context, scope domain.SkillReadReque
 			}
 			if session.InitialExecution != nil {
 				scope.AgentRevision = session.InitialExecution.Configuration.AgentRevision
+				if len(scope.Selections) == 0 {
+					scope.ManagedPackages = session.InitialExecution.Configuration.ManagedSkills
+					frozenManaged = true
+				}
+			}
+		}
+		if len(scope.Selections) == 0 && !frozenManaged {
+			agent, e := store.Decode[domain.Agent](row)
+			if e != nil {
+				return e
+			}
+			scope.ManagedPackages, e = tx.ResolveManagedSkillGeneration(agent.ManagedSkills, scope.MachineID, agent.Harness)
+			if e != nil {
+				return e
 			}
 		}
 		input, manifest, e = skillScope(tx, scope)

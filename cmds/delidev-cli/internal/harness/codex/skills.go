@@ -8,10 +8,12 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
 	"path/filepath"
+	"slices"
+	"strings"
 )
 
 func (c *Client) selectedSkillInputs(ctx context.Context, input domain.SessionInput) ([]nativeTextInput, error) {
-	if len(input.Skills) == 0 {
+	if len(input.Skills) == 0 && len(c.managedSkills) == 0 {
 		return nil, nil
 	}
 	if c.skillsRoot == "" || c.home == "" {
@@ -21,9 +23,40 @@ func (c *Client) selectedSkillInputs(ctx context.Context, input domain.SessionIn
 	if e != nil {
 		return nil, e
 	}
+	if len(c.managedSkills) > 0 {
+		if e := c.verifyManagedSkillDiscovery(ctx); e != nil {
+			return nil, e
+		}
+	}
+	if e := skills.VerifyManagedRuntime(ctx, c.home, c.managedSkills); e != nil {
+		return nil, e
+	}
+	all := append([]skills.NativeSelection{}, selected...)
+	for _, managed := range c.managedSkills {
+		matched := false
+		for _, explicit := range selected {
+			if strings.EqualFold(explicit.Name, managed.Name) {
+				if explicit.ContentRevision != managed.ContentRevision {
+					return nil, incompatible()
+				}
+				matched = true
+			}
+		}
+		if !matched {
+			all = append(all, managed)
+		}
+	}
+	names := map[string]string{}
 	roots := []string{}
-	for _, s := range selected {
-		roots = append(roots, filepath.Dir(s.Path))
+	for _, s := range all {
+		key := strings.ToLower(s.Name)
+		if prior, exists := names[key]; exists && !nativePathEqual(prior, s.Path) {
+			return nil, incompatible()
+		}
+		names[key] = s.Path
+		if !slices.Contains(roots, filepath.Dir(s.Path)) {
+			roots = append(roots, filepath.Dir(s.Path))
+		}
 	}
 	result, e := c.wire.Call(ctx, domain.NewID(), "skills/extraRoots/set", struct {
 		ExtraRoots []string `json:"extraRoots"`
@@ -63,7 +96,7 @@ func (c *Client) selectedSkillInputs(ctx context.Context, input domain.SessionIn
 		return nil, incompatible()
 	}
 	out := []nativeTextInput{}
-	for _, selection := range selected {
+	for i, selection := range all {
 		matches := 0
 		for _, entry := range response.Data[0].Skills {
 			if nativePathEqual(entry.Path, selection.Path) && entry.Name == selection.Name && entry.Enabled {
@@ -73,7 +106,15 @@ func (c *Client) selectedSkillInputs(ctx context.Context, input domain.SessionIn
 		if matches != 1 {
 			return nil, incompatible()
 		}
-		out = append(out, nativeTextInput{Type: "skill", Name: selection.Name, Path: selection.Path})
+		if i < len(selected) {
+			out = append(out, nativeTextInput{Type: "skill", Name: selection.Name, Path: selection.Path})
+		}
+	}
+	// Managed packages remain automatic discoveries; only explicit selections
+	// produce structured input. Native invocation policy is read from package
+	// resources, and literal prompt tokens are never converted into selections.
+	if e := skills.VerifyManagedRuntime(ctx, c.home, c.managedSkills); e != nil {
+		return nil, e
 	}
 	// Recheck immutable snapshots after native discovery, before turn/start.
 	if _, e = (skills.Manager{Root: c.skillsRoot}).Resolve(ctx, input.Skills); e != nil {
@@ -132,4 +173,30 @@ func nativeInputSkills(parts []json.RawMessage) ([]json.RawMessage, []nativeText
 		selected = append(selected, part)
 	}
 	return plain, selected, nil
+}
+
+// Skip ordinary host/project discovery only for an explicit managed generation.
+// Old Agents keep their historical behavior; selected packages still use the
+// native engine's own discovery and per-package invocation policy.
+func (c *Client) verifyManagedSkillDiscovery(ctx context.Context) error {
+	response, err := c.wire.Call(ctx, domain.NewID(), "config/read", struct {
+		Cwd           string `json:"cwd"`
+		IncludeLayers bool   `json:"includeLayers"`
+	}{Cwd: c.execution.settings.Cwd})
+	if err != nil {
+		return err
+	}
+	var result struct {
+		Config  map[string]json.RawMessage `json:"config"`
+		Origins json.RawMessage            `json:"origins"`
+		Layers  json.RawMessage            `json:"layers"`
+	}
+	if domain.Decode(response.Result, &result) != nil || result.Config == nil {
+		return incompatible()
+	}
+	var features map[string]json.RawMessage
+	if domain.Decode(result.Config["features"], &features) != nil || strings.TrimSpace(string(features["skip_host_skill_discovery"])) != "true" {
+		return incompatible()
+	}
+	return nil
 }

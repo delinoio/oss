@@ -1,3 +1,4 @@
+import { ManagedSkillAgentSelections } from "./managed-skills-settings";
 import { MCPAgentSelections } from "./mcp-settings";
 import "./wizard-presentation.css";
 // SPDX-License-Identifier: Apache-2.0
@@ -1605,6 +1606,14 @@ export function AgentWorkerSourceWizard({
           hidden={step !== Step.Configure}
           disabled={blocked || step !== Step.Configure}
         >
+          <ManagedSkillAgentSelections
+            value={data.managed_skills}
+            onChange={(managed_skills) =>
+              setData((previous) => ({ ...previous, managed_skills }))
+            }
+            disabled={blocked}
+            active={active && step === Step.Configure}
+          />
           <MCPAgentSelections
             value={data.mcp}
             onChange={(mcp) => setData((previous) => ({ ...previous, mcp }))}

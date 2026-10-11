@@ -81,6 +81,13 @@ const target = (
 export const settingsSearchTargets: Partial<
   Record<Category, readonly StaticTarget[]>
 > = {
+  [Category.Skills]: [
+    target(
+      SettingsSearchTarget.Category,
+      "managed-skills.title",
+      "managed-skills.scope",
+    ),
+  ],
   [Category.ProjectDefaults]: [
     target(
       SettingsSearchTarget.PlanModeDefault,

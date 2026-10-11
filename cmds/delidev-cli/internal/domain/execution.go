@@ -21,6 +21,7 @@ type AppliedTemplate struct {
 // Native defaults remain unspecified here; observed effective settings belong
 // to the native execution record and cannot rewrite this accepted selection.
 type ExecutionConfiguration struct {
+	ManagedSkills  []ManagedSkillPackage  `json:"managed_skills,omitempty"`
 	MCPDefinitions []MCPDefinition        `json:"mcp_definitions,omitempty"`
 	BranchPrefix   *BranchPrefixSelection `json:"branch_prefix,omitempty"`
 
@@ -124,6 +125,16 @@ func (c ExecutionConfiguration) Digest() (string, error) {
 }
 
 func (c ExecutionConfiguration) Validate() error {
+	if len(c.ManagedSkills) > MaxSelectedSkills {
+		return ManagedSkillUnavailable()
+	}
+	seenSkills := map[ID]bool{}
+	for _, p := range c.ManagedSkills {
+		if p.Validate() != nil || seenSkills[p.ID] {
+			return ManagedSkillUnavailable()
+		}
+		seenSkills[p.ID] = true
+	}
 	if len(c.MCPDefinitions) > MaxMCPDefinitions {
 		return MCPUnavailable()
 	}

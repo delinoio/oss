@@ -83,3 +83,20 @@ func skillWorkspaceRoots(request ReadRequest, observe func(ReadRequest, domain.I
 	}
 	return roots, nil
 }
+
+func (m *Manager) ReadManagedSkills(ctx context.Context, request ReadRequest) (domain.ManagedSkillResult, error) {
+	var result domain.ManagedSkillResult
+	if request.ManagedSkills == nil || request.MCP != nil || request.Skills != nil || request.PRCandidate != nil || request.ManagedSkills.MachineID != request.Preparation.MachineID || request.Deadline.IsZero() || request.Deadline.After(time.Now().Add(31*time.Second)) {
+		return result, ResultUncertain()
+	}
+	ctx, cancel := context.WithDeadline(ctx, request.Deadline)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return result, err
+	}
+	result, err := (skills.Manager{Root: m.Root}).Managed(ctx, *request.ManagedSkills)
+	if m.Logger != nil {
+		m.Logger.InfoContext(ctx, "managed_skill_operation_finished", "request_id", request.ManagedSkills.RequestID, "worker_device_id", request.ManagedSkills.WorkerDeviceID, "action", request.ManagedSkills.Mutation.Action, "state", result.State, "success", err == nil)
+	}
+	return result, err
+}
