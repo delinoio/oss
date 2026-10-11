@@ -1144,8 +1144,9 @@ it.each(["inventory", "creation", "deletion"])(
         : within(screen.getByRole("tabpanel", { name: label }));
     const idText =
       (ordinal: number) => (_content: string, element: Element | null) =>
-        element?.classList.contains("backups-id") === true &&
-        element.textContent === `Backup ${ordinal}`;
+        element?.tagName === "H3" &&
+        element.textContent?.replace(/\s+/gu, " ").trim() ===
+          `Backup Backup ${ordinal}`;
     await result.findByText(idText(1));
     fireEvent.click(
       await screen.findByRole("button", { name: `Load more ${label}` }),

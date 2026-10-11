@@ -258,7 +258,7 @@ it.each([
     render(value.view(<Settings />));
     chooseGit();
     await screen.findByRole("region", { name: "Project defaults unavailable" });
-    expect(screen.getAllByText(/^Record \d+$/)).toHaveLength(rows.length);
+    expect(screen.queryAllByText(/^Record \d+$/)).toHaveLength(rows.length);
     expect(screen.queryByRole("form")).toBeNull();
     expect(value.save).not.toHaveBeenCalled();
     if (variant.endsWith("continuation")) {

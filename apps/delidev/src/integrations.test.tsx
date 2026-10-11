@@ -464,7 +464,14 @@ it("renders separate storage and identity facts with readable immutable metadata
   ).toBeTruthy();
   expect(f.validate).not.toHaveBeenCalled();
   fireEvent.click(manage);
-  expect(screen.getByText("9,007,199,254,740,993")).toBeTruthy();
+  expect(
+    screen.getByText(
+      (_content, element) =>
+        element?.tagName === "P" &&
+        element.textContent ===
+          "Authenticated as fixture-user · GitHub ID 9007199254740993",
+    ),
+  ).toBeTruthy();
   expect(
     within(screen.getByRole("dialog")).getByTitle("2026-09-30T04:00:00Z"),
   ).toBeTruthy();

@@ -648,7 +648,7 @@ export function LocalReviews({
       setNotice(
         r.change?.input
           ? ownedMessage("local-reviews.sentence.72171603f37d", {
-              v0: r.change.input.id,
+              v0: presentationLabels.identity(r.change.input.id, "input"),
             })
           : ownedMessage("local-reviews.extra.68459ebcb74e"),
       );

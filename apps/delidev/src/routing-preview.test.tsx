@@ -734,9 +734,7 @@ it("retains four original RPC permits across nested dialog close and reopen", as
       const message = response.message as { resource?: Resource };
       if (message.resource)
         message.resource.documentJson = encode({
-          name: safePresentation(
-            `${generation} source ${rows.findIndex((row) => row.id === message.resource?.id)}`,
-          ),
+          name: `${generation} source ${rows.findIndex((row) => row.id === message.resource?.id)}`,
         });
       return response;
     },

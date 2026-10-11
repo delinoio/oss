@@ -547,7 +547,7 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({
                           <LocalizedText
                             id="execution-configuration.revision_dfefbf"
                             components={{
-                              s0: <>{text(presentationLabels.identity(configuration.agent_id, "record"))}</>,
+                              s0: <>{text(presentationLabels.identity(configuration.agent_id, "agent"))}</>,
                               s1: <>{integer(configuration.agent_revision)}</>,
                             }}
                           />
@@ -626,6 +626,7 @@ export const ExecutionConfiguration = memo(function ExecutionConfiguration({
                 : null}
             </section>
           </TechnicalEvidence>
+
 
           <NativeObservations
             progress={object(data.execution)}

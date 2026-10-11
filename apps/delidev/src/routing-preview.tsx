@@ -189,7 +189,7 @@ function AccountId({ id }: { id: string }) {
       className="routing-account-id"
     >
       <DisclosureSummary>{copy("routing-preview.accountId")}</DisclosureSummary>
-      <code>{presentationLabels.identity(id, "record")}</code>
+      <code>{presentationLabels.identity(id, "account")}</code>
     </Disclosure>
   );
 }
@@ -246,7 +246,7 @@ function Candidates({
             <DisclosureSummary>
               {copy("routing-preview.accountId")}
             </DisclosureSummary>
-            <code>{presentationLabels.identity(candidate.id, "record")}</code>
+            <code>{presentationLabels.identity(candidate.id, "account")}</code>
             <dl className="routing-detail-evidence">
               {typeof candidate.score === "number" ? (
                 <div>

@@ -527,7 +527,7 @@ it.each([Code.NotFound, Code.Unavailable])(
         await screen.findByText(
           (_content, element) =>
             element?.tagName === "P" &&
-            element.textContent === "Next session. Session 1",
+            element.textContent === "Next session · Session 1",
         ),
       ).not.toBeNull();
     } else {

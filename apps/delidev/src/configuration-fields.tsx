@@ -1234,6 +1234,16 @@ export function ResourceChoice({
   result.rows.forEach((row) =>
     presentationLabels.observe(row.id, row.name, presentationKind(kind)),
   );
+  if (selectedResource)
+    presentationLabels.observe(
+      selectedResource.id,
+      typeof selectedData.name === "string"
+        ? selectedData.name
+        : typeof selectedData.alias === "string"
+          ? selectedData.alias
+          : "",
+      presentationKind(kind),
+    );
   const options = [
     {
       id: "",

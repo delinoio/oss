@@ -274,7 +274,7 @@ it("opens project creation shortcuts without toggling groups or reading collapse
   for (const [index, project] of [first, second, empty].entries()) {
     const name = JSON.parse(new TextDecoder().decode(project.documentJson))
       .name as string;
-    const numberedName = index === 1 ? `${name} · 2` : name;
+    const numberedName = name === "Same name" ? `${name} · ${index + 1}` : name;
     const toggle = await screen.findByRole("button", {
       name: safePresentation(`${numberedName}. Project ID: ${project.id}`),
     });
@@ -299,7 +299,9 @@ it("opens project creation shortcuts without toggling groups or reading collapse
   }
   value.setProps({ projectSelectionBlocked: true });
   const disabled = screen.getByRole("button", {
-    name: safePresentation(`New session in Same name. Project ID: ${first.id}`),
+    name: safePresentation(
+      `New session in Same name · 1. Project ID: ${first.id}`,
+    ),
   });
   expect(disabled).toHaveProperty("disabled", true);
   const before = value.newSession.mock.calls.length;
@@ -309,7 +311,7 @@ it("opens project creation shortcuts without toggling groups or reading collapse
   expect(
     screen.getByRole("button", {
       name: safePresentation(
-        `Same name 프로젝트의 새 세션. 프로젝트 ID: ${first.id}`,
+        `Same name · 1 프로젝트의 새 세션. 프로젝트 ID: ${first.id}`,
       ),
     }),
   ).toBe(disabled);

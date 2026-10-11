@@ -356,7 +356,7 @@ export function SessionStorageProvider({ children }: { children: ReactNode }) {
               id="session-storage.session_37c76b"
               components={{
                 s0: <>{presentationLabels.resource(source)}</>,
-                s1: <>{presentationLabels.identity(source.id, "record")}</>,
+                s1: <>{presentationLabels.identity(source.id, "session")}</>,
               }}
             />
           </p>
@@ -531,7 +531,7 @@ export function SessionStorageProvider({ children }: { children: ReactNode }) {
                           .map((row) => (
                             <article key={row.id}>
                               <p>
-                                {presentationLabels.identity(row.id, "record")}{" "}
+                                {presentationLabels.identity(row.id, "session")}{" "}
                                 · {bytes(document(row).size_bytes)} ·{" "}
                                 {
                                   <Timestamp

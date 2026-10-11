@@ -1151,11 +1151,18 @@ it("keeps original identities and complete counter/estimate evidence in mounted 
     f.data.groups[0].projectId,
   ])
     expect(detail.textContent).not.toContain(id);
-  expect(f.read.mock.calls[0]![0]).toMatchObject({
+  expect(f.data.groups[0]).toMatchObject({
     sessionId: f.ids.session,
     accountId: f.ids.account,
     projectId: f.data.groups[0].projectId,
   });
+  expect(f.read.mock.calls[0]![0]).toMatchObject({
+    sessionId: "",
+    accountId: "",
+    projectId: "",
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Retained session" }));
+  expect(f.open).toHaveBeenCalledWith(f.ids.session);
   expect(detail.textContent).toContain("USD 0.002");
   expect(detail.textContent).toContain("EUR 0");
   expect(f.read).toHaveBeenCalledTimes(1);

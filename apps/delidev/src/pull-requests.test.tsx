@@ -25,6 +25,10 @@ import {
 import { App } from "./App";
 import { encode, resourceName } from "./documents";
 import { i18n, SupportedLanguage } from "./localization";
+import {
+  safePresentation,
+  unavailablePresentation,
+} from "./product-presentation-test-support";
 
 const repositoryId = "0195c9c0-7b13-7000-8000-000000000001";
 function repository(name = "Example repository") {
@@ -183,9 +187,19 @@ function accessibleName(value: string) {
 async function choose(row: Resource) {
   const name = accessibleName(resourceName(row));
   const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const data = JSON.parse(new TextDecoder().decode(row.documentJson)) as {
+    alias?: unknown;
+    name?: unknown;
+  };
+  const savedName =
+    (typeof data.name === "string" && data.name) ||
+    (typeof data.alias === "string" && data.alias);
   fireEvent.click(
     await screen.findByRole("button", {
-      name: new RegExp(`^${escapedName}(?: · \\d+)?$`),
+      name:
+        row.schemaVersion === 1 && savedName
+          ? new RegExp(`^${escapedName}(?: · \\d+)?$`)
+          : unavailablePresentation(row.id, "Repository"),
     }),
   );
   await waitFor(() =>
@@ -314,7 +328,7 @@ it("discloses one exact duplicate-name identity without selecting or reading it"
   const value = fixture([first, second]);
   render(<App transport={value.transport} />);
   const pane = await open();
-  const [firstButton, secondButton] = await pane.findAllByRole("button", {
+  const [firstButton] = await pane.findAllByRole("button", {
     name: /^Details for Example repository · \d+$/,
   });
   const catalogReads = value.list.mock.calls.filter(
@@ -330,6 +344,9 @@ it("discloses one exact duplicate-name identity without selecting or reading it"
   expect(details.textContent).not.toContain(first.id);
   expect(firstButton.getAttribute("aria-label")).not.toContain(first.id);
   expect(within(details).getByText("owner/repo")).toBeTruthy();
+  const secondButton = pane.getByRole("button", {
+    name: /^Details for Example repository · 2$/,
+  });
   fireEvent.click(secondButton);
   expect(firstButton.getAttribute("aria-expanded")).toBe("false");
   expect(secondButton.getAttribute("aria-expanded")).toBe("true");

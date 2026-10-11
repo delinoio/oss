@@ -108,7 +108,7 @@ function DeviceMetadata({ resource }: { resource: Resource }) {
   return (
     <dl className="paired-device-metadata">
       <dt>{copy("device-settings.deviceId_6e0a0b")}</dt>
-      <dd>{presentationLabels.identity(resource.id, "record")}</dd>
+      <dd>{presentationLabels.identity(resource.id, "device")}</dd>
       {text(value.machine_id) ? (
         <>
           <dt>{copy("device-settings.runnerDeviceId_a03c92")}</dt>

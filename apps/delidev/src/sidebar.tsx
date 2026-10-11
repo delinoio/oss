@@ -1864,7 +1864,9 @@ export function Sidebar({
                     })),
                     ...[...fallbackGroups].map(([id, rows]) => ({
                       id,
-                      label: presentationLabels.identity(id, "project"),
+                      label: copy("documents.unavailableName", {
+                        kind: presentationLabels.identity(id, "project"),
+                      }),
                       fallback: true,
                       rows,
                     })),

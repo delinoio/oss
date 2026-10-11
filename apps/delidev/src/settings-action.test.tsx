@@ -158,11 +158,11 @@ it("disambiguates same-name Projects with safe stable numbers and retains exact 
     screen.getByRole("button", { name: "Delete Shared name · Project 1" }),
   );
   expect(remove).toHaveBeenCalledExactlyOnceWith(a);
-  fireEvent.click(
+  expect(
     screen.getByRole("button", {
-      name: /Delete Shared name · 3 · Project 3/,
+      name: "Delete Project 3 · Name unavailable · Project 3",
     }),
-  );
+  ).toHaveProperty("disabled", true);
   expect(remove).toHaveBeenCalledTimes(1);
 });
 it("preserves unsupported Repository and Agent Worker action guards", () => {

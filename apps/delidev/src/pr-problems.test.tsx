@@ -16,6 +16,7 @@ import {
 import { ciObservation, queueCIObservation } from "./github-ci-fixture";
 import { document, encode } from "./documents";
 import { MutationIntents } from "./mutation";
+import { safePresentation } from "./product-presentation-test-support";
 import { PRWorkflowProvider } from "./pr-workflow";
 import {
   OpenPRProblemHistory,
@@ -248,8 +249,12 @@ it("displays the complete original handled-push audit without offering another a
   await screen.findByText(/Local handling: Handled after verified push/);
   const audit = screen.getByText(/Verified push:/);
   expect(audit.textContent).toContain(handling.pushed_head);
-  expect(audit.textContent).toContain(`attempt ${handling.attempt_id}`);
-  expect(audit.textContent).toContain(`execution ${handling.execution_id}`);
+  expect(audit.textContent).toMatch(
+    /attempt Record \d+ · execution Record \d+/,
+  );
+  expect(audit.textContent).not.toContain(handling.attempt_id);
+  expect(audit.textContent).not.toContain(handling.execution_id);
+  expect(document(row).handling).toEqual(handling);
   expect(audit.textContent).toContain("handled at ");
   expect(audit.querySelector("time")?.dateTime).toBe(handling.at);
   expect(
@@ -509,7 +514,14 @@ it("retains an original conflict transition while showing current unknown mergea
     name: "Merge conflict · feature → main",
   });
   expect(screen.getByText(/Latest mergeability: unknown/)).toBeTruthy();
-  expect(screen.getByText(conflict.transition_id)).toBeTruthy();
+  expect(
+    screen.getByText(safePresentation(conflict.transition_id, "Record"), {
+      selector: "code",
+    }),
+  ).toBeTruthy();
+  expect(
+    (document(row).conflict as { transition_id: string }).transition_id,
+  ).toBe(conflict.transition_id);
   expect(
     screen.getByRole("button", { name: "Dismiss this content version" }),
   ).toBeTruthy();
