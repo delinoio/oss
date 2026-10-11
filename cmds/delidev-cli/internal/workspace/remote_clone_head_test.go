@@ -155,8 +155,15 @@ func TestManagedCloneRemoteHeadInterruptedObservation(t *testing.T) {
 }
 
 func TestManagedCloneRemoteHeadFailureBlocksReady(t *testing.T) {
-	for _, observation := range []string{"exit 128", "printf 'fatal: Authentication failed\\n' >&2; exit 1", "printf 'refs/heads/main\\n'"} {
-		t.Run(observation, func(t *testing.T) {
+	for _, test := range []struct {
+		name, observation string
+		preserve          bool
+	}{
+		{name: "fatal", observation: "exit 128"},
+		{name: "authentication", observation: "printf 'fatal: Authentication failed\\n' >&2; exit 1"},
+		{name: "foreign symbolic target", observation: "printf 'refs/heads/main\\n'", preserve: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
 			manager, input, marker := managedCloneFixture(t)
 			input.Repositories[0].Starting = domain.Reference{Type: domain.RemoteBranch, Remote: "upstream", Name: "main"}
 			input.Repositories[0].AutoFetch = false
@@ -164,7 +171,7 @@ func TestManagedCloneRemoteHeadFailureBlocksReady(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			branch := "case \" $* \" in\n*' symbolic-ref --quiet refs/remotes/origin/HEAD '*) " + observation + " ;;\n*' fetch '*) exit 77 ;;\n"
+			branch := "case \" $* \" in\n*' symbolic-ref --quiet refs/remotes/origin/HEAD '*) " + test.observation + " ;;\n*' fetch '*) exit 77 ;;\n"
 			body = []byte(strings.Replace(string(body), "case \" $* \" in\n", branch, 1))
 			if err := os.WriteFile(manager.Git.Executable, body, 0700); err != nil {
 				t.Fatal(err)
@@ -173,8 +180,17 @@ func TestManagedCloneRemoteHeadFailureBlocksReady(t *testing.T) {
 			if err == nil || manifest.State == Ready {
 				t.Fatal("failed symbolic observation published readiness")
 			}
-			if _, err := os.Stat(filepath.Join(manager.Root, "workspaces", string(input.SessionID))); !os.IsNotExist(err) {
-				t.Fatal("joined failed preparation retained its workspace", err)
+			workspaceRoot := filepath.Join(manager.Root, "workspaces", string(input.SessionID))
+			if test.preserve {
+				if _, err := os.Stat(workspaceRoot); err != nil {
+					t.Fatal("uncertain preparation did not retain its recovery workspace", err)
+				}
+				retained, err := manager.Read(input.SessionID)
+				if err != nil || retained.State != CleanupPending {
+					t.Fatal("uncertain preparation did not retain its cleanup manifest", retained.State, err)
+				}
+			} else if _, err := os.Stat(workspaceRoot); !os.IsNotExist(err) {
+				t.Fatal("definite failed preparation retained its workspace", err)
 			}
 			if raw, err := os.ReadFile(marker); err != nil || string(raw) != "invoked" {
 				t.Fatal("failure repeated the original clone", string(raw), err)
