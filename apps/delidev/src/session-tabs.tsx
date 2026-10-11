@@ -18,7 +18,6 @@ export enum SessionTabKind {
   File = "file",
   Diff = "diff",
   Comparison = "comparison",
-  Terminals = "terminals",
   Terminal = "terminal",
   Browser = "browser",
   Page = "page",
@@ -32,7 +31,6 @@ export type SessionTab =
         | SessionTabKind.Conversation
         | SessionTabKind.Files
         | SessionTabKind.Diff
-        | SessionTabKind.Terminals
         | SessionTabKind.Browser
         | SessionTabKind.Diagnostics;
     }
@@ -44,7 +42,7 @@ export type SessionTab =
       path: string;
       base_ref?: BaseReference;
     }
-  | { kind: SessionTabKind.Terminal; id: string }
+  | { kind: SessionTabKind.Terminal; id: string; number: number }
   | {
       kind: SessionTabKind.Page;
       profile: string;
@@ -57,7 +55,10 @@ export type SessionTab =
 export const conversationTab: SessionTab = {
   kind: SessionTabKind.Conversation,
 };
-export function sessionTabKey(tab: SessionTab): string {
+type SessionTabIntent =
+  | SessionTab
+  | { kind: SessionTabKind.Terminal; id: string };
+export function sessionTabKey(tab: SessionTabIntent): string {
   switch (tab.kind) {
     case SessionTabKind.File:
       return JSON.stringify([tab.kind, tab.repository, tab.path]);
@@ -118,12 +119,16 @@ export class SessionTabsStore {
     this.sessions.set(id, value);
     for (const callback of this.listeners) callback();
   }
-  open(id: string, tab: SessionTab) {
+  open(id: string, tab: SessionTabIntent) {
     if (
       tab.kind === SessionTabKind.Terminal &&
       this.terminalPresentation(id).hidden(tab.id)
     )
       return;
+    const descriptor: SessionTab =
+      tab.kind === SessionTabKind.Terminal
+        ? { ...tab, number: this.terminalPresentation(id).number(tab.id) }
+        : tab;
     if (tab.kind === SessionTabKind.Sidechat) {
       this.parents.set(tab.id, id);
       const children = this.children.get(id) ?? new Map<string, SidechatTab>();
@@ -136,8 +141,8 @@ export class SessionTabsStore {
       (value) => sessionTabKey(value) === key,
     );
     const tabs = [...previous.tabs];
-    if (found < 0) tabs.push(tab);
-    else tabs[found] = tab;
+    if (found < 0) tabs.push(descriptor);
+    else tabs[found] = descriptor;
     this.publish(id, { tabs, selected: key });
   }
   select(id: string, key: string) {

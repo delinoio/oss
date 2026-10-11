@@ -19,6 +19,7 @@ export enum ShortcutId {
   SessionTab8 = "session-tab-8",
   SessionTab9 = "session-tab-9",
   SessionCloseTab = "session-close-tab",
+  TerminalCreate = "terminal-create",
   Help = "help",
   NewSession = "new-session",
   SessionFocus = "session-focus",

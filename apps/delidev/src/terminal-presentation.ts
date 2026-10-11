@@ -6,6 +6,16 @@ import { document, object } from "./documents";
 export class TerminalPresentation {
   private revisions = new Map<string, bigint>();
   private dismissed = new Set<string>();
+  private numbers = new Map<string, number>();
+  /** Original IDs retain authority; numbers live only in this connection. */
+  number(id: string): number {
+    let value = this.numbers.get(id);
+    if (value === undefined) {
+      value = this.numbers.size + 1;
+      this.numbers.set(id, value);
+    }
+    return value;
+  }
   hidden(id: string) {
     return this.dismissed.has(id);
   }
@@ -18,6 +28,7 @@ export class TerminalPresentation {
       resource.revision <= 0n
     )
       return false;
+    this.number(resource.id);
     const previous = this.revisions.get(resource.id) ?? 0n;
     if (resource.revision < previous || this.hidden(resource.id)) return false;
     this.revisions.set(resource.id, resource.revision);

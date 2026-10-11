@@ -38,3 +38,30 @@ it("roves focus and selection without an absent-position alias and leaves pinned
   expect(close).toHaveBeenCalledWith("files");
   expect(tabs[0].getAttribute("aria-keyshortcuts")).toMatch(/1$/);
 });
+
+it("keeps numbered terminal labels and focus independent of original IDs and locale", async () => {
+  const { i18n, SupportedLanguage } = await import("./localization");
+  const original = "0192b234-6789-7abc-8def-012345678901";
+  const tabs = [
+    { kind: SessionTabKind.Conversation } as const,
+    { kind: SessionTabKind.Terminal, id: original, number: 7 } as const,
+  ];
+  const selected = JSON.stringify(["terminal", original]);
+  const props = {
+    id: "session",
+    tabs,
+    selected,
+    select: vi.fn(),
+    close: vi.fn(),
+  };
+  const view = render(<SessionTabBar {...props} />);
+  const tab = screen.getByRole("tab", { name: "Terminal 7" });
+  expect(tab.title).toBe("Terminal 7");
+  expect(tab.textContent).not.toContain(original);
+  tab.focus();
+  await i18n.changeLanguage(SupportedLanguage.Korean);
+  view.rerender(<SessionTabBar {...props} />);
+  expect(screen.getByRole("tab", { name: "터미널 7" })).toBe(tab);
+  expect(tab.title).toBe("터미널 7");
+  expect(document.activeElement).toBe(tab);
+});

@@ -231,7 +231,7 @@ Common shortcuts are logical `?` for help and primary+Shift+N for New session. P
 
 Primary letter/digit matching and capture share one canonical resolver. Physical `KeyA`–`KeyZ` and `Digit0`–`Digit9` codes resolve to lowercase ASCII letters and digits before translated logical keys. Recognized codes take precedence over inconsistent `event.key`; unavailable or unrecognized codes retain the existing logical fallback, including Numpad behavior. Named Enter/Escape and default logical Help retain their existing rules and held-key release ownership. Stored `{key, shift}` chords, editable IDs, reservations and preference bytes remain unchanged. Input-layout selection alone does not block dispatch or capture; active composition remains excluded.
 
-Logical `?` accepts the layout's producing Shift state and remains ordinary text in input, textarea, select, editable/combobox contexts. Ignore handled, composing, keyCode-229, AltGraph and repeated events. Ignore hidden/inert targets and terminal passthrough, except the fixed `SessionCloseTab` (primary+W) action and the numeric tab actions, which remain eligible from terminal focus and Keyboard Help; external native child views receive no new bridge. Visible modals, including the compact sidebar drawer, suspend background dispatch and help opening. The owned help dialog has only the action-dismissal exception described below. The wide sidebar region is not a modal. The help dialog cannot stack over another modal; Escape and Close dismiss only help.
+Logical `?` accepts the layout's producing Shift state and remains ordinary text in input, textarea, select, editable/combobox contexts. Ignore handled, composing, keyCode-229, AltGraph and repeated events. Ignore hidden/inert targets and terminal passthrough, except target-bound `TerminalCreate` (primary+T) from its terminal input host, and the fixed `SessionCloseTab` (primary+W) and numeric tab actions, which remain eligible from terminal focus and Keyboard Help; external native child views receive no new bridge. Visible modals, including the compact sidebar drawer, suspend background dispatch and help opening. The owned help dialog has only the action-dismissal exception described below. The wide sidebar region is not a modal. The help dialog cannot stack over another modal; Escape and Close dismiss only help.
 
 The Settings-adjacent rail help button opens a 640px maximum-width central dialog with 24px padding, 12px corners and existing semantic light/dark tokens. Use Keyboard shortcuts / 키보드 단축키 and the localized current screen, followed by Common and screen-specific read-only lists. Show each registered binding, native behavior and disabled reason; show an explicit screen-specific empty state. Never execute a list row. English/Korean catalog changes update presentation without remounting the help or changing focus. On opening focus the named 40px Close button and contain Tab. On Escape or Close dismissal, restore the available opener or fall back to the current main. Retain 16px viewport margins, vertical scrolling and stacked rows at narrow widths/200% reflow. Device-local customization follows the preference boundary below; no dependency, API/schema/migration, OS permission or OS-global shortcut is added.
 
@@ -1061,7 +1061,11 @@ connected original ancestors containing the returned tree may receive them.
 
 ### Session terminals
 
-The Terminals tool opens the terminal inventory in the shared session tab workspace.
+The Terminals tool resolves explicit reuse-or-create intent while preserving the
+selected pane. It opens a direct terminal content tab only after verified original
+admission; there is no singleton inventory descriptor. Opening, capability/read
+failures and exact uncertain creation recovery appear in a bounded nonmodal strip
+directly below the tab row while the current pane remains mounted.
 Each explicit creation or retained-resource selection opens/selects the tab keyed
 by the original terminal ID. The active terminal occupies the complete content
 region beside persistent Info; the former independent bottom dock and its
@@ -1070,7 +1074,11 @@ original terminal mutation controllers remain mounted. Departure disposes only
 the output/input attachment, discards unsent bytes with its original notice and
 never closes the Worker-owned process. Reopening an original ID beyond the
 bounded inventory page uses an exact authenticated resource read before attachment.
-Presentation Close is separate from the explicit original process Close action.
+The terminal header retains only Terminals and the right-aligned + action.
+Details, shell override, manual Refresh, Hide terminals, Worker/shell/cwd/cleanup
+metadata and process Close controls are absent, including renderer failure.
+Presentation × closes only the client tab; original shell exit and Archive retain
+process cleanup ownership.
 
 Original authenticated inventory or stream resources dismiss a terminal only
 when schema-v1 state is exactly `exited` and `cleanup_verified` is boolean true.
@@ -1084,8 +1092,8 @@ other terminal content tab exists, selection uses the remaining inventory
 neighbor without creating a shell. The retained standalone dock uses inventory
 order. The final automatic dismissal uses
 the Session-owned presentation close and focus path, retaining mounted
-conversation/composer/Info. An explicitly opened empty inventory remains available
-for creation. EOF, errors, missing resources and malformed/unsupported observations
+conversation/composer/Info. Empty inventory participates only in explicit admission.
+EOF, errors, missing resources and malformed/unsupported observations
 never prove exit. Dismissal sends no process Close, deletion or replacement creation.
 
 Authenticated generated operations follow the
@@ -1094,10 +1102,10 @@ enables history reads/refresh/selection; capability errors remain distinct from
 missing support. Already-loaded background history Refresh does not insert a loading
 row or change the selected terminal geometry. Preserve Initial, Additional, Reload,
 Restore and error/retry guidance, unchanged polling, original output ownership and
-explicit user resize delivery. Opening, tab selection and reattachment cannot create shells.
-The compact dark header exposes explicit creation, retained-resource choices, Details and
-presentation Close. Details owns the future-creation shell override, Worker/shell/cwd, original
-state/cleanup and refresh/reattach/Close actions. Retain the accepted creation
+explicit user resize delivery. Mounting, passive tab selection and reattachment cannot create shells.
+The compact dark header exposes only Terminals and +. Retained-resource choices,
+compact status, original reattachment and uncertainty retries remain available.
+Retain the accepted creation
 and explicit selection beyond the bounded 50-record history payload window.
 
 Pin xterm 6.0.0, WebGL addon 0.19.0 and Fit addon 0.11.0 with their MIT notices.
@@ -1109,7 +1117,7 @@ makes the DOM renderer fallback fail closed; its source and ESM changes route
 both package entrypoints to the same patched ESM on repository Node24. Load
 WebGL before opening, dispose Terminal before addon teardown, and leave
 production style-src self unchanged. Renderer failure or context loss disables
-input and offers explicit original reattachment/Close. Do not install clipboard,
+input and offers explicit original reattachment. Do not install clipboard,
 web-link or attach addons; consume OSC 52/OSC 8 and keep detected links inert.
 Screen-reader output remains enabled and xterm diagnostic logging stays off.
 
@@ -3503,7 +3511,7 @@ session width or less use 12px padding and wrap controls below identity; retain
 short-height bounded scrolling, accessible composer and all original action
 guards. Reflow must retain workspace controller and draft identities.
 
-The feature use two primary workspace rows: an approximately 72px identity/action header and a 52px navigation row. The feature uses a fixed 40×40px icon-only Open tool trigger beside the horizontally scrolling tablist. Center the decorative 18px outlined wrench from `SessionIconKind.Tools` in the existing renderer with zero padding and 8px corners. Keep localized Open tool / 도구 열기 as both its accessible name and title hint, with original semantic hover/expanded/focus treatment and menu ARIA relationships. It exposes Diff, Files, Terminals, Browser and Diagnostics in that order through their original entry callbacks and eligibility, followed by Open Sidechat only for the independently eligible original parent. The flat menu uses the existing localized label, including Sidechat 열기, with the decorative outline chat glyph from `SessionIconKind.Sidechat`. Sidechat is absent from the session overflow menu. Fork keeps its independent shared eligibility and original dialog. Opening focuses the first enabled item; arrows, Home/End and native Enter/Space select entries. Escape closes only the menu and restores its trigger; outside dismissal preserves destination focus. The 220px popup stays viewport-bounded and scrolls vertically. Tool selection closes it and focuses the selected singleton descriptor without new resources or observation reads.
+The feature use two primary workspace rows: an approximately 72px identity/action header and a 52px navigation row. The feature uses a fixed 40×40px icon-only Open tool trigger beside the horizontally scrolling tablist. Center the decorative 18px outlined wrench from `SessionIconKind.Tools` in the existing renderer with zero padding and 8px corners. Keep localized Open tool / 도구 열기 as both its accessible name and title hint, with original semantic hover/expanded/focus treatment and menu ARIA relationships. It exposes Diff, Files, Terminals, Browser and Diagnostics in that order through their original entry callbacks and eligibility, followed by Open Sidechat only for the independently eligible original parent. The flat menu uses the existing localized label, including Sidechat 열기, with the decorative outline chat glyph from `SessionIconKind.Sidechat`. Sidechat is absent from the session overflow menu. Fork keeps its independent shared eligibility and original dialog. Opening focuses the first enabled item; arrows, Home/End and native Enter/Space select entries. Escape closes only the menu and restores its trigger; outside dismissal preserves destination focus. The 220px popup stays viewport-bounded and scrolls vertically. Tool selection closes it and focuses the selected descriptor. Terminals instead preserves the selected pane during its explicit authenticated admission reads, and selects/focuses only the verified returned original terminal.
 
 Tabs form a continuous gapless neutral editor strip attached to the active pane. Each tab is 40px high and at most 320px wide. Selected tabs use the surface background, 4px top corners, square bottom corners and a 2px accent underline; inactive tabs have transparent backgrounds and subtle separators. Every closeable tab encloses an always-visible 40px close target beside its truncated label, using sibling controls with independent focus treatment. This supersedes 's earlier rounded-shell appearance while preserving its enclosed close-control principle. Exactly one content region is active. Conversation is
 pinned first, initially selected and cannot be closed or moved. Files and Diff
@@ -5257,7 +5265,33 @@ Keep every existing expanded field, inspection/job/error/remediation/retry, URL 
 
 ### Explicit first-terminal opening
 
-The Terminals toolbar/menu action is explicit open-or-create intent under the terminal contract. Show localized Opening terminal… while resolving, reuse eligible original terminals including later inventory pages, or create one only after complete successful reads and verified independent cleanup. Preserve full-pane tab selection and attached-input focus, + for additional terminals, shell override, exact uncertain retry and all server admission. Presentation departure cancels only unresolved intent; opening, mounting, reconnecting, polling and exits never replace shells.
+The Terminals toolbar/menu action is explicit open-or-create intent under the
+terminal contract. Retain the selected pane during bounded capability and inventory
+resolution and original admission; display localized feedback and observational
+read Retry directly below the tab row. Coalesce gestures and capture the exact
+session, revision, request ID and default Worker shell with 24×80 dimensions.
+Departure or later explicit pane selection cancels unresolved unsent intent;
+accepted/uncertain operations retain exact recovery without hijacking later focus.
+Mount, reconnect, polling and exits never replace shells.
+
+Connection-owned memory assigns monotonic session-local numbers at first verified
+admission/open or authenticated inventory encounter. Direct tabs and inventory
+share Terminal N / 터미널 N names with no UUID in visible, accessible or title
+labels. Original IDs remain keys and authority. Numbers survive tab close/reopen,
+pagination, reordering, eviction, navigation and same-identity reconnect. They are
+never reused, remain independent across sessions and reset on connection replacement
+or application restart. Labels do not alter focus, 40px tabs/close targets, 320px
+maximum width, semantic themes, truncation, scroll, roving or positional selection.
+
+`+` and target-bound primary+T share explicit additional creation using the original
+session/revision, a fresh request ID, default shell and 24×80 dimensions. The fixed
+TerminalCreate action has Terminal target context, Session scope, priority 2,
+target input policy and terminal eligibility. The renderer consumes it before PTY
+bytes; disabled matches do not create or fall through. Preserve composition,
+repeat, modifiers, modal, hidden/inert, inactive/archive, busy/uncertain and opening
+fences. Help describes terminal-input-only eligibility and cannot invoke it. The
+seven editable preferences and their custom primary+T bindings remain valid in
+other targets and screens; no global T reservation or eighth preference exists.
 
 ## Detailed session startup
 

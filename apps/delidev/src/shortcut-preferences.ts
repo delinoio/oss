@@ -32,6 +32,7 @@ export enum ShortcutGroup {
 }
 export enum ShortcutTargetContext {
   SessionMessage = "session-message",
+  Terminal = "terminal",
   CreationMessage = "creation-message",
   Search = "search",
   Files = "files",
@@ -118,6 +119,16 @@ export const editableShortcutCatalog: readonly CatalogAction[] = [
   },
 ];
 export const readOnlyShortcutCatalog: readonly CatalogAction[] = [
+  {
+    target: ShortcutTargetContext.Terminal,
+    id: ShortcutId.TerminalCreate,
+    label: "shortcuts.createTerminal",
+    group: ShortcutGroup.Session,
+    scopes: [Surface.Sessions],
+    priority: 2,
+    input: ShortcutInput.Target,
+    defaults: [{ key: "t", primary: true }],
+  },
   {
     id: ShortcutId.ToggleSidebar,
     label: "sidebar-preference.toggle",

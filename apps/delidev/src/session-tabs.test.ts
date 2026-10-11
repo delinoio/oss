@@ -134,3 +134,38 @@ it("late original creation receipts cannot reopen a dismissed content tab", () =
   expect(store.snapshot("session").tabs).toHaveLength(1);
   expect(store.snapshot("session").selected).toBe(SessionTabKind.Conversation);
 });
+
+it("retains monotonic session-local terminal numbers through inventory and presentation changes", () => {
+  const store = new SessionTabsStore();
+  const inventory = store.terminalPresentation("session");
+  expect(inventory.number("later-page")).toBe(1);
+  store.open("session", { kind: SessionTabKind.Terminal, id: "opened" });
+  expect(store.snapshot("session").tabs[1]).toMatchObject({
+    id: "opened",
+    number: 2,
+  });
+  store.close(
+    "session",
+    sessionTabKey({ kind: SessionTabKind.Terminal, id: "opened" }),
+  );
+  store.open("session", { kind: SessionTabKind.Terminal, id: "later-page" });
+  store.open("session", { kind: SessionTabKind.Terminal, id: "opened" });
+  expect(
+    store
+      .snapshot("session")
+      .tabs.slice(1)
+      .map((tab) =>
+        tab.kind === SessionTabKind.Terminal ? tab.number : undefined,
+      ),
+  ).toEqual([1, 2]);
+  expect(inventory.number("new-original")).toBe(3);
+  expect(store.terminalPresentation("other-session").number("opened")).toBe(1);
+  expect(
+    new SessionTabsStore().terminalPresentation("session").number("opened"),
+  ).toBe(1);
+  expect(
+    sessionTabKey({ kind: SessionTabKind.Terminal, id: "opened", number: 99 }),
+  ).toBe(
+    sessionTabKey({ kind: SessionTabKind.Terminal, id: "opened", number: 2 }),
+  );
+});

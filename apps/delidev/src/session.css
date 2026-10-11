@@ -1359,3 +1359,20 @@
   min-height: 0;
   overflow: auto;
 }
+
+.session-navigation-region {
+  grid-area: 2 / 1;
+  min-width: 0;
+}
+.session-terminal-status:not(:empty) {
+  padding: 8px 12px;
+  max-height: 24vh;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  background: var(--surface-muted);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.session-terminal-status > p {
+  margin: 0;
+}

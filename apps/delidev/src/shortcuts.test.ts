@@ -470,3 +470,39 @@ it("runs the close-tab chord from terminal input once and consumes it when disab
   expect(disabled.run).not.toHaveBeenCalled();
   input.remove();
 });
+
+it("consumes fixed terminal creation only inside its target and never falls through disabled admission", () => {
+  const host = document.createElement("div"),
+    input = document.createElement("textarea");
+  host.dataset.shortcuts = "passthrough";
+  host.append(input);
+  document.body.append(host);
+  const create = definition({
+    id: ShortcutId.TerminalCreate,
+    scope: Surface.Search,
+    target: { current: host },
+    input: ShortcutInput.Target,
+    terminal: true,
+    bindings: [{ key: "t", primary: true }],
+  });
+  expect(
+    dispatch([create], { key: "t", code: "KeyT" }, input).defaultPrevented,
+  ).toBe(true);
+  expect(create.run).toHaveBeenCalledOnce();
+  expect(dispatch([create], { key: "t" }).defaultPrevented).toBe(false);
+  for (const extra of [
+    { repeat: true },
+    { isComposing: true },
+    { keyCode: 229 },
+    { altKey: true },
+  ])
+    expect(
+      dispatch([create], { key: "t", ...extra }, input).defaultPrevented,
+    ).toBe(false);
+  const disabled = { ...create, enabled: false, run: vi.fn() };
+  expect(dispatch([disabled], { key: "t" }, input).defaultPrevented).toBe(true);
+  expect(disabled.run).not.toHaveBeenCalled();
+  host.hidden = true;
+  expect(dispatch([create], { key: "t" }, input).defaultPrevented).toBe(false);
+  host.remove();
+});

@@ -1,6 +1,9 @@
-import { useTerminalTabShortcuts } from "./shortcut-provider";
+import { useShortcuts, useTerminalTabShortcuts } from "./shortcut-provider";
 // SPDX-License-Identifier: Apache-2.0
 import "./terminal-dock.css";
+import { createPortal } from "react-dom";
+import { ShortcutId, ShortcutInput } from "./shortcuts";
+import { Surface } from "./surface";
 import { useConversationPages } from "./conversation-pagination";
 import { ScrollContinuation } from "./scroll-continuation";
 import { ReadStage } from "./scroll-pagination";
@@ -49,6 +52,9 @@ export function SessionTerminals({
   session,
   close,
   active = true,
+  resolutionActive = active,
+  selectionKey = "",
+  statusHost,
   presentationChanged,
   selectedId,
   openTerminal,
@@ -61,20 +67,40 @@ export function SessionTerminals({
   session: Resource;
   close: () => void;
   active?: boolean;
+  resolutionActive?: boolean;
+  selectionKey?: string;
+  statusHost?: HTMLElement | null;
   presentationChanged?: (value: TerminalDockPresentation) => void;
   selectedId?: string;
   openTerminal?: (id: string) => void;
   dismissTerminal?: (id: string, fallback: string) => void;
   hideEmpty?: () => void;
   tabbed?: boolean;
-  openIntent?: { requestId: string; revision: bigint };
+  openIntent?: { requestId: string; revision: bigint; selected?: string };
   finishOpenIntent?: () => void;
 }) {
   useLocale();
   const tabsStore = useSessionTabsStore();
   const inventoryTransport = useTransport();
-  const latest = useRef({ active, session, finishOpenIntent, openTerminal });
-  latest.current = { active, session, finishOpenIntent, openTerminal };
+  const latest = useRef({
+    resolutionActive,
+    selectionKey,
+    session,
+    openIntent,
+    finishOpenIntent,
+    openTerminal,
+  });
+  latest.current = {
+    resolutionActive,
+    selectionKey,
+    session,
+    openIntent,
+    finishOpenIntent,
+    openTerminal,
+  };
+  // Accepted/uncertain requests outlive presentation. A later pane selection
+  // cannot be replaced by their delayed acknowledgment.
+  const admissionSelections = useRef(new Map<string, string>());
   const [openError, setOpenError] = useState<unknown>();
   const presentationRecords = tabsStore.terminalPresentation(session.id);
   const intents = useRetainedMutationIntents("terminal-control:");
@@ -96,9 +122,7 @@ export function SessionTerminals({
   const visibleBefore = useRef<string[]>([]);
   const observeRef = useRef<(value: Resource) => void>(() => {});
   const dock = useRef<HTMLElement>(null);
-  const [details, setDetails] = useState(false),
-    [maximized, setMaximized] = useState(false),
-    [height, setHeight] = useState<number>();
+  const [height, setHeight] = useState<number>();
   const [geometry, setGeometry] = useState({ width: 0, height: 0 }),
     [discarded, setDiscarded] = useState(false);
   useLayoutEffect(() => {
@@ -115,7 +139,7 @@ export function SessionTerminals({
   const actualHeight = terminalDockHeight(
     geometry.width,
     geometry.height,
-    maximized,
+    false,
     height,
   );
   const presentation =
@@ -140,25 +164,28 @@ export function SessionTerminals({
       ?.closest<HTMLElement>(".session-content")
       ?.style.setProperty("--terminal-dock-height", `${actualHeight}px`);
   }, [actualHeight]);
-  const [shell, setShell] = useState("");
   const [internalSelected, setSelected] = useState("");
   const selected = selectedId ?? internalSelected;
-  // Content-tab selection is owned by SessionTabBar. Retain it before the
-  // toolbar selects the inventory tab, whose selectedId is deliberately empty.
+  // Retain the last explicitly selected original terminal for reuse, even
+  // while another workspace pane remains selected during admission.
   useLayoutEffect(() => {
     if (selectedId) setSelected(selectedId);
   }, [selectedId]);
   const [createdTerminal, setCreatedTerminal] = useState<Resource>();
   const [selectedTerminal, setSelectedTerminal] = useState<Resource>();
   const listRoot = useRef<HTMLDivElement>(null);
-  const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
+  const status = useQuery(
+    SystemQuery.getStatus,
+    {},
+    { enabled: resolutionActive && (active || Boolean(openIntent)) },
+  );
   const supported =
     status.data?.capabilities.includes(SystemCapability.SESSION_TERMINALS_V1) ??
     false;
   const list = useConversationPages(
     EntityKind.TERMINAL,
     session.id,
-    active && supported,
+    resolutionActive && (active || Boolean(openIntent)) && supported,
     50,
     undefined,
     1000,
@@ -166,15 +193,34 @@ export function SessionTerminals({
   const create = useRetainedMutation(
     `terminal-create:${session.id}`,
     TerminalQuery.createTerminal,
-    (value) => {
+    (value, request) => {
       if (value.terminal && !presentationRecords.hidden(value.terminal.id)) {
         setCreatedTerminal(value.terminal);
         setSelectedTerminal(undefined);
         setSelected(value.terminal.id);
-        if (latest.current.active) openTerminal?.(value.terminal.id);
+        presentationRecords.number(value.terminal.id);
+        const origin = admissionSelections.current.get(
+          request.mutation?.requestId ?? "",
+        );
+        if (
+          latest.current.resolutionActive &&
+          origin !== undefined &&
+          origin === latest.current.selectionKey
+        )
+          latest.current.openTerminal?.(value.terminal.id);
+        admissionSelections.current.delete(request.mutation?.requestId ?? "");
       }
-      if (supported) void list.refresh();
+      if (supported && latest.current.resolutionActive) void list.refresh();
     },
+    (value, request) =>
+      Boolean(
+        value.terminal &&
+        value.terminal.kind === EntityKind.TERMINAL &&
+        value.terminal.sessionId === request.mutation?.id &&
+        value.terminal.schemaVersion === 1 &&
+        isEntityId(value.terminal.id) &&
+        value.terminal.revision > 0n,
+      ),
   );
   const blocked =
     !active ||
@@ -182,11 +228,28 @@ export function SessionTerminals({
     !supported ||
     create.busy ||
     create.uncertain ||
+    unsettled.has(selected) ||
     text(document(session).archive) !== "active";
+  const createAdditional = () => {
+    if (blocked) return;
+    const requestId = newRequestId();
+    admissionSelections.current.set(requestId, selectionKey);
+    void create.send({
+      mutation: {
+        requestId,
+        id: session.id,
+        expectedRevision: session.revision,
+      },
+      creationMode: TerminalCreationMode.UNSPECIFIED,
+      shellOverride: "",
+      rows: 24,
+      columns: 80,
+    });
+  };
   const resolution = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (!openIntent) return;
-    if (!active) {
+    if (!resolutionActive) {
       finishOpenIntent?.();
       return;
     }
@@ -200,9 +263,12 @@ export function SessionTerminals({
     setOpenError(undefined);
     const controller = new AbortController();
     let sent = false;
+    const originSelection = selectionKey;
     const current = () =>
       !controller.signal.aborted &&
-      latest.current.active &&
+      latest.current.resolutionActive &&
+      latest.current.openIntent?.requestId === openIntent.requestId &&
+      latest.current.selectionKey === originSelection &&
       latest.current.session.id === session.id;
     const run = async () => {
       try {
@@ -287,6 +353,7 @@ export function SessionTerminals({
           tokens.add(token);
         } while (token);
         if (!current()) return;
+        for (const row of records) presentationRecords.number(row.id);
         const retained = [createdTerminal, selectedTerminal].filter(
           (value): value is Resource => Boolean(value),
         );
@@ -334,6 +401,7 @@ export function SessionTerminals({
             Code.Aborted,
           );
         sent = true;
+        admissionSelections.current.set(openIntent.requestId, originSelection);
         void create.send({
           mutation: {
             requestId: openIntent.requestId,
@@ -342,7 +410,7 @@ export function SessionTerminals({
           },
           creationMode: TerminalCreationMode.REUSE_OR_CREATE,
           preferredTerminalId: reused?.id ?? "",
-          shellOverride: shell,
+          shellOverride: "",
           rows: 24,
           columns: 80,
         });
@@ -358,7 +426,13 @@ export function SessionTerminals({
       if (!sent && resolution.current === openIntent.requestId)
         resolution.current = undefined;
     };
-  }, [openIntent, active, supported, status.error, status.isFetching]);
+  }, [
+    openIntent,
+    resolutionActive,
+    supported,
+    status.error,
+    status.isFetching,
+  ]);
 
   // The accepted resource can be beyond the first history page. Retain just
   // that one explicit selection so history eviction never detaches its shell.
@@ -464,106 +538,8 @@ export function SessionTerminals({
       .filter((row) => !presentationRecords.hidden(row.id))
       .map((row) => row.id);
   }, [list.data, resource, intents, active]);
-  return (
-    <aside
-      ref={dock}
-      hidden={!active}
-      className="terminal-dock"
-      aria-label={copy("session-terminals.sessionTerminals_db991c")}
-    >
-      {!tabbed ? (
-        <div
-          role="separator"
-          tabIndex={0}
-          aria-orientation="horizontal"
-          aria-label={copy("session-terminals.resizeDock")}
-          aria-valuemin={Math.min(200, geometry.height * 0.7)}
-          aria-valuemax={Math.floor(geometry.height)}
-          aria-valuenow={Math.round(actualHeight)}
-          className="terminal-dock-separator"
-          onPointerDown={(event) => {
-            const target = event.currentTarget,
-              start = event.clientY,
-              initial = actualHeight;
-            target.setPointerCapture(event.pointerId);
-            const move = (next: PointerEvent) => {
-              setMaximized(false);
-              setHeight(initial + start - next.clientY);
-            };
-            const stop = () => {
-              target.removeEventListener("pointermove", move);
-              target.removeEventListener("pointerup", stop);
-              target.removeEventListener("pointercancel", stop);
-            };
-            target.addEventListener("pointermove", move);
-            target.addEventListener("pointerup", stop, { once: true });
-            target.addEventListener("pointercancel", stop, { once: true });
-          }}
-          onKeyDown={(event) => {
-            if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key))
-              return;
-            event.preventDefault();
-            setMaximized(false);
-            setHeight(
-              event.key === "Home"
-                ? 200
-                : event.key === "End"
-                  ? geometry.height * 0.7
-                  : actualHeight + (event.key === "ArrowUp" ? 20 : -20),
-            );
-          }}
-        />
-      ) : null}
-      <header className="terminal-dock-header">
-        <h3>{copy("session-terminals.terminals_7482c4")}</h3>
-        <button
-          type="button"
-          aria-label={copy("session-terminals.createTerminal_747b98")}
-          disabled={blocked}
-          onClick={() =>
-            void create.send({
-              mutation: {
-                requestId: newRequestId(),
-                id: session.id,
-                expectedRevision: session.revision,
-              },
-              shellOverride: shell,
-              rows: 24,
-              columns: 80,
-            })
-          }
-        >
-          +
-        </button>
-        <button
-          type="button"
-          aria-expanded={details}
-          onClick={() => setDetails((value) => !value)}
-        >
-          {copy("session-terminals.details")}
-        </button>
-        {!tabbed ? (
-          <button
-            type="button"
-            data-terminal-restore
-            onClick={() => {
-              if (actualHeight === geometry.height) {
-                setMaximized(false);
-                setHeight(geometry.height * 0.4);
-              } else setMaximized(true);
-            }}
-          >
-            {copy(
-              actualHeight === geometry.height
-                ? "session-terminals.restoreDock"
-                : "session-terminals.maximizeDock",
-            )}
-          </button>
-        ) : null}
-        <button type="button" onClick={close}>
-          {copy("session-terminals.hideTerminals_522e2b")}
-        </button>
-      </header>
+  const feedback = (
+    <>
       {openIntent || create.busy ? (
         <p role="status">{copy("session-terminals.openingTerminal")}</p>
       ) : null}
@@ -571,7 +547,7 @@ export function SessionTerminals({
         error={openError}
         actions={
           <button
-            disabled={!active || list.isFetching}
+            disabled={!resolutionActive || list.isFetching}
             onClick={() => {
               setOpenError(undefined);
               void list.refetch();
@@ -581,161 +557,16 @@ export function SessionTerminals({
           </button>
         }
       />
-      {discarded ? (
-        <p role="status">{copy("session-terminals.unsentDiscarded")}</p>
-      ) : null}
-      <div className="terminal-dock-details" hidden={!details}>
-        <p>{copy("session-terminals.terminalsRunOnThisSessionS_0699b6")}</p>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void create.send({
-              mutation: {
-                requestId: newRequestId(),
-                id: session.id,
-                expectedRevision: session.revision,
-              },
-              shellOverride: shell,
-              rows: 24,
-              columns: 80,
-            });
-          }}
-        >
-          <label>
-            {copy("session-terminals.workerShellOverride_b27d25")}
-            <input
-              value={shell}
-              onChange={(event) => setShell(event.target.value)}
-              placeholder={copy(
-                "session-terminals.workerAccountDefaultShell_2fd88a",
-              )}
-              disabled={blocked}
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </label>
-          <button disabled={blocked}>
-            {copy("session-terminals.createTerminal_747b98")}
-          </button>
-        </form>
-        <button
-          disabled={!active || !supported || list.isFetching}
-          onClick={() => {
-            if (active && supported) void list.refetch();
-          }}
-        >
-          {copy("session-terminals.refreshTerminals_6e87f2")}
-        </button>
-      </div>
-      <div
-        ref={listRoot}
-        role={tabbed ? "group" : "tablist"}
-        aria-label={copy("session-terminals.terminals_7482c4")}
-        className="terminal-tabs"
-      >
-        {tabs.map((row, index) => (
-          <button
-            key={row.id}
-            id={`terminal-tab-${row.id}`}
-            role={tabbed ? undefined : "tab"}
-            aria-selected={tabbed ? undefined : selected === row.id}
-            aria-controls={
-              selected === row.id ? `terminal-panel-${row.id}` : undefined
-            }
-            tabIndex={
-              tabbed || selected === row.id || (!selected && index === 0)
-                ? 0
-                : -1
-            }
-            onKeyDown={(event) => {
-              if (
-                tabbed ||
-                !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)
-              )
-                return;
-              event.preventDefault();
-              const elements = [
-                  ...(listRoot.current?.querySelectorAll<HTMLButtonElement>(
-                    "[role=tab]",
-                  ) ?? []),
-                ],
-                at = elements.indexOf(event.currentTarget),
-                next =
-                  event.key === "Home"
-                    ? 0
-                    : event.key === "End"
-                      ? elements.length - 1
-                      : (at +
-                          (event.key === "ArrowRight" ? 1 : -1) +
-                          elements.length) %
-                        elements.length;
-              elements[next]?.focus();
-              elements[next]?.click();
-            }}
-            onClick={() => {
-              openTerminal?.(row.id);
-              setSelected(row.id);
-              const value =
-                list.data?.resources.find((value) => value.id === row.id) ??
-                (createdTerminal?.id === row.id
-                  ? createdTerminal
-                  : selectedTerminal?.id === row.id
-                    ? selectedTerminal
-                    : undefined);
-              if (value) {
-                setSelectedTerminal(value);
-                setCreatedTerminal(undefined);
-              } else {
-                const page = list.pages.find((page) =>
-                  page.rows.some((value) => value.id === row.id),
-                );
-                if (page) list.restore(page.token);
-              }
-            }}
-          >
-            <LocalizedText
-              id="session-terminals.terminal_8058ce"
-              components={{
-                s0: <>{index + 1}</>,
-                s1: (
-                  <>
-                    {statusLabel(
-                      text(
-                        document(
-                          list.data?.resources.find(
-                            (value) => value.id === row.id,
-                          ) ?? (resource?.id === row.id ? resource : undefined),
-                        ).state,
-                      ),
-                    )}
-                  </>
-                ),
-              }}
-            />
-          </button>
-        ))}
-      </div>
-      <ScrollContinuation
-        showInitial={!(list.loaded && list.loading === ReadStage.Refresh)}
-        query={list}
-        root={listRoot}
-        active={active && supported}
-        label={copy("session-terminals.terminalHistoryPages_2ace98")}
-      />
-      {supported && list.loaded && !tabs.length && !list.error ? (
-        <p role="status">{copy("session-terminals.emptyInventory")}</p>
-      ) : null}
       {!supported && !status.error ? (
         <p role="status">
           {copy("session-terminals.waitingForAServerThatSupports_e0becc")}
         </p>
       ) : null}
-      <Problem error={selectedRead.error} />
       <Problem
         error={status.error}
         actions={
           <button
-            disabled={!active || status.isFetching}
+            disabled={!resolutionActive || status.isFetching}
             onClick={() => void status.refetch()}
           >
             {copy("session-terminals.retryCapability")}
@@ -749,31 +580,207 @@ export function SessionTerminals({
           {copy("session-terminals.retryTheSameTerminalCreation_bc3946")}
         </button>
       ) : null}
-      {active && resource ? (
-        <TerminalView
-          key={resource.id}
-          resource={resource}
-          details={details}
-          discarded={() => setDiscarded(true)}
-          refresh={() => {
-            if (supported) void list.refresh();
-          }}
-          observe={(value) => observeRef.current(value)}
+    </>
+  );
+  return (
+    <>
+      {resolutionActive && statusHost
+        ? createPortal(feedback, statusHost)
+        : null}
+      <aside
+        ref={dock}
+        hidden={!active}
+        className="terminal-dock"
+        aria-label={copy("session-terminals.sessionTerminals_db991c")}
+      >
+        {!tabbed ? (
+          <div
+            role="separator"
+            tabIndex={0}
+            aria-orientation="horizontal"
+            aria-label={copy("session-terminals.resizeDock")}
+            aria-valuemin={Math.min(200, geometry.height * 0.7)}
+            aria-valuemax={Math.floor(geometry.height)}
+            aria-valuenow={Math.round(actualHeight)}
+            className="terminal-dock-separator"
+            onPointerDown={(event) => {
+              const target = event.currentTarget,
+                start = event.clientY,
+                initial = actualHeight;
+              target.setPointerCapture(event.pointerId);
+              const move = (next: PointerEvent) => {
+                setHeight(initial + start - next.clientY);
+              };
+              const stop = () => {
+                target.removeEventListener("pointermove", move);
+                target.removeEventListener("pointerup", stop);
+                target.removeEventListener("pointercancel", stop);
+              };
+              target.addEventListener("pointermove", move);
+              target.addEventListener("pointerup", stop, { once: true });
+              target.addEventListener("pointercancel", stop, { once: true });
+            }}
+            onKeyDown={(event) => {
+              if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key))
+                return;
+              event.preventDefault();
+              setHeight(
+                event.key === "Home"
+                  ? 200
+                  : event.key === "End"
+                    ? geometry.height * 0.7
+                    : actualHeight + (event.key === "ArrowUp" ? 20 : -20),
+              );
+            }}
+          />
+        ) : null}
+        {active && !statusHost ? feedback : null}
+        <header className="terminal-dock-header">
+          <h3>{copy("session-terminals.terminals_7482c4")}</h3>
+          <button
+            type="button"
+            aria-label={copy("session-terminals.createTerminal_747b98")}
+            disabled={blocked}
+            onClick={createAdditional}
+          >
+            +
+          </button>
+        </header>
+        {discarded ? (
+          <p role="status">{copy("session-terminals.unsentDiscarded")}</p>
+        ) : null}
+        <div
+          ref={listRoot}
+          role={tabbed ? "group" : "tablist"}
+          aria-label={copy("session-terminals.terminals_7482c4")}
+          className="terminal-tabs"
+        >
+          {tabs.map((row, index) => (
+            <button
+              key={row.id}
+              id={`terminal-tab-${row.id}`}
+              role={tabbed ? undefined : "tab"}
+              aria-selected={tabbed ? undefined : selected === row.id}
+              aria-controls={
+                selected === row.id ? `terminal-panel-${row.id}` : undefined
+              }
+              tabIndex={
+                tabbed || selected === row.id || (!selected && index === 0)
+                  ? 0
+                  : -1
+              }
+              onKeyDown={(event) => {
+                if (
+                  tabbed ||
+                  !["ArrowLeft", "ArrowRight", "Home", "End"].includes(
+                    event.key,
+                  )
+                )
+                  return;
+                event.preventDefault();
+                const elements = [
+                    ...(listRoot.current?.querySelectorAll<HTMLButtonElement>(
+                      "[role=tab]",
+                    ) ?? []),
+                  ],
+                  at = elements.indexOf(event.currentTarget),
+                  next =
+                    event.key === "Home"
+                      ? 0
+                      : event.key === "End"
+                        ? elements.length - 1
+                        : (at +
+                            (event.key === "ArrowRight" ? 1 : -1) +
+                            elements.length) %
+                          elements.length;
+                elements[next]?.focus();
+                elements[next]?.click();
+              }}
+              onClick={() => {
+                finishOpenIntent?.();
+                openTerminal?.(row.id);
+                setSelected(row.id);
+                const value =
+                  list.data?.resources.find((value) => value.id === row.id) ??
+                  (createdTerminal?.id === row.id
+                    ? createdTerminal
+                    : selectedTerminal?.id === row.id
+                      ? selectedTerminal
+                      : undefined);
+                if (value) {
+                  setSelectedTerminal(value);
+                  setCreatedTerminal(undefined);
+                } else {
+                  const page = list.pages.find((page) =>
+                    page.rows.some((value) => value.id === row.id),
+                  );
+                  if (page) list.restore(page.token);
+                }
+              }}
+            >
+              <LocalizedText
+                id="session-terminals.terminal_8058ce"
+                components={{
+                  s0: <>{presentationRecords.number(row.id)}</>,
+                  s1: (
+                    <>
+                      {statusLabel(
+                        text(
+                          document(
+                            list.data?.resources.find(
+                              (value) => value.id === row.id,
+                            ) ??
+                              (resource?.id === row.id ? resource : undefined),
+                          ).state,
+                        ),
+                      )}
+                    </>
+                  ),
+                }}
+              />
+            </button>
+          ))}
+        </div>
+        <ScrollContinuation
+          showInitial={!(list.loaded && list.loading === ReadStage.Refresh)}
+          query={list}
+          root={listRoot}
+          active={active && supported}
+          label={copy("session-terminals.terminalHistoryPages_2ace98")}
         />
-      ) : null}
-    </aside>
+        {supported && list.loaded && !tabs.length && !list.error ? (
+          <p role="status">{copy("session-terminals.emptyInventory")}</p>
+        ) : null}
+        <Problem error={selectedRead.error} />
+        {active && resource ? (
+          <TerminalView
+            key={resource.id}
+            resource={resource}
+            createAdditional={createAdditional}
+            createBlocked={blocked}
+            discarded={() => setDiscarded(true)}
+            refresh={() => {
+              if (supported) void list.refresh();
+            }}
+            observe={(value) => observeRef.current(value)}
+          />
+        ) : null}
+      </aside>
+    </>
   );
 }
 
 function TerminalView({
   resource,
-  details,
+  createAdditional,
+  createBlocked,
   discarded,
   refresh,
   observe,
 }: {
   resource: Resource;
-  details: boolean;
+  createAdditional: () => void;
+  createBlocked: boolean;
   discarded: () => void;
   refresh: () => void;
   observe: (value: Resource) => void;
@@ -846,6 +853,20 @@ function TerminalView({
     text(data.state) !== "running" ||
     !!data.close_request_id ||
     state !== OutputState.Attached;
+  useShortcuts([
+    {
+      id: ShortcutId.TerminalCreate,
+      scope: Surface.Sessions,
+      label: "shortcuts.createTerminal",
+      bindings: [{ key: "t", primary: true }],
+      input: ShortcutInput.Target,
+      target: host,
+      terminal: true,
+      enabled:
+        !createBlocked && !control.busy && !control.uncertain && !pending,
+      run: createAdditional,
+    },
+  ]);
   const canType =
     !rendererUnavailable &&
     !deliveryError &&
@@ -1056,25 +1077,6 @@ function TerminalView({
       <footer role="status">
         {copy(`session-terminals.${state}`)} · {statusLabel(text(data.state))}
       </footer>
-      <div className="terminal-resource-details" hidden={!details}>
-        <p>
-          <LocalizedText
-            id="session-terminals.worker_5a5ff9"
-            components={{
-              s0: <>{text(data.machine_id)}</>,
-              s1: <br />,
-              s2: <>{text(data.shell)}</>,
-              s3: <br />,
-              s4: <>{text(data.cwd)}</>,
-            }}
-          />
-        </p>
-        <p>
-          {data.cleanup_verified
-            ? copy("session-terminals.processCleanupVerified_024000")
-            : copy("session-terminals.processCleanupPending_efa78d")}
-        </p>
-      </div>
       <Problem error={error || control.error} />
       {state === OutputState.Detached ||
       rendererUnavailable ||
@@ -1090,30 +1092,6 @@ function TerminalView({
             {copy("session-terminals.retryTheSameTerminalOperation_92eff7")}
           </button>
         </>
-      ) : null}
-      {details || rendererUnavailable ? (
-        <button
-          type="button"
-          disabled={
-            control.busy ||
-            control.uncertain ||
-            !!data.cleanup_verified ||
-            !!data.close_request_id
-          }
-          onClick={() => {
-            if (queue.current.discard()) discarded();
-            void control.send({
-              mutation: {
-                id: terminal.id,
-                expectedRevision: terminal.revision,
-                requestId: newRequestId(),
-              },
-              action: TerminalAction.CLOSE,
-            });
-          }}
-        >
-          {copy("session-terminals.closeTerminal_7d02fb")}
-        </button>
       ) : null}
       {object(data.problem).message ? (
         <ServiceProblem

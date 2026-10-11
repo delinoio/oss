@@ -678,7 +678,8 @@ export const TranscriptItem = memo(function TranscriptItem({
                     {text(delta.kind)}
                     {typeof delta.index === "number"
                       ? ` ${delta.index}`
-                      : ""}: {text(delta.text)}
+                      : ""}:{" "}
+                    {text(delta.text)}
                   </pre>
                 );
               })}
@@ -874,10 +875,17 @@ export function SessionView({
   const upperContent = useRef<HTMLDivElement>(null);
   const [filesOpened, setFilesOpened] = useState(false);
   const [terminalOpened, setTerminalOpened] = useState(false);
-  const [pendingTerminalOpen, setPendingTerminalOpen] = useState<string>();
+  const [terminalSelectionEpoch, setTerminalSelectionEpoch] = useState(0);
+  const [pendingTerminalOpen, setPendingTerminalOpen] = useState<{
+    requestId: string;
+    selected: string;
+  }>();
+  const [terminalStatusHost, setTerminalStatusHost] =
+    useState<HTMLDivElement | null>(null);
   const [terminalOpenIntent, setTerminalOpenIntent] = useState<{
     requestId: string;
     revision: bigint;
+    selected: string;
   }>();
   const [browserOpened, setBrowserOpened] = useState(false);
   const [recoveryLauncherTarget, setRecoveryLauncherTarget] =
@@ -1009,16 +1017,11 @@ export function SessionView({
       ),
   );
   // A toolbar gesture can precede the initial session snapshot. Capture its
-  // revision only after authenticated metadata arrives, while the same tool
-  // remains selected; navigation cancels this unsent intent.
+  // revision only after authenticated metadata arrives, while the original
+  // workspace pane remains selected; navigation cancels this unsent intent.
   useEffect(() => {
     if (!pendingTerminalOpen) return;
-    if (
-      !active ||
-      ![SessionTabKind.Terminal, SessionTabKind.Terminals].includes(
-        tabs.tab.kind,
-      )
-    ) {
+    if (!active || tabs.selected !== pendingTerminalOpen.selected) {
       setPendingTerminalOpen(undefined);
       return;
     }
@@ -1026,13 +1029,21 @@ export function SessionView({
       setTerminalOpenIntent(
         (current) =>
           current ?? {
-            requestId: pendingTerminalOpen,
+            requestId: pendingTerminalOpen.requestId,
             revision: session.revision,
+            selected: pendingTerminalOpen.selected,
           },
       );
       setPendingTerminalOpen(undefined);
     }
-  }, [pendingTerminalOpen, active, tabs.tab.kind, session]);
+  }, [pendingTerminalOpen, active, tabs.selected, session]);
+  useEffect(() => {
+    if (
+      terminalOpenIntent &&
+      (!active || tabs.selected !== terminalOpenIntent.selected)
+    )
+      setTerminalOpenIntent(undefined);
+  }, [terminalOpenIntent, active, tabs.selected]);
   const waitingRevision = `${session?.revision ?? 0n}:${live.generation}:${[
     ...live.resources.values(),
   ]
@@ -1263,6 +1274,9 @@ export function SessionView({
           active,
           enabled: index < tabs.tabs.length,
           run: () => {
+            setTerminalSelectionEpoch((value) => value + 1);
+            setPendingTerminalOpen(undefined);
+            setTerminalOpenIntent(undefined);
             document
               .getElementById(`session-tab-${id}-${index}`)
               ?.focus({ preventScroll: true });
@@ -1444,10 +1458,7 @@ export function SessionView({
   const closeTerminal = closePanel;
   const hideEmptyTerminals = () => {
     for (const tab of tabs.store.snapshot(id).tabs) {
-      if (
-        tab.kind === SessionTabKind.Terminal ||
-        tab.kind === SessionTabKind.Terminals
-      )
+      if (tab.kind === SessionTabKind.Terminal)
         tabs.store.close(id, sessionTabKey(tab));
     }
     const current = tabs.store.snapshot(id);
@@ -1466,17 +1477,25 @@ export function SessionView({
         setTerminalOpenIntent(
           (current) =>
             current ?? {
-              requestId: newRequestId(),
+              requestId: pendingTerminalOpen?.requestId ?? newRequestId(),
               revision: session.revision,
+              selected: tabs.selected,
             },
         );
-      else setPendingTerminalOpen((current) => current ?? newRequestId());
+      else
+        setPendingTerminalOpen(
+          (current) =>
+            current ?? { requestId: newRequestId(), selected: tabs.selected },
+        );
+      return;
     }
+    setTerminalSelectionEpoch((value) => value + 1);
+    setPendingTerminalOpen(undefined);
+    setTerminalOpenIntent(undefined);
     if (next === SessionPanel.Browser) setBrowserOpened(true);
     const kinds = {
       [SessionPanel.Files]: SessionTabKind.Files,
       [SessionPanel.Diff]: SessionTabKind.Diff,
-      [SessionPanel.Terminals]: SessionTabKind.Terminals,
       [SessionPanel.Browser]: SessionTabKind.Browser,
       [SessionPanel.Diagnostics]: SessionTabKind.Diagnostics,
     } as const;
@@ -1800,42 +1819,57 @@ export function SessionView({
           </div>
         </header>
         {!embedded ? (
-          <div className="session-navigation">
-            <SessionTabBar
-              id={id}
-              tabs={tabs.tabs}
-              selected={tabs.selected}
-              select={(key) => tabs.store.select(id, key)}
-              close={closeTab}
-              closeAria={shortcuts.aria(ShortcutId.SessionCloseTab)}
-            />
-            <SessionToolMenu active={active}>
-              {tools.map((tool) => (
-                <button
-                  role="menuitem"
-                  key={tool.panel}
-                  type="button"
-                  ref={panelButtons[tool.panel]}
-                  disabled={
-                    tool.panel === SessionPanel.Terminals &&
-                    Boolean(object(data.fork).sidechat_parent_snapshot)
-                  }
-                  onClick={() => togglePanel(tool.panel)}
-                >
-                  <SessionIcon kind={tool.icon} />
-                  {tool.label}
-                </button>
-              ))}
-              {session &&
-              tabs.tab.kind !== SessionTabKind.Sidechat &&
-              tabs.tab.kind !== SessionTabKind.PendingSidechat ? (
-                <SessionForkAction
-                  source={session}
-                  action={SessionCreationAction.Sidechat}
-                  disabled={control.busy || control.uncertain}
-                />
+          <div className="session-navigation-region">
+            <div className="session-navigation">
+              <SessionTabBar
+                id={id}
+                tabs={tabs.tabs}
+                selected={tabs.selected}
+                select={(key) => {
+                  setTerminalSelectionEpoch((value) => value + 1);
+                  setPendingTerminalOpen(undefined);
+                  setTerminalOpenIntent(undefined);
+                  tabs.store.select(id, key);
+                }}
+                close={closeTab}
+                closeAria={shortcuts.aria(ShortcutId.SessionCloseTab)}
+              />
+              <SessionToolMenu active={active}>
+                {tools.map((tool) => (
+                  <button
+                    role="menuitem"
+                    key={tool.panel}
+                    type="button"
+                    ref={panelButtons[tool.panel]}
+                    disabled={
+                      tool.panel === SessionPanel.Terminals &&
+                      Boolean(object(data.fork).sidechat_parent_snapshot)
+                    }
+                    onClick={() => togglePanel(tool.panel)}
+                  >
+                    <SessionIcon kind={tool.icon} />
+                    {tool.label}
+                  </button>
+                ))}
+                {session &&
+                tabs.tab.kind !== SessionTabKind.Sidechat &&
+                tabs.tab.kind !== SessionTabKind.PendingSidechat ? (
+                  <SessionForkAction
+                    source={session}
+                    action={SessionCreationAction.Sidechat}
+                    disabled={control.busy || control.uncertain}
+                  />
+                ) : null}
+              </SessionToolMenu>
+            </div>
+            <div
+              ref={setTerminalStatusHost}
+              className="session-terminal-status"
+            >
+              {pendingTerminalOpen && active ? (
+                <p role="status">{copy("session-terminals.openingTerminal")}</p>
               ) : null}
-            </SessionToolMenu>
+            </div>
           </div>
         ) : null}
         <div className="session-content">
@@ -2624,18 +2658,18 @@ export function SessionView({
               ) : null}
               {session && terminalOpened ? (
                 <div
-                  hidden={
-                    !active ||
-                    ![
-                      SessionTabKind.Terminal,
-                      SessionTabKind.Terminals,
-                    ].includes(tabs.tab.kind)
-                  }
+                  hidden={!active || tabs.tab.kind !== SessionTabKind.Terminal}
                   className="session-app-panel session-terminal-pane"
                 >
                   <SessionTerminals
                     session={session}
                     close={closeTerminal}
+                    resolutionActive={active}
+                    selectionKey={JSON.stringify([
+                      tabs.selected,
+                      terminalSelectionEpoch,
+                    ])}
+                    statusHost={terminalStatusHost}
                     openIntent={terminalOpenIntent}
                     finishOpenIntent={() => setTerminalOpenIntent(undefined)}
                     tabbed
@@ -2675,13 +2709,7 @@ export function SessionView({
                             ?.focus({ preventScroll: true });
                         });
                     }}
-                    active={
-                      active &&
-                      [
-                        SessionTabKind.Terminal,
-                        SessionTabKind.Terminals,
-                      ].includes(tabs.tab.kind)
-                    }
+                    active={active && tabs.tab.kind === SessionTabKind.Terminal}
                   />
                 </div>
               ) : null}

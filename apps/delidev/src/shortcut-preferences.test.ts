@@ -9,6 +9,7 @@ import {
   fixedNativeShortcutCatalog,
   shortcutConflicts,
   ShortcutOverrideState,
+  ShortcutTargetContext,
   validShortcutChord,
 } from "./shortcut-preferences";
 import { ShortcutId, ShortcutPlatform, ShortcutScope } from "./shortcuts";
@@ -275,3 +276,27 @@ it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])(
     ).toBeUndefined();
   },
 );
+
+it("keeps terminal creation fixed and preserves all seven custom primary-T targets", () => {
+  const terminal = readOnlyShortcutCatalog.find(
+    (action) => action.id === ShortcutId.TerminalCreate,
+  );
+  expect(terminal).toMatchObject({
+    target: ShortcutTargetContext.Terminal,
+    priority: 2,
+    scopes: [Surface.Sessions],
+    defaults: [{ key: "t", primary: true }],
+  });
+  expect(editableShortcutCatalog).toHaveLength(7);
+  expect(validShortcutChord({ key: "t", shift: false })).toBe(true);
+  for (const action of editableShortcutCatalog) {
+    const overrides = {
+      [action.id]: {
+        state: ShortcutOverrideState.Binding,
+        chord: { key: "t", shift: false },
+      },
+    } as const;
+    expect(shortcutConflicts(overrides)).toEqual([]);
+    expect(parseShortcutOverrides(overrides)).toEqual(overrides);
+  }
+});
