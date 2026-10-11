@@ -3714,7 +3714,9 @@ cancel publication and discard bytes through their original read owners. Accepte
 or uncertain mutations retain original connection-owned request/controller identity;
 selection, closure and reopening never create a resource or retry a mutation.
 
-Info remains persistent beside the active pane, with the original section focus,
+Info remains persistent beside the active pane except during validated initial
+Conversation startup as defined under [Detailed session startup](#detailed-session-startup).
+Keep the original section focus,
 recovery and budget controls. At 900px available session width reserve its 360px
 right rail; below 900px reflow the same Info DOM into the bounded scrolling band
 above content. Each active resource occupies the remaining full-width region,
@@ -5608,7 +5610,29 @@ precedence and suppress animation. Failure includes inert original observed-stag
 context alongside independent cleanup guidance. Reconnection performs reads only.
 
 Keep the polite status node, composer, drafts, tools, Info and all original
-controllers mounted. English/Korean labels and semantic tokens wrap within narrow
+controllers mounted. During a validated initial startup projection in the active
+ordinary Session or General Chat Conversation, hide Info with `hidden` and `inert`.
+Require original first-input ownership in addition to the accepted progress,
+revision, transcript and Worker-presence predicates. Preparing workspace, Waiting
+to start, Starting agent and Waiting for response all hide Info, including the
+compact row after initial input publication. A later follow-up, replacement
+execution, unsupported workspace or unknown first-input evidence retains Info.
+Before hiding focused Info, move focus to its original connected, enabled and
+visible composer, or to the Session heading when the composer is unavailable.
+Restoration does not move focus. Retain Info controller and query activity while
+hidden; visibility alone must not recreate requests, mutations, editors or drafts.
+
+Remove the hidden Info rail's 360px column and 24px gap at wide widths and the
+bounded band below 900px. The conversation occupies the full remaining width;
+the detailed unboxed startup list retains its centered 380px maximum width.
+Actual assistant/tool/progress response evidence restores Info, including when
+the response payload later leaves the transcript or an older revision arrives.
+Failure, Stop/pause, archive, recovery, budget, approval, user-input, uncertainty,
+stale or incomplete observations and connection problems restore normal Info
+whenever they suppress the startup projection. Tool tabs retain normal Info
+visibility; Sidechat retains its independent behavior and child controller.
+
+English/Korean labels and semantic tokens wrap within narrow
 or 200% layouts, reduced motion disables animation, and disclosure changes never
 move focus. Old peers retain the existing coarse presentation without fabricated
 details or execution rejection. The independently owned initial-readiness warning

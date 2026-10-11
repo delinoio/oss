@@ -12,6 +12,7 @@ import { encode } from "./documents";
 import { conversationProjection } from "./tool-turn-projection";
 import {
   initialExecutionPending,
+  initialSessionStartup,
   progressMessages,
   progressResponseOwner,
   responseSuppressesProgress,
@@ -39,6 +40,7 @@ const progress = {
   accepted_inputs: [{ input_id: inputId, prompt_digest: "a".repeat(64) }],
 };
 const body = {
+  workspace: "general-chat",
   archive: "active",
   recovery: "none",
   dispatch: "claimed",
@@ -99,6 +101,132 @@ function message(extra: object = {}, revision = 1n, id = newRequestId()) {
     revision,
   );
 }
+const hidesInfo = (o: ProgressObservation) =>
+  initialSessionStartup(o.session, sessionProgress(o), o.queueCurrent, o.queue);
+it.each(["local", "worktree", "general-chat"])(
+  "hides Info only for the proven original input in %s",
+  (workspace) => {
+    expect(hidesInfo(observation({ workspace }))).toBe(true);
+    expect(hidesInfo(observation({ workspace, execution: undefined }))).toBe(
+      true,
+    );
+    expect(hidesInfo(observation({ workspace, last_input_sequence: 2 }))).toBe(
+      false,
+    );
+    expect(
+      hidesInfo(observation({ workspace, initial_execution: undefined })),
+    ).toBe(false);
+    expect(
+      hidesInfo(
+        observation({
+          workspace,
+          execution: {
+            ...progress,
+            accepted_inputs: [
+              ...progress.accepted_inputs,
+              { input_id: newRequestId(), prompt_digest: "b".repeat(64) },
+            ],
+          },
+        }),
+      ),
+    ).toBe(false);
+  },
+);
+it("requires complete first-queue ownership before hiding pre-claim Info", () => {
+  const queued = resource(
+    EntityKind.QUEUE,
+    {
+      delivery: "queued",
+      sequence: 1,
+      content_revision: 1,
+      mode: "execute",
+      prompt: "Original input",
+    },
+    inputId,
+  );
+  const first = {
+    outcome: "not-started",
+    dispatch: "ready",
+    pending_inputs: 1,
+    last_input_sequence: 1,
+    active_execution_id: undefined,
+    initial_execution: undefined,
+    execution: undefined,
+  };
+  for (const state of ["pending", "ready"]) {
+    const o = observation(
+      { ...first, preparation: { job_id: jobId, state } },
+      { queue: [queued] },
+    );
+    expect(hidesInfo(o)).toBe(true);
+    expect(hidesInfo({ ...o, queueCurrent: false })).toBe(false);
+    expect(hidesInfo({ ...o, queue: [] })).toBe(false);
+    expect(
+      hidesInfo(
+        observation(
+          { ...first, last_input_sequence: undefined },
+          { queue: [queued] },
+        ),
+      ),
+    ).toBe(false);
+  }
+  const later = resource(EntityKind.QUEUE, {
+    delivery: "queued",
+    sequence: 2,
+    content_revision: 1,
+    mode: "execute",
+    prompt: "Follow-up",
+  });
+  expect(hidesInfo(observation({}, { queue: [later] }))).toBe(false);
+});
+it("keeps Info visible for unsupported workspace, changed execution and unknown legacy ownership", () => {
+  expect(hidesInfo(observation({ workspace: "unknown" }))).toBe(false);
+  const successor = newRequestId(),
+    successorInput = newRequestId();
+  const o = observation({
+    active_execution_id: successor,
+    current_execution: { id: successor, input_id: successorInput },
+    execution: {
+      ...progress,
+      execution_id: successor,
+      input_id: successorInput,
+      accepted_inputs: [
+        { input_id: successorInput, prompt_digest: "a".repeat(64) },
+      ],
+    },
+  });
+  expect(sessionProgress(o)).toBe(SessionProgressPhase.Response);
+  expect(hidesInfo(o)).toBe(false);
+  const accepted = resource(
+    EntityKind.QUEUE,
+    {
+      sequence: 1,
+      content_revision: 1,
+      mode: "execute",
+      prompt: "Original input",
+      delivery: "accepted",
+      execution_id: executionId,
+    },
+    inputId,
+  );
+  const legacy = observation(
+    { execution: { ...progress, accepted_inputs: undefined } },
+    { queue: [accepted] },
+  );
+  expect(sessionProgress(legacy)).toBe(SessionProgressPhase.Response);
+  expect(hidesInfo(legacy)).toBe(false);
+  expect(
+    hidesInfo(
+      observation(
+        {
+          execution: { ...progress, accepted_inputs: undefined },
+          last_input_sequence: 1,
+        },
+        { queue: [accepted] },
+      ),
+    ),
+  ).toBe(true);
+});
 it("resolves the complete ordered preparation/queue/claim/acceptance phases", () => {
   const queued = resource(
     EntityKind.QUEUE,
@@ -194,13 +322,17 @@ it.each([
 ])(
   "suppresses blocked, terminal, uncertain, waiting and foreign metadata %j",
   (extra) => {
-    expect(sessionProgress(observation(extra))).toBeUndefined();
+    const o = observation(extra);
+    expect(sessionProgress(o)).toBeUndefined();
+    expect(hidesInfo(o)).toBe(false);
   },
 );
 it.each([{ current: false }, { complete: false }, { blocked: true }])(
   "does not infer live progress from unavailable observation %j",
   (option) => {
-    expect(sessionProgress(observation({}, option))).toBeUndefined();
+    const o = observation({}, option);
+    expect(sessionProgress(o)).toBeUndefined();
+    expect(hidesInfo(o)).toBe(false);
   },
 );
 it("requires original queued input and complete current queue evidence", () => {

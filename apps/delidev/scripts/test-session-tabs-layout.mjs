@@ -365,6 +365,142 @@ try {
         );
         cases++;
       }
+  // Verify the retained Info rail and compact band both leave startup full width.
+  for (const language of ["en", "ko"])
+    for (const theme of ["light", "dark"])
+      for (const reducedMotion of ["reduce", "no-preference"])
+        for (const size of [
+          { width: 899, height: 640 },
+          { width: 900, height: 640 },
+          { width: 320, height: 480 },
+          { width: 560, height: 480, zoom: 2 },
+        ]) {
+          const zoom = size.zoom ?? 1;
+          await page.setViewportSize({
+            width: Math.ceil((size.width + 80) * zoom),
+            height: size.height * zoom,
+          });
+          await page.emulateMedia({ reducedMotion });
+          await page.goto(
+            `${origin}/?language=${language}&theme=${theme}&zoom=${zoom}&startup=1`,
+          );
+          const status =
+            language === "en" ? "Waiting for response" : "응답 대기 중";
+          await page.getByText(status, { exact: true }).waitFor();
+          const info = page.locator(".session-information");
+          await page.waitForFunction(() =>
+            document
+              .querySelector(".session-information")
+              ?.hasAttribute("hidden"),
+          );
+          await info.evaluate((node) => {
+            window.originalInfo = node;
+          });
+          const composer = page.locator(".composer textarea");
+          await composer.evaluate((node) => {
+            window.originalComposer = node;
+          });
+          const geometry = await page
+            .locator(".session-content")
+            .evaluate((node) => {
+              const box = node.getBoundingClientRect(),
+                pane = node
+                  .querySelector(".session-upper-content")
+                  .getBoundingClientRect(),
+                status = node
+                  .querySelector(".session-startup-status")
+                  .getBoundingClientRect(),
+                info = node.querySelector(".session-information"),
+                spinner = node.querySelector(".session-progress-spinner");
+              return {
+                width: box.width,
+                paneWidth: pane.width,
+                top: box.top,
+                paneTop: pane.top,
+                gap: getComputedStyle(node).columnGap,
+                center: (box.left + box.right) / 2,
+                statusCenter: (status.left + status.right) / 2,
+                infoRects: info.getClientRects().length,
+                inert: info.hasAttribute("inert"),
+                animation: getComputedStyle(spinner).animationName,
+                pageWidth: document.documentElement.scrollWidth,
+                viewport: document.documentElement.clientWidth,
+              };
+            });
+          assert(
+            Math.abs(geometry.width - size.width * zoom) <= 1,
+            JSON.stringify(geometry),
+          );
+          assert(
+            Math.abs(geometry.width - geometry.paneWidth) <= 1,
+            JSON.stringify(geometry),
+          );
+          assert(
+            Math.abs(geometry.top - geometry.paneTop) <= 1,
+            JSON.stringify(geometry),
+          );
+          assert(
+            Math.abs(geometry.center - geometry.statusCenter) <= 1,
+            JSON.stringify(geometry),
+          );
+          assert.equal(geometry.gap, "0px");
+          assert.equal(geometry.infoRects, 0);
+          assert.equal(geometry.inert, true);
+          assert(
+            geometry.pageWidth <= geometry.viewport + 1,
+            JSON.stringify(geometry),
+          );
+          if (reducedMotion === "reduce")
+            assert.equal(geometry.animation, "none");
+          await page
+            .getByRole("button", {
+              name: language === "en" ? "Open tool" : "도구 열기",
+            })
+            .click();
+          await page
+            .getByRole("menuitem", {
+              name: language === "en" ? "Files" : "파일",
+              exact: true,
+            })
+            .click();
+          await info.waitFor({ state: "visible" });
+          assert(
+            await info.evaluate(
+              (node) =>
+                node === window.originalInfo && !node.hasAttribute("inert"),
+            ),
+          );
+          await page
+            .getByRole("tab", {
+              name: language === "en" ? "Conversation" : "대화",
+              exact: true,
+            })
+            .click();
+          await page.getByText(status, { exact: true }).waitFor();
+          await info.waitFor({ state: "hidden" });
+          assert(
+            await composer.evaluate((node) => node === window.originalComposer),
+          );
+          assert.equal(
+            await composer.inputValue(),
+            "Retained synthetic Browser draft",
+          );
+          assert.deepEqual(
+            await page.evaluate(() => browserFixture.registrations),
+            [],
+          );
+          process.stdout.write(
+            JSON.stringify({
+              operation: "session-startup-info-layout-case",
+              language,
+              theme,
+              reducedMotion,
+              ...size,
+              geometry,
+            }) + "\n",
+          );
+          cases++;
+        }
   assert.deepEqual(errors, []);
   process.stdout.write(
     JSON.stringify({

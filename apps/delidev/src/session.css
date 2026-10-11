@@ -1111,12 +1111,13 @@
     grid-area: 1 / 1;
   }
 }
-.session-tabbed:has(> .session-content .session-sidechat-pane:not([hidden]))
+.session-tabbed:has(> .session-content > .session-information[hidden])
   > .session-content {
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
+  column-gap: 0;
 }
-.session-tabbed:has(> .session-content .session-sidechat-pane:not([hidden]))
+.session-tabbed:has(> .session-content > .session-information[hidden])
   > .session-content
   > .session-upper-content {
   grid-area: 1 / 1;

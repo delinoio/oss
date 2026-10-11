@@ -12,6 +12,7 @@ import { SessionTabBar } from "./session-tab-bar";
 import { useSessionTabs, SessionTabKind, sessionTabKey } from "./session-tabs";
 import {
   initialExecutionPending,
+  initialSessionStartup,
   SessionProgressPhase,
   sessionProgress,
   progressMessages,
@@ -953,6 +954,8 @@ export function SessionView({
   const infoEvidence = useRef<HTMLDivElement>(null);
   const budgetDetails = useRef<HTMLElement>(null);
   const information = useRef<HTMLElement>(null);
+  const sessionHeading = useRef<HTMLHeadingElement>(null);
+  const [startupInfoHidden, setStartupInfoHidden] = useState(false);
   const [prEmpty, setPREmpty] = useState(false),
     [subagentsEmpty, setSubagentsEmpty] = useState(false);
   const [diagnosticsTarget, setDiagnosticsTarget] =
@@ -1739,6 +1742,40 @@ export function SessionView({
         : NaN,
     );
   const progress = startupOwnerCurrent ? observedProgress : undefined;
+  const hideStartupInfo =
+    conversationActive &&
+    initialSessionStartup(
+      session,
+      progress,
+      Boolean(queue.data) &&
+        !queue.error &&
+        !queue.isPending &&
+        !queue.nextPageToken,
+      pending,
+    );
+  useLayoutEffect(() => {
+    // Commit visibility only after moving focus out of the still-visible Info.
+    // Keep the original controllers active; presentation must not recreate reads.
+    if (
+      hideStartupInfo &&
+      information.current?.contains(document.activeElement)
+    ) {
+      const input = composer.current;
+      if (
+        input?.isConnected &&
+        !input.disabled &&
+        !input.closest("[hidden], [inert]")
+      )
+        input.focus({ preventScroll: true });
+      else sessionHeading.current?.focus({ preventScroll: true });
+    }
+    setStartupInfoHidden(hideStartupInfo);
+  }, [hideStartupInfo]);
+  const infoHidden =
+    [SessionTabKind.Sidechat, SessionTabKind.PendingSidechat].includes(
+      tabs.tab.kind,
+    ) ||
+    (hideStartupInfo && startupInfoHidden);
   return (
     <SessionActivityProvider
       active={
@@ -1782,6 +1819,7 @@ export function SessionView({
             <SessionHarness resource={session}>
               <div className="session-heading-line">
                 <h2
+                  ref={sessionHeading}
                   tabIndex={-1}
                   onDoubleClick={(event) => {
                     if (session) editName?.(session.id, event.currentTarget);
@@ -2781,10 +2819,8 @@ export function SessionView({
             </div>
           </div>
           <aside
-            hidden={[
-              SessionTabKind.Sidechat,
-              SessionTabKind.PendingSidechat,
-            ].includes(tabs.tab.kind)}
+            hidden={infoHidden}
+            inert={infoHidden}
             ref={information}
             id={`info-${id}`}
             className="session-information"
