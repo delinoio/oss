@@ -338,7 +338,7 @@ export function WaitingQueue({
                 {dragged &&
                 !locked &&
                 !query.nextPageToken &&
-                query.rows.at(-1)?.id === row.id ? (
+                row.id === lastDisplayedRowId ? (
                   <div
                     className={`queue-drop-end${insertion === "end" ? " queue-insertion" : ""}`}
                     onDragOver={(event) => {
