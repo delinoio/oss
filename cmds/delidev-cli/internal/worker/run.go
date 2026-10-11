@@ -42,6 +42,7 @@ type Config struct {
 	quotaBlockSupported      bool
 	inspectionMetadata       bool
 	remoteWorkspaceClone     bool
+	namedManagedDirectories  bool
 	repositoryClone          bool
 	updatesEnabled           bool
 	terminals                *terminalManager
@@ -287,6 +288,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		claudeCapabilityExpected := false
 		metadataExpected := false
 		remoteCloneExpected := false
+		namedDirectoriesExpected := false
 		cloneExpected := false
 		if err == nil && attached.Msg.ServerId != string(credential.ServerID) {
 			return domain.Fail(domain.RecoveryRequired, "The configured server identity changed.", "Inspect the paired endpoint before reconnecting.")
@@ -304,6 +306,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				return domain.Fail(domain.Unsupported, "The selected server lacks encrypted Worker routing and native proxy support.", "Update the original server; no direct fallback is permitted.")
 			}
 			remoteCloneExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1)
+			namedDirectoriesExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NAMED_MANAGED_DIRECTORIES_V1)
 			cloneExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1)
 			metadataExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1)
 			// Capabilities describe implemented adapters, never inventory readiness.
@@ -387,6 +390,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			if remoteCloneExpected {
 				profile += "\x00remote-workspace-clone-v1"
+			}
+			if namedDirectoriesExpected {
+				profile += "\x00named-managed-directories-v1"
 			}
 			if cloneExpected {
 				profile += "\x00repository-clone-v1"
@@ -502,6 +508,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if remoteCloneExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1)
 			}
+			if namedDirectoriesExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NAMED_MANAGED_DIRECTORIES_V1)
+			}
 			if cloneExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1)
 			}
@@ -558,6 +567,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			config.updatesEnabled = machineCapability(attached.Msg.Machine, domain.SignedWorkerUpdatesV1)
 			config.startupProgress = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1) && machineCapability(attached.Msg.Machine, domain.SessionStartupProgressV1)
 			config.remoteWorkspaceClone = remoteCloneExpected && machineCapability(attached.Msg.Machine, domain.RemoteWorkspaceCloneV1)
+			config.namedManagedDirectories = namedDirectoriesExpected && machineCapability(attached.Msg.Machine, domain.NamedManagedDirectoriesV1)
 			config.repositoryClone = cloneExpected && machineCapability(attached.Msg.Machine, domain.RepositoryCloneV1)
 			config.inspectionMetadata = metadataExpected && machineCapability(attached.Msg.Machine, domain.RepositoryInspectionMetadataV1)
 			err = watchAttached(ctx, config, client, credential, instance, auxiliary, (managedCapabilityExpected || claudeCapabilityExpected) && managedSubscriptionCapability(attached.Msg.Machine))
@@ -1161,6 +1171,9 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 		if clones && !config.remoteWorkspaceClone {
 			return nil, domain.Fail(domain.Unsupported, "Independent Fork cloning was not negotiated.", "Update and reconnect the original Worker.")
 		}
+		if workspace.ForkRequiresNamedDirectories(input) && !config.namedManagedDirectories {
+			return nil, domain.Fail(domain.Unsupported, "Named managed workspace directories were not negotiated.", "Update and reconnect the original Worker.")
+		}
 		return forkSession(ctx, config, owner, job)
 	case domain.ExecuteSessionJob:
 		return executeSession(ctx, config, owner, job)
@@ -1250,6 +1263,9 @@ func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job
 			return nil, domain.Fail(domain.PermissionDenied, "Workspace preparation targets another machine.", "Reconcile the accepted assignment before retrying.")
 		}
 		for _, repo := range input.Repositories {
+			if repo.DirectoryName != "" && !config.namedManagedDirectories {
+				return nil, domain.Fail(domain.Unsupported, "Named managed workspace directories were not negotiated.", "Update and reconnect the original Worker.")
+			}
 			if (repo.SourceKind == workspace.RemoteCloneSource || repo.SourceKind == workspace.IndependentForkSource) && !config.remoteWorkspaceClone {
 				return nil, domain.Fail(domain.Unsupported, "Remote workspace cloning was not negotiated.", "Update and reconnect the original Worker.")
 			}

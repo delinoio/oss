@@ -131,6 +131,8 @@ message AttachWorkerRequest {
 enum WorkerCapability {
   WORKER_CAPABILITY_UNSPECIFIED = 0;
   WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1 = 52;
+  // Named managed workspace repository directories (issue 2560).
+  WORKER_CAPABILITY_NAMED_MANAGED_DIRECTORIES_V1 = 53;
 
   WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1 = 22;
 

@@ -291,7 +291,7 @@ func (m *Manager) validatePartial(input PrepareRequest, manifest Manifest) error
 			if !validLocalRepository(repo) || repo.Base != expected.Base {
 				return ResultUncertain()
 			}
-		} else if repo.Path != filepath.Join(root, string(repo.ID)) || !repo.Owned || repo.SourceKind == CheckoutSource && repo.Source == repo.Path || repo.LocalIdentityDigest != "" || repo.LocalHEAD != LocalHEADCommitted || repo.SourceKind == CheckoutSource && (!canonicalCommit(repo.StartingCommit) || !canonicalCommit(repo.BaseCommit)) {
+		} else if repo.DirectoryName != expected.DirectoryName || !validManagedDirectoryName(repo.DirectoryName) || repo.Path != repo.ownedPath(root) || !repo.Owned || repo.SourceKind == CheckoutSource && repo.Source == repo.Path || repo.LocalIdentityDigest != "" || repo.LocalHEAD != LocalHEADCommitted || repo.SourceKind == CheckoutSource && (!canonicalCommit(repo.StartingCommit) || !canonicalCommit(repo.BaseCommit)) {
 			return ResultUncertain()
 		}
 		if repo.ID == input.PrimaryRepository && manifest.PrimaryPath == repo.Path {

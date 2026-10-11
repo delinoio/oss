@@ -63,6 +63,8 @@ func sessionWorkspaceRequest(tx *store.Tx, id domain.ID, session domain.Session)
 		spec := workspace.RepositorySpec{ID: r.ID, PreferredRemote: repo.PreferredRemote, Base: repo.Base, Starting: repo.Starting, AutoFetch: settings.AutomaticFetch && project.EffectiveFetch(settings.AutomaticFetch) && repo.AutoFetch}
 		if session.Workspace == domain.Worktree {
 			spec.SourceKind, spec.RemoteURL = workspace.RemoteCloneSource, repo.RemoteURL
+			// Freeze the portable name at acceptance; later renames affect new sessions only.
+			spec.DirectoryName = domain.PortableDirectoryName(repo.Name)
 		}
 		for _, checkout := range repo.Checkouts {
 			if session.Workspace == domain.Local && checkout.MachineID == session.MachineID {
@@ -94,6 +96,9 @@ func queueSessionWorkspace(tx *store.Tx, id domain.ID, session *domain.Session, 
 		return err
 	}
 	for _, repo := range input.Repositories {
+		if repo.DirectoryName != "" && !slices.Contains(machine.WorkerCapabilities, domain.NamedManagedDirectoriesV1) {
+			return domain.Fail(domain.Unsupported, "The selected Runner Device cannot create named workspace directories.", "Update and reconnect that Worker before preparing this session.")
+		}
 		if (repo.SourceKind == workspace.RemoteCloneSource || repo.SourceKind == workspace.IndependentForkSource) && !slices.Contains(machine.WorkerCapabilities, domain.RemoteWorkspaceCloneV1) {
 			return domain.Fail(domain.Unsupported, "The selected Runner Device cannot clone remote workspaces.", "Update and reconnect that Worker before preparing this session.")
 		}

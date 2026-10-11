@@ -217,6 +217,9 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 			if !slices.Contains(machine.WorkerCapabilities, domain.RemoteWorkspaceCloneV1) {
 				return nil, domain.Fail(domain.Unsupported, "The selected Runner Device cannot clone an independent Fork.", "Update and reconnect the original Worker before creating the Fork.")
 			}
+			if workspace.ForkRequiresNamedDirectories(input) && !slices.Contains(machine.WorkerCapabilities, domain.NamedManagedDirectoriesV1) {
+				return nil, domain.Fail(domain.Unsupported, "The selected Runner Device cannot create named workspace directories.", "Update and reconnect the original Worker before creating the Fork.")
+			}
 		}
 		if origin != nil && purpose != domain.SidechatFork {
 			current, err := tx.Authenticate(originDigest[:])
@@ -331,6 +334,9 @@ func validateForkAuthority(tx *store.Tx, input domain.ForkJobInput) error {
 		}
 		if !slices.Contains(machine.WorkerCapabilities, domain.RemoteWorkspaceCloneV1) {
 			return domain.Fail(domain.Unsupported, "The original Runner Device cannot clone an independent Fork.", "Update and reconnect that Worker before creating a Fork.")
+		}
+		if workspace.ForkRequiresNamedDirectories(input) && !slices.Contains(machine.WorkerCapabilities, domain.NamedManagedDirectoriesV1) {
+			return domain.Fail(domain.Unsupported, "The original Runner Device cannot create named workspace directories.", "Update and reconnect that Worker before creating a Fork.")
 		}
 	}
 	if err := input.Validate(); err != nil {

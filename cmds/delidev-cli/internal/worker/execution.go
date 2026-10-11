@@ -45,6 +45,9 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		}
 		return nil, err
 	}
+	if workspace.ManifestHasNamedDirectories(input.Manifest) && !config.namedManagedDirectories {
+		return nil, domain.Fail(domain.Unsupported, "Named managed workspace directories were not negotiated.", "Update and reconnect the original Worker.")
+	}
 	if err := (skills.Manager{Root: config.Root}).CheckContext(input.Input.Skills, input); err != nil {
 		return nil, err
 	}

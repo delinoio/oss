@@ -534,10 +534,10 @@ func validateStorageRoot(root string, manifest Manifest) error {
 		allowed["chat"] = true
 	}
 	for _, repo := range manifest.Repositories {
-		if !repo.Owned || repo.Path != filepath.Join(root, string(repo.ID)) {
+		if !repo.Owned || !validManagedDirectoryName(repo.DirectoryName) || repo.Path != repo.ownedPath(root) {
 			return ResultUncertain()
 		}
-		allowed[string(repo.ID)] = true
+		allowed[repo.Directory()] = true
 	}
 	for _, entry := range entries {
 		if !allowed[entry.Name()] {

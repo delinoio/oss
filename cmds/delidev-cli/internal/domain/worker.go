@@ -125,6 +125,8 @@ const (
 	OpenCodeSessionCompactionV1 WorkerCapability = "opencode-session-compaction-v1"
 	NetworkBootstrapV1          WorkerCapability = "network-bootstrap-v1"
 	CodexAPIProxyV1             WorkerCapability = "codex-api-proxy-v1"
+	// NamedManagedDirectoriesV1 gates registered-name managed checkout directories.
+	NamedManagedDirectoriesV1 WorkerCapability = "named-managed-directories-v1"
 )
 
 type JobState string

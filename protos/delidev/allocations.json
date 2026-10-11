@@ -13239,6 +13239,13 @@
       "number": 52
     },
     {
+      "issue": 2560,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_NAMED_MANAGED_DIRECTORIES_V1",
+      "number": 53
+    },
+    {
       "issue": 2123,
       "kind": "message",
       "declaration": "SetAutomaticResetCreditConsentRequest",
