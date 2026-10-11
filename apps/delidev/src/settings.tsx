@@ -100,7 +100,7 @@ import {
   ServerPreferenceSection,
 } from "./configuration-fields";
 import { ConfigurationDeletion, RoutingPreview } from "./configuration-actions";
-import { JobState, TrackedJob } from "./jobs";
+import { JobState, TrackedJob, type JobObservation } from "./jobs";
 import {
   LocalWorkerControls,
   LocalWorkerPresentation,
@@ -140,10 +140,11 @@ import {
 import { revealAgentInvalidControl } from "./agent-configuration";
 import {
   RepositoryRegistration,
+  confirmedRepository,
   type ChooseRepositoryFolder,
 } from "./repository-registration";
 import type { ReadLocalWorkerProof } from "./local-worker";
-import { SettingsLifetime } from "./settings-lifetime";
+import { SettingsLifetime, useSettingsOpening } from "./settings-lifetime";
 import { ShortcutSettings } from "./shortcut-settings";
 import { DateFormatSettings } from "./date-format";
 import { AppearanceSettings } from "./appearance";
@@ -180,6 +181,88 @@ import {
 export enum ConfigurationEditorPresentation {
   Workflow,
   InlineServerPreferences,
+}
+
+interface RepositorySaveSubmission {
+  jobId: string;
+  repositoryId: string;
+  expectedRevision: bigint;
+}
+
+function RepositorySaveCompletion({
+  job,
+  submission,
+  observation,
+  active,
+  saved,
+  completed,
+}: {
+  job: Resource;
+  submission?: RepositorySaveSubmission;
+  observation: JobObservation;
+  active: boolean;
+  saved: () => void;
+  completed: Set<string>;
+}) {
+  useLocale();
+  const opening = useSettingsOpening();
+  const visible = useSettingsTaskVisible();
+  const notifications = useNotifications();
+  const identity = confirmedRepository(observation.output);
+  const confirmed = Boolean(
+    observation.state === JobState.Succeeded &&
+    observation.verified &&
+    !observation.pending &&
+    observation.current?.id === job.id &&
+    submission?.jobId === job.id &&
+    identity?.id === submission.repositoryId &&
+    identity.revision > submission.expectedRevision,
+  );
+  useEffect(() => {
+    if (!confirmed || !active || !visible || !opening || opening.disposed)
+      return;
+    const key = `${opening.id}:${job.id}`;
+    if (completed.has(key)) return;
+    // Commit the presentation guard before notifying or closing. Strict Mode
+    // and repeated observations cannot finish this original opening twice.
+    completed.add(key);
+    notifications.notify({
+      kind: ToastKind.Success,
+      message: ownedMessage("settings.savedKind.REPOSITORY"),
+      id: job.id,
+    });
+    saved();
+  }, [
+    confirmed,
+    active,
+    visible,
+    opening,
+    job.id,
+    notifications,
+    saved,
+    completed,
+  ]);
+  if (observation.state !== JobState.Succeeded || confirmed) return null;
+  return (
+    <>
+      <p role="status">{copy("settings.repositorySaveUnverified")}</p>
+      {!observation.error && !observation.unreadable ? (
+        <SettingsActionButton
+          icon={SettingsActionIcon.Retry}
+          disabled={
+            !active ||
+            !visible ||
+            !opening ||
+            opening.disposed ||
+            observation.pending
+          }
+          onClick={() => void observation.retry()}
+        >
+          {copy("jobs.retryStatusRead")}
+        </SettingsActionButton>
+      ) : null}
+    </>
+  );
 }
 
 function RepositorySaveReview({
@@ -307,6 +390,9 @@ export function ConfigurationEditor({
     initial ? document(initial) : (initialData ?? newConfiguration(kind)),
   );
   const [job, setJob] = useState<Resource | "unknown">();
+  const [repositorySave, setRepositorySave] =
+    useState<RepositorySaveSubmission>();
+  const completedRepositoryJobs = useRef(new Set<string>());
   const [childPending, setChildPending] = useState(false);
   const pendingSelections = useRef(new Set<string>());
   const [selectionPending, setSelectionPending] = useState(false);
@@ -400,8 +486,21 @@ export function ConfigurationEditor({
             );
         }
       }
-      if (result.job) setJob(result.job);
-      else if (result.resource) {
+      if (result.job) {
+        if (kind === EntityKind.REPOSITORY && initial) {
+          const original = request.mutation;
+          setRepositorySave(
+            original?.id === initial.id && original.expectedRevision > 0n
+              ? {
+                  jobId: result.job.id,
+                  repositoryId: original.id,
+                  expectedRevision: original.expectedRevision,
+                }
+              : undefined,
+          );
+        }
+        setJob(result.job);
+      } else if (result.resource) {
         if (inline) {
           setBaseline(result.resource);
           setData(document(result.resource));
@@ -623,9 +722,32 @@ export function ConfigurationEditor({
             {copy("settings.theServerAcknowledgedThisRequestWithout_061fa2")}
           </p>
         ) : (
-          <TrackedJob initial={job} active={active}>
+          <TrackedJob
+            initial={job}
+            active={active}
+            expectedType={
+              kind === EntityKind.REPOSITORY && source
+                ? "save-repository"
+                : undefined
+            }
+          >
             {(state, _output, observation) =>
-              state === JobState.Succeeded ? (
+              state === JobState.Succeeded &&
+              kind === EntityKind.REPOSITORY &&
+              source ? (
+                <RepositorySaveCompletion
+                  key={job.id}
+                  job={job}
+                  submission={repositorySave}
+                  completed={completedRepositoryJobs.current}
+                  observation={observation}
+                  active={active}
+                  saved={() => {
+                    mutation.resolveJob(job.id);
+                    saved();
+                  }}
+                />
+              ) : state === JobState.Succeeded ? (
                 <>
                   <p>
                     {copy(
@@ -1273,6 +1395,7 @@ export enum SettingsEntryDestination {
   ConnectionDiagnostics = "connection-diagnostics",
   Repositories = "repositories",
   NewProject = "new-project",
+  NewAgentWorker = "new-agent-worker",
   RunnerDevices = "runner-devices",
   GitProfiles = "git-profiles",
 }
@@ -1590,6 +1713,7 @@ interface SettingsProps {
 }
 enum SettingsEntryKind {
   NewProject,
+  NewAgentWorker,
   ManageAccounts,
   AddAccount,
   NotificationTarget,
@@ -1601,6 +1725,7 @@ type SettingsCategoryEntry =
       resourceKind: EntityKind;
     }
   | { kind: SettingsEntryKind.NewProject }
+  | { kind: SettingsEntryKind.NewAgentWorker }
   | {
       kind: SettingsEntryKind.ManageAccounts | SettingsEntryKind.AddAccount;
       providerId: string;
@@ -1646,14 +1771,18 @@ function entrySelection(
             ? SettingsCategory.ExecutionWorkers
             : destination === SettingsEntryDestination.Repositories
               ? SettingsCategory.Repositories
-              : destination === SettingsEntryDestination.NewProject
-                ? SettingsCategory.Projects
-                : SettingsCategory.SubscriptionAccounts,
+              : destination === SettingsEntryDestination.NewAgentWorker
+                ? SettingsCategory.AgentWorkers
+                : destination === SettingsEntryDestination.NewProject
+                  ? SettingsCategory.Projects
+                  : SettingsCategory.SubscriptionAccounts,
     key: newRequestId(),
     entry:
       destination === SettingsEntryDestination.NewProject
         ? { kind: SettingsEntryKind.NewProject }
-        : undefined,
+        : destination === SettingsEntryDestination.NewAgentWorker
+          ? { kind: SettingsEntryKind.NewAgentWorker }
+          : undefined,
   };
 }
 
@@ -1858,7 +1987,9 @@ function SettingsWorkspace({
   >(() =>
     entry?.kind === SettingsEntryKind.NewProject
       ? { key: newRequestId() }
-      : undefined,
+      : entry?.kind === SettingsEntryKind.NewAgentWorker
+        ? { kind: EntityKind.AGENT, key: newRequestId() }
+        : undefined,
   );
   const [machine, setMachine] = useState<Resource>();
   const runnerInspection = useRunnerRemediation({
@@ -1954,6 +2085,7 @@ function SettingsWorkspace({
   const [apiProviderID, setApiProviderID] = useState(() =>
     entry &&
     entry.kind !== SettingsEntryKind.NewProject &&
+    entry.kind !== SettingsEntryKind.NewAgentWorker &&
     entry.kind !== SettingsEntryKind.NotificationTarget
       ? entry.providerId
       : "",
@@ -1963,6 +2095,7 @@ function SettingsWorkspace({
   >(() =>
     entry &&
     entry.kind !== SettingsEntryKind.NewProject &&
+    entry.kind !== SettingsEntryKind.NewAgentWorker &&
     entry.kind !== SettingsEntryKind.NotificationTarget
       ? entry.provider
       : undefined,
@@ -2334,7 +2467,9 @@ function SettingsWorkspace({
                     ? "settings-content settings-runner-devices"
                     : area === SettingsArea.Diagnostics
                       ? "settings-content settings-connections"
-                      : "settings-content"
+                      : area === SettingsArea.KeyboardShortcuts
+                        ? "settings-content settings-shortcuts"
+                        : "settings-content"
         }
         aria-label={copy("settings.settingsContent_e4dcd3")}
       >
@@ -2351,7 +2486,9 @@ function SettingsWorkspace({
                       ? "settings-runner-column"
                       : area === SettingsArea.Transfer
                         ? "settings-transfer-column"
-                        : undefined
+                        : area === SettingsArea.KeyboardShortcuts
+                          ? "settings-shortcut-column"
+                          : undefined
               }
             >
               {isGitWorkflow ? (
@@ -2459,7 +2596,7 @@ function SettingsWorkspace({
                   <ShortcutSettings />
                 ) : null}
                 {area === SettingsArea.Appearance ? (
-                  <div>
+                  <div className="appearance-content">
                     <AppearanceSettings />
                     <LanguageSettings />
                     <DateFormatSettings />

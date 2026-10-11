@@ -24,6 +24,7 @@ import {
   messageTurn,
   retainedTurnTiming,
   turnDuration,
+  useTurnClock,
   type CurrentTurn,
 } from "./turn-timing";
 const sessionId = newRequestId(),
@@ -43,6 +44,7 @@ function resource(
     sessionId,
     revision,
     schemaVersion: 1,
+    updatedAt: start,
     documentJson: encode(data),
   });
 }
@@ -128,9 +130,22 @@ function view(
     ...extra,
   };
 }
+function fakeClock() {
+  vi.useFakeTimers({
+    toFake: [
+      "Date",
+      "setTimeout",
+      "clearTimeout",
+      "setInterval",
+      "clearInterval",
+      "performance",
+    ],
+  });
+}
 afterEach(async () => {
   cleanup();
   vi.useRealTimers();
+  vi.restoreAllMocks();
   await i18n.changeLanguage("en");
 });
 
@@ -226,7 +241,7 @@ it("retains strict UTC shape, calendar validation and original nanosecond interv
 });
 
 it("starts before the first message, advances through waits and moves one display to the original primary user", () => {
-  vi.useFakeTimers();
+  fakeClock();
   vi.setSystemTime(new Date(start));
   const p = view(),
     renderer = vi.fn(p.render);
@@ -266,7 +281,7 @@ it("starts before the first message, advances through waits and moves one displa
 });
 
 it("freezes disconnected/failed-read estimates and resumes authoritative observations without inventing an end", () => {
-  vi.useFakeTimers();
+  fakeClock();
   vi.setSystemTime(new Date(start));
   const p = view();
   const { container, rerender, unmount } = render(
@@ -279,13 +294,13 @@ it("freezes disconnected/failed-read estimates and resumes authoritative observa
   act(() => vi.advanceTimersByTime(30000));
   expect(container.textContent).toContain("Unconfirmed · 12s");
   rerender(<ToolTurnTranscript {...p} />);
-  expect(container.textContent).toContain("In progress · 42s");
+  expect(container.textContent).toContain("In progress · 12s");
   expect(vi.getTimerCount()).toBe(1);
   rerender(<ToolTurnTranscript {...p} active={false} />);
   act(() => vi.advanceTimersByTime(60000));
   expect(vi.getTimerCount()).toBe(0);
   rerender(<ToolTurnTranscript {...p} />);
-  expect(container.textContent).toContain("1m 42s");
+  expect(container.textContent).toContain("In progress · 12s");
   unmount();
   expect(vi.getTimerCount()).toBe(0);
 });
@@ -293,7 +308,7 @@ it("freezes disconnected/failed-read estimates and resumes authoritative observa
 it.each(["succeeded", "failed", "stopped"])(
   "freezes %s at the immutable terminal and preserves genuine zero",
   (outcome) => {
-    vi.useFakeTimers();
+    fakeClock();
     vi.setSystemTime(new Date(start));
     const p = view();
     const { container, rerender } = render(<ToolTurnTranscript {...p} />);
@@ -372,7 +387,7 @@ it("deduplicates split historical/live parts through bounded eviction/restoratio
 });
 
 it("retains completed Fork attribution while independently timing the new child turn", () => {
-  vi.useFakeTimers();
+  fakeClock();
   vi.setSystemTime(new Date(start));
   const sourceSession = newRequestId(),
     sourceExecution = newRequestId(),
@@ -414,7 +429,7 @@ it("keeps long durations localized and readable without per-second announcements
   expect(turnDuration(90061)).toBe("1d 1h 1m 1s");
   await i18n.changeLanguage("ko");
   expect(turnDuration(90061)).toBe("1일 1시간 1분 1초");
-  vi.useFakeTimers();
+  fakeClock();
   vi.setSystemTime(new Date(start));
   const { container } = render(<ToolTurnTranscript {...view()} />);
   expect(container.textContent).toContain("진행 중 · 0초");
@@ -475,7 +490,7 @@ it("rejects queued/pre-acceptance/foreign selected generations and terminal outc
 });
 
 it("anchors pre-user timing before the first original native row and relocates only to its late primary", () => {
-  vi.useFakeTimers();
+  fakeClock();
   vi.setSystemTime(new Date(start));
   const prior = message({
     role: "assistant",
@@ -524,7 +539,7 @@ it("anchors pre-user timing before the first original native row and relocates o
 });
 
 it("uses terminal timing from a later matching primary part without moving the original anchor", () => {
-  vi.useFakeTimers();
+  fakeClock();
   vi.setSystemTime(new Date(start));
   const first = message({
     text: "Original primary part",
@@ -603,7 +618,7 @@ it("uses terminal timing from a later matching primary part without moving the o
 });
 
 it("freezes terminal Message timing before the Session update and across disconnect", () => {
-  vi.useFakeTimers();
+  fakeClock();
   vi.setSystemTime(new Date(start));
   const primary = message(),
     p = view(query([[primary]])),
@@ -661,7 +676,7 @@ it.each([
 ])(
   "rejects foreign/conflicting terminal Message timing without stopping the original clock %j",
   (extra) => {
-    vi.useFakeTimers();
+    fakeClock();
     vi.setSystemTime(new Date(start));
     const p = view();
     const row = message({
@@ -680,3 +695,220 @@ it.each([
     expect(p.current?.running).toBe(true);
   },
 );
+
+function observedTurn(elapsed = 10000, revision = 5n) {
+  const row = session();
+  row.revision = revision;
+  row.updatedAt = new Date(Date.parse(start) + elapsed).toISOString();
+  return currentTurn(row, sessionId)!;
+}
+function ClockProbe({
+  turn,
+  active = true,
+  confirmed = true,
+}: {
+  turn?: CurrentTurn;
+  active?: boolean;
+  confirmed?: boolean;
+}) {
+  const seconds = useTurnClock(turn, active, confirmed);
+  return <output>{seconds === undefined ? "unavailable" : seconds}</output>;
+}
+function clockValue() {
+  return screen.getByRole("status").textContent;
+}
+
+it.each([170000, 90000])(
+  "ignores desktop UTC skew and wall-clock jumps from %s",
+  (wallTime) => {
+    fakeClock();
+    vi.setSystemTime(wallTime);
+    const row = session({
+      turn_timing: { accepted_at: "1970-01-01T00:01:40Z" },
+    });
+    row.updatedAt = "1970-01-01T00:01:50Z";
+    const turn = currentTurn(row, sessionId);
+    render(<ClockProbe turn={turn} />);
+    expect(clockValue()).toBe("10");
+    expect(vi.getTimerCount()).toBe(1);
+    vi.setSystemTime(wallTime + 24 * 60 * 60 * 1000);
+    act(() => vi.advanceTimersByTime(5000));
+    expect(clockValue()).toBe("15");
+    vi.setSystemTime(0);
+    act(() => vi.advanceTimersByTime(1000));
+    expect(clockValue()).toBe("16");
+  },
+);
+
+it.each([
+  "",
+  "invalid",
+  "2026-10-09T10:00:00.122999999Z",
+  "2026-10-09T10:00:00.123+00:00",
+  "2026-02-30T10:00:00.123Z",
+])("rejects an unavailable or inverted server anchor %s", (updatedAt) => {
+  fakeClock();
+  const row = session();
+  row.updatedAt = updatedAt;
+  const turn = currentTurn(row, sessionId);
+  expect(turn?.timing).toEqual({ accepted: Date.parse(start) });
+  expect(turn?.observation).toBeUndefined();
+  render(<ClockProbe turn={turn} />);
+  expect(clockValue()).toBe("unavailable");
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("compares server anchors at nanosecond precision before reducing display precision", () => {
+  const accepted = "2026-10-09T10:00:00.123456789Z";
+  const row = session({ turn_timing: { accepted_at: accepted } });
+  row.updatedAt = "2026-10-09T10:00:00.123456788Z";
+  expect(currentTurn(row, sessionId)?.observation).toBeUndefined();
+  row.updatedAt = "2026-10-09T10:00:00.123456790Z";
+  expect(currentTurn(row, sessionId)?.observation?.elapsed).toBe(0);
+  row.updatedAt = accepted;
+  expect(currentTurn(row, sessionId)?.observation?.elapsed).toBe(0);
+});
+
+it("reconciles newer revisions without restarting from duplicate or stale observations", () => {
+  fakeClock();
+  const { rerender } = render(<ClockProbe turn={observedTurn()} />);
+  act(() => vi.advanceTimersByTime(5000));
+  expect(clockValue()).toBe("15");
+  rerender(<ClockProbe turn={observedTurn()} />);
+  expect(clockValue()).toBe("15");
+  act(() => vi.advanceTimersByTime(2000));
+  rerender(<ClockProbe turn={observedTurn(9000, 4n)} />);
+  expect(clockValue()).toBe("17");
+  act(() => vi.advanceTimersByTime(1000));
+  expect(clockValue()).toBe("18");
+  rerender(<ClockProbe turn={observedTurn(14000, 6n)} />);
+  expect(clockValue()).toBe("18");
+  act(() => vi.advanceTimersByTime(1000));
+  expect(clockValue()).toBe("19");
+  rerender(<ClockProbe turn={observedTurn(25000, 7n)} />);
+  expect(clockValue()).toBe("25");
+  expect(vi.getTimerCount()).toBe(1);
+  rerender(<ClockProbe turn={observedTurn(26000, 7n)} />);
+  expect(clockValue()).toBe("unavailable");
+  expect(vi.getTimerCount()).toBe(0);
+  rerender(<ClockProbe turn={observedTurn(25000, 7n)} />);
+  expect(clockValue()).toBe("25");
+  rerender(<ClockProbe turn={observedTurn(24000, 8n)} />);
+  expect(clockValue()).toBe("unavailable");
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("freezes inactive, hidden and unconfirmed estimates and resumes only measured time", () => {
+  fakeClock();
+  const turn = observedTurn();
+  const { rerender, unmount } = render(<ClockProbe turn={turn} />);
+  act(() => vi.advanceTimersByTime(2500));
+  rerender(<ClockProbe turn={turn} active={false} />);
+  expect(clockValue()).toBe("12");
+  expect(vi.getTimerCount()).toBe(0);
+  act(() => vi.advanceTimersByTime(30000));
+  rerender(<ClockProbe turn={turn} />);
+  expect(clockValue()).toBe("12");
+  act(() => vi.advanceTimersByTime(1000));
+  expect(clockValue()).toBe("13");
+  const visibility = vi.spyOn(document, "visibilityState", "get");
+  visibility.mockReturnValue("hidden");
+  fireEvent(document, new Event("visibilitychange"));
+  act(() => vi.advanceTimersByTime(30000));
+  expect(clockValue()).toBe("13");
+  expect(vi.getTimerCount()).toBe(0);
+  visibility.mockReturnValue("visible");
+  fireEvent(document, new Event("visibilitychange"));
+  act(() => vi.advanceTimersByTime(1000));
+  expect(clockValue()).toBe("14");
+  rerender(<ClockProbe turn={turn} confirmed={false} />);
+  act(() => vi.advanceTimersByTime(30000));
+  expect(clockValue()).toBe("14");
+  expect(vi.getTimerCount()).toBe(0);
+  const newer = observedTurn(50000, 6n);
+  rerender(<ClockProbe turn={newer} confirmed={false} />);
+  expect(clockValue()).toBe("14");
+  rerender(<ClockProbe turn={newer} />);
+  expect(clockValue()).toBe("50");
+  expect(vi.getTimerCount()).toBe(1);
+  unmount();
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("does not transfer a retained clock to stale owner, input or acceptance observations", () => {
+  fakeClock();
+  const original = observedTurn();
+  const successor = {
+    ...observedTurn(2000, 6n),
+    owner: "successor-native-owner",
+    inputId: newRequestId(),
+  };
+  const { rerender } = render(<ClockProbe turn={original} />);
+  act(() => vi.advanceTimersByTime(1000));
+  expect(clockValue()).toBe("11");
+  const stale = {
+    ...successor,
+    observation: { ...successor.observation!, revision: 4n },
+  };
+  rerender(<ClockProbe turn={stale} />);
+  expect(clockValue()).toBe("unavailable");
+  expect(vi.getTimerCount()).toBe(0);
+  rerender(<ClockProbe turn={successor} />);
+  expect(clockValue()).toBe("2");
+  rerender(<ClockProbe turn={original} />);
+  expect(clockValue()).toBe("unavailable");
+  expect(vi.getTimerCount()).toBe(0);
+  rerender(<ClockProbe turn={successor} />);
+  expect(clockValue()).toBe("2");
+  const changedAcceptance = {
+    ...successor,
+    observation: {
+      ...successor.observation!,
+      revision: 7n,
+      accepted: successor.observation!.accepted + 1n,
+    },
+  };
+  rerender(<ClockProbe turn={changedAcceptance} />);
+  expect(clockValue()).toBe("unavailable");
+  expect(vi.getTimerCount()).toBe(0);
+  rerender(<ClockProbe turn={successor} />);
+  expect(clockValue()).toBe("2");
+});
+
+it("keeps terminal server duration independent of a missing active anchor and the desktop clock", () => {
+  fakeClock();
+  vi.setSystemTime(0);
+  const row = session({
+    outcome: "succeeded",
+    turn_timing: {
+      accepted_at: start,
+      terminal_at: "2026-10-09T10:00:12.123Z",
+    },
+  });
+  row.updatedAt = "";
+  const { container } = render(
+    <ToolTurnTranscript {...view(query([]), currentTurn(row, sessionId))} />,
+  );
+  expect(container.textContent).toContain("Elapsed · 12s");
+  expect(vi.getTimerCount()).toBe(0);
+  vi.setSystemTime(new Date("2099-01-01T00:00:00Z"));
+  act(() => vi.advanceTimersByTime(60000));
+  expect(container.textContent).toContain("Elapsed · 12s");
+});
+
+it("waits until visibility returns before accepting a newer server anchor", () => {
+  fakeClock();
+  const { rerender } = render(<ClockProbe turn={observedTurn()} />);
+  const visibility = vi.spyOn(document, "visibilityState", "get");
+  visibility.mockReturnValue("hidden");
+  fireEvent(document, new Event("visibilitychange"));
+  const newer = observedTurn(20000, 6n);
+  rerender(<ClockProbe turn={newer} />);
+  act(() => vi.advanceTimersByTime(30000));
+  expect(clockValue()).toBe("10");
+  expect(vi.getTimerCount()).toBe(0);
+  visibility.mockReturnValue("visible");
+  fireEvent(document, new Event("visibilitychange"));
+  expect(clockValue()).toBe("20");
+  expect(vi.getTimerCount()).toBe(1);
+});

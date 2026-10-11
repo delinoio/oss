@@ -230,6 +230,8 @@
       "dependsOn": ["^build"],
       "inputs": [
         "$TURBO_DEFAULT$",
+        "scripts/ci-test-sequencer.mjs",
+        "scripts/ci-test-weights.json",
         "$TURBO_ROOT$/.nvmrc",
         "$TURBO_ROOT$/package.json",
         "$TURBO_ROOT$/pnpm-lock.yaml",
@@ -245,6 +247,8 @@
       "dependsOn": ["test:unit:1", "^build"],
       "inputs": [
         "$TURBO_DEFAULT$",
+        "scripts/ci-test-sequencer.mjs",
+        "scripts/ci-test-weights.json",
         "$TURBO_ROOT$/.nvmrc",
         "$TURBO_ROOT$/package.json",
         "$TURBO_ROOT$/pnpm-lock.yaml",
@@ -270,6 +274,8 @@
       "dependsOn": ["^build"],
       "inputs": [
         "$TURBO_DEFAULT$",
+        "scripts/ci-test-sequencer.mjs",
+        "scripts/ci-test-weights.json",
         "$TURBO_ROOT$/.nvmrc",
         "$TURBO_ROOT$/package.json",
         "$TURBO_ROOT$/pnpm-lock.yaml",
@@ -285,6 +291,8 @@
       "dependsOn": ["test:unit:2", "^build"],
       "inputs": [
         "$TURBO_DEFAULT$",
+        "scripts/ci-test-sequencer.mjs",
+        "scripts/ci-test-weights.json",
         "$TURBO_ROOT$/.nvmrc",
         "$TURBO_ROOT$/package.json",
         "$TURBO_ROOT$/pnpm-lock.yaml",
@@ -335,6 +343,8 @@
       "dependsOn": ["^build"],
       "inputs": [
         "$TURBO_DEFAULT$",
+        "scripts/ci-test-sequencer.mjs",
+        "scripts/ci-test-weights.json",
         "$TURBO_ROOT$/.nvmrc",
         "$TURBO_ROOT$/package.json",
         "$TURBO_ROOT$/pnpm-lock.yaml",
@@ -350,6 +360,8 @@
       "dependsOn": ["test:unit:3", "^build"],
       "inputs": [
         "$TURBO_DEFAULT$",
+        "scripts/ci-test-sequencer.mjs",
+        "scripts/ci-test-weights.json",
         "$TURBO_ROOT$/.nvmrc",
         "$TURBO_ROOT$/package.json",
         "$TURBO_ROOT$/pnpm-lock.yaml",
@@ -375,6 +387,8 @@
       "dependsOn": ["^build"],
       "inputs": [
         "$TURBO_DEFAULT$",
+        "scripts/ci-test-sequencer.mjs",
+        "scripts/ci-test-weights.json",
         "$TURBO_ROOT$/.nvmrc",
         "$TURBO_ROOT$/package.json",
         "$TURBO_ROOT$/pnpm-lock.yaml",
@@ -390,6 +404,8 @@
       "dependsOn": ["test:unit:4", "^build"],
       "inputs": [
         "$TURBO_DEFAULT$",
+        "scripts/ci-test-sequencer.mjs",
+        "scripts/ci-test-weights.json",
         "$TURBO_ROOT$/.nvmrc",
         "$TURBO_ROOT$/package.json",
         "$TURBO_ROOT$/pnpm-lock.yaml",

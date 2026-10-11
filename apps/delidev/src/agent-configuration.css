@@ -51,7 +51,7 @@
   overflow-wrap: anywhere;
 }
 .agent-configuration:is(button, summary):focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 3px;
 }
 .agent-core {
@@ -174,7 +174,7 @@
   justify-content: flex-end;
 }
 .agent-configuration .agent-required {
-  color: var(--accent);
+  color: var(--link);
 }
 @container (width < 640px) {
   .agent-core-columns {

@@ -3,5 +3,12 @@
   "native-reasoning.complete_143b27": "Complete",
   "native-reasoning.streaming_a951c5": "Streaming",
   "native-reasoning.reasoning_4d3137": "Reasoning · <s0/>",
-  "native-reasoning.theRetainedReasoningContentIsUnavailable_d2c416": "The retained reasoning content is unavailable or inconsistent."
+  "native-reasoning.theRetainedReasoningContentIsUnavailable_d2c416": "The retained reasoning content is unavailable or inconsistent.",
+  "native-reasoning.thinking": "Thinking",
+  "native-reasoning.noSuppliedContent": "No reasoning content was supplied.",
+  "native-reasoning.initialObservation": "Initial observation",
+  "native-reasoning.finalObservation": "Final observation",
+  "native-reasoning.summaryPart": "Summary part {{index}}",
+  "native-reasoning.contentPart": "Content part {{index}}",
+  "native-reasoning.codexReasoning": "Codex reasoning"
 }

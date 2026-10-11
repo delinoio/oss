@@ -1577,6 +1577,9 @@ it.each([
     fireEvent.click(await screen.findByRole("button", { name: "New session" }));
     expect(await screen.findByText(message)).toBeTruthy();
     expect(
+      screen.queryByRole("button", { name: "Create agent worker" }),
+    ).toBeNull();
+    expect(
       screen.queryByText(
         "No selectable Agent Worker choices are on this page.",
       ),
@@ -1584,16 +1587,126 @@ it.each([
   },
 );
 
-it("distinguishes an empty current Agent Worker page from a loading selector", async () => {
+it("offers creation only after a complete empty Agent Worker inventory", async () => {
   const value = fixture([], [], [], false, true, undefined, true);
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "New session" }));
   expect(
-    await screen.findByText(
-      "No selectable Agent Worker choices are on this page.",
-    ),
+    await screen.findByRole("button", { name: "Create agent worker" }),
   ).toBeTruthy();
 });
+
+it.each(["New session", "New Chat"])(
+  "opens Harness directly from empty %s and preserves independent drafts",
+  async (surface) => {
+    const value = fixture([], [], [], false, true, undefined, true);
+    value.status.mockResolvedValue({
+      version: "0.1.0",
+      protocolVersion: 2,
+      capabilities: [
+        SystemCapability.AUTOMATIC_TITLES_V1,
+        SystemCapability.INLINE_WORKER_MODELS_V1,
+      ],
+    });
+    render(<App transport={value.transport} />);
+    for (const entry of ["New session", "New Chat"]) {
+      fireEvent.click(
+        (await screen.findAllByRole("button", { name: entry }))[0],
+      );
+      fireEvent.change(
+        await screen.findByRole("textbox", { name: "First message" }),
+        { target: { value: `${entry} independent draft` } },
+      );
+    }
+    fireEvent.click(screen.getAllByRole("button", { name: surface })[0]);
+    await chooseScrollOption(
+      screen.getByRole("combobox", { name: "Runs on" }),
+      value.machine.id,
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "Plan Mode" }));
+    fireEvent.click(screen.getByRole("button", { name: "Options" }));
+    if (surface === "New session")
+      fireEvent.click(screen.getByText("Optional estimated-cost budget"));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Enable estimated-cost budget" }),
+    );
+    fireEvent.change(screen.getByLabelText("Budget currency"), {
+      target: { value: "USD" },
+    });
+    fireEvent.change(screen.getByLabelText("Estimated-cost threshold"), {
+      target: { value: "3.25" },
+    });
+    const action = await screen.findByRole("button", {
+      name: "Create agent worker",
+    });
+    expect(action).toHaveProperty("type", "button");
+    expect(
+      screen.queryByText(
+        "No selectable Agent Worker choices are on this page.",
+      ),
+    ).toBeNull();
+    fireEvent.click(action);
+    const wizard = await screen.findByRole("dialog", {
+      name: "New Agent Worker",
+    });
+    expect(
+      await within(wizard).findByRole("heading", { name: "Harness" }),
+    ).toBeTruthy();
+    expect(value.saveConfiguration).not.toHaveBeenCalled();
+    expect(value.creates).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(
+      within(wizard).getByRole("heading", { name: "Harness" }),
+    );
+    fireEvent.click(
+      within(wizard).getByRole("button", { name: "Close New Agent Worker" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+    fireEvent.click(screen.getAllByRole("button", { name: surface })[0]);
+    expect(
+      screen.getByRole("textbox", { name: "First message" }),
+    ).toHaveProperty("value", `${surface} independent draft`);
+    expect(
+      scrollChoiceValue(screen.getByRole("combobox", { name: "Runs on" })),
+    ).toBe(value.machine.id);
+    expect(screen.getByLabelText("Estimated-cost threshold")).toHaveProperty(
+      "value",
+      "3.25",
+    );
+    expect(screen.getByLabelText("Budget currency")).toHaveProperty(
+      "value",
+      "USD",
+    );
+    expect(
+      screen.getByRole("button", {
+        name:
+          surface === "New session" ? "Create session" : "Start general chat",
+      }),
+    ).toHaveProperty("disabled", true);
+    expect(screen.getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty(
+      "checked",
+      true,
+    );
+    expect(
+      screen
+        .getByRole("button", { name: "Options" })
+        .getAttribute("aria-expanded"),
+    ).toBe("true");
+    fireEvent.click(
+      screen.getAllByRole("button", {
+        name: surface === "New session" ? "New Chat" : "New session",
+      })[0],
+    );
+    expect(
+      screen.getByRole("textbox", { name: "First message" }),
+    ).toHaveProperty(
+      "value",
+      `${surface === "New session" ? "New Chat" : "New session"} independent draft`,
+    );
+    expect(value.saveConfiguration).not.toHaveBeenCalled();
+    expect(value.creates).not.toHaveBeenCalled();
+  },
+  fullShellTimeoutMs,
+);
 
 it("shows selector loading while the current page has not returned", async () => {
   let finish!: () => void;
@@ -1604,6 +1717,9 @@ it("shows selector loading while the current page has not returned", async () =>
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "New session" }));
   expect(await screen.findByText("Loading Agent Worker choices…")).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Create agent worker" }),
+  ).toBeNull();
   finish();
   await waitScrollChoices(
     screen.getByRole("combobox", { name: "Agent Worker" }),
@@ -2429,7 +2545,7 @@ it("retries the exact accepted message identity after uncertainty instead of sen
   expect(calls[0][0]).toEqual(calls[1][0]);
 });
 
-it("shows expanded execution configuration without changing the unsent session draft or dispatching work", async () => {
+it("shows unavailable execution evidence in Diagnostics without changing the draft", async () => {
   const value = fixture();
   render(<App transport={value.transport} />);
   fireEvent.click(
@@ -2441,12 +2557,11 @@ it("shows expanded execution configuration without changing the unsent session d
   fireEvent.change(composer, {
     target: { value: "Keep the original unsent draft" },
   });
-  const executionHeading = screen.getByRole("heading", {
-    name: "Execution settings",
-  });
-  expect(executionHeading.closest("details")).toBeNull();
-  expect(executionHeading.closest("[hidden]")).toBeNull();
-  expect(screen.getByText(/No accepted execution configuration/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Diagnostics" }));
+  expect(
+    screen.getByText(/No accepted execution configuration is available/),
+  ).toBeTruthy();
   expect((composer as HTMLTextAreaElement).value).toBe(
     "Keep the original unsent draft",
   );
@@ -3196,6 +3311,27 @@ function viewport(compact = false) {
   };
 }
 
+function startingSidebarBridge() {
+  const bridge = memorySidebarBridge();
+  const originalRead = bridge.read;
+  let signalRead!: () => void;
+  const readStarted = new Promise<void>((resolve) => {
+    signalRead = resolve;
+  });
+  vi.spyOn(bridge, "read").mockImplementation(async () => {
+    signalRead();
+    return originalRead();
+  });
+  return { bridge, readStarted };
+}
+
+async function waitForSidebarRead(readStarted: Promise<void>) {
+  await act(async () => {
+    await readStarted;
+    await Promise.resolve();
+  });
+}
+
 function animationFrames() {
   let id = 0;
   const frames = new Map<number, FrameRequestCallback>();
@@ -3686,15 +3822,85 @@ it("rechecks the original welcome status failure without creating or controlling
 });
 
 it(
+  "exposes the wide sidebar shortcut on the persistent main landmark",
+  async () => {
+    viewport();
+    const value = fixture();
+    const { bridge, readStarted } = startingSidebarBridge();
+    render(
+      <SidebarProvider bridge={bridge}>
+        <App transport={value.transport} />
+      </SidebarProvider>,
+    );
+    await waitForSidebarRead(readStarted);
+    const main = screen.getByRole("main");
+    expect(main.getAttribute("aria-keyshortcuts")).toMatch(
+      /^(Meta|Control)\+B$/,
+    );
+    fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
+    await waitFor(() =>
+      expect(
+        document.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")
+          ?.hidden,
+      ).toBe(true),
+    );
+    await waitFor(() =>
+      expect(main.getAttribute("aria-keyshortcuts")).toMatch(
+        /^(Meta|Control)\+B$/,
+      ),
+    );
+  },
+  fullShellTimeoutMs,
+);
+
+it(
+  "withholds the wide sidebar shortcut while its preference is unresolved",
+  async () => {
+    viewport();
+    const value = fixture();
+    const bridge = memorySidebarBridge();
+    let finishRead!: (snapshot: unknown) => void;
+    const read = new Promise<unknown>((resolve) => {
+      finishRead = resolve;
+    });
+    vi.spyOn(bridge, "read").mockReturnValue(read);
+    render(
+      <SidebarProvider bridge={bridge}>
+        <App transport={value.transport} />
+      </SidebarProvider>,
+    );
+    const main = screen.getByRole("main");
+    expect(main.getAttribute("aria-keyshortcuts")).toBeNull();
+
+    await act(async () => {
+      finishRead({
+        revision: 1,
+        sidebar_preference: "expanded",
+        problem: null,
+      });
+      await read;
+    });
+    await waitFor(() =>
+      expect(main.getAttribute("aria-keyshortcuts")).toMatch(
+        /^(Meta|Control)\+B$/,
+      ),
+    );
+  },
+  fullShellTimeoutMs,
+);
+
+it(
   "wide sidebar collapse retains composer selection and mounted navigation while moving only hidden focus",
   async () => {
     viewport();
     const value = fixture();
+    const { bridge, readStarted } = startingSidebarBridge();
     render(
-      <SidebarProvider bridge={memorySidebarBridge()}>
+      <SidebarProvider bridge={bridge}>
         <App transport={value.transport} />
       </SidebarProvider>,
     );
+    await waitForSidebarRead(readStarted);
     fireEvent.click(screen.getByRole("button", { name: "New session" }));
     const draft = (await screen.findByRole("textbox", {
       name: "First message",
@@ -3709,15 +3915,11 @@ it(
     )!;
     const initialPane = pane,
       initialOutlet = pane.querySelector(".sidebar-surface-outlet");
-    await waitFor(() =>
-      expect(
-        screen
-          .getByRole("button", { name: "Collapse sidebar" })
-          .getAttribute("aria-disabled"),
-      ).toBe("false"),
-    );
     fireEvent.keyDown(draft, { key: "b", ctrlKey: true });
-    await screen.findByRole("button", { name: "Expand sidebar" });
+    await waitFor(() =>
+      expect(document.querySelector(".app.sidebar-collapsed")).toBeTruthy(),
+    );
+    await waitFor(() => expect(pane.hidden).toBe(true));
     expect(pane.hidden).toBe(true);
     expect(pane.inert).toBe(true);
     expect(document.activeElement).toBe(draft);
@@ -3727,7 +3929,10 @@ it(
       "original draft",
     ]);
     fireEvent.keyDown(draft, { key: "b", ctrlKey: true });
-    await screen.findByRole("button", { name: "Collapse sidebar" });
+    await waitFor(() =>
+      expect(document.querySelector(".app.sidebar-collapsed")).toBeNull(),
+    );
+    await waitFor(() => expect(pane.hidden).toBe(false));
     expect(document.querySelector(".sidebar-pane-dialog")).toBe(initialPane);
     expect(pane.querySelector(".sidebar-surface-outlet")).toBe(initialOutlet);
     expect(pane.hidden).toBe(false);
@@ -3735,10 +3940,15 @@ it(
     const source = pane.querySelector<HTMLButtonElement>("button")!;
     act(() => source.focus());
     fireEvent.keyDown(source, { key: "b", ctrlKey: true });
-    const toggle = await screen.findByRole("button", {
-      name: "Expand sidebar",
-    });
-    expect(document.activeElement).toBe(toggle);
+    await waitFor(() => expect(pane.hidden).toBe(true));
+    const rail = screen.getByRole("button", { name: "Sessions" });
+    expect(document.activeElement).toBe(rail);
+    fireEvent.keyDown(rail, { key: "b", ctrlKey: true });
+    await waitFor(() =>
+      expect(document.querySelector(".app.sidebar-collapsed")).toBeNull(),
+    );
+    await waitFor(() => expect(pane.hidden).toBe(false));
+    expect(document.activeElement).toBe(rail);
     expectNoNavigationWrites(value);
   },
   fullShellTimeoutMs,
@@ -3749,20 +3959,21 @@ it(
   async () => {
     const resize = viewport();
     const value = fixture();
+    const { bridge, readStarted } = startingSidebarBridge();
     render(
-      <SidebarProvider bridge={memorySidebarBridge()}>
+      <SidebarProvider bridge={bridge}>
         <App transport={value.transport} />
       </SidebarProvider>,
     );
+    await waitForSidebarRead(readStarted);
+    const pane = document.querySelector<HTMLDialogElement>(
+      ".sidebar-pane-dialog",
+    )!;
+    fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
     await waitFor(() =>
-      expect(
-        screen
-          .getByRole("button", { name: "Collapse sidebar" })
-          .getAttribute("aria-disabled"),
-      ).toBe("false"),
+      expect(document.querySelector(".app.sidebar-collapsed")).toBeTruthy(),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
-    await screen.findByRole("button", { name: "Expand sidebar" });
+    await waitFor(() => expect(pane.hidden).toBe(true));
     act(() => resize(true));
     fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
     const opener = document.querySelector<HTMLButtonElement>(
@@ -3774,11 +3985,233 @@ it(
     ).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Close navigation" }));
     act(() => resize(false));
-    expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeTruthy();
-    expect(
-      document.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")!.hidden,
-    ).toBe(true);
+    expect(document.querySelector(".app.sidebar-collapsed")).toBeTruthy();
+    expect(pane.hidden).toBe(true);
     expectNoNavigationWrites(value);
   },
   fullShellTimeoutMs,
 );
+
+it.each([
+  ["MacIntel", false],
+  ["Win32", false],
+  ["Linux x86_64", false],
+  ["MacIntel", true],
+] as const)(
+  "opens Settings with its fixed local shortcut from an ordinary input on %s (compact %s)",
+  async (platform, compact) => {
+    viewport(compact);
+    vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
+    const value = fixture();
+    render(<App transport={value.transport} />);
+    if (compact)
+      fireEvent.click(
+        screen.getByRole("button", { name: "Open session navigation" }),
+      );
+    fireEvent.click(await screen.findByRole("button", { name: "New session" }));
+    const input = await screen.findByRole("textbox", { name: "First message" });
+    input.focus();
+    const chord = {
+      key: ",",
+      metaKey: platform === "MacIntel",
+      ctrlKey: platform !== "MacIntel",
+    };
+    expect(fireEvent.keyDown(input, chord)).toBe(false);
+    expect(
+      screen.getByRole("region", { name: "Settings content" }),
+    ).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", { name: "Settings" })
+        .getAttribute("aria-keyshortcuts"),
+    ).toBe(platform === "MacIntel" ? "Meta+," : "Control+,");
+    expect(
+      screen.getByRole("heading", { name: "AI Subscription" }),
+    ).toBeTruthy();
+    expect(document.activeElement).toBe(
+      compact
+        ? screen.getByRole("button", { name: "Open settings categories" })
+        : screen.getByRole("main"),
+    );
+    expectNoNavigationWrites(value);
+  },
+  fullShellTimeoutMs,
+);
+
+it(
+  "retains the active Settings editor and focus on comma, then starts a fresh visit after leaving",
+  async () => {
+    viewport(false);
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+    const value = fixture();
+    render(<App transport={value.transport} />);
+    await screen.findByRole("button", { name: "Settings" });
+    fireEvent.keyDown(document.body, { key: ",", ctrlKey: true });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Instructions" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "New Instructions" }),
+    );
+    const name = screen.getByRole("textbox", { name: "Name" });
+    fireEvent.change(name, { target: { value: "Retained shortcut draft" } });
+    name.focus();
+    fireEvent.keyDown(name, { key: ",", ctrlKey: true });
+    expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
+    expect(name).toHaveProperty("value", "Retained shortcut draft");
+    expect(document.activeElement).toBe(name);
+    expect(value.saveConfiguration).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+    fireEvent.keyDown(document.body, { key: ",", ctrlKey: true });
+    expect(
+      screen
+        .getByRole("button", { name: "AI Subscription" })
+        .getAttribute("aria-current"),
+    ).toBe("page");
+    expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+    expectNoNavigationWrites(value);
+  },
+  fullShellTimeoutMs,
+);
+
+it("Search focus waits for its opening generation and cannot survive reversal or navigation", async () => {
+  viewport();
+  const flushFrames = animationFrames();
+  const value = fixture();
+  const view = render(
+    <SidebarProvider bridge={memorySidebarBridge()}>
+      <App transport={value.transport} />
+    </SidebarProvider>,
+  );
+  await act(async () => {});
+  fireEvent.click(headerAction("Search"));
+  const input = screen.getByRole("textbox", { name: "Search conversations" });
+  flushFrames();
+  const main = screen.getByRole("main");
+  main.focus();
+  const focused = vi.fn();
+  input.addEventListener("focus", focused);
+  const original = getComputedStyle;
+  let rendered = 288;
+  vi.stubGlobal("getComputedStyle", (element: Element) =>
+    element.classList.contains("app")
+      ? {
+          gridTemplateColumns: `${53 + rendered}px 1000px`,
+          transitionDuration: "0.18s",
+        }
+      : original(element),
+  );
+  vi.useFakeTimers();
+  try {
+    const toggle = async (key: string) => {
+      fireEvent.keyDown(document.activeElement ?? document.body, {
+        key,
+        ctrlKey: true,
+      });
+      await act(async () => {});
+    };
+    const settle = () => act(() => vi.advanceTimersByTime(240));
+    await toggle("b");
+    settle();
+    rendered = 0;
+    await toggle("i");
+    expect(document.activeElement).toBe(main);
+    expect(focused).not.toHaveBeenCalled();
+    settle();
+    expect(document.activeElement).toBe(input);
+    expect(focused).toHaveBeenCalledTimes(1);
+    main.focus();
+    rendered = 288;
+    await toggle("b");
+    settle();
+    rendered = 0;
+    await toggle("i");
+    rendered = 144;
+    await toggle("b");
+    settle();
+    expect(focused).toHaveBeenCalledTimes(1);
+    rendered = 0;
+    await toggle("b");
+    settle();
+    flushFrames();
+    expect(focused).toHaveBeenCalledTimes(1);
+    rendered = 288;
+    await toggle("b");
+    settle();
+    rendered = 0;
+    await toggle("i");
+    fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+    settle();
+    flushFrames();
+    expect(focused).toHaveBeenCalledTimes(1);
+    expectNoNavigationWrites(value);
+  } finally {
+    view.unmount();
+    vi.useRealTimers();
+  }
+});
+
+it("preserves first Search autofocus after a hidden wide activation", async () => {
+  viewport();
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const flushFrames = animationFrames();
+  const value = fixture();
+  render(
+    <SidebarProvider bridge={memorySidebarBridge()}>
+      <App transport={value.transport} />
+    </SidebarProvider>,
+  );
+  await act(async () => {});
+  fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
+  await waitFor(() =>
+    expect(document.querySelector(".app.sidebar-collapsed")).toBeTruthy(),
+  );
+
+  const navigate = async (name: "Search" | "Sessions") => {
+    fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
+    const menu = await screen.findByRole("dialog", { name: "Command menu" });
+    fireEvent.click(within(menu).getByRole("option", { name }));
+  };
+  await navigate("Search");
+  const input = document.querySelector<HTMLInputElement>(
+    ".sidebar-pane-dialog input",
+  )!;
+  flushFrames();
+  expect(document.activeElement).not.toBe(input);
+
+  await navigate("Sessions");
+  fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
+  await waitFor(() =>
+    expect(document.querySelector(".app.sidebar-collapsed")).toBeNull(),
+  );
+  fireEvent.click(headerAction("Search"));
+  flushFrames();
+  expect(document.activeElement).toBe(input);
+  expectNoNavigationWrites(value);
+});
+
+it("autofocuses visible Search after a wide sidebar preference read failure", async () => {
+  viewport();
+  const flushFrames = animationFrames();
+  const value = fixture();
+  const bridge = memorySidebarBridge();
+  vi.spyOn(bridge, "read").mockRejectedValue(new Error("read unavailable"));
+  render(
+    <SidebarProvider bridge={bridge}>
+      <App transport={value.transport} />
+    </SidebarProvider>,
+  );
+  await screen.findByRole("alert");
+  fireEvent.click(headerAction("Search"));
+  const input = screen.getByRole("textbox", { name: "Search conversations" });
+  flushFrames();
+  expect(document.activeElement).toBe(input);
+  expectNoNavigationWrites(value);
+});

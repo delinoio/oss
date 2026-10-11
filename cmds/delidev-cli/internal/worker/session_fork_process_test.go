@@ -84,10 +84,16 @@ func TestForkChildRetirementPreservesReplacedOrUncertainOwners(t *testing.T) {
 			root := filepath.Join(t.TempDir(), "worker")
 			owner := domain.NewID()
 			path := filepath.Join(root, "processes", string(owner))
+			if err := security.PrivateDir(filepath.Dir(path)); err != nil {
+				t.Fatal(err)
+			}
 			if err := security.PrivateDir(path); err != nil {
 				t.Fatal(err)
 			}
-			original, _ := os.Lstat(path)
+			original, err := security.StableStat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
 			phase := forkRuntimeUnused
 			problem := error(domain.Fail(domain.Unsupported, "Rejected.", "Preserve the source."))
 			switch scenario {
@@ -113,7 +119,7 @@ func TestForkChildRetirementPreservesReplacedOrUncertainOwners(t *testing.T) {
 			case "recovery":
 				problem = executionCheckpointUncertain()
 			}
-			err := finishForkChildProcessFailure(root, owner, original, phase, problem)
+			err = finishForkChildProcessFailure(root, owner, original, phase, problem)
 			if scenario != "native-possible" && domain.SafeError(err).Code != domain.RecoveryRequired {
 				t.Fatal("uncertainty lost", err)
 			}

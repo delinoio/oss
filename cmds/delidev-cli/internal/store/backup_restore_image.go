@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 )
 
 // validateRestoreImage admits only the current immutable layout. The original
@@ -175,7 +176,7 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 		body []byte
 	}
 	changes := []change{}
-	var total int64
+	var retained restoreDocumentBudget
 	for rows.Next() {
 		var id domain.ID
 		var kind domain.Kind
@@ -183,12 +184,6 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 		if err := rows.Scan(&id, &kind, &raw); err != nil {
 			rows.Close()
 			return storageError(err)
-		}
-		// Bound aggregate retained documents as well as each domain document.
-		total += int64(len(raw))
-		if len(changes) >= 100000 || total > 256<<20 {
-			rows.Close()
-			return domain.Fail(domain.ResourceExhausted, "Restore transformation exceeds its document bound.", "Preserve both databases and arrange offline maintenance.")
 		}
 		var value any
 		switch kind {
@@ -204,7 +199,7 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 		case domain.JobKind:
 			// Restore supported history with the same closed type-aware limits
 			// as ordinary storage reads, without enlarging generic documents.
-			v, err := Decode[domain.Job](Record{ID: id, Kind: kind, Data: raw})
+			v, err := decodeRestoreJob(raw)
 			if err != nil {
 				rows.Close()
 				return err
@@ -223,6 +218,10 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 				}
 			}
 			if v.Type == domain.DeleteBackupJob {
+				if err := retained.add(len(raw)); err != nil {
+					rows.Close()
+					return err
+				}
 				continue
 			}
 			if !v.State.Terminal() {
@@ -245,6 +244,10 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 			value = v
 		case domain.AccountKind:
 			if retainedOAuth[id] {
+				if err := retained.add(len(raw)); err != nil {
+					rows.Close()
+					return err
+				}
 				continue
 			}
 			var v domain.Account
@@ -294,6 +297,18 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 		if err != nil {
 			rows.Close()
 			return storageError(err)
+		}
+		// Quarantine adds required metadata. Recheck the complete retained Job
+		// before any body updates so a valid source cannot become unreadable.
+		if kind == domain.JobKind {
+			if _, err := decodeRestoreJob(body); err != nil {
+				rows.Close()
+				return err
+			}
+		}
+		if err := retained.add(len(body)); err != nil {
+			rows.Close()
+			return err
 		}
 		changes = append(changes, change{id, body})
 	}
@@ -395,5 +410,39 @@ func redactRestoredDeletedSessions(ctx context.Context, tx *sql.Tx, now time.Tim
 			return err
 		}
 	}
+	return nil
+}
+
+// Decode the original document before quarantine can replace invalid state or
+// hide a malformed input behind a canceled historical Job. Generic storage
+// decoding chooses outer limits; each exceptional profile owns its validation.
+func decodeRestoreJob(raw []byte) (domain.Job, error) {
+	job, err := Decode[domain.Job](Record{Kind: domain.JobKind, Data: raw})
+	if err != nil {
+		return job, err
+	}
+	switch job.Type {
+	case domain.CompactSessionJob:
+		err = domain.DecodeCompactionJob(raw, &job)
+	case domain.WorkspaceStorageJob:
+		err = workspace.DecodeStorageJob(raw, &job)
+	}
+	return job, err
+}
+
+// Count final retained bodies, including unchanged current-authority rows. Keep
+// accounting separate from the change list, which excludes those rows.
+type restoreDocumentBudget struct {
+	documents int
+	bytes     int64
+}
+
+func (b *restoreDocumentBudget) add(size int) error {
+	const maxBytes = 256 << 20
+	if b.documents >= 100000 || int64(size) > maxBytes-b.bytes {
+		return domain.Fail(domain.ResourceExhausted, "Restore transformation exceeds its document bound.", "Preserve both databases and arrange offline maintenance.")
+	}
+	b.documents++
+	b.bytes += int64(size)
 	return nil
 }

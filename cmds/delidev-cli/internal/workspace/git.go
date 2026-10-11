@@ -184,18 +184,17 @@ func (g Git) runCommand(ctx context.Context, root string, args ...string) ([]byt
 		if out.overflow {
 			return nil, -1, domain.Fail(domain.ResourceExhausted, "Git output exceeded its bound.", "Narrow the requested repository operation.")
 		}
-		var exit interface{ ExitCode() int }
-		if errors.As(err, &exit) {
+		if exitCode, exited := process.CommandExitCode(err); exited {
 			if g.cloneDiagnostics {
 				value := strings.ToLower(diagnostic.String())
 				if strings.Contains(value, "authentication failed") || strings.Contains(value, "permission denied (publickey") || strings.Contains(value, "could not read username") || strings.Contains(value, "could not read password") {
-					return nil, exit.ExitCode(), &domain.Error{Code: domain.PermissionDenied, Message: "Git authentication failed.", Guidance: "Configure this computer's Git credentials or SSH key, then retry.", Cause: "clone_authentication"}
+					return nil, exitCode, &domain.Error{Code: domain.PermissionDenied, Message: "Git authentication failed.", Guidance: "Configure this computer's Git credentials or SSH key, then retry.", Cause: "clone_authentication"}
 				}
 			}
 			if g.Logger != nil {
-				g.Logger.WarnContext(ctx, "workspace_git_failed", "owner_id", g.OwnerID, "code", domain.Unavailable, "cause", "git_exit", "exit_code", exit.ExitCode(), "read_only", g.readOnly, "offline", g.offline)
+				g.Logger.WarnContext(ctx, "workspace_git_failed", "owner_id", g.OwnerID, "code", domain.Unavailable, "cause", "git_exit", "exit_code", exitCode, "read_only", g.readOnly, "offline", g.offline)
 			}
-			return nil, exit.ExitCode(), &domain.Error{Code: domain.Unavailable, Message: "Git could not complete the operation on this Worker.", Guidance: "Check the selected repository, reference, remote access, and Worker Git authentication; no stale fallback was used.", Cause: "git_exit"}
+			return nil, exitCode, &domain.Error{Code: domain.Unavailable, Message: "Git could not complete the operation on this Worker.", Guidance: "Check the selected repository, reference, remote access, and Worker Git authentication; no stale fallback was used.", Cause: "git_exit"}
 		}
 		if g.Logger != nil {
 			g.Logger.WarnContext(ctx, "workspace_git_failed", "owner_id", g.OwnerID, "code", domain.Unavailable, "cause", "git_launch", "read_only", g.readOnly, "offline", g.offline)

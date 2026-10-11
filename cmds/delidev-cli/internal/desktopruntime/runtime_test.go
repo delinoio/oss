@@ -5,12 +5,15 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
@@ -117,6 +120,41 @@ func TestLocalRetirementCannotFallBackToPairingAddress(t *testing.T) {
 		t.Fatal("retirement fell back to obsolete address")
 	}
 }
+func TestRetireIsIdempotentAcrossConcurrentCalls(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "owner")
+	if err := security.PrivateDir(root); err != nil {
+		t.Fatal(err)
+	}
+	target := fixtureTarget("http://127.0.0.1:46310")
+	target.Root = root
+	if err := Publish(target); err != nil {
+		t.Fatal(err)
+	}
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	var callers sync.WaitGroup
+	for range 2 {
+		callers.Add(1)
+		go func() {
+			defer callers.Done()
+			<-start
+			errs <- Retire(target)
+		}()
+	}
+	close(start)
+	callers.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent retirement failed: %v", err)
+		}
+	}
+	if _, err := Load(root, target.ServerID); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("retired runtime remains available: %v", err)
+	}
+}
+
 func TestTargetRequiresCanonicalLoopbackPort(t *testing.T) {
 	for _, address := range []string{"http://127.0.0.1:0", "http://127.0.0.1:65536", "http://127.0.0.1:01", "http://localhost:1234", "http://127.0.0.1:1234/path"} {
 		if fixtureTarget(address).Validate() == nil {
@@ -130,6 +168,9 @@ func TestLocalPairingNameMetadataPreservesOriginalRuntimeProof(t *testing.T) {
 		t.Run("name="+name, func(t *testing.T) {
 			target := fixtureTarget("http://127.0.0.1:46310")
 			target.Root = filepath.Join(t.TempDir(), "owner")
+			if err := security.PrivateDir(target.Root); err != nil {
+				t.Fatal(err)
+			}
 			root := filepath.Join(target.Root, "worker")
 			if err := security.PrivateDir(root); err != nil {
 				t.Fatal(err)

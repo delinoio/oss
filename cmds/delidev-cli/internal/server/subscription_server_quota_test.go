@@ -46,6 +46,11 @@ func newServerQuotaFixture(t *testing.T) (*subscriptionFixture, *serverQuotaFixt
 }
 
 func newServerQuotaFixtureAccount(t *testing.T, account string) (*subscriptionFixture, *serverQuotaFixture) {
+	return newServerQuotaFixtureBundle(t, subscriptionTestBundle(account, "first", time.Now().UTC()))
+}
+
+func newServerQuotaFixtureBundle(t *testing.T, bundle []byte) (*subscriptionFixture, *serverQuotaFixture) {
+	t.Helper()
 	f := newSubscriptionFixture(t)
 	// Remove the common fixture's Runner registration. This lane must work with
 	// only its server-owned account, original protected generation and receipt.
@@ -60,7 +65,7 @@ func newServerQuotaFixtureAccount(t *testing.T, account string) (*subscriptionFi
 		t.Fatal(err)
 	}
 	f.serverStart(pb.SubscriptionAction_SUBSCRIPTION_ACTION_LOGIN)
-	login := &serverLoginFixture{started: make(chan struct{}), finish: make(chan struct{}), bundle: subscriptionTestBundle(account, "first", time.Now().UTC())}
+	login := &serverLoginFixture{started: make(chan struct{}), finish: make(chan struct{}), bundle: bundle}
 	done := f.serverRun(login)
 	awaitServerFixture(t, login.started)
 	close(login.finish)

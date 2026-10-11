@@ -48,10 +48,16 @@ func TestRetireCompletedOwnerFailureDoesNotClaimCleanup(t *testing.T) {
 			root := filepath.Join(t.TempDir(), "processes")
 			owner := domain.NewID()
 			path := filepath.Join(root, string(owner))
+			if err := security.PrivateDir(filepath.Dir(path)); err != nil {
+				t.Fatal(err)
+			}
 			if err := security.PrivateDir(path); err != nil {
 				t.Fatal(err)
 			}
-			original, _ := os.Lstat(path)
+			original, err := security.StableStat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
 			remove := os.Remove
 			syncParent := security.SyncParent
 			ctx, cancel := context.WithCancel(context.Background())
@@ -74,7 +80,7 @@ func TestRetireCompletedOwnerFailureDoesNotClaimCleanup(t *testing.T) {
 			case "canceled":
 				cancel()
 			}
-			err := retireCompletedOwnerContext(ctx, root, owner, original, remove, syncParent)
+			err = retireCompletedOwnerContext(ctx, root, owner, original, remove, syncParent)
 			if err == nil {
 				t.Fatal("cleanup failure accepted")
 			}

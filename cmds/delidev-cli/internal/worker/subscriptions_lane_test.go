@@ -241,9 +241,15 @@ func TestManagedLifecycleExactTakeRefusalKeepsLaneWithoutCompletion(t *testing.T
 			deadline := time.Now().Add(3 * time.Second)
 			for {
 				var journal managedSubscriptionJournal
-				raw, err := os.ReadFile(paths[0])
+				// Read with Windows delete-sharing while the owner atomically
+				// replaces its journal. A transient read is not settled evidence.
+				raw, err := security.ReadPrivate(paths[0], 1<<20)
 				if err != nil {
-					t.Fatal(err)
+					if time.Now().After(deadline) {
+						t.Fatal("settled journal remained unreadable", err)
+					}
+					time.Sleep(10 * time.Millisecond)
+					continue
 				}
 				if err = json.Unmarshal(raw, &journal); err != nil {
 					t.Fatal(err)

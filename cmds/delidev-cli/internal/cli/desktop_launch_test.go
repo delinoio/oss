@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +24,10 @@ import (
 )
 
 func TestDesktopLaunchSharesDeadlineAcrossAdmissionAndController(t *testing.T) {
+	// Overlap isolated fixture waits on Linux; retain native Windows scheduling.
+	if runtime.GOOS == "linux" {
+		t.Parallel()
+	}
 	root := filepath.Join(t.TempDir(), "private")
 	if err := security.PrivateDir(root); err != nil {
 		t.Fatal(err)

@@ -273,6 +273,10 @@ function request(data: Document) {
   }
   return { r, v, p };
 }
+export function validGrokInteraction(data: Document): boolean {
+  return Boolean(request(data));
+}
+
 export function NativeGrokInteraction({
   data,
   resource,

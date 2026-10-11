@@ -198,3 +198,173 @@ func assertCredentialCancellationWithheld(t *testing.T, prefix, released string)
 		t.Fatal("close did not join")
 	}
 }
+
+func TestCredentialJSONEscapeDecodingMatchesJSON(t *testing.T) {
+	for _, escaped := range []string{
+		`\"\\\/\b\f\n\r\t`,
+		`\u0000\u007f\u0080\u07ff\u0800\uFFFF`,
+		`\ud83d\uDD12`,
+		`\uD800`, `\uDC00`, `\uD800a`, `\uD800\n`,
+		`\uD800\u0061`, `\uD800\uD800`,
+		`\uD800\uD83D\uDD12`, `\uDC00\uD83D\uDD12`,
+	} {
+		var want string
+		if err := json.Unmarshal([]byte(`"`+escaped+`"`), &want); err != nil {
+			t.Fatal(err)
+		}
+		wire := []byte(`"` + escaped)
+		for split := 0; split <= len(wire); split++ {
+			// Keep the entire decoded value as a candidate prefix so it can be
+			// compared with encoding/json without adding a production observer.
+			guard := credentialJSONGuard{
+				framing:  credentialOrdinary,
+				patterns: [][]byte{[]byte(want + "\x00unmatched-suffix")},
+			}
+			if guard.scan(wire[:split]) || guard.scan(wire[split:]) || guard.finish() {
+				t.Fatalf("unexpected reflection for %q at split %d", escaped, split)
+			}
+			if got := string(guard.decoded); got != want || len(guard.escape) != 0 {
+				t.Fatalf("decode %q at split %d: got %q, want %q, pending %d", escaped, split, got, want, len(guard.escape))
+			}
+		}
+	}
+}
+
+func TestCredentialJSONEscapesReuseBuffers(t *testing.T) {
+	patterns := [][]byte{[]byte("credential-never-occurs")}
+	for _, escape := range []string{`\n`, `\u0061`, `\uD83D\uDD12`, `\uD800a`, `\uD800\uD83D\uDD12`} {
+		var baseline float64
+		for _, count := range []int{1, 64, 4096} {
+			wire := []byte(`{"value":"` + strings.Repeat(escape, count) + `"}`)
+			failed := false
+			allocs := testing.AllocsPerRun(10, func() {
+				guard := credentialJSONGuard{framing: credentialOrdinary, patterns: patterns}
+				if guard.scan(wire) || guard.finish() {
+					failed = true
+				}
+			})
+			if failed {
+				t.Fatal("harmless escape fixture was rejected")
+			}
+			if count == 1 {
+				baseline = allocs
+			}
+			if allocs > 16 || allocs > baseline+1 {
+				t.Fatalf("%q repeated %d times allocated %.0f times; initial %.0f", escape, count, allocs, baseline)
+			}
+		}
+	}
+}
+
+func TestCredentialJSONEscapeOffsets(t *testing.T) {
+	for _, test := range []struct {
+		wire   string
+		want   string
+		starts []int64
+	}{
+		{`"\uD83D\uDD12`, "🔒", []int64{1, 1, 1, 1}},
+		{`"\uD800\u0061`, "�a", []int64{1, 1, 1, 7}},
+		{`"\uD800\uD83D\uDD12`, "�🔒", []int64{1, 1, 1, 7, 7, 7, 7}},
+		{`"\uD800\n`, "�\n", []int64{1, 1, 1, 7}},
+	} {
+		for split := 0; split <= len(test.wire); split++ {
+			guard := credentialJSONGuard{framing: credentialOrdinary, patterns: [][]byte{[]byte(test.want + "unmatched-suffix")}}
+			guard.scan([]byte(test.wire[:split]))
+			guard.scan([]byte(test.wire[split:]))
+			guard.finish()
+			if string(guard.decoded) != test.want || len(guard.starts) != len(test.starts) || guard.retainFrom() != 1 {
+				t.Fatalf("wrong decoded candidate for %q at split %d", test.wire, split)
+			}
+			for i, start := range guard.starts {
+				if start != test.starts[i] {
+					t.Fatalf("wrong wire offset for %q at split %d, byte %d: %d", test.wire, split, i, start)
+				}
+			}
+		}
+	}
+}
+
+func TestCredentialMalformedJSONKeepsLiteralProtection(t *testing.T) {
+	credential := domain.ProxyCredential{Username: "fixture-user", Password: "fixture-password"}
+	for _, escape := range []string{`\z`, `\u00xz`, `\uD800\u00xz`} {
+		wire := `{"value":"` + escape + credential.Password + `"}`
+		for split := 0; split <= len(wire); split++ {
+			source := io.MultiReader(strings.NewReader(wire[:split]), strings.NewReader(wire[split:]))
+			original := &trackedCredentialReader{Reader: source}
+			guard := newCredentialBody(original, credential, "application/json")
+			output, err := io.ReadAll(guard)
+			if err == nil || !original.closed || strings.Contains(string(output), credential.Password) {
+				t.Fatalf("literal reflection after %q escaped protection at split %d", escape, split)
+			}
+			guard.Close()
+		}
+	}
+}
+
+func TestCredentialIncompleteJSONPreservesWire(t *testing.T) {
+	credential := domain.ProxyCredential{Username: "fixture-user", Password: "fixture-password"}
+	for _, escape := range []string{`\`, `\u`, `\u00`, `\uD800`, `\uD800\`, `\uD800\u`, `\uD800\u00`} {
+		wire := `{"value":"` + escape
+		guard := newCredentialBody(io.NopCloser(fragmentedReader{strings.NewReader(wire)}), credential, "application/json")
+		output, err := io.ReadAll(guard)
+		if err != nil || string(output) != wire {
+			t.Fatalf("incomplete escape %q changed safe wire: %v", escape, err)
+		}
+		guard.Close()
+	}
+}
+
+func TestCredentialJSONSurrogateTailKeepsRejection(t *testing.T) {
+	credential := domain.ProxyCredential{Username: "fixture-user", Password: "fixture-password"}
+	credential.Password = "�"
+	// The following quote must not reset a rejection found while flushing the
+	// unmatched high surrogate. This also exercises a short token at EOF.
+	for _, wire := range []string{`{"value":"\uD800"}`, `{"value":"\uD800`, `{"value":"\uD800\uD83D\uDD12 "}`} {
+		for split := 0; split <= len(wire); split++ {
+			source := io.MultiReader(strings.NewReader(wire[:split]), strings.NewReader(wire[split:]))
+			original := &trackedCredentialReader{Reader: source}
+			guard := newCredentialBody(original, credential, "application/json")
+			output, err := io.ReadAll(guard)
+			// Non-ASCII continuation bytes mean adjacent replacement/lock runes
+			// form one token, so only the first two complete-token cases reject.
+			if strings.Contains(wire, `\uD83D`) {
+				if err != nil || string(output) != wire {
+					t.Fatalf("embedded short token rejected at split %d: %v", split, err)
+				}
+			} else if err == nil || !original.closed || strings.Contains(string(output), `\uD800`) {
+				t.Fatalf("surrogate reflection accepted at split %d", split)
+			}
+			guard.Close()
+		}
+	}
+}
+
+func TestCredentialJSONSurrogateFailureSurvivesTailQuote(t *testing.T) {
+	credential := domain.ProxyCredential{Username: "fixture-user", Password: "fixture-�"}
+	wire := `{"value":"fixture-\uD800"}`
+	for split := 0; split <= len(wire); split++ {
+		source := io.MultiReader(strings.NewReader(wire[:split]), strings.NewReader(wire[split:]))
+		original := &trackedCredentialReader{Reader: source}
+		guard := newCredentialBody(original, credential, "application/json")
+		output, err := io.ReadAll(guard)
+		if err == nil || !original.closed || strings.Contains(string(output), `fixture-\uD800`) {
+			t.Fatalf("tail quote cleared decoded reflection at split %d", split)
+		}
+		guard.Close()
+	}
+}
+
+func TestCredentialJSONSurrogateChainReflection(t *testing.T) {
+	credential := domain.ProxyCredential{Username: "fixture-user", Password: "fixture-�🔒-password"}
+	wire := `{"value":"fixture-\uD800\uD83D\uDD12-password"}`
+	for split := 0; split <= len(wire); split++ {
+		source := io.MultiReader(strings.NewReader(wire[:split]), strings.NewReader(wire[split:]))
+		original := &trackedCredentialReader{Reader: source}
+		guard := newCredentialBody(original, credential, "application/json")
+		output, err := io.ReadAll(guard)
+		if err == nil || !original.closed || strings.Contains(string(output), `fixture-\uD800`) {
+			t.Fatalf("surrogate chain reflection accepted at split %d", split)
+		}
+		guard.Close()
+	}
+}
