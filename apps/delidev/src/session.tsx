@@ -27,7 +27,7 @@ import { ImageAttachmentInput, RetainedImages, imageEntryHandlers } from "./imag
 import { useImageDraft, useImageRoute } from "./image-drafts";
 import { RunnerTaskRemediation } from "./session-runner-remediation";
 import { sessionControlEligibility, useSessionControl } from "./session-control";
-import { paginationIdentity, paginationRevision } from "./scroll-pagination";
+import { paginationIdentity, paginationRevision, ReadStage } from "./scroll-pagination";
 import { useConversationDrafts } from "./conversation-drafts";
 import { initialInteractionDraft, interactionRequestIdentity, type InboxInteractionDraft } from "./inbox-drafts";
 import { useConversationPages } from "./conversation-pagination";
@@ -483,7 +483,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   // Evicted payloads can contain waiting inputs. Keep their exact restoration
   // controls reachable; retained IDs alone cannot establish an empty queue.
   const completeQueuePayloads = queue.pages.every(page => queue.payloadPages.some(payload => payload.token === page.token));
-  const confirmedEmptyQueue = live.state === ConnectionState.Live && !live.error && Boolean(queue.data) && !queue.error && !queue.isPending && !queue.loading && !queue.nextPageToken && completeQueuePayloads && !queued.length;
+  const confirmedEmptyQueue = live.state === ConnectionState.Live && !live.error && Boolean(queue.data) && !queue.error && !queue.isPending && (!queue.loading || queue.loading === ReadStage.Refresh || queue.loading === ReadStage.Reload) && !queue.nextPageToken && completeQueuePayloads && !queued.length;
   const presentedQueueIds = new Set(queue.payloadPages.flatMap(page => queueRows(page.payload, live.resources, live.removed, [], id, false).filter(row => isQueuedInput(row) || isImageStartupRejectedInput(row, session)).map(row => row.id)).concat(!queue.nextPageToken ? [...queued, ...imageRejected].filter(row => !queue.rows.some(known => known.id === row.id)).map(row => row.id) : []));
   const panelButtons = {
     [SessionPanel.Files]: filesButton, [SessionPanel.Diff]: diffButton,
@@ -650,6 +650,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         </Disclosure>
         <PendingQueueInputs sessionId={id} presentInputIds={presentedQueueIds} refresh={queue.refresh} />
         {waitingSupported ? <WaitingQueue sessionId={id} session={session} active={conversationActive} revision={waitingRevision} drafts={queueDrafts.values} saveDraft={queueDrafts.save} readOnly={live.state !== ConnectionState.Live || Boolean(live.error)} refreshHistory={queue.refresh} /> : null}
+        {confirmedEmptyQueue && queue.loading ? <p className="sidebar-sr-only" role="status" aria-live="polite">{copy("session.loadingQueue")}</p> : null}
         <div ref={queueRoot} className={`session-tray-content ${queued.some(isQueuedInput) ? "queue-compact-list" : "queue-read-state"}`} hidden={waitingSupported || confirmedEmptyQueue} aria-label={waitingSupported || confirmedEmptyQueue ? undefined : copy("queue.waitingInputs")}>
           {queue.isPending ? <p role="status">{copy("session.loadingQueue")}</p> : null}<Failure failure={queue.error?.failure} />
             <ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={queue} root={queueRoot} active={conversationActive}>{payload => queueRows(payload, live.resources, live.removed, [], id, false).filter(isQueuedInput).map(row => <QueuedInput compact active={conversationActive} key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />)}</ScrollPayloadWindow>{!queue.nextPageToken ? [...queued, ...imageRejected].filter(row => !queue.rows.some(known => known.id === row.id)).map(row => <QueuedInput compact active={conversationActive} key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />) : null}
