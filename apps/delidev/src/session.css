@@ -398,7 +398,7 @@
 .session-diagnostics input, .session-diagnostics select,
 .session-diagnostics summary { min-height: 40px; font: inherit; }
 .session-diagnostics :is(button, summary):focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 @container session-diagnostics-view (width < 640px) {
