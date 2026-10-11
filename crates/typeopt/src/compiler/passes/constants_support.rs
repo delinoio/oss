@@ -624,6 +624,12 @@ pub(super) fn canonical_index(text: &str) -> Option<String> {
 /// Classifies every runtime reference of `symbol`.
 pub(super) fn classify(ctx: &mut Ctx, symbol: SymbolId, object_builtins: bool) -> Uses {
     let mut uses = Uses::default();
+    // With verbatim module syntax every value import stays at runtime.
+    let verbatim = ctx
+        .checker
+        .compiler_options
+        .verbatim_module_syntax
+        .is_true();
     let refs = ctx.refs(symbol).to_vec();
     for r in refs {
         let parent = r.node.parent();
@@ -651,7 +657,19 @@ pub(super) fn classify(ctx: &mut Ctx, symbol: SymbolId, object_builtins: bool) -
                     }
                 }
             }
-            RefKind::Alias => {}
+            RefKind::Alias => {
+                if verbatim
+                    && matches!(
+                        parent.kind(),
+                        SyntaxKind::ImportSpecifier | SyntaxKind::ImportClause
+                    )
+                    && !parent.is_type_only()
+                    && !(parent.kind() == SyntaxKind::ImportSpecifier
+                        && parent.parent().parent().is_type_only())
+                {
+                    uses.binding_observed = true;
+                }
+            }
             RefKind::Read | RefKind::Call | RefKind::New | RefKind::Write
                 if qualified_type_name(r.node).is_some() =>
             {

@@ -366,6 +366,27 @@ fn reexported_enums_keep_their_object_but_inline_reads() {
 }
 
 #[test]
+fn verbatim_imports_keep_the_enum_object() {
+    // Verbatim module syntax keeps `import { E }` at runtime, so the
+    // export must survive even though every read is inlined.
+    let temp = project(&[
+        ("dep.ts", "export enum E { A = 10, B = 20 }\n"),
+        (
+            "main.ts",
+            "import { E } from './dep.ts';\nconsole.log(E.A + E.B);\n",
+        ),
+        (
+            "tsconfig.json",
+            r#"{"compilerOptions":{"target":"ES2022","module":"ESNext","moduleResolution":"bundler","strict":true,"verbatimModuleSyntax":true,"rewriteRelativeImportExtensions":true}}"#,
+        ),
+    ]);
+    let report = run_only(temp.path(), &[ENUM]);
+    no_recheck_failures(&report);
+    assert!(skipped_reasons(&report, ENUM).contains(&"observable_identity".to_owned()));
+    assert!(emitted(temp.path(), "dep.ts").contains("E[E[\"A\"] = 10]"));
+}
+
+#[test]
 fn const_enums_are_left_to_the_compiler() {
     let temp = project(&[("main.ts", "const enum C { A = 1 }\nconsole.log(C.A);\n")]);
     let report = run_only(temp.path(), &[ENUM]);
