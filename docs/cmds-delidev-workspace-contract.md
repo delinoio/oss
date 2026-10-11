@@ -617,3 +617,18 @@ existing original cleanup and recovery ownership; a foreign directory or
 unproved process cleanup remains uncertain. Sidechat keeps metadata-only parent
 references. Original Local sharing and legacy accepted linked-worktree lifetimes
 keep their existing ownership boundaries.
+
+## Obligation-owned permanent deletion proofs
+
+Permanent cleanup retains the original session workspace/observation/publication
+locks and immutable manifest checks. The external workspace-removal proof belongs
+to the original server/session/deletion/machine/device obligation, with its full
+work digest. The session-wide admission fence remains separate. Exact historical
+workspace evidence is synchronized into its keyed path before its old name is
+retired; equal interrupted pairs preserve original removal stages and manifests.
+Mismatched obligations never borrow a removed workspace or foreign proof.
+
+The Worker retires this non-content proof only after original complete progress
+commits. Both bounded proof names enter completed absence checks. Reappearance
+keeps acknowledgement pending; original Local directories, independent child
+copies and shared account/browser data retain their separate ownership.

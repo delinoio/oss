@@ -1016,3 +1016,13 @@ jobs and remains available at the retention bound. These checks grant no native
 replay or new execution authority; original ownership and settled no-send proof
 remain required. See the [Sidechat contract](cmds-delidev-sidechat-contract.md#same-question-retry)
 for the five-job admission reservation.
+
+## Independent original Worker deletion acknowledgements
+
+Each original paired-device cleanup obligation retains its own identity-keyed
+progress, operation lock and original report UUID. Another historical device on
+the same machine cannot acknowledge from that proof. Session-wide native
+admission remains fenced independently of per-obligation progress. Exact legacy
+work may retain its original receipt and stages through synchronized import;
+mismatched/restored scope stays pending. The storage contract owns proof
+retirement and completed absence inventories. No new RPC or migration is added.

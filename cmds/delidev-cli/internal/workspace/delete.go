@@ -16,10 +16,11 @@ import (
 )
 
 type deletionWorkspaceProof struct {
-	Version  uint32    `json:"version"`
-	Digest   string    `json:"digest"`
-	Manifest *Manifest `json:"manifest,omitempty"`
-	Removed  bool      `json:"removed"`
+	Version  uint32                         `json:"version"`
+	Identity domain.SessionDeletionIdentity `json:"identity,omitempty"`
+	Digest   string                         `json:"digest"`
+	Manifest *Manifest                      `json:"manifest,omitempty"`
+	Removed  bool                           `json:"removed"`
 }
 
 // DeleteOwnedWorkspace holds the same lock as preparation, execution and reads.
@@ -79,11 +80,18 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 	}
 	root := filepath.Join(m.Root, "workspaces", string(w.SessionID))
 	stage = "retained-proof"
-	proofPath := filepath.Join(m.Root, "session-deletions", string(w.SessionID)+"-workspace.json")
-	proof := deletionWorkspaceProof{Version: 1, Digest: w.Digest()}
+	paths, e := SessionDeletionProofPaths(m.Root, w)
+	if e != nil {
+		return e
+	}
+	if e := ImportLegacyDeletionWorkspaceProof(m.Root, w); e != nil {
+		return e
+	}
+	proofPath := paths.Workspace
+	proof := deletionWorkspaceProof{Version: 2, Identity: w.Identity(), Digest: w.Digest()}
 	b, e := security.ReadPrivate(proofPath, 1<<20)
 	if e == nil {
-		if domain.Decode(b, &proof) != nil || proof.Version != 1 || proof.Digest != w.Digest() {
+		if domain.Decode(b, &proof) != nil || proof.Version != 2 || proof.Identity != w.Identity() || proof.Digest != w.Digest() {
 			return domain.SessionDeletionPending()
 		}
 	} else if !errors.Is(e, os.ErrNotExist) {

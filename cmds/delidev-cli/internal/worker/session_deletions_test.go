@@ -142,7 +142,15 @@ func TestSessionDeletionWorkerRemovesOnlySelectedWorktreeAndResumesAfterRemoval(
 	}
 	// Reproduce a crash after all unlinks but before completion persistence.
 	proof.Complete = false
-	if e := writeJSON(sessionDeletionPath(c.Root, w.SessionID), proof); e != nil {
+	paths, err := workspace.SessionDeletionProofPaths(c.Root, w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof.WorkspaceRetired = false
+	if err := writeJSON(paths.Workspace, map[string]any{"version": 2, "identity": w.Identity(), "digest": w.Digest(), "removed": true}); err != nil {
+		t.Fatal(err)
+	}
+	if e := writeJSON(paths.Worker, proof); e != nil {
 		t.Fatal(e)
 	}
 	again, e := deleteSessionCopies(context.Background(), c, w)
