@@ -1,3 +1,4 @@
+import { diagnosticText, ProductIdentity, ProductKind } from "./product-identity";
 import { useTerminalTabShortcuts } from "./shortcut-provider";
 // SPDX-License-Identifier: Apache-2.0
 import "./terminal-dock.css";
@@ -255,13 +256,13 @@ function TerminalView({ resource, details, discarded, refresh, observe }: { reso
     <div ref={host} className="terminal-screen" data-shortcuts="passthrough" aria-label={copy("session-terminals.attribute.34ad7d49708a")} onKeyDown={event => event.stopPropagation()} />
     <footer role="status">{copy(`session-terminals.${state}`)} · {statusLabel(text(data.state))}</footer>
     <div className="terminal-resource-details" hidden={!details}>
-      <p><LocalizedText id="session-terminals.worker_5a5ff9" components={{ s0: <>{text(data.machine_id)}</>, s1: <br />, s2: <>{text(data.shell)}</>, s3: <br />, s4: <>{text(data.cwd)}</> }} /></p>
+      <p><LocalizedText id="session-terminals.worker_5a5ff9" components={{ s0: <>{<ProductIdentity id={text(data.machine_id)} kind={ProductKind.Runner} />}</>, s1: <br />, s2: <>{text(data.shell)}</>, s3: <br />, s4: <>{text(data.cwd)}</> }} /></p>
       <p>{data.cleanup_verified ? copy("session-terminals.processCleanupVerified_024000") : copy("session-terminals.processCleanupPending_efa78d")}</p>
     </div>
     <Problem error={error || control.error} />
     {state === OutputState.Detached || rendererUnavailable || deliveryError ? <button type="button" onClick={reattach}>{copy("session-terminals.reattachOriginalTerminal_b22f08")}</button> : null}
     {control.uncertain ? <><p role="status">{copy("session-terminals.uncertainInput")}</p><button type="button" disabled={control.busy} onClick={control.retry}>{copy("session-terminals.retryTheSameTerminalOperation_92eff7")}</button></> : null}
     {details || rendererUnavailable ? <button type="button" disabled={control.busy || control.uncertain || !!data.cleanup_verified || !!data.close_request_id} onClick={() => { if (queue.current.discard()) discarded(); void control.send({ mutation: { id: terminal.id, expectedRevision: terminal.revision, requestId: newRequestId() }, action: TerminalAction.CLOSE }); }}>{copy("session-terminals.closeTerminal_7d02fb")}</button> : null}
-    {object(data.problem).message ? <ServiceProblem code={text(object(data.problem).code) || text(object(data.problem).problem_code)}><p role="alert">{text(object(data.problem).message)} {text(object(data.problem).guidance)}</p></ServiceProblem> : null}
+    {object(data.problem).message ? <ServiceProblem code={text(object(data.problem).code) || text(object(data.problem).problem_code)}><p role="alert">{diagnosticText(text(object(data.problem).message))} {diagnosticText(text(object(data.problem).guidance))}</p></ServiceProblem> : null}
   </section>;
 }

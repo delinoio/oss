@@ -1,3 +1,4 @@
+import { ProductIdentity, ProductKind, useProductLabels } from "./product-identity";
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
@@ -12,7 +13,7 @@ import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 
 // Fetch the original project explicitly; never infer it from repository membership.
 export function ProjectSettingsMenu({ projectId, label, active }: { projectId: string; label: string; active: boolean }) {
- useLocale();
+ useLocale(); const labels=useProductLabels();
  const owner = useSidebarActionMenuOwner(), visible = owner.open === `project:${projectId}`;
  const opener = useRef<HTMLButtonElement>(null), popup = useRef<HTMLDivElement>(null), group = useRef<HTMLButtonElement | null>(null);
  const restore = () => (opener.current?.isConnected ? opener.current : group.current?.isConnected ? group.current : null)?.focus({ preventScroll: true });
@@ -43,14 +44,14 @@ export function ProjectSettingsMenu({ projectId, label, active }: { projectId: s
   return () => { observer?.disconnect(); menu.hidePopover?.(); document.removeEventListener("pointerdown", outside); window.removeEventListener("resize", leave); };
  }, [visible]);
  const [open, setOpen] = useState(false);
- const project = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROJECT, id: projectId }, { enabled: active && open, retry: false });
+ const project = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROJECT, id: labels(projectId, ProductKind.Project) }, { enabled: active && open, retry: false });
  const [row, setRow] = useState<Resource>();
  useEffect(() => { if (!open) { setRow(undefined); return; } const value = project.data?.resource; if (!row && value?.id === projectId && value.kind === EntityKind.PROJECT && supportsResourceSchema(value)) setRow(value); }, [open, row, projectId, project.data]);
- return <><button ref={opener} type="button" className="sidebar-project-more" aria-label={copy("sidebar.projectActions", { name: label, id: projectId })} aria-haspopup="menu" aria-expanded={visible} disabled={!active} onClick={event => {
+ return <><button ref={opener} type="button" className="sidebar-project-more" aria-label={copy("sidebar.projectActions", { name: label, id: labels(projectId, ProductKind.Project) })} aria-haspopup="menu" aria-expanded={visible} disabled={!active} onClick={event => {
   group.current = event.currentTarget.closest(".sidebar-project-group")?.querySelector<HTMLButtonElement>(".sidebar-project-row") ?? null;
   if (visible) closeMenu(); else owner.setOpen(`project:${projectId}`);
  }}><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><circle cx="3" cy="8" r="1"/><circle cx="8" cy="8" r="1"/><circle cx="13" cy="8" r="1"/></svg></button>
- {visible ? <div ref={popup} popover="manual" role="menu" tabIndex={-1} className="sidebar-session-menu sidebar-project-menu" aria-label={copy("sidebar.projectActions", { name: label, id: projectId })} onKeyDown={event => {
+ {visible ? <div ref={popup} popover="manual" role="menu" tabIndex={-1} className="sidebar-session-menu sidebar-project-menu" aria-label={copy("sidebar.projectActions", { name: label, id: labels(projectId, ProductKind.Project) })} onKeyDown={event => {
   if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeMenu(); }
   if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) { event.preventDefault(); popup.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus(); }
   if (event.key === "Tab") closeMenu();

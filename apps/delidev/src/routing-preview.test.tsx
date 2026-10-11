@@ -45,7 +45,7 @@ it("uses a saved alias and service, keeping the full identity in a closed disclo
   expect(within(dialog).getByText("Unauthenticated")).toBeTruthy();
   expect(within(dialog).getByText("No eligible account")).toBeTruthy();
   expect(dialog.querySelector(".routing-account-id")?.hasAttribute("open")).toBe(false);
-  expect(within(dialog).getByText(row.id)).toBeTruthy();
+  expect(dialog.textContent).not.toContain(row.id);
   expect(within(dialog).getByText("Weight")).toBeTruthy();
   expect(within(dialog).getByText("unknown")).toBeTruthy();
   expect(value.get).toHaveBeenCalledTimes(1);

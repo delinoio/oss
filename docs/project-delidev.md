@@ -429,3 +429,9 @@ workspace/process/native adapters own actual operation observations; desktop own
 the grouped conversation and compact disclosure. Follow the startup, workspace,
 process, protocol and desktop contracts. No telemetry observation grants input,
 credentials, retry, cleanup or execution authority, and no migration is added.
+
+Product identity presentation is shared across desktop, mobile, diagnostics,
+notifications and widgets. Follow the [desktop identity presentation
+contract](apps-delidev-desktop-contract.md#product-identity-presentation).
+Original protocol/storage/native identities remain internal authority; display
+names and view-lifetime presentation numbers never replace them.

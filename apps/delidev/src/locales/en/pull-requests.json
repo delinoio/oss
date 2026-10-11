@@ -19,7 +19,7 @@
   "pull-requests.loadingRepositories_460ca9": "Loading repositories…",
   "pull-requests.refreshFailedShowingThePreviousRepository_6c5a34": "Refresh failed. Showing the previous repository page.",
   "pull-requests.repositoryId_cfd937": "{{v0}}. Repository ID: {{v1}}",
-  "pull-requests.repositoryDetails": "Details for {{name}}. Repository ID: {{id}}",
+  "pull-requests.repositoryDetails": "Details for {{name}}",
   "pull-requests.githubRepository": "GitHub repository",
   "pull-requests.repositoryIdentifier": "Repository ID",
   "pull-requests.repositoryNotConfigured": "Not configured",
@@ -56,5 +56,7 @@
   "pull-requests.retryOriginalProfileSave": "Retry original profile connection",
   "pull-requests.editCurrentRepository": "Edit this repository",
   "pull-requests.profileCapabilityRequired": "Repository connection requires current server support.",
-  "pull-requests.profileSaveUnverified": "The saved repository identity or revision could not be verified. Inspect the original operation before continuing."
+  "pull-requests.profileSaveUnverified": "The saved repository identity or revision could not be verified. Inspect the original operation before continuing.",
+  "pull-requests.repositoryName": "Repository",
+  "pull-requests.repositoryPosition": "{{name}} · Repository {{position}}"
 }

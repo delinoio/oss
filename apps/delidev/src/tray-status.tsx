@@ -1,3 +1,4 @@
+import { diagnosticText } from "./product-identity";
 import { applyAppearanceColors } from "./appearance-preferences";
 // SPDX-License-Identifier: Apache-2.0
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
@@ -39,8 +40,8 @@ function Quota({ quota, index, stale, snapshot, now }: { quota: TrayQuota; index
   const remaining = [TrayQuotaState.Observed, TrayQuotaState.Stale].includes(state) ? quota.remaining_basis_points : null;
   const percentage = remaining === null ? null : new Intl.NumberFormat(displayLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(remaining / 100);
   const stamp = (at: string, mode = TimestampMode.Ordinary) => formatTimestampLabel(at, { preference: snapshot.date_format, now, mode });
-  return <section className="tray-quota" aria-label={quota.id ?? copy("tray-status.quota", { number: index + 1 })}>
-    <div className="tray-quota-id">{quota.id ?? copy("tray-status.quota", { number: index + 1 })}</div>
+  return <section className="tray-quota" aria-label={diagnosticText(quota.id ?? copy("tray-status.quota", { number: index + 1 }))}>
+    <div className="tray-quota-id">{diagnosticText(quota.id ?? copy("tray-status.quota", { number: index + 1 }))}</div>
     <strong className="tray-quota-remaining">{percentage === null ? copy("tray-status.remainingUnknown") : copy("tray-status.remaining", { amount: percentage })}</strong>
     {remaining !== null ? <progress aria-hidden="true" max={10000} value={remaining} /> : null}
     <p className="tray-quota-state">{copy(states[state])}</p>

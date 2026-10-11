@@ -1,3 +1,4 @@
+import { ProductIdentity, ProductKind, useProductLabels } from "./product-identity";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import { DisclosureButton, DisclosureContent, DisclosureDensity, Disclosure, DisclosureSummary } from "./disclosure";
@@ -25,7 +26,7 @@ function ProjectRow({ row, metadata, edit, remove }: { row: Resource; metadata: 
     </header>
     <ol id={repositoriesId} className="project-repository-rows">{(expanded ? ids : ids.slice(0, 3)).map((id, index) => {
       const details = metadata.get(id), ready = details?.state === RepositoryDetailsState.Ready;
-      const redundantName = singleton && ready && details.name === name;
+      const redundantName = singleton && ready && details.name === resourceName(row);
       return <li key={`${id}:${index}`}>{!redundantName ? <div className="project-repository-heading"><strong>{ready ? details.name : copy(details?.state === RepositoryDetailsState.Unavailable ? "settings.projectRepositoryUnavailable" : "settings.projectRepositoryLoading")}</strong>{!singleton && id === primary ? <span className="project-primary-badge">{copy("settings.projectRepositoryPrimary")}</span> : null}</div> : null}
         {ready ? <p className="project-repository-url">{details.url || copy("settings.projectRepositoryURLMissing")}</p> : null}
         {details?.stale ? <p className="project-repository-stale" role="status">{copy("settings.projectRepositoryStale")}</p> : null}
@@ -33,6 +34,5 @@ function ProjectRow({ row, metadata, edit, remove }: { row: Resource; metadata: 
       </li>;
     })}</ol>
     {ids.length > 3 ? <DisclosureButton density={DisclosureDensity.Settings} type="button" className="project-show-repositories" aria-controls={repositoriesId} aria-expanded={expanded} onClick={() => setExpanded(value => !value)} focusWhenCollapsing={element => { const row = element.closest("li"); return Boolean(row && [...row.parentElement!.children].indexOf(row) >= 3); }}>{copy(expanded ? "settings.projectRepositoriesShowFewer" : "settings.projectRepositoriesShowAll")}</DisclosureButton> : null}
-    <Disclosure density={DisclosureDensity.Settings} className="project-original-details"><DisclosureSummary>{copy("settings.projectDetails")}</DisclosureSummary><dl><dt>{copy("settings.projectOriginalID")}</dt><dd>{row.id}</dd><dt>{copy("settings.projectRepositoryOriginalIDs")}</dt><dd><ol>{ids.map((id, index) => <li key={`${id}:${index}`}>{id}</li>)}</ol></dd></dl></Disclosure>
   </article>;
 }

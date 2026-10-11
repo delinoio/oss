@@ -1,3 +1,4 @@
+import { diagnosticText } from "./product-identity";
 // SPDX-License-Identifier: Apache-2.0
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -44,7 +45,7 @@ export function PendingRepositoryConfiguration({ intent }: { intent: RetainedMut
     if (job && state === JobState.Succeeded && validOutput && output && fresh && fresh.revision >= output.revision) mutation.resolveJob(job.id);
   }, [job?.id, state, validOutput, output?.id, output?.revision, id, fresh, mutation.resolveJob]);
   return <article className="pending-pr-action"><strong>{copy("pull-requests.profileSavePending")}</strong>
-    {job ? <><OperationStatus state={state} />{unreadable ? <p role="alert">{copy("jobs.unreadableStatus")}</p> : null}{text(object(document(row).problem).message) ? <ServiceProblem code={text(object(document(row).problem).code)}><p>{text(object(document(row).problem).message)} {text(object(document(row).problem).guidance)}</p></ServiceProblem> : null}<Problem error={status.error} />
+    {job ? <><OperationStatus state={state} />{unreadable ? <p role="alert">{copy("jobs.unreadableStatus")}</p> : null}{text(object(document(row).problem).message) ? <ServiceProblem code={text(object(document(row).problem).code)}><p>{diagnosticText(text(object(document(row).problem).message))} {diagnosticText(text(object(document(row).problem).guidance))}</p></ServiceProblem> : null}<Problem error={status.error} />
       {state === JobState.Succeeded && !validOutput ? <p role="alert">{copy("pull-requests.profileSaveUnverified")}</p> : null}
       <Problem error={repository.error} />
       {status.error || unreadable ? <button type="button" onClick={() => void status.refetch()}>{copy("jobs.retryStatusRead")}</button> : null}

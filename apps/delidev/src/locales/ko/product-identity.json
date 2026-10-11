@@ -1,0 +1,20 @@
+{
+  "product-identity.resourceUnavailable": "리소스를 사용할 수 없음",
+  "product-identity.projectUnavailable": "프로젝트 이름을 사용할 수 없음",
+  "product-identity.repositoryUnavailable": "저장소 이름을 사용할 수 없음",
+  "product-identity.agentUnavailable": "에이전트 워커 이름을 사용할 수 없음",
+  "product-identity.runnerUnavailable": "실행 기기 이름을 사용할 수 없음",
+  "product-identity.accountUnavailable": "계정 이름을 사용할 수 없음",
+  "product-identity.providerUnavailable": "제공자 이름을 사용할 수 없음",
+  "product-identity.sessionUnavailable": "세션 이름을 사용할 수 없음",
+  "product-identity.backupUnavailable": "백업",
+  "product-identity.requestUnavailable": "요청",
+  "product-identity.executionUnavailable": "실행",
+  "product-identity.connectionUnavailable": "연결 이름을 사용할 수 없음",
+  "product-identity.deviceUnavailable": "기기 이름을 사용할 수 없음",
+  "product-identity.inputUnavailable": "입력",
+  "product-identity.templateUnavailable": "템플릿 이름을 사용할 수 없음",
+  "product-identity.numbered": "{{name}} · {{number}}",
+  "product-identity.privateReference": "[비공개 참조]",
+  "product-identity.ordinal": "항목 {{number}}"
+}

@@ -19,7 +19,7 @@
   "pull-requests.loadingRepositories_460ca9": "저장소를 불러오는 중…",
   "pull-requests.refreshFailedShowingThePreviousRepository_6c5a34": "새로 고침에 실패했습니다. 이전 저장소 페이지를 표시합니다.",
   "pull-requests.repositoryId_cfd937": "{{v0}}. 저장소 ID: {{v1}}",
-  "pull-requests.repositoryDetails": "{{name}} 상세. 저장소 ID: {{id}}",
+  "pull-requests.repositoryDetails": "{{name}} 상세",
   "pull-requests.githubRepository": "GitHub 저장소",
   "pull-requests.repositoryIdentifier": "저장소 ID",
   "pull-requests.repositoryNotConfigured": "설정되지 않음",
@@ -56,5 +56,7 @@
   "pull-requests.retryOriginalProfileSave": "기존 프로필 연결 재시도",
   "pull-requests.editCurrentRepository": "이 저장소 편집",
   "pull-requests.profileCapabilityRequired": "저장소 연결에는 현재 서버의 지원이 필요합니다.",
-  "pull-requests.profileSaveUnverified": "저장된 저장소 식별 정보나 리비전을 확인할 수 없습니다. 계속하기 전에 원래 작업을 확인하세요."
+  "pull-requests.profileSaveUnverified": "저장된 저장소 식별 정보나 리비전을 확인할 수 없습니다. 계속하기 전에 원래 작업을 확인하세요.",
+  "pull-requests.repositoryName": "저장소",
+  "pull-requests.repositoryPosition": "{{name}} · 저장소 {{position}}"
 }

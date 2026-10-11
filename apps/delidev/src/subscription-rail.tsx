@@ -1,3 +1,4 @@
+import { ProductIdentity, ProductKind, diagnosticText, useProductLabels } from "./product-identity";
 // SPDX-License-Identifier: Apache-2.0
 import { Timestamp, TimestampText, TimestampMode } from "./timestamp-display";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -15,7 +16,7 @@ import { Failure, InlineRemediation } from "./ui";
 import { LocalConnectionHelp } from "./local-connection-presentation";
 
 export function SubscriptionRail({ enabled, manage, focusFallback = () => undefined }: { enabled: boolean; manage: () => void; focusFallback?: () => void }) {
-  useLocale();
+  useLocale(); const labels=useProductLabels();
   const [visible, setVisible] = useState(() => document.visibilityState !== "hidden");
   const [now, setNow] = useState(Date.now);
   const [authenticationLost, setAuthenticationLost] = useState(false);
@@ -96,7 +97,7 @@ export function SubscriptionRail({ enabled, manage, focusFallback = () => undefi
   return <div className="subscription-rail-group" aria-label={copy("subscription-rail.title")}>
     <div ref={root} className="subscription-rail-scroll">
       {!query.loaded && !query.error ? <span role="status">{copy("subscription-rail.loading")}</span> : null}
-      {accounts.map(row => { const percent = unavailable ? undefined : remainingBadge(row.windows, now); const label = `${brand(row).name} · ${row.alias} · ${percent === undefined ? copy("subscription-rail.unavailable") : copy("subscription-rail.remaining", { percent })}`; return <button type="button" key={row.id} className="sidebar-rail-button subscription-rail-account" aria-label={`${label} · ${row.id}`} title={label} aria-haspopup="dialog" aria-expanded={selection?.id === row.id} onClick={event => { if (selection?.id === row.id) close(); else setSelection({ id: row.id, opener: event.currentTarget }); }}><img src={brand(row).mark} alt="" width="24" height="24" /><span className="subscription-rail-badge" aria-hidden="true">{percent === undefined ? "—" : `${percent}%`}</span></button>; })}
+      {accounts.map(row => { const percent = unavailable ? undefined : remainingBadge(row.windows, now); const label = `${brand(row).name} · ${row.alias} · ${percent === undefined ? copy("subscription-rail.unavailable") : copy("subscription-rail.remaining", { percent })}`; return <button type="button" key={row.id} className="sidebar-rail-button subscription-rail-account" aria-label={labels(row.id,ProductKind.Account,label)} title={label} aria-haspopup="dialog" aria-expanded={selection?.id === row.id} onClick={event => { if (selection?.id === row.id) close(); else setSelection({ id: row.id, opener: event.currentTarget }); }}><img src={brand(row).mark} alt="" width="24" height="24" /><span className="subscription-rail-badge" aria-hidden="true">{percent === undefined ? "—" : `${percent}%`}</span></button>; })}
       {/* Retained refreshes keep their accepted anchor without adding loading height. */}
       {query.nextPageToken || query.error || query.loading && query.loading !== ReadStage.Refresh ? <ScrollContinuation showErrors={false} query={{ ...query, loading: query.loading === ReadStage.Refresh ? undefined : query.loading, nextPageToken: limited ? "" : query.nextPageToken }} root={root} active={allowed && query.loading !== ReadStage.Refresh} label={copy("subscription-rail.title")} /> : null}
       {query.error || unconfirmedRead ? <RailReadProblem summary={copy("account-connection.inline.railPartial")} failure={query.error?.failure ?? retainedReadFailure.current} retry={query.error?.stalled || query.error?.failure.code === FailureCode.CursorExpired ? query.reload : query.retry} reload={query.error?.stalled || query.error?.failure.code === FailureCode.CursorExpired} busy={!allowed || Boolean(query.loading)} /> : null}
@@ -125,7 +126,7 @@ function QuotaWindow({ window, index, now, unavailable }: { window: RailWindow; 
   const current = !unavailable && freshWindow(window, now);
   const state = window.valid === false || typeof window.blocking !== "boolean" ? "subscription-rail.unknown" : !current && window.state === "observed" ? "subscription-rail.stale" : window.state === "observed" ? "subscription-rail.observed" : window.state === "failed" ? "subscription-rail.failed" : window.state === "unsupported" ? "subscription-rail.unsupportedQuota" : "subscription-rail.unknown";
   return <section className={`subscription-quota-window${current ? "" : " subscription-quota-historical"}`}>
-    <p className="subscription-quota-id">{window.id || copy("subscription-rail.window", { index: index + 1 })}</p>
+    <p className="subscription-quota-id">{diagnosticText(window.id || copy("subscription-rail.window", { index: index + 1 }))}</p>
     <p className="subscription-quota-value">{percent === undefined ? copy("subscription-rail.unavailable") : <><strong>{percent}%</strong><span>{copy("subscription-rail.remainingLabel")}</span></>}</p>
     {percent !== undefined ? <div className="subscription-quota-bar" aria-hidden="true"><span style={{ width: `${percent}%` }} /></div> : null}
     <div className="subscription-quota-timing"><Timestamp value={window.resetAt} fallback="—" mode={TimestampMode.QuotaCountdown} expired={timestamp => <TimestampText id="subscription-rail.reset" values={{ time: timestamp }} />} /></div>

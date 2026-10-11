@@ -166,7 +166,8 @@ test("keeps child conversation presentation in Info and portals only source meta
   expect(within(mounted.container).getByText("Original child output block")).toBeTruthy();
   expect(within(mounted.container).getByText("Observed: observed-model")).toBeTruthy();
   const diagnostics = within(target);
-  expect(diagnostics.getByText(new RegExp(String(record.execution_id)))).toBeTruthy();
+  expect(diagnostics.queryByText(new RegExp(String(record.execution_id)))).toBeNull();
+  expect(diagnostics.getByText(/Execution: Execution ·/)).toBeTruthy();
   expect(diagnostics.getByText(String(object(record.observation).native_id))).toBeTruthy();
   expect(diagnostics.queryByText("Original child conversation content")).toBeNull();
   expect(diagnostics.queryByText("Original child output block")).toBeNull();

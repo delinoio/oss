@@ -89,5 +89,6 @@
   "backups.inspectionHelp": "The selected backup could not be verified. Use Recheck selected backup here. A failed or changed inspection clears deletion confirmation; do not delete from a previous observation.",
   "backups.deletionHelp": "Backup deletion was not confirmed. For an unknown outcome, retry only the same deletion here with its original inspected image and digest. Never treat a missing list row as confirmed cleanup.",
   "backups.failedCreationHelp": "This creation attempt failed. Check storage space and write permissions on the original server, then explicitly create a new backup when ready. History refresh does not restart the failed attempt.",
-  "backups.pendingCleanupHelp": "Original backup cleanup still needs attention. Check storage access on the original server and continue observing the same job here; do not submit a replacement deletion."
+  "backups.pendingCleanupHelp": "Original backup cleanup still needs attention. Check storage access on the original server and continue observing the same job here; do not submit a replacement deletion.",
+  "backups.bytesLabel": "bytes"
 }

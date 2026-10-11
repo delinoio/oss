@@ -515,7 +515,7 @@ dialog nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .sidebar-pull-requests .pr-repository-heading[data-selected="true"] button.disclosure-header.disclosure-header.pr-repository-details-toggle { color: var(--selected-text); }
 .sidebar-pull-requests button.disclosure-header.disclosure-header.pr-repository-details-toggle:focus-visible { outline-offset: -3px; }
 .sidebar-pull-requests .pr-repository-heading button:focus-visible { outline-offset: -3px; }
-.sidebar-pull-requests .pr-repository-details { margin: 4px 8px 12px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: 12px; overflow-wrap: anywhere; }
+.sidebar-pull-requests .pr-repository-details { position: fixed; inset: auto; margin: 0; width: min(320px, calc(100vw - 16px)); max-height: calc(100vh - 16px); box-sizing: border-box; overflow: auto; overscroll-behavior: contain; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); box-shadow: 0 8px 24px var(--shadow-soft); font-size: 12px; overflow-wrap: anywhere; }
 .sidebar-pull-requests .pr-repository-details dl { margin: 0; }
 .sidebar-pull-requests .pr-repository-details dt { margin: 8px 0 2px; color: var(--muted); font-weight: 500; }
 .sidebar-pull-requests .pr-repository-details dt:first-child { margin-top: 0; }

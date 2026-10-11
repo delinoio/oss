@@ -1,4 +1,6 @@
-import { useSidebarPaneVisible } from "./sidebar-context";
+import { ProductIdentity, ProductKind, useProductLabels } from "./product-identity";
+import { useRepositoryDetailsPopup } from "./repository-details-popup";
+import { useSidebarActivity, useSidebarPaneVisible } from "./sidebar-context";
 import { DisclosureButton, DisclosureContent, DisclosureDensity } from "./disclosure";
 import { ScrollContinuation } from "./scroll-continuation";
 import { paginationError, useGitHubCatalog, useGitHubScrollRoot } from "./github-scroll";
@@ -32,28 +34,29 @@ interface LoadedPullRequests {
 
 const plainSearch = (value: string) => value.length <= 120 && /^[\p{L}\p{N} ._-]*$/u.test(value);
 
-function RepositoryNavigationRow({ row, selected, expanded, choose, toggleDetails }: {
-  row: Resource; selected: boolean; expanded: boolean; choose: () => void; toggleDetails: () => void;
+function RepositoryNavigationRow({ row, label, selected, expanded, choose, toggleDetails, closeDetails }: {
+  row: Resource; label: string; selected: boolean; expanded: boolean; choose: () => void; toggleDetails: () => void; closeDetails: () => void;
 }) {
   useLocale();
   const detailsId = useId();
-  const name = resourceName(row);
+  const trigger = useRef<HTMLButtonElement>(null), popup = useRef<HTMLDivElement>(null);
+  const { visible, reveal } = useRepositoryDetailsPopup(expanded, useSidebarActivity(), trigger, popup, closeDetails);
   const config = document(row);
   const owner = text(config.github_owner), repository = text(config.github_name);
-  const detailsLabel = copy("pull-requests.repositoryDetails", { name, id: row.id });
+  const detailsLabel = copy("pull-requests.repositoryDetails", { name: label });
   return <div className="pr-repository-item">
     <div className="pr-repository-heading" data-selected={selected}>
-      <button type="button" className="sidebar-repository-row" aria-label={copy("pull-requests.repositoryId_cfd937", { v0: name, v1: row.id })} aria-pressed={selected} onClick={choose}>
+      <button type="button" className="sidebar-repository-row" aria-label={label} aria-pressed={selected} onClick={choose}>
         <svg className="sidebar-icon sidebar-repository-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M5 3h14v18H5zM9 3v18M13 7h3M13 11h3" /></svg>
-        <span className="sidebar-repository-info">{name}</span>
+        <span className="sidebar-repository-info">{label}</span>
       </button>
-      <DisclosureButton density={DisclosureDensity.Compact} type="button" className="pr-repository-details-toggle" aria-label={detailsLabel} aria-expanded={expanded} aria-controls={detailsId} onClick={toggleDetails}>
+      <DisclosureButton ref={trigger} density={DisclosureDensity.Compact} type="button" className="pr-repository-details-toggle" aria-label={detailsLabel} aria-expanded={visible} aria-controls={detailsId} onClick={() => { if (expanded && !visible) reveal(); else toggleDetails(); }}>
         <span className="sidebar-sr-only">{detailsLabel}</span>
       </DisclosureButton>
     </div>
-    <DisclosureContent id={detailsId} className="pr-repository-details" role="region" aria-label={detailsLabel} hidden={!expanded}>
+    <DisclosureContent ref={popup} popover="manual" restoreFocusOnHide={false} tabIndex={0} id={detailsId} className="pr-repository-details" role="region" aria-label={detailsLabel} hidden={!visible}>
       <dl><dt>{copy("pull-requests.githubRepository")}</dt><dd>{owner && repository ? `${owner}/${repository}` : copy("pull-requests.repositoryNotConfigured")}</dd>
-        <dt>{copy("pull-requests.repositoryIdentifier")}</dt><dd>{row.id}</dd></dl>
+        <dt>{copy("pull-requests.repositoryName")}</dt><dd>{label}</dd></dl>
     </DisclosureContent>
   </div>;
 }
@@ -61,7 +64,7 @@ function RepositoryNavigationRow({ row, selected, expanded, choose, toggleDetail
 function PendingDismissal({ intent, id }: { intent: RetainedMutationIntent; id: string }) {
   useLocale();
   const mutation = useRetainedMutation(intent.key, IntegrationQuery.dismissPullRequestProblem);
-  return <article className="pending-pr-action"><strong><LocalizedText id="pull-requests.problemDismissal_9c312b" components={{ s0: <>{id}</> }} /></strong><p>{intent.busy ? copy("pull-requests.submitting_cba659") : copy("pull-requests.acknowledgmentUncertain_62e6b9")}</p>{intent.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>{copy("pull-requests.retryOriginalDismissal_bb2de0")}</button> : null}</article>;
+  return <article className="pending-pr-action"><strong><LocalizedText id="pull-requests.problemDismissal_9c312b" components={{ s0: <>{<ProductIdentity id={id} kind={ProductKind.Repository} />}</> }} /></strong><p>{intent.busy ? copy("pull-requests.submitting_cba659") : copy("pull-requests.acknowledgmentUncertain_62e6b9")}</p>{intent.uncertain ? <button disabled={mutation.busy} onClick={mutation.retry}>{copy("pull-requests.retryOriginalDismissal_bb2de0")}</button> : null}</article>;
 }
 
 function PendingCollection({ intent, repositoryId, number }: { intent: RetainedMutationIntent; repositoryId: string; number: string }) {
@@ -110,7 +113,8 @@ function PendingPRActions() {
 }
 
 export function PullRequests({ active, openSettings }: { active: boolean; openSettings: (destination?: SettingsNavigationEntry) => void }) {
-  useLocale();
+  useLocale(); const labels = useProductLabels();
+  const distinguished = useRef(new Set<string>());
   const { root, bindRoot } = useGitHubScrollRoot();
   const [repositoryId, setRepositoryId] = useState("");
   const [expandedRepositoryId, setExpandedRepositoryId] = useState("");
@@ -189,6 +193,14 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
   const listLayout = !navigation || navigation.query.operation === QueryOperation.List || navigation.query.operation === QueryOperation.Search;
   const cardsCurrent = resultsCurrent && loaded && navigation?.scopeKey === loaded.scopeKey && (navigation.query.operation === QueryOperation.List || navigation.query.operation === QueryOperation.Search);
   const filtersChanged = Boolean(loaded && (loaded.state !== state || loaded.search !== search.trim() || loaded.pageSize !== pageSize));
+  const names = new Map<string, string[]>();
+  for (const row of repositories.data?.resources ?? []) {
+    const name = resourceName(row);
+    names.set(name, [...(names.get(name) ?? []), row.id]);
+    // Allocate once against original identity before any filtering or reorder.
+    labels(row.id, ProductKind.Repository, name);
+  }
+  for (const ids of names.values()) if (ids.length > 1) for (const id of ids) distinguished.current.add(id);
   return <>
     <SidebarSurface active={active} title={copy("pull-requests.pullRequests_d9e3f2")} showHeading={false}>
       <header className="pr-sidebar-title"><h2>{copy("pull-requests.pullRequests_d9e3f2")}</h2><SettingsActionScope><SettingsActionButton className="pr-sidebar-refresh" icon={SettingsActionIcon.Refresh} presentation={SettingsActionPresentation.Icon} aria-label={copy("pull-requests.refresh_0e9161")} type="button" disabled={!active || repositories.isFetching} onClick={repositories.refetch}>{copy("pull-requests.refresh_0e9161")}</SettingsActionButton></SettingsActionScope></header>
@@ -196,7 +208,7 @@ export function PullRequests({ active, openSettings }: { active: boolean; openSe
       <Problem error={paginationError(repositories.error?.failure)} />
       {repositories.isPending && active ? <p role="status">{copy("pull-requests.loadingRepositories_460ca9")}</p> : null}
       {repositories.error && repositories.data ? <p className="sidebar-help">{copy("pull-requests.refreshFailedShowingThePreviousRepository_6c5a34")}</p> : null}
-      {repositories.data?.resources.map((row) => <RepositoryNavigationRow key={row.id} row={row} selected={repositoryId === row.id} expanded={expandedRepositoryId === row.id} choose={() => chooseRepository(row)} toggleDetails={() => setExpandedRepositoryId((current) => current === row.id ? "" : row.id)} />)}
+      {repositories.data?.resources.map((row) => <RepositoryNavigationRow key={row.id} row={row} label={distinguished.current.has(row.id) ? labels(row.id, ProductKind.Repository, resourceName(row)) : resourceName(row)} selected={repositoryId === row.id} expanded={expandedRepositoryId === row.id} choose={() => chooseRepository(row)} toggleDetails={() => setExpandedRepositoryId((current) => current === row.id ? "" : row.id)} closeDetails={() => setExpandedRepositoryId(current => current === row.id ? "" : current)} />)}
       {!repositories.error && repositories.data?.resources.length === 0 ? <div className="sidebar-repository-empty"><svg className="sidebar-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h7l2 2h9v11H3z" /></svg><p>{copy("pull-requests.noRepositoriesOnThisPage_249a41")}</p></div> : null}
       <ScrollContinuation query={repositories} root={root} active={active} label={copy("pull-requests.repositories_1e32af")} showInitial={false} /></div>
       {repositoryId ? <>

@@ -1,0 +1,20 @@
+{
+  "product-identity.resourceUnavailable": "Resource unavailable",
+  "product-identity.projectUnavailable": "Project name unavailable",
+  "product-identity.repositoryUnavailable": "Repository name unavailable",
+  "product-identity.agentUnavailable": "Agent Worker name unavailable",
+  "product-identity.runnerUnavailable": "Runner Device name unavailable",
+  "product-identity.accountUnavailable": "Account name unavailable",
+  "product-identity.providerUnavailable": "Provider name unavailable",
+  "product-identity.sessionUnavailable": "Session name unavailable",
+  "product-identity.backupUnavailable": "Backup",
+  "product-identity.requestUnavailable": "Request",
+  "product-identity.executionUnavailable": "Execution",
+  "product-identity.connectionUnavailable": "Connection name unavailable",
+  "product-identity.deviceUnavailable": "Device name unavailable",
+  "product-identity.inputUnavailable": "Input",
+  "product-identity.templateUnavailable": "Template name unavailable",
+  "product-identity.numbered": "{{name}} · {{number}}",
+  "product-identity.privateReference": "[private reference]",
+  "product-identity.ordinal": "Item {{number}}"
+}

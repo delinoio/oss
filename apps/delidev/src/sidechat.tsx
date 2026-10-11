@@ -1,3 +1,4 @@
+import { ProductIdentity, ProductKind } from "./product-identity";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -38,7 +39,7 @@ export function SidechatFindings({ session, messages }: { session: Resource; mes
     void mutation.send({ mutation: { id: session.id, expectedRevision: session.revision, requestId: newRequestId() }, parentId, expectedParentRevision: target.revision, messages: chosen.map((row) => ({ messageId: row.id, expectedRevision: row.revision })) });
   };
   return <section className="sidechat-findings" aria-label={copy("sidechat.sidechatFindings_b85000")}>
-    <p><LocalizedText id="sidechat.readOnlySidechatParentSessionSelect_ceb705" components={{ s0: <>{parentId}</> }} /></p>
+    <p><LocalizedText id="sidechat.readOnlySidechatParentSessionSelect_ceb705" components={{ s0: <><ProductIdentity id={parentId} kind={ProductKind.Session} /></> }} /></p>
     {!supported ? <p role="status">{copy("sidechat.updateTheConnectedServerToSend_9dd279")}</p> : <>
       <fieldset disabled={blocked}><legend>{copy("sidechat.repliesToSend_a20827")}</legend>{eligible.length ? eligible.map((row, index) => <label key={row.id}><input type="checkbox" checked={selected.has(row.id)} onChange={(event) => setSelected((current) => { const next = new Set(current); if (event.target.checked) next.add(row.id); else next.delete(row.id); return next; })} /><LocalizedText id="sidechat.reply_b9b235" components={{ s0: <>{index + 1}</>, s1: <span>{text(document(row).text)}</span> }} /></label>) : <p>{copy("sidechat.noCompleteSidechatRepliesOnThis_b35106")}</p>}</fieldset>
       {chosen.length > 20 || bytes > 256 * 1024 ? <p role="alert">{copy("sidechat.selectAtMost20RepliesWithin_7b1bc4")}</p> : null}

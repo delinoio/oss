@@ -1,3 +1,5 @@
+import { copy } from "./localization";
+import { ProductPresentationScope, usePresentationNumbers } from "./product-identity";
 // SPDX-License-Identifier: Apache-2.0
 import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode, type Ref } from "react";
 import { createPortal } from "react-dom";
@@ -14,7 +16,7 @@ export enum SettingsActionIcon {
 export enum SettingsActionPresentation { Icon = "icon", Label = "label" }
 const ActionScope = createContext(false);
 export function SettingsActionScope({ children }: { children: ReactNode }) {
-  return <ActionScope.Provider value>{children}</ActionScope.Provider>;
+  return <ProductPresentationScope><ActionScope.Provider value>{children}</ActionScope.Provider></ProductPresentationScope>;
 }
 const paths: Record<SettingsActionIcon, string> = {
   [SettingsActionIcon.Edit]: "m14 4 6 6M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z",
@@ -57,7 +59,8 @@ export function SettingsActionButton({ icon, presentation = SettingsActionPresen
   const tooltipRef = useRef<HTMLDivElement>(null);
   const label = scoped && decorativePrefix && typeof children === "string" && children.startsWith(decorativePrefix) ? children.slice(decorativePrefix.length) : children;
   const originalName = props["aria-label"] ?? (label !== children && typeof children === "string" ? children : undefined);
-  const name = scoped && (targetName || targetId) ? [originalName ?? (typeof children === "string" ? children : undefined), targetName, targetId].filter(Boolean).join(" · ") : originalName;
+  const numbers=usePresentationNumbers();
+  const name = scoped && (targetName || targetId) ? [originalName ?? (typeof children === "string" ? children : undefined), targetName, targetId ? copy("product-identity.ordinal",{number:numbers.number(targetId)}) : undefined].filter(Boolean).join(" · ") : originalName;
   useLayoutEffect(() => {
     if (!tooltip || !tooltipRef.current) return;
     const zoom = Number(getComputedStyle(document.body).zoom) || 1;

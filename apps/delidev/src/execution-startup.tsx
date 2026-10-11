@@ -58,12 +58,11 @@ export function ExecutionStartupDetails({ failure }: { failure: Document }) {
   const phases = ["", copy("session.startupResolve"), copy("session.startupLaunch"), copy("session.startupInitialize"), copy("session.startupAppliedSettings"), copy("session.startupInput"), copy("session.startupExecution"), copy("session.startupCleanup")];
   const delivery = ["", copy("session.startupNotSent"), copy("session.startupClaimed"), copy("session.startupAcknowledged"), copy("session.startupUnknown")];
   // Project only validated metadata. Never copy the resource or native output.
-  const metadata = { phase: failure.phase, harness: failure.harness, native_version: failure.native_version ?? "", problem_code: failure.problem_code, correlation_id: failure.correlation_id, input_delivery: failure.input_delivery, cleanup: failure.cleanup };
+  const metadata = { phase: failure.phase, harness: failure.harness, native_version: failure.native_version ?? "", problem_code: failure.problem_code, input_delivery: failure.input_delivery, cleanup: failure.cleanup };
   return <Disclosure className="execution-startup-details"><DisclosureSummary>{copy("session.startupDetails")}</DisclosureSummary>
     <dl><dt>{copy("session.startupPhase")}</dt><dd>{phases[Number(failure.phase)]}</dd>
       <dt>{copy("session.startupVersion")}</dt><dd>{text(failure.native_version) || copy("session.startupUnavailable")}</dd>
       <dt>{copy("session.startupCode")}</dt><dd>{text(failure.problem_code)}</dd>
-      <dt>{copy("session.startupReference")}</dt><dd>{text(failure.correlation_id)}</dd>
       <dt>{copy("session.startupInputDelivery")}</dt><dd>{delivery[Number(failure.input_delivery)]}</dd>
       <dt>{copy("session.startupCleanup")}</dt><dd>{failure.cleanup === Cleanup.Confirmed ? copy("session.startupConfirmed") : copy("session.startupUnknown")}</dd></dl>
     <p>{failure.state === StartupState.Failed ? copy("session.startupManualSteps") : startupRecoveryGuidance(failure)}</p>

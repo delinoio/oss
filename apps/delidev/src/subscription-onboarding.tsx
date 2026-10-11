@@ -92,7 +92,6 @@ export function SubscriptionOnboarding(props: SubscriptionOnboardingProps) {
         {diagnostic?.minimum ? <div><dt>{copy("subscription-onboarding.minimumVersion_3cab5a")}</dt><dd>{diagnostic.minimum}</dd></div> : null}
         <div><dt>{copy("subscription-onboarding.failedStep_0ed199")}</dt><dd>{diagnostic?.phase ?? copy("subscription-onboarding.notReported_adadfa")}</dd></div>
         <div><dt>{copy("subscription-onboarding.errorCode_2c35f6")}</dt><dd>{diagnostic?.code ?? copy("subscription-onboarding.notReported_adadfa")}</dd></div>
-        {diagnostic?.correlation ? <div><dt>{copy("subscription-onboarding.reference_44dc4a")}</dt><dd>{diagnostic.correlation}</dd></div> : null}
       </dl>
     } actions={props.inspect ? <SettingsActionButton icon={SettingsActionIcon.Retry} type="button" disabled={!active || busy} onClick={props.inspect}>{copy("subscription-onboarding.inline.inspect")}</SettingsActionButton> : undefined} /> : null}
     {failed || props.problem ? <LocalConnectionHelp active={active} /> : null}

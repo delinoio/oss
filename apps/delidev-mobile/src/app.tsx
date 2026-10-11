@@ -13,6 +13,7 @@ import { createClient } from "@connectrpc/connect";
 import {
   QueryClient,
   QueryClientProvider,
+  useQueryClient,
   useQuery as useLocalQuery,
 } from "@tanstack/react-query";
 import {
@@ -87,8 +88,29 @@ function record(v: unknown): Record<string, unknown> {
     ? (v as Record<string, unknown>)
     : {};
 }
-function label(resource: Resource): string {
-  return text(value(resource).name) || resource.id;
+type NamingScope = { numbers: Map<string, number>; names: Map<string, string> };
+const namingScopes = new WeakMap<QueryClient, NamingScope>();
+const connectionScopes = new WeakMap<ProtectedState, Map<string, number>>();
+function useResourceLabel() {
+  const client = useQueryClient(), c = useCopy();
+  if (!namingScopes.has(client)) namingScopes.set(client, { numbers: new Map(), names: new Map() });
+  return (resource: Resource) => label(resource, c, namingScopes.get(client)!);
+}
+function connectionLabel(owner: ProtectedState, id: string, name: string, c: Labels): string {
+  if (!connectionScopes.has(owner)) connectionScopes.set(owner, new Map());
+  const numbers = connectionScopes.get(owner)!;
+  let number = numbers.get(id);
+  if (number === undefined) { number = numbers.size + 1; numbers.set(id, number); }
+  return `${name || c.nameUnavailable} · ${number}`;
+}
+function label(resource: Resource, c: Labels, scope: NamingScope): string {
+  const key = `${resource.kind}:${resource.id}`;
+  let number = scope.numbers.get(key);
+  if (number === undefined) { number = scope.numbers.size + 1; scope.numbers.set(key, number); }
+  const name = text(value(resource).name) || text(value(resource).alias);
+  if (supportsResourceSchema(resource)) scope.names.set(key, name);
+  const kind = resource.kind === EntityKind.PROJECT ? c.project : resource.kind === EntityKind.AGENT ? c.agent : resource.kind === EntityKind.MACHINE ? c.runner : c.sessionLabel;
+  return `${scope.names.get(key) || `${kind} · ${c.nameUnavailable}`} · ${number}`;
 }
 function observation(v: unknown, c: Labels): string {
   const key = text(v);
@@ -326,7 +348,7 @@ function Settings({
             disabled={busy}
             onClick={() => void run(() => state.select(p.id))}
           >
-            {p.name}
+            {connectionLabel(state,p.id,p.name,c)}
           </button>
           <p>{p.origin}</p>
           {p.pairing ? (
@@ -423,7 +445,7 @@ function Settings({
           {JSON.stringify(
             {
               operation: "connection-profile",
-              profile_id: state.state.selectedProfile,
+              profile_name: state.state.profiles.find(p=>p.id===state.state.selectedProfile)?.name ?? c.nameUnavailable,
               paired: state.state.profiles.filter(
                 (p) => !p.pairing && !p.revoked,
               ).length,
@@ -757,7 +779,7 @@ function Connected({
       <TransportProvider transport={transport}>
         <section>
           <div className="connection">
-            <strong>{state.profile(id).name}</strong>
+            <strong>{connectionLabel(state,id,state.profile(id).name,c)}</strong>
             <span role="status">
               {
                 c[
@@ -869,7 +891,7 @@ function Connected({
           <details>
             <summary>{c.diagnostics}</summary>
             <p>
-              {c.identity}: {state.profile(id).serverId}
+              {c.identity}: {connectionLabel(state,id,state.profile(id).name,c)}
             </p>
             <p>{status}</p>
             <button
@@ -926,6 +948,7 @@ function Choices({
   onSelect: (id: string) => void;
   title: string;
 }) {
+ const resourceLabel=useResourceLabel();
   const c = useCopy(),
     [page, setPage] = useState(""),
     [items, setItems] = useState<Resource[]>([]);
@@ -968,7 +991,7 @@ function Choices({
             )
             .map((r) => (
               <option key={r.id} value={r.id}>
-                {label(r)}
+                {resourceLabel(r)}
               </option>
             ))}
         </select>
@@ -998,6 +1021,7 @@ function Sessions({
   open: (id: string) => void;
   create: () => void;
 }) {
+ const resourceLabel=useResourceLabel();
   const c = useCopy(),
     [page, setPage] = useState(""),
     [items, setItems] = useState<Resource[]>([]);
@@ -1049,7 +1073,7 @@ function Sessions({
         items.map((r) => (
           <article key={r.id}>
             <button className="row" onClick={() => open(r.id)}>
-              <strong>{label(r)}</strong>
+              <strong>{resourceLabel(r)}</strong>
               <span>
                 {observation(value(r).outcome, c)} ·{" "}
                 {observation(value(r).workspace, c)}
@@ -1222,6 +1246,8 @@ function Conversation({
   back: () => void;
   draft: ConversationDraft;
 }) {
+ const resourceLabel=useResourceLabel();
+  const client=useQueryClient();
   const transport = useTransport();
   const c = useCopy(),
     [page, setPage] = useState(""),
@@ -1270,10 +1296,18 @@ function Conversation({
       supportsResourceSchema(resource) &&
       data.archive === "active" &&
       data.recovery === "none";
+  const admittedLabel=(target:string,kind:EntityKind)=>{
+    for(const query of client.getQueryCache().getAll()) {
+      const observation=query.state.data as {resource?:Resource;resources?:Resource[]} | undefined;
+      const row=observation?.resource?.id===target?observation.resource:observation?.resources?.find(row=>row.id===target&&row.kind===kind);
+      if(row?.kind===kind)return resourceLabel(row);
+    }
+    return c.nameUnavailable;
+  };
   return (
     <section>
       <button onClick={back}>{c.back}</button>
-      <h2>{resource ? label(resource) : c.loading}</h2>
+      <h2>{resource ? resourceLabel(resource) : c.loading}</h2>
       <details>
         <summary>{c.information}</summary>
         <dl>
@@ -1285,10 +1319,10 @@ function Conversation({
           ))}
         </dl>
         <p>
-          {c.runner}: {text(data.machine_id)}
+          {c.runner}: {admittedLabel(text(data.machine_id),EntityKind.MACHINE)}
         </p>
         <p>
-          {c.agent}: {text(data.agent_id)}
+          {c.agent}: {admittedLabel(text(data.agent_id),EntityKind.AGENT)}
         </p>
       </details>
       {session.isError ? <p role="alert">{c.sessionGone}</p> : null}
@@ -1487,6 +1521,7 @@ function Inbox({
   mutate: Mutate;
   open: (id: string) => void;
 }) {
+ const resourceLabel=useResourceLabel();
   const c = useCopy(),
     [page, setPage] = useState(""),
     [items, setItems] = useState<InboxView[]>([]),
@@ -1526,7 +1561,7 @@ function Inbox({
         <article key={v.entry?.id}>
           <button className="row" onClick={() => setSelected(v.entry!.id)}>
             <strong>
-              {v.session ? label(v.session) : text(value(v.entry).source)}
+              {v.session ? resourceLabel(v.session) : text(value(v.entry).source)}
             </strong>
             <span>
               {observation(value(v.entry).source, c)} ·{" "}

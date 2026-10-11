@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 export const en = {
+  nameUnavailable: "Name unavailable",
+  sessionLabel: "Session",
   readIncomplete: "The list is incomplete. Retry the read or refresh; current targets must be verified before acting.",
   moreAvailable: "More items remain. Load the next page to see them.",
   retryRead: "Retry reading",
@@ -130,7 +132,7 @@ export const en = {
   diagnostics: "Connection diagnostics",
   export: "Copy safe diagnostics",
   copied: "Safe diagnostics copied",
-  safe: "Diagnostics contain only operation names and opaque correlation identifiers.",
+  safe: "Diagnostics show operation names, saved connection names, and status.",
   notificationNote:
     "OS submission is not proof that you saw a notification. Inbox read state is separate.",
   localNote:
@@ -167,6 +169,8 @@ export const en = {
     "Original pairing is retained. Retry it without generating another credential.",
 } as const;
 export const ko: Record<keyof typeof en, string> = {
+  nameUnavailable: "이름을 사용할 수 없음",
+  sessionLabel: "세션",
   readIncomplete: "목록이 완전하지 않습니다. 읽기를 재시도하거나 새로 고침하세요. 동작 전에 현재 대상을 확인해야 합니다.",
   moreAvailable: "항목이 더 있습니다. 다음 페이지를 불러오세요.",
   retryRead: "읽기 재시도",
@@ -294,7 +298,7 @@ export const ko: Record<keyof typeof en, string> = {
   diagnostics: "연결 진단",
   export: "안전한 진단 복사",
   copied: "안전한 진단 복사됨",
-  safe: "진단에는 작업 이름과 불투명한 상관 식별자만 포함됩니다.",
+  safe: "진단에는 작업 이름, 저장된 연결 이름 및 상태가 표시됩니다.",
   notificationNote:
     "OS에 제출되었다고 알림을 보았다는 뜻은 아닙니다. 받은 편지함 읽음 상태는 별개입니다.",
   localNote:
