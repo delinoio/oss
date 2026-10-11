@@ -38,15 +38,17 @@ export function captureHarnessEditorChanges(
   edited: Document,
   requireTyped = false,
 ): Document {
-  if (!saved.harness_settings && !requireTyped) return edited;
+  if (!saved.harness_settings && !edited.harness_settings && !requireTyped)
+    return edited;
   const projected = harnessEditorDocument(saved);
-  const settings: Document = saved.harness_settings
-    ? { ...object(saved.harness_settings) }
-    : { version: 1 };
+  const settings: Document =
+    edited.harness_settings || saved.harness_settings
+      ? { ...object(edited.harness_settings ?? saved.harness_settings) }
+      : { version: 1 };
   if (
     saved.harness_settings
       ? edited.effort !== projected.effort
-      : Object.hasOwn(edited, "effort")
+      : !edited.harness_settings && Object.hasOwn(edited, "effort")
   ) {
     settings.effort = { mode: "override", value: edited.effort };
   }
@@ -56,7 +58,7 @@ export function captureHarnessEditorChanges(
     if (
       saved.harness_settings
         ? after[field] !== before[field]
-        : Object.hasOwn(after, field)
+        : !edited.harness_settings && Object.hasOwn(after, field)
     ) {
       settings[field] = {
         mode: "override",

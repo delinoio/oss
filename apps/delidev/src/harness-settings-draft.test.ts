@@ -71,3 +71,34 @@ it("normalizes a new inherited route without manufacturing omitted choices", () 
   });
   expect(JSON.parse(JSON.stringify(created))).toEqual(created);
 });
+it("preserves direct shared-editor override and reset choices through the route wizard", () => {
+  const saved = {
+    harness_settings: {
+      version: 1,
+      effort: { mode: "override", value: "high" },
+      permission: { mode: "inherit" },
+    },
+    options: { permission: "default" },
+  };
+  const projected = harnessEditorDocument(saved);
+  const next = captureHarnessEditorChanges(saved, {
+    ...projected,
+    harness_settings: {
+      version: 1,
+      effort: { mode: "inherit" },
+      permission: { mode: "override", value: "read-only" },
+    },
+  });
+  expect(next.harness_settings).toEqual({
+    version: 1,
+    effort: { mode: "inherit" },
+    permission: { mode: "override", value: "read-only" },
+  });
+  expect(
+    captureHarnessEditorChanges(
+      {},
+      { options: { permission: "default" }, harness_settings: { version: 1 } },
+      true,
+    ).harness_settings,
+  ).toEqual({ version: 1 });
+});

@@ -5,6 +5,7 @@ export enum SettingsCategory {
   SubscriptionAccounts = "subscription-accounts",
   ApiAccounts = "api-accounts",
   Providers = "providers",
+  Harnesses = "harnesses",
   AgentWorkers = "agent-workers",
   Instructions = "instructions",
   ProjectDefaults = "project-defaults",

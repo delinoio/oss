@@ -1190,6 +1190,11 @@ export function AgentWorkerSourceWizard({
   cancel: () => void;
   openAccounts?: (source: Source) => void;
 }) {
+  const harnessStatus = useQuery(
+    SystemQuery.getStatus,
+    {},
+    { enabled: active },
+  );
   const [data, setData] = useState<Document>(() =>
     initial
       ? harnessEditorDocument(document(initial))
@@ -1443,7 +1448,16 @@ export function AgentWorkerSourceWizard({
           routes.some((route) => route.inheritModel);
         const next: Document = captureHarnessEditorChanges(
           initial ? document(initial) : {},
-          data,
+          !initial &&
+            data.harness === Harness.Codex &&
+            harnessStatus.data?.capabilities.includes(
+              SystemCapability.HARNESS_DEFAULTS_V1,
+            )
+            ? {
+                ...data,
+                harness_settings: data.harness_settings ?? { version: 1 },
+              }
+            : data,
           typed,
         );
         delete next.reconfiguration_required;
@@ -1670,6 +1684,7 @@ export function AgentWorkerSourceWizard({
             change={setData}
             existing={Boolean(initial)}
             active={active && step === Step.Configure}
+            initial={initial}
             workerWizard
           />
           <section

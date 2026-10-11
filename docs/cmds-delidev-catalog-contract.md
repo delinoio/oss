@@ -57,9 +57,12 @@ Saving and reading defaults do not launch a harness or connect an account.
 
 Follow the [startup contract](cmds-delidev-execution-startup-contract.md) and
 [portable contract](cmds-delidev-configuration-transfer-contract.md) for admission
-and version-7 import/export. The desktop's existing Agent editor retains typed
-selectors through unrelated edits; full Project/server Harness configuration
-surfaces remain separately owned by the desktop contract.
+and version-7 import/export. The desktop's shared Codex Harness editor retains typed selectors through
+unrelated edits and provides server, Project and Agent override/reset controls.
+Follow the [desktop editor contract](apps-delidev-desktop-contract.md#shared-codex-harness-settings)
+for configured-value previews, source scope selection, revision-conflict drafts
+and adapter gates. This presentation does not replace execution-owned native
+evidence or frozen provenance.
 
 ## Key-preserving API format change reservations
 

@@ -35,7 +35,14 @@ const nativeKeys = [
 const permissionKeys = ["permission", "claude_permission"];
 
 function nativeSummary(data: Document) {
-  const options = object(data.options);
+  const options = {
+    ...object(data.options),
+    ...Object.fromEntries(
+      Object.entries(object(data.harness_settings))
+        .filter(([, selector]) => object(selector).mode === "override")
+        .map(([key, selector]) => [key, object(selector).value]),
+    ),
+  };
   const unknown = Object.keys(options).some(
     (key) => !nativeKeys.includes(key) && !permissionKeys.includes(key),
   );
@@ -215,18 +222,20 @@ export function AgentConfiguration({
             {copy("agent-configuration.leaveTheseUnchangedToKeepThe_73a428")}
           </p>
         </header>
-        <AgentDisclosure
-          section={AgentSection.Reasoning}
-          summary={retainedSummary(
-            data.effort,
-            copy("agent-configuration.extra.2bab94029bed"),
-          )}
-          invalidValue={
-            data.effort !== undefined && typeof data.effort !== "string"
-          }
-        >
-          {reasoning}
-        </AgentDisclosure>
+        {reasoning !== undefined ? (
+          <AgentDisclosure
+            section={AgentSection.Reasoning}
+            summary={retainedSummary(
+              data.effort,
+              copy("agent-configuration.extra.2bab94029bed"),
+            )}
+            invalidValue={
+              data.effort !== undefined && typeof data.effort !== "string"
+            }
+          >
+            {reasoning}
+          </AgentDisclosure>
+        ) : null}
         {accounts !== undefined ? (
           <AgentDisclosure
             section={AgentSection.Accounts}

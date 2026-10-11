@@ -338,3 +338,24 @@ it("keeps a pointer target still until click while keyboard and independent focu
   pointer.focus();
   expect(scroller.scrollTop).toBe(148);
 });
+it("finds Codex source defaults and native settings in English and Korean", async () => {
+  const harness = [
+    { category: SettingsCategory.Harnesses, label: "Harnesses", help: "" },
+  ];
+  expect(matchSettings("Codex", harness).map((row) => row.target)).toContain(
+    SettingsSearchTarget.Codex,
+  );
+  expect(
+    matchSettings("reasoning effort", harness).map((row) => row.target),
+  ).toContain(SettingsSearchTarget.CodexEffort);
+  expect(
+    matchSettings("service tier", harness).map((row) => row.target),
+  ).toContain(SettingsSearchTarget.CodexTier);
+  await i18n.changeLanguage("ko");
+  expect(
+    matchSettings("추론 강도", harness).map((row) => row.target),
+  ).toContain(SettingsSearchTarget.CodexEffort);
+  expect(
+    matchSettings("하위 에이전트 모델", harness).map((row) => row.target),
+  ).toContain(SettingsSearchTarget.CodexSubagents);
+});

@@ -5300,3 +5300,50 @@ inherited effort from native-default/explicit effort. New legacy-client creation
 and current typed editing retain their server-owned compatibility boundaries.
 Current import/export review accepts version 7. Full server and Project Harness
 configuration remain separate surfaces under this contract.
+
+## Shared Codex Harness settings
+
+Settings > Harnesses > Codex CLI edits the connected server's original Settings
+resource. The Project Execution panel and Agent Worker Configure step reuse the
+same typed selector editor. Follow the [catalog inheritance contract](cmds-delidev-catalog-contract.md#harness-defaults-and-live-inheritance).
+The editor changes `harness_defaults` version 1 on Settings and Project resources,
+and `harness_settings` version 1 on Agent resources. It creates no client settings
+store, RPC, capability allocation or native configuration write.
+
+Select the general Codex scope, API or subscription source family, optional exact
+Provider or ChatGPT service, and optional API protocol within a Provider. Saved
+scopes remain selectable. A change replaces only that exact scope entry and
+selector; preserve all other harnesses, scopes, unsupported values and unrelated
+resource fields. Inherit omits the value. Override keeps an explicit empty string
+or zero. Reset changes the selector to inherit. Agent overrides apply to all its
+routes. Its source and optional Project choices preview ancestry only; they do
+not change routes, account selection or Project membership. Route Model steps
+continue to own Agent model override/inherit selectors.
+
+The configured-value preview uses Agent, Project and server precedence, with API
+protocol, Provider/service, source and general scope ordering within defaults.
+Read server ancestry only from a complete supported singleton Settings page.
+An incomplete, malformed or failed ancestor read cannot establish a lower-layer
+effective value. Display its unavailable state and keep the draft. Show configured
+values, owning scope and observed resource revisions. The editor's own revision
+is its draft baseline. Never invent a native default or label a client projection
+as execution provenance. Missing native evidence remains explicitly unverified;
+execution admission still verifies the actual selected account, connection,
+profile, native observations and Runner Device support.
+
+Require `HARNESS_DEFAULTS_V1` for the shared editor. Older servers retain their
+existing legacy Agent controls. Gate subagent and approval-review overrides on
+their existing adapter capabilities. Approval review model remains unsupported.
+Offer native default and Fast service tier choices; retain other saved values as
+unsupported rather than replacing them. A menu, configured preview or saved
+value grants no native execution authority.
+
+Use the original atomic save and expected-revision/request owner for all scopes.
+Retain draft input on stale reads, revision rejection and uncertain saves. Only
+explicit discard/reload adopts current resource values; presentation and locale
+changes never reset a draft or retry a mutation. Keep Project tabs and Agent
+disclosures mounted, with invalid-control reveal and keyboard focus. Settings
+search indexes bundled Codex labels and help only, with targets for model,
+effort, permissions, approval, subagents and tier. English and Korean catalogs
+cover labels, draft/save states, source guidance, unverified and unsupported
+states. Controls remain at least 40 pixels high with 8-pixel corners.
