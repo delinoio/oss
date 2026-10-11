@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
 
 import { load } from "js-yaml";
-import { Event, jobPaths, matricesForEvent, nativeMatrices, planJobs } from "./plan.mjs";
+import { Event, Mode, jobPaths, matricesForEvent, nativeMatrices, planJobs } from "./plan.mjs";
 import { jobCommands, jobTaskGraph } from "./task-graph.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -34,7 +34,7 @@ const legacyJobs = [
 ];
 const devhudJobs = [
   "devhud-frontend", "devhud-extension", "devhud-rust-conformance", "devhud-security", "devhud-desktop",
-  "devhud-mobile-contracts", "devhud-ios-simulator", "devhud-android-emulator", "devhud-admin",
+  "devhud-mobile-contracts", "devhud-android-emulator", "devhud-admin",
   "devhud-api", "devhud-oci", "devhud-supply-chain", "devhud-release-contracts",
 ];
 const achJobs = ["async-commit-hook"];
@@ -66,7 +66,7 @@ test("protocol launcher fixtures run uncached on every native CI contract host",
   const job = workflow.jobs["ci-contracts"];
   assert.equal(job["runs-on"], "${{ matrix.os }}");
   assert.equal(job.strategy["fail-fast"], false);
-  assert.deepEqual(job.strategy.matrix.os, ["ubuntu-22.04", "macos-latest", "windows-latest"]);
+  assert.deepEqual(job.strategy.matrix.os, ["ubuntu-22.04", "windows-latest"]);
   for (const name of ["Setup Go", "Validate workflow syntax", "Validate CI contracts and affected behavior"]) {
     assert.equal(namedStep(job, name).if, "${{ runner.os == 'Linux' }}");
   }
@@ -356,7 +356,7 @@ test("desktop and mobile matrices match the committed architecture contracts", (
   ]);
   const platforms = JSON.parse(readFileSync(`${root}/apps/devhud/platforms.json`, "utf8"));
   for (const target of platforms.targets) assert.ok(desktop.some((id) => id === target.id || id.startsWith(`${target.id}-`)), target.id);
-  assert.deepEqual(workflow.jobs["devhud-ios-simulator"].strategy.matrix.include.map(({ target }) => target), ["aarch64", "aarch64-sim", "x86_64"]);
+  assert.equal(workflow.jobs["devhud-ios-simulator"], undefined);
   const android = workflow.jobs["devhud-android-emulator"].strategy.matrix.include;
   assert.deepEqual(android.map(({ target }) => target), ["aarch64", "armv7", "x86_64", "aarch64-armv7"]);
   assert.deepEqual(android.find(({ target }) => target === "aarch64-armv7"), {
@@ -422,7 +422,6 @@ test("implemented DevHud conformance commands are wired to their owning jobs", (
     ["devhud-security", ["test:security", "test:adapters", "diagnostics-policy.test.mjs", "native-bridge.test.mjs", "mobile-policy.test.mjs"]],
     ["devhud-desktop", ["verify:pins", "smoke:platform", "xvfb-run", "io.delino.devhud.native_messaging"]],
     ["devhud-mobile-contracts", ["mobile:check", "test:components"]],
-    ["devhud-ios-simulator", ["mobile:generate", "run-mobile.mjs ios build"]],
     ["devhud-android-emulator", ["mobile:generate", "run-mobile.mjs android build", "--bundletool-jar"]],
     ["devhud-supply-chain", ["finalize-devhud-deb.test.mjs", "generate-devhud-supply-chain.test.mjs", "generate-devhud-updater.test.mjs", "validate-devhud-private-build.test.mjs"]],
     ["devhud-release-contracts", ["scripts/release/*.test.mjs"]],
@@ -621,14 +620,13 @@ test("local CI commands are documented by repository contracts", () => {
   for (const command of ["test:native:capture", "test:native:shortcuts", "test:native:ipc", "test:security", "test:adapters"]) assert.ok(project.includes(command), command);
 });
 
-test("Go validation consumes the planned event matrix and retains five native Windows shards after PRs", () => {
+test("Go validation consumes the planned event matrix and retains five native Windows shards on main", () => {
   const job = workflow.jobs["go-test"];
   assert.equal(job.strategy["fail-fast"], false);
   assert.equal(workflow.jobs.changes.outputs.go_test_matrix, "${{ steps.plan.outputs.go_test_matrix }}");
   assert.equal(job.strategy.matrix, "${{ fromJSON(needs.changes.outputs.go_test_matrix) }}");
-  assert.deepEqual(matricesForEvent(Event.Manual).goTestMatrix, { include: [
+  assert.deepEqual(matricesForEvent(Event.Push).goTestMatrix, { include: [
     { os: "ubuntu-latest", shard: "all", label: "ubuntu-latest" },
-    { os: "macos-latest", shard: "all", label: "macos-latest" },
     ...["core", "server", "harness", "worker", "workspace"].map((shard) => ({ os: "windows-latest", shard, label: `windows-latest, ${shard}` })),
   ] });
   assert.equal(job.name, "Go Test (${{ matrix.label }})");
@@ -668,7 +666,7 @@ test("scoped Go caches preserve default keys and restore shared main caches on f
 });
 
 test("Forge retains three-platform interoperability and mandatory Linux rendering", () => {
-  assert.deepEqual(workflow.jobs["forge-test"].strategy.matrix.os, ["ubuntu-latest", "macos-latest", "windows-latest"]);
+  assert.equal(workflow.jobs["forge-test"].strategy.matrix, "${{ fromJSON(needs.changes.outputs.forge_matrix) }}");
   const testCommands = jobCommands(workflow.jobs["forge-test"]);
   assert.match(testCommands, /cargo test -p forge-tree-doc -p forge-pptx -p delino-forge/u);
   const renderCommands = jobCommands(workflow.jobs["forge-render"]);
@@ -766,7 +764,7 @@ test("Go selection preserves exact comparisons and keeps quality validation unch
   for (const id of ["go-test", "go-quality"]) {
     const job = workflow.jobs[id];
     const execution = job.steps.find(({ run }) => run?.includes(id === "go-test" ? "ci:go:test" : "ci:go:quality"));
-    if (id === "go-quality") assert.equal(execution.env.CI_GO_MODE, "${{ github.event_name == 'pull_request' && !fromJSON(needs.changes.outputs.forced)['go-quality'] && 'affected' || 'full' }}");
+    if (id === "go-quality") assert.equal(execution.env.CI_GO_MODE, "${{ (github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && needs.changes.outputs.mode == 'affected')) && !fromJSON(needs.changes.outputs.forced)['go-quality'] && 'affected' || 'full' }}");
     assert.equal(execution.env.CI_GO_BASE, "${{ needs.changes.outputs.base }}");
     assert.equal(execution.env.CI_GO_HEAD, "${{ needs.changes.outputs.head }}");
   }
@@ -781,10 +779,10 @@ test("Go workflow selects affected native main packages and full Ubuntu main, ma
       for (const forced of [false, true]) {
         const mode = runInNewContext(expression.slice(3, -2), {
           github: { event_name: event }, matrix: row,
-          needs: { changes: { outputs: { forced: JSON.stringify({ "go-test": forced }) } } },
+          needs: { changes: { outputs: { mode: Mode.Affected, forced: JSON.stringify({ "go-test": forced }) } } },
           fromJSON: JSON.parse,
         });
-        const expected = forced || event === Event.Manual || (event === Event.Push && row.os === "ubuntu-latest") ? "full" : "affected";
+        const expected = forced || (event === Event.Push && row.os === "ubuntu-latest") ? "full" : "affected";
         assert.equal(mode, expected, `${event}: ${row.label}: forced=${forced}`);
       }
     }
@@ -868,6 +866,32 @@ test("PR Ubuntu shards reuse the main all cache and Windows alone restores the w
       });
       assert.equal(evaluate(inputs["cache-scope"]), matrix.os === "ubuntu-latest" ? "go-test-all" : `go-test-${matrix.shard}`);
       assert.equal(evaluate(inputs["cache-fallback-scope"]), matrix.os === "windows-latest" && matrix.shard === "workspace" ? "go-test-worker" : "");
+    }
+  }
+});
+
+test("CI exposes no full manual input and allocates no macOS runner on any event", () => {
+  assert.equal(workflow.on.workflow_dispatch, null);
+  for (const event of Object.values(Event)) {
+    const matrices = matricesForEvent(event);
+    const outputs = Object.fromEntries(Object.entries({
+      go_test_matrix: matrices.goTestMatrix, environment_matrix: matrices.environmentMatrix,
+      forge_matrix: matrices.forgeMatrix, clibox_matrix: matrices.cliboxMatrix,
+      desktop_matrix: matrices.desktopMatrix, react_forge_matrix: matrices.reactForgeMatrix,
+      pnport_matrix: matrices.pnportMatrix, delidev_frontend_matrix: matrices.delidevFrontendMatrix,
+    }).map(([name, value]) => [name, JSON.stringify(value)]));
+    const selected = planJobs(event, [".github/workflows/CI.yml"]).jobs;
+    for (const [id, job] of Object.entries(workflow.jobs)) {
+      if (id in selected && !selected[id]) continue;
+      const context = { needs: { changes: { outputs } }, fromJSON: JSON.parse };
+      let matrix = job.strategy?.matrix;
+      if (typeof matrix === "string") matrix = runInNewContext(matrix.slice(3, -2), context);
+      const rows = matrix?.include ?? matrix?.os?.map(os => ({ os })) ?? [{}];
+      for (const row of rows) {
+        const runner = job["runs-on"].startsWith("${{")
+          ? runInNewContext(job["runs-on"].slice(3, -2), { ...context, matrix: row }) : job["runs-on"];
+        assert.doesNotMatch(runner, /^macos/u, `${event}: ${id}`);
+      }
     }
   }
 });

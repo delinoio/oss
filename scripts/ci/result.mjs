@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Event, jobPaths, matricesForEvent } from "./plan.mjs";
+import { Event, executionMode, jobPaths, matricesForEvent } from "./plan.mjs";
 import { rustJobs, validateRustPackages } from "./rust-affected.mjs";
 
 export function validateResults(needs) {
@@ -9,10 +9,13 @@ export function validateResults(needs) {
   }
   const expected = JSON.parse(needs.changes.outputs.jobs);
   const event = needs.changes.outputs.event;
+  const mode = executionMode(event, needs.changes.outputs.mode);
+  if (!needs.changes.outputs.mode) throw new Error("Missing CI mode");
+  const pr = event !== Event.Push;
   const rustPackages = validateRustPackages(JSON.parse(needs.changes.outputs.rust_packages));
   if (rustJobs.some(id => expected[id]) !== (rustPackages.length > 0)) throw new Error("Rust package selection differs from the planned jobs");
-  const matrices = matricesForEvent(event);
-  for (const [output, matrix] of [["go_test_matrix", matrices.goTestMatrix], ["desktop_matrix", matrices.desktopMatrix], ["react_forge_matrix", matrices.reactForgeMatrix], ["delidev_frontend_matrix", matrices.delidevFrontendMatrix]]) {
+  const matrices = matricesForEvent(event, mode);
+  for (const [output, matrix] of [["environment_matrix", matrices.environmentMatrix], ["forge_matrix", matrices.forgeMatrix], ["clibox_matrix", matrices.cliboxMatrix], ["pnport_matrix", matrices.pnportMatrix], ["go_test_matrix", matrices.goTestMatrix], ["desktop_matrix", matrices.desktopMatrix], ["react_forge_matrix", matrices.reactForgeMatrix], ["delidev_frontend_matrix", matrices.delidevFrontendMatrix]]) {
     const actual = JSON.parse(needs.changes.outputs[output]);
     if (JSON.stringify(actual) !== JSON.stringify(matrix)) throw new Error(`${output} differs from the ${event} policy`);
   }
@@ -22,9 +25,7 @@ export function validateResults(needs) {
   if (JSON.stringify(actualIds) !== JSON.stringify(ids)) throw new Error("CI dependencies have an unexpected job inventory");
   for (const id of ids) {
     if (typeof expected[id] !== "boolean") throw new Error(`${id} has an invalid execution decision`);
-    if (event === Event.Manual && !expected[id]) throw new Error(`${id} must run on manual CI`);
-    if (id === "devhud-ios-simulator" && expected[id] !== (event === Event.Manual)) throw new Error(`${id} violates the event policy`);
-    if (event === Event.PullRequest && jobPaths[id].native && expected[id]) throw new Error(`${id} cannot run on a pull request`);
+    if (pr && jobPaths[id].native && expected[id]) throw new Error(`${id} cannot run with PR eligibility`);
     const required = expected[id] ? "success" : "skipped";
     if (needs[id]?.result !== required) throw new Error(`${id}: expected ${required}, got ${needs[id]?.result ?? "missing"}`);
   }

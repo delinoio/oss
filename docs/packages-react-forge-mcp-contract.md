@@ -55,7 +55,7 @@ EOF, transport close, SIGINT/SIGTERM and Windows SIGBREAK stop admission, abort 
 
 - Keep official SDK transport separate from the pure native planner. Serialize image admission and validation against the aggregate session budget. Bound both input code and returned structure; the remote MCP text envelope can truncate large otherwise-successful responses.
 
-- Ordinary affected PR/main CI validates four Windows/Linux native hosts; manual CI and the exact-tag release validate all six, including both Darwin hosts. Keep native, installed CLI/MCP, render, example, and benchmark validation in the shared host script so release failures block candidate assembly and publication.
+- Affected PR/main/manual CI validates three Windows/Linux native hosts; the exact-tag release validates all six, including both Darwin hosts. Keep native, installed CLI/MCP, render, example, and benchmark validation in the shared host script so release failures block candidate assembly and publication.
 
 - Follow `packages-react-forge-mcp-contract.md` for stdio MCP. Keep one shared execution process and canonical React/React Forge module identities; never forward task stdout/stderr to protocol or operational logs. Preserve per-session call order until cancelled callbacks actually settle, bound entry plus data to 16 MiB, retain Figma receipts on partial/unknown outcomes, and never retry writes automatically. Five-second forced cleanup applies only to server shutdown, never normal operations.
 

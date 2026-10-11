@@ -304,15 +304,11 @@ export function assertMobileCi(workflow) {
   const contractsJob = workflowJob(normalizedWorkflow, "devhud-mobile-contracts");
   const iosJob = workflowJob(normalizedWorkflow, "devhud-ios-simulator");
   const androidJob = workflowJob(normalizedWorkflow, "devhud-android-emulator");
-  for (const [name, job] of [["devhud-mobile-contracts", contractsJob], ["devhud-ios-simulator", iosJob], ["devhud-android-emulator", androidJob]]) {
+  for (const [name, job] of [["devhud-mobile-contracts", contractsJob], ["devhud-android-emulator", androidJob]]) {
     assert(job.includes("needs: changes") && job.includes(`if: \u0024{{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['${name}'] }}`), "mobile CI job must use its central execution decision before runner allocation");
     assert(job.includes("uses: ./.github/actions/setup-ci-node"), "mobile CI job must use shared dependency setup");
   }
-  for (const [target, runner] of [["aarch64", "macos-15"], ["aarch64-sim", "macos-15"], ["x86_64", "macos-15-intel"]]) {
-    assert(iosJob.includes(`- target: ${target}\n            runner: ${runner}`), `iOS CI target ${target} must run on ${runner}`);
-  }
-  assert(iosJob.includes("if: ${{ matrix.target == 'x86_64' }}\n        run: xcrun simctl list > /dev/null"), "Intel iOS CI must initialize simulator devices");
-  assert(iosJob.includes("ios build --target ${{ matrix.target }} --ci --no-sign"), "iOS CI must build every matrix target without signing");
+  assert(iosJob === "", "native iOS CI must remain at the owning release boundary");
   for (const [target, artifacts] of [["aarch64", "--apk --aab"], ["armv7", "--apk --aab"], ["x86_64", "--apk"]]) {
     assert(androidJob.includes(`- target: ${target}\n            artifacts: ${artifacts}`), `Android CI target ${target} must build ${artifacts}`);
   }

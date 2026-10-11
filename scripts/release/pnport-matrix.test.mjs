@@ -12,11 +12,11 @@ const read = (file) => readFileSync(new URL(`../../${file}`, import.meta.url), "
 const ci = load(read(".github/workflows/CI.yml"));
 const release = load(read(".github/workflows/release-pnport.yml"));
 
-test("CI and exact-tag release use the package-owned four native hosts", () => {
+test("CI uses Linux hosts while exact-tag release retains all four package-owned hosts", () => {
   assert.deepEqual(targets.map(({ suffix }) => suffix), ["darwin-x64", "darwin-arm64", "linux-x64-gnu", "linux-arm64-gnu"]);
   assert.deepEqual(nativeMatrix.include.map(({ target, suffix }) => ({ target, suffix })), targets.map(({ rust, suffix }) => ({ target: rust, suffix })));
   assert.deepEqual(nativeMatrix.include.map(({ runner }) => runner), ["macos-15-intel", "macos-15", "ubuntu-22.04", "ubuntu-22.04-arm"]);
-  for (const event of Object.values(Event)) assert.deepEqual(matricesForEvent(event).pnportMatrix, nativeMatrix);
+  for (const event of Object.values(Event)) assert.deepEqual(matricesForEvent(event).pnportMatrix, { include: nativeMatrix.include.filter(row => row.suffix.startsWith("linux-")) });
   assert.equal(ci.jobs.changes.outputs.pnport_matrix, "${{ steps.plan.outputs.pnport_matrix }}");
   assert.equal(ci.jobs["pnport-native"].strategy.matrix, "${{ fromJSON(needs.changes.outputs.pnport_matrix) }}");
   assert.equal(release.jobs.prepare.outputs.matrix, "${{ steps.source.outputs.matrix }}");

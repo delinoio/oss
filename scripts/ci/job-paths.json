@@ -405,33 +405,6 @@
       "scripts/tauri-cli.mjs"
     ]
   },
-  "devhud-ios-simulator": {
-    "paths": [
-      ".cargo/**",
-      ".npmrc",
-      ".nvmrc",
-      "Cargo.lock",
-      "Cargo.toml",
-      "apps/devhud/**",
-      "package.json",
-      "packages/devhud-api-client/**",
-      "pnpm-lock.yaml",
-      "pnpm-workspace.yaml",
-      "protos/devhud/**",
-      "protos/gen/go/devhud/**",
-      "rust-toolchain",
-      "rust-toolchain.toml",
-      "scripts/install-git-hooks.sh",
-      "scripts/run-rsbuild-dev.mjs",
-      "scripts/spawn-dev-server.mjs",
-      "turbo.json",
-      "prebuilt-dependencies.lock.json",
-      "scripts/prebuilt-dependencies*.mjs",
-      "scripts/archive*.mjs",
-      "scripts/tauri-cli.mjs"
-    ],
-    "native": true
-  },
   "devhud-android-emulator": {
     "paths": [
       ".cargo/**",

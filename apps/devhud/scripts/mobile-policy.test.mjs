@@ -464,16 +464,13 @@ test("mobile policy pins normalized resolved dependency closures", () => {
   );
 });
 
-test("mobile policy requires production and simulator iOS builds", () => {
+test("mobile CI requires Android builds and excludes native iOS allocation", () => {
   const workflow = readFileSync(join(appRoot, "../../.github/workflows/CI.yml"), "utf8").replace(/\r\n?/gu, "\n");
   assert.doesNotThrow(() => assertMobileCi(workflow));
   assert.doesNotThrow(() => assertMobileCi(workflow.replaceAll("\n", "\r\n")));
   assert.throws(() => assertMobileCi(workflow.replaceAll("needs: changes", "needs: ci-contracts")), /central execution decision/u);
-  assert.throws(() => assertMobileCi(workflow.replaceAll("fromJSON(needs.changes.outputs.jobs)['devhud-ios-simulator']", "true")), /central execution decision/u);
-  const withoutDeviceBuild = workflow.replace("          - target: aarch64\n            runner: macos-15\n", "");
-  assert.throws(() => assertMobileCi(withoutDeviceBuild), /iOS CI target aarch64/u);
-  assert.throws(() => assertMobileCi(workflow.replace("xcrun simctl list > /dev/null", "true")), /initialize simulator devices/u);
-  assert.throws(() => assertMobileCi(workflow.replace(" --no-sign", "")), /without signing/u);
+  assert.throws(() => assertMobileCi(workflow.replaceAll("fromJSON(needs.changes.outputs.jobs)['devhud-android-emulator']", "true")), /central execution decision/u);
+  assert.throws(() => assertMobileCi(`${workflow}\n  devhud-ios-simulator:\n    runs-on: macos-15\n`), /owning release boundary/u);
   assert.throws(() => assertMobileCi(workflow.replace("            artifacts: --apk --aab", "            artifacts: --apk")), /build --apk --aab/u);
   assert.throws(() => assertMobileCi(workflow.replaceAll('--android-artifact "${aab_artifacts[0]}"', '--android-artifact "missing.aab"')), /inspect the generated App Bundle/u);
   assert.throws(() => assertMobileCi(workflow.replace("android build --target aarch64 --target armv7 --aab", "android build --target aarch64 --aab")), /combined production build command/u);

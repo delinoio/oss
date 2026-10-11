@@ -3,7 +3,7 @@ import { appendFileSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 
 import { tmpdir } from "node:os";
 import { isAbsolute, join, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { changedFiles, Event, jobPaths, matchesPath } from "./plan.mjs";
+import { changedFiles, Event, Mode, executionMode, jobPaths, matchesPath } from "./plan.mjs";
 
 export const rustJobs = Object.freeze(["rust-test", "rust-clippy"]);
 export const excludedRustPackages = Object.freeze(["forge-scene", "forge-glb", "forge-fbx"]);
@@ -45,18 +45,17 @@ function changedResult(result, workspace, range, names) {
   return result;
 }
 
-export function selectRustPackages({ event, range, plan, cwd = process.cwd(), binary,
+export function selectRustPackages({ event, range, plan, mode = Mode.Affected, cwd = process.cwd(), binary,
   validationHead = git(cwd, "rev-parse", "HEAD").trim(),
   run = (file, args, directory, env) => JSON.parse(execFileSync(file, args, { ...options(directory), env })),
 }) {
-  if (!Object.values(Event).includes(event)) throw new Error("Unsupported Rust CI event");
+  executionMode(event, mode);
   commit(range.base); commit(range.head); commit(validationHead);
   const jobs = { ...plan.jobs };
   if (!rustJobs.some(id => jobs[id])) return { jobs, packages: [], mode: RustSelection.Empty, reason: "no-rust-jobs", validationHead };
   if (!isAbsolute(binary ?? "")) throw new Error("Rust selection requires the verified cargo-mono executable path");
   let reason;
-  if (event === Event.Manual) reason = "manual";
-  else if (rustJobs.some(id => jobs[id] && plan.forced[id])) reason = "forced";
+  if (rustJobs.some(id => jobs[id] && plan.forced[id])) reason = "forced";
   else if (range.paths.some(path => globalInputs.some(pattern => matchesPath(path, pattern)))) reason = "shared-input";
   // Package detection runs at the event head, while PR tests retain the merge
   // checkout. A changed dependency graph requires the merged workspace baseline.
@@ -130,9 +129,10 @@ export function main(env = process.env) {
   const command = process.argv[2];
   if (command !== "plan") return runRustCheck(command, JSON.parse(env.RUST_PACKAGES));
   const event = JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, "utf8"));
-  const range = changedFiles(env.GITHUB_EVENT_NAME, event, env.GITHUB_SHA);
+  const mode = executionMode(env.GITHUB_EVENT_NAME, env.CI_MODE);
+  const range = changedFiles(env.GITHUB_EVENT_NAME, event, env.GITHUB_SHA, process.cwd(), { mode, ref: env.GITHUB_REF, mainSha: env.CI_MAIN_SHA });
   if (range.base !== env.CI_BASE || range.head !== env.CI_HEAD) throw new Error("Rust comparison differs from the central CI plan");
-  const selection = selectRustPackages({ event: env.GITHUB_EVENT_NAME, range, plan: { jobs: JSON.parse(env.CI_JOBS), forced: JSON.parse(env.CI_FORCED) }, binary: env.CARGO_MONO_BINARY });
+  const selection = selectRustPackages({ event: env.GITHUB_EVENT_NAME, mode, range, plan: { jobs: JSON.parse(env.CI_JOBS), forced: JSON.parse(env.CI_FORCED) }, binary: env.CARGO_MONO_BINARY });
   appendFileSync(env.GITHUB_OUTPUT, `jobs=${JSON.stringify(selection.jobs)}\nrust_packages=${JSON.stringify(selection.packages)}\n`);
   console.log(JSON.stringify({ event: "ci_rust_plan", base: range.base, head: range.head, ...selection }));
   if (env.GITHUB_STEP_SUMMARY) appendFileSync(env.GITHUB_STEP_SUMMARY, `\n## Final Rust execution plan\n\nMode: ${selection.mode}; reason: ${selection.reason}\n\nComparison: ${range.base}..${range.head}\n\nValidation revision: ${selection.validationHead}\n\nPackages: ${selection.packages.join(", ") || "none"}\n\n| Job | Final decision |\n| --- | --- |\n${rustJobs.map(id => `| ${id} | ${selection.jobs[id] ? "run" : "skip"} |`).join("\n")}\n`);
