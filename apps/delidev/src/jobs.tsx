@@ -77,13 +77,12 @@ export function useJobObservation(
     {
       enabled: active && Boolean(initial),
       refetchInterval: (query) => {
-        const row = query.state.data?.resource;
-        return active &&
-          initial &&
-          !(
-            exactJob(row, initial, floor, expectedType, machineId) &&
-            terminalStates.includes(document(row).state as JobState)
-          )
+        if (!active || !initial || query.state.error) return false;
+        const response = query.state.data;
+        const row = response?.resource;
+        if (response && !exactJob(row, initial, floor, expectedType, machineId))
+          return false;
+        return !row || !terminalStates.includes(document(row).state as JobState)
           ? 2000
           : false;
       },
