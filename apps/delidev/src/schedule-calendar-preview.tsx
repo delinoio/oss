@@ -260,16 +260,27 @@ export function calendarRecurrence(
 export function calendarRelative(next: number, now: number) {
   const remaining = next - now;
   if (remaining < 60000) return copy("schedule-creation.preview.soon");
-  const unit =
-    remaining >= 86400000 ? "day" : remaining >= 3600000 ? "hour" : "minute";
-  return new Intl.RelativeTimeFormat(displayLocale(), {
-    numeric: "always",
-  }).format(
-    Math.floor(
-      remaining /
-        (unit === "day" ? 86400000 : unit === "hour" ? 3600000 : 60000),
-    ),
-    unit,
+  const count = Math.floor(
+    remaining /
+      (remaining >= 86400000
+        ? 86400000
+        : remaining >= 3600000
+          ? 3600000
+          : 60000),
+  );
+  return copy(
+    remaining >= 86400000
+      ? count === 1
+        ? "schedule-creation.preview.inDay"
+        : "schedule-creation.preview.inDays"
+      : remaining >= 3600000
+        ? count === 1
+          ? "schedule-creation.preview.inHour"
+          : "schedule-creation.preview.inHours"
+        : count === 1
+          ? "schedule-creation.preview.inMinute"
+          : "schedule-creation.preview.inMinutes",
+    { count },
   );
 }
 export function ScheduleCalendarSummary({
@@ -278,12 +289,14 @@ export function ScheduleCalendarSummary({
   timezone,
   enabled,
   fallback,
+  showCron = true,
 }: {
   preview: CalendarPreview;
   cron: string;
   timezone: string;
   enabled: boolean;
   fallback: string;
+  showCron?: boolean;
 }) {
   useLocale();
   const preference = useDateFormat();
@@ -358,12 +371,14 @@ export function ScheduleCalendarSummary({
         </div>
       </dl>
       <p>{copy("schedule-creation.preview.provisional")}</p>
-      <Disclosure density={DisclosureDensity.Compact}>
-        <DisclosureSummary>
-          {copy("schedule-creation.preview.details")}
-        </DisclosureSummary>
-        <code>{cron}</code>
-      </Disclosure>
+      {showCron ? (
+        <Disclosure density={DisclosureDensity.Compact}>
+          <DisclosureSummary>
+            {copy("schedule-creation.preview.details")}
+          </DisclosureSummary>
+          <code>{cron}</code>
+        </Disclosure>
+      ) : null}
     </section>
   );
 }

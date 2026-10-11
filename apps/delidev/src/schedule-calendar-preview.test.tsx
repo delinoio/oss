@@ -53,14 +53,16 @@ it("localizes normalized weekdays and preserves OR rather than inventing AND", a
       Date.parse("2026-10-12T09:00:00Z"),
       Date.parse("2026-10-10T09:00:00Z"),
     ),
-  ).toBe("in 2 days");
+  ).toBe("In 2 days");
   const or = create(ScheduleCalendarConstraintsSchema, {
     ...constraints,
     daysOfMonth: [1],
     weekdays: [1],
     dayMatch: ScheduleCalendarDayMatch.OR,
   });
-  expect(calendarRecurrence(or)).toContain("day of month 1 or weekday Monday");
+  expect(calendarRecurrence(or)).toContain(
+    "day of month 1 or day of week Monday",
+  );
   await i18n.changeLanguage("ko");
   expect(calendarRecurrence(constraints)).toContain("월요일부터 금요일까지");
   expect(calendarRecurrence(or)).toContain("또는");
@@ -169,7 +171,16 @@ it("supports Unimplemented without a date and refreshes on returning to the acti
   await waitFor(() => expect(preview).toHaveBeenCalledTimes(2));
 });
 it("uses the server boundary across browser-clock skew and refreshes at the due boundary", async () => {
-  vi.useFakeTimers();
+  vi.useFakeTimers({
+    toFake: [
+      "Date",
+      "setTimeout",
+      "clearTimeout",
+      "setInterval",
+      "clearInterval",
+      "performance",
+    ],
+  });
   const preview = vi.fn(async () => ({
     ...response(),
     nextRunAt: timestampFromDate(new Date("2026-10-10T09:00:01Z")),
@@ -182,6 +193,10 @@ it("uses the server boundary across browser-clock skew and refreshes at the due 
     await vi.advanceTimersByTimeAsync(300);
   });
   expect(preview).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1);
+  });
+  expect(screen.getByText(CalendarPreviewState.Ready)).toBeTruthy();
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1100);
   });

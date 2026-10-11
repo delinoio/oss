@@ -660,6 +660,7 @@ export function ScheduleCreation({
                 />
                 <ScheduleCalendarSummary
                   preview={calendarPreview}
+                  showCron={!timeInvalid}
                   cron={text(definition.cron)}
                   timezone={text(definition.timezone)}
                   enabled={definition.enabled === true}
@@ -860,6 +861,7 @@ export function ScheduleCreation({
                   </header>
                   <ScheduleCalendarSummary
                     preview={calendarPreview}
+                    showCron={!timeInvalid}
                     cron={text(definition.cron)}
                     timezone={text(definition.timezone)}
                     enabled={definition.enabled === true}

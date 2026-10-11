@@ -97,9 +97,15 @@
   "schedule-creation.preview.days": "{{values}} 요일",
   "schedule-creation.preview.dayOr": "{{dates}} 또는 {{days}}",
   "schedule-creation.preview.dayAnd": "{{dates}} 및 {{days}}",
-  "schedule-creation.preview.complex": "{{months}}에 {{matching}} 조건을 만족하는 날의 {{hours}}시 {{minutes}}분(24시간제)에 반복됩니다.",
+  "schedule-creation.preview.complex": "{{months}}에 {{matching}} 조건을 만족하는 날에 반복됩니다. 시 조건(24시간제): {{hours}}. 분 조건: {{minutes}}.",
   "schedule-creation.preview.everyMinute": "모든 분",
   "schedule-creation.preview.everyHour": "모든 시",
   "schedule-creation.preview.everyMonth": "매월",
-  "schedule-creation.preview.soon": "곧"
+  "schedule-creation.preview.soon": "곧",
+  "schedule-creation.preview.inDay": "{{count}}일 후",
+  "schedule-creation.preview.inDays": "{{count}}일 후",
+  "schedule-creation.preview.inHour": "{{count}}시간 후",
+  "schedule-creation.preview.inHours": "{{count}}시간 후",
+  "schedule-creation.preview.inMinute": "{{count}}분 후",
+  "schedule-creation.preview.inMinutes": "{{count}}분 후"
 }

@@ -93,13 +93,19 @@
   "schedule-creation.preview.weekly": "Every {{days}} at {{time}}",
   "schedule-creation.preview.everyDate": "every day of the month",
   "schedule-creation.preview.dates": "day of month {{values}}",
-  "schedule-creation.preview.everyWeekday": "every weekday",
-  "schedule-creation.preview.days": "weekday {{values}}",
+  "schedule-creation.preview.everyWeekday": "every day of the week",
+  "schedule-creation.preview.days": "day of week {{values}}",
   "schedule-creation.preview.dayOr": "{{dates}} or {{days}}",
   "schedule-creation.preview.dayAnd": "{{dates}} and {{days}}",
   "schedule-creation.preview.complex": "At minutes {{minutes}} past hours {{hours}} (24-hour clock), in {{months}}, matching {{matching}}.",
   "schedule-creation.preview.everyMinute": "every minute",
   "schedule-creation.preview.everyHour": "every hour",
   "schedule-creation.preview.everyMonth": "every month",
-  "schedule-creation.preview.soon": "Soon"
+  "schedule-creation.preview.soon": "Soon",
+  "schedule-creation.preview.inDay": "In {{count}} day",
+  "schedule-creation.preview.inDays": "In {{count}} days",
+  "schedule-creation.preview.inHour": "In {{count}} hour",
+  "schedule-creation.preview.inHours": "In {{count}} hours",
+  "schedule-creation.preview.inMinute": "In {{count}} minute",
+  "schedule-creation.preview.inMinutes": "In {{count}} minutes"
 }
