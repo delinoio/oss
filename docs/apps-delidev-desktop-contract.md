@@ -486,7 +486,13 @@ working directory, original inputs and separate original observations without jo
 streams or reading files. Manual entry and nested choices, connected focus and scroll
 anchors survive revisions, reconnect, localization and payload eviction under the
 original mounted owner. No API, schema, native capability or execution authority is
-added. Browser/component evidence is separate from packaged native acceptance.
+added. The desktop CI checks phase invokes `scripts/test-tool-turn-layout.mjs`
+with runner-temporary Playwright 1.64.0 and Chromium, retaining source-revision
+JSON evidence as an artifact. It covers both session kinds, English/Korean,
+light/dark/system themes, wide/360px and effective 200% reflow, direct output,
+computed chrome visibility, borderless resting rows, long-command ellipsis and
+choice/focus restoration. Browser/component evidence is separate from packaged
+native acceptance.
 
 Conversation display projections may retain only bounded tool owner/name/status metadata in addition to identity/revision/order. Full documents remain in the original three-page payload window and independently bounded live stream. A group spans accepted pages and the final historical/live boundary; an evicted anchor still presents that group's projection. Evicted entry details restore only their original accepted page token. Expanding a group does not enumerate an entire turn or unread history. The list explicitly describes reached-record coverage; the existing history continuation controls retain admission, measured restoration, scroll anchors and focus protection. Disclosure choices, including nested output details, remain within the mounted session/connection owner across revisions, reconnect, localization and payload eviction; disposal resets them. Approval/questions remain expanded and independently actionable in the original tray. No execution, response, composer, artifact, account, protocol, migration or native ownership changes are introduced. English/Korean shared compact disclosures use semantic theme tokens and native keyboard/focus behavior.
 

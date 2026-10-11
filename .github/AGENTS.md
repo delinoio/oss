@@ -6,6 +6,8 @@
 
 ## Owning contracts
 
+- [DeliDev desktop presentation validation](../docs/apps-delidev-desktop-contract.md#resident-command-presentation)
+
 - [DeliDev native package verification](../docs/apps-delidev-packaging-contract.md)
 - [DeliDev provider and model catalog](../docs/cmds-delidev-catalog-contract.md)
 - [pnport](../docs/project-pnport.md)
