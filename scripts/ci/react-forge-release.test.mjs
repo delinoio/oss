@@ -15,6 +15,8 @@ test("React Forge release is exact-tag or credential-free manual dry run", () =>
   assert.deepEqual(release.permissions, { contents: "read" });
   assert.equal(release.concurrency["cancel-in-progress"], false);
   assert.deepEqual(release.jobs.build.strategy.matrix.include.map(({ id, target }) => ({ id, target })), platforms.map(({ id, target }) => ({ id, target })));
+  assert.equal(release.jobs.build.strategy.matrix.include.length, 6);
+  assert.ok(release.jobs.build.strategy.matrix.include.some(({ id, runner, target }) => id === "win32-arm64-msvc" && runner === "windows-11-arm" && target === "aarch64-pc-windows-msvc"));
   assert.deepEqual(release.jobs.package.needs, ["prepare", "build"]);
   assert.deepEqual(release.jobs["publish-npm"].needs, ["prepare", "package"]);
   assert.match(release.jobs["publish-npm"].if, /refs\/tags\/react-forge@v/u);
