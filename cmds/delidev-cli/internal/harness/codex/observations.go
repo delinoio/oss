@@ -27,6 +27,7 @@ const (
 	FilesystemChangedDiscarded       MetadataKind = "filesystem-changed-discarded"
 	ThreadMetadataDiscarded          MetadataKind = "thread-metadata-discarded"
 	ThreadContextSupplementDiscarded MetadataKind = "thread-context-supplement-discarded"
+	GatewayOAuthStatusDiscarded      MetadataKind = "gateway-oauth-status-discarded"
 )
 
 type nativeMCPStartupState string
@@ -88,6 +89,8 @@ func (c *Client) metadata(kind MetadataKind) Event {
 
 func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 	switch native.Method {
+	case "account/gatewayOAuth/changed":
+		return c.observeGatewayOAuthLocked(native)
 	case "guardianWarning", "deprecationNotice", "autoApprovalReview/strictReviewRequired":
 		return c.observeAdvisoryNoticeLocked(native)
 	case "error", "modelProvider/authRecoveryStarted", "modelProvider/authRecoveryCompleted":
