@@ -131,3 +131,16 @@ it.each([['en','Add message to queue','Fixed: Enter'],['ko','메시지 대기열
  expect(screen.getAllByText('Shift + Enter').length).toBeGreaterThan(0);
  await act(()=>i18n.changeLanguage('en'));
 });
+
+it("shows committed custom T/E priority in the read-only catalog and restores defaults without writes", async () => {
+ const f=fixture();
+ f.publish({revision:2,problem:null,overrides:{[ShortcutId.NewSessionFocus]:{state:ShortcutOverrideState.Binding,chord:{key:"t",shift:false}},[ShortcutId.SearchFocus]:{state:ShortcutOverrideState.Binding,chord:{key:"e",shift:false}}}});
+ render(<Owner bridge={f.bridge}/>); await screen.findByText("Current saved shortcuts");
+ await waitFor(()=>expect(screen.getAllByText("Inactive because a custom shortcut uses this binding.")).toHaveLength(2));
+ expect(screen.getByText("Open terminals")).toBeTruthy();
+ await act(async()=>f.publish({revision:3,problem:null,overrides:{}}));
+ expect(screen.queryByText("Inactive because a custom shortcut uses this binding.")).toBeNull();
+ expect(screen.getByText("Open Files").parentElement?.textContent).toContain("Ctrl + E");
+ expect(screen.getByText("Open tool").parentElement?.textContent).toContain("Ctrl + T");
+ expect(f.bridge.update).not.toHaveBeenCalled();
+});

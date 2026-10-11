@@ -161,6 +161,35 @@ Validate matching, precedence/conflicts, inactive/disabled registration, editabl
 
 Keyboard shortcuts help permits eligible existing non-input-target actions from its own dialog. Match current registrations with the same precedence, enabled and input rules. An accepted unambiguous action closes the native help dialog before its original callback runs exactly once; dismissal must not restore the opener over destination focus. Disabled/conflicting actions and excluded events keep help open with the existing event-consumption rules. Help focus never satisfies a background input target. Keyboard invocation of the effective committed Help binding opens held help and retains the originating physical key code, with the logical opening key as fallback when code is unavailable. Release of that original key closes held help even after Shift release; unrelated keyup is not consumed. Blur, hiding and provider disposal retire held ownership without reopening on return. Early Escape/Close/action dismissal retains the pressed identity until release, preventing reopening during that press; later release never restores stale opener focus. The rail button opens persistent help: Help presses/releases, blur and hiding neither convert nor close that instance. Locale changes retain the same help instance and focus. Other visible modals and compact navigation still block dispatch and help opening. Ordinary Escape and Close retain opener restoration or main fallback.
 
+### Session tool entry shortcuts
+
+Active nonembedded Sessions register Open tool (primary+T), Open Files
+(primary+E), and Open terminals (primary+logical grave). Ordinary editable fields
+and other parent tool tabs admit these actions. Inactive and embedded sessions
+have no independent tool entry registration. Preserve all shared event, capture,
+modal, terminal passthrough and native Browser fences. Grave uses its logical
+character only, with no physical Backquote fallback or preference grammar change.
+
+Open Files and Open terminals invoke the original tool callback once and select
+its existing destination; they never toggle it closed. Files has no extra archive,
+startup or pending-submission guard. Terminal entry retains the original Sidechat
+parent-snapshot restriction, revision-bound REUSE_OR_CREATE request, inventory,
+cleanup and uncertain-outcome checks. Drafts, Plan Mode, controller identity,
+read-only observation ownership and existing errors remain unchanged. Accepted
+Help actions close Help before the callback and preserve destination focus.
+
+These actions are read-only catalog entries outside the seven editable IDs. Any
+committed editable unshifted primary+T or primary+E override, in any scope,
+suppresses only the corresponding new default in memory. Disabled and shifted
+overrides do not suppress it. Use one policy for dispatch, conflict validation,
+Help, Settings and ARIA. Help and the read-only Settings catalog explain custom
+binding priority in English/Korean; removing or changing the committed override
+immediately restores the default. Preserve preference bytes and native storage
+and validation. Files shows a compact platform-resolved badge and ARIA binding
+only while its default is effective; Terminals and the Open tool trigger use their
+effective ARIA bindings. Add no resource, native forwarding, execution authority,
+protocol allocation or key/content logging.
+
 ### Device-local shortcut preferences
 
 - The feature gives Session and General Chat follow-up composers fixed unmodified Enter send and native Shift+Enter newline. Keep the customizable primary send chord independent, including disabled/custom overrides, seven editable IDs and the existing preference schema. Show fixed Enter alongside the editable Settings send row; Help and ARIA derive effective runtime declarations. Skill completion takes Enter first; preserve IME/229/repeat/handled/target/modal/native fences, original canSend/form/enqueue/receipt/draft/image/Plan Mode ownership and exact pending/uncertain locks. Creation, Search, terminal and mobile behavior remain separate.
@@ -2388,7 +2417,7 @@ All three backup list adapters reject an entire page with duplicate nonempty IDs
 
 - Home sidebar density uses a 16px brand, 32px header/Inbox/Search targets and stacked 30px-minimum creation actions with 6px gaps/corners and 8px horizontal padding. Keep normal header/action height at 104px while allowing enlarged labels to grow; put the compact Home drawer Close navigation control after both creation actions, outside that block, while other contexts retain its placement; preserve pane/list/footer spacing and every other sidebar context under the desktop contract.
 
-- Session workspace the feature use a two-row outer header and continuous editor tabs with internal sibling 40px close targets. The feature gives its Open tool trigger a decorative enum-derived 18px outlined wrench, a centered 40×40px target with zero padding/8px corners and localized accessible name/title; preserve semantic hover/expanded/focus and menu ARIA. The fixed Open tool menu owns only presentation/focus and invokes original tool callbacks once; retain original tab/controller/resource identity, Sidechat restrictions and read-only menu lifecycle. Follow the desktop workspace presentation contract.
+- Session workspace the feature use a two-row outer header and continuous editor tabs with internal sibling 40px close targets. The feature gives its Open tool trigger a decorative enum-derived 18px outlined wrench, a centered 40×40px target with zero padding/8px corners and localized accessible name/title; preserve semantic hover/expanded/focus and dialog ARIA. The fixed Open tool dialog owns only presentation/focus and invokes original tool callbacks once; retain original tab/controller/resource identity, Sidechat restrictions and read-only menu lifecycle. Follow the desktop workspace presentation contract.
 
 - API Providers for this feature shows connection/validation/compatibility guidance once as a stable muted paragraph after the header and before search. Provider rows retain only exact connected/total or unavailable counts. Preserve header scope, grouping, ordering, search/pagination/refresh, Off-provider guidance and original account actions.
 
@@ -3411,7 +3440,9 @@ session width or less use 12px padding and wrap controls below identity; retain
 short-height bounded scrolling, accessible composer and all original action
 guards. Reflow must retain workspace controller and draft identities.
 
-The feature use two primary workspace rows: an approximately 72px identity/action header and a 52px navigation row. The feature uses a fixed 40×40px icon-only Open tool trigger beside the horizontally scrolling tablist. Center the decorative 18px outlined wrench from `SessionIconKind.Tools` in the existing renderer with zero padding and 8px corners. Keep localized Open tool / 도구 열기 as both its accessible name and title hint, with original semantic hover/expanded/focus treatment and menu ARIA relationships. It exposes Diff, Files, Terminals, Browser and Diagnostics in that order through their original entry callbacks and eligibility, followed by Open Sidechat only for the independently eligible original parent. The flat menu uses the existing localized label, including Sidechat 열기, with the decorative outline chat glyph from `SessionIconKind.Sidechat`. Sidechat is absent from the session overflow menu. Fork keeps its independent shared eligibility and original dialog. Opening focuses the first enabled item; arrows, Home/End and native Enter/Space select entries. Escape closes only the menu and restores its trigger; outside dismissal preserves destination focus. The 220px popup stays viewport-bounded and scrolls vertically. Tool selection closes it and focuses the selected singleton descriptor without new resources or observation reads.
+The workspace uses two primary rows: an approximately 72px identity/action header and a 52px navigation row. Keep the fixed 40×40px icon-only Open tool trigger beside the horizontally scrolling tablist, with the centered decorative 18px outlined wrench from `SessionIconKind.Tools`, zero padding and 8px corners. Retain localized Open tool / 도구 열기 as its accessible name/title, semantic hover/expanded/focus treatment, dialog ARIA relationships and effective primary+T guidance. The button and shortcut open one shared `DialogSurface` without tool actions or resource reads. The dialog has a 360px maximum width, viewport-minus-32px bound, 20px padding, 12px corners, named Close button and vertically scrolling contents at narrow sizes and 200% reflow. It has no search or footer.
+
+The dialog retains Diff, Files, Terminals, Browser and Diagnostics in order through their original callbacks and eligibility, followed by Open Sidechat only for the independently eligible original parent. Retain the localized Sidechat 열기 label and decorative `SessionIconKind.Sidechat` glyph. Sidechat remains absent from session overflow; Fork keeps its independent shared eligibility and original dialog. Tool rows have 44px targets and visible semantic focus. Focus the first enabled row, contain Tab, and let arrows and Home/End navigate enabled rows. Native Enter/Space activates once. Escape, Close and backdrop dismissal restore the available opener; selection closes the modal before the original callback and never restores over destination focus. Keep children/controllers mounted across dismissal, with no eager reads on opening. Session, surface or connection departure disposes the presentation. Preserve singleton identities, terminal admission, drafts and original resource ownership.
 
 Tabs form a continuous gapless neutral editor strip attached to the active pane. Each tab is 40px high and at most 320px wide. Selected tabs use the surface background, 4px top corners, square bottom corners and a 2px accent underline; inactive tabs have transparent backgrounds and subtle separators. Every closeable tab encloses an always-visible 40px close target beside its truncated label, using sibling controls with independent focus treatment. This supersedes 's earlier rounded-shell appearance while preserving its enclosed close-control principle. Exactly one content region is active. Conversation is
 pinned first, initially selected and cannot be closed or moved. Files and Diff

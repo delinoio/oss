@@ -145,3 +145,28 @@ it("runs the close-tab chord from terminal input once and consumes it when disab
  const disabled=definition({id:ShortcutId.SessionCloseTab,input:ShortcutInput.Allow,terminal:true,enabled:false,bindings:[{key:"w",primary:true}]});
  expect(dispatch([disabled],{key:"w"},input).defaultPrevented).toBe(true);expect(disabled.run).not.toHaveBeenCalled();input.remove();
 });
+
+it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])("keeps tool shortcuts behind existing event and terminal fences on %s", platform => {
+  const modifier = platform === ShortcutPlatform.Mac ? { metaKey: true } : { ctrlKey: true };
+  const input = document.createElement("textarea"); document.body.append(input);
+  try {
+    for (const [id, key] of [[ShortcutId.SessionOpenTool, "t"], [ShortcutId.SessionOpenFiles, "e"], [ShortcutId.SessionOpenTerminals, "`"]] as const) {
+      const run = vi.fn();
+      const action: ShortcutDefinition = { id, scope: Surface.Sessions, label: "session.openTool", bindings: [{ key, primary: true }], input: ShortcutInput.Allow, run };
+      const send = (flags: KeyboardEventInit = {}, before?: (event: KeyboardEvent) => void) => {
+        const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key, ...modifier, ...flags });
+        before?.(event); input.addEventListener("keydown", () => dispatchShortcut(event, [action], Surface.Sessions, platform), { once: true }); input.dispatchEvent(event); return event;
+      };
+      expect(send().defaultPrevented).toBe(true); expect(run).toHaveBeenCalledOnce(); run.mockClear();
+      for (const flags of [{ shiftKey: true }, { altKey: true }, { repeat: true }, { isComposing: true }, { keyCode: 229 }, { ctrlKey: true, metaKey: true }, { ctrlKey: false, metaKey: false }]) expect(send(flags).defaultPrevented).toBe(false);
+      send({}, event => event.preventDefault());
+      send({}, event => vi.spyOn(event, "getModifierState").mockImplementation(key => key === "AltGraph"));
+      input.dataset.shortcuts = "passthrough"; expect(send().defaultPrevented).toBe(false); delete input.dataset.shortcuts;
+      input.setAttribute("inert", ""); expect(send().defaultPrevented).toBe(false); input.removeAttribute("inert");
+      const modal = document.createElement("dialog"); document.body.append(modal); modal.showModal(); expect(send().defaultPrevented).toBe(false); modal.remove();
+      expect(run).not.toHaveBeenCalled();
+    }
+    expect(bindingMatches(new KeyboardEvent("keydown", { key: "~", code: "Backquote", ...modifier }), { key: "`", primary: true }, platform)).toBe(false);
+    expect(bindingMatches(new KeyboardEvent("keydown", { key: "`", code: "Unidentified", ...modifier }), { key: "`", primary: true }, platform)).toBe(true);
+  } finally { input.remove(); }
+});

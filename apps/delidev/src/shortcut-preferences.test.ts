@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, it, vi } from "vitest";
-import { captureShortcut, effectiveShortcutDefinitions, parseShortcutOverrides, editableShortcutCatalog, readOnlyShortcutCatalog, fixedNativeShortcutCatalog, shortcutConflicts, ShortcutOverrideState, validShortcutChord } from "./shortcut-preferences";
+import { type ShortcutOverrides, captureShortcut, effectiveShortcutDefinitions, parseShortcutOverrides, editableShortcutCatalog, readOnlyShortcutCatalog, fixedNativeShortcutCatalog, shortcutConflicts, ShortcutOverrideState, validShortcutChord } from "./shortcut-preferences";
 import { ShortcutId, ShortcutPlatform, ShortcutScope } from "./shortcuts";
 import { Surface } from "./surface";
 const chord = {state:ShortcutOverrideState.Binding,chord:{key:"j",shift:true}} as const;
@@ -65,4 +65,22 @@ it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])("captures physical chord
   vi.spyOn(altGraph, "getModifierState").mockImplementation(key => key === "AltGraph");
   expect(captureShortcut(altGraph, platform)).toBeUndefined();
   expect(captureShortcut(new KeyboardEvent("keydown", { key: "ㅏ", code: "KeyK", ...modifiers }), platform)).toBeUndefined();
+});
+
+it.each([[ShortcutId.SessionOpenTool, "t"], [ShortcutId.SessionOpenFiles, "e"]] as const)("lets all committed editable overrides suppress only %s", (id, key) => {
+  const defaults = readOnlyShortcutCatalog.filter(action => [ShortcutId.SessionOpenTool, ShortcutId.SessionOpenFiles, ShortcutId.SessionOpenTerminals].includes(action.id)).map(action => ({ id: action.id, label: action.label, scope: Surface.Sessions, bindings: action.defaults }));
+  for (const action of editableShortcutCatalog) {
+    const overrides: ShortcutOverrides = { [action.id]: { state: ShortcutOverrideState.Binding, chord: { key, shift: false } } };
+    const bytes = JSON.stringify(overrides);
+    expect(parseShortcutOverrides(overrides)).toEqual(overrides);
+    const resolved = effectiveShortcutDefinitions(defaults, overrides);
+    expect(resolved.find(action => action.id === id)).toMatchObject({ bindings: [], enabled: false, unavailableReason: "shortcuts.customBindingPriority" });
+    for (const other of resolved.filter(action => action.id !== id)) expect(other.bindings).toEqual(defaults.find(action => action.id === other.id)!.bindings);
+    expect(JSON.stringify(overrides)).toBe(bytes);
+    for (const restored of [{}, { [action.id]: { state: ShortcutOverrideState.Disabled } }, { [action.id]: { state: ShortcutOverrideState.Binding, chord: { key, shift: true } } }] satisfies ShortcutOverrides[]) {
+      expect(effectiveShortcutDefinitions(defaults, restored).find(action => action.id === id)!.bindings).toEqual([{ key, primary: true }]);
+    }
+  }
+  expect(editableShortcutCatalog).toHaveLength(7);
+  expect(() => parseShortcutOverrides({ [id]: { state: ShortcutOverrideState.Disabled } })).toThrow();
 });

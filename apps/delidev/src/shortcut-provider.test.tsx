@@ -200,3 +200,24 @@ it("discloses the exact external browser numeric exception without disabling ord
  function TabHelp(){const open=useShortcutHelp();useShortcutSurface(Surface.Sessions);useShortcuts([{id:ShortcutId.SessionTab1,scope:Surface.Sessions,label:"shortcuts.tab1",bindings:[{key:"1",primary:true}],terminal:true,run:()=>{}}]);return <button onClick={open}>Tab help</button>;}
  render(<ShortcutProvider><TabHelp/></ShortcutProvider>);fireEvent.click(screen.getByRole("button",{name:"Tab help"}));expect(screen.getByText("On Windows and Linux, use the tab bar while an external browser page has focus. Number shortcuts work elsewhere in the app.")).toBeTruthy();expect(screen.getByText("Select tab 1")).toBeTruthy();
 });
+
+it("suppresses only default tool bindings across scopes and restores Help and ARIA from committed state", async () => {
+  let publish: (snapshot: unknown) => void = () => {};
+  const bridge: ShortcutPreferenceBridge = { read: async () => ({ revision: 1, problem: null, overrides: { [ShortcutId.SearchFocus]: { state: "binding", chord: { key: "e", shift: false } } } }), update: vi.fn(), subscribe: async listener => { publish = listener; return () => {}; } };
+  const run = vi.fn(() => { expect(screen.queryByRole("dialog")).toBeNull(); screen.getByRole("button", { name: "Files destination" }).focus(); });
+  function Files() {
+    const shortcut = useShortcuts([{ id: ShortcutId.SessionOpenFiles, scope: Surface.Sessions, label: "shortcuts.openFiles", bindings: [{ key: "e", primary: true }], input: ShortcutInput.Allow, run }]);
+    return <button aria-keyshortcuts={shortcut.aria(ShortcutId.SessionOpenFiles) || undefined}>Files destination</button>;
+  }
+  render(<ShortcutPreferenceProvider bridge={bridge}><ShortcutProvider><Consumer/><Files/></ShortcutProvider></ShortcutPreferenceProvider>);
+  await act(async () => {});
+  expect(screen.getByRole("button", { name: "Files destination" }).hasAttribute("aria-keyshortcuts")).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Help opener" }));
+  expect(screen.getByText("Inactive because a custom shortcut uses this binding.")).toBeTruthy();
+  fireEvent.keyDown(screen.getByRole("dialog"), { key: "e", ctrlKey: true }); expect(run).not.toHaveBeenCalled();
+  await act(async () => publish({ revision: 2, problem: null, overrides: {} }));
+  expect(screen.getByRole("button", { name: "Files destination" }).getAttribute("aria-keyshortcuts")).toBe("Control+E");
+  fireEvent.keyDown(screen.getByRole("dialog"), { key: "e", ctrlKey: true });
+  expect(run).toHaveBeenCalledOnce(); expect(document.activeElement).toBe(screen.getByRole("button", { name: "Files destination" }));
+  expect(bridge.update).not.toHaveBeenCalled();
+});
