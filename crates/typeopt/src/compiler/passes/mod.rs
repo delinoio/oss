@@ -14,6 +14,7 @@ use crate::{
 mod aggregate_elimination;
 mod call_inlining;
 mod constant_property_inlining;
+mod constants_support;
 mod discriminant_compaction;
 mod enum_runtime_reduction;
 mod finite_key_rewriting;
