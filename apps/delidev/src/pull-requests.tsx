@@ -67,7 +67,7 @@ function RepositoryNavigationRow({ row, selected, expanded, choose, toggleDetail
     const element = popup.current, anchor = heading.current;
     if (!expanded || !element || !anchor) return;
     const place = () => {
-      if (!anchor.isConnected || anchor.getClientRects().length === 0) { closeDetails(); return; }
+      if (!anchor.isConnected || anchor.closest("[hidden]") || getComputedStyle(anchor).display === "none") { closeDetails(); return; }
       placeDetailsPopup(element, anchor);
     };
     place();
