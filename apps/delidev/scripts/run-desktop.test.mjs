@@ -4,7 +4,7 @@ import { once } from "node:events";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PassThrough } from "node:stream";
+import { PassThrough, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { spawnDevServer } from "../../../scripts/spawn-dev-server.mjs";
@@ -408,6 +408,39 @@ test("captured diagnostics join split UTF-8 and keep bounded lines private", asy
     err.join(""),
     "[desktop diagnostic line omitted]\nsafe error\n",
   );
+  assert.deepEqual(incomplete, []);
+});
+
+test("captured diagnostics pause child output until the destination drains", async () => {
+  const stdout = new PassThrough();
+  const incomplete = [];
+  const chunks = [];
+  let maxBuffered = 0;
+  const destination = new Writable({
+    highWaterMark: 1,
+    write(chunk, _encoding, callback) {
+      chunks.push(chunk.toString());
+      setTimeout(callback, 1);
+    },
+  });
+  const write = destination.write.bind(destination);
+  destination.write = (...args) => {
+    const accepted = write(...args);
+    maxBuffered = Math.max(maxBuffered, destination.writableLength);
+    return accepted;
+  };
+  const expected = Array.from({ length: 100 }, (_, index) => `line ${index}\n`).join("");
+  const drain = captureDesktopDiagnostics([], {
+    stdout: destination,
+    stderr() {},
+    incomplete: (code) => incomplete.push(code),
+  })({ stdout, stderr: null });
+  stdout.end(expected);
+  await drain();
+  destination.end();
+  await once(destination, "finish");
+  assert.equal(chunks.join(""), expected);
+  assert.ok(maxBuffered < expected.length / 2);
   assert.deepEqual(incomplete, []);
 });
 

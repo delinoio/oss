@@ -99,8 +99,8 @@ export async function runDesktop(
     publish = publishDevelopmentBundle,
     lock = () => acquireNativeBuildLock(root),
     log = (entry) => process.stderr.write(`${JSON.stringify(entry)}\n`),
-    stdout = (value) => process.stdout.write(value),
-    stderr = (value) => process.stderr.write(value),
+    stdout = process.stdout,
+    stderr = process.stderr,
   } = {},
 ) {
   let stage = "prepare";

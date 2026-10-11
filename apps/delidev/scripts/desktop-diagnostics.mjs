@@ -56,38 +56,69 @@ export function desktopDiagnosticFilter(arguments_) {
   };
 }
 
-function captureStream(stream, write, filter) {
+function captureStream(stream, destination, filter) {
   if (!stream) return { done: Promise.resolve(true), stop() {} };
+  const write =
+    typeof destination === "function"
+      ? destination
+      : (value) => destination.write(value);
+  const writable = typeof destination === "function" ? undefined : destination;
   const decoder = new StringDecoder("utf8");
   let pending = "";
   let pendingBytes = 0;
   let dropping = false;
   let finished = false;
   let carriageReturn = false;
+  let waitingForDrain = false;
+  let queued = "";
   let complete;
   const done = new Promise((resolve) => {
     complete = resolve;
   });
+  const resume = () => {
+    if (finished || !waitingForDrain) return;
+    waitingForDrain = false;
+    const remainder = queued;
+    queued = "";
+    if (remainder) consume(remainder);
+    if (!finished && !waitingForDrain) stream.resume();
+  };
+  const writeOutput = (value) => {
+    if (write(value) !== false || !writable) return false;
+    waitingForDrain = true;
+    stream.pause();
+    writable.once("drain", resume);
+    return true;
+  };
   const consume = (value) => {
-    for (const character of value) {
+    for (let index = 0; index < value.length; index++) {
+      const character = value[index];
       if (character === "\n" && carriageReturn) {
         carriageReturn = false;
         continue;
       }
       carriageReturn = character === "\r";
       if (character === "\n" || character === "\r") {
-        if (!dropping && pending) write(filter(pending) + "\n");
-        else if (!dropping && character === "\n") write("\n");
+        let paused = false;
+        if (!dropping && pending) paused = writeOutput(filter(pending) + "\n");
+        else if (!dropping && character === "\n") paused = writeOutput("\n");
         pending = "";
         pendingBytes = 0;
         dropping = false;
+        if (paused) {
+          queued = value.slice(index + 1);
+          return;
+        }
       } else if (!dropping) {
         pending += character;
         pendingBytes += Buffer.byteLength(character);
         if (pendingBytes > lineLimit) {
           pending = "";
           dropping = true;
-          write(omitted + "\n");
+          if (writeOutput(omitted + "\n")) {
+            queued = value.slice(index + 1);
+            return;
+          }
         }
       }
     }
@@ -107,6 +138,8 @@ function captureStream(stream, write, filter) {
     stream.off("end", end);
     stream.off("error", failed);
     stream.off("close", closed);
+    writable?.off("drain", resume);
+    queued = "";
     complete(successful);
   };
   const failed = () => {
