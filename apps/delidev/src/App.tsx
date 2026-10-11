@@ -420,7 +420,7 @@ function Shell({
     navigate(destination);
     pendingFocusDestination.current = destination;
   };
-  useShortcuts([
+  const shortcutDeclarations = useShortcuts([
     {
       id: ShortcutId.ToggleSidebar,
       scope: ShortcutScope.Global,
@@ -557,7 +557,16 @@ function Shell({
                         })}
                       />
                     ) : null}
-                    <main ref={main} id="main" tabIndex={-1}>
+                    <main
+                      ref={main}
+                      id="main"
+                      tabIndex={-1}
+                      aria-keyshortcuts={
+                        wideSidebar
+                          ? shortcutDeclarations.aria(ShortcutId.ToggleSidebar)
+                          : undefined
+                      }
+                    >
                       <SidebarPreferenceNotice />
                       <button
                         ref={contextOpener}

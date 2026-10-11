@@ -3707,6 +3707,36 @@ it("rechecks the original welcome status failure without creating or controlling
 });
 
 it(
+  "exposes the wide sidebar shortcut on the persistent main landmark",
+  async () => {
+    viewport();
+    const value = fixture();
+    const { bridge, readStarted } = startingSidebarBridge();
+    render(
+      <SidebarProvider bridge={bridge}>
+        <App transport={value.transport} />
+      </SidebarProvider>,
+    );
+    await waitForSidebarRead(readStarted);
+    const main = screen.getByRole("main");
+    expect(main.getAttribute("aria-keyshortcuts")).toMatch(
+      /^(Meta|Control)\+B$/,
+    );
+    fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
+    await waitFor(() =>
+      expect(
+        document.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")
+          ?.hidden,
+      ).toBe(true),
+    );
+    expect(main.getAttribute("aria-keyshortcuts")).toMatch(
+      /^(Meta|Control)\+B$/,
+    );
+  },
+  fullShellTimeoutMs,
+);
+
+it(
   "wide sidebar collapse retains composer selection and mounted navigation while moving only hidden focus",
   async () => {
     viewport();
