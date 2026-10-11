@@ -12,6 +12,7 @@ use crate::{
 };
 
 mod aggregate_elimination;
+mod aggregates_support;
 mod call_inlining;
 mod constant_property_inlining;
 mod discriminant_compaction;
