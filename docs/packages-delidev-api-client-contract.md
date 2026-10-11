@@ -451,3 +451,15 @@ remain independently paginated. No new business RPC or transport authority is
 added. Follow the [mobile contract](apps-delidev-mobile-contract.md).
 
 Current schema-4 Agent routes embed exact source/native identity and non-secret metadata. The shared parser rejects Model resources, mixed UUID routes and older Agent schemas. Other currently activated Project, Settings and API-profile schemas remain supported. Protocol-2 connection verification rejects protocol 1 without adopting its state.
+
+## Session Inbox acknowledgment
+
+Generated `InboxQuery.markSessionInboxRead` and the request/response types are
+exported through the existing Inbox namespace and schema exports. System capability
+`SESSION_INBOX_READ_V1 = 89` is independent of count-only capability 80. Clients bind
+UUID-v7 request/session identities to the authenticated connection and validate the
+exact echoed identities, uint64 count and UTC receipt time before acceptance. Follow
+the [Inbox contract](cmds-delidev-inbox-contract.md#foreground-session-acknowledgment)
+for original replay and the
+[desktop contract](apps-delidev-desktop-contract.md#foreground-chat-inbox-acknowledgment)
+for foreground admission and retained query invalidation.

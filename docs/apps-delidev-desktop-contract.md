@@ -5406,3 +5406,25 @@ and mounted drafts retain their original owners. English/Korean, light/dark,
 compact drawer and effective 200% browser checks are synthetic evidence only.
 
 Queue refresh footer stability: both queue presenters (legacy history-based and negotiated waiting queue) keep a retained complete empty presentation hidden during healthy automatic Refresh/Reload rereads of the same queue identity. Refresh status is announced through a screen-reader-only live region that adds no normal-flow height, so repeated rereads cannot shift the tray, Agent requests, transcript boundary or composer. Initial loading, failures with Retry, incomplete pagination, payload restoration and explicit boundary recovery stay visible. Retained emptiness is cached presentation, not fresh authoritative zero or mutation permission. Populated rows are retained during rereads. No API, protocol, migration or native change.
+
+## Foreground chat Inbox acknowledgment
+
+Ordinary Project and General Chat conversations, including independently selected
+Fork sessions, follow the
+[foreground session acknowledgment contract](cmds-delidev-inbox-contract.md#foreground-session-acknowledgment).
+A connection-owned desktop boundary admits only a visible, focused authenticated
+product window. A dedicated visit hook waits for current Session metadata and a
+successful initial transcript payload, while preserving the existing interaction,
+execution, draft and pagination presentation. Hidden/resource/Sidechat views and
+mobile cannot acknowledge. Session snapshot ownership prevents a retained prior
+activation or replaced transport from proving fresh loading.
+
+The hook submits once per conversation selection or foreground return. Readiness
+changes, reconnects, polling and new alerts do not reset a submitted visit. Exact
+failed requests survive navigation in the connection mutation registry and only the
+original request can reconcile on a later qualifying activation. The connection's
+accepted-result observer invalidates Inbox lists/details and unread aggregates after
+sender disposal. Switching connections retires that observer; a late response cannot
+change a successor connection. Failed or uncertain outcomes retain authoritative
+presentation. Existing manual Inbox controls and native badge fences are unchanged.
+No new user control, setting or banner is introduced.

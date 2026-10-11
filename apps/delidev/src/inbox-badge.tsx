@@ -1,12 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@connectrpc/connect";
-import { createQueryOptions, useTransport } from "@connectrpc/connect-query";
+import {
+  createConnectQueryKey,
+  createQueryOptions,
+  useTransport,
+} from "@connectrpc/connect-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { InboxQuery, InboxService } from "@delinoio/delidev-api-client";
-import { useRetainedMutationNotifications } from "./mutation";
+import {
+  sessionInboxReadPrefix,
+  useRetainedMutationNotifications,
+} from "./mutation";
 interface Selection {
   scope: string;
   generation: number;
@@ -40,7 +47,17 @@ export function InboxBadgePresentation({
   // This observer survives detail-pane disposal, but retires with the original
   // connection registry. Only acknowledged exact read-state mutations refresh.
   useRetainedMutationNotifications((key) => {
-    if (key.startsWith("inbox-read:"))
+    if (key.startsWith(sessionInboxReadPrefix)) {
+      for (const schema of [InboxQuery.listInbox, InboxQuery.getInboxEntry])
+        void queryClient.invalidateQueries({
+          queryKey: createConnectQueryKey({
+            schema,
+            transport,
+            cardinality: undefined,
+          }),
+        });
+    }
+    if (key.startsWith("inbox-read:") || key.startsWith(sessionInboxReadPrefix))
       void queryClient.invalidateQueries({
         queryKey: createQueryOptions(
           InboxQuery.getUnreadInboxCount,

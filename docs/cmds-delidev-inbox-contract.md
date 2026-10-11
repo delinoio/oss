@@ -143,3 +143,44 @@ gets a fresh uncached read, followed by ten-second background refreshes. An
 unsupported capability, Unimplemented RPC, disconnected or revoked authority,
 invalid result, failed read or initial replacement clears presentation. It must
 not substitute notification candidates or partial Inbox pages.
+
+### Foreground session acknowledgment
+
+An admitted desktop Project or General Chat conversation, including an independently
+opened Fork's own session, may call `InboxService.MarkSessionInboxRead` after its
+current authenticated session and initial transcript load successfully. Sidechat,
+mobile, hidden conversations, failed or incomplete loads do not qualify. The
+conversation must be selected, the document visible and the product window focused.
+This is a dedicated mutation; Inbox inspection and every ordinary read remain read-only.
+
+The request has a UUID-v7 `request_id` and original UUID-v7 `session_id`. System
+capability `SESSION_INBOX_READ_V1 = 89` independently enables it; count-only capability
+80 does not grant this mutation. Unsupported servers retain manual read controls.
+The authenticated owner or paired client is part of durable operation
+`inbox.session-read`. A new operation requires the original Session, without checking
+or changing its revision. One SQLite transaction defines the acknowledgment instant
+and processes all current unread entries belonging to that session in internal pages
+of at most 200. Query rows close before source validation and ordinary entry updates.
+Each changed entry retains its own revision and event. Other sessions and unscoped
+operational/subscription-recovery alerts remain unchanged.
+
+The read changes and compact original session/count/UTC-time receipt commit together.
+Authorization loss, cancellation, invalid retained sources or a storage failure rolls
+back every page and the receipt. Exact replay returns the original count and time,
+without rescanning, adopting later arrivals or reversing a later explicit Mark unread.
+There is no client-side total cap and no database migration. Reading never answers
+an interaction, changes execution eligibility, claims notification delivery or grants
+recovery authority. Bounded logs contain operation/result/error classifications and
+internal identities, never native content, credentials or raw user data.
+
+The desktop submits once per selected chat visit or return from background after
+successful loading. Re-renders, polling, reconnects, pagination and newly arriving
+alerts do not start another acknowledgment within that activation. The connection
+mutation registry retains exact original bytes across navigation. Failed or uncertain
+outcomes permit only original receipt reconciliation/retry on a later qualifying
+activation and never fabricate a replacement request. Accepted results invalidate the
+original connection's Inbox and unread-count queries even after the sender leaves.
+The authoritative aggregate controls the existing badge; the client never decrements
+it locally. Native selection, freshness and publication fences, zero clearing, 99+
+saturation and manual Mark read/unread remain intact. No universal app-switcher
+visibility is promised and no setting, banner or badge control is added.

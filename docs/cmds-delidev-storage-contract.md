@@ -1436,3 +1436,21 @@ retirement does not change independent backup deletion or restore obligations.
 `session-queue-order:<session-id>` is version-1 private metadata, bounded to 1,000 unique original input IDs and 64 KiB. Missing metadata means acceptance order and generation zero. Generation-only records preserve that order until the first genuine move captures IDs. Captured IDs must match the entire currently waiting set; duplicates, foreign/missing IDs, malformed versions or overflow require RecoveryRequired before dispatch. All membership writers update this metadata atomically with their queue records; content-only edits retain it. No public Queue document rank and no SQLite migration is added.
 
 New Fork jobs retain a bounded version-1 `fork-image-snapshot:<job-id>` with exact original source, child, execution, native turn, job-input digest and ordered image references. Empty references are explicit. The private cutover marker distinguishes legacy jobs from newly admitted jobs; uncertain missing snapshots fail closed. The existing protected image records remain the byte/Worker authority. Durable session purge removes its order metadata and retires Fork snapshots only after both original job and dependent child are gone. Backup images preserve their own private order and Fork snapshots. Restore excludes these owners from the current safety-metadata overlay, validates the restored membership and advances order generation beyond both timelines to expire old waiting cursors. It does not synthesize rank, membership or image authority. Do not copy raw image bytes or native transcript into this metadata.
+
+## Atomic session Inbox acknowledgment
+
+The [Inbox contract](cmds-delidev-inbox-contract.md#foreground-session-acknowledgment)
+owns `inbox.session-read`. Its actor-bound receipt retains only the original session,
+marked count and UTC transaction time. The operation requires an existing Session,
+without changing its revision or execution generations. All current matching unread
+Inbox entries are selected in internal `MaxPage` pages within one transaction. Close
+rows before source validation and ordinary revision/event updates. Public epoch-bound
+Inbox cursors cannot implement this mutation because each read-state event changes
+the cursor epoch. There is no total cap or schema migration.
+
+Every page, final authorization/cancellation check and compact receipt share the
+same commit. Invalid retained sources, authorization loss, cancellation and storage
+failures roll back all changes. Exact receipt replay does not select entries again;
+later arrivals and explicit Mark unread changes remain unread. Existing backup,
+restore, retention, source consistency and independent notification/execution
+ownership remain unchanged.

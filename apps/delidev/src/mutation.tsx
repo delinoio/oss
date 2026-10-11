@@ -175,10 +175,17 @@ function existingRepositoryConfiguration(key: string) {
     key !== `${repositoryConfigurationPrefix}new`
   );
 }
+export const sessionInboxReadPrefix = "inbox-session-read:";
+function connectionOwned(key: string) {
+  return (
+    existingRepositoryConfiguration(key) ||
+    key.startsWith(sessionInboxReadPrefix)
+  );
+}
 function useIntentRegistry(key: string) {
   const local = useContext(Context),
     connection = useContext(ConnectionContext);
-  return existingRepositoryConfiguration(key) ? (connection ?? local) : local;
+  return connectionOwned(key) ? (connection ?? local) : local;
 }
 export function useRepositoryConfigurationPending(id: string) {
   const intents = useRetainedMutationIntents(repositoryConfigurationPrefix);
@@ -320,7 +327,7 @@ export function useRetainedMutation<
   const localOpening = useSettingsOpening();
   // Existing repository saves belong to the connection across Settings and PR navigation.
   const sharedRepository = existingRepositoryConfiguration(key);
-  const opening = sharedRepository ? undefined : localOpening;
+  const opening = connectionOwned(key) ? undefined : localOpening;
   const mutation = useMutation(method, {
     retry: false,
     meta: opening?.mutationMeta,
