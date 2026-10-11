@@ -108,6 +108,7 @@ it("keeps unknown roles, non-text records and invalid native roots outside role 
       ".message-user, .message-assistant, .native-claude-message-content",
     ),
   ).toHaveLength(0);
+  expect(container.querySelectorAll(".user-transcript-item")).toHaveLength(0);
   expect(screen.getByText("Unknown retained text")).toBeTruthy();
   expect(screen.getByLabelText("Grok user input unavailable")).toBeTruthy();
   expect(screen.getByLabelText("Grok text unavailable")).toBeTruthy();

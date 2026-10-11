@@ -733,7 +733,7 @@ export const TranscriptItem = memo(function TranscriptItem({
       ) : null}
     </article>
   );
-  if (data.role !== "user") return message;
+  if (!textRole || data.role !== "user") return message;
   return (
     <div
       className="user-transcript-item"
