@@ -8,13 +8,25 @@ import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { SettingsTaskActions } from "./settings-task";
 import { useCloseSettingsTask } from "./settings-task-context";
-import { useState, useId, useMemo, useRef, useEffect } from "react";
+import {
+  useState,
+  useId,
+  useMemo,
+  useRef,
+  useEffect,
+  useSyncExternalStore,
+} from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import {
   installationObservation,
   validRunnerObservation,
 } from "./runner-observation";
-import { useQuery } from "@connectrpc/connect-query";
+import {
+  createConnectQueryKey,
+  useQuery,
+  useTransport,
+} from "@connectrpc/connect-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
   EntityKind,
   ResourceQuery,
@@ -42,20 +54,111 @@ export function useMachineSettingsController(
   initial: Resource,
   active: boolean,
 ) {
-  const result = useQuery(
-    ResourceQuery.getResource,
-    { kind: EntityKind.MACHINE, id: initial.id },
-    { enabled: active, refetchInterval: active ? 5000 : false },
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  const input = { kind: EntityKind.MACHINE, id: initial.id };
+  const queryKey = useMemo(
+    () =>
+      createConnectQueryKey({
+        schema: ResourceQuery.getResource,
+        transport,
+        input,
+        cardinality: "finite",
+      }),
+    [initial.id, transport],
+  );
+  const result = useQuery(ResourceQuery.getResource, input, {
+    enabled: active,
+    refetchInterval: active ? 5000 : false,
+  });
+  const queryCache = queryClient.getQueryCache();
+  const queryHash = queryCache.find({ queryKey, exact: true })?.queryHash;
+  const subscribeToReadCount = useMemo(
+    () => (notify: () => void) =>
+      queryCache.subscribe((event) => {
+        if (event.query.queryHash === queryHash) notify();
+      }),
+    [queryCache, queryHash],
+  );
+  const getReadUpdateCount = useMemo(
+    () => () => queryClient.getQueryState(queryKey)?.dataUpdateCount ?? 0,
+    [queryClient, queryKey],
+  );
+  const readUpdateCount = useSyncExternalStore(
+    subscribeToReadCount,
+    getReadUpdateCount,
+    getReadUpdateCount,
   );
   const [acknowledged, setAcknowledged] = useState<Resource>();
   const exact = (row?: Resource): row is Resource =>
     validRunnerObservation(row) && row.id === initial.id;
-  const current = [initial, result.data?.resource, acknowledged]
+  // Same-identity reconnects replace the transport but retain this QueryClient.
+  const [observation, setObservation] = useState<{
+    id: string;
+    queryClient: QueryClient;
+    current?: Resource;
+    readUpdateCount: number;
+    acknowledged?: Resource;
+  }>(() => ({
+    id: initial.id,
+    queryClient,
+    readUpdateCount,
+  }));
+  const retained =
+    observation.id === initial.id && observation.queryClient === queryClient
+      ? observation
+      : {
+          id: initial.id,
+          queryClient,
+          readUpdateCount,
+        };
+  let current = [retained?.current, initial, acknowledged]
     .filter(exact)
     .reduce<Resource | undefined>(
       (a, b) => (!a || b.revision > a.revision ? b : a),
       undefined,
     );
+  const newAcknowledgement = acknowledged !== retained?.acknowledged;
+  if (
+    newAcknowledgement &&
+    exact(acknowledged) &&
+    (!current || acknowledged.revision >= current.revision)
+  )
+    current = acknowledged;
+  const freshRead =
+    result.isSuccess &&
+    !result.error &&
+    readUpdateCount > retained.readUpdateCount;
+  const readCounterReset = readUpdateCount < retained.readUpdateCount;
+  const readResource = result.data?.resource;
+  const readExceedsAcknowledgement =
+    exact(readResource) &&
+    exact(acknowledged) &&
+    readResource.revision > acknowledged.revision;
+  // Heartbeats advance without a business revision. Consume each successful
+  // read once, and fence cached or equal/older reads when a mutation is
+  // acknowledged while still accepting a simultaneously delivered newer read.
+  if (
+    freshRead &&
+    (!newAcknowledgement || readExceedsAcknowledgement) &&
+    exact(result.data?.resource) &&
+    (!current || result.data.resource.revision >= current.revision)
+  )
+    current = result.data.resource;
+  if (
+    !retained ||
+    current !== retained.current ||
+    freshRead ||
+    readCounterReset ||
+    newAcknowledgement
+  )
+    setObservation({
+      id: initial.id,
+      queryClient,
+      current,
+      readUpdateCount,
+      acknowledged,
+    });
   const data = useMemo(() => document(current), [current]);
   const [edit, setEdit] = useState<{
     revision: bigint;

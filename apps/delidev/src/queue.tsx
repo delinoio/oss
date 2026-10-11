@@ -1,7 +1,7 @@
 import { RetainedImages } from "./image-attachments";
 import { acknowledgeImages, retainedImages } from "./image-input";
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useId, useRef, useState } from "react";
 import {
   SessionQuery,
   newRequestId,
@@ -436,6 +436,7 @@ function QueuedInputEditor({
   save: (prompt: string, selections: SkillSelection[]) => void;
 }) {
   const [textLimit, setTextLimit] = useState(false);
+  const inputId = useId();
   const textarea = useRef<HTMLTextAreaElement>(null),
     data = document(session);
   // Draft ownership remains outside disposable payloads; only token bindings change.
@@ -473,26 +474,25 @@ function QueuedInputEditor({
         save(edit.prompt, skills.selections);
       }}
     >
-      <label>
-        {copy("queue.editedInput_e6f7fe")}
-        {skills.wrap(
-          <textarea
-            ref={textarea}
-            autoFocus={autoFocus}
-            rows={3}
-            disabled={busy}
-            value={edit.prompt}
-            onChange={(event) =>
-              skills.onChange(event.target.value, event.target.selectionStart)
-            }
-            onSelect={skills.onSelect}
-            onKeyDown={skills.onKeyDown}
-            onCompositionStart={skills.onCompositionStart}
-            onCompositionEnd={skills.onCompositionEnd}
-            {...skills.attributes}
-          />,
-        )}
-      </label>
+      <label htmlFor={inputId}>{copy("queue.editedInput_e6f7fe")}</label>
+      {skills.wrap(
+        <textarea
+          id={inputId}
+          ref={textarea}
+          autoFocus={autoFocus}
+          rows={3}
+          disabled={busy}
+          value={edit.prompt}
+          onChange={(event) =>
+            skills.onChange(event.target.value, event.target.selectionStart)
+          }
+          onSelect={skills.onSelect}
+          onKeyDown={skills.onKeyDown}
+          onCompositionStart={skills.onCompositionStart}
+          onCompositionEnd={skills.onCompositionEnd}
+          {...skills.attributes}
+        />,
+      )}
       {skills.list}
       {skills.warning}
       {textLimit ? <p role="alert">{copy("image-input.textLimit")}</p> : null}

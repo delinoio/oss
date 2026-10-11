@@ -27,6 +27,7 @@
   "shortcuts.messageRequired": "Enter a message first.",
   "shortcuts.activeSessionRequired": "An active session is required.",
   "shortcuts.searchRequired": "Enter a search query first.",
+  "shortcut-settings.catalog": "Shortcut catalog",
   "shortcut-settings.scope": "Saved on this computer. Changes take effect only after Save changes.",
   "shortcut-settings.disabled": "Disabled",
   "shortcut-settings.session": "Session",

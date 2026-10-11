@@ -186,8 +186,15 @@
   }
 }
 
+/* This container excludes the retained navigation pane from reflow width. */
+.appearance-content {
+  container: appearance-body / inline-size;
+  width: 100%;
+  max-width: 880px;
+  min-width: 0;
+}
 .appearance-settings {
-  max-width: 720px;
+  max-width: 880px;
 }
 .appearance-settings legend {
   font-weight: 600;
@@ -255,14 +262,19 @@
 }
 .appearance-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(120px, 240px);
+  grid-template-columns: minmax(0, 1fr) 220px;
   align-items: center;
   gap: 16px;
-  margin: 16px 0;
+  min-height: 64px;
+  margin: 0;
+  padding: 12px 0;
+  font-size: 14px;
+  line-height: 20px;
 }
 .appearance-row input[type="checkbox"] {
-  width: 20px;
-  height: 20px;
+  width: 40px;
+  height: 40px;
+  margin: 0;
   justify-self: start;
 }
 .appearance-row select {
@@ -385,9 +397,9 @@
     scroll-behavior: auto !important;
   }
 }
-@container settings-content (max-width: 639px) {
+@container appearance-body (width < 640px) {
   .appearance-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 8px;
   }
 }
@@ -466,4 +478,100 @@
 
 :root[data-conversation-size="18"] .transcript .message {
   font-size: 18px;
+}
+
+/* Appearance presentation does not change any preference or save owner. */
+.appearance-content .appearance-choices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.appearance-row-text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.appearance-row-text small,
+.appearance-section-help,
+.appearance-autosave {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+.appearance-section-help {
+  margin: 0 0 12px;
+}
+.appearance-content legend {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+}
+.appearance-content .appearance-row select {
+  min-width: 0;
+  border-radius: 8px;
+}
+.appearance-disclosure-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 3fr);
+}
+.appearance-disclosure-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+.appearance-disclosure-option {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.appearance-content .language-settings {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  align-items: center;
+  gap: 8px 16px;
+  max-width: none;
+}
+.appearance-content .language-settings > p,
+.appearance-content .language-settings > button {
+  grid-column: 1 / -1;
+}
+.appearance-content .language-picker,
+.appearance-content .date-format-control {
+  width: 220px;
+  min-width: 0;
+}
+.appearance-content .date-format-settings fieldset {
+  position: relative;
+  min-height: 64px;
+  margin: 0;
+}
+.appearance-content .date-format-settings legend {
+  position: absolute;
+  inset: 0 auto auto 0;
+  max-width: calc(100% - 236px);
+  padding: 0;
+}
+.appearance-content .date-format-control {
+  margin-inline-start: auto;
+}
+.appearance-content .date-format-control select {
+  width: 100%;
+}
+@container appearance-body (width < 640px) {
+  .appearance-content .appearance-choices,
+  .appearance-content .language-settings,
+  .appearance-disclosure-row,
+  .appearance-disclosure-controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .appearance-content .language-picker,
+  .appearance-content .date-format-control {
+    width: 100%;
+  }
+  .appearance-content .date-format-settings legend {
+    position: static;
+    max-width: 100%;
+    margin-bottom: 8px;
+  }
 }

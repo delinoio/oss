@@ -347,6 +347,30 @@ Notification preferences and general configuration editors publish fixed safe su
 
 These toasts neither request OS permission nor claim/report native delivery, modify Inbox read state or enable session actions. OS notifications, durable Inbox reservations, synchronized preferences and native activation retain their existing owners and contracts. No Connect API, migration, storage, native permission or package dependency is added. Component and browser layout checks remain separate from packaged CEF/platform acceptance; record validation in pull requests, issues and CI artifacts rather than repository evidence files.
 
+## Runner Device heartbeat observations
+
+Runner Device settings retains the highest accepted business revision for its
+original Machine. A fresh successful same-ID read at that revision may replace
+the displayed observation because server-projected heartbeat timestamps advance
+without a configuration revision. Detect a new successful query response by its
+data identity, not by requiring wall-clock timestamps to increase. Track query
+freshness separately from the business revision. At each Settings opening,
+baseline the query result already in cache so it cannot be mistaken for a read
+accepted during that Settings lifetime. Do not replay cached data over a newer
+acknowledged mutation. If a fresh read and acknowledgement arrive together,
+accept the read only when its business revision exceeds the acknowledgement;
+equal or lower reads stay fenced. A compatible later read can update the
+heartbeat, while lower revisions, failed reads and malformed or foreign
+resources cannot replace the accepted configuration. Read failures retain the
+existing error and action restrictions.
+
+Equal-revision heartbeat refreshes preserve executable-path drafts and their
+original request revisions. Only a changed business revision makes those drafts
+stale. Keep the original inspection job, uncertain request and exact retry owner;
+observation refresh grants no inspection, execution or cleanup authority. Dispose
+the accepted observation with its original Settings task/connection lifetime,
+and follow the [heartbeat projection contract](protos-delidev-v1-contract.md#machine-heartbeat-read-projection).
+
 ## Model request Diagnostics panel
 
 The feature adds an explicit Diagnostics panel beside the retained session conversation. It uses generated owner/client Connect Query after `REQUEST_DIAGNOSTICS_V1` capability validation, with an optional exact execution UUID filter, explicit refresh and 50-record pages. Validate the entire page's original session/execution, closed source/operation/state/error/settings, identity spelling, timestamps and precise counters before rendering. Keep native input selection/effective settings separate from proxy request/provider observations, and unavailable fields separate from zero/false. A send claim cannot prove provider acceptance; native terminal metadata cannot confirm native cleanup. Historical absence cannot be reconstructed. Escape/Close returns focus to Diagnostics and preserves the composer; inactive diagnostic queries are canceled/disposed. No mutation intent, automatic retry, payload display, usage reconstruction or public opener is introduced. See the [diagnostics contract](cmds-delidev-diagnostics-contract.md) and validation records in the integration PR.
@@ -419,6 +443,36 @@ Session detail and loaded sidebar rows show server-owned automatic title state a
 Named Home project rows expose an always-visible New session plus immediately left of the collapse chevron. Keep the 34px row, 28×28px transparent button, 16px shared plus icon and 2px gap before the chevron target, using semantic theme colors and existing button focus treatment. The plus and existing disclosure button are siblings; preserve name/chevron disclosure clicks and reserve space so long names cannot cover the new action. Tooltips identify the project, and localized accessible names include its original ID to distinguish equal names. Off-catalog fallback groups and General Chat expose no project shortcut. General Chat has its own always-visible sibling **New Chat** plus (English; Korean remains **새 일반 대화**) with the same 28px target, 16px icon and theme/focus treatment. Reuse its localized tooltip and accessible name; activation calls the existing General Chat entry, closes the compact drawer and focuses First message without toggling the group. Keep the top-level action, mounted draft, explicit submission gates and independent project-session draft. Project-selection locks do not disable this navigation.
 
 The shortcut opens the existing mounted creation page with the exact project ID, closes the compact navigation drawer and focuses First message. Bind this entry to the existing activation and consume it once, including rejected locked entries; manual edits, language changes, same-identity reconnect and later request settlement cannot replay it. A changed project clears Agent Worker, Runs on and starting references and selects Worktree, while retaining the message, mode, budget and Options. Reselecting the same project preserves all selections. The shortcut shares the Project selector's pending Local proof, pending/uncertain creation and unreadable-acknowledgment locks. Ordinary New session and Back retain their existing draft and selected-conversation behavior. Navigation alone creates no session, execution, protocol or persistent-state authority.
+
+### Empty Agent Worker inventory creation entry
+
+New session and New Chat replace only their Agent Worker selector with the
+localized **Create agent worker** button (**에이전트 워커 생성**) after the current
+validated unfiltered first inventory page proves zero resources with no
+continuation. Retain that evidence in the existing bounded query projection,
+before project filtering. Require an active original transport, no retained
+selected identity, no read error and no pending refresh. Loading, denied,
+unavailable, malformed, stale, restricted and continuing-page observations
+retain their separate selector states. A later empty page never proves absence.
+Suppress the generic empty-page sentence on these two controls; restricted
+results retain explicit project restriction guidance and continuation remains
+available.
+
+Keep the Agent Worker label above an outlined 40px native non-submit button with
+an inert plus icon, 8px corners, existing selector width, semantic theme colors,
+localized accessible name and visible keyboard focus. Preserve scrollable
+960×640 and 200% reflow layouts. Enter/Space uses ordinary button activation.
+
+The typed `SettingsEntryDestination.NewAgentWorker` enters Settings > Agent
+Workers with the existing creation wizard already open at Harness. Reuse the
+Settings visit/navigation boundary, destination focus and wizard focus behavior.
+Navigation performs no worker save, session submission, project-policy edit or
+execution authorization. Both mounted creation controllers retain their
+independent messages, project/workspace/references, Runner Device, Plan Mode,
+Options/budget and image attachments across this visit. Saving uses existing
+inventory invalidation. Return restores ordinary selection when a worker exists,
+without selecting it or starting a conversation. Existing eligible-selection
+and submission gates remain required.
 
 ### Dedicated General Chat creation
 
@@ -1341,7 +1395,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Skill availability presentation follows the desktop explicit skill completion contract. Only complete successful current authenticated scope inventory confirms absence; retain unknown on loading/error/unsupported scope. Keep native textarea overlays aligned and noninteractive, skip disabled retained rows, bound panel retention to 256 and discard on dismissal/scope change. Prompt history remains text-only and supplies no completion candidates or binding authority.
 
-- Persistent sidebar collapse follows the desktop contract for : computer-local native preference above connection lifetimes, retained 52px rail and mounted pane controllers, wide-only 40px toggle/primary+B, compact drawer independence and explicit failure reload. Preserve independent Appearance and shortcut preferences; add no server RPC, protocol/migration or OS-global shortcut authority.
+- Persistent sidebar collapse follows the desktop contract for : computer-local native preference above connection lifetimes, retained 52px rail and mounted pane controllers, wide-only primary+B shortcut with no shell toggle or spacer, compact drawer independence and explicit failure reload. Preserve independent Appearance and shortcut preferences; add no server RPC, protocol/migration or OS-global shortcut authority.
 
 - Reset-credit row names follow the subscription Settings contract: localized one-based ordinals include unavailable returned details, full original IDs remain secondary, and confirmation captures the selected ordinal with the original identity and revision bindings. Reorder and locale changes cannot transfer selection or grant consumption authority. Preserve count-only native-next, once-only confirmation, exact uncertain requests, cleanup gates and native title privacy; add no durable identity or protocol field.
 
@@ -2445,7 +2499,7 @@ All three backup list adapters reject an entire page with duplicate nonempty IDs
 
 - The feature image startup guidance requires validated closed settled provenance. Present the exact original rejected input and images. English/Korean guidance directs users to start a new session with an explicitly image-capable Agent Worker and Runner Device, or start a new text-only session; retrying the rejected session retains its original input and selection. Queuing text in that session does not repair its startup retry admission. Keep generic/unverified failures under existing generic guidance; preserve current drafts, attachment identities and explicit retry/recovery guards. Missing or mixed metadata cannot offer image-specific retry. Follow the image-input and direct startup contracts.
 
-- Persistent sidebar collapse follows the feature and the desktop contract. Keep the rail, original controllers, portals, drafts and request identities mounted; explicitly hide/inert the pane and suspend only hidden navigation activity. The persistent 40px shell toggle and fixed primary+B share dispatch/help/ARIA, ordinary-input admission and existing exclusions. Preserve focus/caret, compact drawer independence, visible navigation handoffs and explicit reload after failed/uncertain computer-local writes. SidebarProvider stays above connection/Settings lifetimes; browser fixtures use memory only.
+- Persistent sidebar collapse follows the feature and the desktop contract. Keep the rail, original controllers, portals, drafts and request identities mounted; explicitly hide/inert the pane and suspend only hidden navigation activity. The fixed primary+B shortcut shares dispatch/help/ARIA, ordinary-input admission and existing exclusions; the shell has no expand/collapse toggle or replacement spacer. Preserve focus/caret, compact drawer independence, visible navigation handoffs and explicit reload after failed/uncertain computer-local writes. SidebarProvider stays above connection/Settings lifetimes; browser fixtures use memory only.
 
 - The feature per-turn timing uses bounded original owner/input/timestamp metadata and one mounted active timer isolated from transcript payload rendering. Anchor a pre-user line before the first bounded original matching native record, then relocate it before the primary input; reject foreign/earlier/inherited scope. Freeze retained terminal timing and unconfirmed disconnect estimates, preserve zero/unavailable, inherited source attribution, Steer identity, three-page anchors/tokens/scroll/focus and drafts. READY/pre-send states cannot create timing. Keep localized semantic wrapping and aria-live off; display timing grants no control/native authority.
 
@@ -2667,7 +2721,10 @@ login/OAuth operations or changes cleanup authority.
 
 Icon-only paged resource actions include the original resource ID alongside the localized target name. Identity does not depend on which payload pages remain mounted, and computing it adds no reads. Network profile deletion uses the same exact target name and ID as editing.
 
-Keyboard shortcut capture, disable, restore, cancellation, recovery and Save controls also use the closed action catalog with visible localized labels and original capture/preference ownership.
+Keyboard shortcut controls use the closed action catalog and original
+capture/preference ownership. The compact shortcut category below permits icon
+presentation only for per-row Capture, Disable and Restore; cancellation,
+recovery, Restore all defaults, Discard and Save retain visible localized labels.
 
 The Project defaults and project-behavior editors use the same closed action catalog. Return-to-global and exact read retries keep visible labels and original callbacks. The direct project Settings entry retains its original presentation outside the Settings action scope.
 
@@ -2676,6 +2733,45 @@ All 18 Settings categories, their forms, dialogs and action menus share the clos
 Direct secondary Edit, Delete, Refresh and Copy actions use a 16px decorative, nonfocusable repository-owned outline SVG inside a 40×40px button with 8px corners and the existing AA border/text/focus tokens. Localized accessible names remain intact; equal saved-resource names include the original resource ID. Pointer hover and keyboard focus reveal the same localized tooltip, without another tab stop or domain read. Tooltip position alone uses bounded computed coordinates, including viewport-edge and effective CSS zoom clearance; resize/scroll dismisses it. Save, Cancel, creation, connection, recovery/retry and final destructive confirmations retain readable labels and leading icons. Action-menu items retain their labels and leading icons. Category navigation, disclosures, picker/radio choices, ordering grips, menu launchers and existing named dialog/toast dismissal controls keep their own semantics.
 
 The catalog and renderer own no RPC, schema, capability, permission, mutation, request identity, draft, polling, cursor or persistent preference. Preserve target-specific names, original disabled guards, editor and confirmation admission, opener restoration, mounted controllers and exact uncertain request bytes. New Settings owners, including Project defaults and Shortcuts, use this catalog explicitly; never infer an action from English text or route an action through a generic controller. English/Korean and light/dark/System fixtures cover all categories, empty/populated states, narrow layouts and effective 200% geometry. Synthetic browser/jsdom checks do not establish real account, screen-reader, packaged CEF or platform acceptance.
+
+### Compact shortcut Settings
+
+Keyboard shortcuts retains the shared left anchor and 1040px content cap, with
+the category title and scope guidance exactly once above one named,
+keyboard-focusable catalog region. All seven editable actions, read-only entries
+and platform-filtered native entries remain in their original group order. Use
+decorative keycaps from the existing platform-resolved bindings, retaining a
+readable accessible chord and the localized disabled state. Preserve defaults,
+fixed-binding guidance and Focus search's primary+I binding.
+
+The catalog owns vertical scrolling, a stable scrollbar gutter and min-height: 0.
+Its grid uses the remaining category height with an 80px minimum track. Capture,
+invalid-chord, conflict, persistence, recovery and saved/unsaved guidance remain
+outside the catalog before its footer; appearing guidance reduces catalog height.
+The heading and footer remain stationary whenever surrounding controls fit. In
+exceptionally short or zoomed layouts, their natural overflow stays reachable
+through the original outer Settings scroll owner. Keyboard focus reveals catalog
+row controls without scrolling the outer owner in normal layouts.
+
+At catalog widths of at least 640px, editable rows align name/default, current
+binding and actions in three columns. Rows have 56px minimum height, 8px vertical
+padding, 14px/20px action text and 12px/18px muted default text; wrapped content
+increases height. Read-only rows and group heading bands have 40px minimum height.
+Below that width, stack metadata and wrap bindings/actions without horizontal
+overflow. Only editable rows use explicit SettingsActionPresentation.Icon for
+Capture/Edit, Disable/Stop and Restore/Back, retaining 40px targets, 8px corners,
+localized action-specific accessible names/tooltips and visible focus.
+
+Restore all defaults sits at the footer's left; labeled Discard and Save sit at
+the right and wrap as needed. Preserve clean-state eligibility, original disabled
+guards, category-local drafts, explicit Save, conflicts, committed dispatch/help/
+ARIA, native capture admission/retirement, connected opener restoration and exact
+uncertain recovery. Resize, scrolling, locale and theme changes retain the same
+controllers and request ownership. Loading or failed reads never imply an empty
+catalog. Use semantic light/dark/System tokens and English/Korean copy, without
+new persistence, native code, logging, RPC or dependencies. Browser geometry and
+200% reflow fixtures remain separate from packaged CEF, actual platform zoom,
+keyboard and screen-reader acceptance.
 
 ### Settings task dialogs
 
@@ -2983,7 +3079,20 @@ and 200% zoom acceptance in PRs/issues/CI, retaining unavailable targets explici
 
 #### Device styling and custom themes
 
-Appearance uses five flat sections: Theme, Composer, Status, Display and Images.
+Appearance uses five flat sections: Theme, Composer, Session status, Display and
+Images, followed by Language and Date format under their independent controllers.
+Its left-aligned body alone is capped at 880px; other forms retain their existing
+widths and the shared desktop/medium/compact padding. Separate flat sections with
+thin semantic rules and 24px gaps. Keep 26px/32px category titles, 16px/24px section
+headings, 14px/20px labels and 12px/18px explanations. Show the computer-local scope
+and automatic-save explanation while retaining actual Reading/Saving/Saved and
+failure states. Ordinary rows have a 64px minimum, 16px gap and 220px control
+column, with associated descriptions and native controls. Three independent
+Tool/Reasoning/Compaction selectors share one wider grouped row without merging
+values or accessible names. At body widths below 640px, the Appearance-scoped
+container stacks row labels/controls, radio tiles and grouped selectors; actions
+wrap and content scrolls vertically. Retain every labelled disabled renderer,
+longer behavior/recovery explanation and custom-theme management action.
 Language and Date format retain their existing ownership. Ordinary selections
 save automatically. Theme mode retains System/Light/Dark, with independent light
 and dark palette references for Default, Titanium, Nord, Dracula and Solarized.
@@ -4671,6 +4780,15 @@ Confirmed absent token ranges use semantic muted text in a noninteractive aligne
 overlay. Keep the native textarea, exact draft, wrapping, scrolling, selection,
 caret, undo and IME; suppress the overlay during composition. Localized accessible
 status describes affected tokens without exposing prompt content in logs.
+Keep one mounted polite atomic count region in the shared composer wrapper,
+independent of panel visibility, and retain the textarea's count description and
+hidden painted mirror. Announce only changed counts proven by a complete current
+inventory, including recovery from a positive count to zero. Initial zero,
+unchanged results, ordinary edits and IME do not replay announcements. Unknown
+observations clear the status without claiming zero; keep the last confirmed
+count only for deduplication. Scope or transport replacement retires both that
+count and its status, so late results cannot announce for another owner. Preserve
+native focus, drafts, selections and the existing pending/uncertain locks.
 An open panel can retain previously displayed disappeared rows until dismissal or
 scope change. Bound retention to 256 entries with live entries taking priority.
 Unavailable rows retain original names, descriptions and provenance, show localized
@@ -4693,7 +4811,21 @@ use one horizontal option row: name, original description and an unshrunk neutra
 User/Project badge. Project and General Chat creation constrain both the content grid item and its
 fieldset with `min-width: 0`, so intrinsic candidate text cannot widen the
 820px-capped content or responsive composer. Keep project grid placement and
-General Chat centering independent of this shrink boundary. The in-flow panel has a 220px maximum scroll height, 4px padding,
+General Chat centering independent of this shrink boundary. One nonmodal manual
+top-layer popover stays in its original DOM and owning-dialog boundary. It
+reserves no normal-flow height or spacing. At constant draft and textarea size,
+opening, filtering, loading/error transitions, dismissal and reopening preserve
+the heading, form, composer, textarea, toolbar, hints and ancestor scroll geometry
+within 1 CSS pixel. Anchor left aligned to the textarea with matched width, an
+8px gap and 8px usable-surface margins. Prefer above; use below when the full
+bounded panel cannot fit above and fits below. Otherwise use the side with more
+space and reduce height with internal scrolling. Clamp to the visual viewport
+and any owning modal surface. Reposition on anchor/manual textarea resize,
+ancestor scroll, window resize and visual viewport changes. Hidden, inert,
+disabled, disconnected or unmounted original composers dispose the presentation.
+Keep input focus and avoid automatic focus transfer or ancestor scrolling;
+loading, empty, unavailable, unsupported and retry states share this overlay.
+The panel has a 220px maximum border-box scroll height, 4px padding,
 a neutral border and 8px corners. Rows have a 40px minimum height, 12px horizontal
 padding, 12px gaps and 8px corners. Names use 14px/20px semibold text; descriptions
 use muted 12px/18px text. Preserve full original text in the DOM and accessible
@@ -4725,6 +4857,27 @@ Inventory belongs to the selected Runner and Harness, including remote Runners;
 renderer-local skill directories are never discovery authority. Codex alone is
 supported. Follow the sessions contract's Explicit native skills section for
 snapshot, native input, recovery, protocol and cleanup ownership.
+
+Valid explicit selected spans use semantic `--link` color and a thin underline
+in the same noninteractive mirror. Retain exact literal `$name` prompt bytes,
+opaque selections, font, baseline, wrapping and dimensions; add no Markdown,
+chip, navigation target, click action, link role or extra focus stop. Derive
+styling only from one exact nonstale, unambiguous binding in the original resolved
+Runner/Agent/project/session and retained connection scope. Unselected matching
+text remains ordinary. Outside edits move the existing bound span; token edits
+and explicit clearing remove its selected decoration. Bound selected painted
+spans to 16 and never add another mirror.
+
+Confirmed unavailable styling takes precedence. Loading, failed or disabled
+inventory reads remain unknown and may retain a valid selected decoration;
+selection styling never proves availability or enables acceptance. Changed or
+unresolved scope removes selected decoration while preserving reselection
+warnings and send guards. Suppress both decorations during IME. Preserve native
+textarea identity, focus, caret, selection, undo, scroll, existing localized
+status ownership and pending/uncertain draft and binding locks. Apply the same
+rules to project creation, General Chat creation, follow-up and queued editing,
+including semantic themes, typography changes and 200% zoom. Fixture or browser
+geometry coverage does not establish installed-native or assistive acceptance.
 
 Typed queued edits restore selected token bindings from immutable accepted metadata.
 They support explicit selection clearing and reselection, preserve bindings and
@@ -5131,6 +5284,26 @@ history/usage/Fork/Sidechat snapshots, and replacement of the current draft.
 Preserve the exact source revision, context revision and retained mutation
 request; stale sources and uncertain outcomes cannot submit new input.
 
+The exact connection-owned Revert busy intent also fences the composer, even
+when its presenter is reused or remounted and the session row predates job
+admission. Retain action/message/context, draft guard, replacement and restored
+action identity with that original mutation owner. Acknowledgment alone does
+not prove native completion; definitive rejection releases only the matching
+original guard. Retain uncertain bytes for explicit original-request replay.
+Other sessions and connections remain independent, and disposal grants no
+completion or fresh-input authority.
+
+Accepted user text edits synchronously advance a per-session monotonic unsigned
+64-bit generation before React rendering, including same-value events, undo and
+accepted edits from another retained view. Empty draft payload deletion does
+not erase that history. Capture the original generation at confirmation and
+require it, original ownership and text equality for automatic restoration.
+Keep edited drafts and offer the existing explicit restore action. Bound edit
+history to 1000 session owners; reject an edit rather than wrap or discard its
+guard. Mutation-owned presentation is limited to 1000 entries and 4 MiB, with a
+pending guard reserving the 1 MiB document bound for verified replacement text.
+Never evict a busy/uncertain guard or retain it across connection disposal.
+
 Verified completion restores the original prompt text as an unsent draft and
 focuses the active composer. Automatic and explicit restoration preserve the
 current composer Plan/Execute choice; historical input mode remains validated
@@ -5152,28 +5325,45 @@ Refresh reads the captured interval again; choosing the same preset captures a n
 
 ## Persistent context-pane collapse
 
-At widths of at least 760px, the 40px icon button at the beginning of the main
-shell and logical primary+B toggle only the context pane. The 52px rail and its
-navigation/subscription actions remain available. Collapse releases the pane's
-288px (256px through 1100px) grid track. The localized button shares typed
-shortcut/help/ARIA declarations and controls the original mounted pane. It has
-visible focus and `aria-expanded`; it remains available across page changes.
+At widths of at least 760px, logical primary+B toggles only the context pane.
+The main shell has no expand/collapse button or replacement spacer: remove its
+complete 64px row while retaining each surface's own padding and scroll root.
+The 52px rail and its navigation/subscription actions remain available. Collapse
+releases the pane's 288px (256px through 1100px) grid track. Keep the localized
+shortcut Help declaration and original mounted pane across page changes.
 
 Keep Sidebar, portals, filters, scroll snapshots, selected resources, drafts and
-pending/uncertain controllers mounted. Set the hidden pane's `hidden`, `inert`
-and `aria-hidden` boundaries explicitly; closing a nonmodal dialog alone does not
-hide its CSS flex layout. Suspend Home navigation polling, hover timers,
+pending/uncertain controllers mounted. Accepted wide preference changes animate
+the pane track and main boundary for 180ms with cubic-bezier(0.2, 0, 0, 1).
+Keep the 52px rail fixed and pane content at its expanded width; translate the
+content left and clip it during closure without scaling or continuous text reflow.
+Set logical `inert` and `aria-hidden` immediately. Keep the closing pane visually
+open only for this interval, then explicitly set `hidden` and remove its nonmodal
+open state; closing a nonmodal dialog alone does not hide its CSS flex layout.
+Suspend Home navigation polling, hover timers,
 sidebar selectors, repository/schedule navigation refresh and continuation through
 existing activity gates. Main content observation keeps its independent owner.
-Before hiding a focused pane descendant, focus the persistent toggle. Preserve
-composer focus/caret/selection otherwise; expansion never steals focus.
+Before hiding a focused pane descendant, focus the current rail navigation
+button, falling back to the first rail navigation button. Preserve composer
+focus/caret/selection otherwise; expansion never steals focus.
 
-Below 760px retain the purpose-named compact opener and modal drawer. Hide the
-wide toggle and deactivate primary+B. Drawer opening/closing never saves the
-wide preference. On return to wide layout, reapply the committed choice, retire
-any modal drawer and use a visible toggle/rail fallback for focus. Search initial
-focus cannot target a hidden pane; explicit Search focus may request the original
-pane opening and waits for visible committed presentation.
+Each admitted reversal begins at the current rendered geometry. Retire stale
+completion work; use the current track transition completion and a generation-fenced
+240ms fallback. Cancellation, disposal, reduced-motion changes, width breakpoints,
+page navigation and connection changes settle the latest valid endpoint directly.
+Initial preference hydration and breakpoint restoration never animate. Reduced
+motion reaches endpoints immediately. Motion has no preference-write or execution
+authority; pending, failed and uncertain saves retain committed presentation and
+their original recovery controls. Rejected toggles are never queued.
+
+Below 760px retain the purpose-named compact opener and modal drawer. Deactivate
+primary+B. Drawer opening/closing never saves the wide preference. On return to
+wide layout, reapply the committed choice, retire any modal drawer and use the
+same current/first rail fallback when collapsed. Search initial focus cannot
+target a hidden pane; explicit Search focus may request the original
+pane opening and waits for the current committed opening to settle. Fence pending
+Search focus by its presentation generation and active destination; cancellation,
+reversal, rejection or navigation replacement cannot focus an obsolete destination.
 
 `sidebar_preference.json` is an independent computer-local, bounded 4096-byte
 version-1 document containing only the Expanded/Collapsed enum and its document
