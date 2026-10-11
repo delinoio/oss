@@ -511,16 +511,17 @@ it("preserves explicit empty restrictions and requires a primary repository afte
   expect(JSON.parse(new TextDecoder().decode(input(value.save.mock.calls[0][0]).documentJson))).toMatchObject({ repositories: [second.id], primary_repository: second.id, accounts: { configured: true, ids: [] }, agents: { configured: false, ids: [] } });
 });
 
-it("keeps repository save acknowledgment separate from completed Worker validation", async () => {
+it("automatically completes only a verified original repository save", async () => {
   const repository = resource(EntityKind.REPOSITORY, { name: "Repository", remote_url: "https://github.com/fixture/repo.git", checkouts: [{ machine_id: newRequestId(), path: "/owned/checkout" }], base: {}, starting: {}, auto_fetch: true });
   const job = resource(EntityKind.JOB, { type: "save-repository", state: "queued" });
   const value = fixture([repository, job]), saved = vi.fn();
   value.save.mockImplementation(async request => ({ job, requestId: input(request).mutation.requestId }));
-  render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={saved} cancel={() => {}} />));
+  render(<NotificationProvider>{value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={saved} cancel={() => {}} />)}</NotificationProvider>);
   await waitFor(() => expect((screen.getByRole("button", { name: "Save Repository" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
   await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
   expect(saved).not.toHaveBeenCalled();
+  expect(screen.queryByText("Repository saved.")).toBeNull();
   expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
   value.resources[1] = create(ResourceSchema, { ...job, revision: 2n, documentJson: encode({ type: "save-repository", state: "uncertain", problem: { message: "Owned operation needs recovery" } }) });
   await act(async () => { await value.client.invalidateQueries(); });
@@ -529,8 +530,86 @@ it("keeps repository save acknowledgment separate from completed Worker validati
   expect(screen.queryByRole("button", { name: "Return to retained draft" })).toBeNull();
   value.resources[1] = create(ResourceSchema, { ...job, revision: 3n, documentJson: encode({ type: "save-repository", state: "succeeded", output: { id: repository.id, revision: 2 } }) });
   await act(async () => { await value.client.invalidateQueries(); });
-  fireEvent.click(await screen.findByRole("button", { name: "Done" }));
+  await waitFor(() => expect(saved).toHaveBeenCalledTimes(1));
+  expect(await screen.findByText("Repository saved.")).toBeTruthy();
+  await act(async () => { await value.client.invalidateQueries(); });
   expect(saved).toHaveBeenCalledTimes(1);
+  expect(screen.getAllByText("Repository saved.")).toHaveLength(1);
+  expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
+});
+
+it("closes the repository edit, refreshes inventory and restores its opener automatically", async () => {
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", remote_url: "https://github.com/fixture/repo.git", checkouts: [], base: {}, starting: {}, auto_fetch: true });
+  const job = resource(EntityKind.JOB, { type: "save-repository", state: "queued" });
+  const value = fixture([repository, job]);
+  value.save.mockImplementation(async request => ({ job, requestId: input(request).mutation.requestId }));
+  render(<NotificationProvider>{value.view(<Settings />)}</NotificationProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
+  const opener = await screen.findByRole("button", { name: "Edit Repository" });
+  opener.focus(); fireEvent.click(opener);
+  const save = await screen.findByRole("button", { name: "Save Repository" }) as HTMLButtonElement;
+  await waitFor(() => expect(save.disabled).toBe(false)); fireEvent.click(save);
+  await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  const previousLists = value.list.mock.calls.length;
+  value.resources[0] = create(ResourceSchema, { ...repository, revision: 2n, documentJson: encode({ name: "Repository", remote_url: "https://github.com/fixture/repo.git", checkouts: [{ path: "/refreshed/checkout" }], base: {}, starting: {}, auto_fetch: true }) });
+  value.resources[1] = create(ResourceSchema, { ...job, revision: 2n, documentJson: encode({ type: "save-repository", state: "succeeded", output: { id: repository.id, revision: "2" } }) });
+  await act(async () => { await value.client.invalidateQueries(); });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(await screen.findByText("/refreshed/checkout")).toBeTruthy();
+  expect(value.list.mock.calls.length).toBeGreaterThan(previousLists);
+  expect(screen.getAllByText("Repository saved.")).toHaveLength(1);
+  expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Edit Repository" })));
+  expect(value.save).toHaveBeenCalledTimes(1);
+});
+
+it("retries only an unreadable original repository status after a succeeded acknowledgment", async () => {
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", remote_url: "https://github.com/fixture/repo.git", base: {}, starting: {}, auto_fetch: true });
+  const job = resource(EntityKind.JOB, { type: "save-repository", state: "succeeded", output: { id: repository.id, revision: "2" } });
+  let readable = false;
+  const read = vi.fn((id: string) => {
+    if (id === job.id && !readable) throw new ConnectError("Original status temporarily unavailable", Code.Unavailable);
+    return { resource: id === job.id ? job : repository };
+  });
+  const value = fixture([repository, job], { readResource: read }), saved = vi.fn();
+  value.save.mockImplementation(async request => ({ job, requestId: input(request).mutation.requestId }));
+  render(<NotificationProvider>{value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={saved} cancel={() => {}} />)}</NotificationProvider>);
+  const save = await screen.findByRole("button", { name: "Save Repository" }) as HTMLButtonElement;
+  await waitFor(() => expect(save.disabled).toBe(false)); fireEvent.click(save);
+  const retry = await screen.findByRole("button", { name: "Retry original status read" });
+  expect(saved).not.toHaveBeenCalled(); expect(screen.queryByText("Repository saved.")).toBeNull();
+  expect(screen.getAllByRole("button", { name: "Retry original status read" })).toHaveLength(1);
+  await waitFor(() => expect((retry as HTMLButtonElement).disabled).toBe(false));
+  readable = true; fireEvent.click(retry);
+  await waitFor(() => expect(saved).toHaveBeenCalledTimes(1));
+  expect(value.save).toHaveBeenCalledTimes(1);
+  expect(read.mock.calls.filter(([id]) => id === job.id)).toHaveLength(2);
+});
+
+it("fences a dismissed repository status read before opening a successor task", async () => {
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", remote_url: "https://github.com/fixture/repo.git", base: {}, starting: {}, auto_fetch: true });
+  const successor = resource(EntityKind.REPOSITORY, { name: "Successor", remote_url: "https://github.com/fixture/next.git", base: {}, starting: {}, auto_fetch: true });
+  const job = resource(EntityKind.JOB, { type: "save-repository", state: "queued" });
+  let finish!: (result: { resource: Resource }) => void;
+  const pending = new Promise<{ resource: Resource }>(resolve => { finish = resolve; });
+  const value = fixture([repository, successor, job], { readResource: id => id === job.id ? pending : { resource: id === successor.id ? successor : repository } });
+  value.save.mockImplementation(async request => ({ job, requestId: input(request).mutation.requestId }));
+  render(<NotificationProvider>{value.view(<Settings />)}</NotificationProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Edit Repository" }));
+  const save = await screen.findByRole("button", { name: "Save Repository" }) as HTMLButtonElement;
+  await waitFor(() => expect(save.disabled).toBe(false)); fireEvent.click(save);
+  await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
+  fireEvent.click(screen.getByRole("button", { name: "Close Edit Repository" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Edit Successor" }));
+  const dialog = screen.getByRole("dialog");
+  const field = screen.getByLabelText("Name"); field.focus();
+  await act(async () => { finish({ resource: create(ResourceSchema, { ...job, revision: 2n, documentJson: encode({ type: "save-repository", state: "succeeded", output: { id: repository.id, revision: "2" } }) }) }); await pending; });
+  expect(screen.getByRole("dialog")).toBe(dialog);
+  expect(document.activeElement).toBe(field);
+  expect(screen.queryByText("Repository saved.")).toBeNull();
+  expect(value.save).toHaveBeenCalledTimes(1);
 });
 
 it.each(["failed", "canceled"] as const)("freshly reviews a %s repository save before returning to its retained draft", async state => {
@@ -556,7 +635,7 @@ it.each(["failed", "canceled"] as const)("freshly reviews a %s repository save b
   await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
   const previousRepositoryReads = repositoryReads;
 
-  resources[1] = create(ResourceSchema, { ...job, revision: 2n, documentJson: encode({ type: "save-repository", state }) });
+  resources[1] = create(ResourceSchema, { ...job, revision: 2n, documentJson: encode({ type: "save-repository", state, problem: { message: "Original Worker failure", guidance: "Review retained settings" } }) });
   await act(async () => { await value.client.invalidateQueries(); });
   const review = await screen.findByRole("button", { name: "Read and review repository settings" });
   await waitFor(() => expect(repositoryReads).toBeGreaterThan(previousRepositoryReads));

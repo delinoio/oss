@@ -70,3 +70,19 @@ it("retains the original identity when a status response is foreign", async () =
   expect(f.read).toHaveBeenCalledTimes(2);
   for (const [request] of f.read.mock.calls as unknown as [{ id: string }][]) expect(request.id).toBe(f.initial.id);
 });
+
+it("does not verify a succeeded job with a visible original problem", async () => {
+  const f = fixture("succeeded");
+  f.read.mockResolvedValueOnce({ resource: create(ResourceSchema, { ...f.initial, documentJson: encode({ state: "succeeded", problem: { message: "Original status requires inspection" } }) }) });
+  render(f.view);
+  await screen.findByText("Original status requires inspection");
+  expect(f.children).toHaveBeenLastCalledWith("succeeded", expect.any(Object), expect.objectContaining({ verified: false, pending: false, retry: expect.any(Function) }));
+});
+
+it.each(["older", "foreign", "unsupported"])("does not verify a %s succeeded status fallback", async kind => {
+  const f = fixture("succeeded");
+  f.read.mockResolvedValueOnce({ resource: create(ResourceSchema, { ...f.initial, ...(kind === "older" ? { revision: f.initial.revision - 1n } : kind === "foreign" ? { id: newRequestId() } : { schemaVersion: 99 }) }) });
+  render(f.view);
+  await screen.findByText("The original status could not be verified. Read it again before continuing.");
+  expect(f.children).toHaveBeenLastCalledWith("succeeded", expect.any(Object), expect.objectContaining({ verified: false, pending: false, retry: expect.any(Function) }));
+});

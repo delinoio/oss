@@ -1,3 +1,4 @@
+import { RepositoryEditCompletion } from "./repository-edit-completion";
 import { revealProjectInvalidControl } from "./project-edit-tabs";
 import { defaultBranchPrefix, validBranchPrefix } from "./session-defaults";
 // SPDX-License-Identifier: Apache-2.0
@@ -108,6 +109,7 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
   const source = inline || apiEditor ? baseline : initial;
   const [data, setData] = useState<Document>(() => initial ? document(initial) : initialData ?? newConfiguration(kind));
   const [job, setJob] = useState<Resource | "unknown">();
+  const [repositorySave, setRepositorySave] = useState<{ id?: string; expectedRevision?: bigint }>();
   const [childPending, setChildPending] = useState(false);
   const pendingSelections = useRef(new Set<string>());
   const [selectionPending, setSelectionPending] = useState(false);
@@ -135,7 +137,10 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
         if (added.length) checkoutPreference.remember(text(added[added.length - 1].machine_id));
       }
     }
-    if (result.job) setJob(result.job);
+    if (result.job) {
+      setRepositorySave({ id: request.mutation?.id, expectedRevision: request.mutation?.expectedRevision });
+      setJob(result.job);
+    }
     else if (result.resource) {
       if (inline) { setBaseline(result.resource); setData(document(result.resource)); setProblem(""); }
       notifications.notify({ kind: ToastKind.Success, message: ownedMessage(savedKind[kind as keyof typeof savedKind] ?? "settings.savedKind.fallback"), id: request.mutation?.requestId }); saved();
@@ -186,7 +191,7 @@ export function ConfigurationEditor({ kind, initial, initialData, subscriptionOn
   const isApiEntry = kind === EntityKind.ACCOUNT && data.type === "api";
   const kindLabel = isApiEntry ? copy("settings.extra.1ebd6d7b3aeb") : kind === EntityKind.SETTINGS ? serverPreferenceLabel(serverPreferenceSection) : kindNames[kind];
   const apiEntryHeading = isApiEntry ? <header className="api-entry-heading"><h1 hidden={inTask}>{initial ? copy("settings.editPreferences_00b4cc") : copy("settings.newAiApiKeyEntry_5f978c")}</h1><p>{resourceName(initial)}</p><p className="api-entry-scope">{copy("settings.savedOnTheSelectedServer_93dbee")}</p></header> : null;
-  if (job) return <section className={isApiEntry ? "api-entry-workflow" : undefined}>{apiEntryHeading}{job === "unknown" ? <p role="alert">{copy("settings.theServerAcknowledgedThisRequestWithout_061fa2")}</p> : <TrackedJob initial={job} active={active}>{(state, _output, observation) => state === JobState.Succeeded ? <><p>{copy("settings.configurationSavedAfterWorkerValidation_d2b875")}</p><SettingsActionButton icon={SettingsActionIcon.Cancel} onClick={saved}>{copy("settings.done_11a676")}</SettingsActionButton></> : (state === JobState.Failed || state === JobState.Canceled) && observation.verified ? kind === EntityKind.REPOSITORY && source ? <RepositorySaveReview initial={source} active={active} review={() => { mutation.resolveJob(job.id); setJob(undefined); }} /> : <SettingsActionButton icon={SettingsActionIcon.Back} onClick={() => setJob(undefined)}>{copy("settings.returnToRetainedDraft_213f1b")}</SettingsActionButton> : null}</TrackedJob>}</section>;
+  if (job) return <section className={isApiEntry ? "api-entry-workflow" : undefined}>{apiEntryHeading}{job === "unknown" ? <p role="alert">{copy("settings.theServerAcknowledgedThisRequestWithout_061fa2")}</p> : <TrackedJob initial={job} active={active}>{(state, output, observation) => kind === EntityKind.REPOSITORY && source ? <><RepositoryEditCompletion key={job.id} jobId={job.id} repositoryId={source.id} expectedRevision={repositorySave?.expectedRevision} submittedId={repositorySave?.id} state={state} output={output} observation={observation} active={active && taskVisible} saved={saved} />{(state === JobState.Failed || state === JobState.Canceled) && observation.readVerified ? <RepositorySaveReview initial={source} active={active} review={() => { mutation.resolveJob(job.id); setJob(undefined); }} /> : null}</> : state === JobState.Succeeded ? <><p>{copy("settings.configurationSavedAfterWorkerValidation_d2b875")}</p><SettingsActionButton icon={SettingsActionIcon.Cancel} onClick={saved}>{copy("settings.done_11a676")}</SettingsActionButton></> : (state === JobState.Failed || state === JobState.Canceled) && observation.readVerified ? <SettingsActionButton icon={SettingsActionIcon.Back} onClick={() => setJob(undefined)}>{copy("settings.returnToRetainedDraft_213f1b")}</SettingsActionButton> : null}</TrackedJob>}</section>;
   const validSubscriptionProvider = !subscriptionOnly || (kind === EntityKind.PROVIDER && data.protocol === "native-subscription" && data.authentication === "subscription" && text(data.endpoint) === "");
   const repositoryNeedsRemoteCapability = kind === EntityKind.REPOSITORY && typeof data.remote_url === "string" && data.remote_url !== "";
   const repositoryStatusPending = repositoryNeedsRemoteCapability && repositoryStatus.data === undefined && !repositoryStatus.error;

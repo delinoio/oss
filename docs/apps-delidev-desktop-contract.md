@@ -255,7 +255,7 @@ Show the first three arrivals and retain later arrivals in FIFO order. Countdown
 
 Success, information and warning content use polite status announcements; errors use assertive alerts. Include a non-color kind label for assistive technology and keep icons decorative. Creation never takes focus. Close supports pointer, Tab/Enter/Space and Escape within the toast, preserving global dialog Escape behavior. Explicit focused dismissal returns to the last connected, available external focus target or the main content fallback.
 
-Notification preferences and general configuration editors publish fixed safe success copy only from their existing acknowledged-save callbacks. A configuration response with a job takes precedence over any resource and remains an accepted operation, not an immediate save completion. Unknown acknowledgments, jobs, failed/uncertain requests, cancellation and late results from disposed Settings visits do not publish success. Original request IDs identify the toasts. Preserve existing mutation receipts/retry rules, query invalidation, focus handoffs, detailed errors and job inspection.
+Notification preferences and general configuration editors publish fixed safe success copy only from their existing acknowledged-save callbacks. A configuration response with a job takes precedence over any resource and remains an accepted operation, not an immediate save completion. Unknown acknowledgments, pending/unverified jobs, failed/uncertain requests, cancellation and late results from disposed Settings visits do not publish success. Verified original existing-repository edit jobs use their stable original job IDs for once-only completion toasts under the repository-editing contract. Other acknowledged saves retain their original request IDs. Preserve existing mutation receipts/retry rules, query invalidation, focus handoffs, detailed errors and job inspection.
 
 These toasts neither request OS permission nor claim/report native delivery, modify Inbox read state or enable session actions. OS notifications, durable Inbox reservations, synchronized preferences and native activation retain their existing owners and contracts. No Connect API, migration, storage, native permission or package dependency is added. Component and browser layout checks remain separate from packaged CEF/platform acceptance; record validation in pull requests, issues and CI artifacts rather than repository evidence files.
 
@@ -4394,6 +4394,19 @@ The existing 720px Configure form, 40px controls, responsive layout, saving flow
 Unavailable native adapters disable the corresponding field, display a bilingual reason below it and retain saved values until explicitly cleared. Grok effort is unavailable while no applied-setting observation adapter exists; Codex child options, service tier and approval policy are unavailable on other harnesses, and approval-review model is unavailable on every harness. No additional approval window or automatic conversion is introduced. Native rejection uses the existing execution error presentation and never causes omission or default retry.
 
 ### Repository editing sections
+
+Existing repository edits finish automatically only after a successful original
+job status read verifies its JOB identity and revision, has no unreadable status
+or visible job problem, and confirms the submitted repository ID with a revision
+greater than the submitted expected revision. The live Settings opening publishes
+one localized repository-saved toast under the original job ID, then invokes its
+existing completion callback to refresh inventory, close the task and restore the
+opener. There is no successful acknowledgment paragraph or Done action. Pending,
+uncertain, failed, invalid-output and unverified status retain the original form
+or recovery presentation; retry reads only the original job status, never Save.
+Repeated observations, Strict Mode, dismissal and departure cannot complete or
+notify again, or affect a successor task. Registration, immediate-resource saves
+and other configuration acknowledgment paths retain their existing behavior.
 
 Settings > Repositories > Edit Repository uses the 960px workflow task shell with fixed header/footer and body-only scrolling. The existing-repository form uses the full available body width; registration and other editors retain their own layout. Show Repository, GitHub, Checkouts and Advanced settings in that order, separated by thin dividers and 24px spacing. Name precedes the complete configured Remote Git URL. GitHub owner/name use equal columns that stack below 640px available body width, with the explicit profile selector below. Keep profile guidance and native Git authentication separate.
 
