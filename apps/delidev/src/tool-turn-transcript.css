@@ -5,10 +5,36 @@
 .tool-turn .disclosure-header { overflow-wrap: anywhere; }
 .tool-turn .disclosure-header small { color: var(--muted); margin-left: auto; }
 .tool-turn-coverage { color: var(--muted); font-size: 0.875rem; }
-.tool-entry-payload [data-tool-primary] { border: 0; background: transparent; }
-.tool-entry-payload [data-tool-primary] > summary { display: none; }
+.tool-turn .tool-entry-payload [data-tool-primary] { border: 0; border-radius: 0; padding: 0; box-shadow: none; background: transparent; }
+.tool-turn .tool-entry-payload [data-tool-primary].disclosure.disclosure > summary.disclosure-header { display: none; }
 .tool-entry-payload pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .turn-time { margin: 0 0 8px; color: var(--muted); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 
 .turn-transcript-item { display: flex; flex-direction: column; min-width: 0; }
+
+/* Keep this text-only presentation within recognized reached tool groups. */
+.tool-turn.disclosure.disclosure > .disclosure-header,
+.tool-turn li > .disclosure.disclosure > .disclosure-header,
+.tool-turn .tool-command-details.disclosure.disclosure > .disclosure-header {
+  border: 0; border-radius: 0; box-shadow: none; background: transparent;
+  min-height: 36px; padding: 7px 8px;
+}
+.tool-turn.disclosure.disclosure > .disclosure-header:hover,
+.tool-turn li > .disclosure.disclosure > .disclosure-header:hover,
+.tool-turn .tool-command-details.disclosure.disclosure > .disclosure-header:hover { background: var(--surface-hover); }
+.tool-turn > .disclosure-header .disclosure-chevron,
+.tool-turn li > .disclosure > .disclosure-header .disclosure-chevron { color: var(--muted); }
+.tool-turn .tool-entry-payload { margin-left: 14px; padding-left: 12px; border-left: 1px solid var(--border); }
+.tool-turn .tool-entry-payload .message { border: 0; border-radius: 0; box-shadow: none; background: transparent; margin: 0; padding: 0; }
+.tool-turn .tool-entry-payload .message > header { display: none; }
+.tool-turn .tool-command-preview { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; font-family: ui-monospace, monospace; color: var(--muted); }
+.tool-turn li > .disclosure > .disclosure-header > .disclosure-label { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.tool-turn .tool-command-preview { flex: 1; }
+.tool-turn .tool-command-output pre { border: 0; background: var(--surface-muted); border-radius: 8px; padding: 10px 12px; margin: 4px 0; }
+.tool-turn .tool-command-output code { font: inherit; color: inherit; }
+.tool-turn .tool-command-details > .disclosure-header { color: var(--muted); }
+
+.tool-turn.disclosure, .tool-turn li > .disclosure, .tool-turn .tool-command-details {
+  border: 0; border-radius: 0; padding: 0; background: transparent; box-shadow: none;
+}

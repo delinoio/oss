@@ -10,6 +10,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 ## Owning contracts
 
+- [Resident command presentation and payload ownership](../../../docs/apps-delidev-desktop-contract.md#resident-command-presentation)
+
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)
 - [Shared sidebar scroll ownership](../../../docs/apps-delidev-desktop-contract.md#sidebar-scroll-boundaries)
 - [DeliDev Diagnostics Presentation](../../../docs/apps-delidev-diagnostics-contract.md)

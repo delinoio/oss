@@ -47,10 +47,15 @@ function tool(value: unknown, state: string): Tool | undefined {
   return v as Tool;
 }
 
+export function retainedClaudeTool(content: unknown, state: string, id: string, native: string, parent: string): Tool | undefined {
+  const retained = tool(content, state);
+  return retained && retained.reference.id === id && retained.reference.native_id === native && retained.native_message_id === parent ? retained : undefined;
+}
+
 export function NativeClaudeTool({ content, state, id, native, parent }: { content: unknown; state: string; id: string; native: string; parent: string }) {
   useLocale();
-  const retained = tool(content, state);
-  if (!retained || retained.reference.id !== id || retained.reference.native_id !== native || retained.native_message_id !== parent) return <section aria-label={copy("native-claude-tool.claudeToolUnavailable_fade0a")}><p>{copy("native-claude-tool.theRetainedClaudeToolIsUnavailable_552da4")}</p></section>;
+  const retained = retainedClaudeTool(content, state, id, native, parent);
+  if (!retained) return <section aria-label={copy("native-claude-tool.claudeToolUnavailable_fade0a")}><p>{copy("native-claude-tool.theRetainedClaudeToolIsUnavailable_552da4")}</p></section>;
   const result = retained.result;
   return <section aria-label={copy("native-claude-tool.claudeToolObservation_17c86c")}><Disclosure appearanceKind="tool_disclosure">
     <DisclosureSummary>{retained.reference.name} · {result ? copy("native-claude-tool.resultObserved_447816") : retained.proposal ? copy("native-claude-tool.proposalComplete_1ebb0e") : copy("native-claude-tool.receivingProposal_2dfe67")}</DisclosureSummary>

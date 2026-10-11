@@ -3,7 +3,8 @@ import { messageTurn, messageTurnOwner, type TurnProjection } from "./turn-timin
 import { responseEvidence, type ResponseEvidence } from "./session-progress";
 import { EntityKind, type Resource } from "@delinoio/delidev-api-client";
 import { document as readDocument, object } from "./documents";
-import { claudeToolReference } from "./native-claude-tool";
+import { retainedClaudeTool } from "./native-claude-tool";
+import { retainedShell } from "./native-shell";
 import { validGrokTool } from "./native-grok-interactions";
 
 export interface ConversationProjection { id: string; revision: bigint; turnOwner?: string; turn?: TurnProjection; executionId?: string; inputId?: string; role?: string; inherited?: boolean; response?: ResponseEvidence; tool?: { owner: string; name: string; state: string } }
@@ -24,9 +25,10 @@ export function conversationProjection(row: Resource, sessionId: string): Conver
   if (families.length !== 1 || ["artifact", "progress", "claude", "claude_progress", "claude_interruption", "grok_text", "grok_user"].some(key => Object.hasOwn(d, key))) return projection;
   let name = "", state = label(d.state);
   if (families[0] === "claude_tool") {
-    const c = object(d.claude_tool), ref = claudeToolReference(c.reference);
-    if (!ref || ref.id !== row.id || ref.native_id !== d.native_id || c.native_message_id !== d.native_parent_id) return projection;
-    name = ref.name;
+    if (d.text !== "" || d.input_id != null || d.phase != null) return projection;
+    const c = retainedClaudeTool(d.claude_tool, typeof d.state === "string" ? d.state : "", row.id, typeof d.native_id === "string" ? d.native_id : "", typeof d.native_parent_id === "string" ? d.native_parent_id : "");
+    if (!c) return projection;
+    name = c.reference.name;
   } else if (families[0] === "grok_tool") {
     if (!validGrokTool(d)) return projection;
     const g = object(d.grok_tool), update = object(object(g.payload).update);
@@ -35,6 +37,7 @@ export function conversationProjection(row: Resource, sessionId: string): Conver
   } else {
     const tool = object(d.tool), started = object(tool.started), completed = object(tool.completed);
     if (!Object.keys(tool).length) return projection;
+    if (started.kind === "opencode-shell" && !retainedShell(tool, typeof d.state === "string" ? d.state : "")) return projection;
     const observations = Array.isArray(tool.states) ? tool.states : [];
     const latest = object(object(observations.at(-1)).snapshot);
     name = started.kind === "image-view" ? "view_image" : started.kind === "opencode-builtin" ? label(object(started.builtin).name) || label(started.kind) : nativeNames[label(started.kind)] || label(started.kind);

@@ -14,7 +14,8 @@ import "./styles.css";
 const args=new URLSearchParams(location.search);document.documentElement.dataset.theme=args.get('theme')??'light';void i18n.changeLanguage(args.get('language')??'en');
 const sessionId='01960dcb-e1fa-7000-8000-000000000001',execution='01960dcb-e1fa-7000-8000-000000000002';
 const record=(data:object,index:number,revision=1n)=>create(ResourceSchema,{id:`01960dcb-e1fa-7000-8000-${String(index).padStart(12,'0')}`,sessionId,kind:EntityKind.MESSAGE,schemaVersion:1,revision,documentJson:encode(data)});
-const tool=(name:string,state='streaming')=>({role:'tool',state,text:'',execution_id:execution,native_thread_id:'original-thread',native_turn_id:'original-turn',tool:{started:{kind:name},completed:{status:state,command:{command:'echo  exact\n  original',aggregated_output:'aggregate\n  exact'}},output:'<script>inert()</script>\n  original'}});
+const originalCommand='/bin/zsh -lc '+(args.get('long')==='true'?'printf '+ 'synthetic-command-'.repeat(100):'echo  exact\n  original');
+const tool=(name:string,state='streaming')=>({role:'tool',state,text:'',execution_id:execution,native_thread_id:'original-thread',native_turn_id:'original-turn',tool:{started:{kind:name,command:name==='command'?{command:originalCommand}:undefined},completed:name==='command'&&state==='streaming'?undefined:{kind:name,status:state==='complete'?'completed':state,command:name==='command'?{command:originalCommand,aggregated_output:'aggregate\n  exact'}:undefined},output:'<script>inert()</script>\n  original'}});
 const first=record(tool('command'),3),second=record(tool('patch'),5),tail=record(tool('shell'),7);
 const pages=[[record({role:'assistant',text:'Before'},4),first],[record({role:'assistant',text:'Interleaved commentary'},6),second]];
 function Fixture(){

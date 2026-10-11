@@ -9,6 +9,7 @@ import { statusLabel } from "./product-status";
 import { copy, useLocale } from "./localization";
 import { ScrollPayloadWindow, type PayloadWindowQuery } from "./scroll-payload-window";
 import { conversationProjection, type ConversationProjection } from "./tool-turn-projection";
+import { CommandOutput, residentCommand } from "./tool-command";
 import "./tool-turn-transcript.css";
 
 interface Choices { groups: Map<string, boolean>; entries: Map<string, boolean>; details: Map<string, boolean[]> }
@@ -17,19 +18,27 @@ function ToolEntry({ active, row, payload, token, query, choices, changed, rende
   if(!choices.entries.has(row.id))choices.entries.set(row.id,preferences.tool_disclosure===DisclosureDefault.Expanded);
   const node = useRef<HTMLDivElement>(null), open = choices.entries.get(row.id) ?? false;
   const hasPayload = Boolean(payload);
+  const command = payload ? residentCommand(payload) : undefined;
+  const hasCommand = Boolean(command);
   useLayoutEffect(() => {
     const details = [...node.current?.querySelectorAll<HTMLDetailsElement>("details") ?? []];
-    // The compact entry replaces only the original primary presentation toggle.
-    // Its validated renderer and all nested output/argument disclosures survive.
-    const remember = () => choices.details.set(row.id, [...node.current?.querySelectorAll<HTMLDetailsElement>("details") ?? []].map(detail => detail.open));
+    // Original observations stay mounted below the initially collapsed Details.
+    // Only their redundant primary trigger is replaced by this entry.
+    const remember = () => {
+      // A renderer's delayed initial preference must not hide its replacement
+      // content behind the primary trigger that this entry has already replaced.
+      node.current?.querySelectorAll<HTMLDetailsElement>("[data-tool-primary]").forEach(detail => { if (!detail.open) detail.open = true; });
+      choices.details.set(row.id, [...node.current?.querySelectorAll<HTMLDetailsElement>("details") ?? []].map(detail => detail.open));
+    };
     const element = node.current;
     element?.addEventListener("toggle", remember, true);
-    details.forEach((detail, index) => { if (index === 0) { detail.dataset.toolPrimary = "true"; detail.open = true; } else detail.open = choices.details.get(row.id)?.[index] ?? false; });
+    const primary = hasCommand ? element?.querySelector<HTMLDetailsElement>(".tool-original-observations details") : details[0];
+    details.forEach((detail, index) => { if (detail === primary) { detail.dataset.toolPrimary = "true"; detail.open = true; } else detail.open = choices.details.get(row.id)?.[index] ?? false; });
     return () => element?.removeEventListener("toggle", remember, true);
-  }, [hasPayload, choices, row.id]);
+  }, [hasPayload, hasCommand, choices, row.id]);
   return <li onFocusCapture={event => { event.stopPropagation(); query.protect?.(token); }} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) query.protect?.(); }}><Disclosure density={DisclosureDensity.Compact} open={open} onToggle={event => { choices.entries.set(row.id, event.currentTarget.open); changed(); }}>
-    <DisclosureSummary><span>{row.tool?.name || copy("session.tool_7c9bbe")}</span><small>{statusLabel(row.tool?.state ?? "")}</small></DisclosureSummary>
-    {payload ? <div className="tool-entry-payload" ref={node}>{render(payload)}</div> : <button type="button" disabled={!active || Boolean(query.loading || query.error)} onClick={() => { if (active && token !== undefined) query.restore(token); }}>{copy("pagination.restore")}</button>}
+    <DisclosureSummary>{command ? <span className="tool-command-preview" title={`> ${command.preview}`}>{`> ${command.preview}`}</span> : <span>{row.tool?.name || copy("session.tool_7c9bbe")}</span>}{!["", "complete", "completed"].includes(row.tool?.state ?? "") ? <small>{statusLabel(row.tool?.state ?? "")}</small> : null}</DisclosureSummary>
+    {payload ? <div className="tool-entry-payload" ref={node}>{command ? <><CommandOutput command={command} /><Disclosure className="tool-command-details"><DisclosureSummary>{copy("session.commandDetails")}</DisclosureSummary><div className="tool-original-observations">{render(payload)}</div></Disclosure></> : render(payload)}</div> : <button type="button" disabled={!active || Boolean(query.loading || query.error)} onClick={() => { if (active && token !== undefined) query.restore(token); }}>{copy("pagination.restore")}</button>}
   </Disclosure></li>;
 }
 

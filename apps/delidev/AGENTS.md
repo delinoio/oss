@@ -6,6 +6,8 @@
 
 ## Owning contracts
 
+- [Resident command presentation and payload ownership](../../docs/apps-delidev-desktop-contract.md#resident-command-presentation)
+
 - [DeliDev desktop client](../../docs/apps-delidev-desktop-contract.md)
 - [DeliDev Diagnostics Presentation](../../docs/apps-delidev-diagnostics-contract.md)
 - [DeliDev desktop localization](../../docs/apps-delidev-localization-contract.md)

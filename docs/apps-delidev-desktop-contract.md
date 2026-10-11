@@ -459,6 +459,35 @@ Conversation resources retain forward returned order and higher revisions;
 independently bounded live streams join new arrivals only after final coverage.
 The feature groups reached tool records by the original session/execution/native-thread/native-turn tuple. One initially collapsed **Tool calls** disclosure is anchored at the first reached tool position, including active execution and records separated by commentary. Non-tool rows retain their relative order; tool entries retain original observation order. Each entry starts collapsed and uses its original validated renderer for exact inert commands, arguments, patches, output and unavailable states. Grok observations remain separate entries without reconstructed unique-call attribution or numeric call counts. Missing, malformed, mixed or foreign ownership retains standalone rendering.
 
+### Resident command presentation
+
+Recognized Tool calls groups and entry rows use borderless, unfilled text disclosures
+with muted chevrons, 36px targets, scoped hover feedback and visible keyboard focus.
+Remove repeated Tool article headers, primary triggers and routine complete/completed
+labels inside these groups; retain running, failed, rejected, interrupted and
+unavailable observations and the reached-record coverage guidance.
+
+Derive command previews only from resident full payloads and their original resource
+family. The exclusive Codex command adapter hides only the exact leading literal
+`/bin/zsh -lc ` in its muted monospace `> command` preview, preserving its suffix.
+Claude uses the complete existing Bash validator and applied input when present,
+otherwise validated initial input. OpenCode uses validated immutable shell snapshots,
+never raw pending fragments. Other tools and Grok retain their original names.
+Long or multiline previews may visually ellipsize but keep the full accessible text.
+Eviction restores the original name and exact page token without command metadata.
+
+Opening a command immediately displays inert literal pre/code output, including empty
+strings as distinct from absent output. Codex prefers a completed string aggregate,
+otherwise retained streamed output. Claude retains ordered result block boundaries;
+OpenCode retains completed output, running preview or original failed error. Keep
+native errors, non-execution, exit, interruption and truncation evidence alongside
+output, and saved paths inert. Initially collapsed Details retain full command,
+working directory, original inputs and separate original observations without joining
+streams or reading files. Manual entry and nested choices, connected focus and scroll
+anchors survive revisions, reconnect, localization and payload eviction under the
+original mounted owner. No API, schema, native capability or execution authority is
+added. Browser/component evidence is separate from packaged native acceptance.
+
 Conversation display projections may retain only bounded tool owner/name/status metadata in addition to identity/revision/order. Full documents remain in the original three-page payload window and independently bounded live stream. A group spans accepted pages and the final historical/live boundary; an evicted anchor still presents that group's projection. Evicted entry details restore only their original accepted page token. Expanding a group does not enumerate an entire turn or unread history. The list explicitly describes reached-record coverage; the existing history continuation controls retain admission, measured restoration, scroll anchors and focus protection. Disclosure choices, including nested output details, remain within the mounted session/connection owner across revisions, reconnect, localization and payload eviction; disposal resets them. Approval/questions remain expanded and independently actionable in the original tray. No execution, response, composer, artifact, account, protocol, migration or native ownership changes are introduced. English/Korean shared compact disclosures use semantic theme tokens and native keyboard/focus behavior.
 
 User-authored request, queue and review drafts remain scope-local under their
