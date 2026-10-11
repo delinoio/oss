@@ -22,6 +22,7 @@ func (f *threadFixture) handleContinuation(id json.RawMessage, method string, ra
 	if method == "fixture/history" {
 		var params struct {
 			ExpandImageContext bool                        `json:"expandImageContext,omitempty"`
+			OversizedImage     bool                        `json:"oversizedImage,omitempty"`
 			Page               json.RawMessage             `json:"page"`
 			ChangeAfterRead    bool                        `json:"changeAfterRead,omitempty"`
 			Notify             *fixtureHistoryNotification `json:"notify,omitempty"`
@@ -32,6 +33,9 @@ func (f *threadFixture) handleContinuation(id json.RawMessage, method string, ra
 		f.history = params.Page
 		if params.ExpandImageContext {
 			f.history = expandImageContextHistory(f.history)
+		}
+		if params.OversizedImage {
+			f.history = expandOversizedImageResult(f.history)
 		}
 		f.historyChangeAfterRead = params.ChangeAfterRead
 		f.historyNotification = params.Notify

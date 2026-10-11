@@ -81,6 +81,10 @@ func imageContextFixture(t *testing.T) (*Client, string, ContinuationCheckpoint,
 }
 
 func setImageContextHistory(t *testing.T, c *Client, source *ContinuationCheckpoint, turns []any) []json.RawMessage {
+	return setImageContextHistoryWithOptions(t, c, source, turns, false)
+}
+
+func setImageContextHistoryWithOptions(t *testing.T, c *Client, source *ContinuationCheckpoint, turns []any, oversizedImage bool) []json.RawMessage {
 	t.Helper()
 	normalized := make([]json.RawMessage, 0, len(turns))
 	for _, turn := range turns {
@@ -92,7 +96,7 @@ func setImageContextHistory(t *testing.T, c *Client, source *ContinuationCheckpo
 	}
 	first := turns[0].(map[string]any)
 	source.Context = &ContinuationContextCheckpoint{Version: 1, TurnsCount: uint32(len(turns)), HistoryDigest: historyDigest(normalized), RolloutPath: filepath.Join(c.home, "sessions", "fixture.jsonl"), RolloutDigest: imageContextRolloutDigest(), Records: []ContextRecord{{Trigger: AutomaticCompaction, TurnID: first["id"].(domain.ID), LiveItemID: "original-context", HistoryItemID: "original-context"}}}
-	fixtureSignal(t, c, "history", map[string]any{"page": map[string]any{"data": turns, "nextCursor": nil, "backwardsCursor": nil}})
+	fixtureSignal(t, c, "history", map[string]any{"page": map[string]any{"data": turns, "nextCursor": nil, "backwardsCursor": nil}, "oversizedImage": oversizedImage})
 	return normalized
 }
 
@@ -149,9 +153,7 @@ func TestGeneratedImageContextHistoryRejectsMalformedAndUnknownItems(t *testing.
 		{"null-result", func(item, _ map[string]any) { item["result"] = nil }},
 		{"null-optional", func(item, _ map[string]any) { item["savedPath"] = nil }},
 		{"relative-path", func(item, _ map[string]any) { item["savedPath"] = "foreign/generated.png" }},
-		{"oversized-result", func(item, _ map[string]any) {
-			item["result"] = strings.Repeat("A", base64.StdEncoding.EncodedLen(domain.MaxInputImageBytes)+4)
-		}},
+		{"oversized-result", func(item, _ map[string]any) { item["result"] = "fixture-expanded-by-native" }},
 		{"unknown-field", func(item, _ map[string]any) { item["unexpected"] = true }},
 		{"unknown-kind", func(item, _ map[string]any) { item["type"] = "unknownImage" }},
 		{"unfinished", func(item, _ map[string]any) { item["status"] = "in_progress" }},
@@ -166,7 +168,7 @@ func TestGeneratedImageContextHistoryRejectsMalformedAndUnknownItems(t *testing.
 			reads := len(requestsOf(t, capture, "thread/turns/list"))
 			first := turns[0].(map[string]any)
 			tc.change(first["items"].([]any)[1].(map[string]any), first)
-			setImageContextHistory(t, c, &source, turns)
+			setImageContextHistoryWithOptions(t, c, &source, turns, tc.name == "oversized-result")
 			claims := 0
 			_, err := c.RevertThread(context.Background(), domain.NewID(), source, inputs[2], ids[2], func(RevertIntent) error { claims++; return nil })
 			if err == nil || domain.SafeError(err).Code != domain.RecoveryRequired || claims != 0 || len(requestsOf(t, capture, "thread/revert")) != 0 || len(requestsOf(t, capture, "thread/turns/list")) <= reads {
@@ -221,6 +223,35 @@ func expandImageContextHistory(raw json.RawMessage) json.RawMessage {
 		prefix = append(prefix, item)
 	}
 	page.Data = append(prefix, page.Data...)
+	result, _ := json.Marshal(page)
+	return result
+}
+
+// Keep the control request small; the native fixture expands this image result
+// after receipt so the history test reaches image-size validation within the
+// native frame limit.
+func expandOversizedImageResult(raw json.RawMessage) json.RawMessage {
+	var page map[string]any
+	if json.Unmarshal(raw, &page) != nil {
+		panic("invalid image context fixture")
+	}
+	turns, ok := page["data"].([]any)
+	if !ok || len(turns) == 0 {
+		panic("invalid image context fixture")
+	}
+	turn, ok := turns[0].(map[string]any)
+	if !ok {
+		panic("invalid image context fixture")
+	}
+	items, ok := turn["items"].([]any)
+	if !ok || len(items) < 2 {
+		panic("invalid image context fixture")
+	}
+	image, ok := items[1].(map[string]any)
+	if !ok || image["type"] != "imageGeneration" {
+		panic("invalid image context fixture")
+	}
+	image["result"] = strings.Repeat("A", base64.StdEncoding.EncodedLen(domain.MaxInputImageBytes)+4)
 	result, _ := json.Marshal(page)
 	return result
 }
