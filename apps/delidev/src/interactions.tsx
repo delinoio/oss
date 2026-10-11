@@ -221,6 +221,28 @@ export function Interaction({
   );
 }
 
+export function PendingInteractionReceipt({
+  projection,
+  accepted,
+}: {
+  projection: InteractionProjection;
+  accepted: (result?: Resource) => void;
+}) {
+  return (
+    <article className="interaction">
+      <header>
+        <h3>{copy("interactions.agentQuestion_1a6b3f")}</h3>
+        <small>{projection.closure}</small>
+      </header>
+      <PendingQuestion
+        projection={projection}
+        accepted={accepted}
+        receiptRetryAllowed
+      />
+    </article>
+  );
+}
+
 function PendingQuestion({
   projection,
   accepted,
@@ -244,6 +266,7 @@ function PendingQuestion({
         : copy("native-grok-interactions.retryTheSameResponseRequest_ebd80d");
   return (
     <>
+      {projection.unavailable ? <p>{copy("ui.failure.unavailable")}</p> : null}
       <Problem error={mutation.error} />
       {mutation.uncertain ? (
         <button

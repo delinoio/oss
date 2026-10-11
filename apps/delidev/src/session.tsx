@@ -156,7 +156,7 @@ import {
   SessionNotice,
 } from "./session-presentation";
 import "./session.css";
-import { Interaction } from "./interactions";
+import { Interaction, PendingInteractionReceipt } from "./interactions";
 import {
   InteractionPresentationStore,
   InteractionPresentation,
@@ -1462,6 +1462,11 @@ export function SessionView({
       pendingQuestionKeys,
     ),
   );
+  const missingQuestionReceipts = [...interactionPresentation.entries()].filter(
+    ([requestId, projection]) =>
+      pendingQuestionKeys.has(projection.mutationKey) &&
+      !requests.some((row) => row.id === requestId),
+  );
   const requestsExpanded =
     requests.some((row) => {
       const projection = interactionPresentation.observe(row);
@@ -2390,7 +2395,12 @@ export function SessionView({
                             <LocalizedText
                               id="session.agentRequestsOnThisPage_5e8644"
                               components={{
-                                s0: <>{displayedRequests.length}</>,
+                                s0: (
+                                  <>
+                                    {displayedRequests.length +
+                                      missingQuestionReceipts.length}
+                                  </>
+                                ),
                               }}
                             />
                           )}
@@ -2428,6 +2438,18 @@ export function SessionView({
                                 )
                                 .map(interactionRow)
                             : null}
+                          {missingQuestionReceipts.map(
+                            ([requestId, projection]) => (
+                              <PendingInteractionReceipt
+                                key={requestId}
+                                projection={projection}
+                                accepted={(result) => {
+                                  if (result) observeResponse(result);
+                                  void interactions.refresh();
+                                }}
+                              />
+                            ),
+                          )}
                           <ScrollContinuation
                             query={interactions}
                             root={requestsRoot}

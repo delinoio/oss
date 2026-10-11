@@ -17,6 +17,7 @@ export interface InteractionProjection {
   responseState: string;
   closure: string;
   mutationKey: string;
+  unavailable: boolean;
 }
 export function questionMutationKey(id: string, data: Document): string {
   const family = Object.hasOwn(data, "grok")
@@ -40,7 +41,7 @@ function validQuestion(data: Document): boolean {
       (response.state !== "accepted" ||
         (data.closure === "native-closed" &&
           response.claim != null &&
-          delivery.state === "transmitted" &&
+          ["transmitted", "uncertain"].includes(text(delivery.state)) &&
           acceptance.evidence ===
             (object(object(response.input).opencode).reject === true
               ? "native-opencode-question-rejected"
@@ -78,10 +79,12 @@ export function interactionProjection(row: Resource): InteractionProjection {
     closure = text(data.closure);
   const responseState = text(response.state);
   let presentation = InteractionPresentation.Form;
+  let unavailable = false;
   if (question) {
     const valid =
       validQuestion(data) &&
       ["open", "native-closed", "turn-ended"].includes(closure);
+    unavailable = !valid;
     const closed = closure === "native-closed" || closure === "turn-ended";
     const canceled =
       responseState === "canceled" &&
@@ -104,6 +107,7 @@ export function interactionProjection(row: Resource): InteractionProjection {
     responseState,
     closure,
     mutationKey: questionMutationKey(row.id, data),
+    unavailable,
   };
 }
 /** Retain metadata only: evicted original documents remain disposable. */
