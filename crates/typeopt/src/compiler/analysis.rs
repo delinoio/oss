@@ -509,6 +509,10 @@ impl<'c> Ctx<'c> {
                 }
             }
             SyntaxKind::ExportAssignment => self.is_pure(statement.expression()),
+            // Directives such as "use client" evaluate a string literal.
+            SyntaxKind::ExpressionStatement => {
+                skip_outer(statement.expression()).kind() == SyntaxKind::StringLiteral
+            }
             SyntaxKind::VariableStatement => statement
                 .declaration_list()
                 .declarations()
@@ -524,13 +528,14 @@ impl<'c> Ctx<'c> {
                 if !statement.decorators().is_empty() {
                     return false;
                 }
-                let heritage_pure =
-                    statement.heritage_clauses().nodes().iter().all(|clause| {
-                        clause.token() == SyntaxKind::ImplementsKeyword
-                            || clause.types().nodes().iter().all(|t| {
-                                skip_outer(t.expression()).kind() == SyntaxKind::Identifier
-                            })
-                    });
+                let heritage_pure = statement.heritage_clauses().nodes().iter().all(|clause| {
+                    clause.token() == SyntaxKind::ImplementsKeyword
+                        || clause
+                            .types()
+                            .nodes()
+                            .iter()
+                            .all(|t| self.initialized_class(statement, t.expression()))
+                });
                 heritage_pure
                     && statement
                         .members()
@@ -618,6 +623,41 @@ impl<'c> Ctx<'c> {
     /// at `except` occurrences.
     pub fn name_mentions(&self, name: &str) -> usize {
         self.mentioned_names.get(name).copied().unwrap_or(0)
+    }
+
+    /// Whether a class heritage expression evaluates to an initialized
+    /// class without effects: an identifier bound to a class declaration
+    /// that is either imported (its module's initialization is checked
+    /// through the import, where cycles count as impure) or declared earlier
+    /// in the same statement list. Any other value may be in its temporal
+    /// dead zone or not be a constructor, which throws.
+    fn initialized_class(&mut self, class: Node, expression: Node) -> bool {
+        let expression = skip_outer(expression);
+        if expression.kind() != SyntaxKind::Identifier {
+            return false;
+        }
+        let symbol = self.resolve(expression);
+        if symbol.is_nil() {
+            return false;
+        }
+        let declaration = self.checker.sym(symbol).value_declaration;
+        if declaration.is_nil()
+            || declaration.kind() != SyntaxKind::ClassDeclaration
+            || declaration.flags().intersects(NodeFlags::AMBIENT)
+            || has_syntactic_modifier(declaration, ModifierFlags::AMBIENT)
+        {
+            return false;
+        }
+        // Ambient or external declarations are no runtime evidence.
+        let file = get_source_file_of_node(declaration);
+        if self
+            .file_of(&source_file_info(file).file_name)
+            .is_none_or(|index| self.files[index].js)
+        {
+            return false;
+        }
+        file != get_source_file_of_node(class)
+            || (declaration.parent() == class.parent() && declaration.end() <= class.pos())
     }
 }
 
