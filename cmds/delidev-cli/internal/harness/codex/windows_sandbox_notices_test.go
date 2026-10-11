@@ -92,9 +92,10 @@ func TestWindowsWarningsDeduplicateOnlyWithinOriginalProcess(t *testing.T) {
 		if err != nil || replay.Metadata != WindowsSandboxWarningDiscarded {
 			t.Fatal("warning replay was republished", err)
 		}
-		fresh, _ := observationClient()
+		fresh, freshTurn := observationClient()
+		fresh.execution.paused = false
 		event, err = observeFixture(fresh, "windows/worldWritableWarning", params)
-		if err != nil || event.Kind != NoticeEvent {
+		if err != nil || event.Kind != NoticeEvent || !event.Correlated || event.TurnID != freshTurn {
 			t.Fatal("another original process lost its notice", err)
 		}
 	}
