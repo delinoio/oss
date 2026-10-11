@@ -1625,13 +1625,13 @@ dialog nav {
 }
 .usage-line {
   fill: none;
-  stroke: var(--accent);
+  stroke: var(--selected-border);
   stroke-width: 3;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 .usage-point {
-  fill: var(--accent);
+  fill: var(--selected-border);
   stroke: var(--surface);
   stroke-width: 2;
 }
@@ -1654,7 +1654,7 @@ dialog nav {
   fill: var(--border-subtle);
 }
 .usage-model-bar {
-  fill: var(--accent);
+  fill: var(--selected-border);
 }
 .usage-model-row-selected .usage-model-bar {
   fill: var(--selected-text);
@@ -1675,7 +1675,7 @@ dialog nav {
   gap: 2px;
   min-width: 0;
   padding: 7px 8px;
-  border-left: 3px solid var(--accent);
+  border-left: 3px solid var(--selected-border);
   background: var(--surface-muted);
   overflow-wrap: anywhere;
 }

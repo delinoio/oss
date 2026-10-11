@@ -167,11 +167,17 @@ test("ordinary controls use semantic accent and contrast tokens", async () => {
     [".inbox-row[aria-current]", "border-left-color", "selected-border"],
     [".integration-empty-mark", "color", "selected-border"],
     [".settings-runner-column:focus-visible", "outline-color", "focus"],
+    [".usage-line", "stroke", "selected-border"],
+    [".usage-point", "fill", "selected-border"],
+    [".usage-model-bar", "fill", "selected-border"],
+    [".usage-model-labels li", "border-left", "selected-border"],
   ]);
   await declarations("session.css", [
     [".session-tab.is-selected", "color", "link"],
     [".session-tab.is-selected", "border-bottom-color", "selected-border"],
     [".session-tab button:focus-visible", "outline", "focus"],
+    [".queue-insertion", "border-top", "selected-border"],
+    [".context-capacity > div", "background", "selected-border"],
   ]);
   await declarations("schedule-creation.css", [
     ['.schedule-creation-progress li[aria-current="step"]', "color", "link"],

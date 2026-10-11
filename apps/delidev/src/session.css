@@ -1282,7 +1282,7 @@
   cursor: default;
 }
 .queue-insertion {
-  border-top: 2px solid var(--accent);
+  border-top: 2px solid var(--selected-border);
 }
 .queue-drop-end {
   min-height: 8px;
@@ -1313,7 +1313,7 @@
 }
 .context-capacity > div {
   height: 100%;
-  background: var(--accent);
+  background: var(--selected-border);
 }
 .session-name-dialog {
   width: 480px;
