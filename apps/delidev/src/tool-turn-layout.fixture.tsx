@@ -29,7 +29,11 @@ const record = (data: object, index: number, revision = 1n) =>
     revision,
     documentJson: encode(data),
   });
-const tool = (name: string, state = "streaming") => ({
+const tool = (
+  name: string,
+  state = "streaming",
+  command = "/bin/zsh -lc echo  exact\n  original",
+) => ({
   role: "tool",
   state,
   text: "",
@@ -44,7 +48,7 @@ const tool = (name: string, state = "streaming") => ({
             status: "running",
             changes: null,
             command: {
-              command: "/bin/zsh -lc echo  exact\n  original",
+              command,
               cwd: "/workspace/project",
               source: "agent",
               actions: [],
@@ -63,7 +67,7 @@ const tool = (name: string, state = "streaming") => ({
                   status: "completed",
                   changes: null,
                   command: {
-                    command: "/bin/zsh -lc echo  exact\n  original",
+                    command,
                     cwd: "/workspace/project",
                     source: "agent",
                     actions: [],
@@ -83,7 +87,10 @@ const tool = (name: string, state = "streaming") => ({
 });
 const first = record(tool("command", "complete"), 3),
   second = record(tool("patch"), 5),
-  tail = record(tool("command"), 7);
+  tail = record(
+    tool("command", "streaming", "/bin/zsh -lc printf " + "x".repeat(600)),
+    7,
+  );
 const pages = [
   [record({ role: "assistant", text: "Before" }, 4), first],
   [record({ role: "assistant", text: "Interleaved commentary" }, 6), second],

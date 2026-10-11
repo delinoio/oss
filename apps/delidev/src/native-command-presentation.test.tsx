@@ -274,14 +274,14 @@ describe("resident native command presentation", () => {
     const { container, rerender } = render(<NativeCommandBody value={p} />);
     expect(container.querySelector("pre code")?.textContent).toBe("");
     expect(
-      screen.queryByText("No native output has been observed."),
+      screen.queryByText("No native text output has been observed."),
     ).toBeNull();
     const absent = data(codex("pwd", null));
     (absent.tool as Document).output = null;
     p = nativeCommandPresentation(row(absent))!;
     rerender(<NativeCommandBody value={p} />);
     expect(
-      screen.getByText("No native output has been observed."),
+      screen.getByText("No native text output has been observed."),
     ).toBeTruthy();
     rerender(
       <NativeCommandBody value={nativeCommandPresentation(claude())!} />,

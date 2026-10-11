@@ -103,7 +103,8 @@ try {
             await trigger.locator(".tool-command-preview").textContent(),
             "> echo  exact\n  original",
           );
-          for (const row of [summary, trigger]) {
+          await page.mouse.move(0, 0);
+          for (const row of [group, summary, trigger]) {
             const styles = await row.evaluate((n) => {
               const s = getComputedStyle(n);
               return {
@@ -118,6 +119,37 @@ try {
             assert.equal(styles.minHeight, "36px");
             assert.equal(styles.shadow, "none");
           }
+          const originalTrigger = group
+            .locator("[data-tool-primary] > summary")
+            .first();
+          assert.equal(
+            await originalTrigger.evaluate((n) => getComputedStyle(n).display),
+            "none",
+          );
+          const originalHeader = group
+            .locator(".tool-entry-payload > .message > header")
+            .first();
+          assert.equal(
+            await originalHeader.evaluate((n) => getComputedStyle(n).display),
+            "none",
+          );
+          const longPreview = group.locator(".tool-command-preview").last();
+          assert.equal(
+            await longPreview.textContent(),
+            "> printf " + "x".repeat(600),
+          );
+          assert.equal(
+            await longPreview.getAttribute("title"),
+            "> printf " + "x".repeat(600),
+          );
+          assert.equal(
+            await longPreview.evaluate((n) => n.scrollWidth > n.clientWidth),
+            true,
+          );
+          assert.equal(
+            await longPreview.evaluate((n) => getComputedStyle(n).whiteSpace),
+            "nowrap",
+          );
           const code = entry.locator(".tool-command-output").first();
           assert.equal(
             await code.locator("code").textContent(),
@@ -195,7 +227,7 @@ try {
       languages: 2,
       themes: 3,
       sessionKinds: 2,
-      widths: 3,
+      widths: 4,
       nativeAcceptance: "not-performed",
     }),
   );

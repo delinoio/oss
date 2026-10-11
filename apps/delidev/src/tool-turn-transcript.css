@@ -75,7 +75,9 @@
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: pre;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
   color: var(--muted);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-weight: 400;
@@ -107,7 +109,7 @@
   overflow-wrap: anywhere;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
 }
-.tool-command-details > .disclosure-header {
+.tool-turn .tool-command-details.disclosure > .disclosure-header {
   color: var(--muted);
 }
 .tool-turn .tool-command-notice {
