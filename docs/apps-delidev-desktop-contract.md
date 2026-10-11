@@ -1331,7 +1331,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Codex AI approval review follows `cmds-delidev-harness-contract.md#codex-ai-approval-reviewer--issue-1980`, the catalog, proxy and usage contracts. Preserve optional legacy User defaults, immutable actual reviewer proof, original review lifecycle and independent manual approval/tool/cleanup evidence. System 55 and Worker 30 belong to this complete feature; retain bounded same-account canonical reviewer relay, unknown attribution when unproved, and User/read-only/never Sidechat overlays. Add no SQLite migration or fallback model authority.
 
-- Appearance v2 follows the feature and the desktop/localization contracts. The original native controller owns the complete computer-local mode/preferences/custom-theme snapshot with a 256 KiB document bound and explicit v1 upgrade on change. Ordinary choices autosave; custom edits/import/deletion require explicit confirmation. Preserve exact revisions, invalid/newer/linked files, atomic writes, uncertain recovery and authorized-window publication. Constructed CSSOM may set only validated opaque semantic application tokens and the derived opaque `--focus-on-selected` value; terminal/backdrop/shadow/native surfaces remain excluded. Accent-off user-message focus uses the semantic focus token at 3:1 contrast with `surface-selected`, or a render-only higher-contrast black/white fallback without changing stored theme colors. Synthetic custom previews contain no conversation content. Presentation changes preserve mounted drafts/focus/request identities, original observations and authenticated Worker image bytes/cleanup; renderer toggles stay unavailable until independently implemented support exists.
+- Appearance v2 follows the feature and the desktop/localization contracts. The original native controller owns the complete computer-local mode/preferences/custom-theme snapshot with a 256 KiB document bound and explicit v1 upgrade on change. Ordinary choices autosave; custom edits/import/deletion require explicit confirmation. Preserve exact revisions, invalid/newer/linked files, atomic writes, uncertain recovery and authorized-window publication. Constructed CSSOM may set only validated opaque semantic application tokens and the derived opaque `--focus-on-selected`, `--focus-on-surface`, and `--revert-hover-surface` values; terminal/backdrop/shadow/native surfaces remain excluded. Derive `--revert-hover-surface` from the validated `text-secondary`, `surface-hover`, and `surface` tokens. Use `surface-hover` when it gives `text-secondary` at least 4.5:1 contrast; otherwise use `surface`. This render-only fallback applies only to the Revert action and does not change stored theme colors. Derive `--focus-on-surface` from the validated focus/surface pair with a render-only higher-contrast black/white fallback. Accent-off user-message focus uses the semantic focus token at 3:1 contrast with `surface-selected`, or its own render-only higher-contrast black/white fallback. Synthetic custom previews contain no conversation content. Presentation changes preserve mounted drafts/focus/request identities, original observations and authenticated Worker image bytes/cleanup; renderer toggles stay unavailable until independently implemented support exists.
 
 - The feature OpenCode Go/Go Plus follows `cmds-delidev-opencode-go-subscription-contract.md`. Preserve identity 4, System 54 and Worker 28 with System 52 Project behavior ownership. Only the exact OpenCode key-backed service may use the fixed Go Chat Completions profile and original accepted native-session header. Reuse protected AccountAPI receipts, joined revocation and confirmed independent cleanup; no native login, quota authority, paid connection validation or migration. Retain category-owned exact uncertain requests and immutable continuation/Fork attribution.
 
@@ -5089,6 +5089,23 @@ Follow the situation notification source, cache, deduplication and joined observ
 ## Conversation Revert and edit
 
 Show one **Revert and edit** action on eligible original complete user turns.
+Place it in a separate right-aligned row 6px below the bubble, within one
+stable, labelled transcript item. Only this action leaves the bubble; other
+user-turn actions, retained images, status and previous-context cues keep their
+existing placement. Preserve measured page wrappers, resource keys, scroll
+anchors and the content-sized bubble's 12px/16px padding and width caps.
+
+The native button uses 13px medium text, a 32px minimum height, 8px horizontal
+padding and 6px corners. Its resting background is transparent with no border;
+use `--text-secondary` and `--surface-hover` for enabled text and hover. Both
+resting and hover text have at least 4.5:1 contrast in built-in themes. Retain
+previously admitted custom themes; when their hover pair does not meet that
+contrast, render the action over `surface` without changing stored theme colors.
+Use the focus token with a contrasting surface fallback for custom themes. Keep
+the eligible action visible without hover, preserve native disabled behavior
+and allow labels and action rows to wrap at narrow widths and 200% zoom. This
+presentation adds no mutation or eligibility authority.
+
 Require server and original Runner capability plus a settled original root,
 current target membership and cleanup. The confirmation explains exclusion of
 this and later turns from working context, unchanged files, preserved prior
