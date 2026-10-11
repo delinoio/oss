@@ -33,7 +33,7 @@ overrides:
 
 patchedDependencies:
   '@wterm/dom@0.5.4':
-    hash: 60ac07b2ec6bc30ab2b7b8ee57fe2f192b9a90915f8fdae74700b872b2f9a406
+    hash: ef754ba847ec4e9598cfeb1a8c369f0bb04006040407cf80604d6e00f94008ba
     path: patches/@wterm__dom@0.5.4.patch
   '@wterm/ghostty@0.5.4':
     hash: 9f95393b76bf7d41af9c17f37752bd409d96e0486cd01737a190bd88e643a7ba
@@ -148,7 +148,7 @@ importers:
         version: 2.11.1
       '@wterm/dom':
         specifier: 0.5.4
-        version: 0.5.4(patch_hash=60ac07b2ec6bc30ab2b7b8ee57fe2f192b9a90915f8fdae74700b872b2f9a406)
+        version: 0.5.4(patch_hash=ef754ba847ec4e9598cfeb1a8c369f0bb04006040407cf80604d6e00f94008ba)
       '@wterm/ghostty':
         specifier: 0.5.4
         version: 0.5.4(patch_hash=9f95393b76bf7d41af9c17f37752bd409d96e0486cd01737a190bd88e643a7ba)
@@ -5246,7 +5246,7 @@ snapshots:
 
   '@wterm/core@0.5.4': {}
 
-  '@wterm/dom@0.5.4(patch_hash=60ac07b2ec6bc30ab2b7b8ee57fe2f192b9a90915f8fdae74700b872b2f9a406)':
+  '@wterm/dom@0.5.4(patch_hash=ef754ba847ec4e9598cfeb1a8c369f0bb04006040407cf80604d6e00f94008ba)':
     dependencies:
       '@wterm/core': 0.5.4
 

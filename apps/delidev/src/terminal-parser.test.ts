@@ -167,7 +167,7 @@ it("retains paste normalization/framing and Korean IME deduplication; disabled s
   expect(onData).toHaveBeenLastCalledWith("a\rb\rc");
   terminal.write(encoder.encode("\x1b[?2004h"));
   terminal.paste("a\n\x1b[201~b");
-  expect(onData).toHaveBeenLastCalledWith("\x1b[200~a\r\x1b[201~b\x1b[201~");
+  expect(onData).toHaveBeenLastCalledWith("\x1b[200~a\r[201~b\x1b[201~");
   input.dispatchEvent(new CompositionEvent("compositionstart"));
   input.dispatchEvent(new CompositionEvent("compositionend", { data: "한글" }));
   input.value = "한글";
