@@ -140,27 +140,38 @@
   padding: 8px;
   overflow: hidden;
 }
-.terminal-screen .xterm {
-  height: 100%;
+.terminal-screen.wterm {
+  --term-font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --term-font-size: 14px;
+  --term-selection-bg: var(--terminal-selection);
+  border-radius: 0;
+  box-shadow: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-color: var(--terminal-scrollbar) var(--terminal-background);
+  scrollbar-width: thin;
+}
+.terminal-screen.wterm::selection,
+.terminal-screen.wterm ::selection {
+  background: var(--terminal-selection);
+}
+.terminal-screen.wterm::-webkit-scrollbar {
+  width: 10px;
+}
+.terminal-screen.wterm::-webkit-scrollbar-track {
+  background: var(--terminal-background);
+}
+.terminal-screen.wterm::-webkit-scrollbar-thumb {
+  background: var(--terminal-scrollbar);
+}
+.terminal-screen.wterm::-webkit-scrollbar-thumb:hover {
+  background: var(--terminal-scrollbar-hover);
+}
+.terminal-screen.wterm::-webkit-scrollbar-thumb:active {
+  background: var(--terminal-scrollbar-active);
 }
 .terminal-view footer {
   color: var(--terminal-muted);
-}
-/* The pinned Viewport patch removes dynamic stylesheet insertion. Scrollbar
-   palette stays static under production style-src self; only upstream bounded
-   cell/canvas/textarea geometry uses element.style properties. */
-.terminal-screen .xterm .xterm-scrollable-element > .scrollbar > .slider {
-  background: var(--terminal-scrollbar);
-}
-.terminal-screen .xterm .xterm-scrollable-element > .scrollbar > .slider:hover {
-  background: var(--terminal-scrollbar-hover);
-}
-.terminal-screen
-  .xterm
-  .xterm-scrollable-element
-  > .scrollbar
-  > .slider.active {
-  background: var(--terminal-scrollbar-active);
 }
 /* Shared problem components inherit the dock's fixed dark palette rather than
    mixing light warning backgrounds with terminal foreground text. */

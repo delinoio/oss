@@ -23,6 +23,45 @@ export function workersArgument(args) {
   return Number(values[1]);
 }
 
+export async function buildQaFrontend(assets) {
+  const build = await createRsbuild({
+    cwd: app,
+    rsbuildConfig: {
+      logLevel: "error",
+      performance: { printFileSize: false },
+      tools: {
+        rspack: {
+          module: {
+            rules: [
+              {
+                test: /\.wasm$/,
+                resourceQuery: /url/,
+                type: "asset/resource",
+                generator: {
+                  filename: "static/wasm/[name].[contenthash:8][ext]",
+                },
+              },
+            ],
+          },
+        },
+      },
+      plugins: [pluginReact()],
+      source: { entry: { index: join(app, "src/qa/main.tsx") } },
+      html: {
+        template: join(app, "index.html"),
+        title: "DeliDev browser QA",
+      },
+      output: {
+        distPath: { root: assets },
+        assetPrefix: "/",
+        sourceMap: false,
+        cleanDistPath: true,
+      },
+    },
+  });
+  await build.build();
+}
+
 export class QaRun {
   processes = new Processes();
   environments = [];
@@ -67,26 +106,7 @@ export class QaRun {
       { cwd: repository, timeout: 180_000 },
     );
     this.checkPreparing();
-    const build = await createRsbuild({
-      cwd: app,
-      rsbuildConfig: {
-        logLevel: "error",
-        performance: { printFileSize: false },
-        plugins: [pluginReact()],
-        source: { entry: { index: join(app, "src/qa/main.tsx") } },
-        html: {
-          template: join(app, "index.html"),
-          title: "DeliDev browser QA",
-        },
-        output: {
-          distPath: { root: this.assets },
-          assetPrefix: "/",
-          sourceMap: false,
-          cleanDistPath: true,
-        },
-      },
-    });
-    await build.build();
+    await buildQaFrontend(this.assets);
     this.checkPreparing();
     this.api = await import(
       pathToFileURL(
