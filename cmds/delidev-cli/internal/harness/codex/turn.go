@@ -150,7 +150,7 @@ func (c *Client) eligibleTurnLocked(allowRecovery bool) error {
 	if !allowRecovery && c.execution.continuationPending {
 		return continuationUncertain()
 	}
-	if !allowRecovery && c.execution.interactions.blocksInput() {
+	if !allowRecovery && (c.execution.interactions.blocksInput() || c.dynamicRequestsBlockInput()) {
 		return interactionConflict()
 	}
 	if c.execution.thread.DirectInput == nil || !*c.execution.thread.DirectInput {

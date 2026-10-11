@@ -1,4 +1,5 @@
 import { createPortal } from "react-dom";
+import { NativeDynamicTool } from "./native-dynamic-tool";
 import { NativeFunctionOutput } from "./native-function-output";
 import { WaitingQueue } from "./waiting-queue";
 
@@ -446,6 +447,32 @@ export const TranscriptItem = memo(function TranscriptItem({
 }) {
   useLocale();
   const data = readDocument(resource);
+  if (Object.hasOwn(data, "dynamic_tool"))
+    return (
+      <NativeDynamicTool
+        content={
+          data.role === "tool" &&
+          data.text === "" &&
+          ![
+            "tool",
+            "function_output",
+            "claude_tool",
+            "grok_tool",
+            "artifact",
+            "progress",
+            "input_id",
+            "phase",
+            "claude",
+            "claude_progress",
+            "claude_interruption",
+            "grok_text",
+            "grok_user",
+          ].some((key) => Object.hasOwn(data, key))
+            ? data.dynamic_tool
+            : undefined
+        }
+      />
+    );
   if (Object.hasOwn(data, "function_output"))
     return (
       <NativeFunctionOutput
@@ -454,6 +481,7 @@ export const TranscriptItem = memo(function TranscriptItem({
           data.text === "" &&
           ![
             "tool",
+            "dynamic_tool",
             "claude_tool",
             "grok_tool",
             "artifact",

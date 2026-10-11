@@ -315,6 +315,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			config.quotaBlockSupported = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1)
 			titleCapabilityExpected = true
 			profile := "implemented-adapters-v1"
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1)
+			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1) {
 				profile += "\x00codex-function-outputs-v1"
 			}

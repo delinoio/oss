@@ -2625,3 +2625,41 @@ grants no dispatch, approval, tool success, input acceptance, turn result or
 cleanup authority. Title, Sidechat and other restricted profiles retain their
 separate closed admission rules. Fixture coverage does not prove real native,
 account or platform acceptance.
+
+## Original Codex dynamic tools
+
+The original root Codex execution admits the closed `dynamicToolCall` lifecycle
+and `item/tool/call` request union. Preserve the original item/call, thread,
+turn, tool, nullable namespace, argument commitment, native status, ordered
+content, nullable success and exact duration. Native content uses the separate
+camelCase `inputText`, `inputImage` and `inputAudio` union. Arguments and media
+locators stay in protected original history. Public text is inert; media retain
+only their kind and commitment, with no retrieval, adoption or dispatch.
+
+A request binds its original root turn and call identity. If a lifecycle item is
+already observed, the identity must match before it gains reply authority. An
+original request may precede its lifecycle; later observations must match the
+retained request identity.
+Retain the original numeric-versus-text wire identity without browser precision
+loss, arrival token and immutable Worker assignment. Persist original ownership
+before claiming the reply; persist send intent after the native connection's
+atomic arrival claim and before its pipe write. With no selected backend, the
+only response is `success: false` and one `inputText` item containing
+`This dynamic tool is unavailable in DeliDev.` No handler, registry, arbitrary
+tool backend, automatic input replay or automatic resend is introduced.
+
+Exclusive original-call and wire-request journals survive cancellation,
+publication loss and restart. Existing or uncertain attempts permit inspection
+of the original journal and native reply state only. Receipt replay republishes
+the exact pending fact and cannot respond again. Reply delivery, native request
+resolution, native item completion/success, root outcome and cleanup remain
+independent. Unresolved or uncertain original requests block successful
+completion and operations that need settled continuation proof. Failed and
+interrupted roots retain their original unsettled evidence; late completion or
+resolution can refine only that original item before independent cleanup.
+
+System capability 86 and Worker capability 58 negotiate this additive JSON
+publication. The Worker advertises it only after explicit server support.
+Read-only Sidechat, title and model-observation profiles gain no responder.
+Existing human question and approval controllers retain their separate types
+and ownership. No storage migration or selected backend is added.

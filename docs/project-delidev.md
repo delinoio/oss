@@ -443,3 +443,14 @@ workspace/process/native adapters own actual operation observations; desktop own
 the grouped conversation and compact disclosure. Follow the startup, workspace,
 process, protocol and desktop contracts. No telemetry observation grants input,
 credentials, retry, cleanup or execution authority, and no migration is added.
+
+## Original Codex dynamic tools
+
+The [harness contract](cmds-delidev-harness-contract.md#original-codex-dynamic-tools)
+owns closed original dynamic lifecycle, once-only durable unavailable replies
+and independent request/item/root/cleanup evidence. System 86 and Worker 58
+negotiate the additive inert transcript union. Complete context and ordinary
+Fork preserve protected native history; restricted auxiliary profiles retain
+separate history and response boundaries. The desktop uses the original tool
+disclosure with independent reply and request rows. No backend, registry,
+automatic replay or storage migration is introduced.

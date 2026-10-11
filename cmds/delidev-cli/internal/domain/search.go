@@ -56,6 +56,11 @@ func (m ExecutionMessage) SearchText() string {
 		}
 		changes(value.Changes)
 	}
+	if m.DynamicTool != nil && m.DynamicTool.Snapshot != nil && m.DynamicTool.Snapshot.Content != nil {
+		for _, part := range *m.DynamicTool.Snapshot.Content {
+			add(part.Text)
+		}
+	}
 	if m.FunctionOutput != nil {
 		add(m.FunctionOutput.Text)
 		for _, part := range m.FunctionOutput.Content {

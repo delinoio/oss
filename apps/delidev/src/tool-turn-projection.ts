@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { dynamicTool } from "./native-dynamic-tool";
 import { functionOutput } from "./native-function-output";
 import {
   messageTurn,
@@ -99,6 +100,7 @@ export function conversationProjection(
     "claude_tool",
     "grok_tool",
     "function_output",
+    "dynamic_tool",
   ].filter((key) => Object.hasOwn(d, key));
   if (
     families.length !== 1 ||
@@ -115,7 +117,27 @@ export function conversationProjection(
     return projection;
   let name = "",
     state = label(d.state);
-  if (families[0] === "function_output") {
+  if (families[0] === "dynamic_tool") {
+    const dynamic = dynamicTool(d.dynamic_tool);
+    const original = dynamic?.snapshot?.identity ?? dynamic?.request?.identity;
+    if (
+      !dynamic ||
+      !original ||
+      d.text !== "" ||
+      !identity(d.native_id) ||
+      !["streaming", "complete"].includes(state) ||
+      ["input_id", "phase"].some((key) => Object.hasOwn(d, key))
+    )
+      return projection;
+    name =
+      original.namespace === null
+        ? original.tool
+        : `${original.namespace}.${original.tool}`;
+    state =
+      dynamic.snapshot?.status === "inProgress"
+        ? "running"
+        : (dynamic.snapshot?.status ?? "running");
+  } else if (families[0] === "function_output") {
     const output = functionOutput(d.function_output);
     if (
       !output ||

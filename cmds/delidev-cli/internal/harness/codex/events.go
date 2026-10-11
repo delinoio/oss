@@ -119,6 +119,7 @@ const (
 	UsageEvent                    EventKind = "usage"
 	ResponseUsageEvent            EventKind = "response-usage"
 	NoticeEvent                   EventKind = "notice"
+	DynamicToolEvent              EventKind = "dynamic-tool"
 	FunctionOutputEvent           EventKind = "function-output"
 	ToolStartedEvent              EventKind = "tool-started"
 	ToolCompletedEvent            EventKind = "tool-completed"
@@ -163,6 +164,7 @@ type Message struct {
 }
 
 type Event struct {
+	DynamicTool         *domain.DynamicToolUpdate
 	FunctionOutput      *domain.FunctionOutput
 	FunctionOutputStage domain.FunctionOutputStage
 	NativeError         *NativeErrorObservation `json:"-"`
@@ -318,6 +320,9 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 		return c.observeLateTurnLocked(native)
 	}
 	if native.Kind == nativewire.ServerRequest && c.execution != nil {
+		if native.Method == "item/tool/call" {
+			return c.observeDynamicRequestLocked(native)
+		}
 		return c.observeInteractionLocked(native)
 	}
 	if native.Kind != nativewire.Notification || c.execution == nil {
@@ -422,6 +427,9 @@ func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
 		}
 		return event, nil
 	case "serverRequest/resolved":
+		if event, handled, err := c.observeDynamicResolvedLocked(native); handled || err != nil {
+			return event, err
+		}
 		return c.observeInteractionClosedLocked(native)
 	case "thread/status/changed":
 		var params struct {
@@ -577,6 +585,8 @@ func (c *Client) observeMessageLocked(native nativewire.Event) (Event, error) {
 	}
 	message := &Message{}
 	switch kind {
+	case "dynamicToolCall":
+		return c.observeDynamicItemLocked(native, params.TurnID, params.Item)
 	case "functionCallOutput":
 		id, output, err := decodeFunctionOutput(params.Item)
 		if err != nil {

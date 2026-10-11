@@ -44,6 +44,9 @@ type Config struct {
 	ManagedAuthentication bool
 }
 type Client struct {
+	dynamicItems     map[string]dynamicItem
+	dynamicArrivals  map[domain.ID]*dynamicArrival
+	dynamicNative    map[string]domain.ID
 	functionOutputs  map[string]functionOutputIdentity
 	currentTimeClock func() time.Time
 

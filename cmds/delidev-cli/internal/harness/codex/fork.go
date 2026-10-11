@@ -52,6 +52,9 @@ func (c *Client) InspectForkSource(ctx context.Context, checkpoint ContinuationC
 		return nil, err
 	}
 	defer func() { <-c.control }()
+	if c.dynamicRequestsBlockInput() {
+		return nil, continuationUncertain()
+	}
 	if c.problem != nil {
 		return nil, c.problem
 	}
@@ -183,7 +186,14 @@ func (c *Client) forkTurnsLocked(ctx context.Context, thread domain.ID) ([]json.
 					return nil, unsupportedFork()
 				}
 				seen["item:"+identity.ID] = true
-				if identity.Type == "functionCallOutput" {
+				if identity.Type == "dynamicToolCall" {
+					if c.sidechat != "" {
+						return nil, unsupportedFork()
+					}
+					if _, _, err := decodeDynamicTool(item, true); err != nil {
+						return nil, unsupportedFork()
+					}
+				} else if identity.Type == "functionCallOutput" {
 					if c.sidechat != "" {
 						return nil, unsupportedFork()
 					}
@@ -466,6 +476,10 @@ func settledForkTool(raw json.RawMessage, kind string) bool {
 }
 
 func managedForkItem(raw json.RawMessage, kind string) bool {
+	if kind == "dynamicToolCall" {
+		_, _, err := decodeDynamicTool(raw, true)
+		return err == nil
+	}
 	if kind == "functionCallOutput" {
 		_, _, err := decodeFunctionOutput(raw)
 		return err == nil

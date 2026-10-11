@@ -166,5 +166,15 @@
   "session.functionOutputUnavailable": "Function result is unavailable.",
   "session.functionImageReference": "Image reference",
   "session.functionAudioReference": "Audio reference",
-  "session.functionEncryptedContent": "Encrypted content"
+  "session.functionEncryptedContent": "Encrypted content",
+  "session.dynamicTool": "Dynamic tool",
+  "session.dynamicUnavailable": "Dynamic tool observation is unavailable.",
+  "session.dynamicReplyDelivery": "Reply delivery",
+  "session.dynamicNativeRequest": "Native request",
+  "session.dynamicNativeSuccess": "Native success",
+  "session.dynamicTransmitted": "Transmitted",
+  "session.dynamicUncertain": "Uncertain",
+  "session.dynamicNotSent": "Not sent",
+  "session.dynamicOpen": "Open",
+  "session.dynamicResolved": "Resolved"
 }

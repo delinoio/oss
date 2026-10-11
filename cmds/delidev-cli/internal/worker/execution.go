@@ -563,6 +563,11 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			logger.WarnContext(publicationContext, "native_execution_event_unhandled", "event_kind", event.Kind, "metadata", event.Metadata, "extension_stage", event.ExtensionStage, "correlated", event.Correlated, "late", event.Late)
 			return nil, domain.Fail(domain.Unsupported, "The native execution produced an unsupported event family.", "Retain its native history for the required typed adapter; input is never replayed automatically.")
 		}
+		if event.Kind == codex.DynamicToolEvent && event.DynamicTool != nil && event.DynamicTool.Stage == domain.DynamicRequested {
+			if err := mapper.deliverDynamicUnavailable(ctx, publicationContext, event, client); err != nil {
+				return nil, err
+			}
+		}
 		if event.Kind == codex.TurnCompletedEvent {
 			copy := event
 			parentTerminal = &copy

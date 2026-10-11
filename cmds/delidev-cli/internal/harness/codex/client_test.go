@@ -205,6 +205,12 @@ func init() {
 				}
 				continue
 			}
+			if request.Method == "" && mode == "thread-turn-dynamic" {
+				if !threads.dynamicReply(request.ID, request.Result) {
+					os.Exit(34)
+				}
+				continue
+			}
 			if request.Method == "" && mode == "thread-turn-current-time" {
 				if !threads.currentTimeReply(request.ID, request.Result) {
 					os.Exit(34)

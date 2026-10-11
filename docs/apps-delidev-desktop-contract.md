@@ -5828,3 +5828,15 @@ and optional detail remain visible metadata. Do not render locators, ciphertext,
 Markdown links, media elements, download controls or execution actions. Use the
 English/Korean session catalogs and reject mixed or malformed payloads before
 display. Result item completion never indicates turn success or cleanup.
+
+## Original dynamic-tool disclosure
+
+Use the original tool disclosure for bounded Codex dynamic observations. Show
+the native tool/namespace and independently observed lifecycle status. Expanded
+content shows the exact fixed unavailable text when an original reply was
+attempted, plus separate localized `Reply delivery` and `Native request` rows.
+Transmission or uncertainty never substitutes for native resolution, item
+completion, root outcome or cleanup. Preserve nullable native success and
+ordered inert text/image/audio reference rows. Do not display internal request
+identities, argument contents, media locators or dispatch/retry/approval controls.
+Unknown or malformed unions retain explicit unavailable presentation.

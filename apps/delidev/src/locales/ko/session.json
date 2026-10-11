@@ -166,5 +166,15 @@
   "session.functionOutputUnavailable": "함수 결과를 사용할 수 없습니다.",
   "session.functionImageReference": "이미지 참조",
   "session.functionAudioReference": "오디오 참조",
-  "session.functionEncryptedContent": "암호화된 콘텐츠"
+  "session.functionEncryptedContent": "암호화된 콘텐츠",
+  "session.dynamicTool": "동적 도구",
+  "session.dynamicUnavailable": "동적 도구 관찰을 사용할 수 없습니다.",
+  "session.dynamicReplyDelivery": "응답 전달",
+  "session.dynamicNativeRequest": "네이티브 요청",
+  "session.dynamicNativeSuccess": "네이티브 성공",
+  "session.dynamicTransmitted": "전송됨",
+  "session.dynamicUncertain": "불확실",
+  "session.dynamicNotSent": "전송되지 않음",
+  "session.dynamicOpen": "열림",
+  "session.dynamicResolved": "해결됨"
 }
