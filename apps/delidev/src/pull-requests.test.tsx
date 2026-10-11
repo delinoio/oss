@@ -371,7 +371,7 @@ it("dismisses only repository details on Escape and preserves outside focus", as
   ).toBeNull();
   expect(document.activeElement).toBe(trigger);
   fireEvent.click(trigger);
-  const outside = pane.getByRole("button", { name: "Refresh", exact: true });
+  const outside = pane.getByRole("button", { name: /^Refresh$/ });
   outside.focus();
   fireEvent.pointerDown(outside);
   expect(
@@ -435,7 +435,7 @@ it("retires the popup when its original opener is hidden or removed", async () =
   trigger.hidden = false;
   fireEvent.click(trigger);
   rows.splice(0);
-  fireEvent.click(pane.getByRole("button", { name: "Refresh", exact: true }));
+  fireEvent.click(pane.getByRole("button", { name: /^Refresh$/ }));
   await pane.findByText("No repositories on this page.");
   expect(trigger.isConnected).toBe(false);
   expect(

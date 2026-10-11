@@ -2942,7 +2942,7 @@ it("opens a dedicated PR workspace and reads GitHub automatically after valid se
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Pull requests" }));
   const select = await screen.findByRole("button", {
-    name: `Fixture repository. Repository ID: ${repository.id}`,
+    name: "Fixture repository",
   });
   expect(value.githubQuery).not.toHaveBeenCalled();
   fireEvent.click(select);
@@ -2950,6 +2950,7 @@ it("opens a dedicated PR workspace and reads GitHub automatically after valid se
     screen.queryByRole("button", { name: "Load pull requests" }),
   ).toBeNull();
   await waitFor(() => expect(value.githubQuery).toHaveBeenCalledTimes(1));
+  expect(value.githubQuery.mock.calls[0][0].repositoryId).toBe(repository.id);
   const request = JSON.parse(
     new TextDecoder().decode(value.githubQuery.mock.calls[0][0].queryJson),
   );
@@ -3041,7 +3042,7 @@ it("opens a fresh targeted Git Profiles visit after abandoning an unsaved profil
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
   fireEvent.click(
     await screen.findByRole("button", {
-      name: `Unconfigured repository. Repository ID: ${repository.id}`,
+      name: "Unconfigured repository",
     }),
   );
   fireEvent.click(
