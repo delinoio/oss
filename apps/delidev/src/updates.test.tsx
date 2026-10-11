@@ -2,6 +2,7 @@
 
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
+import { safePresentation } from "./product-presentation-test-support";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -195,7 +196,9 @@ it("preserves the exact desktop recovery pair for a later unsupported-server vis
   fireEvent.click(screen.getByText("Update recovery"));
   expect(candidate.textContent).not.toContain(original.id);
   const id = original.id;
-  const revision = within(candidate).getByText("9007199254740993").textContent!;
+  const recoveryPanel = screen.getByText("Update recovery").closest("details")!;
+  const revision =
+    within(recoveryPanel).getByText("9007199254740993").textContent!;
   fireEvent.click(
     within(candidate).getByRole("button", {
       name: "Download verified desktop update",
@@ -369,7 +372,7 @@ it("keeps a prepared or uncertain candidate mounted until inspection resolves it
     name: "Review and install desktop update",
   });
   await vi.waitFor(() => expect(check.disabled).toBe(true));
-  expect(screen.getByText(f.id)).toBeTruthy();
+  expect(screen.getByText(safePresentation(f.id))).toBeTruthy();
   expect(screen.getByText("9007199254740993")).toBeTruthy();
 
   fireEvent.click(
@@ -380,7 +383,7 @@ it("keeps a prepared or uncertain candidate mounted until inspection resolves it
   await screen.findByText(/original installation response is unconfirmed/);
   expect(check.disabled).toBe(true);
   expect(f.check).toHaveBeenCalledTimes(1);
-  expect(screen.getByText(f.id)).toBeTruthy();
+  expect(screen.getByText(safePresentation(f.id))).toBeTruthy();
   expect(screen.getByText("9007199254740993")).toBeTruthy();
 
   f.control.mockResolvedValueOnce({

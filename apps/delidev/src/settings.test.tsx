@@ -1904,7 +1904,7 @@ it("closes a verified repository edit, refreshes its inventory, and restores the
   );
   fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
   const opener = await screen.findByRole("button", {
-    name: `Edit Repository · ${repository.id}`,
+    name: safePresentation(`Edit Repository · ${repository.id}`),
   });
   opener.focus();
   fireEvent.click(opener);
@@ -1943,7 +1943,7 @@ it("keeps a successor repository edit open when a dismissed pending status read 
   );
   fireEvent.click(screen.getByRole("button", { name: "Repositories" }));
   const opener = await screen.findByRole("button", {
-    name: `Edit Repository · ${repository.id}`,
+    name: safePresentation(`Edit Repository · ${repository.id}`),
   });
   fireEvent.click(opener);
   await submitRepositorySave();

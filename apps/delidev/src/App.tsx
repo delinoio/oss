@@ -885,34 +885,34 @@ export function App({
         <QueryClientProvider key={connection.id} client={client}>
           <PresentationLabelsProvider>
             <NotificationProvider>
-            <MutationIntents>
-              <SessionTabsProvider>
-                <SessionSubmissionsProvider>
-                  <ImageDraftProvider>
-                    <PRWorkflowProvider>
-                      <ShortcutProvider>
-                        <SessionNameEditorProvider>
-                          <Shell
-                            connectionReady={connectionReady}
-                            pairingAuthority={pairingAuthority}
-                            currentDeviceId={currentDeviceId}
-                            controlLocalWorker={controlLocalWorker}
-                            chooseRepositoryFolder={chooseRepositoryFolder}
-                            connectionSettings={connectionSettings}
-                            appInformationSettings={appInformationSettings}
-                            connectionTarget={connectionTarget}
-                            onConnectionHelp={onConnectionHelp}
-                            localServer={localServer}
-                            serverPresentation={serverPresentation}
-                            readLocalWorker={readLocalWorker}
-                          />
-                        </SessionNameEditorProvider>
-                      </ShortcutProvider>
-                    </PRWorkflowProvider>
-                  </ImageDraftProvider>
-                </SessionSubmissionsProvider>
-              </SessionTabsProvider>
-            </MutationIntents>
+              <MutationIntents>
+                <SessionTabsProvider>
+                  <SessionSubmissionsProvider>
+                    <ImageDraftProvider>
+                      <PRWorkflowProvider>
+                        <ShortcutProvider>
+                          <SessionNameEditorProvider>
+                            <Shell
+                              connectionReady={connectionReady}
+                              pairingAuthority={pairingAuthority}
+                              currentDeviceId={currentDeviceId}
+                              controlLocalWorker={controlLocalWorker}
+                              chooseRepositoryFolder={chooseRepositoryFolder}
+                              connectionSettings={connectionSettings}
+                              appInformationSettings={appInformationSettings}
+                              connectionTarget={connectionTarget}
+                              onConnectionHelp={onConnectionHelp}
+                              localServer={localServer}
+                              serverPresentation={serverPresentation}
+                              readLocalWorker={readLocalWorker}
+                            />
+                          </SessionNameEditorProvider>
+                        </ShortcutProvider>
+                      </PRWorkflowProvider>
+                    </ImageDraftProvider>
+                  </SessionSubmissionsProvider>
+                </SessionTabsProvider>
+              </MutationIntents>
             </NotificationProvider>
           </PresentationLabelsProvider>
         </QueryClientProvider>

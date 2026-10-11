@@ -657,7 +657,6 @@ export function Updates({
                     setId(event.target.value);
                     setCandidate(undefined);
                   }}
-
                 />
               </label>
               <SettingsActionButton
@@ -705,7 +704,9 @@ export function Updates({
                     {copy("updates.originalUpdateId_51ae1b")}
                     <input
                       value={enteredId}
-                      placeholder={id ? presentationLabels.identity(id) : undefined}
+                      placeholder={
+                        id ? presentationLabels.identity(id) : undefined
+                      }
                       maxLength={36}
                       onChange={(event) => {
                         setEnteredId(event.target.value);
