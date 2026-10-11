@@ -11,5 +11,6 @@
   "skills.clear": "선택한 스킬 지우기",
   "skills.entryUnavailable": "사용할 수 없음",
   "skills.tokensAvailable": "현재 범위에서 사용할 수 없는 스킬 토큰이 없습니다.",
+  "skills.tokensUnavailable_one": "현재 범위에서 스킬 토큰 {{count}}개를 사용할 수 없습니다.",
   "skills.tokensUnavailable_other": "현재 범위에서 스킬 토큰 {{count}}개를 사용할 수 없습니다."
 }
