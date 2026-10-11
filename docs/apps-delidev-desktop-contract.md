@@ -3696,9 +3696,12 @@ Frontend changes require package-local `pnpm test`, typechecking and production 
 The macOS development-only config removes `devUrl`, enables local `custom-protocol`, and uses the embedded frontend without a dev server or watcher. The containing app, CEF and widget code retain ad-hoc signatures. Only the copied Go server uses the explicitly registered local development certificate and fixed signing identifier `io.delino.delidev.development.server`. Re-seal only the containing app, preserving its original entitlements, flags and runtime metadata; deep verification must succeed before publication. Both preparation and execution receive the native dry-run system/tool environment plus optional `CARGO_TARGET_DIR`, using the pinned distribution in the standard `Library/Caches/tauri-cef` cache; caller CEF overrides and release-signing/notarization credentials are not inherited. The original distribution's Chromium notices are included alongside existing repository/CEF notices. No runtime pin, default data directory, production configuration or release-signing policy changes. Application arguments, including spaces and Unicode, reach only the published desktop as argv, never the Cargo/Tauri build. Preparation/signing/verification children use joined termination forwarding; execution signals only the original desktop, preserving abnormal-exit server and independent Worker lifetimes. Failures stop the sequence, and wrapper diagnostics contain only stable stages and outcomes, not application arguments or private data paths. Node launcher tests run separately from jsdom through `pnpm test:desktop-launch` and are included in `pnpm test`.
 
 Preparation, bundle and application output use separate captured stdout/stderr
-streams. Pause each captured stream when its destination applies backpressure and
-resume it after `drain`, keeping diagnostic output buffering bounded. Suppress
-Cargo command echoes and redact original application arguments,
+streams. When the parent stdout or stderr is a terminal, set child color modes
+before piping output so Cargo and Node tools retain ANSI diagnostics. `NO_COLOR`,
+`CLICOLOR=0`, `CARGO_TERM_COLOR=never` and `FORCE_COLOR=0` disable this forcing.
+Pause each captured stream when its destination applies backpressure and resume
+it after `drain`, keeping diagnostic output buffering bounded. Suppress Cargo
+command echoes and redact original application arguments,
 including option values, JSON and shell spellings and multiline fragments, before
 publishing safe diagnostic text. Normalize ANSI color sequences for matching so
 that they cannot split a private argument; retain ordinary colored diagnostics

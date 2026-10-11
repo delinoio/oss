@@ -47,6 +47,30 @@ export function desktopEnvironment(platform, source, home = homedir()) {
   };
 }
 
+export function desktopColorEnvironment(
+  source,
+  {
+    base = source,
+    stdoutIsTTY = false,
+    stderrIsTTY = false,
+  } = {},
+) {
+  const env = { ...base };
+  const optedOut =
+    Object.hasOwn(source, "NO_COLOR") ||
+    source.CLICOLOR === "0" ||
+    source.CARGO_TERM_COLOR === "never" ||
+    source.FORCE_COLOR === "0";
+  if (optedOut) {
+    env.CARGO_TERM_COLOR = "never";
+    env.FORCE_COLOR = "0";
+  } else if (stdoutIsTTY || stderrIsTTY) {
+    env.CARGO_TERM_COLOR = "always";
+    if (!source.FORCE_COLOR) env.FORCE_COLOR = "1";
+  }
+  return env;
+}
+
 export function desktopArguments(platform, args, credits) {
   const cargo = ["run", "--locked", "--manifest-path", "src-tauri/Cargo.toml"];
   if (platform !== "darwin") {
@@ -101,6 +125,8 @@ export async function runDesktop(
     log = (entry) => process.stderr.write(`${JSON.stringify(entry)}\n`),
     stdout = process.stdout,
     stderr = process.stderr,
+    stdoutIsTTY = process.stdout.isTTY === true,
+    stderrIsTTY = process.stderr.isTTY === true,
   } = {},
 ) {
   let stage = "prepare";
@@ -113,7 +139,11 @@ export async function runDesktop(
       report("failed", { code: "pnpm-required" });
       return { code: 1, signal: null };
     }
-    const env = desktopEnvironment(platform, environment);
+    const env = desktopColorEnvironment(environment, {
+      base: desktopEnvironment(platform, environment),
+      stdoutIsTTY,
+      stderrIsTTY,
+    });
     // Keep the same argv for execution, but never inherit unfiltered diagnostic
     // pipes: Cargo's command echo otherwise bypasses the safe stage logger.
     // One pnpm separator is optional. All remaining tokens are application

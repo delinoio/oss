@@ -14,6 +14,7 @@ import {
 } from "./desktop-diagnostics.mjs";
 import {
   desktopArguments,
+  desktopColorEnvironment,
   desktopEnvironment,
   runDesktop,
 } from "./run-desktop.mjs";
@@ -119,6 +120,49 @@ test("Windows and Linux retain the direct Cargo executable path", () => {
     );
     assert.deepEqual(desktopEnvironment(platform, environment), environment);
   }
+});
+
+test("desktop child colors follow parent terminals and respect opt-outs", async () => {
+  const captureEnvironment = async (overrides, terminal) => {
+    const environments = [];
+    await runDesktop([], {
+      platform: "linux",
+      environment: { ...environment, ...overrides },
+      stdout: () => {},
+      stderr: () => {},
+      stdoutIsTTY: terminal,
+      stderrIsTTY: false,
+      log() {},
+      run: async (_command, _args, options) => {
+        environments.push(options.env);
+        return success;
+      },
+    });
+    return environments;
+  };
+
+  const interactive = await captureEnvironment({}, true);
+  assert.equal(interactive.length, 2);
+  for (const env of interactive) {
+    assert.equal(env.CARGO_TERM_COLOR, "always");
+    assert.equal(env.FORCE_COLOR, "1");
+  }
+
+  const noColor = await captureEnvironment(
+    { NO_COLOR: "", CARGO_TERM_COLOR: "always", FORCE_COLOR: "1" },
+    true,
+  );
+  for (const env of noColor) {
+    assert.equal(env.CARGO_TERM_COLOR, "never");
+    assert.equal(env.FORCE_COLOR, "0");
+  }
+
+  const cargoOptOut = desktopColorEnvironment(
+    { ...environment, CARGO_TERM_COLOR: "never" },
+    { stdoutIsTTY: true },
+  );
+  assert.equal(cargoOptOut.CARGO_TERM_COLOR, "never");
+  assert.equal(cargoOptOut.FORCE_COLOR, "0");
 });
 
 test("local macOS preparation and bundling share the configured deployment target and CEF cache without signing credentials", () => {
