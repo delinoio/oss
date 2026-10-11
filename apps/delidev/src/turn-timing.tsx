@@ -24,6 +24,13 @@ export interface TurnProjection {
 }
 export interface CurrentTurn extends TurnProjection {
   running: boolean;
+  observation?: {
+    sessionId: string;
+    revision: bigint;
+    accepted: bigint;
+    updated: bigint;
+    elapsed: number;
+  };
 }
 const uuid = (value: unknown): value is string =>
   typeof value === "string" &&
@@ -50,6 +57,15 @@ function utc(value: unknown): number | undefined {
     return;
   return parsed;
 }
+function utcNanoseconds(value: unknown): bigint | undefined {
+  const milliseconds = utc(value);
+  if (milliseconds === undefined) return;
+  const fraction = String(value).slice(19, -1).replace(/^\./, "");
+  return (
+    BigInt(Math.floor(milliseconds / 1000)) * 1000000000n +
+    BigInt(fraction.padEnd(9, "0"))
+  );
+}
 export function retainedTurnTiming(value: unknown): TurnTiming | undefined {
   const timing = object(value),
     accepted = utc(timing.accepted_at);
@@ -68,13 +84,8 @@ export function retainedTurnTiming(value: unknown): TurnTiming | undefined {
     !Number.isSafeInteger(terminal - accepted)
   )
     return;
-  // Millisecond conversion discards native submillisecond precision. Preserve
-  // the original interval order before allowing that loss in display metadata.
-  if (
-    terminal === accepted &&
-    String(timing.terminal_at).slice(20, -1).padEnd(9, "0") <
-      String(timing.accepted_at).slice(20, -1).padEnd(9, "0")
-  )
+  // Compare the original precision before truncating display metadata.
+  if (utcNanoseconds(timing.terminal_at)! < utcNanoseconds(timing.accepted_at)!)
     return;
   return { accepted, terminal };
 }
@@ -255,6 +266,25 @@ export function currentTurn(
     timing &&
     bound &&
     (running ? timing.terminal === undefined : timing.terminal !== undefined);
+  const accepted = utcNanoseconds(object(e.turn_timing).accepted_at),
+    updated = utcNanoseconds(row.updatedAt);
+  const observedElapsed =
+    accepted !== undefined && updated !== undefined && updated >= accepted
+      ? Number((updated - accepted) / 1000000n)
+      : undefined;
+  const observation =
+    running &&
+    consistent &&
+    observedElapsed !== undefined &&
+    Number.isSafeInteger(observedElapsed)
+      ? {
+          sessionId,
+          revision: row.revision,
+          accepted: accepted!,
+          updated: updated!,
+          elapsed: observedElapsed,
+        }
+      : undefined;
   return {
     owner: owner(
       sessionId,
@@ -266,37 +296,122 @@ export function currentTurn(
     captured: Object.hasOwn(e, "turn_timing"),
     timing: consistent ? timing : undefined,
     running,
+    observation,
   };
 }
 
+interface TurnClockFrame {
+  sessionId: string;
+  owner: string;
+  inputId: string;
+  accepted: bigint;
+  revision: bigint;
+  updated: bigint;
+  elapsed: number;
+}
+function sameClockOwner(frame: TurnClockFrame, turn: CurrentTurn) {
+  return (
+    frame.owner === turn.owner &&
+    frame.inputId === turn.inputId &&
+    frame.sessionId === turn.observation?.sessionId
+  );
+}
+function compatibleObservation(frame: TurnClockFrame, turn: CurrentTurn) {
+  const observation = turn.observation;
+  return Boolean(
+    turn.running &&
+    observation &&
+    sameClockOwner(frame, turn) &&
+    frame.accepted === observation.accepted &&
+    (observation.revision < frame.revision ||
+      (observation.revision === frame.revision
+        ? observation.updated === frame.updated
+        : observation.updated >= frame.updated)),
+  );
+}
 /** Exactly one mounted timer; inactive/unconfirmed observations do no clock work. */
 export function useTurnClock(
   turn: CurrentTurn | undefined,
   active: boolean,
   confirmed: boolean,
 ) {
-  const frame = useRef<{ owner: string; seconds?: number }>({ owner: "" });
+  const frame = useRef<TurnClockFrame | undefined>(undefined);
   const [, redraw] = useState(0);
-  const accepted = turn?.running ? turn.timing?.accepted : undefined;
+  const [visible, setVisible] = useState(
+    () => document.visibilityState !== "hidden",
+  );
   useLayoutEffect(() => {
-    if (!active || !confirmed || accepted === undefined || !turn) return;
-    const tick = () => {
-      const delta = Date.now() - accepted;
-      frame.current = {
+    const visibility = () => setVisible(document.visibilityState !== "hidden");
+    document.addEventListener("visibilitychange", visibility);
+    return () => document.removeEventListener("visibilitychange", visibility);
+  }, []);
+  const observation = turn?.running ? turn.observation : undefined;
+  useLayoutEffect(() => {
+    if (!active || !visible || !confirmed || !turn || !observation) {
+      if (frame.current) redraw((value) => value + 1);
+      return;
+    }
+    let current = frame.current;
+    if (!current || !sameClockOwner(current, turn)) {
+      // A stale Session revision cannot transfer the clock to an older turn.
+      if (
+        current &&
+        observation.sessionId === current.sessionId &&
+        observation.revision <= current.revision
+      )
+        return;
+      current = {
         owner: turn.owner,
-        seconds:
-          Number.isSafeInteger(delta) && delta >= 0
-            ? Math.floor(delta / 1000)
-            : undefined,
+        inputId: turn.inputId,
+        ...observation,
       };
-      redraw((value) => value + 1);
+      frame.current = current;
+    } else {
+      if (!compatibleObservation(current, turn)) return;
+      if (observation.revision > current.revision) {
+        current.revision = observation.revision;
+        current.updated = observation.updated;
+        // A delayed server observation must not erase already measured time.
+        current.elapsed = Math.max(current.elapsed, observation.elapsed);
+      }
+    }
+    const retained = current;
+    let previous = performance.now();
+    const advance = () => {
+      const now = performance.now();
+      const delta = now - previous;
+      if (
+        Number.isFinite(delta) &&
+        delta >= 0 &&
+        Number.isFinite(retained.elapsed + delta) &&
+        retained.elapsed + delta <= Number.MAX_SAFE_INTEGER
+      )
+        retained.elapsed += delta;
+      previous = now;
     };
-    tick();
-    const timer = setInterval(tick, 1000);
-    return () => clearInterval(timer);
-  }, [active, confirmed, turn?.owner, accepted]);
-  return turn && frame.current.owner === turn.owner
-    ? frame.current.seconds
+    const timer = setInterval(() => {
+      advance();
+      redraw((value) => value + 1);
+    }, 1000);
+    redraw((value) => value + 1);
+    return () => {
+      clearInterval(timer);
+      // Retain subsecond time without counting inactive or hidden time.
+      advance();
+    };
+  }, [
+    active,
+    visible,
+    confirmed,
+    turn?.owner,
+    turn?.inputId,
+    observation?.sessionId,
+    observation?.accepted,
+    observation?.revision,
+    observation?.updated,
+  ]);
+  return turn && frame.current && compatibleObservation(frame.current, turn)
+    ? Math.floor(frame.current.elapsed / 1000)
     : undefined;
 }
 export function turnDuration(seconds: number): string {
