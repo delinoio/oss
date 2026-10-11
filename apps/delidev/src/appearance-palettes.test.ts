@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { expect, test } from "vitest";
 import {
   contrast,
@@ -98,7 +99,7 @@ test("Default retains its complete original maps and five stable palette IDs", (
 
 test("ordinary controls use accent and control contrast tokens", async () => {
   const styles = await readFile(
-    new URL("./styles.css", import.meta.url),
+    resolve(process.cwd(), "src/styles.css"),
     "utf8",
   );
   const rules = [...styles.matchAll(/([^{}]+)\{([^{}]*)\}/gu)];
