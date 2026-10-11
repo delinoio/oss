@@ -3844,8 +3844,10 @@ it(
           ?.hidden,
       ).toBe(true),
     );
-    expect(main.getAttribute("aria-keyshortcuts")).toMatch(
-      /^(Meta|Control)\+B$/,
+    await waitFor(() =>
+      expect(main.getAttribute("aria-keyshortcuts")).toMatch(
+        /^(Meta|Control)\+B$/,
+      ),
     );
   },
   fullShellTimeoutMs,
