@@ -1816,12 +1816,21 @@ it.each(["failed", "foreign", "older", "malformed"])(
     await screen.findByText(
       "The repository save could not be verified. Read the original status again before continuing.",
     );
-    const retry = await screen.findByRole("button", {
+    await screen.findByRole("button", {
       name: "Retry original status read",
     });
     await waitFor(() =>
-      expect((retry as HTMLButtonElement).disabled).toBe(false),
+      expect(
+        (
+          screen.getByRole("button", {
+            name: "Retry original status read",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(false),
     );
+    const retry = screen.getByRole("button", {
+      name: "Retry original status read",
+    });
     expect(reads).toBeGreaterThan(0);
     expect(saved).not.toHaveBeenCalled();
     expect(screen.queryByText("Repository saved.")).toBeNull();
