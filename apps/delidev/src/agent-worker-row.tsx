@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { usePresentationLabels } from "./product-presentation";
 import {
   SettingsActionButton,
   SettingsActionIcon,
@@ -15,7 +16,7 @@ import {
   supportsResourceSchema,
   type Resource,
 } from "@delinoio/delidev-api-client";
-import { items, object, resourceName, text } from "./documents";
+import { items, object, text } from "./documents";
 import { copy, LocalizedText, useLocale } from "./localization";
 import { Harness } from "./configuration-fields";
 import { workerHarnessNames } from "./worker-harness-picker";
@@ -35,6 +36,7 @@ export function AgentWorkerRow({
   preview: () => void;
   remove: () => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const decoded = decodeResourceDocument(row),
     data = decoded ?? {},
@@ -68,7 +70,7 @@ export function AgentWorkerRow({
       </>
     );
   };
-  let name = resourceName(row);
+  let name = presentationLabels.resource(row);
   // Unsupported schemas stay non-actionable. Only bounded inert name text is
   // projected within the Agent name's 256-byte UTF-8 limit for identifying the
   // row; it never enters an editor or request.
@@ -179,7 +181,7 @@ export function AgentWorkerRow({
               {copy("settings.reconfigurationRequired_a84a37")}
             </p>
           ) : null}
-          <small>{row.id}</small>
+          <small>{presentationLabels.identity(row.id, "record")}</small>
         </div>
       </div>
       <div className="actions settings-agent-actions">

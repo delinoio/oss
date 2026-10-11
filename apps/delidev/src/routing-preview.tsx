@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+import {
+  usePresentationLabels,
+  diagnosticPresentation,
+} from "./product-presentation";
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { Timestamp, TimestampMode } from "./timestamp-display";
 import { SettingsTaskDismissButton } from "./settings-task";
@@ -11,7 +15,7 @@ import {
   EntityKind,
 } from "@delinoio/delidev-api-client";
 import { copy, useLocale, type MessageKey } from "./localization";
-import { items, object, resourceName, text, type Document } from "./documents";
+import { items, object, text, type Document } from "./documents";
 import { ResourceChoice } from "./configuration-fields";
 import { Routing } from "./configuration-fields";
 import { statusLabel } from "./product-status";
@@ -178,13 +182,14 @@ function AccountIdentity({ metadata }: { metadata?: RoutingAccountMetadata }) {
   );
 }
 function AccountId({ id }: { id: string }) {
+  const presentationLabels = usePresentationLabels();
   return (
     <Disclosure
       density={DisclosureDensity.Settings}
       className="routing-account-id"
     >
       <DisclosureSummary>{copy("routing-preview.accountId")}</DisclosureSummary>
-      <code>{id}</code>
+      <code>{presentationLabels.identity(id, "record")}</code>
     </Disclosure>
   );
 }
@@ -197,6 +202,7 @@ function Candidates({
   metadata: Map<string, RoutingAccountMetadata>;
   active: boolean;
 }) {
+  const presentationLabels = usePresentationLabels();
   return !route.candidatesAvailable ? (
     <p className="routing-empty">
       {copy("configuration-actions.routingEvidenceIsUnavailable_3f3ff4")}
@@ -240,7 +246,7 @@ function Candidates({
             <DisclosureSummary>
               {copy("routing-preview.accountId")}
             </DisclosureSummary>
-            <code>{candidate.id}</code>
+            <code>{presentationLabels.identity(candidate.id, "record")}</code>
             <dl className="routing-detail-evidence">
               {typeof candidate.score === "number" ? (
                 <div>
@@ -336,7 +342,7 @@ function SourceNotices({
       </p>
       {source.problem ? (
         <ServiceProblem code={text(source.problem.code)}>
-          {text(source.problem.message)}
+          {diagnosticPresentation(source.problem.message)}
         </ServiceProblem>
       ) : null}
       {!hideFallback ? <Fallback route={source.route} /> : null}
@@ -357,6 +363,7 @@ export function RoutingPreview({
   active: boolean;
   close: () => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const closeTask = useCloseSettingsTask(close);
   const [project, setProject] = useState("");
@@ -409,9 +416,11 @@ export function RoutingPreview({
   return (
     <section
       className="routing-preview"
-      aria-label={copy("routing-preview.label", { v0: resourceName(agent) })}
+      aria-label={copy("routing-preview.label", {
+        v0: presentationLabels.resource(agent),
+      })}
     >
-      <p className="routing-agent-name">{resourceName(agent)}</p>
+      <p className="routing-agent-name">{presentationLabels.resource(agent)}</p>
       <div className="routing-project">
         <div className="routing-project-controls">
           <span className="routing-read-only">

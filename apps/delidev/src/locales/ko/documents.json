@@ -2,5 +2,22 @@
   "documents.worktree_c893ba": "Worktree",
   "documents.localComputer_09d55f": "로컬 컴퓨터",
   "documents.generalChat_f634bc": "일반 대화",
-  "documents.extra.e504e6152194": "이름 없음"
+  "documents.extra.e504e6152194": "이름 없음",
+  "documents.kind.record": "항목 {{number}}",
+  "documents.kind.project": "프로젝트 {{number}}",
+  "documents.kind.repository": "저장소 {{number}}",
+  "documents.kind.session": "세션 {{number}}",
+  "documents.kind.account": "계정 {{number}}",
+  "documents.kind.provider": "제공자 {{number}}",
+  "documents.kind.runner": "실행 기기 {{number}}",
+  "documents.kind.terminal": "터미널 {{number}}",
+  "documents.kind.backup": "백업 {{number}}",
+  "documents.kind.input": "입력 {{number}}",
+  "documents.internalReference": "내부 참조",
+  "documents.unavailableName": "{{kind}} · 이름을 확인할 수 없음",
+  "documents.numberedName": "{{name}} · {{number}}",
+  "documents.kind.agent": "에이전트 워커 {{number}}",
+  "documents.kind.model": "모델 {{number}}",
+  "documents.kind.device": "기기 {{number}}",
+  "documents.kind.server": "서버 {{number}}"
 }

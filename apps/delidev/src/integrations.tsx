@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 import {
+  usePresentationLabels,
+  diagnosticPresentation,
+} from "./product-presentation";
+import {
   SettingsActionButton,
   SettingsActionIcon,
   SettingsActionPresentation,
@@ -37,14 +41,7 @@ import {
   newRequestId,
   type Resource,
 } from "@delinoio/delidev-api-client";
-import {
-  document,
-  encode,
-  object,
-  resourceName,
-  text,
-  type Document,
-} from "./documents";
+import { document, encode, object, text, type Document } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { Failure, ServiceProblem, Problem } from "./ui";
 import { GitHubTokenForm } from "./github-opening";
@@ -467,6 +464,7 @@ function IntegrationConnection({
   initialRetry?: GitHubTokenRetry;
   initialProblem?: Document;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const tokenFormId = useId(),
     closeTask = useCloseSettingsTask(close);
@@ -585,7 +583,7 @@ function IntegrationConnection({
     <section className="integration-manage">
       <header>
         <div>
-          <h3>{resourceName(current)}</h3>
+          <h3>{presentationLabels.resource(current)}</h3>
           <p>{profileDescription(data)}</p>
         </div>
         <SettingsTaskDismissButton
@@ -602,7 +600,9 @@ function IntegrationConnection({
             id="integrations.authenticatedAsGithubId_5a4d87"
             components={{
               s0: <>{text(identity.login)}</>,
-              s1: <>{text(identity.id)}</>,
+              s1: (
+                <>{text(presentationLabels.identity(identity.id, "record"))}</>
+              ),
             }}
           />
         </p>
@@ -682,7 +682,16 @@ function IntegrationConnection({
           <p>
             <LocalizedText
               id="integrations.pendingRequest_2efde7"
-              components={{ s0: <>{retryIdentity.requestId}</> }}
+              components={{
+                s0: (
+                  <>
+                    {presentationLabels.identity(
+                      retryIdentity.requestId,
+                      "record",
+                    )}
+                  </>
+                ),
+              }}
             />
           </p>
         ) : null}
@@ -775,14 +784,15 @@ function IntegrationConnection({
           }
         >
           <p role="alert">
-            {text(object(validation.problem).message)}{" "}
-            {text(object(validation.problem).guidance)}
+            {diagnosticPresentation(object(validation.problem).message)}{" "}
+            {diagnosticPresentation(object(validation.problem).guidance)}
           </p>
         </ServiceProblem>
       ) : null}
       {problem ? (
         <p role="alert">
-          {text(problem.message)} {text(problem.guidance)}
+          {diagnosticPresentation(problem.message)}{" "}
+          {diagnosticPresentation(problem.guidance)}
         </p>
       ) : null}
       <Problem error={result.error || tokenError} />
@@ -824,6 +834,7 @@ export function Integrations({
   showCategoryIntro?: boolean;
   onWorkflowReadyChange?: (active: boolean) => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const content = useRef<HTMLElement>(null);
   const root = useScrollRoot(content);
@@ -1000,7 +1011,7 @@ export function Integrations({
                     rows.map((row) => (
                       <article className="integration-row" key={row.id}>
                         <div>
-                          <h3>{resourceName(row)}</h3>
+                          <h3>{presentationLabels.resource(row)}</h3>
                           <p className="integration-secondary">
                             {profileDescription(document(row))}
                           </p>
@@ -1010,7 +1021,7 @@ export function Integrations({
                           <SettingsActionButton
                             icon={SettingsActionIcon.Inspect}
                             aria-label={copy("integrations.manage_e9e199", {
-                              v0: resourceName(row),
+                              v0: presentationLabels.resource(row),
                             })}
                             disabled={row.schemaVersion !== 1}
                             onClick={() => setSelected({ profile: row })}
@@ -1022,7 +1033,7 @@ export function Integrations({
                             presentation={SettingsActionPresentation.Icon}
                             targetId={row.id}
                             aria-label={copy("integrations.rename_089ce7", {
-                              v0: resourceName(row),
+                              v0: presentationLabels.resource(row),
                             })}
                             disabled={row.schemaVersion !== 1}
                             onClick={() =>
@@ -1105,7 +1116,7 @@ export function Integrations({
         <SettingsTaskDialog
           key={selected.profile.id}
           title={copy("integrations.manage_e9e199", {
-            v0: resourceName(selected.profile),
+            v0: presentationLabels.resource(selected.profile),
           })}
           size={SettingsDialogSize.Wide}
           close={done}

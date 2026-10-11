@@ -1,3 +1,4 @@
+import { safePresentation } from "./product-presentation-test-support";
 import { i18n } from "./localization";
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
@@ -193,7 +194,9 @@ it("keeps a replacement draft and its accepted job independent of the old profil
   });
   expect(
     screen.getByText(
-      `Source: ${fixture.sources[1]!.id} · Turn: msg_01960dcbe1fcABCDEFGHIJKLMN`,
+      safePresentation(
+        `Source: ${fixture.sources[1]!.id} · Turn: msg_01960dcbe1fcABCDEFGHIJKLMN`,
+      ),
     ),
   ).not.toBeNull();
 });
@@ -1617,7 +1620,9 @@ it("preserves pending then uncertain original ownership through hiding and attem
   );
   fireEvent.click(screen.getByRole("button", { name: "Close Fork session" }));
   fireEvent.click(screen.getByRole("button", { name: "Fork session" }));
-  expect(screen.getByText(new RegExp(fixture.sources[0]!.id))).toBeDefined();
+  expect(
+    screen.getByText(safePresentation(fixture.sources[0]!.id)),
+  ).toBeDefined();
   expect(screen.queryByRole("button", { name: "Create fork" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Open forked session" }));
   expect(fixture.open).toHaveBeenCalledWith(

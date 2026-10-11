@@ -1,4 +1,9 @@
 import { createPortal } from "react-dom";
+import {
+  usePresentationLabels,
+  diagnosticPresentation,
+} from "./product-presentation";
+
 import { WaitingQueue } from "./waiting-queue";
 
 import { FlatDisclosureScope } from "./disclosure";
@@ -125,7 +130,6 @@ import { useQuery, useTransport } from "@connectrpc/connect-query";
 import {
   ConnectionState,
   EntityKind,
-  ResourceQuery,
   ResourceService,
   SessionAction,
   SessionQuery,
@@ -145,7 +149,6 @@ import {
   items,
   Mode,
   object,
-  resourceName,
   text,
   Workspace,
 } from "./documents";
@@ -726,7 +729,8 @@ export const TranscriptItem = memo(function TranscriptItem({
                     {text(delta.kind)}
                     {typeof delta.index === "number"
                       ? ` ${delta.index}`
-                      : ""}: {text(delta.text)}
+                      : ""}:{" "}
+                    {text(delta.text)}
                   </pre>
                 );
               })}
@@ -863,6 +867,7 @@ export function SessionView({
   embedded?: boolean;
   openRunnerSettings?: () => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const tabs = useSessionTabs(id);
   const conversationActive =
@@ -1980,7 +1985,7 @@ export function SessionView({
                     if (session) editName?.(session.id, event.currentTarget);
                   }}
                 >
-                  {resourceName(session)}
+                  {presentationLabels.resource(session)}
                 </h2>
                 <p
                   className={`connection${live.state === ConnectionState.Live ? " is-live" : ""}`}
@@ -2284,7 +2289,8 @@ export function SessionView({
                               }
                             >
                               <p>
-                                {text(problem.message)} {text(problem.guidance)}
+                                {diagnosticPresentation(problem.message)}{" "}
+                                {diagnosticPresentation(problem.guidance)}
                               </p>
                             </ServiceProblem>
                           ) : null}

@@ -1060,7 +1060,7 @@ describe("Inbox detail presentation", () => {
         .getByText("Execution metadata")
         .closest("details")!;
       expect(disclosure.open).toBe(false);
-      expect(screen.getByText("Original identifiers and outcome")).toBeTruthy();
+      expect(screen.getByText("Recorded context and outcome")).toBeTruthy();
       expect(
         screen.getByText(
           "Recorded time is the Inbox record time. It does not establish process cleanup or the current session outcome.",
@@ -1070,9 +1070,20 @@ describe("Inbox detail presentation", () => {
         lists = value.list.mock.calls.length;
       fireEvent.click(disclosure.querySelector("summary")!);
       expect(disclosure.open).toBe(true);
-      expect(JSON.parse(disclosure.querySelector("pre")!.textContent!)).toEqual(
-        metadata,
+      const displayed = JSON.parse(
+        disclosure.querySelector("pre")!.textContent!,
       );
+      expect(displayed).toMatchObject({
+        outcome,
+        sequence: 17,
+        native_thread_id: metadata.native_thread_id,
+        native_turn_id: metadata.native_turn_id,
+      });
+      for (const key of ["job_id", "input_id", "execution_id"] as const) {
+        expect(displayed[key]).not.toBe(metadata[key]);
+        expect(displayed[key]).toMatch(/^(Record|Input) \d+$/);
+      }
+      expect(document(value.terminalEntry).terminal).toEqual(metadata);
       expect(value.get).toHaveBeenCalledTimes(reads);
       expect(value.list).toHaveBeenCalledTimes(lists);
       expect(value.setRead).not.toHaveBeenCalled();

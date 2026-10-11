@@ -1,3 +1,4 @@
+import { safePresentation } from "./product-presentation-test-support";
 import { useState } from "react";
 import { create } from "@bufbuild/protobuf";
 import { createRouterTransport, ConnectError, Code } from "@connectrpc/connect";
@@ -100,7 +101,7 @@ it("renders exact HTTP provenance and zero latency while absent observations rem
   expect(screen.getByText("resp_original")).toBeTruthy();
   expect(screen.getByText("high")).toBeTruthy();
   expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(2);
-  expect(screen.getByText(f.row.accountId)).toBeTruthy();
+  expect(screen.getByText(safePresentation(f.row.accountId))).toBeTruthy();
   expect(screen.getByText("9007199254740993")).toBeTruthy();
   expect(document.activeElement).toBe(
     screen.getByLabelText("Execution ID (optional)"),

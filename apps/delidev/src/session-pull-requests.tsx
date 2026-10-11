@@ -1,11 +1,8 @@
+import { usePresentationLabels } from "./product-presentation";
 import { createPortal } from "react-dom";
-import {
-  SessionActivityProvider,
-  useSessionActive,
-  useSessionQuery as useQuery,
-} from "./session-activity";
+import { useSessionActive } from "./session-activity";
 // SPDX-License-Identifier: Apache-2.0
-import { Disclosure, DisclosureSummary } from "./disclosure";
+
 import { Timestamp } from "./timestamp-display";
 import { ScrollContinuation } from "./scroll-continuation";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
@@ -119,6 +116,7 @@ function PendingUnlink({
   associationId: string;
   refreshed: () => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   const remove = usePRUnlink(sessionId, associationId, refreshed);
   const original = remove.input as UnlinkSessionPullRequestRequest | undefined;
   const valid =
@@ -128,9 +126,12 @@ function PendingUnlink({
     original.mutation.expectedRevision > 0n &&
     original.mutation.expectedRevision < 1n << 63n;
   return (
-    <article aria-label={`Pending PR unlink ${associationId}`}>
+    <article
+      aria-label={`Pending PR unlink ${presentationLabels.identity(associationId, "record")}`}
+    >
       <p>
-        {copy("session-pull-requests.inline.60c1498ca3")} {associationId}
+        {copy("session-pull-requests.inline.60c1498ca3")}{" "}
+        {presentationLabels.identity(associationId, "record")}
       </p>
       <p role="status">
         {remove.busy
@@ -268,6 +269,8 @@ function LinkRow({
 }) {
   const article = useRef<HTMLElement>(null);
   const rowVisible = useRowVisible(article, root, active);
+  const presentationLabels = usePresentationLabels();
+
   const remove = usePRUnlink(sessionId, row.id, refreshed);
   return (
     <article
@@ -318,7 +321,18 @@ function LinkRow({
               <p>
                 <LocalizedText
                   id="session-pull-requests.configuredRepository_6aa131"
-                  components={{ s0: <>{text(value.repository_id)}</> }}
+                  components={{
+                    s0: (
+                      <>
+                        {text(
+                          presentationLabels.identity(
+                            value.repository_id,
+                            "repository",
+                          ),
+                        )}
+                      </>
+                    ),
+                  }}
                 />
               </p>
               <p>{`https://github.com/${text(value.owner)}/${text(value.name)}/pull/${text(value.number)}`}</p>

@@ -1,3 +1,4 @@
+import { safePresentation } from "./product-presentation-test-support";
 import { SidebarProvider, memorySidebarBridge } from "./sidebar-preference";
 import { sessionInputReceipt } from "./test-session-input";
 import {
@@ -1247,16 +1248,20 @@ it.each([false, true])(
           screen.getByRole("button", { name: "Open session navigation" }),
         );
       await screen.findByRole("button", {
-        name: `New session in First project. Project ID: ${first.id}`,
+        name: safePresentation(
+          `New session in First project. Project ID: ${first.id}`,
+        ),
       });
     };
     await showHome();
     const fold = screen.getByRole("button", {
-      name: `First project. Project ID: ${first.id}`,
+      name: safePresentation(`First project. Project ID: ${first.id}`),
     });
     fireEvent.click(
       screen.getByRole("button", {
-        name: `New session in First project. Project ID: ${first.id}`,
+        name: safePresentation(
+          `New session in First project. Project ID: ${first.id}`,
+        ),
       }),
     );
     const prompt = screen.getByRole("textbox", { name: "First message" });
@@ -1318,7 +1323,9 @@ it.each([false, true])(
     await showHome();
     fireEvent.click(
       screen.getByRole("button", {
-        name: `New session in First project. Project ID: ${first.id}`,
+        name: safePresentation(
+          `New session in First project. Project ID: ${first.id}`,
+        ),
       }),
     );
     expect(
@@ -1340,7 +1347,9 @@ it.each([false, true])(
     await showHome();
     fireEvent.click(
       screen.getByRole("button", {
-        name: `New session in Second project. Project ID: ${second.id}`,
+        name: safePresentation(
+          `New session in Second project. Project ID: ${second.id}`,
+        ),
       }),
     );
     expect(
@@ -1452,7 +1461,9 @@ it("locks shortcuts for pending and uncertain creates and retries the unchanged 
   render(<App transport={value.transport} />);
   fireEvent.click(
     await screen.findByRole("button", {
-      name: `New session in First project. Project ID: ${first.id}`,
+      name: safePresentation(
+        `New session in First project. Project ID: ${first.id}`,
+      ),
     }),
   );
   await waitScrollChoices(
@@ -1479,7 +1490,9 @@ it("locks shortcuts for pending and uncertain creates and retries the unchanged 
   fireEvent.click(screen.getByRole("button", { name: "Create session" }));
   await waitFor(() => expect(value.creates).toHaveBeenCalledTimes(1));
   const shortcut = screen.getByRole("button", {
-    name: `New session in Second project. Project ID: ${second.id}`,
+    name: safePresentation(
+      `New session in Second project. Project ID: ${second.id}`,
+    ),
   });
   expect(shortcut).toHaveProperty("disabled", true);
   fireEvent.click(shortcut);
@@ -1534,13 +1547,17 @@ it("locks shortcuts during Local proof and preserves the original project on com
   render(<App transport={value.transport} readLocalWorker={readLocalWorker} />);
   fireEvent.click(
     await screen.findByRole("button", {
-      name: `New session in First project. Project ID: ${first.id}`,
+      name: safePresentation(
+        `New session in First project. Project ID: ${first.id}`,
+      ),
     }),
   );
   fireEvent.click(screen.getByRole("button", { name: "Options" }));
   fireEvent.click(screen.getByRole("radio", { name: "Local" }));
   const shortcut = screen.getByRole("button", {
-    name: `New session in Second project. Project ID: ${second.id}`,
+    name: safePresentation(
+      `New session in Second project. Project ID: ${second.id}`,
+    ),
   });
   expect(shortcut).toHaveProperty("disabled", true);
   fireEvent.click(shortcut);
@@ -2257,7 +2274,7 @@ it(
     const value = fixture([], [repository], [project], true);
     render(<App transport={value.transport} />);
     await screen.findByRole("button", {
-      name: `Existing project. Project ID: ${project.id}`,
+      name: safePresentation(`Existing project. Project ID: ${project.id}`),
     });
     reach("projects");
     await waitFor(() =>
@@ -2274,7 +2291,7 @@ it(
     );
     fireEvent.click(
       screen.getByRole("button", {
-        name: `Existing project. Project ID: ${project.id}`,
+        name: safePresentation(`Existing project. Project ID: ${project.id}`),
       }),
     );
     await waitFor(() =>
@@ -3057,7 +3074,7 @@ it("opens a dedicated PR workspace and reads GitHub automatically after valid se
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "Pull requests" }));
   const select = await screen.findByRole("button", {
-    name: "Fixture repository",
+name: "Fixture repository",
   });
   expect(value.githubQuery).not.toHaveBeenCalled();
   fireEvent.click(select);
@@ -3157,7 +3174,7 @@ it("opens a fresh targeted Git Profiles visit after abandoning an unsaved profil
   fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
   fireEvent.click(
     await screen.findByRole("button", {
-      name: "Unconfigured repository",
+name: "Unconfigured repository",
     }),
   );
   fireEvent.click(

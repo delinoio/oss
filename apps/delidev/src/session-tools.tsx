@@ -1,3 +1,4 @@
+import { usePresentationLabels } from "./product-presentation";
 import {
   useSessionQuery as useQuery,
   useSessionActive,
@@ -17,14 +18,7 @@ import {
   type Resource,
   type SessionChange,
 } from "@delinoio/delidev-api-client";
-import {
-  document,
-  object,
-  resourceName,
-  text,
-  Workspace,
-  workspaceNames,
-} from "./documents";
+import { document, object, text, Workspace, workspaceNames } from "./documents";
 import { TrackedJob } from "./jobs";
 import { useRetainedMutation, useRetainedMutationIntents } from "./mutation";
 import { Problem } from "./ui";
@@ -55,6 +49,7 @@ function RetainedJob({
   sessionId: string;
   diagnosticsTarget?: HTMLElement | null;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const active = useSessionActive();
   const result = useQuery(ResourceQuery.getResource, {
@@ -87,7 +82,8 @@ function RetainedJob({
             <section>
               <h3>{title}</h3>
               <p>
-                {id} · {row?.revision.toString()} · {text(document(row).state)}
+                {presentationLabels.identity(id, "record")} ·{" "}
+                {row?.revision.toString()} · {text(document(row).state)}
               </p>
               <Problem error={result.error} />
             </section>,
@@ -116,6 +112,7 @@ export function SessionTools({
   openRecovery?: (opener: HTMLButtonElement) => void;
   diagnosticsTarget?: HTMLElement | null;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const [host] = useState(() => globalThis.document.createElement("div"));
   useLayoutEffect(() => {
@@ -260,7 +257,8 @@ export function SessionTools({
       <dl>
         <dt>{copy("session-tools.sessionId")}</dt>
         <dd>
-          {resource.id} · {resource.revision.toString()}
+          {presentationLabels.identity(resource.id, "record")} ·{" "}
+          {resource.revision.toString()}
         </dd>
         <dt>{copy("session-tools.workspace")}</dt>
         <dd>

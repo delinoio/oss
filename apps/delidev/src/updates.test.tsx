@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -192,8 +193,9 @@ it("preserves the exact desktop recovery pair for a later unsupported-server vis
     name: "Original update",
   });
   fireEvent.click(screen.getByText("Update recovery"));
-  const id = screen.getByText(original.id).textContent!;
-  const revision = screen.getByText("9007199254740993").textContent!;
+  expect(candidate.textContent).not.toContain(original.id);
+  const id = original.id;
+  const revision = within(candidate).getByText("9007199254740993").textContent!;
   fireEvent.click(
     within(candidate).getByRole("button", {
       name: "Download verified desktop update",

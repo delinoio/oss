@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { usePresentationLabels } from "./product-presentation";
 import {
   createContext,
   useContext,
@@ -507,6 +508,7 @@ function TurnTimeLine({
   seconds?: number;
   confirmed: boolean;
 }) {
+  const presentationLabels = usePresentationLabels();
   const matches =
     current?.owner === turn.owner && current.inputId === turn.inputId;
   const timing = displayedTurnTiming(turn, current);
@@ -537,7 +539,7 @@ function TurnTimeLine({
       aria-live="off"
       aria-label={
         inherited
-          ? `${displayed}. ${copy("turnTiming.inheritedOrigin", { v0: inherited.sessionId, v1: inherited.executionId, v2: inherited.inputId })}`
+          ? `${displayed}. ${copy("turnTiming.inheritedOrigin", { v0: presentationLabels.identity(inherited.sessionId, "session"), v1: presentationLabels.identity(inherited.executionId, "record"), v2: presentationLabels.identity(inherited.inputId, "input") })}`
           : undefined
       }
     >

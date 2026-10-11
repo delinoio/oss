@@ -1,3 +1,4 @@
+import { usePresentationLabels } from "./product-presentation";
 import {
   SettingsActionButton,
   SettingsActionIcon,
@@ -195,6 +196,7 @@ export function SavedConnections({
   target?: HTMLElement;
   advancedTarget?: HTMLElement;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const readGeneration = useRef(0);
   const [adding, setAdding] = useState(false);
@@ -497,7 +499,16 @@ export function SavedConnections({
                   <p>
                     <LocalizedText
                       id="saved-connections.server_90ff00"
-                      components={{ s0: <>{profile.server_id}</> }}
+                      components={{
+                        s0: (
+                          <>
+                            {presentationLabels.identity(
+                              profile.server_id,
+                              "server",
+                            )}
+                          </>
+                        ),
+                      }}
                     />
                   </p>
                   <p>
@@ -793,7 +804,18 @@ export function SavedConnections({
             <p>
               <LocalizedText
                 id="saved-connections.expectedServer_4ed0bf"
-                components={{ s0: <>{text(preview.server_id)}</> }}
+                components={{
+                  s0: (
+                    <>
+                      {text(
+                        presentationLabels.identity(
+                          preview.server_id,
+                          "server",
+                        ),
+                      )}
+                    </>
+                  ),
+                }}
               />
             </p>
           ) : null}

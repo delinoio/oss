@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { safePresentation } from "./product-presentation-test-support";
 import { StrictMode, useEffect, type ReactNode } from "react";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
@@ -550,7 +551,7 @@ it("reuses stale row evidence through dialog reopen and disposes Details on cate
   const dialog = screen.getByRole("dialog", { name: "Details" });
   expect(within(dialog).getByText(/Showing stale usage/)).toBeTruthy();
   expect(within(dialog).getByText("USD 12.48")).toBeTruthy();
-  expect(within(dialog).getByText(f.id)).toBeTruthy();
+  expect(within(dialog).getByText(safePresentation(f.id))).toBeTruthy();
   fireEvent.click(
     within(dialog).getByRole("button", { name: "Close Details" }),
   );
@@ -589,7 +590,9 @@ it("keeps unknown schemas read-only while allowing their full Details identity",
   );
   fireEvent.click(screen.getByRole("button", { name: "Details" }));
   expect(
-    within(screen.getByRole("dialog", { name: "Details" })).getByText(f.id),
+    within(screen.getByRole("dialog", { name: "Details" })).getByText(
+      safePresentation(f.id),
+    ),
   ).toBeTruthy();
   expect(f.read).not.toHaveBeenCalled();
 });

@@ -1,5 +1,6 @@
+import { safePresentation } from "./product-presentation-test-support";
 import { readFileSync } from "node:fs";
-import { chooseScrollOption, waitScrollChoices } from "./test-scroll-picker";
+import { chooseScrollOption } from "./test-scroll-picker";
 // SPDX-License-Identifier: Apache-2.0
 import { StrictMode, useState } from "react";
 import { create } from "@bufbuild/protobuf";
@@ -567,10 +568,14 @@ it.each([false, true])(
       await screen.findByRole("button", { name: "Add inspected checkout" }),
     );
     const primary = within(
-      screen.getByText(`${f.machine.id} · /canonical/oss`).closest("li")!,
+      screen
+        .getByText(safePresentation(`${f.machine.id} · /canonical/oss`))
+        .closest("li")!,
     );
     const secondary = within(
-      screen.getByText(`${other.id} · /canonical/B`).closest("li")!,
+      screen
+        .getByText(safePresentation(`${other.id} · /canonical/B`))
+        .closest("li")!,
     );
     expect(
       (
@@ -583,7 +588,9 @@ it.each([false, true])(
       primary.getByText("Use Change folder to replace this checkout."),
     ).toBeTruthy();
     fireEvent.click(primary.getByRole("button", { name: "Remove checkout" }));
-    expect(screen.getByText(`${f.machine.id} · /canonical/oss`)).toBeTruthy();
+    expect(
+      screen.getByText(safePresentation(`${f.machine.id} · /canonical/oss`)),
+    ).toBeTruthy();
     expect(
       (
         secondary.getByRole("button", {
@@ -637,7 +644,7 @@ it("keeps checkout removal available when editing an existing repository", async
   f.mount();
   fireEvent.click(
     await screen.findByRole("button", {
-      name: `Edit Existing · ${repository.id}`,
+      name: safePresentation(`Edit Existing · ${repository.id}`),
     }),
   );
   const remove = screen.getByRole("button", { name: "Remove checkout" });
@@ -646,7 +653,9 @@ it("keeps checkout removal available when editing an existing repository", async
     screen.queryByText("Use Change folder to replace this checkout."),
   ).toBeNull();
   fireEvent.click(remove);
-  expect(screen.queryByText(`${f.machine.id} · /existing`)).toBeNull();
+  expect(
+    screen.queryByText(safePresentation(`${f.machine.id} · /existing`)),
+  ).toBeNull();
 });
 
 it("does not replace the remote identity when a connected folder remote changes", async () => {

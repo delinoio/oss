@@ -1,5 +1,5 @@
 import { create } from "@bufbuild/protobuf";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { expect, it } from "vitest";
 import {
   EntityKind,
@@ -240,7 +240,7 @@ it("shows the immutable ordered instructions as inert read-only text without nat
   expect(detail(saved, "Requested service tier")).toBe("priority");
   expect(
     screen.getByLabelText("Saved account order").children[0].textContent,
-  ).toContain(value.configuration.accounts[0].id);
+  ).not.toContain(value.configuration.accounts[0].id);
 });
 
 it("distinguishes missing native values from requested settings and empty native observations", () => {

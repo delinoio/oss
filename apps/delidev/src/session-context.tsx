@@ -1,3 +1,4 @@
+import { diagnosticPresentation } from "./product-presentation";
 import { useSessionQuery as useQuery } from "./session-activity";
 import { LocalizedText, copy, useLocale } from "./localization";
 
@@ -459,7 +460,8 @@ export function SessionContext({ session }: { session: Resource }) {
               code={text(problem.code) || text(problem.problem_code)}
             >
               <p role="alert">
-                {text(problem.message)} {text(problem.guidance)}
+                {diagnosticPresentation(problem.message)}{" "}
+                {diagnosticPresentation(problem.guidance)}
               </p>
             </ServiceProblem>
           ) : null}

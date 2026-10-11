@@ -1,5 +1,7 @@
 # Project: DeliDev
 
+Desktop, mobile, notifications and widgets share the [internal identity presentation policy](apps-delidev-desktop-contract.md#internal-identity-presentation). Product text uses names, safe context and ephemeral display numbers; original IDs retain all communication, storage, authorization, mutation and recovery authority. User/native content and technical exports remain verbatim.
+
 The desktop owns shared scroll-continuation state and presentation with domain
 adapters retaining response-validation, initial-read, payload-disposal and
 mutation authority. See the [shared desktop pagination contract](apps-delidev-desktop-contract.md#shared-scroll-continuation).

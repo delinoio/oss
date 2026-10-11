@@ -1,4 +1,5 @@
-import { chooseScrollOption, waitScrollChoices } from "./test-scroll-picker";
+import { safePresentation } from "./product-presentation-test-support";
+import { chooseScrollOption } from "./test-scroll-picker";
 // SPDX-License-Identifier: Apache-2.0
 import { useState } from "react";
 import { create } from "@bufbuild/protobuf";
@@ -133,7 +134,7 @@ it("uses a saved alias and service, keeping the full identity in a closed disclo
   expect(
     dialog.querySelector(".routing-account-id")?.hasAttribute("open"),
   ).toBe(false);
-  expect(within(dialog).getByText(row.id)).toBeTruthy();
+  expect(within(dialog).getByText(safePresentation(row.id))).toBeTruthy();
   expect(within(dialog).getByText("Weight")).toBeTruthy();
   expect(within(dialog).getByText("unknown")).toBeTruthy();
   expect(value.get).toHaveBeenCalledTimes(1);
@@ -731,7 +732,9 @@ it("retains four original RPC permits across nested dialog close and reopen", as
       const message = response.message as { resource?: Resource };
       if (message.resource)
         message.resource.documentJson = encode({
-          name: `${generation} source ${rows.findIndex((row) => row.id === message.resource?.id)}`,
+          name: safePresentation(
+            `${generation} source ${rows.findIndex((row) => row.id === message.resource?.id)}`,
+          ),
         });
       return response;
     },

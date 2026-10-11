@@ -1,3 +1,4 @@
+import { usePresentationLabels } from "./product-presentation";
 import type { PriceSelection } from "./usage-prices";
 // SPDX-License-Identifier: Apache-2.0
 import { Disclosure, DisclosureSummary } from "./disclosure";
@@ -38,6 +39,7 @@ export function GrokAccounting({
   disclosures?: AccountingDisclosures;
   selectPrice?: (identity: PriceSelection) => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const allTotals = [
     data.totals,
@@ -151,21 +153,45 @@ export function GrokAccounting({
                         type="button"
                         onClick={() => open(group.sessionId)}
                       >
-                        {group.sessionName || group.sessionId}
+                        {group.sessionName ||
+                          presentationLabels.identity(
+                            group.sessionId,
+                            "session",
+                          )}
                       </button>
-                      <small>{group.sessionId}</small>
+                      <small>
+                        {presentationLabels.identity(
+                          group.sessionId,
+                          "session",
+                        )}
+                      </small>
                       <p>
                         {group.projectId
-                          ? group.projectName || group.projectId
+                          ? group.projectName ||
+                            presentationLabels.identity(
+                              group.projectId,
+                              "project",
+                            )
                           : copy("grok-accounting.generalChat_f634bc")}
                       </p>
                       {group.projectId ? (
-                        <small>{group.projectId}</small>
+                        <small>
+                          {presentationLabels.identity(
+                            group.projectId,
+                            "project",
+                          )}
+                        </small>
                       ) : null}
                     </td>
                     <td>
-                      {group.accountName || group.accountId}
-                      <small>{group.accountId}</small>
+                      {group.accountName ||
+                        presentationLabels.identity(group.accountId, "account")}
+                      <small>
+                        {presentationLabels.identity(
+                          group.accountId,
+                          "account",
+                        )}
+                      </small>
                     </td>
                     <td>
                       <button
@@ -181,8 +207,19 @@ export function GrokAccounting({
                         {group.modelName || (group.model?.nativeId ?? "")}
                       </button>
                       <small>{group.model?.nativeId ?? ""}</small>
-                      <p>{group.providerName || group.providerId}</p>
-                      <small>{group.providerId}</small>
+                      <p>
+                        {group.providerName ||
+                          presentationLabels.identity(
+                            group.providerId,
+                            "provider",
+                          )}
+                      </p>
+                      <small>
+                        {presentationLabels.identity(
+                          group.providerId,
+                          "provider",
+                        )}
+                      </small>
                     </td>
                     <td>
                       {grok(group.totals)?.units.toLocaleString(
@@ -284,8 +321,19 @@ export function GrokAccounting({
                           {model.modelName || (model.model?.nativeId ?? "")}
                         </button>
                         <small>{model.model?.nativeId ?? ""}</small>
-                        <p>{model.providerName || model.providerId}</p>
-                        <small>{model.providerId}</small>
+                        <p>
+                          {model.providerName ||
+                            presentationLabels.identity(
+                              model.providerId,
+                              "provider",
+                            )}
+                        </p>
+                        <small>
+                          {presentationLabels.identity(
+                            model.providerId,
+                            "provider",
+                          )}
+                        </small>
                       </td>
                       <td>
                         {grok(model.totals)?.units.toLocaleString(

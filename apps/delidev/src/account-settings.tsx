@@ -1,3 +1,4 @@
+import { usePresentationLabels } from "./product-presentation";
 import "./wizard-presentation.css";
 // SPDX-License-Identifier: Apache-2.0
 import {
@@ -76,7 +77,7 @@ import {
 import "./api-account.css";
 import { AccountConnection } from "./account-connection";
 import { Authentication } from "./configuration-fields";
-import { document, object, resourceName, text } from "./documents";
+import { document, object, text } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { Failure, Problem } from "./ui";
 import { SubscriptionAccounts } from "./subscription-accounts";
@@ -335,6 +336,7 @@ function AccountCreationWizard({
   openManage: (resource: Resource) => void;
   saved: (resource: Resource) => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const taskFormId = useId(),
     taskVisible = useSettingsTaskVisible(),
@@ -503,7 +505,8 @@ function AccountCreationWizard({
     ConfigurationQuery.saveConfiguration,
     (result, request) => {
       let expected:
-        { providerId: string; alias: string; protocol: string } | undefined;
+        | { providerId: string; alias: string; protocol: string }
+        | undefined;
       try {
         const body = JSON.parse(
           new TextDecoder("utf-8", { fatal: true }).decode(
@@ -982,7 +985,9 @@ function AccountCreationWizard({
           {copy("account-settings.backToAiApiKeys_2d6214")}
         </SettingsActionButton>
         <SettingsHeading title={copy("account-settings.aiApiKeys_da1a0f")} />
-        <h2 id="api-account-created-title">{resourceName(current)}</h2>
+        <h2 id="api-account-created-title">
+          {presentationLabels.resource(current)}
+        </h2>
         <p>
           {copy("account-settings.apiFormat")}:{" "}
           {

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { safePresentation } from "./product-presentation-test-support";
 import { execFile, spawn } from "node:child_process";
 import { readFile, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -719,7 +720,9 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   fireEvent.click(screen.getByRole("button", { name: "Projects" }));
   fireEvent.click(
     await screen.findByRole("button", {
-      name: `Delete Owned project · ${projects.resources[0].id}`,
+      name: safePresentation(
+        `Delete Owned project · ${projects.resources[0].id}`,
+      ),
     }),
   );
   fireEvent.click(

@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+import {
+  usePresentationLabels,
+  diagnosticPresentation,
+} from "./product-presentation";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { SettingsTaskDismissButton } from "./settings-task";
 import { copy, useLocale } from "./localization";
@@ -29,7 +33,7 @@ import {
   type RequestSubscriptionRequest,
   type Resource,
 } from "@delinoio/delidev-api-client";
-import { document, object, resourceName, text } from "./documents";
+import { document, object, text } from "./documents";
 import { useSettingsOpening } from "./settings-lifetime";
 import { SettingsTaskContext } from "./settings-task-context";
 import { serviceAccount } from "./subscription-resource";
@@ -173,6 +177,7 @@ export function ChatGPTAccountDeletion({
   deleted: () => void;
   close: () => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   const task = useContext(SettingsTaskContext);
   const hasReturnAction = !task || Boolean(task.stepId);
   useLocale();
@@ -614,10 +619,10 @@ export function ChatGPTAccountDeletion({
       <h3>
         {waiting
           ? copy("account-deletion.deleting_983c74", {
-              v0: resourceName(confirmed),
+              v0: presentationLabels.resource(confirmed),
             })
           : copy("account-deletion.delete_a19801", {
-              v0: resourceName(confirmed),
+              v0: presentationLabels.resource(confirmed),
             })}
       </h3>
       {view.stage === Stage.Confirmation ? (
@@ -669,7 +674,7 @@ export function ChatGPTAccountDeletion({
             summary={
               view.failure ? (
                 <>
-                  <p>{view.failure.message}</p>
+                  <p>{diagnosticPresentation(view.failure.message)}</p>
                   <p>{copy("account-connection.inline.deletion")}</p>
                 </>
               ) : undefined

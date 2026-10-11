@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { PersistentConnectionView } from "./connections-page";
+import { usePresentationLabels } from "./product-presentation";
+
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { statusLabel } from "./product-status";
@@ -66,6 +68,7 @@ function UpdateCandidate({
   controls?: DesktopUpdateControls;
   onRecoveryStateChange?: (id: string, required: boolean) => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const [local, setLocal] = useState<NativeUpdateResult>(),
     [busy, setBusy] = useState(false),
@@ -182,6 +185,7 @@ function UpdateCandidate({
           }}
         />
       </p>
+
       {worker ? (
         <>
           <p>{copy("updates.updatesWaitForActiveWorkTerminals_ac7bf1")}</p>
@@ -267,7 +271,7 @@ function UpdateCandidate({
           <PersistentConnectionView target={recoveryTarget} hidden>
             <dl>
               <dt>{copy("updates.retainedDesktopUpdateId_acb1d6")}</dt>
-              <dd>{row.id}</dd>
+              <dd>{presentationLabels.identity(row.id, "record")}</dd>
               <dt>{copy("updates.retainedDesktopUpdateRevision_a8ee1a")}</dt>
               <dd>{row.revision.toString()}</dd>
             </dl>
@@ -313,8 +317,10 @@ function LocalInstallationInspection({
   active: boolean;
   controls: DesktopUpdateControls;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const [id, setId] = useState(""),
+    [enteredId, setEnteredId] = useState(""),
     [revision, setRevision] = useState(""),
     [result, setResult] = useState<NativeUpdateResult>(),
     [busy, setBusy] = useState(false),
@@ -374,10 +380,12 @@ function LocalInstallationInspection({
         <label>
           {copy("updates.retainedDesktopUpdateId_acb1d6")}
           <input
-            value={id}
+            value={enteredId}
+            placeholder={id ? presentationLabels.identity(id) : undefined}
             maxLength={36}
             disabled={busy}
             onChange={(event) => {
+              setEnteredId(event.target.value);
               setId(event.target.value);
               setResult(undefined);
             }}
@@ -434,6 +442,7 @@ export function Updates({
   machine?: Resource;
   controls?: DesktopUpdateControls;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const [expanded, setExpanded] = useState(!machine),
     [checked, setChecked] = useState(false),
@@ -441,6 +450,7 @@ export function Updates({
     [candidate, setCandidate] = useState<Resource>(),
     [recoveryCandidateId, setRecoveryCandidateId] = useState(""),
     [id, setId] = useState(""),
+    [enteredId, setEnteredId] = useState(""),
     [nativeContext, setNativeContext] = useState<{
       current_version: string;
       target: string;
@@ -513,9 +523,11 @@ export function Updates({
       if (!machine) {
         setChecked(true);
         setCandidate(response.update);
+        setEnteredId("");
         setId(response.update?.id ?? "");
       } else if (response.update) {
         setCandidate(response.update);
+        setEnteredId("");
         setId(response.update.id);
       }
     },
@@ -637,12 +649,15 @@ export function Updates({
               <label>
                 {copy("updates.originalUpdateId_51ae1b")}
                 <input
-                  value={id}
+                  value={enteredId}
+                  placeholder={id ? presentationLabels.identity(id) : undefined}
                   maxLength={36}
                   onChange={(event) => {
+                    setEnteredId(event.target.value);
                     setId(event.target.value);
                     setCandidate(undefined);
                   }}
+
                 />
               </label>
               <SettingsActionButton
@@ -689,9 +704,11 @@ export function Updates({
                   <label>
                     {copy("updates.originalUpdateId_51ae1b")}
                     <input
-                      value={id}
+                      value={enteredId}
+                      placeholder={id ? presentationLabels.identity(id) : undefined}
                       maxLength={36}
                       onChange={(event) => {
+                        setEnteredId(event.target.value);
                         setId(event.target.value);
                         setCandidate(undefined);
                       }}

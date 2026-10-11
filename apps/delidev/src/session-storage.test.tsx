@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { safePresentation } from "./product-presentation-test-support";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -523,7 +524,7 @@ it.each([Code.NotFound, Code.Unavailable])(
         })[1]!,
       );
       expect(
-        await screen.findByText(new RegExp(`Next session.*${next.id}`)),
+        await screen.findByText(safePresentation(`Next session.*${next.id}`)),
       ).not.toBeNull();
     } else {
       expect(

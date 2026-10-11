@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { usePresentationLabels } from "./product-presentation";
 import {
   SettingsActionButton,
   SettingsActionIcon,
@@ -7,13 +8,7 @@ import {
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { Timestamp, TimestampMode } from "./timestamp-display";
 import { SettingsTaskDismissButton } from "./settings-task";
-import {
-  LocalizedText,
-  copy,
-  displayLocale,
-  formatNumber,
-  useLocale,
-} from "./localization";
+import { LocalizedText, copy, formatNumber, useLocale } from "./localization";
 import {
   SettingsTaskDialog,
   SettingsTaskScope,
@@ -111,6 +106,7 @@ function EmptyHistory({ children }: { children: string }) {
 }
 
 export function Backups({ active }: { active: boolean }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const panelId = useId();
   const [historyTab, setHistoryTab] = useState(HistoryTab.Creation);
@@ -451,7 +447,9 @@ export function Backups({ active }: { active: boolean }) {
                               }}
                             />
                           </span>
-                          <code className="backups-id">{item.id}</code>
+                          <code className="backups-id">
+                            {presentationLabels.identity(item.id, "backup")}
+                          </code>
                         </td>
                         <td role="cell" headers={`${tableId}-size`}>
                           <LocalizedText
@@ -491,7 +489,10 @@ export function Backups({ active }: { active: boolean }) {
                               else inspectButtons.current.delete(item.id);
                             }}
                             aria-label={copy("backups.inspectBackup_78fbba", {
-                              v0: item.id,
+                              v0: presentationLabels.identity(
+                                item.id,
+                                "backup",
+                              ),
                             })}
                             disabled={
                               !active ||
@@ -682,7 +683,16 @@ export function Backups({ active }: { active: boolean }) {
                   <h3>
                     <LocalizedText
                       id="backups.backup_181f9b"
-                      components={{ s0: <>{job.backupId}</> }}
+                      components={{
+                        s0: (
+                          <>
+                            {presentationLabels.identity(
+                              job.backupId,
+                              "backup",
+                            )}
+                          </>
+                        ),
+                      }}
                     />
                   </h3>
                   <p>
@@ -761,7 +771,16 @@ export function Backups({ active }: { active: boolean }) {
                   <h3>
                     <LocalizedText
                       id="backups.backup_181f9b"
-                      components={{ s0: <>{job.backupId}</> }}
+                      components={{
+                        s0: (
+                          <>
+                            {presentationLabels.identity(
+                              job.backupId,
+                              "backup",
+                            )}
+                          </>
+                        ),
+                      }}
                     />
                   </h3>
                   <p>
@@ -825,6 +844,7 @@ function BackupInspection({
   deleted: (job?: BackupDeletionJob) => void;
   inspected: (id: string) => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const heading = useRef<HTMLHeadingElement>(null);
   useLayoutEffect(() => {
@@ -883,7 +903,9 @@ function BackupInspection({
         <h2 ref={heading} tabIndex={-1}>
           <LocalizedText
             id="backups.inspection_39c73e"
-            components={{ s0: <>{selected}</> }}
+            components={{
+              s0: <>{presentationLabels.identity(selected, "backup")}</>,
+            }}
           />
         </h2>
         <Problem
@@ -906,7 +928,9 @@ function BackupInspection({
               <div>
                 <dt>{copy("backups.backupId_8c6f39")}</dt>
                 <dd>
-                  <code>{checked.backup!.id}</code>
+                  <code>
+                    {presentationLabels.identity(checked.backup!.id, "backup")}
+                  </code>
                 </dd>
               </div>
               <div>
@@ -966,6 +990,21 @@ function BackupInspection({
                     {copy("backups.permanentBackupDeletion_7640fe")}
                   </legend>
                   <p>{copy("backups.theSelectedImageWillBeDeleted_214572")}</p>
+                  <p>
+                    {presentationLabels.identity(selected, "backup")} ·{" "}
+                    <LocalizedText
+                      id="backups.bytes_e17732"
+                      components={{
+                        s0: <>{formatNumber(checked.backup!.sizeBytes)}</>,
+                      }}
+                    />
+                    {" · "}
+                    <Timestamp
+                      value={checked.backup!.modifiedAt}
+                      mode={TimestampMode.Absolute}
+                      timeZone="UTC"
+                    />
+                  </p>
                   <label>
                     <input
                       type="checkbox"
@@ -979,7 +1018,11 @@ function BackupInspection({
                     />
                     <LocalizedText
                       id="backups.iConfirmPermanentDeletionOfBackup_6eefd3"
-                      components={{ s0: <>{selected}</> }}
+                      components={{
+                        s0: (
+                          <>{presentationLabels.identity(selected, "backup")}</>
+                        ),
+                      }}
                     />
                   </label>
                   <Problem

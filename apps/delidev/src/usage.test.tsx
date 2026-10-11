@@ -1,4 +1,4 @@
-import { chooseScrollOption, waitScrollChoices } from "./test-scroll-picker";
+import { chooseScrollOption } from "./test-scroll-picker";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -232,7 +232,7 @@ it("shows exact known subtotals, missing fields and separate unavailable costs",
   ).toBeTruthy();
   const table = screen.getByRole("table");
   expect(within(table).getByText("General Chat")).toBeTruthy();
-  expect(within(table).getByText(f.ids.account)).toBeTruthy();
+  expect(within(table).getByText(/Record \d+/)).toBeTruthy();
   expect(within(table).getByText("Original model")).toBeTruthy();
   fireEvent.click(
     within(table).getByRole("button", { name: "Retained session" }),
@@ -987,7 +987,7 @@ it("keeps current query results when an older scope resolves later, without show
   expect(screen.queryByText("Earlier scope")).toBeNull();
   expect(
     screen.getByRole("group", { name: "Applied conditions" }).textContent,
-  ).toContain(f.ids.account);
+  ).not.toContain(f.ids.account);
 });
 
 it("does not reuse old scope data when a new valid selection fails", async () => {

@@ -1,3 +1,4 @@
+import { safePresentation } from "./product-presentation-test-support";
 import {
   cleanup,
   fireEvent,
@@ -127,7 +128,9 @@ it.each([
     fireEvent.click(opener);
     const dialog = screen.getByRole("dialog", { name: "Local Worker problem" });
     expect(
-      within(dialog).getByText(`Execution machine: ${value.machine_id}`),
+      within(dialog).getByText(
+        safePresentation(`Execution machine: ${value.machine_id}`),
+      ),
     ).toBeTruthy();
     expect(dialog.textContent).not.toContain(failure);
     expect(
@@ -149,7 +152,7 @@ it.each([
     await waitFor(() =>
       expect(
         within(screen.getByRole("dialog")).getByText(
-          `Execution machine: ${value.machine_id}`,
+          safePresentation(`Execution machine: ${value.machine_id}`),
         ),
       ).toBeTruthy(),
     );
@@ -265,7 +268,9 @@ it.each(Object.values(LocalWorkerPresentation))(
       screen.getByRole("button", { name: "Confirm Worker stop" }),
     );
     await screen.findByRole("button", { name: "Retry original Worker stop" });
-    await screen.findByText(`Execution machine: ${replacement.machine_id}`);
+    await screen.findByText(
+      safePresentation(`Execution machine: ${replacement.machine_id}`),
+    );
     view.rerender(
       <LocalWorkerControls
         presentation={presentation}
@@ -422,7 +427,9 @@ it.each([
         : description,
     );
     expect(
-      screen.getByText(`Execution machine: ${value.machine_id}`),
+      screen.getByText(
+        safePresentation(`Execution machine: ${value.machine_id}`),
+      ),
     ).toBeTruthy();
     expect(
       Boolean(screen.queryByRole("button", { name: "Start local Worker" })),
@@ -498,7 +505,9 @@ it.each([true, false])(
     const details = screen.getByText("Details").closest("details")!;
     expect(details.open).toBe(false);
     expect(
-      within(details).getByText(`Execution machine: ${value.machine_id}`),
+      within(details).getByText(
+        safePresentation(`Execution machine: ${value.machine_id}`),
+      ),
     ).toBeTruthy();
     expect(
       screen

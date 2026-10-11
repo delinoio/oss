@@ -1,3 +1,4 @@
+import { usePresentationLabels } from "./product-presentation";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { useEffect, useRef } from "react";
@@ -30,6 +31,7 @@ export function BackupJob({
   completed: () => void;
   dismiss: () => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const creation = useQuery(
     SystemQuery.getBackupCreation,
@@ -98,13 +100,15 @@ export function BackupJob({
         kind === BackupJobKind.Creation
           ? "backup-job.creationTracking"
           : "backup-job.deletionTracking",
-        { v0: accepted.backupId },
+        { v0: presentationLabels.identity(accepted.backupId, "backup") },
       )}
     >
       <h4>
         <LocalizedText
           id="backup-job.backup_181f9b"
-          components={{ s0: <>{accepted.backupId}</> }}
+          components={{
+            s0: <>{presentationLabels.identity(accepted.backupId, "backup")}</>,
+          }}
         />
       </h4>
       {!succeeded ? (
@@ -168,7 +172,7 @@ export function BackupJob({
             kind === BackupJobKind.Creation
               ? "backup-job.dismissCreation"
               : "backup-job.dismissDeletion",
-            { v0: accepted.backupId },
+            { v0: presentationLabels.identity(accepted.backupId, "backup") },
           )}
           disabled={!active}
           onClick={dismiss}

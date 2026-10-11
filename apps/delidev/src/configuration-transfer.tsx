@@ -1,3 +1,9 @@
+import {
+  usePresentationLabels,
+  diagnosticPresentation,
+  presentationKind,
+  type PresentationLabels,
+} from "./product-presentation";
 import "./wizard-presentation.css";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import {
@@ -115,10 +121,12 @@ interface Preview {
   changes: Document[];
   machines: Document[];
 }
-const name = (entry: Entry) =>
-  text(entry.document.name) ||
-  text(entry.document.alias) ||
-  copy("configuration-transfer.extra.eba66b2c00bb");
+const name = (entry: Entry, labels: PresentationLabels) =>
+  labels.name(
+    entry.id,
+    text(entry.document.name) || text(entry.document.alias),
+    presentationKind(kinds[entry.kind]),
+  );
 function readBundle(raw: string): Bundle {
   if (encoder.encode(raw).byteLength > bundleLimit)
     throw new ProductError("validation.0c01933238f8");
@@ -247,6 +255,7 @@ export function ConfigurationTransfer({
   showCategoryIntro?: boolean;
   onWorkflowReadyChange?: (active: boolean) => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const [exported, setExported] = useState("");
   const [draft, setDraft] = useState("");
@@ -542,6 +551,16 @@ export function ConfigurationTransfer({
       : loaded
         ? TransferStage.Map
         : TransferStage.Load;
+  if (loaded) {
+    for (const entry of loaded.bundle.entries)
+      presentationLabels.observe(
+        entry.id,
+        text(entry.document.name) || text(entry.document.alias),
+        presentationKind(kinds[entry.kind]),
+      );
+    for (const machine of loaded.bundle.machines)
+      presentationLabels.observe(machine.id, machine.name, "runner");
+  }
   return (
     <section
       className="configuration-transfer wizard-step-presentation"
@@ -789,7 +808,15 @@ export function ConfigurationTransfer({
                 <LocalizedText
                   id="configuration-transfer.sourceMachine_b09a79"
                   components={{
-                    s0: <>{machine.name}</>,
+                    s0: (
+                      <>
+                        {presentationLabels.name(
+                          machine.id,
+                          machine.name,
+                          "runner",
+                        )}
+                      </>
+                    ),
                     s1: <>{machine.os}</>,
                     s2: <>{machine.architecture}</>,
                   }}
@@ -797,7 +824,11 @@ export function ConfigurationTransfer({
               </p>
               <ResourceChoice
                 label={copy("configuration-transfer.targetFor_183f6f", {
-                  v0: machine.name,
+                  v0: presentationLabels.name(
+                    machine.id,
+                    machine.name,
+                    "runner",
+                  ),
                 })}
                 kind={EntityKind.MACHINE}
                 value={machines[machine.id] ?? ""}
@@ -845,7 +876,7 @@ export function ConfigurationTransfer({
             return (
               <section key={entry.id}>
                 <h4>
-                  {name(entry)} · {entry.kind}
+                  {name(entry, presentationLabels)} · {entry.kind}
                 </h4>
                 {entry.kind === "account" ? (
                   <p>
@@ -857,7 +888,7 @@ export function ConfigurationTransfer({
                   <>
                     <label>
                       {copy("configuration-transfer.actionFor_428793", {
-                        v0: name(entry),
+                        v0: name(entry, presentationLabels),
                       })}
                       <select
                         value={binding.action}
@@ -892,7 +923,7 @@ export function ConfigurationTransfer({
                     {binding.action !== ImportAction.Create ? (
                       <ResourceChoice
                         label={copy("configuration-transfer.existing_35e8bd", {
-                          v0: name(entry),
+                          v0: name(entry, presentationLabels),
                         })}
                         kind={kinds[entry.kind]!}
                         value={binding.target}
@@ -935,8 +966,13 @@ export function ConfigurationTransfer({
                               label={copy(
                                 "configuration-transfer.targetCheckoutForOn_27ac75",
                                 {
-                                  v0: name(entry),
-                                  v1: machine?.name ?? source,
+                                  v0: name(entry, presentationLabels),
+                                  v1:
+                                    machine?.name ||
+                                    presentationLabels.identity(
+                                      source,
+                                      "runner",
+                                    ),
                                 },
                               )}
                               value={paths[key] ?? ""}
@@ -991,7 +1027,11 @@ export function ConfigurationTransfer({
                   s0: <>{text(machine.name)}</>,
                   s1: <>{text(machine.os)}</>,
                   s2: <>{text(machine.architecture)}</>,
-                  s3: <>{text(machine.id)}</>,
+                  s3: (
+                    <>
+                      {text(presentationLabels.identity(machine.id, "runner"))}
+                    </>
+                  ),
                 }}
               />
             </p>
@@ -1008,7 +1048,13 @@ export function ConfigurationTransfer({
               <p>
                 <LocalizedText
                   id="configuration-transfer.target_8daa2b"
-                  components={{ s0: <>{text(change.id)}</> }}
+                  components={{
+                    s0: (
+                      <>
+                        {text(presentationLabels.identity(change.id, "record"))}
+                      </>
+                    ),
+                  }}
                 />
               </p>
               <p>
@@ -1113,7 +1159,8 @@ export function ConfigurationTransfer({
               }
             >
               <p role="alert">
-                {text(importProblem.message)} {text(importProblem.guidance)}
+                {diagnosticPresentation(importProblem.message)}{" "}
+                {diagnosticPresentation(importProblem.guidance)}
               </p>
             </ServiceProblem>
           ) : null}

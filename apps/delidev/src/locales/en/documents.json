@@ -2,5 +2,22 @@
   "documents.worktree_c893ba": "Worktree",
   "documents.localComputer_09d55f": "Local computer",
   "documents.generalChat_f634bc": "General Chat",
-  "documents.extra.e504e6152194": "Unnamed"
+  "documents.extra.e504e6152194": "Unnamed",
+  "documents.kind.record": "Record {{number}}",
+  "documents.kind.project": "Project {{number}}",
+  "documents.kind.repository": "Repository {{number}}",
+  "documents.kind.session": "Session {{number}}",
+  "documents.kind.account": "Account {{number}}",
+  "documents.kind.provider": "Provider {{number}}",
+  "documents.kind.runner": "Runner Device {{number}}",
+  "documents.kind.terminal": "Terminal {{number}}",
+  "documents.kind.backup": "Backup {{number}}",
+  "documents.kind.input": "Input {{number}}",
+  "documents.internalReference": "Internal reference",
+  "documents.unavailableName": "{{kind}} · Name unavailable",
+  "documents.numberedName": "{{name}} · {{number}}",
+  "documents.kind.agent": "Agent Worker {{number}}",
+  "documents.kind.model": "Model {{number}}",
+  "documents.kind.device": "Device {{number}}",
+  "documents.kind.server": "Server {{number}}"
 }

@@ -1,4 +1,9 @@
 import { configurationNameConflictCopy } from "./configuration-name-conflict";
+import {
+  usePresentationLabels,
+  diagnosticPresentation,
+  presentationKind,
+} from "./product-presentation";
 import { ProjectEditTabs, ProjectEditTab } from "./project-edit-tabs";
 import { defaultBranchPrefix, validBranchPrefix } from "./session-defaults";
 import { useSidebarActivity } from "./sidebar-context";
@@ -63,14 +68,7 @@ import {
   newRequestId,
   type Resource,
 } from "@delinoio/delidev-api-client";
-import {
-  document,
-  items,
-  object,
-  resourceName,
-  text,
-  type Document,
-} from "./documents";
+import { document, items, object, text, type Document } from "./documents";
 import { Problem, ServiceProblem } from "./ui";
 import { useRetainedMutation } from "./mutation";
 import { JobState, TrackedJob } from "./jobs";
@@ -836,6 +834,7 @@ export function ResourceChoice({
   emptyLabel?: string;
   resolvedChoice?: Resource;
 }) {
+  const presentationLabels = usePresentationLabels();
   const sidebarActivity = useSidebarActivity();
   active = active && sidebarActivity;
   useLocale();
@@ -1232,6 +1231,9 @@ export function ResourceChoice({
       (JSON.parse(allowedKey) as unknown[]).includes(value))
       ? knownHarness(selectedData.harness)
       : undefined;
+  result.rows.forEach((row) =>
+    presentationLabels.observe(row.id, row.name, presentationKind(kind)),
+  );
   const options = [
     {
       id: "",
@@ -1246,7 +1248,7 @@ export function ResourceChoice({
       id: row.id,
       decoration: decorate(row.harness),
       label:
-        (row.name || copy("documents.extra.e504e6152194")) +
+        presentationLabels.name(row.id, row.name, presentationKind(kind)) +
         (kind === EntityKind.ACCOUNT
           ? copy("configuration-fields.message_2fa20b", {
               v0: statusLabel(row.health),
@@ -1294,7 +1296,7 @@ export function ResourceChoice({
           selectedLabel={
             value
               ? selectedResource
-                ? resourceName(selectedResource)
+                ? presentationLabels.resource(selectedResource)
                 : copy("configuration-fields.sentence.38798a0275ce", {
                     v0: resourceLabel,
                   })
@@ -1310,6 +1312,7 @@ export function ResourceChoice({
           markRequired={markRequired}
         />
       )}
+
       {needsProviderCapability && active && !ready ? (
         <p role="status">
           {copy("configuration-fields.providerAndModelChoicesRequireA_5726bc")}
@@ -1377,8 +1380,8 @@ export function ResourceChoice({
             </SettingsActionButton>
           }
         >
-          <p>{result.error.failure.message}</p>
-          <p>{result.error.failure.guidance}</p>
+          <p>{diagnosticPresentation(result.error.failure.message)}</p>
+          <p>{diagnosticPresentation(result.error.failure.guidance)}</p>
         </ServiceProblem>
       ) : null}
       <Problem error={failure} />
@@ -1441,6 +1444,7 @@ function OrderedLinks({
   explanation?: string;
   names?: ReadonlyMap<string, string>;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const [selected, setSelected] = useState("");
   const id = (value: unknown) =>
@@ -1501,7 +1505,7 @@ function OrderedLinks({
                 <RepositoryIdentity id={id(link)} />
               </>
             ) : (
-              <code>{id(link)}</code>
+              <code>{presentationLabels.identity(id(link))}</code>
             )}
             {weighted ? (
               <label>
@@ -2114,6 +2118,7 @@ export function RepositoryIdentity({
   id: string;
   descriptionId?: string;
 }) {
+  const presentationLabels = usePresentationLabels();
   return (
     <>
       <Disclosure
@@ -2123,11 +2128,11 @@ export function RepositoryIdentity({
         <DisclosureSummary>
           {copy("project-creation.repositoryDetails")}
         </DisclosureSummary>
-        <code>{id}</code>
+        <code>{presentationLabels.identity(id, "record")}</code>
       </Disclosure>
       {descriptionId ? (
         <span id={descriptionId} className="project-repository-id">
-          <code>{id}</code>
+          <code>{presentationLabels.identity(id, "record")}</code>
         </span>
       ) : null}
     </>
@@ -2135,13 +2140,13 @@ export function RepositoryIdentity({
 }
 export function projectRepositoryOption(
   id: string,
-  index: number,
+  number: number,
   names: ReadonlyMap<string, string>,
 ) {
   const name = names.get(id) ?? copy("project-creation.nameUnavailable");
   return [...names.values()].filter((value) => value === name).length > 1 ||
     !names.has(id)
-    ? copy("project-creation.distinctRepository", { name, position: index + 1 })
+    ? copy("project-creation.distinctRepository", { name, position: number })
     : name;
 }
 function ProjectFields({
@@ -2154,6 +2159,7 @@ function ProjectFields({
   supportsProjectBehavior = false,
   supportsSessionDefaults = false,
 }: FieldsProps) {
+  const presentationLabels = usePresentationLabels();
   const [selected, setSelected] = useState("");
   useLocale();
   const repositories = items(data.repositories).map(text);
@@ -2276,7 +2282,11 @@ function ProjectFields({
                   </option>
                   {repositories.map((id, index) => (
                     <option key={id} value={id}>
-                      {projectRepositoryOption(id, index, names)}
+                      {projectRepositoryOption(
+                        id,
+                        presentationLabels.number(id, "repository"),
+                        names,
+                      )}
                     </option>
                   ))}
                 </select>
@@ -2478,6 +2488,7 @@ export function RepositoryFields({
   registration?: boolean;
   requiredCheckout?: { machine_id: string; path: string };
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const [machine, setMachine] = useState(""),
     [path, setPath] = useState("");
@@ -2763,7 +2774,10 @@ export function RepositoryFields({
                 />
               ) : (
                 <p>
-                  {text(checkout.machine_id)} · {text(checkout.path)}
+                  {text(
+                    presentationLabels.identity(checkout.machine_id, "runner"),
+                  )}{" "}
+                  · {text(checkout.path)}
                 </p>
               )}
               {required ? (

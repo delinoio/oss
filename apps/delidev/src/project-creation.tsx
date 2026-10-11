@@ -1,4 +1,5 @@
 import { configurationNameConflictCopy } from "./configuration-name-conflict";
+import { usePresentationLabels } from "./product-presentation";
 import "./wizard-presentation.css";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
@@ -151,6 +152,7 @@ export function ProjectCreationWizard({
   children?: ReactNode;
   registrationAdapters?: ProjectRegistrationAdapters;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const [step, setStep] = useState(Step.Repositories);
   const [nameEdited, setNameEdited] = useState(Boolean(text(data.name)));
@@ -596,7 +598,11 @@ export function ProjectCreationWizard({
                 </option>
                 {ids.map((id, index) => (
                   <option key={id} value={id}>
-                    {projectRepositoryOption(id, index, names)}
+                    {projectRepositoryOption(
+                      id,
+                      presentationLabels.number(id, "repository"),
+                      names,
+                    )}
                   </option>
                 ))}
               </select>
@@ -635,7 +641,10 @@ export function ProjectCreationWizard({
               <dd>
                 {projectRepositoryOption(
                   text(data.primary_repository),
-                  ids.indexOf(text(data.primary_repository)),
+                  presentationLabels.number(
+                    text(data.primary_repository),
+                    "repository",
+                  ),
                   names,
                 )}
               </dd>

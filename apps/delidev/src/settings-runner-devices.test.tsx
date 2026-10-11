@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { safePresentation } from "./product-presentation-test-support";
 import { create } from "@bufbuild/protobuf";
 import { StrictMode, useState } from "react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
@@ -215,7 +216,9 @@ it("renders the approved uncertain/loading hierarchy without duplicate guidance 
     ),
   ).toHaveLength(1);
   expect(
-    screen.getByText(`Execution machine: ${current.machine_id}`),
+    screen.getByText(
+      safePresentation(`Execution machine: ${current.machine_id}`),
+    ),
   ).toBeTruthy();
   const inventory = screen.getByRole("region", {
     name: "Saved runner devices",
@@ -274,7 +277,7 @@ it("retains original order, parser fallback, full IDs and schema-gated inspect a
     ),
   ).toEqual(["Zulu", "Alpha", "Unnamed"]);
   for (const row of rows)
-    expect(within(inventory).getByText(row.id)).toBeTruthy();
+    expect(within(inventory).getByText(safePresentation(row.id))).toBeTruthy();
   expect(
     (
       within(inventory).getAllByRole("button", {
@@ -504,11 +507,15 @@ it.each(["navigation", "Escape then navigation"])(
       screen.getByRole("heading", { level: 1, name: "AI Subscription" }),
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Runner Devices" }));
-    await screen.findByText(`Execution machine: ${replacement.machine_id}`);
+    await screen.findByText(
+      safePresentation(`Execution machine: ${replacement.machine_id}`),
+    );
     const calls = control.mock.calls.length;
     await act(async () => pending.resolve(status(LocalWorkerState.Uncertain)));
     expect(
-      screen.getByText(`Execution machine: ${replacement.machine_id}`),
+      screen.getByText(
+        safePresentation(`Execution machine: ${replacement.machine_id}`),
+      ),
     ).toBeTruthy();
     expect(control.mock.calls).toHaveLength(calls);
   },

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { usePresentationLabels } from "./product-presentation";
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import {
   useCallback,
@@ -233,6 +234,7 @@ function StartingBranch({
   active: boolean;
   supported: boolean;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const transport = useTransport();
   const repository = useQuery(
@@ -514,7 +516,7 @@ function StartingBranch({
     (remote !== inventory.remote || !inventory.branches.includes(selected));
   const label = primary
     ? copy("new-session.startingBranch")
-    : `${copy("new-session.startingBranch")} · ${text(document(repo).name) || repositoryId}`;
+    : `${copy("new-session.startingBranch")} · ${text(document(repo).name) || presentationLabels.identity(repositoryId, "repository")}`;
   return (
     <div className="starting-branch-autocomplete">
       <label htmlFor={`${id}-input`}>{label}</label>

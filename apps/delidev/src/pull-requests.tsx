@@ -1,3 +1,4 @@
+import { usePresentationLabels } from "./product-presentation";
 import { useSidebarActivity, useSidebarPaneVisible } from "./sidebar-context";
 import {
   DisclosureButton,
@@ -21,7 +22,7 @@ import {
   type Resource,
   newRequestId,
 } from "@delinoio/delidev-api-client";
-import { document as resourceDocument, resourceName, text } from "./documents";
+import { document as resourceDocument, text } from "./documents";
 import {
   ItemKind,
   ItemState,
@@ -88,6 +89,7 @@ function RepositoryNavigationRow({
   toggleDetails: () => void;
   dismissDetails: () => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const detailsId = useId();
   const available = useSidebarActivity();
@@ -240,7 +242,7 @@ function RepositoryNavigationRow({
       window.visualViewport?.removeEventListener("scroll", position);
     };
   }, [visible]);
-  const name = resourceName(row);
+  const name = presentationLabels.resource(row);
   const config = resourceDocument(row);
   const owner = text(config.github_owner),
     repository = text(config.github_name);
@@ -314,6 +316,7 @@ function PendingDismissal({
   intent: RetainedMutationIntent;
   id: string;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const mutation = useRetainedMutation(
     intent.key,
@@ -324,7 +327,7 @@ function PendingDismissal({
       <strong>
         <LocalizedText
           id="pull-requests.problemDismissal_9c312b"
-          components={{ s0: <>{id}</> }}
+          components={{ s0: <>{presentationLabels.identity(id, "record")}</> }}
         />
       </strong>
       <p>
@@ -350,6 +353,7 @@ function PendingCollection({
   repositoryId: string;
   number: string;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const mutation = useRetainedMutation(
     intent.key,
@@ -360,7 +364,10 @@ function PendingCollection({
       <strong>
         <LocalizedText
           id="pull-requests.problemCollectionRepositoryPr_233e06"
-          components={{ s0: <>{repositoryId}</>, s1: <>{number}</> }}
+          components={{
+            s0: <>{presentationLabels.identity(repositoryId, "repository")}</>,
+            s1: <>{number}</>,
+          }}
         />
       </strong>
       <p>
@@ -386,6 +393,7 @@ function PendingAllowance({
   repositoryId: string;
   pullRequestId: string;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const workflow = usePRWorkflow();
   const mutation = useRetainedMutation(
@@ -401,7 +409,10 @@ function PendingAllowance({
       <strong>
         <LocalizedText
           id="pull-requests.attemptAllowanceRepositoryPr_510835"
-          components={{ s0: <>{repositoryId}</>, s1: <>{pullRequestId}</> }}
+          components={{
+            s0: <>{presentationLabels.identity(repositoryId, "repository")}</>,
+            s1: <>{pullRequestId}</>,
+          }}
         />
       </strong>
       <p>
@@ -565,6 +576,7 @@ export function PullRequests({
   active: boolean;
   openSettings: (destination?: SettingsNavigationEntry) => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const { root, bindRoot } = useGitHubScrollRoot();
   const [repositoryId, setRepositoryId] = useState("");
@@ -952,7 +964,9 @@ export function PullRequests({
               <header className="pr-list-header">
                 <div>
                   <h2>{copy("pull-requests.pullRequests_d9e3f2")}</h2>
-                  {selected ? <p>{resourceName(selected)}</p> : null}
+                  {selected ? (
+                    <p>{presentationLabels.resource(selected)}</p>
+                  ) : null}
                 </div>
               </header>
             ) : (

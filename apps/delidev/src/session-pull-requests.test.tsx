@@ -1,5 +1,6 @@
+import { safePresentation } from "./product-presentation-test-support";
 import { useState } from "react";
-import { chooseScrollOption, waitScrollChoices } from "./test-scroll-picker";
+
 import { create, toBinary } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -362,7 +363,9 @@ it("keeps a committed unlink recoverable after refresh, reopen and session navig
     screen.getByRole("button", { name: "Retry original PR unlink" }),
   ).toBeTruthy();
   expect(
-    screen.getByText(`Original association: ${original.mutation!.id}`),
+    screen.getByText(
+      safePresentation(`Original association: ${original.mutation!.id}`),
+    ),
   ).toBeTruthy();
 
   closeAssociations();

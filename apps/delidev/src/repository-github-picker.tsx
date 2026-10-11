@@ -1,3 +1,4 @@
+import { usePresentationLabels } from "./product-presentation";
 import { ScrollPicker } from "./scroll-picker";
 import { ScrollContinuation } from "./scroll-continuation";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
@@ -306,6 +307,7 @@ export function RepositoryGitHubPicker({
   disabled: boolean;
   choose: (selection: GitHubCloneSelection, url: string) => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const opener = useRef<HTMLButtonElement>(null),
     taskVisible = useSettingsTaskVisible();
@@ -466,7 +468,9 @@ export function RepositoryGitHubPicker({
               id: row.id,
               label: resourceName(row),
             }))}
-            selectedLabel={profile ? resourceName(profile) : undefined}
+            selectedLabel={
+              profile ? presentationLabels.resource(profile) : undefined
+            }
           />
           <div className="actions">
             <SettingsActionButton

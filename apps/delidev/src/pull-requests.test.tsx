@@ -1061,7 +1061,10 @@ it("keeps repository inventory visits free of GitHub content reads across langua
     fireEvent.click(
       document.querySelector('[data-settings-category="repositories"]')!,
     );
-    await screen.findByText(repositoryId);
+    await screen.findByText("GitHub configured");
+    expect(
+      document.querySelector(".repository-row")?.textContent,
+    ).not.toContain(repositoryId);
     expect(document.querySelector(".repository-github-tools")).toBeNull();
     expect(
       document.querySelector('[aria-label="Browse repository GitHub items"]'),

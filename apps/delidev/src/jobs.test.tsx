@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { safePresentation } from "./product-presentation-test-support";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -77,7 +78,7 @@ it("observes the original job automatically and removes only generic success pre
   await waitFor(() => expect(f.read).toHaveBeenCalledTimes(1));
   const input = screen.getByRole("textbox", { name: "Result draft" });
   input.focus();
-  expect(screen.queryByText(f.initial.id)).toBeNull();
+  expect(screen.queryByText(safePresentation(f.initial.id))).toBeNull();
   expect(screen.queryByText("871")).toBeNull();
   expect(
     screen.queryByRole("button", { name: /Refresh operation/ }),
@@ -115,7 +116,7 @@ it.each(["failed", "canceled", "uncertain"])(
     const f = fixture(state);
     render(f.view);
     expect(await screen.findByRole("status")).toBeTruthy();
-    expect(screen.queryByText(f.initial.id)).toBeNull();
+    expect(screen.queryByText(safePresentation(f.initial.id))).toBeNull();
     expect(screen.queryByRole("button", { name: /Refresh|Retry/ })).toBeNull();
     expect(
       screen.getByRole("textbox", { name: "Result draft" }),

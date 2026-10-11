@@ -1,3 +1,4 @@
+import { usePresentationLabels } from "./product-presentation";
 import {
   PaidCredits,
   PaidCreditState,
@@ -98,6 +99,7 @@ function NativeManagedSubscriptionAccount({
   active: boolean;
   close: () => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const closeTask = useCloseSettingsTask(close);
   const initialResource = "kind" in initial ? initial : undefined;
@@ -304,10 +306,10 @@ function NativeManagedSubscriptionAccount({
     <section
       className="subscription-account-create"
       aria-label={copy("subscription-accounts.manageSubscription_5ac1d0", {
-        v0: resourceName(current),
+        v0: presentationLabels.resource(current),
       })}
     >
-      <h2>{resourceName(current)}</h2>
+      <h2>{presentationLabels.resource(current)}</h2>
       <p>
         {subscriptionServiceNames[service]} ·{" "}
         {connected
@@ -319,7 +321,7 @@ function NativeManagedSubscriptionAccount({
           {copy("claude-subscription.ownerRunner", {
             runner:
               owner.data?.resource?.id === ownerMachine
-                ? resourceName(owner.data.resource)
+                ? presentationLabels.resource(owner.data.resource)
                 : copy("claude-subscription.originalRunner"),
           })}
         </p>
@@ -419,7 +421,9 @@ function NativeManagedSubscriptionAccount({
             <p>
               <LocalizedText
                 id="subscription-accounts.logOutActiveExecutionsAreCanceled_dc5bf0"
-                components={{ s0: <>{resourceName(logoutConfirmation)}</> }}
+                components={{
+                  s0: <>{presentationLabels.resource(logoutConfirmation)}</>,
+                }}
               />
             </p>
             {current.revision !== logoutConfirmation.revision ? (

@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
+import { usePresentationLabels } from "./product-presentation";
 import { useLayoutEffect, useRef } from "react";
 import { copy } from "./localization";
 import { Comparison } from "./session-diff-model";
 import { SessionTabKind, sessionTabKey, type SessionTab } from "./session-tabs";
 import { bindingAria, shortcutPlatform } from "./shortcuts";
-export function tabName(tab: SessionTab): string {
+export function tabName(
+  tab: SessionTab,
+  terminalName = copy("session.terminals_7482c4"),
+): string {
   switch (tab.kind) {
     case SessionTabKind.Conversation:
       return copy("session.conversation_ccca18");
@@ -13,7 +17,7 @@ export function tabName(tab: SessionTab): string {
     case SessionTabKind.Comparison:
       return `${copy("session.diff_7ecf46")} · ${tab.path} · ${copy(tab.comparison === Comparison.Creation ? "session-diff.workingTreeAgainstCreationCommit_3102e8" : tab.comparison === Comparison.Staged ? "session-diff.stagedChangesAgainstCurrentHead_9974f1" : "session-diff.workingTreeAgainstCurrentHead_f0fac9")}`;
     case SessionTabKind.Terminal:
-      return `${copy("session.terminals_7482c4")} · ${tab.id}`;
+      return terminalName;
     case SessionTabKind.Page:
       return tab.title;
     case SessionTabKind.PendingSidechat:
@@ -46,6 +50,7 @@ export function SessionTabBar({
   close: (key: string) => void;
   id: string;
 }) {
+  const presentationLabels = usePresentationLabels();
   const root = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     root.current
@@ -61,7 +66,12 @@ export function SessionTabBar({
     >
       {tabs.map((tab, index) => {
         const key = sessionTabKey(tab),
-          name = tabName(tab);
+          name = tabName(
+            tab,
+            tab.kind === SessionTabKind.Terminal
+              ? presentationLabels.identity(tab.id, "terminal")
+              : undefined,
+          );
         return (
           <div
             className={`session-tab${selected === key ? " is-selected" : ""}`}

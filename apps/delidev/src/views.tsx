@@ -1,6 +1,7 @@
+import { usePresentationLabels } from "./product-presentation";
 import { useSidebarPaneVisible } from "./sidebar-context";
 // SPDX-License-Identifier: Apache-2.0
-import { LocalizedText, copy, useLocale } from "./localization";
+import { copy, useLocale } from "./localization";
 import {
   useCallback,
   useEffect,
@@ -88,6 +89,7 @@ export function Search({
   active: boolean;
   open: (id: string) => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const [draft, setDraft] = useState<SearchFilters>(emptySearch);
   const [query, setQuery] = useState<SearchFilters>();
@@ -395,7 +397,12 @@ export function Search({
                   {hit.sessionName}
                 </button>
                 <p>{text(document(hit.message).text)}</p>
-                <small>{hit.message?.sessionId}</small>
+                <small>
+                  {presentationLabels.identity(
+                    hit.message?.sessionId,
+                    "session",
+                  )}
+                </small>
               </article>
             ))
           }

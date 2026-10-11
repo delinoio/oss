@@ -1,11 +1,7 @@
+import { diagnosticPresentation } from "./product-presentation";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { Disclosure, DisclosureSummary } from "./disclosure";
-import {
-  LocalizedText,
-  copy,
-  useLocale,
-  type MessageKey,
-} from "./localization";
+import { copy, useLocale, type MessageKey } from "./localization";
 import {
   useLayoutEffect,
   useId,
@@ -74,18 +70,10 @@ export function Failure({
       {actions ? <div className="actions">{actions}</div> : null}
       <Disclosure>
         <DisclosureSummary>{copy("ui.technicalDetails")}</DisclosureSummary>
-        <strong>{failure.message}</strong>
-        <p>{failure.guidance}</p>
+        <strong>{diagnosticPresentation(failure.message)}</strong>
+        <p>{diagnosticPresentation(failure.guidance)}</p>
         <code>{failure.code}</code>
       </Disclosure>
-      {failure.correlationId ? (
-        <small>
-          <LocalizedText
-            id="ui.reference_0eac07"
-            components={{ s0: <>{failure.correlationId}</> }}
-          />
-        </small>
-      ) : null}
     </div>
   );
 }

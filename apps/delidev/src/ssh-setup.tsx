@@ -1,3 +1,4 @@
+import { usePresentationLabels } from "./product-presentation";
 import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 // SPDX-License-Identifier: Apache-2.0
@@ -56,13 +57,15 @@ function SSHSetupTask({
   active: boolean;
   close: () => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const formId = useId();
   const [host, setHost] = useState(""),
     [port, setPort] = useState("22"),
     [user, setUser] = useState(""),
     [name, setName] = useState(""),
-    [id, setId] = useState("");
+    [id, setId] = useState(""),
+    [enteredId, setEnteredId] = useState("");
   const [submittedStartId, setSubmittedStartId] = useState("");
   const [accepted, setAccepted] = useState<Resource>(),
     [confirmed, setConfirmed] = useState(false),
@@ -113,6 +116,7 @@ function SSHSetupTask({
     (response) => {
       if (response.setup) {
         setAccepted(response.setup);
+        setEnteredId("");
         setId(response.setup.id);
         setConfirmed(false);
         setUncertain(false);
@@ -305,9 +309,11 @@ function SSHSetupTask({
               {copy("ssh-setup.originalSetupId_888879")}
               <input
                 disabled={Boolean(submittedStartId)}
-                value={id}
+                value={enteredId}
+                placeholder={id ? presentationLabels.identity(id) : undefined}
                 maxLength={36}
                 onChange={(event) => {
+                  setEnteredId(event.target.value);
                   setId(event.target.value);
                   setConfirmed(false);
                   setAccepted(undefined);
@@ -446,7 +452,16 @@ function SSHSetupTask({
                     id="ssh-setup.workerReadinessConfirmedMachine_699397"
                     components={{
                       s0: <>{text(result.worker_version)}</>,
-                      s1: <>{text(result.machine_id)}</>,
+                      s1: (
+                        <>
+                          {text(
+                            presentationLabels.identity(
+                              result.machine_id,
+                              "runner",
+                            ),
+                          )}
+                        </>
+                      ),
                     }}
                   />
                 </p>

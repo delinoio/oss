@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { usePresentationLabels } from "./product-presentation";
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { useEffect, useRef, type ReactNode, type SyntheticEvent } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -82,6 +83,7 @@ export function RepositoryCheckoutIdentity({
   path: string;
   active: boolean;
 }) {
+  const presentationLabels = usePresentationLabels();
   const machine = useQuery(
     ResourceQuery.listResources,
     { filter: { kind: EntityKind.MACHINE, pageSize: 50, pageToken: "" } },
@@ -101,7 +103,8 @@ export function RepositoryCheckoutIdentity({
           <span>{name}</span> ·{" "}
         </>
       ) : null}
-      <code>{machineId}</code> · <code>{path}</code>
+      <code>{presentationLabels.identity(machineId, "runner")}</code> ·{" "}
+      <code>{path}</code>
     </p>
   );
 }

@@ -1,3 +1,4 @@
+import { diagnosticPresentation } from "./product-presentation";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { copy, useLocale } from "./localization";
 import { useRef, useMemo, type ReactNode } from "react";
@@ -189,7 +190,8 @@ export function ObservedJob({
               code={text(problem.code) || text(problem.problem_code)}
             >
               <p role="alert">
-                {text(problem.message)} {text(problem.guidance)}
+                {diagnosticPresentation(problem.message)}{" "}
+                {diagnosticPresentation(problem.guidance)}
               </p>
             </ServiceProblem>
           ) : null}

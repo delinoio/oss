@@ -1,3 +1,4 @@
+import { usePresentationLabels } from "./product-presentation";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -22,6 +23,7 @@ export function SidechatFindings({
   session: Resource;
   messages: readonly Resource[];
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const fork = object(document(session).fork);
   const sidechat = Boolean(fork.sidechat_parent_snapshot);
@@ -182,7 +184,9 @@ export function SidechatFindings({
         <p role="status">
           <LocalizedText
             id="sidechat.selectedFindingsQueuedAsReviewThem_7c06ec"
-            components={{ s0: <>{accepted}</> }}
+            components={{
+              s0: <>{presentationLabels.identity(accepted, "record")}</>,
+            }}
           />
         </p>
       ) : null}

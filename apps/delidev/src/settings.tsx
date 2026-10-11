@@ -4,6 +4,7 @@ import {
   ConfigurationNameJobFailure,
   isConfigurationNameConflict,
 } from "./configuration-name-conflict";
+import { usePresentationLabels } from "./product-presentation";
 import { revealProjectInvalidControl } from "./project-edit-tabs";
 import { defaultBranchPrefix, validBranchPrefix } from "./session-defaults";
 import {
@@ -90,7 +91,6 @@ import {
   encode,
   items,
   object,
-  resourceName,
   text,
   type Document,
 } from "./documents";
@@ -154,7 +154,7 @@ import { ShortcutSettings } from "./shortcut-settings";
 import { DateFormatSettings } from "./date-format";
 import { AppearanceSettings } from "./appearance";
 import { LanguageSettings } from "./language";
-import { statusLabel } from "./product-status";
+
 import {
   latestServerPreferences,
   readableServerPreferences,
@@ -279,6 +279,7 @@ function RepositorySaveReview({
   active: boolean;
   review: () => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const repository = useQuery(
     ResourceQuery.getResource,
@@ -321,7 +322,8 @@ function RepositorySaveReview({
       ) : null}
       {fresh ? (
         <p>
-          {resourceName(fresh)} · revision {fresh.revision.toString()}
+          {presentationLabels.resource(fresh)} · revision{" "}
+          {fresh.revision.toString()}
         </p>
       ) : null}
       {fresh ? (
@@ -371,6 +373,7 @@ export function ConfigurationEditor({
   preferencesObservation?: ServerPreferencesObservation;
   registrationAdapters?: ProjectRegistrationAdapters;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const checkoutPreference = useRunnerPreference(
     RunnerWorkflow.Checkout,
@@ -725,7 +728,7 @@ export function ConfigurationEditor({
           ? copy("settings.editPreferences_00b4cc")
           : copy("settings.newAiApiKeyEntry_5f978c")}
       </h1>
-      <p>{resourceName(initial)}</p>
+      <p>{presentationLabels.resource(initial)}</p>
       <p className="api-entry-scope">
         {copy("settings.savedOnTheSelectedServer_93dbee")}
       </p>
@@ -2017,6 +2020,7 @@ function SettingsWorkspace({
   entry?: SettingsCategoryEntry;
   navigate: NavigateSettings;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
 
   const [device, setDevice] = useState<Resource>();
@@ -2999,6 +3003,7 @@ function SettingsWorkspace({
                                 />
                               ) : (
                                 rows.map((row) => {
+                                  presentationLabels.observeResources(rows);
                                   if (kind === EntityKind.REPOSITORY)
                                     return (
                                       <RepositoryRow
@@ -3053,7 +3058,7 @@ function SettingsWorkspace({
                                       <h3>
                                         {kind === EntityKind.SETTINGS
                                           ? preferenceLabel
-                                          : resourceName(row)}
+                                          : presentationLabels.resource(row)}
                                       </h3>
                                       {text(data.health) ? (
                                         <p>
@@ -3078,7 +3083,12 @@ function SettingsWorkspace({
                                       {kind === EntityKind.TEMPLATE ? (
                                         <pre>{text(data.contents)}</pre>
                                       ) : null}
-                                      <small>{row.id}</small>
+                                      <small>
+                                        {presentationLabels.identity(
+                                          row.id,
+                                          "record",
+                                        )}
+                                      </small>
                                       <div className="actions">
                                         {editableKinds.includes(kind) ? (
                                           <SettingsActionButton
@@ -3093,7 +3103,9 @@ function SettingsWorkspace({
                                                 v0:
                                                   kind === EntityKind.SETTINGS
                                                     ? preferenceLabel
-                                                    : resourceName(row),
+                                                    : presentationLabels.resource(
+                                                        row,
+                                                      ),
                                               },
                                             )}
                                             disabled={row.schemaVersion !== 1}
@@ -3112,7 +3124,9 @@ function SettingsWorkspace({
                                                     {kind ===
                                                     EntityKind.SETTINGS
                                                       ? preferenceLabel
-                                                      : resourceName(row)}
+                                                      : presentationLabels.resource(
+                                                          row,
+                                                        )}
                                                   </>
                                                 ),
                                               }}
@@ -3129,7 +3143,11 @@ function SettingsWorkspace({
                                             targetId={row.id}
                                             aria-label={copy(
                                               "settings.delete_cd822e",
-                                              { v0: resourceName(row) },
+                                              {
+                                                v0: presentationLabels.resource(
+                                                  row,
+                                                ),
+                                              },
                                             )}
                                             disabled={row.schemaVersion !== 1}
                                             onClick={() => setDeleting(row)}
@@ -3137,7 +3155,13 @@ function SettingsWorkspace({
                                             <LocalizedText
                                               id="settings.delete_a1b98e"
                                               components={{
-                                                s0: <>{resourceName(row)}</>,
+                                                s0: (
+                                                  <>
+                                                    {presentationLabels.resource(
+                                                      row,
+                                                    )}
+                                                  </>
+                                                ),
                                               }}
                                             />
                                           </SettingsActionButton>
@@ -3360,7 +3384,9 @@ function SettingsWorkspace({
             !editing.initial
               ? copy("settings.savedOnTheSelectedServer_93dbee")
               : routing
-                ? copy("routing-preview.scope", { v0: resourceName(routing) })
+                ? copy("routing-preview.scope", {
+                    v0: presentationLabels.resource(routing),
+                  })
                 : undefined
           }
           size={taskSize}
@@ -3498,6 +3524,7 @@ function RunnerDeviceInventory({
   nextPage: string;
   inspect: (row: Resource) => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   return (
     <section
@@ -3543,11 +3570,12 @@ function RunnerDeviceInventory({
       >
         {(rows) =>
           rows.map((row) => {
+            presentationLabels.observeResources(rows);
             const data = document(row);
             return (
               <article className="settings-runner-row" key={row.id}>
                 <div className="settings-runner-identity">
-                  <h3>{resourceName(row)}</h3>
+                  <h3>{presentationLabels.resource(row)}</h3>
                   {text(data.health) ? (
                     <p>
                       <LocalizedText
@@ -3564,7 +3592,7 @@ function RunnerDeviceInventory({
                       />
                     </p>
                   ) : null}
-                  <small>{row.id}</small>
+                  <small>{presentationLabels.identity(row.id, "record")}</small>
                 </div>
                 <div className="actions">
                   <SettingsActionButton

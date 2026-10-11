@@ -1,3 +1,7 @@
+import {
+  usePresentationLabels,
+  diagnosticPresentation,
+} from "./product-presentation";
 import { useSessionActive } from "./session-activity";
 import { LocalizedText, copy, useLocale } from "./localization";
 import {
@@ -276,6 +280,7 @@ export function SessionForkProvider({
   openSidechat?: (parent: string, child: Resource) => void;
   readLocalWorker?: ReadLocalWorkerProof;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const tabs = useSessionTabsStore();
   const [direct, setDirect] = useState<DirectSidechat>();
@@ -674,7 +679,7 @@ export function SessionForkProvider({
                 <LocalizedText
                   id="session-fork.createAnIndependentConversationFromAt_76ffeb"
                   components={{
-                    s0: <>{resourceName(source)}</>,
+                    s0: <>{presentationLabels.resource(source)}</>,
                     s1: (
                       <>
                         {sourceHarness(source) === "opencode"
@@ -694,7 +699,7 @@ export function SessionForkProvider({
               <LocalizedText
                 id="session-fork.sourceTurn_0471be"
                 components={{
-                  s0: <>{source.id}</>,
+                  s0: <>{presentationLabels.identity(source.id, "record")}</>,
                   s1: (
                     <>
                       {text(object(document(source).execution).native_turn_id)}
@@ -828,7 +833,8 @@ export function SessionForkProvider({
                     code={text(problem.code) || text(problem.problem_code)}
                   >
                     <p role="alert">
-                      {text(problem.message)} {text(problem.guidance)}
+                      {diagnosticPresentation(problem.message)}{" "}
+                      {diagnosticPresentation(problem.guidance)}
                     </p>
                   </ServiceProblem>
                 ) : null}
@@ -951,7 +957,8 @@ export function PendingSidechatPane({
               }
             >
               <p role="alert">
-                {text(pending.problem.message)} {text(pending.problem.guidance)}
+                {diagnosticPresentation(pending.problem.message)}{" "}
+                {diagnosticPresentation(pending.problem.guidance)}
               </p>
             </ServiceProblem>
           ) : null}

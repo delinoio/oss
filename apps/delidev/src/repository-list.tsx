@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { usePresentationLabels } from "./product-presentation";
 import {
   SettingsActionButton,
   SettingsActionIcon,
@@ -9,7 +10,7 @@ import {
   supportsResourceSchema,
   type Resource,
 } from "@delinoio/delidev-api-client";
-import { document, items, object, resourceName, text } from "./documents";
+import { document, items, object, text } from "./documents";
 import { copy, LocalizedText, useLocale } from "./localization";
 import "./repository-list.css";
 
@@ -34,9 +35,10 @@ export function RepositoryRow({
   edit: () => void;
   remove: () => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const heading = useId(),
-    name = resourceName(row),
+    name = presentationLabels.resource(row),
     data = document(row);
   const supported = supportsResourceSchema(row);
   const owner = text(data.github_owner),
@@ -149,10 +151,6 @@ export function RepositoryRow({
           />
         </p>
       ) : null}
-      <p className="repository-resource-id">
-        <span>{copy("settings.repositoryId")}</span>
-        <code>{row.id}</code>
-      </p>
     </article>
   );
 }

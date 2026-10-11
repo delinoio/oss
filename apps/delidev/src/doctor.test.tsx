@@ -545,7 +545,8 @@ for (const code of [Code.Unauthenticated, Code.PermissionDenied])
     expect(
       screen.getByText("Inspect the selected authorized connection."),
     ).toBeTruthy();
-    expect(screen.getByText(`Reference: ${reference}`)).toBeTruthy();
+    expect(screen.queryByText(`Reference: ${reference}`)).toBeNull();
+    expect(screen.getByRole("alert").textContent).not.toContain(reference);
   });
 
 for (const encoding of ["future", "json", "utf8", "oversized"])

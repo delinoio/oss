@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 import {
+  PresentationLabelsProvider,
+  usePresentationLabels,
+  type PresentationLabels,
+} from "./product-presentation";
+import {
   createContext,
   useContext,
   useEffect,
@@ -10,11 +15,7 @@ import {
 } from "react";
 import { create, type Message } from "@bufbuild/protobuf";
 import { createClient } from "@connectrpc/connect";
-import {
-  QueryClient,
-  QueryClientProvider,
-  useQuery as useLocalQuery,
-} from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   TransportProvider,
   useQuery,
@@ -87,8 +88,27 @@ function record(v: unknown): Record<string, unknown> {
     ? (v as Record<string, unknown>)
     : {};
 }
-function label(resource: Resource): string {
-  return text(value(resource).name) || resource.id;
+function label(
+  resource: Resource,
+  c: Labels,
+  labels: PresentationLabels,
+): string {
+  const kind =
+    resource.kind === EntityKind.PROJECT
+      ? c.project
+      : resource.kind === EntityKind.SESSION
+        ? c.sessions
+        : resource.kind === EntityKind.MACHINE
+          ? c.runner
+          : resource.kind === EntityKind.AGENT
+            ? c.agent
+            : c.record;
+  return labels.name(
+    resource.id,
+    text(value(resource).name) || text(value(resource).alias),
+    kind,
+    c,
+  );
 }
 function observation(v: unknown, c: Labels): string {
   const key = text(v);
@@ -279,6 +299,7 @@ function Settings({
   changed: () => void;
   active: boolean;
 }) {
+  const presentationLabels = usePresentationLabels();
   const c = useCopy(),
     [adding, setAdding] = useState(false),
     [name, setName] = useState(""),
@@ -423,7 +444,10 @@ function Settings({
           {JSON.stringify(
             {
               operation: "connection-profile",
-              profile_id: state.state.selectedProfile,
+              profile: presentationLabels.identity(
+                state.state.selectedProfile,
+                c.record,
+              ),
               paired: state.state.profiles.filter(
                 (p) => !p.pairing && !p.revoked,
               ).length,
@@ -543,14 +567,16 @@ function NotificationSettings({
   );
   return (
     <QueryClientProvider client={cache}>
-      <TransportProvider transport={transport}>
-        <ServerNotificationSettings
-          state={state}
-          id={id}
-          changed={changed}
-          active={active}
-        />
-      </TransportProvider>
+      <PresentationLabelsProvider>
+        <TransportProvider transport={transport}>
+          <ServerNotificationSettings
+            state={state}
+            id={id}
+            changed={changed}
+            active={active}
+          />
+        </TransportProvider>
+      </PresentationLabelsProvider>
     </QueryClientProvider>
   );
 }
@@ -808,159 +834,161 @@ function Connected({
   }
   return (
     <QueryClientProvider client={connection.cache}>
-      <TransportProvider transport={transport}>
-        <section>
-          <div className="connection">
-            <strong>{state.profile(id).name}</strong>
-            <span role="status">
-              {
-                c[
-                  status === Status.Live
-                    ? "live"
-                    : status === Status.Suspended
-                      ? "suspended"
-                      : status === Status.Certificate
-                        ? "certificate"
-                        : status === Status.Unavailable
-                          ? "unavailable"
-                          : status === Status.Revoked
-                            ? "revoked"
-                            : status === Status.Version
-                              ? "version"
-                              : "connecting"
-                ]
-              }
-            </span>
-            <button
-              disabled={!active || busy}
-              onClick={() => void connection.resume()}
-            >
-              {c.refresh}
-            </button>
-          </div>
-          {pending ? (
-            <aside role="status">
-              <p>{c.pending}</p>
-              <p>{c.inspectNote}</p>
+      <PresentationLabelsProvider>
+        <TransportProvider transport={transport}>
+          <section>
+            <div className="connection">
+              <strong>{state.profile(id).name}</strong>
+              <span role="status">
+                {
+                  c[
+                    status === Status.Live
+                      ? "live"
+                      : status === Status.Suspended
+                        ? "suspended"
+                        : status === Status.Certificate
+                          ? "certificate"
+                          : status === Status.Unavailable
+                            ? "unavailable"
+                            : status === Status.Revoked
+                              ? "revoked"
+                              : status === Status.Version
+                                ? "version"
+                                : "connecting"
+                  ]
+                }
+              </span>
               <button
-                disabled={!enabled || busy}
-                onClick={() => void inspect()}
+                disabled={!active || busy}
+                onClick={() => void connection.resume()}
               >
-                {c.inspect}
+                {c.refresh}
               </button>
-              <button
-                disabled={!enabled || busy || inspected !== pending.request}
-                onClick={() => {
-                  setRevokeConfirm(false);
-                  setConfirm(() => async () => {
-                    setBusy(true);
-                    try {
-                      await state.retry(id);
-                      changed();
-                      await connection.cache.invalidateQueries();
-                    } catch {
-                      setError(c.error);
-                    } finally {
-                      setBusy(false);
-                      setConfirm(undefined);
-                    }
-                  });
-                }}
-              >
-                {c.retry}
-              </button>
-              {inspected === pending.request ? <p>{c.inspected}</p> : null}
-            </aside>
-          ) : null}
-          {error ? <p role="alert">{error}</p> : null}
-          {tab === "inbox" && !sessionId ? (
-            <Inbox
-              enabled={enabled}
-              busy={busy || !!pending}
-              mutate={mutate}
-              open={open}
-            />
-          ) : sessionId && draft ? (
-            <Conversation
-              key={sessionId}
-              id={sessionId}
-              draft={draft}
-              enabled={enabled}
-              busy={busy || !!pending}
-              mutate={mutate}
-              back={back}
-            />
-          ) : (
-            <Sessions
-              enabled={enabled}
-              project={project}
-              setProject={setProject}
-              open={open}
-              create={() => setCreation(true)}
-            />
-          )}
-          {creation ? (
-            <Modal title={c.newSession} close={() => setCreation(false)}>
-              <NewSession
-                enabled={enabled && !busy && !pending}
-                error={error}
-                mutate={async (r) => {
-                  await mutate(Operation.Create, r, "", () =>
-                    setCreation(false),
-                  );
-                }}
+            </div>
+            {pending ? (
+              <aside role="status">
+                <p>{c.pending}</p>
+                <p>{c.inspectNote}</p>
+                <button
+                  disabled={!enabled || busy}
+                  onClick={() => void inspect()}
+                >
+                  {c.inspect}
+                </button>
+                <button
+                  disabled={!enabled || busy || inspected !== pending.request}
+                  onClick={() => {
+                    setRevokeConfirm(false);
+                    setConfirm(() => async () => {
+                      setBusy(true);
+                      try {
+                        await state.retry(id);
+                        changed();
+                        await connection.cache.invalidateQueries();
+                      } catch {
+                        setError(c.error);
+                      } finally {
+                        setBusy(false);
+                        setConfirm(undefined);
+                      }
+                    });
+                  }}
+                >
+                  {c.retry}
+                </button>
+                {inspected === pending.request ? <p>{c.inspected}</p> : null}
+              </aside>
+            ) : null}
+            {error ? <p role="alert">{error}</p> : null}
+            {tab === "inbox" && !sessionId ? (
+              <Inbox
+                enabled={enabled}
+                busy={busy || !!pending}
+                mutate={mutate}
+                open={open}
               />
-            </Modal>
-          ) : null}
-          {confirm ? (
-            <Modal
-              title={revokeConfirm ? c.confirmRevoke : c.confirmRetry}
-              close={() => setConfirm(undefined)}
-            >
-              <button disabled={busy} onClick={() => void confirm()}>
-                {c.confirm}
-              </button>
-            </Modal>
-          ) : null}
-          <details>
-            <summary>{c.diagnostics}</summary>
-            <p>
-              {c.identity}: {state.profile(id).serverId}
-            </p>
-            <p>{status}</p>
-            <button
-              disabled={!enabled || busy || !!pending}
-              onClick={() => {
-                setRevokeConfirm(true);
-                setConfirm(() => async () => {
-                  const result = await createClient(
-                    ResourceService,
-                    transport,
-                  ).getResource({
-                    kind: EntityKind.DEVICE,
-                    id: state.profile(id).deviceId,
-                  });
-                  if (result.resource)
-                    await mutate(
-                      Operation.Revoke,
-                      create(RevokeDeviceRequestSchema, {
-                        mutation: {
-                          id: result.resource.id,
-                          expectedRevision: result.resource.revision,
-                          requestId: uuid(),
-                        },
-                      }),
-                      result.resource.id,
+            ) : sessionId && draft ? (
+              <Conversation
+                key={sessionId}
+                id={sessionId}
+                draft={draft}
+                enabled={enabled}
+                busy={busy || !!pending}
+                mutate={mutate}
+                back={back}
+              />
+            ) : (
+              <Sessions
+                enabled={enabled}
+                project={project}
+                setProject={setProject}
+                open={open}
+                create={() => setCreation(true)}
+              />
+            )}
+            {creation ? (
+              <Modal title={c.newSession} close={() => setCreation(false)}>
+                <NewSession
+                  enabled={enabled && !busy && !pending}
+                  error={error}
+                  mutate={async (r) => {
+                    await mutate(Operation.Create, r, "", () =>
+                      setCreation(false),
                     );
-                  setConfirm(undefined);
-                });
-              }}
-            >
-              {c.revoke}
-            </button>
-          </details>
-        </section>
-      </TransportProvider>
+                  }}
+                />
+              </Modal>
+            ) : null}
+            {confirm ? (
+              <Modal
+                title={revokeConfirm ? c.confirmRevoke : c.confirmRetry}
+                close={() => setConfirm(undefined)}
+              >
+                <button disabled={busy} onClick={() => void confirm()}>
+                  {c.confirm}
+                </button>
+              </Modal>
+            ) : null}
+            <details>
+              <summary>{c.diagnostics}</summary>
+              <p>
+                {c.identity}: {state.profile(id).name}
+              </p>
+              <p>{status}</p>
+              <button
+                disabled={!enabled || busy || !!pending}
+                onClick={() => {
+                  setRevokeConfirm(true);
+                  setConfirm(() => async () => {
+                    const result = await createClient(
+                      ResourceService,
+                      transport,
+                    ).getResource({
+                      kind: EntityKind.DEVICE,
+                      id: state.profile(id).deviceId,
+                    });
+                    if (result.resource)
+                      await mutate(
+                        Operation.Revoke,
+                        create(RevokeDeviceRequestSchema, {
+                          mutation: {
+                            id: result.resource.id,
+                            expectedRevision: result.resource.revision,
+                            requestId: uuid(),
+                          },
+                        }),
+                        result.resource.id,
+                      );
+                    setConfirm(undefined);
+                  });
+                }}
+              >
+                {c.revoke}
+              </button>
+            </details>
+          </section>
+        </TransportProvider>
+      </PresentationLabelsProvider>
     </QueryClientProvider>
   );
 }
@@ -982,6 +1010,7 @@ function Choices({
   onSelect: (id: string) => void;
   title: string;
 }) {
+  const presentationLabels = usePresentationLabels();
   const c = useCopy(),
     [page, setPage] = useState(""),
     [items, setItems] = useState<Resource[]>([]);
@@ -1003,6 +1032,7 @@ function Choices({
           : query.data!.resources,
       );
   }, [query.data, page]);
+  presentationLabels.observeResources(items);
   return (
     <div>
       <label>
@@ -1024,7 +1054,7 @@ function Choices({
             )
             .map((r) => (
               <option key={r.id} value={r.id}>
-                {label(r)}
+                {label(r, c, presentationLabels)}
               </option>
             ))}
         </select>
@@ -1054,6 +1084,7 @@ function Sessions({
   open: (id: string) => void;
   create: () => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   const c = useCopy(),
     [page, setPage] = useState(""),
     [items, setItems] = useState<Resource[]>([]);
@@ -1079,6 +1110,7 @@ function Sessions({
           : query.data!.sessions,
       );
   }, [query.data, page]);
+  presentationLabels.observeResources(items);
   return (
     <section>
       <header>
@@ -1105,7 +1137,7 @@ function Sessions({
         items.map((r) => (
           <article key={r.id}>
             <button className="row" onClick={() => open(r.id)}>
-              <strong>{label(r)}</strong>
+              <strong>{label(r, c, presentationLabels)}</strong>
               <span>
                 {observation(value(r).outcome, c)} ·{" "}
                 {observation(value(r).workspace, c)}
@@ -1378,6 +1410,7 @@ function Conversation({
   back: () => void;
   draft: ConversationDraft;
 }) {
+  const presentationLabels = usePresentationLabels();
   const transport = useTransport();
   const c = useCopy(),
     [page, setPage] = useState(""),
@@ -1433,7 +1466,7 @@ function Conversation({
   return (
     <section>
       <button onClick={back}>{c.back}</button>
-      <h2>{resource ? label(resource) : c.loading}</h2>
+      <h2>{resource ? label(resource, c, presentationLabels) : c.loading}</h2>
       <details>
         <summary>{c.information}</summary>
         <dl>
@@ -1444,12 +1477,8 @@ function Conversation({
             </div>
           ))}
         </dl>
-        <p>
-          {c.runner}: {text(data.machine_id)}
-        </p>
-        <p>
-          {c.agent}: {text(data.agent_id)}
-        </p>
+        <p>{presentationLabels.identity(text(data.machine_id), c.runner)}</p>
+        <p>{presentationLabels.identity(text(data.agent_id), c.agent)}</p>
       </details>
       {session.isError ? <p role="alert">{c.sessionGone}</p> : null}
       <div className="transcript" aria-live="polite">
@@ -1667,6 +1696,7 @@ function Inbox({
   mutate: Mutate;
   open: (id: string) => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   const c = useCopy(),
     [page, setPage] = useState(""),
     [items, setItems] = useState<InboxView[]>([]),
@@ -1697,6 +1727,9 @@ function Inbox({
   const v = current.data?.view,
     r = v?.entry,
     d = value(r);
+  presentationLabels.observeResources(
+    items.flatMap((view) => (view.session ? [view.session] : [])),
+  );
   return (
     <section>
       <h2>{c.inbox}</h2>
@@ -1706,7 +1739,9 @@ function Inbox({
         <article key={v.entry?.id}>
           <button className="row" onClick={() => setSelected(v.entry!.id)}>
             <strong>
-              {v.session ? label(v.session) : text(value(v.entry).source)}
+              {v.session
+                ? label(v.session, c, presentationLabels)
+                : text(value(v.entry).source)}
             </strong>
             <span>
               {observation(value(v.entry).source, c)} ·{" "}

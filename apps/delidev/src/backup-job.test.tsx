@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { safePresentation } from "./product-presentation-test-support";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -67,26 +68,26 @@ it("distinguishes creation and deletion tracking for the same backup", async () 
     </TransportProvider>,
   );
   const createArticle = screen.getByRole("article", {
-    name: `Backup ${backupId} creation`,
+    name: safePresentation(`Backup ${backupId} creation`),
   });
   const deleteArticle = screen.getByRole("article", {
-    name: `Backup ${backupId} deletion`,
+    name: safePresentation(`Backup ${backupId} deletion`),
   });
   fireEvent.click(
     await within(createArticle).findByRole("button", {
-      name: `Dismiss backup ${backupId} creation tracking`,
+      name: safePresentation(`Dismiss backup ${backupId} creation tracking`),
     }),
   );
   expect(dismissCreation).toHaveBeenCalledTimes(1);
   expect(dismissDeletion).not.toHaveBeenCalled();
   fireEvent.click(
     await within(deleteArticle).findByRole("button", {
-      name: `Dismiss backup ${backupId} deletion tracking`,
+      name: safePresentation(`Dismiss backup ${backupId} deletion tracking`),
     }),
   );
   expect(dismissDeletion).toHaveBeenCalledTimes(1);
-  expect(screen.queryByText(creation.id)).toBeNull();
-  expect(screen.queryByText(deletion.id)).toBeNull();
+  expect(screen.queryByText(safePresentation(creation.id))).toBeNull();
+  expect(screen.queryByText(safePresentation(deletion.id))).toBeNull();
 });
 
 it.each([BackupJobKind.Creation, BackupJobKind.Deletion])(

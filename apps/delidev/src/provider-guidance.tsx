@@ -1,3 +1,4 @@
+import { usePresentationLabels } from "./product-presentation";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import {
   ownedMessage,
@@ -27,6 +28,7 @@ export function ProviderGuidance({
   documentationAction?: ProviderGuidanceAction;
   documentationLabel?: string;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const [busy, setBusy] = useState(false),
     [status, setStatus] = useProductMessage("");
@@ -95,7 +97,13 @@ export function ProviderGuidance({
             <p>
               <LocalizedText
                 id="provider-guidance.officialKeyCreation_adef05"
-                components={{ s0: <code>{keyCreation}</code> }}
+                components={{
+                  s0: (
+                    <code>
+                      {presentationLabels.identity(keyCreation, "record")}
+                    </code>
+                  ),
+                }}
               />
             </p>
           ) : null}

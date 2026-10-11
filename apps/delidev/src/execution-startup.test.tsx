@@ -97,7 +97,6 @@ it("copies only validated debugging metadata without another check", async () =>
     harness: "codex",
     native_version: "0.150.9",
     problem_code: "not_found",
-    correlation_id: failure.correlation_id,
     input_delivery: 1,
     cleanup: 1,
   });

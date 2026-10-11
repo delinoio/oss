@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+import {
+  usePresentationLabels,
+  diagnosticPresentation,
+} from "./product-presentation";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { Timestamp, TimestampText } from "./timestamp-display";
 import { LocalConnectionHelp } from "./local-connection-presentation";
@@ -34,14 +38,8 @@ import {
   type Resource,
 } from "@delinoio/delidev-api-client";
 import { useEndpointModelHints } from "./endpoint-model-hints";
-import {
-  document,
-  object,
-  resourceName,
-  text,
-  type Document,
-} from "./documents";
-import { Authentication } from "./configuration-fields";
+import { document, object, text, type Document } from "./documents";
+
 import { useRetainedMutation } from "./mutation";
 import { accountRemovalMutation } from "./account-removal";
 import { InlineRemediation, ServiceProblem, Problem } from "./ui";
@@ -69,7 +67,8 @@ function Observation({ label, value }: { label: string; value: unknown }) {
       {text(problem.message) ? (
         <ServiceProblem code={text(problem.code) || text(problem.problem_code)}>
           <p role="alert">
-            {text(problem.message)} {text(problem.guidance)}
+            {diagnosticPresentation(problem.message)}{" "}
+            {diagnosticPresentation(problem.guidance)}
           </p>
         </ServiceProblem>
       ) : null}
@@ -95,6 +94,7 @@ function ApiAccountConnection({
   active: boolean;
   close: () => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const formId = useId(),
     closeTask = useCloseSettingsTask(close),
@@ -229,7 +229,7 @@ function ApiAccountConnection({
             <h2 hidden={inTask}>
               {copy("account-connection.manageConnection_ad2892")}
             </h2>
-            <p>{resourceName(current)}</p>
+            <p>{presentationLabels.resource(current)}</p>
             <p className="api-entry-scope">
               {copy("account-connection.savedOnTheSelectedServer_93dbee")}
             </p>
@@ -237,7 +237,7 @@ function ApiAccountConnection({
         </>
       ) : (
         <header>
-          <h3>{resourceName(current)}</h3>
+          <h3>{presentationLabels.resource(current)}</h3>
           <SettingsTaskDismissButton onClick={closeTask}>
             {copy("account-connection.backToAccounts_68d8e7")}
           </SettingsTaskDismissButton>
@@ -262,7 +262,7 @@ function ApiAccountConnection({
         <LocalizedText
           id="account-connection.provider_0a5bc7"
           components={{
-            s0: <>{resourceName(provider.data?.resource)}</>,
+            s0: <>{presentationLabels.resource(provider.data?.resource)}</>,
             s1: <>{profile?.authentication ?? ""}</>,
             s2: (
               <>
@@ -501,7 +501,8 @@ function ApiAccountConnection({
           summary={<p>{copy("account-connection.inline.cleanup")}</p>}
         >
           <p role="alert">
-            {text(cleanup.message)} {text(cleanup.guidance)}
+            {diagnosticPresentation(cleanup.message)}{" "}
+            {diagnosticPresentation(cleanup.guidance)}
           </p>
         </ServiceProblem>
       ) : null}

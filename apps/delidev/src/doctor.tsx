@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+import {
+  usePresentationLabels,
+  diagnosticPresentation,
+} from "./product-presentation";
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { Timestamp } from "./timestamp-display";
 import { LocalizedText, copy, displayLocale, useLocale } from "./localization";
@@ -56,7 +60,7 @@ function observation(
         : ""}
       {text(result.guidance) ? (
         <ServiceProblem code={text(result.code) || text(result.problem_code)}>
-          <p>{text(result.guidance)}</p>
+          <p>{diagnosticPresentation(result.guidance)}</p>
         </ServiceProblem>
       ) : null}
     </div>
@@ -250,7 +254,7 @@ function Installation({
       {text(value.problem_code) ? <p>{text(value.problem_code)}</p> : null}
       {text(value.guidance) ? (
         <ServiceProblem code={text(value.code) || text(value.problem_code)}>
-          <p>{text(value.guidance)}</p>
+          <p>{diagnosticPresentation(value.guidance)}</p>
         </ServiceProblem>
       ) : null}
     </li>
@@ -264,6 +268,7 @@ function Workers({
   report: Document;
   recordKey: RecordKey;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   return (
     <section
@@ -360,8 +365,12 @@ function Workers({
                         components={{
                           s0: (
                             <>
-                              {text(machine.machine_id) ||
-                                copy("doctor.extra.a1dddb1d9c42")}
+                              {text(
+                                presentationLabels.identity(
+                                  machine.machine_id,
+                                  "runner",
+                                ),
+                              ) || copy("doctor.extra.a1dddb1d9c42")}
                             </>
                           ),
                         }}
@@ -391,6 +400,7 @@ function Workers({
   );
 }
 function Report({ report }: { report: Document }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   // Missing identities get response-object keys, so a replacement cannot inherit
   // another record's native disclosure state. Known identities survive reorder.
@@ -511,7 +521,10 @@ function Report({ report }: { report: Document }) {
           </dl>
           <p>{ownerCaveat()}</p>
           <DiagnosticDisclosure title={copy("doctor.serverIdentity_fa4fb0")}>
-            <p>{text(report.server_id) || copy("doctor.extra.b764cdc0eab7")}</p>
+            <p>
+              {text(presentationLabels.identity(report.server_id, "server")) ||
+                copy("doctor.extra.b764cdc0eab7")}
+            </p>
           </DiagnosticDisclosure>
         </section>
         {expanded ? (

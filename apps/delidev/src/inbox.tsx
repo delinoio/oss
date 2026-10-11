@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { usePresentationLabels } from "./product-presentation";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { Timestamp } from "./timestamp-display";
 import { Code, ConnectError } from "@connectrpc/connect";
@@ -10,7 +11,7 @@ import {
   usePaginationRefresh,
 } from "./scroll-pagination-query";
 import { statusLabel } from "./product-status";
-import { LocalizedText, copy, displayLocale, useLocale } from "./localization";
+import { LocalizedText, copy, useLocale } from "./localization";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createQueryOptions,
@@ -31,7 +32,7 @@ import {
   type ListInboxResponse,
   type Resource,
 } from "@delinoio/delidev-api-client";
-import { document, object, resourceName, text } from "./documents";
+import { document, object, text } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { Failure, Problem } from "./ui";
 import { Interaction } from "./interactions";
@@ -192,6 +193,7 @@ export function Inbox({
   notificationActivation?: number;
   openOperational?: (resource: Resource) => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const emptyFilters = {
     source: InboxSource.UNSPECIFIED,
@@ -665,7 +667,9 @@ export function Inbox({
                             }
                             aria-label={copy("inbox.message_3c2edd", {
                               v0: kind,
-                              v1: resourceName(view.account ?? view.session),
+                              v1: presentationLabels.resource(
+                                view.account ?? view.session,
+                              ),
                               v2:
                                 state === "read"
                                   ? copy("inbox.read_9b9a8d")
@@ -685,7 +689,9 @@ export function Inbox({
                             </span>
                             <span className="inbox-row-copy">
                               <strong>
-                                {resourceName(view.account ?? view.session)}
+                                {presentationLabels.resource(
+                                  view.account ?? view.session,
+                                )}
                               </strong>
                               <span>{kind}</span>
                               <small>
@@ -770,7 +776,7 @@ export function Inbox({
                   </button>
                   <h3 ref={detailHeading} tabIndex={-1}>
                     {selectedView
-                      ? resourceName(
+                      ? presentationLabels.resource(
                           selectedView.account ?? selectedView.session,
                         )
                       : copy("inbox.selectedInboxItem_959221")}
@@ -890,6 +896,7 @@ function InboxDetail({
   pageContains: boolean;
   openOperational?: (resource: Resource) => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const entry = view.entry!;
   const data = document(entry);
@@ -1063,7 +1070,9 @@ function InboxDetail({
           <p>
             <LocalizedText
               id="inbox.account_e07497"
-              components={{ s0: <>{resourceName(view.account)}</> }}
+              components={{
+                s0: <>{presentationLabels.resource(view.account)}</>,
+              }}
             />
           </p>
           <p>
@@ -1088,7 +1097,13 @@ function InboxDetail({
               {copy("inbox.executionMetadata")}
               <small>{copy("inbox.originalIdentifiersAndOutcome")}</small>
             </DisclosureSummary>
-            <pre>{JSON.stringify(terminal, null, 2)}</pre>
+            <pre>
+              {JSON.stringify(
+                presentationLabels.executionMetadata(terminal),
+                null,
+                2,
+              )}
+            </pre>
           </Disclosure>
         </section>
       )}

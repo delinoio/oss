@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { usePresentationLabels } from "./product-presentation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useSidebarActionMenuOwner } from "./session-row-actions";
@@ -29,6 +30,7 @@ export function ProjectSettingsMenu({
   label: string;
   active: boolean;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const owner = useSidebarActionMenuOwner(),
     visible = owner.open === `project:${projectId}`;
@@ -134,7 +136,7 @@ export function ProjectSettingsMenu({
         className="sidebar-project-more"
         aria-label={copy("sidebar.projectActions", {
           name: label,
-          id: projectId,
+          id: presentationLabels.identity(projectId, "project"),
         })}
         aria-haspopup="menu"
         aria-expanded={visible}
@@ -170,7 +172,7 @@ export function ProjectSettingsMenu({
           className="sidebar-session-menu sidebar-project-menu"
           aria-label={copy("sidebar.projectActions", {
             name: label,
-            id: projectId,
+            id: presentationLabels.identity(projectId, "project"),
           })}
           onKeyDown={(event) => {
             if (event.key === "Escape") {

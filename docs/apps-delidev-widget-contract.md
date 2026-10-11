@@ -1,5 +1,9 @@
 # DeliDev macOS status widget
 
+## Internal identity presentation
+
+Widget and notification text follow [the shared product identity policy](apps-delidev-desktop-contract.md#internal-identity-presentation). Keep saved user names and original native quota labels verbatim. Internal profile/server IDs remain in protected snapshots and selection bindings, never in generated visible or accessible labels. Presentation changes cannot grant networking or agent actions.
+
 ## Scope
 
 The feature adds the initial read-only macOS WidgetKit extension under

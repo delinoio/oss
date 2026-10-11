@@ -254,12 +254,6 @@ export function SubscriptionOnboarding(props: SubscriptionOnboardingProps) {
                     copy("subscription-onboarding.notReported_adadfa")}
                 </dd>
               </div>
-              {diagnostic?.correlation ? (
-                <div>
-                  <dt>{copy("subscription-onboarding.reference_44dc4a")}</dt>
-                  <dd>{diagnostic.correlation}</dd>
-                </div>
-              ) : null}
             </dl>
           }
           actions={

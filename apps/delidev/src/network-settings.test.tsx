@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { safePresentation } from "./product-presentation-test-support";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -735,7 +736,7 @@ it("names icon-only profile deletion with the original target and opens only its
   const f = fixture(false, undefined, true, true);
   fireEvent.click(screen.getByRole("button", { name: "Network settings" }));
   const opener = await screen.findByRole("button", {
-    name: `Delete profile · Pinned proxy · ${f.row.id}`,
+    name: safePresentation(`Delete profile · Pinned proxy · ${f.row.id}`),
   });
   expect(opener.getAttribute("data-settings-action-presentation")).toBe("icon");
   act(() => opener.focus());

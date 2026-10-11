@@ -1,3 +1,4 @@
+import { usePresentationLabels } from "./product-presentation";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { Timestamp, TimestampMode, TimestampText } from "./timestamp-display";
 import type { ReactNode } from "react";
@@ -256,6 +257,7 @@ export function Usage({
   open: (id: string) => void;
   entry?: UsageEntry;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const [detail, setDetail] = useState<PriceSelection>();
 
@@ -978,7 +980,12 @@ export function Usage({
                                       <div key={label}>
                                         <dt>{label}</dt>
                                         <dd>
-                                          {id ||
+                                          {(label === copy("usage.model_5e2c61")
+                                            ? id
+                                            : presentationLabels.identity(
+                                                id,
+                                                "record",
+                                              )) ||
                                             copy("usage.extra.ca1844969742")}
                                         </dd>
                                       </div>

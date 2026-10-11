@@ -1,3 +1,4 @@
+import { safePresentation } from "./product-presentation-test-support";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -140,7 +141,8 @@ it("clears PAT input and mutation cache after uncertain transmission and reuses 
   f.client.getMutationCache().subscribe((event) => {
     if ("mutation" in event && event.mutation) {
       const variables = event.mutation.state.variables as
-        { token?: Uint8Array } | undefined;
+        | { token?: Uint8Array }
+        | undefined;
       if (variables?.token && !buffers.includes(variables.token))
         buffers.push(variables.token);
     }
@@ -349,7 +351,7 @@ it("shows an initial sanitized failure and explicit retry without an empty-succe
       .getByRole("button", { name: "New GitHub profile" })
       .hasAttribute("disabled"),
   ).toBe(false);
-  expect(screen.getByRole("alert").textContent).toContain(reference);
+  expect(screen.getByRole("alert").textContent).not.toContain(reference);
   fireEvent.click(
     screen.getByRole("button", { name: "Refresh GitHub profiles" }),
   );
@@ -716,7 +718,7 @@ it("pins a paged profile Rename action to its original identity without observin
   const f = fixture();
   render(<SettingsActionScope>{f.view()}</SettingsActionScope>);
   const rename = await screen.findByRole("button", {
-    name: `Rename Work · ${f.profile.id}`,
+    name: safePresentation(`Rename Work · ${f.profile.id}`),
   });
   expect(rename.getAttribute("data-settings-action-presentation")).toBe("icon");
   const reads = f.list.mock.calls.length;

@@ -1,4 +1,8 @@
 import { DraftEditGenerations } from "./draft-edit-generations";
+import {
+  usePresentationLabels,
+  PresentationLabelsProvider,
+} from "./product-presentation";
 import { InboxBadgePresentation } from "./inbox-badge";
 import { SessionNameEditorProvider } from "./session-name-editor";
 import {
@@ -9,7 +13,7 @@ import {
   useWideSidebar,
 } from "./sidebar-preference";
 import { CommandMenu, applicationCommands } from "./command-menu";
-import { resourceName } from "./documents";
+
 import {
   SessionTabsProvider,
   useSessionTabsStore,
@@ -123,6 +127,7 @@ function Shell({
   onConnectionHelp?: (target: HTMLElement | undefined) => void;
   readLocalWorker?: ReadLocalWorkerProof;
 }) {
+  const presentationLabels = usePresentationLabels();
   const queryClient = useQueryClient();
   const transport = useTransport();
   const latestTransport = useRef(transport);
@@ -297,7 +302,7 @@ function Shell({
         tabs.sidechats(parent).find((tab) => tab.id === id) ?? {
           kind: SessionTabKind.Sidechat,
           id,
-          name: name ?? id,
+          name: name || presentationLabels.identity(id, "session"),
         },
       );
       id = parent;
@@ -878,7 +883,8 @@ export function App({
     <SidebarPreferenceBoundary>
       <TransportProvider transport={transport}>
         <QueryClientProvider key={connection.id} client={client}>
-          <NotificationProvider>
+          <PresentationLabelsProvider>
+            <NotificationProvider>
             <MutationIntents>
               <SessionTabsProvider>
                 <SessionSubmissionsProvider>
@@ -907,7 +913,8 @@ export function App({
                 </SessionSubmissionsProvider>
               </SessionTabsProvider>
             </MutationIntents>
-          </NotificationProvider>
+            </NotificationProvider>
+          </PresentationLabelsProvider>
         </QueryClientProvider>
       </TransportProvider>
     </SidebarPreferenceBoundary>

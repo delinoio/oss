@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { safePresentation } from "./product-presentation-test-support";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -139,7 +140,7 @@ it("retains selected complete reply revisions across navigation and uncertain fi
     }),
   );
   await screen.findByText(
-    new RegExp(`Selected findings queued as ${input.id}`),
+    safePresentation(`Selected findings queued as ${input.id}`),
   );
   expect(sent[1]).toEqual(sent[0]);
   expect(sent[0]).toMatchObject({

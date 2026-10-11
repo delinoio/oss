@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { safePresentation } from "./product-presentation-test-support";
 import { resolve } from "node:path";
 import { createClient, type Transport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -98,7 +99,11 @@ it("saves and renames GitHub profiles through the real Go server and CLI", async
   fireEvent.click(
     await screen.findByRole(
       "button",
-      { name: `Rename Real server profile · ${savedProfile!.id}` },
+      {
+        name: safePresentation(
+          `Rename Real server profile · ${savedProfile!.id}`,
+        ),
+      },
       { timeout: 15000 },
     ),
   );

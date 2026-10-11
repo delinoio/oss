@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { safePresentation } from "./product-presentation-test-support";
 import { create } from "@bufbuild/protobuf";
 import { StrictMode, useState } from "react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
@@ -184,14 +185,20 @@ it("groups rows in server order with complete identities, schema guards and no e
     within(list)
       .getAllByRole("heading")
       .map((node) => node.textContent),
-  ).toEqual(["Zulu " + "long project name ".repeat(30), "Alpha", "Unnamed"]);
+  ).toEqual([
+    "Zulu " + "long project name ".repeat(30),
+    "Alpha",
+    "Project 3 · Name unavailable",
+  ]);
   for (const row of [last, first, future])
-    expect(within(list).getByText(row.id)).toBeTruthy();
+    expect(list.textContent).not.toContain(row.id);
   for (const action of ["Edit", "Delete"])
     expect(
       (
         screen.getByRole("button", {
-          name: `${action} Unnamed · ${future.id}`,
+          name: safePresentation(
+            `${action} Project 3 · Name unavailable · ${future.id}`,
+          ),
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
@@ -233,7 +240,7 @@ it.each([Code.PermissionDenied, Code.Unauthenticated, Code.Unavailable])(
     );
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).not.toContain("private fixture detail");
-    expect(alert.textContent).toContain(correlationId);
+    expect(alert.textContent).not.toContain(correlationId);
     expect(screen.queryByText("No projects yet")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "New Project" }));
     expect(screen.getByRole("button", { name: "Next" })).toBeTruthy();
@@ -279,7 +286,7 @@ it.each([false, true])(
     await screen.findByText(
       "Refresh failed. Showing the last successfully loaded results.",
     );
-    expect(screen.getByRole("alert").textContent).toContain(correlationId);
+    expect(screen.getByRole("alert").textContent).not.toContain(correlationId);
     if (empty) expect(screen.queryByText("No projects yet")).toBeNull();
     else expect(screen.getByText("Retained project")).toBeTruthy();
   },
@@ -300,7 +307,7 @@ it("preserves four tabs, repository order, primary clearing, restrictions and fu
   openProjects(value);
   fireEvent.click(
     await screen.findByRole("button", {
-      name: `Edit Editable project · ${row.id}`,
+      name: safePresentation(`Edit Editable project · ${row.id}`),
     }),
   );
   expect(
@@ -407,7 +414,7 @@ it("retries exact edit repository IDs without replacing unreadable names with se
   openProjects(value);
   fireEvent.click(
     await screen.findByRole("button", {
-      name: `Edit Name lookup project · ${row.id}`,
+      name: safePresentation(`Edit Name lookup project · ${row.id}`),
     }),
   );
   fireEvent.click(screen.getByRole("tab", { name: "Repositories" }));
@@ -453,7 +460,9 @@ it.each(["revision", "failure"])(
       });
     openProjects(value);
     fireEvent.click(
-      await screen.findByRole("button", { name: `Edit Original · ${row.id}` }),
+      await screen.findByRole("button", {
+        name: safePresentation(`Edit Original · ${row.id}`),
+      }),
     );
     fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
       target: { value: "Retained draft" },
@@ -491,7 +500,9 @@ it.each(["save", "delete"])(
     openProjects(value);
     fireEvent.click(
       await screen.findByRole("button", {
-        name: `${action === "save" ? "Edit" : "Delete"} Retry project · ${row.id}`,
+        name: safePresentation(
+          `${action === "save" ? "Edit" : "Delete"} Retry project · ${row.id}`,
+        ),
       }),
     );
     if (action === "delete") {

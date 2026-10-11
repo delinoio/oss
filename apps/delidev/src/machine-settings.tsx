@@ -1,3 +1,4 @@
+import { usePresentationLabels } from "./product-presentation";
 import {
   SettingsActionButton,
   SettingsActionIcon,
@@ -34,14 +35,7 @@ import {
   newRequestId,
   type Resource,
 } from "@delinoio/delidev-api-client";
-import {
-  document,
-  encode,
-  items,
-  object,
-  resourceName,
-  text,
-} from "./documents";
+import { document, encode, items, object, text } from "./documents";
 import { Harness, TextField } from "./configuration-fields";
 import { ObservedJob, useJobObservation } from "./jobs";
 import { useRetainedMutation } from "./mutation";
@@ -337,6 +331,7 @@ export function MachineSettingsView({
   authority?: PairingAuthority;
   compact?: boolean;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const formId = useId(),
     closeTask = useCloseSettingsTask(close);
@@ -377,7 +372,7 @@ export function MachineSettingsView({
   return (
     <section>
       <header>
-        <h3>{resourceName(current)}</h3>
+        <h3>{presentationLabels.resource(current)}</h3>
       </header>
       <p>
         <LocalizedText

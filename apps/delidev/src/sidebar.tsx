@@ -1,3 +1,4 @@
+import { usePresentationLabels } from "./product-presentation";
 import { useSessionNameEditor } from "./session-name-editor";
 import { SidebarPaneMotion, type SidebarPresentation } from "./sidebar-motion";
 import { ProjectSettingsMenu } from "./project-settings-menu";
@@ -299,12 +300,7 @@ function QueryProblem({
         : copy("sidebar.sentence.3c9f0d81b95a", { v0: label });
   return (
     <div className="sidebar-query-problem">
-      <span role="status">
-        {message}
-        {failure.correlationId
-          ? copy("sidebar.correlation_3851eb", { v0: failure.correlationId })
-          : ""}
-      </span>
+      <span role="status">{message}</span>
       <button
         type="button"
         aria-label={
@@ -960,6 +956,7 @@ function ProjectGroup({
   newSession: (projectId: string) => void;
   projectSelectionBlocked: boolean;
 }) {
+  const presentationLabels = usePresentationLabels();
   const disclosureContentId1 = useId();
   useLocale();
   return (
@@ -975,7 +972,7 @@ function ProjectGroup({
         title={label}
         aria-label={copy("sidebar.projectId_656c43", {
           v0: label,
-          v1: projectId,
+          v1: presentationLabels.identity(projectId, "project"),
         })}
         aria-expanded={expanded}
         onClick={toggle}
@@ -993,7 +990,7 @@ function ProjectGroup({
           title={copy("sidebar.newSessionInProject", { v0: label })}
           aria-label={copy("sidebar.newSessionInProjectId", {
             v0: label,
-            v1: projectId,
+            v1: presentationLabels.identity(projectId, "project"),
           })}
           disabled={projectSelectionBlocked}
           onClick={(event) => {
@@ -1083,6 +1080,7 @@ export function Sidebar({
   drawerOpen?: boolean;
   setDrawerOpen?: (open: boolean) => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   const disclosureContentId3 = useId();
   useLocale();
   const [compact, setCompact] = useState(
@@ -1856,13 +1854,17 @@ export function Sidebar({
                   {[
                     ...projectRows.map((project) => ({
                       id: project.id,
-                      label: project.name,
+                      label: presentationLabels.name(
+                        project.id,
+                        project.name,
+                        "project",
+                      ),
                       fallback: false,
                       rows: globalGroups.get(project.id),
                     })),
                     ...[...fallbackGroups].map(([id, rows]) => ({
                       id,
-                      label: copy("sidebar.sentence.7436726e0559", { v0: id }),
+                      label: presentationLabels.identity(id, "project"),
                       fallback: true,
                       rows,
                     })),

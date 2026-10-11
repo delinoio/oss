@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { usePresentationLabels } from "./product-presentation";
 import { Timestamp, TimestampText, TimestampMode } from "./timestamp-display";
 import {
   useCallback,
@@ -50,6 +51,7 @@ export function SubscriptionRail({
   manage: () => void;
   focusFallback?: () => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const [visible, setVisible] = useState(
     () => document.visibilityState !== "hidden",
@@ -277,7 +279,7 @@ export function SubscriptionRail({
               type="button"
               key={row.id}
               className="sidebar-rail-button subscription-rail-account"
-              aria-label={`${label} · ${row.id}`}
+              aria-label={`${label} · ${presentationLabels.identity(row.id, "account")}`}
               title={label}
               aria-haspopup="dialog"
               aria-expanded={selection?.id === row.id}

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { usePresentationLabels } from "./product-presentation";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import {
   DisclosureButton,
@@ -19,7 +20,7 @@ import {
   newRequestId,
   type Resource,
 } from "@delinoio/delidev-api-client";
-import { document, resourceName, text } from "./documents";
+import { document, text } from "./documents";
 import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
 import "./device-settings.css";
@@ -101,16 +102,19 @@ export function deviceDate(value: unknown): string {
 }
 
 function DeviceMetadata({ resource }: { resource: Resource }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const value = document(resource);
   return (
     <dl className="paired-device-metadata">
       <dt>{copy("device-settings.deviceId_6e0a0b")}</dt>
-      <dd>{resource.id}</dd>
+      <dd>{presentationLabels.identity(resource.id, "record")}</dd>
       {text(value.machine_id) ? (
         <>
           <dt>{copy("device-settings.runnerDeviceId_a03c92")}</dt>
-          <dd>{text(value.machine_id)}</dd>
+          <dd>
+            {text(presentationLabels.identity(value.machine_id, "runner"))}
+          </dd>
         </>
       ) : null}
       <dt>{copy("device-settings.originalPairedTimestamp_7fae2b")}</dt>
@@ -376,6 +380,7 @@ export function DeviceRevocation({
   close: (exit: DeviceRevocationExit) => void;
   revoked: () => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const [accepted, setAccepted] = useState<Resource | "unknown">();
   const current = useQuery(
@@ -425,7 +430,9 @@ export function DeviceRevocation({
             <p role="status">
               <LocalizedText
                 id="device-settings.authorizationRevokedFor_57a733"
-                components={{ s0: <>{resourceName(accepted)}</> }}
+                components={{
+                  s0: <>{presentationLabels.resource(accepted)}</>,
+                }}
               />
             </p>
             <DeviceDetails
@@ -458,7 +465,7 @@ export function DeviceRevocation({
       <h3>
         <LocalizedText
           id="device-settings.revoke_eeebdc"
-          components={{ s0: <>{resourceName(initial)}</> }}
+          components={{ s0: <>{presentationLabels.resource(initial)}</> }}
         />
       </h3>
       <DeviceDetails resource={initial} currentDeviceId={currentDeviceId} />

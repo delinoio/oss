@@ -2,6 +2,8 @@ import {
   ScheduleCalendarSummary,
   useScheduleCalendarPreview,
 } from "./schedule-calendar-preview";
+import { usePresentationLabels } from "./product-presentation";
+
 import "./wizard-presentation.css";
 import {
   DisclosureButton,
@@ -30,7 +32,6 @@ import {
   items,
   Mode,
   object,
-  resourceName,
   text,
   Workspace,
   type Document,
@@ -129,6 +130,7 @@ export interface ScheduleCreationProps {
 }
 
 function ReviewIdentity({ kind, id }: { kind: EntityKind; id: string }) {
+  const presentationLabels = usePresentationLabels();
   // Observe the exact resource already read by its mounted picker. Review must
   // not fetch choices or derive names from the previous localized DOM commit.
   const selected = useQuery(
@@ -140,7 +142,7 @@ function ReviewIdentity({ kind, id }: { kind: EntityKind; id: string }) {
   return (
     <span>
       {resource?.id === id && resource.kind === kind
-        ? resourceName(resource)
+        ? presentationLabels.resource(resource)
         : copy("schedule-creation.nameUnavailable")}
     </span>
   );

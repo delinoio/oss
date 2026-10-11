@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { safePresentation } from "./product-presentation-test-support";
 import { create } from "@bufbuild/protobuf";
 import { createRouterTransport, Code, ConnectError } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -826,7 +827,9 @@ it("retains duplicate-alias ownership and every native window in original order 
   const f = mount(() => ({ resources: rows }));
   await screen.findAllByRole("button", { name: /Same alias/ });
   for (const row of rows) {
-    fireEvent.click(screen.getByRole("button", { name: new RegExp(row.id) }));
+    fireEvent.click(
+      screen.getByRole("button", { name: safePresentation(row.id) }),
+    );
     const dialog = screen.getByRole("dialog");
     expect(
       [...dialog.querySelectorAll(".subscription-quota-id")].map(
@@ -905,7 +908,7 @@ for (const [name, extra, percent, state] of [
     });
     const f = mount(() => ({ resources: [row] }));
     fireEvent.click(
-      await screen.findByRole("button", { name: new RegExp(row.id) }),
+      await screen.findByRole("button", { name: safePresentation(row.id) }),
     );
     const dialog = screen.getByRole("dialog");
     expect(
@@ -986,7 +989,7 @@ it("close and outside dismissal retain the original opener without another read"
   const row = resource("Original opener"),
     f = mount(() => ({ resources: [row] }));
   const opener = await screen.findByRole("button", {
-    name: new RegExp(row.id),
+    name: safePresentation(row.id),
   });
   fireEvent.click(opener);
   fireEvent.click(screen.getByRole("button", { name: "Close quota details" }));

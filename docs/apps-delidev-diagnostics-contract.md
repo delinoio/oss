@@ -1,8 +1,12 @@
 # DeliDev Diagnostics Presentation
 
+## Internal identity presentation
+
+Follow [the desktop presentation policy](apps-delidev-desktop-contract.md#internal-identity-presentation). Original server/machine/generation, correlation and recovery proofs remain internal. Product Copy omits internal UUIDs; diagnostic projection never changes user/native output.
+
 ## Direct startup presentation
 
-[Direct startup](cmds-delidev-execution-startup-contract.md) removes the first-session checklist from ordinary welcome and execution. Runner Devices retains explicit optional diagnostics and executable-path editing; owning failures can present the same original controller locally without category navigation. A session failure shows a concrete corrective action and opens the existing Info drawer for phase, optional version, safe code, original correlation, input delivery and cleanup. Copy projects only independently validated metadata. An uncertain attempt offers original recovery; positive no-send plus confirmed cleanup permits explicit Retry startup through Resume. Keep the existing contained drawer navigation, keyboard/Escape/focus handling and responsive shell.
+[Direct startup](cmds-delidev-execution-startup-contract.md) removes the first-session checklist from ordinary welcome and execution. Runner Devices retains explicit optional diagnostics and executable-path editing; owning failures can present the same original controller locally without category navigation. A session failure shows a concrete corrective action and opens the existing Info drawer for phase, optional version, safe code, original internal correlation binding, input delivery and cleanup. Copy projects only independently validated metadata. An uncertain attempt offers original recovery; positive no-send plus confirmed cleanup permits explicit Retry startup through Resume. Keep the existing contained drawer navigation, keyboard/Escape/focus handling and responsive shell.
 
 ## Scope
 
@@ -30,7 +34,7 @@ Server information aligns version, OS/architecture, protocol version, database s
 
 Server storage shows the exact result classification, safe code/guidance and all five byte fields: database file, write-ahead log, logical database size, filesystem capacity and space available to the server. Keep the separately-sampled/no-sum/no-reclaimable-space caveat visible. Retained resources contains bounded resource kind/count rows in a closed disclosure; unavailable/empty notices remain outside it. Partial storage measurements survive later measurement failures.
 
-Runner Devices occupies full width. Each always-open record shows its name, reported version/platform, observed stream state, enabled/disabled state, last contact and every retained harness installation/version/protocol classification within the existing four-entry bound. Failure codes and guidance stay inside the owning record and outside disclosures. Installation details contains machine identity, discovery timestamps and reported capabilities. The full original description preserves discovery, handshake, account-readiness and process-cleanup distinctions. Machine inventory availability and completeness notices stay visible.
+Runner Devices occupies full width. Each always-open record shows its name, reported version/platform, observed stream state, enabled/disabled state, last contact and every retained harness installation/version/protocol classification within the existing four-entry bound. Failure codes and guidance stay inside the owning record and outside disclosures. Installation details contains a safe machine label, discovery timestamps and reported capabilities. The full original description preserves discovery, handshake, account-readiness and process-cleanup distinctions. Machine inventory availability and completeness notices stay visible.
 
 ### Account-storage presentation
 
@@ -42,7 +46,7 @@ Validate absence alongside preserved account operations and general diagnostics 
 
 ### State and compatibility
 
-Keep one active-gated `SystemQuery.getDoctor`, explicit refresh and existing query defaults/bounds. Disclosures change visibility only: no RPC, discovery, login, repair, inference, native operation or mutation. Loading announces Reading server diagnostics and disables refresh. Refresh retains prior data/time; failure exposes the safe Problem/correlation surface and labels the last returned observation. Initial denial/failure cannot establish a successful summary or empty inventory.
+Keep one active-gated `SystemQuery.getDoctor`, explicit refresh and existing query defaults/bounds. Disclosures change visibility only: no RPC, discovery, login, repair, inference, native operation or mutation. Loading announces Reading server diagnostics and disables refresh. Refresh retains prior data/time; failure exposes the safe Problem surface and labels the last returned observation. Initial denial/failure cannot establish a successful summary or empty inventory.
 
 Strict UTF-8/1 MiB and legacy/future/malformed handling remain unchanged. Legacy reports show original fields and the capacity/protected-storage limitation; unsupported/malformed reports establish no health. Unknown field-level enums remain Unknown/unavailable without adding the first-session checklist's stronger whole-report validator. Missing versus empty inventories and true/false/unknown completeness remain distinct, with at most 50 machine records rendered in Doctor; account categories do not inspect account storage.
 
@@ -72,7 +76,7 @@ Disclosures are native memory-only presentation state within the original connec
 
 ## Security
 
-Render every name, identity, endpoint, capability and guidance as inert English text. Retain strict decoding and safe Problem/correlation handling. Disclosures cannot access credentials or authorize an operation, and styling cannot relax CSP.
+Render names, safe numbered identity labels, endpoints, capabilities and UUID-free DeliDev guidance as inert localized text. Preserve original native evidence verbatim. Retain strict decoding and safe Problem handling. Disclosures cannot access credentials or authorize an operation, and styling cannot relax CSP.
 
 ## Logging
 

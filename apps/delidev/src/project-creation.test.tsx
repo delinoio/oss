@@ -538,7 +538,9 @@ it("does not confuse duplicate names or offer unsupported schemas", async () => 
   fireEvent.click(duplicates[1]);
   const identity = duplicates[0]!.getAttribute("aria-describedby");
   expect(identity).toBeTruthy();
-  expect(document.getElementById(identity!)?.textContent).toContain(first.id);
+  expect(document.getElementById(identity!)?.textContent).not.toContain(
+    first.id,
+  );
   expect(
     (
       screen.getByRole("checkbox", {

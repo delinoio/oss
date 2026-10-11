@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { usePresentationLabels } from "./product-presentation";
 import { Timestamp, TimestampMode } from "./timestamp-display";
 import {
   useEffect,
@@ -11,7 +12,7 @@ import {
 import { createPortal } from "react-dom";
 import { SettingsActionGlyph, SettingsActionIcon } from "./settings-action";
 import type { Resource } from "@delinoio/delidev-api-client";
-import { resourceName, items, object, text, type Document } from "./documents";
+import { items, object, text, type Document } from "./documents";
 import {
   ItemKind,
   QueryOperation,
@@ -121,13 +122,14 @@ export function PRListHeader({
   reloadRequired?: boolean;
   refresh: () => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   return (
     <>
       <header className="pr-list-header">
         <div>
           <h2>{copy("pull-requests.pullRequests_d9e3f2")}</h2>
-          <p>{resourceName(selected)}</p>
+          <p>{presentationLabels.resource(selected)}</p>
         </div>
         <PRRefreshButton
           disabled={reading || reloadRequired}

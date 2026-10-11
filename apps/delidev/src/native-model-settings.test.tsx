@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { safePresentation } from "./product-presentation-test-support";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -277,10 +278,15 @@ it("retains exact provenance for an empty successful native observation", async 
   const value = fixture(false, false, "succeeded", true);
   await choose(value);
   await screen.findByText("No native models in this observation page.");
-  expect(screen.getByText(new RegExp(value.job.id)).textContent).toContain(
-    value.account.id,
+  expect(
+    screen.getByText(safePresentation(value.job.id)).textContent,
+  ).not.toContain(value.account.id);
+  expect(screen.getByText(safePresentation(value.job.id)).textContent).toMatch(
+    /Account \d+/,
   );
-  expect(screen.getByText(new RegExp(value.job.id)).textContent).toContain("1");
+  expect(
+    screen.getByText(safePresentation(value.job.id)).textContent,
+  ).toContain("1");
   expect(screen.getByText(/Observed at/)).toBeTruthy();
   expect(screen.queryByRole("button", { name: /Register/ })).toBeNull();
   expect(value.createModel).not.toHaveBeenCalled();

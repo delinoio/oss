@@ -1,5 +1,9 @@
 # DeliDev mobile client contract
 
+## Internal identity presentation
+
+Mobile follows [the shared product identity policy](apps-delidev-desktop-contract.md#internal-identity-presentation). Selectors, session information, connection diagnostics, notifications and accessible/copy text use observed names or localized numbered unavailable labels. Original IDs still bind profiles, server/device verification, actions, recovery and histories. User/native messages and protected pairing documents remain verbatim. Numbers remain stable for the original connection/view lifetime, including paging, reordering and refresh, without new reads.
+
 ## Scope
 
 `apps/delidev-mobile` owns the separate iOS and Android remote client in the feature. Its identity is `io.delino.delidev.mobile`, and its display name is
@@ -174,7 +178,7 @@ closed transport outcome. Durable checkpoints report platform and stage; no
 provider URL, response body or raw exception is recorded.
 
 Platform failures log only the operation and sanitized outcome. Product
-connection diagnostics include opaque profile/server identifiers and status.
+connection diagnostics include the saved server name, a safe profile presentation number and status. Original profile/server identifiers remain internal.
 Never log origins, authorization headers, pairing codes, prompts, messages,
 native request content, platform exception strings or protected file paths.
 

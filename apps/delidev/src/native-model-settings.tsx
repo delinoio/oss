@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { usePresentationLabels } from "./product-presentation";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { Timestamp, TimestampText } from "./timestamp-display";
@@ -42,6 +43,7 @@ export function NativeModelSettings({
   selectedAccounts?: Resource[];
   pendingOperation?: (pending: boolean) => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const inspection = useRunnerRemediation();
   const [opened, setOpened] = useState(false);
@@ -269,7 +271,8 @@ export function NativeModelSettings({
                   </option>
                   {selectedAccounts.map((row) => (
                     <option key={row.id} value={row.id}>
-                      {text(document(row).alias) || row.id}
+                      {text(document(row).alias) ||
+                        presentationLabels.identity(row.id, "record")}
                     </option>
                   ))}
                 </select>
@@ -478,8 +481,24 @@ export function NativeModelSettings({
                 <LocalizedText
                   id="native-model-settings.sourceObservationAccountInstallationGeneration_bf070d"
                   components={{
-                    s0: <>{selectedObservation.id}</>,
-                    s1: <>{text(observedScope.account_id)}</>,
+                    s0: (
+                      <>
+                        {presentationLabels.identity(
+                          selectedObservation.id,
+                          "record",
+                        )}
+                      </>
+                    ),
+                    s1: (
+                      <>
+                        {text(
+                          presentationLabels.identity(
+                            observedScope.account_id,
+                            "account",
+                          ),
+                        )}
+                      </>
+                    ),
                     s2: (
                       <>
                         {String(

@@ -1,3 +1,4 @@
+import { usePresentationLabels } from "./product-presentation";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import {
   SettingsActionButton,
@@ -8,13 +9,12 @@ import {
   formatDecimal,
   productError,
   ProductError,
-  ownedMessage,
   useProductMessage,
   LocalizedText,
   copy,
   useLocale,
 } from "./localization";
-import { useCloseSettingsTask } from "./settings-task-context";
+
 import { SettingsTaskActions } from "./settings-task";
 import { useState, useId } from "react";
 import { useQuery, useMutation } from "@connectrpc/connect-query";
@@ -48,6 +48,7 @@ import { useRetainedMutation } from "./mutation";
 import { Problem } from "./ui";
 
 export function PricingBasis({ value }: { value: PricingVersion }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const p = value.basis;
   if (!p) return <p>{copy("pricing.pricingBasisUnavailable_1b8fe3")}</p>;
@@ -104,7 +105,7 @@ export function PricingBasis({ value }: { value: PricingVersion }) {
           id="pricing.version_4fda4a"
           components={{
             s0: <>{value.revision.toString()}</>,
-            s1: <>{value.id}</>,
+            s1: <>{presentationLabels.identity(value.id, "record")}</>,
           }}
         />
       </small>
@@ -119,7 +120,12 @@ export function PricingBasis({ value }: { value: PricingVersion }) {
                   ? copy("pricing.subscriptionService_596422", {
                       v0: subscriptionServiceLabel(value.subscriptionService),
                     })
-                  : copy("pricing.provider_28af03", { v0: value.providerId })}
+                  : copy("pricing.provider_28af03", {
+                      v0: presentationLabels.identity(
+                        value.providerId,
+                        "provider",
+                      ),
+                    })}
               </>
             ),
           }}
@@ -409,6 +415,7 @@ export function ModelPricing({
   close: () => void;
   compact?: boolean;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const key = priceIdentity(model);
   const current = useQuery(
@@ -592,7 +599,7 @@ export function ModelPricing({
               <dd>{model.nativeId}</dd>
               <dt>{copy("usage.provider_472590")}</dt>
               <dd>
-                {model.providerId ||
+                {presentationLabels.identity(model.providerId, "provider") ||
                   subscriptionServiceLabel(model.subscriptionService)}
               </dd>
               {data?.pricing?.provenance ? (

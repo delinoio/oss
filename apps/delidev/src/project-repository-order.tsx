@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { usePresentationLabels } from "./product-presentation";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { useLayoutEffect, useRef, useState } from "react";
 import { useTransport } from "@connectrpc/connect-query";
@@ -14,7 +15,12 @@ type Movement = {
   authority: object;
 };
 export function RepositorySecondaryID({ id }: { id: string }) {
-  return <code className="project-repository-secondary-id">{id}</code>;
+  const presentationLabels = usePresentationLabels();
+  return (
+    <code className="project-repository-secondary-id">
+      {presentationLabels.identity(id, "repository")}
+    </code>
+  );
 }
 /** Preview order belongs to this view; only an explicit commit changes the draft. */
 export function ProjectRepositoryOrder({

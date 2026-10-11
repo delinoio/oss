@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { usePresentationLabels } from "./product-presentation";
 import {
   DisclosureButton,
   DisclosureContent,
@@ -521,6 +522,7 @@ function ProblemRow({
   disabled: boolean;
   refreshed: () => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const feedback = object(value.feedback),
     latest = object(value.latest_provider),
@@ -728,7 +730,18 @@ function ProblemRow({
         <p>
           <LocalizedText
             id="pr-problems.verifiedConflictTransitionANewConfirmed_e5bb28"
-            components={{ s0: <code>{text(conflict.transition_id)}</code> }}
+            components={{
+              s0: (
+                <code>
+                  {text(
+                    presentationLabels.identity(
+                      conflict.transition_id,
+                      "record",
+                    ),
+                  )}
+                </code>
+              ),
+            }}
           />
         </p>
       )}
@@ -760,7 +773,7 @@ function ProblemRow({
           <LocalizedText
             id="pr-problems.problemRevision_f77cf7"
             components={{
-              s0: <>{row.id}</>,
+              s0: <>{presentationLabels.identity(row.id, "record")}</>,
               s1: <>{row.revision.toString()}</>,
             }}
           />
@@ -772,8 +785,23 @@ function ProblemRow({
             id="pr-problems.verifiedPushAttemptExecutionHandledAt_358d0e"
             components={{
               s0: <code>{text(handling.pushed_head)}</code>,
-              s1: <code>{text(handling.attempt_id)}</code>,
-              s2: <code>{text(handling.execution_id)}</code>,
+              s1: (
+                <code>
+                  {text(
+                    presentationLabels.identity(handling.attempt_id, "record"),
+                  )}
+                </code>
+              ),
+              s2: (
+                <code>
+                  {text(
+                    presentationLabels.identity(
+                      handling.execution_id,
+                      "record",
+                    ),
+                  )}
+                </code>
+              ),
               s3: <Timestamp value={text(handling.at)} />,
             }}
           />
@@ -789,12 +817,23 @@ function ProblemRow({
                 <>
                   {dismissal.device_id
                     ? copy("pr-problems.message_a4e9a4", {
-                        v0: text(dismissal.device_id),
+                        v0: text(
+                          presentationLabels.identity(
+                            dismissal.device_id,
+                            "runner",
+                          ),
+                        ),
                       })
                     : ""}
                 </>
               ),
-              s3: <>{text(dismissal.request_id)}</>,
+              s3: (
+                <>
+                  {text(
+                    presentationLabels.identity(dismissal.request_id, "record"),
+                  )}
+                </>
+              ),
             }}
           />
         </p>

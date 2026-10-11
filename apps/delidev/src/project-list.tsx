@@ -1,22 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 import {
+  usePresentationLabels,
+  PresentationLabelsProvider,
+} from "./product-presentation";
+import {
   SettingsActionButton,
   SettingsActionIcon,
   SettingsActionPresentation,
 } from "./settings-action";
-import {
-  DisclosureButton,
-  DisclosureContent,
-  DisclosureDensity,
-  Disclosure,
-  DisclosureSummary,
-} from "./disclosure";
+import { DisclosureButton, DisclosureDensity } from "./disclosure";
 import { useId, useState } from "react";
 import {
   supportsResourceSchema,
   type Resource,
 } from "@delinoio/delidev-api-client";
-import { document, resourceName, text } from "./documents";
+import { document, text } from "./documents";
 import { copy, useLocale } from "./localization";
 import { Failure } from "./ui";
 import {
@@ -37,23 +35,30 @@ export function ProjectList({
   edit: (row: Resource) => void;
   remove: (row: Resource) => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
+  resources.forEach((row) => {
+    const data = document(row);
+    presentationLabels.observe(row.id, text(data.name), "project");
+  });
   if (!resources.length) return null;
   return (
-    <section
-      className="project-list"
-      aria-label={copy("settings.savedProjects_f85c7c")}
-    >
-      {resources.map((row) => (
-        <ProjectRow
-          key={row.id}
-          row={row}
-          metadata={metadata}
-          edit={edit}
-          remove={remove}
-        />
-      ))}
-    </section>
+    <PresentationLabelsProvider labels={presentationLabels}>
+      <section
+        className="project-list"
+        aria-label={copy("settings.savedProjects_f85c7c")}
+      >
+        {resources.map((row) => (
+          <ProjectRow
+            key={row.id}
+            row={row}
+            metadata={metadata}
+            edit={edit}
+            remove={remove}
+          />
+        ))}
+      </section>
+    </PresentationLabelsProvider>
   );
 }
 function ProjectRow({
@@ -67,9 +72,10 @@ function ProjectRow({
   edit: (row: Resource) => void;
   remove: (row: Resource) => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   const [expanded, setExpanded] = useState(false);
   const repositoriesId = useId();
-  const name = resourceName(row),
+  const name = presentationLabels.resource(row),
     ids = projectRepositoryIds(row),
     primary = text(document(row).primary_repository);
   const singleton = ids.length === 1;
@@ -174,24 +180,6 @@ function ProjectRow({
           )}
         </DisclosureButton>
       ) : null}
-      <Disclosure
-        density={DisclosureDensity.Settings}
-        className="project-original-details"
-      >
-        <DisclosureSummary>{copy("settings.projectDetails")}</DisclosureSummary>
-        <dl>
-          <dt>{copy("settings.projectOriginalID")}</dt>
-          <dd>{row.id}</dd>
-          <dt>{copy("settings.projectRepositoryOriginalIDs")}</dt>
-          <dd>
-            <ol>
-              {ids.map((id, index) => (
-                <li key={`${id}:${index}`}>{id}</li>
-              ))}
-            </ol>
-          </dd>
-        </dl>
-      </Disclosure>
     </article>
   );
 }

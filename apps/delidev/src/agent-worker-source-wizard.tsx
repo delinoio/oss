@@ -1,3 +1,4 @@
+import { usePresentationLabels } from "./product-presentation";
 import "./wizard-presentation.css";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
@@ -237,6 +238,7 @@ function SourceGroup({
   openAccounts?: (source: Source) => void;
   remove: (key: string) => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const [known, setKnown] = useState<Record<string, Resource | undefined>>({});
   const [popup, setPopup] = useState(false);
@@ -353,8 +355,13 @@ function SourceGroup({
     source?.kind === SourceKind.Subscription
       ? `${subscriptionServiceNames[source.id as SubscriptionServiceId]} ${copy("agent-worker-wizard.subscription")}`
       : provider.data?.resource
-        ? resourceName(provider.data.resource)
-        : source?.id || copy("agent-worker-wizard.chooseSource");
+        ? presentationLabels.resource(provider.data.resource)
+        : presentationLabels.identity(source?.id, "provider") ||
+          copy("agent-worker-wizard.chooseSource");
+  presentationLabels.observeResources([
+    ...rows.rows,
+    ...Object.values(known).filter((row): row is Resource => Boolean(row)),
+  ]);
   const selectedRows = ids.flatMap((id) => (known[id] ? [known[id]!] : []));
   const refreshAccount = selectedRows.find(
     (row) =>
@@ -661,8 +668,9 @@ function SourceGroup({
                   data-wizard-field="account"
                   aria-label={copy("agent-worker-wizard.selectAccount", {
                     v0: known[id]
-                      ? resourceName(known[id])
-                      : labels[id]?.name || id,
+                      ? presentationLabels.resource(known[id])
+                      : labels[id]?.name ||
+                        presentationLabels.identity(id, "account"),
                   })}
                   checked
                   onChange={() =>
@@ -676,8 +684,9 @@ function SourceGroup({
                 <span>
                   <strong>
                     {known[id]
-                      ? resourceName(known[id])
-                      : labels[id]?.name || id}
+                      ? presentationLabels.resource(known[id])
+                      : labels[id]?.name ||
+                        presentationLabels.identity(id, "account")}
                   </strong>
                   <small>
                     {known[id]
@@ -727,7 +736,7 @@ function SourceGroup({
                         }}
                       />
                       <span>
-                        <strong>{resourceName(row)}</strong>
+                        <strong>{presentationLabels.resource(row)}</strong>
                         <small>
                           {accountStatus(accountDisplayStatus(document(row)))}
                         </small>
@@ -828,8 +837,10 @@ function SourceGroup({
                 <li key={text(account.id)}>
                   <strong>
                     {known[text(account.id)]
-                      ? resourceName(known[text(account.id)])
-                      : text(account.id)}
+                      ? presentationLabels.resource(known[text(account.id)])
+                      : text(
+                          presentationLabels.identity(account.id, "account"),
+                        )}
                   </strong>
                   <label>
                     {copy("agent-worker-wizard.weightForAccount", {

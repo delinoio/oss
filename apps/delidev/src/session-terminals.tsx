@@ -1,3 +1,7 @@
+import {
+  usePresentationLabels,
+  diagnosticPresentation,
+} from "./product-presentation";
 import { useTerminalTabShortcuts } from "./shortcut-provider";
 // SPDX-License-Identifier: Apache-2.0
 import "./terminal-dock.css";
@@ -70,6 +74,7 @@ export function SessionTerminals({
   openIntent?: { requestId: string; revision: bigint };
   finishOpenIntent?: () => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const tabsStore = useSessionTabsStore();
   const inventoryTransport = useTransport();
@@ -696,7 +701,7 @@ export function SessionTerminals({
             <LocalizedText
               id="session-terminals.terminal_8058ce"
               components={{
-                s0: <>{index + 1}</>,
+                s0: <>{presentationLabels.number(row.id, "terminal")}</>,
                 s1: (
                   <>
                     {statusLabel(
@@ -778,6 +783,7 @@ function TerminalView({
   refresh: () => void;
   observe: (value: Resource) => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const tabShortcut = useTerminalTabShortcuts();
   const transport = useTransport(),
@@ -1061,7 +1067,11 @@ function TerminalView({
           <LocalizedText
             id="session-terminals.worker_5a5ff9"
             components={{
-              s0: <>{text(data.machine_id)}</>,
+              s0: (
+                <>
+                  {text(presentationLabels.identity(data.machine_id, "runner"))}
+                </>
+              ),
               s1: <br />,
               s2: <>{text(data.shell)}</>,
               s3: <br />,
@@ -1123,8 +1133,8 @@ function TerminalView({
           }
         >
           <p role="alert">
-            {text(object(data.problem).message)}{" "}
-            {text(object(data.problem).guidance)}
+            {diagnosticPresentation(object(data.problem).message)}{" "}
+            {diagnosticPresentation(object(data.problem).guidance)}
           </p>
         </ServiceProblem>
       ) : null}

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { usePresentationLabels } from "./product-presentation";
 import {
   DisclosureButton,
   DisclosureContent,
@@ -510,6 +511,7 @@ function ModelViewData({
   id: string;
   open: boolean;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   return (
     <DisclosureContent
@@ -548,7 +550,7 @@ function ModelViewData({
               <td>
                 {model.subscriptionService
                   ? subscriptionServiceLabel(model.subscriptionService)
-                  : model.providerId}
+                  : presentationLabels.identity(model.providerId, "provider")}
               </td>
               <td>
                 {model.subscriptionService
@@ -584,6 +586,7 @@ function ModelViewData({
 }
 
 export function ModelUsageChart({ analytics }: { analytics: UsageAnalytics }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const [selected, setSelected] = useState<number | null>(null);
   const [open, setOpen] = useState(false);
@@ -733,8 +736,16 @@ export function ModelUsageChart({ analytics }: { analytics: UsageAnalytics }) {
                             ),
                           })
                         : copy("usage-chart.apiProvider_f01871", {
-                            v0: row.providerName || row.providerId,
-                            v1: row.providerId,
+                            v0:
+                              row.providerName ||
+                              presentationLabels.identity(
+                                row.providerId,
+                                "provider",
+                              ),
+                            v1: presentationLabels.identity(
+                              row.providerId,
+                              "provider",
+                            ),
                           }),
                       v1: row.modelId,
                     })}
@@ -782,7 +793,10 @@ export function ModelUsageChart({ analytics }: { analytics: UsageAnalytics }) {
                                 ),
                               })
                             : copy("usage-chart.provider_7a7f6c", {
-                                v0: selectedRow.providerId,
+                                v0: presentationLabels.identity(
+                                  selectedRow.providerId,
+                                  "provider",
+                                ),
                               }),
                           v1: selectedRow.modelId,
                         })}

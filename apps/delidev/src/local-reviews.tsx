@@ -1,3 +1,4 @@
+import { usePresentationLabels } from "./product-presentation";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { paginationIdentity, paginationRevision } from "./scroll-pagination";
 import { useConversationDrafts } from "./conversation-drafts";
@@ -75,15 +76,20 @@ function PendingCommentDeletion({
   commentId: string;
   accepted: () => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   const mutation = useCommentDeletion(intent.key);
   useRetainedMutationAccepted(intent.key, accepted);
   return (
     <article
       aria-label={copy("local-reviews.pendingCommentDeletion", {
-        v0: commentId,
+        v0: presentationLabels.identity(commentId, "record"),
       })}
     >
-      <p>{copy("local-reviews.commentDeletion", { v0: commentId })}</p>
+      <p>
+        {copy("local-reviews.commentDeletion", {
+          v0: presentationLabels.identity(commentId, "record"),
+        })}
+      </p>
       <p role="status">
         {intent.busy
           ? copy("local-reviews.waitingForCommentDeletionAcknowledgement")
@@ -387,6 +393,7 @@ function CommentRow({
   draft?: ReviewDraft;
   changeDraft: (value: ReviewDraft) => void;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const { editing, body, revision } = draft ?? {
     editing: false,
@@ -461,7 +468,14 @@ function CommentRow({
           <LocalizedText
             id="local-reviews.repositoryDiffRevision_7f2d2f"
             components={{
-              s0: <>{anchor.repository_id}</>,
+              s0: (
+                <>
+                  {presentationLabels.identity(
+                    anchor.repository_id,
+                    "repository",
+                  )}
+                </>
+              ),
               s1: <br />,
               s2: <>{anchor.diff_revision}</>,
             }}
@@ -601,6 +615,7 @@ export function LocalReviews({
   reading: boolean;
   acceptedDeletionId?: string;
 }) {
+  const presentationLabels = usePresentationLabels();
   useLocale();
   const [authoring, setAuthoring] = useState<Diff>(),
     [notice, setNotice] = useProductMessage("");
@@ -730,14 +745,27 @@ export function LocalReviews({
                           id="local-reviews.submittedReview_d16733"
                           components={{
                             s0: <>{submission.mode}</>,
-                            s1: <>{row.id}</>,
+                            s1: (
+                              <>
+                                {presentationLabels.identity(row.id, "record")}
+                              </>
+                            ),
                           }}
                         />
                       </DisclosureSummary>
                       <p className="file-path">
                         <LocalizedText
                           id="local-reviews.acceptedInput_d7512d"
-                          components={{ s0: <>{submission.input_id}</> }}
+                          components={{
+                            s0: (
+                              <>
+                                {presentationLabels.identity(
+                                  submission.input_id,
+                                  "input",
+                                )}
+                              </>
+                            ),
+                          }}
                         />
                       </p>
                       {submission.comments.map((c) => (
