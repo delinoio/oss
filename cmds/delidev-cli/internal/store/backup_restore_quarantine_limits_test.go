@@ -77,7 +77,19 @@ func TestRestoreQuarantineRevalidatesTypedJobEntityBound(t *testing.T) {
 				}
 				job := quarantineSizedJob(t, kind, session, target, mode == "terminal")
 				id := domain.NewID()
-				if _, err := s.Mutate(ctx, domain.NewID(), "fixture.quarantine-size", nil, func(tx *Tx) (any, error) { return tx.PutJob(id, 0, session, "", job) }); err != nil {
+				// Seed only the maximum typed input through the normal mutation path.
+				// The full historical output fixture is larger than the ordinary
+				// mutation-result envelope, so add it to the stored row afterward.
+				seed := job
+				seed.Output = json.RawMessage(`""`)
+				if _, err := s.Mutate(ctx, domain.NewID(), "fixture.quarantine-size", nil, func(tx *Tx) (any, error) { return tx.PutJob(id, 0, session, "", seed) }); err != nil {
+					t.Fatal(err)
+				}
+				raw, err := json.Marshal(job)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := s.db.ExecContext(ctx, "UPDATE entities SET body=? WHERE id=?", raw, id); err != nil {
 					t.Fatal(err)
 				}
 				live, err := s.Get(ctx, domain.JobKind, id)
