@@ -29,10 +29,10 @@ export const readOnlyShortcutCatalog: readonly CatalogAction[] = [
 ];
 export const shortcutCatalog = [...editableShortcutCatalog, ...readOnlyShortcutCatalog];
 // Native menu bindings are read-only and never enter the seven override IDs.
-export enum NativeShortcutId { NewWindow="native-new-window", CloseWindow="native-close-window", Quit="native-quit", Hide="native-hide", Minimize="native-minimize" }
+export enum NativeShortcutId { NewWindow="native-new-window", CloseTab="fixed-close-tab", Quit="native-quit", Hide="native-hide", Minimize="native-minimize" }
 export const fixedNativeShortcutCatalog: readonly {id:NativeShortcutId;label:MessageKey;key:string;macOnly:boolean}[]=[
  {id:NativeShortcutId.NewWindow,label:"shortcuts.nativeNewWindow",key:"n",macOnly:false},
- {id:NativeShortcutId.CloseWindow,label:"shortcuts.nativeCloseWindow",key:"w",macOnly:false},
+ {id:NativeShortcutId.CloseTab,label:"shortcuts.closeTab",key:"w",macOnly:false},
  {id:NativeShortcutId.Quit,label:"shortcuts.nativeQuit",key:"q",macOnly:true},
  {id:NativeShortcutId.Hide,label:"shortcuts.nativeHide",key:"h",macOnly:true},
  {id:NativeShortcutId.Minimize,label:"shortcuts.nativeMinimize",key:"m",macOnly:false},
