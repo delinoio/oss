@@ -102,6 +102,38 @@ turn/settings/account, terminal results, receipts and independent recovery and
 cleanup remain unchanged. The [official notification schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/FsChangedNotification.json)
 defines this passive envelope separately from explicit filesystem operations.
 
+### Codex passive fuzzy-search sessions
+
+Notification-only `fuzzyFileSearch/sessionUpdated` and
+`fuzzyFileSearch/sessionCompleted` use a strict private search-session decoder.
+Updated requires `sessionId`, `query` and an ordered non-null `files` array;
+completed requires only `sessionId`. File records require `root`, `path`,
+`file_name`, a closed file/directory match type and uint32 `score`. Preserve
+absent, null and ordered uint32-array `indices` separately during validation.
+The pinned official schemas use `match_type`; the earlier compatibility fixture
+uses `matchType`. Accept exactly one spelling and reject mixed spellings.
+Never rename `file_name` to `fileName`.
+
+Bound session IDs to 1024 UTF-8 bytes, queries and file descriptors to 4096
+bytes, files to 1000 records and each indices array to 4096 entries. Empty
+queries, descriptors, files and indices remain valid native values. Reject NUL,
+unknown/duplicate fields, missing/null required fields, invalid enums,
+non-integer/negative/overflow uint32 values and payloads above the original
+process frame limit. Failures use the closed `fuzzy-search-session` diagnostic
+classification without private session IDs, query text, names, roots or paths.
+
+No search owner exists in this adapter. Validate and discard every valid
+unsolicited, foreign, stale, repeated or completion-before-update observation.
+The Worker and isolated title runtime consume only the content-free closed
+metadata kind. Arrival grants no file read, search creation, query mutation,
+conversation indexing, input completion, response, replay or cleanup authority.
+A same-name server request retains its unsupported request boundary. Preserve
+original input, settings, account, receipts, terminal outcomes and independent
+recovery/cleanup. No public protocol or database migration is added.
+The [updated schema](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server-protocol/schema/json/FuzzyFileSearchSessionUpdatedNotification.json)
+and [completed schema](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server-protocol/schema/json/FuzzyFileSearchSessionCompletedNotification.json)
+define the official envelopes.
+
 ### Codex native error and authentication recovery observations
 
 Notification-only `error`, `modelProvider/authRecoveryStarted` and
