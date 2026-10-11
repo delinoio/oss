@@ -1150,7 +1150,8 @@ export function Sidebar({
     const railTarget = () =>
       rail.current?.querySelector<HTMLButtonElement>(
         ".sidebar-rail-button[aria-current='page']",
-      ) ?? rail.current?.querySelector<HTMLButtonElement>(".sidebar-rail-button");
+      ) ??
+      rail.current?.querySelector<HTMLButtonElement>(".sidebar-rail-button");
     const hidden = compact ? !drawerOpen : collapsed;
     if (hidden && element.contains(document.activeElement)) {
       // The rail remains visible when the wide pane collapses. Move only pane

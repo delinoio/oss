@@ -154,7 +154,7 @@ try {
           ),
           true,
         );
-        // A focused pane control must return to the current rail item before hiding.
+        // A focused pane control returns to the current rail item before hiding.
         const control = pane.locator("button").first();
         await control.focus();
         await page.keyboard.press(`${primary}+b`);
@@ -210,7 +210,9 @@ try {
         for (const collapsed of [false, true]) {
           if (collapsed) await page.keyboard.press(`${primary}+b`);
           const mainBounds = await page.locator("#main").boundingBox();
-          const inboxBounds = await page.locator(".inbox-container").boundingBox();
+          const inboxBounds = await page
+            .locator(".inbox-container")
+            .boundingBox();
           assert.equal(inboxBounds.y, mainBounds.y);
           assert.equal(inboxBounds.height, mainBounds.height);
         }

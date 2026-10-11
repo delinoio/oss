@@ -3196,6 +3196,27 @@ function viewport(compact = false) {
   };
 }
 
+function startingSidebarBridge() {
+  const bridge = memorySidebarBridge();
+  const originalRead = bridge.read;
+  let signalRead!: () => void;
+  const readStarted = new Promise<void>((resolve) => {
+    signalRead = resolve;
+  });
+  vi.spyOn(bridge, "read").mockImplementation(async () => {
+    signalRead();
+    return originalRead();
+  });
+  return { bridge, readStarted };
+}
+
+async function waitForSidebarRead(readStarted: Promise<void>) {
+  await act(async () => {
+    await readStarted;
+    await Promise.resolve();
+  });
+}
+
 function animationFrames() {
   let id = 0;
   const frames = new Map<number, FrameRequestCallback>();
@@ -3690,11 +3711,13 @@ it(
   async () => {
     viewport();
     const value = fixture();
+    const { bridge, readStarted } = startingSidebarBridge();
     render(
-      <SidebarProvider bridge={memorySidebarBridge()}>
+      <SidebarProvider bridge={bridge}>
         <App transport={value.transport} />
       </SidebarProvider>,
     );
+    await waitForSidebarRead(readStarted);
     fireEvent.click(screen.getByRole("button", { name: "New session" }));
     const draft = (await screen.findByRole("textbox", {
       name: "First message",
@@ -3709,15 +3732,8 @@ it(
     )!;
     const initialPane = pane,
       initialOutlet = pane.querySelector(".sidebar-surface-outlet");
-    await waitFor(() =>
-      expect(
-        screen
-          .getByRole("button", { name: "Collapse sidebar" })
-          .getAttribute("aria-disabled"),
-      ).toBe("false"),
-    );
     fireEvent.keyDown(draft, { key: "b", ctrlKey: true });
-    await screen.findByRole("button", { name: "Expand sidebar" });
+    await waitFor(() => expect(pane.hidden).toBe(true));
     expect(pane.hidden).toBe(true);
     expect(pane.inert).toBe(true);
     expect(document.activeElement).toBe(draft);
@@ -3727,7 +3743,7 @@ it(
       "original draft",
     ]);
     fireEvent.keyDown(draft, { key: "b", ctrlKey: true });
-    await screen.findByRole("button", { name: "Collapse sidebar" });
+    await waitFor(() => expect(pane.hidden).toBe(false));
     expect(document.querySelector(".sidebar-pane-dialog")).toBe(initialPane);
     expect(pane.querySelector(".sidebar-surface-outlet")).toBe(initialOutlet);
     expect(pane.hidden).toBe(false);
@@ -3735,10 +3751,12 @@ it(
     const source = pane.querySelector<HTMLButtonElement>("button")!;
     act(() => source.focus());
     fireEvent.keyDown(source, { key: "b", ctrlKey: true });
-    const toggle = await screen.findByRole("button", {
-      name: "Expand sidebar",
-    });
-    expect(document.activeElement).toBe(toggle);
+    await waitFor(() => expect(pane.hidden).toBe(true));
+    const rail = screen.getByRole("button", { name: "Sessions" });
+    expect(document.activeElement).toBe(rail);
+    fireEvent.keyDown(rail, { key: "b", ctrlKey: true });
+    await waitFor(() => expect(pane.hidden).toBe(false));
+    expect(document.activeElement).toBe(rail);
     expectNoNavigationWrites(value);
   },
   fullShellTimeoutMs,
@@ -3749,20 +3767,18 @@ it(
   async () => {
     const resize = viewport();
     const value = fixture();
+    const { bridge, readStarted } = startingSidebarBridge();
     render(
-      <SidebarProvider bridge={memorySidebarBridge()}>
+      <SidebarProvider bridge={bridge}>
         <App transport={value.transport} />
       </SidebarProvider>,
     );
-    await waitFor(() =>
-      expect(
-        screen
-          .getByRole("button", { name: "Collapse sidebar" })
-          .getAttribute("aria-disabled"),
-      ).toBe("false"),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
-    await screen.findByRole("button", { name: "Expand sidebar" });
+    await waitForSidebarRead(readStarted);
+    const pane = document.querySelector<HTMLDialogElement>(
+      ".sidebar-pane-dialog",
+    )!;
+    fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
+    await waitFor(() => expect(pane.hidden).toBe(true));
     act(() => resize(true));
     fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
     const opener = document.querySelector<HTMLButtonElement>(
@@ -3774,10 +3790,7 @@ it(
     ).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Close navigation" }));
     act(() => resize(false));
-    expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeTruthy();
-    expect(
-      document.querySelector<HTMLDialogElement>(".sidebar-pane-dialog")!.hidden,
-    ).toBe(true);
+    expect(pane.hidden).toBe(true);
     expectNoNavigationWrites(value);
   },
   fullShellTimeoutMs,

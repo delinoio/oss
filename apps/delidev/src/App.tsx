@@ -466,10 +466,17 @@ function Shell({
   ]);
   useLayoutEffect(() => {
     const destination = pendingFocusDestination.current;
+    if (!destination) return;
+    if (destination !== surface) {
+      pendingFocusDestination.current = undefined;
+      return;
+    }
+    // The compact drawer closes in a child layout effect. Keep this request
+    // until that state update lets the wide destination receive focus.
+    if (drawerOpen) return;
     pendingFocusDestination.current = undefined;
-    if (!destination || destination !== surface || drawerOpen) return;
-    // Child layout effects close the drawer first. Consuming here keeps Search's
-    // existing first-entry animation frame authoritative, with no later handoff.
+    // Search's existing first-entry animation frame remains authoritative, with
+    // no later focus handoff after the visible destination receives focus.
     const compact =
       typeof window.matchMedia === "function" &&
       window.matchMedia("(max-width: 759px)").matches;
