@@ -466,35 +466,42 @@ export function useSkillCompletion({
     distinct.size > 16;
   // Selection styling describes retained explicit authority, not inventory
   // availability. Unknown reads and pending locks must not invent or erase it.
-  const selectedRanges =
+  const selectedRanges: SkillToken[] = [];
+  if (
     !composition &&
     !contextChanged &&
     isEntityId(machineId) &&
     isEntityId(agentId) &&
     distinct.size <= 16
-      ? ranges
-          .filter((range) => {
-            const matches = bindings.filter(
-              (binding) =>
-                binding.start === range.start &&
-                binding.end === range.end &&
-                binding.token === `$${range.prefix}`,
-            );
-            const binding = matches[0];
-            return (
-              matches.length === 1 &&
-              binding &&
-              !binding.stale &&
-              !binding.ambiguous &&
-              (!binding.context || binding.context === scope) &&
-              isEntityId(binding.selection.skillId) &&
-              isEntityId(binding.selection.inventoryId) &&
-              isEntityId(binding.selection.workerDeviceId) &&
-              /^[a-f0-9]{64}$/.test(binding.selection.contentRevision)
-            );
-          })
-          .slice(0, 16)
-      : [];
+  ) {
+    const bindingsByRange = new Map<string, SkillTokenBinding[]>();
+    for (const binding of bindings) {
+      const key = `${binding.start}:${binding.end}:${binding.token}`,
+        matches = bindingsByRange.get(key);
+      if (matches) matches.push(binding);
+      else bindingsByRange.set(key, [binding]);
+    }
+    for (const range of ranges) {
+      const matches = bindingsByRange.get(
+          `${range.start}:${range.end}:$${range.prefix}`,
+        ),
+        binding = matches?.[0];
+      if (
+        matches?.length !== 1 ||
+        !binding ||
+        binding.stale ||
+        binding.ambiguous ||
+        (binding.context && binding.context !== scope) ||
+        !isEntityId(binding.selection.skillId) ||
+        !isEntityId(binding.selection.inventoryId) ||
+        !isEntityId(binding.selection.workerDeviceId) ||
+        !/^[a-f0-9]{64}$/.test(binding.selection.contentRevision)
+      )
+        continue;
+      selectedRanges.push(range);
+      if (selectedRanges.length === 16) break;
+    }
+  }
   useLayoutEffect(() => {
     if (!keyboardNavigation.current) return;
     keyboardNavigation.current = false;

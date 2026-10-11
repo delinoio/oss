@@ -1412,7 +1412,7 @@ function BoundDecorationComposer({
   );
 }
 it("bounds painted explicit spans and leaves duplicate, stale or ambiguous binding claims plain", () => {
-  const prompt = Array.from({ length: 17 }, () => "$add-issue").join(" ");
+  const prompt = Array.from({ length: 2048 }, () => "$add-issue").join(" ");
   const bindings = skillRanges(prompt).map((range) => ({
     start: range.start,
     end: range.end,
