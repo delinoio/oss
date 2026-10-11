@@ -62,16 +62,7 @@ export function useMachineSettingsController(
     paths: Record<string, string>;
   }>();
   const [verify, setVerifyValue] = useState(false);
-  const [verifyEdited, setVerifyEdited] = useState(false);
   const verifyGeneration = useRef(0);
-  const setVerify = useMemo(
-    () => (next: boolean) => {
-      setVerifyValue(next);
-      verifyGeneration.current += 1;
-      setVerifyEdited(true);
-    },
-    [],
-  );
   const [job, setJob] = useState<Resource | "unknown">();
   const submitted = useRef<{
     edit: typeof edit;
@@ -82,6 +73,16 @@ export function useMachineSettingsController(
     edit: typeof edit;
     verifyGeneration: number;
   }>();
+  const verifyEdited = accepted
+    ? verifyGeneration.current !== accepted.verifyGeneration
+    : verify;
+  const setVerify = useMemo(
+    () => (next: boolean) => {
+      setVerifyValue(next);
+      verifyGeneration.current += 1;
+    },
+    [],
+  );
   const draft = useRef({ edit, verifyGeneration: verifyGeneration.current });
   draft.current = { edit, verifyGeneration: verifyGeneration.current };
   const discovery = useRetainedMutation(
@@ -113,8 +114,6 @@ export function useMachineSettingsController(
     setEdit((currentEdit) =>
       currentEdit === accepted.edit ? undefined : currentEdit,
     );
-    if (verifyGeneration.current === accepted.verifyGeneration)
-      setVerifyEdited(false);
   }, [accepted, jobObservation.terminal, jobObservation.current?.id]);
   const stale = Boolean(edit && edit.revision !== current?.revision);
   const readError = useMemo(
