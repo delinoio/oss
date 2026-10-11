@@ -504,11 +504,6 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	terminalPublished := false
 	var dynamicDrainCancel context.CancelFunc
 	var dynamicDrainParent context.Context
-	defer func() {
-		if dynamicDrainCancel != nil {
-			dynamicDrainCancel()
-		}
-	}()
 	for {
 		if ctx.Err() != nil && !stopping {
 			if err := nativeCtx.Err(); err != nil {
@@ -573,7 +568,10 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			if !mapper.dynamicToolsSettled() {
 				if dynamicDrainCancel == nil {
 					dynamicDrainParent = readContext
-					readContext, dynamicDrainCancel = context.WithTimeout(dynamicDrainParent, 15*time.Second)
+					var drainContext context.Context
+					drainContext, dynamicDrainCancel = context.WithTimeout(dynamicDrainParent, 15*time.Second)
+					defer dynamicDrainCancel()
+					readContext = drainContext
 				}
 				// Successful completion needs settled dynamic evidence. Failed and
 				// interrupted outcomes are publishable with their original unsettled
