@@ -151,7 +151,7 @@ func TestImageViewAcceptsUNCShareRootRepository(t *testing.T) {
 
 func TestImageViewPOSIXLiteralCharactersRoundTrip(t *testing.T) {
 	for _, workerOS := range []string{"linux", "darwin"} {
-		for _, relative := range []string{"screens/frame:01.png", `screens/frame\01.png`, `screens\archive/frame:01.png`, "frame:01.png"} {
+		for _, relative := range []string{"screens/frame:01.png", `screens/frame\01.png`, `screens\archive/frame:01.png`, "frame:01.png", "C:/frame.png", `\\server\share.png`} {
 			t.Run(workerOS+"/"+relative, func(t *testing.T) {
 				input := localImageViewInput(t, "/repo")
 				ref, err := ObserveImageViewLocation(input, workerOS, "/repo/"+relative, domain.NewID())

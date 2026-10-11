@@ -22,7 +22,7 @@ func (v ImageViewObservation) Validate() error {
 	digest, err := hex.DecodeString(v.ManifestDigest)
 	// Colons and literal backslashes can be inert POSIX filename characters.
 	// The original Worker OS and manifest enforce path semantics at publication.
-	if v.ReferenceID.Validate() != nil || v.MachineID.Validate() != nil || (v.RepositoryID != "" && v.RepositoryID.Validate() != nil) || err != nil || len(digest) != 32 || hex.EncodeToString(digest) != v.ManifestDigest || Text(v.Location, "native image location", 4096, true) != nil || path.IsAbs(v.Location) || windowsAbsolute(v.Location) || strings.HasPrefix(v.Location, `\\`) || path.Clean(v.Location) != v.Location || v.Location == "." || v.Location == ".." || strings.HasPrefix(v.Location, "../") || strings.Contains(v.Location, "://") {
+	if v.ReferenceID.Validate() != nil || v.MachineID.Validate() != nil || (v.RepositoryID != "" && v.RepositoryID.Validate() != nil) || err != nil || len(digest) != 32 || hex.EncodeToString(digest) != v.ManifestDigest || Text(v.Location, "native image location", 4096, true) != nil || path.IsAbs(v.Location) || path.Clean(v.Location) != v.Location || v.Location == "." || v.Location == ".." || strings.HasPrefix(v.Location, "../") || strings.Contains(v.Location, "://") {
 		return invalidTool()
 	}
 	return nil
