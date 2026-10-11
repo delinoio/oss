@@ -617,3 +617,7 @@ existing original cleanup and recovery ownership; a foreign directory or
 unproved process cleanup remains uncertain. Sidechat keeps metadata-only parent
 references. Original Local sharing and legacy accepted linked-worktree lifetimes
 keep their existing ownership boundaries.
+
+## Repository registration name collisions
+
+Repository saves check server-wide same-kind name uniqueness at admission and after the original checkout inspections finish. Concurrent accepted inspections cannot both publish equivalent names. Clone completion uses the same transactional publication gate and settles a definitive name collision in the original job. The reported checkout has already transferred to user-owned Local lifetime; registration failure retains its original inspection metadata and grants no deletion authority. Native source proof, job ownership and revision conflicts keep their existing categories. See the [command naming contract](cmds-delidev-contract.md#project-and-repository-name-uniqueness).

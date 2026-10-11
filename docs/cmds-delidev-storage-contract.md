@@ -1454,3 +1454,7 @@ failures roll back all changes. Exact receipt replay does not select entries aga
 later arrivals and explicit Mark unread changes remain unread. Existing backup,
 restore, retention, source consistency and independent notification/execution
 ownership remain unchanged.
+
+## Transactional configuration name admission
+
+`Tx.Put` checks normalized Project and Repository names before publication in the serialized mutation transaction. Admission checks and native inspection do not reserve names. Final asynchronous writes repeat the check. A rejected write leaves resource documents, revisions, references, immutable history and events unchanged; an existing coordinator may atomically settle its failed job. Receipts and original-request replay keep their existing rules. Tombstones reserve IDs but do not reserve display names. No table or SQLite migration is added. The [command contract](cmds-delidev-contract.md#project-and-repository-name-uniqueness) owns normalization and the collision cause.

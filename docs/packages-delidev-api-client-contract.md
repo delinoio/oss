@@ -464,6 +464,10 @@ for original replay and the
 [desktop contract](apps-delidev-desktop-contract.md#foreground-chat-inbox-acknowledgment)
 for foreground admission and retained query invalidation.
 
+## Configuration name failure projection
+
+`ClientFailure.cause` optionally exposes the closed `FailureCause.ConfigurationNameConflict` value. The client projects it only from the existing typed ErrorDetail when its code is Conflict and its cause is exactly `configuration_name_conflict`. Unknown causes, other categories and raw transport messages cannot establish a name collision. Protocol declarations remain unchanged.
+
 ## Schedule calendar preview
 
 `ScheduleQuery.previewScheduleCalendar` exposes the generated read-only RPC with

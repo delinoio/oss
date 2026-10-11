@@ -5779,6 +5779,14 @@ change a successor connection. Failed or uncertain outcomes retain authoritative
 presentation. Existing manual Inbox controls and native badge fences are unchanged.
 No new user control, setting or banner is introduced.
 
+## Configuration name correction
+
+The server owns Project and Repository name availability. Loaded client pages cannot prove global availability; the client adds no catalog scan or availability RPC. Only Conflict with the typed `configuration_name_conflict` cause receives name-specific treatment. Revision, identity, denied and uncertain outcomes retain their existing presentation and request guards.
+
+Show “A project with this name already exists. Choose another name.” beneath the existing Project name field. Repository copy uses “repository”. Korean copy is “이 이름의 프로젝트가 이미 있습니다. 다른 이름을 입력하세요.” and “이 이름의 저장소가 이미 있습니다. 다른 이름을 입력하세요.” Connect the wrapping alert to its input with `aria-describedby` and `aria-invalid`; use the existing semantic danger color. Preserve field geometry, themes, draft spelling, keyboard flow and opener restoration. A confirmed failure returns to the wizard name step or editor General panel, focuses its field and permits correction with a fresh explicit request. Pending or uncertain requests retain immutable original bytes.
+
+A verified asynchronous repository name collision releases only its original settled request and returns to the retained draft. A completed clone collision retains the reported existing Local checkout and allows corrected registration without cloning or deleting that checkout. Narrow widths and effective 200% layout retain readable, wrapping guidance.
+
 ## Sidebar response attention
 
 Home navigation retains only the literal boolean true from the supported

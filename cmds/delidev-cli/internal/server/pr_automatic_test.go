@@ -445,7 +445,7 @@ func TestAutomaticPRRemediationBlockedTargetCannotStallAndShutdownJoins(t *testi
 	native := f.service.integrationSecrets.(*testPATs)
 	integrations := &integrationFixture{t: t, service: f.service, native: native, client: delidevv1connect.NewIntegrationServiceClient(http.DefaultClient, f.endpoint.URL)}
 	profile := integrations.replace(profileMutation(integrations.save("Independent automatic profile")), "automatic-server-lookup-fixture")
-	repo := integrations.repository(domain.ID(profile.Profile.Id))
+	repo := integrations.repositoryNamed(domain.ID(profile.Profile.Id), "Independent automatic repository")
 	_, err := f.service.Store.Mutate(f.owner, domain.NewID(), "fixture.independent-pr-scope", nil, func(tx *store.Tx) (any, error) {
 		r, err := tx.Get(domain.RepositoryKind, domain.ID(repo.Id))
 		if err != nil {
