@@ -22,7 +22,7 @@ type nativeSkillInventoryTransport struct {
 
 func (f *nativeSkillInventoryTransport) RoundTrip(request *http.Request) (*http.Response, error) {
 	f.t.Helper()
-	if request.Method != http.MethodGet || request.Body != nil {
+	if request.Method != http.MethodGet || request.Body != nil && request.Body != http.NoBody {
 		f.t.Fatal("inventory inspection attempted a native mutation")
 	}
 	f.reads = append(f.reads, request.URL.Path)
