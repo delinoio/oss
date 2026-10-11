@@ -391,9 +391,8 @@ it("lets a focused modal handle Escape above repository details", async () => {
   });
   trigger.focus();
   fireEvent.click(trigger);
-  const modal = document.createElement("div");
-  modal.setAttribute("role", "dialog");
-  modal.setAttribute("aria-modal", "true");
+  const modal = document.createElement("dialog");
+  modal.open = true;
   const input = document.createElement("input");
   modal.append(input);
   document.body.append(modal);

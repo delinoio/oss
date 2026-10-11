@@ -196,7 +196,7 @@ function RepositoryNavigationRow({
       if (event.key !== "Escape") return;
       if (
         event.target instanceof Element &&
-        event.target.closest('[aria-modal="true"]')
+        event.target.closest('[aria-modal="true"], dialog[open]')
       )
         return;
       event.preventDefault();
@@ -205,7 +205,11 @@ function RepositoryNavigationRow({
       if (usable()) source.focus({ preventScroll: true });
     };
     const lifetime = new MutationObserver(position);
-    lifetime.observe(document.body, { childList: true, subtree: true });
+    lifetime.observe(document.body, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
     for (let node: HTMLElement | null = source; node; node = node.parentElement)
       lifetime.observe(node, {
         attributes: true,
