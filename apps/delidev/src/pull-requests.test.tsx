@@ -382,6 +382,40 @@ it("dismisses only repository details on Escape and preserves outside focus", as
   expect(value.query).not.toHaveBeenCalled();
 });
 
+it("lets a focused modal handle Escape above repository details", async () => {
+  const value = fixture();
+  render(<App transport={value.transport} />);
+  const pane = await open();
+  const trigger = await pane.findByRole("button", {
+    name: "Details for Example repository",
+  });
+  trigger.focus();
+  fireEvent.click(trigger);
+  const modal = document.createElement("div");
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  const input = document.createElement("input");
+  modal.append(input);
+  document.body.append(modal);
+  const modalEscape = vi.fn();
+  modal.addEventListener("keydown", modalEscape);
+  input.focus();
+
+  fireEvent.keyDown(input, { key: "Escape" });
+
+  expect(modalEscape).toHaveBeenCalledOnce();
+  expect(
+    pane.getByRole("region", { name: "Details for Example repository" }),
+  ).toBeTruthy();
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  modal.remove();
+  trigger.focus();
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(
+    pane.queryByRole("region", { name: "Details for Example repository" }),
+  ).toBeNull();
+});
+
 it("retires the popup when its original opener is hidden or removed", async () => {
   const rows = [repository()];
   const value = fixture(rows);

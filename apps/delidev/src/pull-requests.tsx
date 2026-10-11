@@ -189,6 +189,11 @@ function RepositoryNavigationRow({
     };
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest('[aria-modal="true"]')
+      )
+        return;
       event.preventDefault();
       event.stopImmediatePropagation();
       dismiss.current();
