@@ -274,10 +274,14 @@ and 1 MiB body limit. Redirects, ambient proxies and route fallback are
 forbidden; server shutdown cancels and joins the request and maintenance owner.
 
 Known metadata is separate from native discovery, credential/account entitlement,
-readiness and canonical saved-model authority. Known selections use the existing
-atomic Worker native-ID save. Saved selections retain exact model ID/revision
-checks. Removal from recommendations never removes saved models, configurations
-or immutable historical execution attribution. API endpoint discovery is unchanged.
+readiness and execution authority. Known selections use the atomic Worker
+native-ID save, preserving original Worker revision and source/account checks.
+The [inline Worker model contract](#inline-worker-models-and-endpoint-only-completion-reservation)
+supersedes saved Model selections and their separate ID/revision checks with
+embedded exact native IDs and non-secret execution metadata. Removal from
+recommendations never removes Worker configurations or immutable historical
+execution attribution. API suggestions follow the selected endpoint's separate
+read-only contract and never merge saved records.
 
 The collector uses the revision-pinned official Codex `models-manager/models.json`
 (public visibility and nonempty subscription plans), official Codex retirement
@@ -396,7 +400,7 @@ Provider-row account links use the list-only `provider_id` selector on `Resource
 
 ### Workflow integration
 
-- Known subscription model suggestions follow `cmds-delidev-catalog-contract.md#known-subscription-model-suggestions`. The originating change established System capability 35 and the advisory declarations on main before activation. Keep bounded read-only owner/client metadata, explicit server outbound routing, joined cache refresh and review-only daily PRs separate from account/native/execution authority. Preserve atomic native-ID Worker saves and saved revision/history checks; no database migration.
+- Known subscription model suggestions follow `cmds-delidev-catalog-contract.md#known-subscription-model-suggestions`. The originating change established System capability 35 and the advisory declarations on main before activation. Keep bounded read-only owner/client metadata, explicit server outbound routing, joined cache refresh and review-only daily PRs separate from account/native/execution authority. Preserve atomic native-ID Worker saves, original Worker revision checks and immutable history; no database migration for advisory catalog reads.
 
 ### Project requirements
 

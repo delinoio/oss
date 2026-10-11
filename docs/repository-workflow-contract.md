@@ -541,7 +541,7 @@ DeliDev QA preparation and its original signal-test children rebuild the API cli
 
 - Load repository-local actions only after checkout. Cache authentication requires the `delinoio/oss` repository, GitHub workflow name `CI` and exact `CI.yml` workflow-ref prefix. Prepare the pinned Rust toolchain before native tasks and retain serial DevHud conformance; export prepared Go cache locations explicitly for Turbo strict environments.
 
-- DeliDev validation separates schema/binding freshness, TypeScript client and desktop jobs. Preserve the exact checks/two-Vitest-shard matrix, Turbo client build dependencies, uncached real-server fixtures and complete CI Result aggregation. A runner-owned source build may share only its executable path; retain private fixture state and QA build ownership.
+- DeliDev validation separates schema/binding freshness, TypeScript client and desktop jobs. Preserve the exact checks/four-Vitest-shard matrix, Turbo client build dependencies, uncached real-server fixtures and complete CI Result aggregation. A runner-owned source build may share only its executable path; retain private fixture state and QA build ownership.
 
 - The separate Runmoor PR Docker workflow also uses uncached `scripts/ci` Turbo tasks, preserving the explicit Docker opt-in, race coverage, read-only contents authority and successful-main-only dependency-cache saves. It requires no remote-cache token.
 
@@ -601,7 +601,7 @@ Coverage expectations:
 
 - `devhud-frontend`, `devhud-extension`, and `devhud-admin`: run package-local type, lint, unit, component, accessibility, and deterministic frontend/package builds.
 
-- DeliDev CI separates `delidev-protocol` schema/Go-binding freshness, `delidev-client` TypeScript validation and `delidev-frontend` desktop validation. Screen-only changes do not select schema/client checks; command changes retain real-server integration. Desktop checks use exactly one checks phase plus two complete Vitest shards, with fail-fast disabled and all results required by `CI Result`.
+- DeliDev CI separates `delidev-protocol` schema/Go-binding freshness, `delidev-client` TypeScript validation and `delidev-frontend` desktop validation. Screen-only changes do not select schema/client checks; command changes retain real-server integration. Desktop checks use exactly one checks phase plus four complete Vitest shards, with fail-fast disabled and all results required by `CI Result`.
 
 - `devhud-api`: runs package-local Go format, vet, unit, PostgreSQL migration, integration, API, and sweeper conformance.
 
