@@ -71,7 +71,7 @@
 +        this._textCapture.cancel();
 +        this._rectangleDrag.cancel();
 +        this.clearSelection();
-+        this._search.search("");
++        this._search.search("", {});
 +        this._searchReveal = false;
 +        this._windowSizeQueryState = 0;
 +        this._synchronizedOutputState = "idle";
