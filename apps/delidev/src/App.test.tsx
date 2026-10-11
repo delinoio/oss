@@ -1657,7 +1657,9 @@ it.each(["New session", "New Chat"])(
     expect(document.activeElement).toBe(
       within(wizard).getByRole("heading", { name: "Harness" }),
     );
-    fireEvent.click(within(wizard).getByRole("button", { name: "Cancel" }));
+    fireEvent.click(
+      within(wizard).getByRole("button", { name: "Close New Agent Worker" }),
+    );
     fireEvent.click(screen.getAllByRole("button", { name: surface })[0]);
     expect(
       screen.getByRole("textbox", { name: "First message" }),

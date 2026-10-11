@@ -33,7 +33,21 @@ function worker() {
     kind: EntityKind.AGENT,
     schemaVersion: 4,
     revision: 1n,
-    documentJson: encode({ name: "Worker", harness: "codex" }),
+    documentJson: encode({
+      name: "Worker",
+      harness: "codex",
+      routes: [
+        {
+          model: {
+            subscription_service: "chatgpt",
+            native_id: "fixture-model",
+          },
+          accounts: [{ id: newRequestId(), weight: 1 }],
+        },
+      ],
+      templates: [],
+      options: { permission: "default" },
+    }),
   });
 }
 function fixture(
@@ -125,9 +139,13 @@ it.each(["en", "ko"])(
   },
 );
 
-it.each([undefined, [], [newRequestId()]])(
+it.each([
+  { allowed: undefined },
+  { allowed: [] },
+  { allowed: [newRequestId()] },
+])(
   "keeps nonempty inventory distinct from project-filtered emptiness (%j)",
-  async (allowed) => {
+  async ({ allowed }) => {
     const row = worker(),
       f = fixture(() => ({ resources: [row] }));
     render(<f.View allowed={allowed} />);
@@ -175,7 +193,10 @@ it("rejects a malformed raw row before a deny-all restriction can hide it", asyn
   row.kind = EntityKind.PROJECT;
   const f = fixture(() => ({ resources: [row] }));
   render(<f.View allowed={[]} />);
-  expect(await screen.findByText("Invalid resource choices")).toBeTruthy();
+  expect(
+    await screen.findByRole("button", { name: "Retry current read" }),
+  ).toBeTruthy();
+  expect(screen.queryByText(/match the selected project/)).toBeNull();
   expect(
     screen.queryByRole("button", { name: "Create agent worker" }),
   ).toBeNull();
