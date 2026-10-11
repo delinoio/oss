@@ -177,7 +177,7 @@ func TestLegacyForkDeletionProofCannotRebuildRemovedEvidence(t *testing.T) {
 			if err := security.PrivateDir(filepath.Join(c.Root, "session-deletions")); err != nil {
 				t.Fatal(err)
 			}
-			if err := writeJSON(sessionDeletionPath(c.Root, w.SessionID), originalProof); err != nil {
+			if err := writeJSON(sessionDeletionObligationPath(c.Root, w), originalProof); err != nil {
 				t.Fatal(err)
 			}
 			executable, err := exec.LookPath("git")

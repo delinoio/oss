@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -142,7 +144,7 @@ func TestSessionDeletionWorkerRemovesOnlySelectedWorktreeAndResumesAfterRemoval(
 	}
 	// Reproduce a crash after all unlinks but before completion persistence.
 	proof.Complete = false
-	if e := writeJSON(sessionDeletionPath(c.Root, w.SessionID), proof); e != nil {
+	if e := writeJSON(sessionDeletionObligationPath(c.Root, w), proof); e != nil {
 		t.Fatal(e)
 	}
 	again, e := deleteSessionCopies(context.Background(), c, w)
@@ -464,5 +466,231 @@ func TestRetiringAssignmentPreservesMaximumUnpublishedSidechatInventory(t *testi
 	resource.Revision++
 	if retiringAssignment(context.Background(), config, client, credential, original.InstanceID, resource) {
 		t.Fatal("large envelope lost exact claimed revision")
+	}
+}
+
+func TestSessionDeletionIndependentOriginalDeviceObligations(t *testing.T) {
+	c, first, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	second := first
+	second.DeviceID = domain.NewID()
+	second.Copies = append([]domain.SessionDeletionCopy(nil), first.Copies...)
+	second.Copies[0].JobID = domain.NewID()
+	copy := second.Copies[0]
+	// The second device retained its own failed preparation, not authority to
+	// adopt the first device's removed workspace.
+	if err := writeJSON(filepath.Join(c.Root, "jobs", string(copy.JobID)+".json"), journal{Version: 1, JobID: copy.JobID, InstanceID: copy.InstanceID, Revision: copy.Revision, Digest: copy.Digest, ReportID: domain.NewID(), State: journalReported, Problem: domain.Fail(domain.Unsupported, "Preparation rejected.", "Preserve original ownership.")}); err != nil {
+		t.Fatal(err)
+	}
+	one, err := deleteSessionCopies(context.Background(), c, first)
+	if err != nil || !one.Complete {
+		t.Fatal(one, err)
+	}
+	lock, err := security.TryLock(filepath.Join(c.Root, "session-deletions", first.ObligationKey()+".lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Close()
+	two, err := deleteSessionCopies(context.Background(), c, second)
+	if err != nil || !two.Complete || two.ReportID == one.ReportID || two.Digest == one.Digest {
+		t.Fatal(two, err)
+	}
+	again, err := deleteSessionCopies(context.Background(), c, second)
+	if err != nil || again.ReportID != two.ReportID {
+		t.Fatal(again, err)
+	}
+	if err := writeJSON(sessionDeletionObligationPath(c.Root, second), one); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := deleteSessionCopies(context.Background(), c, second); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("other device proof replayed", err)
+	}
+}
+func TestSessionDeletionLegacyProofExactImport(t *testing.T) {
+	for _, matching := range []bool{true, false} {
+		t.Run(fmt.Sprint(matching), func(t *testing.T) {
+			c, w, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+			if err := security.PrivateDir(filepath.Join(c.Root, "session-deletions")); err != nil {
+				t.Fatal(err)
+			}
+			legacy := sessionDeletionProof{Version: 1, Digest: w.Digest(), ReportID: domain.NewID()}
+			if !matching {
+				other := w
+				other.DeviceID = domain.NewID()
+				legacy.Digest = other.Digest()
+			}
+			if err := writeJSON(sessionDeletionPath(c.Root, w.SessionID), legacy); err != nil {
+				t.Fatal(err)
+			}
+			proof, err := deleteSessionCopies(context.Background(), c, w)
+			if matching {
+				if err != nil || !proof.Complete || proof.ReportID != legacy.ReportID {
+					t.Fatal(proof, err)
+				}
+			} else {
+				if domain.SafeError(err).Code != domain.RecoveryRequired {
+					t.Fatal("mismatched legacy adopted", err)
+				}
+				if _, err := os.Lstat(sessionDeletionObligationPath(c.Root, w)); !errors.Is(err, os.ErrNotExist) {
+					t.Fatal("mismatch minted proof", err)
+				}
+			}
+		})
+	}
+}
+func TestSessionDeletionCompletedProofRejectsRestoredWorkspaceProof(t *testing.T) {
+	c, w, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	proof, err := deleteSessionCopies(context.Background(), c, w)
+	if err != nil || !proof.Complete {
+		t.Fatal(proof, err)
+	}
+	path := filepath.Join(c.Root, "session-deletions", w.ObligationKey()+"-workspace.json")
+	raw, err := security.ReadPrivate(path, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored map[string]any
+	if err := json.Unmarshal(raw, &restored); err != nil {
+		t.Fatal(err)
+	}
+	restored["manifest"] = map[string]any{}
+	if err := writeJSON(path, restored); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := deleteSessionCopies(context.Background(), c, w); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("restored proof ignored", err)
+	}
+}
+
+func TestSessionDeletionCompletedLegacyProofRecovery(t *testing.T) {
+	for _, matching := range []bool{true, false} {
+		t.Run(fmt.Sprint(matching), func(t *testing.T) {
+			c, w, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+			original, err := deleteSessionCopies(context.Background(), c, w)
+			if err != nil {
+				t.Fatal(err)
+			}
+			keyed := sessionDeletionObligationPath(c.Root, w)
+			if err := os.Remove(keyed); err != nil {
+				t.Fatal(err)
+			}
+			if err := writeJSON(sessionDeletionPath(c.Root, w.SessionID), original); err != nil {
+				t.Fatal(err)
+			}
+			workspaceKeyed := filepath.Join(c.Root, "session-deletions", w.ObligationKey()+"-workspace.json")
+			raw, err := security.ReadPrivate(workspaceKeyed, 1<<20)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !matching {
+				var v map[string]any
+				if err := json.Unmarshal(raw, &v); err != nil {
+					t.Fatal(err)
+				}
+				v["digest"] = strings.Repeat("a", 64)
+				raw, _ = json.Marshal(v)
+			}
+			if err := security.WriteAtomic(filepath.Join(c.Root, "session-deletions", string(w.SessionID)+"-workspace.json"), raw); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Remove(workspaceKeyed); err != nil {
+				t.Fatal(err)
+			}
+			recovered, err := deleteSessionCopies(context.Background(), c, w)
+			if matching {
+				if err != nil || !recovered.Complete || recovered.ReportID != original.ReportID {
+					t.Fatal(recovered, err)
+				}
+			} else if domain.SafeError(err).Code != domain.RecoveryRequired {
+				t.Fatal("foreign legacy workspace accepted", err)
+			}
+		})
+	}
+}
+
+// Matching duplicate records model interruption after the keyed rename and
+// before legacy retirement, including a failed parent-directory sync.
+func TestSessionDeletionLegacyImportInterruptedPublication(t *testing.T) {
+	for _, scenario := range []string{"legacy-only", "matching-pair", "conflicting-pair", "session-lock"} {
+		t.Run(scenario, func(t *testing.T) {
+			c, w, manifest, _ := deletionWorkerFixture(t, domain.GeneralChat)
+			if err := security.PrivateDir(filepath.Join(c.Root, "session-deletions")); err != nil {
+				t.Fatal(err)
+			}
+			original := sessionDeletionProof{Version: 1, Digest: w.Digest(), ReportID: domain.NewID()}
+			legacyPath := sessionDeletionPath(c.Root, w.SessionID)
+			if err := writeJSON(legacyPath, original); err != nil {
+				t.Fatal(err)
+			}
+			if scenario == "matching-pair" || scenario == "conflicting-pair" {
+				keyed := original
+				if scenario == "conflicting-pair" {
+					keyed.ReportID = domain.NewID()
+				}
+				if err := writeJSON(sessionDeletionObligationPath(c.Root, w), keyed); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if scenario == "session-lock" {
+				lock, err := security.TryLock(filepath.Join(c.Root, "session-deletions", string(w.SessionID)+".lock"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer lock.Close()
+			}
+			result, err := deleteSessionCopies(context.Background(), c, w)
+			if scenario == "legacy-only" || scenario == "matching-pair" {
+				if err != nil || !result.Complete || result.ReportID != original.ReportID || result.Digest != original.Digest {
+					t.Fatal("original receipt was not recovered", result, err)
+				}
+				if _, err := os.Lstat(legacyPath); err != nil {
+					t.Fatal("session admission fence was lost", err)
+				}
+			} else {
+				if domain.SafeError(err).Code != domain.RecoveryRequired {
+					t.Fatal("uncertain publication authorized removal", err)
+				}
+				if _, err := os.Stat(manifest.PrimaryPath); err != nil {
+					t.Fatal("original workspace changed before proof recovery", err)
+				}
+				var retained sessionDeletionProof
+				raw, err := security.ReadPrivate(legacyPath, 4096)
+				if err != nil || domain.Decode(raw, &retained) != nil || retained != original {
+					t.Fatal("conflicting publication replaced legacy evidence", err)
+				}
+			}
+		})
+	}
+}
+
+func TestSessionDeletionObligationStillRequiresFullWorkDigest(t *testing.T) {
+	c, w, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	original, err := deleteSessionCopies(context.Background(), c, w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"server", "machine", "revision", "copies"} {
+		t.Run(field, func(t *testing.T) {
+			changed := w
+			changed.Copies = append([]domain.SessionDeletionCopy(nil), w.Copies...)
+			switch field {
+			case "server":
+				changed.ServerID = domain.NewID()
+			case "machine":
+				changed.MachineID = domain.NewID()
+			case "revision":
+				changed.Copies[0].Revision++
+			case "copies":
+				changed.Copies[0].JobID = domain.NewID()
+			}
+			if changed.ObligationKey() != w.ObligationKey() {
+				t.Fatal("fixture must exercise an unchanged obligation path")
+			}
+			if _, err := deleteSessionCopies(context.Background(), c, changed); domain.SafeError(err).Code != domain.RecoveryRequired {
+				t.Fatal("path identity substituted for full work validation", err)
+			}
+		})
+	}
+	if replay, err := deleteSessionCopies(context.Background(), c, w); err != nil || replay != original {
+		t.Fatal("rejected scopes changed original proof", replay, err)
 	}
 }

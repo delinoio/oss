@@ -283,8 +283,26 @@ ownership fails closed.
 A separate authenticated Worker polling/report lane survives an interrupted
 primary assignment stream. Work binds the original paired device/machine and
 immutable assignment instance/revision/hash; reports additionally require a live
-current instance and exact plan digest. One retained report UUID survives process
-replacement and lost acknowledgements. Exact acknowledged report retries reuse
+current instance and exact plan digest. Worker report proofs, workspace removal
+proofs and report-operation locks use
+`session-deletions/<session>-<deletion>-<device>` names in the private original
+Worker scope. The full work digest independently binds every retained copy.
+Distinct historical device obligations retain their own recovery and report
+UUIDs; the session-wide admission tombstone and original job/workspace locks
+remain separate. A session-only legacy proof imports only for its exact work
+digest, retaining the original receipt durably before replacing that legacy file
+with a non-content admission marker. Recovery synchronizes the obligation path
+before retiring matching legacy evidence, including after an interrupted
+publication. Conflicting paired proofs remain pending. Untouched keyed proofs retain existing
+server-proved child-owner compatibility; this cannot import mismatched legacy
+proofs. Workspace legacy proofs likewise require exact work equality. No proof
+is copied to authorize another device. Completed replay inventories the bounded
+original obligation workspace proof alongside original removal paths; restored
+proof content, foreign digests and conflicting legacy content remain pending.
+Workspace completion requires a removed proof with no retained manifest. No RPC,
+allocation or database migration is introduced.
+
+One retained report UUID survives process replacement and lost acknowledgements. Exact acknowledged report retries reuse
 the matching actor/work-bound receipt without rewriting the external journal or
 changing its revision. Missing SQL receipts still recover from the original
 synchronized acknowledgement; conflicting receipts are rejected. Cleanup tombstones native admission,
