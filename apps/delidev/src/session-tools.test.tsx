@@ -999,9 +999,7 @@ it("labels missing and malformed status without inferring readiness or automatic
       dispatch: "unknown-state",
     }),
   });
-  render(
-    f.view(<SessionTools resource={row} changed={() => {}} initiallyOpen />),
-  );
+  render(f.view(<SessionTools resource={row} changed={() => {}} />));
   const values = globalThis.document.querySelector(".session-status-values")!;
   const terms = [...values.querySelectorAll("dt")].map(
     (node) => node.textContent,

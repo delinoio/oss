@@ -1415,13 +1415,13 @@
   background: var(--text-secondary);
 }
 .session-pr-dot-open {
-  background: #1f9f55;
+  background: var(--success-text);
 }
 .session-pr-dot-merged {
-  background: #8957e5;
+  background: var(--accent);
 }
 .session-pr-dot-closed {
-  background: #cf334a;
+  background: var(--danger-text);
 }
 
 .session-tools-exceptions > .actions:empty,

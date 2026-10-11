@@ -495,7 +495,7 @@ it("orders principal Info summaries and keeps technical snapshots out of healthy
         ".session-information-body > .session-information-section > h3",
       ),
     ].map((heading) => heading.textContent),
-  ).toEqual(["Pull requests", "Subagents", "Context", "Usage and budget"]);
+  ).toEqual(["PR associations", "Subagents", "Context", "Usage and budget"]);
   expect(
     within(info).getByRole("group", { name: "Saved model: saved-model" }),
   ).toBeTruthy();
@@ -921,31 +921,27 @@ it("keeps a compact header and all independent status/title evidence in the expa
   expect(f.enqueue).not.toHaveBeenCalled();
 });
 
-it("retains primary section choices and editor/input identities across tools and locale changes", async () => {
+it("retains Info sections and editor/input identities across tools and locale changes", async () => {
   const f = fixture();
   render(f.view());
   const composer = await screen.findByRole("textbox", { name: "Message" });
   const info = screen.getByRole("complementary", {
     name: "Session information",
   });
-  const execution = [
-    ...info.querySelectorAll<HTMLDetailsElement>(
-      ".session-information-section",
-    ),
-  ].find((node) => node.querySelector(".execution-configuration"))!;
+  const sections = [...info.querySelectorAll(".session-information-section")];
   const projection = info.querySelector(".execution-configuration");
-  await act(async () => {
-    execution.open = false;
-    fireEvent(execution, new Event("toggle"));
-  });
   fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
   fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
-  expect(execution.open).toBe(false);
+  expect([...info.querySelectorAll(".session-information-section")]).toEqual(
+    sections,
+  );
   expect(info.querySelector(".execution-configuration")).toBe(projection);
   await act(async () => {
     await i18n.changeLanguage("ko");
   });
-  expect(execution.open).toBe(false);
+  expect([...info.querySelectorAll(".session-information-section")]).toEqual(
+    sections,
+  );
   expect(info.querySelector(".execution-configuration")).toBe(projection);
   await act(async () => {
     await i18n.changeLanguage("en");

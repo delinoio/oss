@@ -230,7 +230,7 @@ it("retains only the previous complete summary on failed invalidation and retrie
     await client.invalidateQueries();
   });
   expect(screen.getByText("9,007,199,254,740,993")).toBeTruthy();
-  expect(screen.getByText(/Previous complete usage is stale/)).toBeTruthy();
+  await screen.findByText(/Previous complete usage is stale/);
   fireEvent.click(screen.getByRole("button", { name: "Retry read" }));
   await waitFor(() => expect(read).toHaveBeenCalledTimes(3));
   await waitFor(() =>
