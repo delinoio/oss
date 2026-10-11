@@ -248,3 +248,70 @@ func TestWorkspaceProviderPageBudgetAndForkFence(t *testing.T) {
 		t.Fatal("missing fork identity granted graph edge", e, v.State)
 	}
 }
+
+func TestWorkspaceRechecksCompleteRelationInventory(t *testing.T) {
+	c := workspaceFixture(t, map[int][2]string{101: {"main", "s1"}, 102: {"s1", "s2"}}, nil)
+	original := c.http.Transport
+	pages := map[string]int{}
+	c.http.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		reply, err := original.RoundTrip(r)
+		if err != nil {
+			return reply, err
+		}
+		if r.URL.Path == "/repos/fixture-owner/repo/pulls" {
+			pages[r.URL.String()]++
+			if pages[r.URL.String()] > 1 {
+				reply.Body.Close()
+				reply.Body = io.NopCloser(strings.NewReader(`[{"number":999}]`))
+			}
+		}
+		return reply, nil
+	})
+	result, err := c.Workspace(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", []string{"102"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State == domain.PRWorkspaceComplete {
+		t.Fatal("a new competing PR appeared between relationship reads")
+	}
+	found := false
+	for _, reason := range result.Reasons {
+		found = found || reason == "relationship_drift"
+	}
+	if !found {
+		t.Fatalf("missing drift classification: %v", result.Reasons)
+	}
+}
+
+func TestWorkspaceRejectsRepositoryIdentityDrift(t *testing.T) {
+	c := workspaceFixture(t, map[int][2]string{101: {"main", "s1"}}, nil)
+	original := c.http.Transport
+	reads := 0
+	c.http.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		reply, err := original.RoundTrip(r)
+		if err != nil {
+			return reply, err
+		}
+		if r.URL.Path == "/repos/fixture-owner/repo" {
+			reads++
+			if reads > 1 {
+				raw, _ := io.ReadAll(reply.Body)
+				reply.Body.Close()
+				var value map[string]any
+				json.Unmarshal(raw, &value)
+				value["id"] = 999
+				value["node_id"] = "R_replacement"
+				raw, _ = json.Marshal(value)
+				reply.Body = io.NopCloser(bytes.NewReader(raw))
+			}
+		}
+		return reply, nil
+	})
+	result, err := c.Workspace(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", []string{"101"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State == domain.PRWorkspaceComplete {
+		t.Fatal("replaced numeric repository acquired complete context")
+	}
+}

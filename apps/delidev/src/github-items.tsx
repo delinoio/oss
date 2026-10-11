@@ -61,7 +61,7 @@ function QueryResultPage({ selected, query, change, back, result, validated }: {
   </section>;
 }
 
-type QueryProps = { selected: Resource; query: GitHubQuery; change: (query: GitHubQuery) => void; back?: () => void; active?: boolean; standaloneCards?: boolean; pending?: ReactNode; workspace?: { supported: boolean; selection?: string; choose: (selection: PRSelection, button: HTMLButtonElement) => void; enrich: (scope: Document) => void } };
+type QueryProps = { selected: Resource; query: GitHubQuery; change: (query: GitHubQuery) => void; back?: () => void; active?: boolean; standaloneCards?: boolean; pending?: ReactNode; workspace?: { supported: boolean; reset: () => void; selection?: string; choose: (selection: PRSelection, button: HTMLButtonElement) => void; enrich: (scope: Document) => void } };
 function QueryResult(props: QueryProps) { return props.query.page ? <PaginatedQueryResult {...props} /> : <SingleQueryResult {...props} />; }
 function SingleQueryResult({ active = true, ...props }: QueryProps) {
   const result = useQuery(IntegrationQuery.queryRepositoryIntegration, { repositoryId: props.selected.id, schemaVersion: 1, queryJson: encode(props.query) }, { enabled: active, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false, gcTime: 0, staleTime: 0 });
@@ -100,7 +100,7 @@ function PaginatedQueryResult({ active = true, ...props }: QueryProps) {
   const chain = usePaginationChain(scope, active, reader);
   usePaginationRefresh(IntegrationQuery.queryRepositoryIntegration, request(""), active, chain.refresh);
   return <div ref={bindRoot} role={props.standaloneCards ? "region" : undefined} aria-label={props.standaloneCards ? copy("github-items.githubQueryResults_66fac2") : undefined}>
-    {props.standaloneCards ? <PRListHeader selected={props.selected} pending={props.pending} reading={Boolean(chain.loading)} reloadRequired={Boolean(chain.error?.stalled || chain.error?.failure.code === FailureCode.CursorExpired)} refresh={chain.refreshExplicit} /> : null}
+    {props.standaloneCards ? <PRListHeader selected={props.selected} pending={props.pending} reading={Boolean(chain.loading)} reloadRequired={Boolean(chain.error?.stalled || chain.error?.failure.code === FailureCode.CursorExpired)} refresh={() => { props.workspace?.reset(); chain.refreshExplicit(); }} /> : null}
     {props.standaloneCards && chain.loading ? <p role="status">{copy("github-items.readingGithub_ebcef8")}</p> : null}
     <Problem error={paginationError(chain.error?.failure)} />
     <ScrollPayloadWindow query={chain} root={root} active={active}>{(payload, projections) => props.workspace ? <PRWorkspaceRows pages={payload.map(({ data, query }) => { const ids = visiblePageIds(chain.pages, projections); return { query, data: { ...data, items: items(data.items).filter(raw => { const item = object(raw); return ids.has(text(item.identity_source) + ":" + text(item.id)); }) } }; })} previous={Boolean(chain.loading || chain.error)} allSeeds={chain.pages.flatMap(page => page.rows.map(row => row.number)).filter(Boolean)} observations={workspaceObservations} observe={observeWorkspace} selected={props.selected} enabled={props.workspace.supported && active} chosen={props.workspace.selection} choose={props.workspace.choose} /> : payload.map(({ data, query }) => { const ids = visiblePageIds(chain.pages, projections); const observation = query.operation === QueryOperation.Checks ? "checks" : query.operation === QueryOperation.Statuses ? "statuses" : undefined; const field = observation === "checks" ? "runs" : "contexts";

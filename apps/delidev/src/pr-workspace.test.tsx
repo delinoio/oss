@@ -4,7 +4,7 @@ import { create } from "@bufbuild/protobuf";
 import { createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { EntityKind, IntegrationService, ResourceSchema, SystemCapability, SystemService, newRequestId } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
@@ -23,7 +23,8 @@ it("retains list/scroll while lazily reading all four tabs with independent comm
  const enrich=vi.fn(async (request:{seedNumbers:string[]})=>({schemaVersion:1,documentJson:encode({...scope,state:"complete",reasons:[],seeds:request.seedNumbers,nodes:["101","102","103","104"].map(number=>({item:item(number,true),seed:request.seedNumbers.includes(number),counts:{additions:"24",deletions:"8"}})),edges:[{parent:"101",child:"102"},{parent:"102",child:"103"}]})}));
  const commits=vi.fn(async (request:{number:string;pullRequestId:string;pageToken:string;baseSha:string;headSha:string})=>({schemaVersion:1,documentJson:encode({...scope,pull_request_id:request.pullRequestId,number:request.number,base_sha:request.baseSha,head_sha:request.headSha,page_token:request.pageToken,next_page_token:"",commits:[{sha:"c".repeat(40),message:"Original complete commit\n\nFull body",author:{name:"Original author",date:"2026-10-11T00:00:00Z"},committer:{name:"Original committer",date:"2026-10-11T00:00:00Z"},parents:[request.headSha],counts:{additions:"8",deletions:"3"}}]})}));
  const transport=createRouterTransport(router=>{router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.PULL_REQUEST_WORKSPACE_V1]})});router.service(IntegrationService,{queryRepositoryIntegration:legacy,getPullRequestWorkspace:enrich,listPullRequestCommits:commits});});
- vi.stubGlobal("ResizeObserver",class {constructor(private callback:(entries:unknown[])=>void){}observe(){this.callback([{contentRect:{width:1000}}]);}disconnect(){}});
+ let resize: ((entries: unknown[]) => void) | undefined;
+ vi.stubGlobal("ResizeObserver",class {constructor(private callback:(entries:unknown[])=>void){}observe(node:Element){if(node.classList.contains("pr-workspace"))resize=this.callback;this.callback([{contentRect:{width:1000}}]);}disconnect(){}});
  function Fixture(){const[navigation,setNavigation]=useState<PullRequestNavigation>({scopeKey:"fixture",query:{kind:ItemKind.PullRequest,operation:QueryOperation.List,state:ItemState.Open,page:1,page_size:20},previous:[]});return <StandalonePullRequestResults selected={selected} navigation={navigation} changeNavigation={setNavigation} active/>;}
  const view=render(<TransportProvider transport={transport}><QueryClientProvider client={new QueryClient()}><Fixture/></QueryClientProvider></TransportProvider>);
  await waitFor(()=>expect(view.container.querySelectorAll(".pr-workspace-row")).toHaveLength(4));expect(screen.getAllByText("Stack context")).toHaveLength(2);expect(legacy).toHaveBeenCalledTimes(1);
@@ -33,6 +34,12 @@ it("retains list/scroll while lazily reading all four tabs with independent comm
  fireEvent.click(screen.getByRole("tab",{name:"Diff"}));await screen.findByText("Snapshot details");fireEvent.click(screen.getByRole("tab",{name:"Reviews"}));await screen.findByRole("region",{name:"Published PR feedback"});fireEvent.click(screen.getByRole("tab",{name:"Commits"}));await screen.findByRole("heading",{name:"Original complete commit"});
  const detail=view.container.querySelector(".pr-workspace-detail")!;expect(within(detail as HTMLElement).getAllByText("+24").length).toBeGreaterThan(0);expect(within(detail as HTMLElement).getByText("+8")).toBeTruthy();expect(commits).toHaveBeenCalledTimes(1);
  fireEvent.click(screen.getByRole("tab",{name:"Description"}));fireEvent.click(screen.getByRole("tab",{name:"Commits"}));expect(commits).toHaveBeenCalledTimes(1);expect(legacy).toHaveBeenCalledTimes(4);expect(list.scrollTop).toBe(80);expect(view.container.querySelectorAll(".pr-workspace-row")).toHaveLength(4);
+ await act(async () => resize?.([{contentRect:{width:600}}]));
+ expect(list.hidden).toBe(true);
+ fireEvent.click(screen.getByRole("button", {name:"Back to results"}));
+ await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", {name:/#102 Complete original title 102/})));
+ expect(list.hidden).toBe(false); expect(list.scrollTop).toBe(80);
+ expect(commits).toHaveBeenCalledTimes(1);
  expect(legacy.mock.calls.map(([q])=>JSON.parse(new TextDecoder().decode(q.queryJson)).operation)).toEqual(["list","detail","diff","feedback"]);
  vi.unstubAllGlobals();
 });

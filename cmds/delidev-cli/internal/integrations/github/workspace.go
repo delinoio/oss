@@ -35,7 +35,7 @@ func parseCounts(fields map[string]json.RawMessage) *domain.PRChangeCounts {
 // admitted; a URL, login, image or avatar never establishes actor authority.
 func AvatarLocator(value, actorID string) bool {
 	u, e := url.Parse(value)
-	if e != nil || !domain.PositiveDecimal(actorID) || u.Scheme != "https" || u.Host != "avatars.githubusercontent.com" || u.User != nil || u.Fragment != "" || u.EscapedPath() != "/u/"+actorID {
+	if len(value) > 2048 || e != nil || !domain.PositiveDecimal(actorID) || u.Scheme != "https" || u.Host != "avatars.githubusercontent.com" || u.User != nil || u.Fragment != "" || u.EscapedPath() != "/u/"+actorID {
 		return false
 	}
 	q, e := url.ParseQuery(u.RawQuery)
@@ -63,6 +63,8 @@ func retainAvatar(raw []byte, actor *domain.RepositoryActor, avatars map[string]
 	}
 }
 func (c *Client) Workspace(ctx context.Context, token []byte, owner, name string, seeds []string) (WorkspaceObservation, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 	result := WorkspaceObservation{Nodes: []domain.PRWorkspaceNode{}, Edges: []domain.PRWorkspaceEdge{}, Reasons: []string{}, State: domain.PRWorkspaceComplete, Avatars: map[string]string{}}
 	if len(seeds) == 0 || len(seeds) > 20 {
 		return result, queryUnavailable()
@@ -253,6 +255,14 @@ func (c *Client) Workspace(ctx context.Context, token []byte, owner, name string
 		}
 		nodes[n] = again
 	}
+	// Repository replacement under the same owner/name must not publish a graph
+	// scoped to the former numeric repository.
+	if metadata, ok := read("/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name)); ok {
+		repository, valid := parseRepository(metadata.raw, owner, name)
+		if !valid || repository.ID != result.Repository.ID || repository.NodeID != result.Repository.NodeID {
+			reason("repository_drift")
+		}
+	}
 	numbers := make([]string, 0, len(nodes))
 	for n := range nodes {
 		numbers = append(numbers, n)
@@ -327,6 +337,8 @@ type CommitsObservation struct {
 }
 
 func (c *Client) Commits(ctx context.Context, token []byte, owner, name, number, id, remoteID, base, head, cursor string) (CommitsObservation, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 	r := CommitsObservation{Avatars: map[string]string{}}
 	initial, e := c.QueryRepository(ctx, token, owner, name, domain.RepositoryQuery{Kind: domain.RepositoryPullRequest, Operation: domain.RepositoryDetail, Number: number})
 	if e != nil {
@@ -356,7 +368,7 @@ func (c *Client) Commits(ctx context.Context, token []byte, owner, name, number,
 	page, pok := jsonObject(connection["pageInfo"])
 	more, mok := nullableBool(page, "hasNextPage")
 	var rows []json.RawMessage
-	if !ok || !pok || !mok || more == nil || domain.Decode(connection["nodes"], &rows) != nil || rows == nil || len(rows) > 20 {
+	if !ok || !pok || !mok || more == nil || domain.Decode(connection["nodes"], &rows) != nil || rows == nil || len(rows) > 20 || (*more && len(rows) == 0) {
 		return r, queryUnavailable()
 	}
 	r.Value = domain.PRCommits{PullRequestID: id, Number: number, BaseSHA: base, HeadSHA: head, PageToken: cursor, Commits: []domain.PRCommit{}}

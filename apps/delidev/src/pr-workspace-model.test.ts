@@ -2,7 +2,7 @@
 import { expect, it } from "vitest";
 import { create } from "@bufbuild/protobuf";
 import { EntityKind, ResourceSchema, newRequestId } from "@delinoio/delidev-api-client";
-import { changeCounts, commitResult, observationsConflict, orderWorkspace } from "./pr-workspace-model";
+import { changeCounts, commitResult, sameReadScope, workspaceResult, observationsConflict, orderWorkspace } from "./pr-workspace-model";
 import { encode } from "./documents";
 
 it("does not combine incompatible snapshots across retained list pages", () => {
@@ -32,9 +32,20 @@ it("preserves valid zero and exact large independent counts", () => {
 });
 it("rejects foreign commit scope and stalled continuations while preserving full messages", () => {
  const profile = newRequestId(), repository = create(ResourceSchema,{id:newRequestId(),kind:EntityKind.REPOSITORY,revision:1n,schemaVersion:1,documentJson:encode({integration_id:profile,github_owner:"fixture-owner",github_name:"repo"})});
- const remote = {provider:"github.com",id:"37",node_id:"R_37",owner:"fixture-owner",name:"repo"}, item = {id:"817",number:"17",base_sha:"a".repeat(40),head_sha:"b".repeat(40)};
+ const remote = {provider:"github.com",id:"37",node_id:"R_37",owner:"fixture-owner",name:"repo",private:true}, item = {id:"817",number:"17",base_sha:"a".repeat(40),head_sha:"b".repeat(40)};
  const value = {repository_id:repository.id,repository_revision:"1",profile_id:profile,generation_id:newRequestId(),observed_at:"2026-10-11T00:00:00Z",repository:remote,pull_request_id:"817",number:"17",base_sha:item.base_sha,head_sha:item.head_sha,page_token:"",next_page_token:"next",commits:[{sha:"c".repeat(40),message:"Long 한글 headline\n\nFull original body",author:{name:"Original author",date:"2026-10-11T00:00:00Z"},committer:{name:"Original committer",date:"2026-10-11T00:00:00Z"},parents:[item.head_sha],counts:{additions:"8",deletions:"3"}}]};
  expect(commitResult(encode(value),repository,item,remote,"")?.commits).toEqual(value.commits);
  expect(commitResult(encode({...value,head_sha:"d".repeat(40)}),repository,item,remote,"")).toBeUndefined();
  expect(commitResult(encode({...value,page_token:"next",next_page_token:"next"}),repository,item,remote,"next")).toBeUndefined();
+});
+
+it("rejects an enrichment from another retained source generation", () => {
+ const selected = create(ResourceSchema, {id:newRequestId(),revision:1n,schemaVersion:1,documentJson:encode({integration_id:newRequestId(),github_owner:"fixture-owner",github_name:"repo"})});
+ const profile = JSON.parse(new TextDecoder().decode(selected.documentJson)).integration_id;
+ const original = {repository_id:selected.id,repository_revision:"1",profile_id:profile,generation_id:newRequestId(),observed_at:"2026-10-11T00:00:00Z",repository:{provider:"github.com",id:"37",node_id:"R_37",owner:"fixture-owner",name:"repo",private:true}};
+ const value = {...original,state:"complete",reasons:[],seeds:["17"],nodes:[{seed:true,item:{number:"17"}}],edges:[]};
+ expect(workspaceResult(encode(value),selected,["17"],()=>true,original)).toBeDefined();
+ expect(workspaceResult(encode({...value,generation_id:newRequestId()}),selected,["17"],()=>true,original)).toBeUndefined();
+ expect(workspaceResult(encode({...value,nodes:[]}),selected,["17"],()=>true,original)).toBeUndefined();
+ expect(sameReadScope(original,{...original,repository:{...original.repository,id:"99"}})).toBe(false);
 });

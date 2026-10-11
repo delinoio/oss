@@ -575,7 +575,7 @@ all states. Context rows are labeled and never increase filtered match counts.
 Each component renders once under its earliest accepted matching seed, parents
 before children and numeric sibling ties. Discovery retains at most 100 PRs,
 depth 20 and 40 provider-page reads under the original query deadline. The graph
-is reobserved before complete claims. Limits, missing source repositories, access
+rechecks every discovered relationship page, including empty boundaries, original PR refs and numeric repository identity before complete claims. Desktop enrichment and tabs must also match the retained original profile generation and numeric repository scope. Limits, missing source repositories, access
 failures and relationship drift remain incomplete; cycles and competing parents
 remain ambiguous and render flat selectable observations. Foreign forks grant
 no same-repository graph relationship.

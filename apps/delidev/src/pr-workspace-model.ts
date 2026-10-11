@@ -11,7 +11,7 @@ export function readScoped(raw: Uint8Array, selected: Resource): Document | unde
   if (raw.byteLength > 1 << 20) return;
   let v: Document; try { v = object(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(raw))); } catch { return; }
   const sel = document(selected), repo = object(v.repository);
-  if (v.repository_id !== selected.id || v.repository_revision !== selected.revision.toString() || v.profile_id !== sel.integration_id || !uuid(v.profile_id) || !uuid(v.generation_id) || !date(v.observed_at) || repo.provider !== "github.com" || !positive(repo.id) || !bounded(repo.node_id, 256) || text(repo.owner).toLowerCase() !== text(sel.github_owner).toLowerCase() || text(repo.name).toLowerCase() !== text(sel.github_name).toLowerCase()) return;
+  if (v.repository_id !== selected.id || v.repository_revision !== selected.revision.toString() || v.profile_id !== sel.integration_id || !uuid(v.profile_id) || !uuid(v.generation_id) || !date(v.observed_at) || repo.provider !== "github.com" || !positive(repo.id) || !bounded(repo.node_id, 256) || typeof repo.private !== "boolean" || text(repo.owner).toLowerCase() !== text(sel.github_owner).toLowerCase() || text(repo.name).toLowerCase() !== text(sel.github_name).toLowerCase()) return;
   return v;
 }
 export function sameReadScope(a: Document, b: Document): boolean {
