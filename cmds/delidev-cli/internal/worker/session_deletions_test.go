@@ -302,7 +302,7 @@ func TestSessionDeletionCompletedProofRechecksAllManagedCopies(t *testing.T) {
 		w.Copies = append(w.Copies, copy)
 	}
 	action := w.Copies[3].ActionID
-	owned := []string{filepath.Join(c.Root, "runtimes", string(action), "content"), filepath.Join(c.Root, "compaction-checkpoints", string(action)+".json")}
+	owned := []string{filepath.Join(c.Root, "runtimes", string(action), "content"), filepath.Join(c.Root, "compaction-checkpoints", string(action)+".json"), filepath.Join(c.Root, "native-shell-checkpoints", string(action)+".json")}
 	unrelated := filepath.Join(c.Root, "compaction-checkpoints", string(domain.NewID())+".json")
 	for _, path := range append(owned, unrelated) {
 		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
@@ -335,6 +335,7 @@ func TestSessionDeletionCompletedProofRechecksAllManagedCopies(t *testing.T) {
 		filepath.Join("runtimes", string(execution.ExecutionID), "content"),
 		filepath.Join("runtimes", string(compaction.ActionID), "content"),
 		filepath.Join("compaction-checkpoints", string(compaction.ActionID)+".json"),
+		filepath.Join("native-shell-checkpoints", string(compaction.ActionID)+".json"),
 		filepath.Join("pr-git", string(execution.ExecutionID), "scope.json"),
 		filepath.Join("jobs", string(job.JobID), "outbox"),
 		filepath.Join("jobs", string(job.JobID)+".json"),

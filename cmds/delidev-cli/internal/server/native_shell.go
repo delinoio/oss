@@ -56,7 +56,7 @@ func (s *Service) RunNativeShell(ctx context.Context, req *connect.Request[pb.Ru
 		return nil, rpc.Error(err, corr)
 	}
 	actor, _ := domain.PrincipalFrom(ctx)
-	command := domain.NativeShellCommand{Command: req.Msg.Command, FullAccess: req.Msg.Access == pb.NativeShellAccess_NATIVE_SHELL_ACCESS_FULL_ACCESS, TimeoutMS: req.Msg.TimeoutMs, ActorDeviceID: actor.DeviceID}
+	command := domain.NativeShellCommand{Command: req.Msg.Command, FullAccess: req.Msg.Access == pb.NativeShellAccess_NATIVE_SHELL_ACCESS_FULL_ACCESS, TimeoutMS: req.Msg.TimeoutMs, Actor: actor}
 	if err := command.Validate(); err != nil {
 		return nil, rpc.Error(err, corr)
 	}
@@ -269,7 +269,7 @@ func (s *Service) ClaimNativeShell(ctx context.Context, req *connect.Request[pb.
 		}
 		sr, session, e := sessionRecord(tx, ar.SessionID)
 		_, machine, me := activeMachine(tx, claim.MachineID)
-		if e != nil || me != nil || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || !session.WorkspaceAvailable() || !slices.Contains(machine.WorkerCapabilities, domain.CodexNativeShellV1) || checkedExecutionSource(tx, sr, session, machine, i.Assignment) != nil {
+		if e != nil || me != nil || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || !session.WorkspaceAvailable() || !slices.Contains(machine.WorkerCapabilities, domain.CodexNativeShellV1) || checkedExecutionSource(tx, sr, session, machine, i.Assignment) != nil || tx.RequireForkActor(i.NativeShell.Actor) != nil {
 			return nil, domain.NativeShellRecovery()
 		}
 		canceled, err := tx.JobCancellationRequested(a.JobID)

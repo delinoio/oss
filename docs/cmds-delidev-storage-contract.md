@@ -1436,3 +1436,28 @@ retirement does not change independent backup deletion or restore obligations.
 `session-queue-order:<session-id>` is version-1 private metadata, bounded to 1,000 unique original input IDs and 64 KiB. Missing metadata means acceptance order and generation zero. Generation-only records preserve that order until the first genuine move captures IDs. Captured IDs must match the entire currently waiting set; duplicates, foreign/missing IDs, malformed versions or overflow require RecoveryRequired before dispatch. All membership writers update this metadata atomically with their queue records; content-only edits retain it. No public Queue document rank and no SQLite migration is added.
 
 New Fork jobs retain a bounded version-1 `fork-image-snapshot:<job-id>` with exact original source, child, execution, native turn, job-input digest and ordered image references. Empty references are explicit. The private cutover marker distinguishes legacy jobs from newly admitted jobs; uncertain missing snapshots fail closed. The existing protected image records remain the byte/Worker authority. Durable session purge removes its order metadata and retires Fork snapshots only after both original job and dependent child are gone. Backup images preserve their own private order and Fork snapshots. Restore excludes these owners from the current safety-metadata overlay, validates the restored membership and advances order generation beyond both timelines to expire old waiting cursors. It does not synthesize rank, membership or image authority. Do not copy raw image bytes or native transcript into this metadata.
+
+## Native shell action retention
+
+Native shell actions use a closed `native_action` document in the existing
+session-scoped entity store. Acceptance, exact human actor and command, original
+Worker claim, ordered bounded observations and terminal cleanup remain durable
+under the ordinary request-receipt and revision transaction. No table migration
+or generic write authority is introduced. Managed database restore preserves
+historical content while canceling undispatched actions and quarantining
+unsettled claimed actions; restored bytes cannot authorize another native send.
+
+The Worker retains a separate private `native-shell-checkpoints` proof bound to
+its original server/device/job/instance/assignment digest, exact send fence,
+ordinary predecessor, native history and completed job journal. Later original
+continuation checks it before native resume and independently checks the native
+history afterward. It never overwrites the ordinary execution or compaction
+checkpoint. Account/connection/configuration changes cannot retarget this proof.
+
+Permanent session deletion includes each original action runtime, private send
+claim and native-shell checkpoint in the existing immutable action/job/process
+inventory. Completed deletion proof rechecks the same inventory, so restored
+private shell history cannot survive under a completed proof. Unrelated action
+checkpoints are preserved. Deletion closes action authority and joins independent
+owned processes before removing session-scoped receipts/content. Follow the
+[sessions contract](cmds-delidev-sessions-contract.md#explicit-native-shell-commands).

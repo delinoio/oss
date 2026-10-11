@@ -2526,3 +2526,34 @@ value grants readiness, native support, credential release or input acceptance.
 The original root may observe official `sleep` ThreadItems through the existing tool lifecycle. The shared closed decoder requires exactly `type`, bounded nonempty `id` and nonnegative uint64 `durationMs`, rejects duplicate/unknown fields and preserves the original item, thread and known turn. Lifecycle status comes only from original `item/started` and `item/completed`; duration is immutable across completion. Worker and server independently fence scope and changed duration. Public `sleep.duration_ms` is an exact decimal JSON string to preserve every native uint64 value through browser parsing. The existing tool disclosure displays the duration and original lifecycle status without a timer or controls.
 
 Complete continuation, context/compaction and permitted ordinary/managed Fork history share the same decoder and retain the original normalized native item JSON, sequence and history digest. Both Fork admission checks explicitly allow only this closed inert family; async/structured tool families and other restricted profiles remain separate. The synchronized outbox and server exact-request receipt replay preserve one observation after publication loss; uncertainty permits only replay of that original publication, never native sleep/input replay. Sleep completion settles only the tool. Original turn outcome, accepted input, native failure/interruption, cleanup and recovery remain independent. No protocol allocation, database migration or numeric native version gate is added.
+
+## Codex native shell profile
+
+The closed native shell adapter uses the independently detected Codex `0.162.0`
+profile and experimental ThreadProtocol initialization. It sends exactly one
+`thread/shellCommand` request with the original thread, exact accepted command
+and optional timeout after the durable Worker claim and private send fence.
+Native Codex trims the command and runs it outside the thread sandbox with full
+access. A native empty acknowledgment confirms submission only. A failed or
+malformed reply keeps the original attempt uncertain; connection replacement,
+replayed receipts and agent text cannot authorize another send.
+
+The original standalone native turn must produce `commandExecution` items with
+`source = userShell`. Bind exact thread, turn, item, working directory and optional
+native process metadata. Preserve native rendered shell argv independently from
+the accepted raw command. Reject agent-origin commands, foreign or duplicate
+items, changed identities, incompatible envelopes, changed rendered command and
+oversized output. Native output deltas and terminal aggregate output remain
+independent bounded observations. Item exit does not complete its turn; native
+turn completion does not prove operating-system cleanup. Interrupt targets only
+the bound original turn once and preserves uncertain acknowledgment.
+
+The separate native-shell checkpoint retains the ordinary source unchanged,
+full original history-prefix digest, one terminal shell turn, exact rollout
+digest and existing context records. Verify retained rollout bytes before a
+replacement process resumes. Verify the same original native history and
+settings after resume before accepting later work. This profile never invokes
+compaction, emits compaction/context events, rewrites the ordinary checkpoint or
+changes runtime permissions/mode. The [sessions contract](cmds-delidev-sessions-contract.md#explicit-native-shell-commands)
+owns human authorization and public typed receipts. Fixture tests and source
+inspection do not establish real native, account or platform acceptance.

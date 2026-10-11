@@ -451,3 +451,14 @@ remain independently paginated. No new business RPC or transport authority is
 added. Follow the [mobile contract](apps-delidev-mobile-contract.md).
 
 Current schema-4 Agent routes embed exact source/native identity and non-secret metadata. The shared parser rejects Model resources, mixed UUID routes and older Agent schemas. Other currently activated Project, Settings and API-profile schemas remain supported. Protocol-2 connection verification rejects protocol 1 without adopting its state.
+
+## Native shell action clients
+
+Generated SessionService Run/Get/Cancel native-shell methods and WorkerService
+Claim/Publish methods follow the [sessions](cmds-delidev-sessions-contract.md#explicit-native-shell-commands)
+and [protocol](protos-delidev-v1-contract.md#original-native-shell-actions)
+contracts. Clients retain exact original mutation/actor/session/action identities
+and explicit full-access selection. Status reads cannot resubmit an action, and
+cancellation cannot adopt a product terminal or operating-system PID. Typed
+receipt revisions and observation sequences remain decimal-safe. Generated
+bindings alone provide no native, account or cleanup acceptance evidence.

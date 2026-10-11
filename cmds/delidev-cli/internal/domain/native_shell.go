@@ -18,14 +18,14 @@ const (
 )
 
 type NativeShellCommand struct {
-	Command       string  `json:"command"`
-	FullAccess    bool    `json:"full_access"`
-	TimeoutMS     *uint64 `json:"timeout_ms,omitempty"`
-	ActorDeviceID ID      `json:"actor_device_id"`
+	Command    string    `json:"command"`
+	FullAccess bool      `json:"full_access"`
+	TimeoutMS  *uint64   `json:"timeout_ms,omitempty"`
+	Actor      Principal `json:"actor"`
 }
 
 func (c NativeShellCommand) Validate() error {
-	if !c.FullAccess || c.ActorDeviceID.Validate() != nil || Text(c.Command, "native shell command", 64<<10, true) != nil || strings.TrimSpace(c.Command) == "" || c.TimeoutMS != nil && *c.TimeoutMS > 3600000 {
+	if !c.FullAccess || (c.Actor.Type != OwnerDevice && c.Actor.Type != ClientDevice || c.Actor.MachineID != "" || c.Actor.Type == ClientDevice && c.Actor.DeviceID.Validate() != nil || c.Actor.DeviceID != "" && c.Actor.DeviceID.Validate() != nil) || Text(c.Command, "native shell command", 64<<10, true) != nil || strings.TrimSpace(c.Command) == "" || c.TimeoutMS != nil && *c.TimeoutMS > 3600000 {
 		return Fail(InvalidArgument, "An explicit full-access native shell command is required.", "Confirm the exact command and original session; the maximum timeout is one hour.")
 	}
 	return nil
@@ -179,6 +179,9 @@ func (a NativeShellAction) Validate() error {
 
 func CheckNativeShellTransition(previous, next NativeShellObservation) error {
 	if previous.Validate() != nil || next.Validate() != nil || next.ActionID != previous.ActionID || next.SessionID != previous.SessionID || next.ExecutionID != previous.ExecutionID || next.NativeThreadID != previous.NativeThreadID || next.Sequence != previous.Sequence+1 || previous.CleanupVerified || !strings.HasPrefix(next.Output, previous.Output) || previous.Acknowledged && !next.Acknowledged {
+		return NativeShellRecovery()
+	}
+	if previous.State != NativeShellClaimed && (previous.NativeProcessID == nil) != (next.NativeProcessID == nil) {
 		return NativeShellRecovery()
 	}
 	if previous.NativeTurnID != "" && next.NativeTurnID != previous.NativeTurnID || previous.NativeItemID != "" && next.NativeItemID != previous.NativeItemID || previous.NativeProcessID != nil && (next.NativeProcessID == nil || *previous.NativeProcessID != *next.NativeProcessID) {

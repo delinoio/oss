@@ -127,3 +127,17 @@ after its original Resume succeeds; initialization begins then and is confirmed
 only by the adapter's validated native response. This callback is excluded from
 serialization and noninteractive Run helpers. It cannot release the barrier,
 change cancellation, input/cleanup authority, ownership journals or return values.
+
+## Native shell action ownership
+
+Explicit native shell commands use the original session's separate durable
+action/job owner. A synchronized private send claim retains exact authorized
+command and native identities; it is separate from operating-system ownership
+journals, which continue to contain no command or output content. The native
+item/turn and optional process identifier are observations, never PID adoption
+or signaling authority. Native cancellation interrupts only that original turn.
+The original app-server process retains its existing kernel ownership scope,
+child joining, cancellation and cleanup proof. A typed shell result requires
+independent native-process, proxy and workspace release before publication.
+Missing or lost native/cleanup evidence remains uncertain and cannot authorize
+a replacement command. Product terminals and unrelated processes are untouched.
