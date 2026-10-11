@@ -221,7 +221,8 @@ try {
           .getByRole("menuitem", { name: label.browser, exact: true })
           .click();
         assert.equal(await page.getByRole("tabpanel").count(), 1);
-        assert.equal(await page.locator(".composer:visible").count(), 0);
+        // Opening the transient account dialog retains the selected Conversation.
+        assert.equal(await page.locator(".composer:visible").count(), 1);
         await page
           .getByRole("textbox", {
             name: language === "en" ? "Address" : "주소",
@@ -379,14 +380,14 @@ try {
         await page.keyboard.press("ArrowRight");
         assert.equal(
           await page
-            .getByRole("tab", { name: label.browser, exact: true })
+            .getByRole("tab", { name: "https://example.com/", exact: true })
             .getAttribute("aria-selected"),
           "true",
         );
         assert.equal(
           await page.locator(".browser-viewport:visible").count(),
-          0,
-          "Browser picker does not show an unselected page",
+          1,
+          "Automatic activation selects the original page directly",
         );
         process.stdout.write(
           JSON.stringify({
