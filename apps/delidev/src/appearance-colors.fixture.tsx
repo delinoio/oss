@@ -14,8 +14,8 @@ let snapshot: AppearanceSnapshot = { revision: 1, theme: Theme.Dark, problem: nu
 const listeners = new Set<(value: unknown) => void>();
 const root = createRoot(document.getElementById("root")!);
 Object.assign(window, { appearanceFixture: {
-  select: (theme: Theme, custom: boolean) => {
-    snapshot = { ...snapshot, revision: snapshot.revision + 1, theme, preferences: { ...preferences, dark_palette: custom ? customId : Palette.Dracula } };
+  select: (theme: Theme, custom: boolean, defaults = false) => {
+    snapshot = { ...snapshot, revision: snapshot.revision + 1, theme, preferences: { ...preferences, light_palette: defaults ? Palette.Default : Palette.Nord, dark_palette: defaults ? Palette.Default : custom ? customId : Palette.Dracula } };
     listeners.forEach(listener => listener(snapshot));
   },
   dispose: () => root.unmount(),

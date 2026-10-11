@@ -50,6 +50,10 @@ try {
   await check(palettes.dracula.dark);
   await page.evaluate(() => window.appearanceFixture.select("light", false));
   await check(palettes.nord.light);
+  await page.evaluate(() => window.appearanceFixture.select("dark", false, true));
+  await check(palettes.default.dark);
+  await page.evaluate(() => window.appearanceFixture.select("light", false, true));
+  await check(palettes.default.light);
   await page.evaluate(() => window.appearanceFixture.dispose());
   assert.equal(await page.evaluate(() => document.adoptedStyleSheets.length), 0);
   assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--background").trim().toLowerCase()), palettes.default.light.background.toLowerCase());
