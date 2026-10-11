@@ -160,6 +160,15 @@ func Open(ctx context.Context, config Config) (client *Client, returned error) {
 		// keeps startup and account changes within the unchanged cleanup bounds.
 		config.Process.Args = append(config.Process.Args, "-c", "features.plugins=false")
 	}
+	if config.Mode == ThreadProtocol {
+		// Execution and title consumers need the native app-server's experimental
+		// time service to use the Worker clock instead of silently using its own.
+		// Only ThreadProtocol can run a thread that may request this service.
+		config.Process.Args = append(config.Process.Args,
+			"-c", "features.current_time_reminder.enabled=true",
+			"-c", `features.current_time_reminder.clock_source="external"`,
+		)
+	}
 	if config.Mode == QuotaProtocol {
 		config.Process.Args = append(config.Process.Args, "-c", `model_provider="openai"`, "-c", `forced_login_method="chatgpt"`)
 	}

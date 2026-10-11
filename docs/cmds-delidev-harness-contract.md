@@ -255,8 +255,11 @@ isolated title consumer discard the content-free sent metadata. Logs contain
 only closed service and delivery classifications. Stale/replaced tokens,
 repeated attempts, stopped connections and uncertain delivery cannot resample
 or resend; existing recovery and original process cleanup remain independent.
-The adapter does not enable external-clock configuration or alter native polling.
-No public protocol allocation or database migration is added.
+Thread protocol processes enable the native current-time reminder and select the
+external clock source, so the app-server requests time from the bound Worker
+during execution. Probe, subscription, and quota-only profiles do not enable
+this thread service. No public protocol allocation or database migration is
+added.
 
 ### Codex app-server profile
 
