@@ -5,6 +5,13 @@
 import { ScheduleService } from "./schedule_pb.js";
 
 /**
+ * Read-only calendar preview; accepts owner and paired-client credentials.
+ *
+ * @generated from rpc delidev.v1.ScheduleService.PreviewScheduleCalendar
+ */
+export const previewScheduleCalendar = ScheduleService.method.previewScheduleCalendar;
+
+/**
  * @generated from rpc delidev.v1.ScheduleService.SaveSchedule
  */
 export const saveSchedule = ScheduleService.method.saveSchedule;

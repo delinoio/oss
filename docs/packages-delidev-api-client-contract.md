@@ -451,3 +451,13 @@ remain independently paginated. No new business RPC or transport authority is
 added. Follow the [mobile contract](apps-delidev-mobile-contract.md).
 
 Current schema-4 Agent routes embed exact source/native identity and non-secret metadata. The shared parser rejects Model resources, mixed UUID routes and older Agent schemas. Other currently activated Project, Settings and API-profile schemas remain supported. Protocol-2 connection verification rejects protocol 1 without adopting its state.
+
+## Schedule calendar preview
+
+`ScheduleQuery.previewScheduleCalendar` exposes the generated read-only RPC with
+only cron/timezone input, server calculation/next-run timestamps and typed sorted
+calendar constraints. Consumers preserve the closed AND/OR enum, exact draft and
+connection ownership. They localize normalized values without parsing cron or
+computing calendar instants. Unimplemented supports older servers without a new
+capability gate. Preview failure cannot authorize execution or modify retained
+save/retry bytes. Follow the [schedule contract](cmds-delidev-schedules-contract.md#unsaved-calendar-preview).
