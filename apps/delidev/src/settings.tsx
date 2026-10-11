@@ -316,7 +316,13 @@ function RepositorySaveReview({
       ) : null}
       {fresh ? (
         <p>
-          {resourceName(fresh)} · revision {fresh.revision.toString()}
+          <LocalizedText
+            id="local-reviews.revision_24230a"
+            components={{
+              s0: <>{resourceName(fresh)}</>,
+              s1: <>{fresh.revision.toString()}</>,
+            }}
+          />
         </p>
       ) : null}
       {fresh ? (
