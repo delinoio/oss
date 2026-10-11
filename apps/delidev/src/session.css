@@ -1198,7 +1198,7 @@
   padding: 0 12px;
   border-bottom: 1px solid var(--border);
 }
-.queue-compact-list .queue-compact-item:last-child {
+.queue-compact-list .queue-drop-row:last-child .queue-compact-item {
   border-bottom: 0;
 }
 .queue-compact-item .queue-row {
