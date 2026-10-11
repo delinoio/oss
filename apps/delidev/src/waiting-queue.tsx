@@ -34,6 +34,8 @@ export function WaitingQueue({ sessionId, session, active, revision, drafts, sav
  const pendingDown=useRef<{id:string;revision:bigint;generation:bigint} | undefined>(undefined);
  const accepted=useCallback(()=>{setAnnouncement(copy("queue.moved"));query.reload();refreshHistory();},[query.reload,refreshHistory]);
  // Session scope owns the original request even after row eviction or removal.
+ // Clear the one-shot announcement so later rereads cannot replay stale text.
+ useEffect(()=>{if(!announcement)return;const timer=setTimeout(()=>setAnnouncement(""),4000);return()=>clearTimeout(timer);},[announcement]);
  const move=useRetainedMutation(`move-waiting:${sessionId}`,SessionQuery.moveQueuedInput,accepted,(result,request)=>Boolean(result.change && request.mutation && result.change.requestId===request.mutation.requestId && result.change.session?.id===request.sessionId) && typeof result.currentQueueGeneration==="bigint");
  const locked=readOnly || !active || move.busy || move.uncertain || !query.loaded || Boolean(query.loading || query.error);
  const previousRevision=useRef(revision);
