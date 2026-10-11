@@ -101,8 +101,13 @@ function RepositoryNavigationRow({
       content = popup.current;
     if (!visible || !source || !content) return;
     const usable = () => {
-      if (!source.isConnected || source.closest("[hidden], [inert]")) return false;
-      for (let node: HTMLElement | null = source; node; node = node.parentElement) {
+      if (!source.isConnected || source.closest("[hidden], [inert]"))
+        return false;
+      for (
+        let node: HTMLElement | null = source;
+        node;
+        node = node.parentElement
+      ) {
         const style = getComputedStyle(node);
         if (style.display === "none" || style.visibility === "hidden")
           return false;
