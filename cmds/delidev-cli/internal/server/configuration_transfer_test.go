@@ -436,7 +436,7 @@ func TestConfigurationImportRejectsManagedPresetCollisionsAtPreviewAndApply(t *t
 }
 
 func TestConfigurationImportRepositoryValidationCommitsAllOrNothing(t *testing.T) {
-	for _, outcome := range []string{"success", "failure", "canonical-path", "stale-settings", "revoked-client", "retired-identity", "provider-disabled"} {
+	for _, outcome := range []string{"success", "failure", "canonical-path", "stale-settings", "revoked-client", "retired-identity", "provider-disabled", "source-proof-missing", "source-proof-historical", "source-proof-changed", "legacy-source-proof"} {
 		t.Run(outcome, func(t *testing.T) {
 			s, _ := newDoctorFixture(t)
 			selection := transferSelection()
@@ -456,9 +456,13 @@ func TestConfigurationImportRepositoryValidationCommitsAllOrNothing(t *testing.T
 			}
 			sources := []domain.ID{domain.NewID(), domain.NewID()}
 			targets := []domain.ID{domain.NewID(), domain.NewID()}
-			repository := domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "Both checkouts", AutoFetch: true}
+			repository := domain.Repository{RemoteURL: "https://generic.invalid/team/repo", Name: "Both checkouts", AutoFetch: true}
 			for i, source := range sources {
-				doctorPut(t, s, domain.MachineKind, targets[i], 0, domain.Machine{Name: "target", OS: "linux", Architecture: "amd64"})
+				capabilities := []domain.WorkerCapability{domain.RepositoryInspectionMetadataV1}
+				if outcome == "legacy-source-proof" {
+					capabilities = nil
+				}
+				doctorPut(t, s, domain.MachineKind, targets[i], 0, domain.Machine{Name: "target", OS: "linux", Architecture: "amd64", WorkerCapabilities: capabilities})
 				selection.Bundle.Machines = append(selection.Bundle.Machines, domain.ConfigurationMachine{ID: source, Name: "source", OS: "linux", Architecture: "amd64"})
 				selection.Machines = append(selection.Machines, domain.ConfigurationMachineBinding{SourceID: source, TargetID: targets[i]})
 				repository.Checkouts = append(repository.Checkouts, domain.Checkout{MachineID: source, Path: "/untrusted/old"})
@@ -496,7 +500,8 @@ func TestConfigurationImportRepositoryValidationCommitsAllOrNothing(t *testing.T
 				doctorPut(t, s, domain.DeviceKind, clientID, 1, domain.Device{Name: "client", Type: domain.ClientDevice, Revoked: true})
 				finishTransferTest(t, s, report.JobID, outcome, settingsID, settings)
 			} else {
-				report := transferApply(t, s, preview, domain.NewID())
+				requestID := domain.NewID()
+				report := transferApply(t, s, preview, requestID)
 				if report.State != domain.JobQueued {
 					t.Fatal(report)
 				}
@@ -517,8 +522,11 @@ func TestConfigurationImportRepositoryValidationCommitsAllOrNothing(t *testing.T
 					if err := domain.Decode(job.Input, &input); err != nil {
 						t.Fatal(err)
 					}
-					if input.ExpectedRemoteIdentity != "" {
+					if outcome == "legacy-source-proof" && input.ExpectedRemoteIdentity != "" {
 						t.Fatal("legacy Worker received the post-capability source identity")
+					}
+					if outcome != "legacy-source-proof" && input.ExpectedRemoteIdentity == "" {
+						t.Fatal("current Worker received no original source proof")
 					}
 				}
 				if outcome == "provider-disabled" {
@@ -527,12 +535,27 @@ func TestConfigurationImportRepositoryValidationCommitsAllOrNothing(t *testing.T
 					doctorPut(t, s, domain.ProviderKind, providerID, 1, provider)
 				}
 				finishTransferTest(t, s, report.JobID, outcome, settingsID, settings)
+				if strings.HasPrefix(outcome, "source-proof-") || outcome == "legacy-source-proof" {
+					replay := transferApply(t, s, preview, requestID)
+					if replay.JobID != report.JobID || replay.State != domain.JobUncertain {
+						t.Fatal("source refusal lost original receipt ownership")
+					}
+				}
 			}
 		})
 	}
 }
 func finishTransferTest(t *testing.T, s *Service, parentID domain.ID, outcome string, settingsID domain.ID, settings domain.Settings) {
 	t.Helper()
+	proofFailure := strings.HasPrefix(outcome, "source-proof-") || outcome == "legacy-source-proof"
+	original, err := s.Store.Get(context.Background(), domain.JobKind, parentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalJob, err := store.Decode[domain.Job](original)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var children []store.Record
 	if err := s.Store.Read(context.Background(), func(tx *store.Tx) error { var err error; children, err = tx.Jobs("", parentID, "", "", 10); return err }); err != nil || len(children) != 2 {
 		t.Fatal("children", err)
@@ -561,6 +584,7 @@ func finishTransferTest(t *testing.T, s *Service, parentID domain.ID, outcome st
 		settings.AutomaticFetch = false
 		doctorPut(t, s, domain.SettingsKind, settingsID, 1, settings)
 	}
+	retainedProofs := map[domain.ID][]byte{}
 	for index, row := range children {
 		_, err := s.Store.Mutate(context.Background(), domain.NewID(), "import.fixture.finish", nil, func(tx *store.Tx) (any, error) {
 			job, err := store.Decode[domain.Job](row)
@@ -568,6 +592,15 @@ func finishTransferTest(t *testing.T, s *Service, parentID domain.ID, outcome st
 				return nil, err
 			}
 			job.State = domain.JobSucceeded
+			if strings.HasPrefix(outcome, "source-proof-") {
+				var input domain.RepositoryInspectionInput
+				if err := domain.Decode(job.Input, &input); err != nil {
+					return nil, err
+				}
+				input.ExpectedRemoteIdentity = repositorySourceProofFixture(t, "https://generic.invalid/team/repo", strings.TrimPrefix(outcome, "source-proof-"))
+				job.Input, _ = json.Marshal(input)
+			}
+			retainedProofs[row.ID] = append([]byte(nil), job.Input...)
 			root := "/target/checkout"
 			if outcome == "canonical-path" {
 				root = "/different/canonical"
@@ -604,6 +637,26 @@ func finishTransferTest(t *testing.T, s *Service, parentID domain.ID, outcome st
 	if outcome == "success" {
 		if job.State != domain.JobSucceeded || len(rows) != 1 {
 			t.Fatal("not applied", job.State)
+		}
+	} else if proofFailure {
+		if job.State != domain.JobUncertain || job.Problem == nil || job.Problem.Code != domain.RecoveryRequired || len(rows) != 0 || !bytes.Equal(job.Input, originalJob.Input) {
+			t.Fatal("source refusal changed accepted input or published partial configuration")
+		}
+		for _, kind := range []domain.Kind{domain.AccountKind, domain.AgentKind, domain.RepositoryKind, domain.ProviderKind} {
+			entries, err := s.Store.List(context.Background(), store.Filter{Kind: kind, Limit: 10})
+			if err != nil || len(entries) != 0 {
+				t.Fatal("source refusal published a partial graph", kind, err)
+			}
+		}
+		for id, proof := range retainedProofs {
+			row, err := s.Store.Get(context.Background(), domain.JobKind, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			child, err := store.Decode[domain.Job](row)
+			if err != nil || child.State != domain.JobSucceeded || !bytes.Equal(child.Input, proof) {
+				t.Fatal("import refusal rewrote an original successful child proof", err)
+			}
 		}
 	} else if job.State != domain.JobFailed || len(rows) != 0 {
 		t.Fatal("partial or unresolved failure", outcome, job.State)
