@@ -490,8 +490,10 @@ it("shows fixed New Window N and permits saving former T without changing native
   render(<Owner bridge={f.bridge} run={run} />);
   await screen.findByText("Current saved shortcuts");
   expect(
-    screen.getByText("New Window").closest("div")?.querySelector("dd")
-      ?.textContent,
+    screen
+      .getByText("New Window")
+      .closest("div")
+      ?.querySelector("dd .shortcut-binding-text")?.textContent,
   ).toBe("Ctrl + N");
   const opener = screen.getByRole("button", {
     name: "Capture shortcut for New session",
@@ -530,8 +532,10 @@ it("shows fixed New Window N and permits saving former T without changing native
   });
   expect(run).toHaveBeenCalledOnce();
   expect(
-    screen.getByText("New Window").closest("div")?.querySelector("dd")
-      ?.textContent,
+    screen
+      .getByText("New Window")
+      .closest("div")
+      ?.querySelector("dd .shortcut-binding-text")?.textContent,
   ).toBe("Ctrl + N");
 });
 
