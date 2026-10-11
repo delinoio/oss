@@ -309,7 +309,7 @@ func validateNewProviderSelections(tx configurationView, input ConfigurationMuta
 			}
 		}
 	case *domain.Project:
-		if err := validateHarnessDefaultRelationships(tx, v.HarnessDefaults); err != nil {
+		if err := validateHarnessDefaultRelationships(tx, selected.HarnessDefaults); err != nil {
 			return err
 		}
 		oldAgents, err := previousIDs(domain.AgentKind)
