@@ -114,6 +114,15 @@ export function WaitingQueue({
     active,
     reader,
   );
+  const residentPageTokens = new Set(
+    query.payloadPages.map(({ token }) => token),
+  );
+  let lastResidentPageToken: string | undefined;
+  for (const page of query.pages)
+    if (residentPageTokens.has(page.token)) lastResidentPageToken = page.token;
+  const lastDisplayedRowId = query.pages.find(
+    (page) => page.token === lastResidentPageToken,
+  )?.rows.at(-1)?.id;
   const pendingFocus = useRef<string | undefined>(undefined);
   const pendingDown = useRef<
     { id: string; revision: bigint; generation: bigint } | undefined
@@ -296,7 +305,11 @@ export function WaitingQueue({
             payload.map((row) => (
               <div
                 key={row.id}
-                className={`queue-drop-row${insertion === row.id ? " queue-insertion" : ""}`}
+                className={`queue-drop-row${
+                  insertion === row.id ? " queue-insertion" : ""
+                }${
+                  row.id === lastDisplayedRowId ? " queue-drop-row-last" : ""
+                }`}
                 onDragOver={(event) => {
                   if (dragged && !locked && dragged !== row.id) {
                     event.preventDefault();
