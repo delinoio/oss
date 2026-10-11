@@ -175,6 +175,13 @@ impl Project {
         let mut sources = BTreeMap::new();
         for file in files {
             crate::app::check_cancelled()?;
+            let name = &source_file_info(file).file_name;
+            ensure!(
+                !name.ends_with(".cts")
+                    || name.ends_with(".d.cts")
+                    || is_source_file_from_external_library(file),
+                "CommonJS TypeScript (.cts) is unsupported; use an ESM source module"
+            );
             if !is_application(file) {
                 continue;
             }
@@ -200,6 +207,10 @@ impl Project {
                 with_type_checker_for_file(file, move |checker| analyze_file(file, checker));
             objects.extend(facts?);
         }
+        ensure!(
+            !sources.is_empty(),
+            "program contains no supported runtime source; select a TypeScript or JavaScript entry"
+        );
         Ok((objects, sources))
     }
 
@@ -333,7 +344,8 @@ fn is_application(file: Node) -> bool {
         || n.ends_with(".mts")
         || n.ends_with(".js")
         || n.ends_with(".jsx")
-        || n.ends_with(".mjs"))
+        || n.ends_with(".mjs")
+        || n.ends_with(".cjs"))
         && !is_source_file_from_external_library(file)
         && !n.contains("/node_modules/")
         && !n.starts_with("bundled:")

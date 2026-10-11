@@ -301,3 +301,49 @@ fn inherited_union_and_external_js_shapes_remain_observable() {
             .any(|m| m["kind"] == "passthrough")
     );
 }
+
+#[test]
+fn unsupported_entries_fail_and_commonjs_javascript_passes_through() {
+    for name in ["main.cts", "main.d.ts"] {
+        let temp = fixture("export {};");
+        fs::rename(temp.path().join("main.ts"), temp.path().join(name)).unwrap();
+        let result = Command::new(env!("CARGO_BIN_EXE_typeopt"))
+            .current_dir(temp.path())
+            .args([
+                "--project",
+                "tsconfig.json",
+                "--entry",
+                name,
+                "--out-dir",
+                "out",
+            ])
+            .output()
+            .unwrap();
+        assert!(!result.status.success());
+        assert!(!temp.path().join("out").exists());
+    }
+    let temp = fixture("export {};");
+    fs::write(
+        temp.path().join("tsconfig.json"),
+        r#"{"compilerOptions":{"module":"ESNext","allowJs":true}}"#,
+    )
+    .unwrap();
+    fs::write(temp.path().join("main.cjs"), "module.exports = 3;").unwrap();
+    success(
+        Command::new(env!("CARGO_BIN_EXE_typeopt"))
+            .current_dir(temp.path())
+            .args([
+                "--project",
+                "tsconfig.json",
+                "--entry",
+                "main.cjs",
+                "--out-dir",
+                "out",
+            ])
+            .output()
+            .unwrap(),
+    );
+    let manifest: Value =
+        serde_json::from_slice(&fs::read(temp.path().join("out/modules.json")).unwrap()).unwrap();
+    assert_eq!(manifest["modules"][0]["kind"], "passthrough");
+}
