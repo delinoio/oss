@@ -568,6 +568,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			config.startupProgress = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1) && machineCapability(attached.Msg.Machine, domain.SessionStartupProgressV1)
 			config.remoteWorkspaceClone = remoteCloneExpected && machineCapability(attached.Msg.Machine, domain.RemoteWorkspaceCloneV1)
 			config.namedWorkspaceDirectories = namedDirectoriesExpected && machineCapability(attached.Msg.Machine, domain.NamedWorkspaceDirectoriesV1)
+			config.terminals.setNamedWorkspaceDirectoriesSupported(config.namedWorkspaceDirectories)
 			config.repositoryClone = cloneExpected && machineCapability(attached.Msg.Machine, domain.RepositoryCloneV1)
 			config.inspectionMetadata = metadataExpected && machineCapability(attached.Msg.Machine, domain.RepositoryInspectionMetadataV1)
 			err = watchAttached(ctx, config, client, credential, instance, auxiliary, (managedCapabilityExpected || claudeCapabilityExpected) && managedSubscriptionCapability(attached.Msg.Machine))
