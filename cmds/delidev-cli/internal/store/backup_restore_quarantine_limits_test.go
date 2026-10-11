@@ -70,7 +70,26 @@ func TestRestoreQuarantineRevalidatesTypedJobEntityBound(t *testing.T) {
 	for _, kind := range []domain.JobType{domain.CompactSessionJob, domain.WorkspaceStorageJob} {
 		for _, mode := range []string{"overflow", "headroom", "terminal"} {
 			t.Run(string(kind)+"/"+mode, func(t *testing.T) {
-				s, root, ctx, in, session := restoreFixture(t)
+				s, root, ctx, in, _ := restoreFixture(t)
+				session := domain.NewID()
+				if _, err := s.Mutate(ctx, domain.NewID(), "fixture.quarantine-session", nil, func(tx *Tx) (any, error) {
+					return tx.Put(domain.SessionKind, session, 0, session, "", domain.Session{Name: "quarantine fixture", Outcome: domain.ExecutionNotStarted, Archive: domain.NotArchived, Recovery: domain.NoRecovery, Dispatch: domain.DispatchBlocked})
+				}); err != nil {
+					t.Fatal(err)
+				}
+				backup, err := s.Backup(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				observed, err := s.InspectBackup(ctx, backup, in.ServerID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				in.Backup, in.SHA256 = observed.Backup, observed.SHA256
+				in.ExpectedRevision, err = s.RestoreRevision(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
 				target := domain.MaxCompactionJobBytes - 1
 				if mode == "headroom" {
 					target -= 1024
