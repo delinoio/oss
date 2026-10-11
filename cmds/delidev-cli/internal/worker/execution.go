@@ -504,6 +504,8 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	terminalPublished := false
 	var dynamicDrainCancel context.CancelFunc
 	var dynamicDrainParent context.Context
+	dynamicDrainExpired := false
+	var handled bool
 	for {
 		if ctx.Err() != nil && !stopping {
 			if err := nativeCtx.Err(); err != nil {
@@ -538,6 +540,21 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 		}
 		event, err := client.NextEvent(readContext)
 		if err != nil {
+			if (stopping || dynamicDrainCancel != nil) && nativeCtx.Err() == nil && errors.Is(err, context.DeadlineExceeded) && parentTerminal != nil && terminalPublished && parentTerminal.Turn != nil && (parentTerminal.Turn.Status == codex.TurnFailed || parentTerminal.Turn.Status == codex.TurnInterrupted) {
+				// Failed terminals remain failures; after their bounded drain, close
+				// the native scope when descendants are closed even if a tool stays unsettled.
+				_, childrenClosed := mapper.childState()
+				if !childrenClosed {
+					return nil, err
+				}
+				if dynamicDrainCancel != nil {
+					dynamicDrainCancel()
+					dynamicDrainCancel = nil
+					dynamicDrainParent = nil
+				}
+				dynamicDrainExpired = true
+				goto terminalCleanup
+			}
 			if !stopping && ctx.Err() != nil && nativeCtx.Err() == nil {
 				continue
 			}
@@ -581,7 +598,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 				}
 			}
 		}
-		handled, err := mapper.PublishCore(publicationContext, event)
+		handled, err = mapper.PublishCore(publicationContext, event)
 		if err != nil {
 			logger.WarnContext(publicationContext, "native_execution_publication_failed", "event_kind", event.Kind, "correlated", event.Correlated, "late", event.Late, "code", domain.SafeError(err).Code)
 			return nil, err
@@ -616,14 +633,19 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 				terminalPublished = true
 			}
 		}
+	terminalCleanup:
 		hasChildren, childrenClosed := mapper.childState()
-		if parentTerminal == nil || !terminalPublished || !childrenClosed || !mapper.dynamicToolsSettled() {
+		if parentTerminal == nil || !terminalPublished || !childrenClosed || (!mapper.dynamicToolsSettled() && !dynamicDrainExpired) {
 			continue
 		}
 
 		event = *parentTerminal
+		cleanupContext := ctx
+		if stopping || dynamicDrainExpired {
+			cleanupContext = nativeCtx
+		}
 		if managed != nil && config.quotaBlockSupported && event.Turn != nil && event.Turn.Status == codex.TurnFailed && event.Turn.QuotaBlock.Valid() && input.Input.Mode == domain.ExecuteMode {
-			managed.publishQuotaBlock(ctx, config.observations, domain.SubscriptionQuotaBlock{SessionID: input.SessionID, ExecutionID: input.ExecutionID, NativeThreadID: domain.NativeIdentity(bound.Thread.ID), NativeTurnID: domain.NativeIdentity(turn.TurnID), Reason: event.Turn.QuotaBlock})
+			managed.publishQuotaBlock(cleanupContext, config.observations, domain.SubscriptionQuotaBlock{SessionID: input.SessionID, ExecutionID: input.ExecutionID, NativeThreadID: domain.NativeIdentity(bound.Thread.ID), NativeTurnID: domain.NativeIdentity(turn.TurnID), Reason: event.Turn.QuotaBlock})
 		}
 		// Fence and join original observations before native credential capture and
 		// terminal cleanup, including an admitted operation with a lost publication.
@@ -649,7 +671,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 				}
 				copy(nativeInputs[n].PromptDigest[:], bytes)
 			}
-			proofs, proofErr := client.SkillInputProofs(ctx)
+			proofs, proofErr := client.SkillInputProofs(cleanupContext)
 			if proofErr != nil {
 				return nil, proofErr
 			}
@@ -662,7 +684,7 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 				}
 			}
 			original := codex.ContinuationCheckpoint{PaginatedHistory: bound.Thread.History == codex.PaginatedHistory, ContextRevision: input.ContextRevision, ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: turn.TurnID, Status: event.Turn.Status, Mode: input.Input.Mode, Inputs: nativeInputs, Effective: *bound.Effective}
-			contextProof, err = client.RetainContinuationContext(ctx, original)
+			contextProof, err = client.RetainContinuationContext(cleanupContext, original)
 			if err != nil {
 				return nil, err
 			}
