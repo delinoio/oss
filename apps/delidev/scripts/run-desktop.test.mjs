@@ -4,8 +4,14 @@ import { once } from "node:events";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { spawnDevServer } from "../../../scripts/spawn-dev-server.mjs";
+import {
+  captureDesktopDiagnostics,
+  desktopDiagnosticFilter,
+} from "./desktop-diagnostics.mjs";
 import {
   desktopArguments,
   desktopEnvironment,
@@ -73,7 +79,9 @@ test("macOS prepares a CEF bundle with embedded assets and preserves application
   assert.ok(!argv.includes(args[1]));
   assert.equal(calls[2][0], await macFixtures.publish());
   assert.deepEqual(calls[2][1], args);
-  assert.deepEqual(calls[2][3], { terminateProcessTree: false });
+  assert.equal(calls[2][3].terminateProcessTree, false);
+  assert.equal(typeof calls[2][3].captureOutput, "function");
+  assert.deepEqual(calls[2][2].stdio, ["inherit", "pipe", "pipe"]);
   assert.equal(calls[2][2].detached, true);
   assert.equal(released, true);
   const config = JSON.parse(argv[argv.indexOf("--config") + 1]);
@@ -341,5 +349,182 @@ test(
       if (vanishedProcess)
         assert.match(diagnostics, /vanished-process-observed/u);
     }
+  },
+);
+
+test("private argv spellings are removed while safe diagnostics remain", () => {
+  const value = '/private/한글 folder/quote"and\\slash';
+  const filter = desktopDiagnosticFilter([
+    "--data-dir",
+    value,
+    "--token=fixture-secret",
+  ]);
+  for (const spelling of [
+    value,
+    JSON.stringify(value).slice(1, -1),
+    value.replace(/[^a-zA-Z0-9_./:-]/g, "\\$&"),
+  ]) {
+    assert.equal(
+      filter(`failure at ${spelling}`),
+      "failure at [private argument]",
+    );
+  }
+  assert.equal(filter("safe compiler warning"), "safe compiler warning");
+  assert.equal(filter("token fixture-secret"), "token [private argument]");
+  assert.equal(
+    filter("\x1b[32mRunning\x1b[0m `cargo private arguments`"),
+    "[desktop diagnostic line omitted]",
+  );
+  assert.equal(
+    filter("error: process didn't exit successfully: private command"),
+    "[desktop diagnostic line omitted]",
+  );
+  const multiline = desktopDiagnosticFilter(["private-first\nprivate-second"]);
+  assert.equal(multiline("private-first"), "[private argument]");
+  assert.equal(multiline("private-second"), "[private argument]");
+});
+
+test("captured diagnostics join split UTF-8 and keep bounded lines private", async () => {
+  const stdout = new PassThrough(),
+    stderr = new PassThrough();
+  const out = [],
+    err = [],
+    incomplete = [];
+  const secret = "/private/한글 fixture";
+  const drain = captureDesktopDiagnostics([secret], {
+    stdout: (value) => out.push(value),
+    stderr: (value) => err.push(value),
+    incomplete: (code) => incomplete.push(code),
+  })({ stdout, stderr });
+  const bytes = Buffer.from(`safe\r\n${secret}\n`);
+  for (const byte of bytes) stdout.write(Buffer.from([byte]));
+  stderr.write("x".repeat(70_000));
+  stderr.write(`${secret}\nsafe error\n`);
+  stdout.end();
+  stderr.end();
+  await drain();
+  assert.equal(out.join(""), "safe\n[private argument]\n");
+  assert.equal(
+    err.join(""),
+    "[desktop diagnostic line omitted]\nsafe error\n",
+  );
+  assert.deepEqual(incomplete, []);
+});
+
+test("diagnostic drain bounds descendant pipes and discards incomplete private text", async () => {
+  const stdout = new PassThrough(),
+    stderr = new PassThrough();
+  const out = [],
+    incomplete = [];
+  const drain = captureDesktopDiagnostics(["/private/long-argument"], {
+    stdout: (value) => out.push(value),
+    stderr() {},
+    incomplete: (code) => incomplete.push(code),
+  })({ stdout, stderr });
+  stdout.write("/private/long");
+  stderr.end();
+  await drain();
+  await drain();
+  assert.deepEqual(out, []);
+  assert.deepEqual(incomplete, ["output-drain-timeout"]);
+  assert.equal(stdout.destroyed, true);
+});
+
+test("launcher captures real child diagnostics without changing the original exit code", async () => {
+  const secret = "/private/fixture scope";
+  const out = [],
+    err = [],
+    logs = [];
+  let calls = 0;
+  const result = await runDesktop(["--data-dir", secret], {
+    platform: "linux",
+    environment,
+    stdout: (value) => out.push(value),
+    stderr: (value) => err.push(value),
+    log: (entry) => logs.push(entry),
+    run: (_command, _args, options, lifecycle) => {
+      const code = ++calls === 1 ? 0 : 23;
+      const diagnostic =
+        "Running `binary --data-dir " +
+        secret +
+        "`\nerror reading " +
+        secret +
+        "\n";
+      const source = `process.stdout.write('safe output\\n'); process.stderr.write(${JSON.stringify(diagnostic)}); process.exitCode = ${code};`;
+      return spawnDevServer(process.execPath, ["-e", source], options, lifecycle);
+    },
+  });
+  assert.deepEqual(result, { code: 23, signal: null });
+  assert.equal(calls, 2);
+  assert.match(out.join(""), /safe output/);
+  assert.match(err.join(""), /error reading \[private argument\]/);
+  assert.doesNotMatch(
+    JSON.stringify({ out, err, logs }),
+    /fixture scope|--data-dir/,
+  );
+  assert.equal(logs.at(-1).code, 23);
+});
+
+test("failed final lock release preserves the child result and reports safe uncertainty", async () => {
+  const logs = [];
+  const failure = { code: 19, signal: null };
+  let calls = 0;
+  const result = await runDesktop([], {
+    platform: "darwin",
+    environment,
+    ...macFixtures,
+    creditsFor: () => "/fixture/credits",
+    log: (entry) => logs.push(entry),
+    lock: () => () => {
+      throw new Error("/private/lock-path");
+    },
+    run: async () => (++calls === 1 ? success : failure),
+  });
+  assert.deepEqual(result, failure);
+  assert.deepEqual(logs.at(-1), {
+    operation: "desktop_development",
+    stage: "bundle",
+    state: "cleanup-uncertain",
+    code: "build-lock-release-failed",
+  });
+  assert.doesNotMatch(JSON.stringify(logs), /private|lock-path/);
+});
+
+test("failed diagnostic reads report incomplete output without private error text", async () => {
+  const stdout = new PassThrough(),
+    stderr = new PassThrough();
+  const out = [],
+    incomplete = [];
+  const drain = captureDesktopDiagnostics([], {
+    stdout: (value) => out.push(value),
+    stderr() {},
+    incomplete: (code) => incomplete.push(code),
+  })({ stdout, stderr });
+  stdout.destroy(new Error("/private/stream-error"));
+  stderr.end();
+  await drain();
+  assert.deepEqual(out, ["[desktop diagnostic line omitted]\n"]);
+  assert.deepEqual(incomplete, ["output-read-failed"]);
+});
+
+test(
+  "captured output preserves the original child's termination signal",
+  { skip: process.platform === "win32" },
+  async () => {
+    const captureOutput = captureDesktopDiagnostics([], {
+      stdout() {},
+      stderr() {},
+      incomplete() {},
+    });
+    const result = await spawnDevServer(
+      process.execPath,
+      [
+        "-e",
+        "process.stdout.write('safe\\n'); process.kill(process.pid, 'SIGTERM');",
+      ],
+      { stdio: ["ignore", "pipe", "pipe"], shell: false },
+      { captureOutput },
+    );
+    assert.deepEqual(result, { code: null, signal: "SIGTERM" });
   },
 );
