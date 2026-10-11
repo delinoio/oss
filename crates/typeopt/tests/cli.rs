@@ -96,10 +96,12 @@ fn shortening_aliases_side_effects_and_determinism() {
 #[test]
 fn distinct_disambiguation_and_ambiguation_effects() {
     let temp = fixture(
-        "export {}; const first = {sharedProperty: 1, firstOther: 2}; const second = \
-         {sharedProperty: 3, secondOther: 4}; console.log(first.sharedProperty, \
-         first.sharedProperty, first.firstOther, second.sharedProperty, second.secondOther, \
-         second.secondOther);",
+        // Non-literal values keep constant-property-inlining out of this
+        // property-allocation fixture.
+        "export {}; const first = {sharedProperty: Number(1), firstOther: Number(2)}; const \
+         second = {sharedProperty: Number(3), secondOther: Number(4)}; \
+         console.log(first.sharedProperty, first.sharedProperty, first.firstOther, \
+         second.sharedProperty, second.secondOther, second.secondOther);",
     );
     success(run(temp.path(), "out"));
     compare(temp.path());
