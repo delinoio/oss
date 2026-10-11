@@ -170,7 +170,7 @@ mod app {
         let mut report = Report {
             schema_version: 0,
             tool_version: env!("CARGO_PKG_VERSION"),
-            compiler_revision: "d62b17c3d608e4c61c763e7ec18574f689cbb3d0",
+            compiler_revision: "398b09f45dcf06cd67f8e9e18c8c22f95f81430f",
             files: sources.len(),
             object_regions: objects.len(),
             analysis_scope: "module_local_interprocedural",

@@ -6,7 +6,7 @@
 
 ## Runtime and Language
 
-Rust, with Node.js 24 for fixture execution and integration tooling. Pin `ts_goport` to upstream revision `d62b17c3d608e4c61c763e7ec18574f689cbb3d0`; manually validate upstream changes. Keep optimizer code separate from upstream compiler code. Initial distribution is Cargo source builds for macOS arm64 and Linux x64.
+Rust, with Node.js 24 for fixture execution and integration tooling. Pin `ts_goport` to upstream revision `398b09f45dcf06cd67f8e9e18c8c22f95f81430f`; manually validate upstream changes. Keep optimizer code separate from upstream compiler code. Initial distribution is Cargo source builds for macOS arm64 and Linux x64.
 
 ## Users and Operators
 
