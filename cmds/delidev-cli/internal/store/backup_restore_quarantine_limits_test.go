@@ -115,7 +115,7 @@ func TestRestoreQuarantineRevalidatesTypedJobEntityBound(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				backup, err := s.Backup(ctx)
+				backup, err = s.Backup(ctx)
 				if err != nil {
 					t.Fatal(err)
 				}
