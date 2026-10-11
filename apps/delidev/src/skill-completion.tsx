@@ -471,8 +471,7 @@ export function useSkillCompletion({
     !composition &&
     !contextChanged &&
     isEntityId(machineId) &&
-    isEntityId(agentId) &&
-    distinct.size <= 16
+    isEntityId(agentId)
   ) {
     const bindingsByRange = new Map<string, SkillTokenBinding[]>();
     for (const binding of bindings) {

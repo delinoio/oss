@@ -1411,6 +1411,36 @@ function BoundDecorationComposer({
     />,
   );
 }
+it("keeps the first 16 selected decorations when more distinct skills are bound", () => {
+  const tokens = Array.from({ length: 17 }, (_, index) => `$skill-${index}`),
+    prompt = tokens.join(" "),
+    bindings = skillRanges(prompt).map((range) => ({
+      start: range.start,
+      end: range.end,
+      token: `$${range.prefix}`,
+      selection: { ...entries[0]!.selection, skillId: newRequestId() },
+      stale: false,
+      context: `${machine}:${agent}::`,
+    }));
+  const f = fixture();
+  const view = render(
+    <TransportProvider
+      transport={createRouterTransport((router) =>
+        router.service(SkillService, { listSkills: f.read }),
+      )}
+    >
+      <QueryClientProvider client={f.client}>
+        <BoundDecorationComposer prompt={prompt} initialBindings={bindings} />
+      </QueryClientProvider>
+    </TransportProvider>,
+  );
+
+  const selected = view.container.querySelectorAll(".skill-token-selected");
+  expect([...selected].map((span) => span.textContent)).toEqual(
+    tokens.slice(0, 16),
+  );
+  expect(f.read).not.toHaveBeenCalled();
+});
 it("bounds painted explicit spans and leaves duplicate, stale or ambiguous binding claims plain", () => {
   const prompt = Array.from({ length: 2048 }, () => "$add-issue").join(" ");
   const bindings = skillRanges(prompt).map((range) => ({
