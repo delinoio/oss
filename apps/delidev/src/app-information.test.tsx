@@ -152,15 +152,23 @@ it("shares all static focus targets with command navigation in English and Korea
     });
   }
   expect(
-    matchSettings("Official releases", []).some(
-      (row) => row.target === SettingsSearchTarget.AppReleases,
-    ),
+    matchSettings("Official releases", [
+      {
+        category: SettingsCategory.AppInformation,
+        label: "App information",
+        help: "Check the current app and its updates.",
+      },
+    ]).some((row) => row.target === SettingsSearchTarget.AppReleases),
   ).toBe(true);
   await act(() => i18n.changeLanguage("ko"));
   expect(
-    matchSettings("앱 정보", []).some(
-      (row) => row.target === SettingsSearchTarget.AppInformation,
-    ),
+    matchSettings("앱 정보", [
+      {
+        category: SettingsCategory.AppInformation,
+        label: "앱 정보",
+        help: "현재 앱과 업데이트 정보를 확인하세요.",
+      },
+    ]).some((row) => row.target === SettingsSearchTarget.AppInformation),
   ).toBe(true);
   await act(() => i18n.changeLanguage("en"));
 });
