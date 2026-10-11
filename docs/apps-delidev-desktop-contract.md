@@ -5735,6 +5735,27 @@ Show “A project with this name already exists. Choose another name.” beneath
 
 A verified asynchronous repository name collision releases only its original settled request and returns to the retained draft. A completed clone collision retains the reported existing Local checkout and allows corrected registration without cloning or deleting that checkout. Narrow widths and effective 200% layout retain readable, wrapping guidance.
 
+## Sidebar response attention
+
+Home navigation retains only the literal boolean true from the supported
+Session `awaiting_user_response` list projection. Missing, malformed,
+non-Session or unsupported document metadata shows no response indicator.
+The shared wide pane and compact navigation drawer render one static,
+nonfocusable 14px outlined-circle question mark immediately before the existing
+execution and archive glyphs. Use the semantic blue link color, preserving its
+light/dark theme contrast and the independent execution colors. The decorative
+SVG is hidden from assistive technology and has no separate click action or
+keyboard stop. Unknown execution/archive question marks retain their meaning.
+
+Append **Waiting for your response** / **응답 대기 중** to the complete row
+accessible description and existing hover card. Preserve 32px rows, title
+ellipsis before status glyphs, selection, rename, actions, focus outlines and
+scroll ownership, including long names and 200% zoom. Use existing accepted
+list refresh and reconnect handling, including updates at the same Session
+revision. Do not add polling, telemetry, question-content logs or a feature
+flag. The session contract owns the authoritative derived predicate; presentation
+never grants response, execution or mutation authority.
+
 ### Codex reasoning summary disclosure
 
 Ordinary Session and General Chat retain Codex reasoning in its original resource and
