@@ -461,7 +461,7 @@ test("captured diagnostics pause child output until the destination drains", asy
     highWaterMark: 1,
     write(chunk, _encoding, callback) {
       chunks.push(chunk.toString());
-      setTimeout(callback, 1);
+      queueMicrotask(callback);
     },
   });
   const write = destination.write.bind(destination);

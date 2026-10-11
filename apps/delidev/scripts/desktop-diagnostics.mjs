@@ -74,6 +74,7 @@ function captureStream(stream, destination, filter) {
   let carriageReturn = false;
   let waitingForDrain = false;
   let queued = "";
+  let inputEnded = false;
   let complete;
   const done = new Promise((resolve) => {
     complete = resolve;
@@ -84,7 +85,9 @@ function captureStream(stream, destination, filter) {
     const remainder = queued;
     queued = "";
     if (remainder) consume(remainder);
-    if (!finished && !waitingForDrain) stream.resume();
+    if (finished || waitingForDrain) return;
+    if (inputEnded) finishInput();
+    else stream.resume();
   };
   const writeOutput = (value) => {
     if (write(value) !== false || !writable) return false;
@@ -127,11 +130,18 @@ function captureStream(stream, destination, filter) {
     }
   };
   const data = (chunk) => consume(decoder.write(chunk));
-  const end = () => {
-    if (finished) return;
-    consume(decoder.end());
+  const finishInput = () => {
+    if (finished || !inputEnded || waitingForDrain) return;
     if (!dropping && pending) write(filter(pending));
     finish(true);
+  };
+  const end = () => {
+    if (finished || inputEnded) return;
+    inputEnded = true;
+    const remainder = decoder.end();
+    if (waitingForDrain) queued += remainder;
+    else consume(remainder);
+    finishInput();
   };
   const finish = (successful = false) => {
     if (finished) return;
@@ -150,7 +160,7 @@ function captureStream(stream, destination, filter) {
     finish();
   };
   const closed = () => {
-    if (!finished) failed();
+    if (!finished && !inputEnded) failed();
   };
   stream.on("data", data);
   stream.once("end", end);
