@@ -253,10 +253,11 @@ impl<B: Backend> Gate<'_, B> {
                     return Ok(Decision::Reject(Reason::ModuleInitialization));
                 };
                 for specifier in removed {
-                    let site = self
-                        .imports
-                        .get(&file)
-                        .and_then(|sites| sites.iter().find(|s| s.specifier == specifier));
+                    let site = self.imports.get(&file).and_then(|sites| {
+                        sites
+                            .iter()
+                            .find(|s| same_specifier(&s.specifier, &specifier))
+                    });
                     let Some(site) = site else {
                         return Ok(Decision::Reject(Reason::ModuleInitialization));
                     };
@@ -266,7 +267,7 @@ impl<B: Backend> Gate<'_, B> {
                         insertions.push(FileEdit::insert(
                             &file,
                             site.offset,
-                            format!("import {};\n", quote(&specifier)),
+                            format!("import {};\n", quote(&site.specifier)),
                         ));
                     } else {
                         return Ok(Decision::Reject(Reason::ModuleInitialization));
@@ -999,4 +1000,28 @@ mod tests {
 /// Double-quoted JavaScript string literal.
 fn quote(value: &str) -> String {
     serde_json::to_string(value).expect("strings serialize")
+}
+
+/// Whether an emitted import specifier is the source specifier, possibly
+/// rewritten by `rewriteRelativeImportExtensions` (`./a.ts` emits as
+/// `./a.js`).
+fn same_specifier(source: &str, emitted: &str) -> bool {
+    if source == emitted {
+        return true;
+    }
+    if !source.starts_with('.') || source.ends_with(".d.ts") {
+        return false;
+    }
+    [
+        (".ts", ".js"),
+        (".tsx", ".js"),
+        (".mts", ".mjs"),
+        (".cts", ".cjs"),
+    ]
+    .iter()
+    .any(|(from, to)| {
+        source
+            .strip_suffix(from)
+            .is_some_and(|stem| emitted.strip_suffix(to) == Some(stem))
+    })
 }

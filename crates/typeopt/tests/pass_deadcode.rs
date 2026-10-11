@@ -116,6 +116,156 @@ fn residual_disabled_never_runs() {
     assert!(emitted_or_source(temp.path(), "main.ts").contains("deadLocal"));
 }
 
+/// Removing the last user of an import keeps the initialization of a
+/// module with effects (as a bare import) and drops a pure module.
+#[test]
+fn residual_preserves_module_initialization() {
+    let (temp, report) = run(
+        &[
+            (
+                "main.ts",
+                "import { live } from \"./dep.ts\";\nconsole.log(live());\n",
+            ),
+            (
+                "dep.ts",
+                r#"import { sideLog } from "./side.ts";
+import { pureHelper } from "./pure.ts";
+export function live() { return 1; }
+export function deadUser() { sideLog(); return pureHelper(); }
+"#,
+            ),
+            (
+                "side.ts",
+                "console.log(\"side init\");\nexport function sideLog() { console.log(\"side\"); \
+                 }\n",
+            ),
+            ("pure.ts", "export function pureHelper() { return 2; }\n"),
+        ],
+        &[RESIDUAL],
+    );
+    assert!(applied(&report, RESIDUAL) > 0, "{report:#}");
+    let dep = emitted(temp.path(), "dep.ts");
+    assert!(!dep.contains("deadUser"), "{dep}");
+    assert!(dep.contains("import \"./side.js\""), "{dep}");
+    assert!(!dep.contains("pure.js"), "{dep}");
+}
+
+/// Declarations whose removal could change types, effects, exceptions or
+/// what outside code can reach by name stay.
+#[test]
+fn residual_boundaries_stay() {
+    let (temp, report) = run(
+        &[
+            (
+                "main.ts",
+                r#"import { live } from "./dep.ts";
+import * as all from "./namespace.ts";
+export function publicApi() { return "api"; }
+console.log(live(), Object.keys(all).join(","));
+const lazy = await import("./lazy.ts");
+console.log(Object.keys(lazy).join(","));
+"#,
+            ),
+            (
+                "dep.ts",
+                r#"function typeSource() { return { a: 1 }; }
+type Shape = ReturnType<typeof typeSource>;
+const shape: Shape = { a: 2 };
+function register(name: string) { console.log("registered", name); return name; }
+const registered = register("x");
+class StaticInit { static { console.log("static block"); } }
+class StaticEffect { static value = register("static"); }
+function makeBase() { console.log("heritage evaluated"); return class {}; }
+class Derived extends makeBase() {}
+export default function unusedDefault() { return 0; }
+export function live() { return shape.a; }
+"#,
+            ),
+            (
+                "namespace.ts",
+                "export function viaNamespace() { return 1; }\n",
+            ),
+            (
+                "lazy.ts",
+                "export function viaDynamicImport() { return 2; }\n",
+            ),
+        ],
+        &[RESIDUAL],
+    );
+    let dep = emitted_or_source(temp.path(), "dep.ts");
+    for live in [
+        "typeSource",
+        "register(\"x\")",
+        "StaticInit",
+        "StaticEffect",
+        "makeBase()",
+        "unusedDefault",
+    ] {
+        assert!(dep.contains(live), "{live} missing in {dep}");
+    }
+    assert!(emitted_or_source(temp.path(), "namespace.ts").contains("viaNamespace"));
+    assert!(emitted_or_source(temp.path(), "lazy.ts").contains("viaDynamicImport"));
+    assert!(emitted_or_source(temp.path(), "main.ts").contains("publicApi"));
+    let reasons = skipped_reasons(&report, RESIDUAL);
+    for reason in [
+        "type_constraint",
+        "side_effects",
+        "reflection",
+        "public_export",
+        "unsupported_syntax",
+    ] {
+        assert!(reasons.iter().any(|r| r == reason), "{reason}: {reasons:?}");
+    }
+}
+
+/// Earlier removals leave helpers unused; the cleanup removes them in a
+/// later round only when residual-dependency-removal is enabled.
+#[test]
+fn residual_cleans_up_after_member_removal() {
+    let files: &[(&str, &str)] = &[
+        (
+            "main.ts",
+            "import { Widget } from \"./widget.ts\";\nconsole.log(new Widget().render2());\n",
+        ),
+        (
+            "widget.ts",
+            r#"import { format } from "./format.ts";
+function onlyForUnused(): string { return format("unused"); }
+function factory() { return 1; }
+export class Widget {
+  produced = factory;
+  render2() { return "widget"; }
+  unusedMethod() { return onlyForUnused(); }
+}
+"#,
+        ),
+        (
+            "format.ts",
+            "export function format(v: string) { return `[${v}]`; }\n",
+        ),
+    ];
+    let (temp, report) = run(files, &[METHOD, FIELD, RESIDUAL]);
+    assert!(applied(&report, METHOD) > 0, "{report:#}");
+    assert!(applied(&report, FIELD) > 0, "{report:#}");
+    assert!(applied(&report, RESIDUAL) > 0, "{report:#}");
+    let widget = emitted(temp.path(), "widget.ts");
+    for dead in [
+        "unusedMethod",
+        "onlyForUnused",
+        "produced",
+        "factory",
+        "format",
+    ] {
+        assert!(!widget.contains(dead), "{dead} in {widget}");
+    }
+    let (temp, report) = run(files, &[METHOD, FIELD]);
+    assert_eq!(applied(&report, RESIDUAL), 0);
+    let widget = emitted(temp.path(), "widget.ts");
+    assert!(!widget.contains("unusedMethod"), "{widget}");
+    assert!(widget.contains("function onlyForUnused"), "{widget}");
+    assert!(widget.contains("function factory"), "{widget}");
+}
+
 /// Emitted output when the module was optimized, otherwise its source.
 fn emitted_or_source(root: &std::path::Path, source: &str) -> String {
     let manifest = modules(root);

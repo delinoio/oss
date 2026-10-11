@@ -454,8 +454,8 @@ fn solve(ctx: &mut Ctx, exposure: &Exposure, units: &[Unit], out: &mut Plan) -> 
         }
     }
     let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
-    for index in 0..units.len() {
-        if alive[index] {
+    for (index, &removable) in alive.iter().enumerate() {
+        if removable {
             let root = find(&mut parent, index);
             groups.entry(root).or_default().push(index);
         }
@@ -562,27 +562,24 @@ fn bundle(ctx: &mut Ctx, units: &[Unit], group: &[usize]) -> Option<Candidate> {
             ));
             continue;
         }
-        remove_list(
-            ctx,
-            &mut candidate,
-            file,
-            declaration,
-            &elements,
-            &dead,
-            None,
-        );
-    }
-    for ((file, declaration), dead) in exports {
-        let elements: Vec<Node> = declaration.export_clause().elements().iter().collect();
-        let specifier = declaration.module_specifier();
-        // Deleting a runtime re-export also deletes the module dependency.
-        let replacement = if specifier.is_some()
-            && !declaration.is_type_only()
-            && elements.iter().any(|e| !e.is_type_only())
-        {
-            let droppable = module_index(ctx, specifier)
-                .is_some_and(|target| ctx.module_initialization_pure(target));
-            (!droppable).then(|| format!("import {};", ctx.text(file, specifier)))
+        // Deleting an import that TypeScript emitted (a binding had a
+        // runtime use) also deletes the module dependency; keep it bare
+        // unless the target initializes without effects.
+        let emitted = !clause.is_type_only()
+            && elements.iter().any(|&element| {
+                !element.is_type_only() && {
+                    let target = ctx.resolve(element.name());
+                    ctx.refs(target).iter().any(|r| {
+                        r.file == file
+                            && matches!(
+                                effective_kind(r),
+                                RefKind::Read | RefKind::Call | RefKind::New | RefKind::Write
+                            )
+                    })
+                }
+            });
+        let replacement = if emitted {
+            dependency(ctx, file, declaration.module_specifier())
         } else {
             None
         };
@@ -596,7 +593,80 @@ fn bundle(ctx: &mut Ctx, units: &[Unit], group: &[usize]) -> Option<Candidate> {
             replacement,
         );
     }
+    for ((file, declaration), dead) in exports {
+        let elements: Vec<Node> = declaration.export_clause().elements().iter().collect();
+        let specifier = declaration.module_specifier();
+        // Deleting a runtime re-export also deletes the module dependency.
+        let replacement = if specifier.is_some()
+            && !declaration.is_type_only()
+            && elements.iter().any(|e| !e.is_type_only())
+        {
+            dependency(ctx, file, specifier)
+        } else {
+            None
+        };
+        remove_list(
+            ctx,
+            &mut candidate,
+            file,
+            declaration,
+            &elements,
+            &dead,
+            replacement,
+        );
+    }
+    keep_modules(ctx, &mut candidate);
     (!candidate.edits.is_empty()).then_some(candidate)
+}
+
+/// Replacement for a deleted import or re-export: a bare import that keeps
+/// evaluating the module `specifier` names, or, when that module and its
+/// imports initialize without effects, an erased type-only import. The
+/// latter emits nothing, so the bundler may drop the module, while the
+/// module stays part of the analyzed program and its output.
+fn dependency(ctx: &mut Ctx, file: usize, specifier: Node) -> Option<String> {
+    let droppable =
+        module_index(ctx, specifier).is_some_and(|target| ctx.module_initialization_pure(target));
+    let specifier = ctx.text(file, specifier);
+    Some(if droppable {
+        format!("import type {{}} from {specifier};")
+    } else {
+        format!("import {specifier};")
+    })
+}
+
+/// A file whose last import or export is deleted would become a script,
+/// which other modules can no longer import; `export {};` keeps it a module.
+fn keep_modules(ctx: &Ctx, candidate: &mut Candidate) {
+    let files: BTreeSet<String> = candidate.edits.iter().map(|e| e.file.clone()).collect();
+    for name in files {
+        let Some(file) = ctx.file_of(&name) else {
+            continue;
+        };
+        let deleted = |statement: Node| {
+            candidate.edits.iter().any(|e| {
+                e.file == name
+                    && e.edit.replacement.is_empty()
+                    && e.edit.start <= token_start(statement)
+                    && e.edit.end >= statement.end() as usize
+            })
+        };
+        let module = ctx.files[file].node.statements().iter().any(|statement| {
+            let indicator = matches!(
+                statement.kind(),
+                SyntaxKind::ImportDeclaration
+                    | SyntaxKind::ExportDeclaration
+                    | SyntaxKind::ExportAssignment
+            ) || has_syntactic_modifier(statement, ModifierFlags::EXPORT);
+            indicator && !deleted(statement)
+        });
+        if !module {
+            let end = ctx.files[file].text.len();
+            candidate
+                .edits
+                .push(FileEdit::insert(&name, end, "\nexport {};\n"));
+        }
+    }
 }
 
 /// Deletes the dead elements of a list statement, or the whole statement
