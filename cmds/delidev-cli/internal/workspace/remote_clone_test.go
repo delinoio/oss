@@ -6,6 +6,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -16,6 +17,126 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 )
+
+func TestManagedCloneRemoteHeadObservation(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX owned-wrapper fixtures; native Windows acceptance is separate")
+	}
+	for _, test := range []struct {
+		name, response string
+		code           domain.Code
+		cause          string
+	}{
+		{name: "absence", response: "exit 1"},
+		{name: "valid nested target", response: "printf 'refs/remotes/origin/feature/nested\\n'"},
+		{name: "fatal", response: "exit 128", code: domain.Unavailable, cause: "git_exit"},
+		{name: "authentication status one", response: "printf 'Authentication failed\\n' >&2; exit 1", code: domain.PermissionDenied, cause: "clone_authentication"},
+		{name: "missing executable", response: "exec /nonexistent/delidev-git-fixture", code: domain.Unavailable, cause: "git_exit"},
+		{name: "foreign", response: "printf 'refs/remotes/foreign/main\\n'", code: domain.RecoveryRequired},
+		{name: "empty suffix", response: "printf 'refs/remotes/origin/\\n'", code: domain.RecoveryRequired},
+		{name: "empty output", response: ":", code: domain.RecoveryRequired},
+		{name: "self", response: "printf 'refs/remotes/origin/HEAD\\n'", code: domain.RecoveryRequired},
+		{name: "multiple", response: "printf 'refs/remotes/origin/main\\nrefs/remotes/origin/other\\n'", code: domain.RecoveryRequired},
+		{name: "malformed", response: "printf 'refs/remotes/origin/bad..name\\n'", code: domain.Unavailable, cause: "git_exit"},
+		{name: "overflow", response: "head -c 8388608 /dev/zero", code: domain.ResourceExhausted},
+		{name: "deadline", response: "exec sleep 20", code: domain.Unavailable, cause: "clone_timeout"},
+		{name: "canceled", response: "exec sleep 20", code: domain.Canceled},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+			t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+			root := repository(t)
+			binary, err := exec.LookPath("git")
+			if err != nil {
+				t.Fatal(err)
+			}
+			quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
+			wrapper := filepath.Join(t.TempDir(), "git-wrapper")
+			started, commands := filepath.Join(t.TempDir(), "started"), filepath.Join(t.TempDir(), "commands")
+			body := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> " + quote(commands) + "\ncase \" $* \" in\n*' symbolic-ref --quiet refs/remotes/origin/HEAD '*) printf started > " + quote(started) + "; " + test.response + "; exit 0 ;;\nesac\nexec " + quote(binary) + " \"$@\"\n"
+			if err := os.WriteFile(wrapper, []byte(body), 0700); err != nil {
+				t.Fatal(err)
+			}
+			git := Git{Executable: wrapper, ProcessRoot: filepath.Join(t.TempDir(), "processes"), OwnerID: domain.NewID(), cloneDiagnostics: true}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if test.name == "deadline" || test.name == "canceled" {
+				// Cancel or expire only after the original HEAD child has started.
+				go func() {
+					limit := time.NewTimer(30 * time.Second)
+					defer limit.Stop()
+					ticker := time.NewTicker(10 * time.Millisecond)
+					defer ticker.Stop()
+					for {
+						select {
+						case <-ctx.Done():
+							return
+						case <-limit.C:
+							cancel()
+							return
+						case <-ticker.C:
+							if _, err := os.Stat(started); err == nil {
+								if test.name == "canceled" {
+									cancel()
+								}
+								return
+							}
+						}
+					}
+				}()
+				if test.name == "deadline" {
+					git.Timeout = 3 * time.Second
+				}
+			}
+			spec := RepositorySpec{PreferredRemote: "upstream", Starting: domain.Reference{Type: domain.RemoteBranch, Remote: "backup", Name: "main"}}
+			err = provisionManagedCloneRemotes(ctx, git, root, "https://github.com/fixture/repo.git", spec, "origin")
+			if test.code == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if problem := domain.SafeError(err); err == nil || problem.Code != test.code || problem.Cause != test.cause {
+				t.Fatalf("lost original failure: %v, want %s/%s", problem, test.code, test.cause)
+			}
+			for _, remote := range []string{"upstream", "backup"} {
+				if test.name == "valid nested target" {
+					if got := gitTest(t, root, "symbolic-ref", "refs/remotes/"+remote+"/HEAD"); got != "refs/remotes/"+remote+"/feature/nested" {
+						t.Fatal("alias lost accepted target", got)
+					}
+				} else if _, err := os.Stat(filepath.Join(root, ".git", "refs", "remotes", remote, "HEAD")); !os.IsNotExist(err) {
+					t.Fatal("failed observation published alias HEAD", err)
+				}
+			}
+			log, err := os.ReadFile(commands)
+			if err != nil || strings.Contains(string(log), " clone ") || strings.Contains(string(log), " fetch ") {
+				t.Fatal("unexpected clone/fetch", err)
+			}
+		})
+	}
+}
+
+func TestManagedCloneRemoteHeadFailureBlocksReady(t *testing.T) {
+	m, input, marker := managedCloneFixture(t)
+	body, err := os.ReadFile(m.Git.Executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body = bytes.Replace(body, []byte("case \" $* \" in\n"), []byte("case \" $* \" in\n*' symbolic-ref --quiet refs/remotes/origin/HEAD '*) exit 128 ;;\n"), 1)
+	if err := os.WriteFile(m.Git.Executable, body, 0700); err != nil {
+		t.Fatal(err)
+	}
+	input.Repositories[0].Starting = domain.Reference{Type: domain.RemoteBranch, Remote: "upstream", Name: "main"}
+	input.Repositories[0].AutoFetch = false
+	if _, err := m.Prepare(context.Background(), input); err == nil || domain.SafeError(err).Cause != "git_exit" {
+		t.Fatal("HEAD failure published readiness", err)
+	}
+	if _, err := os.Stat(filepath.Join(m.Root, "workspaces", string(input.SessionID))); !os.IsNotExist(err) {
+		t.Fatal("confirmed failure retained workspace", err)
+	}
+	invocations, err := os.ReadFile(marker)
+	if err != nil || string(invocations) != "invoked" {
+		t.Fatal("failure replayed clone", err)
+	}
+}
 
 func TestManagedCloneFailedAuthenticationAndCanceledProcessCleanup(t *testing.T) {
 	for _, cancelProcess := range []bool{false, true} {
