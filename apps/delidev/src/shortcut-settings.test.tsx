@@ -131,3 +131,19 @@ it.each([['en','Add message to queue','Fixed: Enter'],['ko','메시지 대기열
  expect(screen.getAllByText('Shift + Enter').length).toBeGreaterThan(0);
  await act(()=>i18n.changeLanguage('en'));
 });
+
+it("discloses the effective fixed tool binding from committed preferences in both languages", async () => {
+ const f = fixture(); render(<Owner bridge={f.bridge}/>); await screen.findByText("Current saved shortcuts");
+ const row = () => screen.getByText(i18n.t("session.openTool"), {selector:"dt"}).parentElement!;
+ expect(row().textContent).toContain("Ctrl + T");
+ await act(async()=>f.publish({revision:2,overrides:{[ShortcutId.SearchFocus]:{state:ShortcutOverrideState.Binding,chord:{key:"t",shift:false}}},problem:null}));
+ expect(row().textContent).toContain("Inactive because a saved custom shortcut takes priority."); expect(row().textContent).not.toContain("Ctrl + T");
+ // An unsaved change in this editor cannot change the effective default.
+ fireEvent.click(screen.getByRole("button",{name:"Disable Focus search query"}));
+ expect(row().textContent).toContain("saved custom shortcut");
+ await act(async()=>i18n.changeLanguage(SupportedLanguage.Korean));
+ expect(row().textContent).toContain("저장된 사용자 단축키가 우선하므로 비활성화됩니다.");
+ await act(async()=>f.publish({revision:3,overrides:{},problem:null}));
+ expect(row().textContent).toContain("Ctrl + T");
+ expect(f.bridge.update).not.toHaveBeenCalled();
+});

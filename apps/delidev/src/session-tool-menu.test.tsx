@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest";
 import { SessionToolMenu } from "./session-tool-menu";
 import { i18n } from "./localization";
-import { ShortcutProvider } from "./shortcut-provider";
+import { ShortcutProvider, useShortcutHelp } from "./shortcut-provider";
 import { ShortcutPreferenceProvider, type ShortcutPreferenceBridge } from "./shortcut-preference-controller";
 import { editableShortcutCatalog, ShortcutOverrideState, type ShortcutOverrides } from "./shortcut-preferences";
 afterEach(async () => { vi.restoreAllMocks(); await i18n.changeLanguage("en"); });
@@ -88,15 +88,22 @@ it.each(["MacIntel", "Win32", "Linux x86_64"])("opens one shared dialog from the
  fireEvent.click(screen.getByRole("button", {name:"Open tool"})); expect(screen.getAllByRole("dialog")).toHaveLength(1);
 });
 
+function HelpButton() { const open = useShortcutHelp(); return <button onClick={open}>Show Help</button>; }
+
 it("restores the default immediately after a committed cross-scope T binding changes", async () => {
  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
  let changed!: (snapshot: unknown) => void;
  const overrides: ShortcutOverrides = { [editableShortcutCatalog.at(-1)!.id]: {state:ShortcutOverrideState.Binding,chord:{key:"t",shift:false}} };
  const bridge: ShortcutPreferenceBridge = {read:async()=>({revision:1,overrides,problem:null}),update:vi.fn(),subscribe:async callback=>{changed=callback;return()=>{};}};
- render(<ShortcutPreferenceProvider bridge={bridge}><ShortcutProvider><textarea aria-label="Composer"/><SessionToolMenu active><button role="menuitem">Files</button></SessionToolMenu></ShortcutProvider></ShortcutPreferenceProvider>);
+ render(<ShortcutPreferenceProvider bridge={bridge}><ShortcutProvider><HelpButton/><textarea aria-label="Composer"/><SessionToolMenu active><button role="menuitem">Files</button></SessionToolMenu></ShortcutProvider></ShortcutPreferenceProvider>);
  const trigger = screen.getByRole("button", {name:"Open tool"}), composer = screen.getByRole("textbox");
  await waitFor(()=>expect(trigger.getAttribute("aria-keyshortcuts")).toBe(""));
  expect(trigger.title).toContain("saved custom shortcut");
+ fireEvent.click(screen.getByRole("button",{name:"Show Help"}));
+ const helpRow = screen.getByText("Open tool",{selector:"dt"}).parentElement!;
+ expect(helpRow.textContent).toContain("Inactive because a saved custom shortcut takes priority.");
+ expect(helpRow.textContent).toContain("Disabled");
+ fireEvent.click(screen.getByRole("button",{name:"Close keyboard shortcuts"}));
  composer.focus(); fireEvent.keyDown(composer,{key:"t",code:"KeyT",ctrlKey:true}); expect(screen.queryByRole("dialog")).toBeNull();
  fireEvent.click(trigger); expect(screen.getByRole("dialog")).toBeTruthy(); fireEvent.keyDown(screen.getByRole("menuitem"),{key:"Escape"});
  await act(async()=>changed({revision:2,overrides:{},problem:null}));
