@@ -4036,6 +4036,14 @@ it("Search focus waits for its opening generation and cannot survive reversal or
 
 it("preserves first Search autofocus after a hidden wide activation", async () => {
   viewport();
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
   const flushFrames = animationFrames();
   const value = fixture();
   render(
@@ -4055,7 +4063,9 @@ it("preserves first Search autofocus after a hidden wide activation", async () =
     fireEvent.click(within(menu).getByRole("option", { name }));
   };
   await navigate("Search");
-  const input = screen.getByRole("textbox", { name: "Search conversations" });
+  const input = document.querySelector<HTMLInputElement>(
+    ".sidebar-pane-dialog input",
+  )!;
   flushFrames();
   expect(document.activeElement).not.toBe(input);
 
