@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import type { PropsWithChildren } from "react";
+import { useState, type PropsWithChildren } from "react";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -55,13 +55,18 @@ function fixture(
     router.service(ResourceService, { getResource: read });
     router.service(WorkerService, { discoverHarnesses: discover });
   });
-  const wrapper = ({ children }: PropsWithChildren) => (
-    <TransportProvider transport={transport}>
-      <QueryClientProvider client={client}>
-        <MutationIntents>{children}</MutationIntents>
-      </QueryClientProvider>
-    </TransportProvider>
-  );
+  let updateTransport!: (nextTransport: typeof transport) => void;
+  const wrapper = ({ children }: PropsWithChildren) => {
+    const [activeTransport, setActiveTransport] = useState(transport);
+    updateTransport = setActiveTransport;
+    return (
+      <TransportProvider transport={activeTransport}>
+        <QueryClientProvider client={client}>
+          <MutationIntents>{children}</MutationIntents>
+        </QueryClientProvider>
+      </TransportProvider>
+    );
+  };
   const hook = renderHook(
     ({ resource, active }) => useMachineSettingsController(resource, active),
     { initialProps: { resource: initial, active: true }, wrapper },
@@ -76,7 +81,19 @@ function fixture(
     await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(hook.result.current.loading).toBe(false));
   };
-  return { ...hook, initial, read, discover, client, refresh, ready };
+  const replaceTransport = async (replacement: typeof transport) => {
+    await act(async () => updateTransport(replacement));
+  };
+  return {
+    ...hook,
+    initial,
+    read,
+    discover,
+    client,
+    refresh,
+    ready,
+    replaceTransport,
+  };
 }
 
 it("accepts a fresh equal-revision heartbeat and keeps the business request revision", async () => {
@@ -284,4 +301,57 @@ it("starts a new same-ID opening from its own connection observation", async () 
   expect(reopened.result.current.pending).toBe(false);
   await reopened.refresh(machine(original.initial.id, 7n, later));
   expect(reopened.result.current.data.last_seen).toBe(later);
+});
+
+it("retains the accepted observation while the same connection replaces its transport", async () => {
+  const value = fixture();
+  await value.ready();
+  await value.refresh(machine(value.initial.id, 9n, later, "/accepted/codex"));
+
+  let finishRead!: (response: { resource: Resource }) => void;
+  const replacementRead = vi.fn(
+    () =>
+      new Promise<{ resource: Resource }>((resolve) => {
+        finishRead = resolve;
+      }),
+  );
+  const replacementDiscover = vi.fn(async (_request: unknown) => ({
+    machine: machine(value.initial.id, 9n, later, "/accepted/codex"),
+  }));
+  const replacement = createRouterTransport((router) => {
+    router.service(ResourceService, { getResource: replacementRead });
+    router.service(WorkerService, { discoverHarnesses: replacementDiscover });
+  });
+
+  await value.replaceTransport(replacement);
+  await waitFor(() => expect(replacementRead).toHaveBeenCalledOnce());
+  expect(value.result.current.loading).toBe(true);
+  expect(value.result.current.current?.revision).toBe(9n);
+  expect(value.result.current.data.last_seen).toBe(later);
+  expect(value.result.current.data.installations).toMatchObject([
+    { explicit_path: "/accepted/codex" },
+  ]);
+
+  await act(async () => {
+    await value.result.current.discovery.send({
+      mutation: {
+        id: value.initial.id,
+        expectedRevision: value.result.current.current!.revision,
+        requestId: newRequestId(),
+      },
+    });
+  });
+  expect(replacementDiscover.mock.calls[0][0]).toMatchObject({
+    mutation: { id: value.initial.id, expectedRevision: 9n },
+  });
+
+  await act(async () => {
+    finishRead({
+      resource: machine(value.initial.id, 10n, later, "/replacement/codex"),
+    });
+  });
+  await waitFor(() => expect(value.result.current.current?.revision).toBe(10n));
+  expect(value.result.current.data.installations).toMatchObject([
+    { explicit_path: "/replacement/codex" },
+  ]);
 });

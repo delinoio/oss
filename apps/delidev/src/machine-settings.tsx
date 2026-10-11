@@ -34,7 +34,6 @@ import {
   newRequestId,
   type Resource,
 } from "@delinoio/delidev-api-client";
-import type { Transport } from "@connectrpc/connect";
 import {
   document,
   encode,
@@ -93,27 +92,23 @@ export function useMachineSettingsController(
   const [acknowledged, setAcknowledged] = useState<Resource>();
   const exact = (row?: Resource): row is Resource =>
     validRunnerObservation(row) && row.id === initial.id;
+  // Same-identity reconnects replace the transport but retain this QueryClient.
   const [observation, setObservation] = useState<{
     id: string;
-    transport: Transport;
     queryClient: QueryClient;
     current?: Resource;
     readUpdateCount: number;
     acknowledged?: Resource;
   }>(() => ({
     id: initial.id,
-    transport,
     queryClient,
     readUpdateCount,
   }));
   const retained =
-    observation.id === initial.id &&
-    observation.transport === transport &&
-    observation.queryClient === queryClient
+    observation.id === initial.id && observation.queryClient === queryClient
       ? observation
       : {
           id: initial.id,
-          transport,
           queryClient,
           readUpdateCount,
         };
@@ -159,7 +154,6 @@ export function useMachineSettingsController(
   )
     setObservation({
       id: initial.id,
-      transport,
       queryClient,
       current,
       readUpdateCount,
