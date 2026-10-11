@@ -180,7 +180,6 @@ func deleteSessionCopiesWithAdmissionHooks(ctx context.Context, config Config, w
 		phase = deletionLegacyAbsence
 		// Already-started historical progress cannot capture replacement authority.
 		// Only the existing complete/absence rule may finish its original receipt.
-		proof.Complete = true
 		return completeLegacySessionDeletion(ctx, config, root, path, w, proof)
 	}
 	if admission == nil {

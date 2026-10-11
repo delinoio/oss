@@ -128,6 +128,7 @@ func completeLegacySessionDeletion(ctx context.Context, config Config, root, pat
 			return proof, err
 		}
 	}
+	proof.Complete = true
 	if err := writeJSON(path, proof); err != nil {
 		return proof, err
 	}
