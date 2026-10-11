@@ -172,7 +172,7 @@ export function ObservedJob({
             <SettingsActionButton
               icon={SettingsActionIcon.Retry}
               type="button"
-              disabled={!observation.active || observation.pending}
+              disabled={!observation.active}
               onClick={() => void observation.retry()}
             >
               {copy("jobs.retryStatusRead")}
