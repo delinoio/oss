@@ -107,7 +107,7 @@ function RepositoryNavigationRow({ row, selected, expanded, choose, toggleDetail
         <span className="sidebar-sr-only">{detailsLabel}</span>
       </DisclosureButton>
     </div>
-    <DisclosureContent ref={popup} popover="manual" id={detailsId} className="pr-repository-details" role="region" aria-label={detailsLabel} hidden={!expanded}>
+    <DisclosureContent ref={popup} popover={typeof HTMLElement !== "undefined" && "showPopover" in HTMLElement.prototype ? "manual" : undefined} id={detailsId} className="pr-repository-details" role="region" aria-label={detailsLabel} hidden={!expanded}>
       <dl><dt>{copy("pull-requests.githubRepository")}</dt><dd>{owner && repository ? `${owner}/${repository}` : copy("pull-requests.repositoryNotConfigured")}</dd>
         <dt>{copy("pull-requests.repositoryIdentifier")}</dt><dd>{row.id}</dd></dl>
     </DisclosureContent>
