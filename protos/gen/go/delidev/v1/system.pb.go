@@ -25,6 +25,7 @@ type SystemCapability int32
 
 const (
 	SystemCapability_SYSTEM_CAPABILITY_UNSPECIFIED                       SystemCapability = 0
+	SystemCapability_SYSTEM_CAPABILITY_OPENCODE_NATIVE_SKILLS_V1         SystemCapability = 91
 	SystemCapability_SYSTEM_CAPABILITY_MANAGED_SKILL_MANAGEMENT_V1       SystemCapability = 87
 	SystemCapability_SYSTEM_CAPABILITY_MANAGED_NATIVE_SKILLS_V1          SystemCapability = 88
 	SystemCapability_SYSTEM_CAPABILITY_MANAGED_MCP_V1                    SystemCapability = 83
@@ -103,6 +104,7 @@ const (
 var (
 	SystemCapability_name = map[int32]string{
 		0:  "SYSTEM_CAPABILITY_UNSPECIFIED",
+		91: "SYSTEM_CAPABILITY_OPENCODE_NATIVE_SKILLS_V1",
 		87: "SYSTEM_CAPABILITY_MANAGED_SKILL_MANAGEMENT_V1",
 		88: "SYSTEM_CAPABILITY_MANAGED_NATIVE_SKILLS_V1",
 		83: "SYSTEM_CAPABILITY_MANAGED_MCP_V1",
@@ -172,6 +174,7 @@ var (
 	}
 	SystemCapability_value = map[string]int32{
 		"SYSTEM_CAPABILITY_UNSPECIFIED":                          0,
+		"SYSTEM_CAPABILITY_OPENCODE_NATIVE_SKILLS_V1":            91,
 		"SYSTEM_CAPABILITY_MANAGED_SKILL_MANAGEMENT_V1":          87,
 		"SYSTEM_CAPABILITY_MANAGED_NATIVE_SKILLS_V1":             88,
 		"SYSTEM_CAPABILITY_MANAGED_MCP_V1":                       83,
@@ -3002,9 +3005,10 @@ const file_delidev_v1_system_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\"V\n" +
 	"\x18GetBackupRestoreResponse\x12:\n" +
-	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xbf\x19\n" +
+	"\areceipt\x18\x01 \x01(\v2 .delidev.v1.BackupRestoreReceiptR\areceipt*\xf0\x19\n" +
 	"\x10SystemCapability\x12!\n" +
-	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x121\n" +
+	"\x1dSYSTEM_CAPABILITY_UNSPECIFIED\x10\x00\x12/\n" +
+	"+SYSTEM_CAPABILITY_OPENCODE_NATIVE_SKILLS_V1\x10[\x121\n" +
 	"-SYSTEM_CAPABILITY_MANAGED_SKILL_MANAGEMENT_V1\x10W\x12.\n" +
 	"*SYSTEM_CAPABILITY_MANAGED_NATIVE_SKILLS_V1\x10X\x12$\n" +
 	" SYSTEM_CAPABILITY_MANAGED_MCP_V1\x10S\x127\n" +

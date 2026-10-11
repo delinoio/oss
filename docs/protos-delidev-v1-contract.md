@@ -1,5 +1,14 @@
 # DeliDev v1 Connect contract
 
+## Native OpenCode skills capability
+
+System capability `OPENCODE_NATIVE_SKILLS_V1 = 91` and Worker capability
+`OPENCODE_NATIVE_SKILLS_V1 = 62` independently negotiate selected native OpenCode
+skills. Existing managed-skill capabilities do not imply this support. Admission
+must also verify the original native profile, immutable selected packages and
+negotiated peer capabilities before input. These declarations grant no execution
+authority. Existing RPC and document ownership remains unchanged.
+
 ## Machine heartbeat read projection
 
 Machine Get, List and Snapshot Resources project the exact Machine's current
