@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
-import { createRouterTransport } from "@connectrpc/connect";
+import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -343,5 +343,31 @@ it("distinguishes unchecked from a successful explicit check with no signed cand
   fireEvent.click(check);
   await screen.findByText("No newer signed update was found.");
   expect(f.check).toHaveBeenCalledTimes(1);
+  expect(f.control).not.toHaveBeenCalled();
+});
+
+it("retains the exact failed-check request for explicit retry and never claims current from failure", async () => {
+  const f = fixture(true, 1n, newRequestId(), false);
+  f.check.mockImplementationOnce(() => {
+    throw new ConnectError("Lost original response", Code.Unavailable);
+  });
+  const check = await screen.findByRole<HTMLButtonElement>("button", {
+    name: "Check for updates",
+  });
+  await vi.waitFor(() => expect(check.disabled).toBe(false));
+  fireEvent.click(check);
+  const retry = await screen.findByRole("button", {
+    name: "Retry the same update check",
+  });
+  expect(screen.queryByText("No newer signed update was found.")).toBeNull();
+  await vi.waitFor(() =>
+    expect(screen.getByText("Update recovery").closest("details")?.open).toBe(
+      true,
+    ),
+  );
+  fireEvent.click(retry);
+  await screen.findByText("No newer signed update was found.");
+  expect(f.check).toHaveBeenCalledTimes(2);
+  expect(f.check.mock.calls[1]).toEqual(f.check.mock.calls[0]);
   expect(f.control).not.toHaveBeenCalled();
 });
