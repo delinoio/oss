@@ -1391,7 +1391,7 @@
   padding: 0;
   border: 0;
 }
-.session-diagnostics > div > * + *,
+.session-diagnostics > div > :not(:first-child),
 .session-diagnostics > .session-files {
   margin-top: 16px;
   padding-top: 16px;
