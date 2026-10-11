@@ -440,6 +440,76 @@ test("v2 validates custom theme imports and preserves immutable defaults", async
   ).toThrow();
 });
 
+test("selected palette sheets follow System changes and retire only their own sheet", async () => {
+  const { defaultPreferences, palettes } =
+    await import("./appearance-preferences");
+  const changeScheme = scheme(false);
+  // jsdom has no constructed sheets. This shim checks ownership and lifecycle;
+  // scripts/test-appearance-palette.mjs checks the actual browser cascade.
+  const OriginalSheet = CSSStyleSheet;
+  vi.stubGlobal(
+    "CSSStyleSheet",
+    class extends OriginalSheet {
+      replaceSync(source: string) {
+        this.insertRule(source);
+      }
+    },
+  );
+  const descriptor = Object.getOwnPropertyDescriptor(
+    document,
+    "adoptedStyleSheets",
+  );
+  const unrelated = new CSSStyleSheet();
+  Object.defineProperty(document, "adoptedStyleSheets", {
+    configurable: true,
+    writable: true,
+    value: [unrelated],
+  });
+  const preferences = {
+    ...defaultPreferences(),
+    light_palette: "nord",
+    dark_palette: "dracula",
+  };
+  const value = fixture();
+  vi.mocked(value.bridge.read).mockResolvedValue({
+    revision: 1,
+    theme: Theme.System,
+    problem: null,
+    preferences,
+  });
+  const view = render(
+    <AppearanceProvider bridge={value.bridge}>{null}</AppearanceProvider>,
+  );
+  const currentRule = () =>
+    document.adoptedStyleSheets[1].cssRules[0] as CSSStyleRule;
+  try {
+    await waitFor(() =>
+      expect(currentRule().style.getPropertyValue("--background")).toBe(
+        palettes.nord.light.background,
+      ),
+    );
+    const lightSheet = document.adoptedStyleSheets[1];
+    expect(currentRule().selectorText).toBe("html:root[data-theme]");
+    changeScheme(true);
+    expect(currentRule().style.getPropertyValue("--background")).toBe(
+      palettes.dracula.dark.background,
+    );
+    expect(document.adoptedStyleSheets).not.toContain(lightSheet);
+    changeScheme(false);
+    expect(currentRule().style.getPropertyValue("--background")).toBe(
+      palettes.nord.light.background,
+    );
+    expect(document.adoptedStyleSheets).toHaveLength(2);
+  } finally {
+    view.unmount();
+    const remaining = document.adoptedStyleSheets;
+    if (descriptor)
+      Object.defineProperty(document, "adoptedStyleSheets", descriptor);
+    else Reflect.deleteProperty(document, "adoptedStyleSheets");
+    expect(remaining).toEqual([unrelated]);
+  }
+});
+
 test("v2 ordinary choices autosave full snapshots without replacing a draft", async () => {
   const { defaultPreferences } = await import("./appearance-preferences");
   scheme(false);
