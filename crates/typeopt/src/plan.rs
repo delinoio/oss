@@ -167,8 +167,23 @@ pub struct PropertyStats {
     pub properties: usize,
 }
 
+/// A value import declaration of a module. When a transformation removes the
+/// last runtime use of its bindings, the gate either keeps the dependency
+/// with a bare import inserted at `offset` or, if `droppable`, lets it go.
+#[derive(Clone, Debug)]
+pub struct ImportSite {
+    pub specifier: String,
+    /// Start of the first import declaration with this specifier.
+    pub offset: usize,
+    /// The target module and everything it imports initialize without
+    /// observable effects, so skipping its evaluation is unobservable.
+    pub droppable: bool,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Plan {
+    /// Value import declarations per module.
+    pub imports: std::collections::BTreeMap<String, Vec<ImportSite>>,
     pub candidates: Vec<Candidate>,
     pub skips: Vec<Skip>,
     /// Preserved property mappings (property phase only).

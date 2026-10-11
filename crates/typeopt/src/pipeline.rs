@@ -9,7 +9,9 @@ use anyhow::{Result, bail, ensure};
 use crate::{
     optimizer::{Mapping, Preservation},
     passes::{PassId, PassSet},
-    plan::{Candidate, Edit, Location, Phase, Plan, PropertyStats, Reason, Skip},
+    plan::{
+        Candidate, Edit, FileEdit, ImportSite, Location, Phase, Plan, PropertyStats, Reason, Skip,
+    },
 };
 
 /// Upper bound on structural rounds. Each accepted round strictly reduces the
@@ -31,9 +33,67 @@ pub trait Backend {
     /// diagnostics. Syntax errors and compiler failures are returned as
     /// errors because they indicate an internal transformation failure.
     fn check(&mut self, texts: &BTreeMap<String, String>) -> Result<Vec<String>>;
-    /// Emitted ESM byte count for one module, using equal emitter settings
-    /// for every call. Source maps are excluded.
-    fn emitted_size(&mut self, file: &str, text: &str) -> Result<usize>;
+    /// Emits one module with equal emitter settings for every call and
+    /// returns its ESM byte count (source maps excluded) and its static
+    /// import specifiers in evaluation order.
+    fn emit_module(&mut self, file: &str, text: &str) -> Result<Emitted>;
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Emitted {
+    pub size: usize,
+    pub imports: Vec<String>,
+}
+
+/// Static module specifiers of emitted ESM in statement order. The same
+/// scanner reads both sides of every comparison.
+pub fn static_imports(code: &str) -> Vec<String> {
+    let mut imports = Vec::new();
+    let mut offset = 0;
+    for line in code.split_inclusive('\n') {
+        let start = offset;
+        offset += line.len();
+        let keyword = if line.starts_with("import") {
+            "import"
+        } else if line.starts_with("export") {
+            "export"
+        } else {
+            continue;
+        };
+        let tail = &code[start..];
+        let statement = &tail[..tail.find(';').map_or(tail.len(), |i| i + 1)];
+        let after_keyword = statement[keyword.len()..].trim_start();
+        let literal = if keyword == "import" && after_keyword.starts_with(['"', '\'']) {
+            Some(after_keyword)
+        } else {
+            statement
+                .rfind(" from ")
+                .map(|i| statement[i + 6..].trim_start())
+                .filter(|s| s.starts_with(['"', '\'']))
+        };
+        if let Some(literal) = literal {
+            let quote = literal.as_bytes()[0] as char;
+            if let Some(end) = literal[1..].find(quote) {
+                imports.push(literal[1..1 + end].to_owned());
+            }
+        }
+    }
+    imports
+}
+
+/// Elements of `before` missing from `after`, if `after` is `before` with
+/// some elements removed in order; `None` when `after` adds or reorders.
+fn removed_imports(before: &[String], after: &[String]) -> Option<Vec<String>> {
+    let mut removed = Vec::new();
+    let mut remaining = after.iter().peekable();
+    for import in before {
+        if remaining.peek() == Some(&import) {
+            remaining.next();
+        } else {
+            removed.push(import.clone());
+        }
+    }
+    remaining.peek().is_none().then_some(removed)
 }
 
 #[derive(Clone, Debug)]
@@ -121,67 +181,132 @@ fn conflicts(a: &Edit, b: &Edit) -> bool {
 struct Gate<'a, B: Backend> {
     backend: &'a mut B,
     texts: &'a BTreeMap<String, String>,
+    imports: &'a BTreeMap<String, Vec<ImportSite>>,
+    enabled: &'a PassSet,
     accepted: BTreeMap<String, Vec<Edit>>,
-    sizes: HashMap<String, usize>,
+    current: HashMap<String, Emitted>,
+}
+
+enum Decision {
+    Accept { before: usize, after: usize },
+    Reject(Reason),
 }
 
 impl<B: Backend> Gate<'_, B> {
-    fn current_size(&mut self, file: &str) -> Result<usize> {
-        if let Some(&size) = self.sizes.get(file) {
-            return Ok(size);
+    fn current(&mut self, file: &str) -> Result<Emitted> {
+        if let Some(emitted) = self.current.get(file) {
+            return Ok(emitted.clone());
         }
         let Some(text) = self.texts.get(file) else {
             bail!("transformation targets a module outside the analyzed program");
         };
         let text = apply(text, self.accepted.get(file).map_or(&[], Vec::as_slice))?;
-        let size = self.backend.emitted_size(file, &text)?;
-        self.sizes.insert(file.to_owned(), size);
-        Ok(size)
+        let emitted = self.backend.emit_module(file, &text)?;
+        self.current.insert(file.to_owned(), emitted.clone());
+        Ok(emitted)
     }
 
-    /// Returns `Some((before, after))` if accepted, `None` on no benefit.
-    fn try_accept(&mut self, candidate: &Candidate) -> Result<Option<(usize, usize)>> {
-        let mut by_file = BTreeMap::<&str, Vec<Edit>>::new();
-        for edit in &candidate.edits {
-            by_file
-                .entry(edit.file.as_str())
-                .or_default()
-                .push(edit.edit.clone());
-        }
-        let mut before = 0;
-        let mut after = 0;
-        let mut merged_files = Vec::new();
-        for (file, mut edits) in by_file {
-            edits.sort();
-            for pair in edits.windows(2) {
-                ensure!(
-                    !conflicts(&pair[0], &pair[1]),
-                    "{} produced overlapping edits",
-                    candidate.pass
-                );
+    /// Evaluates the complete bundle, including module-initialization
+    /// preservation. TypeScript elides an import whose bindings lose their
+    /// last runtime use, which would skip or reorder that module's
+    /// initialization. The gate keeps such a dependency with a bare
+    /// `import "specifier";` at the original position, unless
+    /// residual-dependency-removal is enabled and the analysis proved the
+    /// module initialization pure; then the import may disappear and the
+    /// bundle records that pass as cleanup.
+    fn try_accept(&mut self, candidate: &mut Candidate) -> Result<Decision> {
+        for attempt in 0..2 {
+            let mut by_file = BTreeMap::<String, Vec<Edit>>::new();
+            for edit in &candidate.edits {
+                by_file
+                    .entry(edit.file.clone())
+                    .or_default()
+                    .push(edit.edit.clone());
             }
-            before += self.current_size(file)?;
-            let mut merged = self.accepted.get(file).cloned().unwrap_or_default();
-            merged.extend(edits);
-            merged.sort();
-            let text = apply(&self.texts[file], &merged)?;
-            let size = self.backend.emitted_size(file, &text).map_err(|error| {
-                anyhow::anyhow!(
-                    "{} produced output the compiler rejects in a module: {error}",
-                    candidate.pass
-                )
-            })?;
-            after += size;
-            merged_files.push((file.to_owned(), merged, size));
+            let mut before = 0;
+            let mut after = 0;
+            let mut merged_files = Vec::new();
+            let mut insertions = Vec::new();
+            let mut uses_residual = false;
+            for (file, mut edits) in by_file {
+                edits.sort();
+                for pair in edits.windows(2) {
+                    ensure!(
+                        !conflicts(&pair[0], &pair[1]),
+                        "{} produced overlapping edits",
+                        candidate.pass
+                    );
+                }
+                let current = self.current(&file)?;
+                before += current.size;
+                let mut merged = self.accepted.get(&file).cloned().unwrap_or_default();
+                merged.extend(edits);
+                merged.sort();
+                let text = apply(&self.texts[&file], &merged)?;
+                let emitted = self.backend.emit_module(&file, &text).map_err(|error| {
+                    anyhow::anyhow!(
+                        "{} produced output the compiler rejects in a module: {error}",
+                        candidate.pass
+                    )
+                })?;
+                let Some(removed) = removed_imports(&current.imports, &emitted.imports) else {
+                    return Ok(Decision::Reject(Reason::ModuleInitialization));
+                };
+                for specifier in removed {
+                    let site = self
+                        .imports
+                        .get(&file)
+                        .and_then(|sites| sites.iter().find(|s| s.specifier == specifier));
+                    let Some(site) = site else {
+                        return Ok(Decision::Reject(Reason::ModuleInitialization));
+                    };
+                    if site.droppable && self.enabled.contains(PassId::ResidualDependencyRemoval) {
+                        uses_residual = true;
+                    } else if attempt == 0 {
+                        insertions.push(FileEdit::insert(
+                            &file,
+                            site.offset,
+                            format!("import {};\n", quote(&specifier)),
+                        ));
+                    } else {
+                        return Ok(Decision::Reject(Reason::ModuleInitialization));
+                    }
+                }
+                after += emitted.size;
+                merged_files.push((file, merged, emitted));
+            }
+            if !insertions.is_empty() {
+                let conflict =
+                    insertions.iter().any(|insertion| {
+                        candidate.edits.iter().any(|e| {
+                            e.file == insertion.file && conflicts(&e.edit, &insertion.edit)
+                        }) || self
+                            .accepted
+                            .get(&insertion.file)
+                            .is_some_and(|a| a.iter().any(|e| conflicts(e, &insertion.edit)))
+                    });
+                if conflict {
+                    return Ok(Decision::Reject(Reason::ModuleInitialization));
+                }
+                candidate.edits.extend(insertions);
+                continue;
+            }
+            if after >= before {
+                return Ok(Decision::Reject(Reason::NoSizeBenefit));
+            }
+            if uses_residual
+                && candidate.pass != PassId::ResidualDependencyRemoval
+                && !candidate.uses.contains(&PassId::ResidualDependencyRemoval)
+            {
+                candidate.uses.push(PassId::ResidualDependencyRemoval);
+            }
+            for (file, merged, emitted) in merged_files {
+                self.current.insert(file.clone(), emitted);
+                self.accepted.insert(file, merged);
+            }
+            return Ok(Decision::Accept { before, after });
         }
-        if after >= before {
-            return Ok(None);
-        }
-        for (file, merged, size) in merged_files {
-            self.sizes.insert(file.clone(), size);
-            self.accepted.insert(file, merged);
-        }
-        Ok(Some((before, after)))
+        Ok(Decision::Reject(Reason::ModuleInitialization))
     }
 
     fn overlaps(&self, candidate: &Candidate) -> bool {
@@ -304,7 +429,7 @@ impl<B: Backend> Pipeline<'_, B> {
         let mut total = 0;
         for (file, text) in texts {
             crate::app::check_cancelled()?;
-            total += self.backend.emitted_size(file, text)?;
+            total += self.backend.emit_module(file, text)?.size;
         }
         Ok(total)
     }
@@ -323,11 +448,14 @@ impl<B: Backend> Pipeline<'_, B> {
         let mut skips = std::mem::take(&mut plan.skips);
         let mut accepted = Vec::new();
         let mut rejected = Vec::new();
+        let imports = std::mem::take(&mut plan.imports);
         let mut gate = Gate {
             backend: &mut *self.backend,
             texts,
+            imports: &imports,
+            enabled: self.enabled,
             accepted: BTreeMap::new(),
-            sizes: HashMap::new(),
+            current: HashMap::new(),
         };
         let mut seen = BTreeSet::new();
         for candidate in candidates {
@@ -360,10 +488,16 @@ impl<B: Backend> Pipeline<'_, B> {
                 // Re-planned against the updated text in the next round.
                 continue;
             }
-            match gate.try_accept(&candidate)? {
-                Some((before, after)) => accepted.push((candidate, before, after)),
-                None => {
-                    skips.push(skip(Reason::NoSizeBenefit));
+            let mut candidate = candidate;
+            match gate.try_accept(&mut candidate)? {
+                Decision::Accept { before, after } => accepted.push((candidate, before, after)),
+                Decision::Reject(reason) => {
+                    skips.push(Skip {
+                        pass: candidate.pass,
+                        key: candidate.key.clone(),
+                        location: candidate.location.clone(),
+                        reason,
+                    });
                     rejected.extend(preserved(&candidate, Preservation::NoSizeBenefit));
                 }
             }
@@ -539,8 +673,11 @@ mod tests {
                 .collect())
         }
 
-        fn emitted_size(&mut self, _: &str, text: &str) -> Result<usize> {
-            Ok(text.len())
+        fn emit_module(&mut self, _: &str, text: &str) -> Result<Emitted> {
+            Ok(Emitted {
+                size: text.len(),
+                imports: static_imports(text),
+            })
         }
     }
 
@@ -737,6 +874,110 @@ mod tests {
     }
 
     #[test]
+    fn static_imports_follow_statement_order() {
+        let code = "import { a } from \"./a\";\nimport \"./side\";\nimport {\n  b,\n  c\n} from \
+                    './bc';\nexport * from \"./star\";\nexport { d };\nconst s = \"import x from \
+                    'no'\";\n";
+        assert_eq!(static_imports(code), ["./a", "./side", "./bc", "./star"]);
+        assert_eq!(
+            removed_imports(
+                &["a".into(), "b".into(), "c".into()],
+                &["a".into(), "c".into()]
+            ),
+            Some(vec!["b".to_owned()])
+        );
+        assert_eq!(removed_imports(&["a".into()], &["b".into()]), None);
+    }
+
+    #[test]
+    fn elided_imports_keep_module_initialization() {
+        // Removing the only use of `x` would drop `import {x} from "m"`; the
+        // gate keeps the dependency with a bare import.
+        let source = "import {x} from \"m\";\nuse(x);\nlongDeadCode;\n";
+        let mut fake = Fake {
+            script: Box::new(|texts, phase| {
+                let text = &texts["a.ts"];
+                if phase != Phase::Structural || !text.contains("use(x);") {
+                    return Vec::new();
+                }
+                let at = text.find("use(x);").unwrap();
+                let dead = text.find("longDeadCode;").unwrap();
+                vec![candidate(
+                    PassId::CallInlining,
+                    "drop-use",
+                    vec![
+                        FileEdit::delete("a.ts", at, at + 7),
+                        FileEdit::delete("a.ts", dead, dead + 13),
+                    ],
+                )]
+            }),
+            checks: 0,
+        };
+        struct Elide<'a>(&'a mut Fake, bool);
+        impl Backend for Elide<'_> {
+            fn plan(
+                &mut self,
+                texts: &BTreeMap<String, String>,
+                phase: Phase,
+                enabled: &PassSet,
+            ) -> Result<Plan> {
+                let mut plan = self.0.plan(texts, phase, enabled)?;
+                plan.imports.insert(
+                    "a.ts".into(),
+                    vec![ImportSite {
+                        specifier: "m".into(),
+                        offset: 0,
+                        droppable: self.1,
+                    }],
+                );
+                Ok(plan)
+            }
+
+            fn check(&mut self, texts: &BTreeMap<String, String>) -> Result<Vec<String>> {
+                self.0.check(texts)
+            }
+
+            fn emit_module(&mut self, _: &str, text: &str) -> Result<Emitted> {
+                // Mimic TypeScript import elision.
+                let code = if text.contains("use(x)") {
+                    text.to_owned()
+                } else {
+                    text.replace("import {x} from \"m\";\n", "")
+                };
+                Ok(Emitted {
+                    size: code.len(),
+                    imports: static_imports(&code),
+                })
+            }
+        }
+        let enabled = PassSet::all();
+        let outcome = Pipeline {
+            backend: &mut Elide(&mut fake, false),
+            enabled: &enabled,
+        }
+        .run(&sources(source))
+        .unwrap();
+        assert!(outcome.texts["a.ts"].starts_with("import \"m\";\nimport {x}"));
+        assert!(outcome.bundles[0].uses.is_empty());
+        let outcome = Pipeline {
+            backend: &mut Elide(&mut fake, true),
+            enabled: &enabled,
+        }
+        .run(&sources(source))
+        .unwrap();
+        assert!(!outcome.texts["a.ts"].contains("import \"m\""));
+        assert_eq!(outcome.bundles[0].uses, [PassId::ResidualDependencyRemoval]);
+        let without = PassSet::without(&[PassId::ResidualDependencyRemoval]);
+        let outcome = Pipeline {
+            backend: &mut Elide(&mut fake, true),
+            enabled: &without,
+        }
+        .run(&sources(source))
+        .unwrap();
+        assert!(outcome.texts["a.ts"].starts_with("import \"m\";"));
+    }
+
+    #[test]
     fn offsets_map_through_rounds() {
         let first = vec![Edit {
             start: 2,
@@ -753,4 +994,9 @@ mod tests {
         assert_eq!(source_offset(8 + 2, &[first.clone(), second.clone()]), 2);
         assert_eq!(source_offset(8 + 3, &[first, second]), 6);
     }
+}
+
+/// Double-quoted JavaScript string literal.
+fn quote(value: &str) -> String {
+    serde_json::to_string(value).expect("strings serialize")
 }

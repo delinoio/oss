@@ -378,7 +378,7 @@ pub struct Backend<'a> {
     project: &'a Project,
     original: u64,
     checked: Option<(u64, &'static GoProgram)>,
-    sizes: HashMap<(String, u64), usize>,
+    sizes: HashMap<(String, u64), crate::pipeline::Emitted>,
 }
 
 impl<'a> Backend<'a> {
@@ -429,18 +429,18 @@ impl crate::pipeline::Backend for Backend<'_> {
         let (version, fresh) = self.program_for(texts);
         let result = (|| {
             let _scope = enter_program(Some(version));
-            let files: Vec<Node> = source_files()
-                .into_iter()
-                .filter(|&f| is_application(f))
-                .collect();
+            let (files, externals): (Vec<Node>, Vec<Node>) =
+                source_files().into_iter().partition(|&f| is_application(f));
             let Some(&first) = files.first() else {
                 bail!("program contains no application module");
             };
             let entries = self.project.entries.clone();
             let enabled = enabled.clone();
             with_type_checker_for_file(first, move |checker| {
-                let mut ctx = analysis::Ctx::new(checker, files, &entries)?;
-                passes::plan(&mut ctx, phase, &enabled)
+                let mut ctx = analysis::Ctx::new(checker, files, externals, &entries)?;
+                let mut plan = passes::plan(&mut ctx, phase, &enabled)?;
+                plan.imports = ctx.import_sites();
+                Ok(plan)
             })
         })();
         if fresh {
@@ -475,16 +475,19 @@ impl crate::pipeline::Backend for Backend<'_> {
         result
     }
 
-    fn emitted_size(&mut self, file: &str, text: &str) -> Result<usize> {
+    fn emit_module(&mut self, file: &str, text: &str) -> Result<crate::pipeline::Emitted> {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         text.hash(&mut hasher);
         let key = (file.to_owned(), hasher.finish());
-        if let Some(&size) = self.sizes.get(&key) {
-            return Ok(size);
+        if let Some(emitted) = self.sizes.get(&key) {
+            return Ok(emitted.clone());
         }
         if is_js_name(file) {
             // JavaScript passes through unchanged and has no emitted form.
-            return Ok(text.len());
+            return Ok(crate::pipeline::Emitted {
+                size: text.len(),
+                imports: crate::pipeline::static_imports(text),
+            });
         }
         let output = ts_goport::transpile::transpile_module(
             &ts_goport::gostd::context::background(),
@@ -506,9 +509,12 @@ impl crate::pipeline::Backend for Backend<'_> {
             "transformed module has syntax errors (TS{})",
             syntax[0].code
         );
-        let size = output.output_text.len();
-        self.sizes.insert(key, size);
-        Ok(size)
+        let emitted = crate::pipeline::Emitted {
+            size: output.output_text.len(),
+            imports: crate::pipeline::static_imports(&output.output_text),
+        };
+        self.sizes.insert(key, emitted.clone());
+        Ok(emitted)
     }
 }
 
