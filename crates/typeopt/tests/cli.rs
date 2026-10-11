@@ -473,3 +473,120 @@ fn interprocedural_uncertainty_and_transitive_escapes_preserve_groups() {
         assert_eq!(report(temp.path())["renamed_properties"], 0, "{code}");
     }
 }
+
+#[test]
+fn accessors_reflection_and_prototype_lookup_keep_names() {
+    let cases = [
+        "export {}; const obj = {inner: 0, set longProperty(v: number) {this.inner = v * 2}}; \
+         obj.longProperty = 3; console.log(obj.inner);",
+        "export {}; let writes = 0; const obj = {inner: 1, get longProperty() {return \
+         this.inner}, set longProperty(v: number) {writes++; this.inner = v}}; obj.longProperty \
+         += 4; console.log(obj.longProperty, writes);",
+        "export {}; const obj = {longProperty: 3}; console.log(Reflect.ownKeys(obj));",
+        "export {}; const obj = {longProperty: 3}; console.log(Reflect.has(obj, 'longProperty'));",
+        "export {}; const obj = {longProperty: 3}; console.log(Reflect.get(obj, 'longProperty'));",
+        "export {}; const obj = {longProperty: 3}; console.log(Object.hasOwn(obj, \
+         'longProperty'));",
+        "export {}; const obj = {longProperty: 3}; \
+         console.log(obj.hasOwnProperty('longProperty'));",
+        "export {}; const obj = {longProperty: 3}; console.log(Object.entries(obj));",
+        "export {}; const obj = {longProperty: 3}; console.log(Object.getOwnPropertyNames(obj));",
+        "export {}; const obj = {longProperty: 3}; const copy = Object.assign({}, obj); \
+         console.log(copy.longProperty, Object.keys(copy));",
+        "export {}; const obj = {longProperty: 3}; Object.defineProperty(obj, 'longProperty', \
+         {value: 4}); console.log(obj.longProperty);",
+        "export {}; const obj = {longProperty: 3}; const keys: string[] = []; for (const key in \
+         obj) keys.push(key); console.log(keys);",
+        "export {}; const base = {longProperty: 3}; const child: {longProperty: number} = \
+         Object.create(base); console.log(child.longProperty, Object.keys(child));",
+    ];
+    for code in cases {
+        let temp = fixture(code);
+        success(run(temp.path(), "out"));
+        compare(temp.path());
+        assert_eq!(report(temp.path())["renamed_properties"], 0, "{code}");
+    }
+}
+
+#[test]
+fn class_inheritance_overrides_and_super_keep_behavior() {
+    let cases = [
+        "export {}; class Base {longProperty = 1; read() {return this.longProperty}} class Child \
+         extends Base {longProperty = 2} console.log(new Base().read(), new Child().read());",
+        "export {}; class Base {longProperty = 1; describe() {return `base \
+         ${this.longProperty}`}} class Child extends Base {describe() {return `child \
+         ${super.describe()}`}} const items: Base[] = [new Base(), new Child()]; \
+         console.log(items.map((item) => item.describe()));",
+        "export {}; class Base {get longProperty() {return 1}} class Child extends Base {get \
+         longProperty() {return super.longProperty + 10}} console.log(new Child().longProperty, \
+         Object.getPrototypeOf(new Child()) === Child.prototype);",
+        "export {}; class Base {static longProperty = 3; static read() {return \
+         this.longProperty}} class Child extends Base {static longProperty = 4} \
+         console.log(Base.read(), Child.read());",
+        "export {}; class Base {longProperty = 5} const instance = new Base(); \
+         console.log(instance.longProperty, Object.keys(instance), 'longProperty' in instance);",
+    ];
+    for code in cases {
+        let temp = fixture(code);
+        success(run(temp.path(), "out"));
+        compare(temp.path());
+        assert_eq!(report(temp.path())["renamed_properties"], 0, "{code}");
+    }
+}
+
+#[test]
+fn filesystem_failures_fail_without_publishing_or_leaking_staging() {
+    use std::os::unix::fs::PermissionsExt;
+    let no_staging = |dir: &Path| {
+        !fs::read_dir(dir).unwrap().any(|p| {
+            p.unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".typeopt-")
+        })
+    };
+    let code = "export {}; const obj = {longProperty: 1}; console.log(obj.longProperty);";
+
+    let temp = fixture(code);
+    assert!(!run(temp.path(), "missing-parent/out").status.success());
+    assert!(!temp.path().join("missing-parent").exists());
+    assert!(no_staging(temp.path()));
+
+    let temp = fixture(code);
+    fs::write(temp.path().join("out"), "keep").unwrap();
+    assert!(!run(temp.path(), "out").status.success());
+    assert_eq!(fs::read_to_string(temp.path().join("out")).unwrap(), "keep");
+    assert!(no_staging(temp.path()));
+
+    let temp = fixture(code);
+    fs::remove_file(temp.path().join("tsconfig.json")).unwrap();
+    assert!(!run(temp.path(), "out").status.success());
+    assert!(!temp.path().join("out").exists());
+
+    // Permission checks do not apply to root, so the remaining cases need a
+    // regular user. SAFETY: geteuid has no preconditions and only reads
+    // process credentials.
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+
+    let temp = fixture(code);
+    let locked = temp.path().join("locked");
+    fs::create_dir(&locked).unwrap();
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o555)).unwrap();
+    let result = run(temp.path(), "locked/out");
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(!result.status.success());
+    assert_eq!(fs::read_dir(&locked).unwrap().count(), 0);
+    assert!(no_staging(temp.path()));
+
+    let temp = fixture(code);
+    let entry = temp.path().join("main.ts");
+    fs::set_permissions(&entry, fs::Permissions::from_mode(0o000)).unwrap();
+    let result = run(temp.path(), "out");
+    fs::set_permissions(&entry, fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(!result.status.success());
+    assert!(!temp.path().join("out").exists());
+    assert!(no_staging(temp.path()));
+    assert_eq!(fs::read_to_string(&entry).unwrap(), code);
+}
