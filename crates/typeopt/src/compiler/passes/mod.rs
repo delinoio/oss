@@ -15,6 +15,7 @@ mod aggregate_elimination;
 mod aggregates_support;
 mod call_inlining;
 mod constant_property_inlining;
+mod constants_support;
 mod deadcode_support;
 mod discriminant_compaction;
 mod enum_runtime_reduction;
