@@ -74,6 +74,19 @@ func TestContinuationRejectsCheckpointHistoryModeDriftBeforeNativeReads(t *testi
 	}
 }
 
+func TestCompactedContinuationRejectsSourceHistoryModeDriftBeforeNativeReads(t *testing.T) {
+	c, capture, source, _ := continuationFixture(t, "ready")
+	beforeReads := len(requestsOf(t, capture, "thread/read")) + len(requestsOf(t, capture, "thread/turns/list"))
+	proof := CompactedCheckpoint{Source: source}
+	proof.Source.PaginatedHistory = true
+	if _, err := c.VerifyCompactedContinuation(context.Background(), domain.NewID(), proof); err == nil || c.problem == nil || !c.execution.paused {
+		t.Fatal("ordinary compacted continuation accepted mismatched source history mode")
+	}
+	if reads := len(requestsOf(t, capture, "thread/read")) + len(requestsOf(t, capture, "thread/turns/list")); reads != beforeReads {
+		t.Fatal("ordinary compacted continuation mismatch read native state or history")
+	}
+}
+
 func TestRevertedReplacementRejectsCheckpointHistoryModeDriftBeforeNativeReads(t *testing.T) {
 	for _, mode := range []string{"ready", "paginated-ready"} {
 		t.Run(mode, func(t *testing.T) {
