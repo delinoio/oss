@@ -23,7 +23,13 @@ import {
   visiblePageIds,
 } from "./github-scroll";
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from "react";
 
 import {
   EntityKind,
@@ -34,6 +40,7 @@ import {
   type Resource,
   type UnlinkSessionPullRequestRequest,
 } from "@delinoio/delidev-api-client";
+import { PRReadLimiter, SessionPRStatus } from "./session-pr-state";
 import { document, text, type Document } from "./documents";
 import { bounded, date, positive, uuid } from "./github-query-model";
 import { useRetainedMutation, useRetainedMutationIntents } from "./mutation";
@@ -54,6 +61,7 @@ export function readSessionPR(
   const value = document(row);
   if (
     row.kind !== EntityKind.PULL_REQUEST ||
+    row.schemaVersion !== 1 ||
     row.sessionId !== sessionId ||
     !uuid(row.id) ||
     !uuid(row.projectId) ||
@@ -173,7 +181,11 @@ function LinkRow({
   sessionId,
   refreshed,
   diagnosticsTarget,
+  limiter,
+  active,
 }: {
+  limiter: PRReadLimiter;
+  active: boolean;
   row: Resource;
   value: Document;
   sessionId: string;
@@ -190,6 +202,13 @@ function LinkRow({
       })}
     >
       <h4>
+        <SessionPRStatus
+          row={row}
+          association={value}
+          limiter={limiter}
+          active={active}
+          diagnosticsTarget={diagnosticsTarget}
+        />
         {text(value.owner)}/{text(value.name)}#{text(value.number)}
       </h4>
       <p>{text(value.title)}</p>
@@ -277,6 +296,7 @@ function RetainedLinks({
 }) {
   const active = useSessionActive();
   useLocale();
+  const limiter = useMemo(() => new PRReadLimiter(), []);
   const { root, bindRoot } = useGitHubScrollRoot();
   const validateBoundary = useStablePageRevisions(session.id);
   const request = useCallback(
@@ -392,6 +412,8 @@ function RetainedLinks({
               <LinkRow
                 key={row.id}
                 row={row}
+                limiter={limiter}
+                active={active && !blocked && !list.error && !list.loading}
                 value={readSessionPR(row, session.id)!}
                 sessionId={session.id}
                 refreshed={refresh}

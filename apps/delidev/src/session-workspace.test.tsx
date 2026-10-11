@@ -471,6 +471,49 @@ it("keeps original technical evidence in persistent Info and reveals it from the
   expect(f.control).not.toHaveBeenCalled();
 });
 
+it("orders principal Info summaries and keeps technical snapshots out of healthy Info", async () => {
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {
+    initial_execution: {
+      id: newRequestId(),
+      configuration: {
+        agent_id: newRequestId(),
+        native_model: "saved-model",
+        effort: "high",
+        harness: "codex",
+        instructions: "Original applied instructions",
+      },
+    },
+  });
+  render(f.view());
+  await screen.findByRole("heading", { name: "Original session" });
+  const info = screen.getByRole("complementary", {
+    name: "Session information",
+  });
+  expect(
+    [
+      ...info.querySelectorAll(
+        ".session-information-body > .session-information-section > h3",
+      ),
+    ].map((heading) => heading.textContent),
+  ).toEqual(["Pull requests", "Subagents", "Context", "Usage and budget"]);
+  expect(
+    within(info).getByRole("group", { name: "Saved model: saved-model" }),
+  ).toBeTruthy();
+  expect(
+    within(info).getByRole("group", { name: "Saved reasoning effort: high" }),
+  ).toBeTruthy();
+  expect(within(info).queryByText("Saved configuration")).toBeNull();
+  expect(within(info).queryByText("Native observations")).toBeNull();
+  expect(info.querySelector(".session-status-values")).toBeNull();
+  expect(within(info).getByText("Original applied instructions")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Diagnostics" }));
+  await screen.findByText("Saved configuration");
+  expect(within(info).queryByText("Saved configuration")).toBeNull();
+  expect(f.control).not.toHaveBeenCalled();
+  expect(f.recover).not.toHaveBeenCalled();
+});
+
 it("retries the exact queued input after supporting panels were opened and closed", async () => {
   const f = fixture();
   f.enqueue.mockRejectedValueOnce(
@@ -849,15 +892,10 @@ it("keeps a compact header and all independent status/title evidence in the expa
   expect(header.querySelector(".session-title-status")).toBeNull();
   expect(header.textContent).not.toContain("Succeeded");
   expect(header.textContent).not.toContain("Title generation unsupported");
-  const values = info.querySelector(".session-status-values")!;
+  expect(info.querySelector(".session-status-values")).toBeNull();
   expect(
-    [...values.querySelectorAll("dt")].map((node) => node.textContent),
-  ).toEqual(["Workspace", "Result", "Archive"]);
-  expect(
-    [...values.querySelectorAll("dd")]
-      .slice(0, 7)
-      .map((node) => node.textContent),
-  ).toEqual(["Worktree", "succeeded", "active"]);
+    within(info).queryByRole("heading", { name: "Status and recovery" }),
+  ).toBeNull();
   expect(info.textContent).not.toContain(
     "The original Worker did not prove the required title capability.",
   );
@@ -872,7 +910,7 @@ it("keeps a compact header and all independent status/title evidence in the expa
   expect(info.querySelector(".session-information-section details")).toBeNull();
   expect(
     info.querySelectorAll(".session-information-section").length,
-  ).toBeGreaterThanOrEqual(5);
+  ).toBeGreaterThanOrEqual(4);
   expect(
     screen.queryByRole("button", { name: "Show PR associations" }),
   ).toBeNull();
