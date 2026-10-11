@@ -5464,3 +5464,32 @@ and mounted drafts retain their original owners. English/Korean, light/dark,
 compact drawer and effective 200% browser checks are synthetic evidence only.
 
 Queue refresh footer stability: both queue presenters (legacy history-based and negotiated waiting queue) keep a retained complete empty presentation hidden during healthy automatic Refresh/Reload rereads of the same queue identity. Refresh status is announced through a screen-reader-only live region that adds no normal-flow height, so repeated rereads cannot shift the tray, Agent requests, transcript boundary or composer. Initial loading, failures with Retry, incomplete pagination, payload restoration and explicit boundary recovery stay visible. Retained emptiness is cached presentation, not fresh authoritative zero or mutation permission. Populated rows are retained during rereads. No API, protocol, migration or native change.
+
+## Schedule creation calendar preview
+
+Repeat and Review share a compact summary with separate Repeats, Scheduling starts
+and First run preview rows. English/Korean prose comes from server-normalized
+calendar constraints, including AND/OR day semantics. Simple patterns use familiar
+sentences; complex patterns state time, month and day constraints explicitly.
+The browser does not parse arbitrary cron. The exact original expression remains
+in an initially collapsed keyboard-accessible Cron details disclosure; Custom
+cron input is unchanged. Wrapped rows preserve the wizard's scrolling/footer.
+
+An enabled draft starts scheduling after save. Its provisional first occurrence
+shows a weekday, full date/time in the explicit schedule timezone and relative
+wording based on the returned server boundary plus monotonic elapsed time.
+Date display follows the device preference. A paused draft starts after enabling
+and states that no automatic run is scheduled. Saving confirms the actual next
+run; a scheduled time does not guarantee execution. The saved authoritative
+`next_run_at` supersedes the creation estimate through the existing success path.
+
+Connect Query scopes reads to the original transport and exact cron/timezone.
+Valid changed inputs debounce by 300 ms, immediately hiding obsolete dates.
+Repeat/Review refresh each minute, at the estimated occurrence boundary, on
+returning to the surface and on window focus. Disposed tasks, replaced connections
+and changed inputs cannot receive an old date. Polite status updates do not move
+focus or announce a per-second countdown. Invalid, calculating, unavailable and
+unsupported-server states retain the draft and original save validation.
+Unimplemented retains the preset summary and explains that saving determines
+the next run; no Custom interpretation is fabricated. All existing mutation,
+revision, fresh Local proof, pending/uncertain request bytes and retry owners remain.

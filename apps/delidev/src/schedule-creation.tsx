@@ -1,3 +1,7 @@
+import {
+  ScheduleCalendarSummary,
+  useScheduleCalendarPreview,
+} from "./schedule-calendar-preview";
 import "./wizard-presentation.css";
 import {
   DisclosureButton,
@@ -247,6 +251,12 @@ export function ScheduleCreation({
     : copy("schedule-creation.sentence.2a3f85460313", {
         v0: text(definition.timezone),
       });
+  const calendarPreview = useScheduleCalendarPreview(
+    text(definition.cron),
+    text(definition.timezone),
+    active && (step === 2 || step === 3),
+    !timeInvalid,
+  );
   const steps = [
     copy("schedule-creation.task_4bc74b"),
     copy("schedule-creation.execution_a45cd4"),
@@ -648,13 +658,13 @@ export function ScheduleCreation({
                   required
                   change={field("timezone")}
                 />
-                <div className="schedule-creation-preview" role="status">
-                  <p>{summary}</p>
-                  {!timeInvalid ? <code>{text(definition.cron)}</code> : null}
-                  <p>
-                    {copy("schedule-creation.nextRunIsCalculatedByThe_a9cb90")}
-                  </p>
-                </div>
+                <ScheduleCalendarSummary
+                  preview={calendarPreview}
+                  cron={text(definition.cron)}
+                  timezone={text(definition.timezone)}
+                  enabled={definition.enabled === true}
+                  fallback={summary}
+                />
                 <label>
                   {copy(
                     "schedule-creation.whenAPreviousOccurrenceIsStill_851448",
@@ -848,15 +858,14 @@ export function ScheduleCreation({
                       {copy("schedule-creation.edit")}
                     </button>
                   </header>
+                  <ScheduleCalendarSummary
+                    preview={calendarPreview}
+                    cron={text(definition.cron)}
+                    timezone={text(definition.timezone)}
+                    enabled={definition.enabled === true}
+                    fallback={summary}
+                  />
                   <dl>
-                    <dt>{copy("schedule-creation.frequency_16b666")}</dt>
-                    <dd>{summary}</dd>
-                    <dt>{copy("schedule-creation.cronExpression_9e6e7d")}</dt>
-                    <dd>
-                      <code>{text(definition.cron)}</code>
-                    </dd>
-                    <dt>{copy("schedule-creation.ianaTimezone_37cf56")}</dt>
-                    <dd>{text(definition.timezone)}</dd>
                     <dt>
                       {copy(
                         "schedule-creation.whenAPreviousOccurrenceIsStill_851448",
@@ -882,9 +891,6 @@ export function ScheduleCreation({
                       : copy("schedule-creation.pausedOnCreation_484218")}
                   </p>
                   <p>{copy("schedule-creation.reviewConfiguration")}</p>
-                  <p>
-                    {copy("schedule-creation.nextRunIsCalculatedByThe_a9cb90")}
-                  </p>
                 </div>
               </section>
             ) : null}
