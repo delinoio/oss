@@ -46,10 +46,15 @@ function revision(cwd, value) {
 export function allFormatFiles(cwd) {
   return git(cwd, "ls-files", "-z")
     .split("\0")
-    .filter(
-      (name) =>
-        extensions.has(extname(name)) && lstatSync(resolve(cwd, name)).isFile(),
-    );
+    .filter((name) => {
+      if (!extensions.has(extname(name))) return false;
+      try {
+        return lstatSync(resolve(cwd, name)).isFile();
+      } catch (error) {
+        if (error.code === "ENOENT") return false;
+        throw error;
+      }
+    });
 }
 
 export function changedFormatFiles(cwd, base, head, local = false) {

@@ -15,7 +15,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { changedFormatFiles, runFormatter } from "./format-changed.mjs";
+import {
+  allFormatFiles,
+  changedFormatFiles,
+  runFormatter,
+} from "./format-changed.mjs";
 import { Event, planJobs } from "./plan.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -89,6 +93,20 @@ test("deletions, renames, empty ranges, local edits and invalid comparisons", (t
   ]);
   assert.throws(() => changedFormatFiles(f.cwd, "", head), /comparison SHA/);
   assert.throws(() => changedFormatFiles(f.cwd, "a".repeat(40), head));
+});
+
+test("all-file selection skips unstaged deletions and retains existing files", (t) => {
+  const f = fixture(t);
+  f.write("deleted.ts", "const deleted = 1;\n");
+  f.write("retained.ts", "const retained = 1;\n");
+  f.commit();
+  rmSync(join(f.cwd, "deleted.ts"));
+  const paths = allFormatFiles(f.cwd);
+  assert.ok(!paths.includes("deleted.ts"));
+  assert.ok(paths.includes("retained.ts"));
+  assert.equal(runFormatter(f.cwd, paths, "write"), 0);
+  assert.equal(runFormatter(f.cwd, paths), 0);
+  assert.ok(f.git("status", "--porcelain").includes("D deleted.ts"));
 });
 
 test("Rstack owns exclusions and retains Markdown prose and embedded code", (t) => {

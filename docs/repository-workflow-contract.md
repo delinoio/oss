@@ -789,7 +789,7 @@ The `source-format` Ubuntu job checks changed JS/TS (including JSX/TSX and modul
 
 PR, main push and affected manual jobs pass the central planner's exact base/head SHAs to the uncached `@delinoio/ci` task. Selection uses NUL-separated Git paths with rename detection disabled, then checks whole files in the validation checkout, including PR merge contents. Deleted files and symlinks are excluded. No candidate files, or only files excluded by Rstack configuration, is a successful no-op. Invalid or missing comparisons, Git failures, formatter startup failures and parser errors fail validation. The final CI result requires a successful selected job. Logs record comparison and validation revisions, candidate counts and exit status without file contents.
 
-For an explicit local repository-wide pass, use `pnpm format -- --all`; this option is rejected in CI. Imported agent skills retain their upstream formatting.
+For an explicit local repository-wide pass, use `pnpm format -- --all`; this option is rejected in CI. This pass checks tracked files present in the working tree and skips unstaged deletions. Other filesystem errors fail the pass. Imported agent skills retain their upstream formatting.
 
 Root `pnpm format:check` checks and `pnpm format` fixes the same candidates. Local execution defaults to the merge base of `origin/main` and HEAD and includes tracked working changes and untracked non-ignored files. Explicit `--base <sha> --head <sha>` arguments after the Turbo `--` separator select a committed range, as do `TURBO_SCM_BASE` and `TURBO_SCM_HEAD` in CI. CI requires an explicit comparison. Formatter configuration changes do not expand validation to unchanged files; configuration regressions belong to the central contract fixtures.
 
