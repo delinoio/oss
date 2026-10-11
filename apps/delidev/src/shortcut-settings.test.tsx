@@ -124,6 +124,46 @@ const capture = async (name = "New session", key = "j") => {
     expect(screen.queryByRole("button", { name: "Cancel capture" })).toBeNull(),
   );
 };
+it("keeps capture guidance and labeled footer controls outside the localized catalog", async () => {
+  const f = fixture();
+  render(<Owner bridge={f.bridge} />);
+  await screen.findByText("Current saved shortcuts");
+  const catalog = screen.getByRole("region", { name: "Shortcut catalog" });
+  expect(catalog.getAttribute("tabindex")).toBe("0");
+  expect(
+    catalog.querySelectorAll('[data-settings-action-presentation="icon"]'),
+  ).toHaveLength(21);
+  expect(within(catalog).queryByText("Current saved shortcuts")).toBeNull();
+  for (const name of [
+    "Restore all defaults",
+    "Discard changes",
+    "Save changes",
+  ]) {
+    const button = screen.getByRole("button", { name });
+    expect(catalog.contains(button)).toBe(false);
+    expect(button.getAttribute("data-settings-action-presentation")).toBe(
+      "label",
+    );
+  }
+  fireEvent.click(
+    screen.getByRole("button", { name: "Capture shortcut for New session" }),
+  );
+  const cancel = await screen.findByRole("button", { name: "Cancel capture" });
+  expect(catalog.contains(cancel)).toBe(false);
+  await act(async () => {
+    await i18n.changeLanguage(SupportedLanguage.Korean);
+  });
+  expect(screen.getByRole("region", { name: "단축키 목록" })).toBe(catalog);
+  expect(screen.getByRole("button", { name: "단축키 입력 취소" })).toBe(cancel);
+  expect(f.bridge.update).not.toHaveBeenCalled();
+  await act(async () => {
+    await i18n.changeLanguage(SupportedLanguage.English);
+  });
+  fireEvent.click(cancel);
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Cancel capture" })).toBeNull(),
+  );
+});
 it("uses New Chat in the English creation heading while preserving Korean and shortcut dispatch", async () => {
   const f = fixture(),
     run = vi.fn();
@@ -173,7 +213,7 @@ it("keeps draft bindings inactive until Save and updates dispatch and ARIA witho
     screen
       .getByRole("button", { name: "Capture shortcut for New session" })
       .getAttribute("data-settings-action-presentation"),
-  ).toBe("label");
+  ).toBe("icon");
   const action = screen.getByRole("button", { name: "Ordinary action" });
   await capture();
   expect(action.getAttribute("aria-keyshortcuts")).toBe("Control+Shift+N");
@@ -456,8 +496,10 @@ it("shows fixed New Window N and permits saving former T without changing native
   render(<Owner bridge={f.bridge} run={run} />);
   await screen.findByText("Current saved shortcuts");
   expect(
-    screen.getByText("New Window").closest("div")?.querySelector("dd")
-      ?.textContent,
+    screen
+      .getByText("New Window")
+      .closest("div")
+      ?.querySelector("dd .shortcut-binding-text")?.textContent,
   ).toBe("Ctrl + N");
   const opener = screen.getByRole("button", {
     name: "Capture shortcut for New session",
@@ -496,8 +538,10 @@ it("shows fixed New Window N and permits saving former T without changing native
   });
   expect(run).toHaveBeenCalledOnce();
   expect(
-    screen.getByText("New Window").closest("div")?.querySelector("dd")
-      ?.textContent,
+    screen
+      .getByText("New Window")
+      .closest("div")
+      ?.querySelector("dd .shortcut-binding-text")?.textContent,
   ).toBe("Ctrl + N");
 });
 

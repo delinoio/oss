@@ -253,19 +253,30 @@ it.each([Code.PermissionDenied, Code.Unavailable, undefined])(
         />,
       ),
     );
-    const expected =
-      code === Code.PermissionDenied
-        ? /The server denied access to these choices/
-        : code === Code.Unavailable
-          ? /The server connection failed while loading these choices/
-          : /No selectable Agent Worker choices are on this page/;
-    expect(await screen.findByText(expected)).toBeTruthy();
-    if (code)
+    if (code) {
+      const expected =
+        code === Code.PermissionDenied
+          ? /The server denied access to these choices/
+          : /The server connection failed while loading these choices/;
+      expect(await screen.findByText(expected)).toBeTruthy();
       expect(
         screen.queryByText(
           "No selectable Agent Worker choices are on this page.",
         ),
       ).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "Create agent worker" }),
+      ).toBeNull();
+    } else {
+      expect(
+        await screen.findByRole("button", { name: "Create agent worker" }),
+      ).toBeTruthy();
+      expect(
+        screen.queryByText(
+          "No selectable Agent Worker choices are on this page.",
+        ),
+      ).toBeNull();
+    }
     expect(
       value.listResources.mock.calls.some(
         ([request]) => request.filter?.kind === EntityKind.PROJECT,

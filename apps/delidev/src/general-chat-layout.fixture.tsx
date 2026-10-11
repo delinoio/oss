@@ -3,7 +3,7 @@
 import { create } from "@bufbuild/protobuf";
 import { createRoot } from "react-dom/client";
 import { useState, useRef } from "react";
-import { createRouterTransport } from "@connectrpc/connect";
+import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -66,9 +66,30 @@ const client = new QueryClient({
   defaultOptions: { queries: { retry: false } },
 });
 const originalSkills = skills;
+let pendingSkills: Promise<void> | undefined,
+  finishSkills: (() => void) | undefined,
+  failedSkills = false;
 let report: (() => void) | undefined;
 Object.assign(window, {
   __skillInventory: {
+    loading: () => {
+      pendingSkills = new Promise<void>((resolve) => {
+        finishSkills = resolve;
+      });
+      void client.invalidateQueries();
+    },
+    finish: async () => {
+      finishSkills?.();
+      pendingSkills = undefined;
+      await client.invalidateQueries();
+    },
+    fail: async () => {
+      failedSkills = true;
+      await client.invalidateQueries();
+    },
+    allowRetry: () => {
+      failedSkills = false;
+    },
     remove: async () => {
       skills = skills.filter((entry) => entry.name !== "add-issue");
       await client.invalidateQueries();
@@ -88,7 +109,17 @@ const transport = createRouterTransport((router) => {
       ],
     }),
   });
-  router.service(SkillService, { listSkills: () => ({ skills }) });
+  router.service(SkillService, {
+    listSkills: async () => {
+      await pendingSkills;
+      if (failedSkills)
+        throw new ConnectError(
+          "Synthetic skill read failure",
+          Code.Unavailable,
+        );
+      return { skills };
+    },
+  });
   router.service(ResourceService, {
     getResource: (request) => ({
       resource: rows.find(

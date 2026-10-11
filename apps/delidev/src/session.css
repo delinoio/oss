@@ -710,15 +710,24 @@
   overflow: auto;
 }
 
-/* Shared creation, follow-up and queue-edit completion stays in document flow. */
+/* Native top-layer presentation reserves no composer height or flex spacing. */
 .skill-completion {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  box-sizing: border-box;
+  width: 240px;
   min-width: 0;
+  min-height: 0;
   max-height: 220px;
   overflow: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
   padding: 4px;
+  color: var(--text);
+  box-shadow: 0 4px 16px var(--shadow);
 }
 .skill-completion ul {
   list-style: none;
@@ -1213,6 +1222,12 @@
 }
 .skill-token-unavailable {
   color: var(--muted);
+}
+.skill-token-selected {
+  color: var(--link);
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.12em;
 }
 
 .new-session-composer .skill-textarea {
