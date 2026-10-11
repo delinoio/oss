@@ -207,7 +207,7 @@
          this.getBridge = getBridge;
          this.getCellSize = getCellSize;
          this.prepareComposition = prepareComposition;
-@@ -213,6 +214,24 @@
+@@ -213,6 +214,25 @@
          this.element.addEventListener("mouseleave", this._onMouseLeave);
          this.element.addEventListener("wheel", this._onWheel, { passive: false });
      }
@@ -222,6 +222,7 @@
 +            this.mouseButtons = 0;
 +            this.lastMouseMotion = null;
 +            this.suppressNextTouchDeleteInput = false;
++            this.hideComposition();
 +            this.textarea.value = "";
 +            this.pressedModifiers.clear();
 +            this.deliveredKeys.clear();
@@ -232,7 +233,7 @@
      focus() {
          if (this.touchPrimary)
              this.prepareComposition();
-@@ -245,6 +264,11 @@
+@@ -245,6 +265,11 @@
          this.textarea.remove();
      }
      handleKeyDown(e) {
@@ -244,7 +245,7 @@
          const keyId = e.code || e.key;
          if (e.key !== "Backspace")
              this.suppressNextTouchDeleteInput = false;
-@@ -392,6 +416,7 @@
+@@ -392,6 +417,7 @@
          }
      }
      handleKeyUp(e) {
@@ -252,7 +253,7 @@
          const keyId = e.code || e.key;
          this.pressedModifiers.delete(e.code);
          const delivered = this.deliveredKeys.delete(keyId);
-@@ -414,6 +439,7 @@
+@@ -414,6 +440,7 @@
          this.onData(seq, true);
      }
      handlePaste(e) {
@@ -260,7 +261,7 @@
          this.tabExitArmed = false;
          this.recentCompositionCommit = null;
          this.suppressNextTouchDeleteInput = false;
-@@ -426,6 +452,9 @@
+@@ -426,6 +453,9 @@
          this.sendPaste(text);
      }
      sendPaste(text) {
@@ -270,7 +271,7 @@
          this.selectionActions?.clearSelection();
          const bridge = this.getBridge();
          if (bridge && bridge.bracketedPaste()) {
-@@ -439,6 +468,7 @@
+@@ -439,6 +469,7 @@
          }
      }
      handleCompositionStart() {
@@ -278,7 +279,7 @@
          this.tabExitArmed = false;
          this.prepareComposition();
          this.composing = true;
-@@ -455,6 +485,7 @@
+@@ -455,6 +486,7 @@
          s.caretColor = "var(--term-fg, currentColor)";
      }
      handleCompositionEnd(e) {
@@ -286,7 +287,7 @@
          this.composing = false;
          this.hideComposition();
          this.resetInputValue();
-@@ -533,6 +564,7 @@
+@@ -533,6 +565,7 @@
              this.onData(seq);
      }
      handleInput(event) {
@@ -294,7 +295,7 @@
          this.tabExitArmed = false;
          if (this.composing) {
              this.sizeComposition();
-@@ -572,6 +604,7 @@
+@@ -572,6 +605,7 @@
          }
      }
      handleMouse(event, kind) {
