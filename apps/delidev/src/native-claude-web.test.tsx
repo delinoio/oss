@@ -63,3 +63,45 @@ test.each(timestampVectors)("preserves timestamp readability parity: $name", ({ 
     expect(screen.getByText(/unavailable or inconsistent/)).toBeTruthy();
   }
 });
+
+
+test.each(["<", ">", "&", "\u2028", "\u2029"])("rejects 50,000 Go-escaped web document characters: %s", (character) => {
+  const data = fixture("web_fetch");
+  data.blocks[1]!.block.web.result!.fetch!.document.text = character.repeat(50000);
+  expect(validNativeClaudeMessage(data, "complete")).toBe(false);
+  render(<NativeClaudeMessage content={data} state="complete" />);
+  expect(screen.getByLabelText("Claude message unavailable")).toBeTruthy();
+  expect(screen.queryByText("Original document")).toBeNull();
+});
+
+// The empty metadata is ASCII-only. Each added special character occupies six
+// retained JSON bytes; the separate plain block contributes its raw UTF-8 bytes.
+test.each([262143, 262144, 262145])("bounds mixed web metadata and text at %i bytes", (targetBytes) => {
+  const data = fixture("web_fetch");
+  const document = data.blocks[1]!.block.web.result!.fetch!.document;
+  document.title = "Original document";
+  document.text = "";
+  const metadataBytes = data.blocks.reduce((total, entry) => total + new TextEncoder().encode(JSON.stringify(entry.block.web)).length, 0);
+  document.text = "<>&\u2028\u2029".repeat(8000);
+  const text = "x".repeat(targetBytes - metadataBytes - 8000 * 5 * 6);
+  const content = { ...data, blocks: [...data.blocks, { index: 2, block: { kind: "text", text }, state: "stopped" }] };
+  expect(validNativeClaudeMessage(content, "complete")).toBe(targetBytes <= 262144);
+  const { container } = render(<NativeClaudeMessage content={content} state="complete" />);
+  if (targetBytes <= 262144) {
+    const rows = container.querySelector(".native-claude-message-content > ol")!.children;
+    expect(rows).toHaveLength(3);
+    expect(rows[0]!.textContent).toContain(data.blocks[0]!.block.web.call!.initial_input);
+    expect(rows[1]!.textContent).toContain(document.text);
+    expect(rows[2]!.textContent).toContain(text);
+  } else {
+    expect(screen.getByLabelText("Claude message unavailable")).toBeTruthy();
+    expect(screen.queryByText("Original document")).toBeNull();
+  }
+});
+
+test("aggregates individually bounded web calls and results", () => {
+  const data = fixture("web_fetch");
+  data.blocks[0]!.block.web.call!.initial_input = JSON.stringify({ url: "<".repeat(25000) });
+  data.blocks[1]!.block.web.result!.fetch!.document.text = ">".repeat(25000);
+  expect(validNativeClaudeMessage(data, "complete")).toBe(false);
+});
