@@ -50,12 +50,60 @@ export function useMachineSettingsController(
   const [acknowledged, setAcknowledged] = useState<Resource>();
   const exact = (row?: Resource): row is Resource =>
     validRunnerObservation(row) && row.id === initial.id;
-  const current = [initial, result.data?.resource, acknowledged]
+  const [observation, setObservation] = useState<{
+    id: string;
+    current?: Resource;
+    read?: typeof result.data;
+    readUpdatedAt: number;
+    acknowledged?: Resource;
+  }>({ id: initial.id, readUpdatedAt: 0 });
+  const retained = observation.id === initial.id ? observation : undefined;
+  let current = [retained?.current, initial, acknowledged]
     .filter(exact)
     .reduce<Resource | undefined>(
       (a, b) => (!a || b.revision > a.revision ? b : a),
       undefined,
     );
+  const newAcknowledgement = acknowledged !== retained?.acknowledged;
+  if (
+    newAcknowledgement &&
+    exact(acknowledged) &&
+    (!current || acknowledged.revision >= current.revision)
+  )
+    current = acknowledged;
+  const freshRead =
+    result.isSuccess &&
+    !result.error &&
+    result.dataUpdatedAt > 0 &&
+    (result.dataUpdatedAt > (retained?.readUpdatedAt ?? 0) ||
+      (result.dataUpdatedAt === retained?.readUpdatedAt &&
+        result.data !== retained?.read));
+  // Heartbeats advance without a business revision. Consume each successful
+  // read once, and fence cached reads when a mutation is acknowledged so they
+  // cannot replace its configuration on the next render or after a read error.
+  if (
+    freshRead &&
+    !newAcknowledgement &&
+    exact(result.data?.resource) &&
+    (!current || result.data.resource.revision >= current.revision)
+  )
+    current = result.data.resource;
+  if (
+    !retained ||
+    current !== retained.current ||
+    freshRead ||
+    newAcknowledgement
+  )
+    setObservation({
+      id: initial.id,
+      current,
+      read: freshRead || newAcknowledgement ? result.data : retained?.read,
+      readUpdatedAt:
+        freshRead || newAcknowledgement
+          ? result.dataUpdatedAt
+          : (retained?.readUpdatedAt ?? 0),
+      acknowledged,
+    });
   const data = useMemo(() => document(current), [current]);
   const [edit, setEdit] = useState<{
     revision: bigint;

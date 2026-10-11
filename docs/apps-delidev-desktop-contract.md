@@ -347,6 +347,25 @@ Notification preferences and general configuration editors publish fixed safe su
 
 These toasts neither request OS permission nor claim/report native delivery, modify Inbox read state or enable session actions. OS notifications, durable Inbox reservations, synchronized preferences and native activation retain their existing owners and contracts. No Connect API, migration, storage, native permission or package dependency is added. Component and browser layout checks remain separate from packaged CEF/platform acceptance; record validation in pull requests, issues and CI artifacts rather than repository evidence files.
 
+## Runner Device heartbeat observations
+
+Runner Device settings retains the highest accepted business revision for its
+original Machine. A fresh successful same-ID read at that revision may replace
+the displayed observation because server-projected heartbeat timestamps advance
+without a configuration revision. Track successful response identity and query
+freshness separately from the business revision; do not replay cached data over
+a newer acknowledged mutation. A compatible later read can update the heartbeat,
+while lower revisions, failed reads and malformed or foreign resources cannot
+replace the accepted configuration. Read failures retain the existing error and
+action restrictions.
+
+Equal-revision heartbeat refreshes preserve executable-path drafts and their
+original request revisions. Only a changed business revision makes those drafts
+stale. Keep the original inspection job, uncertain request and exact retry owner;
+observation refresh grants no inspection, execution or cleanup authority. Dispose
+the accepted observation with its original Settings task/connection lifetime,
+and follow the [heartbeat projection contract](protos-delidev-v1-contract.md#machine-heartbeat-read-projection).
+
 ## Model request Diagnostics panel
 
 The feature adds an explicit Diagnostics panel beside the retained session conversation. It uses generated owner/client Connect Query after `REQUEST_DIAGNOSTICS_V1` capability validation, with an optional exact execution UUID filter, explicit refresh and 50-record pages. Validate the entire page's original session/execution, closed source/operation/state/error/settings, identity spelling, timestamps and precise counters before rendering. Keep native input selection/effective settings separate from proxy request/provider observations, and unavailable fields separate from zero/false. A send claim cannot prove provider acceptance; native terminal metadata cannot confirm native cleanup. Historical absence cannot be reconstructed. Escape/Close returns focus to Diagnostics and preserves the composer; inactive diagnostic queries are canceled/disposed. No mutation intent, automatic retry, payload display, usage reconstruction or public opener is introduced. See the [diagnostics contract](cmds-delidev-diagnostics-contract.md) and validation records in the integration PR.

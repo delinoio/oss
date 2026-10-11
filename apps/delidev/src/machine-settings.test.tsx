@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
+import type { PropsWithChildren } from "react";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import type { ReactNode } from "react";
 import {
   EntityKind,
   ResourceSchema,
@@ -14,49 +14,46 @@ import {
   newRequestId,
   type Resource,
 } from "@delinoio/delidev-api-client";
-import { document, encode } from "./documents";
+import { encode } from "./documents";
 import { useMachineSettingsController } from "./machine-settings";
 import { MutationIntents } from "./mutation";
 
-function fixture() {
-  const machine = create(ResourceSchema, {
-    id: newRequestId(),
+const earlier = "2026-10-09T00:00:00Z";
+const later = "2026-10-09T00:00:05Z";
+
+function machine(
+  id = newRequestId(),
+  revision = 7n,
+  lastSeen = earlier,
+  path = "/original/codex",
+) {
+  return create(ResourceSchema, {
+    id,
     kind: EntityKind.MACHINE,
-    revision: 7n,
     schemaVersion: 1,
+    revision,
     documentJson: encode({
-      name: "Original Runner",
-      disabled: false,
-      installations: [],
+      name: "Runner",
+      last_seen: lastSeen,
+      installations: [{ harness: "codex", explicit_path: path }],
     }),
   });
-  const initial = create(ResourceSchema, {
-    id: newRequestId(),
-    kind: EntityKind.JOB,
-    revision: 2n,
-    schemaVersion: 1,
-    documentJson: encode({
-      type: "harness-discovery",
-      machine_id: machine.id,
-      state: "queued",
-    }),
-  });
-  let observed: Resource | undefined = initial;
-  let readError: Error | undefined;
-  const read = vi.fn(async (request: { kind: EntityKind; id: string }) => {
-    if (request.kind === EntityKind.MACHINE) return { resource: machine };
-    if (readError) throw readError;
-    return { resource: observed };
-  });
-  const discover = vi.fn(async () => ({ machine, job: initial }));
+}
+
+function fixture(initial = machine()) {
+  const read = vi.fn(async () => ({ resource: initial }));
+  const discover = vi.fn(async (_request: unknown) => ({ machine: initial }));
   const transport = createRouterTransport((router) => {
     router.service(ResourceService, { getResource: read });
     router.service(WorkerService, { discoverHarnesses: discover });
   });
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    defaultOptions: {
+      queries: { retry: false, staleTime: Infinity },
+      mutations: { retry: false },
+    },
   });
-  const wrapper = ({ children }: { children: ReactNode }) => (
+  const wrapper = ({ children }: PropsWithChildren) => (
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
         <MutationIntents>{children}</MutationIntents>
@@ -64,237 +61,173 @@ function fixture() {
     </TransportProvider>
   );
   const hook = renderHook(
-    ({ active }) => useMachineSettingsController(machine, active),
-    { wrapper, initialProps: { active: true } },
+    ({ resource, active }) => useMachineSettingsController(resource, active),
+    { initialProps: { resource: initial, active: true }, wrapper },
   );
-  const send = () =>
-    hook.result.current.discovery.send({
-      mutation: {
-        id: machine.id,
-        expectedRevision: machine.revision,
-        requestId: newRequestId(),
-      },
-      verifyProtocol: hook.result.current.verify,
-    });
-  const refresh = async (resource?: Resource, error?: Error) => {
-    observed = resource;
-    readError = error;
+  const refresh = async (resource: Resource) => {
+    read.mockResolvedValueOnce({ resource });
     await act(async () => {
-      await client.invalidateQueries();
+      await hook.result.current.refetch();
     });
   };
-  const terminal = (state: string, revision = initial.revision + 1n) =>
-    create(ResourceSchema, {
-      ...initial,
-      revision,
-      documentJson: encode({
-        type: "harness-discovery",
-        machine_id: machine.id,
-        state,
-        ...(state === "failed"
-          ? {
-              problem: {
-                code: "unsupported",
-                message: "Original inspection failed",
-              },
-            }
-          : {}),
-      }),
-    });
-  return {
-    machine,
-    initial,
-    hook,
-    read,
-    discover,
-    client,
-    send,
-    refresh,
-    terminal,
+  const ready = async () => {
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(hook.result.current.loading).toBe(false));
   };
+  return { ...hook, initial, read, discover, client, refresh, ready };
 }
 
-it.each(["succeeded", "failed", "canceled"])(
-  "settles %s original inspection and submitted edits while retaining its result",
-  async (state) => {
-    const f = fixture();
-    act(() => {
-      f.hook.result.current.setEdit({
-        revision: f.machine.revision,
-        paths: { codex: "/submitted/codex" },
-      });
-      f.hook.result.current.setVerify(true);
+it("accepts a fresh equal-revision heartbeat and keeps the business request revision", async () => {
+  const value = fixture();
+  await value.ready();
+  await value.refresh(machine(value.initial.id, 7n, later));
+  expect(value.result.current.data.last_seen).toBe(later);
+  expect(value.result.current.current?.revision).toBe(7n);
+  await act(async () => {
+    await value.result.current.discovery.send({
+      mutation: {
+        id: value.initial.id,
+        expectedRevision: value.result.current.current!.revision,
+        requestId: newRequestId(),
+      },
+    });
+  });
+  expect(value.discover.mock.calls[0][0]).toMatchObject({
+    mutation: { id: value.initial.id, expectedRevision: 7n },
+  });
+});
+
+it("retains higher configuration and its observation after lower reads and read failures", async () => {
+  const value = fixture();
+  await value.ready();
+  await value.refresh(machine(value.initial.id, 8n, later, "/new/codex"));
+  await value.refresh(machine(value.initial.id, 7n, earlier));
+  expect(value.result.current.current?.revision).toBe(8n);
+  expect(value.result.current.data.last_seen).toBe(later);
+  expect(value.result.current.data.installations).toMatchObject([
+    { explicit_path: "/new/codex" },
+  ]);
+  value.read.mockRejectedValueOnce(
+    new ConnectError("Offline", Code.Unavailable),
+  );
+  await act(async () => {
+    await value.result.current.refetch();
+  });
+  expect(value.result.current.current?.revision).toBe(8n);
+  expect(value.result.current.data.last_seen).toBe(later);
+  expect(value.result.current.readError).toBeTruthy();
+});
+
+it.each([7n, 8n])(
+  "keeps an acknowledgement over cached revision %s until a fresh compatible read",
+  async (cachedRevision) => {
+    const value = fixture();
+    await value.ready();
+    await value.refresh(
+      machine(value.initial.id, cachedRevision, earlier, "/cached/codex"),
+    );
+    value.discover.mockResolvedValueOnce({
+      machine: machine(value.initial.id, 8n, earlier, "/acknowledged/codex"),
     });
     await act(async () => {
-      await f.send();
+      await value.result.current.discovery.send({
+        mutation: {
+          id: value.initial.id,
+          expectedRevision: cachedRevision,
+          requestId: newRequestId(),
+        },
+      });
     });
-    expect(f.hook.result.current.locked).toBe(true);
-    await f.refresh(f.terminal(state));
-    await waitFor(() => expect(f.hook.result.current.locked).toBe(false));
-    const acceptedJob = f.hook.result.current.job;
-    expect(acceptedJob).toMatchObject({
-      id: f.initial.id,
-      kind: EntityKind.JOB,
-      revision: f.initial.revision,
-    });
-    expect(document(acceptedJob as Resource).state).toBe("queued");
-    expect(f.hook.result.current.jobObservation.state).toBe(state);
-    if (state === "failed")
-      expect(f.hook.result.current.jobObservation.problem.message).toBe(
-        "Original inspection failed",
-      );
-    expect(f.hook.result.current.edit).toBeUndefined();
-    f.hook.rerender({ active: false });
-    expect(f.hook.result.current.pending).toBe(false);
-    expect(f.hook.result.current.job).toMatchObject({
-      id: f.initial.id,
-      kind: EntityKind.JOB,
-      revision: f.initial.revision,
-    });
-    expect(document(f.hook.result.current.job as Resource).state).toBe(
-      "queued",
+    value.rerender({ resource: value.initial, active: false });
+    expect(value.result.current.data.installations).toMatchObject([
+      { explicit_path: "/acknowledged/codex" },
+    ]);
+    await value.refresh(machine(value.initial.id, 7n, later));
+    expect(value.result.current.current?.revision).toBe(8n);
+    expect(value.result.current.data.installations).toMatchObject([
+      { explicit_path: "/acknowledged/codex" },
+    ]);
+    await value.refresh(
+      machine(value.initial.id, 8n, later, "/acknowledged/codex"),
     );
-    expect(f.hook.result.current.jobObservation.state).toBe(state);
-    expect(f.discover).toHaveBeenCalledOnce();
-    expect(
-      f.read.mock.calls
-        .filter(([request]) => request.kind === EntityKind.JOB)
-        .every(([request]) => request.id === f.initial.id),
-    ).toBe(true);
-    f.hook.unmount();
-    f.client.clear();
+    expect(value.result.current.data.last_seen).toBe(later);
+    expect(value.result.current.current?.revision).toBe(8n);
   },
 );
 
-it("clears Verify dirtiness when restored to the initial value before submitting", () => {
-  const f = fixture();
-  act(() => {
-    f.hook.result.current.setVerify(true);
-    f.hook.result.current.setVerify(false);
-  });
-  expect(f.hook.result.current.locked).toBe(false);
-  f.hook.unmount();
-  f.client.clear();
+it("preserves an editable path draft and its request revision during heartbeat refresh", async () => {
+  const value = fixture();
+  await value.ready();
+  const paths = { codex: "/draft/codex" };
+  act(() => value.result.current.setEdit({ revision: 7n, paths }));
+  await value.refresh(machine(value.initial.id, 7n, later));
+  expect(value.result.current.edit).toEqual({ revision: 7n, paths });
+  expect(value.result.current.stale).toBe(false);
+  expect(value.result.current.locked).toBe(true);
+  expect(value.discover).not.toHaveBeenCalled();
+  await value.refresh(machine(value.initial.id, 8n, later));
+  expect(value.result.current.edit?.paths).toEqual(paths);
+  expect(value.result.current.stale).toBe(true);
 });
 
-it("clears settled Verify dirtiness when restored to the accepted value", async () => {
-  const f = fixture();
-  act(() => f.hook.result.current.setVerify(true));
-  await act(async () => {
-    await f.send();
-  });
-  act(() => f.hook.result.current.setVerify(false));
-  expect(f.hook.result.current.locked).toBe(true);
-  await f.refresh(f.terminal("succeeded"));
-  await waitFor(() => expect(f.hook.result.current.pending).toBe(false));
-  expect(f.hook.result.current.locked).toBe(true);
-  act(() => f.hook.result.current.setVerify(true));
-  expect(f.hook.result.current.locked).toBe(false);
-  f.hook.unmount();
-  f.client.clear();
-});
+it.each(["foreign", "malformed", "unsupported"] as const)(
+  "retains accepted observations and the read-error lock for a %s response",
+  async (kind) => {
+    const value = fixture();
+    await value.ready();
+    await value.refresh(machine(value.initial.id, 7n, later));
+    const invalid = machine(value.initial.id, 8n);
+    if (kind === "foreign") invalid.id = newRequestId();
+    if (kind === "malformed")
+      invalid.documentJson = encode({ installations: false });
+    if (kind === "unsupported") invalid.schemaVersion = 99;
+    await value.refresh(invalid);
+    expect(value.result.current.current?.revision).toBe(7n);
+    expect(value.result.current.data.last_seen).toBe(later);
+    expect(value.result.current.readError).toMatchObject({ code: Code.DataLoss });
+    expect(value.discover).not.toHaveBeenCalled();
+  },
+);
 
-it("settles only submitted edits and keeps later unsent path and Verify changes locked", async () => {
-  const f = fixture();
-  act(() => {
-    f.hook.result.current.setEdit({
-      revision: f.machine.revision,
-      paths: { codex: "/submitted/codex" },
-    });
-    f.hook.result.current.setVerify(true);
-  });
-  await act(async () => {
-    await f.send();
-  });
-  const later = {
-    revision: f.machine.revision,
-    paths: { codex: "/later/codex" },
+it("keeps a pending discovery and its exact retry while fresh heartbeats arrive", async () => {
+  const value = fixture();
+  await value.ready();
+  value.discover.mockRejectedValueOnce(
+    new ConnectError("Lost acknowledgement", Code.Unavailable),
+  );
+  const request = {
+    mutation: {
+      id: value.initial.id,
+      expectedRevision: 7n,
+      requestId: newRequestId(),
+    },
+    selectionsJson: encode({
+      executables: [{ harness: "codex", path: "/draft/codex" }],
+    }),
   };
-  act(() => {
-    f.hook.result.current.setEdit(later);
-    f.hook.result.current.setVerify(false);
+  await act(async () => {
+    await value.result.current.discovery.send(request);
   });
-  await f.refresh(f.terminal("succeeded"));
-  await waitFor(() => expect(f.hook.result.current.pending).toBe(false));
-  expect(f.hook.result.current.edit).toBe(later);
-  expect(f.hook.result.current.locked).toBe(true);
-  act(() => f.hook.result.current.setEdit(undefined));
-  expect(f.hook.result.current.locked).toBe(true);
-  expect(f.discover).toHaveBeenCalledOnce();
-  f.hook.unmount();
-  f.client.clear();
+  expect(value.result.current.discovery.uncertain).toBe(true);
+  await value.refresh(machine(value.initial.id, 7n, later));
+  expect(value.result.current.pending).toBe(true);
+  expect(value.result.current.discovery.uncertain).toBe(true);
+  await act(async () => {
+    await value.result.current.discovery.retry();
+  });
+  expect(value.discover.mock.calls[1][0]).toEqual(value.discover.mock.calls[0][0]);
 });
 
-it.each([
-  "queued",
-  "claimed",
-  "uncertain",
-  "missing",
-  "foreign",
-  "kind",
-  "schema",
-  "regressive",
-  "malformed",
-  "unknown-state",
-  "machine",
-  "type",
-  "read-error",
-  "success-problem",
-])("retains the original gate for %s observation", async (mode) => {
-  const f = fixture();
-  await act(async () => {
-    await f.send();
-  });
-  let row: Resource | undefined = f.terminal("succeeded");
-  let error: Error | undefined;
-  if (["queued", "claimed", "uncertain"].includes(mode)) row = f.terminal(mode);
-  else if (mode === "missing") row = undefined;
-  else if (mode === "foreign") row.id = newRequestId();
-  else if (mode === "kind") row.kind = EntityKind.MACHINE;
-  else if (mode === "schema") row.schemaVersion = 99;
-  else if (mode === "regressive") {
-    await f.refresh(f.terminal("claimed", 8n));
-    row.revision = 7n;
-  } else if (mode === "malformed")
-    row.documentJson = new TextEncoder().encode("{unreadable");
-  else if (mode === "unknown-state")
-    row.documentJson = encode({ state: "unknown", type: "harness-discovery" });
-  else if (mode === "machine")
-    row.documentJson = encode({
-      state: "succeeded",
-      type: "harness-discovery",
-      machine_id: newRequestId(),
-    });
-  else if (mode === "type")
-    row.documentJson = encode({ state: "succeeded", type: "save-repository" });
-  else if (mode === "read-error")
-    error = new ConnectError("Original status failed", Code.Unavailable);
-  else if (mode === "success-problem")
-    row.documentJson = encode({
-      state: "succeeded",
-      type: "harness-discovery",
-      problem: { code: "unavailable" },
-    });
-  await f.refresh(row, error);
-  expect(f.hook.result.current.pending).toBe(true);
-  expect(f.hook.result.current.locked).toBe(true);
-  expect(f.hook.result.current.jobObservation.terminal).toBe(false);
-  expect(f.discover).toHaveBeenCalledOnce();
-  f.hook.unmount();
-  f.client.clear();
-});
-
-it("does not settle a superseding job from the preceding job's terminal response", async () => {
-  const f = fixture();
-  await act(async () => {
-    await f.send();
-  });
-  const next = create(ResourceSchema, { ...f.initial, id: newRequestId() });
-  act(() => f.hook.result.current.setJob(next));
-  await f.refresh(f.terminal("succeeded"));
-  expect(f.hook.result.current.job).toEqual(next);
-  expect(f.hook.result.current.pending).toBe(true);
-  expect(f.discover).toHaveBeenCalledOnce();
-  f.hook.unmount();
-  f.client.clear();
+it("starts a new same-ID opening from its own connection observation", async () => {
+  const original = fixture();
+  await original.ready();
+  await original.refresh(machine(original.initial.id, 9n, later));
+  original.unmount();
+  original.client.clear();
+  const reopened = fixture(machine(original.initial.id, 7n, earlier));
+  await reopened.ready();
+  expect(reopened.result.current.current?.revision).toBe(7n);
+  expect(reopened.result.current.data.last_seen).toBe(earlier);
+  expect(reopened.result.current.edit).toBeUndefined();
+  expect(reopened.result.current.pending).toBe(false);
 });
