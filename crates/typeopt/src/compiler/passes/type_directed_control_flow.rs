@@ -477,7 +477,7 @@ impl Planner<'_> {
         };
         let mut edits = Vec::new();
         let mut run: Option<(Node, Node)> = None;
-        let mut flush = |run: &mut Option<(Node, Node)>, edits: &mut Vec<FileEdit>| {
+        let flush = |run: &mut Option<(Node, Node)>, edits: &mut Vec<FileEdit>| {
             if let Some((first, last)) = run.take() {
                 let (start, _) = span(first);
                 let end = last.end() as usize;

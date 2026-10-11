@@ -118,14 +118,6 @@ impl Lit {
         }
     }
 
-    /// `SameValueZero`, used by `Array.prototype.includes`.
-    pub fn same_value_zero(&self, other: &Lit) -> bool {
-        match (self, other) {
-            (Lit::Num(a), Lit::Num(b)) => a == b || (a.is_nan() && b.is_nan()),
-            _ => self.same(other),
-        }
-    }
-
     pub fn truthy(&self) -> bool {
         match self {
             Lit::Undefined | Lit::Null => false,
@@ -1382,9 +1374,8 @@ fn scan_patches(ctx: &mut Ctx) -> Patches {
                     let Some(name) = lib_global_name(ctx, node) else {
                         continue;
                     };
-                    if let Some(member) = escape_member(node) {
+                    if escapes_as_value(node) {
                         escaping.insert(name.to_owned());
-                        let _ = member;
                     }
                     // Destructuring or aliasing reflection helpers.
                     if matches!(name, "Object" | "Reflect") {
@@ -1649,13 +1640,13 @@ fn lib_global_name(ctx: &mut Ctx, node: Node) -> Option<&'static str> {
 
 /// For a read of a built-in global, whether it escapes as a value (anything
 /// other than a call, construction, member read, comparison or `typeof`).
-fn escape_member(node: Node) -> Option<()> {
+fn escapes_as_value(node: Node) -> bool {
     if is_part_of_type_node(node) {
-        return None;
+        return false;
     }
     let outer = walk_up_outer(node);
     let parent = outer.parent();
-    let escapes = match parent.kind() {
+    match parent.kind() {
         SyntaxKind::CallExpression | SyntaxKind::NewExpression => parent.expression() != outer,
         SyntaxKind::PropertyAccessExpression | SyntaxKind::ElementAccessExpression => {
             parent.expression() != outer
@@ -1671,8 +1662,7 @@ fn escape_member(node: Node) -> Option<()> {
         ),
         SyntaxKind::ExpressionWithTypeArguments | SyntaxKind::HeritageClause => false,
         _ => !is_declaration_name(node),
-    };
-    escapes.then_some(())
+    }
 }
 
 /// Checker-type kind classification for type neutrality decisions.
@@ -2452,7 +2442,6 @@ mod tests {
         let negative_zero = Fact::lit(Lit::Num(-0.0));
         assert_eq!(equality(&nan, &nan, true), Some(false));
         assert_eq!(equality(&zero, &negative_zero, true), Some(true));
-        assert!(Lit::Num(f64::NAN).same_value_zero(&Lit::Num(f64::NAN)));
         let object = Fact::of(Kinds::OBJECT);
         let null = Fact::lit(Lit::Null);
         assert_eq!(equality(&object, &null, false), Some(false));

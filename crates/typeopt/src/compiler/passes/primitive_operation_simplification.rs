@@ -496,10 +496,7 @@ mod tests {
             fold(K::LessThanToken, n(f64::NAN), n(1.0)),
             Some(Lit::Bool(false))
         ));
-        assert!(matches!(
-            fold(K::PlusToken, Lit::Str("a".into()), n(1.5)),
-            None
-        ));
+        assert!(fold(K::PlusToken, Lit::Str("a".into()), n(1.5)).is_none());
         assert!(
             matches!(fold(K::PlusToken, Lit::Str("a".into()), n(-0.0)), Some(Lit::Str(s)) if s == "a0")
         );
