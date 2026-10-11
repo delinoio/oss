@@ -53,10 +53,12 @@ const rows =
             name,
             integration_id: "0195c9c0-7b13-7000-8000-000000000010",
             github_owner:
-              args.get("long") === "true"
-                ? "long-owner-".repeat(8)
-                : "delinoio",
-            github_name: name,
+              args.get("missing") === "true"
+                ? ""
+                : args.get("long") === "true"
+                  ? "long-owner-".repeat(8)
+                  : "delinoio",
+            github_name: args.get("missing") === "true" ? "" : name,
           }),
         }),
       );

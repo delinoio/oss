@@ -89,7 +89,6 @@ try {
   const page = await browser.newPage();
   page.on("pageerror", (error) => failures.push(error.message));
   const origin = `http://127.0.0.1:${server.address().port}`;
-  const id = "0195c9c0-7b13-7000-8000-000000000001";
   const enter = async (language) => {
     await page
       .getByRole("button", {
@@ -114,7 +113,7 @@ try {
         overflow: node.scrollWidth > node.clientWidth,
         outside: [
           ...node.querySelectorAll(
-            "button, input:not([type=radio]), select, .pr-repository-details",
+            "button, input:not([type=radio]), select",
           ),
         ]
           .filter((item) => item.getClientRects().length)
@@ -225,11 +224,68 @@ try {
       `${context}: ${JSON.stringify(disclosures)}`,
     );
 
-    assert.deepEqual(
-      await page.evaluate(() => window.__prSidebarFixture),
-      { github: 0, repository: 0 },
-      context,
+  };
+  const snapshot = async (pane) =>
+    pane.evaluate((node) => {
+    const owner = node.closest(".sidebar-list");
+    return {
+      metrics: [owner.scrollHeight, owner.clientHeight, owner.scrollTop],
+      rectangles: [...node.querySelectorAll(
+        ".pr-repository-heading, .sidebar-query-options, .pr-state-field, .pr-search-input, .sidebar-form select, .pr-repository-settings",
+      )].map((item) => {
+        const box = item.getBoundingClientRect();
+        return [box.x, box.y, box.width, box.height];
+      }),
+      values: [...node.querySelectorAll("input, select")].map((item) => [
+        item.value,
+        item.checked,
+      ]),
+      selection: [...node.querySelectorAll(".sidebar-repository-row")].map(
+        (item) => item.getAttribute("aria-pressed"),
+      ),
+      reads: { ...window.__prSidebarFixture },
+    };
+  });
+  const unchanged = async (before, pane) => {
+    const after = await snapshot(pane);
+    for (const key of ["metrics", "rectangles"])
+      assert(
+        before[key].flat().every(
+          (value, index) => Math.abs(value - after[key].flat()[index]) <= 1,
+        ),
+        `Details preserves ${key}: ${JSON.stringify({ before, after })}`,
+      );
+    for (const key of ["values", "selection", "reads"])
+      assert.deepEqual(after[key], before[key], `Details preserves ${key}`);
+  };
+  const assertPopup = async (trigger) => {
+    const panel = page.locator(
+      `[id="${await trigger.getAttribute("aria-controls")}"]`,
     );
+    await panel.waitFor();
+    const presentation = await panel.evaluate((node) => {
+      const box = node.getBoundingClientRect();
+      return {
+        topLayer: node.matches(":popover-open"),
+        fixed: getComputedStyle(node).position === "fixed",
+        contained:
+          box.left >= 7 &&
+          box.top >= 7 &&
+          box.right <= innerWidth - 7 &&
+          box.bottom <= innerHeight - 7,
+        content: node.textContent,
+        names: [...node.querySelectorAll("[aria-label], [title]")]
+          .map((item) => `${item.getAttribute("aria-label")} ${item.title}`)
+          .join(" "),
+      };
+    });
+    assert(
+      presentation.topLayer && presentation.fixed && presentation.contained,
+      JSON.stringify(presentation),
+    );
+    assert(!/0195c9c0-7b13-7000-8000-/.test(presentation.content + presentation.names));
+    assert(!(await trigger.getAttribute("aria-label")).includes("0195c9c0"));
+    return panel;
   };
   for (const language of ["en", "ko"])
     for (const theme of ["light", "dark"])
@@ -245,15 +301,13 @@ try {
         await page.goto(`${origin}/?theme=${theme}&language=${language}`);
         const pane = await enter(language);
         const row = pane.getByRole("button", {
-          name:
-            language === "ko"
-              ? `oss. 저장소 ID: ${id}`
-              : `oss. Repository ID: ${id}`,
+          name: "oss",
           exact: true,
         });
         await row.waitFor();
         assert.equal(await row.textContent(), "oss");
         await assertLayout(pane, `${language}/${theme}/${width}: unselected`);
+        assert.deepEqual(await page.evaluate(() => window.__prSidebarFixture), { github: 0, repository: 0 });
         const refresh = pane.getByRole("button", {
           name: language === "ko" ? "새로고침" : "Refresh",
           exact: true,
@@ -286,15 +340,13 @@ try {
           });
         }
         const details = pane.getByRole("button", {
-          name:
-            language === "ko"
-              ? `oss 상세. 저장소 ID: ${id}`
-              : `Details for oss. Repository ID: ${id}`,
+          name: language === "ko" ? "oss 상세" : "Details for oss",
           exact: true,
         });
         await details.hover();
         await assertLayout(pane, `${language}/${theme}/${width}: hover`);
         await details.focus();
+        const beforeDetails = await snapshot(pane);
         await details.press("Enter");
         await pane
           .getByRole("region", {
@@ -302,10 +354,25 @@ try {
             exact: true,
           })
           .waitFor();
+        await assertPopup(details);
+        await unchanged(beforeDetails, pane);
+        const secondDetails = pane.locator(".pr-repository-details-toggle").nth(1);
+        await secondDetails.focus();
+        const beforeSecondDetails = await snapshot(pane);
+        await secondDetails.press("Enter");
+        await assertPopup(secondDetails);
+        assert.equal(await details.getAttribute("aria-expanded"), "false");
+        await unchanged(beforeSecondDetails, pane);
+        await details.focus();
+        const beforeFirstReturn = await snapshot(pane);
+        await details.press("Enter");
+        await assertPopup(details);
         assert.equal(await row.getAttribute("aria-pressed"), "false");
         await assertLayout(pane, `${language}/${theme}/${width}: details`);
         await details.press("Space");
+        await unchanged(beforeFirstReturn, pane);
         await row.click();
+        await page.waitForFunction(() => window.__prSidebarFixture.github > 0);
         const open = pane.getByRole("radio", {
           name: language === "ko" ? "열림" : "Open",
           exact: true,
@@ -326,8 +393,13 @@ try {
           ),
           theme === "light" ? "rgb(255, 255, 255)" : "rgb(27, 33, 43)",
         );
+        await page.waitForFunction(() => window.__prSidebarFixture.github > 1);
         await assertLayout(pane, `${language}/${theme}/${width}: selected`);
-        await details.click();
+        await details.focus();
+        const beforeSelectedDetails = await snapshot(pane);
+        await details.press("Enter");
+        await assertPopup(details);
+        await unchanged(beforeSelectedDetails, pane);
         const detailsRegion = pane.getByRole("region", {
           name: await details.getAttribute("aria-label"),
           exact: true,
@@ -355,8 +427,8 @@ try {
           );
           assert(await closed.isChecked(), "Refresh retains filter state");
           assert(
-            await detailsRegion.isVisible(),
-            "Refresh retains Details expansion",
+            !(await detailsRegion.isVisible()),
+            "Outside refresh leaves Details dismissed",
           );
         }
         await refresh.blur();
@@ -370,6 +442,11 @@ try {
             ),
           });
         if (width < 760) {
+          await details.click();
+          await page.keyboard.press("Escape");
+          assert(await pane.isVisible(), "First Escape retains the compact drawer");
+          assert.equal(await details.getAttribute("aria-expanded"), "false");
+          assert(await details.evaluate((node) => node === document.activeElement));
           await page.keyboard.press("Escape");
           assert.equal(
             await pane.isVisible(),
@@ -393,6 +470,7 @@ try {
     await last.click();
     const details = pane.locator(".pr-repository-details-toggle").last();
     await details.click();
+    await assertPopup(details);
     // Fixture-only long title proves that localization can wrap beside the fixed action.
     await pane.locator(".pr-sidebar-title h2").evaluate((node) => {
       node.textContent = node.textContent.repeat(8);
@@ -401,6 +479,7 @@ try {
       pane,
       `${language}: long name/details at effective 200%`,
     );
+    await assertPopup(details);
     assert.equal(
       await pane
         .getByRole("region", {
@@ -410,10 +489,36 @@ try {
         .locator("dd")
         .last()
         .textContent(),
-      "0195c9c0-7b13-7000-8000-000000000003",
+      `${"long-owner-".repeat(8)}/${"long-repository-name-".repeat(18)}`,
     );
     checks++;
   }
+  // Missing GitHub metadata stays read-free inside the popup after selection.
+  await page.setViewportSize({ width: 960, height: 640 });
+  await page.goto(`${origin}/?missing=true`);
+  const missingPane = await enter("en");
+  await missingPane.getByRole("button", { name: "oss", exact: true }).click();
+  await page.waitForFunction(() => window.__prSidebarFixture.repository > 0);
+  await page.getByText("Loading repository settings…", { exact: true }).waitFor({ state: "hidden" });
+  const missingTrigger = missingPane.getByRole("button", { name: "Details for oss", exact: true });
+  await missingTrigger.focus();
+  const missingBefore = await snapshot(missingPane);
+  await missingTrigger.press("Enter");
+  const missingPopup = await assertPopup(missingTrigger);
+  assert.equal(await missingPopup.locator("dd").textContent(), "Not configured");
+  await unchanged(missingBefore, missingPane);
+  const outside = missingPane.getByRole("textbox");
+  await outside.click();
+  assert.equal(await missingTrigger.getAttribute("aria-expanded"), "false");
+  assert(await outside.evaluate((node) => node === document.activeElement));
+  await missingTrigger.focus();
+  const beforeEscape = await snapshot(missingPane);
+  await missingTrigger.press("Space");
+  await assertPopup(missingTrigger);
+  await page.keyboard.press("Escape");
+  await unchanged(beforeEscape, missingPane);
+  assert(await missingTrigger.evaluate((node) => node === document.activeElement));
+  checks++;
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${origin}/?empty=true`);
   const emptyPane = await enter("en");

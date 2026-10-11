@@ -2784,7 +2784,15 @@ dialog nav {
   outline-offset: -3px;
 }
 .sidebar-pull-requests .pr-repository-details {
-  margin: 4px 8px 12px;
+  box-shadow: 0 8px 24px var(--shadow-soft);
+  color: var(--text);
+  position: fixed;
+  inset: auto;
+  width: min(320px, calc(100vw - 16px));
+  max-height: calc(100dvh - 16px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  margin: 0;
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: 8px;

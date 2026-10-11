@@ -19,7 +19,7 @@
   "pull-requests.loadingRepositories_460ca9": "Loading repositories…",
   "pull-requests.refreshFailedShowingThePreviousRepository_6c5a34": "Refresh failed. Showing the previous repository page.",
   "pull-requests.repositoryId_cfd937": "{{v0}}. Repository ID: {{v1}}",
-  "pull-requests.repositoryDetails": "Details for {{name}}. Repository ID: {{id}}",
+  "pull-requests.repositoryDetails": "Details for {{name}}",
   "pull-requests.githubRepository": "GitHub repository",
   "pull-requests.repositoryIdentifier": "Repository ID",
   "pull-requests.repositoryNotConfigured": "Not configured",

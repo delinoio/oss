@@ -1,4 +1,4 @@
-import { useSidebarPaneVisible } from "./sidebar-context";
+import { useSidebarActivity, useSidebarPaneVisible } from "./sidebar-context";
 import {
   DisclosureButton,
   DisclosureContent,
@@ -11,7 +11,7 @@ import {
   useGitHubScrollRoot,
 } from "./github-scroll";
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
   EntityKind,
@@ -79,22 +79,159 @@ function RepositoryNavigationRow({
   expanded,
   choose,
   toggleDetails,
+  dismissDetails,
 }: {
   row: Resource;
   selected: boolean;
   expanded: boolean;
   choose: () => void;
   toggleDetails: () => void;
+  dismissDetails: () => void;
 }) {
   useLocale();
   const detailsId = useId();
+  const available = useSidebarActivity();
+  const visible = expanded && available;
+  const opener = useRef<HTMLButtonElement>(null);
+  const popup = useRef<HTMLDivElement>(null);
+  const dismiss = useRef(dismissDetails);
+  dismiss.current = dismissDetails;
+  useLayoutEffect(() => {
+    const source = opener.current,
+      content = popup.current;
+    if (!visible || !source || !content) return;
+    const usable = () => {
+      if (!source.isConnected || source.closest("[hidden], [inert]")) return false;
+      for (let node: HTMLElement | null = source; node; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (style.display === "none" || style.visibility === "hidden")
+          return false;
+        if (node instanceof HTMLDialogElement && !node.open) return false;
+      }
+      return true;
+    };
+    const position = () => {
+      if (!usable()) {
+        content.hidePopover?.();
+        dismiss.current();
+        return;
+      }
+      const row = source
+        .closest(".pr-repository-heading")!
+        .getBoundingClientRect();
+      const box = content.getBoundingClientRect();
+      const cssWidth = Number.parseFloat(getComputedStyle(content).width);
+      const scale = cssWidth > 0 && box.width > 0 ? box.width / cssWidth : 1;
+      const viewport = window.visualViewport;
+      const edge = 8,
+        gap = 8;
+      const leftEdge = (viewport?.offsetLeft ?? 0) + edge;
+      const topEdge = (viewport?.offsetTop ?? 0) + edge;
+      const rightEdge =
+        (viewport?.offsetLeft ?? 0) + (viewport?.width ?? innerWidth) - edge;
+      const bottomEdge =
+        (viewport?.offsetTop ?? 0) + (viewport?.height ?? innerHeight) - edge;
+      const width = box.width;
+      const naturalHeight = (content.scrollHeight + 2) * scale;
+      const right = row.right + gap;
+      let left = right,
+        top = row.top,
+        maximumHeight = bottomEdge - topEdge;
+      if (right + width > rightEdge) {
+        left = row.left;
+        const below = bottomEdge - row.bottom - gap;
+        const above = row.top - gap - topEdge;
+        const useBelow = naturalHeight <= below || below >= above;
+        maximumHeight = Math.max(1, useBelow ? below : above);
+        // An exceptionally tall wrapped row can fill the viewport. Keep the
+        // read-only card scrollable rather than reducing it to an unusable sliver.
+        if (maximumHeight < 40) maximumHeight = bottomEdge - topEdge;
+        top = useBelow
+          ? row.bottom + gap
+          : row.top - gap - Math.min(naturalHeight, maximumHeight);
+      }
+      const height = Math.min(naturalHeight, maximumHeight);
+      // Top-layer coordinates remain in CSS layout units under ancestor zoom.
+      // Only the original loaded card is measured; no metadata read is admitted.
+      Object.assign(content.style, {
+        left: `${Math.max(leftEdge, Math.min(left, rightEdge - width)) / scale}px`,
+        top: `${Math.max(topEdge, Math.min(top, bottomEdge - height)) / scale}px`,
+        maxWidth: `${(rightEdge - leftEdge) / scale}px`,
+        maxHeight: `${maximumHeight / scale}px`,
+      });
+    };
+    // The shell's layout effect opens the original compact dialog and the
+    // disclosure removes its hidden attribute first. Join that paint boundary;
+    // this popup must never clear retained expansion during drawer reopening.
+    const opening = requestAnimationFrame(() => {
+      if (!usable()) {
+        dismiss.current();
+        return;
+      }
+      try {
+        content.showPopover?.();
+      } catch {
+        console.warn("delidev.pull_requests.details_unavailable", {
+          phase: "show",
+          classification: "presentation-unavailable",
+        });
+        dismiss.current();
+        return;
+      }
+      position();
+    });
+    const outside = (event: PointerEvent) => {
+      if (
+        !content.contains(event.target as Node) &&
+        !source.contains(event.target as Node)
+      )
+        dismiss.current();
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      dismiss.current();
+      if (usable()) source.focus({ preventScroll: true });
+    };
+    const lifetime = new MutationObserver(position);
+    lifetime.observe(document.body, { childList: true, subtree: true });
+    for (let node: HTMLElement | null = source; node; node = node.parentElement)
+      lifetime.observe(node, {
+        attributes: true,
+        attributeFilter: ["hidden", "inert", "open", "class", "style"],
+      });
+    const resize =
+      typeof ResizeObserver === "undefined"
+        ? undefined
+        : new ResizeObserver(position);
+    resize?.observe(content);
+    resize?.observe(source);
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape, true);
+    document.addEventListener("scroll", position, true);
+    window.addEventListener("resize", position);
+    window.visualViewport?.addEventListener("resize", position);
+    window.visualViewport?.addEventListener("scroll", position);
+    return () => {
+      cancelAnimationFrame(opening);
+      lifetime.disconnect();
+      resize?.disconnect();
+      content.hidePopover?.();
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape, true);
+      document.removeEventListener("scroll", position, true);
+      window.removeEventListener("resize", position);
+      window.visualViewport?.removeEventListener("resize", position);
+      window.visualViewport?.removeEventListener("scroll", position);
+    };
+  }, [visible]);
   const name = resourceName(row);
   const config = document(row);
   const owner = text(config.github_owner),
     repository = text(config.github_name);
   const detailsLabel = copy("pull-requests.repositoryDetails", {
     name,
-    id: row.id,
   });
   return (
     <div className="pr-repository-item">
@@ -102,10 +239,7 @@ function RepositoryNavigationRow({
         <button
           type="button"
           className="sidebar-repository-row"
-          aria-label={copy("pull-requests.repositoryId_cfd937", {
-            v0: name,
-            v1: row.id,
-          })}
+          aria-label={name}
           aria-pressed={selected}
           onClick={choose}
         >
@@ -124,11 +258,12 @@ function RepositoryNavigationRow({
           <span className="sidebar-repository-info">{name}</span>
         </button>
         <DisclosureButton
+          ref={opener}
           density={DisclosureDensity.Compact}
           type="button"
           className="pr-repository-details-toggle"
           aria-label={detailsLabel}
-          aria-expanded={expanded}
+          aria-expanded={visible}
           aria-controls={detailsId}
           onClick={toggleDetails}
         >
@@ -136,11 +271,14 @@ function RepositoryNavigationRow({
         </DisclosureButton>
       </div>
       <DisclosureContent
+        ref={popup}
         id={detailsId}
+        popover="manual"
+        tabIndex={0}
         className="pr-repository-details"
         role="region"
         aria-label={detailsLabel}
-        hidden={!expanded}
+        hidden={!visible}
       >
         <dl>
           <dt>{copy("pull-requests.githubRepository")}</dt>
@@ -149,8 +287,6 @@ function RepositoryNavigationRow({
               ? `${owner}/${repository}`
               : copy("pull-requests.repositoryNotConfigured")}
           </dd>
-          <dt>{copy("pull-requests.repositoryIdentifier")}</dt>
-          <dd>{row.id}</dd>
         </dl>
       </DisclosureContent>
     </div>
@@ -635,6 +771,7 @@ export function PullRequests({
               selected={repositoryId === row.id}
               expanded={expandedRepositoryId === row.id}
               choose={() => chooseRepository(row)}
+              dismissDetails={() => setExpandedRepositoryId("")}
               toggleDetails={() =>
                 setExpandedRepositoryId((current) =>
                   current === row.id ? "" : row.id,

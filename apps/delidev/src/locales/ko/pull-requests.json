@@ -19,7 +19,7 @@
   "pull-requests.loadingRepositories_460ca9": "저장소를 불러오는 중…",
   "pull-requests.refreshFailedShowingThePreviousRepository_6c5a34": "새로 고침에 실패했습니다. 이전 저장소 페이지를 표시합니다.",
   "pull-requests.repositoryId_cfd937": "{{v0}}. 저장소 ID: {{v1}}",
-  "pull-requests.repositoryDetails": "{{name}} 상세. 저장소 ID: {{id}}",
+  "pull-requests.repositoryDetails": "{{name}} 상세",
   "pull-requests.githubRepository": "GitHub 저장소",
   "pull-requests.repositoryIdentifier": "저장소 ID",
   "pull-requests.repositoryNotConfigured": "설정되지 않음",

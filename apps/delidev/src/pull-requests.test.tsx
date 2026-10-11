@@ -178,7 +178,7 @@ async function open() {
 async function choose(row: Resource) {
   fireEvent.click(
     await screen.findByRole("button", {
-      name: `${resourceName(row)}. Repository ID: ${row.id}`,
+      name: `${resourceName(row)}`,
     }),
   );
   await waitFor(() =>
@@ -275,7 +275,7 @@ it("shows only the selected name and loads the selected default query automatica
   expect(pane.getByRole("heading", { name: "Query options" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "GitHub profiles" })).toBeNull();
   const row = pane.getByRole("button", {
-    name: `Example repository. Repository ID: ${repositoryId}`,
+    name: "Example repository",
   });
   expect(row.textContent).toBe("Example repository");
   expect(row.querySelector("button")).toBeNull();
@@ -307,11 +307,8 @@ it("discloses one exact duplicate-name identity without selecting or reading it"
   const value = fixture([first, second]);
   render(<App transport={value.transport} />);
   const pane = await open();
-  const firstButton = await pane.findByRole("button", {
-    name: `Details for Example repository. Repository ID: ${first.id}`,
-  });
-  const secondButton = pane.getByRole("button", {
-    name: `Details for Example repository. Repository ID: ${second.id}`,
+  const [firstButton, secondButton] = await pane.findAllByRole("button", {
+    name: "Details for Example repository",
   });
   const catalogReads = value.list.mock.calls.filter(
     ([request]) => request.filter?.kind === EntityKind.REPOSITORY,
@@ -319,27 +316,30 @@ it("discloses one exact duplicate-name identity without selecting or reading it"
   expect(firstButton.getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(firstButton);
   let details = pane.getByRole("region", {
-    name: `Details for Example repository. Repository ID: ${first.id}`,
+    name: "Details for Example repository",
   });
   expect(details.id).toBe(firstButton.getAttribute("aria-controls"));
-  expect(within(details).getByText(first.id).textContent).toBe(first.id);
+  expect(details.getAttribute("popover")).toBe("manual");
+  expect(details.textContent).not.toContain(first.id);
+  expect(firstButton.getAttribute("aria-label")).not.toContain(first.id);
   expect(within(details).getByText("owner/repo")).toBeTruthy();
   fireEvent.click(secondButton);
   expect(firstButton.getAttribute("aria-expanded")).toBe("false");
   expect(secondButton.getAttribute("aria-expanded")).toBe("true");
   details = pane.getByRole("region", {
-    name: `Details for Example repository. Repository ID: ${second.id}`,
+    name: "Details for Example repository",
   });
-  expect(within(details).getByText(second.id)).toBeTruthy();
+  expect(details.id).toBe(secondButton.getAttribute("aria-controls"));
+  expect(details.textContent).not.toContain(second.id);
   expect(pane.queryAllByRole("region", { name: /Details for/ })).toHaveLength(
     1,
   );
   expect(pane.queryByRole("heading", { name: "Query options" })).toBeNull();
   expect(
     pane
-      .getByRole("button", {
-        name: `Example repository. Repository ID: ${first.id}`,
-      })
+      .getAllByRole("button", {
+        name: "Example repository",
+      })[0]
       .getAttribute("aria-pressed"),
   ).toBe("false");
   fireEvent.click(secondButton);
@@ -353,13 +353,71 @@ it("discloses one exact duplicate-name identity without selecting or reading it"
   expect(value.query).not.toHaveBeenCalled();
 });
 
+it("dismisses only repository details on Escape and preserves outside focus", async () => {
+  const value = fixture();
+  render(<App transport={value.transport} />);
+  const pane = await open();
+  const trigger = await pane.findByRole("button", {
+    name: "Details for Example repository",
+  });
+  trigger.focus();
+  fireEvent.click(trigger);
+  expect(
+    pane.getByRole("region", { name: "Details for Example repository" }),
+  ).toBeTruthy();
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(
+    pane.queryByRole("region", { name: "Details for Example repository" }),
+  ).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+  fireEvent.click(trigger);
+  const outside = pane.getByRole("button", { name: "Refresh", exact: true });
+  outside.focus();
+  fireEvent.pointerDown(outside);
+  expect(
+    pane.queryByRole("region", { name: "Details for Example repository" }),
+  ).toBeNull();
+  expect(document.activeElement).toBe(outside);
+  expect(value.get).not.toHaveBeenCalled();
+  expect(value.query).not.toHaveBeenCalled();
+});
+
+it("retires the popup when its original opener is hidden or removed", async () => {
+  const rows = [repository()];
+  const value = fixture(rows);
+  render(<App transport={value.transport} />);
+  const pane = await open();
+  const trigger = await pane.findByRole("button", {
+    name: "Details for Example repository",
+  });
+  fireEvent.click(trigger);
+  trigger.hidden = true;
+  await waitFor(() =>
+    expect(trigger.getAttribute("aria-expanded")).toBe("false"),
+  );
+  expect(
+    pane.queryByRole("region", { name: "Details for Example repository" }),
+  ).toBeNull();
+  trigger.hidden = false;
+  fireEvent.click(trigger);
+  rows.splice(0);
+  fireEvent.click(pane.getByRole("button", { name: "Refresh", exact: true }));
+  await pane.findByText("No repositories on this page.");
+  expect(trigger.isConnected).toBe(false);
+  expect(
+    pane.queryByRole("region", { name: "Details for Example repository" }),
+  ).toBeNull();
+  expect(value.get).not.toHaveBeenCalled();
+  expect(value.query).not.toHaveBeenCalled();
+});
+
 it("retains expanded details and enum drafts through paging, navigation, reconnect and language changes", async () => {
   const row = repository("Long repository name ".repeat(20));
   const value = fixture([row]);
   const view = render(<App transport={value.transport} />);
   let pane = await open();
   await choose(row);
-  const detailsName = `Details for ${resourceName(row)}. Repository ID: ${row.id}`;
+  const detailsName = `Details for ${resourceName(row)}`;
   fireEvent.click(pane.getByRole("button", { name: detailsName }));
   fireEvent.click(pane.getByRole("radio", { name: "Closed" }));
   fireEvent.change(pane.getByLabelText("Search title and body"), {
@@ -380,6 +438,7 @@ it("retains expanded details and enum drafts through paging, navigation, reconne
     ),
   ).toBe("true");
   fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  expect(screen.queryByRole("region", { name: detailsName })).toBeNull();
   pane = await open();
   view.rerender(<App transport={value.transport} connectionEpoch={1} />);
   expect(pane.getByRole("region", { name: detailsName })).toBeTruthy();
@@ -390,7 +449,7 @@ it("retains expanded details and enum drafts through paging, navigation, reconne
   expect(
     pane
       .getByRole("button", {
-        name: `${resourceName(row).trim()} 상세. 저장소 ID: ${row.id}`,
+        name: `${resourceName(row).trim()} 상세`,
       })
       .getAttribute("aria-expanded"),
   ).toBe("true");
@@ -415,11 +474,11 @@ it("keeps missing repository mapping and original content inert in Details", asy
   const pane = await open();
   fireEvent.click(
     await pane.findByRole("button", {
-      name: `Details for <b>Original name</b>. Repository ID: ${row.id}`,
+      name: "Details for <b>Original name</b>",
     }),
   );
   const details = pane.getByRole("region", {
-    name: `Details for <b>Original name</b>. Repository ID: ${row.id}`,
+    name: "Details for <b>Original name</b>",
   });
   expect(within(details).getByText("Not configured")).toBeTruthy();
   expect(details.textContent).not.toContain("https://private.example/repo");
@@ -427,7 +486,7 @@ it("keeps missing repository mapping and original content inert in Details", asy
   expect(
     pane
       .getByRole("button", {
-        name: `<b>Original name</b>. Repository ID: ${row.id}`,
+        name: "<b>Original name</b>",
       })
       .querySelector("b"),
   ).toBeNull();
@@ -469,7 +528,7 @@ it("preserves selected identity and filter drafts through empty appended pages a
   ).toBe("fix");
   fireEvent.click(pane.getByRole("button", { name: "Refresh" }));
   await pane.findByRole("button", {
-    name: `Example repository. Repository ID: ${repositoryId}`,
+    name: "Example repository",
   });
   expect((pane.getByLabelText("PR page size") as HTMLSelectElement).value).toBe(
     "5",
@@ -617,7 +676,7 @@ it.each([Code.PermissionDenied, Code.Unavailable])(
     );
     expect(
       pane.getByRole("button", {
-        name: `Example repository. Repository ID: ${repositoryId}`,
+        name: "Example repository",
       }),
     ).toBeTruthy();
     expect(pane.queryByText("No repositories on this page.")).toBeNull();
@@ -678,7 +737,7 @@ it("hides the profile shortcut before selection and for an unavailable selected 
   expect(screen.queryByRole("button", { name: "GitHub profiles" })).toBeNull();
   fireEvent.click(
     await screen.findByRole("button", {
-      name: `Example repository. Repository ID: ${repositoryId}`,
+      name: "Example repository",
     }),
   );
   await screen.findByText(
@@ -1045,7 +1104,7 @@ it("waits for validated selected metadata before automatic GitHub reads", async 
   await open();
   fireEvent.click(
     await screen.findByRole("button", {
-      name: `Example repository. Repository ID: ${repositoryId}`,
+      name: "Example repository",
     }),
   );
   await screen.findByText("Loading repository settings…");
