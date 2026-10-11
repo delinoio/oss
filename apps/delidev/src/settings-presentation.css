@@ -449,42 +449,40 @@
   min-width: 0;
 }
 .appearance-miniature {
-  --appearance-miniature-surface: #ffffff;
-  --appearance-miniature-inset: #f0f2f5;
-  --appearance-miniature-muted: #f5f6f8;
-  --appearance-miniature-border: #d8dee8;
-  --appearance-miniature-dark-surface: #1b212b;
-  --appearance-miniature-dark-inset: #10161e;
-  --appearance-miniature-dark-muted: #171d26;
-  --appearance-miniature-dark-border: #47556a;
   grid-column: 1 / -1;
   display: grid;
   grid-template-columns: 20% minmax(0, 1fr);
   gap: 8px;
   height: 64px;
   padding: 8px;
-  border: 1px solid var(--appearance-miniature-border);
+  border: 1px solid var(--appearance-preview-light-border);
   border-radius: 4px;
-  background: var(--appearance-miniature-surface);
+  background: var(--appearance-preview-light-surface);
 }
 .appearance-miniature::before {
   content: "";
-  background: var(--appearance-miniature-inset);
-  border-right: 1px solid var(--appearance-miniature-border);
+  background: var(--appearance-preview-light-inset);
+  border-right: 1px solid var(--appearance-preview-light-border);
 }
 .appearance-miniature::after {
   content: "";
-  border-block: 6px solid var(--appearance-miniature-border);
-  background: var(--appearance-miniature-muted);
+  border-block: 6px solid var(--appearance-preview-light-border);
+  background: var(--appearance-preview-light-muted);
 }
 .appearance-miniature[data-preview="dark"] {
-  --appearance-miniature-surface: var(--appearance-miniature-dark-surface);
-  --appearance-miniature-inset: var(--appearance-miniature-dark-inset);
-  --appearance-miniature-muted: var(--appearance-miniature-dark-muted);
-  --appearance-miniature-border: var(--appearance-miniature-dark-border);
+  border-color: var(--appearance-preview-dark-border);
+  background: var(--appearance-preview-dark-surface);
+}
+.appearance-miniature[data-preview="dark"]::before {
+  background: var(--appearance-preview-dark-inset);
+  border-right-color: var(--appearance-preview-dark-border);
+}
+.appearance-miniature[data-preview="dark"]::after {
+  border-block-color: var(--appearance-preview-dark-border);
+  background: var(--appearance-preview-dark-muted);
 }
 .appearance-miniature[data-preview="system"] {
-  border-inline-end: 24px solid var(--appearance-miniature-dark-surface);
+  border-inline-end: 24px solid var(--appearance-preview-dark-surface);
 }
 @container appearance (width < 640px) {
   .appearance-choices {
