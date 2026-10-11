@@ -343,6 +343,17 @@ each known category once, retains incomplete subtotals and excludes assistant
 repeats. At uniform $1/M input and $2/M output, the specified two-step example
 retains $0.000055 with incomplete category coverage.
 
+OpenCode step accounting retains exactly one source identity: the original API
+Provider UUID with no subscription service, or the closed `opencode_go` service
+with no Provider UUID. Missing, foreign and mixed identities reject atomically
+with the source observation. The immutable model key must match that source.
+Session/account and model groups expose the same service identity, and service
+filters read it from the retained unit body without a migration or synthetic
+Provider. Historical price selection and validation compare the complete
+model/Provider/service identity. Exact source receipts, conflicting-unit
+rejection, category counts and original account/connection ownership remain
+unchanged; current configuration or price edits cannot reattribute retained units.
+
 Lifetime budget evidence combines known amounts across response and native-input
 ledgers in the selected currency while retaining separate complete, partial,
 unavailable, unpriced and other-currency unit counts. Response writes never absorb
