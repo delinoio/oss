@@ -202,6 +202,23 @@ func cloneSSHUser(value string) bool {
 	return true
 }
 
+// IsReservedRepositoryCloneDirectoryName reports Windows device-name stems that cannot be directories.
+func IsReservedRepositoryCloneDirectoryName(value string) bool {
+	stem := strings.ToUpper(strings.SplitN(value, ".", 2)[0])
+	if stem == "CON" || stem == "PRN" || stem == "AUX" || stem == "NUL" {
+		return true
+	}
+	if len(stem) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) && stem[3] >= '1' && stem[3] <= '9' {
+		return true
+	}
+	switch stem {
+	case "COM¹", "COM²", "COM³", "LPT¹", "LPT²", "LPT³":
+		return true
+	default:
+		return false
+	}
+}
+
 func ValidateRepositoryCloneDirectory(value string) error {
 	invalid := func() error {
 		return Fail(InvalidArgument, "Enter a portable repository folder name.", "Use one folder name without separators, reserved device names, trailing dots or spaces.")
@@ -214,8 +231,7 @@ func ValidateRepositoryCloneDirectory(value string) error {
 			return invalid()
 		}
 	}
-	stem := strings.ToUpper(strings.SplitN(value, ".", 2)[0])
-	if stem == "CON" || stem == "PRN" || stem == "AUX" || stem == "NUL" || (len(stem) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) && stem[3] >= '1' && stem[3] <= '9') {
+	if IsReservedRepositoryCloneDirectoryName(value) {
 		return invalid()
 	}
 	return nil

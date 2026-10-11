@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -73,18 +74,25 @@ type nativeTerminal struct {
 }
 
 type terminalManager struct {
-	ctx         context.Context
-	config      Config
-	client      delidevv1connect.WorkerServiceClient
-	credential  Credential
-	instance    domain.ID
-	mu          sync.Mutex
-	live        map[domain.ID]*nativeTerminal
-	journalScan *os.File
+	ctx                       context.Context
+	config                    Config
+	client                    delidevv1connect.WorkerServiceClient
+	credential                Credential
+	instance                  domain.ID
+	mu                        sync.Mutex
+	live                      map[domain.ID]*nativeTerminal
+	journalScan               *os.File
+	namedWorkspaceDirectories atomic.Bool
 }
 
 func newTerminalManager(ctx context.Context, config Config, client delidevv1connect.WorkerServiceClient, credential Credential, instance domain.ID) *terminalManager {
-	return &terminalManager{ctx: ctx, config: config, client: client, credential: credential, instance: instance, live: map[domain.ID]*nativeTerminal{}}
+	manager := &terminalManager{ctx: ctx, config: config, client: client, credential: credential, instance: instance, live: map[domain.ID]*nativeTerminal{}}
+	manager.namedWorkspaceDirectories.Store(config.namedWorkspaceDirectories)
+	return manager
+}
+
+func (m *terminalManager) setNamedWorkspaceDirectoriesSupported(supported bool) {
+	m.namedWorkspaceDirectories.Store(supported)
 }
 func (m *terminalManager) processRoot() string {
 	return filepath.Join(m.config.Root, "terminal-processes")
@@ -293,6 +301,10 @@ func (m *terminalManager) execute(a terminal.Assignment) terminal.Result {
 		}
 		if a.Preparation == nil || a.Manifest == nil || a.Preparation.SessionID != a.SessionID || a.Preparation.MachineID != m.credential.MachineID {
 			result.State, result.Problem = domain.TerminalUncertain, workspace.ResultUncertain()
+			return result
+		}
+		if workspace.RequiresNamedDirectories(*a.Preparation) && !m.namedWorkspaceDirectories.Load() {
+			result.State, result.CleanupVerified, result.Problem = domain.TerminalExited, true, domain.SafeError(workspace.NamedDirectoriesUnsupported())
 			return result
 		}
 		ctx, cancel := context.WithTimeout(m.ctx, 15*time.Second)

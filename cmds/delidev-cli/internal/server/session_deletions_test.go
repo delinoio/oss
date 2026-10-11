@@ -13,8 +13,10 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 	"google.golang.org/protobuf/proto"
@@ -162,6 +164,42 @@ func TestSessionDeletionRPCOriginalWorkerWorkAndIndependentAcknowledgment(t *tes
 	}
 	if _, e := worker.ReportSessionDeletion(ctx, ownerRequest(identity, report)); e != nil {
 		t.Fatal("original report replay failed", e)
+	}
+}
+
+func TestSessionDeletionWithholdsNamedWorkspaceFromWorkerWithoutCapability(t *testing.T) {
+	f := newAccountFixture(t)
+	selection, identity := sessionSelection(t, f)
+	repository := f.save(pb.EntityKind_ENTITY_KIND_REPOSITORY, domain.Repository{Name: "Named workspace", RemoteURL: "https://github.com/fixture/named-workspace.git"})
+	project := f.save(pb.EntityKind_ENTITY_KIND_PROJECT, domain.Project{Name: "Named workspace", Repositories: []domain.ID{domain.ID(repository.Id)}, PrimaryRepository: domain.ID(repository.Id)})
+	selection.ProjectID, selection.Workspace = domain.ID(project.Id), domain.Worktree
+	ctx, worker, instance, stream := workspaceStream(t, f, identity, selection.MachineID)
+	_, target := createSessionFixture(t, f, selection)
+	if target.WorkspaceJob == nil || !stream.Receive() || stream.Msg().Job == nil || stream.Msg().Job.Id != target.WorkspaceJob.Id {
+		t.Fatal("named workspace preparation was not claimed", stream.Err())
+	}
+	var assigned domain.Job
+	var preparation workspace.PrepareRequest
+	if domain.Decode(stream.Msg().Job.DocumentJson, &assigned) != nil || domain.Decode(assigned.Input, &preparation) != nil || !workspace.RequiresNamedDirectories(preparation) {
+		t.Fatal("fixture did not claim a named workspace preparation")
+	}
+	current := currentCatalogResource(t, f, target.Session)
+	if _, err := sessionClient(f).DeleteSession(ctx, ownerRequest(f.identity, &pb.DeleteSessionRequest{Mutation: acctMutation(current, domain.NewID())})); err != nil {
+		t.Fatal("session deletion was not accepted", err)
+	}
+	_ = stream.Close()
+	oldInstance := string(domain.NewID())
+	if _, err := worker.AttachWorker(ctx, ownerRequest(identity, &pb.AttachWorkerRequest{ProtocolVersion: 2, RequestId: string(domain.NewID()), MachineId: string(selection.MachineID), InstanceId: oldInstance, Version: rpc.Version, Capabilities: []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1}})); err != nil {
+		t.Fatal("older Worker could not attach", err)
+	}
+	for _, request := range []*pb.ListSessionDeletionWorkRequest{
+		{MachineId: string(selection.MachineID), InstanceId: oldInstance},
+		{MachineId: string(selection.MachineID), InstanceId: oldInstance, OriginalSessionId: target.Session.Id, OriginalJobId: target.WorkspaceJob.Id},
+	} {
+		work, err := worker.ListSessionDeletionWork(ctx, ownerRequest(identity, request))
+		if err != nil || len(work.Msg.WorkJson) != 0 || work.Msg.NextSessionId != "" {
+			t.Fatal("named workspace deletion reached a Worker without capability 53", work, err)
+		}
 	}
 }
 

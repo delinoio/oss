@@ -977,3 +977,7 @@ jobs and remains available at the retention bound. These checks grant no native
 replay or new execution authority; original ownership and settled no-send proof
 remain required. See the [Sidechat contract](cmds-delidev-sidechat-contract.md#same-question-retry)
 for the five-job admission reservation.
+
+## Frozen managed directory names
+
+Session and Schedule preparation freeze portable registered repository names at acceptance. Retries preserve the exact original request and digest after registration renames. Named preparations require separately negotiated Worker 55; historical omitted fields retain their original UUID layout. See the [workspace contract](cmds-delidev-workspace-contract.md#frozen-named-managed-directories).

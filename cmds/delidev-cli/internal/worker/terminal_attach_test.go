@@ -13,6 +13,8 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/terminal"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
@@ -65,5 +67,43 @@ func TestTerminalCapabilitySurvivesPreliminaryReconnectAttach(t *testing.T) {
 		if req.InstanceId != f.requests[0].InstanceId {
 			t.Fatal("reconnect replaced original process identity")
 		}
+	}
+}
+
+func TestTerminalManagerUsesNegotiatedNamedDirectoryCapability(t *testing.T) {
+	machineID := domain.NewID()
+	manager := newTerminalManager(context.Background(), Config{Root: t.TempDir()}, nil, Credential{MachineID: machineID}, domain.NewID())
+	preparation := &workspace.PrepareRequest{
+		SessionID: domain.NewID(),
+		MachineID: machineID,
+		Type:      domain.Worktree,
+		Repositories: []workspace.RepositorySpec{{
+			ID:            domain.NewID(),
+			SourceKind:    workspace.RemoteCloneSource,
+			DirectoryName: "oss",
+		}},
+	}
+	assignment := terminal.Assignment{
+		ID:        domain.NewID(),
+		SessionID: preparation.SessionID,
+		Terminal: domain.Terminal{
+			MachineID:     machineID,
+			ShellOverride: "/missing/worker-shell",
+		},
+		Operation:   domain.TerminalOperation{ID: domain.NewID(), Action: domain.TerminalCreate},
+		Preparation: preparation,
+		Manifest:    &workspace.Manifest{},
+	}
+
+	if result := manager.execute(assignment); result.Problem == nil || result.Problem.Code != domain.Unsupported {
+		t.Fatalf("unnegotiated named directory did not fail as unsupported: %+v", result.Problem)
+	}
+	manager.setNamedWorkspaceDirectoriesSupported(true)
+	if result := manager.execute(assignment); result.Problem == nil || result.Problem.Code != domain.InvalidArgument {
+		t.Fatalf("negotiated named directory did not reach shell validation: %+v", result.Problem)
+	}
+	manager.setNamedWorkspaceDirectoriesSupported(false)
+	if result := manager.execute(assignment); result.Problem == nil || result.Problem.Code != domain.Unsupported {
+		t.Fatalf("withdrawn capability still admitted named directory: %+v", result.Problem)
 	}
 }

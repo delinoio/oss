@@ -298,6 +298,13 @@ func (s *Service) RequestWorkspaceStorage(ctx context.Context, req *connect.Requ
 		if err != nil {
 			return nil, err
 		}
+		_, namedMachine, err := activeMachine(tx, session.MachineID)
+		if err != nil {
+			return nil, err
+		}
+		if err := requireNamedWorkspaceCapability(namedMachine, input.Preparation); err != nil {
+			return nil, err
+		}
 		if _, err := tx.PutJob(input.OperationID, 0, sr.ID, sr.ProjectID, domain.Job{Type: domain.WorkspaceStorageJob, State: domain.JobQueued, MachineID: session.MachineID, ParentID: domain.ID(req.Msg.RecoveryJobId), Input: raw, AcceptedAt: time.Now().UTC()}); err != nil {
 			return nil, err
 		}

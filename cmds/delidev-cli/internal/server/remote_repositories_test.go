@@ -256,12 +256,13 @@ func TestRemoteWorkspaceSelectionPinsURLAndIgnoresCheckout(t *testing.T) {
 		}
 		repository, _ := store.Decode[domain.Repository](r)
 		repository.RemoteURL = "https://github.com/fixture/reconfigured.git"
+		repository.Name = "renamed"
 		_, err = tx.Put(r.Kind, r.ID, r.Revision, "", "", repository)
 		return err
 	})
 	job, _ := store.Decode[domain.Job](f.record(t, domain.JobKind, jobRecord.ID))
 	var accepted workspace.PrepareRequest
-	if domain.Decode(job.Input, &accepted) != nil || accepted.Repositories[0].RemoteURL != pinned.Repositories[0].RemoteURL || accepted.Repositories[0].SourceKind != workspace.RemoteCloneSource {
+	if domain.Decode(job.Input, &accepted) != nil || accepted.Repositories[0].DirectoryName != pinned.Repositories[0].DirectoryName || accepted.Repositories[0].RemoteURL != pinned.Repositories[0].RemoteURL || accepted.Repositories[0].SourceKind != workspace.RemoteCloneSource {
 		t.Fatal("configuration edit changed accepted schedule source")
 	}
 	f.mutate(t, func(tx *store.Tx) error {

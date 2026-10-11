@@ -168,7 +168,7 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 				}
 				continue
 			}
-			if manifest.Type != domain.Worktree || !repo.Owned || repo.ID.Validate() != nil || repo.Path != filepath.Join(root, string(repo.ID)) || repo.SourceKind == CheckoutSource && repo.Source == repo.Path {
+			if !validDirectoryName(repo.DirectoryName) || manifest.Type != domain.Worktree || !repo.Owned || repo.ID.Validate() != nil || repo.Path != ownedRepositoryPath(root, repo.ID, repo.DirectoryName) || repo.SourceKind == CheckoutSource && repo.Source == repo.Path {
 				return domain.SessionDeletionPending()
 			}
 			if independent {

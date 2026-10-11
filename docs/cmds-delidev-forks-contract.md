@@ -525,3 +525,7 @@ account/native assignment retain their existing invariants. Copied history
 remains inspectable when the original common/admin directories are unavailable.
 Sidechat remains metadata-only, and original Local folder lifetimes remain
 unchanged. Follow the [workspace inventory contract](cmds-delidev-workspace-contract.md#complete-independent-fork-inventory).
+
+## Frozen managed directory names
+
+Independent Worktree Fork inherits each original frozen `directory_name`, including historical omission. It never reads a later registered name. Named source and child operations require separately negotiated Worker 55 while preserving original native and complete independent Git inventory checks. See the [workspace contract](cmds-delidev-workspace-contract.md#frozen-named-managed-directories).

@@ -205,6 +205,9 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 		if err := validateForkSharing(input); err != nil {
 			return nil, err
 		}
+		if err := requireNamedForkCapability(tx, input); err != nil {
+			return nil, err
+		}
 		clones, err := workspace.ForkRequiresManagedClone(input)
 		if err != nil {
 			return nil, err
@@ -212,6 +215,13 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 		if clones {
 			_, machine, err := activeMachine(tx, session.MachineID)
 			if err != nil {
+				return nil, err
+			}
+			namedRaw, marshalErr := json.Marshal(input)
+			if marshalErr != nil {
+				return nil, marshalErr
+			}
+			if err := requireNamedJobCapability(machine, domain.Job{Type: domain.ForkSessionJob, Input: namedRaw}); err != nil {
 				return nil, err
 			}
 			if !slices.Contains(machine.WorkerCapabilities, domain.RemoteWorkspaceCloneV1) {
@@ -320,6 +330,9 @@ func validateForkAuthority(tx *store.Tx, input domain.ForkJobInput) error {
 	if input.Retry != nil {
 		return validateSidechatRetryForkAuthority(tx, input)
 	}
+	if err := requireNamedForkCapability(tx, input); err != nil {
+		return err
+	}
 	clones, err := workspace.ForkRequiresManagedClone(input)
 	if err != nil {
 		return err
@@ -327,6 +340,13 @@ func validateForkAuthority(tx *store.Tx, input domain.ForkJobInput) error {
 	if clones {
 		_, machine, err := activeMachine(tx, input.SourceAssignment.MachineID)
 		if err != nil {
+			return err
+		}
+		namedRaw, marshalErr := json.Marshal(input)
+		if marshalErr != nil {
+			return marshalErr
+		}
+		if err := requireNamedJobCapability(machine, domain.Job{Type: domain.ForkSessionJob, Input: namedRaw}); err != nil {
 			return err
 		}
 		if !slices.Contains(machine.WorkerCapabilities, domain.RemoteWorkspaceCloneV1) {
