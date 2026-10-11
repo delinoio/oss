@@ -68,6 +68,36 @@ try {
     await input.press('End'); await input.pressSequentially('!'); await input.press('ControlOrMeta+z'); assert.equal(await input.inputValue(), draft);
     assert.equal(await page.locator('output').getAttribute('data-fixture-creates'), '0'); overlayCases++;
   };
+  let selectedCases = 0;
+  const checkSelected = async (root, input) => {
+    const selected = root.locator('.skill-token-selected');
+    await selected.waitFor();
+    assert.equal(await selected.textContent(), '$add-issue');
+    assert.notEqual(await selected.evaluate(node => getComputedStyle(node).color), await input.evaluate(node => getComputedStyle(node.parentElement.querySelector('.skill-text-overlay')).color));
+    await input.press('ControlOrMeta+Home'); await input.pressSequentially('한글 ');
+    await input.press('ControlOrMeta+End'); await input.pressSequentially(' wrap words'.repeat(30));
+    const draft = await input.inputValue();
+    await input.evaluate(node => { node.style.fontSize='24px'; node.style.lineHeight='32px'; node.parentElement.style.setProperty('--link', 'rgb(37, 99, 235)'); });
+    await page.evaluate(() => window.dispatchEvent(new Event('resize'))); await frame();
+    const geometry = await input.evaluate(node => {
+      const overlay = node.parentElement.querySelector('.skill-text-overlay'), mirror = overlay.firstElementChild, token = overlay.querySelector('.skill-token-selected');
+      const style = getComputedStyle(node), mirrored = getComputedStyle(mirror), painted = getComputedStyle(token);
+      return { width: node.clientWidth, overlayWidth: overlay.clientWidth, mirrorWidth: mirror.clientWidth, nativeHeight: node.scrollHeight, mirrorHeight: mirror.scrollHeight,
+        fonts: [style.fontFamily,style.fontSize,style.lineHeight,style.padding].join('|'), mirrored: [mirrored.fontFamily,mirrored.fontSize,mirrored.lineHeight,mirrored.padding].join('|'),
+        color: painted.color, underline: painted.textDecorationLine, thickness: painted.textDecorationThickness, hidden: overlay.getAttribute('aria-hidden'), pointer: getComputedStyle(overlay).pointerEvents,
+        links: overlay.querySelectorAll('a,[role=link],[tabindex]').length };
+    });
+    assert.equal(geometry.width, geometry.overlayWidth); assert.equal(geometry.width, geometry.mirrorWidth); assert.equal(geometry.fonts, geometry.mirrored);
+    assert(Math.abs(geometry.nativeHeight-geometry.mirrorHeight) <= 1, JSON.stringify(geometry));
+    assert.equal(geometry.color, 'rgb(37, 99, 235)'); assert.equal(geometry.underline, 'underline'); assert.equal(geometry.thickness, '1px');
+    assert.equal(geometry.hidden, 'true'); assert.equal(geometry.pointer, 'none'); assert.equal(geometry.links, 0); assert.equal(await root.locator('.skill-text-overlay').count(), 1);
+    await input.evaluate(node => { node.parentElement.style.zoom='2'; node.scrollTop=100; node.dispatchEvent(new Event('scroll')); }); await frame();
+    const scaled = await input.evaluate(node => ({ native: node.getBoundingClientRect().width-(node.offsetWidth-node.clientWidth)*2, overlay: node.parentElement.querySelector('.skill-text-overlay').getBoundingClientRect().width, top: node.scrollTop, transform: node.parentElement.querySelector('.skill-text-overlay > div').style.transform }));
+    assert(Math.abs(scaled.native-scaled.overlay) <= 1, JSON.stringify(scaled)); assert(scaled.top > 0); assert.equal(scaled.transform, `translate(0px, ${-scaled.top}px)`);
+    assert.equal(await input.inputValue(), draft); assert(await input.evaluate(node => node === document.activeElement));
+    await input.evaluate(node => { node.style.fontSize=''; node.style.lineHeight=''; node.parentElement.style.zoom=''; node.parentElement.style.removeProperty('--link'); });
+    await page.evaluate(() => window.dispatchEvent(new Event('resize'))); await frame(); selectedCases++;
+  };
   const selectResource = async (root, index) => {
     const control = root.getByRole('combobox').nth(index);
     await control.focus(); await page.keyboard.press('End'); await page.keyboard.press('Enter');
@@ -107,6 +137,7 @@ try {
     await open('$a'); await input.press('Enter'); assert.equal(await input.inputValue(), '$add-issue');
     await open('$a'); await root.locator('.skill-completion').getByRole('option').click(); assert.equal(await input.inputValue(), '$add-issue'); assert(await input.evaluate(node => node === document.activeElement));
     assert.equal(await page.locator('output').getAttribute('data-fixture-creates'), '0');
+    await checkSelected(root, input);
     await open('$a');
     await page.evaluate(() => window.__skillInventory.remove());
     const removed = root.locator('.skill-completion').getByRole('option'); await page.waitForFunction(node => node.getAttribute('aria-disabled') === 'true', await removed.elementHandle());
@@ -132,12 +163,13 @@ try {
       assert(await root.locator('.skill-completion').evaluate(node => node.scrollWidth <= node.clientWidth + 1));
       await input.press('Enter'); assert.equal(await input.inputValue(), '$add-issue'); assert(await input.evaluate(node => node === document.activeElement));
       assert.equal(await page.locator('output').getAttribute('data-fixture-creates'), '0');
+      await checkSelected(root, input);
       await checkOverlay(root, input);
     }
     cases++;
   }
   assert.deepEqual(errors, []);
-  process.stdout.write(JSON.stringify({ operation: 'creation-skill-layout', ...source, cases, overlayCases, screenshots, effectiveZoom: 'half-viewport reflow', nativeAcceptance: 'not-performed' }) + '\n');
+  process.stdout.write(JSON.stringify({ operation: 'creation-skill-layout', ...source, cases, overlayCases, selectedCases, screenshots, effectiveZoom: 'half-viewport reflow', nativeAcceptance: 'not-performed' }) + '\n');
 } finally {
   await browser?.close(); if (server) await new Promise(done => server.close(done));
   await rm(directory, { recursive: true, force: true });

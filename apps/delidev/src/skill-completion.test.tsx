@@ -3,10 +3,10 @@ import { useRef, useState } from "react";
 import { createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { SessionService, SessionQuery, SkillService, SkillProvenance, newRequestId } from "@delinoio/delidev-api-client";
-import { skillToken, skillRanges, editedBindings, useSkillCompletion } from "./skill-completion";
+import { skillToken, skillRanges, selectedSkillRanges, editedBindings, useSkillCompletion, type SkillTokenBinding } from "./skill-completion";
 import { MutationIntents, useRetainedMutation } from "./mutation";
 import { SupportedLanguage, i18n } from "./localization";
 const machine = newRequestId(), agent = newRequestId(), inventory = newRequestId(), worker = newRequestId();
@@ -179,4 +179,67 @@ it("prioritizes a complete live inventory at the retention bound instead of carr
  const input=screen.getByRole("textbox");fireEvent.change(input,{target:{value:"$",selectionStart:1}});await screen.findAllByRole("option");
  current=Array.from({length:256},(_,index)=>({...entries[0]!,name:`live-${index}`,selection:{...entries[0]!.selection,skillId:newRequestId()}})); await client.invalidateQueries();
  await waitFor(()=>expect(screen.getAllByRole("option")).toHaveLength(256));expect(screen.queryByText("add-issue",{selector:"strong"})).toBeNull();expect(screen.queryByRole("option",{name:/Unavailable/})).toBeNull();
+});
+
+
+it.each(["mouse","Enter","Tab"])("decorates only an explicit %s selection while preserving native text and caret",async(method)=>{
+ const f=fixture(),view=render(f.view()),input=screen.getByRole("textbox") as HTMLTextAreaElement;input.focus();
+ fireEvent.change(input,{target:{value:"한글\n$add-iss",selectionStart:11}});const option=await screen.findByRole("option");
+ if(method==="mouse")fireEvent.click(option);else fireEvent.keyDown(input,{key:method});
+ await waitFor(()=>expect(input.selectionStart).toBe(13));
+ expect(input.value).toBe("한글\n$add-issue");expect(document.activeElement).toBe(input);expect(f.send).not.toHaveBeenCalled();
+ const span=view.container.querySelector(".skill-token-selected")!;expect(span.textContent).toBe("$add-issue");expect(span.getAttribute("data-skill-start")).toBe("3");
+ expect(view.container.querySelectorAll(".skill-text-overlay")).toHaveLength(1);expect(span.closest("[aria-hidden=true]")).not.toBeNull();expect(span.getAttribute("role")).toBeNull();expect(span.getAttribute("href")).toBeNull();expect(span.getAttribute("tabindex")).toBeNull();
+ fireEvent.click(screen.getByText("Send"));expect(f.send).toHaveBeenLastCalledWith({value:"한글\n$add-issue",skills:[entries[0]!.selection]});
+});
+it("keeps manually typed tokens plain and moves only an untouched selected binding",async()=>{
+ const f=fixture(),view=render(f.view()),input=screen.getByRole("textbox");
+ fireEvent.change(input,{target:{value:"$add-issue",selectionStart:10}});await screen.findByRole("option");expect(view.container.querySelector(".skill-token-selected")).toBeNull();
+ fireEvent.keyDown(input,{key:"Enter"});expect(view.container.querySelector(".skill-token-selected")).not.toBeNull();
+ fireEvent.change(input,{target:{value:"한글\n$add-issue",selectionStart:13}});expect(view.container.querySelector(".skill-token-selected")?.getAttribute("data-skill-start")).toBe("3");
+ fireEvent.change(input,{target:{value:"한글\n$add-issuX",selectionStart:13}});expect(view.container.querySelector(".skill-token-selected")).toBeNull();
+});
+function DecoratedBindings({runner=machine,locked=false,bindings}:{runner?:string;locked?:boolean;bindings:SkillTokenBinding[]}) {
+ const [value,change]=useState("$add-issue"),textarea=useRef<HTMLTextAreaElement>(null);
+ const skills=useSkillCompletion({value,change,textarea,machineId:runner,agentId:agent,disabled:locked,initialBindings:bindings});
+ return <><fieldset disabled={locked}>{skills.wrap(<textarea ref={textarea} aria-label="Bound decoration" value={value} onChange={event=>skills.onChange(event.target.value,event.target.selectionStart)} onCompositionStart={skills.onCompositionStart} onCompositionEnd={skills.onCompositionEnd}/>)}{skills.warning}</fieldset><button onClick={skills.clear}>Clear selected skills</button></>;
+}
+const originalDecorationBinding=():SkillTokenBinding=>({start:0,end:10,token:"$add-issue",selection:entries[0]!.selection,stale:false,context:`${machine}:${agent}::`});
+it.each(["stale","ambiguous","unresolved","changed","overlap","invalid-selection"])("never decorates a %s original binding",async(reason)=>{
+ const binding=originalDecorationBinding();if(reason==="stale")binding.stale=true;if(reason==="ambiguous")binding.ambiguous=true;if(reason==="invalid-selection")binding.selection={...binding.selection,inventoryId:"invalid"};
+ const bindings=reason==="overlap"?[binding,{...binding}]:[binding];const transport=createRouterTransport(router=>router.service(SkillService,{listSkills:async()=>({skills:entries})}));
+ const view=render(<TransportProvider transport={transport}><QueryClientProvider client={new QueryClient()}><DecoratedBindings bindings={bindings} runner={reason==="unresolved"?"":reason==="changed"?newRequestId():machine}/></QueryClientProvider></TransportProvider>);await act(async()=>{});expect(view.container.querySelector(".skill-token-selected")).toBeNull();
+});
+it("retains valid restored selection while inventory is unknown and gives confirmed absence precedence",async()=>{
+ let state:"pending"|"failed"|"absent"="pending",release!:()=>void;const pending=new Promise<void>(done=>{release=done});
+ const transport=createRouterTransport(router=>router.service(SkillService,{listSkills:async()=>{if(state==="pending")await pending;if(state==="failed")throw new Error("Private inventory failure");return{skills:[]};}}));const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ const view=render(<TransportProvider transport={transport}><QueryClientProvider client={client}><DecoratedBindings bindings={[originalDecorationBinding()]}/></QueryClientProvider></TransportProvider>);
+ expect(view.container.querySelector(".skill-token-selected")?.textContent).toBe("$add-issue");state="failed";await act(async()=>{release()});expect(view.container.querySelector(".skill-token-selected")?.textContent).toBe("$add-issue");expect(view.container.querySelector(".skill-token-unavailable")).toBeNull();
+ state="absent";await act(async()=>{await client.invalidateQueries()});await waitFor(()=>expect(view.container.querySelector(".skill-token-unavailable")?.textContent).toBe("$add-issue"));expect(view.container.querySelector(".skill-token-selected")).toBeNull();expect(view.container.querySelectorAll(".skill-text-overlay")).toHaveLength(1);
+});
+it("preserves selected decoration under locks, suppresses IME, and clears only when editable",async()=>{
+ const transport=createRouterTransport(router=>router.service(SkillService,{listSkills:async()=>({skills:entries})}));const client=new QueryClient();
+ const tree=(locked:boolean)=><TransportProvider transport={transport}><QueryClientProvider client={client}><DecoratedBindings bindings={[originalDecorationBinding()]} locked={locked}/></QueryClientProvider></TransportProvider>;
+ const view=render(tree(true)),input=screen.getByRole("textbox");expect(view.container.querySelector(".skill-token-selected")).not.toBeNull();fireEvent.click(screen.getByText("Clear selected skills"));expect(view.container.querySelector(".skill-token-selected")).not.toBeNull();
+ view.rerender(tree(false));fireEvent.compositionStart(input);expect(view.container.querySelector(".skill-text-overlay")).toBeNull();fireEvent.compositionEnd(input);expect(view.container.querySelector(".skill-token-selected")).not.toBeNull();fireEvent.click(screen.getByText("Clear selected skills"));expect(view.container.querySelector(".skill-token-selected")).toBeNull();expect(input).toHaveProperty("value","$add-issue");
+});
+it("bounds selected decoration to the existing selection limit",()=>{
+ const text=Array(20).fill("$add-issue").join(" ");const binding=originalDecorationBinding();const bindings=Array.from({length:20},(_,index)=>({...binding,start:index*11,end:index*11+10}));expect(selectedSkillRanges(text,bindings,`${machine}:${agent}::`,true)).toHaveLength(16);
+});
+
+it("gives confirmed missing selection precedence even when its token prefixes another candidate",async()=>{
+ let current=entries;const client=new QueryClient();const transport=createRouterTransport(router=>router.service(SkillService,{listSkills:async()=>({skills:current})}));
+ const view=render(<TransportProvider transport={transport}><QueryClientProvider client={client}><Composer send={vi.fn()}/></QueryClientProvider></TransportProvider>);const input=screen.getByRole("textbox");fireEvent.change(input,{target:{value:"$add-iss",selectionStart:8}});await screen.findByRole("option");fireEvent.keyDown(input,{key:"Enter"});
+ current=[{...entries[1]!,name:"add-issue-extra"}];fireEvent.change(input,{target:{value:"$add-issue ",selectionStart:10}});await act(async()=>{await client.invalidateQueries()});await screen.findByRole("option",{name:/add-issue-extra/});
+ expect(view.container.querySelector(".skill-token-selected")).toBeNull();expect(view.container.querySelector(".skill-token-unavailable")?.textContent).toBe("$add-issue");
+});
+
+it("uses one original mirror alignment owner for selected text and retains native scrolling",async()=>{
+ const f=fixture(),view=render(f.view()),input=screen.getByRole("textbox") as HTMLTextAreaElement;
+ fireEvent.change(input,{target:{value:"한글\n$add-iss",selectionStart:11}});await screen.findByRole("option");fireEvent.keyDown(input,{key:"Tab"});
+ for(const [property,value] of Object.entries({offsetLeft:7,offsetTop:8,clientLeft:2,clientTop:1,clientWidth:240,clientHeight:60}))Object.defineProperty(input,property,{configurable:true,value});
+ input.style.fontFamily="Fixture font";input.style.fontSize="24px";input.style.lineHeight="32px";input.scrollLeft=11;input.scrollTop=13;fireEvent.scroll(input);
+ const viewport=view.container.querySelector<HTMLElement>(".skill-text-overlay")!,mirror=viewport.firstElementChild as HTMLElement;
+ expect(viewport.style.left).toBe("9px");expect(viewport.style.top).toBe("9px");expect(viewport.style.width).toBe("240px");expect(viewport.style.height).toBe("60px");expect(mirror.style.transform).toBe("translate(-11px, -13px)");expect(mirror.style.fontSize).toBe("24px");expect(mirror.style.lineHeight).toBe("32px");expect(view.container.querySelectorAll(".skill-text-overlay")).toHaveLength(1);
+ input.style.fontSize="28px";fireEvent(window,new Event("resize"));expect(mirror.style.fontSize).toBe("28px");expect(screen.getByRole("textbox")).toBe(input);expect(input.value).toBe("한글\n$add-issue");
 });
