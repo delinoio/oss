@@ -69,7 +69,19 @@ func TestQuotaReflectionRejectsExactShortOriginalAndEncodedIDs(t *testing.T) {
 }
 
 func TestNativeQuotaShortReflectionRejectsReadsAndRollingUpdates(t *testing.T) {
-	for _, key := range []string{"acct", "YWNjdA", "user", "dXNlcg", "tok", "dG9r"} {
+	type sample struct {
+		key, name string
+		profile   bool
+	}
+	cases := []sample{{key: "acct"}, {key: "YWNjdA"}, {key: "user"}, {key: "dXNlcg"}, {key: "tok"}, {key: "dG9r"}}
+	for _, profile := range []bool{false, true} {
+		for _, identity := range []sample{{key: "Ada", name: "Ada"}, {key: "QWRh", name: "Ada"}, {key: "UQ==", name: "Q"}} {
+			identity.profile = profile
+			cases = append(cases, identity)
+		}
+	}
+	for _, sample := range cases {
+		key := sample.key
 		t.Run(key, func(t *testing.T) {
 			config := fixtureConfig(t, "managed-ready")
 			config.Mode, config.ManagedAuthentication = SubscriptionProtocol, true
@@ -95,7 +107,11 @@ func TestNativeQuotaShortReflectionRejectsReadsAndRollingUpdates(t *testing.T) {
 			if err = native.WaitManagedLogin(ctx, progress.LoginID); err != nil {
 				t.Fatal(err)
 			}
-			if err = security.WriteAtomic(filepath.Join(config.Home, "auth.json"), shortQuotaBundle(t)); err != nil {
+			bundle := shortQuotaBundle(t)
+			if sample.name != "" {
+				bundle = quotaDisplayNameBundle(t, sample.name, sample.profile)
+			}
+			if err = security.WriteAtomic(filepath.Join(config.Home, "auth.json"), bundle); err != nil {
 				t.Fatal(err)
 			}
 			observed, err := native.ReadManagedQuota(ctx, domain.NewID())
