@@ -290,6 +290,7 @@ type Session struct {
 	Problem                     *Error                     `json:"problem,omitempty"`
 	ExecutionRecoveryJobID      ID                         `json:"execution_recovery_job_id,omitempty"`
 	ActiveExecutionID           ID                         `json:"active_execution_id,omitempty"`
+	NativeBackground            *NativeBackgroundInventory `json:"native_background,omitempty"`
 	PendingSteerID              ID                         `json:"pending_steer_id,omitempty"`
 	LastInputSequence           uint64                     `json:"last_input_sequence"`
 	PendingInputs               uint32                     `json:"pending_inputs"`

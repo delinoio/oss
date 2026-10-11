@@ -53,12 +53,14 @@ type Config struct {
 	Ready           func(domain.ID)
 	// Admitted runs only after this original process owns its generation/lock.
 	// It publishes desktop ownership independently of network readiness.
-	Admitted         func(Lifecycle)
-	execution        *PublicationConfig
-	executionContext context.Context
-	questionControls <-chan *pb.QuestionResponseControl
-	approvalControls <-chan *pb.ApprovalResponseControl
-	steerControls    <-chan *pb.SteerInputControl
+	Admitted            func(Lifecycle)
+	execution           *PublicationConfig
+	executionContext    context.Context
+	questionControls    <-chan *pb.QuestionResponseControl
+	approvalControls    <-chan *pb.ApprovalResponseControl
+	steerControls       <-chan *pb.SteerInputControl
+	backgroundControls  <-chan *pb.NativeBackgroundControl
+	backgroundSupported bool
 }
 type journalState string
 
@@ -81,16 +83,18 @@ type journal struct {
 }
 
 type assignment struct {
-	resource    *pb.Resource
-	context     context.Context
-	cancel      context.CancelFunc
-	controls    chan *pb.QuestionResponseControl
-	approvals   chan *pb.ApprovalResponseControl
-	approvalIDs map[domain.ID]responseControlIdentity
-	responses   map[domain.ID]responseControlIdentity
-	steers      chan *pb.SteerInputControl
-	steerIDs    map[domain.ID]steerControlIdentity
-	native      bool
+	resource      *pb.Resource
+	context       context.Context
+	cancel        context.CancelFunc
+	controls      chan *pb.QuestionResponseControl
+	approvals     chan *pb.ApprovalResponseControl
+	approvalIDs   map[domain.ID]responseControlIdentity
+	responses     map[domain.ID]responseControlIdentity
+	steers        chan *pb.SteerInputControl
+	steerIDs      map[domain.ID]steerControlIdentity
+	backgrounds   chan *pb.NativeBackgroundControl
+	backgroundIDs map[domain.ID]uint64
+	native        bool
 }
 
 func authenticated[T any](credential Credential, message *T) *connect.Request[T] {
@@ -284,6 +288,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		titleCapabilityExpected := false
 		managedCapabilityExpected := false
 		config.quotaBlockSupported = false
+		config.backgroundSupported = false
 		claudeCapabilityExpected := false
 		metadataExpected := false
 		remoteCloneExpected := false
@@ -355,6 +360,11 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			if revertExpected {
 				profile += "\x00codex-session-revert-v1"
+			}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_NATIVE_BACKGROUND_TERMINALS_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_NATIVE_BACKGROUND_TERMINALS_V1)
+				config.backgroundSupported = true
+				profile += "\x00codex-native-background-terminals-v1"
 			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_NATIVE_SHELL_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_NATIVE_SHELL_V1)
@@ -665,6 +675,52 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 		for stream.Receive() {
 			deadline.Reset(heartbeatTimeout)
 			message := stream.Msg()
+			if message.NativeBackground != nil {
+				control := message.NativeBackground
+				if domain.ID(control.JobId).Validate() != nil || domain.ID(control.ActionId).Validate() != nil || control.Revision == 0 || message.Job != nil || message.Heartbeat || message.CancelRequested || message.CancelJobId != "" || message.SteerInput != nil || message.QuestionResponse != nil || message.ApprovalResponse != nil {
+					cancel(publicationUncertain())
+					return
+				}
+				value, ok := active.Load(control.JobId)
+				if !ok {
+					if control.JobId == lastAssigned {
+						continue
+					}
+					cancel(publicationUncertain())
+					return
+				}
+				work := value.(*assignment)
+				if !work.native {
+					cancel(publicationUncertain())
+					return
+				}
+				if work.context.Err() != nil {
+					continue
+				}
+				id := domain.ID(control.ActionId)
+				if revision, exists := work.backgroundIDs[id]; exists {
+					if revision != control.Revision {
+						cancel(publicationUncertain())
+						return
+					}
+					continue
+				}
+				if len(work.backgroundIDs) >= domain.MaxNativeBackgroundActions {
+					cancel(publicationUncertain())
+					return
+				}
+				work.backgroundIDs[id] = control.Revision
+				select {
+				case work.backgrounds <- proto.Clone(control).(*pb.NativeBackgroundControl):
+				case <-work.context.Done():
+				case <-ctx.Done():
+					return
+				default:
+					cancel(publicationUncertain())
+					return
+				}
+				continue
+			}
 			if message.SteerInput != nil {
 				control := message.SteerInput
 				identity, err := steerControl(control)
@@ -842,7 +898,7 @@ func watchWithTimeout(ctx context.Context, config Config, client delidevv1connec
 				return
 			}
 			jobContext, stopJob := context.WithCancel(ctx)
-			work := &assignment{resource: resource, context: jobContext, cancel: stopJob, controls: make(chan *pb.QuestionResponseControl, domain.MaxOpenInteractions), approvals: make(chan *pb.ApprovalResponseControl, domain.MaxOpenInteractions), approvalIDs: map[domain.ID]responseControlIdentity{}, responses: map[domain.ID]responseControlIdentity{}, steers: make(chan *pb.SteerInputControl, 1), steerIDs: map[domain.ID]steerControlIdentity{}}
+			work := &assignment{resource: resource, context: jobContext, cancel: stopJob, controls: make(chan *pb.QuestionResponseControl, domain.MaxOpenInteractions), approvals: make(chan *pb.ApprovalResponseControl, domain.MaxOpenInteractions), approvalIDs: map[domain.ID]responseControlIdentity{}, responses: map[domain.ID]responseControlIdentity{}, steers: make(chan *pb.SteerInputControl, 1), steerIDs: map[domain.ID]steerControlIdentity{}, backgrounds: make(chan *pb.NativeBackgroundControl, 1), backgroundIDs: map[domain.ID]uint64{}}
 			var envelope domain.Job
 			if decodeAssignedJob(resource.DocumentJson, &envelope) != nil {
 				stopJob()
@@ -971,6 +1027,7 @@ func runAndReportJob(ctx context.Context, config Config, client delidevv1connect
 	jobConfig.questionControls = work.controls
 	jobConfig.approvalControls = work.approvals
 	jobConfig.steerControls = work.steers
+	jobConfig.backgroundControls = work.backgrounds
 	jobConfig.progress = newSessionStartupReporter(work.context, jobConfig, job)
 	defer jobConfig.progress.close()
 	result, err := runJob(work.context, jobConfig, instance, resource, job)

@@ -44,6 +44,11 @@ type Config struct {
 	ManagedAuthentication bool
 }
 type Client struct {
+	background         map[string]domain.NativeBackgroundTerminal
+	backgroundReads    map[domain.ID]bool
+	backgroundInvalid  bool
+	backgroundListed   map[string]bool
+	backgroundSent     map[domain.ID]bool
 	managedForkHistory bool
 	quotaUsed          atomic.Bool
 	skillsRoot         string

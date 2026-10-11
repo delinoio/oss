@@ -385,6 +385,9 @@ func applyExecutionEventAt(tx *store.Tx, job store.Record, input domain.Executio
 						return executionEventConflict()
 					}
 				}
+				if err := retireNativeBackground(tx, sr, session); err != nil {
+					return err
+				}
 				if err := retireSteer(tx, sr, session, true); err != nil {
 					return err
 				}

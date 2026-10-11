@@ -490,6 +490,14 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	if err := config.startup.ready(ctx, client.Version()); err != nil {
 		return nil, err
 	}
+	var background *nativeBackgroundController
+	if config.backgroundSupported && input.Configuration.SidechatPolicy == "" {
+		background = &nativeBackgroundController{config: config.execution, input: input, native: client, inventory: domain.NativeBackgroundInventory{JobID: owner, NativeThreadID: domain.NativeIdentity(bound.Thread.ID)}}
+		if err := background.refresh(ctx, nil); err != nil {
+			logger.WarnContext(ctx, "native_background_inventory_unavailable", "code", domain.SafeError(err).Code)
+			background = nil
+		}
+	}
 	config.startup.claimInput()
 	turn, err := client.StartTurn(ctx, input.TurnRequestID, input.InputID, input.Input)
 	if err != nil {
@@ -509,6 +517,15 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	}
 	config.startup.acknowledgeInput()
 	logger.InfoContext(ctx, "native_execution_input_accepted", "input_id", input.InputID)
+	var finishBackground func() error
+	if background != nil {
+		finishBackground = startNativeBackgroundController(ctx, cancelNative, config.backgroundControls, background)
+		defer func() {
+			if err := finishBackground(); err != nil {
+				output, returned = nil, config.startup.cleanupFailure(returned, err)
+			}
+		}()
+	}
 	finishResponses := startQuestionResponseController(ctx, nativeCtx, cancelNative, config.questionControls, mapper, client)
 	finishApprovals := startApprovalResponseController(ctx, nativeCtx, cancelNative, config.approvalControls, mapper, client)
 	finishSteers := startSteerController(ctx, nativeCtx, cancelNative, config.steerControls, mapper, client)
@@ -559,6 +576,31 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 				continue
 			}
 			return nil, err
+		}
+		if event.BackgroundResponse {
+			continue
+		}
+		if background != nil {
+			if event.Kind == codex.TurnCompletedEvent {
+				if err := finishBackground(); err != nil {
+					return nil, err
+				}
+			}
+			if event.Kind == codex.ToolStartedEvent || event.Kind == codex.ToolCompletedEvent || event.Kind == codex.ToolOutputEvent || event.Kind == codex.TurnCompletedEvent {
+				if err := background.refresh(publicationContext, nil); err != nil {
+					logger.WarnContext(publicationContext, "native_background_inventory_unavailable", "code", domain.SafeError(err).Code)
+					if closeErr := finishBackground(); closeErr != nil {
+						return nil, closeErr
+					}
+					if closeErr := background.closeInventory(publicationContext); closeErr != nil {
+						logger.WarnContext(publicationContext, "native_background_closure_publication_failed", "code", domain.SafeError(closeErr).Code)
+					}
+					background = nil
+				}
+			}
+			if event.Kind == codex.TurnCompletedEvent {
+				background = nil
+			}
 		}
 		// Completion must inspect the native inventory even when spawn events
 		// were missed. Root completion alone cannot release live descendants.

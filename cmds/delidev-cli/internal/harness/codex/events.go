@@ -157,6 +157,8 @@ type Message struct {
 }
 
 type Event struct {
+	BackgroundResponse bool
+
 	NativeShell      *domain.NativeShellObservation
 	NativeError      *NativeErrorObservation `json:"-"`
 	AutoReview       *domain.AutoReviewObservation
@@ -286,6 +288,12 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	}
 	if c.logger != nil && event.Metadata == GatewayOAuthStatusDiscarded {
 		c.logger.InfoContext(ctx, "Codex passive gateway OAuth status observed", "owner_id", c.ownerID, "status", event.gatewayStatus, "policy", GatewayOAuthStatusDiscarded)
+	}
+	if err := c.observeBackgroundLocked(event); err != nil {
+		c.backgroundInvalid = true
+		if c.logger != nil {
+			c.logger.WarnContext(ctx, "native_background_identity_unavailable", "owner_id", c.ownerID, "code", domain.SafeError(err).Code)
+		}
 	}
 	event.EmittedAtMS = native.EmittedAtMS
 	return event, nil
@@ -458,6 +466,10 @@ func (c *Client) observeLateTurnLocked(native nativewire.Event) (Event, error) {
 	var id domain.ID
 	if json.Unmarshal(native.ID, &id) != nil || id.Validate() != nil {
 		return privateNative(native), nil
+	}
+	if c.backgroundReads[id] || c.backgroundSent[id] {
+		delete(c.backgroundReads, id)
+		return Event{Kind: MetadataEvent, ThreadID: c.thread, RequestID: id, Correlated: true, Late: true, BackgroundResponse: true}, nil
 	}
 	op, exists := c.execution.pending[id]
 	if !exists {

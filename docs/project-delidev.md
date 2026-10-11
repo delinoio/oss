@@ -445,3 +445,5 @@ workspace/process/native adapters own actual operation observations; desktop own
 the grouped conversation and compact disclosure. Follow the startup, workspace,
 process, protocol and desktop contracts. No telemetry observation grants input,
 credentials, retry, cleanup or execution authority, and no migration is added.
+
+Original native background terminals use CLI/Connect controls on the original active Codex Worker only. Retained item/process references, action receipts and bounded output follow the [harness](cmds-delidev-harness-contract.md#original-native-background-terminals), [session](cmds-delidev-sessions-contract.md#original-native-background-terminals) and [terminal](cmds-delidev-terminals-contract.md#original-native-background-terminals) contracts. Ordinary execution completion and independent product terminal lifetimes remain unchanged; completed or lost owners expose retained status without cold-resume adoption.

@@ -47,7 +47,7 @@ func (s *Service) SteerQueuedInput(ctx context.Context, req *connect.Request[pb.
 		if err != nil {
 			return nil, err
 		}
-		if session.PendingSteerID != "" {
+		if session.PendingSteerID != "" || session.NativeBackground != nil && session.NativeBackground.PendingActionID != "" {
 			return nil, steerConflict()
 		}
 		assignment, grant, err := s.steerScope(tx, sr, session, identity.Execution, identity.Turn)
