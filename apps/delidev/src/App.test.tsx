@@ -1660,6 +1660,7 @@ it.each(["New session", "New Chat"])(
     fireEvent.click(
       within(wizard).getByRole("button", { name: "Close New Agent Worker" }),
     );
+    fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
     fireEvent.click(screen.getAllByRole("button", { name: surface })[0]);
     expect(
       screen.getByRole("textbox", { name: "First message" }),
