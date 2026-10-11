@@ -89,12 +89,17 @@ export function useMachineSettingsController(
     (result.dataUpdatedAt > (retained?.readUpdatedAt ?? 0) ||
       (result.dataUpdatedAt === retained?.readUpdatedAt &&
         result.data !== retained?.read));
+  const readResource = result.data?.resource;
+  const readExceedsAcknowledgement =
+    exact(readResource) &&
+    exact(acknowledged) &&
+    readResource.revision > acknowledged.revision;
   // Heartbeats advance without a business revision. Consume each successful
-  // read once, and fence cached reads when a mutation is acknowledged so they
-  // cannot replace its configuration on the next render or after a read error.
+  // read once, and fence cached or equal/older reads when a mutation is
+  // acknowledged while still accepting a simultaneously delivered newer read.
   if (
     freshRead &&
-    !newAcknowledgement &&
+    (!newAcknowledgement || readExceedsAcknowledgement) &&
     exact(result.data?.resource) &&
     (!current || result.data.resource.revision >= current.revision)
   )

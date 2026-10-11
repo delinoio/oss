@@ -356,10 +356,12 @@ without a configuration revision. Track successful response identity and query
 freshness separately from the business revision. At each Settings opening,
 baseline the query result already in cache so it cannot be mistaken for a read
 accepted during that Settings lifetime. Do not replay cached data over a newer
-acknowledged mutation. A compatible later read can update the heartbeat, while
-lower revisions, failed reads and malformed or foreign resources cannot replace
-the accepted configuration. Read failures retain the existing error and action
-restrictions.
+acknowledged mutation. If a fresh read and acknowledgement arrive together,
+accept the read only when its business revision exceeds the acknowledgement;
+equal or lower reads stay fenced. A compatible later read can update the
+heartbeat, while lower revisions, failed reads and malformed or foreign
+resources cannot replace the accepted configuration. Read failures retain the
+existing error and action restrictions.
 
 Equal-revision heartbeat refreshes preserve executable-path drafts and their
 original request revisions. Only a changed business revision makes those drafts

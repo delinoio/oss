@@ -157,6 +157,36 @@ it.each([7n, 8n])(
   },
 );
 
+it("accepts a newer read delivered with a lower mutation acknowledgement", async () => {
+  const value = fixture();
+  await value.ready();
+  const newer = machine(value.initial.id, 9n, later, "/server/codex");
+  const acknowledged = machine(
+    value.initial.id,
+    8n,
+    earlier,
+    "/acknowledged/codex",
+  );
+  value.read.mockResolvedValueOnce({ resource: newer });
+  value.discover.mockResolvedValueOnce({ machine: acknowledged });
+  await act(async () => {
+    await Promise.all([
+      value.result.current.refetch(),
+      value.result.current.discovery.send({
+        mutation: {
+          id: value.initial.id,
+          expectedRevision: 7n,
+          requestId: newRequestId(),
+        },
+      }),
+    ]);
+  });
+  expect(value.result.current.current?.revision).toBe(9n);
+  expect(value.result.current.data.installations).toMatchObject([
+    { explicit_path: "/server/codex" },
+  ]);
+});
+
 it("preserves an editable path draft and its request revision during heartbeat refresh", async () => {
   const value = fixture();
   await value.ready();
