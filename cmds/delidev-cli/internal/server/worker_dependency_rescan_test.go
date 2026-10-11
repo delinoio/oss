@@ -28,8 +28,8 @@ func TestPrimaryWorkRescansOriginalDependencyBlockedStorage(t *testing.T) {
 		{name: "cleanup"}, {name: "recovery", recovery: true}, {name: "later-terminal", terminal: 1}, {name: "across-pages", terminal: store.MaxPage + 1},
 		{name: "full-blocked-cleanup-page", blocked: store.MaxPage},
 		{name: "full-blocked-recovery-page", recovery: true, blocked: store.MaxPage},
-		{name: "all-blocked-change", blocked: store.MaxPage, allBlocked: true},
-		{name: "all-blocked-cancel", blocked: store.MaxPage, allBlocked: true, cancelBlocked: true},
+		{name: "all-blocked-change", terminal: store.MaxPage - 1, blocked: 1, allBlocked: true},
+		{name: "all-blocked-cancel", terminal: store.MaxPage - 1, blocked: 1, allBlocked: true, cancelBlocked: true},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			f := newStorageFixture(t)
@@ -132,7 +132,7 @@ func TestPrimaryWorkRescansOriginalDependencyBlockedStorage(t *testing.T) {
 			}
 			var assigned *pb.Resource
 			if scenario.allBlocked {
-				// A full excluded page must yield to the normal heartbeat and cancellation.
+				// A full page containing excluded work must yield to the heartbeat and cancellation.
 				if !stream.Receive() || !stream.Msg().Heartbeat {
 					t.Fatal("all-blocked stream did not heartbeat", stream.Msg(), stream.Err())
 				}
@@ -202,7 +202,7 @@ func TestPrimaryWorkRescansOriginalDependencyBlockedStorage(t *testing.T) {
 				}
 			}
 			if !stream.Receive() || stream.Msg().Job == nil || stream.Msg().Job.Id != string(blocked) {
-				t.Fatal("original stream did not revisit eligible storage", stream.Msg(), stream.Err())
+				t.Fatalf("original stream did not revisit eligible storage: want job %s, got %v (%v)", blocked, stream.Msg(), stream.Err())
 			}
 			if stream.Msg().Job.Revision != 2 {
 				t.Fatal("original job was claimed more than once", stream.Msg().Job.Revision)
