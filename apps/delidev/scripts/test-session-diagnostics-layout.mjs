@@ -37,7 +37,7 @@ try {
               ? "Selected execution account"
               : "선택된 실행 계정";
           await page.setContent(
-            `<html lang="${language}" data-theme="${theme}"><style>${styles.join("\n")}</style><body><main class="session-workspace session-tabbed" style="display:block;height:100vh;width:${panelWidth}px"><div class="session-app-panel session-diagnostics-panel"><div class="session-diagnostics"><div><section class="session-information-section"><h3>Session details</h3><dl><dt>${label}</dt><dd>${reference}<p>Original Worker guidance</p></dd><dt>Recovery</dt><dd>none</dd></dl></section><section><h3>Snapshot references and account order</h3><dl><dt>${label}</dt><dd>${reference}</dd></dl><ol aria-label="Saved account order"><li>first-account · weight 2</li><li>second-account · weight 1</li></ol></section></div><aside class="session-files"><header><h2>Model request diagnostics</h2><button>Close diagnostics</button></header><p role="status">Retained observations may be stale</p><form><label>${label}<input value="${reference}" /></label><button>Apply execution filter</button></form><article class="result"><h3>Native input</h3><dl><dt>Request</dt><dd>${reference}</dd></dl><details class="disclosure" data-disclosure-density="compact"><summary class="disclosure-header">Technical details</summary><p>${reference}</p></details></article><button>Load more</button></aside></div></div></main><section id="other"><dl><dt>${label}</dt><dd>Other surface</dd></dl></section></body></html>`,
+            `<html lang="${language}" data-theme="${theme}"><style>${styles.join("\n")}</style><body><main class="session-workspace session-tabbed" style="display:block;height:100vh;width:${panelWidth}px"><div class="session-app-panel session-diagnostics-panel"><div class="session-diagnostics"><div><section class="session-information-section"><h3>Session details</h3><dl><div data-token-observation><dt>${label}</dt><dd>${reference}<p>Original Worker guidance</p></dd></div><div><dt>Recovery</dt><dd>none</dd></div></dl></section><section><h3>Snapshot references and account order</h3><dl><div><dt>${label}</dt><dd>${reference}</dd></div></dl><ol aria-label="Saved account order"><li>first-account · weight 2</li><li>second-account · weight 1</li></ol></section><p id="portal-notice" role="status">Saved execution evidence is unavailable</p></div><aside class="session-files"><header><h2>Model request diagnostics</h2><button>Close diagnostics</button></header><p role="status">Retained observations may be stale</p><form><label>${label}<input value="${reference}" /></label><button>Apply execution filter</button></form><article class="result"><h3>Native input</h3><dl><div><dt>Request</dt><dd>${reference}</dd></div></dl><details class="disclosure" data-disclosure-density="compact"><summary class="disclosure-header">Technical details</summary><p>${reference}</p></details></article><button>Load more</button></aside></div></div></main><section id="other"><dl><dt>${label}</dt><dd>Other surface</dd></dl></section></body></html>`,
           );
           const geometry = await page.evaluate(() => {
             const rect = (e) => {
@@ -53,7 +53,8 @@ try {
             const content = document.querySelector(".session-diagnostics"),
               host = content.firstElementChild,
               first = host.firstElementChild,
-              next = host.lastElementChild;
+              next = host.children[1],
+              portalNotice = host.lastElementChild;
             const labels = [...content.querySelectorAll("dt")],
               values = [...content.querySelectorAll("dd")];
             const heading = first.querySelector("h3"),
@@ -65,6 +66,7 @@ try {
               headingSize: getComputedStyle(heading).fontSize,
               headingGap: rect(facts).y - rect(heading).bottom,
               sectionGap: rect(next.querySelector("h3")).y - rect(first).bottom,
+              portalItemGap: rect(portalNotice).y - rect(next).bottom,
               contentWidth: rect(host).width,
               firstX: rect(first).x,
               requestX: rect(content.querySelector("aside")).x,
@@ -90,6 +92,10 @@ try {
           assert.equal(geometry.headingSize, "16px");
           assert.equal(geometry.headingGap, 16);
           assert(Math.abs(geometry.sectionGap - 32) <= 1, "section rhythm");
+          assert(
+            Math.abs(geometry.portalItemGap - 32) <= 1,
+            "all portal items receive section rhythm",
+          );
           assert(geometry.contentWidth <= 1040, "content cap");
           assert.equal(geometry.firstX, geometry.requestX, "shared inset");
           assert(
@@ -143,12 +149,26 @@ try {
             await page
               .locator("button")
               .first()
-              .evaluate(
-                (e) =>
+              .evaluate((e) => {
+                const style = getComputedStyle(e),
+                  focus = getComputedStyle(document.documentElement)
+                    .getPropertyValue("--focus")
+                    .trim();
+                return (
                   e === document.activeElement &&
-                  parseFloat(getComputedStyle(e).outlineWidth) >= 2,
-              ),
-            "keyboard focus",
+                  parseFloat(style.outlineWidth) >= 2 &&
+                  style.outlineColor === focus
+                );
+              }),
+            "keyboard focus uses the semantic focus token",
+          );
+          await page.locator("input").focus();
+          assert.equal(
+            await page
+              .locator("input")
+              .evaluate((e) => getComputedStyle(e).outlineWidth),
+            "0px",
+            "form controls retain their ordinary focus appearance",
           );
           await page.locator("summary").focus();
           await page.keyboard.press("Enter");

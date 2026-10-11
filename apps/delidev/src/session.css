@@ -1391,7 +1391,7 @@
   padding: 0;
   border: 0;
 }
-.session-diagnostics > div > section + section,
+.session-diagnostics > div > * + *,
 .session-diagnostics > .session-files {
   margin-top: 16px;
   padding-top: 16px;
@@ -1417,6 +1417,9 @@
   column-gap: 24px;
   row-gap: 12px;
   margin: 0;
+}
+.session-diagnostics dl > div {
+  display: contents;
 }
 .session-diagnostics dt {
   color: var(--muted);
@@ -1465,8 +1468,8 @@
 .session-diagnostics .disclosure[data-disclosure-density] > .disclosure-header {
   min-height: 40px;
 }
-.session-diagnostics :focus-visible {
-  outline: 2px solid var(--accent);
+.session-diagnostics :focus-visible:not(:where(input, textarea, select)) {
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 @container session-diagnostics (width < 640px) {
