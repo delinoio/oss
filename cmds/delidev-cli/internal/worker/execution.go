@@ -501,12 +501,25 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 	readContext, publicationContext := ctx, nativeCtx
 	stopping := false
 	var parentTerminal *codex.Event
+	terminalPublished := false
+	var dynamicDrainCancel context.CancelFunc
+	var dynamicDrainParent context.Context
+	defer func() {
+		if dynamicDrainCancel != nil {
+			dynamicDrainCancel()
+		}
+	}()
 	for {
 		if ctx.Err() != nil && !stopping {
 			if err := nativeCtx.Err(); err != nil {
 				return nil, domain.SafeError(err)
 			}
 			stopping = true
+			if dynamicDrainCancel != nil {
+				dynamicDrainCancel()
+				dynamicDrainCancel = nil
+				dynamicDrainParent = nil
+			}
 			bounded, cancel := context.WithTimeout(nativeCtx, 15*time.Second)
 			defer cancel()
 			readContext, publicationContext = bounded, bounded
@@ -554,6 +567,17 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			}
 			event = activity
 		}
+		if event.Kind == codex.TurnCompletedEvent {
+			terminal := event
+			parentTerminal = &terminal
+			if !mapper.dynamicToolsSettled() {
+				if dynamicDrainCancel == nil {
+					dynamicDrainParent = readContext
+					readContext, dynamicDrainCancel = context.WithTimeout(dynamicDrainParent, 15*time.Second)
+				}
+				continue
+			}
+		}
 		handled, err := mapper.PublishCore(publicationContext, event)
 		if err != nil {
 			logger.WarnContext(publicationContext, "native_execution_publication_failed", "event_kind", event.Kind, "correlated", event.Correlated, "late", event.Late, "code", domain.SafeError(err).Code)
@@ -569,11 +593,26 @@ func executeSession(ctx context.Context, config Config, owner domain.ID, job dom
 			}
 		}
 		if event.Kind == codex.TurnCompletedEvent {
-			copy := event
-			parentTerminal = &copy
+			terminalPublished = true
+		}
+		if parentTerminal != nil && !terminalPublished && mapper.dynamicToolsSettled() {
+			if dynamicDrainCancel != nil {
+				dynamicDrainCancel()
+				dynamicDrainCancel = nil
+				readContext = dynamicDrainParent
+				dynamicDrainParent = nil
+			}
+			handled, err := mapper.PublishCore(publicationContext, *parentTerminal)
+			if err != nil || !handled {
+				if err == nil {
+					err = publicationUncertain()
+				}
+				return nil, err
+			}
+			terminalPublished = true
 		}
 		hasChildren, childrenClosed := mapper.childState()
-		if parentTerminal == nil || !childrenClosed {
+		if parentTerminal == nil || !terminalPublished || !childrenClosed {
 			continue
 		}
 

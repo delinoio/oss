@@ -133,6 +133,28 @@ func TestDynamicNativeCompletionAndFailedTurnDoNotSettleRequest(t *testing.T) {
 		t.Fatal("root failure erased original request", err)
 	}
 }
+func TestDynamicLateLifecycleSettlesBeforeTerminalPublication(t *testing.T) {
+	c, rpc := dynamicWorkerFixture(t)
+	terminal := codex.Event{Kind: codex.TurnCompletedEvent, ThreadID: c.thread, TurnID: c.turn, Correlated: true, Turn: &codex.Turn{ID: c.turn, Status: codex.TurnCompleted}}
+	before := len(rpc.events)
+	// The execution reader retains this terminal without publishing it until
+	// bounded lifecycle draining observes both completion and resolution.
+	if c.dynamicToolsSettled() {
+		t.Fatal("open request unexpectedly settled before the terminal event")
+	}
+	identity := c.dynamicTools["dynamic-call"].Tool.Request.Identity
+	completed := codex.Event{Kind: codex.DynamicToolEvent, ThreadID: c.thread, TurnID: c.turn, ItemID: "dynamic-call", Correlated: true, Late: true, DynamicTool: &domain.DynamicToolUpdate{NativeID: "dynamic-call", Stage: domain.DynamicCompleted, Snapshot: &domain.DynamicToolSnapshot{Identity: identity, Status: "completed"}}}
+	if handled, err := c.PublishCore(context.Background(), completed); !handled || err != nil {
+		t.Fatal("late native completion was not drained", err)
+	}
+	resolved := codex.Event{Kind: codex.DynamicToolEvent, ThreadID: c.thread, TurnID: c.turn, ItemID: "dynamic-call", Correlated: true, Late: true, DynamicTool: &domain.DynamicToolUpdate{NativeID: "dynamic-call", Stage: domain.DynamicResolved, Token: c.dynamicTools["dynamic-call"].Tool.Request.Token}}
+	if handled, err := c.PublishCore(context.Background(), resolved); !handled || err != nil || !c.dynamicToolsSettled() {
+		t.Fatal("late resolution did not settle the dynamic request", err)
+	}
+	if handled, err := c.PublishCore(context.Background(), terminal); !handled || err != nil || !c.finished || len(rpc.events) != before+3 {
+		t.Fatal("terminal did not publish after lifecycle reconciliation", err)
+	}
+}
 func TestDynamicCanceledControllerDoesNotSend(t *testing.T) {
 	c, event := dynamicWorkerFixture(t)
 	ctx, cancel := context.WithCancel(context.Background())
