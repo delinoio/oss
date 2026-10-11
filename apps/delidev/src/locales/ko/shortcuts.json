@@ -1,4 +1,6 @@
 {
+  "shortcuts.openTerminals": "터미널 열기",
+  "shortcuts.terminalsUnavailable": "Sidechat에서는 터미널을 사용할 수 없습니다.",
   "shortcuts.title": "키보드 단축키",
   "shortcuts.currentScreen": "현재 화면: {{name}}",
   "shortcuts.close": "키보드 단축키 닫기",

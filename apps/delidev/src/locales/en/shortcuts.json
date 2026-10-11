@@ -1,4 +1,6 @@
 {
+  "shortcuts.openTerminals": "Open terminals",
+  "shortcuts.terminalsUnavailable": "Terminals are unavailable in Sidechat.",
   "shortcuts.title": "Keyboard shortcuts",
   "shortcuts.currentScreen": "Current screen: {{name}}",
   "shortcuts.close": "Close keyboard shortcuts",
