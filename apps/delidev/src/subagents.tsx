@@ -21,6 +21,7 @@ import {
 import { items, object, text } from "./documents";
 import { Failure, Problem } from "./ui";
 import { validateSubagentPage, type SubagentRow } from "./subagent-record";
+import { usePresentationLabels } from "./product-presentation";
 
 const unavailable = () => (
   <p>{copy("subagents.theRetainedChildPageIsUnavailable_e2dd4a")}</p>
@@ -58,6 +59,7 @@ export function SubagentSourceRows({
   sessionId: string;
 }) {
   useLocale();
+  const presentationLabels = usePresentationLabels();
   const accepted = useMemo(
     () => validateSubagentPage(rows, sessionId),
     [rows, sessionId],
@@ -87,7 +89,16 @@ export function SubagentSourceRows({
               <p>
                 <LocalizedText
                   id="subagents.execution_2ce365"
-                  components={{ s0: <>{text(record.execution_id)}</> }}
+                  components={{
+                    s0: (
+                      <>
+                        {presentationLabels.identity(
+                          record.execution_id,
+                          "record",
+                        )}
+                      </>
+                    ),
+                  }}
                 />
               </p>
               <p>
@@ -158,6 +169,7 @@ function ChildRows({
   labels?: Map<string, number>;
 }) {
   useLocale();
+  const presentationLabels = usePresentationLabels();
   return (
     <table aria-label={copy("subagents.nativeChildAgentHierarchy_212425")}>
       <thead>
@@ -188,7 +200,16 @@ function ChildRows({
                     <p>
                       <LocalizedText
                         id="subagents.execution_2ce365"
-                        components={{ s0: <>{text(record.execution_id)}</> }}
+                        components={{
+                          s0: (
+                            <>
+                              {presentationLabels.identity(
+                                record.execution_id,
+                                "record",
+                              )}
+                            </>
+                          ),
+                        }}
                       />
                     </p>
                     <p>

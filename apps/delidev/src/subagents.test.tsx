@@ -352,9 +352,7 @@ test("keeps child conversation presentation in Info and portals only source meta
     within(mounted.container).getByText("Observed: observed-model"),
   ).toBeTruthy();
   const diagnostics = within(target);
-  expect(
-    diagnostics.getByText(new RegExp(String(record.execution_id))),
-  ).toBeTruthy();
+  expect(diagnostics.getByText("Record 1")).toBeTruthy();
   expect(
     diagnostics.getByText(String(object(record.observation).native_id)),
   ).toBeTruthy();
