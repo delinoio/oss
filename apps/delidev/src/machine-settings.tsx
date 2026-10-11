@@ -57,11 +57,10 @@ export function useMachineSettingsController(
     input,
     cardinality: "finite",
   });
-  const result = useQuery(
-    ResourceQuery.getResource,
-    input,
-    { enabled: active, refetchInterval: active ? 5000 : false },
-  );
+  const result = useQuery(ResourceQuery.getResource, input, {
+    enabled: active,
+    refetchInterval: active ? 5000 : false,
+  });
   const readUpdateCount =
     queryClient.getQueryState(queryKey)?.dataUpdateCount ?? 0;
   const [acknowledged, setAcknowledged] = useState<Resource>();
