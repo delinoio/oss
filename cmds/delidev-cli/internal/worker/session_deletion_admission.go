@@ -164,3 +164,28 @@ func prepareSessionDeletionRecoveryLocks(ctx context.Context, root string, w dom
 	}
 	return nil
 }
+
+func requireSessionDeletionAbsent(ctx context.Context, root string, w domain.SessionDeletionWork) error {
+	if err := workspace.RequireDeletionGitRemoved(root, w); err != nil {
+		return err
+	}
+	paths, err := sessionDeletionCopyPaths(ctx, root, w)
+	if err != nil {
+		return err
+	}
+	if len(w.Copies) != 0 || w.Fork != nil {
+		paths = append(paths, filepath.Join(root, "workspaces", string(w.SessionID)))
+	}
+	if w.Fork != nil {
+		paths = append(paths, workspace.SidechatForkClaimPath(root, w.Fork.JobID))
+	}
+	for _, path := range paths {
+		if err := ctx.Err(); err != nil {
+			return domain.SafeError(err)
+		}
+		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+			return domain.SessionDeletionPending()
+		}
+	}
+	return nil
+}

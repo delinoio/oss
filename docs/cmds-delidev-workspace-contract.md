@@ -633,7 +633,6 @@ commits. Both bounded proof names enter completed absence checks. Reappearance
 keeps acknowledgement pending; original Local directories, independent child
 copies and shared account/browser data retain their separate ownership.
 
-
 ## Retained native workspace removal admission
 
 Permanent cleanup captures the original managed workspace tree before manifest

@@ -84,11 +84,11 @@ func watchSessionDeletions(ctx context.Context, config Config, client delidevv1c
 // Tombstones close native admission before cleanup. A once-persisted plan may
 // resume removals after a crash; it never replays preparation or native input.
 func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDeletionWork) (sessionDeletionProof, error) {
-	return deleteSessionCopiesWithAdmissionHook(ctx, config, w, nil)
+	return deleteSessionCopiesWithAdmissionHooks(ctx, config, w, nil, nil)
 }
 
 // The optional hook belongs to deterministic fixtures and never runs in production.
-func deleteSessionCopiesWithAdmissionHook(ctx context.Context, config Config, w domain.SessionDeletionWork, hook func()) (sessionDeletionProof, error) {
+func deleteSessionCopiesWithAdmissionHooks(ctx context.Context, config Config, w domain.SessionDeletionWork, hook, afterAdmission func()) (sessionDeletionProof, error) {
 	proof := sessionDeletionProof{Version: 2, Identity: w.Identity(), Digest: w.Digest(), ReportID: domain.NewID()}
 	if w.Validate() != nil {
 		return proof, domain.SessionDeletionPending()
@@ -175,6 +175,10 @@ func deleteSessionCopiesWithAdmissionHook(ctx context.Context, config Config, w 
 		}
 	} else if admission.Check(ctx, root, proof.RemovalStarted) != nil {
 		return proof, domain.SessionDeletionPending()
+	}
+	admittedRemover, err := security.NewAdmittedRemover(root, admission)
+	if err != nil {
+		return proof, err
 	}
 	// A synchronized admission left before progress publication is reused exactly.
 	// It becomes authoritative only after this attempt revalidates original work.
@@ -305,12 +309,6 @@ func deleteSessionCopiesWithAdmissionHook(ctx context.Context, config Config, w 
 	}
 	if len(w.Copies) != 0 || w.Fork != nil {
 		e = manager.DeleteOwnedWorkspaceAdmitted(ctx, w, allowAbsentWorkspace, admission, func() error {
-			if hook != nil {
-				hook()
-				hook = nil
-			}
-			return persistSessionRemovalAdmission(ctx, root, path, w, &proof, admission)
-		}, func() error {
 			// Admission is tombstoned and every native/publisher owner was joined.
 			// Release handles before unlinking their lock files on Windows.
 			for _, lock := range locks {
@@ -319,6 +317,20 @@ func deleteSessionCopiesWithAdmissionHook(ctx context.Context, config Config, w 
 				}
 			}
 			locks = nil
+
+			if hook != nil {
+				hook()
+				hook = nil
+			}
+			if err := persistSessionRemovalAdmission(ctx, root, path, w, &proof, admission); err != nil {
+				return err
+			}
+			if afterAdmission != nil {
+				afterAdmission()
+				afterAdmission = nil
+			}
+			return nil
+		}, func() error {
 
 			for _, binding := range w.SkillSnapshots {
 				if err := (skills.Manager{Root: root}).DeletePreparedSnapshot(ctx, w.MachineID, binding); err != nil {
@@ -336,7 +348,7 @@ func deleteSessionCopiesWithAdmissionHook(ctx context.Context, config Config, w 
 					}
 					continue
 				}
-				if e := removeSessionCopyAdmitted(ctx, root, path, admission); e != nil {
+				if e := removeSessionCopyAdmitted(ctx, root, path, admittedRemover); e != nil {
 					return e
 				}
 			}
@@ -371,6 +383,10 @@ func deleteSessionCopiesWithAdmissionHook(ctx context.Context, config Config, w 
 		if err := persistSessionRemovalAdmission(ctx, root, path, w, &proof, admission); err != nil {
 			return proof, err
 		}
+		if afterAdmission != nil {
+			afterAdmission()
+			afterAdmission = nil
+		}
 	}
 	for _, binding := range w.SkillSnapshots {
 		if err := (skills.Manager{Root: root}).DeletePreparedSnapshot(ctx, w.MachineID, binding); err != nil {
@@ -388,6 +404,12 @@ func deleteSessionCopiesWithAdmissionHook(ctx context.Context, config Config, w 
 		if err := images.Removed(w.MachineID, ref); err != nil {
 			return proof, err
 		}
+	}
+	if admission.Check(ctx, root, true) != nil {
+		return proof, domain.SessionDeletionPending()
+	}
+	if err := requireSessionDeletionAbsent(ctx, root, w); err != nil {
+		return proof, err
 	}
 	proof.Complete = true
 	if err := writeJSON(path, proof); err != nil {
@@ -422,11 +444,11 @@ func removeSessionCopy(ctx context.Context, root, path string) error {
 	return removeSessionTree(ctx, root, path)
 }
 
-func removeSessionCopyAdmitted(ctx context.Context, root, path string, admission *security.RemovalAdmission) error {
+func removeSessionCopyAdmitted(ctx context.Context, root, path string, remover *security.AdmittedRemover) error {
 	if independentSessionCopy(root, path) {
 		return removeSessionCopy(ctx, root, path)
 	}
-	return security.RemoveAdmittedTree(ctx, root, path, admission)
+	return remover.Remove(ctx, path)
 }
 
 // Walk first without following symlinks, then remove deepest paths first. Each

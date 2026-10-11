@@ -1461,7 +1461,6 @@ and both keyed and historical workspace-proof names for absence. Restored native
 content or a proof after committed retirement cannot grant new removal authority.
 This private metadata transition adds no protocol allocation or database migration.
 
-
 ## Native admission for permanent cleanup
 
 Before original ownership reads, pin the original data root, existing ancestors,

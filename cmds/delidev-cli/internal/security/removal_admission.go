@@ -31,9 +31,10 @@ type RemovalEntry struct {
 // RemovalAdmission retains relative names, original identities and explicit
 // absent operands. A caller binds it to immutable managed ownership before use.
 type RemovalAdmission struct {
-	Version  uint32         `json:"version"`
-	Operands []string       `json:"operands"`
-	Entries  []RemovalEntry `json:"entries"`
+	Ancestors []NativeIdentity `json:"ancestors"`
+	Version   uint32           `json:"version"`
+	Operands  []string         `json:"operands"`
+	Entries   []RemovalEntry   `json:"entries"`
 }
 
 func removalRelative(root, path string) (string, error) {
@@ -48,6 +49,23 @@ func removalRelative(root, path string) (string, error) {
 // follows a symlink and pins existing ancestors before entering an operand.
 func CaptureRemovalAdmission(ctx context.Context, root string, paths []string) (*RemovalAdmission, error) {
 	a := &RemovalAdmission{Version: 1}
+	canonical, err := filepath.EvalSymlinks(root)
+	if err != nil || canonical != root || !filepath.IsAbs(root) {
+		return nil, domain.SessionDeletionPending()
+	}
+	for p := filepath.Dir(root); ; p = filepath.Dir(p) {
+		if err := ctx.Err(); err != nil {
+			return nil, domain.SafeError(err)
+		}
+		id, err := CaptureNativeIdentity(p)
+		if err != nil || id.Kind != uint32(os.ModeDir) || len(a.Ancestors) >= 1024 {
+			return nil, domain.SessionDeletionPending()
+		}
+		a.Ancestors = append(a.Ancestors, id)
+		if p == filepath.Dir(p) {
+			break
+		}
+	}
 	entries := map[string]RemovalEntry{}
 	metadataBytes := 0
 	capture := func(path string, absence bool) error {
@@ -136,11 +154,19 @@ func CaptureRemovalAdmission(ctx context.Context, root string, paths []string) (
 	return a, nil
 }
 func (a *RemovalAdmission) Validate() error {
-	if a == nil || a.Version != 1 || len(a.Entries) == 0 || len(a.Entries) > MaxRemovalAdmissionEntries || len(a.Operands) > MaxRemovalAdmissionEntries {
+	if a == nil || a.Version != 1 || len(a.Ancestors) == 0 || len(a.Ancestors) > 1024 || len(a.Entries) == 0 || len(a.Entries) > MaxRemovalAdmissionEntries || len(a.Operands) > MaxRemovalAdmissionEntries {
 		return domain.SessionDeletionPending()
 	}
+	for _, id := range a.Ancestors {
+		if id.Kind != uint32(os.ModeDir) {
+			return domain.SessionDeletionPending()
+		}
+	}
 	entries := map[string]bool{}
-	for _, entry := range a.Entries {
+	for i, entry := range a.Entries {
+		if i > 0 && a.Entries[i-1].Path >= entry.Path {
+			return domain.SessionDeletionPending()
+		}
 		if filepath.IsAbs(entry.Path) || filepath.Clean(entry.Path) != entry.Path || entry.Path == ".." || strings.HasPrefix(entry.Path, ".."+string(filepath.Separator)) || entries[entry.Path] {
 			return domain.SessionDeletionPending()
 		}
@@ -171,9 +197,31 @@ func (a *RemovalAdmission) checkCapturedAncestors(root, path string, entries map
 			return domain.SessionDeletionPending()
 		}
 		if p == root {
-			return nil
+			return a.checkRootAncestors(root)
 		}
 	}
+}
+func (a *RemovalAdmission) checkRootAncestors(root string) error {
+	canonical, err := filepath.EvalSymlinks(root)
+	if err != nil || canonical != root {
+		return domain.SessionDeletionPending()
+	}
+	p := filepath.Dir(root)
+	for i, original := range a.Ancestors {
+		current, err := CaptureNativeIdentity(p)
+		if err != nil || current != original {
+			return domain.SessionDeletionPending()
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			if i != len(a.Ancestors)-1 {
+				return domain.SessionDeletionPending()
+			}
+			return nil
+		}
+		p = parent
+	}
+	return domain.SessionDeletionPending()
 }
 func (a *RemovalAdmission) entryMap() map[string]RemovalEntry {
 	entries := map[string]RemovalEntry{}
@@ -194,7 +242,7 @@ func (a *RemovalAdmission) removable(rel string) bool {
 // Check permits only disappearance of original removable entries on recovery.
 // Present ancestors outside the operands remain mandatory and unchanged.
 func (a *RemovalAdmission) Check(ctx context.Context, root string, removed bool) error {
-	if a.Validate() != nil {
+	if a.Validate() != nil || a.checkRootAncestors(root) != nil {
 		return domain.SessionDeletionPending()
 	}
 	for _, entry := range a.Entries {
@@ -216,17 +264,48 @@ func (a *RemovalAdmission) Check(ctx context.Context, root string, removed bool)
 // directory operation. Native command internals retain their separate syscall
 // race limit; this check grants no authority to a replacement inventory.
 func (a *RemovalAdmission) CheckTree(ctx context.Context, root, path string) error {
-	if a.Check(ctx, root, true) != nil {
+	if a.Validate() != nil {
 		return domain.SessionDeletionPending()
+	}
+	return a.checkTree(ctx, root, path, a.entryMap())
+}
+func (a *RemovalAdmission) checkTree(ctx context.Context, root, path string, entries map[string]RemovalEntry) error {
+	if err := ctx.Err(); err != nil {
+		return domain.SafeError(err)
+	}
+	if err := a.checkRootAncestors(root); err != nil {
+		return err
 	}
 	rel, err := removalRelative(root, path)
 	if err != nil || !a.removable(rel) {
 		return domain.SessionDeletionPending()
 	}
-	entries := a.entryMap()
 	entry, ok := entries[rel]
 	if !ok {
 		return domain.SessionDeletionPending()
+	}
+	if entry.Identity != nil {
+		if err := a.checkCapturedAncestors(root, path, entries); err != nil {
+			return err
+		}
+	} else {
+		// No unlink is authorized. Recheck only captured existing ancestors; an
+		// originally absent namespace need not be manufactured for a no-op.
+		for p := filepath.Dir(path); ; p = filepath.Dir(p) {
+			relative, err := removalRelative(root, p)
+			if err != nil {
+				return err
+			}
+			if original, ok := entries[relative]; ok && original.Identity != nil {
+				current, err := CaptureNativeIdentity(p)
+				if err != nil || current != *original.Identity {
+					return domain.SessionDeletionPending()
+				}
+			}
+			if p == root {
+				break
+			}
+		}
 	}
 	if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -265,8 +344,9 @@ func (a *RemovalAdmission) CheckTrees(ctx context.Context, root string) error {
 	if a.Check(ctx, root, true) != nil {
 		return domain.SessionDeletionPending()
 	}
+	entries := a.entryMap()
 	for _, operand := range a.Operands {
-		if err := a.CheckTree(ctx, root, filepath.Join(root, operand)); err != nil {
+		if err := a.checkTree(ctx, root, filepath.Join(root, operand), entries); err != nil {
 			return err
 		}
 	}
@@ -285,18 +365,45 @@ func (a *RemovalAdmission) OriginallyPresent(root, path string) bool {
 	return false
 }
 
+// AdmittedRemover validates one bounded immutable record for a serial cleanup
+// batch. It avoids rebuilding the full 100,000-entry index for every operand.
+// The caller must not mutate the record while this remover is in use.
+type AdmittedRemover struct {
+	root      string
+	admission *RemovalAdmission
+	entries   map[string]RemovalEntry
+}
+
+func NewAdmittedRemover(root string, a *RemovalAdmission) (*AdmittedRemover, error) {
+	if a.Validate() != nil || a.checkRootAncestors(root) != nil {
+		return nil, domain.SessionDeletionPending()
+	}
+	return &AdmittedRemover{root, a, a.entryMap()}, nil
+}
+func (r *AdmittedRemover) Remove(ctx context.Context, path string) error {
+	return removeAdmittedTreeValidated(ctx, r.root, path, r.admission, r.entries, nil, os.Remove, SyncParent)
+}
+
 // RemoveAdmittedTree never takes a fresh baseline. Every traversal and unlink
 // uses the original record. The final check-to-unlink syscall gap is separate.
 func RemoveAdmittedTree(ctx context.Context, root, path string, a *RemovalAdmission) error {
-	if a.Check(ctx, root, true) != nil {
+	return removeAdmittedTree(ctx, root, path, a, nil, os.Remove, SyncParent)
+}
+func removeAdmittedTree(ctx context.Context, root, path string, a *RemovalAdmission, beforeUnlink func(string), remove func(string) error, syncParent func(string) error) error {
+	if a.Validate() != nil {
 		return domain.SessionDeletionPending()
 	}
+	return removeAdmittedTreeValidated(ctx, root, path, a, a.entryMap(), beforeUnlink, remove, syncParent)
+}
+func removeAdmittedTreeValidated(ctx context.Context, root, path string, a *RemovalAdmission, entries map[string]RemovalEntry, beforeUnlink func(string), remove func(string) error, syncParent func(string) error) error {
 	rel, err := removalRelative(root, path)
 	if err != nil || !slices.Contains(a.Operands, rel) {
 		return domain.SessionDeletionPending()
 	}
-	entries := a.entryMap()
 	original := entries[rel]
+	if err := a.checkTree(ctx, root, path, entries); err != nil {
+		return err
+	}
 	if original.Identity == nil {
 		return nil
 	}
@@ -304,10 +411,7 @@ func RemoveAdmittedTree(ctx context.Context, root, path string, a *RemovalAdmiss
 		if err := a.checkCapturedAncestors(root, path, entries); err != nil {
 			return err
 		}
-		return SyncParent(path)
-	}
-	if err := a.CheckTree(ctx, root, path); err != nil {
-		return err
+		return syncParent(path)
 	}
 
 	for i := len(a.Entries) - 1; i >= 0; i-- {
@@ -316,6 +420,9 @@ func RemoveAdmittedTree(ctx context.Context, root, path string, a *RemovalAdmiss
 			continue
 		}
 		p := filepath.Join(root, entry.Path)
+		if beforeUnlink != nil {
+			beforeUnlink(p)
+		}
 		if err := ctx.Err(); err != nil {
 			return domain.SafeError(err)
 		}
@@ -333,11 +440,11 @@ func RemoveAdmittedTree(ctx context.Context, root, path string, a *RemovalAdmiss
 		if err != nil || entry.Identity == nil || id != *entry.Identity {
 			return domain.SessionDeletionPending()
 		}
-		if err := os.Remove(p); err != nil {
+		if err := remove(p); err != nil {
 			return domain.SessionDeletionPending()
 		}
 	}
-	if err := SyncParent(path); err != nil {
+	if err := syncParent(path); err != nil {
 		return domain.SessionDeletionPending()
 	}
 	return nil
