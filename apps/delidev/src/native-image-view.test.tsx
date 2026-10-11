@@ -86,7 +86,9 @@ test.each([
   const tool = fixture();
   tool.started.image_view.location = location;
   tool.completed.image_view.location = location;
-  const { container } = render(<NativeImageView tool={tool} state="complete" />);
+  const { container } = render(
+    <NativeImageView tool={tool} state="complete" />,
+  );
   expect(screen.getByText(location)).toBeTruthy();
   expect(container.querySelector("a,img,button,input,iframe")).toBeNull();
   expect(fetch).not.toHaveBeenCalled();
