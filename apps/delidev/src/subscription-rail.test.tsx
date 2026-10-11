@@ -1181,8 +1181,9 @@ it("retains credit values and timestamps across failed and deferred reads until 
   ).toEqual(originalTimes);
   phase = 2;
   fireEvent.click(
-    within(popup).getByRole("button", { name: "Recheck saved quota evidence" }),
+    screen.getByRole("button", { name: "Explain subscription read problem" }),
   );
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
   await waitFor(() => expect(f.requests).toHaveBeenCalledTimes(3));
   expect(
     within(popup).getByText(/Refresh failed; retained observation/),
@@ -1268,4 +1269,45 @@ it("clears credits on credential replacement and authentication loss", async () 
   );
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(screen.queryByText("60,961.11")).toBeNull();
+});
+
+it.each([
+  {},
+  { quota_state: "failed" },
+  { paid_credits: [paidBucket("invalid")] },
+])(
+  "never manufactures a balance for sparse, failed or malformed saved evidence %j",
+  async (subscription) => {
+    mount(
+      () => ({
+        resources: [resource("Personal", "chatgpt", { subscription })],
+      }),
+      true,
+      true,
+    );
+    const { popup } = await openPersonal();
+    expect(
+      within(popup).getByText(
+        "quota_state" in subscription
+          ? "Balance unavailable"
+          : "Balance unknown",
+      ),
+    ).toBeTruthy();
+    expect(within(popup).queryByText("0.00")).toBeNull();
+  },
+);
+it("preserves a 64-character source decimal in the selected rail disclosure", async () => {
+  const balance = "9".repeat(60) + ".001";
+  mount(
+    () => ({ resources: [withCredits([paidBucket(balance)])] }),
+    true,
+    true,
+  );
+  const { popup } = await openPersonal();
+  fireEvent.focus(
+    within(popup).getByRole("button", {
+      name: "Show exact paid-credit balance",
+    }),
+  );
+  expect(within(popup).getByRole("tooltip").textContent).toContain(balance);
 });
