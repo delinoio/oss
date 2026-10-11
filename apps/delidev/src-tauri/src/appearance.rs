@@ -648,10 +648,12 @@ mod tests {
             let text = colors["text-secondary"].clone();
             colors.insert("surface-hover".into(), text);
         }
-        let mut preferences = Preferences::default();
-        preferences.light_palette = theme.id.clone();
-        preferences.dark_palette = theme.id.clone();
-        preferences.custom_themes.push(theme);
+        let preferences = Preferences {
+            light_palette: theme.id.clone(),
+            dark_palette: theme.id.clone(),
+            custom_themes: vec![theme],
+            ..Preferences::default()
+        };
         assert!(preferences.valid());
 
         let path = directory.path().join("appearance.json");
