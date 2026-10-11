@@ -488,6 +488,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 			}
 			if job.State == domain.JobQueued {
 				claimDependencyBlocked := false
+				var releasedRetry domain.ID
 				result, err := s.Store.Mutate(ctx, domain.NewID(), "worker.claim", struct{ Job, Instance domain.ID }{record.ID, instance}, func(tx *store.Tx) (any, error) {
 					if err := currentInstance(tx, machine, instance); err != nil {
 						return nil, err
@@ -591,9 +592,9 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 							problem = validateForkAuthority(tx, input)
 						}
 						if problem != nil {
-							now := time.Now().UTC()
-							j.State, j.Problem, j.FinishedAt = domain.JobFailed, domain.SafeError(problem), &now
-							return tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, j)
+							failed, generation, err := failForkBeforeClaim(tx, r, j, problem)
+							releasedRetry = generation
+							return failed, err
 						}
 					}
 					actor, _ := domain.PrincipalFrom(ctx)
@@ -612,6 +613,9 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 				if err != nil {
 					s.logger.WarnContext(ctx, "worker claim receipt rejected", "machine_id", machine, "job_id", claimID, "code", domain.SafeError(err).Code)
 					return rpc.Error(err, correlation)
+				}
+				if releasedRetry != "" {
+					s.logger.InfoContext(ctx, "sidechat_retry_preclaim_rejected", "job_id", record.ID, "generation_id", releasedRetry, "code", job.Problem.Code)
 				}
 				if claimDependencyBlocked {
 					rememberDependency()
