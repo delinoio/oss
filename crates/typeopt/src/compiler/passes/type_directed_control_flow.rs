@@ -361,11 +361,9 @@ impl Planner<'_> {
         // As an operand of a condition or logical operator, `x?.y` narrows `x`
         // for the guarded code; `x!.y` does not.
         let (scope, after) = test_scope(node);
-        if scope != walk_up_outer(node) {
-            if !narrowing_neutral(ctx, node, scope, after, &[]) {
-                self.skip(ctx, file, "optional", node, Reason::TypeConstraint);
-                return;
-            }
+        if scope != walk_up_outer(node) && !narrowing_neutral(ctx, node, scope, after, &[]) {
+            self.skip(ctx, file, "optional", node, Reason::TypeConstraint);
+            return;
         }
         let (start, end) = span(token);
         let replacement = if node.kind() == SyntaxKind::PropertyAccessExpression {
