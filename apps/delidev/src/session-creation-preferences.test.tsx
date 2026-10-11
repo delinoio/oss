@@ -151,25 +151,26 @@ function fixture(
   const createSession = vi.fn(async (_request: CreateSessionRequest) => ({
     change: { session: resource(EntityKind.SESSION, "Accepted") },
   }));
+  const list = vi.fn(async (request: { filter?: { kind?: EntityKind } }) => {
+    if (request.filter?.kind === EntityKind.SETTINGS && defaults?.fail)
+      throw new ConnectError("defaults unavailable", Code.Unavailable);
+    return {
+      resources:
+        request.filter?.kind === EntityKind.SETTINGS && defaults
+          ? [defaultSettings]
+          : request.filter?.kind === EntityKind.AGENT
+            ? [otherAgent, ...(includeRemembered ? [agent] : [])]
+            : request.filter?.kind === EntityKind.MACHINE
+              ? [otherMachine]
+              : request.filter?.kind === EntityKind.PROJECT
+                ? projects
+                : [],
+    };
+  });
   const transport = createRouterTransport((router) => {
     router.service(ResourceService, {
       getResource: get,
-      listResources: (request) => {
-        if (request.filter?.kind === EntityKind.SETTINGS && defaults?.fail)
-          throw new ConnectError("defaults unavailable", Code.Unavailable);
-        return {
-          resources:
-            request.filter?.kind === EntityKind.SETTINGS && defaults
-              ? [defaultSettings]
-              : request.filter?.kind === EntityKind.AGENT
-                ? [otherAgent, ...(includeRemembered ? [agent] : [])]
-                : request.filter?.kind === EntityKind.MACHINE
-                  ? [otherMachine]
-                  : request.filter?.kind === EntityKind.PROJECT
-                    ? projects
-                    : [],
-        };
-      },
+      listResources: list,
     });
     router.service(SystemService, {
       getStatus: () => ({
@@ -187,6 +188,8 @@ function fixture(
   const view = (
     kind = NewSessionKind.Session,
     readLocalWorker?: () => Promise<{ machineId: string; token: string }>,
+    active = true,
+    creationScope = scope,
   ) => (
     <StrictMode>
       <TransportProvider transport={transport}>
@@ -194,7 +197,7 @@ function fixture(
           <MutationIntents>
             <NewSession
               kind={kind}
-              active
+              active={active}
               ownsActivation
               activation={1}
               back={() => {}}
@@ -202,7 +205,7 @@ function fixture(
               open={() => {}}
               created={() => {}}
               preferenceBridge={bridge}
-              preferenceScope={scope}
+              preferenceScope={creationScope}
               readLocalWorker={readLocalWorker}
             />
           </MutationIntents>
@@ -221,6 +224,8 @@ function fixture(
     memory,
     get,
     createSession,
+    defaultSettings,
+    list,
     client,
     view,
   };
@@ -1237,4 +1242,281 @@ it("does not submit a provisional default after a failed settings read", async (
   expect(f.createSession).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("checkbox", { name: "Plan Mode" }));
   await waitFor(() => expect(create.disabled).toBe(false));
+});
+
+async function readyAutomaticCreation(f: ReturnType<typeof fixture>) {
+  await waitFor(() =>
+    expect(
+      scrollChoiceValue(screen.getByRole("combobox", { name: "Runs on" })),
+    ).toBe(f.machine.id),
+  );
+  fireEvent.change(screen.getByRole("textbox", { name: "First message" }), {
+    target: { value: "Fresh defaults fixture" },
+  });
+  const button = screen.getByRole("button", {
+    name: "Create session",
+  }) as HTMLButtonElement;
+  await waitFor(() => expect(button.disabled).toBe(false));
+  return button;
+}
+
+function freshPlanSettings(f: ReturnType<typeof fixture>) {
+  return {
+    ...f.defaultSettings,
+    revision: f.defaultSettings.revision + 1n,
+    documentJson: encode({
+      automatic_plan_approval: false,
+      plan_mode_default: true,
+      branch_prefix: "delidev/",
+    }),
+  };
+}
+
+function submittedMode(f: ReturnType<typeof fixture>) {
+  return JSON.parse(
+    new TextDecoder().decode(f.createSession.mock.calls[0][0].documentJson),
+  ).mode;
+}
+
+it.each([NewSessionKind.Session, NewSessionKind.GeneralChat])(
+  "refreshes a changed global default before untouched %s creation",
+  async (kind) => {
+    const f = fixture(true, false, { global: false });
+    if (kind === NewSessionKind.GeneralChat)
+      f.memory.set(kind, { agent_id: f.agent.id, machine_id: f.machine.id });
+    render(f.view(kind));
+    await waitFor(() =>
+      expect(
+        scrollChoiceValue(screen.getByRole("combobox", { name: "Runs on" })),
+      ).toBe(f.machine.id),
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: "First message" }), {
+      target: { value: "Changed in another client" },
+    });
+    const original = f.list.getMockImplementation()!;
+    f.list.mockImplementation(async (request) =>
+      request.filter?.kind === EntityKind.SETTINGS
+        ? { resources: [freshPlanSettings(f)] }
+        : original(request),
+    );
+    expect(screen.getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty(
+      "checked",
+      false,
+    );
+    await submitCreation(
+      kind === NewSessionKind.GeneralChat ? "Start general chat" : "Create session",
+    );
+    await waitFor(() => expect(f.createSession).toHaveBeenCalledOnce());
+    expect(submittedMode(f)).toBe("plan");
+  },
+);
+
+it("refreshes the exact selected project override before automatic creation", async () => {
+  const f = fixture(true, false, { global: false, project: "inherit" });
+  render(f.view());
+  await chooseScrollOption(
+    screen.getByRole("combobox", { name: "Project" }),
+    f.projects[0].id,
+  );
+  const button = await readyAutomaticCreation(f);
+  const original = f.get.getMockImplementation()!;
+  f.get.mockImplementation((request) =>
+    request.id === f.projects[0].id
+      ? {
+          resource: {
+            ...f.projects[0],
+            revision: 2n,
+            documentJson: encode({
+              name: "Allowed project",
+              repositories: [],
+              agents: { configured: true, ids: [f.agent.id] },
+              settings: { plan_mode_default: "enabled" },
+            }),
+          },
+        }
+      : original(request),
+  );
+  fireEvent.click(button);
+  await waitFor(() => expect(f.createSession).toHaveBeenCalledOnce());
+  expect(submittedMode(f)).toBe("plan");
+});
+
+it.each([
+  "missing",
+  "foreign",
+  "older",
+  "malformed",
+  "schema",
+  "continued",
+  "multiple",
+  "failed",
+])(
+  "blocks automatic creation when fresh settings are %s",
+  async (problem) => {
+    const f = fixture(true, false, { global: false });
+    f.defaultSettings.revision = 3n;
+    render(f.view());
+    const button = await readyAutomaticCreation(f);
+    const original = f.list.getMockImplementation()!;
+    f.list.mockImplementation(async (request) => {
+      if (request.filter?.kind !== EntityKind.SETTINGS) return original(request);
+      if (problem === "failed")
+        throw new ConnectError("Unavailable", Code.Unavailable);
+      const row = freshPlanSettings(f);
+      if (problem === "foreign") row.id = newRequestId();
+      if (problem === "older") row.revision = 2n;
+      if (problem === "malformed")
+        row.documentJson = encode({ plan_mode_default: "true" });
+      if (problem === "schema") row.schemaVersion = 99;
+      return {
+        resources:
+          problem === "missing" ? [] : problem === "multiple" ? [row, row] : [row],
+        nextPageToken: problem === "continued" ? "more" : "",
+      };
+    });
+    fireEvent.click(button);
+    await screen.findByRole("button", { name: "Retry Plan Mode defaults" });
+    expect(f.createSession).not.toHaveBeenCalled();
+    expect(screen.getByRole("textbox", { name: "First message" })).toHaveProperty(
+      "value",
+      "Fresh defaults fixture",
+    );
+  },
+);
+
+it.each(["missing", "foreign", "older", "malformed"])(
+  "blocks automatic creation when the fresh selected project is %s",
+  async (problem) => {
+    const f = fixture(true, false, { global: false, project: "inherit" });
+    f.projects[0].revision = 3n;
+    render(f.view());
+    await chooseScrollOption(
+      screen.getByRole("combobox", { name: "Project" }),
+      f.projects[0].id,
+    );
+    const button = await readyAutomaticCreation(f);
+    const original = f.get.getMockImplementation()!;
+    f.get.mockImplementation((request) => {
+      if (request.id !== f.projects[0].id) return original(request);
+      const row = { ...f.projects[0] };
+      if (problem === "foreign") row.id = newRequestId();
+      if (problem === "older") row.revision = 2n;
+      if (problem === "malformed")
+        row.documentJson = encode({ settings: { plan_mode_default: "invalid" } });
+      return { resource: problem === "missing" ? undefined : row };
+    });
+    fireEvent.click(button);
+    await screen.findByRole("button", { name: "Retry Plan Mode defaults" });
+    expect(f.createSession).not.toHaveBeenCalled();
+  },
+);
+
+it("keeps manual Execute without rereading defaults", async () => {
+  const f = fixture(true, false, { global: false });
+  render(f.view());
+  const button = await readyAutomaticCreation(f);
+  const checkbox = screen.getByRole("checkbox", { name: "Plan Mode" });
+  fireEvent.click(checkbox);
+  fireEvent.click(checkbox);
+  const before = f.list.mock.calls.length;
+  f.list.mockRejectedValue(
+    new ConnectError("Changed elsewhere", Code.Unavailable),
+  );
+  fireEvent.click(button);
+  await waitFor(() => expect(f.createSession).toHaveBeenCalledOnce());
+  expect(f.list.mock.calls).toHaveLength(before);
+  expect(submittedMode(f)).toBe("execute");
+});
+
+it.each(["current", "departure", "connection"])(
+  "serializes automatic preflight and fences its scope (%s)",
+  async (scope) => {
+    const f = fixture(true, false, { global: false });
+    const view = render(f.view());
+    const button = await readyAutomaticCreation(f);
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const original = f.list.getMockImplementation()!;
+    f.list.mockImplementation(async (request) => {
+      if (request.filter?.kind !== EntityKind.SETTINGS) return original(request);
+      await pending;
+      return { resources: [freshPlanSettings(f)] };
+    });
+    const before = f.list.mock.calls.length;
+    fireEvent.submit(button.closest("form")!);
+    fireEvent.submit(button.closest("form")!);
+    await waitFor(() => expect(f.list.mock.calls.length).toBe(before + 1));
+    expect(
+      screen.getByRole("textbox", { name: "First message" }).closest("fieldset"),
+    ).toHaveProperty("disabled", true);
+    if (scope === "departure") {
+      view.rerender(f.view(NewSessionKind.Session, undefined, false));
+      view.rerender(f.view());
+    } else if (scope === "connection") {
+      view.rerender(
+        f.view(NewSessionKind.Session, undefined, true, {
+          ...f.scope,
+          server_id: newRequestId(),
+        }),
+      );
+    }
+    await act(async () => {
+      release();
+      await pending;
+    });
+    if (scope !== "current") {
+      await waitFor(() =>
+        expect(
+          screen.getByRole("textbox", { name: "First message" }).closest("fieldset"),
+        ).toHaveProperty("disabled", false),
+      );
+      expect(f.createSession).not.toHaveBeenCalled();
+    } else {
+      await waitFor(() => expect(f.createSession).toHaveBeenCalledOnce());
+    }
+  },
+);
+
+it("retries the exact frozen automatic request without another default read", async () => {
+  const f = fixture(true, false, { global: false });
+  f.createSession.mockRejectedValueOnce(
+    new ConnectError("Lost acknowledgment", Code.Unavailable),
+  );
+  render(f.view());
+  const button = await readyAutomaticCreation(f);
+  const original = f.list.getMockImplementation()!;
+  f.list.mockImplementation(async (request) =>
+    request.filter?.kind === EntityKind.SETTINGS
+      ? { resources: [freshPlanSettings(f)] }
+      : original(request),
+  );
+  fireEvent.click(button);
+  const retry = await screen.findByRole("button", {
+    name: "Retry the same session creation",
+  });
+  const before = f.list.mock.calls.length;
+  f.list.mockRejectedValue(
+    new ConnectError("Defaults now unavailable", Code.Unavailable),
+  );
+  fireEvent.click(retry);
+  await waitFor(() => expect(f.createSession).toHaveBeenCalledTimes(2));
+  expect(f.createSession.mock.calls[1][0]).toEqual(f.createSession.mock.calls[0][0]);
+  expect(submittedMode(f)).toBe("plan");
+  expect(f.list.mock.calls).toHaveLength(before);
+});
+
+it("allows an authoritative empty Settings singleton when none was previously observed", async () => {
+  const f = fixture(true, false, { global: false });
+  const original = f.list.getMockImplementation()!;
+  f.list.mockImplementation(async (request) =>
+    request.filter?.kind === EntityKind.SETTINGS
+      ? { resources: [] }
+      : original(request),
+  );
+  render(f.view());
+  fireEvent.click(await readyAutomaticCreation(f));
+  await waitFor(() => expect(f.createSession).toHaveBeenCalledOnce());
+  expect(submittedMode(f)).toBe("execute");
 });
