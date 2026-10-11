@@ -727,7 +727,7 @@ export function NewSession({
       setBudgetProblem(productError(error, "new-session.extra.08fb485eeaf6"));
       return;
     }
-    // Lock synchronously as React has not yet disabled the form on a second submit.
+    // Lock synchronously before React disables the form on a second submit.
     submittingRef.current = true;
     setSubmitting(true);
     const scope = submissionScope.current;
@@ -737,7 +737,7 @@ export function NewSession({
       let submittedMode = effectiveMode;
       if (!manualMode && supportsDefaults) {
         try {
-          // These direct reads cannot reuse the mounted queries' cached defaults.
+          // Direct reads cannot reuse the mounted queries' cached defaults.
           const initialObserved = observedDefaults.current;
           const client = createClient(ResourceService, transport);
           const [settings, selected] = await Promise.all([
@@ -805,7 +805,9 @@ export function NewSession({
         }
       }
       const selectedProjectId = generalChat ? "" : project;
-      const workspaceType = selectedProjectId ? workspace : Workspace.GeneralChat;
+      const workspaceType = selectedProjectId
+        ? workspace
+        : Workspace.GeneralChat;
       const selection = {
         name_mode: "automatic",
         estimated_cost_budget: estimatedBudget,
@@ -822,7 +824,9 @@ export function NewSession({
         source: "MANUAL",
       };
       const proof =
-        workspaceType === Workspace.Local ? await local.load(machine) : undefined;
+        workspaceType === Workspace.Local
+          ? await local.load(machine)
+          : undefined;
       if (!scopeIsCurrent() || (workspaceType === Workspace.Local && !proof))
         return;
       touched.current = true;

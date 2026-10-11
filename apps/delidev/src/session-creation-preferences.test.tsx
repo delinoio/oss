@@ -1299,47 +1299,51 @@ it.each([NewSessionKind.Session, NewSessionKind.GeneralChat])(
         ? { resources: [freshPlanSettings(f)] }
         : original(request),
     );
-    expect(screen.getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty(
-      "checked",
-      false,
-    );
+    expect(
+      screen.getByRole("checkbox", { name: "Plan Mode" }),
+    ).toHaveProperty("checked", false);
     await submitCreation(
-      kind === NewSessionKind.GeneralChat ? "Start general chat" : "Create session",
+      kind === NewSessionKind.GeneralChat
+        ? "Start general chat"
+        : "Create session",
     );
     await waitFor(() => expect(f.createSession).toHaveBeenCalledOnce());
     expect(submittedMode(f)).toBe("plan");
   },
 );
 
-it("refreshes the exact selected project override before automatic creation", async () => {
-  const f = fixture(true, false, { global: false, project: "inherit" });
-  render(f.view());
-  await chooseScrollOption(
-    screen.getByRole("combobox", { name: "Project" }),
-    f.projects[0].id,
-  );
-  const button = await readyAutomaticCreation(f);
-  const original = f.get.getMockImplementation()!;
-  f.get.mockImplementation((request) =>
-    request.id === f.projects[0].id
-      ? {
-          resource: {
-            ...f.projects[0],
-            revision: 2n,
-            documentJson: encode({
-              name: "Allowed project",
-              repositories: [],
-              agents: { configured: true, ids: [f.agent.id] },
-              settings: { plan_mode_default: "enabled" },
-            }),
-          },
-        }
-      : original(request),
-  );
-  fireEvent.click(button);
-  await waitFor(() => expect(f.createSession).toHaveBeenCalledOnce());
-  expect(submittedMode(f)).toBe("plan");
-});
+it(
+  "refreshes the exact selected project override before automatic creation",
+  async () => {
+    const f = fixture(true, false, { global: false, project: "inherit" });
+    render(f.view());
+    await chooseScrollOption(
+      screen.getByRole("combobox", { name: "Project" }),
+      f.projects[0].id,
+    );
+    const button = await readyAutomaticCreation(f);
+    const original = f.get.getMockImplementation()!;
+    f.get.mockImplementation((request) =>
+      request.id === f.projects[0].id
+        ? {
+            resource: {
+              ...f.projects[0],
+              revision: 2n,
+              documentJson: encode({
+                name: "Allowed project",
+                repositories: [],
+                agents: { configured: true, ids: [f.agent.id] },
+                settings: { plan_mode_default: "enabled" },
+              }),
+            },
+          }
+        : original(request),
+    );
+    fireEvent.click(button);
+    await waitFor(() => expect(f.createSession).toHaveBeenCalledOnce());
+    expect(submittedMode(f)).toBe("plan");
+  },
+);
 
 it.each([
   "missing",
@@ -1359,7 +1363,8 @@ it.each([
     const button = await readyAutomaticCreation(f);
     const original = f.list.getMockImplementation()!;
     f.list.mockImplementation(async (request) => {
-      if (request.filter?.kind !== EntityKind.SETTINGS) return original(request);
+      if (request.filter?.kind !== EntityKind.SETTINGS)
+        return original(request);
       if (problem === "failed")
         throw new ConnectError("Unavailable", Code.Unavailable);
       const row = freshPlanSettings(f);
@@ -1370,17 +1375,20 @@ it.each([
       if (problem === "schema") row.schemaVersion = 99;
       return {
         resources:
-          problem === "missing" ? [] : problem === "multiple" ? [row, row] : [row],
+          problem === "missing"
+            ? []
+            : problem === "multiple"
+              ? [row, row]
+              : [row],
         nextPageToken: problem === "continued" ? "more" : "",
       };
     });
     fireEvent.click(button);
     await screen.findByRole("button", { name: "Retry Plan Mode defaults" });
     expect(f.createSession).not.toHaveBeenCalled();
-    expect(screen.getByRole("textbox", { name: "First message" })).toHaveProperty(
-      "value",
-      "Fresh defaults fixture",
-    );
+    expect(
+      screen.getByRole("textbox", { name: "First message" }),
+    ).toHaveProperty("value", "Fresh defaults fixture");
   },
 );
 
@@ -1402,7 +1410,9 @@ it.each(["missing", "foreign", "older", "malformed"])(
       if (problem === "foreign") row.id = newRequestId();
       if (problem === "older") row.revision = 2n;
       if (problem === "malformed")
-        row.documentJson = encode({ settings: { plan_mode_default: "invalid" } });
+        row.documentJson = encode({
+          settings: { plan_mode_default: "invalid" },
+        });
       return { resource: problem === "missing" ? undefined : row };
     });
     fireEvent.click(button);
@@ -1438,7 +1448,8 @@ it.each(["current", "departure", "connection"])(
     });
     const original = f.list.getMockImplementation()!;
     f.list.mockImplementation(async (request) => {
-      if (request.filter?.kind !== EntityKind.SETTINGS) return original(request);
+      if (request.filter?.kind !== EntityKind.SETTINGS)
+        return original(request);
       await pending;
       return { resources: [freshPlanSettings(f)] };
     });
@@ -1447,7 +1458,9 @@ it.each(["current", "departure", "connection"])(
     fireEvent.submit(button.closest("form")!);
     await waitFor(() => expect(f.list.mock.calls.length).toBe(before + 1));
     expect(
-      screen.getByRole("textbox", { name: "First message" }).closest("fieldset"),
+      screen
+        .getByRole("textbox", { name: "First message" })
+        .closest("fieldset"),
     ).toHaveProperty("disabled", true);
     if (scope === "departure") {
       view.rerender(f.view(NewSessionKind.Session, undefined, false));
@@ -1467,7 +1480,9 @@ it.each(["current", "departure", "connection"])(
     if (scope !== "current") {
       await waitFor(() =>
         expect(
-          screen.getByRole("textbox", { name: "First message" }).closest("fieldset"),
+          screen
+            .getByRole("textbox", { name: "First message" })
+            .closest("fieldset"),
         ).toHaveProperty("disabled", false),
       );
       expect(f.createSession).not.toHaveBeenCalled();
@@ -1477,42 +1492,50 @@ it.each(["current", "departure", "connection"])(
   },
 );
 
-it("retries the exact frozen automatic request without another default read", async () => {
-  const f = fixture(true, false, { global: false });
-  f.createSession.mockRejectedValueOnce(
-    new ConnectError("Lost acknowledgment", Code.Unavailable),
-  );
-  render(f.view());
-  const button = await readyAutomaticCreation(f);
-  const original = f.list.getMockImplementation()!;
-  f.list.mockImplementation(async (request) =>
-    request.filter?.kind === EntityKind.SETTINGS
-      ? { resources: [freshPlanSettings(f)] }
-      : original(request),
-  );
-  fireEvent.click(button);
-  const retry = await screen.findByRole("button", {
-    name: "Retry the same session creation",
-  });
-  f.list.mockRejectedValue(
-    new ConnectError("Defaults now unavailable", Code.Unavailable),
-  );
-  fireEvent.click(retry);
-  await waitFor(() => expect(f.createSession).toHaveBeenCalledTimes(2));
-  expect(f.createSession.mock.calls[1][0]).toEqual(f.createSession.mock.calls[0][0]);
-  expect(submittedMode(f)).toBe("plan");
-});
+it(
+  "retries the exact frozen automatic request without another default read",
+  async () => {
+    const f = fixture(true, false, { global: false });
+    f.createSession.mockRejectedValueOnce(
+      new ConnectError("Lost acknowledgment", Code.Unavailable),
+    );
+    render(f.view());
+    const button = await readyAutomaticCreation(f);
+    const original = f.list.getMockImplementation()!;
+    f.list.mockImplementation(async (request) =>
+      request.filter?.kind === EntityKind.SETTINGS
+        ? { resources: [freshPlanSettings(f)] }
+        : original(request),
+    );
+    fireEvent.click(button);
+    const retry = await screen.findByRole("button", {
+      name: "Retry the same session creation",
+    });
+    f.list.mockRejectedValue(
+      new ConnectError("Defaults now unavailable", Code.Unavailable),
+    );
+    fireEvent.click(retry);
+    await waitFor(() => expect(f.createSession).toHaveBeenCalledTimes(2));
+    expect(f.createSession.mock.calls[1][0]).toEqual(
+      f.createSession.mock.calls[0][0],
+    );
+    expect(submittedMode(f)).toBe("plan");
+  },
+);
 
-it("allows an authoritative empty Settings singleton when none was previously observed", async () => {
-  const f = fixture(true, false, { global: false });
-  const original = f.list.getMockImplementation()!;
-  f.list.mockImplementation(async (request) =>
-    request.filter?.kind === EntityKind.SETTINGS
-      ? { resources: [] }
-      : original(request),
-  );
-  render(f.view());
-  fireEvent.click(await readyAutomaticCreation(f));
-  await waitFor(() => expect(f.createSession).toHaveBeenCalledOnce());
-  expect(submittedMode(f)).toBe("execute");
-});
+it(
+  "allows an authoritative empty Settings singleton when none was previously observed",
+  async () => {
+    const f = fixture(true, false, { global: false });
+    const original = f.list.getMockImplementation()!;
+    f.list.mockImplementation(async (request) =>
+      request.filter?.kind === EntityKind.SETTINGS
+        ? { resources: [] }
+        : original(request),
+    );
+    render(f.view());
+    fireEvent.click(await readyAutomaticCreation(f));
+    await waitFor(() => expect(f.createSession).toHaveBeenCalledOnce());
+    expect(submittedMode(f)).toBe("execute");
+  },
+);
