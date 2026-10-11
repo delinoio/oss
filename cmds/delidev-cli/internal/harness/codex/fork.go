@@ -177,13 +177,17 @@ func (c *Client) forkTurnsLocked(ctx context.Context, thread domain.ID) ([]json.
 				if json.Unmarshal(item, &identity) != nil {
 					return nil, unsupportedFork()
 				}
-				if c.managedForkHistory {
-					if seen["item:"+identity.ID] || !managedForkItem(item, identity.Type) {
+				// An output must not reuse another native item's identity, including
+				// a message item admitted by the ordinary history profile.
+				if seen["item:"+identity.ID] || c.managedForkHistory && !managedForkItem(item, identity.Type) {
+					return nil, unsupportedFork()
+				}
+				seen["item:"+identity.ID] = true
+				if identity.Type == "functionCallOutput" {
+					if _, _, err := decodeFunctionOutput(item); err != nil {
 						return nil, unsupportedFork()
 					}
-					seen["item:"+identity.ID] = true
-				}
-				if identity.Type == "sleep" {
+				} else if identity.Type == "sleep" {
 					if seen["sleep:"+identity.ID] {
 						return nil, unsupportedFork()
 					}
@@ -459,6 +463,10 @@ func settledForkTool(raw json.RawMessage, kind string) bool {
 }
 
 func managedForkItem(raw json.RawMessage, kind string) bool {
+	if kind == "functionCallOutput" {
+		_, _, err := decodeFunctionOutput(raw)
+		return err == nil
+	}
 	if kind == "sleep" {
 		_, err := decodeSleep(raw)
 		return err == nil

@@ -24,6 +24,7 @@ import {
 } from "./scroll-payload-window";
 import {
   conversationProjection,
+  ToolClassification,
   type ConversationProjection,
 } from "./tool-turn-projection";
 import "./tool-turn-transcript.css";
@@ -119,7 +120,9 @@ function ToolEntry({
           ) : (
             <span>{row.tool?.name || copy("session.tool_7c9bbe")}</span>
           )}
-          {!["complete", "completed"].includes(row.tool?.state ?? "") ? (
+          {row.tool?.classification === ToolClassification.FunctionResult ? (
+            <small>{copy("session.functionOutput")}</small>
+          ) : !["complete", "completed"].includes(row.tool?.state ?? "") ? (
             <small>{statusLabel(row.tool?.state ?? "")}</small>
           ) : null}
         </DisclosureSummary>

@@ -5816,3 +5816,15 @@ Hide the complete Agent requests disclosure only when a successful complete resi
 The selected ChatGPT usage popover places a compact Paid credits card above quota within its existing 320px width, 16px padding and viewport-clamped internal scroll. Reuse the subscription presentation contract’s validated saved projection, string-only two-decimal formatter, 24px tabular value, smaller unit and accessible unchanged exact decimal disclosure. Separate multiple buckets in source order with native labels and their original observation times; never sum them. Explicit zero, null/unknown, tiny positive, unlimited, loading, unsupported, stale/future and failed evidence remain distinct. System 76 controls credit display independently of capability-17 inventory admission; other services remain unchanged.
 
 Failed or incomplete saved-resource reads retain original account-bound values and timestamps as historical evidence until a complete accepted replacement. Connection identity replacement resets local disclosure state; authentication loss removes the selected details. Credits do not affect `remainingBadge`, quota windows, read pagination, the existing refresh owner or Recheck saved quota evidence and Manage subscriptions actions. Preserve semantic themes, EN/KO wrapping, narrow and effective 200% reflow, Escape/outside dismissal and opener focus. No new RPC, polling owner, native operation, purchase, consumption or migration is added. Follow [the subscription presentation contract](apps-delidev-subscription-settings-contract.md#paid-credit-observations).
+
+## Inert native function results
+
+Codex function-result observations use the existing tool transcript disclosure
+and original turn ordering. Its summary retains the original namespace/name;
+the summary uses the localized “Function result” classification without a success
+badge. Expanded content displays plain escaped
+text and ordered image/audio/encrypted presence markers. Image reference kind
+and optional detail remain visible metadata. Do not render locators, ciphertext,
+Markdown links, media elements, download controls or execution actions. Use the
+English/Korean session catalogs and reject mixed or malformed payloads before
+display. Result item completion never indicates turn success or cleanup.

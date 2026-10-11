@@ -315,6 +315,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			config.quotaBlockSupported = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1)
 			titleCapabilityExpected = true
 			profile := "implemented-adapters-v1"
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1) {
+				profile += "\x00codex-function-outputs-v1"
+			}
 			if config.quotaBlockSupported {
 				profile += "\x00codex-quota-block-v1"
 			}
@@ -379,6 +382,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			if claudeCapabilityExpected {
 				profile += "\x00native-claude-subscriptions-v1"
+			}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1)
 			}
 			if verifiedTitleProfile {
 				profile += "\x00verified"

@@ -345,3 +345,33 @@ it("retains expanded tool state while denying exact-page restoration in an inact
   fireEvent.click(restore);
   expect(q.restore).toHaveBeenCalledExactlyOnceWith("");
 });
+
+it("labels a function result without a fabricated execution-success badge", () => {
+  const original = row({
+    role: "tool",
+    state: "complete",
+    text: "",
+    execution_id: execution,
+    native_thread_id: "original-thread",
+    native_turn_id: "original-turn",
+    native_id: "original-output",
+    function_output: {
+      name: "original_tool",
+      namespace: "original_namespace",
+      structured: false,
+      text: "<script>inert result</script>",
+    },
+  });
+  const projection = conversationProjection(original, sessionId);
+  expect(projection.tool?.classification).toBe("function-result");
+  expect(projection.tool?.name).toBe("original_namespace.original_tool");
+  const { container } = render(<ToolTurnTranscript {...props(query([[original]]))} />);
+  expect(screen.getAllByText("Function result").length).toBeGreaterThan(0);
+  expect(screen.queryByText("Complete")).toBeNull();
+  const group = container.querySelector<HTMLDetailsElement>(".tool-turn")!;
+  expand(group);
+  const entry = group.querySelector<HTMLDetailsElement>("ol > li > details")!;
+  expand(entry);
+  expect(screen.getByText("<script>inert result</script>")).toBeTruthy();
+  expect(container.querySelectorAll("script,a,img,audio,video")).toHaveLength(0);
+});

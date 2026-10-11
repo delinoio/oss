@@ -161,5 +161,10 @@
   "session.prStateUnavailable": "Pull request state unavailable or stale",
   "session.prStateEvidence": "Current pull request #{{number}} observation",
   "session.prStateReadFailed": "The current PR observation is unavailable or stale. Retry this original repository and PR read.",
-  "session.prRetryRead": "Retry PR #{{number}} read"
+  "session.prRetryRead": "Retry PR #{{number}} read",
+  "session.functionOutput": "Function result",
+  "session.functionOutputUnavailable": "Function result is unavailable.",
+  "session.functionImageReference": "Image reference",
+  "session.functionAudioReference": "Audio reference",
+  "session.functionEncryptedContent": "Encrypted content"
 }
