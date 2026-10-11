@@ -9,7 +9,7 @@ function reference(snapshot: unknown) {
  const s = object(snapshot), v = object(s.image_view);
  if (Object.keys(s).some(key => !["kind", "status", "image_view", "changes"].includes(key)) || s.kind !== "image-view" || !["running", "completed"].includes(String(s.status)) || ["command", "changes", "read", "shell", "todo", "builtin"].some(key => s[key] != null) || Object.keys(v).some(key => !["reference_id", "machine_id", "repository_id", "manifest_digest", "location"].includes(key))) return;
  const location = v.location;
- if (!uuid(v.reference_id) || !uuid(v.machine_id) || (v.repository_id != null && !uuid(v.repository_id)) || typeof v.manifest_digest !== "string" || !/^[a-f0-9]{64}$/.test(v.manifest_digest) || typeof location !== "string" || !location || new TextEncoder().encode(location).length > 4096 || /[\\:\u0000-\u001f\u007f\uD800-\uDFFF]/u.test(location) || location.startsWith("/") || location.split("/").some(part => !part || part === "." || part === "..")) return;
+ if (!uuid(v.reference_id) || !uuid(v.machine_id) || (v.repository_id != null && !uuid(v.repository_id)) || typeof v.manifest_digest !== "string" || !/^[a-f0-9]{64}$/.test(v.manifest_digest) || typeof location !== "string" || !location || new TextEncoder().encode(location).length > 4096 || /[\u0000-\u001f\u007f\uD800-\uDFFF]/u.test(location) || location.includes("://") || location.startsWith("/") || location.split("/").some(part => !part || part === "." || part === "..")) return;
  return { id: v.reference_id, machine: v.machine_id, repository: v.repository_id, digest: v.manifest_digest, location };
 }
 

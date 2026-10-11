@@ -249,3 +249,28 @@ func TestExecutionImageViewRejectsChangedScopeAndReference(t *testing.T) {
 		})
 	}
 }
+
+func TestExecutionImageViewPublishesLiteralPOSIXFilename(t *testing.T) {
+	for _, name := range []string{"frame:01.png", `frame\01.png`} {
+		t.Run(name, func(t *testing.T) {
+			f, original := newImageViewPublicationFixture(t)
+			publisher, mapper := bindNativeMapper(t, f, publicationWorkerConfig(t, f))
+			defer publisher.Close()
+			// The observation deliberately names a missing file. Publication must only
+			// validate immutable metadata, never open or adopt image bytes.
+			location := filepath.Dir(original) + "/" + name
+			native := &codex.Tool{ID: "literal-image", Kind: codex.ImageViewTool, Status: codex.ToolRunning, ImagePath: location}
+			publishNativeEvent(t, f, mapper, codex.Event{Kind: codex.ToolStartedEvent, ItemID: native.ID, Tool: native})
+			native.Status = codex.ToolCompleted
+			publishNativeEvent(t, f, mapper, codex.Event{Kind: codex.ToolCompletedEvent, ItemID: native.ID, Tool: native})
+			rows, err := f.service.Store.List(context.Background(), store.Filter{Kind: domain.MessageKind, SessionID: f.input.SessionID, Limit: 10})
+			if err != nil || len(rows) != 1 {
+				t.Fatalf("literal filename publication missing: %v", err)
+			}
+			message, err := store.Decode[domain.ExecutionMessage](rows[0])
+			if err != nil || message.Tool.Started.ImageView.Location != name || message.Tool.Completed == nil || *message.Tool.Started.ImageView != *message.Tool.Completed.ImageView {
+				t.Fatal("literal filename changed in publication round trip")
+			}
+		})
+	}
+}

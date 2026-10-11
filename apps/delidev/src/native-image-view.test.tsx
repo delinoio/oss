@@ -29,3 +29,19 @@ test.each(["../outside.png", "/absolute.png", "https://example.com/image.png", "
  render(<NativeImageView tool={tool} state="complete" />);
  expect(screen.getByText("This image-view observation is unavailable.")).toBeTruthy();
 });
+
+test.each(["screens/frame:01.png", String.raw`screens/frame\01.png`, String.raw`screens/C:\frame.png`])("renders admitted literal filename %s as inert metadata", location => {
+ const tool = fixture(); tool.started.image_view.location = location; tool.completed.image_view.location = location;
+ const fetch = vi.spyOn(globalThis, "fetch");
+ const { container } = render(<NativeImageView tool={tool} state="complete" />);
+ expect(screen.getByText(location)).toBeTruthy();
+ expect(container.querySelector("a,img,button,input,iframe")).toBeNull();
+ expect(fetch).not.toHaveBeenCalled();
+ fetch.mockRestore();
+});
+
+test.each(["images/https://host/image.png", "images/../image.png", "images/./image.png", "images/image\u0000.png"])("rejects malformed inert location %s", location => {
+ const tool = fixture(); tool.started.image_view.location = location; tool.completed.image_view.location = location;
+ render(<NativeImageView tool={tool} state="complete" />);
+ expect(screen.getByText("This image-view observation is unavailable.")).toBeTruthy();
+});

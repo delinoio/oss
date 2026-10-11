@@ -20,3 +20,19 @@ func TestImageViewSnapshotHasNoInputOrFileAuthority(t *testing.T) {
 		}
 	}
 }
+
+func TestImageViewInertFilenameMetadata(t *testing.T) {
+	reference := ImageViewObservation{ReferenceID: NewID(), MachineID: NewID(), ManifestDigest: strings.Repeat("a", 64)}
+	for _, location := range []string{"images/frame:01.png", `images/frame\01.png`, `images/C:\frame.png`} {
+		reference.Location = location
+		if reference.Validate() != nil {
+			t.Fatalf("literal inert filename rejected: %q", location)
+		}
+	}
+	for _, location := range []string{"../image.png", "/image.png", "images//image.png", "images/./image.png", "https://host/image.png", "images/https://host/image.png", "images/image\x00.png"} {
+		reference.Location = location
+		if reference.Validate() == nil {
+			t.Fatalf("unscoped metadata accepted: %q", location)
+		}
+	}
+}

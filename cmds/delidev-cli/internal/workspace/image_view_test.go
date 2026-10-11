@@ -82,3 +82,65 @@ func TestImageViewReferenceRejectsForeignScopeAndOwnership(t *testing.T) {
 		t.Fatal("different manifest generation adopted original reference")
 	}
 }
+
+func imageViewLocalInput(t *testing.T, root string) domain.ExecutionJobInput {
+	t.Helper()
+	input := imageViewInput(t)
+	id, commit := domain.NewID(), strings.Repeat("b", 40)
+	p := PrepareRequest{SessionID: input.SessionID, MachineID: input.MachineID, OriginMachineID: input.MachineID, Type: domain.Local, PrimaryRepository: id, Repositories: []RepositorySpec{{ID: id, Checkout: root}}}
+	input.Preparation, _ = json.Marshal(p)
+	digest := sha256.Sum256(input.Preparation)
+	m := Manifest{Version: 1, SessionID: input.SessionID, MachineID: input.MachineID, Type: domain.Local, State: Ready, CreatedAt: time.Now().UTC(), PrimaryPath: root, InputDigest: hex.EncodeToString(digest[:]), Repositories: []PreparedRepository{{ID: id, Source: root, Path: root, LocalIdentityDigest: strings.Repeat("a", 64), Starting: domain.Reference{Type: domain.CommitReference, Name: commit}, StartingCommit: commit, BaseCommit: commit}}}
+	input.Manifest, _ = json.Marshal(m)
+	return input
+}
+
+func TestImageViewUNCOriginalRootRoundTrip(t *testing.T) {
+	input := imageViewLocalInput(t, `\\server\share\repo`)
+	for _, location := range []string{`\\server\share\repo\image.png`, "//server/share/repo/image.png", `//server\share/repo\image.png`} {
+		ref, err := ObserveImageViewLocation(input, "windows", location, domain.NewID())
+		if err != nil || ref.Location != "image.png" || ValidateImageViewReference(input, "windows", ref) != nil {
+			t.Fatalf("UNC round trip rejected: %q: %v", location, err)
+		}
+	}
+	for _, location := range []string{`\\server\other\repo\image.png`, `\\other\share\repo\image.png`, `\\Server\share\repo\image.png`, `\\server\share\repo-sibling\image.png`, `\\server\share\repo`, `\\server\share\repo\..\image.png`, `\\server\share\repo\\image.png`, `\\?\server\share\repo\image.png`, `\\.\server\share\repo\image.png`, `\\server\share\repo\image:stream.png`, `\\server\share\repo\C:\image.png`} {
+		if _, err := ObserveImageViewLocation(input, "windows", location, domain.NewID()); err == nil {
+			t.Fatalf("invalid UNC location accepted: %q", location)
+		}
+	}
+	for _, root := range []string{`\\server`, `\\server\share`, `\\\share\repo`, `\\?\share\repo`, `\\.\share\repo`, `\\server\..\repo`, `\\server\share\repo\..`} {
+		bad := imageViewLocalInput(t, root)
+		if _, err := ObserveImageViewLocation(bad, "windows", root+`\image.png`, domain.NewID()); err == nil {
+			t.Fatalf("invalid UNC preparation accepted: %q", root)
+		}
+	}
+}
+
+func TestImageViewOriginalOSFilenameRoundTrip(t *testing.T) {
+	for _, workerOS := range []string{"linux", "darwin"} {
+		input := imageViewLocalInput(t, "/source/repo")
+		for _, location := range []string{"screens/frame:01.png", `screens/frame\01.png`, `screens/C:\frame.png`, "plain.png"} {
+			ref, err := ObserveImageViewLocation(input, workerOS, "/source/repo/"+location, domain.NewID())
+			if err != nil || ref.Location != location || ValidateImageViewReference(input, workerOS, ref) != nil {
+				t.Fatalf("%s literal filename rejected: %q: %v", workerOS, location, err)
+			}
+		}
+		for _, location := range []string{"/source/repo-sibling/image.png", "/source/repo/../image.png", "/source/repo/images//image.png", "/source/repo/https://host/image.png"} {
+			if _, err := ObserveImageViewLocation(input, workerOS, location, domain.NewID()); err == nil {
+				t.Fatalf("foreign/noncanonical POSIX path accepted: %q", location)
+			}
+		}
+	}
+	input := imageViewLocalInput(t, `C:\source\repo`)
+	ref, err := ObserveImageViewLocation(input, "windows", `C:\source\repo\screens\image.png`, domain.NewID())
+	if err != nil || ValidateImageViewReference(input, "windows", ref) != nil {
+		t.Fatal("ordinary Windows drive rejected")
+	}
+	for _, location := range []string{`screens\image.png`, "screens/frame:01.png", `C:\image.png`, "/image.png", "../image.png", `screens\..\image.png`} {
+		changed := ref
+		changed.Location = location
+		if ValidateImageViewReference(input, "windows", changed) == nil {
+			t.Fatalf("Windows malformed reference accepted: %q", location)
+		}
+	}
+}

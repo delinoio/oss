@@ -35,7 +35,7 @@ func ObserveImageViewLocation(input domain.ExecutionJobInput, workerOS, location
 		return value
 	}
 	location = normalize(location)
-	if domain.Text(location, "native image location", 4096, true) != nil || path.Clean(location) != location || strings.Contains(location, "://") {
+	if domain.Text(location, "native image location", 4096, true) != nil || !canonicalWorkerAbsolutePath(location, workerOS) || strings.Contains(location, "://") {
 		return domain.ImageViewObservation{}, ResultUncertain()
 	}
 	roots := manifest.Repositories
@@ -62,7 +62,7 @@ func ObserveImageViewLocation(input domain.ExecutionJobInput, workerOS, location
 // successful validation nor this reference permits opening or deleting a file.
 func ValidateImageViewReference(input domain.ExecutionJobInput, workerOS string, observation domain.ImageViewObservation) error {
 	manifest, err := imageViewManifest(input, workerOS)
-	if err != nil || observation.Validate() != nil || observation.MachineID != input.MachineID {
+	if err != nil || observation.Validate() != nil || observation.MachineID != input.MachineID || (workerOS == "windows" && strings.ContainsAny(observation.Location, "\\:")) {
 		return ResultUncertain()
 	}
 	root := ""
@@ -86,4 +86,34 @@ func ValidateImageViewReference(input domain.ExecutionJobInput, workerOS string,
 		return ResultUncertain()
 	}
 	return nil
+}
+
+// canonicalWorkerAbsolutePath checks the original Worker grammar without using
+// the server host's filesystem rules. Keep the UNC prefix for root comparison;
+// remove one slash only while checking POSIX lexical canonicality.
+func canonicalWorkerAbsolutePath(value, workerOS string) bool {
+	if domain.Text(value, "workspace path", 4096, true) != nil {
+		return false
+	}
+	if workerOS == "windows" {
+		value = strings.ReplaceAll(value, "\\", "/")
+		if strings.HasPrefix(value, "//") {
+			parts := strings.Split(value[2:], "/")
+			if len(parts) < 3 || parts[0] == "" || parts[0] == "." || parts[0] == ".." || parts[0] == "?" || parts[1] == "" || parts[1] == "." || parts[1] == ".." || strings.ContainsAny(value, ":?") {
+				return false
+			}
+			value = value[1:]
+		} else {
+			if len(value) < 4 || !((value[0] >= 'A' && value[0] <= 'Z') || (value[0] >= 'a' && value[0] <= 'z')) || value[1:3] != ":/" {
+				return false
+			}
+			value = value[2:]
+			if strings.Contains(value, ":") {
+				return false
+			}
+		}
+	} else if workerOS != "darwin" && workerOS != "linux" {
+		return false
+	}
+	return path.IsAbs(value) && path.Clean(value) == value
 }
