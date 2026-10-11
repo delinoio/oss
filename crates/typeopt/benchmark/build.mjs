@@ -1,4 +1,6 @@
 // Copyright 2026 Delino. SPDX-License-Identifier: Apache-2.0
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { readFile, writeFile, realpath, stat } from "node:fs/promises";
@@ -18,6 +20,22 @@ if (process.versions.node !== pin.node)
 Object.assign(process.env, pin.environment);
 const started = performance.now();
 const checkout = await realpath(checkoutArg);
+// Verify the checkout identity before building so the evidence records the
+// source that was actually built, not only the pinned value.
+const revision = execFileSync("git", ["-C", checkout, "rev-parse", "HEAD"], {
+  encoding: "utf8",
+}).trim();
+if (revision !== pin.revision)
+  throw new Error(
+    `Checkout revision ${revision} does not match pinned ${pin.revision}`,
+  );
+const yarnLockSha256 = createHash("sha256")
+  .update(await readFile(path.join(checkout, "yarn.lock")))
+  .digest("hex");
+if (yarnLockSha256 !== pin.yarn_lock_sha256)
+  throw new Error(
+    `yarn.lock SHA-256 ${yarnLockSha256} does not match pinned ${pin.yarn_lock_sha256}`,
+  );
 const destination = path.resolve(destinationArg);
 const optimized = optimizedArg && path.resolve(optimizedArg);
 try {
@@ -64,7 +82,8 @@ await writeFile(
   JSON.stringify(
     {
       schema_version: 0,
-      revision: pin.revision,
+      revision,
+      yarn_lock_sha256: yarnLockSha256,
       node: process.versions.node,
       mode: "production",
       sourcemap: true,
