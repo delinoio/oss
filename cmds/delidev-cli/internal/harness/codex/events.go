@@ -18,6 +18,7 @@ type eventValidationStage string
 
 const (
 	validationRemoteControl  eventValidationStage = "remote-control-policy"
+	validationWindowsSandbox eventValidationStage = "windows-sandbox"
 	validationOther          eventValidationStage = "other"
 	validationNativeError    eventValidationStage = "native-error"
 	validationSettings       eventValidationStage = "thread-settings"
@@ -49,6 +50,8 @@ func validationStage(method string) eventValidationStage {
 	switch method {
 	case "remoteControl/status/changed":
 		return validationRemoteControl
+	case "windows/worldWritableWarning", "windowsSandbox/setupCompleted":
+		return validationWindowsSandbox
 	case "error":
 		return validationNativeError
 	case "thread/settings/updated":
@@ -202,6 +205,7 @@ type Event struct {
 	ExtensionStage      eventValidationStage `json:"-"`
 	remoteControlStatus remoteControlStatus
 	gatewayStatus       gatewayOAuthStatus
+	windowsWarning      *windowsWarningObservation
 }
 
 // NextEvent preserves wire order even with concurrent consumers. If cancellation
@@ -300,6 +304,12 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	}
 	if c.logger != nil && event.Metadata == RemoteControlDisabled {
 		c.logger.InfoContext(ctx, "Codex passive remote control status observed", "owner_id", c.ownerID, "status", event.remoteControlStatus, "policy", RemoteControlDisabled)
+	}
+	if c.logger != nil && event.windowsWarning != nil {
+		c.logger.InfoContext(ctx, "Codex Windows sandbox warning observed", "owner_id", c.ownerID, "classification", event.windowsWarning.class.String(), "sample_count", event.windowsWarning.samples, "extra_count", event.windowsWarning.extra, "event_kind", event.Kind)
+	}
+	if c.logger != nil && event.Metadata == WindowsSandboxSetupDiscarded {
+		c.logger.InfoContext(ctx, "Codex unsolicited Windows sandbox setup discarded", "owner_id", c.ownerID, "policy", WindowsSandboxSetupDiscarded)
 	}
 	event.EmittedAtMS = native.EmittedAtMS
 	return event, nil

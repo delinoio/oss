@@ -10,6 +10,11 @@ import {
 import { NativeGrokInteraction } from "./native-grok-interactions";
 import { useState } from "react";
 import {
+  InteractionPresentation,
+  interactionProjection,
+  type InteractionProjection,
+} from "./interaction-presentation";
+import {
   InteractionQuery,
   newRequestId,
   type Resource,
@@ -80,6 +85,9 @@ export function Interaction({
   clearDraft,
   submissionAllowed = true,
   receiptRetryAllowed = true,
+  activeTray = false,
+  projection,
+  observe,
 }: {
   resource: Resource;
   refresh: () => void;
@@ -88,6 +96,9 @@ export function Interaction({
   clearDraft?: () => void;
   submissionAllowed?: boolean;
   receiptRetryAllowed?: boolean;
+  activeTray?: boolean;
+  projection?: InteractionProjection;
+  observe?: (result: Resource) => void;
 }) {
   useLocale();
   const [accepted, setAccepted] = useState<Resource>();
@@ -99,12 +110,28 @@ export function Interaction({
       : resource;
   const data = document(current);
   const changed = (result?: Resource) => {
-    if (result) {
+    if (
+      result &&
+      result.id === resource.id &&
+      result.sessionId === resource.sessionId &&
+      result.kind === resource.kind &&
+      result.revision > resource.revision
+    ) {
       setAccepted(result);
+      observe?.(result);
       clearDraft?.();
     }
     refresh();
   };
+  const presentation =
+    projection && projection.revision >= current.revision
+      ? projection
+      : interactionProjection(current);
+  const compact =
+    activeTray &&
+    presentation.question &&
+    (presentation.presentation !== InteractionPresentation.Form ||
+      presentation.revision > current.revision);
   return (
     <article className="interaction">
       <header>
@@ -113,7 +140,7 @@ export function Interaction({
             ? copy("interactions.agentQuestion_1a6b3f")
             : copy("interactions.nativeApproval_c515b9")}
         </h3>
-        <small>{text(data.closure)}</small>
+        <small>{compact ? presentation.closure : text(data.closure)}</small>
       </header>
       <p>
         <LocalizedText
@@ -122,14 +149,24 @@ export function Interaction({
             s0: (
               <>
                 {statusLabel(
-                  text(object(data.response ?? data.approval_response).state),
+                  compact
+                    ? presentation.responseState
+                    : text(
+                        object(data.response ?? data.approval_response).state,
+                      ),
                 ) || copy("interactions.extra.d3289e625281")}
               </>
             ),
           }}
         />
       </p>
-      {Object.hasOwn(data, "grok") ? (
+      {compact ? (
+        <PendingQuestion
+          projection={presentation}
+          accepted={changed}
+          receiptRetryAllowed={receiptRetryAllowed}
+        />
+      ) : Object.hasOwn(data, "grok") ? (
         <NativeGrokInteraction
           data={data}
           resource={current}
@@ -181,6 +218,66 @@ export function Interaction({
         <p>{copy("interactions.thisNativeRequestTypeIsNot_6fd7af")}</p>
       )}
     </article>
+  );
+}
+
+export function PendingInteractionReceipt({
+  projection,
+  accepted,
+}: {
+  projection: InteractionProjection;
+  accepted: (result?: Resource) => void;
+}) {
+  return (
+    <article className="interaction">
+      <header>
+        <h3>{copy("interactions.agentQuestion_1a6b3f")}</h3>
+        <small>{projection.closure}</small>
+      </header>
+      <PendingQuestion
+        projection={projection}
+        accepted={accepted}
+        receiptRetryAllowed
+      />
+    </article>
+  );
+}
+
+function PendingQuestion({
+  projection,
+  accepted,
+  receiptRetryAllowed,
+}: {
+  projection: InteractionProjection;
+  accepted: (result?: Resource) => void;
+  receiptRetryAllowed: boolean;
+}) {
+  const mutation = useRetainedMutation(
+    projection.mutationKey,
+    InteractionQuery.respondQuestion,
+    (result) => accepted(result.interaction),
+  );
+  const retryLabel = projection.mutationKey.startsWith("answer:")
+    ? copy("interactions.retryTheSameAnswers_572a30")
+    : projection.mutationKey.startsWith("opencode-answer:")
+      ? copy("native-interaction-response.retryTheSameResponseRequest_ebd80d")
+      : projection.mutationKey.startsWith("claude-answer:")
+        ? copy("native-claude-response.retryTheSameResponseRequest_ebd80d")
+        : copy("native-grok-interactions.retryTheSameResponseRequest_ebd80d");
+  return (
+    <>
+      {projection.unavailable ? <p>{copy("ui.failure.unavailable")}</p> : null}
+      <Problem error={mutation.error} />
+      {mutation.uncertain ? (
+        <button
+          type="button"
+          disabled={mutation.busy || !receiptRetryAllowed}
+          onClick={mutation.retry}
+        >
+          {retryLabel}
+        </button>
+      ) : null}
+    </>
   );
 }
 

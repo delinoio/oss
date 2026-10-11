@@ -49,7 +49,7 @@ func uniqueHistoryItem(t *testing.T, item any, id string) map[string]any {
 	t.Helper()
 	source, ok := item.(map[string]any)
 	if !ok {
-		t.Fatal("image history fixture item must be an object")
+		t.Fatalf("unexpected history item type %T", item)
 	}
 	cloned := make(map[string]any, len(source))
 	for key, value := range source {
@@ -151,8 +151,8 @@ func assertImageHistoryRefusesRevert(t *testing.T, item any, duplicate bool) {
 	turns := generatedHistoryTurns(t, ids, inputs, item)
 	if duplicate {
 		first := turns[0].(map[string]any)
-		firstItems := first["items"].([]any)
-		first["items"] = append(firstItems, firstItems[2])
+		items := first["items"].([]any)
+		first["items"] = append(items, items[2])
 	}
 	setGeneratedHistory(t, c, turns)
 	claims := 0

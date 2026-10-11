@@ -262,6 +262,15 @@ export function SessionTools({
         <dd>
           {resource.id} · {resource.revision.toString()}
         </dd>
+        <dt>{copy("session-tools.workspace")}</dt>
+        <dd>
+          {workspaceNames[text(data.workspace) as Workspace] ||
+            copy("session.extra.87bb59ba2f92")}
+        </dd>
+        <dt>{copy("session-tools.result")}</dt>
+        <dd>{statusValue(data.outcome)}</dd>
+        <dt>{copy("session-tools.archive")}</dt>
+        <dd>{statusValue(data.archive)}</dd>
         <dt>{copy("session-tools.dispatch")}</dt>
         <dd>{statusValue(data.dispatch)}</dd>
         <dt>{copy("session-tools.preparation")}</dt>
@@ -282,23 +291,25 @@ export function SessionTools({
   );
   const body = (
     <FlatDisclosureScope>
-      <section className="session-tools session-information-section">
-        <h3>
-          {initiallyOpen
-            ? copy("session.statusAndRecovery")
-            : copy("session-tools.sessionDetailsAndRecovery_8025d7")}
-        </h3>
-        <dl className="session-status-values">
-          <dt>{copy("session-tools.workspace")}</dt>
-          <dd>
-            {workspaceNames[text(data.workspace) as Workspace] ||
-              copy("session.extra.87bb59ba2f92")}
-          </dd>
-          <dt>{copy("session-tools.result")}</dt>
-          <dd>{statusValue(data.outcome)}</dd>
-          <dt>{copy("session-tools.archive")}</dt>
-          <dd>{statusValue(data.archive)}</dd>
-        </dl>
+      <section
+        className={`session-tools session-information-section${initiallyOpen ? " session-tools-exceptions" : ""}`}
+      >
+        {initiallyOpen ? null : (
+          <h3>{copy("session-tools.sessionDetailsAndRecovery_8025d7")}</h3>
+        )}
+        {initiallyOpen ? null : (
+          <dl className="session-status-values">
+            <dt>{copy("session-tools.workspace")}</dt>
+            <dd>
+              {workspaceNames[text(data.workspace) as Workspace] ||
+                copy("session.extra.87bb59ba2f92")}
+            </dd>
+            <dt>{copy("session-tools.result")}</dt>
+            <dd>{statusValue(data.outcome)}</dd>
+            <dt>{copy("session-tools.archive")}</dt>
+            <dd>{statusValue(data.archive)}</dd>
+          </dl>
+        )}
         {children}
         {launcherTarget ? null : recoveryActions}
 

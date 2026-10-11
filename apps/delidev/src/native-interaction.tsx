@@ -268,24 +268,9 @@ function nativeStopClosure(data: Record<string, unknown>): boolean {
   });
 }
 
-export function NativeInteraction({
-  data,
-  resource,
-  accepted = () => {},
-  draft,
-  saveDraft,
-  submissionAllowed = true,
-  receiptRetryAllowed = true,
-}: {
-  data: Record<string, unknown>;
-  resource?: Resource;
-  accepted?: (value?: Resource) => void;
-  draft?: InteractionDraftState;
-  saveDraft?: (value: InteractionDraftState) => void;
-  submissionAllowed?: boolean;
-  receiptRetryAllowed?: boolean;
-}) {
-  useLocale();
+export function validOpenCodeInteraction(
+  data: Record<string, unknown>,
+): boolean {
   const r = object(data.opencode),
     id = object(data.native_request_id),
     permission = object(r.permission);
@@ -315,7 +300,7 @@ export function NativeInteraction({
     native(data.native_turn_id, "msg") &&
     r.native_message_id !== data.native_turn_id &&
     bounded(r.call_id, 1024) &&
-    r.call_id.trim() &&
+    r.call_id.trim().length > 0 &&
     id.kind === "text" &&
     id.number == null &&
     native(id.text, question ? "que" : "per") &&
@@ -325,11 +310,35 @@ export function NativeInteraction({
       : r.questions == null &&
         shape(r.permission, ["name", "patterns", "always", "metadata_json"]) &&
         bounded(permission.name, 256) &&
-        permission.name.trim() &&
+        permission.name.trim().length > 0 &&
         strings(permission.patterns) &&
         strings(permission.always) &&
         objectJSON(permission.metadata_json));
-  if (!valid || !nativePolicyClosure(data) || !nativeStopClosure(data))
+  return valid && nativePolicyClosure(data) && nativeStopClosure(data);
+}
+
+export function NativeInteraction({
+  data,
+  resource,
+  accepted = () => {},
+  draft,
+  saveDraft,
+  submissionAllowed = true,
+  receiptRetryAllowed = true,
+}: {
+  data: Record<string, unknown>;
+  resource?: Resource;
+  accepted?: (value?: Resource) => void;
+  draft?: InteractionDraftState;
+  saveDraft?: (value: InteractionDraftState) => void;
+  submissionAllowed?: boolean;
+  receiptRetryAllowed?: boolean;
+}) {
+  useLocale();
+  const r = object(data.opencode),
+    permission = object(r.permission);
+  const question = data.type === "user-question";
+  if (!validOpenCodeInteraction(data))
     return (
       <p>
         {copy(

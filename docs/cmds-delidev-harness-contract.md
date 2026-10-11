@@ -2499,6 +2499,49 @@ solely as unsupported families. This adds no RPC, protocol allocation or
 migration. Controlled decoder/Worker publication fixtures are separate from
 installed native/account/platform acceptance.
 
+### Codex Windows sandbox safety notices
+
+The pinned [world-writable warning schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/WindowsWorldWritableWarningNotification.json)
+requires `samplePaths`, `extraCount` and `failedScan` for
+`windows/worldWritableWarning`. Decode only these exact keys. Reject duplicate
+or unknown keys, missing/null required fields, malformed UTF-8, NUL bytes,
+wrong types, negative/fractional counts and uint64 overflow. Limit samples to
+1024 and each path to 4096 UTF-8 bytes within the existing bounded frame/document
+limits. Schema-valid empty path strings remain valid. Preserve `extraCount`
+exactly as uint64; never sum it into a smaller integer or convert it through a
+floating-point number. Discard all paths immediately after validation. Only a
+closed warning classification, sample count and extra count remain private.
+
+A nonempty sample list, positive extra count or failed scan can emit the existing
+generic native-warning notice on the original process and active known
+nonterminal turn. An empty successful scan emits no notice. Deduplicate each of
+three warning classifications (world-writable paths, failed scan, or both) for
+the lifetime of that original execution process. Replays and observations in
+paused, failed or completed contexts become validated discarded metadata. They
+do not create a new current turn or change settings, approvals, account/provider,
+readiness, input delivery, response receipts, recovery or cleanup ownership.
+
+The pinned [setup completion schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/WindowsSandboxSetupCompletedNotification.json)
+requires exact `mode` (`elevated` or `unelevated`) and boolean `success` for
+`windowsSandbox/setupCompleted`; `error` may be omitted, null or bounded text
+(up to 4096 UTF-8 bytes). Validate the closed object and discard all native setup
+fields, including error text. This adapter has no setup request owner, so every
+valid unsolicited completion becomes typed discarded metadata. It cannot prove
+sandbox readiness, elevate privileges, override permissions, clear recovery or
+confirm cleanup, regardless of native success. No privileged setup operation is
+added.
+
+These OS-neutral decoders accept notification envelopes only. Unbound or foreign
+process context and same-named server requests retain private/rejection handling.
+Structured diagnostics contain only closed classifications, bounded counts and
+the discard policy; malformed payloads use the closed `windows-sandbox` stage.
+Raw native paths, error text and payloads never enter public events or logs. The
+Worker and isolated title runtime consume validated discarded metadata without
+publishing a second notice or changing the original result. The existing notice
+publication and transcript contract remains unchanged; no RPC, capability
+allocation, migration or Desktop-specific surface is added. Decoder and ordered
+process/Worker fixtures do not prove installed Windows/account acceptance.
+
 ## OpenCode Go subscriptions
 
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.
@@ -2510,6 +2553,8 @@ The feature now compose the root native search/fetch decoder with ordered Worker
 The closed Codex `imageView` item retains the original native call ID and path in the private adapter. The [official 0.162.0 item schema](https://github.com/openai/codex/blob/1f3f93473394b620b35580859b7e6864f7a9f948/codex-rs/app-server-protocol/src/protocol/v2/item.rs) has only `id` and `path`: the [native handler](https://github.com/openai/codex/blob/1f3f93473394b620b35580859b7e6864f7a9f948/codex-rs/core/src/tools/handlers/view_image.rs) reads and validates the image before it emits started and completed observations. It supplies no digest, file identity, byte receipt or failed-image-view status. Required fields, unknown fields, foreign thread/turn, malformed lifecycle and unsupported states retain the existing rejection boundary. Native read/validation failure remains the original supported native failure outcome; do not fabricate a successful or failed image-view result from text.
 
 The Worker binds an opaque observation ID to the original tool record, authenticated machine, exact immutable preparation/manifest digest and canonical root-relative location. Both Worker and server validate the accepted prepared-root metadata; completion must preserve the original reference exactly. This proves ownership of the native observation, not ownership or unchanged contents of a live file. Lexical scope validation performs no filesystem read, link traversal, URL fetch or native call. A symlink's current target and later file changes cannot provide byte or deletion authority. The original private path is not published.
+
+Preparation and image observations share the original Worker OS path grammar. Windows UNC paths retain their complete authority/share prefix for exact root matching; slash normalization never removes that identity. Reject malformed shares, device namespaces, alternate streams, traversal and sibling roots. Linux and macOS retain literal colon and backslash filename characters in the inert relative observation. Portable metadata rejects absolute paths and URLs; server revalidation applies the original Worker OS before accepting the exact reference again.
 
 The existing synchronized outbox, atomic native-item index, original account/execution/thread/turn, sequence and receipt checks own publication and replay. Archive and history retain one original observation. Replay never reads the location. Full native history validation accepts only the closed image-view metadata while preserving original rollout/checkpoint digests; it does not replay the tool. Lost acknowledgments, unsupported older peers, foreign generations or changed references retain recovery without input resend. No RPC, capability allocation or migration is added.
 

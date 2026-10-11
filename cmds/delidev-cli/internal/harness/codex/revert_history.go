@@ -111,6 +111,10 @@ func verifyRevertHistoryItem(raw json.RawMessage) (string, error) {
 		if _, err := decodeTool(raw, item.Type, true); err != nil {
 			return "", compactionUncertain()
 		}
+	case "imageGeneration":
+		if _, err := decodeImageGeneration(raw, true); err != nil {
+			return "", compactionUncertain()
+		}
 	default:
 		return "", compactionUncertain()
 	}

@@ -90,6 +90,8 @@ func (c *Client) metadata(kind MetadataKind) Event {
 
 func (c *Client) observeMetadataLocked(native nativewire.Event) (Event, error) {
 	switch native.Method {
+	case "windows/worldWritableWarning", "windowsSandbox/setupCompleted":
+		return c.observeWindowsSandboxLocked(native)
 	case "account/gatewayOAuth/changed":
 		return c.observeGatewayOAuthLocked(native)
 	case "fuzzyFileSearch/sessionUpdated", "fuzzyFileSearch/sessionCompleted":

@@ -38,7 +38,9 @@ if (args.get("zoom") === "2") {
 }
 const sessionId = newRequestId(),
   accountId = newRequestId(),
-  profileId = newRequestId();
+  profileId = newRequestId(),
+  executionId = newRequestId(),
+  inputId = newRequestId();
 const session = create(ResourceSchema, {
   id: sessionId,
   sessionId,
@@ -52,7 +54,35 @@ const session = create(ResourceSchema, {
     outcome: "stopped",
     dispatch: "paused",
     recovery: "none",
-    initial_execution: { id: newRequestId(), initial_account_id: accountId },
+    initial_execution: { id: executionId, initial_account_id: accountId },
+    ...(args.get("startup") === "1"
+      ? {
+          outcome: "running",
+          dispatch: "claimed",
+          pending_inputs: 0,
+          last_input_sequence: 1,
+          preparation: { job_id: newRequestId(), state: "ready" },
+          active_execution_id: executionId,
+          initial_execution: {
+            id: executionId,
+            input_id: inputId,
+            initial_account_id: accountId,
+          },
+          execution: {
+            job_id: newRequestId(),
+            execution_id: executionId,
+            input_id: inputId,
+            native_thread_id: "original-thread",
+            native_turn_id: "original-turn",
+            last_sequence: 1,
+            outcome: "running",
+            waiting: { approval: false, user_input: false },
+            accepted_inputs: [
+              { input_id: inputId, prompt_digest: "a".repeat(64) },
+            ],
+          },
+        }
+      : {}),
   }),
 });
 const profile = create(BrowserProfileSchema, {
@@ -206,7 +236,11 @@ const transport = createRouterTransport((router) => {
   router.service(ResourceService, {
     getSnapshot: () => ({ resources: [session], cursor: "fixture" }),
     listResources: (request) => ({
-      resources: request.filter?.kind === EntityKind.MESSAGE ? messages : [],
+      resources:
+        request.filter?.kind === EntityKind.MESSAGE &&
+        args.get("startup") !== "1"
+          ? messages
+          : [],
     }),
     async *watchEvents(_request, context) {
       if (!context.signal.aborted)

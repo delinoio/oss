@@ -43,8 +43,11 @@ function reference(snapshot: unknown) {
     typeof location !== "string" ||
     !location ||
     new TextEncoder().encode(location).length > 4096 ||
-    /[\\:\u0000-\u001f\u007f\uD800-\uDFFF]/u.test(location) ||
+    /[\u0000-\u001f\u007f\uD800-\uDFFF]/u.test(location) ||
     location.startsWith("/") ||
+    location.startsWith("\\\\") ||
+    /^[a-z]:[\\/]/i.test(location) ||
+    location.includes("://") ||
     location.split("/").some((part) => !part || part === "." || part === "..")
   )
     return;
