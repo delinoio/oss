@@ -4,7 +4,10 @@ import {
   ConfigurationNameJobFailure,
   isConfigurationNameConflict,
 } from "./configuration-name-conflict";
-import { usePresentationLabels } from "./product-presentation";
+import {
+  presentationKind,
+  usePresentationLabels,
+} from "./product-presentation";
 import { revealProjectInvalidControl } from "./project-edit-tabs";
 import { defaultBranchPrefix, validBranchPrefix } from "./session-defaults";
 import {
@@ -3086,7 +3089,7 @@ function SettingsWorkspace({
                                       <small>
                                         {presentationLabels.identity(
                                           row.id,
-                                          "record",
+                                          presentationKind(kind),
                                         )}
                                       </small>
                                       <div className="actions">
@@ -3097,6 +3100,7 @@ function SettingsWorkspace({
                                               SettingsActionPresentation.Icon
                                             }
                                             targetId={row.id}
+                                            targetKind={presentationKind(kind)}
                                             aria-label={copy(
                                               "settings.edit_f1be7e",
                                               {
@@ -3141,6 +3145,7 @@ function SettingsWorkspace({
                                               SettingsActionPresentation.Icon
                                             }
                                             targetId={row.id}
+                                            targetKind={presentationKind(kind)}
                                             aria-label={copy(
                                               "settings.delete_cd822e",
                                               {

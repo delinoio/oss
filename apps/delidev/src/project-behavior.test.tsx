@@ -21,6 +21,7 @@ import {
 } from "./configuration-fields";
 import { type Document } from "./documents";
 import { SettingsActionScope } from "./settings-action";
+import { safePresentation } from "./product-presentation-test-support";
 it("retains explicit disabled overrides and restores continuous global inheritance", async () => {
   const defaults = {
     ...newConfiguration(EntityKind.SETTINGS),
@@ -261,7 +262,10 @@ it("opens the exact sidebar project and retains its draft through a resource ref
   );
   fireEvent.click(
     screen.getByRole("button", {
-      name: `Project actions · Original project · ${projectId}`,
+      name: safePresentation(
+        `Project actions · Original project · ${projectId}`,
+        "Project",
+      ),
     }),
   );
   expect(get).not.toHaveBeenCalled();
