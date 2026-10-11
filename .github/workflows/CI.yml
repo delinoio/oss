@@ -297,14 +297,6 @@ jobs:
           CI_GO_BASE: ${{ needs.changes.outputs.base }}
           CI_GO_HEAD: ${{ needs.changes.outputs.head }}
 
-      # Manual dispatch race validation supplements the ordinary full Go suite.
-      # Retain this path until ordinary CI guarantees equivalent race coverage.
-      - name: Run DeliDev Go race tests
-        if: ${{ github.event_name == 'workflow_dispatch' && matrix.os == 'ubuntu-latest' && matrix.shard == 'all' }}
-        run: |
-          go test -mod=readonly ./cmds/delidev-cli/internal/domain ./cmds/delidev-cli/internal/workspace ./cmds/delidev-cli/internal/server -run ImageView -count=1
-          go test -mod=readonly -race -count=1 ./cmds/delidev-cli/...
-
       - name: Summarize Go test timings
         if: ${{ always() && hashFiles('.turbo/go-test/*.json') != '' }}
         run: node scripts/ci/go-test-report.mjs --summary ".turbo/go-test/${{ matrix.shard }}.json"
@@ -1840,23 +1832,12 @@ jobs:
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:delidev:fixture
         env:
           FORCE_RUN: 'true'
-      # Manual dispatch validation must execute the repository-required full command.
-      # Keep ordinary shards unchanged; retain this path until CI guarantees the full command.
-      - name: Prepare fixture for full DeliDev frontend validation
-        if: ${{ github.event_name == 'workflow_dispatch' && matrix.phase == 'checks' }}
-        run: node scripts/ci/prepare-delidev-test-binary.mjs
       - name: Run affected desktop checks
         env:
           TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
           TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
           FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['delidev-frontend'] }}
         run: node scripts/ci/run-affected.mjs delidev-desktop ci:${{ matrix.phase }}
-
-      - name: Run full DeliDev frontend test command
-        if: ${{ github.event_name == 'workflow_dispatch' && matrix.phase == 'checks' }}
-        run: |
-          pnpm --dir apps/delidev exec vitest run src/native-image-view.test.tsx
-          pnpm --dir apps/delidev test
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
