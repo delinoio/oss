@@ -122,8 +122,8 @@ fn preservation_boundaries_keep_behavior() {
         "export {}; const obj = {longProperty: () => 3}; console.log(obj.longProperty.name);",
         "export {}; const obj = {get longProperty() {return 3}}; console.log(obj.longProperty);",
         "export {}; const obj = {longProperty: 3}; console.log('longProperty' in obj);",
-        "export {}; const obj = {longProperty: 3}; function read(v: {longProperty: number}) \
-         {return v.longProperty}; console.log(read(obj));",
+        "export {}; const obj = {longProperty: 3}; export function read(v: {longProperty: \
+         number}) {return v.longProperty}; console.log(read(obj));",
         "export {}; const obj = {longProperty: 3}; const {...rest} = obj; \
          console.log(rest.longProperty);",
         "export {}; const obj = {longProperty: 3}; console.log({...obj});",
@@ -208,7 +208,8 @@ fn check_analyzes_without_publishing_or_executing_input() {
 
 #[test]
 fn source_maps_refer_to_original_unicode_input() {
-    let code = "export {}; const text = '😀'; const obj = {longProperty: 4}; console.log(text, \
+    let code = "export {}; const text = '😀'; function identity(v: {longProperty: number}) { \
+                return v; } const obj = identity({longProperty: 4}); console.log(text, \
                 obj.longProperty);";
     let temp = fixture(code);
     success(run(temp.path(), "out"));
@@ -216,6 +217,22 @@ fn source_maps_refer_to_original_unicode_input() {
     let bytes = fs::read(temp.path().join("out/0.js.map")).unwrap();
     let map = sourcemap::SourceMap::from_slice(&bytes).unwrap();
     assert_eq!(map.get_source_contents(0), Some(code));
+    let mapping: Value =
+        serde_json::from_slice(&fs::read(temp.path().join("out/properties.json")).unwrap())
+            .unwrap();
+    let renamed = mapping["properties"][0]["renamed"].as_str().unwrap();
+    assert_ne!(renamed, "longProperty");
+    let emitted = fs::read_to_string(temp.path().join("out/0.js")).unwrap();
+    let offset = emitted.rfind(&format!("obj.{renamed}")).unwrap() + "obj.".len();
+    let prefix = &emitted[..offset];
+    let line = prefix.bytes().filter(|&b| b == b'\n').count() as u32;
+    let column = prefix.rsplit('\n').next().unwrap().encode_utf16().count() as u32;
+    let token = map.lookup_token(line, column).unwrap();
+    let original_column = code[..code.rfind("longProperty").unwrap()]
+        .encode_utf16()
+        .count();
+    assert_eq!(token.get_src_line(), 0);
+    assert_eq!(token.get_src_col(), original_column as u32);
     assert!(
         map.tokens()
             .any(|token| token.has_source() && token.get_src_col() > 40)
@@ -346,4 +363,113 @@ fn unsupported_entries_fail_and_commonjs_javascript_passes_through() {
     let manifest: Value =
         serde_json::from_slice(&fs::read(temp.path().join("out/modules.json")).unwrap()).unwrap();
     assert_eq!(manifest["modules"][0]["kind"], "passthrough");
+}
+
+#[test]
+fn interprocedural_arguments_returns_recursion_and_captures() {
+    let cases = [
+        "export {}; function identity(v: {longProperty: number}) { return v; } function \
+         forward(v: {longProperty: number}) { return identity(v); } const obj = {longProperty: \
+         4}; const result = forward(obj); console.log(result.longProperty, obj.longProperty);",
+        "export {}; function make() { return {longProperty: 5}; } const result = make(); \
+         console.log(result.longProperty);",
+        "export {}; function read(v: {longProperty: number}) { return v.longProperty; } \
+         console.log(read({longProperty: 7}));",
+        "export {}; function recur(v: {longProperty: number}, depth: number): {longProperty: \
+         number} { if (depth > 0) return recur(v, depth - 1); return v; } const result = \
+         recur({longProperty: 8}, 3); console.log(result.longProperty);",
+        "export {}; const obj = {longProperty: 9}; function capture() { return obj; } function \
+         forward() { return capture(); } console.log(forward().longProperty);",
+        "export {}; const identity = (v: {longProperty: number}) => v; let first = {longProperty: \
+         10}; const second = {longProperty: 11}; first = identity(second); \
+         console.log(first.longProperty, second.longProperty);",
+        "export {}; function left(v: {longProperty: number}, n: number): {longProperty: number} { \
+         if (n > 0) return right(v, n - 1); return v; } function right(v: {longProperty: number}, \
+         n: number): {longProperty: number} { return left(v, n); } \
+         console.log(left({longProperty: 12}, 4).longProperty);",
+    ];
+    for code in cases {
+        let temp = fixture(code);
+        success(run(temp.path(), "out"));
+        compare(temp.path());
+        assert!(
+            report(temp.path())["renamed_properties"].as_u64().unwrap() > 0,
+            "{code}"
+        );
+    }
+}
+
+#[test]
+fn shared_callee_unifies_shapes_and_preserved_names_without_collisions() {
+    let temp = fixture(
+        "export {}; function read(v: {sharedProperty: number}) { return v.sharedProperty; } const \
+         first = {sharedProperty: 3, a: 10}; const second = {sharedProperty: 4, anotherProperty: \
+         20}; console.log(read(first), read(second), first.a, second.anotherProperty);",
+    );
+    success(run(temp.path(), "out"));
+    compare(temp.path());
+    let mapping: Value =
+        serde_json::from_slice(&fs::read(temp.path().join("out/properties.json")).unwrap())
+            .unwrap();
+    let shared: Vec<_> = mapping["properties"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|m| m["original"] == "sharedProperty")
+        .collect();
+    assert_eq!(shared.len(), 1);
+    assert_ne!(shared[0]["renamed"], "a");
+    success(run(temp.path(), "again"));
+    for file in ["0.js", "0.js.map", "modules.json", "properties.json"] {
+        assert_eq!(
+            fs::read(temp.path().join("out").join(file)).unwrap(),
+            fs::read(temp.path().join("again").join(file)).unwrap()
+        );
+    }
+}
+
+#[test]
+fn interprocedural_uncertainty_and_transitive_escapes_preserve_groups() {
+    let cases = [
+        "export {}; function identity(v: {longProperty: number}) { return v; } const obj = \
+         {longProperty: 1}; console.log(JSON.stringify(identity(obj)));",
+        "export {}; function inner(v: {longProperty: number}) { console.log(Object.keys(v)); } \
+         function outer(v: {longProperty: number}) { inner(v); } const obj = {longProperty: 2}; \
+         outer(obj);",
+        "export {}; function read(v: {longProperty: number}) { return v.longProperty; } const obj \
+         = {longProperty: 3}; const unknown = JSON.parse('{\"longProperty\":4}'); \
+         console.log(read(obj), read(unknown));",
+        "export {}; function read(v: {longProperty: number}) { return v.longProperty; } const obj \
+         = {longProperty: 5}; const fn = read; console.log(fn(obj));",
+        "export {}; function read(v: {longProperty: number}) { return v.longProperty; } const obj \
+         = {longProperty: 6}; console.log([obj].map(read));",
+        "export {}; function identity(v: {longProperty: number}) { return v; } const first = \
+         {longProperty: 7}; const second = {longProperty: 8}; \
+         console.log(identity(first).longProperty, identity(second).longProperty, \
+         Object.keys(second));",
+        "export {}; function hold(v: {longProperty: number}) { return {v}; } const obj = \
+         {longProperty: 9}; console.log(JSON.stringify(hold(obj)));",
+        "export {}; interface Shape {longProperty: number} function read(v: Shape) { return \
+         v.longProperty; } const obj = {longProperty: 10}; console.log(read(obj));",
+        "export {}; function outer(v: {longProperty: number}) { return () => v; } const obj = \
+         {longProperty: 11}; console.log(JSON.stringify(outer(obj)()));",
+        "export {}; function read(v: {longProperty: number}) { return v.longProperty; } const obj \
+         = {longProperty: 12}; export {read}; console.log(read(obj));",
+        "export {}; async function read(v: {longProperty: number}) { return v.longProperty; } \
+         const obj = {longProperty: 13}; console.log(await read(obj));",
+        "export {}; function* read(v: {longProperty: number}) { yield v.longProperty; } const obj \
+         = {longProperty: 14}; console.log([...read(obj)]);",
+        "export {}; const obj = {longProperty: 15}; function read(v = obj) { return \
+         v.longProperty; } console.log(read());",
+        "export {}; function read(...values: {longProperty: number}[]) { return \
+         values[0].longProperty; } const obj = {longProperty: 16}; console.log(read(obj));",
+        "export {}; let obj = {longProperty: 17}; function replace() { obj = \
+         JSON.parse('{\"longProperty\":18}'); } replace(); console.log(obj.longProperty);",
+    ];
+    for code in cases {
+        let temp = fixture(code);
+        success(run(temp.path(), "out"));
+        compare(temp.path());
+        assert_eq!(report(temp.path())["renamed_properties"], 0, "{code}");
+    }
 }

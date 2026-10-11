@@ -20,6 +20,8 @@ use ts_goport::{
 
 use crate::optimizer::{Object, Occurrence, Preservation, Property};
 
+mod flow;
+
 struct Host {
     fs: Rc<dyn Fs>,
     cwd: String,
@@ -382,8 +384,7 @@ fn analyze_file(file: Node, checker: &mut Checker) -> Result<Vec<Object>> {
     let mut nodes = Vec::new();
     collect(file, &mut nodes);
     let mut objects = Vec::<Object>::new();
-    let mut bindings = HashMap::new();
-    let mut declarations = HashMap::new();
+    let mut allocations = HashMap::new();
     for &node in &nodes {
         if node.kind() != SyntaxKind::ObjectLiteralExpression {
             continue;
@@ -398,19 +399,10 @@ fn analyze_file(file: Node, checker: &mut Checker) -> Result<Vec<Object>> {
             properties: Vec::new(),
             preservation: None,
         };
-        if !local
-            || !declaration
-                .parent()
-                .flags()
-                .intersects(NodeFlags::CONST | NodeFlags::LET)
-        {
-            object.preservation = Some(Preservation::ExternalOrUnsupportedShape);
-        } else if declaration.type_().is_some() {
-            object.preservation = Some(Preservation::TypeConstraint);
-        } else if get_combined_modifier_flags(declaration).intersects(ModifierFlags::EXPORT)
-            || !is_external_module(file)
-        {
+        if !is_external_module(file) {
             object.preservation = Some(Preservation::Exported);
+        } else if local && declaration.type_().is_some() {
+            object.preservation = Some(Preservation::TypeConstraint);
         }
         for property in node.properties().iter() {
             let property_name = property.name();
@@ -459,7 +451,6 @@ fn analyze_file(file: Node, checker: &mut Checker) -> Result<Vec<Object>> {
             }
         }
         if local {
-            let symbol = checker.get_symbol_at_location(declaration.name(), false);
             // Type evidence is necessary, but never sufficient: actual
             // references below must also stay within this fresh
             // object's closed region.
@@ -468,163 +459,9 @@ fn analyze_file(file: Node, checker: &mut Checker) -> Result<Vec<Object>> {
             if typed_properties.len() != object.properties.len() {
                 object.preservation = Some(Preservation::TypeConstraint);
             }
-            bindings.insert(symbol, objects.len());
-            declarations.insert(declaration.name(), objects.len());
         }
+        allocations.insert(node, objects.len());
         objects.push(object);
     }
-    // Discover const/let aliases to a fixed point. Other assignments are
-    // escapes.
-    loop {
-        let mut added = false;
-        for &node in &nodes {
-            if node.kind() != SyntaxKind::VariableDeclaration
-                || node.name().kind() != SyntaxKind::Identifier
-                || node.initializer().is_nil()
-                || node.initializer().kind() != SyntaxKind::Identifier
-            {
-                continue;
-            }
-            let source_symbol = checker.get_symbol_at_location(node.initializer(), false);
-            let Some(&index) = bindings.get(&source_symbol) else {
-                continue;
-            };
-            let symbol = checker.get_symbol_at_location(node.name(), false);
-            if bindings.contains_key(&symbol) {
-                continue;
-            }
-            if !node
-                .parent()
-                .flags()
-                .intersects(NodeFlags::CONST | NodeFlags::LET)
-                || node.type_().is_some()
-            {
-                objects[index].preservation = Some(Preservation::TypeConstraint);
-                continue;
-            }
-            if get_combined_modifier_flags(node).intersects(ModifierFlags::EXPORT) {
-                objects[index].preservation = Some(Preservation::Exported);
-            }
-            bindings.insert(symbol, index);
-            declarations.insert(node.name(), index);
-            added = true;
-        }
-        if !added {
-            break;
-        }
-    }
-    for node in nodes {
-        if node.kind() != SyntaxKind::Identifier {
-            continue;
-        }
-        let symbol = if node.parent().kind() == SyntaxKind::ExportSpecifier {
-            checker.get_export_specifier_local_target_symbol(node.parent())
-        } else if node.parent().kind() == SyntaxKind::ShorthandPropertyAssignment {
-            checker.get_shorthand_assignment_value_symbol(node.parent())
-        } else {
-            checker.get_symbol_at_location(node, false)
-        };
-        let Some(&index) = bindings.get(&symbol) else {
-            continue;
-        };
-        if declarations.contains_key(&node) {
-            continue;
-        }
-        let parent = node.parent();
-        if parent.kind() == SyntaxKind::VariableDeclaration
-            && parent.initializer() == node
-            && parent.name().kind() == SyntaxKind::ObjectBindingPattern
-            && parent.type_().is_nil()
-        {
-            // Destructuring reads own values without exposing the object's
-            // identity. Keep binding names and defaults intact; reject rest,
-            // computed keys and nested patterns instead of guessing their use.
-            for element in parent.name().elements().iter() {
-                let explicit = element.property_name();
-                let key = if explicit.is_some() {
-                    explicit
-                } else {
-                    element.name()
-                };
-                if element.dot_dot_dot_token().is_some()
-                    || element.name().kind() != SyntaxKind::Identifier
-                    || !matches!(
-                        key.kind(),
-                        SyntaxKind::Identifier | SyntaxKind::StringLiteral
-                    )
-                {
-                    objects[index].preservation = Some(Preservation::ExternalOrUnsupportedShape);
-                    continue;
-                }
-                if let Some(property) = objects[index]
-                    .properties
-                    .iter_mut()
-                    .find(|p| p.name == key.text())
-                {
-                    property.occurrences.push(span(
-                        key,
-                        &source,
-                        explicit.is_nil(),
-                        key.kind() == SyntaxKind::StringLiteral,
-                    ));
-                } else {
-                    objects[index].preservation = Some(Preservation::ObservableOperation);
-                }
-            }
-            continue;
-        }
-        if parent.kind() == SyntaxKind::VariableDeclaration
-            && parent.initializer() == node
-            && declarations.get(&parent.name()) == Some(&index)
-        {
-            continue;
-        }
-        if matches!(
-            parent.kind(),
-            SyntaxKind::PropertyAccessExpression | SyntaxKind::ElementAccessExpression
-        ) && parent.expression() == node
-        {
-            let key = if parent.kind() == SyntaxKind::PropertyAccessExpression {
-                parent.name()
-            } else {
-                parent.argument_expression()
-            };
-            if !matches!(
-                key.kind(),
-                SyntaxKind::Identifier | SyntaxKind::StringLiteral
-            ) || (parent.kind() == SyntaxKind::ElementAccessExpression
-                && key.kind() != SyntaxKind::StringLiteral)
-            {
-                objects[index].preservation = Some(Preservation::DynamicAccess);
-                continue;
-            }
-            let outer = parent.parent();
-            if matches!(
-                outer.kind(),
-                SyntaxKind::DeleteExpression
-                    | SyntaxKind::CallExpression
-                    | SyntaxKind::TaggedTemplateExpression
-            ) && outer.expression() == parent
-            {
-                objects[index].preservation = Some(Preservation::ObservableOperation);
-            }
-            if let Some(property) = objects[index]
-                .properties
-                .iter_mut()
-                .find(|p| p.name == key.text())
-            {
-                property.occurrences.push(span(
-                    key,
-                    &source,
-                    false,
-                    key.kind() == SyntaxKind::StringLiteral,
-                ));
-            } else {
-                objects[index].preservation = Some(Preservation::ObservableOperation);
-            }
-        } else {
-            objects[index].preservation = Some(Preservation::Escapes);
-        }
-    }
-    Ok(objects)
+    flow::analyze(&nodes, checker, &source, objects, allocations)
 }

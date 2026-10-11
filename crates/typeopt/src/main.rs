@@ -173,7 +173,7 @@ mod app {
             compiler_revision: "d62b17c3d608e4c61c763e7ec18574f689cbb3d0",
             files: sources.len(),
             object_regions: objects.len(),
-            analysis_scope: "closed_local_object_regions",
+            analysis_scope: "module_local_interprocedural",
             no_change_reason: (renamed == 0).then_some(
                 "No profitable property rename was proven safe; unsupported or observable shapes \
                  are preserved.",
