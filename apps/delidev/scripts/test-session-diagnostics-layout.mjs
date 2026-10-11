@@ -37,7 +37,7 @@ try {
               ? "Selected execution account"
               : "선택된 실행 계정";
           await page.setContent(
-            `<html lang="${language}" data-theme="${theme}"><style>${styles.join("\n")}</style><body><main class="session-workspace session-tabbed" style="display:block;height:100vh;width:${panelWidth}px"><div class="session-app-panel session-diagnostics-panel"><div class="session-diagnostics"><div><section class="session-information-section"><h3>Session details</h3><dl><div data-token-observation><dt>${label}</dt><dd>${reference}<p>Original Worker guidance</p></dd></div><div><dt>Recovery</dt><dd>none</dd></div></dl></section><section><h3>Snapshot references and account order</h3><dl><div><dt>${label}</dt><dd>${reference}</dd></div></dl><ol aria-label="Saved account order"><li>first-account · weight 2</li><li>second-account · weight 1</li></ol></section><p id="portal-notice" role="status">Saved execution evidence is unavailable</p></div><aside class="session-files"><header><h2>Model request diagnostics</h2><button>Close diagnostics</button></header><p role="status">Retained observations may be stale</p><form><label>${label}<input value="${reference}" /></label><button>Apply execution filter</button></form><article class="result"><h3>Native input</h3><dl><div><dt>Request</dt><dd>${reference}</dd></div></dl><details class="disclosure" data-disclosure-density="compact"><summary class="disclosure-header">Technical details</summary><p>${reference}</p></details></article><button>Load more</button></aside></div></div></main><section id="other"><dl><dt>${label}</dt><dd>Other surface</dd></dl></section></body></html>`,
+            `<html lang="${language}" data-theme="${theme}"><style>${styles.join("\n")}</style><body><main class="session-workspace session-tabbed" style="display:block;height:100vh;width:${panelWidth}px"><div class="session-app-panel session-diagnostics-panel"><div class="session-diagnostics"><div><section class="session-information-section"><h3>Session details</h3><dl><div data-token-observation><dt>${label}</dt><dd>${reference}<p>Original Worker guidance</p></dd></div><div><dt>Recovery</dt><dd>none</dd></div></dl></section><section><h3>Snapshot references and account order</h3><dl><div><dt>${label}</dt><dd>${reference}</dd></div></dl><ol aria-label="Saved account order"><li>first-account · weight 2</li><li>second-account · weight 1</li></ol></section><p id="portal-notice" role="status">Saved execution evidence is unavailable</p></div><aside class="session-files"><header><h2>Model request diagnostics</h2><button>Close diagnostics</button></header><p role="status">Retained observations may be stale</p><form><label>${label}<input value="${reference}" /></label><button>Apply execution filter</button></form><article class="result"><h3>Native input</h3><dl><div><dt>Request</dt><dd>${reference}</dd></div></dl><details class="disclosure" data-disclosure-density="compact"><summary class="disclosure-header">Technical details</summary><p>${reference}</p></details></article><button>Load more</button></aside></div></div></main><section id="other"><dl><dt>${label}</dt><dd>Other surface</dd></dl><input id="ordinary-input" /></section></body></html>`,
           );
           const geometry = await page.evaluate(() => {
             const rect = (e) => {
@@ -177,12 +177,24 @@ try {
             },
             "keyboard focus uses the semantic focus token",
           );
-          await page.locator("input").focus();
-          assert.equal(
-            await page
-              .locator("input")
-              .evaluate((e) => getComputedStyle(e).outlineWidth),
-            "0px",
+          const inputOutline = async (selector) =>
+            page.locator(selector).evaluate((e) => {
+              const style = getComputedStyle(e);
+              return {
+                width: style.outlineWidth,
+                style: style.outlineStyle,
+                color: style.outlineColor,
+                offset: style.outlineOffset,
+              };
+            });
+          await page.locator(".session-diagnostics input").focus();
+          const diagnosticInputOutline = await inputOutline(
+            ".session-diagnostics input",
+          );
+          await page.locator("#ordinary-input").focus();
+          assert.deepEqual(
+            diagnosticInputOutline,
+            await inputOutline("#ordinary-input"),
             "form controls retain their ordinary focus appearance",
           );
           await page.locator("summary").focus();
