@@ -2900,7 +2900,11 @@ with name and complete light/dark token maps, and always creates a new identity.
 Unknown fields/tokens, non-#RRGGBB colors and failing text/control contrast reject
 adoption. Terminal colors, backdrop, shadows and native OS surfaces are excluded.
 Validated tokens use an application-owned constructed CSS stylesheet without raw
-CSS injection or a CSP exception. Export captures one committed custom theme.
+CSS injection or a CSP exception. The root palette selector has at least the
+specificity of the built-in explicit-dark selector; its adopted-sheet order makes
+the selected map effective in explicit Dark and dark System mode. Replacing a
+mode or palette disposes only its previous owned sheet, preserving unrelated
+sheets and custom preview selectors. Export captures one committed custom theme.
 Deletion requires confirmation and atomically returns all selected references to
 Default. Cancel discards only the editor/import draft. Concurrent revisions keep
 dirty drafts visible and block save until explicit discard/reload.
