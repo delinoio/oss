@@ -1904,6 +1904,15 @@ jobs:
           FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['delidev-frontend'] }}
         run: node scripts/ci/run-affected.mjs delidev-desktop ci:${{ matrix.phase }}
 
+      - name: Validate sidebar collapse geometry
+        if: ${{ matrix.phase == 'checks' }}
+        env:
+          DELIDEV_LAYOUT_PLAYWRIGHT_MODULE: ${{ runner.temp }}/delidev-sidebar-playwright/node_modules/playwright/index.mjs
+        run: |
+          npm install --prefix "$RUNNER_TEMP/delidev-sidebar-playwright" --no-audit --no-fund --ignore-scripts playwright@1.56.1
+          node "$RUNNER_TEMP/delidev-sidebar-playwright/node_modules/playwright/cli.js" install --with-deps chromium
+          node apps/delidev/scripts/test-sidebar-collapse-layout.mjs
+
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5

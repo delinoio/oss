@@ -8,6 +8,10 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
+## Sidebar presentation
+
+- Keep wide context-pane collapse shortcut-driven, with visible rail focus restoration and no shell toggle row. Preserve compact drawer controls and the original preference/controller owners under the [persistent context-pane contract](../../../docs/apps-delidev-desktop-contract.md#persistent-context-pane-collapse).
+
 ## Owning contracts
 
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)

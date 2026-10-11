@@ -5,6 +5,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { EntityKind, InboxService, IntegrationService, NotificationPreferencesSchema, ResourceSchema, ResourceService, SessionService, SystemService } from "@delinoio/delidev-api-client";
 import { App } from "./App";
+import { SidebarPreference, SidebarProvider, memorySidebarBridge } from "./sidebar-preference";
 import { AppearanceProvider, Theme } from "./appearance";
 import { encode } from "./documents";
 import { i18n, SupportedLanguage } from "./localization";
@@ -12,6 +13,8 @@ import "./themes.css";
 import "./styles.css";
 
 const args = new URLSearchParams(location.search);
+const sidebarBridge = memorySidebarBridge();
+if (args.get("collapsed") === "true") void sidebarBridge.update(SidebarPreference.Collapsed, 1);
 const theme = args.get("theme") === "dark" ? Theme.Dark : Theme.Light;
 void i18n.changeLanguage(args.get("language") === "ko" ? SupportedLanguage.Korean : SupportedLanguage.English);
 const requests = { github: 0, repository: 0 };
@@ -36,4 +39,4 @@ const transport = createRouterTransport(router => {
   });
   router.service(IntegrationService, { queryRepositoryIntegration: () => { requests.github++; throw new ConnectError("Synthetic observation unavailable", Code.Unavailable); } });
 });
-createRoot(document.getElementById("root")!).render(<AppearanceProvider bridge={{ read: async () => ({ revision: 1, theme, problem: null }), update: async next => ({ revision: 2, theme: next, problem: null }), subscribe: async () => () => {} }}><App transport={transport} /></AppearanceProvider>);
+createRoot(document.getElementById("root")!).render(<AppearanceProvider bridge={{ read: async () => ({ revision: 1, theme, problem: null }), update: async next => ({ revision: 2, theme: next, problem: null }), subscribe: async () => () => {} }}><SidebarProvider bridge={sidebarBridge}><App transport={transport} /></SidebarProvider></AppearanceProvider>);
