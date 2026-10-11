@@ -201,6 +201,11 @@ try {
           .getByRole("textbox", { name: "Required repository" })
           .waitFor();
         assert.equal(await tabs.nth(1).getAttribute("aria-selected"), "true");
+        await page.waitForFunction(
+          () =>
+            document.activeElement?.getAttribute("aria-label") ===
+            "Required repository",
+        );
         assert(
           await dialog
             .getByRole("textbox", { name: "Required repository" })
