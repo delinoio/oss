@@ -137,13 +137,16 @@ test("layout guard runs before browser import, temporary output and build", asyn
   assert(guard > 0);
   assert(files > guard);
   for (const operation of [
-    "await import(modulePath",
-    "await mkdtemp(",
-    "await mkdir(screenshots",
-    "await createRsbuild(",
+    /await import\(\s*modulePath/u,
+    /await mkdtemp\(/u,
+    /await mkdir\(screenshots/u,
+    /await createRsbuild\(/u,
   ])
-    assert(files < source.indexOf(operation));
-  assert.match(source, /cases:16,creationGuidanceSurfaces:32/);
+    assert(files < source.search(operation));
+  assert.match(source, /cases:\s*16,\s*creationGuidanceSurfaces:\s*32/);
   assert.match(source, /await browser\?\.close\(\)/);
-  assert.match(source, /await rm\(directory,\{recursive:true,force:true\}\)/);
+  assert.match(
+    source,
+    /await rm\(directory,\s*\{\s*recursive: true,\s*force: true\s*\}\)/,
+  );
 });

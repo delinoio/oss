@@ -108,7 +108,7 @@ test("RealQA panels use the defined themed surface color", () => {
 test("RealQA annotation text uses CSP-compatible static font styling", () => {
   assert.match(
     styles,
-    /\.annotation-text\s*\{\s*font-family:\s*"DevHud\s*RealQA\s*Noto\s*Sans\s*KR";\s*font-kerning:\s*none;?\s*\}/u,
+    /\.annotation-text\s*\{\s*font-family:\s*"DevHud RealQA Noto Sans KR";\s*font-kerning:\s*none;?\s*\}/u,
   );
 });
 
@@ -519,7 +519,7 @@ test("the shell exposes a localized skip target and named rail tooltips", () => 
   );
   assert.match(
     app,
-    /className="nav-tooltip\s*rail-nav-tooltip"\s*role="tooltip"/u,
+    /className="nav-tooltip rail-nav-tooltip"\s*role="tooltip"/u,
   );
   assert.match(app, /createPortal\(\s*[^;]*document\.body,?\s*\)/u);
   assert.match(
@@ -612,11 +612,11 @@ test("Deck keeps configuration in the desktop panel and a named mobile sheet", (
 test("Deck checkbox labels retain the shared 44px interaction target", () => {
   assert.match(
     deckUi,
-    /<label\s*className="check\s*deck-check"\s*htmlFor="deck-show-drafts">/u,
+    /<label\s*className="check deck-check"\s*htmlFor="deck-show-drafts">/u,
   );
   assert.match(
     deckUi,
-    /<label\s*className="check\s*deck-check"\s*htmlFor="deck-notifications">/u,
+    /<label\s*className="check deck-check"\s*htmlFor="deck-notifications">/u,
   );
   assert.match(
     styles,

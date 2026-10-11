@@ -18,6 +18,7 @@ define.fmt({
     "protos/gen/**",
     "packages/*/src/gen/**",
     "**/*.generated.*",
+    "apps/delidev/src/locales/resources.ts",
     "**/pnpm-lock.yaml",
     "**/package-lock.json",
     "**/npm-shrinkwrap.json",

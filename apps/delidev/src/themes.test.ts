@@ -135,12 +135,12 @@ test("all native modal backdrops use the same subtle dimming token without surfa
 test("accent-off user-message focus follows the selected palette without changing accent-on focus", () => {
   // The root attribute gives this override greater specificity than the
   // transcript rule, regardless of stylesheet order or custom token values.
-  expect(source).toContain(
-    ':root[data-session-accent="false"] .session-workspace .message-user :focus-visible { outline-color: var(--focus-on-selected, var(--focus)); }',
+  expect(source).toMatch(
+    /:root\[data-session-accent="false"\]\s+\.session-workspace\s+\.message-user\s+:focus-visible\s*\{\s*outline-color: var\(--focus-on-selected, var\(--focus\)\);\s*\}/u,
   );
   const session = readFileSync(join(directory, "session.css"), "utf8");
-  expect(session).toContain(
-    ".session-workspace .transcript .message-user :focus-visible { outline-color: var(--on-accent); outline-offset: 2px; }",
+  expect(session).toMatch(
+    /\.session-workspace \.transcript \.message-user :focus-visible\s*\{\s*outline-color: var\(--on-accent\);\s*outline-offset: 2px;\s*\}/u,
   );
   for (const [name, modes] of Object.entries(appearancePalettes)) {
     for (const [mode, colors] of Object.entries(modes)) {
