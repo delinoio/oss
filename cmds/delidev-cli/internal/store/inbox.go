@@ -282,3 +282,60 @@ func (t *Tx) UnreadInboxCount() (uint64, error) {
 	err := t.tx.QueryRowContext(t.ctx, "SELECT COUNT(*) FROM entities WHERE kind='inbox' AND json_extract(body,'$.read_state')=?", domain.InboxUnread).Scan(&count)
 	return count, storageError(err)
 }
+
+// SessionInboxReadReceipt retains the original transaction result without source
+// content. Replay never rescans entries or reverses a later explicit mark-unread.
+type SessionInboxReadReceipt struct {
+	SessionID   domain.ID `json:"session_id"`
+	MarkedCount uint64    `json:"marked_count,string"`
+	ObservedAt  time.Time `json:"observed_at"`
+}
+
+// MarkSessionInboxRead uses internal pages in one transaction. Public Inbox
+// cursors cannot be reused here because each retained read change advances their
+// epoch. sessionPage closes its rows before source validation and ordinary puts.
+func (t *Tx) MarkSessionInboxRead(session domain.ID, validate func(*Tx, Record) error) (SessionInboxReadReceipt, error) {
+	receipt := SessionInboxReadReceipt{SessionID: session, ObservedAt: t.now}
+	if session.Validate() != nil || validate == nil {
+		return receipt, domain.Fail(domain.InvalidArgument, "Invalid session inbox acknowledgment.", "Use the original session identity.")
+	}
+	if err := t.writeAllowed(); err != nil {
+		return receipt, err
+	}
+	if _, err := t.Get(domain.SessionKind, session); err != nil {
+		return receipt, err
+	}
+	after := domain.ID("")
+	for {
+		if err := t.ctx.Err(); err != nil {
+			return receipt, err
+		}
+		if err := t.Authorize(); err != nil {
+			return receipt, err
+		}
+		records, more, err := t.sessionPage(MaxPage, "SELECT "+recordColumns+" FROM entities WHERE kind='inbox' AND session_id=? AND id>? AND json_extract(body,'$.read_state')='unread' ORDER BY id LIMIT ?", session, after, MaxPage+1)
+		if err != nil {
+			return receipt, err
+		}
+		for _, record := range records {
+			if err := t.ctx.Err(); err != nil {
+				return receipt, err
+			}
+			if err := validate(t, record); err != nil {
+				return receipt, err
+			}
+			if _, err := t.SetInboxReadState(record.ID, record.Revision, domain.InboxRead); err != nil {
+				return receipt, err
+			}
+			receipt.MarkedCount++
+			after = record.ID
+		}
+		if !more {
+			break
+		}
+	}
+	if err := t.Authorize(); err != nil {
+		return receipt, err
+	}
+	return receipt, t.ctx.Err()
+}
