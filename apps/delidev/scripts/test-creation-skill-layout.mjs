@@ -95,8 +95,147 @@ try {
           requestAnimationFrame(() => requestAnimationFrame(resolve)),
         ),
     );
-  let overlayCases = 0;
+  let overlayCases = 0,
+    selectedOverlayCases = 0;
+  const checkSelectedOverlay = async (root, input) => {
+    await input.fill("한글\n$add-iss");
+    await root.locator(".skill-completion").getByRole("option").waitFor();
+    await input.press("Enter");
+    const selected = root.locator(".skill-token-selected");
+    await selected.waitFor();
+    assert.equal(await input.inputValue(), "한글\n$add-issue");
+    assert.equal(await selected.getAttribute("data-skill-start"), "3");
+    assert.equal(await root.locator(".skill-text-overlay").count(), 1);
+    assert.equal(await root.locator(".skill-token-unavailable").count(), 0);
+    assert.equal(await input.getAttribute("aria-describedby"), null);
+    assert.equal(
+      await root
+        .locator(
+          ".skill-text-overlay a, .skill-text-overlay [tabindex], .skill-text-overlay [role=link]",
+        )
+        .count(),
+      0,
+    );
+    const prefixed = "wrap 한글 ".repeat(30) + "한글\n$add-issue";
+    await input.fill(prefixed);
+    const draft = prefixed + "\n" + "after ".repeat(30);
+    await input.fill(draft);
+    await input.press("Escape");
+    await selected.waitFor();
+    assert.equal(
+      await selected.getAttribute("data-skill-start"),
+      String(draft.indexOf("$add-issue")),
+    );
+    const originalStyle = await input.getAttribute("style");
+    for (const zoom of ["", "2"]) {
+      await input.evaluate((node, zoom) => {
+        node.parentElement.style.zoom = zoom;
+        node.parentElement.style.setProperty("--link", "rgb(20, 80, 180)");
+        if (zoom) {
+          node.style.fontFamily = "monospace";
+          node.style.fontSize = "18px";
+          node.style.lineHeight = "1.6";
+          node.style.letterSpacing = "0.4px";
+          node.style.width = "90%";
+        }
+        window.dispatchEvent(new Event("resize"));
+      }, zoom);
+      await frame();
+      const geometry = await input.evaluate((node) => {
+        const overlay = node.parentElement.querySelector(".skill-text-overlay"),
+          text = overlay.firstElementChild,
+          selected = overlay.querySelector(".skill-token-selected"),
+          native = getComputedStyle(node),
+          mirrored = getComputedStyle(text),
+          style = getComputedStyle(selected);
+        return {
+          width: node.clientWidth,
+          overlayWidth: overlay.clientWidth,
+          textWidth: text.clientWidth,
+          height: node.scrollHeight,
+          textHeight: text.scrollHeight,
+          fonts: [
+            native.fontFamily,
+            native.fontSize,
+            native.lineHeight,
+            native.letterSpacing,
+            native.padding,
+          ].join("|"),
+          mirrored: [
+            mirrored.fontFamily,
+            mirrored.fontSize,
+            mirrored.lineHeight,
+            mirrored.letterSpacing,
+            mirrored.padding,
+          ].join("|"),
+          color: style.color,
+          decoration: style.textDecorationLine,
+          thickness: style.textDecorationThickness,
+          pointer: getComputedStyle(overlay).pointerEvents,
+          hidden: overlay.getAttribute("aria-hidden"),
+        };
+      });
+      assert.equal(geometry.width, geometry.overlayWidth);
+      assert.equal(geometry.width, geometry.textWidth);
+      assert.equal(geometry.fonts, geometry.mirrored);
+      assert(
+        Math.abs(geometry.height - geometry.textHeight) <= 1,
+        JSON.stringify(geometry),
+      );
+      assert.equal(geometry.color, "rgb(20, 80, 180)");
+      assert.equal(geometry.decoration, "underline");
+      assert.equal(geometry.thickness, "1px");
+      assert.equal(geometry.pointer, "none");
+      assert.equal(geometry.hidden, "true");
+    }
+    await input.evaluate((node, originalStyle) => {
+      if (originalStyle === null) node.removeAttribute("style");
+      else node.setAttribute("style", originalStyle);
+      node.parentElement.style.zoom = "";
+      node.parentElement.style.removeProperty("--link");
+      window.dispatchEvent(new Event("resize"));
+      node.scrollTop = 100;
+      node.dispatchEvent(new Event("scroll"));
+      node.setSelectionRange(3, 17);
+    }, originalStyle);
+    await frame();
+    assert.equal(await input.evaluate((node) => node.selectionStart), 3);
+    assert.equal(await input.evaluate((node) => node.selectionEnd), 17);
+    const scroll = await input.evaluate((node) => ({
+      top: node.scrollTop,
+      transform: node.parentElement.querySelector(".skill-text-overlay > div")
+        .style.transform,
+    }));
+    assert(scroll.top > 0);
+    assert.equal(scroll.transform, `translate(0px, ${-scroll.top}px)`);
+    await input.evaluate((node) => {
+      node.dispatchEvent(
+        new CompositionEvent("compositionstart", { bubbles: true }),
+      );
+    });
+    await page.waitForFunction(
+      (node) => !node.parentElement.querySelector(".skill-text-overlay"),
+      await input.elementHandle(),
+    );
+    await input.evaluate((node) => {
+      node.dispatchEvent(
+        new CompositionEvent("compositionend", { bubbles: true }),
+      );
+    });
+    await selected.waitFor();
+    await input.press("End");
+    await input.pressSequentially("!");
+    await input.press("ControlOrMeta+z");
+    assert.equal(await input.inputValue(), draft);
+    assert.equal(await selected.textContent(), "$add-issue");
+    assert.equal(
+      await page.locator("output").getAttribute("data-fixture-creates"),
+      "0",
+    );
+    selectedOverlayCases++;
+  };
   const checkOverlay = async (root, input) => {
+    await checkSelectedOverlay(root, input);
     const draft =
       "한글 Native selection $add-issue $removed-skill\n" +
       "wrap words $removed-skill ".repeat(30);
@@ -234,11 +373,170 @@ try {
       await control.elementHandle(),
     );
   };
+  const surrounding = (root) =>
+    root.evaluate((node) => {
+      const selectors = [
+        ".new-session-header",
+        ".new-session-content",
+        "fieldset",
+        ".new-session-composer",
+        ".new-session-toolbar",
+        ".new-session-hints",
+        "textarea",
+      ];
+      const rectangles = [
+        node,
+        ...selectors.flatMap((selector) => [
+          ...node.querySelectorAll(selector),
+        ]),
+      ].map((element) => {
+        const { x, y, width, height } = element.getBoundingClientRect();
+        return { x, y, width, height };
+      });
+      const scroll = [];
+      for (let owner = node; owner; owner = owner.parentElement)
+        scroll.push([
+          owner.scrollLeft,
+          owner.scrollTop,
+          owner.scrollWidth,
+          owner.scrollHeight,
+        ]);
+      return { rectangles, scroll };
+    });
+  const stable = async (root, baseline) => {
+    await frame();
+    const current = await surrounding(root);
+    assert.equal(current.rectangles.length, baseline.rectangles.length);
+    current.rectangles.forEach((rect, index) => {
+      for (const dimension of ["x", "y", "width", "height"])
+        assert(
+          Math.abs(rect[dimension] - baseline.rectangles[index][dimension]) <=
+            1,
+          JSON.stringify({ dimension, baseline, current }),
+        );
+    });
+    assert.deepEqual(current.scroll, baseline.scroll);
+  };
+  const bounded = async (root, input) => {
+    const geometry = await input.evaluate((anchor) => {
+      const popup = anchor
+          .closest("[data-shared], .new-session-page")
+          .querySelector(".skill-completion"),
+        rect = popup.getBoundingClientRect(),
+        viewport = visualViewport,
+        bounds = {
+          left: viewport?.offsetLeft ?? 0,
+          top: viewport?.offsetTop ?? 0,
+          right: (viewport?.offsetLeft ?? 0) + (viewport?.width ?? innerWidth),
+          bottom:
+            (viewport?.offsetTop ?? 0) + (viewport?.height ?? innerHeight),
+        };
+      return {
+        topLayer: popup.matches(":popover-open"),
+        position: getComputedStyle(popup).position,
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        width: rect.width,
+        anchorWidth: anchor.getBoundingClientRect().width,
+        height: rect.height,
+        bounds,
+      };
+    });
+    assert.equal(geometry.topLayer, true);
+    assert.equal(geometry.position, "fixed");
+    assert(geometry.height <= 221);
+    assert(geometry.width <= geometry.anchorWidth + 1);
+    assert(
+      geometry.left >= geometry.bounds.left + 7 &&
+        geometry.right <= geometry.bounds.right - 7,
+      JSON.stringify(geometry),
+    );
+    assert(
+      geometry.top >= geometry.bounds.top + 7 &&
+        geometry.bottom <= geometry.bounds.bottom - 7,
+      JSON.stringify(geometry),
+    );
+  };
+  const checkCompletionLayout = async (root, input) => {
+    for (const zoom of ["", "2"]) {
+      await root.evaluate((node, zoom) => {
+        node.style.zoom = zoom;
+      }, zoom);
+      await input.fill("$a");
+      await input.press("Escape");
+      await frame();
+      const baseline = await surrounding(root);
+      for (const token of ["$a", "$", "$no-match"]) {
+        await input.fill("");
+        await input.pressSequentially(token);
+        await root.locator(".skill-completion").waitFor();
+        await stable(root, baseline);
+        await bounded(root, input);
+        await input.press("Escape");
+        await stable(root, baseline);
+      }
+      await input.fill("");
+      await input.pressSequentially("$a");
+      await root.locator(".skill-completion [role=option]").waitFor();
+      await page.evaluate(() => window.__skillInventory.loading());
+      await page.waitForFunction(() =>
+        [...document.querySelectorAll(".skill-completion")].some(
+          (panel) =>
+            !panel.querySelector("[role=option]") &&
+            !panel.querySelector("button"),
+        ),
+      );
+      await stable(root, baseline);
+      await bounded(root, input);
+      await page.evaluate(() => window.__skillInventory.finish());
+      await root.locator(".skill-completion [role=option]").waitFor();
+      await page.evaluate(() => window.__skillInventory.fail());
+      const retry = root.locator(".skill-completion button");
+      await retry.waitFor();
+      await stable(root, baseline);
+      await page.evaluate(() => window.__skillInventory.allowRetry());
+      await retry.click();
+      await root.locator(".skill-completion [role=option]").waitFor();
+      await stable(root, baseline);
+      assert(await input.evaluate((node) => node === document.activeElement));
+      const originalStyle = await input.getAttribute("style");
+      await input.evaluate((node) => {
+        node.style.width = "90%";
+        node.style.height = `${Number.parseFloat(getComputedStyle(node).height) + 16}px`;
+      });
+      await frame();
+      await bounded(root, input);
+      await input.evaluate((node, style) => {
+        if (style === null) node.removeAttribute("style");
+        else node.setAttribute("style", style);
+      }, originalStyle);
+      await page.locator("main").evaluate((node) => {
+        node.scrollTop += 4;
+      });
+      await frame();
+      await bounded(root, input);
+      const viewport = page.viewportSize();
+      await page.setViewportSize({ ...viewport, height: viewport.height + 32 });
+      await frame();
+      await bounded(root, input);
+      await page.setViewportSize(viewport);
+      await input.press("Escape");
+      await input.fill("");
+    }
+    await root.evaluate((node) => {
+      node.style.zoom = "";
+    });
+  };
   for (const language of ["en", "ko"])
     for (const theme of ["light", "dark", "system"])
       for (const size of [
         { width: 1600, height: 1000 },
+        { width: 1440, height: 900 },
+        { width: 1280, height: 820 },
         { width: 960, height: 640 },
+        { width: 640, height: 480 },
         { width: 480, height: 320 },
         { width: 320, height: 240 },
       ])
@@ -270,6 +568,7 @@ try {
           if (kind === "New session") await selectResource(root, 0);
           await selectResource(root, kind === "New session" ? 1 : 0);
           await selectResource(root, kind === "New session" ? 2 : 1);
+          await checkCompletionLayout(root, input);
           const open = async (token) => {
             await input.fill("");
             await input.pressSequentially(token);
@@ -467,6 +766,7 @@ try {
         for (const placement of ["follow-up", "queue"]) {
           const root = page.locator(`[data-shared="${placement}"]`),
             input = root.locator("textarea");
+          await checkCompletionLayout(root, input);
           await input.fill("");
           await input.pressSequentially("$a");
           await root.locator(".skill-completion").getByRole("option").waitFor();
@@ -495,6 +795,7 @@ try {
       ...source,
       cases,
       overlayCases,
+      selectedOverlayCases,
       screenshots,
       effectiveZoom: "half-viewport reflow",
       nativeAcceptance: "not-performed",

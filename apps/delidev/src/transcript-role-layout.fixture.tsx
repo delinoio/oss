@@ -133,6 +133,60 @@ if (timingMode) {
       ),
     );
 }
+const reasoningSnapshot = (summary: string[], content: string[] = []) => ({
+  kind: "reasoning",
+  text: "",
+  summary,
+  content,
+});
+const reasoningSummary =
+  "  Checking the working directory. 한글🙂\n" + "longunbrokentoken".repeat(60);
+const reasoningStarted = reasoningSnapshot(
+  ["", reasoningSummary],
+  ["", "  Original initial content.\n<script>inert()</script>  "],
+);
+const reasoningDeltas = [
+  {
+    sequence: 4,
+    delta: {
+      kind: "reasoning-summary",
+      index: 3,
+      text: "  Streamed summary 한글🙂  ",
+    },
+  },
+  {
+    sequence: 5,
+    delta: {
+      kind: "reasoning-content",
+      index: 7,
+      text: "  Streamed content\n  ",
+    },
+  },
+];
+if (args.get("reasoning") === "1")
+  historical.splice(
+    0,
+    historical.length,
+    transcriptResource(
+      {
+        role: "artifact",
+        state: "streaming",
+        artifact: { started: reasoningStarted, deltas: reasoningDeltas },
+      },
+      80,
+    ),
+    transcriptResource(
+      {
+        role: "artifact",
+        state: "complete",
+        artifact: {
+          started: reasoningSnapshot([]),
+          completed: reasoningSnapshot([]),
+        },
+      },
+      81,
+    ),
+  );
 const resources = new Map(historical.map((row) => [row.id, row]));
 const events: WatchEventsResponse[] = [];
 let wake: (() => void) | undefined,
@@ -183,6 +237,32 @@ function timingSessionEvent() {
   wake?.();
 }
 Object.assign(window, {
+  __codexReasoningFixture: {
+    get reads() {
+      return timingReads;
+    },
+    complete() {
+      const row = transcriptResource(
+        {
+          role: "artifact",
+          state: "complete",
+          artifact: {
+            started: reasoningStarted,
+            deltas: reasoningDeltas,
+            completed: reasoningSnapshot(
+              ["", "Final supplied summary"],
+              ["Final original content"],
+            ),
+          },
+        },
+        80,
+        2n,
+      );
+      resources.set(row.id, row);
+      events.push(createEvent(row.id, row.revision));
+      wake?.();
+    },
+  },
   __turnTimingFixture: {
     get reads() {
       return timingReads;

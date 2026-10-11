@@ -25,7 +25,7 @@
 }
 .project-edit-tablist button[aria-selected="true"] {
   color: var(--selected-text);
-  border-bottom-color: var(--accent);
+  border-bottom-color: var(--selected-border);
 }
 .project-edit-tabs > [role="tabpanel"] {
   flex: 1;

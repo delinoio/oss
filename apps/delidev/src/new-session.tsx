@@ -61,6 +61,7 @@ import {
   Workspace,
 } from "./documents";
 import { ResourceChoice } from "./configuration-fields";
+import { SettingsEntryDestination } from "./settings";
 import { StartingBranches } from "./starting-branches";
 import { StartingReferences } from "./schedules";
 import { useRetainedMutation } from "./mutation";
@@ -125,7 +126,7 @@ export function NewSession({
   preferenceBridge?: CreationPreferenceBridge;
   preferenceScope?: CreationPreferenceScope;
   back: () => void;
-  openSettings: () => void;
+  openSettings: (destination?: SettingsEntryDestination) => void;
   open: (id: string) => void;
   created: (session: Resource) => void;
 }) {
@@ -1181,6 +1182,13 @@ export function NewSession({
                         }
                         resolvedChoice={agentChoice}
                         change={editAgent}
+                        emptyInventoryAction={{
+                          label: copy("new-session.createAgentWorker"),
+                          invoke: () =>
+                            openSettings(
+                              SettingsEntryDestination.NewAgentWorker,
+                            ),
+                        }}
                       />
                       <ResourceChoice
                         label={copy("new-session.runsOn_88a550")}
@@ -1358,7 +1366,7 @@ export function NewSession({
               {copy("new-session.automaticSessionTitlesAreUnavailable_807e33")}
             </strong>
             <p>{copy("new-session.updateTheDelidevServerAndConnect_039a1d")}</p>
-            <button type="button" onClick={openSettings}>
+            <button type="button" onClick={() => openSettings()}>
               {copy("new-session.openSettings_3f9401")}
             </button>
             <Problem error={status.error} />

@@ -2496,6 +2496,49 @@ solely as unsupported families. This adds no RPC, protocol allocation or
 migration. Controlled decoder/Worker publication fixtures are separate from
 installed native/account/platform acceptance.
 
+### Codex Windows sandbox safety notices
+
+The pinned [world-writable warning schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/WindowsWorldWritableWarningNotification.json)
+requires `samplePaths`, `extraCount` and `failedScan` for
+`windows/worldWritableWarning`. Decode only these exact keys. Reject duplicate
+or unknown keys, missing/null required fields, malformed UTF-8, NUL bytes,
+wrong types, negative/fractional counts and uint64 overflow. Limit samples to
+1024 and each path to 4096 UTF-8 bytes within the existing bounded frame/document
+limits. Schema-valid empty path strings remain valid. Preserve `extraCount`
+exactly as uint64; never sum it into a smaller integer or convert it through a
+floating-point number. Discard all paths immediately after validation. Only a
+closed warning classification, sample count and extra count remain private.
+
+A nonempty sample list, positive extra count or failed scan can emit the existing
+generic native-warning notice on the original process and active known
+nonterminal turn. An empty successful scan emits no notice. Deduplicate each of
+three warning classifications (world-writable paths, failed scan, or both) for
+the lifetime of that original execution process. Replays and observations in
+paused, failed or completed contexts become validated discarded metadata. They
+do not create a new current turn or change settings, approvals, account/provider,
+readiness, input delivery, response receipts, recovery or cleanup ownership.
+
+The pinned [setup completion schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/WindowsSandboxSetupCompletedNotification.json)
+requires exact `mode` (`elevated` or `unelevated`) and boolean `success` for
+`windowsSandbox/setupCompleted`; `error` may be omitted, null or bounded text
+(up to 4096 UTF-8 bytes). Validate the closed object and discard all native setup
+fields, including error text. This adapter has no setup request owner, so every
+valid unsolicited completion becomes typed discarded metadata. It cannot prove
+sandbox readiness, elevate privileges, override permissions, clear recovery or
+confirm cleanup, regardless of native success. No privileged setup operation is
+added.
+
+These OS-neutral decoders accept notification envelopes only. Unbound or foreign
+process context and same-named server requests retain private/rejection handling.
+Structured diagnostics contain only closed classifications, bounded counts and
+the discard policy; malformed payloads use the closed `windows-sandbox` stage.
+Raw native paths, error text and payloads never enter public events or logs. The
+Worker and isolated title runtime consume validated discarded metadata without
+publishing a second notice or changing the original result. The existing notice
+publication and transcript contract remains unchanged; no RPC, capability
+allocation, migration or Desktop-specific surface is added. Decoder and ordered
+process/Worker fixtures do not prove installed Windows/account acceptance.
+
 ## OpenCode Go subscriptions
 
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.

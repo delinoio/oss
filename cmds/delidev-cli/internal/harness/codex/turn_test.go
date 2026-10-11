@@ -1,8 +1,10 @@
 package codex
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -30,7 +32,9 @@ func (f *threadFixture) handleTurn(id json.RawMessage, method string, raw json.R
 		os.Exit(30)
 	}
 	var params map[string]any
-	if json.Unmarshal(raw, &params) != nil {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if decoder.Decode(&params) != nil || decoder.Decode(new(any)) != io.EOF {
 		os.Exit(31)
 	}
 	if file := os.Getenv("DELIDEV_CODEX_CAPTURE"); file != "" {
