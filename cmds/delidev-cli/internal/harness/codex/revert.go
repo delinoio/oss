@@ -212,6 +212,14 @@ func (c *Client) ReconcileRevert(ctx context.Context, intent RevertIntent) (Comp
 		return CompactedCheckpoint{}, err
 	}
 	defer func() { <-c.control }()
+	fail := func() (CompactedCheckpoint, error) {
+		c.problem = compactionUncertain()
+		c.execution.paused = true
+		return CompactedCheckpoint{}, c.problem
+	}
+	if !c.matchesCheckpointHistoryMode(intent.Source.PaginatedHistory) {
+		return fail()
+	}
 	if c.problem != nil || c.execution.active != "" || len(c.execution.pending) != 0 || c.execution.interactions.blocksInput() || len(c.subagents) != 0 || c.checkNativeStateLocked(ctx, true) != nil || c.noForkWorkLocked(ctx, c.thread) != nil {
 		return CompactedCheckpoint{}, compactionUncertain()
 	}

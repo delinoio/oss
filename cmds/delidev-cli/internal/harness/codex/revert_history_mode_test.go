@@ -63,6 +63,40 @@ func TestRevertSelectedPaginatedHistoryExplicitRecovery(t *testing.T) {
 	}
 }
 
+func TestReconcileRevertRejectsReplacementHistoryModeDriftBeforeNativeReads(t *testing.T) {
+	for _, scenario := range []struct {
+		name, original, replacement string
+	}{
+		{"paginated-intent-resumed-legacy", "paginated-lost", "thread-revert-omitted"},
+		{"legacy-intent-resumed-paginated", "lost", "thread-revert-paginated-ready"},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			original, _, source, ids, inputs := revertFixture(t, scenario.original)
+			var intent RevertIntent
+			if _, err := original.RevertThread(context.Background(), domain.NewID(), source, inputs[1], ids[1], func(value RevertIntent) error {
+				intent = value
+				return nil
+			}); err == nil {
+				t.Fatal("lost mutation fixture unexpectedly acknowledged Revert")
+			}
+
+			replacement, capture := openThreadFixture(t, scenario.replacement)
+			settings := threadSettings(t)
+			settings.Cwd = source.Effective.Cwd
+			if _, err := replacement.ResumeThread(context.Background(), domain.NewID(), source.ThreadID, settings); err != nil {
+				t.Fatal("replacement binding rejected", err)
+			}
+			beforeReads := len(requestsOf(t, capture, "thread/read")) + len(requestsOf(t, capture, "thread/turns/list"))
+			if _, err := replacement.ReconcileRevert(context.Background(), intent); err == nil || replacement.problem == nil || !replacement.execution.paused {
+				t.Fatal("replacement history-mode drift produced a recovered checkpoint")
+			}
+			if reads := len(requestsOf(t, capture, "thread/read")) + len(requestsOf(t, capture, "thread/turns/list")); reads != beforeReads {
+				t.Fatal("replacement history-mode mismatch read native state or history")
+			}
+		})
+	}
+}
+
 func TestContinuationRejectsCheckpointHistoryModeDriftBeforeNativeReads(t *testing.T) {
 	c, capture, checkpoint, _ := continuationFixture(t, "ready")
 	checkpoint.PaginatedHistory = true
