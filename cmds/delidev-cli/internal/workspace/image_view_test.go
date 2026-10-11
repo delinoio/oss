@@ -126,11 +126,26 @@ func TestImageViewUNCRoundTripPreservesOriginalAuthority(t *testing.T) {
 			t.Fatalf("unscoped or malformed Windows observation accepted: %q", bad)
 		}
 	}
-	for _, malformedRoot := range []string{`\\server`, `\\server\share`, `\\server\\repo`, `\\?\UNC\server\share\repo`, `\\.\C:\repo`, `\\server\share\..\repo`, `C:repo`, `C:\repo:stream`} {
+	for _, malformedRoot := range []string{`\\server`, `\\server\\repo`, `\\?\UNC\server\share\repo`, `\\.\C:\repo`, `\\server\share\..\repo`, `C:repo`, `C:\repo:stream`} {
 		invalid := localImageViewInput(t, malformedRoot)
 		if _, err := ObserveImageViewLocation(invalid, "windows", malformedRoot+`\image.png`, domain.NewID()); err == nil {
 			t.Fatalf("invalid prepared root accepted: %q", malformedRoot)
 		}
+	}
+}
+
+func TestImageViewAcceptsUNCShareRootRepository(t *testing.T) {
+	for _, root := range []string{`\\server\share`, "//server/share"} {
+		t.Run(root, func(t *testing.T) {
+			input := localImageViewInput(t, root)
+			locations := []string{root + `\images\original.png`, normalizeWorkerPath(root, "windows") + "/images/original.png"}
+			for _, location := range locations {
+				ref, err := ObserveImageViewLocation(input, "windows", location, domain.NewID())
+				if err != nil || ref.Location != "images/original.png" || ValidateImageViewReference(input, "windows", ref) != nil {
+					t.Fatalf("valid UNC share-root observation rejected: %v", err)
+				}
+			}
+		})
 	}
 }
 

@@ -26,7 +26,7 @@ func validWorkerAbsolutePath(value, workerOS string) bool {
 	if workerOS == "windows" {
 		if strings.HasPrefix(value, "//") {
 			parts := strings.Split(value[2:], "/")
-			if len(parts) < 3 || parts[0] == "" || parts[0] == "." || parts[0] == "?" || parts[1] == "" {
+			if len(parts) < 2 || parts[0] == "" || parts[0] == "." || parts[0] == "?" || parts[1] == "" {
 				return false
 			}
 			value = value[1:]
