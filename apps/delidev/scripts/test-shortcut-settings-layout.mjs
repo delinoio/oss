@@ -102,7 +102,10 @@ try {
           exact: true,
         });
         assert.equal(await catalog.getAttribute("tabindex"), "0");
-        assert.equal(await catalog.locator(".shortcut-settings-row").count(), 7);
+        assert.equal(
+          await catalog.locator(".shortcut-settings-row").count(),
+          7,
+        );
         assert.equal(
           await catalog
             .locator('[data-settings-action-presentation="icon"]')
@@ -122,7 +125,10 @@ try {
             .count(),
           0,
         );
-        for (const key of ["shortcut-settings.save", "shortcut-settings.discard"])
+        for (const key of [
+          "shortcut-settings.save",
+          "shortcut-settings.discard",
+        ])
           assert(
             await page
               .getByRole("button", { name: t(key), exact: true })
@@ -154,7 +160,8 @@ try {
         await catalog.hover();
         await page.mouse.wheel(0, 400);
         await page.waitForFunction(
-          () => document.querySelector(".shortcut-settings-catalog").scrollTop > 0,
+          () =>
+            document.querySelector(".shortcut-settings-catalog").scrollTop > 0,
         );
         await catalog.evaluate((node) => {
           node.scrollTop = 0;
@@ -162,7 +169,8 @@ try {
         await catalog.focus();
         await page.keyboard.press("PageDown");
         await page.waitForFunction(
-          () => document.querySelector(".shortcut-settings-catalog").scrollTop > 0,
+          () =>
+            document.querySelector(".shortcut-settings-catalog").scrollTop > 0,
         );
         await catalog.evaluate((node) => {
           node.scrollTop = node.scrollHeight;
@@ -190,23 +198,30 @@ try {
           listBounds = await catalog.boundingBox();
         assert(
           finalBounds.y >= listBounds.y &&
-            finalBounds.y + finalBounds.height <= listBounds.y + listBounds.height + 1,
+            finalBounds.y + finalBounds.height <=
+              listBounds.y + listBounds.height + 1,
           "Final native shortcut must be reachable inside the catalog",
         );
         await catalog.evaluate((node) => {
           node.scrollTop = 0;
         });
-        const lastCapture = catalog.locator('[data-settings-action="edit"]').last();
+        const lastCapture = catalog
+          .locator('[data-settings-action="edit"]')
+          .last();
         await catalog.focus();
         const tabStops = await catalog.locator("button:not(:disabled)").count();
         for (let step = 0; step <= tabStops; step++) {
           await page.keyboard.press("Tab");
           if (
-            await lastCapture.evaluate((node) => node === document.activeElement)
+            await lastCapture.evaluate(
+              (node) => node === document.activeElement,
+            )
           )
             break;
         }
-        assert(await lastCapture.evaluate((node) => node === document.activeElement));
+        assert(
+          await lastCapture.evaluate((node) => node === document.activeElement),
+        );
         assert(
           (await bounds()).listScroll > 0,
           "Tab reveals an offscreen editable row through catalog scrolling",
@@ -235,7 +250,10 @@ try {
           "0:0",
         );
         const captureNode = await capture.elementHandle();
-        await page.setViewportSize({ width: Math.max(240, width - 16), height });
+        await page.setViewportSize({
+          width: Math.max(240, width - 16),
+          height,
+        });
         await page.setViewportSize({ width, height });
         assert(
           await captureNode.evaluate((node) => node.isConnected),
@@ -251,7 +269,10 @@ try {
         await page
           .getByText(t("shortcut-settings.unsaved"), { exact: true })
           .waitFor();
-        await page.setViewportSize({ width: Math.max(240, width - 16), height });
+        await page.setViewportSize({
+          width: Math.max(240, width - 16),
+          height,
+        });
         await page.setViewportSize({ width, height });
         assert(
           await captureNode.evaluate((node) => node.isConnected),

@@ -77,7 +77,9 @@ function Fixture() {
             <div className="settings-category-heading">
               <div className="settings-category-title">
                 <h1>{copy("shortcuts.title")}</h1>
-                <p className="settings-scope">{copy("shortcut-settings.scope")}</p>
+                <p className="settings-scope">
+                  {copy("shortcut-settings.scope")}
+                </p>
               </div>
               <div>
                 <button data-shortcut-action aria-keyshortcuts={aria}>

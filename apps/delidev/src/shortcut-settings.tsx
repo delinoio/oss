@@ -40,12 +40,15 @@ function ShortcutKeycaps({
   bindings: readonly ShortcutBinding[];
   platform: ShortcutPlatform;
 }) {
-  if (!bindings.length) return <span>{copy("shortcut-settings.disabled")}</span>;
+  if (!bindings.length)
+    return <span>{copy("shortcut-settings.disabled")}</span>;
   const chords = bindings.map((binding) => bindingKeys(binding, platform));
   return (
     <span className="shortcut-keycaps">
       <span className="shortcut-binding-text">
-        {chords.map((keys) => keys.join(" + ")).join(` ${copy("shortcuts.or")} `)}
+        {chords
+          .map((keys) => keys.join(" + "))
+          .join(` ${copy("shortcuts.or")} `)}
       </span>
       <span aria-hidden="true" className="shortcut-keycaps-decoration">
         {chords.map((keys, index) => (
@@ -302,7 +305,9 @@ export function ShortcutSettings() {
                       onClick={() =>
                         setDraft((previous) => ({
                           ...previous,
-                          [action.id]: { state: ShortcutOverrideState.Disabled },
+                          [action.id]: {
+                            state: ShortcutOverrideState.Disabled,
+                          },
                         }))
                       }
                     >
@@ -312,7 +317,9 @@ export function ShortcutSettings() {
                       icon={SettingsActionIcon.Back}
                       presentation={SettingsActionPresentation.Icon}
                       type="button"
-                      disabled={locked || Boolean(capturing) || !draft[action.id]}
+                      disabled={
+                        locked || Boolean(capturing) || !draft[action.id]
+                      }
                       aria-label={copy("shortcut-settings.restoreAction", {
                         name: copy(action.label),
                       })}
@@ -346,7 +353,8 @@ export function ShortcutSettings() {
           <dl>
             {fixedNativeShortcutCatalog
               .filter(
-                (action) => !action.macOnly || platform === ShortcutPlatform.Mac,
+                (action) =>
+                  !action.macOnly || platform === ShortcutPlatform.Mac,
               )
               .map((action) => (
                 <div key={action.id}>
@@ -457,7 +465,10 @@ export function ShortcutSettings() {
             type="button"
             className="primary"
             disabled={
-              locked || Boolean(capturing) || !dirty || Boolean(conflicts.length)
+              locked ||
+              Boolean(capturing) ||
+              !dirty ||
+              Boolean(conflicts.length)
             }
             onClick={() => {
               const original = structuredClone(draft);
