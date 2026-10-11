@@ -268,24 +268,9 @@ function nativeStopClosure(data: Record<string, unknown>): boolean {
   });
 }
 
-export function NativeInteraction({
-  data,
-  resource,
-  accepted = () => {},
-  draft,
-  saveDraft,
-  submissionAllowed = true,
-  receiptRetryAllowed = true,
-}: {
-  data: Record<string, unknown>;
-  resource?: Resource;
-  accepted?: (value?: Resource) => void;
-  draft?: InteractionDraftState;
-  saveDraft?: (value: InteractionDraftState) => void;
-  submissionAllowed?: boolean;
-  receiptRetryAllowed?: boolean;
-}) {
-  useLocale();
+export function validOpenCodeInteraction(
+  data: Record<string, unknown>,
+): boolean {
   const r = object(data.opencode),
     id = object(data.native_request_id),
     permission = object(r.permission);
@@ -329,7 +314,31 @@ export function NativeInteraction({
         strings(permission.patterns) &&
         strings(permission.always) &&
         objectJSON(permission.metadata_json));
-  if (!valid || !nativePolicyClosure(data) || !nativeStopClosure(data))
+  return valid && nativePolicyClosure(data) && nativeStopClosure(data);
+}
+
+export function NativeInteraction({
+  data,
+  resource,
+  accepted = () => {},
+  draft,
+  saveDraft,
+  submissionAllowed = true,
+  receiptRetryAllowed = true,
+}: {
+  data: Record<string, unknown>;
+  resource?: Resource;
+  accepted?: (value?: Resource) => void;
+  draft?: InteractionDraftState;
+  saveDraft?: (value: InteractionDraftState) => void;
+  submissionAllowed?: boolean;
+  receiptRetryAllowed?: boolean;
+}) {
+  useLocale();
+  const r = object(data.opencode),
+    permission = object(r.permission);
+  const question = data.type === "user-question";
+  if (!validOpenCodeInteraction(data))
     return (
       <p>
         {copy(

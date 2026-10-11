@@ -388,6 +388,10 @@ function validResponse(data: Document, original: Document, input: Document) {
   return true;
 }
 
+export function validClaudeInteraction(data: Document): boolean {
+  return Boolean(request(data));
+}
+
 export function NativeClaudeInteraction({
   data,
   resource,
