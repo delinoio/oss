@@ -39,9 +39,9 @@ func (f *fixtureDynamicResponder) ReplyDynamicUnavailable(ctx context.Context, t
 	}
 	return reply, nil
 }
-func dynamicWorkerFixture(t *testing.T) (*CodexEventPublisher, codex.Event) {
+func dynamicWorkerFixture(t *testing.T) (*CodexEventPublisher, *openCodeBindingRPC, codex.Event) {
 	t.Helper()
-	c, _ := codexTerminalStatusFixture(t)
+	c, rpc := codexTerminalStatusFixture(t)
 	identity := domain.DynamicToolIdentity{Tool: "fixture_tool", ArgumentsDigest: strings.Repeat("a", 64)}
 	event := codex.Event{Kind: codex.DynamicToolEvent, ThreadID: c.thread, TurnID: c.turn, ItemID: "dynamic-call", Correlated: true, DynamicTool: &domain.DynamicToolUpdate{NativeID: "dynamic-call", Stage: domain.DynamicStarted, Snapshot: &domain.DynamicToolSnapshot{Identity: identity, Status: "inProgress"}}}
 	if _, err := c.PublishCore(context.Background(), event); err != nil {
@@ -51,12 +51,12 @@ func dynamicWorkerFixture(t *testing.T) (*CodexEventPublisher, codex.Event) {
 	if _, err := c.PublishCore(context.Background(), event); err != nil {
 		t.Fatal(err)
 	}
-	return c, event
+	return c, rpc, event
 }
 func TestDynamicDurableOwnerBeforeWireAndRestartNeverResends(t *testing.T) {
 	for _, delivery := range []domain.DynamicReplyDelivery{domain.DynamicTransmitted, domain.DynamicUncertain, domain.DynamicNotSent} {
 		t.Run(string(delivery), func(t *testing.T) {
-			c, event := dynamicWorkerFixture(t)
+			c, _, event := dynamicWorkerFixture(t)
 			root := filepath.Join(c.publisher.config.Root, "jobs", string(c.publisher.job), "dynamic-replies", "by-call", dynamicJournalKey(event.ItemID))
 			client := &fixtureDynamicResponder{t: t, root: root, delivery: delivery, lost: delivery == domain.DynamicUncertain}
 			err := c.deliverDynamicUnavailable(context.Background(), context.Background(), event, client)
@@ -122,7 +122,7 @@ func TestDynamicObservedJournalRecoversPublicationWithoutResending(t *testing.T)
 	}
 }
 func TestDynamicNativeCompletionAndFailedTurnDoNotSettleRequest(t *testing.T) {
-	c, event := dynamicWorkerFixture(t)
+	c, _, event := dynamicWorkerFixture(t)
 	identity := event.DynamicTool.Request.Identity
 	event.DynamicTool = &domain.DynamicToolUpdate{NativeID: event.ItemID, Stage: domain.DynamicCompleted, Snapshot: &domain.DynamicToolSnapshot{Identity: identity, Status: "completed"}}
 	if _, err := c.PublishCore(context.Background(), event); err != nil || c.dynamicToolsSettled() {
@@ -134,7 +134,7 @@ func TestDynamicNativeCompletionAndFailedTurnDoNotSettleRequest(t *testing.T) {
 	}
 }
 func TestDynamicLateLifecycleSettlesBeforeTerminalPublication(t *testing.T) {
-	c, rpc := dynamicWorkerFixture(t)
+	c, rpc, _ := dynamicWorkerFixture(t)
 	request := c.dynamicTools["dynamic-call"].Tool.Request
 	attempt := filepath.Join(c.publisher.config.Root, "jobs", string(c.publisher.job), "dynamic-replies", "by-call", dynamicJournalKey("dynamic-call"))
 	client := &fixtureDynamicResponder{t: t, root: attempt, delivery: domain.DynamicTransmitted}
@@ -163,7 +163,7 @@ func TestDynamicLateLifecycleSettlesBeforeTerminalPublication(t *testing.T) {
 	}
 }
 func TestDynamicCanceledControllerDoesNotSend(t *testing.T) {
-	c, event := dynamicWorkerFixture(t)
+	c, _, event := dynamicWorkerFixture(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	client := &fixtureDynamicResponder{t: t}
