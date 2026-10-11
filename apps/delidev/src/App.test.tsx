@@ -1577,6 +1577,9 @@ it.each([
     fireEvent.click(await screen.findByRole("button", { name: "New session" }));
     expect(await screen.findByText(message)).toBeTruthy();
     expect(
+      screen.queryByRole("button", { name: "Create agent worker" }),
+    ).toBeNull();
+    expect(
       screen.queryByText(
         "No selectable Agent Worker choices are on this page.",
       ),
@@ -1584,16 +1587,126 @@ it.each([
   },
 );
 
-it("distinguishes an empty current Agent Worker page from a loading selector", async () => {
+it("offers creation only after a complete empty Agent Worker inventory", async () => {
   const value = fixture([], [], [], false, true, undefined, true);
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "New session" }));
   expect(
-    await screen.findByText(
-      "No selectable Agent Worker choices are on this page.",
-    ),
+    await screen.findByRole("button", { name: "Create agent worker" }),
   ).toBeTruthy();
 });
+
+it.each(["New session", "New Chat"])(
+  "opens Harness directly from empty %s and preserves independent drafts",
+  async (surface) => {
+    const value = fixture([], [], [], false, true, undefined, true);
+    value.status.mockResolvedValue({
+      version: "0.1.0",
+      protocolVersion: 2,
+      capabilities: [
+        SystemCapability.AUTOMATIC_TITLES_V1,
+        SystemCapability.INLINE_WORKER_MODELS_V1,
+      ],
+    });
+    render(<App transport={value.transport} />);
+    for (const entry of ["New session", "New Chat"]) {
+      fireEvent.click(
+        (await screen.findAllByRole("button", { name: entry }))[0],
+      );
+      fireEvent.change(
+        await screen.findByRole("textbox", { name: "First message" }),
+        { target: { value: `${entry} independent draft` } },
+      );
+    }
+    fireEvent.click(screen.getAllByRole("button", { name: surface })[0]);
+    await chooseScrollOption(
+      screen.getByRole("combobox", { name: "Runs on" }),
+      value.machine.id,
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "Plan Mode" }));
+    fireEvent.click(screen.getByRole("button", { name: "Options" }));
+    if (surface === "New session")
+      fireEvent.click(screen.getByText("Optional estimated-cost budget"));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Enable estimated-cost budget" }),
+    );
+    fireEvent.change(screen.getByLabelText("Budget currency"), {
+      target: { value: "USD" },
+    });
+    fireEvent.change(screen.getByLabelText("Estimated-cost threshold"), {
+      target: { value: "3.25" },
+    });
+    const action = await screen.findByRole("button", {
+      name: "Create agent worker",
+    });
+    expect(action).toHaveProperty("type", "button");
+    expect(
+      screen.queryByText(
+        "No selectable Agent Worker choices are on this page.",
+      ),
+    ).toBeNull();
+    fireEvent.click(action);
+    const wizard = await screen.findByRole("dialog", {
+      name: "New Agent Worker",
+    });
+    expect(
+      await within(wizard).findByRole("heading", { name: "Harness" }),
+    ).toBeTruthy();
+    expect(value.saveConfiguration).not.toHaveBeenCalled();
+    expect(value.creates).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(
+      within(wizard).getByRole("heading", { name: "Harness" }),
+    );
+    fireEvent.click(
+      within(wizard).getByRole("button", { name: "Close New Agent Worker" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+    fireEvent.click(screen.getAllByRole("button", { name: surface })[0]);
+    expect(
+      screen.getByRole("textbox", { name: "First message" }),
+    ).toHaveProperty("value", `${surface} independent draft`);
+    expect(
+      scrollChoiceValue(screen.getByRole("combobox", { name: "Runs on" })),
+    ).toBe(value.machine.id);
+    expect(screen.getByLabelText("Estimated-cost threshold")).toHaveProperty(
+      "value",
+      "3.25",
+    );
+    expect(screen.getByLabelText("Budget currency")).toHaveProperty(
+      "value",
+      "USD",
+    );
+    expect(
+      screen.getByRole("button", {
+        name:
+          surface === "New session" ? "Create session" : "Start general chat",
+      }),
+    ).toHaveProperty("disabled", true);
+    expect(screen.getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty(
+      "checked",
+      true,
+    );
+    expect(
+      screen
+        .getByRole("button", { name: "Options" })
+        .getAttribute("aria-expanded"),
+    ).toBe("true");
+    fireEvent.click(
+      screen.getAllByRole("button", {
+        name: surface === "New session" ? "New Chat" : "New session",
+      })[0],
+    );
+    expect(
+      screen.getByRole("textbox", { name: "First message" }),
+    ).toHaveProperty(
+      "value",
+      `${surface === "New session" ? "New Chat" : "New session"} independent draft`,
+    );
+    expect(value.saveConfiguration).not.toHaveBeenCalled();
+    expect(value.creates).not.toHaveBeenCalled();
+  },
+  fullShellTimeoutMs,
+);
 
 it("shows selector loading while the current page has not returned", async () => {
   let finish!: () => void;
@@ -1604,6 +1717,9 @@ it("shows selector loading while the current page has not returned", async () =>
   render(<App transport={value.transport} />);
   fireEvent.click(await screen.findByRole("button", { name: "New session" }));
   expect(await screen.findByText("Loading Agent Worker choices…")).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Create agent worker" }),
+  ).toBeNull();
   finish();
   await waitScrollChoices(
     screen.getByRole("combobox", { name: "Agent Worker" }),

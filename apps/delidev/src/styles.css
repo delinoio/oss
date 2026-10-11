@@ -925,6 +925,34 @@ summary {
   min-width: 0;
   flex: 1;
 }
+.resource-empty-create {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+.resource-empty-create > span {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.resource-empty-create > button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  border-radius: 8px;
+  white-space: normal;
+}
+.resource-empty-create svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
 /* Align the attachment action with the actual picker input, not its outer margins. */
 .new-session-selectors .scroll-picker {
   margin: 0;
