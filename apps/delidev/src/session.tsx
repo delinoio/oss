@@ -1743,7 +1743,9 @@ export function SessionView({
     );
   const progress = startupOwnerCurrent ? observedProgress : undefined;
   const hideStartupInfo =
+    active &&
     conversationActive &&
+    !budgetBlocked &&
     initialSessionStartup(
       session,
       progress,

@@ -1253,7 +1253,7 @@ it("projects accepted live preparation, claim and response transitions without r
   expectVisibleInfo();
   rerender(f.view("Original ongoing draft"));
   await screen.findByText("Waiting for response");
-  expectHiddenInfo();
+  expectVisibleInfo();
   const user = create(ResourceSchema, {
     id: newRequestId(),
     sessionId: f.session.id,
@@ -1451,10 +1451,11 @@ it("keeps initial startup Info available for a reached original budget", async (
     initialResponseWaiting(),
   );
   const { container } = render(f.view());
-  await screen.findByText(
+  const info = container.querySelector(".session-information")!;
+  await screen.findByRole("complementary", { name: "Session information" });
+  expect(within(info).getByRole("alert").textContent).toContain(
     "Budget threshold reached. New turns and Resume are blocked; pending input and accepted work are retained.",
   );
-  const info = container.querySelector(".session-information")!;
   await waitFor(() => expect(info).toHaveProperty("hidden", false));
   expect(
     screen.getByRole("complementary", { name: "Session information" }),
