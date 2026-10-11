@@ -78,7 +78,7 @@ typeopt --project /absolute/excalidraw/tsconfig.json --entry /absolute/excalidra
 node crates/typeopt/benchmark/build.mjs /absolute/excalidraw /absolute/optimized-build /absolute/optimized-new
 ```
 
-The build helper fails unless the checkout `HEAD` and `yarn.lock` SHA-256 match `pin.json`. It applies the pinned environment to both builds and records the verified revision, lockfile hash, elapsed time and peak RSS in `typeopt-build.json`. Build the pinned application once with its original inputs, then run typeopt with the application entry and build again with the example adapter. Use the same environment, Vite settings, minifier and source-map settings. Keep outputs in separate directories. Compare:
+The build helper fails unless the checkout `HEAD` and `yarn.lock` SHA-256 match `pin.json` and the worktree, including untracked non-ignored files, equals the pinned revision plus exactly the compatibility patch. Keep build and optimizer outputs outside the checkout. It applies the pinned environment to both builds and records the verified revision, source tree, lockfile hash, elapsed time and peak RSS in `typeopt-build.json`. Build the pinned application once with its original inputs, then run typeopt with the application entry and build again with the example adapter. Use the same environment, Vite settings, minifier and source-map settings. Keep outputs in separate directories. Compare:
 
 ```sh
 node crates/typeopt/benchmark/measure.mjs /absolute/baseline-build /absolute/optimized-build

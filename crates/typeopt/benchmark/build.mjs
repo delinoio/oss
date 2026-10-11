@@ -2,8 +2,16 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
-import { pathToFileURL } from "node:url";
-import { readFile, writeFile, realpath, stat } from "node:fs/promises";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  mkdtemp,
+  readFile,
+  writeFile,
+  realpath,
+  rm,
+  stat,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { typeopt } from "../examples/vite/adapter.mjs";
 
@@ -29,6 +37,33 @@ if (revision !== pin.revision)
   throw new Error(
     `Checkout revision ${revision} does not match pinned ${pin.revision}`,
   );
+// The compatibility patch makes a dirty worktree expected, so compare the
+// whole worktree (tracked and untracked, non-ignored files) with HEAD plus
+// exactly that patch. Temporary indexes leave the checkout's index untouched.
+const patch = fileURLToPath(new URL(pin.compatibility_patch, import.meta.url));
+const indexDirectory = await mkdtemp(path.join(tmpdir(), "typeopt-bench-"));
+let sourceTree;
+try {
+  const treeOf = (name, steps) => {
+    const env = {
+      ...process.env,
+      GIT_INDEX_FILE: path.join(indexDirectory, name),
+    };
+    const git = (...args) =>
+      execFileSync("git", ["-C", checkout, ...args], { encoding: "utf8", env });
+    git("read-tree", "HEAD");
+    steps(git);
+    return git("write-tree").trim();
+  };
+  const expected = treeOf("expected", (git) => git("apply", "--cached", patch));
+  sourceTree = treeOf("actual", (git) => git("add", "--all"));
+  if (sourceTree !== expected)
+    throw new Error(
+      `Checkout worktree ${sourceTree} does not equal the pinned revision plus ${pin.compatibility_patch} (${expected}); run git -C <checkout> status`,
+    );
+} finally {
+  await rm(indexDirectory, { recursive: true, force: true });
+}
 const yarnLockSha256 = createHash("sha256")
   .update(await readFile(path.join(checkout, "yarn.lock")))
   .digest("hex");
@@ -83,6 +118,7 @@ await writeFile(
     {
       schema_version: 0,
       revision,
+      source_tree: sourceTree,
       yarn_lock_sha256: yarnLockSha256,
       node: process.versions.node,
       mode: "production",
