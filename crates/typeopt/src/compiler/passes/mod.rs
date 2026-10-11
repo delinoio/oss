@@ -24,6 +24,7 @@ mod primitive_operation_simplification;
 mod property;
 mod residual_dependency_removal;
 mod signature_reduction;
+mod signature_support;
 mod type_directed_control_flow;
 mod unused_field_removal;
 mod unused_method_removal;
