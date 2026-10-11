@@ -26,7 +26,7 @@ Paths are relative to the current directory. The output parent must exist and th
 ## Output and v0 compatibility
 
 - Numbered `.js` files and adjacent `.js.map` files contain ESM and maps back to original source text.
-- `modules.json` contains `schema_version: 0` and a `modules` array. Each entry has `source`, `output`, `source_map` and `kind` (`optimized`, `preserved` or `passthrough`). Source paths are absolute; optimized output paths are relative to the output directory. JavaScript passthrough entries refer to original files and have no new map.
+- `modules.json` contains `schema_version: 0` and a `modules` array. Each entry has `source`, `source_sha256` (SHA-256 of the analyzed source text), `output`, `source_map` and `kind` (`optimized`, `preserved` or `passthrough`). The Vite example fails when a source no longer matches its digest; rerun typeopt into a new output directory after source changes. Source paths are absolute; optimized output paths are relative to the output directory. JavaScript passthrough entries refer to original files and have no new map.
 - `properties.json` contains `schema_version: 0` and `properties`. Each record identifies a property group, original source/name, final name, occurrence count and optional preservation reason.
 - `report.json` contains compiler/tool versions, file/object/property counts, changed occurrences, preservation counts and elapsed-time/peak-RSS measurements. `renamed_properties: 0` is a valid conservative result, not evidence of application size reduction.
 

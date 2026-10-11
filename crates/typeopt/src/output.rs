@@ -132,6 +132,9 @@ enum ModuleKind {
 #[derive(Serialize)]
 struct Module {
     source: String,
+    /// SHA-256 of the analyzed source text, so consumers can reject output
+    /// that no longer matches the current source.
+    source_sha256: String,
     output: String,
     source_map: Option<String>,
     kind: ModuleKind,
@@ -185,6 +188,7 @@ pub fn publish(
                 );
                 modules.push(Module {
                     source: name.clone(),
+                    source_sha256: sha256_hex(original),
                     output: name.clone(),
                     source_map: None,
                     kind: ModuleKind::Passthrough,
@@ -213,6 +217,7 @@ pub fn publish(
         std::fs::write(staging.path().join(&map_name), map)?;
         modules.push(Module {
             source: name.clone(),
+            source_sha256: sha256_hex(original),
             output,
             source_map: Some(map_name),
             kind: if edits.get(name).is_some_and(|edits| !edits.is_empty()) {
@@ -241,6 +246,13 @@ pub fn publish(
     crate::app::check_cancelled()?;
     rename_exclusive(staging.path(), &destination)?;
     Ok(())
+}
+fn sha256_hex(text: &str) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(text.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
     std::fs::write(path, serde_json::to_vec_pretty(value)?)?;

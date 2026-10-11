@@ -72,6 +72,16 @@ fn shortening_aliases_side_effects_and_determinism() {
     compare(root);
     assert_eq!(report(root)["renamed_properties"], 2);
     assert_eq!(fs::read_to_string(root.join("main.ts")).unwrap(), code);
+    let manifest: Value =
+        serde_json::from_slice(&fs::read(root.join("out/modules.json")).unwrap()).unwrap();
+    let digest: String = {
+        use sha2::{Digest, Sha256};
+        Sha256::digest(code.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    };
+    assert_eq!(manifest["modules"][0]["source_sha256"], digest.as_str());
     success(run(root, "again"));
     for file in ["0.js", "0.js.map", "modules.json", "properties.json"] {
         assert_eq!(

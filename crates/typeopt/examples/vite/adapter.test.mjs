@@ -4,18 +4,30 @@ import { test } from "node:test";
 import { mkdtemp, mkdir, writeFile, rm, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { typeopt } from "./adapter.mjs";
 
-test("keeps original module identity and bypasses query/JS/asset requests", async () => {
+const sha256 = (text) => createHash("sha256").update(text).digest("hex");
+
+test("keeps original module identity, bypasses query/JS/asset requests and rejects stale output", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "typeopt-vite-"));
   try {
     const source = path.join(root, "workspace", "main.tsx");
+    const original = "export const value = 1;";
+    await mkdir(path.dirname(source));
+    await writeFile(source, original);
     await writeFile(
       path.join(root, "modules.json"),
       JSON.stringify({
         schema_version: 0,
         modules: [
-          { source, output: "0.js", source_map: "0.js.map", kind: "optimized" },
+          {
+            source,
+            source_sha256: sha256(original),
+            output: "0.js",
+            source_map: "0.js.map",
+            kind: "optimized",
+          },
           {
             source: path.join(root, "preserved.ts"),
             output: "1.js",
@@ -49,6 +61,8 @@ test("keeps original module identity and bypasses query/JS/asset requests", asyn
     assert.equal(await plugin.load(path.join(root, "unchanged.js")), null);
     assert.equal(await plugin.load(path.join(root, "preserved.ts")), null);
     assert.equal(await plugin.load(path.join(root, "asset.css")), null);
+    await writeFile(source, "export const value = 2;");
+    await assert.rejects(plugin.load(source), /stale/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -63,10 +77,8 @@ test("Vite builds mapped TSX with original aliases, JS, CSS, JSON and source map
     const source = path.join(root, "main.tsx");
     const output = path.join(root, "optimized");
     await mkdir(output);
-    await writeFile(
-      source,
-      'throw new Error("original TSX was not replaced");',
-    );
+    const original = 'throw new Error("original TSX was not replaced");';
+    await writeFile(source, original);
     await writeFile(path.join(root, "value.js"), "export default 7;");
     await writeFile(path.join(root, "style.css"), "body { color: red; }");
     await writeFile(path.join(root, "data.json"), '{"value":3}');
@@ -93,7 +105,13 @@ test("Vite builds mapped TSX with original aliases, JS, CSS, JSON and source map
       JSON.stringify({
         schema_version: 0,
         modules: [
-          { source, output: "0.js", source_map: "0.js.map", kind: "optimized" },
+          {
+            source,
+            source_sha256: sha256(original),
+            output: "0.js",
+            source_map: "0.js.map",
+            kind: "optimized",
+          },
         ],
       }),
     );
@@ -201,6 +219,21 @@ test("optimizer output composes through a real TSX workspace build", async () =>
     assert.ok(sourceIndex >= 0);
     assert.match(chunk.map.sourcesContent[sourceIndex], /obj.longProperty/);
     assert.ok(result.output.some((file) => file.fileName.endsWith(".css")));
+    await writeFile(
+      source,
+      (await readFile(source, "utf8")).replace("data.value", "data.value + 1"),
+    );
+    await assert.rejects(
+      build({
+        root,
+        configFile: false,
+        plugins: [typeopt(output)],
+        resolve: { alias: { "@value": path.join(root, "value.js") } },
+        build: { write: false, sourcemap: true, modulePreload: false },
+        logLevel: "silent",
+      }),
+      /stale/,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
