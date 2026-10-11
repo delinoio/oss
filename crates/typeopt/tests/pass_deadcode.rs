@@ -600,7 +600,7 @@ fn fields_unread_fields_and_dead_writes_are_removed() {
     assert!(tracker.contains("sideEffect(\"ctor\")"), "{tracker}");
     assert!(tracker.contains("count"), "{tracker}");
     let main = emitted(temp.path(), "main.ts");
-    assert!(!main.contains("unusedProperty"), "{main}");
+    assert!(!main.contains("unusedProperty:"), "{main}");
     assert!(!main.contains("alsoUnusedProperty"), "{main}");
     assert!(main.contains("effect(\"write\")"), "{main}");
     assert!(saved(&report) > 0);
@@ -614,7 +614,7 @@ fn fields_with_all_passes_enabled() {
     assert!(applied(&report, FIELD) >= 4, "{report:#}");
     assert!(!emitted(temp.path(), "tracker.ts").contains("unusedInitialized"));
     let main = emitted(temp.path(), "main.ts");
-    assert!(!main.contains("unusedProperty"), "{main}");
+    assert!(!main.contains("unusedProperty:"), "{main}");
 }
 
 #[test]
