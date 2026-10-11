@@ -100,6 +100,12 @@ approved deferring only Windows/Linux numeric forwarding while external browser
 content has focus; use the tab bar there. macOS forwarding requires original
 native composition-clear proof. All ordinary app/input/terminal shortcuts and
 other tab acceptance remain required, and localized Help states this exception.
+Shared page changes during an outstanding browser action reconcile only the latest
+current profile/page after that action settles. Admission rechecks active native
+presentation, visible modal/geometry gates and retained page inventory. Late action
+responses cannot restore an older shared selection or publish into a replaced
+presentation. Each original selection attempt is sent once; rejection retains its
+existing problem and requires an explicit action rather than automatic retry.
 Back/Forward/Reload, labelled address and Go share
 a compact toolbar; explicit native-view Retry is in its accessible overflow.
 Keep original registration uncertainty/retry beside its owning problem. The

@@ -64,6 +64,10 @@ function NativeSessionBrowser({ session, accountId, close, layout, active=true, 
   const alive = useRef(true);
   const presentation = useRef("");
   const shortcutAdmission=useRef("");
+  const reconciledSelection = useRef("");
+  const presentationVisible = useRef<() => boolean>(() => false);
+  const currentSelection = useRef({ profileId, selectedPage, active, retry });
+  currentSelection.current = { profileId, selectedPage, active, retry };
   const tabsStore=useSessionTabsStore();
   const activeRef=useRef(active);activeRef.current=active;
   const capabilities = useQuery(BrowserQuery.getBrowserCapabilities, {}, {retry:false,enabled:active});
@@ -84,6 +88,7 @@ function NativeSessionBrowser({ session, accountId, close, layout, active=true, 
       const style = getComputedStyle(dialog), rect = dialog.getBoundingClientRect();
       return !dialog.closest("[hidden], [inert]") && style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
     }) && node.getBoundingClientRect().width >= 1 && node.getBoundingClientRect().height >= 1;
+    presentationVisible.current = visible;
     const bounds = () => {
       const r = node.getBoundingClientRect();
       let left = Math.max(0, r.left), top = Math.max(0, r.top), right = Math.min(window.innerWidth, r.right), bottom = Math.min(window.innerHeight, r.bottom);
@@ -174,28 +179,44 @@ function NativeSessionBrowser({ session, accountId, close, layout, active=true, 
     // Address changes navigate the existing native tab only at the explicit Go action.
     // Reopening after a modal restores native local tabs without another registration.
   }, [profileId, retry]);
-  const control = async (action: BrowserAction, tabId?: string) => {
+  const control = async (action: BrowserAction, tabId?: string, reconcile = false) => {
     if (!profileId || busy || state?.removal_pending) return;
+    const viewId = presentation.current, original = currentSelection.current;
+    if (reconcile && (!viewId || !presentationVisible.current() || !original.active || original.selectedPage?.profile !== profileId || original.selectedPage.id !== tabId || !state?.tabs.tabs.some(tab => tab.id === tabId))) return;
+    if (reconcile) {
+      const selectionKey = `${profileId}:${viewId}:${tabId}`;
+      if (reconciledSelection.current === selectionKey) return;
+      reconciledSelection.current = selectionKey;
+    } else reconciledSelection.current = "";
+    const owned = () => alive.current && currentSelection.current.profileId === profileId && currentSelection.current.retry === original.retry && presentation.current === viewId;
+    const current = () => owned() && currentSelection.current.active && presentationVisible.current();
     setBusy(true); setFailure(undefined);
     if (openPage && !presentation.current) { pendingAction.current={action,tabId};setPresenting(true);return; }
-    const viewId = presentation.current;
     try {
       const result = browserState(await invoke<BrowserState>("control_browser", { profileId, viewId, action, url: address, tabId }));
-      if (alive.current && presentation.current === viewId) {
+      // Native closure acknowledges the original resource independently from
+      // current presentation visibility; replacement still retires its authority.
+      if (owned() && action === BrowserAction.CloseTab && tabId && !result.tabs.tabs.some(tab => tab.id === tabId)) {
+        tabsStore.closePage(session.id, profileId, tabId);
+      }
+      if (current()) {
         setState(result);
-        if (action === BrowserAction.CloseTab && tabId && !result.tabs.tabs.some(tab => tab.id === tabId)) {
-          tabsStore.closePage(session.id, profileId, tabId);
-        }
-        if (openPage && [BrowserAction.NewTab, BrowserAction.SelectTab, BrowserAction.Navigate].includes(action)) {
+        // Shared selection is already authoritative during reconciliation. An
+        // older navigation must not select its page after the user chose another.
+        const latest = currentSelection.current.selectedPage;
+        const selectionUnchanged = latest?.profile === original.selectedPage?.profile && latest?.id === original.selectedPage?.id;
+        if (!reconcile && selectionUnchanged && openPage && [BrowserAction.NewTab, BrowserAction.SelectTab, BrowserAction.Navigate].includes(action)) {
           const tab = result.tabs.tabs.find(value => value.id === result.tabs.selected);
           if (tab) openPage({ profile: profileId, id: tab.id, title: browserTabTitle(tab.url), label: tab.url });
         }
       }
-    }
-    catch { if (alive.current) setFailure(ownedMessage("session-browser.extra.51fee7071e2b")); }
+    } catch { if (current()) setFailure(ownedMessage("session-browser.extra.51fee7071e2b")); }
     finally { if (alive.current) setBusy(false); }
   };
-  useEffect(()=>{if(!presentation.current||!active||!selectedPage||selectedPage.profile!==profileId||!state||state.tabs.selected===selectedPage.id||!state.tabs.tabs.some(tab=>tab.id===selectedPage.id))return;void control(BrowserAction.SelectTab,selectedPage.id);},[active,selectedPage?.id,profileId,state?.tabs.selected]);
+  useEffect(() => {
+    if (busy || !presentation.current || !active || !selectedPage || selectedPage.profile !== profileId || !state || state.removal_pending || state.tabs.selected === selectedPage.id || !state.tabs.tabs.some(tab => tab.id === selectedPage.id)) return;
+    void control(BrowserAction.SelectTab, selectedPage.id, true);
+  }, [busy, active, selectedPage?.profile, selectedPage?.id, profileId, state]);
   useEffect(()=>{if(!profileId||!openPage)return;let disposed=false;let unlisten:(()=>void)|undefined;void listen<{profile_id:string;view_id:string;position:number;token:string}>("session-tab-selection",event=>{if(!disposed&&activeRef.current&&event.payload.profile_id===profileId&&event.payload.view_id===presentation.current&&event.payload.token===shortcutAdmission.current&&!shortcutModalVisible()){document.getElementById(`session-tab-${session.id}-${event.payload.position-1}`)?.focus({preventScroll:true});tabsStore.position(session.id,event.payload.position);}}).then(stop=>{if(disposed)stop();else unlisten=stop;}).catch(()=>{if(!disposed)console.warn("delidev.browser_shortcuts",{stage:"listener",classification:"unavailable"});});return()=>{disposed=true;unlisten?.();};},[profileId,session.id,tabsStore]);
   useEffect(()=>{if(!profileId||!openPage)return;let disposed=false;const update=()=>{const viewId=presentation.current;if(!viewId)return;const token=newRequestId();shortcutAdmission.current=token;void invoke("browser_tab_shortcuts",{profileId,viewId,token,count:active&&!shortcutModalVisible()?Math.min(9,tabsStore.snapshot(session.id).tabs.length):0}).catch(()=>{if(!disposed)console.warn("delidev.browser_shortcuts",{stage:"admission",classification:"unavailable"});});};update();const observer=new MutationObserver(update);observer.observe(document.body,{subtree:true,attributes:true,attributeFilter:["open","hidden","inert"],childList:true});const stop=tabsStore.subscribe(update);const timer=window.setInterval(update,250);return()=>{disposed=true;shortcutAdmission.current="";window.clearInterval(timer);observer.disconnect();stop();const viewId=presentation.current;if(viewId)void invoke("browser_tab_shortcuts",{profileId,viewId,token:newRequestId(),count:0}).catch(()=>{});};},[active,profileId,state?.tabs.selected,tabsStore,session.id]);
   const blocked = !active || busy || registration.busy || registration.uncertain || state?.removal_pending;
