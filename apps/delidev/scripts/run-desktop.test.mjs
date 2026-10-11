@@ -8,20 +8,14 @@ import { PassThrough, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { spawnDevServer } from "../../../scripts/spawn-dev-server.mjs";
-import {
-  captureDesktopDiagnostics,
-  desktopDiagnosticFilter,
-} from "./desktop-diagnostics.mjs";
+import { captureDesktopDiagnostics, desktopDiagnosticFilter } from "./desktop-diagnostics.mjs";
 import {
   desktopArguments,
   desktopColorEnvironment,
   desktopEnvironment,
   runDesktop,
 } from "./run-desktop.mjs";
-import {
-  DevelopmentSigningError,
-  developmentBundleDirectory,
-} from "./development-signing.mjs";
+import { DevelopmentSigningError, developmentBundleDirectory } from "./development-signing.mjs";
 
 const success = { code: 0, signal: null };
 const environment = {
@@ -72,10 +66,10 @@ test("macOS prepares a CEF bundle with embedded assets and preserves application
   assert.ok(argv[0].replaceAll("\\", "/").endsWith("/scripts/tauri-cli.mjs"));
   assert.ok(argv.includes("build"));
   assert.ok(argv.includes("--debug"));
-  assert.deepEqual(
-    argv.slice(argv.indexOf("--bundles"), argv.indexOf("--bundles") + 2),
-    ["--bundles", "app"],
-  );
+  assert.deepEqual(argv.slice(argv.indexOf("--bundles"), argv.indexOf("--bundles") + 2), [
+    "--bundles",
+    "app",
+  ]);
   assert.ok(argv.includes("desktop-host,custom-protocol"));
   assert.ok(!argv.includes(args[1]));
   assert.equal(calls[2][0], await macFixtures.publish());
@@ -88,10 +82,7 @@ test("macOS prepares a CEF bundle with embedded assets and preserves application
   const config = JSON.parse(argv[argv.indexOf("--config") + 1]);
   assert.equal(config.build.devUrl, null);
   assert.equal(config.bundle.macOS.signingIdentity, "-");
-  assert.equal(
-    config.bundle.resources["/cef/CREDITS.html"],
-    "notices/Chromium-CREDITS.html",
-  );
+  assert.equal(config.bundle.resources["/cef/CREDITS.html"], "notices/Chromium-CREDITS.html");
   assert.equal(options.shell, false);
   assert.equal(calls[0][2].env.MACOSX_DEPLOYMENT_TARGET, "13.0");
   assert.deepEqual(calls[0][2].env, options.env);
@@ -102,22 +93,19 @@ test("macOS prepares a CEF bundle with embedded assets and preserves application
 
 test("Windows and Linux retain the direct Cargo executable path", () => {
   for (const platform of ["win32", "linux"]) {
-    assert.deepEqual(
-      desktopArguments(platform, ["--data-dir", "/private/test"]),
-      [
-        "run",
-        "--locked",
-        "--manifest-path",
-        "src-tauri/Cargo.toml",
-        "--features",
-        "desktop-host,custom-protocol",
-        "--bin",
-        "delidev-desktop",
-        "--",
-        "--data-dir",
-        "/private/test",
-      ],
-    );
+    assert.deepEqual(desktopArguments(platform, ["--data-dir", "/private/test"]), [
+      "run",
+      "--locked",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "--features",
+      "desktop-host,custom-protocol",
+      "--bin",
+      "delidev-desktop",
+      "--",
+      "--data-dir",
+      "/private/test",
+    ]);
     assert.deepEqual(desktopEnvironment(platform, environment), environment);
   }
 });
@@ -193,15 +181,11 @@ test("local macOS preparation and bundling share the configured deployment targe
     CARGO_TARGET_DIR: "/build output",
     CEF_PATH: "/fixture/Library/Caches/tauri-cef",
     MACOSX_DEPLOYMENT_TARGET: JSON.parse(
-      readFileSync(
-        new URL("../src-tauri/tauri.conf.json", import.meta.url),
-        "utf8",
-      ),
+      readFileSync(new URL("../src-tauri/tauri.conf.json", import.meta.url), "utf8"),
     ).bundle.macOS.minimumSystemVersion,
   });
   assert.equal(
-    desktopEnvironment("darwin", { CARGO_TARGET_DIR: "build output" })
-      .CARGO_TARGET_DIR,
+    desktopEnvironment("darwin", { CARGO_TARGET_DIR: "build output" }).CARGO_TARGET_DIR,
     fileURLToPath(new URL("../build output", import.meta.url)),
   );
 });
@@ -222,10 +206,7 @@ test("failed or interrupted preparation never launches the application", async (
           calls++;
           return result;
         },
-        creditsFor: () =>
-          assert.fail(
-            "must not resolve bundle resources after failed preparation",
-          ),
+        creditsFor: () => assert.fail("must not resolve bundle resources after failed preparation"),
       }),
       result,
     );
@@ -307,9 +288,7 @@ test(
     t.after(() => rmSync(root, { recursive: true, force: true }));
     const scenarios = ["prepare", "run"].flatMap((stage) => [
       { stage, vanishedProcess: false },
-      ...(process.platform === "linux"
-        ? [{ stage, vanishedProcess: true }]
-        : []),
+      ...(process.platform === "linux" ? [{ stage, vanishedProcess: true }] : []),
     ]);
     for (const { stage, vanishedProcess } of scenarios) {
       const receipt = join(root, `${stage}-${vanishedProcess}`);
@@ -360,8 +339,7 @@ test(
         { stdio: ["ignore", "pipe", "pipe"] },
       );
       t.after(() => {
-        if (wrapper.exitCode === null && wrapper.signalCode === null)
-          wrapper.kill("SIGTERM");
+        if (wrapper.exitCode === null && wrapper.signalCode === null) wrapper.kill("SIGTERM");
       });
       let diagnostics = "";
       wrapper.stderr.on("data", (chunk) => {
@@ -376,42 +354,28 @@ test(
         destroyOnReturn: false,
       })) {
         output += chunk;
-        if (
-          output.includes("child-ready\n") &&
-          output.includes("wrapper-ready\n")
-        )
-          break;
+        if (output.includes("child-ready\n") && output.includes("wrapper-ready\n")) break;
       }
-      assert.ok(
-        output.includes("child-ready\n") && output.includes("wrapper-ready\n"),
-      );
+      assert.ok(output.includes("child-ready\n") && output.includes("wrapper-ready\n"));
       wrapper.kill("SIGTERM");
       const [code, signal] = await exited;
       assert.equal(code, null, diagnostics);
       assert.equal(signal, "SIGTERM");
       assert.equal(readFileSync(receipt, "utf8"), "terminated");
-      if (vanishedProcess)
-        assert.match(diagnostics, /vanished-process-observed/u);
+      if (vanishedProcess) assert.match(diagnostics, /vanished-process-observed/u);
     }
   },
 );
 
 test("private argv spellings are removed while safe diagnostics remain", () => {
   const value = '/private/한글 folder/quote"and\\slash';
-  const filter = desktopDiagnosticFilter([
-    "--data-dir",
-    value,
-    "--token=fixture-secret",
-  ]);
+  const filter = desktopDiagnosticFilter(["--data-dir", value, "--token=fixture-secret"]);
   for (const spelling of [
     value,
     JSON.stringify(value).slice(1, -1),
     value.replace(/[^a-zA-Z0-9_./:-]/g, "\\$&"),
   ]) {
-    assert.equal(
-      filter(`failure at ${spelling}`),
-      "failure at [private argument]",
-    );
+    assert.equal(filter(`failure at ${spelling}`), "failure at [private argument]");
   }
   assert.equal(filter("safe compiler warning"), "safe compiler warning");
   assert.equal(filter("token fixture-secret"), "token [private argument]");
@@ -448,10 +412,7 @@ test("captured diagnostics join split UTF-8 and keep bounded lines private", asy
   stderr.end();
   await drain();
   assert.equal(out.join(""), "safe\n[private argument]\n");
-  assert.equal(
-    err.join(""),
-    "[desktop diagnostic line omitted]\nsafe error\n",
-  );
+  assert.equal(err.join(""), "[desktop diagnostic line omitted]\nsafe error\n");
   assert.deepEqual(incomplete, []);
 });
 
@@ -522,11 +483,7 @@ test("launcher captures real child diagnostics without changing the original exi
     run: (_command, _args, options, lifecycle) => {
       const code = ++calls === 1 ? 0 : 23;
       const diagnostic =
-        "Running `binary --data-dir " +
-        secret +
-        "`\nerror reading " +
-        secret +
-        "\n";
+        "Running `binary --data-dir " + secret + "`\nerror reading " + secret + "\n";
       const source = `process.stdout.write('safe output\\n'); process.stderr.write(${JSON.stringify(diagnostic)}); process.exitCode = ${code};`;
       return spawnDevServer(process.execPath, ["-e", source], options, lifecycle);
     },
@@ -535,10 +492,7 @@ test("launcher captures real child diagnostics without changing the original exi
   assert.equal(calls, 2);
   assert.match(out.join(""), /safe output/);
   assert.match(err.join(""), /error reading \[private argument\]/);
-  assert.doesNotMatch(
-    JSON.stringify({ out, err, logs }),
-    /fixture scope|--data-dir/,
-  );
+  assert.doesNotMatch(JSON.stringify({ out, err, logs }), /fixture scope|--data-dir/);
   assert.equal(logs.at(-1).code, 23);
 });
 
@@ -595,10 +549,7 @@ test(
     });
     const result = await spawnDevServer(
       process.execPath,
-      [
-        "-e",
-        "process.stdout.write('safe\\n'); process.kill(process.pid, 'SIGTERM');",
-      ],
+      ["-e", "process.stdout.write('safe\\n'); process.kill(process.pid, 'SIGTERM');"],
       { stdio: ["ignore", "pipe", "pipe"], shell: false },
       { captureOutput },
     );
