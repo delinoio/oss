@@ -305,6 +305,9 @@ const GLOBAL_OBJECTS: [&str; 7] = [
 pub(super) struct Facts {
     bindings: HashMap<SymbolId, Fact>,
     active: HashSet<SymbolId>,
+    /// Facts per expression node; facts depend only on the node and the
+    /// program, so each is computed once.
+    expressions: HashMap<Node, Fact>,
     patches: Option<Patches>,
     depth: usize,
 }
@@ -316,6 +319,7 @@ impl Facts {
         Self {
             bindings: HashMap::new(),
             active: HashSet::new(),
+            expressions: HashMap::new(),
             patches: None,
             depth: 0,
         }
@@ -323,12 +327,16 @@ impl Facts {
 
     /// Fact of an expression.
     pub fn expr(&mut self, ctx: &mut Ctx, node: Node) -> Fact {
+        if let Some(fact) = self.expressions.get(&node) {
+            return fact.clone();
+        }
         if self.depth > MAX_DEPTH {
             return Fact::top();
         }
         self.depth += 1;
         let fact = self.expr_inner(ctx, node);
         self.depth -= 1;
+        self.expressions.insert(node, fact.clone());
         fact
     }
 

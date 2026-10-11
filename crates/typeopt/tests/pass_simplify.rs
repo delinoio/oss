@@ -805,6 +805,36 @@ console.log(typeof nothing === "object", nothing === null)
 }
 
 #[test]
+fn optional_chains_keep_narrowing_that_later_code_needs() {
+    let files: &[(&str, &str)] = &[(
+        "main.ts",
+        r#"
+type Options = { map?: Map<string, number>; flag?: boolean; name?: string };
+function guard(opts?: Options): number {
+  if (opts?.map && opts.map.size > 0) return opts.map.size;
+  if (opts?.flag) {
+    return opts?.map?.size ?? 1;
+  }
+  const label = opts?.name ? opts.name.length : 0;
+  return label + (opts?.name?.length ?? 0);
+}
+console.log(guard({ map: new Map([["a", 1]]) }), guard({ flag: true }), guard({ name: "n" }));
+"#,
+    )];
+    let (temp, report) = run(files, &[TDCF]);
+    assert!(applied(&report, TDCF) > 0, "{report:#}");
+    let reasons = skipped_reasons(&report, TDCF);
+    assert!(
+        !reasons.contains(&"recheck_failed".to_owned()),
+        "{reasons:?}"
+    );
+    let main = emitted(temp.path(), "main.ts");
+    // Guards whose narrowing is used later keep `?.`.
+    assert!(main.contains("opts?.map && opts.map.size"), "{main}");
+    assert!(main.contains("opts?.name ? opts.name.length"), "{main}");
+}
+
+#[test]
 fn simplify_family_is_deterministic() {
     let temp = project(TDCF_FILES);
     let first = without_measurements(check(temp.path(), &[]));

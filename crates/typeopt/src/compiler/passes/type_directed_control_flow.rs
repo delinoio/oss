@@ -347,16 +347,26 @@ impl Planner<'_> {
                 return;
             }
         }
-        // When the checker type still admits `null`/`undefined`, the runtime
-        // proof is stated with a non-null assertion, which emits nothing.
-        let assertion = if typed {
-            ""
-        } else if type_assertable(ctx, receiver) {
+        // The runtime proof is stated with a non-null assertion, which emits
+        // nothing. It stays valid even when the receiver's checker type is
+        // non-nullable only through narrowing that another edit may remove.
+        let assertion = if type_assertable(ctx, receiver) {
             "!"
+        } else if typed {
+            ""
         } else {
             self.skip(ctx, file, "optional", node, Reason::TypeConstraint);
             return;
         };
+        // As an operand of a condition or logical operator, `x?.y` narrows `x`
+        // for the guarded code; `x!.y` does not.
+        let (scope, after) = test_scope(node);
+        if scope != walk_up_outer(node) {
+            if !narrowing_neutral(ctx, node, scope, after, &[]) {
+                self.skip(ctx, file, "optional", node, Reason::TypeConstraint);
+                return;
+            }
+        }
         let (start, end) = span(token);
         let replacement = if node.kind() == SyntaxKind::PropertyAccessExpression {
             format!("{assertion}.")
