@@ -84,6 +84,9 @@ func TestGatewayOAuthRejectsMalformedPrivateMetadata(t *testing.T) {
 		`{"providerId":"p","providerId":"q","status":"started"}`, `{"providerId":"p","status":"started","status":"failed"}`,
 		`{"providerId":"p","status":"started","authUrl":null,"authUrl":"url"}`,
 		`{"providerId":"p","status":"started","error":null,"error":"error"}`,
+		`{"ProviderId":"p","Status":"started"}`,
+		`{"providerId":"","ProviderId":"p","status":"bad","Status":"started"}`,
+		`{"providerId":"p","status":"started","AuthUrl":"url"}`,
 		`{"providerId":"p","status":"started","unknown":true}`,
 		`{"providerId":"p","status":"started","authUrl":"bad\u0000url"}`,
 	}

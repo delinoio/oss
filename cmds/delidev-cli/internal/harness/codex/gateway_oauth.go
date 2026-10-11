@@ -42,6 +42,20 @@ type gatewayOAuthObservation struct {
 // Source: openai/codex a06545b311fe01e51ce855c7aa5d8da21e9e7aaf,
 // app-server-protocol/schema/json/v2/GatewayOAuthChangedNotification.json.
 func decodeGatewayOAuth(raw json.RawMessage) (gatewayOAuthObservation, error) {
+	var fields map[string]json.RawMessage
+	if domain.DecodeBounded(raw, &fields, nativewire.MaxFrame) != nil || fields == nil {
+		return gatewayOAuthObservation{}, incompatible()
+	}
+	for name := range fields {
+		switch name {
+		case "providerId", "status", "authUrl", "error":
+		default:
+			// encoding/json matches struct fields case-insensitively. Check the
+			// closed wire names before projecting into the typed envelope.
+			return gatewayOAuthObservation{}, incompatible()
+		}
+	}
+
 	var wire *struct {
 		ProviderID *string             `json:"providerId"`
 		Status     *gatewayOAuthStatus `json:"status"`
