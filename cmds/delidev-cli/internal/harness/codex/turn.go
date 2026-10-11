@@ -376,6 +376,7 @@ func (c *Client) Steer(ctx context.Context, requestID, inputID, expectedTurnID d
 	if err != nil {
 		if attempt.delivery == SteerUncertain {
 			attempt.problem = c.problem
+			attempt.eventFailureRevision = c.eventFailureRevision
 		} else if response.ErrorCode != nil {
 			attempt.evidence = SteerRejection
 		}
@@ -387,6 +388,7 @@ func (c *Client) Steer(ctx context.Context, requestID, inputID, expectedTurnID d
 	if domain.Decode(response.Result, &ack) != nil || ack.TurnID != expectedTurnID {
 		err := c.rejectTurnReply(ctx, SteerTurnAction, requestID)
 		attempt.problem = c.problem
+		attempt.eventFailureRevision = c.eventFailureRevision
 		return result, err
 	}
 	attempt.delivery, attempt.evidence = SteerAccepted, SteerAcknowledgment

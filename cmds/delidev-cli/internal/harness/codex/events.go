@@ -263,6 +263,7 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	c.pendingEvent = nil
 	event, err := c.observeEventLocked(native)
 	if err != nil {
+		c.eventFailureRevision++
 		if c.problem == nil {
 			c.problem = turnUncertain()
 		}

@@ -35,12 +35,13 @@ type SteerObservation struct {
 }
 
 type steerAttempt struct {
-	operation turnOperation
-	delivery  SteerDelivery
-	evidence  SteerEvidence
+	operation            turnOperation
+	delivery             SteerDelivery
+	evidence             SteerEvidence
+	eventFailureRevision uint64
 	// Only this exact uncertainty may be cleared after native inspection. A
-	// subsequent event failure replaces Client.problem and must survive proof
-	// of this input's acceptance. Explicit pause/interrupt is never cleared.
+	// subsequent event failure may preserve Client.problem's pointer, so its
+	// revision must also match. Explicit pause/interrupt is never cleared.
 	problem *domain.Error
 }
 
@@ -72,6 +73,7 @@ func (c *Client) InspectSteerAcceptance(ctx context.Context, requestID domain.ID
 		if returned != nil && domain.SafeError(returned).Code == domain.RecoveryRequired && c.problem == nil {
 			c.problem = turnUncertain()
 			attempt.problem = c.problem
+			attempt.eventFailureRevision = c.eventFailureRevision
 		}
 		result = attempt.observation(c.thread)
 		if c.logger != nil {
@@ -83,7 +85,7 @@ func (c *Client) InspectSteerAcceptance(ctx context.Context, requestID domain.ID
 		}
 	}()
 	clearOwnUncertainty := func() {
-		if attempt.problem != nil && c.problem == attempt.problem {
+		if attempt.problem != nil && c.problem == attempt.problem && attempt.eventFailureRevision == c.eventFailureRevision {
 			c.problem = nil
 		}
 	}
