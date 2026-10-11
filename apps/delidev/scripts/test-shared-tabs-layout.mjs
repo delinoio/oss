@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Synthetic browser checks do not establish packaged CEF/native acceptance.
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -27,7 +27,6 @@ const { chromium } = await import(
   modulePath ? pathToFileURL(resolve(modulePath)).href : "playwright"
 );
 const directory = await mkdtemp(join(tmpdir(), "delidev-browser-layout-"));
-const screenshots = process.env.DELIDEV_BROWSER_SCREENSHOT_DIR;
 let browser,
   server,
   cases = 0;
@@ -86,6 +85,7 @@ try {
       : {}),
   });
   const page = await browser.newPage();
+  page.setDefaultTimeout(5000);
   page.on("pageerror", (error) => errors.push(error.message));
   const origin = `http://127.0.0.1:${server.address().port}`;
   const sizes = [
@@ -183,7 +183,9 @@ try {
           "8px",
         );
         assert.equal(
-          await draft.evaluate((node) => getComputedStyle(node).borderRadius),
+          await dialog
+            .locator('input[aria-label="Project draft"]')
+            .evaluate((node) => getComputedStyle(node).borderRadius),
           "8px",
         );
         await tabs.nth(1).click();
