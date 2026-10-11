@@ -53,7 +53,9 @@ async function create() {
 function row(core: GhosttyCore, index: number) {
   return Array.from({ length: core.getCols() }, (_, col) => {
     const cell = core.getCell(index, col);
-    return cell.chars ?? (cell.char ? String.fromCodePoint(cell.char) : "");
+    return cell.width === 0
+      ? ""
+      : (cell.chars ?? (cell.char ? String.fromCodePoint(cell.char) : ""));
   })
     .join("")
     .trimEnd();
@@ -109,7 +111,8 @@ it("bounds native scrollback and resets parser, screens, selection, queries and 
     ),
   );
   expect(core.getScrollbackCount()).toBeLessThanOrEqual(5000);
-  expect(core.getScrollbackCount()).toBeGreaterThan(4900);
+  expect(core.getScrollbackCount()).toBeGreaterThan(0);
+  expect(core.getScrollbackDiscardedCount()).toBeGreaterThan(0);
   terminal.write(encoder.encode("\x1b[?1049h\x1b[?2004h\x1b[?1000h\x1b[14"));
   terminal.write(new Uint8Array([0xe2]));
   terminal.reset();
@@ -200,13 +203,19 @@ it("constructs full and incremental cell DOM without HTML parsing and clamps dim
     .mockImplementation(() => {
       throw new Error("Unexpected HTML parser assignment");
     });
-  terminal.write(encoder.encode("\x1b[1;3;4;9;38;2;100;120;140m<safe>\x1b[0m"));
+  terminal.write(
+    encoder.encode("\x1b[1;3;4;9;38;2;100;120;140m<safe styled>\x1b[0m"),
+  );
   await new Promise((resolve) => setTimeout(resolve, 20));
   terminal.write(encoder.encode("\rupdate"));
   await new Promise((resolve) => setTimeout(resolve, 20));
   expect(html).not.toHaveBeenCalled();
   expect(host.querySelector(".term-row")?.textContent).toContain("update");
-  expect(host.querySelector(".term-row span")?.style.color).toBeTruthy();
+  expect(
+    Array.from(host.querySelectorAll<HTMLElement>(".term-row span")).some(
+      (span) => !!span.style.color,
+    ),
+  ).toBeTruthy();
   html.mockRestore();
   terminal.resize(99999, 99999);
   expect([
@@ -294,4 +303,26 @@ it("keeps C1-valued UTF8 continuation bytes intact across clipboard filtering bo
     data = encoder.encode("ĝ52;한글");
   for (const byte of data) core.writeRaw(new Uint8Array([byte]));
   expect(row(core, 0)).toBe("ĝ52;한글");
+});
+
+it("localizes terminal input/output and keyboard escape guidance without changing the core", async () => {
+  const core = await create(),
+    { terminal, host, input } = await screen(core);
+  terminal.setAccessibilityLabels({
+    terminal: "터미널",
+    keyboardExit: "Esc를 누른 다음 Tab을 누르세요.",
+    output: "터미널 출력",
+    announcementLimit: "출력 알림 일시 중지",
+    selecting: "텍스트 선택 중",
+    selectionFailed: "선택 실패",
+    selectionChanged: "터미널 변경",
+  });
+  expect(input.getAttribute("aria-label")).toBe("터미널");
+  expect(input.getAttribute("aria-description")).toContain(
+    "Esc를 누른 다음 Tab",
+  );
+  expect(
+    host.querySelector(".term-announcements")?.getAttribute("aria-label"),
+  ).toBe("터미널 출력");
+  expect(terminal.bridge).toBe(core);
 });

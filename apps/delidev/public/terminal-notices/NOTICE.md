@@ -16,7 +16,7 @@ allowlisted CSSOM declarations instead of parsing HTML style attributes.
 Externally managed dimensions retain host-owned height. Ghostty changes
 bound dimensions, fail initialization when native allocation fails, discard
 OSC 52 writes/queries before parsing and silence the raw WASM log import.
-The WASM bytes and original license texts are unchanged.
+An explicit emitted WASM URL is required; the unused default-path asset is not bundled. Scheduled renderer failures use the existing unavailable recovery. The WASM bytes and original license texts are unchanged.
 
 Frontend distributions copy this entire notice directory alongside the
 bundled terminal modules and hashed Ghostty WASM asset. Repository changes

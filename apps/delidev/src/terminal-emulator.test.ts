@@ -145,6 +145,8 @@ it("destroys the renderer and supplied core after late init without delivering q
   });
   const { screen, input } = open();
   await tick();
+  screen.focus();
+  expect(fake.instances[0].focus).not.toHaveBeenCalled();
   const term = fake.instances[0],
     write = screen.write(new Uint8Array([2]));
   screen.enabled(true);
@@ -207,4 +209,19 @@ it("captures paste once, fences sends while disabled, keeps binary bytes, and de
   expect(term.setAccessibilityLabels.mock.calls.at(-1)[0].terminal).toBe(
     "터미널",
   );
+});
+
+it("fences scheduled DOM renderer failures with the existing recovery and both cleanup owners", async () => {
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  const { screen, input, unavailable } = open();
+  await tick();
+  const term = fake.instances[0];
+  screen.enabled(true);
+  term.options.onRenderError();
+  term.options.onData("late");
+  await screen.write(new Uint8Array([1]));
+  expect(unavailable).toHaveBeenCalledTimes(1);
+  expect(term.destroy).toHaveBeenCalledTimes(1);
+  expect(fake.disposed).toHaveBeenCalledTimes(1);
+  expect(input).not.toHaveBeenCalled();
 });

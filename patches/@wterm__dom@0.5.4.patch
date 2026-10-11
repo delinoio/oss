@@ -521,7 +521,7 @@
      }
 --- a/dist/wterm.d.ts
 +++ b/dist/wterm.d.ts
-@@ -1,7 +1,20 @@
+@@ -1,7 +1,21 @@
  import { type TerminalCore, type TerminalPosition, type TerminalThemeColors, type ShellIntegrationState } from "@wterm/core";
  import { DebugAdapter } from "./debug.js";
  import { type SearchOptions, type SearchState } from "./search.js";
@@ -538,11 +538,12 @@
 +    autoFocus?: boolean;
 +    inputEnabled?: boolean;
 +    linksEnabled?: boolean;
++    onRenderError?: () => void;
 +    labels?: TerminalLabels;
      cols?: number;
      rows?: number;
      /**
-@@ -94,6 +107,10 @@
+@@ -94,6 +108,10 @@
      private _container;
      constructor(element: HTMLElement, options?: WTermOptions);
      init(): Promise<this>;
@@ -555,7 +556,7 @@
      private _setScrollTop;
 --- a/dist/wterm.js
 +++ b/dist/wterm.js
-@@ -35,13 +35,17 @@
+@@ -35,13 +35,18 @@
          this._searchReveal = false;
          this.element = element;
          this._coreOption = options.core;
@@ -563,6 +564,7 @@
 +        this._inputEnabled = options.inputEnabled !== false;
 +        this._linksEnabled = options.linksEnabled !== false;
 +        this._labels = options.labels;
++        this._onRenderError = options.onRenderError;
          this._initialColsExplicit = options.cols !== undefined;
          this._initialRowsExplicit = options.rows !== undefined;
          this.wasmUrl = options.wasmUrl;
@@ -575,7 +577,7 @@
          this.autoResize = options.autoResize !== false;
          this._debugEnabled = options.debug ?? false;
          this._renderingPaused = options.renderingPaused ?? false;
-@@ -73,7 +77,7 @@
+@@ -73,7 +78,7 @@
          this._container.className = "term-grid";
          this.element.appendChild(this._container);
          this.element.classList.add("wterm");
@@ -584,7 +586,7 @@
          this._rectangleDrag = new RectangleDrag(this.element, {
              start: (event) => {
                  if (!(event.target instanceof Element) ||
-@@ -83,7 +87,7 @@
+@@ -83,7 +88,7 @@
                  const point = this.renderer?.positionAt(event.target, event.clientX, this._charWidth);
                  if (!point ||
                      (!event.shiftKey &&
@@ -593,7 +595,7 @@
                          point.row >= this.bridge.getScrollbackCount()))
                      return null;
                  return point;
-@@ -97,7 +101,7 @@
+@@ -97,7 +102,7 @@
          });
          this._outputAnnouncements = new OutputAnnouncements(this.element, () => this.bridge, () => this._canRender() &&
              this.rafId === null &&
@@ -602,7 +604,7 @@
          this._outputAnnouncements.setEnabled(options.announceOutput ?? false);
          this._onVisibilityChange = () => {
              if (this._canRender())
-@@ -139,7 +143,7 @@
+@@ -139,7 +144,7 @@
              if (!position || !this.bridge)
                  return;
              if (!event.shiftKey &&
@@ -611,7 +613,7 @@
                  position.row >= this.bridge.getScrollbackCount())
                  return;
              const selected = event.detail === 2
-@@ -237,6 +241,7 @@
+@@ -237,6 +242,7 @@
              this._measureCharSize();
              this.renderer = new Renderer(this._container, {
                  colorHost: this.element,
@@ -619,7 +621,7 @@
                  maxImageWidth: this.maxImageWidth,
                  maxImageHeight: this.maxImageHeight,
              });
-@@ -282,11 +287,11 @@
+@@ -282,11 +288,11 @@
                      this._historySelection.clear();
                  },
              });
@@ -635,7 +637,7 @@
              this._initialRender();
              if (this.cols !== initialCols || this.rows !== initialRows)
                  this.onResize?.(this.cols, this.rows);
-@@ -380,7 +385,7 @@
+@@ -380,7 +386,7 @@
              try {
                  const text = this.bridge?.getClipboardWrite?.() ?? null;
                  if (text !== null && !this._destroyed)
@@ -644,7 +646,7 @@
              }
              catch (error) {
                  recordDeliveryError(error);
-@@ -419,7 +424,7 @@
+@@ -419,7 +425,7 @@
          drain();
          for (const query of windowSizeQueries) {
              try {
@@ -653,7 +655,7 @@
              }
              catch (error) {
                  recordDeliveryError(error);
-@@ -427,6 +432,45 @@
+@@ -427,6 +433,45 @@
          }
          if (hasDeliveryError)
              throw deliveryError;
@@ -699,7 +701,7 @@
      }
      /** Fit the grid to the current element and font metrics. */
      fit() {
-@@ -472,6 +516,9 @@
+@@ -472,6 +517,9 @@
          this.renderer?.beforeMutation(this.bridge);
          this._shouldScrollToBottom =
              this._pendingResizeScrollTop === null && this._isScrolledToBottom();
@@ -709,7 +711,7 @@
          this.bridge.resize(cols, rows);
          this._outputAnnouncements.invalidate();
          this.cols = this.bridge.getCols();
-@@ -715,7 +762,7 @@
+@@ -715,7 +763,7 @@
      }
      focus() {
          if (this.input) {
@@ -718,7 +720,33 @@
          }
          else {
              this.element.focus();
-@@ -897,8 +944,10 @@
+@@ -728,7 +776,11 @@
+             return;
+         this.rafId = requestAnimationFrame(() => {
+             this.rafId = null;
+-            this._doRender();
++            try { this._doRender(); } catch {
++                this.setInputEnabled(false);
++                this._renderingPaused = true;
++                this._onRenderError?.();
++            }
+         });
+     }
+     _cancelScheduledRender() {
+@@ -774,7 +826,11 @@
+             this._synchronizedOutputState = "passthrough";
+             this._setupRendererIfNeeded();
+             this._cancelScheduledRender();
+-            this._doRender();
++            try { this._doRender(); } catch {
++                this.setInputEnabled(false);
++                this._renderingPaused = true;
++                this._onRenderError?.();
++            }
+         }, SYNCHRONIZED_OUTPUT_TIMEOUT_MS);
+     }
+     _cancelSynchronizedOutputFallback() {
+@@ -897,8 +953,10 @@
          let hasError = false;
          while ((response = this.bridge.getResponse()) !== null) {
              try {
@@ -731,7 +759,7 @@
              }
              catch (error) {
                  if (!hasError) {
-@@ -1068,6 +1117,7 @@
+@@ -1068,6 +1126,7 @@
              this.resizeObserver.observe(this.element);
      }
      destroy() {
@@ -739,7 +767,7 @@
          this._destroyed = true;
          this._textCapture.cancel();
          this._historySelection.destroy();
-@@ -1093,7 +1143,7 @@
+@@ -1093,7 +1152,7 @@
          this.element.ownerDocument.removeEventListener("keyup", this._onModifierChange);
          this.element.ownerDocument.defaultView?.removeEventListener("blur", this._onWindowBlur);
          this.element.classList.remove("link-modifier-active");

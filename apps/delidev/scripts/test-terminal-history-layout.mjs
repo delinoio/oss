@@ -222,9 +222,11 @@ try {
             state.samples = [];
             state.renderer = document.querySelector(".wterm");
             state.input = document.querySelector(".wterm textarea");
-            state.input.focus();
+            if (!state.inspect().selection.length) state.input.focus();
+            state.focusOwner = document.activeElement;
             const viewport = document.querySelector(".wterm");
-            if (viewport) viewport.scrollTop = 50;
+            if (viewport && !state.inspect().selection.length)
+              viewport.scrollTop = 50;
             state.scroll = viewport?.scrollTop;
             state.native = state.inspect();
             state.timer = setInterval(
@@ -234,7 +236,7 @@ try {
                     document.querySelector(".terminal-screen").clientHeight,
                   continuation: document.querySelector(".sidebar-continuation")
                     .clientHeight,
-                  focus: document.activeElement === state.input,
+                  focus: document.activeElement === state.focusOwner,
                   same: document.querySelector(".wterm") === state.renderer,
                   scroll: viewport?.scrollTop,
                   native: state.inspect(),
@@ -275,6 +277,7 @@ try {
             assert(continuations.length > 1);
             assert(resizes.length > 4);
           } else {
+            assert(result.native.selection.length > 0);
             assert.equal(heights.length, 1);
             assert.equal(continuations.length, 1);
             assert.equal(resizes.length, closed ? 0 : 1);

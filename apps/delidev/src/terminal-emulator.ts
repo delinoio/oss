@@ -49,6 +49,7 @@ export function openTerminalScreen(
     writable = false,
     requestedFocus = false;
   let core: GhosttyCore | undefined, terminal: WTerm | undefined;
+  let initialized = false;
   let stage = RendererStage.Load;
   let ordered = Promise.resolve();
   const pending = new Set<() => void>();
@@ -142,6 +143,7 @@ export function openTerminalScreen(
         debug: false,
         announceOutput: true,
         labels: labels(),
+        onRenderError: () => fail(RendererStage.Parse),
         onData: (value) => {
           if (alive && writable) input(encoder.encode(value));
         },
@@ -155,6 +157,7 @@ export function openTerminalScreen(
         core.dispose();
         return;
       }
+      initialized = true;
       terminal.setThemeColors({
         foreground: 0xe5e9f0,
         background: 0x14191f,
@@ -202,7 +205,7 @@ export function openTerminalScreen(
     focus() {
       if (!alive) return;
       requestedFocus = true;
-      terminal?.focus();
+      if (initialized) terminal?.focus();
     },
     dispose() {
       if (!alive) return;
