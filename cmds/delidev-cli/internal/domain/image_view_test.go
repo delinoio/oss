@@ -20,3 +20,19 @@ func TestImageViewSnapshotHasNoInputOrFileAuthority(t *testing.T) {
 		}
 	}
 }
+
+func TestImageViewRelativeMetadataPreservesPOSIXCharacters(t *testing.T) {
+	v := ImageViewObservation{ReferenceID: NewID(), MachineID: NewID(), ManifestDigest: strings.Repeat("a", 64)}
+	for _, location := range []string{"screens/frame:01.png", `screens/frame\01.png`, `screens\archive/frame:01.png`, "frame:01.png"} {
+		v.Location = location
+		if err := v.Validate(); err != nil {
+			t.Fatalf("inert POSIX location %q rejected: %v", location, err)
+		}
+	}
+	for _, location := range []string{"/image.png", `C:\image.png`, "C:/image.png", `\\server\share\image.png`, "https://example.com/image.png", "../image.png", "images/../image.png", "images//image.png", "images/./image.png", "images/\x00image.png"} {
+		v.Location = location
+		if v.Validate() == nil {
+			t.Fatalf("absolute or malformed metadata accepted: %q", location)
+		}
+	}
+}

@@ -12,6 +12,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -203,6 +204,33 @@ func TestExecutionImageViewRetainsOriginalReferenceAndIndependentCleanup(t *test
 	s, decodeErr := store.Decode[domain.Session](r)
 	if err != nil || decodeErr != nil || s.Execution.CleanupVerified || s.Outcome != domain.ExecutionSucceeded {
 		t.Fatal("image completion fabricated execution cleanup")
+	}
+}
+
+func TestExecutionImageViewPublishesInertPOSIXFilenameCharacters(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX filename grammar is not the Windows Worker grammar")
+	}
+	for _, name := range []string{"frame:01.png", `frame\01.png`} {
+		t.Run(name, func(t *testing.T) {
+			f, original := newImageViewPublicationFixture(t)
+			_, mapper := bindNativeMapper(t, f, publicationWorkerConfig(t, f))
+			// No file exists at this native observation. Metadata publication must
+			// preserve its spelling without trying to retrieve or validate bytes.
+			location := filepath.Dir(original) + "/" + name
+			native := &codex.Tool{ID: "posix-image", Kind: codex.ImageViewTool, Status: codex.ToolRunning, ImagePath: location}
+			publishNativeEvent(t, f, mapper, codex.Event{Kind: codex.ToolStartedEvent, ItemID: native.ID, Tool: native})
+			native.Status = codex.ToolCompleted
+			publishNativeEvent(t, f, mapper, codex.Event{Kind: codex.ToolCompletedEvent, ItemID: native.ID, Tool: native})
+			rows, err := f.service.Store.List(context.Background(), store.Filter{Kind: domain.MessageKind, SessionID: f.input.SessionID, Limit: 10})
+			if err != nil || len(rows) != 1 {
+				t.Fatal("image observation was not published", err)
+			}
+			m, err := store.Decode[domain.ExecutionMessage](rows[0])
+			if err != nil || m.Tool == nil || m.Tool.Started.ImageView == nil || m.Tool.Completed == nil || m.Tool.Completed.ImageView == nil || m.Tool.Started.ImageView.Location != name || *m.Tool.Started.ImageView != *m.Tool.Completed.ImageView || m.Text != "" || len(m.Attachments) != 0 {
+				t.Fatal("POSIX filename changed or acquired byte authority", err)
+			}
+		})
 	}
 }
 

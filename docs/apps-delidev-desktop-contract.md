@@ -4966,6 +4966,8 @@ The single directly submitted text-only Sidechat question exposes Retry under Sy
 
 Present original native `view_image` observations in the existing collapsed tool transcript. Show the validated lifecycle status, immutable root-relative location and explicit unavailable preview. The reference retains an observation, not original bytes or access to the current file. Keep location text inert; add no image, link, preview/download, image-input or source-file deletion action. Reject mixed/unknown metadata and changed start/completion identity, Worker, manifest, root or location. Preserve localization and original tool-turn grouping.
 
+Preserve literal colon and backslash characters in admitted POSIX filenames. Do not reinterpret them as a drive, separator, URL or link. Continue rejecting absolute paths, UNC references, traversal, malformed segments and changed lifecycle metadata; original Worker-OS and manifest validation remain server-owned.
+
 ## Situation-specific notification presentation
 
 Notifications Settings renders saved, read-only choices under Requests, Execution, Connections and Operations. The twelve controls follow the approved 1,040-pixel body, 24-pixel group spacing, 16-pixel rows and 40-pixel actions. Edit retains the existing 720-pixel explicit Save/Cancel dialog, revision conflict and exact uncertain retry behavior, visit disposal and focus handoffs. Small screens stack through the shared 600-pixel breakpoint. EN/KO labels and Settings search targets cover each choice. Account quota recovery is a separate Managed per account row with an AI Subscription action. Missing granular support shows an explicit compatibility state.
