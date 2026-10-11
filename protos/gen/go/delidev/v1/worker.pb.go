@@ -50,19 +50,20 @@ const (
 	WorkerCapability_WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1    WorkerCapability = 13
 	WorkerCapability_WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1 WorkerCapability = 14
 	// Independently negotiated pinned Unix plain-text General Chat fork profile.
-	WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1     WorkerCapability = 15
-	WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1         WorkerCapability = 1
-	WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1             WorkerCapability = 2
-	WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1    WorkerCapability = 3
-	WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1              WorkerCapability = 4
-	WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1 WorkerCapability = 6
-	WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1   WorkerCapability = 7
-	WorkerCapability_WORKER_CAPABILITY_SUBSCRIPTION_OBSERVATIONS_V1      WorkerCapability = 8
-	WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1              WorkerCapability = 9
-	WorkerCapability_WORKER_CAPABILITY_CODEX_API_PROXY_V1                WorkerCapability = 10
-	WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1   WorkerCapability = 11
-	WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1  WorkerCapability = 12
-	WorkerCapability_WORKER_CAPABILITY_CODEX_NATIVE_SHELL_V1             WorkerCapability = 63
+	WorkerCapability_WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1        WorkerCapability = 15
+	WorkerCapability_WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1            WorkerCapability = 1
+	WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1                WorkerCapability = 2
+	WorkerCapability_WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1       WorkerCapability = 3
+	WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1                 WorkerCapability = 4
+	WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1    WorkerCapability = 6
+	WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1      WorkerCapability = 7
+	WorkerCapability_WORKER_CAPABILITY_SUBSCRIPTION_OBSERVATIONS_V1         WorkerCapability = 8
+	WorkerCapability_WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1                 WorkerCapability = 9
+	WorkerCapability_WORKER_CAPABILITY_CODEX_API_PROXY_V1                   WorkerCapability = 10
+	WorkerCapability_WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1      WorkerCapability = 11
+	WorkerCapability_WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1     WorkerCapability = 12
+	WorkerCapability_WORKER_CAPABILITY_CODEX_NATIVE_SHELL_V1                WorkerCapability = 63
+	WorkerCapability_WORKER_CAPABILITY_CODEX_NATIVE_BACKGROUND_TERMINALS_V1 WorkerCapability = 67
 )
 
 // Enum value maps for WorkerCapability.
@@ -106,46 +107,48 @@ var (
 		11: "WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1",
 		12: "WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1",
 		63: "WORKER_CAPABILITY_CODEX_NATIVE_SHELL_V1",
+		67: "WORKER_CAPABILITY_CODEX_NATIVE_BACKGROUND_TERMINALS_V1",
 	}
 	WorkerCapability_value = map[string]int32{
-		"WORKER_CAPABILITY_UNSPECIFIED":                       0,
-		"WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1":              52,
-		"WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1":         22,
-		"WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1":       50,
-		"WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1":      51,
-		"WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1":             29,
-		"WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1":          30,
-		"WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1":      28,
-		"WORKER_CAPABILITY_SIDECHAT_QUESTION_RETRY_V1":        31,
-		"WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1":           36,
-		"WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1":    27,
-		"WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1":     38,
-		"WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1":         26,
-		"WORKER_CAPABILITY_NATIVE_SKILLS_V1":                  24,
-		"WORKER_CAPABILITY_IMAGE_INPUTS_V1":                   25,
-		"WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1":        35,
-		"WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1":    20,
-		"WORKER_CAPABILITY_EXECUTION_STARTUP_V1":              23,
-		"WORKER_CAPABILITY_REPOSITORY_CLONE_V1":               18,
-		"WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1":         19,
-		"WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1":          17,
-		"WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1":       16,
-		"WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1":      5,
-		"WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1":       13,
-		"WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1":    14,
-		"WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1":     15,
-		"WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1":         1,
-		"WORKER_CAPABILITY_SESSION_FORWARDING_V1":             2,
-		"WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1":    3,
-		"WORKER_CAPABILITY_SESSION_TERMINALS_V1":              4,
-		"WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1": 6,
-		"WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1":   7,
-		"WORKER_CAPABILITY_SUBSCRIPTION_OBSERVATIONS_V1":      8,
-		"WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1":              9,
-		"WORKER_CAPABILITY_CODEX_API_PROXY_V1":                10,
-		"WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1":   11,
-		"WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1":  12,
-		"WORKER_CAPABILITY_CODEX_NATIVE_SHELL_V1":             63,
+		"WORKER_CAPABILITY_UNSPECIFIED":                          0,
+		"WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1":                 52,
+		"WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1":            22,
+		"WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1":          50,
+		"WORKER_CAPABILITY_SUBSCRIPTION_PAID_CREDITS_V1":         51,
+		"WORKER_CAPABILITY_MANAGED_CODEX_FORK_V1":                29,
+		"WORKER_CAPABILITY_CODEX_APPROVAL_REVIEW_V1":             30,
+		"WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1":         28,
+		"WORKER_CAPABILITY_SIDECHAT_QUESTION_RETRY_V1":           31,
+		"WORKER_CAPABILITY_CODEX_SESSION_REVERT_V1":              36,
+		"WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1":       27,
+		"WORKER_CAPABILITY_BRANCH_PREFIX_INSTRUCTIONS_V1":        38,
+		"WORKER_CAPABILITY_MANAGED_CODEX_SIDECHAT_V1":            26,
+		"WORKER_CAPABILITY_NATIVE_SKILLS_V1":                     24,
+		"WORKER_CAPABILITY_IMAGE_INPUTS_V1":                      25,
+		"WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1":           35,
+		"WORKER_CAPABILITY_NATIVE_CLAUDE_SUBSCRIPTIONS_V1":       20,
+		"WORKER_CAPABILITY_EXECUTION_STARTUP_V1":                 23,
+		"WORKER_CAPABILITY_REPOSITORY_CLONE_V1":                  18,
+		"WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1":            19,
+		"WORKER_CAPABILITY_SIGNED_WORKER_UPDATES_V1":             17,
+		"WORKER_CAPABILITY_CODEX_READ_ONLY_SIDECHAT_V1":          16,
+		"WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1":         5,
+		"WORKER_CAPABILITY_CODEX_SESSION_COMPACTION_V1":          13,
+		"WORKER_CAPABILITY_OPENCODE_SESSION_COMPACTION_V1":       14,
+		"WORKER_CAPABILITY_OPENCODE_GENERAL_CHAT_FORK_V1":        15,
+		"WORKER_CAPABILITY_AUTOMATIC_TITLES_CODEX_V1":            1,
+		"WORKER_CAPABILITY_SESSION_FORWARDING_V1":                2,
+		"WORKER_CAPABILITY_MANAGED_CODEX_SUBSCRIPTIONS_V1":       3,
+		"WORKER_CAPABILITY_SESSION_TERMINALS_V1":                 4,
+		"WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1":    6,
+		"WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1":      7,
+		"WORKER_CAPABILITY_SUBSCRIPTION_OBSERVATIONS_V1":         8,
+		"WORKER_CAPABILITY_NETWORK_BOOTSTRAP_V1":                 9,
+		"WORKER_CAPABILITY_CODEX_API_PROXY_V1":                   10,
+		"WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1":      11,
+		"WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1":     12,
+		"WORKER_CAPABILITY_CODEX_NATIVE_SHELL_V1":                63,
+		"WORKER_CAPABILITY_CODEX_NATIVE_BACKGROUND_TERMINALS_V1": 67,
 	}
 )
 
@@ -1686,6 +1689,7 @@ type WatchWorkResponse struct {
 	QuestionResponse *QuestionResponseControl `protobuf:"bytes,5,opt,name=question_response,json=questionResponse,proto3" json:"question_response,omitempty"`
 	SteerInput       *SteerInputControl       `protobuf:"bytes,6,opt,name=steer_input,json=steerInput,proto3" json:"steer_input,omitempty"`
 	ApprovalResponse *ApprovalResponseControl `protobuf:"bytes,7,opt,name=approval_response,json=approvalResponse,proto3" json:"approval_response,omitempty"`
+	NativeBackground *NativeBackgroundControl `protobuf:"bytes,8,opt,name=native_background,json=nativeBackground,proto3" json:"native_background,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -1765,6 +1769,13 @@ func (x *WatchWorkResponse) GetSteerInput() *SteerInputControl {
 func (x *WatchWorkResponse) GetApprovalResponse() *ApprovalResponseControl {
 	if x != nil {
 		return x.ApprovalResponse
+	}
+	return nil
+}
+
+func (x *WatchWorkResponse) GetNativeBackground() *NativeBackgroundControl {
+	if x != nil {
+		return x.NativeBackground
 	}
 	return nil
 }
@@ -4054,7 +4065,7 @@ var File_delidev_v1_worker_proto protoreflect.FileDescriptor
 const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\n" +
 	"\x17delidev/v1/worker.proto\x12\n" +
-	"delidev.v1\x1a\x17delidev/v1/common.proto\x1a\x1ddelidev/v1/native_shell.proto\x1a\x19delidev/v1/terminal.proto\"z\n" +
+	"delidev.v1\x1a\x17delidev/v1/common.proto\x1a\"delidev/v1/native_background.proto\x1a\x1ddelidev/v1/native_shell.proto\x1a\x19delidev/v1/terminal.proto\"z\n" +
 	"\vErrorDetail\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x1a\n" +
 	"\bguidance\x18\x02 \x01(\tR\bguidance\x12\x14\n" +
@@ -4151,7 +4162,7 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x03job\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\x03job\x12\x1c\n" +
 	"\theartbeat\x18\x02 \x01(\bR\theartbeat\x12\"\n" +
 	"\rcancel_job_id\x18\x03 \x01(\tR\vcancelJobId\x12)\n" +
-	"\x10cancel_requested\x18\x04 \x01(\bR\x0fcancelRequested\"\x8c\x03\n" +
+	"\x10cancel_requested\x18\x04 \x01(\bR\x0fcancelRequested\"\xde\x03\n" +
 	"\x11WatchWorkResponse\x12&\n" +
 	"\x03job\x18\x01 \x01(\v2\x14.delidev.v1.ResourceR\x03job\x12\x1c\n" +
 	"\theartbeat\x18\x02 \x01(\bR\theartbeat\x12)\n" +
@@ -4160,7 +4171,8 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x11question_response\x18\x05 \x01(\v2#.delidev.v1.QuestionResponseControlR\x10questionResponse\x12>\n" +
 	"\vsteer_input\x18\x06 \x01(\v2\x1d.delidev.v1.SteerInputControlR\n" +
 	"steerInput\x12P\n" +
-	"\x11approval_response\x18\a \x01(\v2#.delidev.v1.ApprovalResponseControlR\x10approvalResponse\"a\n" +
+	"\x11approval_response\x18\a \x01(\v2#.delidev.v1.ApprovalResponseControlR\x10approvalResponse\x12P\n" +
+	"\x11native_background\x18\b \x01(\v2#.delidev.v1.NativeBackgroundControlR\x10nativeBackground\"a\n" +
 	"\x11SteerInputControl\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x19\n" +
 	"\bsteer_id\x18\x02 \x01(\tR\asteerId\x12\x1a\n" +
@@ -4376,7 +4388,7 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x12repository_ordinal\x18\v \x01(\rR\x11repositoryOrdinal\x12)\n" +
 	"\x10repository_count\x18\f \x01(\rR\x0frepositoryCount\"B\n" +
 	"$ReportSessionStartupProgressResponse\x12\x1a\n" +
-	"\breplayed\x18\x01 \x01(\bR\breplayed*\xd1\x0e\n" +
+	"\breplayed\x18\x01 \x01(\bR\breplayed*\x8d\x0f\n" +
 	"\x10WorkerCapability\x12!\n" +
 	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12*\n" +
 	"&WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1\x104\x12/\n" +
@@ -4416,7 +4428,8 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x125\n" +
 	"1WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1\x10\v\x126\n" +
 	"2WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1\x10\f\x12+\n" +
-	"'WORKER_CAPABILITY_CODEX_NATIVE_SHELL_V1\x10?*\xb6\x02\n" +
+	"'WORKER_CAPABILITY_CODEX_NATIVE_SHELL_V1\x10?\x12:\n" +
+	"6WORKER_CAPABILITY_CODEX_NATIVE_BACKGROUND_TERMINALS_V1\x10C*\xb6\x02\n" +
 	"\x16WorkerNativeRouteState\x12)\n" +
 	"%WORKER_NATIVE_ROUTE_STATE_UNSPECIFIED\x10\x00\x12)\n" +
 	"%WORKER_NATIVE_ROUTE_STATE_UNSUPPORTED\x10\x01\x12)\n" +
@@ -4464,8 +4477,10 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x1bSessionStartupProgressState\x12.\n" +
 	"*SESSION_STARTUP_PROGRESS_STATE_UNSPECIFIED\x10\x00\x12*\n" +
 	"&SESSION_STARTUP_PROGRESS_STATE_RUNNING\x10\x01\x12,\n" +
-	"(SESSION_STARTUP_PROGRESS_STATE_COMPLETED\x10\x022\xa0\x16\n" +
-	"\rWorkerService\x12]\n" +
+	"(SESSION_STARTUP_PROGRESS_STATE_COMPLETED\x10\x022\x82\x18\n" +
+	"\rWorkerService\x12l\n" +
+	"\x15ClaimNativeBackground\x12(.delidev.v1.ClaimNativeBackgroundRequest\x1a).delidev.v1.ClaimNativeBackgroundResponse\x12r\n" +
+	"\x17PublishNativeBackground\x12*.delidev.v1.PublishNativeBackgroundRequest\x1a+.delidev.v1.PublishNativeBackgroundResponse\x12]\n" +
 	"\x10ClaimNativeShell\x12#.delidev.v1.ClaimNativeShellRequest\x1a$.delidev.v1.ClaimNativeShellResponse\x12c\n" +
 	"\x12PublishNativeShell\x12%.delidev.v1.PublishNativeShellRequest\x1a&.delidev.v1.PublishNativeShellResponse\x12`\n" +
 	"\x11SyncWorkerNetwork\x12$.delidev.v1.SyncWorkerNetworkRequest\x1a%.delidev.v1.SyncWorkerNetworkResponse\x12r\n" +
@@ -4572,19 +4587,24 @@ var file_delidev_v1_worker_proto_goTypes = []any{
 	(*ReportSessionStartupProgressResponse)(nil), // 58: delidev.v1.ReportSessionStartupProgressResponse
 	(*Mutation)(nil),                             // 59: delidev.v1.Mutation
 	(*Resource)(nil),                             // 60: delidev.v1.Resource
-	(*SessionDeletionJob)(nil),                   // 61: delidev.v1.SessionDeletionJob
-	(*ClaimNativeShellRequest)(nil),              // 62: delidev.v1.ClaimNativeShellRequest
-	(*PublishNativeShellRequest)(nil),            // 63: delidev.v1.PublishNativeShellRequest
-	(*WatchTerminalsRequest)(nil),                // 64: delidev.v1.WatchTerminalsRequest
-	(*ClaimTerminalRequest)(nil),                 // 65: delidev.v1.ClaimTerminalRequest
-	(*ReportTerminalRequest)(nil),                // 66: delidev.v1.ReportTerminalRequest
-	(*PublishTerminalOutputRequest)(nil),         // 67: delidev.v1.PublishTerminalOutputRequest
-	(*ClaimNativeShellResponse)(nil),             // 68: delidev.v1.ClaimNativeShellResponse
-	(*PublishNativeShellResponse)(nil),           // 69: delidev.v1.PublishNativeShellResponse
-	(*WatchTerminalsResponse)(nil),               // 70: delidev.v1.WatchTerminalsResponse
-	(*ClaimTerminalResponse)(nil),                // 71: delidev.v1.ClaimTerminalResponse
-	(*ReportTerminalResponse)(nil),               // 72: delidev.v1.ReportTerminalResponse
-	(*PublishTerminalOutputResponse)(nil),        // 73: delidev.v1.PublishTerminalOutputResponse
+	(*NativeBackgroundControl)(nil),              // 61: delidev.v1.NativeBackgroundControl
+	(*SessionDeletionJob)(nil),                   // 62: delidev.v1.SessionDeletionJob
+	(*ClaimNativeBackgroundRequest)(nil),         // 63: delidev.v1.ClaimNativeBackgroundRequest
+	(*PublishNativeBackgroundRequest)(nil),       // 64: delidev.v1.PublishNativeBackgroundRequest
+	(*ClaimNativeShellRequest)(nil),              // 65: delidev.v1.ClaimNativeShellRequest
+	(*PublishNativeShellRequest)(nil),            // 66: delidev.v1.PublishNativeShellRequest
+	(*WatchTerminalsRequest)(nil),                // 67: delidev.v1.WatchTerminalsRequest
+	(*ClaimTerminalRequest)(nil),                 // 68: delidev.v1.ClaimTerminalRequest
+	(*ReportTerminalRequest)(nil),                // 69: delidev.v1.ReportTerminalRequest
+	(*PublishTerminalOutputRequest)(nil),         // 70: delidev.v1.PublishTerminalOutputRequest
+	(*ClaimNativeBackgroundResponse)(nil),        // 71: delidev.v1.ClaimNativeBackgroundResponse
+	(*PublishNativeBackgroundResponse)(nil),      // 72: delidev.v1.PublishNativeBackgroundResponse
+	(*ClaimNativeShellResponse)(nil),             // 73: delidev.v1.ClaimNativeShellResponse
+	(*PublishNativeShellResponse)(nil),           // 74: delidev.v1.PublishNativeShellResponse
+	(*WatchTerminalsResponse)(nil),               // 75: delidev.v1.WatchTerminalsResponse
+	(*ClaimTerminalResponse)(nil),                // 76: delidev.v1.ClaimTerminalResponse
+	(*ReportTerminalResponse)(nil),               // 77: delidev.v1.ReportTerminalResponse
+	(*PublishTerminalOutputResponse)(nil),        // 78: delidev.v1.PublishTerminalOutputResponse
 }
 var file_delidev_v1_worker_proto_depIdxs = []int32{
 	59, // 0: delidev.v1.ClaimSteerInputRequest.mutation:type_name -> delidev.v1.Mutation
@@ -4604,94 +4624,99 @@ var file_delidev_v1_worker_proto_depIdxs = []int32{
 	27, // 14: delidev.v1.WatchWorkResponse.question_response:type_name -> delidev.v1.QuestionResponseControl
 	26, // 15: delidev.v1.WatchWorkResponse.steer_input:type_name -> delidev.v1.SteerInputControl
 	28, // 16: delidev.v1.WatchWorkResponse.approval_response:type_name -> delidev.v1.ApprovalResponseControl
-	59, // 17: delidev.v1.ReportWorkRequest.mutation:type_name -> delidev.v1.Mutation
-	9,  // 18: delidev.v1.ReportWorkRequest.problem:type_name -> delidev.v1.ErrorDetail
-	60, // 19: delidev.v1.ReportWorkResponse.job:type_name -> delidev.v1.Resource
-	60, // 20: delidev.v1.InspectRepositoryResponse.job:type_name -> delidev.v1.Resource
-	59, // 21: delidev.v1.DiscoverHarnessesRequest.mutation:type_name -> delidev.v1.Mutation
-	60, // 22: delidev.v1.DiscoverHarnessesResponse.machine:type_name -> delidev.v1.Resource
-	60, // 23: delidev.v1.DiscoverHarnessesResponse.job:type_name -> delidev.v1.Resource
-	60, // 24: delidev.v1.WatchForwardRequestsResponse.forward:type_name -> delidev.v1.Resource
-	61, // 25: delidev.v1.ReportSessionDeletionResponse.job:type_name -> delidev.v1.SessionDeletionJob
-	60, // 26: delidev.v1.SyncWorkerNetworkResponse.route:type_name -> delidev.v1.Resource
-	59, // 27: delidev.v1.ReportWorkerNativeRouteRequest.mutation:type_name -> delidev.v1.Mutation
-	1,  // 28: delidev.v1.ReportWorkerNativeRouteRequest.state:type_name -> delidev.v1.WorkerNativeRouteState
-	49, // 29: delidev.v1.CloneRepositoryRequest.github_selection:type_name -> delidev.v1.RepositoryCloneGitHubSelection
-	60, // 30: delidev.v1.CloneRepositoryResponse.job:type_name -> delidev.v1.Resource
-	59, // 31: delidev.v1.ReportExecutionStartupRequest.mutation:type_name -> delidev.v1.Mutation
-	54, // 32: delidev.v1.ReportExecutionStartupRequest.observation:type_name -> delidev.v1.ExecutionStartupObservation
-	54, // 33: delidev.v1.ReportExecutionStartupResponse.observation:type_name -> delidev.v1.ExecutionStartupObservation
-	3,  // 34: delidev.v1.ExecutionStartupObservation.state:type_name -> delidev.v1.ExecutionStartupState
-	4,  // 35: delidev.v1.ExecutionStartupObservation.phase:type_name -> delidev.v1.ExecutionStartupPhase
-	5,  // 36: delidev.v1.ExecutionStartupObservation.input_delivery:type_name -> delidev.v1.ExecutionStartupInputDelivery
-	6,  // 37: delidev.v1.ExecutionStartupObservation.cleanup:type_name -> delidev.v1.ExecutionStartupCleanup
-	2,  // 38: delidev.v1.ExecutionStartupObservation.failure_kind:type_name -> delidev.v1.ExecutionStartupFailureKind
-	60, // 39: delidev.v1.DiscoverRepositoryBranchesResponse.job:type_name -> delidev.v1.Resource
-	59, // 40: delidev.v1.ReportSessionStartupProgressRequest.mutation:type_name -> delidev.v1.Mutation
-	7,  // 41: delidev.v1.ReportSessionStartupProgressRequest.workspace_operation:type_name -> delidev.v1.SessionStartupWorkspaceOperation
-	4,  // 42: delidev.v1.ReportSessionStartupProgressRequest.native_phase:type_name -> delidev.v1.ExecutionStartupPhase
-	8,  // 43: delidev.v1.ReportSessionStartupProgressRequest.state:type_name -> delidev.v1.SessionStartupProgressState
-	62, // 44: delidev.v1.WorkerService.ClaimNativeShell:input_type -> delidev.v1.ClaimNativeShellRequest
-	63, // 45: delidev.v1.WorkerService.PublishNativeShell:input_type -> delidev.v1.PublishNativeShellRequest
-	45, // 46: delidev.v1.WorkerService.SyncWorkerNetwork:input_type -> delidev.v1.SyncWorkerNetworkRequest
-	47, // 47: delidev.v1.WorkerService.ReportWorkerNativeRoute:input_type -> delidev.v1.ReportWorkerNativeRouteRequest
-	41, // 48: delidev.v1.WorkerService.ListSessionDeletionWork:input_type -> delidev.v1.ListSessionDeletionWorkRequest
-	43, // 49: delidev.v1.WorkerService.ReportSessionDeletion:input_type -> delidev.v1.ReportSessionDeletionRequest
-	64, // 50: delidev.v1.WorkerService.WatchTerminals:input_type -> delidev.v1.WatchTerminalsRequest
-	65, // 51: delidev.v1.WorkerService.ClaimTerminal:input_type -> delidev.v1.ClaimTerminalRequest
-	66, // 52: delidev.v1.WorkerService.ReportTerminal:input_type -> delidev.v1.ReportTerminalRequest
-	67, // 53: delidev.v1.WorkerService.PublishTerminalOutput:input_type -> delidev.v1.PublishTerminalOutputRequest
-	39, // 54: delidev.v1.WorkerService.WatchForwardRequests:input_type -> delidev.v1.WatchForwardRequestsRequest
-	35, // 55: delidev.v1.WorkerService.WatchWorkspaceReads:input_type -> delidev.v1.WatchWorkspaceReadsRequest
-	37, // 56: delidev.v1.WorkerService.ReportWorkspaceRead:input_type -> delidev.v1.ReportWorkspaceReadRequest
-	20, // 57: delidev.v1.WorkerService.AttachWorker:input_type -> delidev.v1.AttachWorkerRequest
-	22, // 58: delidev.v1.WorkerService.WatchWork:input_type -> delidev.v1.WatchWorkRequest
-	23, // 59: delidev.v1.WorkerService.WatchAuxiliaryWork:input_type -> delidev.v1.WatchAuxiliaryWorkRequest
-	29, // 60: delidev.v1.WorkerService.ReportWork:input_type -> delidev.v1.ReportWorkRequest
-	55, // 61: delidev.v1.WorkerService.DiscoverRepositoryBranches:input_type -> delidev.v1.DiscoverRepositoryBranchesRequest
-	31, // 62: delidev.v1.WorkerService.InspectRepository:input_type -> delidev.v1.InspectRepositoryRequest
-	50, // 63: delidev.v1.WorkerService.CloneRepository:input_type -> delidev.v1.CloneRepositoryRequest
-	33, // 64: delidev.v1.WorkerService.DiscoverHarnesses:input_type -> delidev.v1.DiscoverHarnessesRequest
-	57, // 65: delidev.v1.WorkerService.ReportSessionStartupProgress:input_type -> delidev.v1.ReportSessionStartupProgressRequest
-	52, // 66: delidev.v1.WorkerService.ReportExecutionStartup:input_type -> delidev.v1.ReportExecutionStartupRequest
-	18, // 67: delidev.v1.WorkerService.RegisterExecution:input_type -> delidev.v1.RegisterExecutionRequest
-	16, // 68: delidev.v1.WorkerService.PublishExecution:input_type -> delidev.v1.PublishExecutionRequest
-	12, // 69: delidev.v1.WorkerService.ClaimQuestionResponse:input_type -> delidev.v1.ClaimQuestionResponseRequest
-	14, // 70: delidev.v1.WorkerService.ClaimApprovalResponse:input_type -> delidev.v1.ClaimApprovalResponseRequest
-	10, // 71: delidev.v1.WorkerService.ClaimSteerInput:input_type -> delidev.v1.ClaimSteerInputRequest
-	68, // 72: delidev.v1.WorkerService.ClaimNativeShell:output_type -> delidev.v1.ClaimNativeShellResponse
-	69, // 73: delidev.v1.WorkerService.PublishNativeShell:output_type -> delidev.v1.PublishNativeShellResponse
-	46, // 74: delidev.v1.WorkerService.SyncWorkerNetwork:output_type -> delidev.v1.SyncWorkerNetworkResponse
-	48, // 75: delidev.v1.WorkerService.ReportWorkerNativeRoute:output_type -> delidev.v1.ReportWorkerNativeRouteResponse
-	42, // 76: delidev.v1.WorkerService.ListSessionDeletionWork:output_type -> delidev.v1.ListSessionDeletionWorkResponse
-	44, // 77: delidev.v1.WorkerService.ReportSessionDeletion:output_type -> delidev.v1.ReportSessionDeletionResponse
-	70, // 78: delidev.v1.WorkerService.WatchTerminals:output_type -> delidev.v1.WatchTerminalsResponse
-	71, // 79: delidev.v1.WorkerService.ClaimTerminal:output_type -> delidev.v1.ClaimTerminalResponse
-	72, // 80: delidev.v1.WorkerService.ReportTerminal:output_type -> delidev.v1.ReportTerminalResponse
-	73, // 81: delidev.v1.WorkerService.PublishTerminalOutput:output_type -> delidev.v1.PublishTerminalOutputResponse
-	40, // 82: delidev.v1.WorkerService.WatchForwardRequests:output_type -> delidev.v1.WatchForwardRequestsResponse
-	36, // 83: delidev.v1.WorkerService.WatchWorkspaceReads:output_type -> delidev.v1.WatchWorkspaceReadsResponse
-	38, // 84: delidev.v1.WorkerService.ReportWorkspaceRead:output_type -> delidev.v1.ReportWorkspaceReadResponse
-	21, // 85: delidev.v1.WorkerService.AttachWorker:output_type -> delidev.v1.AttachWorkerResponse
-	25, // 86: delidev.v1.WorkerService.WatchWork:output_type -> delidev.v1.WatchWorkResponse
-	24, // 87: delidev.v1.WorkerService.WatchAuxiliaryWork:output_type -> delidev.v1.WatchAuxiliaryWorkResponse
-	30, // 88: delidev.v1.WorkerService.ReportWork:output_type -> delidev.v1.ReportWorkResponse
-	56, // 89: delidev.v1.WorkerService.DiscoverRepositoryBranches:output_type -> delidev.v1.DiscoverRepositoryBranchesResponse
-	32, // 90: delidev.v1.WorkerService.InspectRepository:output_type -> delidev.v1.InspectRepositoryResponse
-	51, // 91: delidev.v1.WorkerService.CloneRepository:output_type -> delidev.v1.CloneRepositoryResponse
-	34, // 92: delidev.v1.WorkerService.DiscoverHarnesses:output_type -> delidev.v1.DiscoverHarnessesResponse
-	58, // 93: delidev.v1.WorkerService.ReportSessionStartupProgress:output_type -> delidev.v1.ReportSessionStartupProgressResponse
-	53, // 94: delidev.v1.WorkerService.ReportExecutionStartup:output_type -> delidev.v1.ReportExecutionStartupResponse
-	19, // 95: delidev.v1.WorkerService.RegisterExecution:output_type -> delidev.v1.RegisterExecutionResponse
-	17, // 96: delidev.v1.WorkerService.PublishExecution:output_type -> delidev.v1.PublishExecutionResponse
-	13, // 97: delidev.v1.WorkerService.ClaimQuestionResponse:output_type -> delidev.v1.ClaimQuestionResponseResponse
-	15, // 98: delidev.v1.WorkerService.ClaimApprovalResponse:output_type -> delidev.v1.ClaimApprovalResponseResponse
-	11, // 99: delidev.v1.WorkerService.ClaimSteerInput:output_type -> delidev.v1.ClaimSteerInputResponse
-	72, // [72:100] is the sub-list for method output_type
-	44, // [44:72] is the sub-list for method input_type
-	44, // [44:44] is the sub-list for extension type_name
-	44, // [44:44] is the sub-list for extension extendee
-	0,  // [0:44] is the sub-list for field type_name
+	61, // 17: delidev.v1.WatchWorkResponse.native_background:type_name -> delidev.v1.NativeBackgroundControl
+	59, // 18: delidev.v1.ReportWorkRequest.mutation:type_name -> delidev.v1.Mutation
+	9,  // 19: delidev.v1.ReportWorkRequest.problem:type_name -> delidev.v1.ErrorDetail
+	60, // 20: delidev.v1.ReportWorkResponse.job:type_name -> delidev.v1.Resource
+	60, // 21: delidev.v1.InspectRepositoryResponse.job:type_name -> delidev.v1.Resource
+	59, // 22: delidev.v1.DiscoverHarnessesRequest.mutation:type_name -> delidev.v1.Mutation
+	60, // 23: delidev.v1.DiscoverHarnessesResponse.machine:type_name -> delidev.v1.Resource
+	60, // 24: delidev.v1.DiscoverHarnessesResponse.job:type_name -> delidev.v1.Resource
+	60, // 25: delidev.v1.WatchForwardRequestsResponse.forward:type_name -> delidev.v1.Resource
+	62, // 26: delidev.v1.ReportSessionDeletionResponse.job:type_name -> delidev.v1.SessionDeletionJob
+	60, // 27: delidev.v1.SyncWorkerNetworkResponse.route:type_name -> delidev.v1.Resource
+	59, // 28: delidev.v1.ReportWorkerNativeRouteRequest.mutation:type_name -> delidev.v1.Mutation
+	1,  // 29: delidev.v1.ReportWorkerNativeRouteRequest.state:type_name -> delidev.v1.WorkerNativeRouteState
+	49, // 30: delidev.v1.CloneRepositoryRequest.github_selection:type_name -> delidev.v1.RepositoryCloneGitHubSelection
+	60, // 31: delidev.v1.CloneRepositoryResponse.job:type_name -> delidev.v1.Resource
+	59, // 32: delidev.v1.ReportExecutionStartupRequest.mutation:type_name -> delidev.v1.Mutation
+	54, // 33: delidev.v1.ReportExecutionStartupRequest.observation:type_name -> delidev.v1.ExecutionStartupObservation
+	54, // 34: delidev.v1.ReportExecutionStartupResponse.observation:type_name -> delidev.v1.ExecutionStartupObservation
+	3,  // 35: delidev.v1.ExecutionStartupObservation.state:type_name -> delidev.v1.ExecutionStartupState
+	4,  // 36: delidev.v1.ExecutionStartupObservation.phase:type_name -> delidev.v1.ExecutionStartupPhase
+	5,  // 37: delidev.v1.ExecutionStartupObservation.input_delivery:type_name -> delidev.v1.ExecutionStartupInputDelivery
+	6,  // 38: delidev.v1.ExecutionStartupObservation.cleanup:type_name -> delidev.v1.ExecutionStartupCleanup
+	2,  // 39: delidev.v1.ExecutionStartupObservation.failure_kind:type_name -> delidev.v1.ExecutionStartupFailureKind
+	60, // 40: delidev.v1.DiscoverRepositoryBranchesResponse.job:type_name -> delidev.v1.Resource
+	59, // 41: delidev.v1.ReportSessionStartupProgressRequest.mutation:type_name -> delidev.v1.Mutation
+	7,  // 42: delidev.v1.ReportSessionStartupProgressRequest.workspace_operation:type_name -> delidev.v1.SessionStartupWorkspaceOperation
+	4,  // 43: delidev.v1.ReportSessionStartupProgressRequest.native_phase:type_name -> delidev.v1.ExecutionStartupPhase
+	8,  // 44: delidev.v1.ReportSessionStartupProgressRequest.state:type_name -> delidev.v1.SessionStartupProgressState
+	63, // 45: delidev.v1.WorkerService.ClaimNativeBackground:input_type -> delidev.v1.ClaimNativeBackgroundRequest
+	64, // 46: delidev.v1.WorkerService.PublishNativeBackground:input_type -> delidev.v1.PublishNativeBackgroundRequest
+	65, // 47: delidev.v1.WorkerService.ClaimNativeShell:input_type -> delidev.v1.ClaimNativeShellRequest
+	66, // 48: delidev.v1.WorkerService.PublishNativeShell:input_type -> delidev.v1.PublishNativeShellRequest
+	45, // 49: delidev.v1.WorkerService.SyncWorkerNetwork:input_type -> delidev.v1.SyncWorkerNetworkRequest
+	47, // 50: delidev.v1.WorkerService.ReportWorkerNativeRoute:input_type -> delidev.v1.ReportWorkerNativeRouteRequest
+	41, // 51: delidev.v1.WorkerService.ListSessionDeletionWork:input_type -> delidev.v1.ListSessionDeletionWorkRequest
+	43, // 52: delidev.v1.WorkerService.ReportSessionDeletion:input_type -> delidev.v1.ReportSessionDeletionRequest
+	67, // 53: delidev.v1.WorkerService.WatchTerminals:input_type -> delidev.v1.WatchTerminalsRequest
+	68, // 54: delidev.v1.WorkerService.ClaimTerminal:input_type -> delidev.v1.ClaimTerminalRequest
+	69, // 55: delidev.v1.WorkerService.ReportTerminal:input_type -> delidev.v1.ReportTerminalRequest
+	70, // 56: delidev.v1.WorkerService.PublishTerminalOutput:input_type -> delidev.v1.PublishTerminalOutputRequest
+	39, // 57: delidev.v1.WorkerService.WatchForwardRequests:input_type -> delidev.v1.WatchForwardRequestsRequest
+	35, // 58: delidev.v1.WorkerService.WatchWorkspaceReads:input_type -> delidev.v1.WatchWorkspaceReadsRequest
+	37, // 59: delidev.v1.WorkerService.ReportWorkspaceRead:input_type -> delidev.v1.ReportWorkspaceReadRequest
+	20, // 60: delidev.v1.WorkerService.AttachWorker:input_type -> delidev.v1.AttachWorkerRequest
+	22, // 61: delidev.v1.WorkerService.WatchWork:input_type -> delidev.v1.WatchWorkRequest
+	23, // 62: delidev.v1.WorkerService.WatchAuxiliaryWork:input_type -> delidev.v1.WatchAuxiliaryWorkRequest
+	29, // 63: delidev.v1.WorkerService.ReportWork:input_type -> delidev.v1.ReportWorkRequest
+	55, // 64: delidev.v1.WorkerService.DiscoverRepositoryBranches:input_type -> delidev.v1.DiscoverRepositoryBranchesRequest
+	31, // 65: delidev.v1.WorkerService.InspectRepository:input_type -> delidev.v1.InspectRepositoryRequest
+	50, // 66: delidev.v1.WorkerService.CloneRepository:input_type -> delidev.v1.CloneRepositoryRequest
+	33, // 67: delidev.v1.WorkerService.DiscoverHarnesses:input_type -> delidev.v1.DiscoverHarnessesRequest
+	57, // 68: delidev.v1.WorkerService.ReportSessionStartupProgress:input_type -> delidev.v1.ReportSessionStartupProgressRequest
+	52, // 69: delidev.v1.WorkerService.ReportExecutionStartup:input_type -> delidev.v1.ReportExecutionStartupRequest
+	18, // 70: delidev.v1.WorkerService.RegisterExecution:input_type -> delidev.v1.RegisterExecutionRequest
+	16, // 71: delidev.v1.WorkerService.PublishExecution:input_type -> delidev.v1.PublishExecutionRequest
+	12, // 72: delidev.v1.WorkerService.ClaimQuestionResponse:input_type -> delidev.v1.ClaimQuestionResponseRequest
+	14, // 73: delidev.v1.WorkerService.ClaimApprovalResponse:input_type -> delidev.v1.ClaimApprovalResponseRequest
+	10, // 74: delidev.v1.WorkerService.ClaimSteerInput:input_type -> delidev.v1.ClaimSteerInputRequest
+	71, // 75: delidev.v1.WorkerService.ClaimNativeBackground:output_type -> delidev.v1.ClaimNativeBackgroundResponse
+	72, // 76: delidev.v1.WorkerService.PublishNativeBackground:output_type -> delidev.v1.PublishNativeBackgroundResponse
+	73, // 77: delidev.v1.WorkerService.ClaimNativeShell:output_type -> delidev.v1.ClaimNativeShellResponse
+	74, // 78: delidev.v1.WorkerService.PublishNativeShell:output_type -> delidev.v1.PublishNativeShellResponse
+	46, // 79: delidev.v1.WorkerService.SyncWorkerNetwork:output_type -> delidev.v1.SyncWorkerNetworkResponse
+	48, // 80: delidev.v1.WorkerService.ReportWorkerNativeRoute:output_type -> delidev.v1.ReportWorkerNativeRouteResponse
+	42, // 81: delidev.v1.WorkerService.ListSessionDeletionWork:output_type -> delidev.v1.ListSessionDeletionWorkResponse
+	44, // 82: delidev.v1.WorkerService.ReportSessionDeletion:output_type -> delidev.v1.ReportSessionDeletionResponse
+	75, // 83: delidev.v1.WorkerService.WatchTerminals:output_type -> delidev.v1.WatchTerminalsResponse
+	76, // 84: delidev.v1.WorkerService.ClaimTerminal:output_type -> delidev.v1.ClaimTerminalResponse
+	77, // 85: delidev.v1.WorkerService.ReportTerminal:output_type -> delidev.v1.ReportTerminalResponse
+	78, // 86: delidev.v1.WorkerService.PublishTerminalOutput:output_type -> delidev.v1.PublishTerminalOutputResponse
+	40, // 87: delidev.v1.WorkerService.WatchForwardRequests:output_type -> delidev.v1.WatchForwardRequestsResponse
+	36, // 88: delidev.v1.WorkerService.WatchWorkspaceReads:output_type -> delidev.v1.WatchWorkspaceReadsResponse
+	38, // 89: delidev.v1.WorkerService.ReportWorkspaceRead:output_type -> delidev.v1.ReportWorkspaceReadResponse
+	21, // 90: delidev.v1.WorkerService.AttachWorker:output_type -> delidev.v1.AttachWorkerResponse
+	25, // 91: delidev.v1.WorkerService.WatchWork:output_type -> delidev.v1.WatchWorkResponse
+	24, // 92: delidev.v1.WorkerService.WatchAuxiliaryWork:output_type -> delidev.v1.WatchAuxiliaryWorkResponse
+	30, // 93: delidev.v1.WorkerService.ReportWork:output_type -> delidev.v1.ReportWorkResponse
+	56, // 94: delidev.v1.WorkerService.DiscoverRepositoryBranches:output_type -> delidev.v1.DiscoverRepositoryBranchesResponse
+	32, // 95: delidev.v1.WorkerService.InspectRepository:output_type -> delidev.v1.InspectRepositoryResponse
+	51, // 96: delidev.v1.WorkerService.CloneRepository:output_type -> delidev.v1.CloneRepositoryResponse
+	34, // 97: delidev.v1.WorkerService.DiscoverHarnesses:output_type -> delidev.v1.DiscoverHarnessesResponse
+	58, // 98: delidev.v1.WorkerService.ReportSessionStartupProgress:output_type -> delidev.v1.ReportSessionStartupProgressResponse
+	53, // 99: delidev.v1.WorkerService.ReportExecutionStartup:output_type -> delidev.v1.ReportExecutionStartupResponse
+	19, // 100: delidev.v1.WorkerService.RegisterExecution:output_type -> delidev.v1.RegisterExecutionResponse
+	17, // 101: delidev.v1.WorkerService.PublishExecution:output_type -> delidev.v1.PublishExecutionResponse
+	13, // 102: delidev.v1.WorkerService.ClaimQuestionResponse:output_type -> delidev.v1.ClaimQuestionResponseResponse
+	15, // 103: delidev.v1.WorkerService.ClaimApprovalResponse:output_type -> delidev.v1.ClaimApprovalResponseResponse
+	11, // 104: delidev.v1.WorkerService.ClaimSteerInput:output_type -> delidev.v1.ClaimSteerInputResponse
+	75, // [75:105] is the sub-list for method output_type
+	45, // [45:75] is the sub-list for method input_type
+	45, // [45:45] is the sub-list for extension type_name
+	45, // [45:45] is the sub-list for extension extendee
+	0,  // [0:45] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_worker_proto_init() }
@@ -4700,6 +4725,7 @@ func file_delidev_v1_worker_proto_init() {
 		return
 	}
 	file_delidev_v1_common_proto_init()
+	file_delidev_v1_native_background_proto_init()
 	file_delidev_v1_native_shell_proto_init()
 	file_delidev_v1_terminal_proto_init()
 	type x struct{}

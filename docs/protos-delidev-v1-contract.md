@@ -1463,3 +1463,18 @@ bounded closed native-shell observation document. The action resource preserves
 original request receipts and independent delivery, native completion and
 cleanup evidence. These declarations grant no shell dispatch, continuation,
 account or cleanup authority by themselves and add no database migration.
+
+## Original native background terminals
+
+System capability 97 and Worker capability 67 identify
+`CODEX_NATIVE_BACKGROUND_TERMINALS_V1`. Session request/status and Worker
+claim/publication RPCs use the closed native-background declarations recorded
+in the allocation ledger. WatchWorkResponse field 8 delivers metadata-only
+control to the original live execution assignment. Native-action resources
+retain their distinct action type and original receipt; no new entity kind or
+database migration is introduced.
+
+Listing requests a fresh native observation. Terminate and clean bind to the
+retained original execution and inventory sequence; process identifiers never
+authorize operating-system process adoption. Retained status alone grants no
+new dispatch, cleanup, account or continuation authority.

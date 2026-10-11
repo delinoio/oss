@@ -5,6 +5,16 @@
 import { WorkerService } from "./worker_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.WorkerService.ClaimNativeBackground
+ */
+export const claimNativeBackground = WorkerService.method.claimNativeBackground;
+
+/**
+ * @generated from rpc delidev.v1.WorkerService.PublishNativeBackground
+ */
+export const publishNativeBackground = WorkerService.method.publishNativeBackground;
+
+/**
  * @generated from rpc delidev.v1.WorkerService.ClaimNativeShell
  */
 export const claimNativeShell = WorkerService.method.claimNativeShell;

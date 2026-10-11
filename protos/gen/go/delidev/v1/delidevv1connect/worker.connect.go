@@ -33,6 +33,12 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// WorkerServiceClaimNativeBackgroundProcedure is the fully-qualified name of the WorkerService's
+	// ClaimNativeBackground RPC.
+	WorkerServiceClaimNativeBackgroundProcedure = "/delidev.v1.WorkerService/ClaimNativeBackground"
+	// WorkerServicePublishNativeBackgroundProcedure is the fully-qualified name of the WorkerService's
+	// PublishNativeBackground RPC.
+	WorkerServicePublishNativeBackgroundProcedure = "/delidev.v1.WorkerService/PublishNativeBackground"
 	// WorkerServiceClaimNativeShellProcedure is the fully-qualified name of the WorkerService's
 	// ClaimNativeShell RPC.
 	WorkerServiceClaimNativeShellProcedure = "/delidev.v1.WorkerService/ClaimNativeShell"
@@ -120,6 +126,8 @@ const (
 
 // WorkerServiceClient is a client for the delidev.v1.WorkerService service.
 type WorkerServiceClient interface {
+	ClaimNativeBackground(context.Context, *connect.Request[v1.ClaimNativeBackgroundRequest]) (*connect.Response[v1.ClaimNativeBackgroundResponse], error)
+	PublishNativeBackground(context.Context, *connect.Request[v1.PublishNativeBackgroundRequest]) (*connect.Response[v1.PublishNativeBackgroundResponse], error)
 	ClaimNativeShell(context.Context, *connect.Request[v1.ClaimNativeShellRequest]) (*connect.Response[v1.ClaimNativeShellResponse], error)
 	PublishNativeShell(context.Context, *connect.Request[v1.PublishNativeShellRequest]) (*connect.Response[v1.PublishNativeShellResponse], error)
 	SyncWorkerNetwork(context.Context, *connect.Request[v1.SyncWorkerNetworkRequest]) (*connect.Response[v1.SyncWorkerNetworkResponse], error)
@@ -162,6 +170,18 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 	baseURL = strings.TrimRight(baseURL, "/")
 	workerServiceMethods := v1.File_delidev_v1_worker_proto.Services().ByName("WorkerService").Methods()
 	return &workerServiceClient{
+		claimNativeBackground: connect.NewClient[v1.ClaimNativeBackgroundRequest, v1.ClaimNativeBackgroundResponse](
+			httpClient,
+			baseURL+WorkerServiceClaimNativeBackgroundProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("ClaimNativeBackground")),
+			connect.WithClientOptions(opts...),
+		),
+		publishNativeBackground: connect.NewClient[v1.PublishNativeBackgroundRequest, v1.PublishNativeBackgroundResponse](
+			httpClient,
+			baseURL+WorkerServicePublishNativeBackgroundProcedure,
+			connect.WithSchema(workerServiceMethods.ByName("PublishNativeBackground")),
+			connect.WithClientOptions(opts...),
+		),
 		claimNativeShell: connect.NewClient[v1.ClaimNativeShellRequest, v1.ClaimNativeShellResponse](
 			httpClient,
 			baseURL+WorkerServiceClaimNativeShellProcedure,
@@ -335,6 +355,8 @@ func NewWorkerServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 
 // workerServiceClient implements WorkerServiceClient.
 type workerServiceClient struct {
+	claimNativeBackground        *connect.Client[v1.ClaimNativeBackgroundRequest, v1.ClaimNativeBackgroundResponse]
+	publishNativeBackground      *connect.Client[v1.PublishNativeBackgroundRequest, v1.PublishNativeBackgroundResponse]
 	claimNativeShell             *connect.Client[v1.ClaimNativeShellRequest, v1.ClaimNativeShellResponse]
 	publishNativeShell           *connect.Client[v1.PublishNativeShellRequest, v1.PublishNativeShellResponse]
 	syncWorkerNetwork            *connect.Client[v1.SyncWorkerNetworkRequest, v1.SyncWorkerNetworkResponse]
@@ -363,6 +385,16 @@ type workerServiceClient struct {
 	claimQuestionResponse        *connect.Client[v1.ClaimQuestionResponseRequest, v1.ClaimQuestionResponseResponse]
 	claimApprovalResponse        *connect.Client[v1.ClaimApprovalResponseRequest, v1.ClaimApprovalResponseResponse]
 	claimSteerInput              *connect.Client[v1.ClaimSteerInputRequest, v1.ClaimSteerInputResponse]
+}
+
+// ClaimNativeBackground calls delidev.v1.WorkerService.ClaimNativeBackground.
+func (c *workerServiceClient) ClaimNativeBackground(ctx context.Context, req *connect.Request[v1.ClaimNativeBackgroundRequest]) (*connect.Response[v1.ClaimNativeBackgroundResponse], error) {
+	return c.claimNativeBackground.CallUnary(ctx, req)
+}
+
+// PublishNativeBackground calls delidev.v1.WorkerService.PublishNativeBackground.
+func (c *workerServiceClient) PublishNativeBackground(ctx context.Context, req *connect.Request[v1.PublishNativeBackgroundRequest]) (*connect.Response[v1.PublishNativeBackgroundResponse], error) {
+	return c.publishNativeBackground.CallUnary(ctx, req)
 }
 
 // ClaimNativeShell calls delidev.v1.WorkerService.ClaimNativeShell.
@@ -507,6 +539,8 @@ func (c *workerServiceClient) ClaimSteerInput(ctx context.Context, req *connect.
 
 // WorkerServiceHandler is an implementation of the delidev.v1.WorkerService service.
 type WorkerServiceHandler interface {
+	ClaimNativeBackground(context.Context, *connect.Request[v1.ClaimNativeBackgroundRequest]) (*connect.Response[v1.ClaimNativeBackgroundResponse], error)
+	PublishNativeBackground(context.Context, *connect.Request[v1.PublishNativeBackgroundRequest]) (*connect.Response[v1.PublishNativeBackgroundResponse], error)
 	ClaimNativeShell(context.Context, *connect.Request[v1.ClaimNativeShellRequest]) (*connect.Response[v1.ClaimNativeShellResponse], error)
 	PublishNativeShell(context.Context, *connect.Request[v1.PublishNativeShellRequest]) (*connect.Response[v1.PublishNativeShellResponse], error)
 	SyncWorkerNetwork(context.Context, *connect.Request[v1.SyncWorkerNetworkRequest]) (*connect.Response[v1.SyncWorkerNetworkResponse], error)
@@ -545,6 +579,18 @@ type WorkerServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	workerServiceMethods := v1.File_delidev_v1_worker_proto.Services().ByName("WorkerService").Methods()
+	workerServiceClaimNativeBackgroundHandler := connect.NewUnaryHandler(
+		WorkerServiceClaimNativeBackgroundProcedure,
+		svc.ClaimNativeBackground,
+		connect.WithSchema(workerServiceMethods.ByName("ClaimNativeBackground")),
+		connect.WithHandlerOptions(opts...),
+	)
+	workerServicePublishNativeBackgroundHandler := connect.NewUnaryHandler(
+		WorkerServicePublishNativeBackgroundProcedure,
+		svc.PublishNativeBackground,
+		connect.WithSchema(workerServiceMethods.ByName("PublishNativeBackground")),
+		connect.WithHandlerOptions(opts...),
+	)
 	workerServiceClaimNativeShellHandler := connect.NewUnaryHandler(
 		WorkerServiceClaimNativeShellProcedure,
 		svc.ClaimNativeShell,
@@ -715,6 +761,10 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 	)
 	return "/delidev.v1.WorkerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case WorkerServiceClaimNativeBackgroundProcedure:
+			workerServiceClaimNativeBackgroundHandler.ServeHTTP(w, r)
+		case WorkerServicePublishNativeBackgroundProcedure:
+			workerServicePublishNativeBackgroundHandler.ServeHTTP(w, r)
 		case WorkerServiceClaimNativeShellProcedure:
 			workerServiceClaimNativeShellHandler.ServeHTTP(w, r)
 		case WorkerServicePublishNativeShellProcedure:
@@ -779,6 +829,14 @@ func NewWorkerServiceHandler(svc WorkerServiceHandler, opts ...connect.HandlerOp
 
 // UnimplementedWorkerServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedWorkerServiceHandler struct{}
+
+func (UnimplementedWorkerServiceHandler) ClaimNativeBackground(context.Context, *connect.Request[v1.ClaimNativeBackgroundRequest]) (*connect.Response[v1.ClaimNativeBackgroundResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.ClaimNativeBackground is not implemented"))
+}
+
+func (UnimplementedWorkerServiceHandler) PublishNativeBackground(context.Context, *connect.Request[v1.PublishNativeBackgroundRequest]) (*connect.Response[v1.PublishNativeBackgroundResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.PublishNativeBackground is not implemented"))
+}
 
 func (UnimplementedWorkerServiceHandler) ClaimNativeShell(context.Context, *connect.Request[v1.ClaimNativeShellRequest]) (*connect.Response[v1.ClaimNativeShellResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.WorkerService.ClaimNativeShell is not implemented"))

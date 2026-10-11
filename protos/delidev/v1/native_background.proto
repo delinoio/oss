@@ -1,0 +1,64 @@
+syntax = "proto3";
+package delidev.v1;
+
+import "delidev/v1/common.proto";
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
+enum NativeBackgroundOperation {
+  NATIVE_BACKGROUND_OPERATION_UNSPECIFIED = 0;
+  NATIVE_BACKGROUND_OPERATION_LIST = 1;
+  NATIVE_BACKGROUND_OPERATION_TERMINATE = 2;
+  NATIVE_BACKGROUND_OPERATION_CLEAN = 3;
+}
+message RequestNativeBackgroundRequest {
+  // Original session revision; never an operating-system PID.
+  Mutation mutation = 1;
+  NativeBackgroundOperation operation = 2;
+  string execution_id = 3;
+  uint64 inventory_sequence = 4;
+  // Native list identity, required only for terminate.
+  string item_id = 5;
+  string process_id = 6;
+}
+message RequestNativeBackgroundResponse {
+  Resource action = 1;
+  string request_id = 2;
+  bool replayed = 3;
+}
+message GetNativeBackgroundRequest {
+  string session_id = 1;
+  optional string action_id = 2;
+}
+message GetNativeBackgroundResponse {
+  Resource session = 1;
+  optional Resource action = 2;
+}
+message ClaimNativeBackgroundRequest {
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  string job_id = 4;
+}
+message ClaimNativeBackgroundResponse {
+  Resource action = 1;
+  bool replayed = 2;
+}
+message PublishNativeBackgroundRequest {
+  // Session ID with expected original inventory sequence (zero for first).
+  Mutation mutation = 1;
+  string machine_id = 2;
+  string instance_id = 3;
+  string job_id = 4;
+  // Closed domain.NativeBackgroundPublication; original live owner only.
+  bytes observation_json = 5;
+}
+message PublishNativeBackgroundResponse {
+  Resource session = 1;
+  optional Resource action = 2;
+  bool replayed = 3;
+}
+message NativeBackgroundControl {
+  string job_id = 1;
+  string action_id = 2;
+  uint64 revision = 3;
+}
