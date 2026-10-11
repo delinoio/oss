@@ -91,7 +91,7 @@ node crates/typeopt/benchmark/browser.mjs http://127.0.0.1:48180 /absolute/basel
 node crates/typeopt/benchmark/browser.mjs http://127.0.0.1:48182 /absolute/optimized-browser
 ```
 
-Compare the two `browser.json` observations and export summaries. The harness uses a fixed random seed and the application's download/file-input fallback; it does not validate native OS file pickers. It retains actual scene, PNG and SVG downloads for inspection. Run the same Chromium checks on both builds: draw shapes/freehand, add/edit text, move/resize, undo/redo, save/reload/import a scene, and export PNG/SVG. Compare scene data and exported results. Native platform acceptance requires actual macOS arm64 and Linux x64 execution; an emulated container is not native evidence.
+Compare the two `browser.json` observations and export summaries. The harness normalizes sketch seeds in the imported scene so PNG pixels and SVG geometry can be compared despite time-seeded drawing roughness. It uses the application's download/file-input fallback; it does not validate native OS file pickers. It retains actual scene, PNG and SVG downloads for inspection. Run the same Chromium checks on both builds: draw shapes/freehand, add/edit text, move/resize, undo/redo, save/reload/import a scene, and export PNG/SVG. Compare scene data and exported results. Native platform acceptance requires actual macOS arm64 and Linux x64 execution; an emulated container is not native evidence.
 
 ## Licensing and support
 

@@ -75,7 +75,13 @@ try {
   await page.getByTestId('main-menu-trigger').click();
   await page.getByTestId('load-button').click();
   const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: 'Load from file', exact: true }).click()]);
-  await chooser.setFiles(sceneFile); await count(3);
+  // Use fixed sketch seeds for import/export comparison. Fresh drawings use
+  // Date.now-seeded roughness, so otherwise identical runs render different paths.
+  const importFile = path.resolve(directory, 'import.excalidraw');
+  await writeFile(importFile, JSON.stringify({ ...saved, elements: saved.elements.map((element, index) => ({ ...element, seed: 12345 + index })) }));
+  await chooser.setFiles(importFile);
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem('excalidraw') || '[]')[0]?.seed === 12345);
+  await count(3);
   console.error("checked import");
   observations.import = normalize(await scene()); assert.deepEqual(observations.import, observations.redo);
   await page.keyboard.press('Escape');
