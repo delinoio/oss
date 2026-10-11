@@ -98,9 +98,15 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 	}
 	proof, path, lock, e := loadSessionDeletionProof(root, w)
 	if e != nil {
+		if config.Logger != nil {
+			config.Logger.DebugContext(ctx, "session_deletion_obligation_pending", "deletion_id", w.DeletionID, "device_id", w.DeviceID, "stage", "proof-admission", "code", domain.SafeError(e).Code)
+		}
 		return proof, e
 	}
 	defer lock.Close()
+	if config.Logger != nil {
+		config.Logger.DebugContext(ctx, "session_deletion_obligation_loaded", "deletion_id", w.DeletionID, "device_id", w.DeviceID, "removal_started", proof.RemovalStarted, "complete", proof.Complete, "workspace_retired", proof.WorkspaceRetired)
+	}
 	if proof.Complete {
 		if err := cleanupGeneratedCopies(root, w, true); err != nil {
 			return proof, err

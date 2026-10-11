@@ -1442,8 +1442,9 @@ New Fork jobs retain a bounded version-1 `fork-image-snapshot:<job-id>` with exa
 Worker cleanup progress, its operation lock and the workspace-removal proof use
 one validated original server/session/deletion/machine/device identity. Their
 bounded private paths include the session and an identity digest. The complete
-immutable work digest and original report UUID remain independent checks. Two
-historical devices on one machine cannot consume or overwrite each other's proof.
+immutable work digest and original report UUID remain independent checks. Retain
+the Worker progress, report and operation-lock metadata; retire only the bounded
+workspace-removal evidence after completion. Two historical devices on one machine cannot consume or overwrite each other's proof.
 
 The session-only Worker file remains an admission fence for preparation,
 execution, reads and Sidechat. Its current metadata grants no cleanup authority.
