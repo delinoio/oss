@@ -102,7 +102,7 @@ func (c *Client) RevertThread(ctx context.Context, action domain.ID, source Cont
 		return fail()
 	}
 	observed, e := decodeThread(wire.Thread, c.version)
-	if e != nil || observed.ID != c.thread || observed.SessionID != source.SessionID || observed.Status.Type != ThreadIdle || observed.ParentThreadID != nil || observed.ForkedFromID != nil || observed.Cwd != source.Effective.Cwd || observed.ModelProvider != source.Effective.Provider {
+	if e != nil || observed.ID != c.thread || observed.SessionID != source.SessionID || !c.matchesBoundHistoryMode(observed.HistoryMode) || observed.Status.Type != ThreadIdle || observed.ParentThreadID != nil || observed.ForkedFromID != nil || observed.Cwd != source.Effective.Cwd || observed.ModelProvider != source.Effective.Provider {
 		return fail()
 	}
 	var cursor, items *string
@@ -228,7 +228,7 @@ func (c *Client) ReconcileRevert(ctx context.Context, intent RevertIntent) (Comp
 		return CompactedCheckpoint{}, compactionUncertain()
 	}
 	thread, err := decodeThread(envelope.Thread, c.version)
-	if err != nil || thread.ID != c.thread || thread.SessionID != intent.Source.SessionID || thread.Status.Type != ThreadIdle || thread.ParentThreadID != nil || thread.ForkedFromID != nil || thread.Cwd != intent.Source.Effective.Cwd || thread.ModelProvider != intent.Source.Effective.Provider {
+	if err != nil || thread.ID != c.thread || thread.SessionID != intent.Source.SessionID || !c.matchesBoundHistoryMode(thread.HistoryMode) || thread.Status.Type != ThreadIdle || thread.ParentThreadID != nil || thread.ForkedFromID != nil || thread.Cwd != intent.Source.Effective.Cwd || thread.ModelProvider != intent.Source.Effective.Provider {
 		return CompactedCheckpoint{}, compactionUncertain()
 	}
 	var path string

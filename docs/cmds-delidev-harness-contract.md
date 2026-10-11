@@ -20,6 +20,15 @@ Codex `0.151.0` API and Claude `2.1.236` API now publish the bounded original ch
 
 ### Codex private thread lifecycle and metadata
 
+Thread binding and later native state observations share closed history-mode
+admission. Only the selected, initialized Revert profile admits paginated history;
+legacy profiles retain legacy-only admission. Omitted history mode means legacy.
+Every later observation must retain the originally bound mode, including returned
+Revert metadata, replacement continuation and explicit recovery. Unknown modes or
+changed original metadata cannot authorize input, a checkpoint or another native
+mutation. Complete retained-history proof and independent cleanup remain required
+under the [compaction contract](cmds-delidev-compaction-contract.md).
+
 The original execution process consumes the pinned closed notification envelopes for thread name, attachment created/deleted, queue, project created/updated/deleted, nullable thread project, environment connection/disconnection, prediction and read-state revisions. Validate bounds, duplicate/unknown fields, required nullable fields and each exact union before discarding descriptors. Prediction completed text may be absent, null or a bounded string; failed has no text field. Read state permits absent/null first-unread, thread-start or an exact native turn position and requires the opaque revision. Prediction source turns must belong to the original root execution. Foreign threads retain their unsupported boundary; already owned child notifications retain the existing child observation and content-free supplement routing.
 
 These private process/root observations never rewrite product names, project bindings, input queues, search, unread state, environment selection or attachment byte ownership. Do not fetch an external project/environment, import attachments or submit prediction text. The Worker accepts only content-free closed metadata kinds and publishes no product event for them. Existing recovery fences remain active.

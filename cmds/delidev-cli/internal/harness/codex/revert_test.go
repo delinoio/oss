@@ -109,7 +109,7 @@ func (f *threadFixture) handleRevert(id json.RawMessage, method string, raw json
 		}
 		page.Data = page.Data[:index]
 		f.history, _ = json.Marshal(page)
-		if f.mode == "thread-revert-lost" {
+		if f.mode == "thread-revert-lost" || f.mode == "thread-revert-paginated-lost" {
 			json.NewEncoder(os.Stdout).Encode(map[string]any{"id": id, "error": map[string]any{"code": -32603, "message": "lost acknowledgment"}})
 			return true
 		}
@@ -117,7 +117,18 @@ func (f *threadFixture) handleRevert(id json.RawMessage, method string, raw json
 		if index > 0 {
 			cursor = "revert-anchor"
 		}
-		write(id, map[string]any{"thread": f.thread, "turnsBackwardsCursor": cursor, "itemsBackwardsCursor": nil})
+		observed := f.thread
+		if f.mode == "thread-revert-paginated-result-mode-change" {
+			observed = map[string]any{}
+			for key, value := range f.thread {
+				observed[key] = value
+			}
+			observed["historyMode"] = "legacy"
+		}
+		write(id, map[string]any{"thread": observed, "turnsBackwardsCursor": cursor, "itemsBackwardsCursor": nil})
+		if f.mode == "thread-revert-paginated-current-mode-change" {
+			f.thread["historyMode"] = "legacy"
+		}
 		return true
 	}
 	return false
