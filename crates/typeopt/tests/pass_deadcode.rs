@@ -609,8 +609,12 @@ fn fields_unread_fields_and_dead_writes_are_removed() {
 #[test]
 fn fields_with_all_passes_enabled() {
     let (temp, report) = run_all(FIELDS);
-    assert!(applied(&report, FIELD) >= 6, "{report:#}");
+    // With every pass enabled, aggregate-elimination may scalar-replace the
+    // closed object literal first; the class fields are still this pass's.
+    assert!(applied(&report, FIELD) >= 4, "{report:#}");
     assert!(!emitted(temp.path(), "tracker.ts").contains("unusedInitialized"));
+    let main = emitted(temp.path(), "main.ts");
+    assert!(!main.contains("unusedProperty"), "{main}");
 }
 
 #[test]
