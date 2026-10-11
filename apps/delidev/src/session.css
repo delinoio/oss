@@ -397,7 +397,7 @@
 .session-workspace .session-diagnostics button,
 .session-diagnostics input, .session-diagnostics select,
 .session-diagnostics summary { min-height: 40px; font: inherit; }
-.session-diagnostics :is(button, input, select, summary):focus-visible {
+.session-diagnostics :is(button, summary):focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
