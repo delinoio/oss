@@ -48,6 +48,7 @@ const technicalLiterals = new Set([
   "Codex",
   "Codex CLI",
   "Claude",
+  "Claude Code CLI",
   "Grok",
   "OpenCode",
   "ChatGPT",

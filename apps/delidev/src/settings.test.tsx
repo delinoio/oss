@@ -802,6 +802,7 @@ it("shows the complete grouped navigation once and keeps its selected category i
     "AI Subscription",
     "AI API Keys",
     "API Providers",
+    "Harnesses",
     "Agent Workers",
     "Instructions",
     "Project defaults",
@@ -822,6 +823,7 @@ it("shows the complete grouped navigation once and keeps its selected category i
     "subscription-accounts",
     "api-accounts",
     "providers",
+    "harnesses",
     "agent-workers",
     "instructions",
     "project-defaults",
@@ -1643,7 +1645,7 @@ it.each(["failed", "canceled"] as const)(
     await waitFor(() =>
       expect(repositoryReads).toBeGreaterThan(previousRepositoryReads),
     );
-    expect(screen.getByText("Repository · revision 1")).toBeTruthy();
+    expect(screen.getByText("Repository · Revision: 1")).toBeTruthy();
     expect(saved).not.toHaveBeenCalled();
 
     fireEvent.click(review);
