@@ -46,6 +46,7 @@ type Config struct {
 type Client struct {
 	remoteControlRefusal *remoteControlPolicyViolation
 	eventFailureRevision uint64
+	safety               modelSafetyLedger
 
 	managedForkHistory bool
 	quotaUsed          atomic.Bool

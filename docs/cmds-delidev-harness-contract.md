@@ -127,10 +127,39 @@ populated questions retain the private extension boundary. Quota snapshots accep
 the advisory `normalModelSlug` without selecting a model. Response-usage
 `usageMetadata.metadata` stays opaque and excluded from publication, cost and
 logs; original counters and amount-evidence classification remain unchanged.
-The installed schema also declares scoped `model/verification` notifications.
-Accept only a required empty verification array bound to the original known root
-turn as discarded metadata. Populated verification remains a private extension;
-the empty observation cannot establish model eligibility or account readiness.
+Native Codex safety observations bind to the original known root thread and turn.
+Retain typed `model/verification` values, including `trustedAccessForCyber`,
+without granting account readiness, model eligibility or permissions. Required
+empty verification arrays retain their existing discarded-metadata representation.
+`model/safetyBuffering/updated` retains the original model, ordered use cases and
+reasons, buffering UI flag and required nullable faster-model descriptor.
+`turn/moderationMetadata` retains bounded JSONValue, including objects, arrays,
+scalars and explicit null. These private observations emit no product prompt,
+response, tool or input mutation. Neither buffering nor verification selects a
+model; original usage and effective settings remain authoritative.
+
+`model/rerouted` validates the original selected `fromModel`, the actual `toModel`
+and closed `highRiskCyberActivity` reason. Retain the safety decision without
+reversing it or adopting a faster-model descriptor. An actual model change pauses
+fresh sends and prevents selected-model success publication. Keep the first
+problem when earlier uncertainty exists. Original native terminal evidence remains
+available for reconciliation and independent cleanup; neither terminal completion
+nor passive observations clears the pause or replays input.
+
+Reject unknown enums, malformed or ambiguous fields and unowned root turns.
+Foreign threads and server requests retain their existing private boundaries.
+After terminal completion, accept only an exact previously retained observation
+as late private evidence; changed or unseen late observations fail validation.
+Deep-copy retained payloads. Bound each notification to 64 KiB, string descriptors
+to 4,096 bytes, descriptor arrays to 64 entries, JSON nesting to 64 levels, and
+aggregate execution evidence to 1,024 observations and 1 MiB of canonical and
+retained descriptor/metadata bytes. Late replays add no retained evidence.
+Native descriptors, moderation and reroute contents are excluded from generic
+serialization and public logs. Logs use closed family classifications only.
+These observations add no RPC, migration, fallback, readiness or input authority.
+[Native safety schemas](https://github.com/openai/codex/tree/c1382380de69521303b416720a52f42d51af6248/codex-rs/app-server-protocol/schema/typescript/v2)
+own the notification shapes and closed enum values.
+
 Managed ChatGPT execution also consumes the original root's passive
 `mcpServer/startupStatus/updated` notifications for the built-in `codex_apps`
 connector. Validate the closed starting/ready/failed/cancelled states, nullable
