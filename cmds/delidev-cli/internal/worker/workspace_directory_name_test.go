@@ -30,3 +30,40 @@ func TestNamedWorkspaceWorkerRefusesUnnegotiatedBeforeSideEffects(t *testing.T) 
 		t.Fatal("legacy omission requires new capability", err)
 	}
 }
+
+func TestNamedManagedSessionDeletionPreservesIndependentCopiesAndSource(t *testing.T) {
+	c, work, manifest, source := deletionWorkerFixture(t, domain.Worktree, "oss")
+	if filepath.Base(manifest.PrimaryPath) != "oss" {
+		t.Fatal("named deletion fixture lost accepted component")
+	}
+	manager := workspace.Manager{Root: c.Root, Logger: c.Logger}
+	other, err := manager.Prepare(context.Background(), workspace.PrepareRequest{SessionID: domain.NewID(), MachineID: work.MachineID, Type: domain.GeneralChat, Repositories: []workspace.RepositorySpec{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(manifest.PrimaryPath, "untracked.txt"), []byte("owned session"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	proof, err := deleteSessionCopies(context.Background(), c, work)
+	if err != nil || !proof.Complete {
+		t.Fatal("named permanent deletion failed", proof, err)
+	}
+	if _, err := os.Stat(manifest.PrimaryPath); !os.IsNotExist(err) {
+		t.Fatal("named owned checkout retained", err)
+	}
+	if _, err := os.Stat(other.PrimaryPath); err != nil {
+		t.Fatal("independent session removed", err)
+	}
+	if body, err := os.ReadFile(filepath.Join(source, "tracked.txt")); err != nil || string(body) != "original" {
+		t.Fatal("original local source changed", err)
+	}
+	// Simulate a crash after unlinks and before completion acknowledgement.
+	proof.Complete = false
+	if err := writeJSON(sessionDeletionPath(c.Root, work.SessionID), proof); err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := deleteSessionCopies(context.Background(), c, work)
+	if err != nil || !replayed.Complete || replayed.ReportID != proof.ReportID {
+		t.Fatal("named deletion replay lost original acknowledgement", err)
+	}
+}

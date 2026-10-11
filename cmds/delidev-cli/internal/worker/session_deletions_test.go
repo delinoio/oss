@@ -24,7 +24,7 @@ import (
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
 
-func deletionWorkerFixture(t *testing.T, kind domain.WorkspaceType) (Config, domain.SessionDeletionWork, workspace.Manifest, string) {
+func deletionWorkerFixture(t *testing.T, kind domain.WorkspaceType, names ...string) (Config, domain.SessionDeletionWork, workspace.Manifest, string) {
 	t.Helper()
 	ctx := context.Background()
 	root := filepath.Join(t.TempDir(), "worker")
@@ -55,6 +55,9 @@ func deletionWorkerFixture(t *testing.T, kind domain.WorkspaceType) (Config, dom
 		}
 		id := domain.NewID()
 		p.Repositories = []workspace.RepositorySpec{{ID: id, Checkout: source, Starting: domain.Reference{Type: domain.LocalBranch, Name: "main"}}}
+		if len(names) != 0 {
+			p.Repositories[0].DirectoryName = names[0]
+		}
 		p.PrimaryRepository = id
 	}
 	manifest, e := m.Prepare(ctx, p)

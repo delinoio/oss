@@ -330,9 +330,6 @@ func (s *Service) GetSessionFork(ctx context.Context, req *connect.Request[pb.Ge
 }
 
 func validateForkAuthority(tx *store.Tx, input domain.ForkJobInput) error {
-	if input.Retry != nil {
-		return validateSidechatRetryForkAuthority(tx, input)
-	}
 	named, err := workspace.ExecutionUsesNamedManagedDirectories(input.SourceAssignment)
 	if err != nil {
 		return err
@@ -345,6 +342,9 @@ func validateForkAuthority(tx *store.Tx, input domain.ForkJobInput) error {
 		if !slices.Contains(machine.WorkerCapabilities, domain.NamedManagedDirectoriesV1) {
 			return workspace.NamedManagedDirectoriesUnsupported()
 		}
+	}
+	if input.Retry != nil {
+		return validateSidechatRetryForkAuthority(tx, input)
 	}
 	clones, err := workspace.ForkRequiresManagedClone(input)
 	if err != nil {
