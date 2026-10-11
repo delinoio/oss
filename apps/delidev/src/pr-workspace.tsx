@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { fromMarkdown } from "mdast-util-from-markdown";
-import { useQuery } from "@connectrpc/connect-query";
+import { PRAvatarCache } from "./pr-avatar-cache";
+import { useQuery, useTransport } from "@connectrpc/connect-query";
 import { IntegrationQuery, SystemCapability, SystemQuery, type Resource } from "@delinoio/delidev-api-client";
 import { encode, items, object, text, type Document } from "./documents";
 import { actorValid, bounded, date, ItemKind, positive, QueryOperation, sha, type GitHubQuery } from "./github-query-model";
@@ -23,11 +24,17 @@ export type PRSelection = { number: string; node?: Document; scope?: Document };
 type Validate = (raw: Uint8Array, selected: Resource, query: GitHubQuery) => Document | undefined;
 const options = { retry: false as const, refetchOnWindowFocus: false, refetchOnReconnect: false, gcTime: 0, staleTime: Infinity };
 export function PRCounts({ value }: { value: unknown }) { useLocale(); const counts = changeCounts(value); return counts ? <span className="pr-counts"><span className="pr-added">+{counts.additions}</span> <span className="pr-deleted">−{counts.deletions}</span></span> : <span aria-label={copy("pr-workspace.countsUnavailable")}>—</span>; }
+const AvatarContext = createContext<PRAvatarCache | undefined>(undefined);
+function AvatarRead({ selected, reference, cache }: { selected: Resource; reference: string; cache: PRAvatarCache }) {
+  const result = useQuery(IntegrationQuery.readPullRequestAvatar, { repositoryId: selected.id, expectedRevision: selected.revision, reference }, { ...options, enabled: true });
+  useEffect(() => { if (result.error) cache.put(reference); else if (result.data) cache.put(reference, result.data.png); }, [result.data, result.error, cache, reference]);
+  return <span className="pr-avatar pr-avatar-fallback" aria-hidden="true">●</span>;
+}
 function Avatar({ selected, reference, enabled }: { selected: Resource; reference?: string; enabled: boolean }) {
-  const result = useQuery(IntegrationQuery.readPullRequestAvatar, { repositoryId: selected.id, expectedRevision: selected.revision, reference: enabled ? reference ?? "" : "" }, { ...options, enabled: enabled && Boolean(reference) });
-  const [url, setURL] = useState<string>();
-  useEffect(() => { if (!enabled || !result.data?.png.length || result.data.png.length > 128 << 10) return; const url = URL.createObjectURL(new Blob([new Uint8Array(result.data.png)], { type: "image/png" })); setURL(url); return () => { URL.revokeObjectURL(url); setURL(undefined); }; }, [result.data, enabled]);
-  return url && !result.error ? <img className="pr-avatar" src={url} alt="" /> : <span className="pr-avatar pr-avatar-fallback" aria-hidden="true">●</span>;
+  const cache = useContext(AvatarContext)!; useSyncExternalStore(cache.subscribe, cache.snapshot);
+  const url = reference && enabled ? cache.read(reference) : undefined;
+  if (url) return <img className="pr-avatar" src={url} alt="" onError={() => cache.fail(reference!)} />;
+  return reference && enabled && !cache.attempted(reference) ? <AvatarRead selected={selected} reference={reference} cache={cache} /> : <span className="pr-avatar pr-avatar-fallback" aria-hidden="true">●</span>;
 }
 function validWorkspaceItem(item: Document, scope: Document) {
   const repository = object(scope.repository);
@@ -65,7 +72,7 @@ export function PRWorkspaceRows({ pages, selected, enabled, chosen, choose, obse
   </section>;
 }
 
-type MarkdownNode = { type: string; value?: string; depth?: number; position?: { start: { offset?: number }; end: { offset?: number } }; children?: MarkdownNode[] };
+type MarkdownNode = { type: string; value?: string; depth?: number; ordered?: boolean; position?: { start: { offset?: number }; end: { offset?: number } }; children?: MarkdownNode[] };
 export function InertMarkdown({ source }: { source: string }) {
   const tree = useMemo(() => fromMarkdown(source) as MarkdownNode, [source]);
   const render = (node: MarkdownNode, index: number): ReactNode => {
@@ -73,7 +80,7 @@ export function InertMarkdown({ source }: { source: string }) {
     switch (node.type) {
       case "root": return <div key={index}>{children}</div>; case "text": return node.value;
       case "paragraph": return <p key={index}>{children}</p>; case "heading": return <div key={index} role="heading" aria-level={Math.min(6, Math.max(1, node.depth ?? 1))}>{children}</div>;
-      case "list": return <ul key={index}>{children}</ul>; case "listItem": return <li key={index}>{children}</li>;
+      case "list": return node.ordered ? <ol key={index}>{children}</ol> : <ul key={index}>{children}</ul>; case "listItem": return <li key={index}>{children}</li>;
       case "emphasis": return <em key={index}>{children}</em>; case "strong": return <strong key={index}>{children}</strong>;
       case "inlineCode": return <code key={index}>{node.value}</code>; case "code": return <pre key={index}><code>{node.value}</code></pre>;
       case "break": return <br key={index} />; default: return <span key={index} className="pr-inert-source">{raw}</span>;
@@ -83,7 +90,7 @@ export function InertMarkdown({ source }: { source: string }) {
 }
 export function PRDiff({ value, item }: { value: Document; item: Document }) {
   const patch = text(value.patch), sections = patch.split(/(?=^diff --git )/m);
-  return <><div className="pr-diff">{sections.map((section, index) => { let old = 0, next = 0; const lines = section.split("\n"), supported = section.startsWith("diff --git ") && !section.includes("GIT binary patch") && !section.includes("Binary files "); return <section key={index}>{supported ? lines.map((line, index) => { const match = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line); if (match) { old = Number(match[1]); next = Number(match[2]); } const code = !match && old > 0 && next > 0 && /^[ +\-]/.test(line) && !line.startsWith("+++") && !line.startsWith("---"), deleted = code && line.startsWith("-"), added = code && line.startsWith("+"); return <div key={index} className="pr-diff-line" data-kind={added ? "added" : deleted ? "deleted" : "context"}><span>{code && !added ? old++ : ""}</span><span>{code && !deleted ? next++ : ""}</span><code>{line}</code></div>; }) : <pre>{section}</pre>}</section>; })}</div><details><summary>{copy("pr-workspace.snapshot")}</summary><p>{text(item.base_sha)} → {text(item.head_sha)}</p><p>SHA-256: {text(value.digest)}</p><pre>{patch}</pre></details></>;
+  return <><div className="pr-diff">{sections.map((section, index) => { let old = 0, next = 0, hunk = false; const lines = section.split("\n"), supported = section.startsWith("diff --git ") && !section.includes("GIT binary patch") && !section.includes("Binary files "); return <section key={index}>{supported ? <h4>{lines[0]}</h4> : null}{supported ? lines.map((line, index) => { const match = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line); if (match) { old = Number(match[1]); next = Number(match[2]); hunk = true; } const code = !match && hunk && /^[ +\-]/.test(line) && !line.startsWith("+++") && !line.startsWith("---"), deleted = code && line.startsWith("-"), added = code && line.startsWith("+"); return <div key={index} className="pr-diff-line" data-kind={added ? "added" : deleted ? "deleted" : "context"}><span>{code && !added ? old++ : ""}</span><span>{code && !deleted ? next++ : ""}</span><code>{line}</code></div>; }) : <pre>{section}</pre>}</section>; })}</div><details><summary>{copy("pr-workspace.snapshot")}</summary><p>{text(item.base_sha)} → {text(item.head_sha)}</p><p>SHA-256: {text(value.digest)}</p><pre>{patch}</pre></details></>;
 }
 function Commits({ selected, item, remote, active }: { selected: Resource; item: Document; remote: Document; active: boolean }) {
   useLocale(); const scope = JSON.stringify([selected.id, selected.revision.toString(), remote.id, item.id, item.base_sha, item.head_sha]);
@@ -98,11 +105,11 @@ enum Tab { Description = "description", Diff = "diff", Reviews = "reviews", Comm
 const tabs = [Tab.Description, Tab.Diff, Tab.Reviews, Tab.Commits];
 function Detail({ selected, selection, supported, active, back, validate, reload }: { selected: Resource; selection: PRSelection; supported: boolean; active: boolean; back: () => void; validate: Validate; reload: () => void }) {
   useLocale(); const [tab, setTab] = useState(Tab.Description), [activated, setActivated] = useState(new Set([Tab.Description])), id = useId(), buttons = useRef<(HTMLButtonElement | null)[]>([]);
-  const query = { kind: ItemKind.PullRequest, operation: QueryOperation.Detail, number: selection.number }, detail = useQuery(IntegrationQuery.queryRepositoryIntegration, { repositoryId: selected.id, schemaVersion: 1, queryJson: encode(query) }, { ...options, enabled: active });
+  const query = { kind: ItemKind.PullRequest, operation: QueryOperation.Detail, number: selection.number }, detail = useQuery(IntegrationQuery.queryRepositoryIntegration, { repositoryId: selected.id, schemaVersion: 1, queryJson: encode(query) }, { ...options, staleTime: 0, enabled: active });
   const value = detail.data?.schemaVersion === 1 ? validate(detail.data.documentJson, selected, query) : undefined, item = object(items(value?.items)[0]), remote = object(value?.repository);
   const diffQuery = { ...query, operation: QueryOperation.Diff }, feedbackQuery = { ...query, operation: QueryOperation.Feedback };
-  const diff = useQuery(IntegrationQuery.queryRepositoryIntegration, { repositoryId: selected.id, schemaVersion: 1, queryJson: encode(diffQuery) }, { ...options, enabled: active && Boolean(value) && activated.has(Tab.Diff) });
-  const reviews = useQuery(IntegrationQuery.queryRepositoryIntegration, { repositoryId: selected.id, schemaVersion: 1, queryJson: encode(feedbackQuery) }, { ...options, enabled: active && Boolean(value) && activated.has(Tab.Reviews) });
+  const diff = useQuery(IntegrationQuery.queryRepositoryIntegration, { repositoryId: selected.id, schemaVersion: 1, queryJson: encode(diffQuery) }, { ...options, staleTime: 0, enabled: active && Boolean(value) && activated.has(Tab.Diff) });
+  const reviews = useQuery(IntegrationQuery.queryRepositoryIntegration, { repositoryId: selected.id, schemaVersion: 1, queryJson: encode(feedbackQuery) }, { ...options, staleTime: 0, enabled: active && Boolean(value) && activated.has(Tab.Reviews) });
   const diffValue = diff.data?.schemaVersion === 1 ? validate(diff.data.documentJson, selected, diffQuery) : undefined, reviewValue = reviews.data?.schemaVersion === 1 ? validate(reviews.data.documentJson, selected, feedbackQuery) : undefined;
   const original = object(selection.node?.item), same = value && selection.scope && object(selection.scope.repository).id === remote.id && original.id === item.id && original.base_sha === item.base_sha && original.head_sha === item.head_sha;
   const sameTab = (observation?: Document) => { const p = object(items(observation?.items)[0]); return observation && object(observation.repository).id === remote.id && p.id === item.id && p.base_sha === item.base_sha && p.head_sha === item.head_sha; };
@@ -117,10 +124,10 @@ function Detail({ selected, selection, supported, active, back, validate, reload
   </section>;
 }
 export function PullRequestWorkspace({ selected, active, validate, list }: { selected: Resource; active: boolean; validate: Validate; list: (options: { supported: boolean; selection?: string; choose: (selection: PRSelection, button: HTMLButtonElement) => void; back: () => void; enrich: (scope: Document) => void }) => ReactNode }) {
-  useLocale(); const [selection, setSelection] = useState<PRSelection>(), [epoch, setEpoch] = useState(0), opener = useRef<HTMLButtonElement | undefined>(undefined), body = useRef<HTMLDivElement>(null), [wide, setWide] = useState(false);
+  useLocale(); const transport = useTransport(), avatars = useMemo(() => new PRAvatarCache(), [transport]); useEffect(() => () => avatars.clear(), [avatars]); const [selection, setSelection] = useState<PRSelection>(), [epoch, setEpoch] = useState(0), opener = useRef<HTMLButtonElement | undefined>(undefined), body = useRef<HTMLDivElement>(null), [wide, setWide] = useState(false);
   const status = useQuery(SystemQuery.getStatus, {}, { ...options, enabled: active }); const supported = Boolean(status.data?.capabilities.includes(SystemCapability.PULL_REQUEST_WORKSPACE_V1));
   useLayoutEffect(() => { if (!body.current || typeof ResizeObserver === "undefined") return; const observer = new ResizeObserver(([entry]) => setWide(entry!.contentRect.width >= 900)); observer.observe(body.current); return () => observer.disconnect(); }, []);
   const enrich = useCallback((scope: Document) => { setSelection(old => { if (!old || old.scope === scope) return old; const node = items(scope.nodes).map(object).find(n => object(n.item).number === old.number); return node ? { ...old, node, scope } : old; }); }, []);
   const back = () => { setSelection(undefined); requestAnimationFrame(() => { if (opener.current?.isConnected) opener.current.focus({ preventScroll: true }); }); };
-  return <div ref={body} className="pr-workspace" data-wide={wide} data-selected={Boolean(selection)}><div className="pr-workspace-list" hidden={!wide && Boolean(selection)}>{list({ supported, selection: selection?.number, choose: (selection, button) => { opener.current = button; setSelection(selection); }, back, enrich })}</div><div className="pr-workspace-selected" hidden={!wide && !selection}>{selection ? <Detail key={`${selection.number}:${epoch}`} reload={() => setEpoch(e => e + 1)} selected={selected} selection={selection} supported={supported} active={active} back={back} validate={validate} /> : <p className="pr-workspace-prompt">{copy("pr-workspace.select")}</p>}</div></div>;
+  return <AvatarContext.Provider value={avatars}><div ref={body} className="pr-workspace" data-wide={wide} data-selected={Boolean(selection)}><div className="pr-workspace-list" hidden={!wide && Boolean(selection)}>{list({ supported, selection: selection?.number, choose: (selection, button) => { opener.current = button; setSelection(selection); }, back, enrich })}</div><div className="pr-workspace-selected" hidden={!wide && !selection}>{selection ? <Detail key={`${selection.number}:${epoch}`} reload={() => setEpoch(e => e + 1)} selected={selected} selection={selection} supported={supported} active={active} back={back} validate={validate} /> : <p className="pr-workspace-prompt">{copy("pr-workspace.select")}</p>}</div></div></AvatarContext.Provider>;
 }

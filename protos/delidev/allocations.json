@@ -13306,133 +13306,152 @@
       "kind": "message",
       "declaration": "GetPullRequestWorkspaceRequest",
       "member": "repository_id",
-      "number": 1
+      "number": 1,
+      "newDeclaration": true
     },
     {
       "issue": 2678,
       "kind": "message",
       "declaration": "GetPullRequestWorkspaceRequest",
       "member": "expected_revision",
-      "number": 2
+      "number": 2,
+      "newDeclaration": true
     },
     {
       "issue": 2678,
       "kind": "message",
       "declaration": "GetPullRequestWorkspaceRequest",
       "member": "seed_numbers",
-      "number": 3
+      "number": 3,
+      "newDeclaration": true
     },
     {
       "issue": 2678,
       "kind": "message",
       "declaration": "GetPullRequestWorkspaceResponse",
       "member": "schema_version",
-      "number": 1
+      "number": 1,
+      "newDeclaration": true
     },
     {
       "issue": 2678,
       "kind": "message",
       "declaration": "GetPullRequestWorkspaceResponse",
       "member": "document_json",
-      "number": 2
+      "number": 2,
+      "newDeclaration": true
     },
     {
       "issue": 2678,
       "kind": "message",
       "declaration": "ListPullRequestCommitsRequest",
       "member": "repository_id",
-      "number": 1
+      "number": 1,
+      "newDeclaration": true
     },
     {
       "issue": 2678,
       "kind": "message",
       "declaration": "ListPullRequestCommitsRequest",
       "member": "expected_revision",
-      "number": 2
+      "number": 2,
+      "newDeclaration": true
     },
     {
       "issue": 2678,
       "kind": "message",
       "declaration": "ListPullRequestCommitsRequest",
       "member": "number",
-      "number": 3
+      "number": 3,
+      "newDeclaration": true
     },
     {
       "issue": 2678,
       "kind": "message",
       "declaration": "ListPullRequestCommitsRequest",
       "member": "pull_request_id",
-      "number": 4
+      "number": 4,
+      "newDeclaration": true
     },
     {
       "issue": 2678,
       "kind": "message",
       "declaration": "ListPullRequestCommitsRequest",
       "member": "remote_repository_id",
-      "number": 5
+      "number": 5,
+      "newDeclaration": true
     },
     {
       "issue": 2678,
       "kind": "message",
       "declaration": "ListPullRequestCommitsRequest",
       "member": "base_sha",
-      "number": 6
+      "number": 6,
+      "newDeclaration": true
     },
     {
       "issue": 2678,
       "kind": "message",
       "declaration": "ListPullRequestCommitsRequest",
       "member": "head_sha",
-      "number": 7
+      "number": 7,
+      "newDeclaration": true
     },
     {
       "issue": 2678,
       "kind": "message",
       "declaration": "ListPullRequestCommitsRequest",
       "member": "page_token",
-      "number": 8
+      "number": 8,
+      "newDeclaration": true
     },
     {
       "issue": 2678,
       "kind": "message",
       "declaration": "ListPullRequestCommitsResponse",
       "member": "schema_version",
-      "number": 1
+      "number": 1,
+      "newDeclaration": true
     },
     {
       "issue": 2678,
       "kind": "message",
       "declaration": "ListPullRequestCommitsResponse",
       "member": "document_json",
-      "number": 2
+      "number": 2,
+      "newDeclaration": true
     },
     {
       "issue": 2678,
       "kind": "message",
       "declaration": "ReadPullRequestAvatarRequest",
       "member": "repository_id",
-      "number": 1
+      "number": 1,
+      "newDeclaration": true
     },
     {
       "issue": 2678,
       "kind": "message",
       "declaration": "ReadPullRequestAvatarRequest",
       "member": "expected_revision",
-      "number": 2
+      "number": 2,
+      "newDeclaration": true
     },
     {
       "issue": 2678,
       "kind": "message",
       "declaration": "ReadPullRequestAvatarRequest",
       "member": "reference",
-      "number": 3
+      "number": 3,
+      "newDeclaration": true
     },
     {
       "issue": 2678,
       "kind": "message",
       "declaration": "ReadPullRequestAvatarResponse",
       "member": "png",
-      "number": 1
+      "number": 1,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [

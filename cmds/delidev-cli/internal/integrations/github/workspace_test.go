@@ -184,3 +184,67 @@ func TestAvatarRedirectOversizeAndMalformed(t *testing.T) {
 		})
 	}
 }
+
+func TestPRCommitsOwnCountsFullMessageNullActorAndHeadFence(t *testing.T) {
+	c := workspaceFixture(t, map[int][2]string{1: {"main", "feature"}}, nil)
+	base := c.http.Transport
+	graphCalls := 0
+	c.http.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != "/graphql" {
+			return base.RoundTrip(r)
+		}
+		graphCalls++
+		if r.Method != "POST" || r.Header.Get("Authorization") != "Bearer private-fixture-pat" {
+			t.Error("unscoped GraphQL commit read")
+		}
+		person := map[string]any{"name": "Original author", "date": "2026-10-11T00:00:00Z", "user": nil, "email": "private-fixture-email@example.invalid"}
+		commit := map[string]any{
+			"oid": strings.Repeat("c", 40), "message": "Original Unicode 한글 headline\n\nComplete message body", "additions": 8, "deletions": 3, "author": person, "committer": person,
+			"parents": map[string]any{"pageInfo": map[string]any{"hasNextPage": false}, "nodes": []any{map[string]any{"oid": strings.Repeat("b", 40)}}},
+		}
+		node := map[string]any{
+			"id": "PR_1", "databaseId": 1001, "number": 1, "baseRefOid": repositorySHA, "headRefOid": strings.Repeat("b", 40),
+			"repository": map[string]any{"id": "R_37", "databaseId": 37},
+			"commits":    map[string]any{"pageInfo": map[string]any{"hasNextPage": false, "endCursor": nil}, "nodes": []any{map[string]any{"commit": commit}}},
+		}
+		raw, _ := json.Marshal(map[string]any{"data": map[string]any{"node": node}})
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(bytes.NewReader(raw))}, nil
+	})
+	value, e := c.Commits(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", "1", "1001", "37", repositorySHA, strings.Repeat("b", 40), "")
+	if e != nil {
+		t.Fatal(e)
+	}
+	if len(value.Value.Commits) != 1 || value.Value.Commits[0].Counts.Additions != "8" || value.Value.Commits[0].Author.Actor != nil || !strings.Contains(value.Value.Commits[0].Message, "Complete message body") {
+		t.Fatal("commit observations replaced or truncated")
+	}
+	raw, _ := json.Marshal(value.Value)
+	if bytes.Contains(raw, []byte("private-fixture-email")) {
+		t.Fatal("email leaked")
+	}
+	if _, e = c.Commits(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", "1", "1001", "37", repositorySHA, strings.Repeat("d", 40), ""); e == nil || graphCalls != 1 {
+		t.Fatal("changed head reached commit connection", e, graphCalls)
+	}
+}
+func TestWorkspaceProviderPageBudgetAndForkFence(t *testing.T) {
+	refs := map[int][2]string{}
+	for n := 1; n <= 30; n++ {
+		refs[n] = [2]string{"s" + strconv.Itoa(n-1), "s" + strconv.Itoa(n)}
+	}
+	c := workspaceFixture(t, refs, nil)
+	base := c.http.Transport
+	calls := 0
+	c.http.Transport = transportFunc(func(r *http.Request) (*http.Response, error) { calls++; return base.RoundTrip(r) })
+	v, e := c.Workspace(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", []string{"1"})
+	if e != nil || v.State == domain.PRWorkspaceComplete || calls > 40 {
+		t.Fatal("capacity claimed complete or exceeded page budget", calls, e, v.State)
+	}
+	c = workspaceFixture(t, map[int][2]string{1: {"main", "feature"}, 2: {"feature", "child"}}, func(_ int, item map[string]any) {
+		if item["number"].(int) == 2 {
+			item["head"].(map[string]any)["repo"] = nil
+		}
+	})
+	v, e = c.Workspace(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", []string{"1", "2"})
+	if e != nil || v.State != domain.PRWorkspaceIncomplete || len(v.Edges) != 0 {
+		t.Fatal("missing fork identity granted graph edge", e, v.State)
+	}
+}
