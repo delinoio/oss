@@ -1539,12 +1539,16 @@ impl Builder<'_, '_> {
                 u.tokens,
             );
         }
-        // Values joined with unknown ones cannot be renamed alone, and every
-        // cell joins the objects it may hold.
+        // Values joined with unknown ones cannot be renamed alone (unknown
+        // code may read an escaped object's fields, including key literals
+        // stored there), and every cell joins the objects it may hold.
         for cell in &graph.cells {
             let mut first = None;
             for &value in &cell.values {
                 if !graph.is_object(value) {
+                    if cell.unknown {
+                        token_escaped[(value - graph.objects) as usize] = true;
+                    }
                     continue;
                 }
                 if cell.unknown {

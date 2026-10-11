@@ -650,6 +650,10 @@ fn finite_keys_preserve_unproven_and_observable_keys() {
         "const table = { firstEntryName: 1, secondEntryName: 2 };\nconst external: any = \
          JSON.parse('{\"firstEntryName\":5}');\nconst pick = Math.random() < 2 ? 'firstEntryName' \
          : 'secondEntryName';\nconsole.log(table[pick], external[pick]);\nexport {};\n",
+        // The key is stored in an object that escapes.
+        "const table = { firstEntryName: 1, secondEntryName: 2 };\nconst pick = Math.random() < 2 \
+         ? 'firstEntryName' : 'secondEntryName';\nconst holder = { key: pick \
+         };\nconsole.log(table[pick], JSON.stringify(holder));\nexport {};\n",
         // Comparison observes the key text.
         "const table = { firstEntryName: 1, secondEntryName: 2 };\nconst pick = Math.random() > 2 \
          ? 'firstEntryName' : 'secondEntryName';\nconsole.log(pick === 'firstEntryName', \
