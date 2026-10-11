@@ -29,6 +29,8 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
+  type RefObject,
 } from "react";
 
 import {
@@ -46,6 +48,7 @@ import { bounded, date, positive, uuid } from "./github-query-model";
 import { useRetainedMutation, useRetainedMutationIntents } from "./mutation";
 import { OpenPRProblemHistory } from "./pr-problems";
 import { Problem } from "./ui";
+import { resolveScrollRoot } from "./scroll-continuation";
 
 const readOptions = {
   retry: false,
@@ -175,6 +178,75 @@ function PendingUnlinks({
   ) : null;
 }
 
+function useRowVisible(
+  row: RefObject<HTMLElement | null>,
+  root: RefObject<HTMLElement | null>,
+  active: boolean,
+) {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const element = row.current,
+      container = resolveScrollRoot(root.current);
+    if (!active || !element || !container) {
+      setVisible(false);
+      return;
+    }
+    const hidden = () =>
+      document.visibilityState === "hidden" ||
+      Boolean(element.closest("[hidden], [inert], [aria-hidden='true']")) ||
+      (() => {
+        for (
+          let parent: HTMLElement | null = element;
+          parent;
+          parent = parent.parentElement
+        )
+          if (parent instanceof HTMLDetailsElement && !parent.open) return true;
+        return false;
+      })();
+    let intersecting = false;
+    const update = () => setVisible(active && intersecting && !hidden());
+    const boundsCheck = () => {
+      const viewport = container.getBoundingClientRect(),
+        position = element.getBoundingClientRect();
+      intersecting =
+        container.clientHeight > 0 &&
+        position.bottom > viewport.top &&
+        position.top < viewport.bottom;
+      update();
+    };
+    const observer =
+      typeof IntersectionObserver === "function"
+        ? new IntersectionObserver(
+            (entries) => {
+              const entry = entries.find((item) => item.target === element);
+              if (entry) {
+                intersecting =
+                  entry.isIntersecting && entry.intersectionRatio > 0;
+                update();
+              }
+            },
+            { root: container },
+          )
+        : undefined;
+    observer?.observe(element);
+    if (!observer) {
+      container.addEventListener("scroll", boundsCheck, { passive: true });
+      window.addEventListener("resize", boundsCheck);
+      boundsCheck();
+    }
+    document.addEventListener("visibilitychange", update);
+    return () => {
+      observer?.disconnect();
+      if (!observer) {
+        container.removeEventListener("scroll", boundsCheck);
+        window.removeEventListener("resize", boundsCheck);
+      }
+      document.removeEventListener("visibilitychange", update);
+    };
+  }, [active, root, row]);
+  return visible;
+}
+
 function LinkRow({
   row,
   value,
@@ -183,18 +255,23 @@ function LinkRow({
   diagnosticsTarget,
   limiter,
   active,
+  root,
 }: {
   limiter: PRReadLimiter;
   active: boolean;
+  root: RefObject<HTMLElement | null>;
   row: Resource;
   value: Document;
   sessionId: string;
   refreshed: () => void;
   diagnosticsTarget?: HTMLElement | null;
 }) {
+  const article = useRef<HTMLElement>(null);
+  const rowVisible = useRowVisible(article, root, active);
   const remove = usePRUnlink(sessionId, row.id, refreshed);
   return (
     <article
+      ref={article}
       aria-label={copy("session-pull-requests.linkedPr_299ef1", {
         v0: text(value.owner),
         v1: text(value.name),
@@ -206,7 +283,7 @@ function LinkRow({
           row={row}
           association={value}
           limiter={limiter}
-          active={active}
+          active={active && rowVisible}
           diagnosticsTarget={diagnosticsTarget}
         />
         {text(value.owner)}/{text(value.name)}#{text(value.number)}
@@ -414,6 +491,7 @@ function RetainedLinks({
                 row={row}
                 limiter={limiter}
                 active={active && !blocked && !list.error && !list.loading}
+                root={root}
                 value={readSessionPR(row, session.id)!}
                 sessionId={session.id}
                 refreshed={refresh}
