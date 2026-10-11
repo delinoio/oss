@@ -5686,7 +5686,6 @@ change a successor connection. Failed or uncertain outcomes retain authoritative
 presentation. Existing manual Inbox controls and native badge fences are unchanged.
 No new user control, setting or banner is introduced.
 
-
 ### Codex reasoning summary disclosure
 
 Ordinary Session and General Chat retain Codex reasoning in its original resource and
