@@ -1,4 +1,5 @@
 import { useSessionNameEditor } from "./session-name-editor";
+import { SidebarPaneMotion, type SidebarPresentation } from "./sidebar-motion";
 import { ProjectSettingsMenu } from "./project-settings-menu";
 import {
   DisclosureButton,
@@ -1000,6 +1001,9 @@ function ProjectGroup({
 
 export function Sidebar({
   collapsed = false,
+  motionReady = false,
+  motionScope,
+  presentationChanged,
   compactFocusRef,
   focusHandoffPending = false,
   openCommandMenu,
@@ -1022,6 +1026,9 @@ export function Sidebar({
   setDrawerOpen = () => undefined,
 }: {
   collapsed?: boolean;
+  motionReady?: boolean;
+  motionScope?: object;
+  presentationChanged?: (value: SidebarPresentation) => void;
   compactFocusRef?: RefObject<HTMLButtonElement | null>;
   focusHandoffPending?: boolean;
   openCommandMenu?: () => void;
@@ -1054,6 +1061,27 @@ export function Sidebar({
   const rail = useRef<HTMLElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const modalDrawer = useRef(false);
+  const motion = useRef<SidebarPaneMotion | undefined>(undefined);
+  const presentationVersion = useRef(0);
+  const modalFocusFrame = useRef<number | undefined>(undefined);
+  const priorPresentation = useRef<{
+    collapsed: boolean;
+    compact: boolean;
+    drawerOpen: boolean;
+    ready: boolean;
+    width: number;
+    reduced: boolean;
+    surface: Surface;
+    scope?: object;
+    connectionReady: boolean;
+  }>(undefined);
+  const [motionEnvironment, setMotionEnvironment] = useState(() => ({
+    width: window.matchMedia?.("(max-width: 1100px)").matches ? 256 : 288,
+    reduced:
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? true,
+  }));
+  const presentationCallback = useRef(presentationChanged);
+  presentationCallback.current = presentationChanged;
   const scrollSurface = useRef(surface);
   const surfaceScroll = useRef(new Map<Surface, number>());
   const [home] = useState(() => new HomeNavigation());
@@ -1146,6 +1174,33 @@ export function Sidebar({
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
   }, []);
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const width = window.matchMedia("(max-width: 1100px)");
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () =>
+      setMotionEnvironment({
+        width: width.matches ? 256 : 288,
+        reduced: reduced.matches,
+      });
+    update();
+    width.addEventListener("change", update);
+    reduced.addEventListener("change", update);
+    return () => {
+      width.removeEventListener("change", update);
+      reduced.removeEventListener("change", update);
+    };
+  }, []);
+  useLayoutEffect(
+    () => () => {
+      motion.current?.dispose();
+      if (modalFocusFrame.current !== undefined)
+        cancelAnimationFrame(modalFocusFrame.current);
+      motion.current = undefined;
+      priorPresentation.current = undefined;
+    },
+    [],
+  );
   useLayoutEffect(() => {
     const element = drawer.current;
     if (!element) return;
@@ -1166,10 +1221,32 @@ export function Sidebar({
         preventScroll: true,
       });
     }
-    element.hidden = hidden;
     element.inert = hidden;
     element.setAttribute("aria-hidden", String(hidden));
     if (compact) {
+      if (motion.current) {
+        presentationVersion.current = motion.current.dispose();
+        presentationCallback.current?.({
+          generation: presentationVersion.current,
+          settled: true,
+          collapsed,
+          focusAllowed: Boolean(priorPresentation.current?.compact),
+        });
+      }
+      motion.current = undefined;
+      if (
+        priorPresentation.current?.compact &&
+        priorPresentation.current.drawerOpen !== drawerOpen
+      ) {
+        presentationVersion.current++;
+        presentationCallback.current?.({
+          generation: presentationVersion.current,
+          settled: true,
+          collapsed,
+          focusAllowed: Boolean(priorPresentation.current?.compact),
+        });
+      }
+      element.hidden = hidden;
       if (drawerOpen) {
         if (element.open && !modalDrawer.current) element.close();
         if (!element.open) {
@@ -1185,15 +1262,63 @@ export function Sidebar({
       const wasModal = modalDrawer.current;
       if (wasModal && element.open) element.close();
       modalDrawer.current = false;
-      if (collapsed) element.removeAttribute("open");
-      else element.setAttribute("open", "");
+      const app = element.closest<HTMLElement>(".app");
+      const content = element.querySelector<HTMLElement>(".sidebar-pane");
+      const before = priorPresentation.current;
+      const changed =
+        !before ||
+        before.collapsed !== collapsed ||
+        before.compact !== compact ||
+        before.ready !== motionReady ||
+        before.width !== motionEnvironment.width ||
+        before.reduced !== motionEnvironment.reduced ||
+        before.surface !== surface ||
+        before.scope !== motionScope ||
+        before.connectionReady !== connectionReady;
+      if (app && content) {
+        motion.current ??= new SidebarPaneMotion(
+          app,
+          element,
+          content,
+          (value) => {
+            presentationVersion.current = value.generation;
+            presentationCallback.current?.(value);
+          },
+          presentationVersion.current,
+        );
+        const admittedChange = Boolean(
+          before &&
+          before.ready &&
+          motionReady &&
+          !before.compact &&
+          before.width === motionEnvironment.width &&
+          before.reduced === motionEnvironment.reduced &&
+          before.surface === surface &&
+          before.scope === motionScope &&
+          before.connectionReady === connectionReady &&
+          before.collapsed !== collapsed,
+        );
+        if (changed)
+          motion.current.present(
+            collapsed,
+            motionEnvironment.width,
+            admittedChange && !motionEnvironment.reduced,
+            admittedChange,
+          );
+      } else {
+        element.hidden = hidden;
+        if (collapsed) element.removeAttribute("open");
+        else element.setAttribute("open", "");
+      }
       if (wasModal) {
         setDrawerOpen(false);
-        requestAnimationFrame(() => {
+        const owned = presentationVersion.current;
+        modalFocusFrame.current = requestAnimationFrame(() => {
           // Closing the native modal can restore its old opener. Reapply a
           // visible wide target unless compact reopened or a header handoff
           // owns focus for the new destination.
           if (
+            owned !== presentationVersion.current ||
             window.matchMedia("(max-width: 759px)").matches ||
             focusHandoffPending
           )
@@ -1206,6 +1331,17 @@ export function Sidebar({
         });
       }
     }
+    priorPresentation.current = {
+      collapsed,
+      compact,
+      drawerOpen,
+      ready: motionReady,
+      width: motionEnvironment.width,
+      reduced: motionEnvironment.reduced,
+      surface,
+      scope: motionScope,
+      connectionReady,
+    };
   }, [
     compact,
     drawerOpen,
@@ -1213,6 +1349,11 @@ export function Sidebar({
     focusHandoffPending,
     setDrawerOpen,
     compactFocusRef,
+    motionReady,
+    motionEnvironment,
+    motionScope,
+    surface,
+    connectionReady,
   ]);
   useLayoutEffect(() => {
     const container = list.current;

@@ -3799,6 +3799,9 @@ it(
     const initialPane = pane,
       initialOutlet = pane.querySelector(".sidebar-surface-outlet");
     fireEvent.keyDown(draft, { key: "b", ctrlKey: true });
+    await waitFor(() =>
+      expect(document.querySelector(".app.sidebar-collapsed")).toBeTruthy(),
+    );
     await waitFor(() => expect(pane.hidden).toBe(true));
     expect(pane.hidden).toBe(true);
     expect(pane.inert).toBe(true);
@@ -3809,6 +3812,9 @@ it(
       "original draft",
     ]);
     fireEvent.keyDown(draft, { key: "b", ctrlKey: true });
+    await waitFor(() =>
+      expect(document.querySelector(".app.sidebar-collapsed")).toBeNull(),
+    );
     await waitFor(() => expect(pane.hidden).toBe(false));
     expect(document.querySelector(".sidebar-pane-dialog")).toBe(initialPane);
     expect(pane.querySelector(".sidebar-surface-outlet")).toBe(initialOutlet);
@@ -3821,6 +3827,9 @@ it(
     const rail = screen.getByRole("button", { name: "Sessions" });
     expect(document.activeElement).toBe(rail);
     fireEvent.keyDown(rail, { key: "b", ctrlKey: true });
+    await waitFor(() =>
+      expect(document.querySelector(".app.sidebar-collapsed")).toBeNull(),
+    );
     await waitFor(() => expect(pane.hidden).toBe(false));
     expect(document.activeElement).toBe(rail);
     expectNoNavigationWrites(value);
@@ -3844,6 +3853,9 @@ it(
       ".sidebar-pane-dialog",
     )!;
     fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
+    await waitFor(() =>
+      expect(document.querySelector(".app.sidebar-collapsed")).toBeTruthy(),
+    );
     await waitFor(() => expect(pane.hidden).toBe(true));
     act(() => resize(true));
     fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
@@ -3856,6 +3868,7 @@ it(
     ).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Close navigation" }));
     act(() => resize(false));
+    expect(document.querySelector(".app.sidebar-collapsed")).toBeTruthy();
     expect(pane.hidden).toBe(true);
     expectNoNavigationWrites(value);
   },
@@ -3943,3 +3956,145 @@ it(
   },
   fullShellTimeoutMs,
 );
+
+it("Search focus waits for its opening generation and cannot survive reversal or navigation", async () => {
+  viewport();
+  const flushFrames = animationFrames();
+  const value = fixture();
+  const view = render(
+    <SidebarProvider bridge={memorySidebarBridge()}>
+      <App transport={value.transport} />
+    </SidebarProvider>,
+  );
+  await act(async () => {});
+  fireEvent.click(headerAction("Search"));
+  const input = screen.getByRole("textbox", { name: "Search conversations" });
+  flushFrames();
+  const main = screen.getByRole("main");
+  main.focus();
+  const focused = vi.fn();
+  input.addEventListener("focus", focused);
+  const original = getComputedStyle;
+  let rendered = 288;
+  vi.stubGlobal("getComputedStyle", (element: Element) =>
+    element.classList.contains("app")
+      ? {
+          gridTemplateColumns: `${53 + rendered}px 1000px`,
+          transitionDuration: "0.18s",
+        }
+      : original(element),
+  );
+  vi.useFakeTimers();
+  try {
+    const toggle = async (key: string) => {
+      fireEvent.keyDown(document.activeElement ?? document.body, {
+        key,
+        ctrlKey: true,
+      });
+      await act(async () => {});
+    };
+    const settle = () => act(() => vi.advanceTimersByTime(240));
+    await toggle("b");
+    settle();
+    rendered = 0;
+    await toggle("i");
+    expect(document.activeElement).toBe(main);
+    expect(focused).not.toHaveBeenCalled();
+    settle();
+    expect(document.activeElement).toBe(input);
+    expect(focused).toHaveBeenCalledTimes(1);
+    main.focus();
+    rendered = 288;
+    await toggle("b");
+    settle();
+    rendered = 0;
+    await toggle("i");
+    rendered = 144;
+    await toggle("b");
+    settle();
+    expect(focused).toHaveBeenCalledTimes(1);
+    rendered = 0;
+    await toggle("b");
+    settle();
+    flushFrames();
+    expect(focused).toHaveBeenCalledTimes(1);
+    rendered = 288;
+    await toggle("b");
+    settle();
+    rendered = 0;
+    await toggle("i");
+    fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+    settle();
+    flushFrames();
+    expect(focused).toHaveBeenCalledTimes(1);
+    expectNoNavigationWrites(value);
+  } finally {
+    view.unmount();
+    vi.useRealTimers();
+  }
+});
+
+it("preserves first Search autofocus after a hidden wide activation", async () => {
+  viewport();
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const flushFrames = animationFrames();
+  const value = fixture();
+  render(
+    <SidebarProvider bridge={memorySidebarBridge()}>
+      <App transport={value.transport} />
+    </SidebarProvider>,
+  );
+  await act(async () => {});
+  fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
+  await waitFor(() =>
+    expect(document.querySelector(".app.sidebar-collapsed")).toBeTruthy(),
+  );
+
+  const navigate = async (name: "Search" | "Sessions") => {
+    fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
+    const menu = await screen.findByRole("dialog", { name: "Command menu" });
+    fireEvent.click(within(menu).getByRole("option", { name }));
+  };
+  await navigate("Search");
+  const input = document.querySelector<HTMLInputElement>(
+    ".sidebar-pane-dialog input",
+  )!;
+  flushFrames();
+  expect(document.activeElement).not.toBe(input);
+
+  await navigate("Sessions");
+  fireEvent.keyDown(document.body, { key: "b", ctrlKey: true });
+  await waitFor(() =>
+    expect(document.querySelector(".app.sidebar-collapsed")).toBeNull(),
+  );
+  fireEvent.click(headerAction("Search"));
+  flushFrames();
+  expect(document.activeElement).toBe(input);
+  expectNoNavigationWrites(value);
+});
+
+it("autofocuses visible Search after a wide sidebar preference read failure", async () => {
+  viewport();
+  const flushFrames = animationFrames();
+  const value = fixture();
+  const bridge = memorySidebarBridge();
+  vi.spyOn(bridge, "read").mockRejectedValue(new Error("read unavailable"));
+  render(
+    <SidebarProvider bridge={bridge}>
+      <App transport={value.transport} />
+    </SidebarProvider>,
+  );
+  await screen.findByRole("alert");
+  fireEvent.click(headerAction("Search"));
+  const input = screen.getByRole("textbox", { name: "Search conversations" });
+  flushFrames();
+  expect(document.activeElement).toBe(input);
+  expectNoNavigationWrites(value);
+});

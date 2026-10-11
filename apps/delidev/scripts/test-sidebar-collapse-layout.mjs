@@ -32,6 +32,41 @@ let browser,
   server,
   checks = 0;
 const failures = [];
+async function mediaMotion(page, reducedMotion) {
+  await page.emulateMedia({ reducedMotion });
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      ),
+  );
+}
+async function sampleMotion(page) {
+  await page.evaluate(() => {
+    const samples = [];
+    window.__sidebarMotionSamples = samples;
+    const started = performance.now();
+    const sample = () => {
+      const pane = document.querySelector(".sidebar-pane-dialog");
+      const app = document.querySelector(".app");
+      samples.push({
+        phase: pane.dataset.sidebarMotion,
+        width: pane.getBoundingClientRect().width,
+        content: pane.querySelector(".sidebar-pane").getBoundingClientRect()
+          .width,
+        rail: document.querySelector(".sidebar-rail").getBoundingClientRect()
+          .width,
+        main: document.querySelector("#main").getBoundingClientRect().x,
+        duration: getComputedStyle(app).transitionDuration,
+        easing: getComputedStyle(app).transitionTimingFunction,
+        inert: pane.inert,
+        aria: pane.getAttribute("aria-hidden"),
+      });
+      if (performance.now() - started < 300) requestAnimationFrame(sample);
+    };
+    sample();
+  });
+}
 try {
   const build = await createRsbuild({
     cwd: app,
@@ -90,7 +125,7 @@ try {
   const origin = `http://127.0.0.1:${server.address().port}`;
   for (const language of ["en", "ko"])
     for (const theme of ["light", "dark"])
-      for (const width of [1440, 960, 760]) {
+      for (const width of [1440, 1100, 960, 760]) {
         await page.setViewportSize({
           width,
           height: width === 1440 ? 900 : 640,
@@ -129,6 +164,7 @@ try {
           originalWidth,
         );
         const paneHandle = await pane.elementHandle();
+        await sampleMotion(page);
         await page.keyboard.press(`${primary}+b`);
         await page.waitForFunction(
           () => document.querySelector(".sidebar-pane-dialog").hidden,
@@ -139,10 +175,32 @@ try {
           53,
         );
         assert.equal(await pane.evaluate((node) => node.inert), true);
-        await page.keyboard.press(`${primary}+b`);
-        await page.waitForFunction(
-          () => !document.querySelector(".sidebar-pane-dialog").hidden,
+        const samples = await page.evaluate(
+          () => window.__sidebarMotionSamples,
         );
+        const intermediate = samples.filter(
+          (value) =>
+            value.phase === "closing" &&
+            value.width > 0.5 &&
+            value.width < originalWidth - 0.5,
+        );
+        assert(
+          intermediate.length > 0,
+          "closing has rendered intermediate geometry",
+        );
+        for (const value of intermediate) {
+          assert.equal(value.rail, 52);
+          assert.equal(value.content, originalWidth);
+          assert(Math.abs(value.main - 53 - value.width) < 1);
+          assert.equal(value.duration, "0.18s");
+          assert.equal(value.easing, "cubic-bezier(0.2, 0, 0, 1)");
+          assert(value.inert && value.aria === "true");
+        }
+        await page.keyboard.press(`${primary}+b`);
+        await page.waitForFunction(() => {
+          const pane = document.querySelector(".sidebar-pane-dialog");
+          return !pane.hidden && pane.dataset.sidebarMotion === "settled";
+        });
         assert.equal(
           Math.round((await pane.boundingBox()).width),
           originalWidth,
@@ -225,9 +283,10 @@ try {
           .click();
         assert.equal(await pane.evaluate((node) => node.hidden), true);
         await page.keyboard.press(`${primary}+b`);
-        await page.waitForFunction(
-          () => !document.querySelector(".sidebar-pane-dialog").hidden,
-        );
+        await page.waitForFunction(() => {
+          const pane = document.querySelector(".sidebar-pane-dialog");
+          return !pane.hidden && pane.dataset.sidebarMotion === "settled";
+        });
         const repository = pane.locator(".sidebar-repository-row").first();
         await repository.click();
         const draft = pane.locator(".pr-search-input input");
@@ -270,9 +329,10 @@ try {
           })
           .click();
         await page.keyboard.press(`${primary}+b`);
-        await page.waitForFunction(
-          () => !document.querySelector(".sidebar-pane-dialog").hidden,
-        );
+        await page.waitForFunction(() => {
+          const pane = document.querySelector(".sidebar-pane-dialog");
+          return !pane.hidden && pane.dataset.sidebarMotion === "settled";
+        });
         assert.equal(
           await scroller.evaluate((node) => node.scrollTop),
           retainedScroll,
@@ -293,6 +353,146 @@ try {
         );
         checks++;
       }
+  // Exercise lifecycle changes once with the actual Shell and Search portal.
+  await mediaMotion(page, "no-preference");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${origin}/?language=en`);
+  await page
+    .locator('[data-sidebar-ready="true"]')
+    .waitFor({ state: "attached" });
+  const primary = await page.evaluate(() =>
+    /mac/i.test(navigator.platform) ? "Meta" : "Control",
+  );
+  const pane = page.locator(".sidebar-pane-dialog");
+  const settled = () =>
+    page.waitForFunction(
+      () =>
+        document.querySelector(".sidebar-pane-dialog").dataset.sidebarMotion ===
+        "settled",
+    );
+  const intermediate = (phase) =>
+    page.waitForFunction((phase) => {
+      const pane = document.querySelector(".sidebar-pane-dialog");
+      const width = pane.getBoundingClientRect().width;
+      return pane.dataset.sidebarMotion === phase && width > 20 && width < 268;
+    }, phase);
+  await pane.locator(".sidebar-header-actions button").nth(1).click();
+  const input = pane.locator("input").first();
+  await input.fill("Unsubmitted Search draft");
+  await input.evaluate((node) => {
+    node.setSelectionRange(2, 8);
+    window.__sidebarSearchFocus = 0;
+    node.addEventListener("focus", () => window.__sidebarSearchFocus++);
+  });
+  await page.locator("#main").focus();
+  await page.keyboard.press(`${primary}+b`);
+  await settled();
+  await sampleMotion(page);
+  await page.keyboard.press(`${primary}+i`);
+  await intermediate("opening");
+  assert.equal(
+    await input.evaluate((node) => node === document.activeElement),
+    false,
+  );
+  await settled();
+  assert.equal(
+    await input.evaluate((node) => node === document.activeElement),
+    true,
+  );
+  assert.equal(await page.evaluate(() => window.__sidebarSearchFocus), 1);
+  const opening = await page.evaluate(() =>
+    window.__sidebarMotionSamples.filter(
+      (value) =>
+        value.phase === "opening" && value.width > 0.5 && value.width < 287.5,
+    ),
+  );
+  assert(
+    opening.length > 0,
+    "opening has intermediate geometry before Search focus",
+  );
+  for (const value of opening) {
+    assert.equal(value.content, 288);
+    assert.equal(value.rail, 52);
+    assert(Math.abs(value.main - 53 - value.width) < 1);
+    assert.equal(value.inert, false);
+  }
+  assert.equal(await input.inputValue(), "Unsubmitted Search draft");
+  assert.deepEqual(
+    await input.evaluate((node) => [node.selectionStart, node.selectionEnd]),
+    [2, 8],
+  );
+  await page.locator("#main").focus();
+  await page.keyboard.press(`${primary}+b`);
+  await settled();
+  await page.keyboard.press(`${primary}+i`);
+  await intermediate("opening");
+  const reversalWidth = (await pane.boundingBox()).width;
+  await page.keyboard.press(`${primary}+b`);
+  const reversedWidth = (await pane.boundingBox()).width;
+  assert(
+    reversedWidth > 0 && reversedWidth < 288,
+    "reversal preserves intermediate geometry",
+  );
+  assert(
+    Math.abs(reversedWidth - reversalWidth) < 70,
+    "reversal cannot jump to an endpoint",
+  );
+  await settled();
+  assert.equal(await pane.evaluate((node) => node.hidden), true);
+  assert.equal(await page.evaluate(() => window.__sidebarSearchFocus), 1);
+  await page.keyboard.press(`${primary}+b`);
+  await settled();
+  assert.equal(
+    await page.evaluate(() => window.__sidebarSearchFocus),
+    1,
+    "ordinary expansion cannot steal focus",
+  );
+  await mediaMotion(page, "reduce");
+  await page.keyboard.press(`${primary}+b`);
+  await settled();
+  assert.equal(await pane.evaluate((node) => node.hidden), true);
+  assert.equal(await page.locator(".app.sidebar-motion").count(), 0);
+  await page.keyboard.press(`${primary}+b`);
+  await settled();
+  await mediaMotion(page, "no-preference");
+  await page.keyboard.press(`${primary}+b`);
+  await intermediate("closing");
+  await mediaMotion(page, "reduce");
+  await settled();
+  assert.equal(await pane.evaluate((node) => node.hidden), true);
+  await mediaMotion(page, "no-preference");
+  await page.keyboard.press(`${primary}+i`);
+  await intermediate("opening");
+  await page.setViewportSize({ width: 759, height: 640 });
+  assert.equal(await pane.evaluate((node) => node.matches(":modal")), false);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await settled();
+  assert.equal(Math.round((await pane.boundingBox()).width), 288);
+  assert.equal(await page.locator(".app.sidebar-motion").count(), 0);
+  assert.equal(
+    await page.evaluate(() => window.__sidebarSearchFocus),
+    1,
+    "breakpoint restoration retires pending Search focus",
+  );
+  await page.keyboard.press(`${primary}+b`);
+  await settled();
+  await page.keyboard.press(`${primary}+i`);
+  await intermediate("opening");
+  await page.getByRole("button", { name: "Sessions", exact: true }).click();
+  await settled();
+  assert.equal(
+    await page.evaluate(() => window.__sidebarSearchFocus),
+    1,
+    "navigation retires pending Search focus",
+  );
+  await page.keyboard.press(`${primary}+b`);
+  await intermediate("closing");
+  await page.setViewportSize({ width: 759, height: 640 });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await settled();
+  assert.equal(await pane.evaluate((node) => node.hidden && node.inert), true);
+  assert.equal(await page.locator(".app.sidebar-motion").count(), 0);
+  checks++;
   // Effective 200% reflow uses half the physical viewport, without claiming CEF zoom.
   for (const language of ["en", "ko"])
     for (const width of [720, 480, 320]) {

@@ -69,6 +69,7 @@ import { NotificationPresentation } from "./notification-presentation";
 import { NotificationProvider } from "./toast-notifications";
 import { refreshCreatedSessionNavigation } from "./home-navigation-query";
 import { Sidebar } from "./sidebar";
+import type { SidebarPresentation } from "./sidebar-motion";
 import type { ChooseRepositoryFolder } from "./repository-registration";
 import {
   SettingsEntryDestination,
@@ -154,16 +155,29 @@ function Shell({
     sidebarPreference.snapshot.sidebar_preference ===
     SidebarPreference.Collapsed;
   const sidebarPaneVisible = wideSidebar ? !sidebarCollapsed : drawerOpen;
-  const toggleSidebar = () =>
+  const [sidebarPresentation, setSidebarPresentation] =
+    useState<SidebarPresentation>({
+      generation: 0,
+      settled: true,
+      collapsed: false,
+      focusAllowed: false,
+    });
+  const toggleSidebar = () => {
     sidebarPreference.select(
       sidebarCollapsed
         ? SidebarPreference.Expanded
         : SidebarPreference.Collapsed,
     );
-  const openSidebar = () =>
-    wideSidebar
-      ? sidebarPreference.select(SidebarPreference.Expanded)
-      : setDrawerOpen(true);
+  };
+  const openSidebar = () => {
+    if (wideSidebar)
+      return (
+        !sidebarCollapsed ||
+        sidebarPreference.select(SidebarPreference.Expanded)
+      );
+    setDrawerOpen(true);
+    return true;
+  };
 
   const [selected, setSelected] = useState("");
   const [sessionNavigationActivation, setSessionNavigationActivation] =
@@ -518,6 +532,14 @@ function Shell({
                   closeDrawer={() => setDrawerOpen(false)}
                   drawerOpen={drawerOpen}
                   paneVisible={sidebarPaneVisible}
+                  paneSettled={
+                    !wideSidebar ||
+                    (sidebarPresentation.settled &&
+                      sidebarPresentation.collapsed === sidebarCollapsed)
+                  }
+                  paneGeneration={sidebarPresentation.generation}
+                  paneFocusAllowed={sidebarPresentation.focusAllowed}
+                  paneProblem={Boolean(sidebarPreference.snapshot.problem)}
                   openDrawer={openSidebar}
                 >
                   <div
@@ -528,6 +550,12 @@ function Shell({
                     </a>
                     <Sidebar
                       collapsed={sidebarCollapsed}
+                      motionReady={
+                        sidebarPreference.snapshot.revision > 0 &&
+                        !sidebarPreference.snapshot.problem
+                      }
+                      motionScope={transport}
+                      presentationChanged={setSidebarPresentation}
                       compactFocusRef={contextOpener}
                       focusHandoffPending={
                         pendingFocusDestination.current !== undefined
