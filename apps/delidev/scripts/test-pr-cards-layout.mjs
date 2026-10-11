@@ -46,15 +46,15 @@ try {
     const pane = page.getByRole("region", { name: language === "ko" ? "풀 리퀘스트 탐색 및 필터" : "Pull requests navigation and filters", exact: true });
     await pane.getByRole("button", { name: language === "ko" ? `oss. 저장소 ID: ${id}` : `oss. Repository ID: ${id}`, exact: true }).click();
     assert.equal(await pane.getByRole("button", { name: language === "ko" ? "풀 리퀘스트 불러오기" : "Load pull requests", exact: true }).count(), 0);
-    await page.locator(".pr-list-card").first().waitFor();
+    await page.locator(".pr-workspace-row").first().waitFor();
     assert.equal(await page.evaluate(() => window.__prSidebarFixture.github), 1, `${context}: automatic initial read`);
-    assert.equal(await page.locator(".pr-list-card").count(), 4, context);
+    assert.equal(await page.locator(".pr-workspace-row").count(), 4, context);
     const geometry = await page.locator(".pull-requests-page").evaluate(node => {
-      const style = getComputedStyle(node), header = node.querySelector(".pr-list-header"), cards = [...node.querySelectorAll(".pr-list-card")];
-      return { width: node.getBoundingClientRect().width, padding: style.paddingLeft, margin: style.marginLeft, overflow: node.scrollWidth > node.clientWidth + 1, cards: cards.map(card => { const s = getComputedStyle(card), title = card.querySelector("h3"), action = card.querySelector("button"); return { radius: s.borderRadius, padding: s.paddingLeft, title: getComputedStyle(title).fontSize, titleFull: title.scrollHeight <= title.clientHeight + 1, overflow: card.scrollWidth > card.clientWidth + 1, actionHeight: action.getBoundingClientRect().height }; }), refresh: header.querySelectorAll("button").length, pendingEmpty: node.querySelector(".pending-pr-actions").dataset.empty, timestamps: [...node.querySelectorAll("time")].map(time => [time.textContent, time.dateTime]) };
+      const style = getComputedStyle(node), header = node.querySelector(".pr-list-header"), cards = [...node.querySelectorAll(".pr-workspace-row")];
+      return { width: node.getBoundingClientRect().width, padding: style.paddingLeft, margin: style.marginLeft, overflow: node.scrollWidth > node.clientWidth + 1, cards: cards.map(card => { const s = getComputedStyle(card), title = card.querySelector(".pr-row-title"), action = card.querySelector("button"); return { radius: s.borderRadius, padding: s.paddingLeft, title: getComputedStyle(title).fontSize, titleFull: title.scrollHeight <= title.clientHeight + 1, overflow: card.scrollWidth > card.clientWidth + 1, actionHeight: action.getBoundingClientRect().height }; }), refresh: header.querySelectorAll("button").length, pendingEmpty: node.querySelector(".pending-pr-actions").dataset.empty, timestamps: [...node.querySelectorAll("time")].map(time => [time.textContent, time.dateTime]) };
     });
-    assert(geometry.width <= 1120 && geometry.margin === "0px" && geometry.padding === (width < 760 ? "16px" : "32px") && !geometry.overflow, `${context}: ${JSON.stringify(geometry)}`);
-    assert(geometry.cards.every(card => card.radius === "12px" && card.padding === "20px" && card.title === "16px" && card.titleFull && !card.overflow && card.actionHeight >= 40), context);
+    assert(geometry.margin === "0px" && geometry.padding === (width < 760 ? "16px" : "32px") && !geometry.overflow, `${context}: ${JSON.stringify(geometry)}`);
+    assert(geometry.cards.every(card => card.titleFull && !card.overflow && card.actionHeight >= 40), context);
     assert.equal(geometry.refresh, 1, context); assert.equal(geometry.pendingEmpty, "true", context);
     assert(geometry.timestamps.every(([value, datetime]) => value === datetime && /Z$/.test(value)), context);
     assert(geometry.timestamps.some(([value]) => value === "2026-10-07T08:07:22.123456789Z"), context);
@@ -63,14 +63,24 @@ try {
     const state = pane.getByRole("radio", { name: language === "ko" ? "열림" : "Open", exact: true }); await state.focus(); await state.press("ArrowRight");
     if (width < 760) await page.keyboard.press("Escape");
     await page.waitForFunction(count => window.__prSidebarFixture.github === count + 1, before);
-    assert(await page.locator(".pr-list-applied").first().textContent().then(value => value.includes(language === "ko" ? "닫힘" : "Closed")), context);
-    const read = page.locator(".pr-list-card").first().getByRole("button"); await read.focus(); await read.press("Enter");
+    assert.equal(await page.locator(".pr-workspace-row").count(), 4, context);
+    const read = page.locator(".pr-workspace-row").first().getByRole("button"); await read.focus(); await read.press("Enter");
     await page.getByRole("button", { name: language === "ko" ? "결과로 돌아가기" : "Back to results", exact: true }).waitFor();
-    assert.equal(await page.locator(".pr-list-card").count(), 0, `${context}: detail uses the original renderer`);
-    await page.getByRole("button", { name: language === "ko" ? "결과로 돌아가기" : "Back to results", exact: true }).click(); await page.locator(".pr-list-card").first().waitFor();
+    assert.equal(await page.locator(".pr-workspace-row").count(), 4, `${context}: retained list owner`);
+    const detailReads = await page.evaluate(() => window.__prSidebarFixture.github);
+    for (const tab of ["Diff", language === "ko" ? "리뷰" : "Reviews", language === "ko" ? "커밋" : "Commits", language === "ko" ? "설명" : "Description"]) await page.getByRole("tab", { name: tab, exact: true }).click();
+    assert.equal(await page.locator(".pr-workspace-row").count(), 4, `${context}: tabs retain list`);
+    assert.equal(await page.locator(".pr-workspace-detail .actions button").count(), 0, `${context}: no technical action grid`);
+    await page.getByRole("tab", { name: language === "ko" ? "커밋" : "Commits", exact: true }).click();
+    await page.locator(".pr-commit").waitFor();
+    assert(await page.locator(".pr-commit .pr-counts").textContent().then(value => value.includes("+8") && value.includes("−3")), context);
+    assert(await page.locator(".pr-workspace-detail header .pr-counts").textContent().then(value => value.includes("+24") && value.includes("−8")), context);
+    const layout = await page.locator(".pr-workspace").evaluate(node => ({ wide: node.dataset.wide, width: node.getBoundingClientRect().width, columns: getComputedStyle(node).gridTemplateColumns, listScroll: node.querySelector(".pr-workspace-list").scrollTop }));
+    assert.equal(layout.wide === "true", layout.width >= 900, `${context}: available body breakpoint`);
+    await page.getByRole("button", { name: language === "ko" ? "결과로 돌아가기" : "Back to results", exact: true }).click(); await page.locator(".pr-workspace-row").first().waitFor();
     const more = page.locator('[data-continuation="'+(language === "ko" ? "GitHub 조회 결과" : "GitHub query results")+'"] button');
     if (await more.count()) { await more.click(); await page.getByText(language === "ko" ? "2페이지에서 반환된 pull request가 없습니다." : "No pull requests were returned on page 2.", { exact: true }).waitFor(); }
-    assert.equal(await page.locator(".pr-list-card").count(), 4, `${context}: empty append retains accepted cards`);
+    assert.equal(await page.locator(".pr-workspace-row").count(), 4, `${context}: empty append retains accepted cards`);
     if (screenshots && width === 1440) { await mkdir(resolve(screenshots), { recursive: true }); await page.screenshot({ path: join(resolve(screenshots), `cards-${language}-${theme}.png`) }); }
     checks++;
   }
@@ -96,7 +106,7 @@ try {
     checks++;
   }
   assert.deepEqual(failures, []);
-  console.log(JSON.stringify({ operation: "pr-list-cards-browser", source, checks, result: "passed", evidence: "synthetic App browser; effective viewport zoom only; no packaged CEF acceptance" }));
+  console.log(JSON.stringify({ operation: "pr-workspace-browser", source, checks, result: "passed", evidence: "synthetic App browser; effective viewport zoom only; no packaged CEF acceptance" }));
 } finally {
   await browser?.close(); await new Promise(done => server ? server.close(done) : done()); await rm(directory, { recursive: true, force: true });
 }

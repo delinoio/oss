@@ -91,6 +91,10 @@ type Service struct {
 	delidevv1connect.UnimplementedProviderServiceHandler
 	delidevv1connect.UnimplementedNetworkServiceHandler
 	delidevv1connect.UnimplementedIntegrationServiceHandler
+	integrationQueued     map[domain.ID]int
+	integrationForeground map[domain.ID]int
+	prAvatarMu            sync.Mutex
+	prAvatars             map[string]*prAvatarEntry
 	integrationOnce       sync.Once
 	integrationGate       chan struct{}
 	integrationChecks     map[domain.ID]*integrationCheck
