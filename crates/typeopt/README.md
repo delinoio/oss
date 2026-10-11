@@ -64,11 +64,15 @@ When a transformation removes the last runtime use of an import, TypeScript woul
 - `properties.json` contains `schema_version: 0` and `properties`. Each record identifies a property group, original source/name, final name, occurrence count and optional preservation reason. It describes property transformations only.
 - `report.json` uses `schema_version: 1`. It keeps the v0 statistics (tool and compiler versions, files, object regions, properties, renamed properties, changed occurrences and preservation reasons) and adds `passes.enabled`/`passes.disabled`, `rounds`, `size` (emitted ESM bytes before and after), `pass_summary` (applied bundles, cleanup participation, skipped counts and reason codes per pass), `transformations` (each accepted bundle with its primary pass, cleanup passes, source location and measured byte change) and `skipped` (pass, location and reason). Savings belong to the whole bundle and are never split among its passes. Zero accepted transformations is a valid conservative result, not evidence of application size reduction.
 
+Elapsed time and peak resident memory are measured, without a ceiling. Each round rebuilds and rechecks the program and each candidate is transpiled for size evaluation, so whole-program runs need considerably more time and memory than a single type check (the pinned Excalidraw application takes about one to two minutes and up to 8 GB peak RSS on macOS arm64).
+
 Code, mappings and reports are deterministic for identical source paths, contents, configuration, options and tool version, except the `measurements` (elapsed time and peak RSS). The interfaces are experimental. Report v1 replaces v0; adapters must reject unknown schema versions.
 
 ## Safety and supported input
 
 Supply explicit application entries and one tsconfig. Workspace imports and declaration files use the compiler's resolver. Project-reference orchestration, CommonJS output, compiler plugins/content mappers, `eval` (including aliases), `with`, `import x = require()`, `export =`, `noCheck`, `noResolve`, `outFile`, declaration-only output and preserved JSX are rejected. Set an ESM module mode and `jsx: "react-jsx"` or `"react"` for TSX. Syntax and type errors fail before publication. Unsupported upstream settings produce compiler diagnostics; they are not silently reinterpreted.
+
+TypeScript modules with a leading `// @ts-nocheck` comment disable the semantic recheck that backs every transformation, so they are treated like JavaScript: they are not transformed and their references are boundaries. `@ts-ignore` and `@ts-expect-error` suppress recheck errors on single lines; every transformation still requires its own proof, but the recheck cannot serve as a second check on those lines.
 
 The CLI owns emission controls: it overrides `noEmit`, declaration/incremental/composite output, output locations and source-map output settings. It does not change the input tsconfig. JavaScript and node_modules are not transformed; imported JSON and other assets stay in the original project.
 

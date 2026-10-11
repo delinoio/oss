@@ -196,6 +196,10 @@ test("optimizer output composes through a real TSX workspace build", async () =>
         source,
         "--out-dir",
         output,
+        // Keep the object so this test exercises property renaming;
+        // scalar replacement would otherwise remove it first.
+        "--disable-pass",
+        "aggregate-elimination",
       ],
       { stdio: "pipe" },
     );
