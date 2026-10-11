@@ -15,12 +15,21 @@ func TestNativeWebSearchActionsKeepOriginalModeAndContent(t *testing.T) {
 			c.execution.settings.Provider = "openai"
 			params := map[string]any{"threadId": c.thread, "turnId": turn, "item": map[string]any{"type": "webSearch", "id": "original-search", "query": "Original", "action": action, "results": []any{map[string]any{"unknown": "original"}}}}
 			for _, method := range []string{"item/started", "item/completed"} {
+				delete(params, "startedAtMs")
+				delete(params, "completedAtMs")
+				if method == "item/started" {
+					params["startedAtMs"] = 0
+				} else {
+					params["completedAtMs"] = 0
+				}
 				event, err := observeFixture(c, method, params)
 				if err != nil || event.Tool == nil || event.Tool.WebSearch == nil || event.Tool.WebSearch.Mode != mode || event.Tool.WebSearch.Source != "openai" || event.Tool.WebSearch.Query != "Original" || event.Tool.WebSearch.Results == nil || c.execution.turns[turn].Turn.Status != TurnRunning {
 					t.Fatal("native evidence lost or tool completed the turn", err)
 				}
 			}
 			params["turnId"] = domain.NewID()
+			delete(params, "completedAtMs")
+			params["startedAtMs"] = 0
 			if _, err := observeFixture(c, "item/started", params); err == nil {
 				t.Fatal("foreign turn accepted")
 			}
@@ -28,7 +37,7 @@ func TestNativeWebSearchActionsKeepOriginalModeAndContent(t *testing.T) {
 	}
 	c, turn := observationClient()
 	c.execution.settings.WebSearch = domain.WebSearchDisabled
-	params := map[string]any{"threadId": c.thread, "turnId": turn, "item": map[string]any{"type": "webSearch", "id": "original-search", "query": "Original", "action": nil, "results": nil}}
+	params := map[string]any{"threadId": c.thread, "turnId": turn, "startedAtMs": 0, "item": map[string]any{"type": "webSearch", "id": "original-search", "query": "Original", "action": nil, "results": nil}}
 	if _, err := observeFixture(c, "item/started", params); err == nil {
 		t.Fatal("disabled search gained authority")
 	}
