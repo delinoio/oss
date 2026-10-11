@@ -21,7 +21,7 @@ typeopt --project ./tsconfig.json --entry ./src/main.tsx ./src/worker.ts --check
 
 Paths are relative to the current directory. The output parent must exist and the destination must not exist, including an empty directory or symlink. Use a new output path for each run. Inputs are never rewritten. Ctrl+C cancels the operation and removes operation-owned staging files. Exit codes are 0 for success, 1 for analysis/output failure, 2 for invalid CLI arguments and 130 for cancellation handled by the CLI.
 
-`--check` prints a JSON analysis report without emitting files. `--verbose` adds compiler diagnostic details; `--help` and `--version` describe the CLI. Logs go to stderr and do not include source bodies or environment values. Set `NO_COLOR=1` to disable ANSI colors.
+`--check` prints a JSON analysis report without emitting files. `--verbose` adds compiler diagnostic messages with source-derived arguments replaced by `<redacted>`; `--help` and `--version` describe the CLI. Logs go to stderr and do not include source bodies or environment values. Set `NO_COLOR=1` to disable ANSI colors.
 
 ## Output and v0 compatibility
 
@@ -78,13 +78,13 @@ typeopt --project /absolute/excalidraw/tsconfig.json --entry /absolute/excalidra
 node crates/typeopt/benchmark/build.mjs /absolute/excalidraw /absolute/optimized-build /absolute/optimized-new
 ```
 
-The build helper applies the pinned environment to both builds and records elapsed time and peak RSS in `typeopt-build.json`. Build the pinned application once with its original inputs, then run typeopt with the application entry and build again with the example adapter. Use the same environment, Vite settings, minifier and source-map settings. Keep outputs in separate directories. Compare:
+The build helper fails unless the checkout `HEAD` and `yarn.lock` SHA-256 match `pin.json`. It applies the pinned environment to both builds and records the verified revision, lockfile hash, elapsed time and peak RSS in `typeopt-build.json`. Build the pinned application once with its original inputs, then run typeopt with the application entry and build again with the example adapter. Use the same environment, Vite settings, minifier and source-map settings. Keep outputs in separate directories. Compare:
 
 ```sh
 node crates/typeopt/benchmark/measure.mjs /absolute/baseline-build /absolute/optimized-build
 ```
 
-The command sums every production `.js`, `.mjs` and `.cjs` file, excluding source maps. It uses gzip level 9 and Brotli quality 11 and fails unless all three totals decrease. Record the result with source revision, exact commands, tool versions, execution time and peak RSS. Fixture results do not substitute for application acceptance.
+The command sums every production `.js`, `.mjs` and `.cjs` file, excluding source maps. It uses gzip level 9 and Brotli quality 11. It fails unless both builds emit the same logical asset set (file paths without the Vite content hash) and all three totals decrease; the output lists missing and extra assets. Record the result with source revision, exact commands, tool versions, execution time and peak RSS. Fixture results do not substitute for application acceptance.
 
 Install browser tooling with `pnpm --dir crates/typeopt/benchmark install --ignore-workspace --frozen-lockfile` and `pnpm --dir crates/typeopt/benchmark exec playwright install chromium`. Serve each build on a separate loopback HTTP port, then run:
 
