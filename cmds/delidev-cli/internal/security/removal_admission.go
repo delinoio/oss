@@ -447,6 +447,9 @@ func removeAdmittedTreeValidated(ctx context.Context, root, path string, a *Remo
 			return domain.SessionDeletionPending()
 		}
 	}
+	if err := a.checkCapturedAncestors(root, path, entries); err != nil {
+		return err
+	}
 	if err := syncParent(path); err != nil {
 		return domain.SessionDeletionPending()
 	}
