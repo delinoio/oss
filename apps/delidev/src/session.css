@@ -356,6 +356,7 @@
 .session-diagnostics h3, .session-diagnostics h4 { margin:0 0 16px; font-size:16px; line-height:1.5; font-weight:600; color:var(--text); }
 .session-diagnostics section, .session-diagnostics .session-information-section { margin:0; padding:0; border:0; }
 .session-diagnostics dl { display:grid; grid-template-columns:200px minmax(0, 1fr); column-gap:24px; row-gap:12px; margin:0; }
+.session-diagnostics dl > div { display:contents; }
 .session-diagnostics dt { margin:0; color:var(--muted); }
 .session-diagnostics dd { margin:0; min-width:0; overflow-wrap:anywhere; }
 .session-diagnostics ol { margin:0; padding-left:24px; }
