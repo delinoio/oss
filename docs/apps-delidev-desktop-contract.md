@@ -3128,6 +3128,20 @@ Default preserves the original colors. Custom libraries hold at most 32 UUID-v7
 identities, with names of at most 80 Unicode scalar values. Bundled themes are
 immutable; duplication creates a separate editable identity.
 
+Titanium, Nord, Dracula and Solarized each provide complete light/dark semantic
+maps in the shared bundled JSON. Their surfaces, text, borders, links, focus,
+selected states, inverse surfaces and conversation colors follow each family.
+The stored values use the approved encoded-sRGB channel blends with rounded
+opaque uppercase hex output; no runtime palette generator is used. Corresponding
+Default warning, danger and success values retain their meaning. Dark running
+status retains Default teal; light running status uses the darker teal variant.
+Default maps remain unchanged. Saved bundled references adopt updated bundled
+values; existing custom maps and earlier duplicates retain their stored values.
+Frontend distributions and the native host must rebuild from the shared JSON;
+tray projections use that same embedded source. Geometry, independent mode
+selection, mounted drafts and excluded terminal/backdrop/shadow/native surfaces
+retain their existing ownership.
+
 A custom editor owns its name and complete light/dark opaque semantic color maps.
 Its synthetic preview contains no conversation content. Save and import require
 explicit confirmation. Import accepts one version-1 JSON theme of at most 32 KiB,
@@ -3656,7 +3670,7 @@ guards. Reflow must retain workspace controller and draft identities.
 
 The feature use two primary workspace rows: an approximately 72px identity/action header and a 52px navigation row. The feature uses a fixed 40×40px icon-only Open tool trigger beside the horizontally scrolling tablist. Center the decorative 18px outlined wrench from `SessionIconKind.Tools` in the existing renderer with zero padding and 8px corners. Keep localized Open tool / 도구 열기 as both its accessible name and title hint, with original semantic hover/expanded/focus treatment and menu ARIA relationships. It exposes Diff, Files, Terminals, Browser and Diagnostics in that order through their original entry callbacks and eligibility, followed by Open Sidechat only for the independently eligible original parent. The flat menu uses the existing localized label, including Sidechat 열기, with the decorative outline chat glyph from `SessionIconKind.Sidechat`. Sidechat is absent from the session overflow menu. Fork keeps its independent shared eligibility and original dialog. Opening focuses the first enabled item; arrows, Home/End and native Enter/Space select entries. Escape closes only the menu and restores its trigger; outside dismissal preserves destination focus. The 220px popup stays viewport-bounded and scrolls vertically. Tool selection closes it and focuses the selected singleton descriptor without new resources or observation reads.
 
-Tabs form a continuous gapless neutral editor strip attached to the active pane. Each tab is 40px high and at most 320px wide. Selected tabs use the surface background, 4px top corners, square bottom corners and a 2px accent underline; inactive tabs have transparent backgrounds and subtle separators. Every closeable tab encloses an always-visible 40px close target beside its truncated label, using sibling controls with independent focus treatment. This supersedes 's earlier rounded-shell appearance while preserving its enclosed close-control principle. Exactly one content region is active. Conversation is
+Tabs form a continuous gapless neutral editor strip attached to the active pane. Each tab is 40px high and at most 320px wide. Selected tabs use the surface background, 4px top corners, square bottom corners and a 2px selected-border underline; inactive tabs have transparent backgrounds and subtle separators. Every closeable tab encloses an always-visible 40px close target beside its truncated label, using sibling controls with independent focus treatment. This supersedes 's earlier rounded-shell appearance while preserving its enclosed close-control principle. Exactly one content region is active. Conversation is
 pinned first, initially selected and cannot be closed or moved. Files and Diff
 open typed content tabs keyed by session/repository/path and, for comparisons,
 comparison kind. Terminals use the original terminal ID; Browser pages use the

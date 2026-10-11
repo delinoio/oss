@@ -965,9 +965,9 @@
 }
 .session-tab.is-selected {
   background: var(--surface);
-  color: var(--accent);
+  color: var(--link);
   border-radius: 4px 4px 0 0;
-  border-bottom-color: var(--accent);
+  border-bottom-color: var(--selected-border);
 }
 .session-workspace .session-tab [role="tab"] {
   height: 38px;
@@ -1001,7 +1001,7 @@
   background: var(--surface-hover);
 }
 .session-tab button:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: -3px;
 }
 .session-tool-popup {
@@ -1338,7 +1338,7 @@
   cursor: default;
 }
 .queue-insertion {
-  border-top: 2px solid var(--accent);
+  border-top: 2px solid var(--selected-border);
 }
 /* End-of-list dragging overlays the last row instead of adding resting space. */
 .queue-drop-row {
@@ -1379,7 +1379,7 @@
 }
 .context-capacity > div {
   height: 100%;
-  background: var(--accent);
+  background: var(--selected-border);
 }
 .session-name-dialog {
   width: 480px;

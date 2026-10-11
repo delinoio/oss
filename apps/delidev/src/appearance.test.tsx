@@ -478,8 +478,14 @@ test("selected palette sheets follow System changes and retire only their own sh
     preferences,
   });
   const view = render(
-    <AppearanceProvider bridge={value.bridge}>{null}</AppearanceProvider>,
+    <AppearanceProvider bridge={value.bridge}>
+      <textarea
+        aria-label="Palette draft"
+        defaultValue="retained palette draft"
+      />
+    </AppearanceProvider>,
   );
+  const draft = screen.getByRole("textbox", { name: "Palette draft" });
   const currentRule = () =>
     document.adoptedStyleSheets[1].cssRules[0] as CSSStyleRule;
   try {
@@ -500,6 +506,10 @@ test("selected palette sheets follow System changes and retire only their own sh
       palettes.nord.light.background,
     );
     expect(document.adoptedStyleSheets).toHaveLength(2);
+    for (const [token, color] of Object.entries(palettes.nord.light))
+      expect(currentRule().style.getPropertyValue(`--${token}`)).toBe(color);
+    expect(screen.getByRole("textbox", { name: "Palette draft" })).toBe(draft);
+    expect((draft as HTMLTextAreaElement).value).toBe("retained palette draft");
   } finally {
     view.unmount();
     const remaining = document.adoptedStyleSheets;
