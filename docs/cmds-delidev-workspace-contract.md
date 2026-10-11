@@ -632,3 +632,28 @@ The Worker retires this non-content proof only after original complete progress
 commits. Both bounded proof names enter completed absence checks. Reappearance
 keeps acknowledgement pending; original Local directories, independent child
 copies and shared account/browser data retain their separate ownership.
+
+
+## Retained native workspace removal admission
+
+Permanent cleanup captures the original managed workspace tree before manifest
+ownership reads and retains native root, ancestor and per-entry identities across
+Git validation and removal. Its obligation-owned external admission is synchronized
+before the first workspace destructive operation. Validate all repository owners
+before removing any repository. A native Git removal requires the original complete
+tree inventory at its invocation boundary; the generic workspace remover checks
+retained identities at traversal and every unlink. Local source directories and
+shared Git/account/browser storage retain their existing independent boundaries.
+
+Ownership checks and Git removal use an independent process index under the
+original deletion obligation. They cannot recreate a session process operand whose
+admission proved absence. Join and retire only their positively completed original
+processes, using their own durable native admission. Interruption preserves this
+scope and its metadata; completed replay requires its original process names absent.
+No new execution, preparation or native input authority is introduced.
+
+Reuse exact workspace native admission after interruption. A historical removed
+workspace proof grants absence only and cannot adopt a restored root. Retain native
+admission metadata independently of the non-content workspace proof retirement.
+The storage contract owns bounds, stable platform identity and the separate final
+check-to-unlink race limit.

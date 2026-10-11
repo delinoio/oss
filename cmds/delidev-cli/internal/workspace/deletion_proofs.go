@@ -50,7 +50,7 @@ func ImportLegacyDeletionWorkspaceProof(root string, w domain.SessionDeletionWor
 		return nil
 	}
 	var legacy deletionWorkspaceProof
-	if err != nil || domain.Decode(raw, &legacy) != nil || legacy.Version != 1 || legacy.Identity != (domain.SessionDeletionIdentity{}) || legacy.Digest != w.Digest() {
+	if err != nil || domain.Decode(raw, &legacy) != nil || legacy.Version != 1 || legacy.AdmissionDigest != "" || legacy.Identity != (domain.SessionDeletionIdentity{}) || legacy.Digest != w.Digest() {
 		return domain.SessionDeletionPending()
 	}
 	legacy.Version = 2

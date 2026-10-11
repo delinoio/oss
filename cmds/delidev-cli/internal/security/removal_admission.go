@@ -212,6 +212,79 @@ func (a *RemovalAdmission) Check(ctx context.Context, root string, removed bool)
 	return nil
 }
 
+// CheckTree rejects new names as well as changed identities before a native
+// directory operation. Native command internals retain their separate syscall
+// race limit; this check grants no authority to a replacement inventory.
+func (a *RemovalAdmission) CheckTree(ctx context.Context, root, path string) error {
+	if a.Check(ctx, root, true) != nil {
+		return domain.SessionDeletionPending()
+	}
+	rel, err := removalRelative(root, path)
+	if err != nil || !a.removable(rel) {
+		return domain.SessionDeletionPending()
+	}
+	entries := a.entryMap()
+	entry, ok := entries[rel]
+	if !ok {
+		return domain.SessionDeletionPending()
+	}
+	if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if entry.Identity == nil {
+		return domain.SessionDeletionPending()
+	}
+	count := 0
+	return filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return domain.SessionDeletionPending()
+		}
+		if err := ctx.Err(); err != nil {
+			return domain.SafeError(err)
+		}
+		count++
+		if count > MaxRemovalAdmissionEntries {
+			return domain.SessionDeletionPending()
+		}
+		if err := a.checkCapturedAncestors(root, p, entries); err != nil {
+			return err
+		}
+		rel, err := removalRelative(root, p)
+		entry, ok := entries[rel]
+		if err != nil || !ok || entry.Identity == nil {
+			return domain.SessionDeletionPending()
+		}
+		id, err := CaptureNativeIdentity(p)
+		if err != nil || id != *entry.Identity {
+			return domain.SessionDeletionPending()
+		}
+		return nil
+	})
+}
+func (a *RemovalAdmission) CheckTrees(ctx context.Context, root string) error {
+	if a.Check(ctx, root, true) != nil {
+		return domain.SessionDeletionPending()
+	}
+	for _, operand := range a.Operands {
+		if err := a.CheckTree(ctx, root, filepath.Join(root, operand)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func (a *RemovalAdmission) OriginallyPresent(root, path string) bool {
+	rel, err := removalRelative(root, path)
+	if err != nil {
+		return false
+	}
+	for _, entry := range a.Entries {
+		if entry.Path == rel {
+			return entry.Identity != nil
+		}
+	}
+	return false
+}
+
 // RemoveAdmittedTree never takes a fresh baseline. Every traversal and unlink
 // uses the original record. The final check-to-unlink syscall gap is separate.
 func RemoveAdmittedTree(ctx context.Context, root, path string, a *RemovalAdmission) error {
@@ -233,30 +306,10 @@ func RemoveAdmittedTree(ctx context.Context, root, path string, a *RemovalAdmiss
 		}
 		return SyncParent(path)
 	}
-	// Inventory actual names to reject any entry not present in original evidence.
-	if err := filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if err := a.checkCapturedAncestors(root, p, entries); err != nil {
-			return err
-		}
-		rel, err := removalRelative(root, p)
-		entry, ok := entries[rel]
-		if err != nil || !ok || entry.Identity == nil {
-			return domain.SessionDeletionPending()
-		}
-		id, err := CaptureNativeIdentity(p)
-		if err != nil || id != *entry.Identity {
-			return domain.SessionDeletionPending()
-		}
-		return nil
-	}); err != nil {
-		return domain.SessionDeletionPending()
+	if err := a.CheckTree(ctx, root, path); err != nil {
+		return err
 	}
+
 	for i := len(a.Entries) - 1; i >= 0; i-- {
 		entry := a.Entries[i]
 		if entry.Path != rel && !strings.HasPrefix(entry.Path, rel+string(filepath.Separator)) {
