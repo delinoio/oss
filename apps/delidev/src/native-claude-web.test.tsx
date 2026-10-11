@@ -180,3 +180,91 @@ test.each(timestampVectors)(
     }
   },
 );
+
+const retainedWebLimit = 256 * 1024;
+
+function fetchWithRetainedBytes(target: number, characters: string) {
+  const data = fixture("web_fetch");
+  const document = data.blocks[1]!.block.web.result!.fetch!.document;
+  document.text = "";
+  // The fixed envelope has only ASCII without HTML-significant characters.
+  // Every character in the supplied token costs six bytes under Go escaping.
+  const envelope = data.blocks.reduce(
+    (total, entry) =>
+      total + new TextEncoder().encode(JSON.stringify(entry.block.web)).length,
+    0,
+  );
+  const remaining = target - envelope;
+  const tokenBytes = characters.length * 6;
+  document.text =
+    characters.repeat(Math.floor(remaining / tokenBytes)) +
+    "x".repeat(remaining % tokenBytes);
+  return data;
+}
+
+test.each(["<", ">", "&", "\u2028", "\u2029", "<>&\u2028\u2029"])(
+  "enforces exact escaped aggregate boundaries for %j",
+  (characters) => {
+    for (const offset of [-1, 0, 1]) {
+      const data = fetchWithRetainedBytes(retainedWebLimit + offset, characters);
+      expect(validNativeClaudeMessage(data, "complete")).toBe(offset <= 0);
+    }
+  },
+);
+
+test("rejects the reported escaped document before rendering any metadata", () => {
+  const data = fixture("web_fetch");
+  data.blocks[1]!.block.web.result!.fetch!.document.text = "<".repeat(50_000);
+  expect(validNativeClaudeMessage(data, "complete")).toBe(false);
+  const { container } = render(
+    <NativeClaudeMessage content={data} state="complete" />,
+  );
+  expect(screen.getByText(/unavailable or inconsistent/)).toBeTruthy();
+  expect(screen.queryByText("Original document")).toBeNull();
+  expect(container.querySelector("script, img, a, button")).toBeNull();
+});
+
+test("aggregates separate valid web results instead of resetting the limit", () => {
+  const first = fixture("web_fetch");
+  const second = fixture("web_fetch");
+  for (const [data, id] of [
+    [first, "srvtool_first"],
+    [second, "srvtool_second"],
+  ] as const) {
+    for (const entry of data.blocks) entry.block.web.native_id = id;
+    data.blocks[1]!.block.web.result!.fetch!.document.text = "&".repeat(25_000);
+    expect(validNativeClaudeMessage(data, "complete")).toBe(true);
+  }
+  const combined = {
+    ...first,
+    blocks: [...first.blocks, ...second.blocks].map((entry, index) => ({
+      ...entry,
+      index,
+    })),
+  };
+  expect(validNativeClaudeMessage(combined, "complete")).toBe(false);
+});
+
+test("combines escaped web metadata with ordinary text under one bound", () => {
+  const data = fetchWithRetainedBytes(retainedWebLimit - 100, "<>&");
+  const text = {
+    index: 2,
+    block: { kind: "text", text: "x".repeat(100) },
+    state: "stopped",
+  };
+  const combined = { ...data, blocks: [...data.blocks, text] };
+  expect(validNativeClaudeMessage(combined, "complete")).toBe(true);
+  text.block.text += "x";
+  expect(validNativeClaudeMessage(combined, "complete")).toBe(false);
+});
+
+test("preserves the original call/result order for an ordinary message", () => {
+  const data = fixture("web_fetch");
+  const { container } = render(
+    <NativeClaudeMessage content={data} state="complete" />,
+  );
+  const text = container.textContent!;
+  expect(text.indexOf('{"url":"https://fixture.invalid"}')).toBeLessThan(
+    text.indexOf("Original native content <script>inert()</script>"),
+  );
+});
