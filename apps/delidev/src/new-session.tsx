@@ -572,7 +572,9 @@ export function NewSession({
     disabled: blocked,
     enabled:
       (status.data?.capabilities.includes(SystemCapability.NATIVE_SKILLS_V1) ||
-        status.data?.capabilities.includes(SystemCapability.OPENCODE_NATIVE_SKILLS_V1)) ??
+        status.data?.capabilities.includes(
+          SystemCapability.OPENCODE_NATIVE_SKILLS_V1,
+        )) ??
       false,
   });
   const promptHistory = useProjectPromptHistory({

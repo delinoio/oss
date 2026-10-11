@@ -2500,7 +2500,6 @@ No host configuration, native authentication or prompt-text skill emulation is
 introduced. Code inspection and fixtures cannot establish installed native,
 remote-Worker, account or platform acceptance.
 
-
 ## OpenCode selected native skill profile
 
 The selected native source revision is `545f51d26cc39a907d2867492d498d9607ea5fa4`.

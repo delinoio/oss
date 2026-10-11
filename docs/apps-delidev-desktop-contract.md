@@ -5332,7 +5332,6 @@ Rows/actions reflow on narrow layouts using existing theme tokens. All new copy 
 English/Korean entries. Synthetic fixtures and parser checks do not establish
 installed desktop, screen-reader, native-runtime or effective-200% acceptance.
 
-
 ## OpenCode native skill composer capability
 
 The existing explicit skill completion also accepts the independently negotiated

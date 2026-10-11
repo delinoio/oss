@@ -1038,7 +1038,6 @@ Existing explicit-only package policy, accepted-input proofs and dependent clean
 remain authoritative. Unsupported harness adapters refuse execution without prompt
 emulation.
 
-
 ## OpenCode native skill generations
 
 System and Worker `OPENCODE_NATIVE_SKILLS_V1` authorize only the independently
