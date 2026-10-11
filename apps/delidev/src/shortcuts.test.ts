@@ -499,7 +499,8 @@ it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])(
       if (handled) event.preventDefault();
       input.addEventListener(
         "keydown",
-        () => dispatchShortcut(event, [action], Surface.Sessions, localPlatform),
+        () =>
+          dispatchShortcut(event, [action], Surface.Sessions, localPlatform),
         { once: true },
       );
       input.dispatchEvent(event);
@@ -515,7 +516,8 @@ it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])(
       { repeat: true },
       { isComposing: true },
       { keyCode: 229 },
-    ]) send(options);
+    ])
+      send(options);
     send({}, true);
     expect(run).toHaveBeenCalledTimes(1);
     expect(bindingAria(action.bindings[0]!, localPlatform)).toBe(

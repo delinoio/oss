@@ -299,7 +299,9 @@ it("keeps Open Settings fixed and rejects comma capture without changing editabl
     ShortcutId.SearchFocus,
   ]);
   expect(() =>
-    parseShortcutOverrides({ [ShortcutId.OpenSettings]: { state: "disabled" } }),
+    parseShortcutOverrides({
+      [ShortcutId.OpenSettings]: { state: "disabled" },
+    }),
   ).toThrow();
   for (const platform of [ShortcutPlatform.Mac, ShortcutPlatform.Other])
     expect(
