@@ -2,6 +2,7 @@ syntax = "proto3";
 package delidev.v1;
 
 import "delidev/v1/common.proto";
+import "delidev/v1/native_shell.proto";
 import "delidev/v1/terminal.proto";
 
 option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
@@ -14,6 +15,9 @@ message ErrorDetail {
 }
 
 service WorkerService {
+  rpc ClaimNativeShell(ClaimNativeShellRequest) returns (ClaimNativeShellResponse);
+  rpc PublishNativeShell(PublishNativeShellRequest) returns (PublishNativeShellResponse);
+
   rpc SyncWorkerNetwork(SyncWorkerNetworkRequest) returns (SyncWorkerNetworkResponse);
   rpc ReportWorkerNativeRoute(ReportWorkerNativeRouteRequest) returns (ReportWorkerNativeRouteResponse);
   rpc ListSessionDeletionWork(ListSessionDeletionWorkRequest) returns (ListSessionDeletionWorkResponse);
@@ -173,6 +177,7 @@ enum WorkerCapability {
   WORKER_CAPABILITY_CODEX_API_PROXY_V1 = 10;
   WORKER_CAPABILITY_CODEX_SUBAGENT_CONFIGURATION_V1 = 11;
   WORKER_CAPABILITY_OPENCODE_FOREGROUND_SUBAGENTS_V1 = 12;
+  WORKER_CAPABILITY_CODEX_NATIVE_SHELL_V1 = 63;
 }
 
 message AttachWorkerResponse {

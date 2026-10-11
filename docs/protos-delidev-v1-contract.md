@@ -1444,3 +1444,19 @@ Each native bucket owns its exact bounded ID, required hasCredits/unlimited flag
 Account rows show one exact balance or a localized multi-bucket count. Manage subscription shows the read-only Paid credits card above Quota, with separate bucket labels and retained stale/error timestamps. Keep loading, unavailable/update, unknown, zero, positive and unlimited states distinct. Use existing theme tokens, wrapping rows, parent scrolling, keyboard/dismissal ownership and EN/KO strings. Presentation grants no account, execution, native or platform acceptance.
 
 The reconciled `CreateTerminalRequest` baseline retains original fields 1–4. The feature records their unchanged reset provenance as existing declarations; its records do not reclassify this original message as new. The feature owns creation intent field 5, original candidate field 6 and the closed creation-mode values. Preserve all member numbers and ownership.
+
+## Original native shell actions
+
+System capability 92 and Worker capability 63 reserve `CODEX_NATIVE_SHELL_V1`.
+`SessionService.RunNativeShell`, `GetNativeShell` and `CancelNativeShell` expose
+a closed native shell action independently of product terminals and ordinary
+execution input. Run requires an exact original mutation, command, explicit
+full-access selection and optional timeout. Cancellation retains the original
+action and session identities; it accepts no operating-system process identifier.
+
+`WorkerService.ClaimNativeShell` and `PublishNativeShell` bind the original
+mutation to its Machine and Worker instance. Publication carries only the
+bounded closed native-shell observation document. The action resource preserves
+original request receipts and independent delivery, native completion and
+cleanup evidence. These declarations grant no shell dispatch, continuation,
+account or cleanup authority by themselves and add no database migration.
