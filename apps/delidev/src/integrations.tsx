@@ -1005,8 +1005,9 @@ export function Integrations({
                   identity={paginationIdentity}
                   revision={paginationRevision}
                 >
-                  {(rows) =>
-                    rows.map((row) => (
+                  {(rows) => {
+                    presentationLabels.observeResources(rows);
+                    return rows.map((row) => (
                       <article className="integration-row" key={row.id}>
                         <div>
                           <h3>{presentationLabels.resource(row)}</h3>
@@ -1042,8 +1043,8 @@ export function Integrations({
                           </SettingsActionButton>
                         </div>
                       </article>
-                    ))
-                  }
+                    ));
+                  }}
                 </ScrollPayloadWindow>
                 {result.loaded && result.rows.length === 0 ? (
                   <p>

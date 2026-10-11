@@ -489,6 +489,22 @@ it("renders separate storage and identity facts with readable immutable metadata
       .hasAttribute("disabled"),
   ).toBe(true);
 });
+it("labels same-name profiles consistently across the complete observed page", async () => {
+  const f = fixture();
+  const duplicate = create(ResourceSchema, {
+    ...f.profile,
+    id: newRequestId(),
+  });
+  f.list.mockResolvedValue({
+    resources: [f.profile, duplicate],
+    nextPageToken: "",
+  });
+  render(f.view());
+  expect(
+    await screen.findByRole("button", { name: "Manage Work · 1" }),
+  ).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Manage Work · 2" })).toBeTruthy();
+});
 it.each([
   ["invalid-token", "Invalid token"],
   ["access-restricted", "Access restricted"],
