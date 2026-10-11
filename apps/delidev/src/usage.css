@@ -30,14 +30,21 @@
 .usage-source-definitions, .usage-source-pricing { margin-block: 16px; }
 .usage-page .usage-accounting-source .usage-metrics-secondary { color: var(--text); font-variant-numeric: tabular-nums; }
 .usage-page .usage-accounting-source h2 { font-size: 1rem; }
-.sidebar-list:has(.usage-sidebar:not([hidden])) { overflow: hidden; }
-.sidebar-surface-outlet:has(.usage-sidebar:not([hidden])) { display: flex; flex: 1; min-height: 0; flex-direction: column; }
-.usage-sidebar:not([hidden]) { display: flex; flex: 1; min-height: 0; flex-direction: column; padding-bottom: 0; }
+.sidebar-list:has(.usage-sidebar:not([hidden])) { min-width: 0; overflow: hidden; }
+.sidebar-surface-outlet:has(.usage-sidebar:not([hidden])) { display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
+.usage-sidebar:not([hidden]) { display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; padding-bottom: 0; }
 .usage-sidebar > h2 { flex-shrink: 0; margin-bottom: 8px; }
 .usage-sidebar .usage-timezone-chip { flex-shrink: 0; align-self: flex-start; box-sizing: border-box; max-width: calc(100% - 8px); margin: 0 4px 16px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-inset); color: var(--muted); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
-.usage-sidebar .usage-sidebar-form { display: flex; flex: 1; min-height: 0; flex-direction: column; }
-.usage-sidebar .usage-filter-scroll { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: none; padding-inline: 4px; scrollbar-gutter: stable; }
+.usage-sidebar .usage-sidebar-form { display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
+.usage-sidebar .usage-filter-scroll { min-width: 0; min-height: 0; flex: 1; overflow-x: hidden; overflow-y: auto; overscroll-behavior: none; padding-inline: 4px; scrollbar-gutter: stable; }
 .usage-sidebar fieldset { padding-block: 12px; border-top: 1px solid var(--border); min-width: 0; }
+/* Native datetime inputs have an intrinsic width larger than narrow panes.
+   Shrink their grid owners and bounds before disabling horizontal scrolling. */
+.usage-sidebar label { min-width: 0; grid-template-columns: minmax(0, 1fr); overflow-wrap: anywhere; }
+.usage-sidebar .resource-choice, .usage-sidebar .scroll-picker { min-width: 0; max-width: 100%; }
+.usage-sidebar input:not([type=checkbox]), .usage-sidebar select, .usage-sidebar .scroll-picker > button { box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; min-height: 40px; }
+.usage-sidebar button { max-width: 100%; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.usage-sidebar p, .usage-sidebar legend { max-width: 100%; overflow-wrap: anywhere; }
 .usage-sidebar legend { color: var(--muted); font-weight: 650; font-size: .8rem; }
 .usage-sidebar .actions { flex-shrink: 0; padding-block: 12px; border-top: 1px solid var(--border); background: var(--surface); }
 .usage-sidebar .actions button { width: 100%; }

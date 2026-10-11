@@ -470,3 +470,17 @@ Endpoint or API-profile edits remove managed mapping eligibility. No name,
 URL resemblance or native-ID alias establishes a match.
 
 Mode changes retain and check the original displayed active price revision (zero only when unavailable), together with the policy and provider revisions. A concurrent automatic publication conflicts before any policy mutation, so Manual cannot freeze an unseen rate. Exact uncertain retries retain all three original revisions.
+
+### Usage filter inline bounds
+
+At the existing 288px and 256px pane widths, Usage filter owners and label grid
+tracks shrink to the available inline width. Text, datetime, select and picker
+controls fit their label bounds with border-box sizing and retain 40px minimum
+height. Preserve native checkbox sizing and calendar appearance. Long labels,
+helpers, validation feedback and buttons wrap without hiding required content.
+The filter body has no horizontal movement after child geometry is constrained;
+its scroll width is at most its client width plus one pixel. Keep independent
+vertical scrolling, stable scrollbar gutter, overscroll protection and fixed
+Reset. Date precision, invalid drafts, presets, picker selection, query identity
+and mounted drafts retain their original owners. English/Korean, light/dark,
+compact drawer and effective 200% browser checks are synthetic evidence only.

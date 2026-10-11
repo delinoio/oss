@@ -47,6 +47,55 @@ async function wheelChaining(page, context) {
  assert.deepEqual(await page.evaluate(()=>({reads:window.__usageFixture.summary,tabs:[...document.querySelectorAll('.usage-tabs [role=tab]')].map(n=>n.getAttribute('aria-selected')),details:[...document.querySelectorAll('.usage-page details')].map(n=>n.open),filters:[...document.querySelectorAll('.usage-sidebar input,.usage-sidebar select')].map(n=>n.value)})),before,`${context}: wheel input preserves data/filters/tabs/disclosures and reads`);
 }
 
+async function boundedFilters(page, context) {
+  const body = page.locator('.usage-filter-scroll');
+  const geometry = await body.evaluate(node => {
+    const bounds = node.getBoundingClientRect();
+    return { width: node.clientWidth, scroll: node.scrollWidth, vertical: node.scrollHeight > node.clientHeight,
+      controls: [...node.querySelectorAll('input,select,button')].filter(n => !n.hidden).map(n => {
+        const r = n.getBoundingClientRect();
+        return { left: r.left, right: r.right, height: r.height, checkbox: n.type === 'checkbox' };
+      }), left: bounds.left, right: bounds.right };
+  });
+  assert(geometry.scroll <= geometry.width + 1, `${context}: bounded filter width ${JSON.stringify(geometry)}`);
+  assert(geometry.controls.every(n => n.left >= geometry.left - 1 && n.right <= geometry.right + 1 && (n.checkbox || n.height >= 40)), `${context}: controls fit without clipping`);
+  await body.evaluate(n => { n.scrollLeft = 100; });
+  assert.equal(await body.evaluate(n => n.scrollLeft), 0, `${context}: no horizontal offset`);
+  const controls = body.locator('input:not([disabled]),select:not([disabled]),button:not([disabled])');
+  for (let i = 0; i < await controls.count(); i++) {
+    await controls.nth(i).focus();
+    assert.equal(await body.evaluate(n => n.scrollLeft), 0, `${context}: focus does not move horizontally`);
+  }
+  await body.evaluate(n => { n.scrollTop = 0; });
+  const box = await body.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + Math.min(40, box.height / 2));
+  await page.mouse.wheel(150, 0); await page.waitForTimeout(150);
+  assert.equal(await body.evaluate(n => n.scrollLeft), 0, `${context}: horizontal gesture stays fixed`);
+  if (geometry.vertical) {
+    await page.mouse.wheel(0, 150);
+    await page.waitForFunction(() => document.querySelector('.usage-filter-scroll').scrollTop > 0);
+  }
+  await body.evaluate(n => { n.scrollTop = 0; });
+}
+
+async function portableFilters(browser, app) {
+  const styles = (await Promise.all(['themes.css', 'styles.css', 'usage.css', 'scroll-picker.css'].map(name => readFile(join(app, 'src', name), 'utf8')))).join('\n');
+  const page = await browser.newPage();
+  try {
+    for (const width of [288, 256]) for (const language of ['en', 'ko']) for (const theme of ['light', 'dark']) {
+      const context = `portable/${width}/${language}/${theme}`;
+      const label = language === 'ko' ? '전체 사용량 필터의 긴 이름과 도움말' : 'Complete long Usage filter label and helper';
+      await page.setContent(`<style>${styles}</style><div class="sidebar-pane" style="width:${width}px;height:600px"><div class="sidebar-list"><div class="sidebar-surface-outlet"><section class="sidebar-surface-content usage-sidebar"><h2>Usage</h2><form class="sidebar-form usage-sidebar-form"><div class="usage-filter-scroll"><fieldset><legend>${label}</legend><label>${label}<input type="datetime-local" value="2026-10-09T10:19:54.733"></label><label>${label}<input type="datetime-local" value="2026-10-10T10:19:54.733"></label><div class="resource-choice"><div class="scroll-picker"><span>${label}</span><button type="button" role="combobox">${label.repeat(6)}</button></div></div><label>${label}<select><option>${label.repeat(6)}</option></select></label><label class="checkbox"><input type="checkbox">${label}</label><p role="alert">${label.repeat(12)}</p></fieldset></div><div class="actions"><button type="button">Reset</button></div></form></section></div></div></div>`);
+      await page.evaluate(theme => { document.documentElement.dataset.theme = theme; }, theme);
+      await boundedFilters(page, context);
+      const footer = await page.locator('.actions button').boundingBox();
+      assert(footer && footer.y >= 0 && footer.y + footer.height <= 600, `${context}: fixed Reset remains visible`);
+      assert(await page.locator('.usage-filter-scroll').evaluate(n => n.scrollHeight > n.clientHeight), `${context}: vertical filter range retained`);
+      console.log(JSON.stringify({ operation: 'usage-portable-width', context, result: 'passed' }));
+    }
+  } finally { await page.close(); }
+}
+
 const app = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const source = { revision: execFileSync("git", ["rev-parse", "HEAD"], { cwd: app, encoding: "utf8" }).trim(), dirty: Boolean(execFileSync("git", ["status", "--porcelain"], { cwd: app, encoding: "utf8" }).trim()) };
 const modulePath = process.env.DELIDEV_LAYOUT_PLAYWRIGHT_MODULE;
@@ -70,6 +119,7 @@ try {
   });
   await new Promise(done => server.listen(0, "127.0.0.1", done));
   browser = await chromium.launch({ headless: true, ...(process.env.DELIDEV_LAYOUT_BROWSER_CHANNEL ? { channel: process.env.DELIDEV_LAYOUT_BROWSER_CHANNEL } : {}) });
+  await portableFilters(browser, app);
   const page = await browser.newPage({ timezoneId: "America/Argentina/Rio_Gallegos" });
   page.on("pageerror", error => failures.push(error.message));
   const origin = `http://127.0.0.1:${server.address().port}`;
@@ -124,6 +174,7 @@ try {
     assert.equal(await sources.nth(0).locator("details").first().evaluate(node => node.open), true, context);
     const opener = page.locator(".sidebar-context-trigger"); if (await opener.isVisible()) { await page.locator("#main").evaluate(node=>node.scrollTop=0); await opener.focus(); await opener.press("Enter"); }
     const pane = page.locator(".usage-sidebar");
+    await boundedFilters(page, context);
     const zone = pane.locator(".usage-timezone-chip");
     assert.equal(await zone.locator('[aria-hidden="true"]').textContent(), "America/Argentina/Rio_Gallegos", context);
     assert.equal(await zone.locator('.usage-sr-only').textContent(), language === "ko" ? "시간대: America/Argentina/Rio_Gallegos" : "Timezone: America/Argentina/Rio_Gallegos", context);
@@ -168,6 +219,12 @@ try {
     assert.deepEqual(await presets.evaluateAll(nodes => nodes.map(node => node.getAttribute("aria-pressed"))), ["false", "false", "false"], context);
     assert.equal(await date.evaluate(node => node === document.activeElement), true, context);
     assert.equal(await pane.isVisible(), true, context);
+    const until = pane.locator('input[type="datetime-local"]').nth(1);
+    await until.fill("2026-08-01T10:00:54.733");
+    await pane.getByRole("alert").waitFor();
+    assert.equal(await until.inputValue(), "2026-08-01T10:00:54.733", `${context}: invalid millisecond draft retained`);
+    assert(await pane.getByRole("alert").evaluate(n => n.scrollWidth <= n.clientWidth + 1), `${context}: invalid feedback wraps`);
+    await boundedFilters(page, `${context}/invalid-range`);
     const reset = pane.locator(".actions button"); await reset.focus();
     const footer = await reset.boundingBox(); assert(footer && footer.y >= 0 && footer.y + footer.height <= height, `${context}: reset stays reachable`);
     await reset.press("Enter");
