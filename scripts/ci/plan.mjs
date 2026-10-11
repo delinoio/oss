@@ -50,7 +50,7 @@ export function matricesForEvent(event, mode = Mode.Affected) {
     environmentMatrix: hosts("ubuntu-latest"),
     forgeMatrix: hosts("ubuntu-latest"),
     cliboxMatrix: hosts("ubuntu-22.04"),
-    delidevFrontendMatrix: { include: [{ phase: "checks" }, { phase: "tests-1" }, { phase: "tests-2" }] },
+    delidevFrontendMatrix: { include: [{ phase: "checks" }, { phase: "tests-1" }, { phase: "tests-2" }, { phase: "tests-3" }, { phase: "tests-4" }] },
     desktopMatrix: { include: nativeMatrices["devhud-desktop"].filter((row) => row.os !== "macos") },
     reactForgeMatrix: { include: nativeMatrices["react-forge"].filter((row) => row.platform !== "darwin") },
     pnportMatrix: { include: pnportMatrix.include.filter(row => !row.runner.startsWith("macos")) },
