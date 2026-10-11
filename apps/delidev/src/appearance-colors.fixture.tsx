@@ -3,6 +3,8 @@
 import { createRoot } from "react-dom/client";
 import { AppearanceProvider, Theme, type AppearanceBridge, type AppearanceSnapshot } from "./appearance";
 import { defaultPreferences, Palette, palettes, type AppearancePreferences } from "./appearance-preferences";
+import "./styles.css";
+import "./doctor.css";
 import "./themes.css";
 import "./appearance-colors.fixture.css";
 
@@ -20,12 +22,21 @@ const bridge: AppearanceBridge = {
   update: async () => { throw new Error("Fixture must not write appearance"); },
 };
 const root = createRoot(document.getElementById("root")!);
-root.render(<AppearanceProvider bridge={bridge}><main id="appearance-probe"><textarea aria-label="Retained draft" defaultValue="unsent" /></main></AppearanceProvider>);
+root.render(<AppearanceProvider bridge={bridge}><main id="appearance-probe">
+  <aside id="palette-sidebar" className="sidebar"><div><button id="palette-hover" className="sidebar-project-row">Demo</button><button id="palette-selected" aria-pressed="true">Selected</button></div></aside>
+  <section className="appearance-preview"><div id="palette-card"><p>Body text</p><small id="palette-muted">Secondary text</small><a id="palette-link" className="diagnostics-symbol" href="#appearance-probe">Example link</a></div></section>
+  <section id="palette-conversation" className="usage-page"><div id="palette-conversation-card" className="usage-chart-panel">Synthetic conversation surface</div></section>
+  <textarea aria-label="Retained draft" defaultValue="unsent" />
+</main></AppearanceProvider>);
 const fixture = {
   commit(theme: Theme, custom = false, defaults = false) {
     snapshot = { ...snapshot, revision: snapshot.revision + 1, theme,
       preferences: { ...preferences, light_palette: defaults ? Palette.Default : Palette.Nord,
         dark_palette: defaults ? Palette.Default : custom ? customId : Palette.Dracula } };
+    listeners.forEach(changed => changed(snapshot));
+  },
+  select(light: Palette, dark: Palette, theme: Theme) {
+    snapshot = { ...snapshot, revision: snapshot.revision + 1, theme, preferences: { ...preferences, light_palette: light, dark_palette: dark } };
     listeners.forEach(changed => changed(snapshot));
   },
   unmount: () => root.unmount(),

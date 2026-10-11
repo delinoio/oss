@@ -2893,6 +2893,53 @@ Default preserves the original colors. Custom libraries hold at most 32 UUID-v7
 identities, with names of at most 80 Unicode scalar values. Bundled themes are
 immutable; duplication creates a separate editable identity.
 
+Titanium, Nord, Dracula and Solarized ship complete independent Light/Dark maps
+for the existing 38 semantic tokens. Preserve both Default maps byte-for-byte.
+Use these approved encoded-sRGB cores; all colors are opaque uppercase `#RRGGBB`:
+
+| Family / mode | Background B | Surface S | Inset I | Text T | Accent A |
+| --- | --- | --- | --- | --- | --- |
+| Titanium Light | #F4F4F5 | #FFFFFF | #E4E4E7 | #27272A | #52525B |
+| Titanium Dark | #18181B | #27272A | #09090B | #FAFAFA | #52525B |
+| Nord Light | #ECEFF4 | #E5E9F0 | #D8DEE9 | #2E3440 | #3A5877 |
+| Nord Dark | #2E3440 | #3B4252 | #242933 | #ECEFF4 | #3A5877 |
+| Dracula Light | #F7F3FF | #F0E9FA | #E6DCF3 | #382C4A | #7143A5 |
+| Dracula Dark | #282A36 | #343746 | #21222C | #F8F8F2 | #7143A5 |
+| Solarized Light | #FDF6E3 | #EEE8D5 | #E3DCC8 | #4B6068 | #006B82 |
+| Solarized Dark | #002B36 | #073642 | #001F27 | #D6D3C4 | #006B82 |
+
+Store the derived values in `appearance-palettes.json`; no runtime generator is
+allowed. `mix(X,Y,p)` rounds each encoded-sRGB channel of `p*X + (1-p)*Y`.
+`background=B`, `surface=S`, `surface-inset=I`, `text=T`, `accent=A`.
+`surface-subtle=mix(B,S,.5)`, `surface-muted=mix(I,S,.25)` and
+`surface-hover=mix(T,S,.08)`. Let `Q=mix(A,S,.08)` and `C=mix(T,S,.8)`.
+Use Q for `surface-selected`, `selected-background` and `conversation-background`;
+use T for `selected-text` and `conversation-text`; use C for `selected-border`,
+`control-border` and `conversation-border`. `text-secondary=mix(T,S,.98)`,
+`muted=mix(T,S,.97)`, `text-subtle=mix(T,S,.96)`, `border=mix(T,S,.25)` and
+`border-subtle=mix(T,S,.15)`. `accent-hover=mix(#000000,A,.15)` and
+`on-accent=#FFFFFF`. Light `link`/`focus` use A; Dark uses `mix(#FFFFFF,A,.65)`.
+Let P be white in Light and black in Dark: `inverse-surface=T`,
+`inverse-hover=mix(P,T,.1)`, `inverse-border=mix(P,T,.65)`, `on-inverse=P` and
+`on-inverse-muted=mix(P,T,.9)`. Preserve each corresponding Default warning,
+danger and success value and Default Dark `execution-running`; Light
+`execution-running=mix(#000000,#087B78,.15)` retains teal with text contrast.
+
+Existing bundled references resolve the updated static maps without rewriting
+preferences. Existing custom maps, including earlier bundled duplicates, retain
+their stored colors. Keep independent mode selections, layout, labels, keyboard
+and focus ownership, mounted drafts, request/revision/recovery authority and all
+excluded terminal/backdrop/shadow/OS-native surfaces. No migration, schema, RPC,
+capability, logging or telemetry change is introduced. Frontend/native distributions
+must be rebuilt because native embeds the shared JSON; native tray snapshots use
+`Preferences::palette_colors` from that same source. Regression coverage checks
+exact values/key sets, unchanged Default bytes/custom storage, text/link contrast
+of at least 4.5:1 and required control/focus pairs of at least 3:1 against actual
+adjacent surfaces. The production-provider browser CI checks all eight maps,
+representative sidebar/card/selected/conversation colors, hover/focus, live System
+changes and retained drafts at ordinary and effective-200% CSS viewports. Fixtures,
+builds and native projections do not establish installed CEF/platform acceptance.
+
 A custom editor owns its name and complete light/dark opaque semantic color maps.
 Its synthetic preview contains no conversation content. Save and import require
 explicit confirmation. Import accepts one version-1 JSON theme of at most 32 KiB,

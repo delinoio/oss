@@ -10,6 +10,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 ## Owning contracts
 
+- [Device styling and bundled palette ownership](../../../docs/apps-delidev-desktop-contract.md#device-styling-and-custom-themes)
+
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)
 - [Shared sidebar scroll ownership](../../../docs/apps-delidev-desktop-contract.md#sidebar-scroll-boundaries)
 - [DeliDev Diagnostics Presentation](../../../docs/apps-delidev-diagnostics-contract.md)

@@ -42,19 +42,55 @@ try {
   // Foreign sheets must survive replacement and disposal of this owner.
   await page.evaluate(() => { const sheet = new CSSStyleSheet(); sheet.replaceSync(":root { --unrelated-appearance-test: retained; }"); window.foreignAppearanceSheet = sheet; document.adoptedStyleSheets = [sheet, ...document.adoptedStyleSheets]; });
   const rgb = hex => `rgb(${[1, 3, 5].map(index => parseInt(hex.slice(index, index + 2), 16)).join(", ")})`;
+  const excludedByMode = new Map();
   async function assertMap(expected, mode, mounted = true) {
     await page.waitForFunction(({ background, mode, mounted }) => document.documentElement.dataset.theme === mode && getComputedStyle(document.documentElement).getPropertyValue("--background").trim().toUpperCase() === background.toUpperCase() && document.adoptedStyleSheets.length === (mounted ? 2 : 1), { background: expected.background, mode, mounted });
-    const actual = await page.evaluate(() => {
+    const actual = await page.evaluate(tokens => {
       const root = getComputedStyle(document.documentElement), probe = document.getElementById("appearance-probe"), style = probe && getComputedStyle(probe);
-      return { colors: Object.fromEntries(["background", "surface", "text", "accent", "conversation-background"].map(token => [token, root.getPropertyValue(`--${token}`).trim().toUpperCase()])), foreign: document.adoptedStyleSheets.includes(window.foreignAppearanceSheet), background: style?.backgroundColor, text: style?.color, accent: style?.borderTopColor, retained: !probe || document.querySelector("textarea") === window.originalAppearanceDraft };
-    });
+      return { excluded: Object.fromEntries(["terminal-background", "terminal-foreground", "terminal-border", "terminal-muted", "terminal-selection", "terminal-scrollbar", "terminal-scrollbar-hover", "terminal-scrollbar-active", "backdrop", "shadow", "shadow-soft", "shadow-subtle"].map(token => [token, root.getPropertyValue(`--${token}`).trim()])), colors: Object.fromEntries(tokens.map(token => [token, root.getPropertyValue(`--${token}`).trim().toUpperCase()])), foreign: document.adoptedStyleSheets.includes(window.foreignAppearanceSheet), background: style?.backgroundColor, text: style?.color, accent: style?.borderTopColor, retained: !probe || document.querySelector("textarea") === window.originalAppearanceDraft };
+    }, Object.keys(expected));
     for (const [token, value] of Object.entries(actual.colors)) assert.equal(value, expected[token].toUpperCase(), `${mode}: ${token}`);
+    if (excludedByMode.has(mode)) assert.deepEqual(actual.excluded, excludedByMode.get(mode), "Palette selection leaves terminal/backdrop/shadow tokens unchanged");
+    else excludedByMode.set(mode, actual.excluded);
     assert(actual.foreign, "Unrelated adopted sheet survives");
     assert(actual.retained, "Mode/palette changes preserve mounted draft");
     if (mounted) { assert.equal(actual.background, rgb(expected.background)); assert.equal(actual.text, rgb(expected.text)); assert.equal(actual.accent, rgb(expected.accent)); }
+    if (mounted) {
+      const samples = await page.evaluate(() => Object.fromEntries(["palette-sidebar", "palette-card", "palette-muted", "palette-link", "palette-selected", "palette-conversation", "palette-conversation-card"].map(id => { const style = getComputedStyle(document.getElementById(id)); return [id, { background: style.backgroundColor, text: style.color, border: style.borderBottomColor }]; })));
+      for (const [id, property, token] of [["palette-sidebar", "background", "surface-muted"], ["palette-card", "background", "surface"], ["palette-card", "text", "text"], ["palette-muted", "text", "muted"], ["palette-link", "text", "link"], ["palette-selected", "background", "selected-background"], ["palette-selected", "text", "selected-text"], ["palette-selected", "border", "selected-border"], ["palette-conversation", "background", "conversation-background"], ["palette-conversation-card", "border", "conversation-border"]]) assert.equal(samples[id][property], rgb(expected[token]), `${mode}: ${id}/${property}`);
+    }
     checks++;
   }
   const commit = (theme, custom = false, defaults = false) => page.evaluate(({ theme, custom, defaults }) => window.appearanceColorsFixture.commit(theme, custom, defaults), { theme, custom, defaults });
+  await assertMap(palettes.dracula.dark, "dark");
+  // Exercise all eight maps through the real provider/cascade, not copied CSS.
+  for (const family of ["titanium", "nord", "dracula", "solarized"]) {
+    for (const mode of ["light", "dark"]) {
+      await page.evaluate(({ family, mode }) => window.appearanceColorsFixture.select(family, family, mode), { family, mode });
+      await assertMap(palettes[family][mode], mode);
+      await page.locator("#palette-hover").hover();
+      assert.equal(await page.locator("#palette-hover").evaluate(node => getComputedStyle(node).backgroundColor), rgb(palettes[family][mode]["surface-hover"]));
+      await page.locator("#palette-link").focus();
+      await page.keyboard.press("Tab"); // Keyboard focus reaches the retained input.
+      assert(await page.locator("textarea").evaluate(node => document.activeElement === node));
+      await page.keyboard.press("Shift+Tab");
+      assert.equal(await page.locator("#palette-link").evaluate(node => getComputedStyle(node).outlineColor), rgb(palettes[family][mode].focus));
+    }
+  }
+  // Same content/control geometry in both modes at ordinary and effective-200%
+  // CSS viewports. This does not claim native chrome zoom or CEF acceptance.
+  for (const viewport of [{ width: 960, height: 640 }, { width: 480, height: 320 }]) {
+    await page.setViewportSize(viewport);
+    let baseline;
+    for (const family of ["titanium", "nord", "dracula", "solarized"]) for (const mode of ["light", "dark"]) {
+      await page.evaluate(({ family, mode }) => window.appearanceColorsFixture.select(family, family, mode), { family, mode });
+      await assertMap(palettes[family][mode], mode);
+      const geometry = await page.evaluate(() => ["palette-sidebar", "palette-card", "palette-selected", "palette-link", "palette-conversation", "palette-conversation-card"].map(id => { const rect = document.getElementById(id).getBoundingClientRect(); return [rect.x, rect.y, rect.width, rect.height]; }));
+      if (!baseline) baseline = geometry; else assert.deepEqual(geometry, baseline, "Color-only changes preserve fixture geometry");
+      assert(await page.locator("#palette-selected").isVisible());
+    }
+  }
+  await commit("dark");
   await assertMap(palettes.dracula.dark, "dark");
   await commit("dark", true);
   const custom = { ...palettes.default.dark, background: "#201B2D", text: "#E8EDF6", accent: "#6B21A8" };

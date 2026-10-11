@@ -591,6 +591,184 @@ mod tests {
     }
 
     #[test]
+    fn bundled_palettes_embed_exact_semantic_maps_for_native_and_tray_projection() {
+        use std::collections::BTreeMap;
+        let bundled: BTreeMap<String, PaletteColors> =
+            serde_json::from_str(include_str!("../../src/appearance-palettes.json")).unwrap();
+        let mix = |x: &str, y: &str, percent: u16| -> String {
+            let mut result = String::from("#");
+            for start in [1, 3, 5] {
+                let a = u16::from_str_radix(&x[start..start + 2], 16).unwrap();
+                let b = u16::from_str_radix(&y[start..start + 2], 16).unwrap();
+                result.push_str(&format!(
+                    "{:02X}",
+                    (percent * a + (100 - percent) * b + 50) / 100
+                ));
+            }
+            result
+        };
+        let cores = [
+            (
+                "titanium",
+                ["#F4F4F5", "#FFFFFF", "#E4E4E7", "#27272A", "#52525B"],
+                ["#18181B", "#27272A", "#09090B", "#FAFAFA", "#52525B"],
+            ),
+            (
+                "nord",
+                ["#ECEFF4", "#E5E9F0", "#D8DEE9", "#2E3440", "#3A5877"],
+                ["#2E3440", "#3B4252", "#242933", "#ECEFF4", "#3A5877"],
+            ),
+            (
+                "dracula",
+                ["#F7F3FF", "#F0E9FA", "#E6DCF3", "#382C4A", "#7143A5"],
+                ["#282A36", "#343746", "#21222C", "#F8F8F2", "#7143A5"],
+            ),
+            (
+                "solarized",
+                ["#FDF6E3", "#EEE8D5", "#E3DCC8", "#4B6068", "#006B82"],
+                ["#002B36", "#073642", "#001F27", "#D6D3C4", "#006B82"],
+            ),
+        ];
+        for (family, light, dark) in cores {
+            let preferences = Preferences {
+                light_palette: family.into(),
+                dark_palette: family.into(),
+                ..Preferences::default()
+            };
+            // Tray Snapshot.colors calls this exact embedded-JSON projection.
+            let projected = preferences.palette_colors().unwrap();
+            for (is_dark, core, actual) in [
+                (false, light, projected.light),
+                (true, dark, projected.dark),
+            ] {
+                let [b, surface, inset, text, accent] = core;
+                let default = if is_dark {
+                    &bundled["default"].dark
+                } else {
+                    &bundled["default"].light
+                };
+                let p = if is_dark { "#000000" } else { "#FFFFFF" };
+                let q = mix(accent, surface, 8);
+                let c = mix(text, surface, 80);
+                let mut expected = default.clone();
+                for (key, value) in [
+                    ("background", b.to_owned()),
+                    ("surface", surface.to_owned()),
+                    ("surface-inset", inset.to_owned()),
+                    ("text", text.to_owned()),
+                    ("accent", accent.to_owned()),
+                    ("surface-subtle", mix(b, surface, 50)),
+                    ("surface-muted", mix(inset, surface, 25)),
+                    ("surface-hover", mix(text, surface, 8)),
+                    ("surface-selected", q.clone()),
+                    ("selected-background", q.clone()),
+                    ("selected-text", text.to_owned()),
+                    ("selected-border", c.clone()),
+                    ("text-secondary", mix(text, surface, 98)),
+                    ("muted", mix(text, surface, 97)),
+                    ("text-subtle", mix(text, surface, 96)),
+                    ("border", mix(text, surface, 25)),
+                    ("control-border", c.clone()),
+                    ("border-subtle", mix(text, surface, 15)),
+                    ("accent-hover", mix("#000000", accent, 15)),
+                    ("on-accent", "#FFFFFF".into()),
+                    (
+                        "link",
+                        if is_dark {
+                            mix("#FFFFFF", accent, 65)
+                        } else {
+                            accent.into()
+                        },
+                    ),
+                    (
+                        "focus",
+                        if is_dark {
+                            mix("#FFFFFF", accent, 65)
+                        } else {
+                            accent.into()
+                        },
+                    ),
+                    ("inverse-surface", text.into()),
+                    ("inverse-hover", mix(p, text, 10)),
+                    ("inverse-border", mix(p, text, 65)),
+                    ("on-inverse", p.into()),
+                    ("on-inverse-muted", mix(p, text, 90)),
+                    ("conversation-background", q),
+                    ("conversation-text", text.into()),
+                    ("conversation-border", c),
+                    (
+                        "execution-running",
+                        if is_dark {
+                            default["execution-running"].clone()
+                        } else {
+                            mix("#000000", "#087B78", 15)
+                        },
+                    ),
+                ] {
+                    expected.insert(key.into(), value);
+                }
+                assert_eq!(actual, expected, "{family} dark={is_dark}");
+                assert_eq!(actual.len(), 38);
+                assert!(valid_colors(&actual), "{family} dark={is_dark}");
+                for (foreground, background, minimum) in [
+                    ("link", "surface", 4.5),
+                    ("conversation-text", "conversation-background", 4.5),
+                    ("selected-text", "selected-background", 4.5),
+                    ("focus", "surface-selected", 3.0),
+                    ("selected-border", "selected-background", 3.0),
+                    ("conversation-border", "conversation-background", 3.0),
+                ] {
+                    let x = luminance(&actual[foreground]);
+                    let y = luminance(&actual[background]);
+                    assert!(
+                        (x.max(y) + 0.05) / (x.min(y) + 0.05) >= minimum,
+                        "{family}: {foreground}/{background}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn bundled_updates_do_not_rewrite_saved_custom_or_earlier_duplicated_maps() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("appearance.json");
+        let source: std::collections::BTreeMap<String, PaletteColors> =
+            serde_json::from_str(include_str!("../../src/appearance-palettes.json")).unwrap();
+        let mut legacy = CustomTheme {
+            version: 1,
+            id: uuid::Uuid::now_v7().to_string(),
+            name: "Earlier Titanium duplicate".into(),
+            light: source["default"].light.clone(),
+            dark: source["default"].dark.clone(),
+        };
+        legacy.light.insert("background".into(), "#F5F5F5".into());
+        legacy.light.insert("accent".into(), "#414D5E".into());
+        legacy.dark.insert("background".into(), "#191919".into());
+        legacy.dark.insert("accent".into(), "#435169".into());
+        let mut custom = legacy.clone();
+        custom.id = uuid::Uuid::now_v7().to_string();
+        custom.name = "Saved custom".into();
+        custom.light.insert("background".into(), "#F2F5FA".into());
+        let preferences = Preferences {
+            light_palette: legacy.id.clone(),
+            dark_palette: custom.id.clone(),
+            custom_themes: vec![legacy.clone(), custom.clone()],
+            ..Preferences::default()
+        };
+        assert!(preferences.valid());
+        persist(&path, Theme::Dark, &preferences).unwrap();
+        let original_bytes = fs::read(&path).unwrap();
+        let read = AppearanceStore::new(Some(directory.path().into())).read();
+        assert_eq!(read.problem, None);
+        assert_eq!(read.preferences, preferences);
+        assert_eq!(fs::read(&path).unwrap(), original_bytes);
+        let projected = read.preferences.palette_colors().unwrap();
+        assert_eq!(projected.light, legacy.light);
+        assert_eq!(projected.dark, custom.dark);
+    }
+
+    #[test]
     fn custom_themes_require_complete_contrast_maps_and_unique_original_references() {
         let source: serde_json::Value =
             serde_json::from_str(include_str!("../../src/appearance-palettes.json")).unwrap();

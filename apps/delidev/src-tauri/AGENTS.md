@@ -10,6 +10,8 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 
 ## Owning contracts
 
+- [Device styling and bundled palette ownership](../../../docs/apps-delidev-desktop-contract.md#device-styling-and-custom-themes)
+
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)
 - [DeliDev desktop localization](../../../docs/apps-delidev-localization-contract.md)
 - [API account browser OAuth](../../../docs/cmds-delidev-account-oauth-contract.md)

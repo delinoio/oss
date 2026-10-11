@@ -1,2 +1,10 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #appearance-probe { background: var(--background); color: var(--text); border: 1px solid var(--accent); }
+
+/* Geometry is synthetic; all sampled component colors use production rules. */
+#appearance-probe { padding: 16px; display: grid; gap: 16px; }
+#palette-sidebar { display: block; }
+#palette-conversation { padding: 16px; }
+#palette-conversation-card { min-height: 80px; }
+#palette-card { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; }
+#palette-card p { margin: 0; }
