@@ -144,3 +144,26 @@ it("releases the original workflow gate after a verified terminal inspection whi
   expect(discover).toHaveBeenCalledOnce();
   client.clear();
 });
+const settlement: [string, string, "foreign" | "kind" | "same", boolean][] = [
+  ["failed", "failed", "same", false], ["canceled", "canceled", "same", false],
+  ["queued", "queued", "same", true], ["claimed", "claimed", "same", true], ["uncertain", "uncertain", "same", true],
+  ["foreign job id", "succeeded", "foreign", true], ["wrong kind", "succeeded", "kind", true],
+];
+it.each(settlement)("gates the original workflow by observation: %s", async (_label, state, variant, blocked) => {
+  const row = machine("Gated Runner");
+  const accepted = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.JOB, schemaVersion: 1, revision: 2n, documentJson: encode({ state: "queued", output: {} }) });
+  const observed = create(ResourceSchema, { id: variant === "foreign" ? newRequestId() : accepted.id, kind: variant === "kind" ? EntityKind.MACHINE : EntityKind.JOB, schemaVersion: 1, revision: 3n, documentJson: encode({ state, output: {} }) });
+  const discover = vi.fn((_request: unknown) => ({ machine: row, job: accepted }));
+  const transport = createRouterTransport(router => { router.service(ResourceService, { getResource: request => ({ resource: request.id === accepted.id ? observed : row }) }); router.service(WorkerService, { discoverHarnesses: discover }); });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function Surface() { const open = useRunnerRemediation(); return <><button onClick={() => open?.(row)}>Inspect gated</button><button disabled={open?.pendingFor(row.id)}>Start original workflow</button>{open?.body}</>; }
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><RunnerRemediationProvider active><Surface /></RunnerRemediationProvider></QueryClientProvider></TransportProvider>);
+  fireEvent.click(screen.getByText("Inspect gated"));
+  fireEvent.click(await screen.findByRole("button", { name: "Run optional diagnostics" }));
+  await waitFor(() => expect(discover).toHaveBeenCalledOnce());
+  await new Promise(resolve => setTimeout(resolve, 50));
+  fireEvent.click(await screen.findByRole("button", { name: "Close Inspect installed harnesses" }));
+  expect((screen.getByRole("button", { name: "Start original workflow" }) as HTMLButtonElement).disabled).toBe(blocked);
+  expect(discover).toHaveBeenCalledOnce();
+  client.clear();
+});

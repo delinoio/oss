@@ -4,6 +4,8 @@
 - This file covers `apps/delidev/` and its descendants unless a more specific instruction file applies.
 - Read the owning contracts below before changing behavior, including affected cross-domain consumers.
 
+- Runner inspection: a retained result is not pending work. Only a verified terminal observation of the exact original job (identity, kind, schema, non-regressive revision) settles its gate, and only for the executable-path snapshot submitted with it. Unsent edits, Verify changes and uncertain work keep gating; settlement grants no readiness or execution authority.
+
 ## Owning contracts
 
 - [DeliDev desktop client](../../docs/apps-delidev-desktop-contract.md)

@@ -34,7 +34,7 @@ export function useMachineSettingsController(initial: Resource, active: boolean)
   // Settlement needs a verified terminal observation of the exact original job.
   // The read shares its cache entry with TrackedJob, so this adds no poller.
   const tracked = job && job !== "unknown" ? job : undefined;
-  const jobRead = useQuery(ResourceQuery.getResource, { kind: EntityKind.JOB, id: tracked?.id ?? "" }, { enabled: active && Boolean(tracked) });
+  const jobRead = useQuery(ResourceQuery.getResource, { kind: EntityKind.JOB, id: tracked?.id ?? "" }, { enabled: Boolean(tracked), refetchInterval: (query) => !query.state.data?.resource || ![JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(text(document(query.state.data.resource).state) as JobState) ? 2000 : false });
   const observed = jobRead.data?.resource;
   const settled = Boolean(tracked && observed && !jobRead.error && observed.id === tracked.id && observed.kind === EntityKind.JOB && observed.revision >= tracked.revision && supportsResourceSchema(observed) && [JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(text(document(observed).state) as JobState));
   const pending = discovery.busy || discovery.uncertain || (Boolean(job) && !settled);
