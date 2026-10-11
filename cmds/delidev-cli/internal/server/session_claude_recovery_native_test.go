@@ -173,9 +173,9 @@ func (r *claudePublicRecoveryFixture) reconcile(t *testing.T, ctx context.Contex
 	if domain.Decode(assignment.DocumentJson, &originalJob) != nil || domain.Decode(originalJob.Input, &originalInput) != nil || originalInput.Validate() != nil {
 		t.Fatal("original Claude assignment changed")
 	}
-	// Claim version describes first execution versus continuation, not the
-	// conversation turn count. Every later execution uses version 2.
-	if domain.Decode(response.Msg.Change.ExecutionRecoveryJob.DocumentJson, &recovery) != nil || domain.Decode(recovery.Input, &comparison) != nil || comparison.Validate() != nil || comparison.Harness != domain.ClaudeCode || comparison.Claude == nil || comparison.Claude.ClaimVersion != originalInput.Version {
+	// Claim version describes the original operation shape, independently of
+	// the assignment format version or conversation turn count.
+	if domain.Decode(response.Msg.Change.ExecutionRecoveryJob.DocumentJson, &recovery) != nil || domain.Decode(recovery.Input, &comparison) != nil || comparison.Validate() != nil || comparison.Harness != domain.ClaudeCode || comparison.Claude == nil || !claudeRecoveryClaimVersionMatches(originalInput, comparison.Claude.ClaimVersion) {
 		t.Fatal("original Claude comparison profile changed")
 	}
 	var evidence domain.ExecutionRecoveryEvidence
