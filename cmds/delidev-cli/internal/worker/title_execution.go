@@ -255,10 +255,8 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 		}
 		switch event.Kind {
 		case codex.MetadataEvent:
-			switch event.Metadata {
-			case codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable, codex.RawSupplementDiscarded, codex.NativeGoalAbsent:
-			default:
-				return nil, domain.Fail(domain.Unsupported, "Codex emitted an unsupported title-runtime metadata event.", "Preserve the isolated runtime; the title profile accepts no auxiliary capability or interaction.")
+			if err := validateCodexTitleMetadata(event.Metadata); err != nil {
+				return nil, err
 			}
 		case codex.NoticeEvent:
 			if config.Logger != nil {
@@ -387,4 +385,14 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 		config.Logger.InfoContext(ctx, "automatic title inference completed", "job_id", jobID, "operation_id", input.OperationID, "session_id", input.SessionID, "usage_observed", usageRecord != nil)
 	}
 	return encoded, nil
+}
+
+// Title metadata remains a separate closed profile from ordinary execution.
+func validateCodexTitleMetadata(kind codex.MetadataKind) error {
+	switch kind {
+	case codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable, codex.RawSupplementDiscarded, codex.NativeGoalAbsent, codex.GatewayOAuthStatusDiscarded:
+		return nil
+	default:
+		return domain.Fail(domain.Unsupported, "Codex emitted an unsupported title-runtime metadata event.", "Preserve the isolated runtime; the title profile accepts no auxiliary capability or interaction.")
+	}
 }

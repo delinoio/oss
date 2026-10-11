@@ -102,6 +102,29 @@ turn/settings/account, terminal results, receipts and independent recovery and
 cleanup remain unchanged. The [official notification schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/FsChangedNotification.json)
 defines this passive envelope separately from explicit filesystem operations.
 
+### Codex passive gateway OAuth status
+
+The original process consumes notification-only `account/gatewayOAuth/changed`
+with required `providerId` and closed `notReady`, `started`, `succeeded`, `failed`
+status. Require a nonempty provider identity of at most 1024 UTF-8 bytes.
+Optional `authUrl` and `error` retain omission versus null privately; non-null
+strings are bounded by the original native frame limit and exclude NUL bytes.
+Strict decoding rejects duplicate/unknown fields, missing/null required values,
+unknown statuses and malformed or oversized payloads with the existing closed
+`account-gateway` diagnostic. Logs contain only the closed status and
+`passive-discarded` policy; provider identities, URLs and diagnostics stay private.
+
+Ordinary execution and isolated title execution discard all validated descriptors.
+No gateway operation is owned. A foreign provider identity or unsafe URL scheme
+cannot create browser, network, callback, token, account-health, input, completion,
+recovery or cleanup authority. Repeated and late notifications do not replay input.
+A same-name server request retains the existing unsupported request boundary.
+The API `gateway_oauth` configuration still permits only omission or exact null
+before input under the [OAuth contract](cmds-delidev-account-oauth-contract.md).
+A future gateway operation requires independently admitted original ownership.
+The [official notification schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/GatewayOAuthChangedNotification.json)
+defines these passive statuses. No allocation or migration is added.
+
 ### Codex native error and authentication recovery observations
 
 Notification-only `error`, `modelProvider/authRecoveryStarted` and
