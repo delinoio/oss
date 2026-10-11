@@ -527,7 +527,9 @@ it.each([Code.NotFound, Code.Unavailable])(
         await screen.findByText(
           (_content, element) =>
             element?.tagName === "P" &&
-            /^Next session · Session \d+$/.test(element.textContent ?? "") &&
+            /^Next session · Session Session \d+$/.test(
+              element.textContent ?? "",
+            ) &&
             !element.textContent?.includes(next.id),
         ),
       ).not.toBeNull();

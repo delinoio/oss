@@ -347,7 +347,12 @@ it("discloses one exact duplicate-name identity without selecting or reading it"
   const secondButton = screen.getByRole("button", {
     name: /^Details for Example repository · 2$/,
   });
-  fireEvent.click(secondButton);
+  fireEvent.pointerDown(secondButton);
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: /^Details for Example repository · 2$/,
+    }),
+  );
   const expandedSecondButton = screen.getByRole("button", {
     name: /^Details for Example repository · 2$/,
   });

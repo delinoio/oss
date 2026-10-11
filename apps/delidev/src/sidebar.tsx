@@ -1395,6 +1395,8 @@ export function Sidebar({
     scrollSurface.current = target;
   }, [surface]);
   const projectRows = projects.rows;
+  for (const project of projectRows)
+    presentationLabels.observe(project.id, project.name, "project");
   const knownProjectIds = useMemo(
     () => new Set(projectRows.map((row) => row.id)),
     [projectRows],
