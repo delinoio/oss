@@ -19,7 +19,6 @@ import {
   ErrorDetailSchema,
   ProviderService,
   ResourceSchema,
-  ErrorDetailSchema,
   ResourceService,
   newRequestId,
   type Resource,

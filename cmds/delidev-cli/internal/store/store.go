@@ -704,7 +704,7 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 			return Record{}, err
 		}
 	}
-	if expected > 0 {
+	if expected > 0 && (kind == domain.ProjectKind || kind == domain.RepositoryKind) {
 		old, err := t.Get(kind, id)
 		if err != nil {
 			return Record{}, err
