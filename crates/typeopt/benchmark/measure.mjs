@@ -54,6 +54,41 @@ async function measure(root) {
 }
 if (process.argv.length !== 4)
   throw new Error("Usage: node measure.mjs <baseline-build> <optimized-build>");
+// Size totals are a valid before/after comparison only when both builds come
+// from the same verified source and build settings.
+const PROVENANCE = [
+  "schema_version",
+  "revision",
+  "source_tree",
+  "yarn_lock_sha256",
+  "node",
+  "vite",
+  "mode",
+  "sourcemap",
+  "environment",
+];
+async function provenance(root) {
+  try {
+    return JSON.parse(
+      await readFile(path.join(root, "typeopt-build.json"), "utf8"),
+    );
+  } catch (error) {
+    throw new Error(
+      `${root} lacks typeopt-build.json; build it with benchmark/build.mjs`,
+      { cause: error },
+    );
+  }
+}
+const baselineBuild = await provenance(process.argv[2]);
+const optimizedBuild = await provenance(process.argv[3]);
+const provenanceMismatches = PROVENANCE.filter(
+  (key) =>
+    JSON.stringify(baselineBuild[key]) !== JSON.stringify(optimizedBuild[key]),
+);
+if (baselineBuild.optimized !== false)
+  provenanceMismatches.push("baseline.optimized");
+if (optimizedBuild.optimized !== true)
+  provenanceMismatches.push("optimized.optimized");
 const baseline = await measure(process.argv[2]);
 const optimized = await measure(process.argv[3]);
 // Size totals are comparable only when both builds emit the same logical
@@ -61,6 +96,7 @@ const optimized = await measure(process.argv[3]);
 const assetSet = assetSetDifference(baseline, optimized);
 const assetSetMatches = !assetSet.missing.length && !assetSet.extra.length;
 const passed =
+  !provenanceMismatches.length &&
   assetSetMatches &&
   ["raw", "gzip", "brotli"].every((key) => optimized[key] < baseline[key]);
 console.log(
@@ -70,6 +106,9 @@ console.log(
       node: process.version,
       zlib: process.versions.zlib,
       brotli: process.versions.brotli,
+      revision: baselineBuild.revision,
+      source_tree: baselineBuild.source_tree,
+      provenance_mismatches: provenanceMismatches,
       baseline,
       optimized,
       asset_set_matches: assetSetMatches,
