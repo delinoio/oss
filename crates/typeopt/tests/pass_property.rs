@@ -334,7 +334,12 @@ fn shortening_safety_boundaries_keep_names() {
          obj;\n",
     ];
     for code in cases {
-        let (_, report) = run(&[("main.ts", code)], None);
+        // Property passes alone: call-inlining could legitimately separate
+        // a fresh literal from the unknown values these fixtures join.
+        let (_, report) = run(
+            &[("main.ts", code)],
+            Some(&[SHORTENING, DISAMBIGUATION, AMBIGUATION, FINITE_KEYS]),
+        );
         assert_eq!(renamed(&report), 0, "{code}");
     }
 }

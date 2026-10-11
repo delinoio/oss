@@ -475,8 +475,9 @@ fn primitive_operations_disabled_never_run() {
     assert_eq!(applied(&report, POS), 0);
     assert!(!mentions_pass(&report, POS));
     let main = emitted(temp.path(), "main.ts");
-    assert!(main.contains("Boolean(input)"));
-    assert!(main.contains("60 * 60 * 1000"));
+    // call-inlining may substitute the argument; the conversion stays.
+    assert!(main.contains("Boolean("), "{main}");
+    assert!(main.contains("60 * 60 * 1000"), "{main}");
     same_behavior(temp.path());
 }
 
