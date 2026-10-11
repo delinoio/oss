@@ -135,6 +135,13 @@ func TestDynamicNativeCompletionAndFailedTurnDoNotSettleRequest(t *testing.T) {
 }
 func TestDynamicLateLifecycleSettlesBeforeTerminalPublication(t *testing.T) {
 	c, rpc := dynamicWorkerFixture(t)
+	request := c.dynamicTools["dynamic-call"].Tool.Request
+	attempt := filepath.Join(c.publisher.config.Root, "jobs", string(c.publisher.job), "dynamic-replies", "by-call", dynamicJournalKey("dynamic-call"))
+	client := &fixtureDynamicResponder{t: t, root: attempt, delivery: domain.DynamicTransmitted}
+	requested := codex.Event{Kind: codex.DynamicToolEvent, ThreadID: c.thread, TurnID: c.turn, ItemID: "dynamic-call", Correlated: true, DynamicTool: &domain.DynamicToolUpdate{NativeID: "dynamic-call", Stage: domain.DynamicRequested, Request: request}}
+	if err := c.deliverDynamicUnavailable(context.Background(), context.Background(), requested, client); err != nil || client.calls != 1 {
+		t.Fatal("dynamic request reply was not retained", err)
+	}
 	terminal := codex.Event{Kind: codex.TurnCompletedEvent, ThreadID: c.thread, TurnID: c.turn, Correlated: true, Turn: &codex.Turn{ID: c.turn, Status: codex.TurnCompleted}}
 	before := len(rpc.events)
 	// The execution reader retains this terminal without publishing it until
