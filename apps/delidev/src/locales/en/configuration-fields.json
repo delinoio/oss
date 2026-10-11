@@ -225,6 +225,8 @@
   "configuration-fields.projectEdit.execution": "Execution",
   "configuration-fields.projectEdit.access": "Access",
   "configuration-fields.planApprovalHeading": "Plan approval",
+  "configuration-fields.projectNameConflict": "A project with this name already exists. Choose another name.",
+  "configuration-fields.repositoryNameConflict": "A repository with this name already exists. Choose another name.",
   "configuration-fields.choices.projectRestricted": "No Agent Workers on this page match the selected project's restrictions.",
   "configuration-fields.choices.continuing": "More {{v0}} choices are available. Continue loading to inspect the inventory."
 }

@@ -13,6 +13,15 @@ type OverviewCounts struct {
 	ConnectedWorkers    uint64
 }
 
+// Both Overview and the session-list projection use the same authoritative
+// original interaction predicate. Native waiting flags and Inbox read state
+// cannot resolve a retained request. The aliases are i (interaction) and s (session).
+const currentUnansweredInteraction = `i.kind='interaction' AND json_extract(i.body,'$.closure')='open'
+AND json_extract(i.body,'$.response') IS NULL AND json_extract(i.body,'$.approval_response') IS NULL
+AND json_extract(s.body,'$.archive')='active'
+AND COALESCE(json_extract(s.body,'$.active_execution_id'),'')<>''
+AND json_extract(s.body,'$.active_execution_id')=json_extract(i.body,'$.execution_id')`
+
 // Count retained execution ownership, including uncertain cleanup, rather than
 // guessing which processes are running. Read state never resolves a request.
 func (t *Tx) Overview(active map[domain.ID]bool, now time.Time) (OverviewCounts, error) {
@@ -26,10 +35,7 @@ func (t *Tx) Overview(active map[domain.ID]bool, now time.Time) (OverviewCounts,
 	}{
 		{`SELECT COUNT(*) FROM entities WHERE kind='session' AND COALESCE(json_extract(body,'$.active_execution_id'),'')<>''`, &result.ActiveSessions},
 		{`SELECT COUNT(*) FROM entities i JOIN entities s ON s.id=i.session_id AND s.kind='session'
-WHERE i.kind='interaction' AND json_extract(i.body,'$.closure')='open'
-AND json_extract(i.body,'$.response') IS NULL AND json_extract(i.body,'$.approval_response') IS NULL
-AND json_extract(s.body,'$.archive')='active'
-AND json_extract(s.body,'$.active_execution_id')=json_extract(i.body,'$.execution_id')`, &result.PendingInteractions},
+WHERE ` + currentUnansweredInteraction, &result.PendingInteractions},
 		{`SELECT COUNT(*) FROM entities WHERE kind='machine'`, &result.RegisteredWorkers},
 	} {
 		if err := t.tx.QueryRowContext(t.ctx, query.sql).Scan(query.out); err != nil {

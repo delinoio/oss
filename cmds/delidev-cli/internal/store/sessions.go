@@ -20,20 +20,40 @@ func (s *Store) Sessions(ctx context.Context, f SessionFilter) ([]Record, bool, 
 	var result []Record
 	more := false
 	err := s.Read(ctx, func(tx *Tx) error {
-		query := "SELECT " + recordColumns + " FROM entities WHERE kind='session' AND id>?"
+		if err := tx.Authorize(); err != nil {
+			return err
+		}
+		// This JSON field exists only in the authorized response. One bounded
+		// query projects the original page without writes or per-row reads;
+		// sessionPage accounts for the projected bytes in its envelope bound.
+		// SQLite JSON functions return TEXT, which modernc scans as string;
+		// Record.Data is json.RawMessage, so retain the stored-body BLOB scan type.
+		query := `SELECT s.id,s.kind,s.revision,s.session_id,s.project_id,
+CAST(json_set(s.body,'$.awaiting_user_response',json(CASE WHEN EXISTS(
+SELECT 1 FROM entities i WHERE i.session_id=s.id AND ` + currentUnansweredInteraction + `
+) THEN 'true' ELSE 'false' END)) AS BLOB),s.created_at,s.updated_at
+FROM entities s WHERE s.kind='session' AND s.id>?`
 		args := []any{f.After}
 		if f.ProjectID != "" {
-			query += " AND project_id=?"
+			query += " AND s.project_id=?"
 			args = append(args, f.ProjectID)
 		}
 		if !f.IncludeArchived {
-			query += " AND json_extract(body,'$.archive')<>'archived'"
+			query += " AND json_extract(s.body,'$.archive')<>'archived'"
 		}
-		query += " ORDER BY id LIMIT ?"
+		query += " ORDER BY s.id LIMIT ?"
 		args = append(args, f.Limit+1)
 		var err error
 		result, more, err = tx.sessionPage(f.Limit, query, args...)
-		return err
+		if err != nil {
+			return err
+		}
+		for _, record := range result {
+			if len(record.Data) > 1<<20 {
+				return domain.Fail(domain.ResourceExhausted, "The session-list projection exceeds its document limit.", "Preserve the original session and inspect its retained metadata.")
+			}
+		}
+		return nil
 	})
 	return result, more, err
 }

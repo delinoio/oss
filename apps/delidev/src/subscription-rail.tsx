@@ -16,6 +16,7 @@ import {
   clientFailure,
   ResourceQuery,
   SystemCapability,
+  SubscriptionServiceId,
   SystemQuery,
   type Resource,
   type ClientFailure,
@@ -35,6 +36,7 @@ import {
   type RailAccount,
   type RailWindow,
 } from "./subscription-rail-data";
+import { PaidCredits, PaidCreditState } from "./subscription-paid-credits";
 import "./subscription-rail.css";
 import { Failure, InlineRemediation } from "./ui";
 import { LocalConnectionHelp } from "./local-connection-presentation";
@@ -375,6 +377,27 @@ export function SubscriptionRail({
                     : "subscription-rail.connected",
                 )}
               </p>
+              {account.service === SubscriptionServiceId.ChatGPT ? (
+                <div className="subscription-rail-paid-credits">
+                  <PaidCredits
+                    key={`${account.id}:${account.connectionId}`}
+                    buckets={account.paidCredits}
+                    state={
+                      !status.data
+                        ? PaidCreditState.Loading
+                        : !status.data.capabilities.includes(
+                              SystemCapability.SUBSCRIPTION_PAID_CREDITS_V1,
+                            )
+                          ? PaidCreditState.Unsupported
+                          : unavailable
+                            ? PaidCreditState.Failed
+                            : account.paidCreditState
+                    }
+                    now={now}
+                    active={allowed}
+                  />
+                </div>
+              ) : null}
               {unavailable ? (
                 <p role="status">{copy("subscription-rail.readFailed")}</p>
               ) : null}

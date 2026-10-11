@@ -1016,3 +1016,27 @@ jobs and remains available at the retention bound. These checks grant no native
 replay or new execution authority; original ownership and settled no-send proof
 remain required. See the [Sidechat contract](cmds-delidev-sidechat-contract.md#same-question-retry)
 for the five-job admission reservation.
+
+## Session-list response attention projection
+
+Authorized `ListSessions` reads add the response-only JSON boolean
+`awaiting_user_response` to each Session Resource. The bounded page and the
+projection share the existing read transaction. One query uses the same
+current-unanswered-interaction predicate as Overview: an active Session, its
+nonempty original `active_execution_id`, a matching original open interaction,
+and neither `response` nor `approval_response`. All supported harnesses use this
+predicate for questions, permission requests and Plan approval requests.
+Several unanswered requests produce one true boolean. An accepted response
+removes its request even while native closure remains open. Closed or prior
+execution requests, archived Sessions, native waiting flags and Inbox read state
+do not supply response attention. Automatic Plan requests with an atomically
+recorded response do not count; unanswered manual or unavailable automatic Plan
+requests do count.
+
+The field is never persisted. Reads preserve Session contents, revisions,
+receipts, cursor scope and ordering. The existing page count and aggregate byte
+bounds include the projected JSON bytes. A projection that exceeds the existing
+1 MiB Resource document limit fails the read. Projection errors use the ordinary
+list-read failure path. No per-row database read, additional RPC, protocol
+allocation, migration or new response/execution authority is introduced. Older
+servers omit the field; clients that ignore additive JSON keep their display.

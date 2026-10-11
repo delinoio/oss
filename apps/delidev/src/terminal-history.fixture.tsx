@@ -147,8 +147,8 @@ const observer = new MutationObserver((changes) => {
       for (const node of nodes)
         if (node instanceof Element)
           metrics[key] +=
-            Number(node.matches(".xterm")) +
-            node.querySelectorAll(".xterm").length;
+            Number(node.matches(".term-grid")) +
+            node.querySelectorAll(".term-grid").length;
 });
 observer.observe(document.body, { subtree: true, childList: true });
 createRoot(document.getElementById("root")!).render(

@@ -6,6 +6,7 @@ import {
   cp,
   mkdtemp,
   readFile,
+  readdir,
   rm,
   symlink,
   writeFile,
@@ -65,19 +66,35 @@ try {
           { cwd: app },
         ),
       );
-    // Both exported variants gain the same read-only inspection of the actual pinned xterm.
+    // Both exported variants gain the same read-only inspection of the actual pinned Ghostty core.
     // The inspector exposes viewport/cursor/selection values, never the terminal object or operations.
     const emulator = join(source, "src/terminal-emulator.ts");
     await writeFile(
       emulator,
       (await readFile(emulator, "utf8")).replace(
-        "terminal.open(host); observer.observe(host);",
-        "terminal.open(host); Object.assign(globalThis.__terminalHistoryFixture, {inspect: () => ({viewport: terminal.buffer.active.viewportY, base: terminal.buffer.active.baseY, cursorX: terminal.buffer.active.cursorX, cursorY: terminal.buffer.active.cursorY, selection: terminal.getSelection()})}); observer.observe(host);",
+        "terminal.setThemeColors({",
+        'Object.assign(globalThis.__terminalHistoryFixture, {inspect: () => ({viewport: host.scrollTop, base: Math.max(0, host.scrollHeight - host.clientHeight), cursorX: core.getCursor().col, cursorY: core.getCursor().row, selection: terminal.getSelectionText() ?? ""})}); terminal.setThemeColors({',
       ),
     );
     const build = await createRsbuild({
       cwd: source,
       rsbuildConfig: {
+        tools: {
+          rspack: {
+            module: {
+              rules: [
+                {
+                  test: /\.wasm$/,
+                  resourceQuery: /url/,
+                  type: "asset/resource",
+                  generator: {
+                    filename: "static/wasm/[name].[contenthash:8][ext]",
+                  },
+                },
+              ],
+            },
+          },
+        },
         plugins: [pluginReact()],
         source: {
           entry: { index: join(source, "src/terminal-history.fixture.tsx") },
@@ -97,6 +114,17 @@ try {
       },
     });
     await build.build();
+    assert.equal(
+      (await readdir(join(dist, "static/wasm"))).filter((name) =>
+        name.endsWith(".wasm"),
+      ).length,
+      1,
+    );
+    for (const name of ["LICENSE-wterm", "LICENSE-ghostty", "NOTICE.md"])
+      assert.deepEqual(
+        await readFile(join(dist, "terminal-notices", name)),
+        await readFile(join(app, "public/terminal-notices", name)),
+      );
     const server = createServer(async (request, response) => {
       try {
         const pathname = new URL(request.url, "http://127.0.0.1").pathname;
@@ -107,7 +135,7 @@ try {
         if (!file.startsWith(`${dist}${sep}`)) throw new Error("Invalid path");
         response.setHeader(
           "Content-Security-Policy",
-          "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'",
+          "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'",
         );
         response.setHeader(
           "Content-Type",
@@ -115,6 +143,7 @@ try {
             ".html": "text/html",
             ".js": "application/javascript",
             ".css": "text/css",
+            ".wasm": "application/wasm",
           }[extname(file)] ?? "application/octet-stream",
         );
         response.end(await readFile(file));
@@ -129,19 +158,39 @@ try {
         const page = await browser.newPage({
             viewport: { width: 1200, height: 720 },
           }),
-          errors = [];
+          errors = [],
+          wasmResponses = [];
+        page.on("response", (response) => {
+          if (new URL(response.url()).pathname.endsWith(".wasm"))
+            wasmResponses.push({
+              path: new URL(response.url()).pathname,
+              status: response.status(),
+              type: response.headers()["content-type"],
+            });
+        });
+        await page.route("**/*", (route) =>
+          new URL(route.request().url()).hostname === "127.0.0.1"
+            ? route.continue()
+            : route.abort(),
+        );
+        await page.addInitScript(() => {
+          window.__terminalCspViolations = [];
+          document.addEventListener("securitypolicyviolation", (event) =>
+            window.__terminalCspViolations.push(event.effectiveDirective),
+          );
+        });
         page.on("pageerror", (error) => errors.push(error.message));
         try {
           await page.goto(
             `http://127.0.0.1:${server.address().port}/?closed=${closed}`,
           );
           await page.getByRole("tab").click();
-          await page.locator(".xterm").waitFor();
+          await page.locator(".wterm").waitFor();
           await page.waitForFunction(
             () => window.__terminalHistoryFixture.metrics.watches === 1,
           );
           await page.waitForTimeout(400);
-          const bounds = await page.locator(".xterm-screen").boundingBox();
+          const bounds = await page.locator(".term-grid").boundingBox();
           process.stdout.write(
             JSON.stringify({
               operation: "terminal-scroll-setup",
@@ -178,13 +227,13 @@ try {
           await page.evaluate(() => {
             const state = window.__terminalHistoryFixture;
             state.samples = [];
-            state.renderer = document.querySelector(".xterm");
-            state.input = document.querySelector(".xterm-helper-textarea");
-            state.input.focus();
-            const viewport = document.querySelector(
-              ".xterm-scrollable-element",
-            );
-            if (viewport) viewport.scrollTop = 50;
+            state.renderer = document.querySelector(".wterm");
+            state.input = document.querySelector(".wterm textarea");
+            if (!state.inspect().selection.length) state.input.focus();
+            state.focusOwner = document.activeElement;
+            const viewport = document.querySelector(".wterm");
+            if (viewport && !state.inspect().selection.length)
+              viewport.scrollTop = 50;
             state.scroll = viewport?.scrollTop;
             state.native = state.inspect();
             state.timer = setInterval(
@@ -194,8 +243,8 @@ try {
                     document.querySelector(".terminal-screen").clientHeight,
                   continuation: document.querySelector(".sidebar-continuation")
                     .clientHeight,
-                  focus: document.activeElement === state.input,
-                  same: document.querySelector(".xterm") === state.renderer,
+                  focus: document.activeElement === state.focusOwner,
+                  same: document.querySelector(".wterm") === state.renderer,
                   scroll: viewport?.scrollTop,
                   native: state.inspect(),
                 }),
@@ -235,6 +284,7 @@ try {
             assert(continuations.length > 1);
             assert(resizes.length > 4);
           } else {
+            assert(result.native.selection.length > 0);
             assert.equal(heights.length, 1);
             assert.equal(continuations.length, 1);
             assert.equal(resizes.length, closed ? 0 : 1);
@@ -279,7 +329,7 @@ try {
             }) + "\n",
           );
           if (!baseline && !closed) {
-            await page.locator(".xterm-helper-textarea").press("x");
+            await page.locator(".wterm textarea").press("x");
             await page.waitForFunction(
               (action) =>
                 window.__terminalHistoryFixture.metrics.controls.some(
@@ -325,6 +375,17 @@ try {
             assert.equal(controls.at(-1).columns, resizes.at(-1).columns);
           }
           assert.deepEqual(errors, []);
+          assert.deepEqual(
+            await page.evaluate(() => window.__terminalCspViolations),
+            [],
+          );
+          assert.equal(wasmResponses.length, 1);
+          assert.equal(wasmResponses[0].status, 200);
+          assert.equal(wasmResponses[0].type, "application/wasm");
+          assert.match(
+            wasmResponses[0].path,
+            /^\/static\/wasm\/ghostty-vt\.[a-f0-9]{8}\.wasm$/,
+          );
         } finally {
           await page.close();
         }

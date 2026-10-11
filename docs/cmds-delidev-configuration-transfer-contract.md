@@ -136,3 +136,7 @@ Follow [project behavior settings](cmds-delidev-catalog-contract.md#project-beha
 ## New-session defaults and branch prefix declarations
 
 Follow [the feature](cmds-delidev-catalog-contract.md#new-session-defaults-and-literal-branch-prefixes) for System 56, Worker 38, schema-3 Project/Settings and portable version 6. Preserve capability 52, schema-1/2 reads and v1–5 imports; reject destructive old-client writes. Automatic creation mode yields only to an explicit checkbox edit. New immutable prefix declarations preserve original source revisions and legacy omission bytes. Shared Execute instructions remain literal, bounded, and absent in Plan/read-only Sidechat; existing native/account/Worker/workspace/recovery/cleanup ownership remains authoritative. No migration, native version gate, branch interception or automatic branch creation is introduced.
+
+## Name validation
+
+Preview validates the complete prospective import overlay against all live target Project and Repository names. Equivalent names within the bundle or target namespace reject the preview. Apply and deferred inspection completion repeat validation against the current target before any configuration publication. A late collision settles the original failure without partial configuration. Matching names never imply reuse, merging or replacement: explicit ID bindings and complete remapped values remain required. Comparison follows the [command naming contract](cmds-delidev-contract.md#project-and-repository-name-uniqueness).

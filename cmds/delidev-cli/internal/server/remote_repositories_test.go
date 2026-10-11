@@ -177,10 +177,10 @@ func TestRemoteRepositoryRegistrationWithoutMachineAndPortableImport(t *testing.
 	}
 	bundle.Entries = entries
 	selection := domain.ConfigurationImportSelection{Bundle: bundle}
-	if err := db.Read(ctx, func(tx *store.Tx) error { _, err := buildConfigurationPlan(tx, selection); return err }); err != nil {
+	destination, secrets := newDoctorFixture(t)
+	if err := destination.Store.Read(ctx, func(tx *store.Tx) error { _, err := buildConfigurationPlan(tx, selection); return err }); err != nil {
 		t.Fatal("URL-only import needs mappings", err)
 	}
-	destination, secrets := newDoctorFixture(t)
 	preview := transferPreview(t, destination, selection)
 	requestID := domain.NewID()
 	imported := transferApply(t, destination, preview, requestID)

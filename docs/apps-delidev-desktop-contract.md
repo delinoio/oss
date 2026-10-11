@@ -1244,18 +1244,48 @@ presentation Close. Details owns the future-creation shell override, Worker/shel
 state/cleanup and refresh/reattach/Close actions. Retain the accepted creation
 and explicit selection beyond the bounded 50-record history payload window.
 
-Pin xterm 6.0.0, WebGL addon 0.19.0 and Fit addon 0.11.0 with their MIT notices.
-Static CSS preserves the dark 14px monospace palette through tokens in all
-three shared theme palettes. Shared outward focus and terminal text/selection/
-control-border contrast remain audited in both application themes.
-The narrow package patch removes Viewport dynamic stylesheet insertion and
-makes the DOM renderer fallback fail closed; its source and ESM changes route
-both package entrypoints to the same patched ESM on repository Node24. Load
-WebGL before opening, dispose Terminal before addon teardown, and leave
-production style-src self unchanged. Renderer failure or context loss disables
-input and offers explicit original reattachment/Close. Do not install clipboard,
-web-link or attach addons; consume OSC 52/OSC 8 and keep detected links inert.
-Screen-reader output remains enabled and xterm diagnostic logging stays off.
+Pin @wterm/dom and @wterm/ghostty to 0.5.4 with resolved
+@wterm/core 0.5.4. The synchronous TerminalScreen facade retains its
+open callbacks and serializes original Uint8Array writes through one async
+initialization. Each renderer owns one Ghostty WASM instance with a 5000-line
+scrollback limit, image storage disabled, debug off and accessible output.
+The adapter owns input listeners; no React wrapper or engine transport takes
+ownership of Connect requests, input admission, resize or native processes.
+
+The version-pinned DOM patch exposes coordinated reset, input gating, optional
+autofocus, inert links and localized accessibility labels. Reset cancels pending
+render, search, selection, announcements and window queries, recreates both
+native screens and parser state on the same core, and retains dimensions and
+attachment focus. Disabled input suppresses keyboard, IME, paste, mouse, focus
+reports and parser replies while selection and copy remain usable. The Ghostty
+patch discards fragmented OSC 52 writes and queries before parsing and silences
+the raw WASM log import. OSC 8 remains inert, and title, working-directory and
+shell-integration callbacks stay disconnected. Diagnostics contain only stable
+stage/category values.
+
+Full and incremental cell rendering constructs DOM nodes and textContent,
+applying only generated, allowlisted declarations through CSSOM. Static CSS
+retains the dark 14px monospace palette, selection, cursor, geometry, shared
+focus and scrollbar tokens in all application themes. Preserve colored underline
+and strike styling without injecting HTML style attributes or stylesheets.
+
+Bundle the exported Ghostty WASM as a hashed same-origin asset, pass its emitted
+URL explicitly and serve it as application/wasm. Production adds only
+script-src wasm-unsafe-eval and connect-src self to its existing restrictive
+policy; style-src self remains unchanged. Saved and local connection rewrites
+retain self plus the exact validated selected server origin and existing IPC
+sources, never wildcard or unrelated origins. No CDN, runtime compiler,
+unsafe-eval or production unsafe-inline is allowed.
+
+Late initialization, failure and disposal fence all writes and focus work.
+Renderer failure disables input and uses the existing original-terminal
+reattachment/Close recovery. Dispose both WTerm and the supplied Ghostty core
+on normal teardown, failure and late load. No native process operation is
+implicit. Preserve full upstream licenses and modification notices in
+public/terminal-notices and frontend distributions. English/Korean labels
+cover terminal input/output, keyboard escape guidance, announcement limits and
+selection status. Engine replacement introduces no control, search, graphics
+surface, flag, fallback, selector, protocol, capability or migration.
 
 Pass ordered Uint8Array output directly to the emulator with exact bigint
 cursors and epoch checks. Keep at most 5000 scrollback lines. Explicit gaps reset
@@ -1294,7 +1324,7 @@ explicit Close, Archive and deletion retain independent native cleanup gates.
 
 - Repository heartbeat guidance follows `apps-delidev-desktop-contract.md`: use the selected Machine's projected original Worker lease, classify offline only above 45,000 ms, and keep missing/failed current observations unknown. Read-only rechecks preserve selected machine/canonical root/drafts and never inspect, save, start or adopt another Worker.
 
-- Terminal dependencies retain their MIT licenses and the three original copyright/license files in `public/terminal-notices`, copied into frontend distributions. Preserve the CSP/ESM modification notice and pinned xterm/WebGL/Fit versions; follow the desktop and repository license contracts.
+- Terminal dependencies retain their original Apache-2.0, MIT and Unicode terms and complete upstream notices in public/terminal-notices, copied into frontend distributions. Preserve the version-pinned wterm/Ghostty modification notice; follow the desktop and repository license contracts.
 
 - Subscription cleanup includes fully disconnected service-native accounts without synthetic login IDs. Explicit failed initial ChatGPT deletion uses the shared durable cleanup controller, preserves the original public deletion revision/receipt while checkpoint revisions advance, and never retries a terminal attempt without fresh explicit confirmation. Retain original actor/native/vault/reference checks; no new RPC, protocol allocation or migration. Follow the subscription and account contracts.
 
@@ -5754,6 +5784,35 @@ compact drawer and effective 200% browser checks are synthetic evidence only.
 
 Queue refresh footer stability: both queue presenters (legacy history-based and negotiated waiting queue) keep a retained complete empty presentation hidden during healthy automatic Refresh/Reload rereads of the same queue identity. Refresh status is announced through a screen-reader-only live region that adds no normal-flow height, so repeated rereads cannot shift the tray, Agent requests, transcript boundary or composer. Initial loading, failures with Retry, incomplete pagination, payload restoration and explicit boundary recovery stay visible. Retained emptiness is cached presentation, not fresh authoritative zero or mutation permission. Populated rows are retained during rereads. No API, protocol, migration or native change.
 
+## Configuration name correction
+
+The server owns Project and Repository name availability. Loaded client pages cannot prove global availability; the client adds no catalog scan or availability RPC. Only Conflict with the typed `configuration_name_conflict` cause receives name-specific treatment. Revision, identity, denied and uncertain outcomes retain their existing presentation and request guards.
+
+Show “A project with this name already exists. Choose another name.” beneath the existing Project name field. Repository copy uses “repository”. Korean copy is “이 이름의 프로젝트가 이미 있습니다. 다른 이름을 입력하세요.” and “이 이름의 저장소가 이미 있습니다. 다른 이름을 입력하세요.” Connect the wrapping alert to its input with `aria-describedby` and `aria-invalid`; use the existing semantic danger color. Preserve field geometry, themes, draft spelling, keyboard flow and opener restoration. A confirmed failure returns to the wizard name step or editor General panel, focuses its field and permits correction with a fresh explicit request. Pending or uncertain requests retain immutable original bytes.
+
+A verified asynchronous repository name collision releases only its original settled request and returns to the retained draft. A completed clone collision retains the reported existing Local checkout and allows corrected registration without cloning or deleting that checkout. Narrow widths and effective 200% layout retain readable, wrapping guidance.
+
+## Sidebar response attention
+
+Home navigation retains only the literal boolean true from the supported
+Session `awaiting_user_response` list projection. Missing, malformed,
+non-Session or unsupported document metadata shows no response indicator.
+The shared wide pane and compact navigation drawer render one static,
+nonfocusable 14px outlined-circle question mark immediately before the existing
+execution and archive glyphs. Use the semantic blue link color, preserving its
+light/dark theme contrast and the independent execution colors. The decorative
+SVG is hidden from assistive technology and has no separate click action or
+keyboard stop. Unknown execution/archive question marks retain their meaning.
+
+Append **Waiting for your response** / **응답 대기 중** to the complete row
+accessible description and existing hover card. Preserve 32px rows, title
+ellipsis before status glyphs, selection, rename, actions, focus outlines and
+scroll ownership, including long names and 200% zoom. Use existing accepted
+list refresh and reconnect handling, including updates at the same Session
+revision. Do not add polling, telemetry, question-content logs or a feature
+flag. The session contract owns the authoritative derived predicate; presentation
+never grants response, execution or mutation authority.
+
 ### Codex reasoning summary disclosure
 
 Ordinary Session and General Chat retain Codex reasoning in its original resource and
@@ -5837,3 +5896,9 @@ After confirmed server submission, remove the original question selection and te
 Retire a question only after authoritative native acceptance or confirmed closure without an unresolved response or retained mutation. Use that same projection for rendering, the page-scoped count and automatic expansion. Preserve unanswered questions and unrelated approval forms, identities and drafts. Original question/answer documents and Inbox inspection remain retained; tray retirement does not delete resources or mark Inbox items read.
 
 Hide the complete Agent requests disclosure only when a successful complete resident read proves there is no displayed request or unresolved operation. Initial loading, errors, continuation and evicted-page restoration remain reachable. An empty tray adds no completion badge, replacement message or vacant region. The composer moves upward naturally and retains its mounted controller, draft, dimensions, styling and controls at wide/compact widths and short heights. If retirement removes the focused control, focus the next actionable request or the composer. Do not steal focus from another connected active control. No RPC, protocol allocation, migration or native delivery change is required.
+
+### Paid credits in the selected subscription popover
+
+The selected ChatGPT usage popover places a compact Paid credits card above quota within its existing 320px width, 16px padding and viewport-clamped internal scroll. Reuse the subscription presentation contract’s validated saved projection, string-only two-decimal formatter, 24px tabular value, smaller unit and accessible unchanged exact decimal disclosure. Separate multiple buckets in source order with native labels and their original observation times; never sum them. Explicit zero, null/unknown, tiny positive, unlimited, loading, unsupported, stale/future and failed evidence remain distinct. System 76 controls credit display independently of capability-17 inventory admission; other services remain unchanged.
+
+Failed or incomplete saved-resource reads retain original account-bound values and timestamps as historical evidence until a complete accepted replacement. Connection identity replacement resets local disclosure state; authentication loss removes the selected details. Credits do not affect `remainingBadge`, quota windows, read pagination, the existing refresh owner or Recheck saved quota evidence and Manage subscriptions actions. Preserve semantic themes, EN/KO wrapping, narrow and effective 200% reflow, Escape/outside dismissal and opener focus. No new RPC, polling owner, native operation, purchase, consumption or migration is added. Follow [the subscription presentation contract](apps-delidev-subscription-settings-contract.md#paid-credit-observations).
