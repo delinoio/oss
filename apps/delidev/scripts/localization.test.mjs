@@ -46,6 +46,7 @@ const technicalLiterals = new Set([
   "Classic",
   "Fine grained",
   "Codex",
+  "Codex CLI",
   "Claude",
   "Grok",
   "OpenCode",

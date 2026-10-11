@@ -233,7 +233,10 @@ function RepositorySaveReview({
       ) : null}
       {fresh ? (
         <p>
-          {resourceName(fresh)} · revision {fresh.revision.toString()}
+          {copy("settings.resourceRevision", {
+            name: resourceName(fresh),
+            revision: fresh.revision.toString(),
+          })}
         </p>
       ) : null}
       {fresh ? (

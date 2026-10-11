@@ -185,5 +185,6 @@
   "settings.savingProjectDefaults": "Saving project defaults…",
   "settings.projectDefaultsSaveOutcomeUnknown": "Project defaults save outcome is unknown.",
   "settings.unsavedProjectDefaults": "Unsaved project defaults",
-  "settings.networkPreferencesDescription": "Network settings for this server."
+  "settings.networkPreferencesDescription": "Network settings for this server.",
+  "settings.resourceRevision": "{{name}} · Revision: {{revision}}"
 }
