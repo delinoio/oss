@@ -120,9 +120,9 @@ function decodeResult(raw: Uint8Array) {
   };
 }
 const terminal = (state: MCPMutationState) =>
-  state === MCPMutationState.SUCCEEDED ||
-  state === MCPMutationState.CANCELED ||
-  state === MCPMutationState.FAILED;
+  state === MCPMutationState.MCP_MUTATION_STATE_SUCCEEDED ||
+  state === MCPMutationState.MCP_MUTATION_STATE_CANCELED ||
+  state === MCPMutationState.MCP_MUTATION_STATE_FAILED;
 
 export function MCPSettings({ active }: { active: boolean }) {
   useLocale();
@@ -259,7 +259,7 @@ function MCPCatalog({ machine, active }: { machine: string; active: boolean }) {
     (r, q) =>
       r.requestId === q.requestId &&
       (terminal(r.state) ||
-        (r.state === MCPMutationState.PENDING &&
+        (r.state === MCPMutationState.MCP_MUTATION_STATE_PENDING &&
           Boolean(decodeResult(r.resultJson).url))),
     true,
   );
@@ -288,7 +288,7 @@ function MCPCatalog({ machine, active }: { machine: string; active: boolean }) {
       mutation.observe(r);
       authentication.observe(r);
       changed();
-    } else if (r.state === MCPMutationState.PENDING) {
+    } else if (r.state === MCPMutationState.MCP_MUTATION_STATE_PENDING) {
       authentication.observe(r);
     }
   }

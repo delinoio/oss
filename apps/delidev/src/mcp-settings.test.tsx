@@ -99,7 +99,7 @@ function managementFixture() {
   });
   const inspect = vi.fn(async (request: { requestId: string }) => ({
     requestId: request.requestId,
-    state: MCPMutationState.SUCCEEDED,
+    state: MCPMutationState.MCP_MUTATION_STATE_SUCCEEDED,
     resultJson: encode({
       worker_device_id: workerA,
       request_id: request.requestId,
