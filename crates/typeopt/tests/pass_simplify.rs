@@ -709,3 +709,105 @@ fn intrinsics_disabled_never_run() {
     assert!(main.contains("const [cx, cy]"));
     same_behavior(temp.path());
 }
+
+// ---------------------------------------------------------------------------
+// Shared syntax and scope hazards
+// ---------------------------------------------------------------------------
+
+#[test]
+fn edits_respect_asi_token_boundaries_and_hoisting() {
+    let files: &[(&str, &str)] = &[(
+        "main.ts",
+        r#"
+const FLAG = true
+const OFF = false
+let base = Math.random() > 2 ? 1 : 3
+function paren(): string {
+  let out = "a"
+  if (FLAG) (out = "b")
+  return out
+}
+function glued(s: string): string {
+  return("" + s)
+}
+function negative(): number {
+  return base-2*-1
+}
+function hoisting(): number {
+  return helper()
+  function helper(): number {
+    return 7
+  }
+}
+function labeled(mode: string, stop: boolean): string {
+  let result = "start"
+  switch (mode) {
+    case "a": {
+      if (stop) break
+      result = "ran"
+      break
+    }
+    default:
+      result = "default"
+  }
+  return result
+}
+function call(callback?: () => number): number {
+  return callback?.() ?? 0
+}
+function first(values?: number[]): number {
+  return values?.[0] ?? -1
+}
+function loop(items: Array<{ x: number } | undefined>): number {
+  let sum = 0
+  for (const item of items) {
+    if (!item) continue
+    sum += item?.x
+  }
+  return sum
+}
+function pickWidth(): number {
+  return OFF ? Math.max(1, 2) : Math.min(1, 2)
+}
+const nothing = null
+console.log(paren(), glued("g"), glued("h"), negative(), hoisting())
+console.log(labeled("a", true), labeled("a", false))
+console.log(call(() => 3), call(() => 4), first([5]), first([6, 7]))
+console.log(loop([{ x: 1 }, undefined, { x: 2 }]), pickWidth())
+console.log(typeof nothing === "object", nothing === null)
+"#,
+    )];
+    let (temp, report) = run(files, &[TDCF, POS, IS]);
+    assert!(
+        applied(&report, TDCF) > 0 && applied(&report, POS) > 0,
+        "{report:#}"
+    );
+    let main = emitted(temp.path(), "main.ts");
+    // The kept parenthesized statement does not continue the previous one.
+    assert!(main.contains("(out = \"b\");"), "{main}");
+    // Removed parentheses do not merge `return` with the operand.
+    assert!(main.contains("return s;"), "{main}");
+    // A folded negative literal does not form `--`.
+    assert!(main.contains("base - -2"), "{main}");
+    // Hoisted function declarations after `return` stay.
+    assert!(main.contains("function helper()"), "{main}");
+    // A `break` inside the selected clause leaves the switch.
+    assert!(main.contains("switch (mode)"), "{main}");
+    // Optional calls and element accesses on proven values.
+    assert!(
+        main.contains("callback()") && main.contains("values[0]"),
+        "{main}"
+    );
+    // Narrowing by a `continue` guard inside a loop body.
+    assert!(main.contains("item.x"), "{main}");
+    // A constant conditional keeps the branch with the same type.
+    assert!(!main.contains("Math.max"), "{main}");
+}
+
+#[test]
+fn simplify_family_is_deterministic() {
+    let temp = project(TDCF_FILES);
+    let first = without_measurements(check(temp.path(), &[]));
+    let second = without_measurements(check(temp.path(), &[]));
+    assert_eq!(first, second);
+}

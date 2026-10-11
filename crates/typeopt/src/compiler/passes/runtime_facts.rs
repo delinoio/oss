@@ -1296,7 +1296,7 @@ pub(super) fn read_safe(ctx: &mut Ctx, read: Node) -> bool {
         SyntaxKind::VariableDeclaration => {
             let list = declaration.parent();
             !list.flags().intersects(NodeFlags::BLOCK_SCOPED)
-                || initialized_before(declaration, read)
+                || runs_after(ctx, declaration, read, &mut HashSet::new())
         }
         _ => false,
     }
@@ -1329,6 +1329,53 @@ pub(super) fn initialized_before(declaration: Node, read: Node) -> bool {
         && node != statement
         && node.pos() >= statement.end()
         && node.kind() != SyntaxKind::FunctionDeclaration
+}
+
+/// Whether `node` can only execute after `declaration` was initialized:
+/// either [`initialized_before`] holds, or `node` lies in a hoisted function
+/// declaration of the same statement list whose every call site (all known
+/// direct calls) itself runs after the initialization. Calls from inside a
+/// function only run while that function runs, so recursion is assumed to
+/// satisfy the property.
+pub(super) fn runs_after(
+    ctx: &mut Ctx,
+    declaration: Node,
+    node: Node,
+    visited: &mut HashSet<Node>,
+) -> bool {
+    if initialized_before(declaration, node) {
+        return true;
+    }
+    let statement = declaration.parent().parent();
+    if statement.kind() != SyntaxKind::VariableStatement {
+        return false;
+    }
+    let container = statement.parent();
+    if get_source_file_of_node(container) != get_source_file_of_node(node) {
+        return false;
+    }
+    let mut top = node;
+    while top.is_some() && top.parent() != container {
+        top = top.parent();
+    }
+    if top.is_nil() || top.kind() != SyntaxKind::FunctionDeclaration {
+        return false;
+    }
+    if !visited.insert(top) {
+        return true;
+    }
+    let Some(symbol) = closed_function_symbol(ctx, top) else {
+        return false;
+    };
+    let calls: Vec<Node> = ctx
+        .refs(symbol)
+        .iter()
+        .filter(|r| r.kind == RefKind::Call)
+        .map(|r| r.node)
+        .collect();
+    calls
+        .into_iter()
+        .all(|call| runs_after(ctx, declaration, call, visited))
 }
 
 /// `inner` lies within `outer` (same file).
