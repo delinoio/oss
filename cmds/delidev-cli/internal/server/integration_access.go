@@ -71,8 +71,82 @@ func (s *Service) withRepositoryIntegration(ctx context.Context, id domain.ID, o
 		return repositoryIntegrationSelection{}, err
 	}
 	profileID := selected.repository.IntegrationID
-	if s.integrationChecks[profileID] != nil {
-		return repositoryIntegrationSelection{}, domain.Fail(domain.Conflict, "The selected profile already has an active GitHub inspection.", "Wait for its result before starting another inspection.")
+	background := operation == "workspace" || operation == "avatar"
+	if s.integrationQueued == nil {
+		s.integrationQueued = map[domain.ID]int{}
+		s.integrationForeground = map[domain.ID]int{}
+	}
+	queued := false
+	defer func() {
+		if queued {
+			if !locked {
+				unlock, _ = s.lockIntegrations(context.Background())
+				locked = true
+			}
+			s.integrationQueued[profileID]--
+			if !background {
+				s.integrationForeground[profileID]--
+			}
+		}
+	}()
+	waitCtx, waitCancel := context.WithTimeout(ctx, 35*time.Second)
+	defer waitCancel()
+	for {
+		running := s.integrationChecks[profileID]
+		if running == nil && (!background || s.integrationForeground[profileID] == 0) {
+			break
+		}
+		if !queued {
+			if s.integrationQueued[profileID] >= 64 {
+				return repositoryIntegrationSelection{}, domain.Fail(domain.ResourceExhausted, "The profile read queue is full.", "Retry this read explicitly after foreground work completes.")
+			}
+			s.integrationQueued[profileID]++
+			if !background {
+				s.integrationForeground[profileID]++
+			}
+			queued = true
+		}
+		if !background && running != nil && running.background {
+			if err := s.stopIntegrationCheck(waitCtx, profileID); err != nil {
+				return repositoryIntegrationSelection{}, err
+			}
+			continue
+		}
+		var done <-chan struct{}
+		if running != nil {
+			done = running.done
+		}
+		unlock()
+		locked = false
+		timer := time.NewTimer(25 * time.Millisecond)
+		select {
+		case <-done:
+		case <-timer.C:
+		case <-waitCtx.Done():
+			timer.Stop()
+			return repositoryIntegrationSelection{}, domain.SafeError(waitCtx.Err())
+		}
+		timer.Stop()
+		unlock, err = s.lockIntegrations(waitCtx)
+		if err != nil {
+			return repositoryIntegrationSelection{}, err
+		}
+		locked = true
+		var current repositoryIntegrationSelection
+		err = s.Store.Read(waitCtx, func(tx *store.Tx) error { var e error; current, e = repositoryIntegrationFromTx(tx, id); return e })
+		if err != nil {
+			return repositoryIntegrationSelection{}, err
+		}
+		if current.record.Revision != selected.record.Revision || current.repository.IntegrationID != profileID || current.profile.Connection.GenerationID != selected.profile.Connection.GenerationID {
+			return repositoryIntegrationSelection{}, domain.Fail(domain.Conflict, "The queued repository read scope changed.", "Reload the exact repository before retrying this read.")
+		}
+	}
+	if queued {
+		s.integrationQueued[profileID]--
+		if !background {
+			s.integrationForeground[profileID]--
+		}
+		queued = false
 	}
 	if len(s.integrationChecks)+len(s.integrationPreviews) >= 8 {
 		return repositoryIntegrationSelection{}, domain.Fail(domain.ResourceExhausted, "The server's GitHub inspection limit is reached.", "Retry after an active inspection completes.")
@@ -81,7 +155,7 @@ func (s *Service) withRepositoryIntegration(ctx context.Context, id domain.ID, o
 		s.integrationChecks = map[domain.ID]*integrationCheck{}
 	}
 	checkCtx, cancel := context.WithTimeout(ctx, 35*time.Second)
-	check := &integrationCheck{cancel: cancel, done: make(chan struct{})}
+	check := &integrationCheck{cancel: cancel, done: make(chan struct{}), background: background}
 	s.integrationChecks[profileID] = check
 	defer func() {
 		cancel()

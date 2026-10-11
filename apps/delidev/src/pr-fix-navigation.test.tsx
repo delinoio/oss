@@ -1,6 +1,8 @@
+import { useState } from "react";
+import { OpenPRProblemHistory } from "./pr-problems";
 import { create, type MessageShape } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { EntityKind, InboxService, IntegrationService, NotificationPreferencesSchema, PullRequestFixProfile, PullRequestFixQuery, PullRequestFixService, ResourceSchema, ResourceService, SessionService, SystemService, newRequestId } from "@delinoio/delidev-api-client";
 import { App } from "./App";
@@ -55,11 +57,16 @@ function fixture() {
     router.service(IntegrationService, { queryRepositoryIntegration: query, listPullRequestProblems: history });
     router.service(PullRequestFixService, { getPullRequestFixCapabilities: capabilities, requestPullRequestFix: fix });
   });
+  // Seed an existing shared history surface in the fixture. The ordinary PR
+  // workspace deliberately has no problem-history or new Fix entry point.
+  let showHistory: (value: boolean) => void = () => {};
+  function FixtureApp() { const [visible, setVisible] = useState(false); showHistory = setVisible; return <App transport={transport} localServer={visible ? <OpenPRProblemHistory selection={{repositoryId,remoteRepositoryId:"37",pullRequestId:"53",number:"17"}} /> : undefined} />; }
   const start = async () => {
     fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
     fireEvent.click(await screen.findByRole("button", { name: `Fixture repository. Repository ID: ${repositoryId}` }));
     expect(screen.queryByRole("button", { name: "Load pull requests" })).toBeNull();
-    fireEvent.click(await screen.findByRole("button", { name: "Read #17" }));
+    fireEvent.click(await screen.findByRole("button", { name: /#17 Original fixture PR/ }));
+    act(() => showHistory(true));
     fireEvent.click(await screen.findByRole("button", { name: "Show retained PR problems" }));
     fireEvent.click(await screen.findByRole("button", { name: "Fix now" }));
     await chooseScrollOption(screen.getByRole("combobox", { name: "Fix project" }), projectId);
@@ -67,15 +74,15 @@ function fixture() {
     fireEvent.click(screen.getByRole("button", { name: "Start fix" }));
     await waitFor(() => expect(fix).toHaveBeenCalledOnce());
   };
-  const leave = () => fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+  const leave = () => { act(() => showHistory(false)); fireEvent.click(screen.getByRole("button", { name: "Sessions" })); };
   const back = () => fireEvent.click(screen.getByRole("button", { name: "Pull requests" }));
   const pending = () => within(screen.getByRole("region", { name: "Pending PR actions" }));
-  return { transport, query, fix, capabilities, history, receipt, start, leave, back, pending, set, problem, projectId, repositoryId, removeRepository: () => { repositoryAvailable = false; }, removeRow: () => { rowAvailable = false; } };
+  return { FixtureApp, transport, query, fix, capabilities, history, receipt, start, leave, back, pending, set, problem, projectId, repositoryId, removeRepository: () => { repositoryAvailable = false; }, removeRow: () => { rowAvailable = false; } };
 }
 
 it("keeps original Fix recovery available before the automatic return read", async () => {
   const f = fixture(); f.fix.mockRejectedValueOnce(new ConnectError("Lost receipt", Code.Unavailable));
-  render(<App transport={f.transport} />); await f.start();
+  render(<f.FixtureApp />); await f.start();
   await f.pending().findByRole("button", { name: "Retry original fix request" });
   await waitFor(() => expect((f.pending().getByRole("button", { name: "Retry original fix request" }) as HTMLButtonElement).disabled).toBe(false));
   f.leave(); f.back();
@@ -95,7 +102,7 @@ it("keeps original Fix recovery available before the automatic return read", asy
 
 it.each(["failed GitHub reload", "removed PR row", "removed repository"])("keeps original Fix recovery available with %s", async state => {
   const f = fixture(); f.fix.mockRejectedValueOnce(new ConnectError("Lost receipt", Code.Unavailable));
-  render(<App transport={f.transport} />); await f.start();
+  render(<f.FixtureApp />); await f.start();
   await f.pending().findByRole("button", { name: "Retry original fix request" });
   f.leave();
   if (state === "failed GitHub reload") f.query.mockRejectedValue(new ConnectError("GitHub unavailable", Code.Unavailable));
@@ -118,7 +125,7 @@ it.each(["failed GitHub reload", "removed PR row", "removed repository"])("keeps
 it.each(["missing", "request", "remote repository", "PR", "number", "local repository", "project", "session", "set", "problem", "content version"])("retains late %s receipts and validates recovery against the original authority", async mismatch => {
   const f = fixture(); let complete!: (value: ReturnType<typeof f.receipt>) => void;
   f.fix.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
-  render(<App transport={f.transport} />); await f.start(); f.leave();
+  render(<f.FixtureApp />); await f.start(); f.leave();
   const invalid = (request: FixRequest) => {
     const result = f.receipt(request);
     const attempt = document(result.attempt);
@@ -157,7 +164,7 @@ it.each(["missing", "request", "remote repository", "PR", "number", "local repos
 it("clears a valid late receipt after leaving the row without replaying it", async () => {
   const f = fixture(); let complete!: (value: ReturnType<typeof f.receipt>) => void;
   f.fix.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
-  render(<App transport={f.transport} />); await f.start(); f.leave();
+  render(<f.FixtureApp />); await f.start(); f.leave();
   complete(f.receipt(f.fix.mock.calls[0][0])); f.back();
   await f.pending().findByText("No pending PR actions.");
   expect(f.fix).toHaveBeenCalledOnce(); await waitFor(() => expect(f.query).toHaveBeenCalledTimes(3));
@@ -167,7 +174,7 @@ it("clears a valid late receipt after leaving the row without replaying it", asy
 it.each([Code.PermissionDenied, Code.Unauthenticated, Code.FailedPrecondition, Code.NotFound])("keeps an already uncertain Fix after rejected replay %s", async code => {
   const f = fixture();
   f.fix.mockRejectedValueOnce(new ConnectError("Lost receipt", Code.Unavailable)).mockRejectedValueOnce(new ConnectError("Replay unavailable to the current client", code));
-  render(<App transport={f.transport} />); await f.start();
+  render(<f.FixtureApp />); await f.start();
   await f.pending().findByRole("button", { name: "Retry original fix request" });
   f.leave(); f.back();
   fireEvent.click(f.pending().getByRole("button", { name: "Retry original fix request" }));

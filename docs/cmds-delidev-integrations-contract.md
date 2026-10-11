@@ -552,3 +552,76 @@ contracts describe these rules; validation commands, source revisions and actual
 native/account/platform acceptance limits belong in PRs/issues/CI artifacts.
 
 Desktop GitHub list adapters use the [shared scroll contract](apps-delidev-desktop-contract.md#shared-scroll-continuation). They validate complete numeric-page responses, repository/profile generations, namespace identities and retained problem-set revisions before atomic append. Safe display projections accumulate; full observations retain at most three reached pages and restore exact accepted request tokens. Refresh cannot discover an unseen tail, and cursor or boundary drift requires explicit Reload list. Existing complete-result, capped/incomplete-search, permission, mutation receipt and original recovery authority remain independent.
+
+## Read-only pull request workspace
+
+The standalone desktop retains its accepted List/Search owner beside a separate
+selected-PR owner. Pending PR actions remains one region above the workspace;
+its original accepted requests and recovery semantics are unchanged. Available
+body widths of at least 900 CSS pixels use independently scrolling 40/60 list
+and detail panes. Compact Back restores the retained list position and row focus.
+Repository, applied-filter or connection replacement disposes the selection.
+
+System capability `PULL_REQUEST_WORKSPACE_V1` negotiates three independent reads:
+`GetPullRequestWorkspace`, `ListPullRequestCommits` and `ReadPullRequestAvatar`.
+Legacy List/Search documents, shared CLI inspection, rules, CI, reviewer and
+remediation operations remain unchanged. Unsupported peers retain a flat list,
+Description/Diff/Reviews and explicit unsupported stacks/Commits notices.
+
+Workspace requests bind the original local repository revision and at most 20
+accepted-page PR numbers. The adapter validates numeric GitHub repository and PR
+identities, exact head-repository identity and base/head branch relationships in
+all states. Context rows are labeled and never increase filtered match counts.
+Each component renders once under its earliest accepted matching seed, parents
+before children and numeric sibling ties. Discovery retains at most 100 PRs,
+depth 20 and 40 provider-page reads under the original query deadline. The graph
+is reobserved before complete claims. Limits, missing source repositories, access
+failures and relationship drift remain incomplete; cycles and competing parents
+remain ambiguous and render flat selectable observations. Foreign forks grant
+no same-repository graph relationship.
+
+Each observed PR retains its own provider-reported additions/deletions, bound to
+its exact repository/PR/base/head. Commit counts come independently from commit
+fields. Counts never sum patch lines, commits or stack members. Exact unsigned
+integer zero is valid; absent or invalid values remain unavailable. Negative,
+fractional, string-valued and overflowing provider numbers are not admitted.
+
+Description reads on selection; Diff, Reviews and Commits read on first tab
+activation. Successful same-PR observations remain in bounded disposable memory
+until refresh or disposal. Other tab activation never reloads the list. The
+ordinary workspace omits technical query buttons, Overview and PR problem history;
+shared backend/CLI and pending-action recovery retain their existing authority.
+Description uses the locked Markdown parser with inert supported text elements;
+HTML, images, links and unsupported nodes remain original source without fetches.
+The original body remains available. Diff preserves immutable bytes, full SHAs
+and digest, with contextual lines and inert fallback for unsupported sections.
+Reviews retain all published bodies, original states/times, thread context and
+excluded drafts; this read performs no author-permission verification.
+
+Commits uses a server-owned GraphQL connection with page size 20. Every page
+rechecks the original numeric repository, PR identity and exact base/head both
+before and after collection. Server-signed continuation binds the authenticated
+actor, repository revision, selected profile generation, PR and immutable SHAs;
+changed heads require explicit reload. Messages, author/committer names and dates,
+parent SHAs and independent counts remain complete. Oversized responses fail;
+email addresses are never projected. No database migration or Worker capability
+is introduced.
+
+Opaque avatar references retain their original actor, local repository revision,
+selected profile generation and numeric author in a bounded 64-entry memory
+cache. The authenticated byte read denies foreign, revoked and evicted scope.
+Only exact HTTPS `avatars.githubusercontent.com/u/<numeric actor>` locators with
+bounded known query fields are fetched through the selected outbound route. No
+PAT, client bearer, cookies or origin Authorization is attached, and redirects
+are refused. Fetches are bounded to five seconds and 128 KiB. PNG/JPEG/WebP decode
+must have dimensions at most 1024 by 1024; re-encoding emits a small sanitized PNG.
+Unknown/failed actors use decorative fallback; imagery establishes no identity.
+The desktop remote-image CSP is unchanged.
+
+The shared per-profile read owner serializes foreground reads and bounded queued
+background work while retaining eight active global inspections. Foreground
+selection/tab work displaces and joins a running enrichment owner and precedes
+queued background work. Interrupted enrichment requires explicit retry. Original
+post-read authorization, repository revision, profile generation, cancellation,
+response limits and safe structured logs remain authoritative. Fixtures and CI
+builds do not establish real-account or packaged native acceptance.

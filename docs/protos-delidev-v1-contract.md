@@ -1417,3 +1417,17 @@ Each native bucket owns its exact bounded ID, required hasCredits/unlimited flag
 Account rows show one exact balance or a localized multi-bucket count. Manage subscription shows the read-only Paid credits card above Quota, with separate bucket labels and retained stale/error timestamps. Keep loading, unavailable/update, unknown, zero, positive and unlimited states distinct. Use existing theme tokens, wrapping rows, parent scrolling, keyboard/dismissal ownership and EN/KO strings. Presentation grants no account, execution, native or platform acceptance.
 
 The reconciled `CreateTerminalRequest` baseline retains original fields 1–4. The feature records their unchanged reset provenance as existing declarations; its records do not reclassify this original message as new. The feature owns creation intent field 5, original candidate field 6 and the closed creation-mode values. Preserve all member numbers and ownership.
+
+## Pull request workspace read allocation
+
+System `PULL_REQUEST_WORKSPACE_V1 = 82` independently negotiates the implemented
+IntegrationService `GetPullRequestWorkspace`, `ListPullRequestCommits` and
+`ReadPullRequestAvatar` reads. Complete message-field and RPC declarations are
+retained in the allocation ledger and canonical integration schema. Each request
+binds the selected local repository revision; commits additionally bind original
+PR/numeric repository/base/head and a signed scoped continuation, while avatar
+reads accept only a server-issued scoped opaque reference. Closed schema-version-1
+workspace/commits documents retain bounded source observations; avatars return
+sanitized PNG bytes. Unsupported peers do not attempt these methods. There is no
+Worker allocation, feature flag or database migration. Reconcile the capability
+and all declarations against current allocations before merge.

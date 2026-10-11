@@ -176,3 +176,14 @@ Local registration endpoints remain immutable authority. Only a validated fixed 
 `internal/tokenprices` owns the separate bounded reference-price collector. It fetches only `https://models.dev/api.json` through the server-selected outbound route. Reject redirects, ambient proxies and direct fallback. Use a 15-second request deadline, 16 MiB response limit, at most 512 providers and 50,000 models, with 10,000 models per provider. Coalesce an ongoing refresh; keep the last valid private atomic cache after failure, including restart-stable failure backoff. Success checks are due after 24 hours; failed attempts cannot retry before one hour. The server joins this owner at shutdown.
 
 The collector grants no account, model or execution support. Automatic application requires the complete source/native-ID pricing and inline-model/reset activation in the catalog and usage contracts. Original source identity, manual policies and first-retention estimates remain independently authoritative. Log phase, duration, bounded counts and stable failure codes only; never emit downloaded content, credentials, endpoints, usage or user state.
+
+### GitHub avatar route
+
+Server-owned PR avatar reads use the same selected outbound resolver, credential
+isolation and no-redirect policy as other GitHub attempts, with no token parameter
+or origin credential headers. Only retained exact GitHub numeric user locators
+are admitted. Fetches have five-second and 128 KiB bounds; supported decoding is
+limited to 1024 by 1024 and emitted PNGs are sanitized and at most 64 by 64.
+Client-supplied URLs, redirects, arbitrary origins and ambient proxy fallback are
+never accepted. The authenticated read returns bytes rather than a remote URL,
+so desktop remote-image CSP authority does not expand.

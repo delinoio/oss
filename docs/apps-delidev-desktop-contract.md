@@ -5220,3 +5220,24 @@ Native local startup, supervision and saved-connection verification require the 
 A current supported repository with saved GitHub owner/name and no profile presents one inline GitHub profile choice. It never selects the only profile automatically. The existing bounded selector verifies an explicit exact resource and allows supported disconnected profiles. Association grants no credential or repository-access authority. Profile creation and credential connection stay in GitHub profiles Settings. Missing owner/name opens resource-targeted Repository Settings only after a matching supported exact-resource read; inline setup has no owner, name, URL or token fields.
 
 Save retains the complete original document with only `integration_id` changed, the original repository ID/revision and one request ID. Existing repository configuration writes share a connection-owned mutation identity across Settings and Pull requests. Admission retains the original job and blocks competing saves through navigation. Uncertain acknowledgment permits only the original bytes/request retry. Pending PR actions owns recovery, sanitized failures and status reads. Verified job success with matching output identity/revision must precede a fresh original repository read before automatic PR loading can resume. Failed jobs require a fresh read and explicit review before releasing the save. Rejected saves require read/review before another draft. Unsent choices and selection reads are discarded on repository change or departure; late work cannot change another form or start its PR query. Remote repository capability, backend authorization/revision/checkout validation and normal configured queries remain authoritative. English/Korean semantic forms keep visible focus, 40px controls and wrapping actions.
+
+### Pull request workspace presentation
+
+The read-only PR workspace follows the integration contract's separately retained
+list/selection owners. At available body width 900 CSS pixels or more, list/detail
+use 40/60 independent scrolling; compact Back restores list scroll and row focus.
+Selection initially remains empty and displays a localized prompt. Rows and the
+compact detail header retain complete wrapping titles, textual state, Draft and
+unknown-author notices, exact UTC times and their own signed additions/deletions.
+Stack-context rows remain distinguished from accepted filtered matches.
+
+Semantic underline tabs are Description, Diff, Reviews, Commits (설명, Diff, 리뷰,
+커밋). Arrow/Home/End moves focus without reading; Enter/Space explicitly activates.
+Same-PR observations are lazy, disposable and bounded. Scope replacement clears
+old observations. Description is inert Markdown plus full source; Diff is an
+immutable file-oriented patch plus original snapshot; Reviews is complete published
+feedback; Commits preserves full messages in Details and supports Copy full SHA.
+The ordinary workspace contains no CI/rules/reviewer verification grid, Overview,
+problem history or separate stack-dependencies section. Pending PR actions remains
+above the workspace. Existing server/CLI inspection and recovery surfaces survive.
+Unknown counts and failed decorative images remain accessible fallbacks.

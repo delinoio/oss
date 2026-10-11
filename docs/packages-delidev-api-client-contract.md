@@ -446,3 +446,16 @@ remain independently paginated. No new business RPC or transport authority is
 added. Follow the [mobile contract](apps-delidev-mobile-contract.md).
 
 Current schema-4 Agent routes embed exact source/native identity and non-secret metadata. The shared parser rejects Model resources, mixed UUID routes and older Agent schemas. Other currently activated Project, Settings and API-profile schemas remain supported. Protocol-2 connection verification rejects protocol 1 without adopting its state.
+
+## Pull request workspace client
+
+The generated IntegrationQuery client exposes independently negotiated workspace,
+commit-page and avatar-byte reads under System `PULL_REQUEST_WORKSPACE_V1`.
+Preserve original repository revision, numeric PR/repository and immutable
+base/head scope, actor/profile generation fences and signed continuation. The
+schema-version-1 decoders reject mixed or foreign observations and invalid counts.
+Avatar references are opaque scope, never URLs. Legacy QueryRepositoryIntegration
+List/Search and shared inspection exports remain unchanged. Connection disposal
+cancels and removes private tab/list/graph/avatar caches; unsupported peers retain
+safe flat-list and supported-tab fallbacks. Fixture validation is separate from
+real GitHub-account and packaged CEF/platform acceptance.
