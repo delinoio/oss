@@ -5696,3 +5696,13 @@ dependency or native operation. Semantic themes, English/Korean, narrow widths
 and 200% reflow keep expanded text readable without horizontal overflow. Component
 and browser fixtures establish presentation only; installed CEF/native acceptance
 remains separate.
+
+## Active conversation question presentation
+
+The Conversation Agent requests tray presents the latest authoritative interaction revision. A successful original answer response RPC joins the same revision projection as list reads, live updates and restored pages. Retain original arrival order, authenticated session scope and page-scoped counts. Keep lightweight revision/presentation metadata across payload eviction so older pages cannot revive an answered form. Full original documents remain in the existing bounded payload window.
+
+After confirmed server submission, remove the original question selection and text inputs. Show compact queued, claimed, transmitted, uncertain, failed or unavailable state while delivery or original receipt recovery remains unresolved. The explicit receipt retry retains the original UUID, revision and request bytes through closure; it cannot create a second answer or native send. Unknown or contradictory observations remain visible without response authority. Native acceptance and closure remain independent from session outcome.
+
+Retire a question only after authoritative native acceptance or confirmed closure without an unresolved response or retained mutation. Use that same projection for rendering, the page-scoped count and automatic expansion. Preserve unanswered questions and unrelated approval forms, identities and drafts. Original question/answer documents and Inbox inspection remain retained; tray retirement does not delete resources or mark Inbox items read.
+
+Hide the complete Agent requests disclosure only when a successful complete resident read proves there is no displayed request or unresolved operation. Initial loading, errors, continuation and evicted-page restoration remain reachable. An empty tray adds no completion badge, replacement message or vacant region. The composer moves upward naturally and retains its mounted controller, draft, dimensions, styling and controls at wide/compact widths and short heights. If retirement removes the focused control, focus the next actionable request or the composer. Do not steal focus from another connected active control. No RPC, protocol allocation, migration or native delivery change is required.
