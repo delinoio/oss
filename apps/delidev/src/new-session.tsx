@@ -1366,7 +1366,7 @@ export function NewSession({
               {copy("new-session.automaticSessionTitlesAreUnavailable_807e33")}
             </strong>
             <p>{copy("new-session.updateTheDelidevServerAndConnect_039a1d")}</p>
-            <button type="button" onClick={openSettings}>
+            <button type="button" onClick={() => openSettings()}>
               {copy("new-session.openSettings_3f9401")}
             </button>
             <Problem error={status.error} />

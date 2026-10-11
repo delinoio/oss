@@ -1724,7 +1724,8 @@ type SettingsCategoryEntry =
       resourceId: string;
       resourceKind: EntityKind;
     }
-  | { kind: SettingsEntryKind.NewProject | SettingsEntryKind.NewAgentWorker }
+  | { kind: SettingsEntryKind.NewProject }
+  | { kind: SettingsEntryKind.NewAgentWorker }
   | {
       kind: SettingsEntryKind.ManageAccounts | SettingsEntryKind.AddAccount;
       providerId: string;
