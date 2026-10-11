@@ -334,7 +334,7 @@
   text-align: right;
 }
 .session-workspace .session-revert-action:hover:not(:disabled) {
-  background: var(--surface-hover);
+  background: var(--revert-hover-surface, var(--surface-hover));
 }
 .session-workspace .session-revert-action:focus-visible {
   outline: 3px solid var(--focus-on-surface, var(--focus));
