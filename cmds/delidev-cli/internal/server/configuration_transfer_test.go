@@ -439,6 +439,25 @@ func TestConfigurationImportRepositoryValidationCommitsAllOrNothing(t *testing.T
 	for _, outcome := range []string{"success", "failure", "canonical-path", "stale-settings", "revoked-client", "retired-identity", "provider-disabled", "source-proof-missing", "source-proof-historical", "source-proof-changed", "legacy-source-proof"} {
 		t.Run(outcome, func(t *testing.T) {
 			s, _ := newDoctorFixture(t)
+			baselineProviders, err := s.Store.List(context.Background(), store.Filter{Kind: domain.ProviderKind, Limit: store.MaxPage})
+			if err != nil {
+				t.Fatal(err)
+			}
+			baselineProviderRevisions := make(map[domain.ID]uint64, len(baselineProviders))
+			for _, provider := range baselineProviders {
+				baselineProviderRevisions[provider.ID] = provider.Revision
+			}
+			assertProvidersUnchanged := func() {
+				providers, err := s.Store.List(context.Background(), store.Filter{Kind: domain.ProviderKind, Limit: store.MaxPage})
+				if err != nil || len(providers) != len(baselineProviderRevisions) {
+					t.Fatal("source refusal changed provider state", err)
+				}
+				for _, provider := range providers {
+					if revision, exists := baselineProviderRevisions[provider.ID]; !exists || revision != provider.Revision {
+						t.Fatal("source refusal changed provider state", provider.ID)
+					}
+				}
+			}
 			selection := transferSelection()
 			var providerID domain.ID
 			var provider domain.Provider
@@ -499,6 +518,7 @@ func TestConfigurationImportRepositoryValidationCommitsAllOrNothing(t *testing.T
 				domain.Decode(response.Msg.ResultJson, &report)
 				doctorPut(t, s, domain.DeviceKind, clientID, 1, domain.Device{Name: "client", Type: domain.ClientDevice, Revoked: true})
 				finishTransferTest(t, s, report.JobID, outcome, settingsID, settings)
+				assertProvidersUnchanged()
 			} else {
 				requestID := domain.NewID()
 				report := transferApply(t, s, preview, requestID)
@@ -536,6 +556,7 @@ func TestConfigurationImportRepositoryValidationCommitsAllOrNothing(t *testing.T
 				}
 				finishTransferTest(t, s, report.JobID, outcome, settingsID, settings)
 				if strings.HasPrefix(outcome, "source-proof-") || outcome == "legacy-source-proof" {
+					assertProvidersUnchanged()
 					replay := transferApply(t, s, preview, requestID)
 					if replay.JobID != report.JobID || replay.State != domain.JobUncertain {
 						t.Fatal("source refusal lost original receipt ownership")
@@ -642,7 +663,7 @@ func finishTransferTest(t *testing.T, s *Service, parentID domain.ID, outcome st
 		if job.State != domain.JobUncertain || job.Problem == nil || job.Problem.Code != domain.RecoveryRequired || len(rows) != 0 || !bytes.Equal(job.Input, originalJob.Input) {
 			t.Fatal("source refusal changed accepted input or published partial configuration")
 		}
-		for _, kind := range []domain.Kind{domain.AccountKind, domain.AgentKind, domain.RepositoryKind, domain.ProviderKind} {
+		for _, kind := range []domain.Kind{domain.AccountKind, domain.AgentKind, domain.RepositoryKind} {
 			entries, err := s.Store.List(context.Background(), store.Filter{Kind: kind, Limit: 10})
 			if err != nil || len(entries) != 0 {
 				t.Fatal("source refusal published a partial graph", kind, err)
