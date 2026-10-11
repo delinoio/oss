@@ -22,7 +22,7 @@ function fixture() {
   const run = vi.fn(async (_request: unknown) => ({ occurrence }));
   const control = vi.fn(async (_request: unknown) => ({ schedule }));
   const remove = vi.fn(async (_request: unknown) => ({}));
-  const discovery = vi.fn(async (_request: unknown) => ({ machine, job }));
+  const discovery = vi.fn(async (request: { mutation?: { requestId: string } }) => ({ machine, job, requestId: request.mutation?.requestId ?? "" }));
   const repositoryId = newRequestId();
   const project = create(ResourceSchema, { id: definition.project_id, kind: EntityKind.PROJECT, schemaVersion: 1, revision: 1n, documentJson: encode({ name: "Selected project", repositories: [repositoryId], base: { type: "local-branch", name: "main" } }) });
   const agent = create(ResourceSchema, { id: definition.agent_id, kind: EntityKind.AGENT, schemaVersion: 4, revision: 1n, documentJson: encode({ name: "Selected agent", harness: "codex", routes: [{ model: { provider_id: newRequestId(), native_id: "fixture-native-model", input_modalities: ["text"], metadata_source: "unknown" }, accounts: [{ id: newRequestId(), weight: 1 }] }], templates: [], options: { permission: "default" } }) });

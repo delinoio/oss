@@ -34,7 +34,7 @@ export function RunnerRemediationProvider({ children, active, authority }: { chi
     if (!active || !validRunnerObservation(resource)) return false;
     const previous = selectedRef.current;
     if (previous?.id === resource.id) { setPresenter(source); return true; }
-    if (previous && (!original.current || original.current.locked)) return false;
+    if (previous && (!original.current || original.current.retained)) return false;
     selectedRef.current = resource;
     original.current = undefined;
     setController(undefined);

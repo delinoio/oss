@@ -128,7 +128,7 @@ it("retains consuming gates for an original diagnostic after selector shortcuts 
 it("releases the original workflow gate after a verified terminal inspection while keeping the result", async () => {
   const row = machine("Settled Runner");
   const job = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.JOB, schemaVersion: 1, revision: 2n, documentJson: encode({ state: "succeeded", output: {} }) });
-  const discover = vi.fn((_request: unknown) => ({ machine: row, job }));
+  const discover = vi.fn((request: { mutation?: { requestId: string } }) => ({ machine: row, job, requestId: request.mutation?.requestId ?? "" }));
   const transport = createRouterTransport(router => { router.service(ResourceService, { getResource: request => ({ resource: request.id === job.id ? job : row }) }); router.service(WorkerService, { discoverHarnesses: discover }); });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   function Surface() { const open = useRunnerRemediation(); return <><button onClick={() => open?.(row)}>Inspect settled</button><button disabled={open?.pendingFor(row.id)}>Start original workflow</button>{open?.body}</>; }
@@ -153,7 +153,7 @@ it.each(settlement)("gates the original workflow by observation: %s", async (_la
   const row = machine("Gated Runner");
   const accepted = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.JOB, schemaVersion: 1, revision: 2n, documentJson: encode({ state: "queued", output: {} }) });
   const observed = create(ResourceSchema, { id: variant === "foreign" ? newRequestId() : accepted.id, kind: variant === "kind" ? EntityKind.MACHINE : EntityKind.JOB, schemaVersion: 1, revision: 3n, documentJson: encode({ state, output: {} }) });
-  const discover = vi.fn((_request: unknown) => ({ machine: row, job: accepted }));
+  const discover = vi.fn((request: { mutation?: { requestId: string } }) => ({ machine: row, job: accepted, requestId: request.mutation?.requestId ?? "" }));
   const transport = createRouterTransport(router => { router.service(ResourceService, { getResource: request => ({ resource: request.id === accepted.id ? observed : row }) }); router.service(WorkerService, { discoverHarnesses: discover }); });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   function Surface() { const open = useRunnerRemediation(); return <><button onClick={() => open?.(row)}>Inspect gated</button><button disabled={open?.pendingFor(row.id)}>Start original workflow</button>{open?.body}</>; }
