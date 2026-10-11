@@ -524,6 +524,9 @@ function Shell({
                     <Sidebar
                       collapsed={sidebarCollapsed}
                       compactFocusRef={contextOpener}
+                      focusHandoffPending={
+                        pendingFocusDestination.current !== undefined
+                      }
                       openCommandMenu={toggleCommandMenu}
                       connectionReady={connectionReady}
                       serverPresentation={serverPresentation}

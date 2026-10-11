@@ -1001,6 +1001,7 @@ function ProjectGroup({
 export function Sidebar({
   collapsed = false,
   compactFocusRef,
+  focusHandoffPending = false,
   openCommandMenu,
   surface,
   selectedSessionId,
@@ -1022,6 +1023,7 @@ export function Sidebar({
 }: {
   collapsed?: boolean;
   compactFocusRef?: RefObject<HTMLButtonElement | null>;
+  focusHandoffPending?: boolean;
   openCommandMenu?: () => void;
   surface: Surface;
   selectedSessionId: string;
@@ -1153,7 +1155,11 @@ export function Sidebar({
       ) ??
       rail.current?.querySelector<HTMLButtonElement>(".sidebar-rail-button");
     const hidden = compact ? !drawerOpen : collapsed;
-    if (hidden && element.contains(document.activeElement)) {
+    if (
+      hidden &&
+      element.contains(document.activeElement) &&
+      !focusHandoffPending
+    ) {
       // The rail remains visible when the wide pane collapses. Move only pane
       // focus, before applying hidden/inert, so composer selection is untouched.
       (compact ? compactFocusRef?.current : railTarget())?.focus({
@@ -1199,6 +1205,7 @@ export function Sidebar({
     compact,
     drawerOpen,
     collapsed,
+    focusHandoffPending,
     setDrawerOpen,
     compactFocusRef,
   ]);
