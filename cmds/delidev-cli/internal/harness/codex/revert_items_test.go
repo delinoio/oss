@@ -156,6 +156,20 @@ func TestRevertItemEvidenceFaultsQuarantineOriginalSend(t *testing.T) {
 	}
 }
 
+func TestRevertNonemptyPaginatedPrefixRequiresNativeItemAnchor(t *testing.T) {
+	c, capture, source, ids, inputs := revertFixture(t, "paginated-items-missing-anchor")
+	claims := 0
+	if _, err := c.RevertThread(context.Background(), domain.NewID(), source, inputs[2], ids[2], func(RevertIntent) error {
+		claims++
+		return nil
+	}); err == nil || claims != 1 || c.problem == nil || !c.execution.paused {
+		t.Fatal("nonempty retained prefix without an item anchor was accepted", err)
+	}
+	if len(requestsOf(t, capture, "thread/items/list")) != 0 || len(requestsOf(t, capture, "thread/revert")) != 1 {
+		t.Fatal("missing item anchor reached retained-item reads or repeated the mutation")
+	}
+}
+
 func TestRevertItemRecoveryAndReplacementHydrateWithoutAnotherSend(t *testing.T) {
 	c, capture, source, ids, inputs := revertFixture(t, "paginated-items-lost")
 	var intent RevertIntent
