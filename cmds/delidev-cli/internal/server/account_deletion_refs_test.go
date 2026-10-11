@@ -49,7 +49,7 @@ func TestAccountDeletionRetainsEveryConfigurationAndSessionReference(t *testing.
 					}}
 				case "deleted-project-policy":
 					session.ProjectID = domain.NewID()
-					if _, err := tx.Put(domain.ProjectKind, session.ProjectID, 0, "", "", domain.Project{Accounts: domain.Restriction{Configured: true, IDs: []domain.ID{account}}}); err != nil {
+					if _, err := tx.Put(domain.ProjectKind, session.ProjectID, 0, "", "", domain.Project{Name: "Deleted project policy fixture", Accounts: domain.Restriction{Configured: true, IDs: []domain.ID{account}}}); err != nil {
 						return nil, err
 					}
 				case "unrelated":
