@@ -580,7 +580,7 @@ keep their existing ownership boundaries.
 
 ## Named Managed Checkout Directories
 
-Issue 2560. A new Worktree names each managed repository checkout after its registered repository name instead of its repository UUID, for example `worker/workspaces/<session UUID>/oss`. The session UUID parent and every repository UUID identity stay unchanged.
+A new Worktree names each managed repository checkout after its registered repository name instead of its repository UUID, for example `worker/workspaces/<session UUID>/oss`. The session UUID parent and every repository UUID identity stay unchanged.
 
 - `RepositorySpec` and `PreparedRepository` carry an optional immutable `directory_name` (version 1; omission serializes as before). An omitted field retains the original `<root>/<repository UUID>` path. Session and Schedule creation freeze the name from the registered Repository at preparation acceptance; independent Fork inherits the original frozen name. Later registration changes never rewrite accepted requests, digests or existing paths.
 - `domain.PortableDirectoryName` is the single conversion: trim surrounding whitespace, normalize to NFC, replace each control or `< > : " / \ | ? *` character with `_`, remove trailing dots and whitespace, truncate at a UTF-8 boundary to at most 255 bytes, use `repository` for an empty result, prefix `_` for a reserved device name, then validate with `ValidateRepositoryCloneDirectory`. Ordinary names keep their casing and no UUID suffix is added.

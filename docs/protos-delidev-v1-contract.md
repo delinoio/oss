@@ -1418,4 +1418,4 @@ Account rows show one exact balance or a localized multi-bucket count. Manage su
 
 The reconciled `CreateTerminalRequest` baseline retains original fields 1–4. The feature records their unchanged reset provenance as existing declarations; its records do not reclassify this original message as new. The feature owns creation intent field 5, original candidate field 6 and the closed creation-mode values. Preserve all member numbers and ownership.
 
-- Worktree named managed checkout directories (issue 2560) record Worker capability `NAMED_MANAGED_DIRECTORIES_V1 = 53` in the owning feature PR. It is independent of Worker capability 19; follow the "Named Managed Checkout Directories" section of `cmds-delidev-workspace-contract.md`.
+- Worktree named managed checkout directories record Worker capability `NAMED_MANAGED_DIRECTORIES_V1 = 53` in the owning feature PR. It is independent of Worker capability 19; follow the "Named Managed Checkout Directories" section of `cmds-delidev-workspace-contract.md`.

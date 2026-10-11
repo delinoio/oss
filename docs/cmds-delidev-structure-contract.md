@@ -571,4 +571,4 @@ Instruction-file updates in this requirement apply only to changes in developmen
 
 Record implementation status and validation results in pull requests, issues and CI logs/artifacts under the root DeliDev validation policy. Do not add repository evidence documents. Update instructions only when their rules or ownership change, not merely to record another validation run.
 
-- Worktree named managed checkout directories (issue 2560) record Worker capability `NAMED_MANAGED_DIRECTORIES_V1 = 53` in the owning feature PR. It is independent of Worker capability 19; follow the "Named Managed Checkout Directories" section of `cmds-delidev-workspace-contract.md`.
+- Worktree named managed checkout directories record Worker capability `NAMED_MANAGED_DIRECTORIES_V1 = 53` in the owning feature PR. It is independent of Worker capability 19; follow the "Named Managed Checkout Directories" section of `cmds-delidev-workspace-contract.md`.

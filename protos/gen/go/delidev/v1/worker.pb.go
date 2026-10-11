@@ -26,7 +26,7 @@ type WorkerCapability int32
 const (
 	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED          WorkerCapability = 0
 	WorkerCapability_WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1 WorkerCapability = 52
-	// Named managed workspace repository directories (issue 2560).
+	// Named managed workspace repository directories.
 	WorkerCapability_WORKER_CAPABILITY_NAMED_MANAGED_DIRECTORIES_V1   WorkerCapability = 53
 	WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1      WorkerCapability = 22
 	WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1    WorkerCapability = 50

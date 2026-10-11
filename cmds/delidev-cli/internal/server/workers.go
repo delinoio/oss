@@ -519,6 +519,31 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 							return tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, j)
 						}
 					}
+					if j.Type == domain.ExecuteSessionJob || j.Type == domain.ForkSessionJob {
+						named := false
+						if j.Type == domain.ExecuteSessionJob {
+							var input domain.ExecutionJobInput
+							named = domain.Decode(j.Input, &input) == nil && workspace.ManifestHasNamedDirectories(input.Manifest)
+						} else {
+							var input domain.ForkJobInput
+							named = domain.Decode(j.Input, &input) == nil && workspace.ForkRequiresNamedDirectories(input)
+						}
+						if named {
+							mr, err := tx.Get(domain.MachineKind, machine)
+							if err != nil {
+								return nil, err
+							}
+							current, err := store.Decode[domain.Machine](mr)
+							if err != nil {
+								return nil, err
+							}
+							if !slices.Contains(current.WorkerCapabilities, domain.NamedManagedDirectoriesV1) {
+								now := time.Now().UTC()
+								j.State, j.Problem, j.FinishedAt = domain.JobFailed, domain.Fail(domain.Unsupported, "The selected Runner Device no longer supports named workspace directories.", "Update and reconnect the original Worker before resuming this workspace."), &now
+								return tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, j)
+							}
+						}
+					}
 					if j.Type == domain.PrepareWorkspaceJob {
 						var input workspace.PrepareRequest
 						if domain.Decode(j.Input, &input) != nil {

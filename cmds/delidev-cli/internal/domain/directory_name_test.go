@@ -8,21 +8,23 @@ import (
 
 func TestPortableDirectoryName(t *testing.T) {
 	for name, want := range map[string]string{
-		"oss":                         "oss",
-		"OSS":                         "OSS",
-		"  oss  ":                     "oss",
-		"a/b":                         "a_b",
-		"a:b*c?":                      "a_b_c_",
-		"CON":                         "_CON",
-		"con.txt":                     "_con.txt",
-		"LPT1":                        "_LPT1",
-		"":                            "repository",
-		"...":                         "repository",
-		"name. . ":                    "name",
-		"a\x00b":                      "a_b",
-		"é":                          "é",
-		strings.Repeat("a", 300):      strings.Repeat("a", 255),
-		strings.Repeat("\u00e9", 200): strings.Repeat("\u00e9", 127),
+		"oss":                                  "oss",
+		"OSS":                                  "OSS",
+		"  oss  ":                              "oss",
+		"a/b":                                  "a_b",
+		"a:b*c?":                               "a_b_c_",
+		"CON":                                  "_CON",
+		"con.txt":                              "_con.txt",
+		"LPT1":                                 "_LPT1",
+		"":                                     "repository",
+		"...":                                  "repository",
+		"name. . ":                             "name",
+		"a\ufffdb":                             "a\ufffdb",
+		"CON" + strings.Repeat(" ", 252) + "x": "_CON",
+		"a\x00b":                               "a_b",
+		"é":                                   "é",
+		strings.Repeat("a", 300):               strings.Repeat("a", 255),
+		strings.Repeat("\u00e9", 200):          strings.Repeat("\u00e9", 127),
 	} {
 		got := PortableDirectoryName(name)
 		if got != want {

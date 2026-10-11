@@ -1684,7 +1684,7 @@ export enum WorkerCapability {
   CODEX_QUOTA_BLOCK_V1 = 52,
 
   /**
-   * Named managed workspace repository directories (issue 2560).
+   * Named managed workspace repository directories.
    *
    * @generated from enum value: WORKER_CAPABILITY_NAMED_MANAGED_DIRECTORIES_V1 = 53;
    */
