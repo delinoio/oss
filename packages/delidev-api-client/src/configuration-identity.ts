@@ -325,7 +325,7 @@ function nativeImportedTemplate(value: ResourceDocument): boolean {
     new TextEncoder().encode(value.name).length > 256 ||
     typeof value.contents !== "string" ||
     new TextEncoder().encode(value.contents).length < 1 ||
-    new TextEncoder().encode(value.contents).length > (128 << 10)
+    new TextEncoder().encode(value.contents).length > 128 << 10
   )
     return false;
   return (
