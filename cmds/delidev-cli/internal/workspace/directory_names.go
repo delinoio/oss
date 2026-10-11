@@ -43,8 +43,7 @@ func PortableRepositoryDirectory(name string) (string, error) {
 	if strings.EqualFold(name, ".git") {
 		name = "_" + name[1:]
 	}
-	stem := strings.ToUpper(strings.SplitN(name, ".", 2)[0])
-	if stem == "CON" || stem == "PRN" || stem == "AUX" || stem == "NUL" || len(stem) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) && stem[3] >= '1' && stem[3] <= '9' {
+	if domain.IsReservedRepositoryCloneDirectoryName(name) {
 		name = "_" + name
 	}
 	// Prefixing a device stem can add one byte to a 255-byte component.

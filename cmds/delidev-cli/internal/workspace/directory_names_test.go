@@ -16,7 +16,7 @@ import (
 
 func TestPortableRepositoryDirectory(t *testing.T) {
 	for _, test := range []struct{ input, expected string }{
-		{"oss", "oss"}, {" OSS ", "OSS"}, {"a/b", "a_b"}, {"a\\b", "a_b"}, {"CON", "_CON"}, {"com1.txt", "_com1.txt"}, {"NUL", "_NUL"}, {".git", "_git"}, {".GIT", "_GIT"}, {" ... ", "repository"}, {"repo.  ", "repo"}, {"e\u0301", "é"}, {"a\x00b", "a_b"}, {strings.Repeat("界", 100), strings.Repeat("界", 85)},
+		{"oss", "oss"}, {" OSS ", "OSS"}, {"a/b", "a_b"}, {"a\\b", "a_b"}, {"CON", "_CON"}, {"com1.txt", "_com1.txt"}, {"com¹", "_com¹"}, {"com².txt", "_com².txt"}, {"COM³", "_COM³"}, {"lpt¹", "_lpt¹"}, {"LPT².txt", "_LPT².txt"}, {"LPT³", "_LPT³"}, {"NUL", "_NUL"}, {".git", "_git"}, {".GIT", "_GIT"}, {" ... ", "repository"}, {"repo.  ", "repo"}, {"e\u0301", "é"}, {"a\x00b", "a_b"}, {strings.Repeat("界", 100), strings.Repeat("界", 85)},
 	} {
 		t.Run(test.input, func(t *testing.T) {
 			actual, err := PortableRepositoryDirectory(test.input)

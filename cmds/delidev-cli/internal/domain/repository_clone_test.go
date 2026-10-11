@@ -95,12 +95,12 @@ func TestRepositoryCloneSourceIdentity(t *testing.T) {
 }
 
 func TestRepositoryCloneDirectory(t *testing.T) {
-	for _, value := range []string{"repo", "My repository", "한글", "repo.git", "-folder"} {
+	for _, value := range []string{"repo", "My repository", "한글", "repo.git", "-folder", "COM⁴", "LPT⁴.txt"} {
 		if err := ValidateRepositoryCloneDirectory(value); err != nil {
 			t.Fatal(value, err)
 		}
 	}
-	for _, value := range []string{"", ".", "..", "../other", "a/b", "a\\b", "CON", "nul.txt", "Lpt1", "COM9.txt", "trailing.", "trailing ", "a:b", "a\n", "a?b"} {
+	for _, value := range []string{"", ".", "..", "../other", "a/b", "a\\b", "CON", "nul.txt", "Lpt1", "COM9.txt", "COM¹", "com².txt", "COM³", "LPT¹", "lpt².txt", "LPT³", "trailing.", "trailing ", "a:b", "a\n", "a?b"} {
 		if ValidateRepositoryCloneDirectory(value) == nil {
 			t.Fatal(value)
 		}
