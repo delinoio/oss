@@ -3408,7 +3408,7 @@ session width or less use 12px padding and wrap controls below identity; retain
 short-height bounded scrolling, accessible composer and all original action
 guards. Reflow must retain workspace controller and draft identities.
 
-The feature use two primary workspace rows: an approximately 72px identity/action header and a 52px navigation row. The feature uses a fixed 40×40px icon-only Open tool trigger beside the horizontally scrolling tablist. Center the decorative 18px outlined wrench from `SessionIconKind.Tools` in the existing renderer with zero padding and 8px corners. Keep localized Open tool / 도구 열기 as both its accessible name and title hint, with original semantic hover/expanded/focus treatment and menu ARIA relationships. It exposes Diff, Files, Terminals, Browser and Diagnostics in that order through their original entry callbacks and eligibility, followed by Open Sidechat only for the independently eligible original parent. The flat menu uses the existing localized label, including Sidechat 열기, with the decorative outline chat glyph from `SessionIconKind.Sidechat`. Sidechat is absent from the session overflow menu. Fork keeps its independent shared eligibility and original dialog. Opening focuses the first enabled item; arrows, Home/End and native Enter/Space select entries. Escape closes only the menu and restores its trigger; outside dismissal preserves destination focus. The 220px popup stays viewport-bounded and scrolls vertically. Tool selection closes it and focuses the selected singleton descriptor without new resources or observation reads.
+The feature use two primary workspace rows: an approximately 72px identity/action header and a 52px navigation row. The feature uses a fixed 40×40px icon-only Open tool trigger beside the horizontally scrolling tablist. Center the decorative 18px outlined wrench from `SessionIconKind.Tools` in the existing renderer with zero padding and 8px corners. Keep localized Open tool / 도구 열기 as both its accessible name and title hint, with original semantic hover/expanded/focus treatment and menu ARIA relationships. It exposes Diff, Files, Terminals, Browser and Diagnostics in that order through their original entry callbacks and eligibility, followed by Open Sidechat only for the independently eligible original parent. The flat menu uses the existing localized label, including Sidechat 열기, with the decorative outline chat glyph from `SessionIconKind.Sidechat`. Sidechat is absent from the session overflow menu. Fork keeps its independent shared eligibility and original dialog. The button and the typed primary+T OpenTool action open one compact DialogSurface modal. Opening focuses the first enabled item; arrows and Home/End navigate enabled rows, Tab remains within the dialog, and native Enter/Space activates an entry. Escape, Close and backdrop dismissal restore the available opener. Selection closes the modal before invoking the original callback once, without restoring over destination focus. Use a 360px maximum width bounded to viewport minus 32px, 20px padding, 12px corners and 44px row targets, with semantic theme colors, visible focus and bounded vertical scrolling at narrow viewports and 200% zoom. Keep all original tool children/controllers mounted on close; session/surface/connection departure disposes presentation and cannot restore focus into hidden content. Opening never reads resources or activates a tool.
 
 Tabs form a continuous gapless neutral editor strip attached to the active pane. Each tab is 40px high and at most 320px wide. Selected tabs use the surface background, 4px top corners, square bottom corners and a 2px accent underline; inactive tabs have transparent backgrounds and subtle separators. Every closeable tab encloses an always-visible 40px close target beside its truncated label, using sibling controls with independent focus treatment. This supersedes 's earlier rounded-shell appearance while preserving its enclosed close-control principle. Exactly one content region is active. Conversation is
 pinned first, initially selected and cannot be closed or moved. Files and Diff
@@ -5220,3 +5220,29 @@ Native local startup, supervision and saved-connection verification require the 
 A current supported repository with saved GitHub owner/name and no profile presents one inline GitHub profile choice. It never selects the only profile automatically. The existing bounded selector verifies an explicit exact resource and allows supported disconnected profiles. Association grants no credential or repository-access authority. Profile creation and credential connection stay in GitHub profiles Settings. Missing owner/name opens resource-targeted Repository Settings only after a matching supported exact-resource read; inline setup has no owner, name, URL or token fields.
 
 Save retains the complete original document with only `integration_id` changed, the original repository ID/revision and one request ID. Existing repository configuration writes share a connection-owned mutation identity across Settings and Pull requests. Admission retains the original job and blocks competing saves through navigation. Uncertain acknowledgment permits only the original bytes/request retry. Pending PR actions owns recovery, sanitized failures and status reads. Verified job success with matching output identity/revision must precede a fresh original repository read before automatic PR loading can resume. Failed jobs require a fresh read and explicit review before releasing the save. Rejected saves require read/review before another draft. Unsent choices and selection reads are discarded on repository change or departure; late work cannot change another form or start its PR query. Remote repository capability, backend authorization/revision/checkout validation and normal configured queries remain authoritative. English/Korean semantic forms keep visible focus, 40px controls and wrapping actions.
+
+
+## Compact Open tool shortcut ownership
+
+OpenTool is a typed fixed Session action outside the seven editable IDs. Command+T
+on macOS and Control+T on Windows/Linux are admitted only for the active selected
+nonembedded session, including ordinary editable fields, through the shared
+shortcut dispatcher. Preserve handled-event, repeat, IME/229, capture,
+hidden/inert, other-modal, terminal passthrough and native Browser fences. Keep
+original N/W/K actions and terminal revision-bound reuse/create authority.
+
+New default bindings marked with custom-binding priority use one catalog-driven
+in-memory resolver across all scopes. Any committed editable unshifted primary+T
+override suppresses only the OpenTool default, even if its action belongs to
+another screen. Disabled and Shift+T overrides do not suppress it. Removal or
+change of the committed override restores the default immediately; unsaved
+Settings drafts do not change effective dispatch. Saved preferences and native
+validation remain unchanged. Conflict validation, effective dispatch, Help,
+read-only Settings and button ARIA all use the same resolved binding. English and
+Korean presentation disclose that a saved custom shortcut takes priority.
+
+Keep the existing five tool actions and independently eligible Sidechat entry,
+original callback ownership, tab identities, mounted drafts, and resource limits.
+The modal adds no feature flag, RPC, migration, dependency, native menu or logging
+of keys or user content. Component/layout fixtures do not establish packaged CEF,
+platform or account acceptance.

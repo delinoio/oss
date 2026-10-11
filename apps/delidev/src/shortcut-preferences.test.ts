@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, it, vi } from "vitest";
-import { captureShortcut, effectiveShortcutDefinitions, parseShortcutOverrides, editableShortcutCatalog, readOnlyShortcutCatalog, fixedNativeShortcutCatalog, shortcutConflicts, ShortcutOverrideState, validShortcutChord } from "./shortcut-preferences";
+import { customizationBindings, defaultShortcutSuppressed, captureShortcut, effectiveShortcutDefinitions, parseShortcutOverrides, editableShortcutCatalog, readOnlyShortcutCatalog, fixedNativeShortcutCatalog, shortcutConflicts, ShortcutOverrideState, validShortcutChord } from "./shortcut-preferences";
 import { ShortcutId, ShortcutPlatform, ShortcutScope } from "./shortcuts";
 import { Surface } from "./surface";
 const chord = {state:ShortcutOverrideState.Binding,chord:{key:"j",shift:true}} as const;
@@ -65,4 +65,24 @@ it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])("captures physical chord
   vi.spyOn(altGraph, "getModifierState").mockImplementation(key => key === "AltGraph");
   expect(captureShortcut(altGraph, platform)).toBeUndefined();
   expect(captureShortcut(new KeyboardEvent("keydown", { key: "ㅏ", code: "KeyK", ...modifiers }), platform)).toBeUndefined();
+});
+
+
+it("lets every saved T override suppress only the new default across all scopes without rewriting preferences", () => {
+ const original = [{ id: ShortcutId.OpenTool, scope: Surface.Sessions, label: "session.openTool" as const, bindings: [{ key: "t", primary: true }] }];
+ for (const editable of editableShortcutCatalog) {
+  const overrides = { [editable.id]: { state: ShortcutOverrideState.Binding, chord: { key: "t", shift: false } } } as const;
+  const serialized = JSON.stringify(overrides);
+  expect(parseShortcutOverrides(overrides)).toEqual(overrides);
+  expect(defaultShortcutSuppressed(ShortcutId.OpenTool, overrides)).toBe(true);
+  expect(customizationBindings(ShortcutId.OpenTool, overrides)).toEqual([]);
+  expect(effectiveShortcutDefinitions(original, overrides)[0]).toMatchObject({ bindings: [], enabled: false, unavailableReason: "shortcuts.customBindingPriority" });
+  expect(JSON.stringify(overrides)).toBe(serialized);
+  for (const alternate of [{ state: ShortcutOverrideState.Disabled }, { state: ShortcutOverrideState.Binding, chord: { key: "t", shift: true } }, { state: ShortcutOverrideState.Binding, chord: { key: "j", shift: false } }] as const) {
+   expect(defaultShortcutSuppressed(ShortcutId.OpenTool, { [editable.id]: alternate })).toBe(false);
+  }
+ }
+ expect(customizationBindings(ShortcutId.OpenTool, {})).toEqual([{ key: "t", primary: true }]);
+ expect(editableShortcutCatalog).toHaveLength(7);
+ expect(() => parseShortcutOverrides({ [ShortcutId.OpenTool]: { state: ShortcutOverrideState.Disabled } })).toThrow();
 });

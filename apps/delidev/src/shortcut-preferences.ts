@@ -9,7 +9,7 @@ export type ShortcutOverride = { state: ShortcutOverrideState.Disabled } | { sta
 export type ShortcutOverrides = Partial<Record<ShortcutId, ShortcutOverride>>;
 export enum ShortcutGroup { Common = "common", Session = "session", Creation = "creation", Search = "search" }
 export enum ShortcutTargetContext { SessionMessage = "session-message", CreationMessage = "creation-message", Search = "search", Files = "files", Diff = "diff", Diagnostics = "diagnostics" }
-interface CatalogAction { fixed?: readonly ShortcutBinding[]; target?: ShortcutTargetContext; id: ShortcutId; label: MessageKey; group: ShortcutGroup; scopes: readonly (Surface | ShortcutScope)[]; priority: number; input: ShortcutInput; defaults: readonly ShortcutBinding[] }
+interface CatalogAction { customBindingPriority?: boolean; fixed?: readonly ShortcutBinding[]; target?: ShortcutTargetContext; id: ShortcutId; label: MessageKey; group: ShortcutGroup; scopes: readonly (Surface | ShortcutScope)[]; priority: number; input: ShortcutInput; defaults: readonly ShortcutBinding[] }
 export const editableShortcutCatalog: readonly CatalogAction[] = [
   { id: ShortcutId.Help, label: "shortcuts.help", group: ShortcutGroup.Common, scopes: [ShortcutScope.Global], priority: 0, input: ShortcutInput.Ignore, defaults: [{ key: "?", ariaKey: "/", ariaShift: true }] },
   { id: ShortcutId.NewSession, label: "shortcuts.newSession", group: ShortcutGroup.Common, scopes: [ShortcutScope.Global], priority: 0, input: ShortcutInput.Allow, defaults: [{ key: "n", primary: true, shift: true }] },
@@ -20,6 +20,7 @@ export const editableShortcutCatalog: readonly CatalogAction[] = [
   { id: ShortcutId.SearchFocus, label: "shortcuts.focusSearch", group: ShortcutGroup.Search, scopes: [Surface.Search], priority: 1, input: ShortcutInput.Allow, defaults: [{ key: "i", primary: true }] },
 ];
 export const readOnlyShortcutCatalog: readonly CatalogAction[] = [
+  { id: ShortcutId.OpenTool, label: "session.openTool", group: ShortcutGroup.Session, scopes: [Surface.Sessions], priority: 1, input: ShortcutInput.Allow, defaults: [{ key: "t", primary: true }], customBindingPriority: true },
   { id: ShortcutId.ToggleSidebar, label: "sidebar-preference.toggle", group: ShortcutGroup.Common, scopes: [ShortcutScope.Global], priority: 0, input: ShortcutInput.Allow, defaults: globalShortcutBindings[ShortcutId.ToggleSidebar] },
   { id: ShortcutId.CommandMenu, label: "command-menu.title", group: ShortcutGroup.Common, scopes: [ShortcutScope.Global], priority: 0, input: ShortcutInput.Allow, defaults: globalShortcutBindings[ShortcutId.CommandMenu] },
   { target: ShortcutTargetContext.SessionMessage, id: ShortcutId.SessionNewline, label: "shortcuts.newline", group: ShortcutGroup.Session, scopes: [Surface.Sessions], priority: 2, input: ShortcutInput.Target, defaults: [{ key: "Enter", shift: true }] },
@@ -46,12 +47,26 @@ export function validShortcutChord(chord: unknown): chord is ShortcutChord {
   // Fixed product and native editing chords remain unavailable for rebinding.
   return value.shift ? !/^[vz]$/.test(value.key) : !nativeReservedKeys.has(value.key) && !/^[bkn1-9acvxyz]$/.test(value.key);
 }
+/** New defaults yield globally to existing committed custom chords without storage changes.
+ * Extend the catalog flag for future defaults; disabled/shifted overrides do not
+ * reserve an unshifted chord, even when the custom action belongs to another page.
+ */
+export function defaultShortcutSuppressed(id: ShortcutId, overrides: ShortcutOverrides): boolean {
+  const action = shortcutCatalog.find(entry => entry.id === id);
+  return Boolean(action?.customBindingPriority && action.defaults.some(binding =>
+    editableShortcutCatalog.some(editable => {
+      const override = overrides[editable.id];
+      return override?.state === ShortcutOverrideState.Binding && binding.primary &&
+        override.chord.key === binding.key && override.chord.shift === Boolean(binding.shift);
+    })));
+}
 export function customizationBindings(id: ShortcutId, overrides: ShortcutOverrides): readonly ShortcutBinding[] {
+  if (defaultShortcutSuppressed(id, overrides)) return [];
   const override = overrides[id];
   return override?.state === ShortcutOverrideState.Disabled ? [] : override?.state === ShortcutOverrideState.Binding ? [{ ...override.chord, primary: true }] : shortcutCatalog.find(action => action.id === id)?.defaults ?? [];
 }
 export function effectiveShortcutDefinitions(definitions: readonly ShortcutDefinition[], overrides: ShortcutOverrides): ShortcutDefinition[] {
-  return definitions.map(action => !editableIds.has(action.id) ? action : { ...action, bindings: [...action.bindings.filter(binding => !binding.primary && binding.key !== "?"), ...customizationBindings(action.id, overrides)] });
+  return definitions.map(action => defaultShortcutSuppressed(action.id, overrides) ? { ...action, bindings: [], enabled: false, unavailableReason: "shortcuts.customBindingPriority" } : !editableIds.has(action.id) ? action : { ...action, bindings: [...action.bindings.filter(binding => !binding.primary && binding.key !== "?"), ...customizationBindings(action.id, overrides)] });
 }
 export function shortcutConflicts(overrides: ShortcutOverrides): [ShortcutId, ShortcutId][] {
   const conflicts: [ShortcutId, ShortcutId][] = [];

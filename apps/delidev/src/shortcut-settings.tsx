@@ -2,7 +2,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { copy, useLocale } from "./localization";
 import { bindingKeys, ShortcutId, ShortcutPlatform, shortcutPlatform, type ShortcutBinding } from "./shortcuts";
-import { captureShortcut, fixedNativeShortcutCatalog, customizationBindings, ShortcutGroup, ShortcutOverrideState, shortcutCatalog, editableShortcutCatalog, readOnlyShortcutCatalog, shortcutConflicts, type ShortcutOverrides } from "./shortcut-preferences";
+import { captureShortcut, defaultShortcutSuppressed, fixedNativeShortcutCatalog, customizationBindings, ShortcutGroup, ShortcutOverrideState, shortcutCatalog, editableShortcutCatalog, readOnlyShortcutCatalog, shortcutConflicts, type ShortcutOverrides } from "./shortcut-preferences";
 import { ShortcutPreferenceOperation, useShortcutPreferences } from "./shortcut-preference-controller";
 import "./shortcut-settings.css";
 import { shortcutCapture } from "./shortcut-capture";
@@ -70,7 +70,7 @@ export function ShortcutSettings() {
           <SettingsActionButton icon={SettingsActionIcon.Stop} type="button" disabled={locked||Boolean(capturing)} aria-label={copy("shortcut-settings.disableAction",{name:copy(action.label)})} onClick={()=>setDraft(previous=>({...previous,[action.id]:{state:ShortcutOverrideState.Disabled}}))}>{copy("shortcut-settings.disable")}</SettingsActionButton>
           <SettingsActionButton icon={SettingsActionIcon.Back} type="button" disabled={locked||Boolean(capturing)||!draft[action.id]} aria-label={copy("shortcut-settings.restoreAction",{name:copy(action.label)})} onClick={()=>restore(action.id)}>{copy("shortcut-settings.restore")}</SettingsActionButton></div>
       </div>)}
-      <dl>{readOnlyShortcutCatalog.filter(action=>action.group===group).map(action=><div key={action.id}><dt>{copy(action.label)}</dt><dd>{bindingLabel(action.defaults)}</dd></div>)}</dl>
+      <dl>{readOnlyShortcutCatalog.filter(action=>action.group===group).map(action=><div key={action.id}><dt>{copy(action.label)}</dt><dd>{bindingLabel(customizationBindings(action.id,snapshot.overrides))}{defaultShortcutSuppressed(action.id,snapshot.overrides) ? <small>{copy("shortcuts.customBindingPriority")}</small> : null}</dd></div>)}</dl>
     </section>)}
     <section><h2>{copy("shortcut-settings.fixed")}</h2><p>{copy("shortcut-settings.fixedHelp")}</p><dl>{fixedNativeShortcutCatalog.filter(action=>!action.macOnly||platform===ShortcutPlatform.Mac).map(action=><div key={action.id}><dt>{copy(action.label)}</dt><dd>{bindingLabel([{key:action.key,primary:true}])}</dd></div>)}</dl></section>
     {capturing?<div role="status"><p>{copy(captureState==="active"?"shortcut-settings.captureHelp":captureState==="uncertain"?"shortcut-settings.captureUncertain":"shortcut-settings.capturePending")}</p>{invalid?<p role="alert">{copy("shortcut-settings.invalid")}</p>:null}<SettingsActionButton icon={SettingsActionIcon.Cancel} type="button" onClick={cancelCapture}>{copy("shortcut-settings.cancelCapture")}</SettingsActionButton></div>:null}
