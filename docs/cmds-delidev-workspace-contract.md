@@ -39,6 +39,21 @@ inspection success and terminal parent failure; unexpected storage errors roll
 back for exact retry. Never recreate a deleted repository or overwrite a newer
 revision.
 
+Generic source identities preserve the exact accepted path, including `.git`
+and trailing separators, as well as transport, SSH user and absolute/relative
+path distinctions. Their private versioned digest namespace cannot reinterpret
+historical ambiguous digests as new source authority. GitHub retains its
+established suffix, case and HTTPS/SSH equivalence and historical digests.
+Before repository-save or deferred configuration-import publication, compare
+each original successful inspection input's source proof with the accepted
+repository source. Missing, changed or historical generic proof retains
+RecoveryRequired and the original job/receipt bytes, publishes no repository or
+partial graph, and grants no reinspection, conversion, repair or replay. An
+uncertain import retains its staged accepted proof rather than scrubbing it as
+a terminal result. Legacy Workers still receive their original inspection input
+without the optional identity field; that omitted proof cannot authorize a
+source-bound publication. Raw URLs and credentials remain private.
+
 ### Negotiated repository metadata
 
 The feature adds optional `Inspection.github_repositories`, mapping an inspected remote name to only validated `{owner, name}`. The normal `Inspect` result stays unchanged. `RepositoryInspectionInput` can carry an internal opaque expected source identity for a repository save/import; it never carries the raw URL into Worker output. The Worker enriches results only after observing server support and the second attachment's accepted Machine capability. Legacy combinations omit the map and identity; the server also omits the identity input for an active Worker that has not negotiated `RepositoryInspectionMetadataV1`, preserving strict decoders and the original inspection flow. Missing GitHub metadata never blocks otherwise valid registration or invents a default branch. The CLI's legacy inspection raw output remains decodable. This does not promise compatibility for unrelated legacy consumers that reject newly advertised Machine capability identifiers.
@@ -332,7 +347,7 @@ Read-only native inspection first tries the exact HEAD commit, then proves a val
 
 First execution, continuation, closed inspection and ready preparation recovery accept the user's current committed or valid unborn HEAD under the same captured Git identity. A user-created first commit does not rewrite the original preparation or checkpoint. Index, staged/unstaged/untracked bytes and branch selection remain unchanged by these checks. Structured Local inspection logs include only session/repository IDs and whether HEAD is unborn, never paths, branch names, object IDs or contents.
 
-Remote default-branch inspection ignores only the native `git symbolic-ref --quiet` exit status 1 ([Git status contract](https://git-scm.com/docs/git-symbolic-ref)); launch, timeout, output and owned-process cleanup failures abort inspection without publishing successful preparation.
+Remote default-branch inspection ignores only the native `git symbolic-ref --quiet` exit status 1 ([Git status contract](https://git-scm.com/docs/git-symbolic-ref)); launch, timeout, output and owned-process cleanup failures abort inspection without publishing successful preparation. Managed clone alias provisioning applies the same rule and accepts absence only with the ordinary native-exit classification, never an authentication failure with the same status. A successful observation must contain one valid, non-self symbolic target in the original primary remote namespace before its exact suffix is mirrored to each alias. Foreign or malformed targets block readiness. Failure preserves the original command classification and joined cleanup boundary without another clone or fetch.
 
 Before an execution lease is issued, a reported owner-directory synchronization or atomic claim-publication failure rolls back only the attempt-owned empty process directory and its exact claim. Continuation restores the original closed predecessor and retains immutable history. Cleanup synchronizes restored/removed entries, rejects unexpected claim changes or any process evidence, and logs rollback uncertainty without paths. This synchronous pre-launch rollback does not infer safety for a returned lease, a crashed Worker, or an active retained claim.
 

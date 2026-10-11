@@ -346,6 +346,89 @@ func testPublicCompactionAtomicReceiptAndFIFO(t *testing.T, harness domain.Harne
 	}
 }
 
+func TestOpenCodeGoCompactionUsageRetainsSubscriptionService(t *testing.T) {
+	ctx := context.Background()
+	continuation := newOpenCodeGoContinuation(t)
+	f := continuation.firstDispatchFixture
+	f.workerStream.Close()
+	_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.go-compaction-capabilities", nil, func(tx *store.Tx) (any, error) {
+		r, machine, err := activeMachine(tx, domain.ID(f.machine.Id))
+		if err != nil {
+			return nil, err
+		}
+		machine.WorkerCapabilities = append(machine.WorkerCapabilities, domain.NativeSessionCompactionV1, domain.OpenCodeSessionCompactionV1)
+		return tx.Put(domain.MachineKind, r.ID, r.Revision, "", "", machine)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	client := sessionClient(f.accountFixture)
+	before := f.refresh(t)
+	accepted, err := client.CompactSession(ctx, ownerRequest(f.identity, &pb.CompactSessionRequest{Mutation: acctMutation(resourceForTest(before), domain.NewID())}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobID := domain.ID(accepted.Msg.Job.Id)
+	jobRecord, err := f.service.Store.Get(ctx, domain.JobKind, jobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.Decode[domain.Job](jobRecord)
+	var input domain.SessionCompactionInput
+	if err != nil || domain.DecodeCompactionInput(job.Input, &input) != nil || !input.Assignment.Configuration.IsOpenCodeGo() {
+		t.Fatal("compaction did not retain the OpenCode Go assignment", err)
+	}
+
+	const summaryID = "msg_01960dcbe1fdABCDEFGHIJKLMN"
+	usage := originalOpenCodeUsage()
+	usage.NativeParentID = summaryID
+	result := domain.SessionCompactionResult{
+		Version: 3, Harness: domain.OpenCode, ActionID: input.ActionID, ExecutionID: input.Assignment.ExecutionID,
+		Outcome: domain.CompactionSucceeded, CleanupVerified: true,
+		Checkpoint: domain.SessionCompactionRef{JobID: jobID, ActionID: input.ActionID, ExecutionID: input.Assignment.ExecutionID, CheckpointDigest: strings.Repeat("ab", 32), NativeDigest: strings.Repeat("cd", 32)},
+		OpenCode:   &domain.OpenCodeCompactionResult{NativeSessionID: input.Completion.NativeThreadID, SourceNativeInputID: input.Completion.NativeTurnID, UserID: "msg_01960dcbe1fcABCDEFGHIJKLMN", PartID: "prt_01960dcbe1fcABCDEFGHIJKLMN", SummaryID: summaryID, CompletedEventID: "evt_01960dcbe1fcABCDEFGHIJKLMN", HistoryDigest: strings.Repeat("ef", 32), Actions: 1, Acknowledged: true, LifecycleCompleted: true, Usages: []domain.OpenCodeUsageObservation{usage}},
+	}
+	raw, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.finish-go-compaction", jobID, func(tx *store.Tx) (any, error) {
+		r, err := tx.Get(domain.JobKind, jobID)
+		if err != nil {
+			return nil, err
+		}
+		j, err := store.Decode[domain.Job](r)
+		if err != nil {
+			return nil, err
+		}
+		return finalizeSessionCompaction(tx, r, j, r.Revision, raw, nil, ordinaryContextAction)
+	}); err != nil {
+		t.Fatal("OpenCode Go compaction did not finalize its usage", err)
+	}
+
+	rows, err := f.service.Store.List(ctx, store.Filter{Kind: domain.UsageKind, SessionID: input.Assignment.SessionID, Limit: store.MaxPage})
+	if err != nil {
+		t.Fatal("could not read retained usage", err)
+	}
+	var retained *domain.OpenCodeUsageRecord
+	for _, row := range rows {
+		observation, decodeErr := store.Decode[domain.OpenCodeUsageRecord](row)
+		if decodeErr == nil && observation.ExecutionID == input.ActionID {
+			retained = &observation
+			break
+		}
+	}
+	if retained == nil || retained.ProviderID != "" || retained.SubscriptionService != domain.SubscriptionOpenCodeGo || retained.AccountID != input.Assignment.AccountID || retained.ConnectionID != input.Assignment.ConnectionID {
+		t.Fatal("compaction usage lost OpenCode Go source attribution", retained)
+	}
+	usageClient := delidevv1connect.NewUsageServiceClient(http.DefaultClient, f.endpoint.URL)
+	response, err := usageClient.GetUsageSummary(ctx, ownerRequest(f.identity, &pb.GetUsageSummaryRequest{AccountingProfile: pb.UsageAccountingProfile_USAGE_ACCOUNTING_PROFILE_NATIVE_UNITS_V1, SessionId: string(input.Assignment.SessionID), SubscriptionService: pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_OPENCODE_GO}))
+	if err != nil || len(response.Msg.NativeAccounting) != 2 || len(response.Msg.NativeAccounting[1].Groups) != 1 || response.Msg.NativeAccounting[1].Groups[0].SubscriptionService != pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_OPENCODE_GO {
+		t.Fatal("compaction accounting lost OpenCode Go source attribution", err)
+	}
+}
+
 func resourceForTest(r store.Record) *pb.Resource {
 	return &pb.Resource{Id: string(r.ID), Revision: r.Revision}
 }

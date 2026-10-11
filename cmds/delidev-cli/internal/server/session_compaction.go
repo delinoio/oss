@@ -252,7 +252,7 @@ func finalizeSessionCompaction(tx *store.Tx, r store.Record, j domain.Job, revis
 		v := input.Assignment
 		for n, usage := range output.OpenCode.Usages {
 			id := domain.NewID()
-			observation := domain.OpenCodeUsageRecord{ExecutionID: input.ActionID, AccountID: v.AccountID, ConnectionID: v.ConnectionID, ProviderID: v.Configuration.ProviderID, ModelID: v.Configuration.ModelID, Harness: domain.OpenCode, Version: v.Installation.Version, ThreadID: string(output.OpenCode.NativeSessionID), TurnID: string(output.OpenCode.UserID), Sequence: uint64(n + 1), Usage: usage}
+			observation := domain.OpenCodeUsageRecord{ExecutionID: input.ActionID, AccountID: v.AccountID, ConnectionID: v.ConnectionID, ProviderID: v.Configuration.ProviderID, SubscriptionService: v.Configuration.SubscriptionService, ModelID: v.Configuration.ModelID, Harness: domain.OpenCode, Version: v.Installation.Version, ThreadID: string(output.OpenCode.NativeSessionID), TurnID: string(output.OpenCode.UserID), Sequence: uint64(n + 1), Usage: usage}
 			if err := tx.PutOpenCodeUsage(id, sr.ID, sr.ProjectID, observation); err != nil {
 				return store.Record{}, err
 			}

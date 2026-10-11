@@ -20,6 +20,15 @@ Codex `0.151.0` API and Claude `2.1.236` API now publish the bounded original ch
 
 ### Codex private thread lifecycle and metadata
 
+Thread binding and later native state observations share closed history-mode
+admission. Only the selected, initialized Revert profile admits paginated history;
+legacy profiles retain legacy-only admission. Omitted history mode means legacy.
+Every later observation must retain the originally bound mode, including returned
+Revert metadata, replacement continuation and explicit recovery. Unknown modes or
+changed original metadata cannot authorize input, a checkpoint or another native
+mutation. Complete retained-history proof and independent cleanup remain required
+under the [compaction contract](cmds-delidev-compaction-contract.md).
+
 The original execution process consumes the pinned closed notification envelopes for thread name, attachment created/deleted, queue, project created/updated/deleted, nullable thread project, environment connection/disconnection, prediction and read-state revisions. Validate bounds, duplicate/unknown fields, required nullable fields and each exact union before discarding descriptors. Prediction completed text may be absent, null or a bounded string; failed has no text field. Read state permits absent/null first-unread, thread-start or an exact native turn position and requires the opaque revision. Prediction source turns must belong to the original root execution. Foreign threads retain their unsupported boundary; already owned child notifications retain the existing child observation and content-free supplement routing.
 
 These private process/root observations never rewrite product names, project bindings, input queues, search, unread state, environment selection or attachment byte ownership. Do not fetch an external project/environment, import attachments or submit prediction text. The Worker accepts only content-free closed metadata kinds and publishes no product event for them. Existing recovery fences remain active.
@@ -27,6 +36,33 @@ These private process/root observations never rewrite product names, project bin
 Unexpected original-root archived, deleted or closed notifications retain the original turn, pause sends and require reconciliation. Unarchived does not clear recovery or authorize reopening. This adapter has no thread archive/delete/close mutation owner; process closure and cleanup remain independently reconciled through the original process owner. Native lifecycle loss is neither turn success nor product deletion evidence.
 
 Deprecated thread-compacted requires the exact original turn's manual compaction owner or canonical ContextCompaction/history record. Thread-reverted requires the existing durable Revert send claim or independently verified Revert continuation while no input/compaction is active or pending. A subsequent original input or compaction ends that supplement scope without changing the durable history proof. Discard these content-free supplements without adding transcript entries, acknowledging a mutation, completing an item/turn, changing history, creating a successor checkpoint or proving cleanup. Unowned supplements retain recovery. Original compaction and Revert responses, canonical items, complete history and private rollout verification remain authoritative under the [compaction contract](cmds-delidev-compaction-contract.md). No goal or Revert mutation authority is added.
+
+### Passive Codex fuzzy-search notifications
+
+The original execution process accepts `fuzzyFileSearch/sessionUpdated` and
+`fuzzyFileSearch/sessionCompleted` only as notifications. Updated payloads retain
+`sessionId`, `query` and ordered `files` during private validation; each result
+uses the exact native `root`, `path`, `match_type`, `file_name`, unsigned 32-bit
+`score` and optional nullable unsigned 32-bit `indices` fields. Match types are
+`file` and `directory`. Preserve absent, null and empty indices distinctly.
+The [pinned updated schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/FuzzyFileSearchSessionUpdatedNotification.json)
+and [completed schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/FuzzyFileSearchSessionCompletedNotification.json)
+own these spellings; camel-case result aliases are unsupported.
+
+Bound each envelope to 1 MiB, the nonempty session ID to 1024 UTF-8 bytes,
+query/root/path/file name to 4096 UTF-8 bytes each, results to 1000, and indices
+per result to 4096. Reject missing/null required fields, unknown/duplicate keys,
+invalid match types, NUL text and invalid/overflowing numbers with the closed
+`fuzzy-search` diagnostic classification. Empty queries and result lists are
+valid. No native query, path or result content enters logs or product events.
+
+There is no admitted search-session/query-generation owner in this adapter.
+Validate and discard every such observation, including unknown sessions, stale
+queries, replays and completion before update. The ordinary Worker and isolated
+title profile consume only the content-free discarded classification. Do not
+start a search, read a path, build a conversation index, replace input, acknowledge
+completion or grant cleanup/recovery authority from this metadata. Server
+requests with these names retain the unsupported request boundary.
 
 ### Direct startup and native attribution
 
@@ -104,6 +140,33 @@ selected-workspace root; notification arrival grants no such ownership. Original
 turn/settings/account, terminal results, receipts and independent recovery and
 cleanup remain unchanged. The [official notification schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/FsChangedNotification.json)
 defines this passive envelope separately from explicit filesystem operations.
+
+### Passive Codex gateway OAuth status
+
+The original execution process accepts notification-only
+`account/gatewayOAuth/changed` using the closed
+`notReady`/`started`/`succeeded`/`failed` status set. Require a nonempty
+`providerId` of at most 1024 UTF-8 bytes. Optional `authUrl` and `error` values
+retain omitted, null and bounded-string states privately during validation.
+The complete envelope and each optional string use the existing 1 MiB native
+frame bound; reject invalid UTF-8, NUL, duplicate/unknown keys and malformed
+required or optional fields through the closed `account-gateway` diagnostic.
+The [pinned native schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/GatewayOAuthChangedNotification.json)
+defines this passive envelope independently of gateway login operations.
+
+No gateway operation owner exists in this adapter. Discard provider identity,
+URL and error text before returning a normalized event. Logs retain only the
+closed status, discard policy and original process owner. All URL strings stay
+inert, including unsafe schemes and callback-like data. Ordinary execution and
+isolated title generation consume the content-free metadata without a product
+receipt. It cannot open a browser, fetch a URL, exchange tokens, acknowledge a
+login, change account health, adopt provider configuration, replay input or
+supply turn completion or cleanup evidence. Same-name server requests retain
+their unsupported boundary. Existing API configuration still accepts only
+absent or exact-null `gateway_oauth`; populated values remain refused before
+input. A future gateway consumer needs its own independently admitted original
+operation and may not infer ownership from a provider ID or status. No public
+protocol allocation or database migration is added.
 
 ### Codex native error and authentication recovery observations
 
@@ -2405,6 +2468,49 @@ solely as unsupported families. This adds no RPC, protocol allocation or
 migration. Controlled decoder/Worker publication fixtures are separate from
 installed native/account/platform acceptance.
 
+### Codex Windows sandbox safety notices
+
+The pinned [world-writable warning schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/WindowsWorldWritableWarningNotification.json)
+requires `samplePaths`, `extraCount` and `failedScan` for
+`windows/worldWritableWarning`. Decode only these exact keys. Reject duplicate
+or unknown keys, missing/null required fields, malformed UTF-8, NUL bytes,
+wrong types, negative/fractional counts and uint64 overflow. Limit samples to
+1024 and each path to 4096 UTF-8 bytes within the existing bounded frame/document
+limits. Schema-valid empty path strings remain valid. Preserve `extraCount`
+exactly as uint64; never sum it into a smaller integer or convert it through a
+floating-point number. Discard all paths immediately after validation. Only a
+closed warning classification, sample count and extra count remain private.
+
+A nonempty sample list, positive extra count or failed scan can emit the existing
+generic native-warning notice on the original process and active known
+nonterminal turn. An empty successful scan emits no notice. Deduplicate each of
+three warning classifications (world-writable paths, failed scan, or both) for
+the lifetime of that original execution process. Replays and observations in
+paused, failed or completed contexts become validated discarded metadata. They
+do not create a new current turn or change settings, approvals, account/provider,
+readiness, input delivery, response receipts, recovery or cleanup ownership.
+
+The pinned [setup completion schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/WindowsSandboxSetupCompletedNotification.json)
+requires exact `mode` (`elevated` or `unelevated`) and boolean `success` for
+`windowsSandbox/setupCompleted`; `error` may be omitted, null or bounded text
+(up to 4096 UTF-8 bytes). Validate the closed object and discard all native setup
+fields, including error text. This adapter has no setup request owner, so every
+valid unsolicited completion becomes typed discarded metadata. It cannot prove
+sandbox readiness, elevate privileges, override permissions, clear recovery or
+confirm cleanup, regardless of native success. No privileged setup operation is
+added.
+
+These OS-neutral decoders accept notification envelopes only. Unbound or foreign
+process context and same-named server requests retain private/rejection handling.
+Structured diagnostics contain only closed classifications, bounded counts and
+the discard policy; malformed payloads use the closed `windows-sandbox` stage.
+Raw native paths, error text and payloads never enter public events or logs. The
+Worker and isolated title runtime consume validated discarded metadata without
+publishing a second notice or changing the original result. The existing notice
+publication and transcript contract remains unchanged; no RPC, capability
+allocation, migration or Desktop-specific surface is added. Decoder and ordered
+process/Worker fixtures do not prove installed Windows/account acceptance.
+
 ## OpenCode Go subscriptions
 
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.
@@ -2416,6 +2522,8 @@ The feature now compose the root native search/fetch decoder with ordered Worker
 The closed Codex `imageView` item retains the original native call ID and path in the private adapter. The [official 0.162.0 item schema](https://github.com/openai/codex/blob/1f3f93473394b620b35580859b7e6864f7a9f948/codex-rs/app-server-protocol/src/protocol/v2/item.rs) has only `id` and `path`: the [native handler](https://github.com/openai/codex/blob/1f3f93473394b620b35580859b7e6864f7a9f948/codex-rs/core/src/tools/handlers/view_image.rs) reads and validates the image before it emits started and completed observations. It supplies no digest, file identity, byte receipt or failed-image-view status. Required fields, unknown fields, foreign thread/turn, malformed lifecycle and unsupported states retain the existing rejection boundary. Native read/validation failure remains the original supported native failure outcome; do not fabricate a successful or failed image-view result from text.
 
 The Worker binds an opaque observation ID to the original tool record, authenticated machine, exact immutable preparation/manifest digest and canonical root-relative location. Both Worker and server validate the accepted prepared-root metadata; completion must preserve the original reference exactly. This proves ownership of the native observation, not ownership or unchanged contents of a live file. Lexical scope validation performs no filesystem read, link traversal, URL fetch or native call. A symlink's current target and later file changes cannot provide byte or deletion authority. The original private path is not published.
+
+Preparation and image observations share the original Worker OS path grammar. Windows UNC paths retain their complete authority/share prefix for exact root matching; slash normalization never removes that identity. Reject malformed shares, device namespaces, alternate streams, traversal and sibling roots. Linux and macOS retain literal colon and backslash filename characters in the inert relative observation. Portable metadata rejects absolute paths and URLs; server revalidation applies the original Worker OS before accepting the exact reference again.
 
 The existing synchronized outbox, atomic native-item index, original account/execution/thread/turn, sequence and receipt checks own publication and replay. Archive and history retain one original observation. Replay never reads the location. Full native history validation accepts only the closed image-view metadata while preserving original rollout/checkpoint digests; it does not replay the tool. Lost acknowledgments, unsupported older peers, foreign generations or changed references retain recovery without input resend. No RPC, capability allocation or migration is added.
 

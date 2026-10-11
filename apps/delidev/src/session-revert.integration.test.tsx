@@ -9,6 +9,7 @@ import {
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -29,16 +30,20 @@ import {
 } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
 import { MutationIntents } from "./mutation";
+import { DraftEditGenerations } from "./draft-edit-generations";
 import { useSessionRevert } from "./session-revert";
+import { TranscriptItem } from "./session";
 
 it.each([
-  { changed: false, mode: "plan", historical: "execute" },
-  { changed: true, mode: "plan", historical: "execute" },
-  { changed: false, mode: "execute", historical: "plan" },
-  { changed: true, mode: "execute", historical: "plan" },
+  { changed: false, undo: false, mode: "plan", historical: "execute" },
+  { changed: true, undo: false, mode: "plan", historical: "execute" },
+  { changed: false, undo: false, mode: "execute", historical: "plan" },
+  { changed: true, undo: false, mode: "execute", historical: "plan" },
+  { changed: true, undo: true, mode: "plan", historical: "execute" },
+  { changed: true, undo: true, mode: "execute", historical: "plan" },
 ])(
-  "keeps original Revert and current $mode mode when restoring $historical text (changed=$changed)",
-  async ({ changed, mode, historical }) => {
+  "keeps original Revert and current $mode mode when restoring $historical text (changed=$changed, undo=$undo)",
+  async ({ changed, undo, mode, historical }) => {
     const id = newRequestId(),
       machine = newRequestId(),
       turn = newRequestId(),
@@ -140,10 +145,12 @@ it.each([
       const [draft, setDraft] = useState("current draft");
       const [currentMode, setMode] = useState(mode);
       const composer = useRef<HTMLTextAreaElement>(null);
+      const edits = useRef(new DraftEditGenerations());
       const state = useSessionRevert({
         session,
         active: true,
         draft,
+        draftGeneration: () => edits.current.read(id),
         composer,
         blocked: false,
         changed: () => {},
@@ -158,7 +165,10 @@ it.each([
             aria-label="Unsent prompt"
             ref={composer}
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => {
+              edits.current.advance(id);
+              setDraft(e.target.value);
+            }}
           />
           <label>
             <input
@@ -180,7 +190,14 @@ it.each([
           >
             Send restored prompt
           </button>
-          {state.action(target)}
+          <div className="session-workspace">
+            <div className="transcript">
+              <TranscriptItem
+                resource={target}
+                revertAction={state.action(target)}
+              />
+            </div>
+          </div>
           {state.content}
         </>
       );
@@ -206,7 +223,12 @@ it.each([
         screen.getByRole("button", { name: "Revert and edit" }),
       ).toHaveProperty("disabled", false),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Revert and edit" }));
+    const action = screen.getByRole("button", { name: "Revert and edit" });
+    expect(action.closest(".message-user")).toBeNull();
+    expect(action.closest(".user-transcript-item")).toBeTruthy();
+    expect(revert).not.toHaveBeenCalled();
+    fireEvent.click(action);
+    expect(revert).not.toHaveBeenCalled();
     const dialog = screen.getByRole("dialog");
     expect(
       within(dialog).getByText(/Your current draft will be replaced/),
@@ -222,8 +244,13 @@ it.each([
     await waitFor(() => expect(revert).toHaveBeenCalledTimes(2));
     expect(requests[1]).toEqual(requests[0]);
     if (changed)
-      fireEvent.change(screen.getByRole("textbox", { name: "Unsent prompt" }), {
-        target: { value: "edited during Revert" },
+      act(() => {
+        const composer = screen.getByRole("textbox", { name: "Unsent prompt" });
+        fireEvent.change(composer, {
+          target: { value: "edited during Revert" },
+        });
+        if (undo)
+          fireEvent.change(composer, { target: { value: "unsent draft" } });
       });
     const completed = create(ResourceSchema, {
       ...original,
@@ -252,7 +279,7 @@ it.each([
       await screen.findByText(/Your edited draft was preserved/);
       expect(
         screen.getByRole("textbox", { name: "Unsent prompt" }),
-      ).toHaveProperty("value", "edited during Revert");
+      ).toHaveProperty("value", undo ? "unsent draft" : "edited during Revert");
       fireEvent.click(
         screen.getByRole("button", { name: "Restore earlier prompt" }),
       );

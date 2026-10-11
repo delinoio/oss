@@ -438,6 +438,26 @@ including settled command/file changes. Bound cursors, distinct turns/items,
 Unknown, partial or changed evidence retains quarantine. Allocation and version
 metadata alone do not establish actual native support.
 
+The selected paginated profile hydrates `thread/items/list` independently of
+turn projections before freezing the private intent, after Revert from its exact
+descending item anchor, and again from the current ascending beginning. It joins
+items to their original ordered turns. Every projected item must occur unchanged
+in that ordered complete item history; omitted settled tool items are retained.
+An empty projection cannot prove empty history. Complete empty turn and item
+pages can prove the explicit empty prefix. The legacy profile keeps its closed
+full-turn proof when no item cursor is returned; a reported item cursor always
+requires hydration and unsupported reads retain quarantine.
+
+Item pages have required nullable continuation and backwards cursors. Original
+item IDs are unique across the thread, and every item belongs to an original
+retained turn in order. Reject missing, foreign, repeated, reordered, unsupported
+or unsettled item evidence, missing pages and cursor cycles. Retain the native
+frame bound, 128-turn and 4 MiB history limits, with at most 4,096 distinct items.
+Canonical history preserves exact JSON numbers before digest comparison.
+Replacement continuation and explicit original-intent recovery use the same
+complete hydration; observation never sends Revert again. Existing original
+account, Worker, workspace, process and cleanup checks remain independent.
+
 A Revert checkpoint binds its exact context revision and independent native
 rollout/history proof. A replacement verifies this proof before accepting a new
 input, including reverting before the first turn. Previous execution outcomes,
@@ -537,7 +557,7 @@ Native session compaction for the feature follows the planned shared boundary in
 
 - Manual Codex HTTP response accounting preserves a separate genuine source turn and absent action turn. Keep original action ownership, native response digest deduplication and immutable price snapshots; nullable splits remain unavailable. Separate missing-compaction coverage from ordinary missing-execution coverage without changing historical conversation SQL purposes or adding an empty migration. Follow `cmds-delidev-compaction-contract.md`.
 
-- Compaction retains immutable original execution and restore inputs through one strict 3 MiB input/4 MiB job decoder. Store reads, private backup-restore Job transformation, server scope/settlement, Worker dispatch and original cleanup use those same typed bounds. Restore uses the owning closed Job decoder, including typed workspace recovery history, while retaining generic document and aggregate transformation limits. Worker Connect receive capacity covers the finite serialized job; ordinary jobs retain their 1 MiB contract. Follow `cmds-delidev-compaction-contract.md`.
+- Compaction retains immutable original execution and restore inputs through one strict 3 MiB input/4 MiB job decoder. Store reads, private backup-restore Job transformation, server scope/settlement, Worker dispatch and original cleanup use those same typed bounds. Restore validates both original and final quarantined Jobs through the owning closed decoder, including typed workspace recovery history. Required metadata must fit the unchanged outer bound, and aggregate accounting includes final retained bodies and unchanged rows; rejection leaves source and live databases intact. Worker Connect receive capacity covers the finite serialized job; ordinary jobs retain their 1 MiB contract. Follow `cmds-delidev-compaction-contract.md`.
 
 - Compaction HTTP pricing uses the same source-aware nullable estimate for publication and historical verification. A configured price cannot reject an otherwise valid original sparse observation or fill absent token splits; replay/restart retains the original basis and estimate.
 

@@ -687,6 +687,20 @@ provisional mode. Explicit mode selection remains available. Freeze original
 mode during pending/uncertain creation, preserve exact retries and mounted draft
 ownership, and reset automatic resolution after accepted creation.
 
+Before each untouched automatic submission, the desktop directly reads the
+current Settings singleton and the exact selected Project on the original
+connection. Validate supported documents, complete singleton pagination,
+original identities and positive nonregressive revisions against the mounted
+observations. Resolve and freeze the mode from these fresh responses; a failed,
+missing, malformed, foreign or regressive observation cannot fall back to the
+cached mode. An authoritative empty Settings singleton remains the false
+default only when no existing singleton observation would be discarded.
+Serialize this preflight with Local proof and attachment preparation, retain
+all drafts on failure, and discard its result after navigation, selection or
+connection ownership changes. Explicit manual mode skips default replacement;
+accepted or uncertain requests continue to use their exact original bytes and
+receipt retries without another defaults read.
+
 Server `branch_prefix` defaults to literal `delidev/`. Optional project
 `settings.branch_prefix` inherits when absent; explicit empty disables the
 instruction. Preserve exact UTF-8 input, add no separator and accept no variable

@@ -440,6 +440,86 @@ test("v2 validates custom theme imports and preserves immutable defaults", async
   ).toThrow();
 });
 
+test("selected palette sheets follow System changes and retire only their own sheet", async () => {
+  const { defaultPreferences, palettes } =
+    await import("./appearance-preferences");
+  const changeScheme = scheme(false);
+  // jsdom has no constructed sheets. This shim checks ownership and lifecycle;
+  // scripts/test-appearance-palette.mjs checks the actual browser cascade.
+  const OriginalSheet = CSSStyleSheet;
+  vi.stubGlobal(
+    "CSSStyleSheet",
+    class extends OriginalSheet {
+      replaceSync(source: string) {
+        this.insertRule(source);
+      }
+    },
+  );
+  const descriptor = Object.getOwnPropertyDescriptor(
+    document,
+    "adoptedStyleSheets",
+  );
+  const unrelated = new CSSStyleSheet();
+  Object.defineProperty(document, "adoptedStyleSheets", {
+    configurable: true,
+    writable: true,
+    value: [unrelated],
+  });
+  const preferences = {
+    ...defaultPreferences(),
+    light_palette: "nord",
+    dark_palette: "dracula",
+  };
+  const value = fixture();
+  vi.mocked(value.bridge.read).mockResolvedValue({
+    revision: 1,
+    theme: Theme.System,
+    problem: null,
+    preferences,
+  });
+  const view = render(
+    <AppearanceProvider bridge={value.bridge}>
+      <textarea
+        aria-label="Palette draft"
+        defaultValue="retained palette draft"
+      />
+    </AppearanceProvider>,
+  );
+  const draft = screen.getByRole("textbox", { name: "Palette draft" });
+  const currentRule = () =>
+    document.adoptedStyleSheets[1].cssRules[0] as CSSStyleRule;
+  try {
+    await waitFor(() =>
+      expect(currentRule().style.getPropertyValue("--background")).toBe(
+        palettes.nord.light.background,
+      ),
+    );
+    const lightSheet = document.adoptedStyleSheets[1];
+    expect(currentRule().selectorText).toBe("html:root[data-theme]");
+    changeScheme(true);
+    expect(currentRule().style.getPropertyValue("--background")).toBe(
+      palettes.dracula.dark.background,
+    );
+    expect(document.adoptedStyleSheets).not.toContain(lightSheet);
+    changeScheme(false);
+    expect(currentRule().style.getPropertyValue("--background")).toBe(
+      palettes.nord.light.background,
+    );
+    expect(document.adoptedStyleSheets).toHaveLength(2);
+    for (const [token, color] of Object.entries(palettes.nord.light))
+      expect(currentRule().style.getPropertyValue(`--${token}`)).toBe(color);
+    expect(screen.getByRole("textbox", { name: "Palette draft" })).toBe(draft);
+    expect((draft as HTMLTextAreaElement).value).toBe("retained palette draft");
+  } finally {
+    view.unmount();
+    const remaining = document.adoptedStyleSheets;
+    if (descriptor)
+      Object.defineProperty(document, "adoptedStyleSheets", descriptor);
+    else Reflect.deleteProperty(document, "adoptedStyleSheets");
+    expect(remaining).toEqual([unrelated]);
+  }
+});
+
 test("v2 ordinary choices autosave full snapshots without replacing a draft", async () => {
   const { defaultPreferences } = await import("./appearance-preferences");
   scheme(false);
@@ -581,4 +661,55 @@ test("custom theme save waits for the positively committed native map identity",
   );
   expect(screen.queryByRole("textbox", { name: "Theme name" })).toBeNull();
   expect(screen.getAllByText("Confirmed theme").length).toBeGreaterThan(0);
+});
+
+test("keeps described settings, separate disclosure choices and unavailable renderers", async () => {
+  scheme(false);
+  const value = fixture();
+  const view = render(
+    <AppearanceProvider bridge={value.bridge}>
+      <AppearanceSettings />
+    </AppearanceProvider>,
+  );
+  await screen.findByText("Theme saved.");
+  expect(screen.getByText("Changes save automatically.")).toBeTruthy();
+  expect(
+    Array.from(
+      view.container.querySelectorAll(
+        ".appearance-settings > fieldset > legend",
+      ),
+    ).map((legend) => legend.textContent),
+  ).toEqual(["Theme", "Composer", "Session status", "Display", "Images"]);
+  for (const control of view.container.querySelectorAll(
+    ".appearance-row input, .appearance-row select",
+  )) {
+    const label = control.getAttribute("aria-labelledby");
+    const help = control.getAttribute("aria-describedby");
+    expect(label && document.getElementById(label)?.textContent).toBeTruthy();
+    expect(help && document.getElementById(help)?.textContent).toBeTruthy();
+  }
+  const disclosures = view.container.querySelector(
+    ".appearance-disclosure-controls",
+  )!;
+  expect(Array.from(disclosures.querySelectorAll("select"))).toHaveLength(3);
+  for (const name of [
+    "Tool details default",
+    "Reasoning default",
+    "Compaction history default",
+  ])
+    expect(
+      within(disclosures as HTMLElement).getByRole("combobox", { name }),
+    ).toBeTruthy();
+  for (const name of [
+    "Markdown",
+    "Mermaid diagrams",
+    "SVG visualizations",
+    "Automatic table charts",
+  ])
+    expect(
+      (screen.getByRole("checkbox", { name }) as HTMLInputElement).matches(
+        ":disabled",
+      ),
+    ).toBe(true);
+  expect(value.bridge.update).not.toHaveBeenCalled();
 });

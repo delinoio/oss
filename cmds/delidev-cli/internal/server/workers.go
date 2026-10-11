@@ -25,6 +25,20 @@ type workerStream struct {
 	Cancel   context.CancelFunc
 }
 
+type workerStoreWake struct {
+	store   *store.Store
+	changed <-chan struct{}
+}
+
+func (w *workerStoreWake) channel() <-chan struct{} {
+	if w.changed == nil {
+		w.changed = w.store.Changed()
+	}
+	return w.changed
+}
+
+func (w *workerStoreWake) consume() { w.changed = nil }
+
 func workerActor(ctx context.Context, machine, instance string) error {
 	actor, ok := domain.PrincipalFrom(ctx)
 	if !ok || actor.Type != domain.WorkerDevice || string(actor.MachineID) != machine {
@@ -344,10 +358,13 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 	// assignment restores this bounded retry boundary without preclaiming work.
 	var dependencyAfter domain.ID
 	var dependencyBlocked bool
-	rememberDependency := func() {
+	skipDependency := func(id domain.ID) {
 		if !dependencyBlocked {
 			dependencyAfter, dependencyBlocked = after, true
 		}
+		// Advance even when a whole page is blocked, so later work and the
+		// heartbeat wait remain reachable. Retry from the saved predecessor.
+		after = id
 	}
 	retryDependencies := func() {
 		if dependencyBlocked {
@@ -358,8 +375,9 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 	var cancellationSent domain.ID
 	responseControlsSent := map[domain.ID]bool{}
 	steerControlsSent := map[domain.ID]bool{}
+	wake := workerStoreWake{store: s.Store}
 	for {
-		changed := s.Store.Changed()
+		changed := wake.channel()
 		var records []store.Record
 		var cancelJob domain.ID
 		var responseControls []*pb.QuestionResponseControl
@@ -482,12 +500,13 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					return rpc.Error(err, correlation)
 				}
 				if pending && (storageInput.Action == workspace.StorageCleanup || storageInput.Action == workspace.StorageRecover) {
-					rememberDependency()
+					skipDependency(record.ID)
 					continue
 				}
 			}
 			if job.State == domain.JobQueued {
 				claimDependencyBlocked := false
+				var releasedRetry domain.ID
 				result, err := s.Store.Mutate(ctx, domain.NewID(), "worker.claim", struct{ Job, Instance domain.ID }{record.ID, instance}, func(tx *store.Tx) (any, error) {
 					if err := currentInstance(tx, machine, instance); err != nil {
 						return nil, err
@@ -591,9 +610,9 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 							problem = validateForkAuthority(tx, input)
 						}
 						if problem != nil {
-							now := time.Now().UTC()
-							j.State, j.Problem, j.FinishedAt = domain.JobFailed, domain.SafeError(problem), &now
-							return tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, j)
+							failed, generation, err := failForkBeforeClaim(tx, r, j, problem)
+							releasedRetry = generation
+							return failed, err
 						}
 					}
 					actor, _ := domain.PrincipalFrom(ctx)
@@ -613,8 +632,11 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					s.logger.WarnContext(ctx, "worker claim receipt rejected", "machine_id", machine, "job_id", claimID, "code", domain.SafeError(err).Code)
 					return rpc.Error(err, correlation)
 				}
+				if releasedRetry != "" {
+					s.logger.InfoContext(ctx, "sidechat_retry_preclaim_rejected", "job_id", record.ID, "generation_id", releasedRetry, "code", job.Problem.Code)
+				}
 				if claimDependencyBlocked {
-					rememberDependency()
+					skipDependency(record.ID)
 					continue
 				}
 			}
@@ -640,15 +662,26 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 			}
 			after = record.ID
 		}
-		if assigned || len(records) == store.MaxPage && !waitForNetwork {
+		if assigned {
+			// The assigned job remains the sole in-flight operation. A later
+			// terminal report restores the dependency cursor before another scan.
+			wake.consume()
+			continue
+		}
+		if len(records) == store.MaxPage && !waitForNetwork {
+			// Keep the scan's original wake channel across pages. Replacing it here
+			// could lose a dependency-retirement signal delivered after an earlier
+			// blocked job was checked.
 			continue
 		}
 		select {
 		case <-ctx.Done():
 			return rpc.Error(ctx.Err(), correlation)
 		case <-changed:
+			wake.consume()
 			retryDependencies()
 		case <-ticker.C:
+			wake.consume()
 			retryDependencies()
 			if err := s.Store.Heartbeat(ctx, machine, instance); err != nil {
 				return rpc.Error(err, correlation)

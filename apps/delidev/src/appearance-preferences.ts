@@ -109,6 +109,12 @@ export function visibleFocusColor(focus: string, surface: string) {
     white = "#FFFFFF";
   return contrast(black, surface) >= contrast(white, surface) ? black : white;
 }
+export function visibleHoverSurface(colors: ColorMap) {
+  const hover = colors["surface-hover"];
+  return contrast(colors["text-secondary"], hover) >= 4.5
+    ? hover
+    : colors.surface;
+}
 export function validColors(value: unknown): value is ColorMap {
   if (
     !object(value) ||
@@ -243,7 +249,8 @@ export function appearanceIdentity(value: unknown): string {
 /** Only application-owned selectors and previously validated colors reach CSSOM. */
 export function applyAppearanceColors(
   colors: ColorMap,
-  selector = ":root",
+  // Outrank the built-in :root[data-theme="dark"] rule in main and tray windows.
+  selector = "html:root[data-theme]",
 ): () => void {
   if (typeof CSSStyleSheet.prototype.replaceSync !== "function")
     return () => {};
@@ -252,9 +259,14 @@ export function applyAppearanceColors(
   const rule = sheet.cssRules[0] as CSSStyleRule;
   for (const [token, value] of Object.entries(colors))
     rule.style.setProperty(`--${token}`, value);
+  rule.style.setProperty("--revert-hover-surface", visibleHoverSurface(colors));
   rule.style.setProperty(
     "--focus-on-selected",
     visibleFocusColor(colors.focus, colors["surface-selected"]),
+  );
+  rule.style.setProperty(
+    "--focus-on-surface",
+    visibleFocusColor(colors.focus, colors.surface),
   );
   document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
   return () => {

@@ -18,9 +18,9 @@ import {
   type WatchEventsResponse,
 } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
-import { i18n } from "./localization";
+import { copy, i18n } from "./localization";
 import { MutationIntents } from "./mutation";
-import { SessionView } from "./session";
+import { SessionView, TranscriptItem } from "./session";
 import {
   transcriptResource,
   transcriptRoleFixtures,
@@ -34,6 +34,8 @@ await i18n.changeLanguage(args.get("language") ?? "en");
 if (args.get("theme") !== "system")
   document.documentElement.dataset.theme = args.get("theme") ?? "light";
 if (args.get("zoom") === "2") document.body.style.zoom = "2";
+if (args.get("accent") === "false")
+  document.documentElement.dataset.sessionAccent = "false";
 let session = create(ResourceSchema, {
   id: transcriptSessionId,
   sessionId: transcriptSessionId,
@@ -131,6 +133,60 @@ if (timingMode) {
       ),
     );
 }
+const reasoningSnapshot = (summary: string[], content: string[] = []) => ({
+  kind: "reasoning",
+  text: "",
+  summary,
+  content,
+});
+const reasoningSummary =
+  "  Checking the working directory. 한글🙂\n" + "longunbrokentoken".repeat(60);
+const reasoningStarted = reasoningSnapshot(
+  ["", reasoningSummary],
+  ["", "  Original initial content.\n<script>inert()</script>  "],
+);
+const reasoningDeltas = [
+  {
+    sequence: 4,
+    delta: {
+      kind: "reasoning-summary",
+      index: 3,
+      text: "  Streamed summary 한글🙂  ",
+    },
+  },
+  {
+    sequence: 5,
+    delta: {
+      kind: "reasoning-content",
+      index: 7,
+      text: "  Streamed content\n  ",
+    },
+  },
+];
+if (args.get("reasoning") === "1")
+  historical.splice(
+    0,
+    historical.length,
+    transcriptResource(
+      {
+        role: "artifact",
+        state: "streaming",
+        artifact: { started: reasoningStarted, deltas: reasoningDeltas },
+      },
+      80,
+    ),
+    transcriptResource(
+      {
+        role: "artifact",
+        state: "complete",
+        artifact: {
+          started: reasoningSnapshot([]),
+          completed: reasoningSnapshot([]),
+        },
+      },
+      81,
+    ),
+  );
 const resources = new Map(historical.map((row) => [row.id, row]));
 const events: WatchEventsResponse[] = [];
 let wake: (() => void) | undefined,
@@ -181,6 +237,32 @@ function timingSessionEvent() {
   wake?.();
 }
 Object.assign(window, {
+  __codexReasoningFixture: {
+    get reads() {
+      return timingReads;
+    },
+    complete() {
+      const row = transcriptResource(
+        {
+          role: "artifact",
+          state: "complete",
+          artifact: {
+            started: reasoningStarted,
+            deltas: reasoningDeltas,
+            completed: reasoningSnapshot(
+              ["", "Final supplied summary"],
+              ["Final original content"],
+            ),
+          },
+        },
+        80,
+        2n,
+      );
+      resources.set(row.id, row);
+      events.push(createEvent(row.id, row.revision));
+      wake?.();
+    },
+  },
   __turnTimingFixture: {
     get reads() {
       return timingReads;
@@ -357,6 +439,35 @@ const transport = createRouterTransport((router) => {
 });
 function Fixture() {
   const [draft, setDraft] = useState("Retained synthetic draft");
+  if (args.has("revert"))
+    return (
+      <div className="session-workspace revert-layout-fixture">
+        <div className="transcript">
+          {["Hi", "여러 줄의 원래 질문\n" + "긴내용".repeat(60)].map(
+            (text, index) => (
+              <TranscriptItem
+                key={index}
+                resource={transcriptResource(
+                  { role: "user", state: "complete", text },
+                  index + 100,
+                )}
+                actions={
+                  index === 1 ? <button>Other original action</button> : null
+                }
+                revertAction={
+                  <button
+                    className="session-revert-action"
+                    disabled={index === 1}
+                  >
+                    {copy("session.revertAndEdit")}
+                  </button>
+                }
+              />
+            ),
+          )}
+        </div>
+      </div>
+    );
   return (
     <div
       className="app transcript-role-fixture"

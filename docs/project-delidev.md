@@ -50,6 +50,12 @@ Failed-login subscription cleanup uses System capability 41 after main-first res
 
 Native execution option selection follows the [catalog contract](cmds-delidev-catalog-contract.md#native-execution-option-selection). Available settings pass unchanged to native execution; unavailable saved values remain explicit, and all four Codex API/subscription permission modes preserve authentication, applied-setting and cleanup/recovery ownership. No protocol or database migration is required.
 
+Revert composer restoration retains its original connection/session operation
+through presenter reconstruction. The desktop owns bounded synchronous draft
+edit generations independently of empty text payloads; busy and uncertain
+original intents fence fresh input. Follow the [desktop contract](apps-delidev-desktop-contract.md#conversation-revert-and-edit).
+This does not change native mutation, server admission or protocol ownership.
+
 ## Goal
 
 Run personal AI sessions across projects, accounts, native harnesses, and execution machines with durable single-user ownership. The feature remains normative, with the explicit owner startup/presentation amendment in ; implementation and real-environment evidence are distinct.

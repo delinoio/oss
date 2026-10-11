@@ -14,6 +14,17 @@ func (t *Tx) rememberAssignment(record Record) error {
 	return storageError(err)
 }
 
+// HasJobAssignment distinguishes an absent first claim from an unreadable
+// assignment. Callers must not infer absence from JobAssignment's recovery error.
+func (t *Tx) HasJobAssignment(id domain.ID) (bool, error) {
+	if err := id.Validate(); err != nil {
+		return false, err
+	}
+	var exists bool
+	err := t.tx.QueryRowContext(t.ctx, "SELECT EXISTS(SELECT 1 FROM job_assignments WHERE job_id=?)", id).Scan(&exists)
+	return exists, storageError(err)
+}
+
 func (t *Tx) JobAssignment(id domain.ID) (Record, error) {
 	if err := id.Validate(); err != nil {
 		return Record{}, err

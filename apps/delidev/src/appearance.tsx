@@ -349,6 +349,7 @@ export function AppearanceSettings() {
       className="appearance-settings"
       aria-label={copy("appearance.deviceAppearance_880cb9")}
     >
+      <p className="appearance-autosave">{copy("appearance.v2.autosave")}</p>
       <AppearanceControls
         modeControls={
           <div className="appearance-choices">

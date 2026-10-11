@@ -14,7 +14,7 @@ import { Interaction } from "./interactions";
 import { MutationIntents } from "./mutation";
 import { encode } from "./documents";
 
-function fixture(data: Record<string, unknown>) {
+function fixture(data: Record<string, unknown>, activeTray = false) {
   const resource = create(ResourceSchema, {
     id: newRequestId(),
     sessionId: newRequestId(),
@@ -50,7 +50,11 @@ function fixture(data: Record<string, unknown>) {
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
         <MutationIntents>
-          <Interaction resource={row} refresh={() => {}} />
+          <Interaction
+            resource={row}
+            refresh={() => {}}
+            activeTray={activeTray}
+          />
         </MutationIntents>
       </QueryClientProvider>
     </TransportProvider>
@@ -261,4 +265,54 @@ it("refuses an unrecognized native approval version without inventing choices", 
     screen.getByRole("button", { name: "Send decision" }).closest("form")!,
   );
   expect(value.approvals).not.toHaveBeenCalled();
+});
+
+it("retires submitted answer controls while retaining compact queued delivery", async () => {
+  const value = fixture(question, true);
+  const view = render(value.view());
+  for (const checkbox of screen.getAllByRole("checkbox", {
+    name: "Leave this question unanswered",
+  }))
+    fireEvent.click(checkbox);
+  fireEvent.click(screen.getByRole("button", { name: "Send answers" }));
+  await screen.findByText("Response: queued");
+  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(screen.queryByRole("checkbox")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Send answers" })).toBeNull();
+  view.rerender(value.view());
+  expect(screen.queryByRole("button", { name: "Send answers" })).toBeNull();
+  expect(value.questions).toHaveBeenCalledTimes(1);
+});
+
+it("keeps the original receipt retry accessible after closure without an answer form", async () => {
+  const value = fixture(question, true);
+  value.questions.mockRejectedValueOnce(
+    new ConnectError("Lost acknowledgement", Code.Unavailable),
+  );
+  const view = render(value.view());
+  for (const checkbox of screen.getAllByRole("checkbox", {
+    name: "Leave this question unanswered",
+  }))
+    fireEvent.click(checkbox);
+  fireEvent.click(screen.getByRole("button", { name: "Send answers" }));
+  await screen.findByRole("button", { name: "Retry the same answers" });
+  view.rerender(
+    value.view(
+      create(ResourceSchema, {
+        ...value.resource,
+        revision: 11n,
+        documentJson: encode({ ...question, closure: "turn-ended" }),
+      }),
+    ),
+  );
+  expect(screen.queryByRole("checkbox")).toBeNull();
+  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(value.questions).toHaveBeenCalledTimes(1);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Retry the same answers" }),
+  );
+  await waitFor(() => expect(value.questions).toHaveBeenCalledTimes(2));
+  expect(value.questions.mock.calls[1][0]).toEqual(
+    value.questions.mock.calls[0][0],
+  );
 });
