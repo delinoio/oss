@@ -28,6 +28,12 @@ it("retains numbers through reorder, refresh, missing names and newly observed t
   ).toBe(3);
   expect(labels.name(first, first, "repository")).toBe(first);
 });
+it("assigns labels to identity-only references without requiring resource documents", () => {
+  const labels = new PresentationLabels();
+  labels.observeIds([first, second], "account");
+  expect(labels.identity(first, "account")).toBe("Account 1");
+  expect(labels.identity(second, "account")).toBe("Account 2");
+});
 it("projects only owned observation keys while preserving native/user bytes and original metadata", () => {
   const labels = new PresentationLabels();
   const original = {

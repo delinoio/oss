@@ -123,6 +123,9 @@ export class PresentationLabels {
       this.observe(resource.id, name, presentationKind(resource.kind));
     }
   }
+  observeIds(ids: readonly string[], kind: PresentationKind) {
+    for (const id of ids) this.number(id, kind);
+  }
   resource(resource?: Resource): string {
     if (!resource) return copy("documents.extra.e504e6152194");
     const data = decodeResourceDocument(resource) ?? {};
