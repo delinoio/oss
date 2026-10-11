@@ -42,7 +42,6 @@ pub(in crate::compiler) fn plan(ctx: &mut Ctx, enabled: &PassSet, out: &mut Plan
     let (allocations, preserved) = optimizer::allocate(&mut objects, strategy);
     out.property_stats = Some(PropertyStats {
         object_regions: regions,
-        properties: preserved.len() + allocations.iter().map(|a| a.mappings.len()).sum::<usize>(),
     });
     out.mappings.extend(preserved);
     let mut counts = [0usize; 3];

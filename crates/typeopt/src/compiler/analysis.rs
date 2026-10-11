@@ -6,7 +6,7 @@
 //! Facts distinguish type-derived candidates from runtime evidence: symbols,
 //! references and syntax are runtime evidence; checker types only nominate
 //! candidates and never prove a closed world on their own.
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use anyhow::Result;
 use ts_goport::prelude::*;
@@ -165,10 +165,8 @@ impl<'c> Ctx<'c> {
                     }
                     _ => {}
                 }
-                if !js {
-                    if let Some(name) = mentioned_name(node) {
-                        *self.mentioned_names.entry(name.to_owned()).or_default() += 1;
-                    }
+                if !js && let Some(name) = mentioned_name(node) {
+                    *self.mentioned_names.entry(name.to_owned()).or_default() += 1;
                 }
             }
             self.files[index].nodes = nodes;
@@ -800,9 +798,4 @@ fn mentioned_name(node: Node) -> Option<&'static str> {
         SyntaxKind::StringLiteral | SyntaxKind::NoSubstitutionTemplateLiteral => Some(node.text()),
         _ => None,
     }
-}
-
-/// Deterministic set helper.
-pub(crate) fn sorted<T: Ord + Clone>(set: &HashSet<T>) -> BTreeSet<T> {
-    set.iter().cloned().collect()
 }

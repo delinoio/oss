@@ -130,7 +130,7 @@ struct Versioned<T> {
 pub fn sorted_mappings(mappings: &[Mapping]) -> Vec<&Mapping> {
     let start = |m: &Mapping| -> usize {
         m.group
-            .rsplitn(3, ':')
+            .rsplit(':')
             .nth(1)
             .and_then(|s| s.parse().ok())
             .unwrap_or(0)

@@ -659,6 +659,35 @@ impl<B: Backend> Pipeline<'_, B> {
     }
 }
 
+/// Double-quoted JavaScript string literal.
+fn quote(value: &str) -> String {
+    serde_json::to_string(value).expect("strings serialize")
+}
+
+/// Whether an emitted import specifier is the source specifier, possibly
+/// rewritten by `rewriteRelativeImportExtensions` (`./a.ts` emits as
+/// `./a.js`).
+fn same_specifier(source: &str, emitted: &str) -> bool {
+    if source == emitted {
+        return true;
+    }
+    if !source.starts_with('.') || source.ends_with(".d.ts") {
+        return false;
+    }
+    [
+        (".ts", ".js"),
+        (".tsx", ".js"),
+        (".mts", ".mjs"),
+        (".cts", ".cjs"),
+    ]
+    .iter()
+    .any(|(from, to)| {
+        source
+            .strip_suffix(from)
+            .is_some_and(|stem| emitted.strip_suffix(to) == Some(stem))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -666,8 +695,10 @@ mod tests {
 
     /// Test-only backend: candidates come from a fixed script, size is byte
     /// length and a module "fails" type checking when it contains `BAD`.
+    type Script = Box<dyn FnMut(&BTreeMap<String, String>, Phase) -> Vec<Candidate>>;
+
     struct Fake {
-        script: Box<dyn FnMut(&BTreeMap<String, String>, Phase) -> Vec<Candidate>>,
+        script: Script,
         checks: usize,
     }
     impl Backend for Fake {
@@ -1013,33 +1044,4 @@ mod tests {
         assert_eq!(source_offset(8 + 2, &[first.clone(), second.clone()]), 2);
         assert_eq!(source_offset(8 + 3, &[first, second]), 6);
     }
-}
-
-/// Double-quoted JavaScript string literal.
-fn quote(value: &str) -> String {
-    serde_json::to_string(value).expect("strings serialize")
-}
-
-/// Whether an emitted import specifier is the source specifier, possibly
-/// rewritten by `rewriteRelativeImportExtensions` (`./a.ts` emits as
-/// `./a.js`).
-fn same_specifier(source: &str, emitted: &str) -> bool {
-    if source == emitted {
-        return true;
-    }
-    if !source.starts_with('.') || source.ends_with(".d.ts") {
-        return false;
-    }
-    [
-        (".ts", ".js"),
-        (".tsx", ".js"),
-        (".mts", ".mjs"),
-        (".cts", ".cjs"),
-    ]
-    .iter()
-    .any(|(from, to)| {
-        source
-            .strip_suffix(from)
-            .is_some_and(|stem| emitted.strip_suffix(to) == Some(stem))
-    })
 }

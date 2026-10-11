@@ -68,6 +68,8 @@ pub struct PassSummary {
 #[derive(Serialize)]
 pub struct Transformation {
     pub bundle: usize,
+    /// Stable semantic identity of the bundle.
+    pub key: String,
     pub pass: PassId,
     pub uses: Vec<PassId>,
     pub phase: Phase,
@@ -147,6 +149,7 @@ pub fn build(snapshot: &Snapshot, outcome: &Outcome, passes: &PassSet) -> Report
             let (line, column) = location(&bundle.location.file, bundle.location.offset);
             Transformation {
                 bundle: bundle.id,
+                key: bundle.key.clone(),
                 pass: bundle.pass,
                 uses: bundle.uses.clone(),
                 phase: bundle.phase,

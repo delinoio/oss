@@ -164,7 +164,6 @@ pub struct Skip {
 #[derive(Clone, Debug, Default)]
 pub struct PropertyStats {
     pub object_regions: usize,
-    pub properties: usize,
 }
 
 /// A value import declaration of a module. When a transformation removes the
