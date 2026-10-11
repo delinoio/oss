@@ -1880,6 +1880,9 @@ it("keeps a successor repository edit open when a dismissed pending status read 
   );
   fireEvent.click(opener);
   const successor = screen.getByRole("dialog");
+  await waitFor(() =>
+    expect(successor.contains(document.activeElement)).toBe(true),
+  );
   const focus = document.activeElement;
   await act(async () => {
     resolve({ resource: completion({ id: repository.id, revision: 2 }) });
