@@ -710,11 +710,11 @@ test("event matrices retain only the authorized native hosts", () => {
   for (const event of [Event.PullRequest, Event.Push]) {
     const { desktopMatrix, reactForgeMatrix } = matricesForEvent(event);
     assert.deepEqual(desktopMatrix.include.map(({ id }) => id), nativeMatrices["devhud-desktop"].filter(({ os }) => os !== "macos").map(({ id }) => id));
-    assert.deepEqual(reactForgeMatrix.include.map(({ id }) => id), nativeMatrices["react-forge"].filter(({ platform }) => platform !== "darwin").map(({ id }) => id));
+    assert.deepEqual(reactForgeMatrix.include.map(({ id }) => id), ["linux-x64-gnu", "linux-arm64-gnu", "win32-x64-msvc"]);
     assert.equal(planJobs(event, [".github/workflows/CI.yml"]).jobs["devhud-ios-simulator"], false);
   }
   assert.deepEqual(matricesForEvent(Event.Manual).desktopMatrix.include, nativeMatrices["devhud-desktop"]);
-  assert.deepEqual(matricesForEvent(Event.Manual).reactForgeMatrix.include, nativeMatrices["react-forge"]);
+  assert.deepEqual(matricesForEvent(Event.Manual).reactForgeMatrix.include.map(({ id }) => id), ["darwin-x64", "darwin-arm64", "linux-x64-gnu", "linux-arm64-gnu", "win32-x64-msvc"]);
   assert.equal(planJobs(Event.Manual, []).jobs["devhud-ios-simulator"], true);
 });
 

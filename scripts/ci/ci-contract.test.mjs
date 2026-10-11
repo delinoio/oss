@@ -676,13 +676,13 @@ test("Forge retains three-platform interoperability and mandatory Linux renderin
   assert.match(renderCommands, /--test render -- --ignored/u);
 });
 
-test("React Forge validates its supported runtime without scene-specific CI tests", () => {
+test("React Forge validates selected CI hosts without scene-specific CI tests", () => {
   const job = workflow.jobs["react-forge"];
   assert.equal(job["runs-on"], "${{ matrix.runner }}");
   assert.equal(job.strategy["fail-fast"], false);
   const platforms = JSON.parse(readFileSync(`${root}/packages/react-forge/src/native-platforms.json`, "utf8"));
   assert.equal(job.strategy.matrix, "${{ fromJSON(needs.changes.outputs.react_forge_matrix) }}");
-  assert.deepEqual(nativeMatrices["react-forge"].map(({ id }) => id), platforms.map(({ id }) => id));
+  assert.deepEqual(nativeMatrices["react-forge"].map(({ id }) => id), ["darwin-x64", "darwin-arm64", "linux-x64-gnu", "linux-arm64-gnu", "win32-x64-msvc"]);
   for (const host of nativeMatrices["react-forge"]) {
     const declared = platforms.find(({ id }) => id === host.id);
     assert.equal(host.platform, declared.platform);

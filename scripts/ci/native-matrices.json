@@ -32,7 +32,6 @@
     { "id": "darwin-arm64", "runner": "macos-15", "platform": "darwin", "architecture": "arm64", "target": "aarch64-apple-darwin" },
     { "id": "linux-x64-gnu", "runner": "ubuntu-22.04", "platform": "linux", "architecture": "x64", "target": "x86_64-unknown-linux-gnu" },
     { "id": "linux-arm64-gnu", "runner": "ubuntu-22.04-arm", "platform": "linux", "architecture": "arm64", "target": "aarch64-unknown-linux-gnu" },
-    { "id": "win32-x64-msvc", "runner": "windows-2022", "platform": "win32", "architecture": "x64", "target": "x86_64-pc-windows-msvc" },
-    { "id": "win32-arm64-msvc", "runner": "windows-11-arm", "platform": "win32", "architecture": "arm64", "target": "aarch64-pc-windows-msvc" }
+    { "id": "win32-x64-msvc", "runner": "windows-2022", "platform": "win32", "architecture": "x64", "target": "x86_64-pc-windows-msvc" }
   ]
 }
