@@ -145,7 +145,9 @@ it("shares the manual overlay through loading, failed read and explicit retry", 
   const popup = view.container.querySelector<HTMLElement>(".skill-completion")!;
   expect(popup.getAttribute("popover")).toBe("manual");
   expect(popup.querySelector("[role=status]")).not.toBeNull();
-  fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Retry skill inventory" }),
+  );
   await screen.findAllByRole("option");
   expect(view.container.querySelector(".skill-completion")).toBe(popup);
   expect(document.activeElement).toBe(input);
