@@ -1467,7 +1467,7 @@ it("clears a prior automatic-default failure after accepted manual creation", as
   await waitFor(() =>
     expect(
       screen.queryByRole("button", { name: "Retry Plan Mode defaults" }),
-    ).not.toBeInTheDocument(),
+    ).toBeNull(),
   );
 });
 
@@ -1488,7 +1488,7 @@ it("clears an automatic-default failure when the creation scope changes", async 
   await waitFor(() =>
     expect(
       screen.queryByRole("button", { name: "Retry Plan Mode defaults" }),
-    ).not.toBeInTheDocument(),
+    ).toBeNull(),
   );
 });
 
