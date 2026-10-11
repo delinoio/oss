@@ -446,3 +446,14 @@ remain independently paginated. No new business RPC or transport authority is
 added. Follow the [mobile contract](apps-delidev-mobile-contract.md).
 
 Current schema-4 Agent routes embed exact source/native identity and non-secret metadata. The shared parser rejects Model resources, mixed UUID routes and older Agent schemas. Other currently activated Project, Settings and API-profile schemas remain supported. Protocol-2 connection verification rejects protocol 1 without adopting its state.
+
+## Schedule preview client
+
+Generated `ScheduleQuery.previewScheduleCalendar` accepts exact cron/timezone
+inputs and returns a server calculation boundary, future UTC occurrence and typed
+normalized constraints. Scope reads to the original transport and exact inputs;
+this descriptor is read-only and must not reuse mutation identities. Desktop
+presentation rejects old, invalid, disconnected or malformed evidence, renders
+localized AND/OR semantics without parsing cron, and handles Unimplemented with
+an explicit save-determines-next-run fallback. No preview grants scheduling,
+Local-origin, Worker or execution authority. Saved schedule state remains final.

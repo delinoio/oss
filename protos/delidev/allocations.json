@@ -13293,6 +13293,118 @@
       "member": "replayed",
       "number": 2,
       "newDeclaration": true
+    },
+    {
+      "issue": 2673,
+      "kind": "message",
+      "declaration": "PreviewScheduleCalendarRequest",
+      "member": "cron",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2673,
+      "kind": "message",
+      "declaration": "PreviewScheduleCalendarRequest",
+      "member": "timezone",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2673,
+      "kind": "message",
+      "declaration": "PreviewScheduleCalendarResponse",
+      "member": "calculated_at",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2673,
+      "kind": "message",
+      "declaration": "PreviewScheduleCalendarResponse",
+      "member": "next_run_at",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2673,
+      "kind": "message",
+      "declaration": "PreviewScheduleCalendarResponse",
+      "member": "calendar",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2673,
+      "kind": "message",
+      "declaration": "ScheduleCalendar",
+      "member": "minutes",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2673,
+      "kind": "message",
+      "declaration": "ScheduleCalendar",
+      "member": "hours",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2673,
+      "kind": "message",
+      "declaration": "ScheduleCalendar",
+      "member": "days_of_month",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2673,
+      "kind": "message",
+      "declaration": "ScheduleCalendar",
+      "member": "months",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2673,
+      "kind": "message",
+      "declaration": "ScheduleCalendar",
+      "member": "weekdays",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2673,
+      "kind": "message",
+      "declaration": "ScheduleCalendar",
+      "member": "day_match",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2673,
+      "kind": "enum",
+      "declaration": "ScheduleDayMatch",
+      "member": "SCHEDULE_DAY_MATCH_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2673,
+      "kind": "enum",
+      "declaration": "ScheduleDayMatch",
+      "member": "SCHEDULE_DAY_MATCH_AND",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2673,
+      "kind": "enum",
+      "declaration": "ScheduleDayMatch",
+      "member": "SCHEDULE_DAY_MATCH_OR",
+      "number": 2,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [
@@ -13527,6 +13639,15 @@
       "method": "SetAutomaticResetCreditConsent",
       "input": "SetAutomaticResetCreditConsentRequest",
       "output": "SetAutomaticResetCreditConsentResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2673,
+      "service": "ScheduleService",
+      "method": "PreviewScheduleCalendar",
+      "input": "PreviewScheduleCalendarRequest",
+      "output": "PreviewScheduleCalendarResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

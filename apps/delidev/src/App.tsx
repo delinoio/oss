@@ -199,7 +199,7 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
     <Search active={surface === Surface.Search} open={open} />
     <div className="inbox-container" hidden={surface !== Surface.Inbox}><Inbox active={surface === Surface.Inbox} open={open} notificationId={selectedInbox} notificationActivation={inboxActivation} openOperational={openOperationalNotification} /></div>
     <Usage active={surface === Surface.Usage} open={open} entry={usageEntry} />
-    <Schedules readLocalWorker={readLocalWorker} active={surface === Surface.Schedules} open={open} notificationOccurrence={notificationOccurrence} clearNotificationOccurrence={()=>setNotificationOccurrence(undefined)} />
+    <Schedules connectionReady={connectionReady} readLocalWorker={readLocalWorker} active={surface === Surface.Schedules} open={open} notificationOccurrence={notificationOccurrence} clearNotificationOccurrence={()=>setNotificationOccurrence(undefined)} />
     <PullRequests active={surface === Surface.PullRequests} openSettings={openSettings} />
     <Settings openUsage={openAccountUsage} readLocalWorker={readLocalWorker} connectionSettings={connectionSettings} pairingAuthority={pairingAuthority} currentDeviceId={currentDeviceId} controlLocalWorker={controlLocalWorker} chooseRepositoryFolder={chooseRepositoryFolder} visible={surface === Surface.Settings} entryDestination={settingsEntry} destinationConsumed={consumeSettingsEntry} />
     {localServer}

@@ -2,12 +2,14 @@ syntax = "proto3";
 package delidev.v1;
 
 import "delidev/v1/common.proto";
+import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
 
 // Owner and paired-client schedule lifecycle. Workers execute derived session
 // assignments and cannot write timer state or invoke these product operations.
 service ScheduleService {
+  rpc PreviewScheduleCalendar(PreviewScheduleCalendarRequest) returns (PreviewScheduleCalendarResponse);
   rpc SaveSchedule(SaveScheduleRequest) returns (SaveScheduleResponse);
   rpc GetSchedule(GetScheduleRequest) returns (GetScheduleResponse);
   rpc ListSchedules(ListSchedulesRequest) returns (ListSchedulesResponse);
@@ -114,4 +116,32 @@ message GetScheduleOccurrenceRequest {
 
 message GetScheduleOccurrenceResponse {
   Resource occurrence = 1;
+}
+
+// Calendar metadata only: no creation, timer, receipt or execution authority.
+message PreviewScheduleCalendarRequest {
+  string cron = 1;
+  string timezone = 2;
+}
+
+message PreviewScheduleCalendarResponse {
+  google.protobuf.Timestamp calculated_at = 1;
+  google.protobuf.Timestamp next_run_at = 2;
+  ScheduleCalendar calendar = 3;
+}
+
+enum ScheduleDayMatch {
+  SCHEDULE_DAY_MATCH_UNSPECIFIED = 0;
+  SCHEDULE_DAY_MATCH_AND = 1;
+  SCHEDULE_DAY_MATCH_OR = 2;
+}
+
+message ScheduleCalendar {
+  repeated uint32 minutes = 1;
+  repeated uint32 hours = 2;
+  repeated uint32 days_of_month = 3;
+  repeated uint32 months = 4;
+  // Sunday is zero. All constraints are sorted, distinct allowed values.
+  repeated uint32 weekdays = 5;
+  ScheduleDayMatch day_match = 6;
 }

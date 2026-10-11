@@ -3338,12 +3338,31 @@ replaces the separately retained Weekly weekday. Arbitrary, padded or otherwise
 noncanonical expressions use the last valid preset time, or 09:00 when absent.
 No general parser, browser timezone substitution or client calendar validation
 is introduced. Empty/invalid Time remains a visible draft, blocks submission and
-cannot silently submit the last valid Cron. Preset summaries show frequency,
-time, entered timezone and actual Cron only when Time is valid; Custom shows raw
-Cron/timezone without natural-language interpretation. These are selection
-summaries, not execution-eligibility proof. Display **Next run is calculated by
-the server after saving.** The server retains all calendar/timezone, DST and
-absolute next-UTC authority.
+cannot silently submit the last valid Cron. Repeat and Review share three stacked rows: Repeats, Scheduling starts and First
+run preview. The owner/client read-only `PreviewScheduleCalendar` result supplies
+sorted constraints and AND/OR day matching for localized prose, including Custom
+cron. Familiar daily, weekday and weekly patterns use compact sentences; complex
+patterns state all time, month and day constraints. The browser does not parse
+cron. Keep the exact original expression in an initially collapsed keyboard Cron
+details disclosure. Enabled drafts start after save and show a provisional full
+weekday/date/time in the explicit schedule timezone plus relative wording. Paused
+drafts start after enable and state that no automatic run is scheduled. Saving
+confirms the actual next run; a scheduled time does not guarantee execution.
+
+Connect Query scopes observations to the original transport and exact cron/zone.
+Debounce valid draft inputs by 300 ms, clear old estimates immediately on edits,
+invalid Time, disconnect or transport replacement, and discard disposed responses.
+Only active Repeat/Review presenters read previews. Refresh on entry, reconnect,
+window focus, each minute and the estimated due boundary. Relative wording uses
+the sampled server boundary plus monotonic elapsed time, never the browser wall
+clock. Respect the date-format preference and selected language. Calculating,
+invalid, unavailable and Unimplemented states show no estimated date; unsupported
+servers retain the preset summary and explain that saving determines the next run.
+Do not invent Custom prose without normalized constraints. Polite updates do not
+move focus or announce a countdown each second. Rows wrap at narrow widths and
+retain existing outer scrolling. Preview cannot modify save eligibility, original
+request bytes, Local proofs, defaults or uncertain retries. Saved `next_run_at`
+supersedes the estimate through the existing post-create detail transition.
 
 Retain Overlap independent sessions, Skip new occurrences while prior work is
 active, and FIFO Wait until confirmed cleanup. **Enable future scheduled runs**

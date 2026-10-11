@@ -110,3 +110,17 @@ Schedule and occurrence pages measure the complete protobuf and protobuf-JSON re
 
 ## Situation notification publication
 The original occurrence transaction publishes one metadata-only operational Inbox record for selection failure, confirmed preparation failure before any InitialExecution, and server-offline/Worker-offline skips, including retained restart misses. Existing wait/overlap/capacity, pause, deletion and explicit Stop remain independent. Post-start execution failures retain the ordinary execution outcome and cannot become Schedule start alerts. Follow `cmds-delidev-inbox-contract.md` for future-only client checkpoints, durable claims and fresh read-only original-occurrence activation.
+
+## Unsaved calendar preview
+
+`PreviewScheduleCalendar` accepts only cron (512 characters) and explicit IANA
+timezone (256 characters). Owner or paired-client authentication is required;
+Workers and anonymous callers are rejected. The handler samples one UTC server
+boundary and reuses `parseSchedule` and `NextRun`, including DST gaps/folds and
+the leap-century search adapter. Invalid or unreachable calendars return typed
+validation errors without a date. Sorted minutes, hours, days of month, months
+and weekdays derive from the parser bitsets. Day matching is AND when either
+parser day field retains its wildcard bit, otherwise OR; stepped wildcards follow
+the pinned parser's actual bits. The response contains the boundary and strictly
+future UTC occurrence. It creates no mutation receipt, timer, occurrence, event,
+Worker/account inspection or native execution. It changes no save/resume boundary.

@@ -116,6 +116,49 @@ func (s ScheduleDefinition) NextRun(after time.Time) (time.Time, error) {
 	return next.UTC(), nil
 }
 
+// ScheduleCalendar contains parser-derived constraints, never browser-parsed cron.
+type ScheduleCalendar struct {
+	Minutes, Hours, DaysOfMonth, Months, Weekdays []uint32
+	DayMatch                                      ScheduleDayMatch
+}
+
+type ScheduleDayMatch uint8
+
+const (
+	ScheduleDaysAnd ScheduleDayMatch = iota + 1
+	ScheduleDaysOr
+)
+
+// PreviewScheduleCalendar uses the same calendar and future-only search as saves.
+func PreviewScheduleCalendar(expression, timezone string, boundary time.Time) (ScheduleCalendar, time.Time, error) {
+	parsed, err := parseSchedule(expression, timezone)
+	if err != nil {
+		return ScheduleCalendar{}, time.Time{}, err
+	}
+	next, err := (ScheduleDefinition{Cron: expression, Timezone: timezone}).NextRun(boundary)
+	if err != nil {
+		return ScheduleCalendar{}, time.Time{}, err
+	}
+	spec := parsed.(*cron.SpecSchedule)
+	values := func(bits uint64, first, last uint32) []uint32 {
+		result := make([]uint32, 0, last-first+1)
+		for n := first; n <= last; n++ {
+			if bits&(uint64(1)<<n) != 0 {
+				result = append(result, n)
+			}
+		}
+		return result
+	}
+	// robfig/cron reserves bit 63 for a wildcard. Its dayMatches method uses
+	// AND when either day field has this bit, and OR for two restricted fields.
+	// Keep this aligned with the pinned parser if its representation changes.
+	match := ScheduleDaysOr
+	if (spec.Dom|spec.Dow)&(uint64(1)<<63) != 0 {
+		match = ScheduleDaysAnd
+	}
+	return ScheduleCalendar{Minutes: values(spec.Minute, 0, 59), Hours: values(spec.Hour, 0, 23), DaysOfMonth: values(spec.Dom, 1, 31), Months: values(spec.Month, 1, 12), Weekdays: values(spec.Dow, 0, 6), DayMatch: match}, next, nil
+}
+
 type Schedule struct {
 	Definition            ScheduleDefinition `json:"definition"`
 	ConfigurationRevision uint64             `json:"configuration_revision"`

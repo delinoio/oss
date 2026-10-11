@@ -13,6 +13,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type scheduleReceipt struct {
@@ -565,4 +566,28 @@ func disableReferencedSchedules(tx *store.Tx, kind domain.Kind, id domain.ID) er
 		}
 	}
 	return nil
+}
+
+// PreviewScheduleCalendar has no store transaction or scheduling side effect.
+func (s *Service) PreviewScheduleCalendar(ctx context.Context, req *connect.Request[pb.PreviewScheduleCalendarRequest]) (*connect.Response[pb.PreviewScheduleCalendarResponse], error) {
+	correlation := req.Header().Get(rpc.CorrelationHeader)
+	if _, err := scheduleActor(ctx); err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	boundary := time.Now().UTC()
+	calendar, next, err := domain.PreviewScheduleCalendar(req.Msg.Cron, req.Msg.Timezone, boundary)
+	if err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	match := pb.ScheduleDayMatch_SCHEDULE_DAY_MATCH_AND
+	if calendar.DayMatch == domain.ScheduleDaysOr {
+		match = pb.ScheduleDayMatch_SCHEDULE_DAY_MATCH_OR
+	}
+	response := connect.NewResponse(&pb.PreviewScheduleCalendarResponse{
+		CalculatedAt: timestamppb.New(boundary), NextRunAt: timestamppb.New(next),
+		Calendar: &pb.ScheduleCalendar{Minutes: calendar.Minutes, Hours: calendar.Hours, DaysOfMonth: calendar.DaysOfMonth, Months: calendar.Months, Weekdays: calendar.Weekdays, DayMatch: match},
+	})
+	s.logger.DebugContext(ctx, "schedule_calendar_previewed", "correlation_id", correlation)
+	rpc.CopyCorrelation(response, req.Header())
+	return response, nil
 }
