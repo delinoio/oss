@@ -56,8 +56,19 @@ export function useMachineSettingsController(
     read?: typeof result.data;
     readUpdatedAt: number;
     acknowledged?: Resource;
-  }>({ id: initial.id, readUpdatedAt: 0 });
-  const retained = observation.id === initial.id ? observation : undefined;
+  }>(() => ({
+    id: initial.id,
+    read: result.data,
+    readUpdatedAt: result.dataUpdatedAt,
+  }));
+  const retained =
+    observation.id === initial.id
+      ? observation
+      : {
+          id: initial.id,
+          read: result.data,
+          readUpdatedAt: result.dataUpdatedAt,
+        };
   let current = [retained?.current, initial, acknowledged]
     .filter(exact)
     .reduce<Resource | undefined>(

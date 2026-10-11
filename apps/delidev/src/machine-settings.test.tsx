@@ -40,18 +40,20 @@ function machine(
   });
 }
 
-function fixture(initial = machine()) {
+function fixture(
+  initial = machine(),
+  client = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, staleTime: Infinity },
+      mutations: { retry: false },
+    },
+  }),
+) {
   const read = vi.fn(async () => ({ resource: initial }));
   const discover = vi.fn(async (_request: unknown) => ({ machine: initial }));
   const transport = createRouterTransport((router) => {
     router.service(ResourceService, { getResource: read });
     router.service(WorkerService, { discoverHarnesses: discover });
-  });
-  const client = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false, staleTime: Infinity },
-      mutations: { retry: false },
-    },
   });
   const wrapper = ({ children }: PropsWithChildren) => (
     <TransportProvider transport={transport}>
@@ -223,11 +225,15 @@ it("starts a new same-ID opening from its own connection observation", async () 
   await original.ready();
   await original.refresh(machine(original.initial.id, 9n, later));
   original.unmount();
-  original.client.clear();
-  const reopened = fixture(machine(original.initial.id, 7n, earlier));
-  await reopened.ready();
+  const reopened = fixture(
+    machine(original.initial.id, 7n, earlier),
+    original.client,
+  );
+  await waitFor(() => expect(reopened.result.current.loading).toBe(false));
   expect(reopened.result.current.current?.revision).toBe(7n);
   expect(reopened.result.current.data.last_seen).toBe(earlier);
   expect(reopened.result.current.edit).toBeUndefined();
   expect(reopened.result.current.pending).toBe(false);
+  await reopened.refresh(machine(original.initial.id, 7n, later));
+  expect(reopened.result.current.data.last_seen).toBe(later);
 });
