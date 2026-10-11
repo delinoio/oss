@@ -48,14 +48,20 @@ export function InboxBadgePresentation({
   // connection registry. Only acknowledged exact read-state mutations refresh.
   useRetainedMutationNotifications((key) => {
     if (key.startsWith(sessionInboxReadPrefix)) {
-      for (const schema of [InboxQuery.listInbox, InboxQuery.getInboxEntry])
-        void queryClient.invalidateQueries({
-          queryKey: createConnectQueryKey({
-            schema,
-            transport,
-            cardinality: undefined,
-          }),
-        });
+      void queryClient.invalidateQueries({
+        queryKey: createConnectQueryKey({
+          schema: InboxQuery.listInbox,
+          transport,
+          cardinality: undefined,
+        }),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: createConnectQueryKey({
+          schema: InboxQuery.getInboxEntry,
+          transport,
+          cardinality: undefined,
+        }),
+      });
     }
     if (key.startsWith("inbox-read:") || key.startsWith(sessionInboxReadPrefix))
       void queryClient.invalidateQueries({
