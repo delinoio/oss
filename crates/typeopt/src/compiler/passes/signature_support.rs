@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use ts_goport::prelude::*;
 
-use super::super::analysis::{Ctx, RefKind, skip_outer, walk_up_outer};
+use super::super::analysis::{Ctx, Ref, RefKind, skip_outer, walk_up_outer};
 use crate::plan::{Edit, FileEdit, Reason};
 
 /// A named function binding that a closed call graph may own.
@@ -94,7 +94,7 @@ pub(super) fn functions(ctx: &mut Ctx) -> Vec<Function> {
                 continue;
             }
             let exported = has_syntactic_modifier(statement, ModifierFlags::EXPORT)
-                || ctx.refs(symbol).iter().any(|r| r.kind == RefKind::Alias);
+                || ctx.refs(symbol).iter().any(is_alias);
             result.push(Function {
                 file,
                 node: function,
@@ -168,6 +168,12 @@ impl Observable {
                                     modules.insert(target);
                                 }
                             }
+                            Some(a) if a.kind() == SyntaxKind::TemplateExpression => {
+                                match template_matches(ctx, file, a) {
+                                    Some(matched) => modules.extend(matched),
+                                    None => all = true,
+                                }
+                            }
                             _ => all = true,
                         }
                     }
@@ -183,12 +189,59 @@ impl Observable {
                 }
             }
         }
+        tracing::debug!(
+            namespace_modules = modules.len(),
+            unresolved_dynamic_import = all,
+            "namespace-observable modules computed"
+        );
         Self { modules, all }
     }
 
     pub fn contains(&self, file: usize) -> bool {
         self.all || self.modules.contains(&file)
     }
+}
+
+/// Application modules a template `import()` specifier such as
+/// `./locales/${code}.json` may load: paths under the static relative
+/// prefix that end with the static suffix (with or without an extension).
+/// `None` when the prefix is not relative.
+fn template_matches(ctx: &Ctx, file: usize, template: Node) -> Option<Vec<usize>> {
+    let prefix = template.head().text();
+    let spans = template.template_spans().nodes();
+    let suffix = spans.last()?.literal().text();
+    if !(prefix.starts_with("./") || prefix.starts_with("../")) {
+        return None;
+    }
+    let importer = std::path::Path::new(&ctx.files[file].name).parent()?;
+    let mut base: Vec<&str> = importer
+        .to_str()?
+        .split('/')
+        .filter(|c| !c.is_empty())
+        .collect();
+    let (directory, partial) = prefix.rsplit_once('/')?;
+    for component in directory.split('/') {
+        match component {
+            "" | "." => {}
+            ".." => {
+                base.pop()?;
+            }
+            other => base.push(other),
+        }
+    }
+    let root = format!("/{}/{}", base.join("/"), partial);
+    let mut matched = Vec::new();
+    for (index, info) in ctx.files.iter().enumerate() {
+        let path = info.name.as_str();
+        if !path.starts_with(&root) {
+            continue;
+        }
+        let stem = path.rsplit_once('.').map_or(path, |(stem, _)| stem);
+        if suffix.is_empty() || path.ends_with(suffix) || stem.ends_with(suffix) {
+            matched.push(index);
+        }
+    }
+    Some(matched)
 }
 
 /// Application module index a module specifier resolves to.
@@ -203,6 +256,29 @@ pub(super) fn target_module(ctx: &mut Ctx, specifier: Node) -> Option<usize> {
     let declaration = ctx.checker.sym(symbol).declarations.first().copied()?;
     let file = get_source_file_of_node(declaration);
     ctx.file_of(&source_file_info(file).file_name)
+}
+
+/// Whether a reference is a module alias: an import or export specifier
+/// or import clause. Export specifier names count as declarations in the
+/// shared index, but they only re-expose the binding.
+pub(super) fn is_alias(r: &Ref) -> bool {
+    r.kind == RefKind::Alias
+        || (r.kind == RefKind::Declaration && r.node.parent().kind() == SyntaxKind::ExportSpecifier)
+}
+
+/// Whether a reference is the value read of a shorthand property `{ x }`,
+/// which the shared index records as the property's declaration name.
+pub(super) fn is_shorthand_read(r: &Ref) -> bool {
+    r.kind == RefKind::Declaration && {
+        let parent = r.node.parent();
+        parent.kind() == SyntaxKind::ShorthandPropertyAssignment && parent.name() == r.node
+    }
+}
+
+/// Whether a reference reads a value at runtime: a plain read or a
+/// shorthand property value.
+pub(super) fn is_value_read(r: &Ref) -> bool {
+    r.kind == RefKind::Read || is_shorthand_read(r)
 }
 
 /// Proves that `function` is closed and returns its complete call-site set.
@@ -233,7 +309,11 @@ pub(super) fn closure(
     let mut declared = false;
     for r in ctx.refs(symbol).to_vec() {
         match r.kind {
+            _ if is_alias(&r) => {}
             RefKind::Declaration => {
+                if is_shorthand_read(&r) {
+                    return Err(Reason::Escapes);
+                }
                 if r.node != function.name {
                     return Err(Reason::DeclarationMerging);
                 }
@@ -545,6 +625,37 @@ pub(super) fn is_movable_literal(node: Node) -> bool {
     Literal::of(node).is_some() && skip_outer(node) == node
 }
 
+/// Whether `as const` leaves the type of an array element unchanged: the
+/// element is not itself a literal form that a const context narrows or
+/// makes readonly.
+fn const_neutral(node: Node) -> bool {
+    let node = skip_parentheses(node);
+    match node.kind() {
+        SyntaxKind::StringLiteral
+        | SyntaxKind::NoSubstitutionTemplateLiteral
+        | SyntaxKind::TemplateExpression
+        | SyntaxKind::NumericLiteral
+        | SyntaxKind::BigIntLiteral
+        | SyntaxKind::TrueKeyword
+        | SyntaxKind::FalseKeyword
+        | SyntaxKind::PrefixUnaryExpression
+        | SyntaxKind::ArrayLiteralExpression
+        | SyntaxKind::ObjectLiteralExpression
+        | SyntaxKind::ConditionalExpression
+        | SyntaxKind::ArrowFunction
+        | SyntaxKind::FunctionExpression
+        | SyntaxKind::ClassExpression => false,
+        SyntaxKind::BinaryExpression => !matches!(
+            node.operator_token().kind(),
+            SyntaxKind::BarBarToken
+                | SyntaxKind::AmpersandAmpersandToken
+                | SyntaxKind::QuestionQuestionToken
+                | SyntaxKind::CommaToken
+        ),
+        _ => true,
+    }
+}
+
 /// Rewrites one call so that the arguments flagged in `remove` are no longer
 /// passed while every removed argument with effects still evaluates exactly
 /// once in its original order. Kept arguments keep their exact text, so
@@ -573,7 +684,7 @@ pub(super) fn rewrite_arguments(
     let kept: Vec<usize> = (0..args.len()).filter(|&i| !flag(i)).collect();
     let last_kept = kept.last().copied();
     // Each effectful removed argument becomes a discarded comma operand.
-    let mut operand = |edits: &mut Vec<FileEdit>, r: usize, open_group: bool| {
+    let operand = |edits: &mut Vec<FileEdit>, r: usize, open_group: bool| {
         let (open, close) = discarded(ctx, args[r]);
         let prefix = if open_group { format!("({open}") } else { open };
         if !prefix.is_empty() {
@@ -632,17 +743,7 @@ pub(super) fn rewrite_arguments(
                     format!(", {literal})"),
                 ));
             }
-            Some(p)
-                if Literal::of(args[p]).is_some()
-                    || matches!(
-                        skip_outer(args[p]).kind(),
-                        SyntaxKind::Identifier
-                            | SyntaxKind::PropertyAccessExpression
-                            | SyntaxKind::ElementAccessExpression
-                            | SyntaxKind::CallExpression
-                            | SyntaxKind::ThisKeyword
-                    ) =>
-            {
+            Some(p) if const_neutral(args[p]) => {
                 // `([kept, r1, r2] as const)[0]`: array elements evaluate in
                 // order and the own element `0` yields the kept value.
                 edits.push(FileEdit::insert(&name, items[p].0, "(["));

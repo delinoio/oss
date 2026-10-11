@@ -38,10 +38,10 @@ use anyhow::Result;
 use ts_goport::prelude::*;
 
 use super::{
-    super::analysis::{Ctx, RefKind, skip_outer},
+    super::analysis::{Ctx, RefKind, skip_outer, walk_up_outer},
     signature_support::{
         CallSite, Function, Literal, Observable, closure, delete_items, finalize, functions,
-        identifier_texts, mentions_type_parameter, target_module, within,
+        identifier_texts, is_alias, is_value_read, mentions_type_parameter, target_module, within,
     },
 };
 use crate::{
@@ -62,7 +62,7 @@ pub(in crate::compiler) fn plan(ctx: &mut Ctx, enabled: &PassSet, out: &mut Plan
     for function in &functions {
         crate::app::check_cancelled()?;
         let nominated = nominate(ctx, function);
-        if nominated.is_empty() {
+        if nominated.is_empty() || !literal_opportunity(ctx, function, &nominated) {
             continue;
         }
         let key = format!("{PASS}:{}", function.ident);
@@ -118,6 +118,30 @@ pub(in crate::compiler) fn plan(ctx: &mut Ctx, enabled: &PassSet, out: &mut Plan
     Ok(())
 }
 
+/// Whether direct calls pass at least two distinct literals at a nominated
+/// position. Only such functions are worth reporting when preserved.
+fn literal_opportunity(ctx: &Ctx, function: &Function, nominated: &[usize]) -> bool {
+    let calls: Vec<Node> = ctx
+        .refs(function.symbol)
+        .iter()
+        .filter(|r| r.kind == RefKind::Call)
+        .map(|r| walk_up_outer(r.node).parent())
+        .filter(|c| c.kind() == SyntaxKind::CallExpression)
+        .collect();
+    nominated.iter().any(|&index| {
+        let mut keys = HashSet::new();
+        for call in &calls {
+            let args = call.arguments();
+            if index < args.len()
+                && let Some(value) = Literal::of(args.get(index))
+            {
+                keys.insert(value.key());
+            }
+        }
+        keys.len() >= 2
+    })
+}
+
 /// Parameters whose declared type is a finite union of primitive literals
 /// and which are only read inside the body.
 fn nominate(ctx: &mut Ctx, function: &Function) -> Vec<usize> {
@@ -158,11 +182,11 @@ fn nominate(ctx: &mut Ctx, function: &Function) -> Vec<usize> {
             continue;
         }
         let only_reads = ctx.refs(symbol).iter().all(|r| match r.kind {
-            RefKind::Declaration => r.node == name,
-            RefKind::Read => {
+            _ if is_value_read(r) => {
                 let at = Ctx::start(r.node);
                 !(at >= span.0 && at < span.1)
             }
+            RefKind::Declaration => r.node == name,
             _ => false,
         });
         if only_reads {
@@ -261,7 +285,7 @@ fn specialize(
     let reads: HashSet<Node> = ctx
         .refs(symbol)
         .iter()
-        .filter(|r| r.kind == RefKind::Read)
+        .filter(|r| is_value_read(r))
         .map(|r| r.node)
         .collect();
     let mut inside: HashMap<Node, Passed> = HashMap::new();
@@ -282,6 +306,9 @@ fn specialize(
         }
     }
     let cast_type = ctx.text(file, parameter.type_()).to_owned();
+    let mut identifiers = Vec::new();
+    crate::compiler::collect(statement, &mut identifiers);
+    identifiers.retain(|n| n.kind() == SyntaxKind::Identifier);
     // Render one clone per value with placeholders for names.
     let mut texts: Vec<(Literal, String)> = Vec::new();
     let mut folded_any = false;
@@ -295,6 +322,7 @@ fn specialize(
             calls: &inside,
             index,
             folded: 0,
+            identifiers: &identifiers,
         };
         let text = render
             .declaration(function, &params)
@@ -421,7 +449,7 @@ fn specialize(
     // Make clones reachable from importing modules.
     let clone_names: Vec<String> = order[1..].iter().map(|&g| names[g].clone()).collect();
     for r in ctx.refs(function.symbol).to_vec() {
-        if r.kind != RefKind::Alias {
+        if !is_alias(&r) {
             continue;
         }
         let specifier = r.node.parent();
@@ -472,7 +500,7 @@ fn specialize(
             && !ctx
                 .refs(function.symbol)
                 .iter()
-                .any(|r| r.kind == RefKind::Alias && r.file == module)
+                .any(|r| is_alias(r) && r.file == module)
         {
             return Err(Reason::UnsupportedSyntax);
         }
@@ -528,6 +556,8 @@ struct Render<'a, 'c> {
     calls: &'a HashMap<Node, Passed>,
     index: usize,
     folded: usize,
+    /// Identifiers of the whole declaration, for scope checks.
+    identifiers: &'a [Node],
 }
 
 impl Render<'_, '_> {
@@ -772,8 +802,8 @@ impl Render<'_, '_> {
         }
         let text = self.render(chosen)?;
         if chosen.kind() == SyntaxKind::Block {
-            let lexical = chosen.statements().iter().any(declares_lexically);
-            if in_list && !lexical && text.len() >= 2 {
+            let statements = chosen.statements().to_vec();
+            if in_list && self.unwrappable(&statements, chosen) && text.len() >= 2 {
                 return Some(text[1..text.len() - 1].trim().to_owned());
             }
             return Some(text);
@@ -781,6 +811,38 @@ impl Render<'_, '_> {
         // A bare statement in a nested position keeps braces so that an
         // inner `if` cannot capture a following `else`.
         Some(if in_list { text } else { format!("{{{text}}}") })
+    }
+
+    /// Whether `statements`, currently scoped by `region`, can move into the
+    /// enclosing statement list: their block-scoped bindings are plain
+    /// `let`/`const` names that nothing else in the declaration mentions.
+    fn unwrappable(&self, statements: &[Node], region: Node) -> bool {
+        let mut names = HashSet::new();
+        for &statement in statements {
+            if !declares_lexically(statement) {
+                continue;
+            }
+            if statement.kind() != SyntaxKind::VariableStatement
+                || statement
+                    .declaration_list()
+                    .flags()
+                    .intersects(NodeFlags::USING)
+            {
+                return false;
+            }
+            for declaration in statement.declaration_list().declarations().nodes().iter() {
+                if declaration.name().kind() != SyntaxKind::Identifier {
+                    return false;
+                }
+                names.insert(declaration.name().text());
+            }
+        }
+        if names.is_empty() {
+            return true;
+        }
+        self.identifiers
+            .iter()
+            .all(|&n| within(n, region) || !names.contains(n.text()))
     }
 
     /// Folds `switch (parameter)` with literal case tests.
@@ -844,9 +906,8 @@ impl Render<'_, '_> {
                 break;
             }
         }
-        let lexical = statements.iter().any(|&s| declares_lexically(s));
         let body = parts.join("\n");
-        Some(if in_list && !lexical {
+        Some(if in_list && self.unwrappable(&statements, node) {
             body
         } else {
             format!("{{{body}}}")
@@ -857,7 +918,9 @@ impl Render<'_, '_> {
     fn redirect(&mut self, call: Node) -> Option<String> {
         let target = match self.calls.get(&call)? {
             Passed::Value(value) => value_placeholder(value),
-            Passed::Forward => value_placeholder(&self.value),
+            // Forwarding the parameter calls the clone itself, so clones
+            // that differ only in their own value stay shareable.
+            Passed::Forward => SELF_NAME.to_owned(),
         };
         let callee = call.expression();
         let args: Vec<Node> = call.arguments().to_vec();

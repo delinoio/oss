@@ -35,7 +35,7 @@ use super::{
     super::analysis::{Ctx, RefKind, skip_outer, walk_up_outer},
     signature_support::{
         CallSite, Function, Literal, Observable, closure, delete_items, enclosing_function,
-        finalize, functions, mentions_type_parameter, rewrite_arguments, within,
+        finalize, functions, is_value_read, mentions_type_parameter, rewrite_arguments, within,
     },
 };
 use crate::{
@@ -45,18 +45,34 @@ use crate::{
 
 const PASS: PassId = PassId::SignatureReduction;
 
+/// A parameter-removal variant: key kind, removed parameters and the literal
+/// text replacing each propagated constant parameter.
+type Variant = (&'static str, Vec<bool>, Vec<Option<String>>);
+
 pub(in crate::compiler) fn plan(ctx: &mut Ctx, _enabled: &PassSet, out: &mut Plan) -> Result<()> {
     let observable = Observable::compute(ctx);
     let functions = functions(ctx);
     let (mut parameters, mut results) = (0usize, 0usize);
+    let mut open: std::collections::BTreeMap<Reason, usize> = std::collections::BTreeMap::new();
+    let mut closed = 0usize;
     for function in &functions {
         crate::app::check_cancelled()?;
         let params = function.parameters();
         let unused = unused_parameters(ctx, function, &params);
         let calls = match closure(ctx, function, &observable) {
-            Ok(calls) => calls,
+            Ok(calls) => {
+                closed += 1;
+                calls
+            }
             Err(reason) => {
-                if unused.iter().any(|&u| u) {
+                *open.entry(reason).or_default() += 1;
+                // Report only directly called functions: a callback with an
+                // unused parameter is not a signature-reduction opportunity.
+                let called = ctx
+                    .refs(function.symbol)
+                    .iter()
+                    .any(|r| r.kind == RefKind::Call);
+                if called && unused.iter().any(|&u| u) {
                     out.skips.push(ctx.skip(
                         PASS,
                         key("params", function),
@@ -94,7 +110,7 @@ pub(in crate::compiler) fn plan(ctx: &mut Ctx, _enabled: &PassSet, out: &mut Pla
         let constants = constant_parameters(ctx, function, &params, &calls, &unused);
         let has_unused = unused.iter().any(|&u| u);
         let has_constants = constants.iter().any(Option::is_some);
-        let mut variants: Vec<(&str, Vec<bool>, Vec<Option<String>>)> = Vec::new();
+        let mut variants: Vec<Variant> = Vec::new();
         if has_unused || has_constants {
             let all: Vec<bool> = (0..params.len())
                 .map(|i| unused[i] || constants[i].is_some())
@@ -129,6 +145,8 @@ pub(in crate::compiler) fn plan(ctx: &mut Ctx, _enabled: &PassSet, out: &mut Pla
     tracing::debug!(
         pass = %PASS,
         functions = functions.len(),
+        closed,
+        open = ?open,
         parameter_candidates = parameters,
         result_candidates = results,
         "signature reduction planned"
@@ -198,13 +216,13 @@ fn constant_parameters(
             }
             let refs = ctx.refs(symbol).to_vec();
             if refs.iter().any(|r| match r.kind {
-                RefKind::Declaration => r.node != name,
-                RefKind::Read => list.is_some_and(|(s, e)| {
+                _ if is_value_read(r) => list.is_some_and(|(s, e)| {
                     // A read inside the parameter list may observe the
                     // parameter in its temporal dead zone.
                     let at = Ctx::start(r.node);
                     at >= s && at < e
                 }),
+                RefKind::Declaration => r.node != name,
                 _ => true,
             }) {
                 return None;
@@ -293,7 +311,7 @@ fn parameter_candidate(
         let replacement = format!("({literal} as {ty})");
         let symbol = ctx.resolve(p.name());
         for r in ctx.refs(symbol).to_vec() {
-            if r.kind != RefKind::Read {
+            if !is_value_read(&r) {
                 continue;
             }
             let parent = r.node.parent();
