@@ -32,7 +32,7 @@ func (u NativeAccountingUnit) Validate() error {
 	if !ModelKeyMatchesSource(o.ModelID, o.ProviderID, o.SubscriptionService) {
 		return invalidObservation()
 	}
-	for _, id := range []ID{u.SourceID, u.RequestID, u.SessionID, u.InputID, o.ExecutionID, o.AccountID, o.ConnectionID, o.ProviderID} {
+	for _, id := range []ID{u.SourceID, u.RequestID, u.SessionID, u.InputID, o.ExecutionID, o.AccountID, o.ConnectionID} {
 		if id.Validate() != nil {
 			return invalidClaudeUsage()
 		}
@@ -41,12 +41,21 @@ func (u NativeAccountingUnit) Validate() error {
 		return invalidClaudeUsage()
 	}
 	if u.Kind == OpenCodeStep {
+		// OpenCode Go has service identity and no API Provider. Keep this
+		// exception closed to Go; other native input families retain API identity.
+		if o.SubscriptionService == "" {
+			if o.ProviderID.Validate() != nil {
+				return invalidObservation()
+			}
+		} else if o.SubscriptionService != SubscriptionOpenCodeGo || o.ProviderID != "" {
+			return invalidObservation()
+		}
 		if u.OpenCode == nil || !reflect.ValueOf(u.Observation).IsZero() || o.Harness != OpenCode || (o.Version != "" && !ValidNativeVersionMetadata(o.Version)) || o.Sequence == 0 || NativeIdentity(o.ThreadID).Validate(OpenCode, NativeThreadIdentity) != nil || NativeIdentity(o.TurnID).Validate(OpenCode, NativeTurnIdentity) != nil || u.OpenCode.Usage.Source != OpenCodeStepUsage || u.OpenCode.Usage.Validate() != nil {
 			return invalidObservation()
 		}
 		return nil
 	}
-	if u.OpenCode != nil || u.Kind != ClaudeMainLoopInput || o.Harness != ClaudeCode || (o.Version != "" && !ValidNativeVersionMetadata(o.Version)) || o.Sequence == 0 || NativeIdentity(o.ThreadID).Validate(ClaudeCode, NativeThreadIdentity) != nil || NativeIdentity(o.TurnID).Validate(ClaudeCode, NativeTurnIdentity) != nil || o.Usage.Source != ClaudeInputResultUsage || o.Usage.Validate() != nil {
+	if o.ProviderID.Validate() != nil || o.SubscriptionService != "" || u.OpenCode != nil || u.Kind != ClaudeMainLoopInput || o.Harness != ClaudeCode || (o.Version != "" && !ValidNativeVersionMetadata(o.Version)) || o.Sequence == 0 || NativeIdentity(o.ThreadID).Validate(ClaudeCode, NativeThreadIdentity) != nil || NativeIdentity(o.TurnID).Validate(ClaudeCode, NativeTurnIdentity) != nil || o.Usage.Source != ClaudeInputResultUsage || o.Usage.Validate() != nil {
 		return invalidClaudeUsage()
 	}
 	return nil
@@ -150,7 +159,8 @@ func UnpricedNativeEstimate() NativeEstimate {
 	return NativeEstimate{Coverage: EstimateUnavailable, Input: c, CacheRead: c, CacheWrite: c, Output: c, Reasoning: NativeEstimateComponent{State: ComponentNotApplicable}}
 }
 func EstimateNativeInput(unit NativeAccountingUnit, price PricingVersion) (NativeEstimate, error) {
-	if unit.Validate() != nil || price.ID.Validate() != nil || price.Basis.Validate() != nil || price.ModelID != unit.Attribution().ModelID || price.ProviderID != unit.Attribution().ProviderID {
+	a := unit.Attribution()
+	if unit.Validate() != nil || price.ID.Validate() != nil || price.Basis.Validate() != nil || !price.ValidIdentity() || price.ModelID != a.ModelID || price.ProviderID != a.ProviderID || price.SubscriptionService != a.SubscriptionService {
 		return NativeEstimate{}, invalidPricing()
 	}
 	c := unit.Counts()
@@ -267,6 +277,7 @@ func (t *NativeAccountingTotals) Add(unit NativeAccountingUnit, e NativeEstimate
 
 type NativeAccountingGroup struct {
 	SessionID, ProjectID, AccountID, ProviderID, ModelID ID
+	SubscriptionService                                  SubscriptionService
 	Totals                                               NativeAccountingTotals
 }
 type NativeAccountingDay struct {

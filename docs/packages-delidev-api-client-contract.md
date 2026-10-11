@@ -455,3 +455,13 @@ Current schema-4 Agent routes embed exact source/native identity and non-secret 
 ## Configuration name failure projection
 
 `ClientFailure.cause` optionally exposes the closed `FailureCause.ConfigurationNameConflict` value. The client projects it only from the existing typed ErrorDetail when its code is Conflict and its cause is exactly `configuration_name_conflict`. Unknown causes, other categories and raw transport messages cannot establish a name collision. Protocol declarations remain unchanged.
+
+## Schedule calendar preview
+
+`ScheduleQuery.previewScheduleCalendar` exposes the generated read-only RPC with
+only cron/timezone input, server calculation/next-run timestamps and typed sorted
+calendar constraints. Consumers preserve the closed AND/OR enum, exact draft and
+connection ownership. They localize normalized values without parsing cron or
+computing calendar instants. Unimplemented supports older servers without a new
+capability gate. Preview failure cannot authorize execution or modify retained
+save/retry bytes. Follow the [schedule contract](cmds-delidev-schedules-contract.md#unsaved-calendar-preview).

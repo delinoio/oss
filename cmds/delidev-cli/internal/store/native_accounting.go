@@ -49,7 +49,7 @@ func (t *Tx) PutClaudeAccounting(source, input, session, project domain.ID, o do
 	}
 	e := domain.UnpricedNativeEstimate()
 	var priceID any
-	if p != nil && p.ProviderID == o.ProviderID {
+	if p != nil && p.ProviderID == o.ProviderID && p.SubscriptionService == o.SubscriptionService {
 		e, err = domain.EstimateNativeInput(u, *p)
 		if err != nil {
 			return err
@@ -122,9 +122,6 @@ func (t *Tx) nativeAccountingSummary(f domain.UsageSelection, kind domain.Accoun
 			args = append(args, p.id)
 		}
 	}
-	if f.SubscriptionService != "" {
-		where += " AND 0"
-	}
 	if f.GeneralChat {
 		where += " AND project_id=''"
 	}
@@ -161,6 +158,7 @@ func (t *Tx) nativeAccountingSummary(f domain.UsageSelection, kind domain.Accoun
 	groups := map[string]*domain.NativeAccountingGroup{}
 	models := map[string]*domain.NativeAccountingGroup{}
 	prices := map[domain.ID]*domain.NativeAccountingPricing{}
+	selectedPrices := map[domain.ID]bool{}
 	for _, o := range originals {
 		if err := t.ctx.Err(); err != nil {
 			return domain.NativeAccountingSummary{}, storageError(err)
@@ -199,14 +197,20 @@ func (t *Tx) nativeAccountingSummary(f domain.UsageSelection, kind domain.Accoun
 		if string(left) != string(right) {
 			return domain.NativeAccountingSummary{}, corrupt()
 		}
+		// Service identity stays in the immutable source body. Validate the row
+		// and historical estimate before filtering; no migration or Provider
+		// substitute is needed to read service-bound accounting.
+		if f.SubscriptionService != "" && a.SubscriptionService != f.SubscriptionService {
+			continue
+		}
 		v.Totals.Add(u, e)
-		key := string(u.SessionID) + ":" + string(u.Attribution().AccountID) + ":" + string(u.Attribution().ProviderID) + ":" + string(u.Attribution().ModelID)
+		key := string(u.SessionID) + ":" + string(a.AccountID) + ":" + string(a.ProviderID) + ":" + string(a.SubscriptionService) + ":" + string(a.ModelID)
 		g := groups[key]
 		if g == nil {
 			if len(groups) >= maxUsageGroups {
 				return domain.NativeAccountingSummary{}, usageReadLimit()
 			}
-			g = &domain.NativeAccountingGroup{SessionID: u.SessionID, ProjectID: u.ProjectID, AccountID: u.Attribution().AccountID, ProviderID: u.Attribution().ProviderID, ModelID: u.Attribution().ModelID}
+			g = &domain.NativeAccountingGroup{SessionID: u.SessionID, ProjectID: u.ProjectID, AccountID: a.AccountID, ProviderID: a.ProviderID, SubscriptionService: a.SubscriptionService, ModelID: a.ModelID}
 			groups[key] = g
 		}
 		if g.ProjectID != u.ProjectID {
@@ -214,6 +218,7 @@ func (t *Tx) nativeAccountingSummary(f domain.UsageSelection, kind domain.Accoun
 		}
 		g.Totals.Add(u, e)
 		if price != nil {
+			selectedPrices[o.price] = true
 			price.Totals.Add(u, e)
 			price.Input.Add(e.Input)
 			price.CacheRead.Add(e.CacheRead)
@@ -228,13 +233,13 @@ func (t *Tx) nativeAccountingSummary(f domain.UsageSelection, kind domain.Accoun
 			}
 			v.Days[i].Totals.Add(u, e)
 		}
-		modelKey := string(u.Attribution().ProviderID) + ":" + string(u.Attribution().ModelID)
+		modelKey := string(a.ProviderID) + ":" + string(a.SubscriptionService) + ":" + string(a.ModelID)
 		m := models[modelKey]
 		if m == nil {
 			if len(models) >= maxUsageGroups {
 				return domain.NativeAccountingSummary{}, usageReadLimit()
 			}
-			m = &domain.NativeAccountingGroup{ProviderID: u.Attribution().ProviderID, ModelID: u.Attribution().ModelID}
+			m = &domain.NativeAccountingGroup{ProviderID: a.ProviderID, SubscriptionService: a.SubscriptionService, ModelID: a.ModelID}
 			models[modelKey] = m
 		}
 		m.Totals.Add(u, e)
@@ -244,16 +249,19 @@ func (t *Tx) nativeAccountingSummary(f domain.UsageSelection, kind domain.Accoun
 	}
 	sort.Slice(v.Groups, func(i, j int) bool {
 		a, b := v.Groups[i], v.Groups[j]
-		return string(a.SessionID)+string(a.AccountID)+string(a.ProviderID)+string(a.ModelID) < string(b.SessionID)+string(b.AccountID)+string(b.ProviderID)+string(b.ModelID)
+		return string(a.SessionID)+string(a.AccountID)+string(a.ProviderID)+string(a.SubscriptionService)+string(a.ModelID) < string(b.SessionID)+string(b.AccountID)+string(b.ProviderID)+string(b.SubscriptionService)+string(b.ModelID)
 	})
 	for _, m := range models {
 		v.Models = append(v.Models, *m)
 	}
 	sort.Slice(v.Models, func(i, j int) bool {
 		a, b := v.Models[i], v.Models[j]
-		return string(a.ProviderID)+string(a.ModelID) < string(b.ProviderID)+string(b.ModelID)
+		return string(a.ProviderID)+string(a.SubscriptionService)+string(a.ModelID) < string(b.ProviderID)+string(b.SubscriptionService)+string(b.ModelID)
 	})
-	for _, p := range prices {
+	for id, p := range prices {
+		if !selectedPrices[id] {
+			continue
+		}
 		v.Pricing = append(v.Pricing, *p)
 	}
 	sort.Slice(v.Pricing, func(i, j int) bool { return v.Pricing[i].Pricing.ID < v.Pricing[j].Pricing.ID })
@@ -289,7 +297,7 @@ func (t *Tx) PutOpenCodeAccounting(source, input, session, project domain.ID, o 
 	}
 	e := domain.UnpricedNativeEstimate()
 	var priceID any
-	if p != nil && p.ProviderID == o.ProviderID {
+	if p != nil && p.ProviderID == o.ProviderID && p.SubscriptionService == o.SubscriptionService {
 		e, err = domain.EstimateNativeInput(u, *p)
 		if err != nil {
 			return err

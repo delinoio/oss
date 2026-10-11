@@ -22,6 +22,15 @@ Execution requires both independently negotiated capabilities, the same account 
 
 Settings appends OpenCode Go / For OpenCode to existing flat service rows with licensed local OpenCode artwork. Connect uses the category-owned name/key form, default OpenCode Go alias, masked key, accessible reveal, API-key focus and explicit Console link. Exact uncertain requests and partial create results retain their original controller until category disposal; presentation dismissal does not manufacture a new account. Manage connection and explicit Disconnect use the shared original-key cleanup flow. English/Korean and theme/reflow semantics remain shared. Quota is unavailable: no quota bars, refresh, reset credits or native subscription login actions.
 
+OpenCode step-finish usage and its accounting unit publish in one original
+receipt transaction. Both retain `opencode_go`, the original Account, connection
+and source model key with an empty Provider ID. Accounting groups, service filters
+and historical price readers preserve that complete source identity. API
+OpenCode steps still require their original valid Provider UUID with no service;
+missing, foreign or mixed identities reject without retaining partial usage or
+accounting. Source replay and conflicting steps preserve the existing immutable
+history and exact category counts. No synthetic Provider or migration is added.
+
 ### Project requirements
 
 - The feature OpenCode Go/Go Plus follows `cmds-delidev-opencode-go-subscription-contract.md`. Preserve identity 4, System 54 and Worker 28 with System 52 Project behavior ownership. Only the exact OpenCode key-backed service may use the fixed Go Chat Completions profile and original accepted native-session header. Reuse protected AccountAPI receipts, joined revocation and confirmed independent cleanup; no native login, quota authority, paid connection validation or migration. Retain category-owned exact uncertain requests and immutable continuation/Fork attribution.

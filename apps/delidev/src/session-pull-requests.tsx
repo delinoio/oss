@@ -23,7 +23,15 @@ import {
   visiblePageIds,
 } from "./github-scroll";
 import { LocalizedText, copy, useLocale } from "./localization";
-import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 
 import {
   EntityKind,
@@ -34,11 +42,13 @@ import {
   type Resource,
   type UnlinkSessionPullRequestRequest,
 } from "@delinoio/delidev-api-client";
+import { PRReadLimiter, SessionPRStatus } from "./session-pr-state";
 import { document, text, type Document } from "./documents";
 import { bounded, date, positive, uuid } from "./github-query-model";
 import { useRetainedMutation, useRetainedMutationIntents } from "./mutation";
 import { OpenPRProblemHistory } from "./pr-problems";
 import { Problem } from "./ui";
+import { resolveScrollRoot } from "./scroll-continuation";
 
 const readOptions = {
   retry: false,
@@ -54,6 +64,7 @@ export function readSessionPR(
   const value = document(row);
   if (
     row.kind !== EntityKind.PULL_REQUEST ||
+    row.schemaVersion !== 1 ||
     row.sessionId !== sessionId ||
     !uuid(row.id) ||
     !uuid(row.projectId) ||
@@ -167,22 +178,100 @@ function PendingUnlinks({
   ) : null;
 }
 
+function useRowVisible(
+  row: RefObject<HTMLElement | null>,
+  root: RefObject<HTMLElement | null>,
+  active: boolean,
+) {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const element = row.current,
+      container = resolveScrollRoot(root.current);
+    if (!active || !element || !container) {
+      setVisible(false);
+      return;
+    }
+    const hidden = () =>
+      globalThis.document.visibilityState === "hidden" ||
+      Boolean(element.closest("[hidden], [inert], [aria-hidden='true']")) ||
+      (() => {
+        for (
+          let parent: HTMLElement | null = element;
+          parent;
+          parent = parent.parentElement
+        )
+          if (parent instanceof HTMLDetailsElement && !parent.open) return true;
+        return false;
+      })();
+    let intersecting = false;
+    const update = () => setVisible(active && intersecting && !hidden());
+    const boundsCheck = () => {
+      const viewport = container.getBoundingClientRect(),
+        position = element.getBoundingClientRect();
+      intersecting =
+        container.clientHeight > 0 &&
+        position.bottom > viewport.top &&
+        position.top < viewport.bottom;
+      update();
+    };
+    const observer =
+      typeof IntersectionObserver === "function"
+        ? new IntersectionObserver(
+            (entries) => {
+              const entry = entries.find((item) => item.target === element);
+              if (entry) {
+                intersecting =
+                  entry.isIntersecting && entry.intersectionRatio > 0;
+                update();
+              }
+            },
+            { root: container },
+          )
+        : undefined;
+    observer?.observe(element);
+    if (!observer) {
+      container.addEventListener("scroll", boundsCheck, { passive: true });
+      window.addEventListener("resize", boundsCheck);
+      boundsCheck();
+    }
+    globalThis.document.addEventListener("visibilitychange", update);
+    return () => {
+      observer?.disconnect();
+      if (!observer) {
+        container.removeEventListener("scroll", boundsCheck);
+        window.removeEventListener("resize", boundsCheck);
+      }
+      globalThis.document.removeEventListener("visibilitychange", update);
+    };
+  }, [active, root, row]);
+  return visible;
+}
+
 function LinkRow({
   row,
   value,
   sessionId,
   refreshed,
   diagnosticsTarget,
+  limiter,
+  active,
+  root,
 }: {
+  limiter: PRReadLimiter;
+  active: boolean;
+  root: RefObject<HTMLElement | null>;
   row: Resource;
   value: Document;
   sessionId: string;
   refreshed: () => void;
   diagnosticsTarget?: HTMLElement | null;
 }) {
+  const article = useRef<HTMLElement>(null);
+  const rowVisible = useRowVisible(article, root, active);
   const remove = usePRUnlink(sessionId, row.id, refreshed);
   return (
     <article
+      ref={article}
       aria-label={copy("session-pull-requests.linkedPr_299ef1", {
         v0: text(value.owner),
         v1: text(value.name),
@@ -190,6 +279,13 @@ function LinkRow({
       })}
     >
       <h4>
+        <SessionPRStatus
+          row={row}
+          association={value}
+          limiter={limiter}
+          active={active && rowVisible}
+          diagnosticsTarget={diagnosticsTarget}
+        />
         {text(value.owner)}/{text(value.name)}#{text(value.number)}
       </h4>
       <p>{text(value.title)}</p>
@@ -277,6 +373,7 @@ function RetainedLinks({
 }) {
   const active = useSessionActive();
   useLocale();
+  const limiter = useMemo(() => new PRReadLimiter(), []);
   const { root, bindRoot } = useGitHubScrollRoot();
   const validateBoundary = useStablePageRevisions(session.id);
   const request = useCallback(
@@ -392,6 +489,9 @@ function RetainedLinks({
               <LinkRow
                 key={row.id}
                 row={row}
+                limiter={limiter}
+                active={active && !blocked && !list.error && !list.loading}
+                root={root}
                 value={readSessionPR(row, session.id)!}
                 sessionId={session.id}
                 refreshed={refresh}
