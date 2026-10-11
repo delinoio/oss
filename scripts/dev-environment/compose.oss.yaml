@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:15-bookworm@sha256:5d1d70e254e3c5d7d76847a9deebb18478cd518df37abf6b278d4bdb1fe5d96c
+    image: postgres:15-bookworm@sha256:539ceaaae49b3a7c8a04467cf00cc6788d8e3f1675df41860d86eebc4c40524f
     environment:
       POSTGRES_DB: devhud
       POSTGRES_PASSWORD: devhud
@@ -16,7 +16,7 @@ services:
       retries: 30
 
   logto-database-init:
-    image: postgres:15-bookworm@sha256:5d1d70e254e3c5d7d76847a9deebb18478cd518df37abf6b278d4bdb1fe5d96c
+    image: postgres:15-bookworm@sha256:539ceaaae49b3a7c8a04467cf00cc6788d8e3f1675df41860d86eebc4c40524f
     command:
       - psql
       - --host=postgres
