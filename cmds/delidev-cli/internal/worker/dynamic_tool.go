@@ -177,7 +177,7 @@ func (c *CodexEventPublisher) publishDynamicReply(publicationCtx context.Context
 	if err != nil {
 		return publicationUncertain()
 	}
-	bounded, cancel = context.WithTimeout(publicationCtx, 15*time.Second)
+	bounded, cancel := context.WithTimeout(publicationCtx, 15*time.Second)
 	err = c.publish(bounded, domain.ExecutionEvent{Kind: domain.ExecutionDynamicToolObserved, DynamicTool: &update})
 	cancel()
 	if err != nil {
@@ -185,8 +185,8 @@ func (c *CodexEventPublisher) publishDynamicReply(publicationCtx context.Context
 	}
 	retained.Tool = next
 	c.dynamicTools[event.ItemID] = retained
-	if config.Logger != nil {
-		config.Logger.InfoContext(publicationCtx, "dynamic_tool_reply_retained", "job_id", journal.JobID, "execution_id", journal.ExecutionID, "request_token", original.Token, "claim_id", journal.ClaimID, "delivery", reply.Delivery)
+	if c.publisher != nil && c.publisher.config.Logger != nil {
+		c.publisher.config.Logger.InfoContext(publicationCtx, "dynamic_tool_reply_retained", "job_id", journal.JobID, "execution_id", journal.ExecutionID, "request_token", journal.Request.Token, "claim_id", journal.ClaimID, "delivery", reply.Delivery)
 	}
 	if reply.Delivery == domain.DynamicUncertain {
 		return publicationUncertain()
