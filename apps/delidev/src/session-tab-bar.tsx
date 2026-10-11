@@ -23,8 +23,6 @@ export function tabName(tab: SessionTab): string {
       return copy("session.files_abc7e9");
     case SessionTabKind.Diff:
       return copy("session.diff_7ecf46");
-    case SessionTabKind.Browser:
-      return copy("session.browser_d31de1");
     case SessionTabKind.Diagnostics:
       return copy("session.diagnostics_268f14");
   }
@@ -36,7 +34,9 @@ export function SessionTabBar({
   close,
   id,
   closeAria,
+  newPage,
 }: {
+  newPage?: () => void;
   closeAria?: string;
   tabs: readonly SessionTab[];
   selected: string;
@@ -132,6 +132,17 @@ export function SessionTabBar({
           </div>
         );
       })}
+      {newPage ? (
+        <button
+          type="button"
+          className="session-new-page"
+          aria-label={copy("session-browser.newPage")}
+          title={copy("session-browser.newPage")}
+          onClick={newPage}
+        >
+          +
+        </button>
+      ) : null}
     </div>
   );
 }

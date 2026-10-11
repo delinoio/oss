@@ -83,7 +83,7 @@ import { LocalizedText, copy, useLocale } from "./localization";
 import { Subagents } from "./subagents";
 import { NativeGrokTool } from "./native-grok-interactions";
 import { NativeGrokText, NativeGrokUser } from "./native-grok";
-import { SessionBrowser } from "./session-browser";
+import { SessionBrowsers, type BrowserController } from "./session-browser";
 import { SessionFiles, SessionFilePreview } from "./session-files";
 import { RequestDiagnostics } from "./request-diagnostics";
 import { SessionDiff } from "./session-diff";
@@ -866,8 +866,7 @@ export function SessionView({
           ? SessionPanel.Diff
           : tabs.tab.kind === SessionTabKind.Diagnostics
             ? SessionPanel.Diagnostics
-            : tabs.tab.kind === SessionTabKind.Page ||
-                tabs.tab.kind === SessionTabKind.Browser
+            : tabs.tab.kind === SessionTabKind.Page
               ? SessionPanel.Browser
               : SessionPanel.Closed;
   const conversationRegion = useRef<HTMLDivElement>(null);
@@ -886,7 +885,8 @@ export function SessionView({
     revision: bigint;
     selected: string;
   }>();
-  const [browserOpened, setBrowserOpened] = useState(false);
+  const [browserDialog, setBrowserDialog] = useState(false);
+  const browserControllers = useRef(new Map<string, BrowserController>());
   const [recoveryLauncherTarget, setRecoveryLauncherTarget] =
     useState<HTMLDivElement | null>(null);
   const [infoToolsTarget, setInfoToolsTarget] = useState<HTMLDivElement | null>(
@@ -1447,6 +1447,11 @@ export function SessionView({
   const closeTab = (key: string) => {
     const index = tabs.tabs.findIndex((tab) => sessionTabKey(tab) === key);
     if (index <= 0) return;
+    const page = tabs.tabs[index];
+    if (page?.kind === SessionTabKind.Page) {
+      browserControllers.current.get(page.profile)?.closePage(page.id);
+      return;
+    }
     const explorer =
       tabs.selected === key && tabs.tabs[index]?.kind === SessionTabKind.File
         ? tabs.tabs.findIndex((tab) => tab.kind === SessionTabKind.Files)
@@ -1501,11 +1506,13 @@ export function SessionView({
     setTerminalSelectionEpoch((value) => value + 1);
     setPendingTerminalOpen(undefined);
     setTerminalOpenIntent(undefined);
-    if (next === SessionPanel.Browser) setBrowserOpened(true);
+    if (next === SessionPanel.Browser) {
+      setBrowserDialog(true);
+      return;
+    }
     const kinds = {
       [SessionPanel.Files]: SessionTabKind.Files,
       [SessionPanel.Diff]: SessionTabKind.Diff,
-      [SessionPanel.Browser]: SessionTabKind.Browser,
       [SessionPanel.Diagnostics]: SessionTabKind.Diagnostics,
     } as const;
     const target = { kind: kinds[next] };
@@ -1841,6 +1848,7 @@ export function SessionView({
                   tabs.store.select(id, key);
                 }}
                 close={closeTab}
+                newPage={() => setBrowserDialog(true)}
                 closeAria={shortcuts.aria(ShortcutId.SessionCloseTab)}
               />
               <SessionToolMenu active={active}>
@@ -2644,31 +2652,22 @@ export function SessionView({
                   </div>
                 </div>
               ) : null}
-              {session && browserOpened ? (
-                <div
-                  hidden={!active || panel !== SessionPanel.Browser}
-                  inert={!active || panel !== SessionPanel.Browser}
-                  className="session-app-panel"
-                >
-                  <SessionBrowser
-                    key={`${id}:${browserAccountId}`}
-                    session={session}
-                    accountId={browserAccountId}
-                    close={closePanel}
-                    active={active && panel === SessionPanel.Browser}
-                    selectedPage={
-                      tabs.tab.kind === SessionTabKind.Page
-                        ? tabs.tab
-                        : undefined
-                    }
-                    openPage={(page) =>
-                      tabs.store.open(id, {
-                        kind: SessionTabKind.Page,
-                        ...page,
-                      })
-                    }
-                  />
-                </div>
+              {session ? (
+                <SessionBrowsers
+                  session={session}
+                  accountId={browserAccountId}
+                  active={active}
+                  presentationActive={active && panel === SessionPanel.Browser}
+                  dialogOpen={browserDialog && active}
+                  dismissDialog={() => setBrowserDialog(false)}
+                  controller={browserControllers}
+                  selectedPage={
+                    tabs.tab.kind === SessionTabKind.Page ? tabs.tab : undefined
+                  }
+                  openPage={(page) =>
+                    tabs.store.open(id, { kind: SessionTabKind.Page, ...page })
+                  }
+                />
               ) : null}
               {session && terminalOpened ? (
                 <div

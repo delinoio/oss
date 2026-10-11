@@ -14,7 +14,12 @@ it("roves focus and selection without an absent-position alias and leaves pinned
         tabs={[
           { kind: SessionTabKind.Conversation },
           { kind: SessionTabKind.Files },
-          { kind: SessionTabKind.Browser },
+          {
+            kind: SessionTabKind.Page,
+            profile: "original",
+            id: "page",
+            title: "fixture.test",
+          },
         ]}
         selected={selected}
         select={select}
@@ -64,4 +69,23 @@ it("keeps numbered terminal labels and focus independent of original IDs and loc
   expect(screen.getByRole("tab", { name: "터미널 7" })).toBe(tab);
   expect(tab.title).toBe("터미널 7");
   expect(document.activeElement).toBe(tab);
+});
+
+it("keeps New browser page as an ordinary reachable button after the numeric tabs", () => {
+  const open = vi.fn();
+  render(
+    <SessionTabBar
+      id="plus"
+      tabs={[{ kind: SessionTabKind.Conversation }]}
+      selected="conversation"
+      select={() => {}}
+      close={() => {}}
+      newPage={open}
+    />,
+  );
+  const plus = screen.getByRole("button", { name: "New browser page" });
+  expect(screen.getAllByRole("tab")).toHaveLength(1);
+  expect(plus.getAttribute("aria-keyshortcuts")).toBeNull();
+  fireEvent.click(plus);
+  expect(open).toHaveBeenCalledTimes(1);
 });

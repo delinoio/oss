@@ -1376,3 +1376,55 @@
 .session-terminal-status > p {
   margin: 0;
 }
+
+.session-workspace .session-new-page {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+}
+.session-workspace .session-new-page:hover {
+  background: var(--surface-hover);
+}
+.session-new-page:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+}
+.browser-new-page {
+  width: min(480px, calc(100vw - 32px));
+  max-width: 480px;
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+}
+.browser-new-page form {
+  display: grid;
+  gap: 16px;
+}
+.browser-new-page label {
+  display: grid;
+  gap: 8px;
+}
+.browser-new-page input {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  border-radius: 8px;
+}
+.browser-new-page button {
+  min-height: 40px;
+  border-radius: 8px;
+}
+.browser-new-page footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.browser-operation-recovery {
+  padding: 8px 16px;
+  overflow-wrap: anywhere;
+}

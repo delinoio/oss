@@ -170,7 +170,7 @@ it("retains monotonic session-local terminal numbers through inventory and prese
   );
 });
 
-it("refreshes only existing matching pages without publication for unchanged observations", () => {
+it("refreshes existing pages and appends inventory without changing selection", () => {
   const store = new SessionTabsStore();
   const page = {
     kind: SessionTabKind.Page as const,
@@ -190,9 +190,15 @@ it("refreshes only existing matching pages without publication for unchanged obs
   ]);
   const updated = store.snapshot("s");
   expect(updated.selected).toBe(previous.selected);
-  expect(updated.tabs.map(sessionTabKey)).toEqual(
-    previous.tabs.map(sessionTabKey),
-  );
+  expect(updated.tabs.map(sessionTabKey)).toEqual([
+    ...previous.tabs.map(sessionTabKey),
+    sessionTabKey({
+      kind: SessionTabKind.Page,
+      profile: "original",
+      id: "absent",
+      title: "unused",
+    }),
+  ]);
   expect(updated.tabs[1]).toMatchObject({
     ...page,
     title: "new",
@@ -206,7 +212,7 @@ it("refreshes only existing matching pages without publication for unchanged obs
   expect(store.snapshot("s")).toBe(updated);
   expect(store.snapshot("other").tabs).toHaveLength(1);
 });
-it("dismisses an acknowledged page to its native survivor or Browser without removing other profiles", () => {
+it("dismisses an acknowledged page to its existing left neighbor without removing other profiles", () => {
   const store = new SessionTabsStore();
   const page = {
     kind: SessionTabKind.Page as const,
@@ -214,19 +220,16 @@ it("dismisses an acknowledged page to its native survivor or Browser without rem
     id: "a",
     title: "page",
   };
-  store.open("s", { kind: SessionTabKind.Browser });
   store.open("s", page);
   store.open("s", { ...page, id: "b" });
   const foreign = { ...page, profile: "foreign" };
   store.open("s", foreign);
   store.select("s", sessionTabKey(page));
   store.dismissPage("s", "original", "a", "b");
-  expect(store.snapshot("s").selected).toBe(
-    sessionTabKey({ ...page, id: "b" }),
-  );
+  expect(store.snapshot("s").selected).toBe(SessionTabKind.Conversation);
   expect(store.snapshot("s").tabs).toContainEqual(foreign);
   store.dismissPage("s", "original", "b", "");
-  expect(store.snapshot("s").selected).toBe(SessionTabKind.Browser);
+  expect(store.snapshot("s").selected).toBe(SessionTabKind.Conversation);
   expect(store.snapshot("s").tabs).toContainEqual(foreign);
   const snapshot = store.snapshot("s");
   store.dismissPage("s", "original", "absent", "");

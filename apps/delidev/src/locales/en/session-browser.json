@@ -34,5 +34,18 @@
   "session-browser.splitter": "Browser width",
   "session-browser.moreActions": "More browser actions",
   "session-browser.tabLabel": "Tab {{number}} · {{url}}",
-  "session-browser.localSummary": "Tabs and browser data stay on this computer."
+  "session-browser.localSummary": "Tabs and browser data stay on this computer.",
+  "session-browser.newPage": "New browser page",
+  "session-browser.sharingSummary": "Browser data is shared with this account’s sessions.",
+  "session-browser.cancel": "Cancel",
+  "session-browser.openPage": "Open page",
+  "session-browser.loading": "Loading browser inventory…",
+  "session-browser.pageLimit": "This account profile already has 16 pages. Close a page before opening another.",
+  "session-browser.createPending": "The original page creation is pending. Observe its result before opening another page.",
+  "session-browser.closePending": "The original page close is pending. Keep this tab until closure is confirmed.",
+  "session-browser.cleanupPending": "Page metadata was removed. Original native child cleanup is still pending.",
+  "session-browser.observeOperation": "Observe original operation",
+  "session-browser.operationUnknown": "The original browser operation could not be confirmed. Observe that operation; do not submit it again.",
+  "session-browser.retryInventory": "Retry browser inventory read",
+  "session-browser.clearFailedOperation": "Acknowledge failed operation"
 }

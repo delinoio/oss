@@ -19,7 +19,6 @@ export enum SessionTabKind {
   Diff = "diff",
   Comparison = "comparison",
   Terminal = "terminal",
-  Browser = "browser",
   Page = "page",
   Diagnostics = "diagnostics",
   Sidechat = "sidechat",
@@ -31,7 +30,6 @@ export type SessionTab =
         | SessionTabKind.Conversation
         | SessionTabKind.Files
         | SessionTabKind.Diff
-        | SessionTabKind.Browser
         | SessionTabKind.Diagnostics;
     }
   | { kind: SessionTabKind.File; repository: string; path: string }
@@ -187,39 +185,40 @@ export class SessionTabsStore {
       changed = true;
       return { ...tab, title: page.title, label: page.label };
     });
+    const retained = new Set(
+      tabs.flatMap((tab) =>
+        tab.kind === SessionTabKind.Page && tab.profile === profile
+          ? [tab.id]
+          : [],
+      ),
+    );
+    for (const page of pages) {
+      if (!retained.has(page.id)) {
+        tabs.push({ kind: SessionTabKind.Page, profile, ...page });
+        changed = true;
+      }
+    }
     if (changed) this.publish(id, { tabs, selected: previous.selected });
   }
   dismissPage(
     id: string,
     profile: string,
     pageId: string,
-    nativeSelected: string,
+    _nativeSelected = "",
   ) {
-    const previous = this.snapshot(id);
     const key = sessionTabKey({
       kind: SessionTabKind.Page,
       profile,
       id: pageId,
       title: "",
     });
-    if (!previous.tabs.some((tab) => sessionTabKey(tab) === key)) return;
-    const tabs = previous.tabs.filter((tab) => sessionTabKey(tab) !== key);
-    let selected = previous.selected;
-    if (selected === key) {
-      const surviving = tabs.find(
-        (tab) =>
-          tab.kind === SessionTabKind.Page &&
-          tab.profile === profile &&
-          tab.id === nativeSelected,
-      );
-      if (surviving) selected = sessionTabKey(surviving);
-      else {
-        if (!tabs.some((tab) => tab.kind === SessionTabKind.Browser))
-          tabs.push({ kind: SessionTabKind.Browser });
-        selected = SessionTabKind.Browser;
-      }
-    }
-    this.publish(id, { tabs, selected });
+    const previous = this.snapshot(id);
+    const lastPage =
+      previous.tabs.filter((tab) => tab.kind === SessionTabKind.Page).length ===
+      1;
+    this.close(id, key);
+    if (lastPage && previous.selected === key)
+      this.select(id, SessionTabKind.Conversation);
   }
   dismissTerminal(id: string, terminalId: string, inventoryFallback = "") {
     const key = sessionTabKey({
