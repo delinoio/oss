@@ -102,7 +102,7 @@ func (c *Client) RevertThread(ctx context.Context, action domain.ID, source Cont
 		return fail()
 	}
 	observed, e := decodeThread(wire.Thread, c.version)
-	if e != nil || observed.ID != c.thread || observed.SessionID != source.SessionID || !c.matchesBoundHistoryMode(observed.HistoryMode) || observed.Status.Type != ThreadIdle || observed.ParentThreadID != nil || observed.ForkedFromID != nil || observed.Cwd != source.Effective.Cwd || observed.ModelProvider != source.Effective.Provider {
+	if e != nil || observed.ID != c.thread || observed.SessionID != source.SessionID || !c.matchesBoundHistoryMode(observed.HistoryMode) || observed.CanAcceptDirectInput == nil || !*observed.CanAcceptDirectInput || observed.Status.Type != ThreadIdle || observed.ParentThreadID != nil || observed.ForkedFromID != nil || observed.Cwd != source.Effective.Cwd || observed.ModelProvider != source.Effective.Provider {
 		return fail()
 	}
 	var cursor, items *string
