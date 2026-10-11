@@ -309,12 +309,12 @@ it("starts PR detail reads only after the association row enters the viewport", 
   try {
     render(f.view);
     openAssociations();
-    const first = await screen.findByText("<script>Retained PR</script>");
-    await screen.findByText("fixture-owner/repo#18");
-    const firstRow = first.closest("article")!;
-    const secondRow = screen
-      .getByText("fixture-owner/repo#18")
-      .closest("article")!;
+    const firstRow = (
+      await screen.findByRole("button", { name: "Unlink #17" })
+    ).closest("article")!;
+    const secondRow = (
+      await screen.findByRole("button", { name: "Unlink #18" })
+    ).closest("article")!;
     await waitFor(() =>
       expect(observers.some((observer) => observer.targets.has(firstRow))).toBe(
         true,
