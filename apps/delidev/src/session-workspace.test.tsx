@@ -877,7 +877,12 @@ it("keeps exactly five workspace tools and no Info action in either locale", asy
   await screen.findByRole("heading", { name: "Original session" });
   const toolbar = document.querySelector(".session-tool-menu")!;
   expect(
-    [...toolbar.querySelectorAll("button")].map((button) => button.textContent),
+    [...toolbar.querySelectorAll("button")].map((button) => {
+      const label = button.cloneNode(true) as HTMLElement;
+      // Decorative keyboard guidance does not change the original tool order.
+      label.querySelector("kbd")?.remove();
+      return label.textContent;
+    }),
   ).toEqual(["Diff", "Files", "Terminals", "Browser", "Diagnostics"]);
   expect(screen.queryByRole("button", { name: "Info" })).toBeNull();
   const info = screen.getByRole("complementary", {
@@ -888,7 +893,12 @@ it("keeps exactly five workspace tools and no Info action in either locale", asy
     await i18n.changeLanguage("ko");
   });
   expect(
-    [...toolbar.querySelectorAll("button")].map((button) => button.textContent),
+    [...toolbar.querySelectorAll("button")].map((button) => {
+      const label = button.cloneNode(true) as HTMLElement;
+      // Decorative keyboard guidance does not change the original tool order.
+      label.querySelector("kbd")?.remove();
+      return label.textContent;
+    }),
   ).toEqual(["변경 사항", "파일", "터미널", "브라우저", "진단"]);
   expect(screen.queryByRole("button", { name: "정보" })).toBeNull();
   expect(screen.getByRole("complementary", { name: "세션 정보" })).toBe(info);
@@ -1936,7 +1946,7 @@ it.each(["MacIntel", "Win32", "Linux x86_64"])(
       composer.focus();
       fireEvent.keyDown(composer, { key: "e", code: "KeyE", ...modifiers });
       const files = await screen.findByRole("tab", { name: "Files" });
-      await screen.findByRole("treeitem", { name: "Original" });
+      await screen.findByRole("treeitem", { name: "note.txt 4 bytes" });
       await waitFor(() => expect(document.activeElement).toBe(files));
       const reads = f.workspace.mock.calls.length;
       fireEvent.keyDown(files, { key: "e", ...modifiers });
@@ -1979,9 +1989,12 @@ it.each(["MacIntel", "Win32", "Linux x86_64"])(
         screen.queryByRole("dialog", { name: "Keyboard shortcuts" }),
       ).toBeNull();
       await waitFor(() => expect(document.activeElement).toBe(files));
-      fireEvent.keyDown(screen.getByRole("treeitem", { name: "Original" }), {
-        key: "Escape",
-      });
+      fireEvent.keyDown(
+        await screen.findByRole("treeitem", { name: "note.txt 4 bytes" }),
+        {
+          key: "Escape",
+        },
+      );
       await waitFor(() =>
         expect(
           screen
