@@ -8,7 +8,14 @@ import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { SettingsTaskActions } from "./settings-task";
 import { useCloseSettingsTask } from "./settings-task-context";
-import { useState, useId, useMemo, useRef, useEffect } from "react";
+import {
+  useState,
+  useId,
+  useMemo,
+  useRef,
+  useEffect,
+  useSyncExternalStore,
+} from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import {
   installationObservation,
@@ -51,18 +58,38 @@ export function useMachineSettingsController(
   const transport = useTransport();
   const queryClient = useQueryClient();
   const input = { kind: EntityKind.MACHINE, id: initial.id };
-  const queryKey = createConnectQueryKey({
-    schema: ResourceQuery.getResource,
-    transport,
-    input,
-    cardinality: "finite",
-  });
+  const queryKey = useMemo(
+    () =>
+      createConnectQueryKey({
+        schema: ResourceQuery.getResource,
+        transport,
+        input,
+        cardinality: "finite",
+      }),
+    [initial.id, transport],
+  );
   const result = useQuery(ResourceQuery.getResource, input, {
     enabled: active,
     refetchInterval: active ? 5000 : false,
   });
-  const readUpdateCount =
-    queryClient.getQueryState(queryKey)?.dataUpdateCount ?? 0;
+  const queryCache = queryClient.getQueryCache();
+  const queryHash = queryCache.find({ queryKey, exact: true })?.queryHash;
+  const subscribeToReadCount = useMemo(
+    () => (notify: () => void) =>
+      queryCache.subscribe((event) => {
+        if (event.query.queryHash === queryHash) notify();
+      }),
+    [queryCache, queryHash],
+  );
+  const getReadUpdateCount = useMemo(
+    () => () => queryClient.getQueryState(queryKey)?.dataUpdateCount ?? 0,
+    [queryClient, queryKey],
+  );
+  const readUpdateCount = useSyncExternalStore(
+    subscribeToReadCount,
+    getReadUpdateCount,
+    getReadUpdateCount,
+  );
   const [acknowledged, setAcknowledged] = useState<Resource>();
   const exact = (row?: Resource): row is Resource =>
     validRunnerObservation(row) && row.id === initial.id;
