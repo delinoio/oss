@@ -168,13 +168,13 @@ fn browser_operations_and_numeric_selection_are_trusted_local_only() {
             let capabilities: BTreeMap<String, Capability> =
                 serde_json::from_str(CAPABILITIES).unwrap();
             let app = &manifests[APP_ACL_KEY];
-            assert!(app.commands.iter().any(|command| command == command));
+            assert!(app.commands.iter().any(|value| value == command));
             assert!(
                 app.permissions["browser-presentation"]
                     .commands
                     .allow
                     .iter()
-                    .any(|command| command == command)
+                    .any(|value| value == command)
             );
             let resolved = Resolved::resolve(&manifests, capabilities, target).unwrap();
             let authority = RuntimeAuthority::new(

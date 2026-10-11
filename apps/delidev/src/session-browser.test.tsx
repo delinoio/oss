@@ -367,12 +367,10 @@ it.each([false, true])(
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(f.local.tabs.tabs).toHaveLength(registered ? 3 : 1);
     expect(f.register).toHaveBeenCalledTimes(1);
-    expect(f.register.mock.calls[0]).toMatchObject([
-      {
-        accountId: f.accountId,
-        session: { id: f.session.id, expectedRevision: 7n },
-      },
-    ]);
+    expect(f.register.mock.calls[0]?.[0]).toMatchObject({
+      accountId: f.accountId,
+      session: { id: f.session.id, expectedRevision: 7n },
+    });
     expect(
       screen.getByRole("tab", {
         name: "https://new.test/page",
@@ -433,7 +431,14 @@ it("blocks explicit creation at sixteen pages and preserves readable guidance", 
 });
 it("retains lost creation ownership across dismissal and observes the original operation", async () => {
   const f = fixture({ count: 0 });
+  let allowObserve = false;
   native.mockImplementation(async (command, input) => {
+    if (
+      command === "browser_pages" &&
+      input.request.action === "observe" &&
+      !allowObserve
+    )
+      throw new Error("original receipt is temporarily unavailable");
     const result = await f.handle(command, input);
     if (command === "browser_pages" && input.request.action === "create")
       throw new Error("lost synthetic reply");
@@ -454,6 +459,7 @@ it("retains lost creation ownership across dismissal and observes the original o
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
+  allowObserve = true;
   fireEvent.click(
     within(modal).getByRole("button", { name: "Observe original operation" }),
   );
@@ -506,13 +512,13 @@ it("keeps exact registration uncertainty without creating a page or changing its
     name: "Retry the same registration",
   });
   expect(actions("create")).toHaveLength(0);
-  const original = f.register.mock.calls[0];
+  const original = f.register.mock.calls[0]?.[0];
   fireEvent.change(within(modal).getByRole("textbox", { name: "Address" }), {
     target: { value: "https://changed.test/" },
   });
   fireEvent.click(retry);
   await waitFor(() => expect(actions("create")).toHaveLength(1));
-  expect(f.register.mock.calls[1]).toEqual(original);
+  expect(f.register.mock.calls[1]?.[0]).toEqual(original);
   expect(actions("create")[0][1].request.url).toBe("https://new.test/page");
 });
 it.each(["inactive", "active", "final"])(
@@ -536,7 +542,7 @@ it.each(["inactive", "active", "final"])(
     ).length;
     fireEvent.click(
       screen.getByRole("button", {
-        name: `Close ${browserTabTitle(f.original[0].url)}`,
+        name: `Close ${browserTabTitle(f.original[0].url)} tab`,
       }),
     );
     await waitFor(() =>
@@ -570,7 +576,7 @@ it("retains a descriptor after close metadata publication until original cleanup
         ...result,
         closed_pages: [],
         receipt: {
-          ...result.receipt,
+          ...(result as ReturnType<typeof f.reply>).receipt,
           phase: "cleanup-pending",
           failure: "sidecar-failed",
         },
@@ -582,7 +588,7 @@ it("retains a descriptor after close metadata publication until original cleanup
   await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(3));
   fireEvent.click(
     screen.getByRole("button", {
-      name: `Close ${browserTabTitle(f.original[0].url)}`,
+      name: `Close ${browserTabTitle(f.original[0].url)} tab`,
     }),
   );
   await screen.findByText(
@@ -623,7 +629,7 @@ it("does not remove a descriptor from a malformed or lost close result", async (
   await waitFor(() => expect(screen.getAllByRole("tab")).toHaveLength(3));
   fireEvent.click(
     screen.getByRole("button", {
-      name: `Close ${browserTabTitle(f.original[0].url)}`,
+      name: `Close ${browserTabTitle(f.original[0].url)} tab`,
     }),
   );
   await screen.findByRole("button", { name: "Observe original operation" });

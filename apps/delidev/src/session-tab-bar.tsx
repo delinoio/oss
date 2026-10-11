@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useLayoutEffect, useRef } from "react";
-import { copy } from "./localization";
+import { copy, useLocale } from "./localization";
 import { Comparison } from "./session-diff-model";
 import { SessionTabKind, sessionTabKey, type SessionTab } from "./session-tabs";
 import { bindingAria, shortcutPlatform } from "./shortcuts";
@@ -44,6 +44,7 @@ export function SessionTabBar({
   close: (key: string) => void;
   id: string;
 }) {
+  useLocale();
   const root = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     root.current

@@ -254,8 +254,8 @@ try {
           .getByRole("button", {
             name:
               language === "en"
-                ? "Close explicit.example/new"
-                : "explicit.example/new 닫기",
+                ? "Close explicit.example/new tab"
+                : "explicit.example/new 탭 닫기",
             exact: true,
           })
           .click();
