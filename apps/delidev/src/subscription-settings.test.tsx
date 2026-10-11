@@ -329,7 +329,8 @@ it("expires retained paid buckets before freshly observed quota windows without 
   try {
     expect(screen.queryByText(/Stale observation/)).toBeNull();
     act(()=>vi.advanceTimersByTime(1001));
-    expect(screen.getByText(/Paid credits: 7.125 credits.*Stale observation/)).toBeTruthy();
+    expect(screen.getByText("7.13")).toBeTruthy();
+    expect(screen.getByText(/Stale observation/)).toBeTruthy();
     expect(screen.getByText(/Observed · Observed/)).toBeTruthy();
     expect(first.refresh).not.toHaveBeenCalled();
     rendered.rerender(view([first],{now:undefined,active:false}));

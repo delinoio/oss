@@ -1,6 +1,13 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-.subscription-paid-credits { padding: 16px; border: 1px solid var(--border); border-radius: 8px; margin-block: 16px; min-width: 0; }
+.subscription-paid-credits { padding: 12px 16px; border: 1px solid var(--border); border-radius: 8px; margin-block: 16px; min-width: 0; background: var(--surface); overflow-wrap: anywhere; }
+.subscription-paid-credits h3 { margin: 0 0 8px; font-size: 12px; color: var(--muted); font-weight: 500; }
+.subscription-paid-credits p { margin: 0 0 4px; }
 .subscription-paid-credits ul { list-style: none; padding: 0; margin: 0; }
-.subscription-paid-credits li { display: flex; flex-wrap: wrap; gap: 8px 16px; padding-block: 8px; min-width: 0; overflow-wrap: anywhere; }
-.subscription-paid-credits li small { flex-basis: 100%; }
-.subscription-paid-summary { grid-column: 1 / -1; overflow-wrap: anywhere; }
+.subscription-paid-credits li { display: flex; flex-direction: column; gap: 4px; padding-block: 4px; min-width: 0; }
+.subscription-paid-credits small, .subscription-paid-suffix { font-size: 12px; color: var(--muted); }
+.subscription-paid-summary { grid-column: 1 / -1; margin-block: 8px; }
+.subscription-paid-number { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; min-width: 0; }
+.subscription-paid-value { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; min-width: 0; }
+.subscription-paid-info { min-width: 40px; min-height: 40px; padding: 4px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
+.subscription-paid-info:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.subscription-paid-exact { flex-basis: 100%; min-width: 0; font-size: 12px; user-select: text; overflow-wrap: anywhere; }
