@@ -1024,12 +1024,16 @@ it("announces a deferred dismissed-panel count without moving focus and dedupes 
   expect(status.textContent).toBe("");
   const input = screen.getByRole("textbox");
   input.focus();
-  fireEvent.change(input, { target: { value: "$missing ", selectionStart: 9 } });
+  fireEvent.change(input, {
+    target: { value: "$missing ", selectionStart: 9 },
+  });
   fireEvent.keyDown(input, { key: "Escape" });
   await waitFor(() => expect(f.read).toHaveBeenCalledOnce());
   await act(async () => release());
   await waitFor(() =>
-    expect(status.textContent).toBe("1 skill tokens are unavailable in this scope."),
+    expect(status.textContent).toBe(
+      "1 skill tokens are unavailable in this scope.",
+    ),
   );
   expect(countStatus(view)).toBe(status);
   expect(document.activeElement).toBe(input);
@@ -1071,71 +1075,85 @@ it("announces a deferred dismissed-panel count without moving focus and dedupes 
 });
 
 it.each([
-  [SupportedLanguage.English, "1 skill tokens are unavailable in this scope.",
-    "No skill tokens are unavailable in this scope."],
-  [SupportedLanguage.Korean, "현재 범위에서 스킬 토큰 1개를 사용할 수 없습니다.",
-    "현재 범위에서 사용할 수 없는 스킬 토큰이 없습니다."],
-])("localizes confirmed recovery without announcing loading as zero in %s", async (language, absent, recovered) => {
-  await i18n.changeLanguage(language);
-  let current = entries;
-  let release!: () => void;
-  let pending: Promise<void> | undefined;
-  const client = new QueryClient();
-  const transport = createRouterTransport((router) =>
-    router.service(SkillService, {
-      listSkills: async () => {
-        await pending;
-        return { skills: current };
-      },
-    }),
-  );
-  const view = render(
-    <TransportProvider transport={transport}>
-      <QueryClientProvider client={client}>
-        <Composer send={vi.fn()} />
-      </QueryClientProvider>
-    </TransportProvider>,
-  );
-  try {
-    const input = screen.getByRole("textbox");
-    input.focus();
-    fireEvent.change(input, { target: { value: "$missing ", selectionStart: 9 } });
-    const status = countStatus(view);
-    await waitFor(() => expect(status.textContent).toBe(absent));
-    pending = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let refetch!: Promise<void>;
-    act(() => {
-      refetch = client.invalidateQueries();
-    });
-    await waitFor(() => expect(status.textContent).toBe(""));
-    await act(async () => {
-      release();
-      await refetch;
-    });
-    expect(status.textContent, "an unchanged confirmed count is not replayed").toBe("");
-    pending = undefined;
-    current = [
-      ...entries,
-      {
-        ...entries[0]!,
-        name: "missing",
-        selection: { ...entries[0]!.selection, skillId: newRequestId() },
-      },
-    ];
-    await act(async () => {
-      await client.invalidateQueries();
-    });
-    await waitFor(() => expect(status.textContent).toBe(recovered));
-    expect(document.activeElement).toBe(input);
-    expect((input as HTMLTextAreaElement).value).toBe("$missing ");
-    expect(input.hasAttribute("aria-describedby")).toBe(false);
-  } finally {
-    view.unmount();
-    await i18n.changeLanguage(SupportedLanguage.English);
-  }
-});
+  [
+    SupportedLanguage.English,
+    "1 skill tokens are unavailable in this scope.",
+    "No skill tokens are unavailable in this scope.",
+  ],
+  [
+    SupportedLanguage.Korean,
+    "현재 범위에서 스킬 토큰 1개를 사용할 수 없습니다.",
+    "현재 범위에서 사용할 수 없는 스킬 토큰이 없습니다.",
+  ],
+])(
+  "localizes confirmed recovery without announcing loading as zero in %s",
+  async (language, absent, recovered) => {
+    await i18n.changeLanguage(language);
+    let current = entries;
+    let release!: () => void;
+    let pending: Promise<void> | undefined;
+    const client = new QueryClient();
+    const transport = createRouterTransport((router) =>
+      router.service(SkillService, {
+        listSkills: async () => {
+          await pending;
+          return { skills: current };
+        },
+      }),
+    );
+    const view = render(
+      <TransportProvider transport={transport}>
+        <QueryClientProvider client={client}>
+          <Composer send={vi.fn()} />
+        </QueryClientProvider>
+      </TransportProvider>,
+    );
+    try {
+      const input = screen.getByRole("textbox");
+      input.focus();
+      fireEvent.change(input, {
+        target: { value: "$missing ", selectionStart: 9 },
+      });
+      const status = countStatus(view);
+      await waitFor(() => expect(status.textContent).toBe(absent));
+      pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let refetch!: Promise<void>;
+      act(() => {
+        refetch = client.invalidateQueries();
+      });
+      await waitFor(() => expect(status.textContent).toBe(""));
+      await act(async () => {
+        release();
+        await refetch;
+      });
+      expect(
+        status.textContent,
+        "an unchanged confirmed count is not replayed",
+      ).toBe("");
+      pending = undefined;
+      current = [
+        ...entries,
+        {
+          ...entries[0]!,
+          name: "missing",
+          selection: { ...entries[0]!.selection, skillId: newRequestId() },
+        },
+      ];
+      await act(async () => {
+        await client.invalidateQueries();
+      });
+      await waitFor(() => expect(status.textContent).toBe(recovered));
+      expect(document.activeElement).toBe(input);
+      expect((input as HTMLTextAreaElement).value).toBe("$missing ");
+      expect(input.hasAttribute("aria-describedby")).toBe(false);
+    } finally {
+      view.unmount();
+      await i18n.changeLanguage(SupportedLanguage.English);
+    }
+  },
+);
 
 it("defers confirmed count publication during composition and suppresses locked outcomes", async () => {
   const f = fixture();
@@ -1149,7 +1167,9 @@ it("defers confirmed count publication during composition and suppresses locked 
   const view = render(f.view());
   const input = screen.getByRole("textbox");
   input.focus();
-  fireEvent.change(input, { target: { value: "$missing ", selectionStart: 9 } });
+  fireEvent.change(input, {
+    target: { value: "$missing ", selectionStart: 9 },
+  });
   await waitFor(() => expect(f.read).toHaveBeenCalledOnce());
   fireEvent.compositionStart(input);
   await act(async () => release());
