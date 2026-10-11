@@ -816,7 +816,7 @@ it("reveals General and retains the Project draft after a confirmed name collisi
   openProjects(f);
   fireEvent.click(
     await screen.findByRole("button", {
-      name: `Edit Editable project · ${item.id}`,
+      name: safePresentation(`Edit Editable project · ${item.id}`),
     }),
   );
   fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
