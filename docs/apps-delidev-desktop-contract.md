@@ -2691,7 +2691,10 @@ login/OAuth operations or changes cleanup authority.
 
 Icon-only paged resource actions include the original resource ID alongside the localized target name. Identity does not depend on which payload pages remain mounted, and computing it adds no reads. Network profile deletion uses the same exact target name and ID as editing.
 
-Keyboard shortcut capture, disable, restore, cancellation, recovery and Save controls also use the closed action catalog with visible localized labels and original capture/preference ownership.
+Keyboard shortcut controls use the closed action catalog and original
+capture/preference ownership. The compact shortcut category below permits icon
+presentation only for per-row Capture, Disable and Restore; cancellation,
+recovery, Restore all defaults, Discard and Save retain visible localized labels.
 
 The Project defaults and project-behavior editors use the same closed action catalog. Return-to-global and exact read retries keep visible labels and original callbacks. The direct project Settings entry retains its original presentation outside the Settings action scope.
 
@@ -2700,6 +2703,45 @@ All 18 Settings categories, their forms, dialogs and action menus share the clos
 Direct secondary Edit, Delete, Refresh and Copy actions use a 16px decorative, nonfocusable repository-owned outline SVG inside a 40×40px button with 8px corners and the existing AA border/text/focus tokens. Localized accessible names remain intact; equal saved-resource names include the original resource ID. Pointer hover and keyboard focus reveal the same localized tooltip, without another tab stop or domain read. Tooltip position alone uses bounded computed coordinates, including viewport-edge and effective CSS zoom clearance; resize/scroll dismisses it. Save, Cancel, creation, connection, recovery/retry and final destructive confirmations retain readable labels and leading icons. Action-menu items retain their labels and leading icons. Category navigation, disclosures, picker/radio choices, ordering grips, menu launchers and existing named dialog/toast dismissal controls keep their own semantics.
 
 The catalog and renderer own no RPC, schema, capability, permission, mutation, request identity, draft, polling, cursor or persistent preference. Preserve target-specific names, original disabled guards, editor and confirmation admission, opener restoration, mounted controllers and exact uncertain request bytes. New Settings owners, including Project defaults and Shortcuts, use this catalog explicitly; never infer an action from English text or route an action through a generic controller. English/Korean and light/dark/System fixtures cover all categories, empty/populated states, narrow layouts and effective 200% geometry. Synthetic browser/jsdom checks do not establish real account, screen-reader, packaged CEF or platform acceptance.
+
+### Compact shortcut Settings
+
+Keyboard shortcuts retains the shared left anchor and 1040px content cap, with
+the category title and scope guidance exactly once above one named,
+keyboard-focusable catalog region. All seven editable actions, read-only entries
+and platform-filtered native entries remain in their original group order. Use
+decorative keycaps from the existing platform-resolved bindings, retaining a
+readable accessible chord and the localized disabled state. Preserve defaults,
+fixed-binding guidance and Focus search's primary+I binding.
+
+The catalog owns vertical scrolling, a stable scrollbar gutter and min-height: 0.
+Its grid uses the remaining category height with an 80px minimum track. Capture,
+invalid-chord, conflict, persistence, recovery and saved/unsaved guidance remain
+outside the catalog before its footer; appearing guidance reduces catalog height.
+The heading and footer remain stationary whenever surrounding controls fit. In
+exceptionally short or zoomed layouts, their natural overflow stays reachable
+through the original outer Settings scroll owner. Keyboard focus reveals catalog
+row controls without scrolling the outer owner in normal layouts.
+
+At catalog widths of at least 640px, editable rows align name/default, current
+binding and actions in three columns. Rows have 56px minimum height, 8px vertical
+padding, 14px/20px action text and 12px/18px muted default text; wrapped content
+increases height. Read-only rows and group heading bands have 40px minimum height.
+Below that width, stack metadata and wrap bindings/actions without horizontal
+overflow. Only editable rows use explicit SettingsActionPresentation.Icon for
+Capture/Edit, Disable/Stop and Restore/Back, retaining 40px targets, 8px corners,
+localized action-specific accessible names/tooltips and visible focus.
+
+Restore all defaults sits at the footer's left; labeled Discard and Save sit at
+the right and wrap as needed. Preserve clean-state eligibility, original disabled
+guards, category-local drafts, explicit Save, conflicts, committed dispatch/help/
+ARIA, native capture admission/retirement, connected opener restoration and exact
+uncertain recovery. Resize, scrolling, locale and theme changes retain the same
+controllers and request ownership. Loading or failed reads never imply an empty
+catalog. Use semantic light/dark/System tokens and English/Korean copy, without
+new persistence, native code, logging, RPC or dependencies. Browser geometry and
+200% reflow fixtures remain separate from packaged CEF, actual platform zoom,
+keyboard and screen-reader acceptance.
 
 ### Settings task dialogs
 

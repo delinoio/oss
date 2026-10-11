@@ -2456,7 +2456,9 @@ function SettingsWorkspace({
                     ? "settings-content settings-runner-devices"
                     : area === SettingsArea.Diagnostics
                       ? "settings-content settings-connections"
-                      : "settings-content"
+                      : area === SettingsArea.KeyboardShortcuts
+                        ? "settings-content settings-shortcuts"
+                        : "settings-content"
         }
         aria-label={copy("settings.settingsContent_e4dcd3")}
       >
@@ -2473,7 +2475,9 @@ function SettingsWorkspace({
                       ? "settings-runner-column"
                       : area === SettingsArea.Transfer
                         ? "settings-transfer-column"
-                        : undefined
+                        : area === SettingsArea.KeyboardShortcuts
+                          ? "settings-shortcut-column"
+                          : undefined
               }
             >
               {isGitWorkflow ? (
