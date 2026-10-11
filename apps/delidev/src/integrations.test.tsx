@@ -543,12 +543,12 @@ it("keeps unknown schema observations explicit and their original action guards 
   await screen.findAllByText("Unsupported profile version");
   expect(
     screen
-      .getByRole("button", { name: "Manage Unnamed" })
+      .getByRole("button", { name: /Manage Record 1 · Name unavailable/ })
       .hasAttribute("disabled"),
   ).toBe(true);
   expect(
     screen
-      .getByRole("button", { name: "Rename Unnamed" })
+      .getByRole("button", { name: /Rename Record 1 · Name unavailable/ })
       .hasAttribute("disabled"),
   ).toBe(true);
 });
