@@ -1254,6 +1254,22 @@ it("clears a prior automatic-default failure after accepted manual creation", as
   );
 });
 
+it("clears an automatic-default failure when the creation scope changes", async () => {
+  const f = fixture(true, false, { global: false, project: "inherit" });
+  render(f.view());
+  const button = await readyAutomaticCreation(f);
+  f.list.mockRejectedValue(new ConnectError("Defaults temporarily unavailable", Code.Unavailable));
+  fireEvent.click(button);
+  await screen.findByRole("button", { name: "Retry Plan Mode defaults" });
+
+  await chooseScrollOption(screen.getByRole("combobox", { name: "Project" }), f.projects[0].id);
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "Retry Plan Mode defaults" }),
+    ).not.toBeInTheDocument(),
+  );
+});
+
 it.each(["current", "departure", "connection"])(
   "serializes automatic preflight and fences its scope (%s)",
   async (scope) => {

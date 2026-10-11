@@ -132,7 +132,6 @@ export function NewSession({
   const [defaultProblem, setDefaultProblem] = useState<unknown>();
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
-  const [defaultRefreshFailed, setDefaultRefreshFailed] = useState(false);
   const localIdentity = useRef<Promise<string>>(undefined);
   const preferences = useCreationPreferences(kind, active, preferenceBridge, preferenceScope);
   const touched = useRef(false);
@@ -185,6 +184,8 @@ export function NewSession({
       serverId: preferenceScope?.server_id,
       deviceId: preferenceScope?.device_id,
     };
+  const [defaultRefreshFailureScope, setDefaultRefreshFailureScope] = useState<object>();
+  const defaultRefreshFailed = defaultRefreshFailureScope === submissionScope.current;
   const mounted = useRef(false);
   useEffect(() => {
     mounted.current = true;
@@ -236,7 +237,7 @@ export function NewSession({
       endHistoryCycle.current();
       setPrompt("");
       setManualMode(false);
-      setDefaultRefreshFailed(false);
+      setDefaultRefreshFailureScope(undefined);
       skills.clearAccepted();
       setCreatedElsewhere(undefined);
       created(session);
@@ -741,7 +742,7 @@ export function NewSession({
             !validProject ||
             !["inherit", "enabled", "disabled"].includes(override as string)
           ) {
-            setDefaultRefreshFailed(true);
+            setDefaultRefreshFailureScope(scope);
             return;
           }
           submittedMode =
@@ -749,9 +750,9 @@ export function NewSession({
             (override === "inherit" && document(row).plan_mode_default === true)
               ? Mode.Plan
               : Mode.Execute;
-          setDefaultRefreshFailed(false);
+          setDefaultRefreshFailureScope(undefined);
         } catch {
-          if (scopeIsCurrent()) setDefaultRefreshFailed(true);
+          if (scopeIsCurrent()) setDefaultRefreshFailureScope(scope);
           return;
         }
       }
@@ -1071,7 +1072,7 @@ export function NewSession({
                               blocked || defaultSettings.isFetching || selectedProject.isFetching
                             }
                             onClick={() => {
-                              setDefaultRefreshFailed(false);
+                              setDefaultRefreshFailureScope(undefined);
                               void defaultSettings.refetch();
                               if (project && !generalChat) void selectedProject.refetch();
                             }}
