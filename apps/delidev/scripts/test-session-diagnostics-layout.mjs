@@ -57,8 +57,7 @@ try {
               portalNotice = host.lastElementChild;
             const labels = [...content.querySelectorAll("dt")],
               values = [...content.querySelectorAll("dd")];
-            const portalNoticeText = document.createRange();
-            portalNoticeText.selectNodeContents(portalNotice);
+            const portalNoticeStyle = getComputedStyle(portalNotice);
             const heading = first.querySelector("h3"),
               facts = first.querySelector("dl");
             return {
@@ -68,8 +67,10 @@ try {
               headingSize: getComputedStyle(heading).fontSize,
               headingGap: rect(facts).y - rect(heading).bottom,
               sectionGap: rect(next.querySelector("h3")).y - rect(first).bottom,
-              portalItemGap:
-                portalNoticeText.getBoundingClientRect().y - rect(next).bottom,
+              portalItemGap: rect(portalNotice).y - rect(next).bottom,
+              portalItemInset:
+                parseFloat(portalNoticeStyle.paddingTop) +
+                parseFloat(portalNoticeStyle.borderTopWidth),
               contentWidth: rect(host).width,
               firstX: rect(first).x,
               requestX: rect(content.querySelector("aside")).x,
@@ -96,7 +97,8 @@ try {
           assert.equal(geometry.headingGap, 16);
           assert(Math.abs(geometry.sectionGap - 32) <= 1, "section rhythm");
           assert(
-            Math.abs(geometry.portalItemGap - 35) <= 1,
+            Math.abs(geometry.portalItemGap + geometry.portalItemInset - 33) <=
+              1,
             "all portal items receive section rhythm",
           );
           assert(geometry.contentWidth <= 1040, "content cap");
