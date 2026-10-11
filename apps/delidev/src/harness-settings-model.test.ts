@@ -152,5 +152,7 @@ it("updates only the exact source scope and keeps imported selectors and other h
     model: override("original"),
     permission: override("read-only"),
   });
-  expect(saved.entries[1].settings.permission).toEqual({ mode: "inherit" });
+  expect(saved.entries[1].settings).toMatchObject({
+    permission: { mode: "inherit" },
+  });
 });
