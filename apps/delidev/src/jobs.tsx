@@ -45,8 +45,7 @@ function exactJob(
     (!text(original.type) || value.type === original.type) &&
     (!expectedType || original.type === expectedType && value.type === expectedType) &&
     (!machineId ||
-      (original.machine_id === undefined || original.machine_id === machineId) &&
-      (value.machine_id === undefined || value.machine_id === machineId))
+      original.machine_id === machineId && value.machine_id === machineId)
   );
 }
 
