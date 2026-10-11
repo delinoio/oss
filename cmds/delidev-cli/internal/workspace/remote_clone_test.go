@@ -61,17 +61,26 @@ func TestManagedCloneFailedAuthenticationAndCanceledProcessCleanup(t *testing.T)
 }
 
 func TestManagedCloneRejectsEffectiveURLRewrite(t *testing.T) {
-	m, input, marker := managedCloneFixture(t)
-	config := filepath.Join(t.TempDir(), "gitconfig")
-	if err := os.WriteFile(config, []byte("[url \"https://other.invalid/\"]\n\tinsteadOf = https://github.com/fixture/\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("GIT_CONFIG_GLOBAL", config)
-	if _, err := m.Prepare(context.Background(), input); domain.SafeError(err).Code != domain.InvalidArgument {
-		t.Fatal("rewritten clone source was accepted", err)
-	}
-	if _, err := os.Stat(marker); !os.IsNotExist(err) {
-		t.Fatal("network-capable clone started before rewrite validation")
+	for _, suffix := range []bool{false, true} {
+		t.Run(map[bool]string{false: "foreign-host", true: "generic-suffix"}[suffix], func(t *testing.T) {
+			m, input, marker := managedCloneFixture(t)
+			config := filepath.Join(t.TempDir(), "gitconfig")
+			contents := "[url \"https://other.invalid/\"]\n\tinsteadOf = https://github.com/fixture/\n"
+			if suffix {
+				input.Repositories[0].RemoteURL = "https://generic.invalid/team/repo"
+				contents = "[url \"https://generic.invalid/team/repo.git\"]\n\tinsteadOf = https://generic.invalid/team/repo\n"
+			}
+			if err := os.WriteFile(config, []byte(contents), 0600); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("GIT_CONFIG_GLOBAL", config)
+			if _, err := m.Prepare(context.Background(), input); domain.SafeError(err).Code != domain.InvalidArgument {
+				t.Fatal("rewritten clone source was accepted", err)
+			}
+			if _, err := os.Stat(marker); !os.IsNotExist(err) {
+				t.Fatal("network-capable clone started before rewrite validation")
+			}
+		})
 	}
 }
 

@@ -117,7 +117,7 @@ func (c *Client) inspectRetainedThreadLocked(ctx context.Context) error {
 		return turnUncertain()
 	}
 	state := c.execution
-	if !nativePathEqual(native.Cwd, state.settings.Cwd) || native.ModelProvider != state.settings.Provider || native.SessionID != state.thread.SessionID || native.HistoryMode != LegacyHistory || native.CanAcceptDirectInput == nil || !*native.CanAcceptDirectInput || (native.Status.Type != ThreadActive && native.Status.Type != ThreadIdle) {
+	if !nativePathEqual(native.Cwd, state.settings.Cwd) || native.ModelProvider != state.settings.Provider || native.SessionID != state.thread.SessionID || !c.matchesBoundHistoryMode(native.HistoryMode) || native.CanAcceptDirectInput == nil || !*native.CanAcceptDirectInput || (native.Status.Type != ThreadActive && native.Status.Type != ThreadIdle) {
 		return turnUncertain()
 	}
 	return nil

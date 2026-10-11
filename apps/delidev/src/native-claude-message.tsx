@@ -1,3 +1,4 @@
+import { claudeRetainedJSONBytes } from "./native-claude-json";
 import {
   ClaudeWebKind,
   NativeClaudeWeb,
@@ -215,7 +216,7 @@ function message(
           return undefined;
         webResults.add(id);
       }
-      bytes += new TextEncoder().encode(JSON.stringify(w)).length;
+      bytes += claudeRetainedJSONBytes(w);
     }
     if (Object.hasOwn(entry, "citations")) {
       if (

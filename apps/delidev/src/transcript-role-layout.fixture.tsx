@@ -18,9 +18,9 @@ import {
   type WatchEventsResponse,
 } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
-import { i18n } from "./localization";
+import { copy, i18n } from "./localization";
 import { MutationIntents } from "./mutation";
-import { SessionView } from "./session";
+import { SessionView, TranscriptItem } from "./session";
 import {
   transcriptResource,
   transcriptRoleFixtures,
@@ -34,6 +34,8 @@ await i18n.changeLanguage(args.get("language") ?? "en");
 if (args.get("theme") !== "system")
   document.documentElement.dataset.theme = args.get("theme") ?? "light";
 if (args.get("zoom") === "2") document.body.style.zoom = "2";
+if (args.get("accent") === "false")
+  document.documentElement.dataset.sessionAccent = "false";
 let session = create(ResourceSchema, {
   id: transcriptSessionId,
   sessionId: transcriptSessionId,
@@ -357,6 +359,35 @@ const transport = createRouterTransport((router) => {
 });
 function Fixture() {
   const [draft, setDraft] = useState("Retained synthetic draft");
+  if (args.has("revert"))
+    return (
+      <div className="session-workspace revert-layout-fixture">
+        <div className="transcript">
+          {["Hi", "여러 줄의 원래 질문\n" + "긴내용".repeat(60)].map(
+            (text, index) => (
+              <TranscriptItem
+                key={index}
+                resource={transcriptResource(
+                  { role: "user", state: "complete", text },
+                  index + 100,
+                )}
+                actions={
+                  index === 1 ? <button>Other original action</button> : null
+                }
+                revertAction={
+                  <button
+                    className="session-revert-action"
+                    disabled={index === 1}
+                  >
+                    {copy("session.revertAndEdit")}
+                  </button>
+                }
+              />
+            ),
+          )}
+        </div>
+      </div>
+    );
   return (
     <div
       className="app transcript-role-fixture"

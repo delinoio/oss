@@ -302,6 +302,44 @@
   gap: 16px;
   min-width: 0;
 }
+/* Keep the measured transcript item stable when Revert eligibility changes.
+   The full-width group preserves the bubble's original percentage width cap. */
+.session-workspace .transcript .user-transcript-item {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  min-width: 0;
+}
+.session-workspace .transcript .user-transcript-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-self: flex-end;
+  max-width: 100%;
+  min-width: 0;
+  margin-top: 6px;
+}
+.session-workspace .session-revert-action {
+  min-height: 32px;
+  max-width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+.session-workspace .session-revert-action:hover:not(:disabled) {
+  background: var(--revert-hover-surface, var(--surface-hover));
+}
+.session-workspace .session-revert-action:focus-visible {
+  outline: 3px solid var(--focus-on-surface, var(--focus));
+  outline-offset: 2px;
+}
 .session-workspace .transcript .message-user {
   align-self: flex-end;
   width: fit-content;
@@ -1201,6 +1239,9 @@
 .queue-compact-list .queue-compact-item:last-child {
   border-bottom: 0;
 }
+.queue-compact-list .queue-drop-row-last .queue-compact-item {
+  border-bottom: 0;
+}
 .queue-compact-item .queue-row {
   display: flex;
   align-items: center;
@@ -1284,8 +1325,18 @@
 .queue-insertion {
   border-top: 2px solid var(--selected-border);
 }
+/* End-of-list dragging overlays the last row instead of adding resting space. */
+.queue-drop-row {
+  position: relative;
+}
 .queue-drop-end {
-  min-height: 8px;
+  position: absolute;
+  inset: auto 0 0;
+  height: 8px;
+  box-sizing: border-box;
+}
+.queue-compact-list > .sidebar-continuation:empty {
+  min-height: 0;
 }
 
 .session-information-section {

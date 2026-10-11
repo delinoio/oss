@@ -236,3 +236,36 @@ it("keeps the empty queue hidden while an automatic reread is pending", async ()
     expect(screen.queryByText("Loading input queue…")).toBeNull(),
   );
 });
+
+it("keeps the end drop inside the final row and sends one move to the end", async () => {
+  const f = fixture();
+  const view = render(f.view());
+  await screen.findByText("Third");
+  expect(view.container.querySelector(".queue-drop-end")).toBeNull();
+
+  const handle = screen
+    .getByText("First")
+    .closest("article")!
+    .querySelector<HTMLButtonElement>(".queue-drag-handle")!;
+  fireEvent.dragStart(handle, { dataTransfer: { setData: vi.fn() } });
+  const target = view.container.querySelector(".queue-drop-end")!;
+  expect(target.parentElement).toBe(
+    screen.getByText("Third").closest(".queue-drop-row"),
+  );
+  fireEvent.dragOver(target);
+  expect(target.classList.contains("queue-insertion")).toBe(true);
+  expect(target.parentElement?.classList.contains("queue-insertion")).toBe(
+    false,
+  );
+  fireEvent.drop(target);
+  await waitFor(() => expect(f.move).toHaveBeenCalledOnce());
+  expect(f.move.mock.calls[0][0]).toMatchObject({
+    mutation: { id: f.rows[0].id, expectedRevision: 3n },
+    sessionId: f.session.id,
+    expectedQueueGeneration: 9007199254740993n,
+    beforeInputId: "",
+    beforeInputRevision: 0n,
+  });
+  fireEvent.dragEnd(handle);
+  expect(view.container.querySelector(".queue-drop-end")).toBeNull();
+});

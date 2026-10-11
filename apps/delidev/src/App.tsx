@@ -444,6 +444,14 @@ function Shell({
       run: toggleCommandMenu,
     },
     {
+      id: ShortcutId.OpenSettings,
+      scope: ShortcutScope.Global,
+      label: "shortcuts.openSettings",
+      bindings: globalShortcutBindings[ShortcutId.OpenSettings],
+      input: ShortcutInput.Allow,
+      run: () => openSettings(),
+    },
+    {
       id: ShortcutId.Help,
       scope: ShortcutScope.Global,
       label: "shortcuts.help",
@@ -478,7 +486,11 @@ function Shell({
       inline={!connectionReady}
       onRequest={onConnectionHelp}
     >
-      <RunnerRemediationProvider active authority={pairingAuthority}>
+      <RunnerRemediationProvider
+        active
+        connectionReady={connectionReady}
+        authority={pairingAuthority}
+      >
         <RunnerPreferenceProvider
           readLocalWorker={readLocalWorker}
           scope={

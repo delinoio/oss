@@ -55,6 +55,11 @@ func TestRepositoryCloneSourceIdentity(t *testing.T) {
 		}
 	}
 	for _, values := range [][2]string{
+		{"https://generic.invalid/team/repo", "https://generic.invalid/team/repo.git"},
+		{"ssh://git@generic.invalid/team/repo", "ssh://git@generic.invalid/team/repo.git"},
+		{"git@generic.invalid:team/repo", "git@generic.invalid:team/repo.git"},
+		{"https://generic.invalid/team/repo", "https://generic.invalid/team/repo/"},
+		{"git@generic.invalid:team/repo", "git@generic.invalid:/team/repo"},
 		{"alice@git.example.com:team/repo.git", "bob@git.example.com:team/repo.git"},
 		{"git.example.com:team/repo.git", "git.example.com:/team/repo.git"},
 		{"https://git.example.com/team/repo.git", "ssh://git@git.example.com/team/repo.git"},
@@ -74,6 +79,7 @@ func TestRepositoryCloneSourceIdentity(t *testing.T) {
 	for _, values := range [][2]string{
 		{"ssh://git@git.example.com/team/repo.git", "git@git.example.com:/team/repo.git"},
 		{"https://github.com/owner/repo.git", "git@github.com:Owner/Repo.git"},
+		{"https://github.com/Owner/Repo", "ssh://git@github.com/owner/repo.git/"},
 	} {
 		left, err := RepositoryCloneSourceIdentity(values[0])
 		if err != nil {
@@ -90,6 +96,23 @@ func TestRepositoryCloneSourceIdentity(t *testing.T) {
 	for _, value := range []string{"", "0", "not-a-digest", "000000000000000000000000000000000000000000000000000000000000000g"} {
 		if ValidRepositoryCloneSourceIdentity(value) {
 			t.Fatalf("accepted invalid source identity: %q", value)
+		}
+	}
+}
+
+func TestRepositoryCloneSourceIdentityHistoricalNamespaces(t *testing.T) {
+	// These are historical digest bytes, not a second implementation of the
+	// current identity algorithm. Only GitHub's established namespace survives.
+	const github = "f2b6c1782a95b061ac5a3e7f279129e50df6a4705aa19a90d860f9af55cac61a"
+	const generic = "aee038bac35f715fe0d4bcf220ec4cddcbd816f2ccf93e17c5e1c58794daeb1b"
+	got, err := RepositoryCloneSourceIdentity("https://github.com/owner/repo.git")
+	if err != nil || got != github {
+		t.Fatal("GitHub historical identity changed", err)
+	}
+	for _, source := range []string{"https://generic.invalid/team/repo", "https://generic.invalid/team/repo.git", "https://generic.invalid/team/repo/"} {
+		got, err := RepositoryCloneSourceIdentity(source)
+		if err != nil || got == generic {
+			t.Fatal("historical generic proof was promoted", err)
 		}
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"runtime"
 	"testing"
 	"time"
 
@@ -17,6 +18,10 @@ import (
 )
 
 func TestSessionDeletionReissuesUncertainTerminalClose(t *testing.T) {
+	// Overlap isolated fixture waits on Linux; retain native Windows scheduling.
+	if runtime.GOOS == "linux" {
+		t.Parallel()
+	}
 	for _, replacement := range []bool{false, true} {
 		name := "same-instance"
 		if replacement {

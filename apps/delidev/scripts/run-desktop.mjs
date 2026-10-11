@@ -7,6 +7,7 @@ import {
   exitLikeChild,
   spawnDevServer,
 } from "../../../scripts/spawn-dev-server.mjs";
+import { captureDesktopDiagnostics } from "./desktop-diagnostics.mjs";
 import { dryRunEnvironment } from "./bundle-macos-dry-run.mjs";
 import {
   acquireNativeBuildLock,
@@ -44,6 +45,26 @@ export function desktopEnvironment(platform, source, home = homedir()) {
       readFileSync(join(app, "src-tauri/tauri.conf.json"), "utf8"),
     ).bundle.macOS.minimumSystemVersion,
   };
+}
+
+export function desktopColorEnvironment(
+  source,
+  { base = source, stdoutIsTTY = false, stderrIsTTY = false } = {},
+) {
+  const env = { ...base };
+  const optedOut =
+    Object.hasOwn(source, "NO_COLOR") ||
+    source.CLICOLOR === "0" ||
+    source.CARGO_TERM_COLOR === "never" ||
+    source.FORCE_COLOR === "0";
+  if (optedOut) {
+    env.CARGO_TERM_COLOR = "never";
+    env.FORCE_COLOR = "0";
+  } else if (stdoutIsTTY || stderrIsTTY) {
+    env.CARGO_TERM_COLOR = "always";
+    if (!source.FORCE_COLOR) env.FORCE_COLOR = "1";
+  }
+  return env;
 }
 
 export function desktopArguments(platform, args, credits) {
@@ -98,6 +119,10 @@ export async function runDesktop(
     publish = publishDevelopmentBundle,
     lock = () => acquireNativeBuildLock(root),
     log = (entry) => process.stderr.write(`${JSON.stringify(entry)}\n`),
+    stdout = process.stdout,
+    stderr = process.stderr,
+    stdoutIsTTY = process.stdout.isTTY === true,
+    stderrIsTTY = process.stderr.isTTY === true,
   } = {},
 ) {
   let stage = "prepare";
@@ -110,9 +135,28 @@ export async function runDesktop(
       report("failed", { code: "pnpm-required" });
       return { code: 1, signal: null };
     }
-    const env = desktopEnvironment(platform, environment);
-    const options = { cwd: app, env, stdio: "inherit", shell: false };
-    const lifecycle = { terminateProcessTree: true };
+    const env = desktopColorEnvironment(environment, {
+      base: desktopEnvironment(platform, environment),
+      stdoutIsTTY,
+      stderrIsTTY,
+    });
+    // Keep the same argv for execution, but never inherit unfiltered diagnostic
+    // pipes: Cargo's command echo otherwise bypasses the safe stage logger.
+    // One pnpm separator is optional. All remaining tokens are application
+    // arguments, never a Tauri/config/Cargo override.
+    const forwarded = args[0] === "--" ? args.slice(1) : args;
+    const options = {
+      cwd: app,
+      env,
+      stdio: ["inherit", "pipe", "pipe"],
+      shell: false,
+    };
+    const captureOutput = captureDesktopDiagnostics(forwarded, {
+      stdout,
+      stderr,
+      incomplete: (code) => report("diagnostics-incomplete", { code }),
+    });
+    const lifecycle = { terminateProcessTree: true, captureOutput };
     const command = (executable, argv, opts) =>
       signingCommand(executable, argv, opts, run);
     let identity;
@@ -139,9 +183,6 @@ export async function runDesktop(
     );
     const credits =
       platform === "darwin" ? creditsFor(selected, env) : undefined;
-    // pnpm callers may include one explicit separator. Every remaining token is
-    // an application argument, never a Tauri/config/Cargo override.
-    const forwarded = args[0] === "--" ? args.slice(1) : args;
     report("started");
     const cliArguments = desktopArguments(platform, forwarded, credits);
     const invocation =
@@ -170,7 +211,7 @@ export async function runDesktop(
         executable,
         forwarded,
         { ...options, detached: true },
-        { terminateProcessTree: false },
+        { terminateProcessTree: false, captureOutput },
       );
     }
     report(
@@ -194,7 +235,13 @@ export async function runDesktop(
     }
     return { code: 1, signal: null };
   } finally {
-    release?.();
+    try {
+      release?.();
+    } catch {
+      // Cleanup failure must remain visible without exposing the lock path or
+      // replacing an already observed child exit code or termination signal.
+      report("cleanup-uncertain", { code: "build-lock-release-failed" });
+    }
   }
 }
 

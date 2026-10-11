@@ -82,6 +82,18 @@ func (e commandExitError) Error() string {
 	return fmt.Sprintf("owned process exited with status %d", int(e))
 }
 func (e commandExitError) ExitCode() int { return int(e) }
+
+// CommandExitCode reports only an exit status returned by a started command.
+// Other errors may implement ExitCode for a caller-facing CLI status without
+// representing a native command result.
+func CommandExitCode(err error) (int, bool) {
+	var exit commandExitError
+	if !errors.As(err, &exit) {
+		return 0, false
+	}
+	return int(exit), true
+}
+
 func ownershipError() error {
 	return domain.Fail(domain.RecoveryRequired, "Owned process descendants could not be confirmed stopped.", "Retain the execution journal and reconcile its native ownership before retrying or releasing resources.")
 }

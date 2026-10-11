@@ -10,6 +10,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,9 @@ import (
 
 func publishedOpenCodeRecoveryFork(t *testing.T) (*continuationFixture, *pb.Resource, domain.ForkJobInput) {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("OpenCode General Chat Fork is supported only on Linux and macOS")
+	}
 	f := newContinuationFixtureProfile(t, domain.ExecutionSucceeded, domain.OpenCode)
 	ctx := context.Background()
 	_, err := f.service.Store.Mutate(ctx, domain.NewID(), "fixture.opencode-fork-profile", nil, func(tx *store.Tx) (any, error) {

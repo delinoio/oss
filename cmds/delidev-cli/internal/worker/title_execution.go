@@ -87,6 +87,17 @@ func (b *titleReasoningBudget) observe(event codex.Event) bool {
 	return b.total <= domain.MaxAutomaticTitleReasoningBytes
 }
 
+// Title execution shares the passive search discard boundary, but retains its
+// explicit narrow metadata profile for every other auxiliary capability.
+func validateTitleMetadata(kind codex.MetadataKind) error {
+	switch kind {
+	case codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable, codex.RawSupplementDiscarded, codex.NativeGoalAbsent, codex.FuzzySearchDiscarded, codex.GatewayOAuthStatusDiscarded:
+		return nil
+	default:
+		return domain.Fail(domain.Unsupported, "Codex emitted an unsupported title-runtime metadata event.", "Preserve the isolated runtime; the title profile accepts no auxiliary capability or interaction.")
+	}
+}
+
 func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, job domain.Job) (output json.RawMessage, returned error) {
 	connection := config.execution
 	if connection == nil || connection.Assignment == nil || domain.ID(connection.Assignment.Id) != jobID || connection.Client == nil || connection.Instance != job.InstanceID {
@@ -255,10 +266,8 @@ func executeSessionTitle(ctx context.Context, config Config, jobID domain.ID, jo
 		}
 		switch event.Kind {
 		case codex.MetadataEvent:
-			switch event.Metadata {
-			case codex.ThreadIdentityChecked, codex.ThreadSettingsChecked, codex.RemoteControlDisabled, codex.QuotaUnavailable, codex.RawSupplementDiscarded, codex.NativeGoalAbsent:
-			default:
-				return nil, domain.Fail(domain.Unsupported, "Codex emitted an unsupported title-runtime metadata event.", "Preserve the isolated runtime; the title profile accepts no auxiliary capability or interaction.")
+			if err := validateTitleMetadata(event.Metadata); err != nil {
+				return nil, err
 			}
 		case codex.NoticeEvent:
 			if config.Logger != nil {

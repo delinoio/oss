@@ -7,9 +7,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"io"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -39,7 +39,7 @@ func TestRepositoryBranchesLargeJournalReplaysOriginalResultWithoutNativeWork(t 
 	document, _ := json.Marshal(job)
 	digest := sha256.Sum256(document)
 	original := journal{Version: 1, JobID: id, InstanceID: instance, Revision: 2, Digest: hex.EncodeToString(digest[:]), State: journalFinished, ReportID: domain.NewID(), Output: output}
-	if err := os.Mkdir(filepath.Join(root, "jobs"), 0700); err != nil {
+	if err := security.PrivateDir(filepath.Join(root, "jobs")); err != nil {
 		t.Fatal(err)
 	}
 	if err := writeJSON(filepath.Join(root, "jobs", string(id)+".json"), original); err != nil {

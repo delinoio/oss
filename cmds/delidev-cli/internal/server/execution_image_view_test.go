@@ -12,6 +12,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -81,6 +82,23 @@ func newImageViewPublicationFixture(t *testing.T) (*publicationFixture, string) 
 		input.Preparation = raw
 		input.Manifest, _ = json.Marshal(m)
 	}, false)
+	// This fixture publishes native file paths, so its remote machine record
+	// must describe the host that owns those paths.
+	_, err := authority.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.image-machine", nil, func(tx *store.Tx) (any, error) {
+		row, err := tx.Get(domain.MachineKind, authority.input.MachineID)
+		if err != nil {
+			return nil, err
+		}
+		machine, err := store.Decode[domain.Machine](row)
+		if err != nil {
+			return nil, err
+		}
+		machine.OS = runtime.GOOS
+		return tx.Put(row.Kind, row.ID, row.Revision, row.SessionID, row.ProjectID, machine)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(location, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +231,7 @@ func TestExecutionImageViewRejectsChangedScopeAndReference(t *testing.T) {
 			f.registerGrant(t)
 			f.publish(t, f.event(domain.ExecutionThreadBound, 1))
 			f.publish(t, f.event(domain.ExecutionInputAccepted, 2))
-			ref, err := workspace.ObserveImageViewLocation(f.input, "linux", location, domain.NewID())
+			ref, err := workspace.ObserveImageViewLocation(f.input, runtime.GOOS, location, domain.NewID())
 			if err != nil {
 				t.Fatal(err)
 			}

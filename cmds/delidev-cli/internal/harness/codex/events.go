@@ -34,6 +34,7 @@ const (
 	validationGateway        eventValidationStage = "account-gateway"
 	validationSkills         eventValidationStage = "skills-inventory"
 	validationFilesystem     eventValidationStage = "filesystem-watch"
+	validationFuzzySearch    eventValidationStage = "fuzzy-search"
 	validationMCP            eventValidationStage = "mcp-startup"
 	validationHook           eventValidationStage = "native-hook"
 	validationThreadMetadata eventValidationStage = "thread-metadata"
@@ -78,6 +79,8 @@ func validationStage(method string) eventValidationStage {
 		return validationSkills
 	case "fs/changed":
 		return validationFilesystem
+	case "fuzzyFileSearch/sessionUpdated", "fuzzyFileSearch/sessionCompleted":
+		return validationFuzzySearch
 	case "mcpServer/startupStatus/updated", "mcpServer/event/stream/notification", "mcpServer/oauthLogin/completed":
 		return validationMCP
 	case "hook/started", "hook/completed":
@@ -193,6 +196,7 @@ type Event struct {
 	// neither it nor raw provider errors may be serialized as a product event.
 	Native         *nativewire.Event    `json:"-"`
 	ExtensionStage eventValidationStage `json:"-"`
+	gatewayStatus  gatewayOAuthStatus
 }
 
 // NextEvent preserves wire order even with concurrent consumers. If cancellation
@@ -277,6 +281,9 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	}
 	if c.logger != nil && (event.Metadata == AuthRecoveryStartedObserved || event.Metadata == AuthRecoveryCompletedObserved) {
 		c.logger.InfoContext(ctx, "Codex native authentication recovery observed", "owner_id", c.ownerID, "phase", event.Metadata)
+	}
+	if c.logger != nil && event.Metadata == GatewayOAuthStatusDiscarded {
+		c.logger.InfoContext(ctx, "Codex passive gateway OAuth status observed", "owner_id", c.ownerID, "status", event.gatewayStatus, "policy", GatewayOAuthStatusDiscarded)
 	}
 	event.EmittedAtMS = native.EmittedAtMS
 	return event, nil

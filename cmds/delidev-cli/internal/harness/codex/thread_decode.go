@@ -51,12 +51,28 @@ type threadWire struct {
 	ReasoningEffort *string           `json:"reasoningEffort,omitempty"`
 }
 
-func (t threadWire) summary() Thread {
-	history := t.HistoryMode
+func normalizedHistoryMode(history HistoryMode) HistoryMode {
 	if history == "" {
-		history = LegacyHistory
+		return LegacyHistory
 	}
-	return Thread{ID: t.ID, SessionID: t.SessionID, Status: t.Status, History: history, DirectInput: t.CanAcceptDirectInput}
+	return history
+}
+
+// Only the selected, initialized Revert profile admits paginated history.
+// Version metadata alone cannot expand a legacy profile's history authority.
+func supportsHistoryMode(history HistoryMode, revert bool) bool {
+	switch normalizedHistoryMode(history) {
+	case LegacyHistory:
+		return true
+	case PaginatedHistory:
+		return revert
+	default:
+		return false
+	}
+}
+
+func (t threadWire) summary() Thread {
+	return Thread{ID: t.ID, SessionID: t.SessionID, Status: t.Status, History: normalizedHistoryMode(t.HistoryMode), DirectInput: t.CanAcceptDirectInput}
 }
 func decodeThread(raw json.RawMessage, version string) (threadWire, error) {
 	var thread threadWire
@@ -114,7 +130,7 @@ func decodeBoundThreadProfile(raw json.RawMessage, settings ThreadSettings, expe
 		return nil, nil, err
 	}
 	thread := wire.summary()
-	if thread.History != LegacyHistory && !revert {
+	if !supportsHistoryMode(thread.History, revert) {
 		return &thread, nil, incompatible()
 	}
 	if expectedID != "" && wire.ID != expectedID {

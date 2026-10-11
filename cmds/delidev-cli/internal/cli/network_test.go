@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -78,6 +79,10 @@ func TestCLINetworkProfilesSelectionAndExactRetry(t *testing.T) {
 }
 
 func TestCLINetworkWaitsForBoundedCredentialResponse(t *testing.T) {
+	// Overlap isolated fixture waits on Linux; retain native Windows scheduling.
+	if runtime.GOOS == "linux" {
+		t.Parallel()
+	}
 	// Exercise the actual response-header wait beyond the default 15 seconds.
 	// Credential-store latency must not lose the original durable acknowledgment.
 	requestID := domain.NewID()

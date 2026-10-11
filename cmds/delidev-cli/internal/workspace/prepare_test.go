@@ -111,6 +111,33 @@ func TestValidateRemoteIdentityRejectsDifferentCheckoutSource(t *testing.T) {
 	}
 }
 
+func TestValidateRemoteIdentityRejectsGenericSuffixAndHistoricalProof(t *testing.T) {
+	root := repository(t)
+	gitTest(t, root, "remote", "add", "origin", "https://generic.invalid/team/repo.git")
+	g := Git{ProcessRoot: filepath.Join(t.TempDir(), "processes"), OwnerID: domain.NewID()}
+	inspection, err := g.Inspect(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, source := range []string{"https://generic.invalid/team/repo", "https://generic.invalid/team/repo.git/"} {
+		expected, err := domain.RepositoryCloneSourceIdentity(source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if domain.SafeError(g.ValidateRemoteIdentity(context.Background(), inspection, "origin", expected)).Code != domain.InvalidArgument {
+			t.Fatal("different generic path was admitted")
+		}
+	}
+	expected, err := domain.RepositoryCloneSourceIdentity("https://generic.invalid/team/repo.git")
+	if err != nil || g.ValidateRemoteIdentity(context.Background(), inspection, "origin", expected) != nil {
+		t.Fatal("exact generic source was refused", err)
+	}
+	const historical = "aee038bac35f715fe0d4bcf220ec4cddcbd816f2ccf93e17c5e1c58794daeb1b"
+	if domain.SafeError(g.ValidateRemoteIdentity(context.Background(), inspection, "origin", historical)).Code != domain.InvalidArgument {
+		t.Fatal("historical generic proof was admitted")
+	}
+}
+
 func TestDetachedAllRepositoryPreparationAndIdempotency(t *testing.T) {
 	root, second := repository(t), repository(t)
 	m := manager(t)

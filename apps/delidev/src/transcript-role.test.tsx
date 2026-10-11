@@ -108,6 +108,7 @@ it("keeps unknown roles, non-text records and invalid native roots outside role 
       ".message-user, .message-assistant, .native-claude-message-content",
     ),
   ).toHaveLength(0);
+  expect(container.querySelectorAll(".user-transcript-item")).toHaveLength(0);
   expect(screen.getByText("Unknown retained text")).toBeTruthy();
   expect(screen.getByLabelText("Grok user input unavailable")).toBeTruthy();
   expect(screen.getByLabelText("Grok text unavailable")).toBeTruthy();
@@ -286,5 +287,64 @@ it.each(["en", "ko"])(
     for (const status of screen.getAllByRole("status"))
       expect(status.textContent?.length).toBeGreaterThan(0);
     expect(container.querySelector("strong")).toBeNull();
+  },
+);
+
+it.each(["en", "ko"])(
+  "keeps only Revert outside a stable labelled user item in %s",
+  async (locale) => {
+    await act(() => i18n.changeLanguage(locale));
+    const resource = transcriptResource({
+      ...transcriptRoleFixtures().user,
+      text: "Short prompt\n두 번째 줄",
+      state: "interrupted",
+      context_revision: 0,
+    });
+    const view = (eligible: boolean) => (
+      <div data-payload-page="original-page">
+        <TranscriptItem
+          resource={resource}
+          contextRevision={1}
+          actions={<button>Original other action</button>}
+          revertAction={
+            eligible ? (
+              <button className="session-revert-action" disabled>
+                {copy("session.revertAndEdit")}
+              </button>
+            ) : null
+          }
+        />
+      </div>
+    );
+    const { container, rerender } = render(view(true));
+    const item = screen.getByRole("group", { name: copy("session.userTurn") });
+    const bubble = screen.getByRole("article", {
+      name: copy("session.userMessage"),
+    });
+    const action = screen.getByRole("button", {
+      name: copy("session.revertAndEdit"),
+    });
+    expect(item.contains(action)).toBe(true);
+    expect(bubble.contains(action)).toBe(false);
+    expect(action).toHaveProperty("disabled", true);
+    expect(bubble.contains(screen.getByText("Original other action"))).toBe(
+      true,
+    );
+    expect(bubble.querySelector("pre")?.textContent).toBe(
+      "Short prompt\n두 번째 줄",
+    );
+    expect(
+      within(bubble).getByText(copy("session.previousContext")),
+    ).toBeTruthy();
+    const page = container.querySelector("[data-payload-page]");
+    rerender(view(false));
+    expect(screen.getByRole("group", { name: copy("session.userTurn") })).toBe(
+      item,
+    );
+    expect(
+      screen.getByRole("article", { name: copy("session.userMessage") }),
+    ).toBe(bubble);
+    expect(container.querySelector("[data-payload-page]")).toBe(page);
+    expect(container.querySelector(".user-transcript-actions")).toBeNull();
   },
 );

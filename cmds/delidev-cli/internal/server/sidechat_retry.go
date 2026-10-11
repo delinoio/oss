@@ -341,6 +341,47 @@ func validateSidechatRetryForkAuthority(tx *store.Tx, input domain.ForkJobInput)
 	return nil
 }
 
+// Reject only the current queued job. A retry owner can be released only when
+// the original admission still proves that no Worker or native runtime claimed it.
+func failForkBeforeClaim(tx *store.Tx, r store.Record, job domain.Job, problem error) (store.Record, domain.ID, error) {
+	if job.Type != domain.ForkSessionJob || job.State != domain.JobQueued || problem == nil {
+		return r, "", retryConflict()
+	}
+	var released domain.ID
+	var input domain.ForkJobInput
+	if r.Revision == 1 && job.InstanceID == "" && job.AssignedDeviceID == "" && job.Startup == nil && len(job.Output) == 0 && job.FinishedAt == nil && domain.Decode(job.Input, &input) == nil && input.Retry != nil && input.Validate() == nil {
+		assigned, err := tx.HasJobAssignment(r.ID)
+		if err != nil {
+			return r, "", err
+		}
+		if !assigned {
+			cr, child, qr, _, err := sidechatRetryCandidate(tx, input.ChildSessionID)
+			if err == nil && cr.ID == r.SessionID && cr.ProjectID == r.ProjectID && child.MachineID == job.MachineID && job.MachineID == input.SourceAssignment.MachineID && child.Fork.SourceSessionID == input.SourceSessionID && child.Fork.WorkerDeviceID == input.Retry.WorkerDeviceID && child.Fork.Snapshot.InitialAccountID == input.SourceAssignment.AccountID && child.Fork.Snapshot.ConnectionID == input.SourceAssignment.ConnectionID && child.Fork.SidechatParentSnapshot.ConfigurationDigest == input.SourceAssignment.ConfigurationDigest && cr.Revision > input.Retry.ChildRevision && qr.ID == input.Retry.QuestionID && qr.Revision == input.Retry.QuestionRevision && child.SidechatActiveRetry == input.Retry.GenerationID && child.Execution != nil && child.Execution.CleanupVerified && child.Execution.JobID == input.Retry.PreviousJobID && child.Execution.ExecutionID == input.Retry.PreviousExecutionID && child.ActiveExecutionID == "" && child.NativeExecutionRootID != input.RuntimeID {
+				matches, exact := 0, false
+				for _, g := range child.SidechatRetries {
+					if g.ID == input.Retry.GenerationID || g.ForkJobID == r.ID || g.RuntimeID == input.RuntimeID {
+						matches++
+						exact = g.ID == input.Retry.GenerationID && g.ForkJobID == r.ID && g.RuntimeID == input.RuntimeID && g.WorkerInstanceID == input.Retry.WorkerInstanceID && g.WorkerDeviceID == input.Retry.WorkerDeviceID && g.QuestionID == input.Retry.QuestionID && g.QuestionRevision == input.Retry.QuestionRevision && g.PreviousJobID == input.Retry.PreviousJobID && g.PreviousExecutionID == input.Retry.PreviousExecutionID && g.ParentRevision == input.SourceRevision && g.ParentExecutionID == input.Completion.ExecutionID && g.ParentTurnID == input.Completion.NativeTurnID && g.Fork == nil && g.ExecutionJobID == "" && g.ExecutionID == "" && !g.Completed
+					}
+				}
+				if matches == 1 && exact {
+					// Preserve the answer, generation and receipt. Only this admission's
+					// active reservation has no runtime left to recover or clean up.
+					child.SidechatActiveRetry = ""
+					if _, err := tx.Put(domain.SessionKind, cr.ID, cr.Revision, cr.ID, cr.ProjectID, child); err != nil {
+						return r, "", err
+					}
+					released = input.Retry.GenerationID
+				}
+			}
+		}
+	}
+	now := time.Now().UTC()
+	job.State, job.Problem, job.FinishedAt = domain.JobFailed, domain.SafeError(problem), &now
+	failed, err := tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, job)
+	return failed, released, err
+}
+
 func finishSidechatRetryFork(tx *store.Tx, r store.Record, job domain.Job, revision uint64, raw json.RawMessage, problem *domain.Error, input domain.ForkJobInput, output domain.ForkJobResult) (any, error) {
 	cr, child, err := sessionRecord(tx, input.ChildSessionID)
 	if err != nil {
