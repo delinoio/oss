@@ -20,7 +20,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useQuery } from "@connectrpc/connect-query";
+import { useMutation, useQuery } from "@connectrpc/connect-query";
 import {
   FailureCode,
   ApiProtocol,
@@ -372,15 +372,7 @@ function SourceGroup({
       document(row).enabled !== false &&
       !document(row).removal,
   );
-  const endpoint = useQuery(
-    ProviderQuery.listEndpointModels,
-    {
-      accountId: refreshAccount?.id ?? "",
-      expectedAccountRevision: refreshAccount?.revision ?? 0n,
-      expectedProviderRevision: provider.data?.resource?.revision ?? 0n,
-    },
-    { enabled: false },
-  );
+  const endpoint = useMutation(ProviderQuery.listEndpointModels);
   const endpointValid =
     source?.kind === SourceKind.Api &&
     endpoint.data?.accountId === refreshAccount?.id &&
@@ -1055,7 +1047,7 @@ function SourceGroup({
                 </ul>
               ) : null}
               <Problem error={endpoint.error || knownModels.error} />
-              {endpoint.isFetching || knownModels.isFetching ? (
+              {endpoint.isPending || knownModels.isFetching ? (
                 <p role="status">
                   {copy("agent-worker-wizard.loadingModelCatalog")}
                 </p>
@@ -1102,7 +1094,7 @@ function SourceGroup({
             type="button"
             disabled={
               locked ||
-              endpoint.isFetching ||
+              endpoint.isPending ||
               knownModels.isFetching ||
               (source?.kind === SourceKind.Api &&
                 (!refreshAccount || !provider.data?.resource))
@@ -1114,7 +1106,11 @@ function SourceGroup({
                 refreshAccount &&
                 provider.data?.resource
               )
-                void endpoint.refetch();
+                void endpoint.mutateAsync({
+                  accountId: refreshAccount.id,
+                  expectedAccountRevision: refreshAccount.revision,
+                  expectedProviderRevision: provider.data.resource.revision,
+                });
               if (source?.kind === SourceKind.Subscription && knownSupported)
                 void knownModels.refetch();
             }}
