@@ -241,7 +241,8 @@
         "test:desktop-launch",
         "test:widget",
         "ci:qa",
-        "ci:release"
+        "ci:release",
+        "test:desktop-tabs-layout"
       ]
     },
     "test:unit:1": {
@@ -368,6 +369,16 @@
         "npm_execpath",
         "RUNNER_TEMP",
         "GITHUB_SHA"
+      ]
+    },
+    "test:desktop-tabs-layout": {
+      "cache": false,
+      "dependsOn": [
+        "^build"
+      ],
+      "passThroughEnv": [
+        "DELIDEV_LAYOUT_PLAYWRIGHT_MODULE",
+        "DELIDEV_LAYOUT_BROWSER_CHANNEL"
       ]
     }
   }

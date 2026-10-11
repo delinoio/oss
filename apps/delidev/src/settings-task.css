@@ -19,7 +19,7 @@ dialog.settings-task-dialog { width: min(768px, calc(100vw - 32px)); max-width: 
 .settings-task-body :is(p, label, button, input, textarea, select) { font-size: 14px; line-height: 20px; }
 .settings-task-body :is(h1, h2, h3, h4, p, small, li, code, dt, dd, button, summary) { overflow-wrap: anywhere; }
 .settings-task-body :is(form, .account-wizard, .api-entry-workflow, .agent-configuration, .project-editor, .integration-editor) { width: 100%; max-width: 720px; margin-inline: 0; }
-.settings-task-body :is(button, input:not([type=checkbox]):not([type=radio]), textarea, select, summary), .settings-task-footer button { min-height: 40px; max-width: 100%; border-radius: 8px; }
+.settings-task-body :is(button, input:not([type=checkbox]):not([type=radio]), textarea, select, summary):not(.desktop-tab-label):not(.desktop-tab-close), .settings-task-footer button { min-height: 40px; max-width: 100%; border-radius: 8px; }
 .settings-task-body textarea { white-space: pre-wrap; }
 .settings-task-body :is(section, article, header, fieldset, form, label, header > div) { min-width: 0; }
 .settings-task-footer { font-size: 14px; line-height: 20px; flex: none; padding: 16px 24px; border-top: 1px solid var(--border); }
@@ -36,7 +36,7 @@ dialog.settings-task-dialog { width: min(768px, calc(100vw - 32px)); max-width: 
 .settings-task-body :is(.account-wizard, .subscription-account-create, .agent-core, .project-field-group, .project-deletion, .server-preferences-panel, .paired-device-form, .integration-editor, .integration-manage) { padding: 0; border: 0; border-radius: 0; background: var(--surface); }
 .settings-task-body :is(.project-field-group, .agent-optional, .integration-section) { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); }
 .settings-task-body :is(.settings-scope, .api-entry-scope, small) { font-size: 12px; line-height: 18px; color: var(--muted); }
-.settings-task-body :is(input:not([type=checkbox]):not([type=radio]), select, textarea, button), .settings-task-footer button { border-color: var(--control-border); }
+.settings-task-body :is(input:not([type=checkbox]):not([type=radio]), select, textarea, button):not(.desktop-tab-label):not(.desktop-tab-close), .settings-task-footer button { border-color: var(--control-border); }
 .settings-task-footer button.primary { border-color: var(--accent); }
 @container settings-body (width < 640px) { .settings-task-body :is(.account-provider-choices, .agent-core-columns, .integration-form-grid) { grid-template-columns: minmax(0, 1fr); } }
 

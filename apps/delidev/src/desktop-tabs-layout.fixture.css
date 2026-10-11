@@ -1,0 +1,6 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.desktop-tabs-fixture { display: block; width: 100%; min-width: 0; padding: 16px; }
+.desktop-tabs-fixture > * { min-width: 0; max-width: 100%; }
+.desktop-tabs-fixture .settings-content-column { display: block; width: 100%; }
+.desktop-tabs-fixture .desktop-tab-strip { margin-block: 8px; }
+.desktop-tabs-fixture .browser-tabs .desktop-tab-item, .desktop-tabs-fixture .browser-pages .desktop-tab-item { max-width: 240px; }

@@ -1,0 +1,86 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.desktop-tab-strip {
+  display: flex;
+  flex: none;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0;
+  border-bottom: 1px solid var(--desktop-tab-border, var(--border));
+  list-style: none;
+  scrollbar-width: thin;
+}
+.desktop-tab-strip .desktop-tab-item {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: stretch;
+  min-width: 0;
+  min-height: 40px;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--desktop-tab-muted, var(--muted));
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+}
+/* The indicator belongs to the item so it spans a sibling close target too. */
+.desktop-tab-strip .desktop-tab-item::after {
+  position: absolute;
+  inset: auto 0 0;
+  height: 2px;
+  background: transparent;
+  content: "";
+  pointer-events: none;
+}
+.desktop-tab-strip .desktop-tab-item:is(.is-selected, [aria-selected="true"]) {
+  color: var(--desktop-tab-selected, var(--selected-text));
+}
+.desktop-tab-strip .desktop-tab-item:is(.is-selected, [aria-selected="true"])::after {
+  background: var(--desktop-tab-indicator, var(--accent));
+}
+.desktop-tab-strip .desktop-tab-label,
+.desktop-tab-strip .desktop-tab-close {
+  flex: none;
+  min-height: 40px;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  box-shadow: none;
+}
+.desktop-tab-strip .desktop-tab-label {
+  min-width: 40px;
+  padding: 10px 16px;
+  white-space: nowrap;
+}
+.desktop-tab-strip .desktop-tab-item > :is(.desktop-tab-label, .desktop-tab-close) {
+  color: inherit;
+}
+.desktop-tab-strip .desktop-tab-item > .desktop-tab-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.desktop-tab-strip .desktop-tab-close {
+  width: 40px;
+  min-width: 40px;
+  padding: 0;
+}
+.desktop-tab-strip :is(.desktop-tab-label, .desktop-tab-close):hover {
+  background: transparent;
+}
+.desktop-tab-strip :is(.desktop-tab-label, .desktop-tab-close):focus-visible {
+  outline: 2px solid var(--desktop-tab-focus, var(--focus));
+  outline-offset: -3px;
+}

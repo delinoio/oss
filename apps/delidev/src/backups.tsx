@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { revealDesktopTab } from "./desktop-tabs";
 import { SettingsActionButton, SettingsActionIcon, SettingsActionPresentation } from "./settings-action";
 import { Disclosure, DisclosureSummary, DisclosureDensity } from "./disclosure";
 import { Timestamp, TimestampMode } from "./timestamp-display";
@@ -47,6 +48,7 @@ export function Backups({ active }: { active: boolean }) {
   const [historyTab, setHistoryTab] = useState(HistoryTab.Creation);
   const [focusedTab, setFocusedTab] = useState(HistoryTab.Creation);
   const tabButtons = useRef(new Map<HistoryTab, HTMLButtonElement>());
+  useLayoutEffect(() => { revealDesktopTab(tabButtons.current.get(historyTab) ?? null); }, [historyTab, active]);
   const inspectButtons = useRef(new Map<string, HTMLButtonElement>());
   const inspectionOrigin = useRef("");
   const returnInspectionFocus = useRef(false);
@@ -141,7 +143,7 @@ export function Backups({ active }: { active: boolean }) {
     </section> : null}
     <section data-settings-search-target="backup-history" className="backups-panel backups-history" aria-label={copy("backups.operationHistory_93bf53")}>
       <header className="backups-history-heading"><h2>{copy("backups.operationHistory_93bf53")}</h2><SettingsActionButton icon={SettingsActionIcon.Refresh} presentation={SettingsActionPresentation.Icon} hidden={historyTab !== HistoryTab.Creation} disabled={!active || Boolean(creations.loading)} onClick={creations.refreshExplicit}>{copy("backups.refreshCreationJobs_96e3e0")}</SettingsActionButton></header>
-      <div className="backups-tabs" role="tablist" aria-label={copy("backups.backupOperationHistory_8f9f32")}>{historyTabs.map(tab => <button key={tab} ref={node => { if (node) tabButtons.current.set(tab, node); else tabButtons.current.delete(tab); }} role="tab" id={`${panelId}-tab-${tab}`} aria-controls={`${panelId}-panel-${tab}`} aria-selected={historyTab === tab} tabIndex={focusedTab === tab ? 0 : -1} onFocus={() => setFocusedTab(tab)} onKeyDown={event => moveTabFocus(event, tab)} onClick={() => { setFocusedTab(tab); setHistoryTab(tab); }}>{tab === HistoryTab.Creation ? copy("backups.creationJobs_dd6156") : copy("backups.deletionJobs_74156e")}</button>)}</div>
+      <div className="backups-tabs desktop-tab-strip" onFocusCapture={event => revealDesktopTab(event.target as HTMLElement)} role="tablist" aria-label={copy("backups.backupOperationHistory_8f9f32")}>{historyTabs.map(tab => <button className="desktop-tab-item desktop-tab-label" key={tab} ref={node => { if (node) tabButtons.current.set(tab, node); else tabButtons.current.delete(tab); }} role="tab" id={`${panelId}-tab-${tab}`} aria-controls={`${panelId}-panel-${tab}`} aria-selected={historyTab === tab} tabIndex={focusedTab === tab ? 0 : -1} onFocus={() => setFocusedTab(tab)} onKeyDown={event => moveTabFocus(event, tab)} onClick={() => { setFocusedTab(tab); setHistoryTab(tab); }}>{tab === HistoryTab.Creation ? copy("backups.creationJobs_dd6156") : copy("backups.deletionJobs_74156e")}</button>)}</div>
       <div role="tabpanel" id={`${panelId}-panel-creation`} aria-labelledby={`${panelId}-tab-creation`} hidden={historyTab !== HistoryTab.Creation}>
         <p>{copy("backups.creationContinuesAfterThisClientDisconnects_03823b")}</p>
         <Problem error={creations.error?.failure} summary={copy("backups.historyHelp")} />{creations.error && creations.loaded ? <p>{copy("backups.previousCreationObservationsAreShownCurrent_feb522")}</p> : null}

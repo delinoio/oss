@@ -1,8 +1,9 @@
+import { revealDesktopTab } from "./desktop-tabs";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { Timestamp, TimestampMode, TimestampText } from "./timestamp-display";
 import type { ReactNode } from "react";
 import { LocalizedText, copy, formatDecimal, displayLocale, useLocale } from "./localization";
-import { useId, useState } from "react";
+import { useId, useLayoutEffect, useState } from "react";
 import type { UsageEntry } from "./usage-entry";
 import { useQuery } from "@connectrpc/connect-query";
 import { subscriptionServiceLabel, SubscriptionServiceIdentity, SystemCapability, SystemQuery, EntityKind, UsageCoverage, UsageQuery, UsageTimeGranularity, type EstimateTotals, type UsageMeasure, type UsageTotals } from "@delinoio/delidev-api-client";
@@ -93,6 +94,7 @@ export function Usage({ active, open, entry }: { active: boolean; open: (id: str
 
   const [tab, setTab] = useState(UsageTab.Overview);
   const tabId = useId();
+  useLayoutEffect(() => { revealDesktopTab(window.document.getElementById(`${tabId}-${tab}-tab`)); }, [tabId, tab, active]);
   const [expanded, setExpanded] = useState<AccountingDisclosures["expanded"]>({});
   const disclosures: AccountingDisclosures = { expanded, change: (kind, value) => setExpanded(current => current[kind] === value ? current : { ...current, [kind]: value }) };
   const { draft, selection, invalid, pending, preset, selectPreset, change, edit, reset: resetFilters, ready } = useUsageFilters(active, entry);
@@ -137,8 +139,8 @@ export function Usage({ active, open, entry }: { active: boolean; open: (id: str
       </form>
     </SidebarSurface>
     <section hidden={!active} className="page usage-page" aria-busy={result.isFetching}>
-    <div className="usage-tabs" role="tablist" aria-label={copy("usage.analysisTabs")}>
-      {tabs.map((value, index) => <button key={value} type="button" role="tab" id={`${tabId}-${value}-tab`} aria-controls={`${tabId}-${value}-panel`} aria-selected={tab === value} tabIndex={tab === value ? 0 : -1} onClick={() => setTab(value)} onKeyDown={(event) => {
+    <div className="usage-tabs desktop-tab-strip" onFocusCapture={event => revealDesktopTab(event.target as HTMLElement)} role="tablist" aria-label={copy("usage.analysisTabs")}>
+      {tabs.map((value, index) => <button className="desktop-tab-item desktop-tab-label" key={value} type="button" role="tab" id={`${tabId}-${value}-tab`} aria-controls={`${tabId}-${value}-panel`} aria-selected={tab === value} tabIndex={tab === value ? 0 : -1} onClick={() => setTab(value)} onKeyDown={(event) => {
         const next = event.key === "ArrowRight" ? tabs[(index + 1) % tabs.length] : event.key === "ArrowLeft" ? tabs[(index + tabs.length - 1) % tabs.length] : event.key === "Home" ? tabs[0] : event.key === "End" ? tabs[tabs.length - 1] : undefined;
         if (!next) return;
         event.preventDefault(); setTab(next); window.document.getElementById(`${tabId}-${next}-tab`)?.focus();

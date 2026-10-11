@@ -1892,6 +1892,12 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Prepare isolated desktop tab browser validation
+        if: ${{ matrix.phase == 'checks' }}
+        run: |
+          npm install --prefix "$RUNNER_TEMP/delidev-tabs-browser" --ignore-scripts --no-audit --no-fund --package-lock=false playwright@1.64.0
+          node "$RUNNER_TEMP/delidev-tabs-browser/node_modules/playwright/cli.js" install --with-deps chromium
+          echo "DELIDEV_LAYOUT_PLAYWRIGHT_MODULE=$RUNNER_TEMP/delidev-tabs-browser/node_modules/playwright/index.mjs" >> "$GITHUB_ENV"
       - name: Build runner-owned Go fixture executable
         if: ${{ matrix.phase != 'checks' }}
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:delidev:fixture
