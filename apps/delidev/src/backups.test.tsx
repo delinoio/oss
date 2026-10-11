@@ -26,6 +26,7 @@ import {
 } from "@delinoio/delidev-api-client";
 import { Backups } from "./backups";
 import { MutationIntents } from "./mutation";
+import { PresentationLabelsProvider } from "./product-presentation";
 import { SettingsLifetime } from "./settings-lifetime";
 
 function fixture() {
@@ -104,27 +105,31 @@ function fixture() {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   const view = (active = true) => (
-    <TransportProvider transport={transport}>
-      <QueryClientProvider client={client}>
-        <MutationIntents>
-          <Backups active={active} />
-        </MutationIntents>
-      </QueryClientProvider>
-    </TransportProvider>
+    <PresentationLabelsProvider>
+      <TransportProvider transport={transport}>
+        <QueryClientProvider client={client}>
+          <MutationIntents>
+            <Backups active={active} />
+          </MutationIntents>
+        </QueryClientProvider>
+      </TransportProvider>
+    </PresentationLabelsProvider>
   );
   const lifetimeView = (active = true) => (
     <StrictMode>
-      <TransportProvider transport={transport}>
-        <QueryClientProvider client={client}>
-          <SettingsLifetime>
-            {() => (
-              <MutationIntents>
-                <Backups active={active} />
-              </MutationIntents>
-            )}
-          </SettingsLifetime>
-        </QueryClientProvider>
-      </TransportProvider>
+      <PresentationLabelsProvider>
+        <TransportProvider transport={transport}>
+          <QueryClientProvider client={client}>
+            <SettingsLifetime>
+              {() => (
+                <MutationIntents>
+                  <Backups active={active} />
+                </MutationIntents>
+              )}
+            </SettingsLifetime>
+          </QueryClientProvider>
+        </TransportProvider>
+      </PresentationLabelsProvider>
     </StrictMode>
   );
   return {
@@ -154,9 +159,7 @@ it("lists metadata without inspecting automatically and preserves exact byte cou
   await screen.findByText(/9,007,199,254,740,993 bytes/);
   expect(f.inspect).not.toHaveBeenCalled();
   fireEvent.click(
-    screen.getByRole("button", {
-      name: safePresentation(`Inspect backup ${f.id}`),
-    }),
+    screen.getByRole("button", { name: "Inspect backup Backup 1" }),
   );
   await screen.findByText(
     "Database integrity and original server identity verified.",
@@ -301,7 +304,10 @@ it.each(["hide", "reinspect"])(
         name: safePresentation(`Inspect backup ${f.id}`),
       }),
     );
-    const checkboxName = `I confirm permanent deletion of backup ${f.id}`;
+    const checkboxName = safePresentation(
+      `I confirm permanent deletion of backup ${f.id}`,
+      "Backup",
+    );
     fireEvent.click(
       await screen.findByRole("button", { name: "Delete selected backup…" }),
     );
@@ -446,6 +452,12 @@ it("retains multiple accepted creations and marks a failed direct refresh stale"
     screen.getByRole("button", { name: "Create database backup" }),
   );
   await screen.findByText("pending");
+  await waitFor(() => expect(f.create).toHaveBeenCalledTimes(1));
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Create database backup" }),
+    ).toHaveProperty("disabled", false),
+  );
   const next = { ...f.creation, id: newRequestId(), backupId: newRequestId() };
   f.create.mockResolvedValueOnce({
     job: next,
@@ -459,10 +471,10 @@ it("retains multiple accepted creations and marks a failed direct refresh stale"
     screen.getByRole("button", { name: "Create database backup" }),
   );
   await screen.findByRole("article", {
-    name: safePresentation(`Backup ${next.backupId} creation`),
+    name: "Backup Backup 2 creation",
   });
   const first = screen.getByRole("article", {
-    name: safePresentation(`Backup ${f.creation.backupId} creation`),
+    name: "Backup Backup 1 creation",
   });
   f.getCreation.mockRejectedValueOnce(
     new ConnectError("read failed", Code.Unavailable),
@@ -517,7 +529,7 @@ it("renders the approved two-row table with UTC labels, full metadata and inert 
     within(table)
       .getAllByRole("button")
       .map((button) => button.getAttribute("aria-label")),
-  ).toEqual(backups.map((backup) => `Inspect backup ${backup.id}`));
+  ).toEqual(["Inspect backup Backup 1", "Inspect backup Backup 2"]);
   expect(within(table).getAllByText("Not checked")).toHaveLength(2);
   for (const backup of backups) {
     expect(
@@ -566,9 +578,7 @@ it("preserves fractional timestamps and exact BigInt deletion operands, with raw
   render(f.view());
   await screen.findAllByText("unformattable-timestamp");
   fireEvent.click(
-    screen.getByRole("button", {
-      name: safePresentation(`Inspect backup ${f.id}`),
-    }),
+    screen.getByRole("button", { name: "Inspect backup Backup 1" }),
   );
   const detail = screen.getByRole("region", {
     name: "Backup integrity inspection",
@@ -696,7 +706,7 @@ it("focuses inspection only at activation and restores the opener or list-headin
   });
   fireEvent.click(opener);
   const heading = screen.getByRole("heading", {
-    name: safePresentation(`Inspection: ${f.id}`),
+    name: safePresentation(`Inspection: ${f.id}`, "Backup"),
   });
   expect(document.activeElement).toBe(heading);
   // The inspection intentionally focuses its own heading after modal mount.
@@ -1132,14 +1142,17 @@ it.each(["inventory", "creation", "deletion"])(
       kind === "inventory"
         ? screen
         : within(screen.getByRole("tabpanel", { name: label }));
-    const idText = (id: string) => (kind === "inventory" ? id : `Backup ${id}`);
-    await result.findByText(idText(original));
+    const idText =
+      (ordinal: number) => (_content: string, element: Element | null) =>
+        element?.classList.contains("backups-id") === true &&
+        element.textContent === `Backup ${ordinal}`;
+    await result.findByText(idText(1));
     fireEvent.click(
       await screen.findByRole("button", { name: `Load more ${label}` }),
     );
     const retry = await screen.findByRole("button", { name: "Retry" });
-    expect(result.getByText(idText(original))).toBeTruthy();
-    expect(result.queryByText(idText(nextID))).toBeNull();
+    expect(result.getByText(idText(1))).toBeTruthy();
+    expect(result.queryByText(idText(2))).toBeNull();
     expect(
       screen.queryByRole("button", { name: `Load more ${label}` }),
     ).toBeNull();
@@ -1148,8 +1161,8 @@ it.each(["inventory", "creation", "deletion"])(
       token,
     ]);
     fireEvent.click(retry);
-    await result.findByText(idText(nextID));
-    expect(result.getByText(idText(original))).toBeTruthy();
+    await result.findByText(idText(2));
+    expect(result.getByText(idText(1))).toBeTruthy();
     expect(owner.mock.calls.map(([request]) => request.pageToken)).toEqual([
       "",
       token,

@@ -1,4 +1,5 @@
 import { chooseScrollOption, waitScrollChoices } from "./test-scroll-picker";
+import { safePresentation } from "./product-presentation-test-support";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -557,15 +558,24 @@ it("selects an Agent from later pages and preserves an explicit per-repository s
   fireEvent.click(
     screen.getByRole("button", { name: "Add starting override" }),
   );
-  fireEvent.change(screen.getByLabelText(`Starting ${repository} type`), {
-    target: { value: "remote-branch" },
-  });
-  fireEvent.change(screen.getByLabelText(`Starting ${repository} name`), {
-    target: { value: "feature/source" },
-  });
-  fireEvent.change(screen.getByLabelText(`Starting ${repository} remote`), {
-    target: { value: "upstream" },
-  });
+  fireEvent.change(
+    screen.getByLabelText(
+      safePresentation(`Starting ${repository} type`, "Repository"),
+    ),
+    { target: { value: "remote-branch" } },
+  );
+  fireEvent.change(
+    screen.getByLabelText(
+      safePresentation(`Starting ${repository} name`, "Repository"),
+    ),
+    { target: { value: "feature/source" } },
+  );
+  fireEvent.change(
+    screen.getByLabelText(
+      safePresentation(`Starting ${repository} remote`, "Repository"),
+    ),
+    { target: { value: "upstream" } },
+  );
   fireEvent.change(screen.getByLabelText("First message"), {
     target: { value: "Original selected work" },
   });

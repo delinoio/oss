@@ -31,6 +31,7 @@ import {
   type Resource,
 } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
+import { PresentationLabelsProvider } from "./product-presentation";
 import { Surface } from "./views";
 import { Sidebar } from "./sidebar";
 import type { ComponentProps } from "react";
@@ -159,15 +160,17 @@ function mountSidebar({
   const tree = () => (
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
-        <MutationIntents>
-          {withApp ? (
-            <div className="app">
+        <PresentationLabelsProvider>
+          <MutationIntents>
+            {withApp ? (
+              <div className="app">
+                <Harness />
+              </div>
+            ) : (
               <Harness />
-            </div>
-          ) : (
-            <Harness />
-          )}
-        </MutationIntents>
+            )}
+          </MutationIntents>
+        </PresentationLabelsProvider>
       </QueryClientProvider>
     </TransportProvider>
   );
@@ -268,15 +271,16 @@ it("opens project creation shortcuts without toggling groups or reading collapse
     projects: () => ({ resources: [first, second, empty] }),
     sessions: () => ({ sessions: [] }),
   });
-  for (const project of [first, second, empty]) {
+  for (const [index, project] of [first, second, empty].entries()) {
     const name = JSON.parse(new TextDecoder().decode(project.documentJson))
       .name as string;
+    const numberedName = index === 1 ? `${name} · 2` : name;
     const toggle = await screen.findByRole("button", {
-      name: safePresentation(`${name}. Project ID: ${project.id}`),
+      name: safePresentation(`${numberedName}. Project ID: ${project.id}`),
     });
     const shortcut = screen.getByRole("button", {
       name: safePresentation(
-        `New session in ${name}. Project ID: ${project.id}`,
+        `New session in ${numberedName}. Project ID: ${project.id}`,
       ),
     });
     expect(shortcut.parentElement).toBe(toggle.parentElement);
@@ -393,7 +397,10 @@ it("keeps sparse global paging reachable and groups retained sessions by their o
     await screen.findByRole("button", { name: /General Chat General session/ }),
   ).toBeTruthy();
   const fallback = await screen.findByRole("button", {
-    name: `Project · ${missingParent}. Project ID: ${missingParent}`,
+    name: safePresentation(
+      `${missingParent} · Name unavailable. Project ID: ${missingParent}`,
+      "Project",
+    ),
   });
   expect(fallback.getAttribute("aria-expanded")).toBe("true");
   expect(

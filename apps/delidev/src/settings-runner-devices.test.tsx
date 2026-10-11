@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-import { safePresentation } from "./product-presentation-test-support";
+import {
+  safePresentation,
+  unavailablePresentation,
+} from "./product-presentation-test-support";
 import { create } from "@bufbuild/protobuf";
 import { StrictMode, useState } from "react";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
@@ -275,10 +278,12 @@ it("retains original order, parser fallback, full IDs and schema-gated inspect a
       inventory.querySelectorAll("article h3"),
       (node) => node.textContent,
     ),
-  ).toEqual(["Zulu", "Alpha", "Unnamed"]);
+  ).toEqual(["Zulu", "Alpha", "Runner Device 3 · Name unavailable"]);
   for (const row of rows)
     expect(
-      within(inventory).getByText(safePresentation(row.id, "Runner Device")),
+      within(inventory).getByText(
+        unavailablePresentation(row.id, "Runner Device"),
+      ),
     ).toBeTruthy();
   expect(
     (
@@ -337,7 +342,7 @@ it.each([Code.PermissionDenied, Code.Unavailable])(
       "Loading runner devices...",
     );
     await act(async () => pending.reject(problem.error));
-    expect((await screen.findByRole("alert")).textContent).toContain(
+    expect((await screen.findByRole("alert")).textContent).not.toContain(
       problem.correlationId,
     );
     expect(screen.queryByText(/No saved entries/)).toBeNull();
@@ -371,7 +376,7 @@ it.each([false, true])(
     expect(
       screen.getByText(empty ? "No saved entries." : "Retained machine"),
     ).toBeTruthy();
-    expect(screen.getByRole("alert").textContent).toContain(
+    expect(screen.getByRole("alert").textContent).not.toContain(
       problem.correlationId,
     );
     expect(control.mock.calls).toHaveLength(calls);

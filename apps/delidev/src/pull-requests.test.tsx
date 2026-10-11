@@ -181,9 +181,11 @@ function accessibleName(value: string) {
   return value.trim().replace(/\s+/gu, " ");
 }
 async function choose(row: Resource) {
+  const name = accessibleName(resourceName(row));
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   fireEvent.click(
     await screen.findByRole("button", {
-      name: accessibleName(resourceName(row)),
+      name: new RegExp(`^${escapedName}(?: · \\d+)?$`),
     }),
   );
   await waitFor(() =>
@@ -313,7 +315,7 @@ it("discloses one exact duplicate-name identity without selecting or reading it"
   render(<App transport={value.transport} />);
   const pane = await open();
   const [firstButton, secondButton] = await pane.findAllByRole("button", {
-    name: "Details for Example repository",
+    name: /^Details for Example repository · \d+$/,
   });
   const catalogReads = value.list.mock.calls.filter(
     ([request]) => request.filter?.kind === EntityKind.REPOSITORY,
@@ -321,7 +323,7 @@ it("discloses one exact duplicate-name identity without selecting or reading it"
   expect(firstButton.getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(firstButton);
   let details = pane.getByRole("region", {
-    name: "Details for Example repository",
+    name: firstButton.getAttribute("aria-label")!,
   });
   expect(details.id).toBe(firstButton.getAttribute("aria-controls"));
   expect(details.getAttribute("popover")).toBe("manual");
@@ -332,7 +334,7 @@ it("discloses one exact duplicate-name identity without selecting or reading it"
   expect(firstButton.getAttribute("aria-expanded")).toBe("false");
   expect(secondButton.getAttribute("aria-expanded")).toBe("true");
   details = pane.getByRole("region", {
-    name: "Details for Example repository",
+    name: secondButton.getAttribute("aria-label")!,
   });
   expect(details.id).toBe(secondButton.getAttribute("aria-controls"));
   expect(details.textContent).not.toContain(second.id);
@@ -1061,7 +1063,11 @@ it("keeps repository inventory visits free of GitHub content reads across langua
     fireEvent.click(
       document.querySelector('[data-settings-category="repositories"]')!,
     );
-    await screen.findByText("GitHub configured");
+    await screen.findByText(
+      language === SupportedLanguage.English
+        ? "GitHub configured"
+        : "GitHub 설정됨",
+    );
     expect(
       document.querySelector(".repository-row")?.textContent,
     ).not.toContain(repositoryId);

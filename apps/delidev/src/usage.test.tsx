@@ -232,7 +232,9 @@ it("shows exact known subtotals, missing fields and separate unavailable costs",
   ).toBeTruthy();
   const table = screen.getByRole("table");
   expect(within(table).getByText("General Chat")).toBeTruthy();
-  expect(within(table).getByText(/Record \d+/)).toBeTruthy();
+  expect(within(table).getByText("Session 1")).toBeTruthy();
+  expect(within(table).getByText("Account 1")).toBeTruthy();
+  expect(within(table).getByText("Provider 1")).toBeTruthy();
   expect(within(table).getByText("Original model")).toBeTruthy();
   fireEvent.click(
     within(table).getByRole("button", { name: "Retained session" }),
@@ -1133,6 +1135,14 @@ it("keeps original identities and complete counter/estimate evidence in mounted 
   fireEvent.click(summary);
   expect(detail.open).toBe(true);
   expect(detail.querySelectorAll("[data-token-measure]")).toHaveLength(6);
+  for (const [id, label] of [
+    [f.ids.session, "Session 1"],
+    [f.ids.account, "Account 1"],
+    [f.ids.model, "Model 1"],
+    [f.ids.provider, "Provider 1"],
+    [f.data.groups[0].projectId, "Project 1"],
+  ] as const)
+    expect(detail.textContent).toContain(label);
   for (const id of [
     f.ids.session,
     f.ids.account,
@@ -1140,7 +1150,12 @@ it("keeps original identities and complete counter/estimate evidence in mounted 
     f.ids.provider,
     f.data.groups[0].projectId,
   ])
-    expect(detail.textContent).toContain(id);
+    expect(detail.textContent).not.toContain(id);
+  expect(f.read.mock.calls[0]![0]).toMatchObject({
+    sessionId: f.ids.session,
+    accountId: f.ids.account,
+    projectId: f.data.groups[0].projectId,
+  });
   expect(detail.textContent).toContain("USD 0.002");
   expect(detail.textContent).toContain("EUR 0");
   expect(f.read).toHaveBeenCalledTimes(1);
@@ -1239,7 +1254,14 @@ it("opens exact historical pricing without changing filters and retains read-onl
     "This original identity has no editable current model. Historical price evidence is read-only.",
   );
   expect(within(panel).getByText("Original deleted price")).toBeTruthy();
-  expect(within(panel).getByText(new RegExp(version))).toBeTruthy();
+  const pricingModel = within(panel).getByRole("combobox", {
+    name: "Pricing model",
+  });
+  expect(pricingModel.textContent).toBe("Original API · Model 1");
+  expect(pricingModel.getAttribute("data-value")).toContain(f.ids.model);
+  expect(pricingModel.getAttribute("data-value")).toContain(f.ids.provider);
+  expect(panel.textContent).not.toContain(f.ids.provider);
+  expect(panel.textContent).toContain("Record 1");
   expect(
     within(panel).getByRole("button", { name: "Edit token pricing" }),
   ).toHaveProperty("disabled", true);

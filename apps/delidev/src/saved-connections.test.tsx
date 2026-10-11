@@ -5,6 +5,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { safePresentation } from "./product-presentation-test-support";
 import { expect, it, vi } from "vitest";
 import { LocalWorkerAction, LocalWorkerState } from "./local-worker-controls";
 import { newRequestId } from "@delinoio/delidev-api-client";
@@ -418,7 +419,9 @@ it("keeps independent Worker stop targeting its original generation after client
   const panel = await screen.findByRole("region", {
     name: "Retained Worker for Saved server",
   });
-  await within(panel).findByText(`Execution machine: ${machine}`);
+  await within(panel).findByText(
+    safePresentation(`Execution machine: ${machine}`),
+  );
   expect(
     within(panel).queryByRole("button", { name: "Register this computer" }),
   ).toBeNull();

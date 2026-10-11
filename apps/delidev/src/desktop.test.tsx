@@ -1,4 +1,5 @@
 import { StrictMode } from "react";
+import { safePresentation } from "./product-presentation-test-support";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import {
   act,
@@ -247,7 +248,7 @@ it("registers and inspects this computer through only the saved window's fixed W
   fireEvent.click(
     screen.getByRole("button", { name: "Register this computer" }),
   );
-  await screen.findByText(`Execution machine: ${machine}`);
+  await screen.findByText(safePresentation(`Execution machine: ${machine}`));
   await waitFor(() =>
     expect(
       (

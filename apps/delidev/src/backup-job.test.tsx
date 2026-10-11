@@ -90,12 +90,12 @@ it("distinguishes creation and deletion tracking for the same backup", async () 
     screen.queryByRole("article", {
       name: safePresentation(`Backup ${backupId} creation`),
     }),
-  ).toBeNull();
+  ).toBe(createArticle);
   expect(
     screen.queryByRole("article", {
       name: safePresentation(`Backup ${backupId} deletion`),
     }),
-  ).toBeNull();
+  ).toBe(deleteArticle);
 });
 
 it.each([BackupJobKind.Creation, BackupJobKind.Deletion])(

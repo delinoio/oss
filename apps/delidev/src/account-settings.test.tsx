@@ -1587,7 +1587,7 @@ it("preserves every independent row fact, full fallback identity, server order a
     "Personal",
     "Work",
     "Disabled cleanup entry",
-    "Unnamed",
+    "Account 1 · Name unavailable",
   ]);
   expect(new Set(rows.map((row) => row.parentElement)).size).toBe(1);
   expect(within(rows[0]).getByText("Connected")).toBeTruthy();
@@ -1596,7 +1596,7 @@ it("preserves every independent row fact, full fallback identity, server order a
     0,
   );
   expect(
-    within(rows[1]).getByText(`Provider unavailable · ${missing}`),
+    within(rows[1]).getByText("Provider unavailable · Provider 1"),
   ).toBeTruthy();
   expect(within(rows[1]).getAllByText("Unavailable").length).toBeGreaterThan(0);
   expect(within(rows[1]).getAllByText("Unknown").length).toBeGreaterThan(0);

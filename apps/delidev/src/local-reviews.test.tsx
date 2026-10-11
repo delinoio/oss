@@ -298,7 +298,8 @@ it("retries the original grouped submission after navigation without rounding re
     }),
   );
   await screen.findByText(
-    safePresentation(`Request changes queued as input ${f.inputId}.`),
+    (_content, element) =>
+      element?.textContent === "Request changes queued as input Input 1.",
   );
   expect(f.submit).toHaveBeenCalledTimes(2);
   expect(f.submit.mock.calls[1][0]).toEqual(original);

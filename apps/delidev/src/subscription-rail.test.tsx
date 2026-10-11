@@ -826,10 +826,15 @@ it("retains duplicate-alias ownership and every native window in original order 
   ]);
   const f = mount(() => ({ resources: rows }));
   await screen.findAllByRole("button", { name: /Same alias/ });
-  for (const row of rows) {
+  for (const [index, row] of rows.entries()) {
+    const serviceName = {
+      chatgpt: "ChatGPT",
+      claude: "Claude",
+      grok: "Grok",
+    }[railAccount(row).service];
     fireEvent.click(
       screen.getByRole("button", {
-        name: safePresentation(row.id, "Account"),
+        name: `${serviceName} · Same alias · Account ${index + 1}`,
       }),
     );
     const dialog = screen.getByRole("dialog");
@@ -911,7 +916,7 @@ for (const [name, extra, percent, state] of [
     const f = mount(() => ({ resources: [row] }));
     fireEvent.click(
       await screen.findByRole("button", {
-        name: safePresentation(row.id, "Account"),
+        name: `ChatGPT · ${name} · Account 1`,
       }),
     );
     const dialog = screen.getByRole("dialog");
@@ -993,7 +998,7 @@ it("close and outside dismissal retain the original opener without another read"
   const row = resource("Original opener"),
     f = mount(() => ({ resources: [row] }));
   const opener = await screen.findByRole("button", {
-    name: safePresentation(row.id, "Account"),
+    name: "ChatGPT · Original opener · Account 1",
   });
   fireEvent.click(opener);
   fireEvent.click(screen.getByRole("button", { name: "Close quota details" }));

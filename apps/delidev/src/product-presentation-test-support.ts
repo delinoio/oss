@@ -67,3 +67,25 @@ export function safePresentation(
   );
   return new RegExp(anchored);
 }
+
+/** Match a typed identity label when the owned resource has no saved name. */
+export function unavailablePresentation(
+  id: string,
+  kind:
+    | "Record"
+    | "Project"
+    | "Repository"
+    | "Session"
+    | "Account"
+    | "Provider"
+    | "Runner Device"
+    | "Terminal"
+    | "Backup"
+    | "Input"
+    | "Agent Worker"
+    | "Model"
+    | "Device"
+    | "Server",
+): RegExp {
+  return safePresentation(`${id} · Name unavailable`, kind);
+}

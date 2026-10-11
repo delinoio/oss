@@ -121,7 +121,7 @@ export function UsageModelPrices({
   const providers = useProviderPages("", active, false);
   const identity = selection ? selectionModel(selection) : undefined;
   const label = (model: SourceModel) =>
-    `${model.providerId ? providers.rows.find((row) => row.providerId === model.providerId)?.displayName || data?.groups.find((row) => row.model?.providerId === model.providerId)?.providerName || presentationLabels.identity(model.providerId, "provider") : subscriptionServiceLabel(model.subscriptionService)} · ${model.nativeId}`;
+    `${model.providerId ? providers.rows.find((row) => row.providerId === model.providerId)?.displayName || data?.groups.find((row) => row.model?.providerId === model.providerId)?.providerName || presentationLabels.identity(model.providerId, "provider") : subscriptionServiceLabel(model.subscriptionService)} · ${presentationLabels.identity(model.nativeId, "model")}`;
   const history = selection
     ? (selection.history ?? retainedPrices(data, selection))
     : [];

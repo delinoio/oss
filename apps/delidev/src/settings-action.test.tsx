@@ -155,7 +155,7 @@ it("disambiguates same-name Projects with safe stable numbers and retains exact 
   );
   expect(edit).toHaveBeenCalledExactlyOnceWith(b);
   fireEvent.click(
-    screen.getByRole("button", { name: /Delete Shared name · 1 · Project 1/ }),
+    screen.getByRole("button", { name: "Delete Shared name · Project 1" }),
   );
   expect(remove).toHaveBeenCalledExactlyOnceWith(a);
   fireEvent.click(

@@ -571,7 +571,7 @@ it("keeps unknown schemas read-only while allowing their full Details identity",
   f.row.schemaVersion = 4;
   render(f.view());
   const opener = screen.getByRole("button", {
-    name: "More actions for Unnamed",
+    name: /^More actions for Account \d+ · Name unavailable$/,
   });
   fireEvent.click(opener);
   expect(

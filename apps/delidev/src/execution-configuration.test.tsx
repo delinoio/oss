@@ -302,10 +302,13 @@ it("preserves first-execution choices while separately identifying retained prio
     name: "Saved execution configuration",
   });
   expect(detail(document.body, "First account")).toMatch(
-    safePresentation(value.data.initial_execution.initial_account_id),
+    safePresentation(
+      value.data.initial_execution.initial_account_id,
+      "Account",
+    ),
   );
   expect(detail(document.body, "Selected execution account")).toMatch(
-    safePresentation(next.current_execution.account_id),
+    safePresentation(next.current_execution.account_id, "Account"),
   );
   const bound = {
     ...next,
@@ -412,7 +415,8 @@ it("keeps unavailable snapshots, unknown options and imprecise revisions explici
   expect(screen.queryByText("unbound-model")).toBeNull();
   expect(
     screen.getByText(
-      `${safePresentation(value.configuration.agent_id)} · revision Unavailable`,
+      (_content, element) =>
+        element?.textContent === "Agent Worker 1 · revision Unavailable",
     ),
   ).toBeTruthy();
   view.rerender(

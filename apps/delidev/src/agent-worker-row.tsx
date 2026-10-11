@@ -181,7 +181,7 @@ export function AgentWorkerRow({
               {copy("settings.reconfigurationRequired_a84a37")}
             </p>
           ) : null}
-          <small>{presentationLabels.identity(row.id, "record")}</small>
+          <small>{presentationLabels.identity(row.id, "agent")}</small>
         </div>
       </div>
       <div className="actions settings-agent-actions">

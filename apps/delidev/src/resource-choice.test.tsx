@@ -401,7 +401,7 @@ it("decorates exact Agent IDs from their top-level harness without model, accoun
   for (const [index, row] of rows.entries()) {
     fireEvent.click(trigger);
     const options = await screen.findAllByRole("option", {
-      name: "Equal Agent name",
+      name: /^Equal Agent name · \d+$/,
     });
     expect(options).toHaveLength(4);
     const option = options[index];
@@ -431,7 +431,7 @@ it("decorates exact Agent IDs from their top-level harness without model, accoun
           ?.getAttribute("data-harness"),
       ).toBe(harnesses[index]),
     );
-    expect(trigger.textContent).toBe("Equal Agent name");
+    expect(trigger.textContent).toBe(`Equal Agent name · ${index + 1}`);
     expect(change.mock.calls[index][0]).toBe(row.id);
     expect(change.mock.calls[index][2]?.id).toBe(row.id);
   }
@@ -492,9 +492,11 @@ it.each([false, true])(
     );
     fireEvent.click(trigger);
     expect(
-      (await screen.findByRole("option", { name: "Equal name" })).querySelector(
-        "[data-harness=codex]",
-      ),
+      (
+        await screen.findByRole("option", {
+          name: `Equal name · ${resolved ? 1 : 2}`,
+        })
+      ).querySelector("[data-harness=codex]"),
     ).toBeTruthy();
     expect(trigger.querySelector("[data-harness=codex]")).toBeNull();
     expect(
@@ -691,7 +693,7 @@ it("reserves blank option slots for missing and unknown harnesses instead of inf
   );
   fireEvent.click(screen.getByRole("combobox", { name: "Agent" }));
   for (const option of await screen.findAllByRole("option", {
-    name: "Codex",
+    name: /^Codex · \d+$/,
   })) {
     expect(option.querySelector(".scroll-picker-decoration")).toBeTruthy();
     expect(option.querySelector(".worker-harness-mark")).toBeNull();

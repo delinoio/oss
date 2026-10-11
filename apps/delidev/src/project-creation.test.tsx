@@ -551,12 +551,12 @@ it("does not confuse duplicate names or offer unsupported schemas", async () => 
   next();
   expect(
     within(primary())
-      .getByRole("option", { name: "Duplicate (entry 1)" })
+      .getByRole("option", { name: "Duplicate (entry 2)" })
       .getAttribute("value"),
   ).toBe(first.id);
   expect(
     within(primary())
-      .getByRole("option", { name: "Duplicate (entry 2)" })
+      .getByRole("option", { name: "Duplicate (entry 3)" })
       .getAttribute("value"),
   ).toBe(second.id);
 });

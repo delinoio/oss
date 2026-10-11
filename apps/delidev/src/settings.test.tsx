@@ -1,4 +1,5 @@
 import { safePresentation } from "./product-presentation-test-support";
+import { PresentationLabelsProvider } from "./product-presentation";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -246,7 +247,9 @@ function fixture(
   const view = (children: React.ReactNode) => (
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
-        <MutationIntents>{children}</MutationIntents>
+        <PresentationLabelsProvider>
+          <MutationIntents>{children}</MutationIntents>
+        </PresentationLabelsProvider>
       </QueryClientProvider>
     </TransportProvider>
   );
@@ -645,17 +648,16 @@ it.each([
     const value = fixture([future]);
     render(value.view(<Settings />));
     fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
-    const name = valid ? projected : "Unnamed";
+    const name = valid ? projected : "Agent Worker 1 · Name unavailable";
     const heading = await screen.findByRole("heading", { name });
     expect(heading.textContent).toBe(name);
-    const row = within(heading.closest("article")!);
-    expect(
-      row.getByText(safePresentation(future.id, "Agent Worker")),
-    ).toBeTruthy();
+    const article = heading.closest("article")!;
+    const row = within(article);
+    expect(article.textContent).toContain("Agent Worker 1");
     for (const label of [
-      `Edit ${name} · ${future.id}`,
+      `Edit ${name} · Agent Worker 1`,
       `Preview routing for ${name}`,
-      `Delete ${name} · ${future.id}`,
+      `Delete ${name} · Agent Worker 1`,
     ]) {
       expect(
         (row.getByRole("button", { name: label }) as HTMLButtonElement)
@@ -3365,7 +3367,7 @@ it("keeps repository source metadata inert and preserves schema-bound actions", 
     ),
   ).toBeNull();
   expect(screen.getByText("/saved/checkout")).toBeTruthy();
-  expect(screen.getByText(safePresentation(row.id, "Repository"))).toBeTruthy();
+  expect(view.container.textContent).not.toContain(row.id);
   expect(view.container.textContent).not.toContain("private-value");
   expect(view.container.textContent).not.toContain("example.invalid");
   expect(
@@ -3414,7 +3416,7 @@ it("keeps repository source metadata inert and preserves schema-bound actions", 
       .every((button) => (button as HTMLButtonElement).disabled),
   ).toBe(true);
   expect(screen.queryByText("/saved/checkout")).toBeNull();
-  expect(screen.getByText(safePresentation(row.id, "Repository"))).toBeTruthy();
+  expect(view.container.textContent).not.toContain(row.id);
   view.rerender(
     value.view(
       <RepositoryRow
