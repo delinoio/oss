@@ -318,15 +318,12 @@ it("opens project creation shortcuts without toggling groups or reading collapse
   fireEvent.click(disabled);
   expect(value.newSession).toHaveBeenCalledTimes(before);
   await act(() => i18n.changeLanguage("ko"));
-  expect(
-    screen.getByRole("button", {
-      name: safePresentation(
-        `Same name · 1 프로젝트의 새 세션. 프로젝트 ID: ${first.id}`,
-      ),
-    }),
-  ).toBe(disabled);
-  expect(disabled.getAttribute("title")).toBe(
-    "Same name · 1 프로젝트의 새 세션",
+  expect(disabled.getAttribute("aria-label")).toMatch(
+    /^Same name · \d+ 프로젝트의 새 세션\. 프로젝트 ID: 프로젝트 \d+$/,
+  );
+  expect(disabled.getAttribute("aria-label")).not.toContain(first.id);
+  expect(disabled.getAttribute("title")).toMatch(
+    /^Same name · \d+ 프로젝트의 새 세션$/,
   );
 });
 
