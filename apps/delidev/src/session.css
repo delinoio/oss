@@ -987,6 +987,18 @@
   border-color: transparent;
   overflow-wrap: anywhere;
 }
+.session-tool-shortcut {
+  flex: none;
+  margin-inline-start: auto;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
 .session-tool-dialog button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;

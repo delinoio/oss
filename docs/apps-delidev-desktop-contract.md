@@ -254,6 +254,37 @@ Validate matching, precedence/conflicts, inactive/disabled registration, editabl
 
 Keyboard shortcuts help permits eligible existing non-input-target actions from its own dialog. Match current registrations with the same precedence, enabled and input rules. An accepted unambiguous action closes the native help dialog before its original callback runs exactly once; dismissal must not restore the opener over destination focus. Disabled/conflicting actions and excluded events keep help open with the existing event-consumption rules. Help focus never satisfies a background input target. Keyboard invocation of the effective committed Help binding opens held help and retains the originating physical key code, with the logical opening key as fallback when code is unavailable. Release of that original key closes held help even after Shift release; unrelated keyup is not consumed. Blur, hiding and provider disposal retire held ownership without reopening on return. Early Escape/Close/action dismissal retains the pressed identity until release, preventing reopening during that press; later release never restores stale opener focus. The rail button opens persistent help: Help presses/releases, blur and hiding neither convert nor close that instance. Locale changes retain the same help instance and focus. Other visible modals and compact navigation still block dispatch and help opening. Ordinary Escape and Close retain opener restoration or main fallback.
 
+### Direct Files shortcut
+
+The typed Session `OpenFiles` action uses primary+E: Command+E on macOS and
+Control+E on Windows/Linux. Register only for the active nonembedded parent
+session, including while another parent resource tab is selected. Allow ordinary
+editable fields and invoke the original Files callback once. Reopening selects
+the same singleton Files tab without closing it or forcing a refresh. Retain
+original tab focus, unsent drafts, Plan Mode, session identity, pending/uncertain
+requests and Files loading, empty, unavailable and read-error behavior. Files
+keeps its original availability in archived and startup-failed sessions.
+
+OpenFiles remains outside the seven editable preference IDs. A committed editable
+unshifted primary+E override suppresses only this default in memory across all
+scopes. Disabled and Shift+E overrides leave it available. Removing or changing
+the conflicting committed override immediately restores the default. The shared
+effective resolver governs dispatch, conflict validation, Help, read-only Settings
+and Files guidance/ARIA. Preserve saved preference bytes and native validation.
+
+The existing Files menu entry shows a compact platform-resolved keyboard badge
+and ARIA binding only while the default is effective. Suppression uses the shared
+localized custom-binding-priority explanation. Help and Settings use Open Files /
+파일 열기. Preserve existing menu row geometry, icons and semantic theme/focus
+colors, with readable guidance and no horizontal overflow at narrow widths or
+200% reflow. Owned Help closes before the original callback and cannot restore
+its opener over destination focus. Keep Files' focus-local Escape closure.
+
+Handled, repeat, IME/229, extra-modifier, AltGraph, hidden/inert, modal, capture,
+terminal-passthrough and native child-view fences remain authoritative. No native
+forwarding, execution/recovery authority, read-owner changes, RPC, protocol
+allocation, dependency, migration, OS-global shortcut or key/content log is added.
+
 ### Device-local shortcut preferences
 
 - The feature gives Session and General Chat follow-up composers fixed unmodified Enter send and native Shift+Enter newline. Keep the customizable primary send chord independent, including disabled/custom overrides, seven editable IDs and the existing preference schema. Show fixed Enter alongside the editable Settings send row; Help and ARIA derive effective runtime declarations. Skill completion takes Enter first; preserve IME/229/repeat/handled/target/modal/native fences, original canSend/form/enqueue/receipt/draft/image/Plan Mode ownership and exact pending/uncertain locks. Creation, Search, terminal and mobile behavior remain separate.
@@ -270,7 +301,7 @@ Search Enter, panel Escape, generic modal Escape, Tab and editing retain their
 original behavior; NewSessionSend always retains guarded plain Enter. Primary+K,
 primary+N (native New Window), primary+W,
 primary+Q/H/M (native Quit/Hide/Minimize) and primary+1–9 remain fixed reservations. Native editing
-chords cannot be assigned. The former New Window primary+T chord remains editable. The read-only session OpenTool default yields to any committed editable unshifted T override under the shared tool-dialog policy. No window action or tab action is added.
+chords cannot be assigned. The former New Window primary+T chord remains editable. The read-only session OpenTool and OpenFiles defaults yield to any committed editable unshifted T and E overrides respectively under the shared default-priority policy. No window action or tab action is added.
 
 Capture becomes active only after original-product-window native admission and
 an acknowledged native-loop replacement of the exact original app menu with an

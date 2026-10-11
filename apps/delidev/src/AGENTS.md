@@ -13,6 +13,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ## Owning contracts
 
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)
+- [Direct Files shortcut](../../../docs/apps-delidev-desktop-contract.md#direct-files-shortcut)
 - [Shared desktop tab presentation](../../../docs/apps-delidev-desktop-contract.md#shared-desktop-tab-presentation)
 - [Shared sidebar scroll ownership](../../../docs/apps-delidev-desktop-contract.md#sidebar-scroll-boundaries)
 - [DeliDev Diagnostics Presentation](../../../docs/apps-delidev-diagnostics-contract.md)

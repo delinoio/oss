@@ -13,6 +13,7 @@ import {
   within,
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
+import { StrictMode } from "react";
 import {
   BudgetState,
   EventAction,
@@ -33,9 +34,28 @@ import { document as readDocument, encode, Mode } from "./documents";
 import { i18n } from "./localization";
 import { SessionNameEditorProvider } from "./session-name-editor";
 import { MutationIntents } from "./mutation";
-import { SessionTabsProvider } from "./session-tabs";
+import {
+  SessionTabsProvider,
+  SessionTabKind,
+  useSessionTabsStore,
+  type SessionTabIntent,
+} from "./session-tabs";
+import { ShortcutSettings } from "./shortcut-settings";
+import {
+  ShortcutPreferenceProvider,
+  type ShortcutPreferenceBridge,
+} from "./shortcut-preference-controller";
+import {
+  ShortcutOverrideState,
+  type ShortcutOverrides,
+} from "./shortcut-preferences";
+import { ShortcutId, ShortcutInput, ShortcutScope } from "./shortcuts";
 import { SessionView } from "./session";
-import { ShortcutProvider, useShortcutHelp } from "./shortcut-provider";
+import {
+  ShortcutProvider,
+  useShortcutHelp,
+  useShortcuts,
+} from "./shortcut-provider";
 
 vi.mock("./terminal-emulator", () => ({
   openTerminalScreen: (host: HTMLElement) => {
@@ -59,7 +79,7 @@ function fixture(
   ) => ReturnType<typeof create<typeof ResourceSchema>>[] = () => [],
   terminalMode: boolean | number = false,
   snapshotGate?: Promise<void>,
-  files = false,
+  files: boolean | "empty" | "error" = false,
 ) {
   const id = newRequestId();
   const session = create(ResourceSchema, {
@@ -173,6 +193,31 @@ function fixture(
     inputs: queueInputs(id),
     nextPageToken: "",
   }));
+  const workspace = vi.fn(async (request: { queryJson: Uint8Array }) => {
+    if (!files || files === "error")
+      throw new ConnectError(
+        "Fixture workspace unavailable",
+        files === "error" ? Code.Unavailable : Code.Unimplemented,
+      );
+    const query = JSON.parse(new TextDecoder().decode(request.queryJson));
+    return {
+      documentJson: encode({
+        size: "0",
+        binary: false,
+        truncated: false,
+        ...(query.operation === "roots"
+          ? {
+              roots:
+                files === "empty"
+                  ? []
+                  : [{ repository_id: id, name: "Original", primary: true }],
+            }
+          : query.operation === "directory"
+            ? { entries: [{ name: "note.txt", kind: "file", size: "4" }] }
+            : { size: "4", text: "safe" }),
+      }),
+    };
+  });
   const transport = createRouterTransport((router) => {
     router.service(SystemService, {
       getStatus: () => ({
@@ -209,30 +254,7 @@ function fixture(
       },
     });
     router.service(SessionService, {
-      readSessionWorkspace: async (request) => {
-        if (!files)
-          throw new ConnectError(
-            "Fixture workspace unavailable",
-            Code.Unimplemented,
-          );
-        const query = JSON.parse(new TextDecoder().decode(request.queryJson));
-        return {
-          documentJson: encode({
-            size: "0",
-            binary: false,
-            truncated: false,
-            ...(query.operation === "roots"
-              ? {
-                  roots: [
-                    { repository_id: id, name: "Original", primary: true },
-                  ],
-                }
-              : query.operation === "directory"
-                ? { entries: [{ name: "note.txt", kind: "file", size: "4" }] }
-                : { size: "4", text: "safe" }),
-          }),
-        };
-      },
+      readSessionWorkspace: workspace,
       listQueue,
       getSessionBudget: budget,
       enqueueInput: enqueue,
@@ -271,12 +293,18 @@ function fixture(
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   const draft = vi.fn();
+  let tabStore: ReturnType<typeof useSessionTabsStore>;
+  function TabsProbe() {
+    tabStore = useSessionTabsStore();
+    return null;
+  }
   const view = (value = "Original draft", active = true, embedded = false) => (
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
         <MutationIntents>
           <SessionNameEditorProvider>
             <SessionTabsProvider>
+              <TabsProbe />
               <SessionView
                 id={id}
                 draft={value}
@@ -294,6 +322,8 @@ function fixture(
     session,
     client,
     view,
+    workspace,
+    openTab: (tab: SessionTabIntent) => tabStore.open(id, tab),
     listQueue,
     enqueue,
     rename,
@@ -1846,6 +1876,311 @@ it("does not register original terminal opening in an embedded session", async (
   } finally {
     mounted.unmount();
     f.releaseTerminal();
+    f.client.clear();
+  }
+});
+
+function FilesShortcutHelp({ custom }: { custom?: () => void }) {
+  const open = useShortcutHelp();
+  useShortcuts([
+    {
+      id: ShortcutId.NewSession,
+      scope: ShortcutScope.Global,
+      label: "shortcuts.newSession",
+      bindings: [{ key: "n", primary: true, shift: true }],
+      input: ShortcutInput.Allow,
+      run: custom,
+    },
+  ]);
+  return <button onClick={open}>Files shortcut help</button>;
+}
+
+it.each(["MacIntel", "Win32", "Linux x86_64"])(
+  "opens singleton Files through the original callback from parent tabs and Help on %s",
+  async (platform) => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
+    const modifiers =
+      platform === "MacIntel" ? { metaKey: true } : { ctrlKey: true };
+    const f = fixture(
+      BudgetState.ALLOW_INCOMPLETE,
+      false,
+      {},
+      () => [],
+      false,
+      undefined,
+      true,
+    );
+    const mounted = render(
+      <StrictMode>
+        <ShortcutProvider>
+          <FilesShortcutHelp />
+          {f.view()}
+        </ShortcutProvider>
+      </StrictMode>,
+    );
+    try {
+      const composer = await screen.findByRole("textbox", { name: "Message" });
+      fireEvent.click(screen.getByRole("checkbox", { name: "Plan Mode" }));
+      fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+      const entry = screen.getByRole("menuitem", { name: "Files" });
+      expect(entry.getAttribute("aria-keyshortcuts")).toBe(
+        platform === "MacIntel" ? "Meta+E" : "Control+E",
+      );
+      expect(entry.querySelector("kbd")?.textContent).toBe(
+        platform === "MacIntel" ? "⌘ E" : "Ctrl E",
+      );
+      fireEvent.keyDown(entry, { key: "Escape" });
+      composer.focus();
+      fireEvent.keyDown(composer, { key: "e", code: "KeyE", ...modifiers });
+      const files = await screen.findByRole("tab", { name: "Files" });
+      await screen.findByRole("treeitem", { name: "Original" });
+      await waitFor(() => expect(document.activeElement).toBe(files));
+      const reads = f.workspace.mock.calls.length;
+      fireEvent.keyDown(files, { key: "e", ...modifiers });
+      expect(screen.getAllByRole("tab", { name: "Files" })).toHaveLength(1);
+      expect(f.workspace).toHaveBeenCalledTimes(reads);
+      for (const tab of [
+        { kind: SessionTabKind.Diff },
+        {
+          kind: SessionTabKind.File,
+          repository: f.session.id,
+          path: "note.txt",
+        },
+        {
+          kind: SessionTabKind.Page,
+          profile: "fixture-profile",
+          id: "fixture-page",
+          label: "Fixture page",
+        },
+        { kind: SessionTabKind.Diagnostics },
+      ] as SessionTabIntent[]) {
+        await act(() => f.openTab(tab));
+        fireEvent.keyDown(
+          screen.getByRole("heading", { name: "Original session" }),
+          { key: "e", ...modifiers },
+        );
+        await waitFor(() =>
+          expect(files.getAttribute("aria-selected")).toBe("true"),
+        );
+      }
+      fireEvent.click(
+        screen.getByRole("button", { name: "Files shortcut help" }),
+      );
+      const help = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
+      expect(within(help).getByText("Open Files")).toBeTruthy();
+      fireEvent.keyDown(
+        within(help).getByRole("button", { name: "Close keyboard shortcuts" }),
+        { key: "e", ...modifiers },
+      );
+      expect(
+        screen.queryByRole("dialog", { name: "Keyboard shortcuts" }),
+      ).toBeNull();
+      await waitFor(() => expect(document.activeElement).toBe(files));
+      fireEvent.keyDown(screen.getByRole("treeitem", { name: "Original" }), {
+        key: "Escape",
+      });
+      await waitFor(() =>
+        expect(
+          screen
+            .getByRole("tab", { name: "Conversation" })
+            .getAttribute("aria-selected"),
+        ).toBe("true"),
+      );
+      expect(composer).toHaveProperty("value", "Original draft");
+      expect(
+        screen.getByRole("checkbox", { name: "Plan Mode" }),
+      ).toHaveProperty("checked", true);
+      for (const mutation of [
+        f.enqueue,
+        f.control,
+        f.recover,
+        f.terminalCreate,
+        f.draft,
+      ])
+        expect(mutation).not.toHaveBeenCalled();
+    } finally {
+      mounted.unmount();
+      f.client.clear();
+    }
+  },
+);
+
+it("keeps Files event fences and retires registration on inactive, embedded and connection disposal", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  const f = fixture();
+  const view = (active = true, embedded = false) => (
+    <ShortcutProvider>
+      {f.view("Original draft", active, embedded)}
+    </ShortcutProvider>
+  );
+  const mounted = render(view());
+  try {
+    const composer = await screen.findByRole("textbox", { name: "Message" });
+    for (const event of [
+      { key: "e" },
+      { key: "e", metaKey: true },
+      { key: "e", ctrlKey: true, shiftKey: true },
+      { key: "e", ctrlKey: true, altKey: true },
+      { key: "e", ctrlKey: true, repeat: true },
+      { key: "e", ctrlKey: true, isComposing: true },
+      { key: "e", ctrlKey: true, keyCode: 229 },
+    ])
+      fireEvent.keyDown(composer, event);
+    const consumed = new KeyboardEvent("keydown", {
+      key: "e",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    consumed.preventDefault();
+    composer.dispatchEvent(consumed);
+    for (const attribute of ["hidden", "inert", "data-shortcuts"]) {
+      const host = document.createElement("div"),
+        input = document.createElement("input");
+      host.setAttribute(
+        attribute,
+        attribute === "data-shortcuts" ? "passthrough" : "",
+      );
+      host.append(input);
+      document.body.append(host);
+      fireEvent.keyDown(input, { key: "e", ctrlKey: true });
+      host.remove();
+    }
+    const modal = document.createElement("dialog");
+    document.body.append(modal);
+    modal.showModal();
+    fireEvent.keyDown(composer, { key: "e", ctrlKey: true });
+    modal.close();
+    modal.remove();
+    expect(screen.queryByRole("tab", { name: "Files" })).toBeNull();
+    mounted.rerender(view(false));
+    fireEvent.keyDown(document.body, { key: "e", ctrlKey: true });
+    expect(
+      document.querySelector('[role="tab"][aria-label="Files"]'),
+    ).toBeNull();
+    mounted.rerender(view(true, true));
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Message" }), {
+      key: "e",
+      ctrlKey: true,
+    });
+    expect(screen.queryByRole("tab", { name: "Files" })).toBeNull();
+    mounted.unmount();
+    fireEvent.keyDown(document.body, { key: "e", ctrlKey: true });
+    expect(f.workspace).not.toHaveBeenCalled();
+    expect(f.enqueue).not.toHaveBeenCalled();
+  } finally {
+    mounted.unmount();
+    f.client.clear();
+  }
+});
+
+it.each([false, "empty", "error"] as const)(
+  "preserves original Files read state %s in failed/archived sessions",
+  async (readState) => {
+    const f = fixture(
+      BudgetState.ALLOW_INCOMPLETE,
+      true,
+      { archive: "archived", outcome: "failed" },
+      () => [],
+      false,
+      undefined,
+      readState,
+    );
+    const mounted = render(<ShortcutProvider>{f.view()}</ShortcutProvider>);
+    try {
+      fireEvent.keyDown(
+        await screen.findByRole("heading", { name: "Original session" }),
+        { key: "e", ctrlKey: true },
+      );
+      const tab = await screen.findByRole("tab", { name: "Files" });
+      await waitFor(() => expect(f.workspace).toHaveBeenCalled());
+      expect(tab.getAttribute("aria-selected")).toBe("true");
+      expect(f.enqueue).not.toHaveBeenCalled();
+      expect(f.control).not.toHaveBeenCalled();
+    } finally {
+      mounted.unmount();
+      f.client.clear();
+    }
+  },
+);
+
+it("shares committed E suppression and restoration across dispatch, Help, Settings and localized Files guidance", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  let changed: ((snapshot: unknown) => void) | undefined;
+  const overrides: ShortcutOverrides = {
+    [ShortcutId.NewSession]: {
+      state: ShortcutOverrideState.Binding,
+      chord: { key: "e", shift: false },
+    },
+  };
+  const bridge: ShortcutPreferenceBridge = {
+    read: vi.fn(async () => ({ revision: 1, overrides, problem: null })),
+    update: vi.fn(),
+    subscribe: vi.fn(async (listener) => {
+      changed = listener;
+      return () => {};
+    }),
+  };
+  const custom = vi.fn(),
+    f = fixture();
+  const mounted = render(
+    <ShortcutPreferenceProvider bridge={bridge}>
+      <ShortcutProvider>
+        <FilesShortcutHelp custom={custom} />
+        {f.view()}
+        <ShortcutSettings />
+      </ShortcutProvider>
+    </ShortcutPreferenceProvider>,
+  );
+  try {
+    await waitFor(() => expect(changed).toBeDefined());
+    const composer = await screen.findByRole("textbox", { name: "Message" });
+    fireEvent.keyDown(composer, { key: "e", ctrlKey: true });
+    expect(custom).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("tab", { name: "Files" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+    const entry = screen.getByRole("menuitem", { name: "Files" });
+    expect(entry.getAttribute("aria-keyshortcuts")).toBeNull();
+    expect(entry.querySelector("kbd")).toBeNull();
+    expect(entry.getAttribute("aria-describedby")).toBeTruthy();
+    fireEvent.keyDown(entry, { key: "Escape" });
+    const catalog = screen
+      .getAllByText("Open Files")
+      .find((node) => node.tagName === "DT")!;
+    expect(catalog.closest("div")?.querySelector("dd")?.textContent).toBe(
+      "Disabled",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Files shortcut help" }),
+    );
+    const help = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
+    expect(
+      within(help).getByText(
+        "Inactive because a custom shortcut uses this key combination.",
+      ),
+    ).toBeTruthy();
+    await act(() => i18n.changeLanguage("ko"));
+    expect(within(help).getByText("파일 열기")).toBeTruthy();
+    fireEvent.keyDown(help, { key: "Escape" });
+    await act(async () => {
+      changed?.({ revision: 2, overrides: {}, problem: null });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "도구 열기" }));
+    const restored = screen.getByRole("menuitem", { name: "파일" });
+    expect(restored.getAttribute("aria-keyshortcuts")).toBe("Control+E");
+    expect(restored.querySelector("kbd")?.textContent).toBe("Ctrl E");
+    fireEvent.keyDown(restored, { key: "Escape" });
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "메시지" }), {
+      key: "e",
+      ctrlKey: true,
+    });
+    expect(await screen.findByRole("tab", { name: "파일" })).toBeTruthy();
+    expect(bridge.update).not.toHaveBeenCalled();
+    expect(overrides[ShortcutId.NewSession]?.state).toBe(
+      ShortcutOverrideState.Binding,
+    );
+  } finally {
+    mounted.unmount();
     f.client.clear();
   }
 });

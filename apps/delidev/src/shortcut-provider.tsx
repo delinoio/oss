@@ -223,6 +223,12 @@ export function useShortcuts(definitions: readonly ShortcutDefinition[]) {
   );
   const platform = controller?.platform ?? shortcutPlatform();
   return {
+    keys: (id: ShortcutId) =>
+      resolved
+        .find((item) => item.id === id)
+        ?.bindings.flatMap((binding) => bindingKeys(binding, platform)) ?? [],
+    reason: (id: ShortcutId) =>
+      resolved.find((item) => item.id === id)?.unavailableReason,
     aria: (...ids: ShortcutId[]) =>
       resolved
         .filter((item) => ids.includes(item.id))

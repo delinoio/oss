@@ -1262,6 +1262,15 @@ export function SessionView({
   };
   const shortcuts = useShortcuts([
     {
+      id: ShortcutId.OpenFiles,
+      scope: Surface.Sessions,
+      label: "shortcuts.openFiles",
+      bindings: [{ key: "e", primary: true }],
+      input: ShortcutInput.Allow,
+      active: active && !embedded && Boolean(id),
+      run: () => togglePanel(SessionPanel.Files),
+    },
+    {
       id: ShortcutId.OpenTerminals,
       scope: Surface.Sessions,
       label: "shortcuts.openTerminals",
@@ -1865,12 +1874,26 @@ export function SessionView({
                     aria-keyshortcuts={
                       tool.panel === SessionPanel.Terminals
                         ? shortcuts.aria(ShortcutId.OpenTerminals)
+                        : tool.panel === SessionPanel.Files
+                          ? shortcuts.aria(ShortcutId.OpenFiles) || undefined
+                          : undefined
+                    }
+                    aria-describedby={
+                      tool.panel === SessionPanel.Files &&
+                      shortcuts.reason(ShortcutId.OpenFiles)
+                        ? `session-files-priority-${id}`
                         : undefined
                     }
                     onClick={() => togglePanel(tool.panel)}
                   >
                     <SessionIcon kind={tool.icon} />
                     {tool.label}
+                    {tool.panel === SessionPanel.Files &&
+                    shortcuts.keys(ShortcutId.OpenFiles).length ? (
+                      <kbd className="session-tool-shortcut" aria-hidden="true">
+                        {shortcuts.keys(ShortcutId.OpenFiles).join(" ")}
+                      </kbd>
+                    ) : null}
                   </button>
                 ))}
                 {session &&
@@ -1883,6 +1906,14 @@ export function SessionView({
                   />
                 ) : null}
               </SessionToolMenu>
+              {shortcuts.reason(ShortcutId.OpenFiles) ? (
+                <span
+                  id={`session-files-priority-${id}`}
+                  className="session-tool-priority"
+                >
+                  {copy(shortcuts.reason(ShortcutId.OpenFiles)!)}
+                </span>
+              ) : null}
             </div>
             <div
               ref={setTerminalStatusHost}

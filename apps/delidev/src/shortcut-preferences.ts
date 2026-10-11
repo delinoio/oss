@@ -120,6 +120,15 @@ export const editableShortcutCatalog: readonly CatalogAction[] = [
 ];
 export const readOnlyShortcutCatalog: readonly CatalogAction[] = [
   {
+    id: ShortcutId.OpenFiles,
+    label: "shortcuts.openFiles",
+    group: ShortcutGroup.Session,
+    scopes: [Surface.Sessions],
+    priority: 1,
+    input: ShortcutInput.Allow,
+    defaults: [{ key: "e", primary: true }],
+  },
+  {
     id: ShortcutId.OpenTool,
     label: "session.openTool",
     group: ShortcutGroup.Session,
@@ -296,12 +305,18 @@ export function suppressedShortcutReason(
   id: ShortcutId,
   overrides: ShortcutOverrides,
 ): MessageKey | undefined {
-  if (id !== ShortcutId.OpenTool) return;
+  const key =
+    id === ShortcutId.OpenTool
+      ? "t"
+      : id === ShortcutId.OpenFiles
+        ? "e"
+        : undefined;
+  if (!key) return;
   return editableShortcutCatalog.some((action) => {
     const override = overrides[action.id];
     return (
       override?.state === ShortcutOverrideState.Binding &&
-      override.chord.key === "t" &&
+      override.chord.key === key &&
       !override.chord.shift
     );
   })
