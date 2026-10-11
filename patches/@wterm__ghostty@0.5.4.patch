@@ -1,0 +1,27 @@
+--- a/dist/wasm-bindings.js
++++ b/dist/wasm-bindings.js
+@@ -110,10 +110,9 @@
+     let wasmMemory;
+     const instance = await WebAssembly.instantiate(module, {
+         env: {
+-            log(ptr, len) {
+-                const text = new TextDecoder().decode(new Uint8Array(wasmMemory.buffer, ptr, len));
+-                console.log("[ghostty-vt]", text);
+-            },
++            // Terminal bytes may contain commands, paths and credentials.
++            // Keep the pinned WASM import callable without publishing raw content.
++            log() {},
+         },
+     });
+     wasmMemory = instance.exports.memory;
+--- a/dist/ghostty-core.js
++++ b/dist/ghostty-core.js
+@@ -138,7 +138,7 @@
+         const scrollback = this._options.scrollbackLimit ?? 10000;
+         this.termPtr = this.wasm.exports.init(cols, rows, scrollback, this._foregroundRgb, this._backgroundRgb, imageStorageLimit(this._options));
+         if (this.termPtr === 0)
+-            return;
++            throw new Error("GHOSTTY_INITIALIZATION_UNAVAILABLE");
+         if (this._themeColors)
+             this.setThemeColors(this._themeColors);
+         if (this._graphemeBufPtr !== 0)

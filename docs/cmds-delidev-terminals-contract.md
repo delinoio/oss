@@ -410,7 +410,7 @@ bytes, split UTF-8, reattachment gaps and Stop/Archive/deletion barriers.
 
 Keep executed checks and retained fixtures distinct from native Windows/Linux,
 real remote Worker, native desktop visual and release acceptance. The desktop
-provides the pinned WebGL terminal emulator described by the desktop contract,
+provides the pinned wterm DOM renderer and Ghostty core described by the desktop contract,
 with bounded scrollback, exact original byte/cursor order, atomic input admission
 and serial retained input/resize controls. Its accepted creation and explicit
 selection survive bounded history payload eviction. Hiding or tab departure
@@ -488,3 +488,13 @@ or closed with independent cleanup verified and no pending operation before
 creation. Concurrent clients receive the same newly accepted terminal. Exact
 request replay retains actor-bound receipts without dispatching another shell.
 No capability, migration or native protocol change is added.
+
+## Desktop renderer ownership
+
+The TerminalScreen adapter owns one asynchronously initialized Ghostty core and
+wterm renderer, without native process or Connect authority. Preserve original
+ordered bytes, exact output cursors, explicit gap reset, bounded dimensions, atomic
+paste admission and serialized input-before-resize dispatch. Follow the desktop
+contract for the pinned public compatibility patches, strict CSP, offline WASM,
+input gating, localization and independent teardown. Browser/package fixtures do
+not establish installed macOS, Windows or Linux native acceptance.

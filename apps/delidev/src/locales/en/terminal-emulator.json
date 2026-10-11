@@ -1,0 +1,6 @@
+{
+  "terminal-emulator.input": "Terminal input",
+  "terminal-emulator.exitHint": "Press Escape, then Tab to move focus out of the terminal, or Shift+Tab to move focus backward.",
+  "terminal-emulator.output": "Terminal output",
+  "terminal-emulator.announcementLimit": "Output announcements paused because there is too much output. Type in the terminal to resume."
+}

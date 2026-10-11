@@ -1,28 +1,48 @@
 // SPDX-License-Identifier: Apache-2.0
+// The published WASM parses only synthetic fixture bytes; this is not native acceptance.
 import { createRequire } from "node:module";
-import { expect, it, vi } from "vitest";
-import { Terminal } from "@xterm/xterm";
-vi.hoisted(() => { HTMLCanvasElement.prototype.getContext = () => null; });
-
-it("uses the same patched ESM distributed entrypoint for Node24 require and import", () => {
-  const require = createRequire(import.meta.url), common = require("@xterm/xterm");
-  expect(require.resolve("@xterm/xterm")).toMatch(/lib\/xterm\.mjs$/);
-  expect(Object.keys(common)).toEqual(["Terminal"]);
-  expect(common.Terminal).toBe(Terminal);
-  const terminal = new Terminal();
-  expect(() => (terminal as unknown as { _core: { _createRenderer: () => void } })._core._createRenderer()).toThrow("DELIDEV_TERMINAL_RENDERER_UNAVAILABLE");
-  terminal.dispose();
+import { readFile } from "node:fs/promises";
+import { afterEach, expect, it, vi } from "vitest";
+import { GhosttyCore } from "@wterm/ghostty";
+const encode = (value: string) => new TextEncoder().encode(value);
+async function load() {
+  const bytes = await readFile(createRequire(import.meta.url).resolve("@wterm/ghostty/ghostty-vt.wasm"));
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array(bytes), { headers: { "Content-Type": "application/wasm" } })));
+  const core = await GhosttyCore.load({ wasmPath: "https://fixture.test/pinned-ghostty.wasm", scrollbackLimit: 5000, imageStorageLimit: 0 });
+  core.init(80, 24);
+  return core;
+}
+function line(core: GhosttyCore, row: number) {
+  return Array.from({ length: core.getCols() }, (_, col) => { const cell = core.getCell(row, col); return cell.width === 0 ? "" : cell.chars ?? String.fromCodePoint(cell.char || 32); }).join("").trimEnd();
+}
+afterEach(() => vi.unstubAllGlobals());
+it("parses split UTF-8/ANSI and restores the original alternate screen", async () => {
+  const core = await load();
+  try {
+    core.writeRaw(new Uint8Array([0xe2, 0x82])); core.writeRaw(new Uint8Array([0xac]));
+    expect(line(core, 0)).toBe("€");
+    core.writeRaw(encode("\x1b[3")); core.writeRaw(encode("1mRED\x1b[0m\r\nSecond\x1b[1A\x1b[1GFirst"));
+    expect(line(core, 0)).toBe("First"); expect(line(core, 1)).toBe("Second");
+    core.writeRaw(encode("\x1b[?1049h\x1b[HAlternate")); expect(core.usingAltScreen()).toBe(true); expect(line(core, 0)).toBe("Alternate");
+    core.writeRaw(encode("\x1b[?1049l")); expect(core.usingAltScreen()).toBe(false); expect(line(core, 0)).toBe("First");
+  } finally { core.dispose(); }
 });
-it("parses original split UTF8, split escape sequences, cursor movement and alternate screen", async () => {
-  const terminal = new Terminal({ cols: 80, rows: 24, allowProposedApi: true, scrollback: 5000 });
-  terminal.parser.registerOscHandler(52,()=>true); terminal.parser.registerOscHandler(8,()=>true);
-  const write = (bytes: Uint8Array) => new Promise<void>(resolve => terminal.write(bytes, resolve));
-  await write(new Uint8Array([0xe2,0x82])); await write(new Uint8Array([0xac]));
-  await write(new TextEncoder().encode("\x1b[3"));await write(new TextEncoder().encode("1mRED\x1b[0m\r\nSecond\x1b[1A\x1b[1GFirst"));
-  expect(terminal.buffer.active.getLine(0)?.translateToString(true)).toBe("First");
-  expect(terminal.buffer.active.getLine(1)?.translateToString(true)).toBe("Second");
-  await write(new TextEncoder().encode("\x1b[?1049h\x1b[HAlternate"));expect(terminal.buffer.active.type).toBe("alternate");expect(terminal.buffer.active.getLine(0)?.translateToString(true)).toBe("Alternate");
-  await write(new TextEncoder().encode("\x1b[?1049l"));expect(terminal.buffer.active.type).toBe("normal");
-  await write(new Uint8Array([0xe2]));terminal.reset();await write(new TextEncoder().encode("suffix"));expect(terminal.buffer.active.getLine(0)?.translateToString(true)).toBe("suffix");
-  terminal.dispose();
+it("fresh initialization clears partial UTF-8/escape, alternate screen and retained history", async () => {
+  const core = await load();
+  try {
+    core.writeRaw(encode("history\r\n\x1b[?1049h")); core.writeRaw(new Uint8Array([0xe2])); core.writeRaw(encode("\x1b[3"));
+    core.init(80, 24); core.writeRaw(encode("suffix"));
+    expect(core.usingAltScreen()).toBe(false); expect(core.getScrollbackCount()).toBe(0); expect(line(core, 0)).toBe("suffix");
+    expect(core.getCols()).toBe(80); expect(core.getRows()).toBe(24);
+  } finally { core.dispose(); }
+});
+it("bounds history and disables image storage without logging synthetic output", async () => {
+  const core = await load(), log = vi.spyOn(console, "log");
+  try {
+    for (let index = 0; index < 5100; index++) core.writeRaw(encode(`fixture-${index}\r\n`));
+    expect(core.getScrollbackCount()).toBeLessThanOrEqual(5000); expect(core.getScrollbackCount()).toBeGreaterThan(0);
+    expect(line(core, 22)).toBe("fixture-5099");
+    expect(core.getGraphicsState()?.images ?? []).toEqual([]);
+    expect(log).not.toHaveBeenCalled();
+  } finally { core.dispose(); log.mockRestore(); }
 });

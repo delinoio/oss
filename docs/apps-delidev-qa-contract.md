@@ -285,3 +285,13 @@ Instruction-file updates in this requirement apply only to changes in developmen
 The the feature session-remediation layout fixture exercises the real shared task presentation with synthetic closed startup evidence and original-controller counters. Validate bilingual themes, narrow widths and original draft/confirmation retention; keep its separate entry and browser outputs outside product releases. It cannot prove native startup, credential access, real-account acceptance or packaged CEF behavior.
 
 The the feature account-remediation fixture similarly exercises safe ChatGPT/API account failure presentation, original read rechecks and compact rail failure popovers in localized responsive themes. Its separate marker is excluded from release output; synthetic counters never establish real login, OS authorization or account cleanup.
+
+## Terminal engine fixture
+
+The frontend CI checks phase installs exact host-only Playwright 1.64.0 in a
+runner-owned temporary directory and runs `test-terminal-history-layout.mjs`
+against synthetic services. It uses the same pinned engine/hashed WASM and static
+production CSP, verifies disabled/active history, stationary geometry and retained
+focus/selection, and rejects inline script/style and JavaScript eval. CI uploads
+content-free JSONL lifecycle and geometry evidence. The fixture has no native
+process, account, credential or installed-platform acceptance authority.

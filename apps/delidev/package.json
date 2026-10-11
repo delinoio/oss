@@ -43,7 +43,8 @@
     "test:integration:1": "vitest run .integration.test. --shard=1/2",
     "test:integration:2": "vitest run .integration.test. --shard=2/2",
     "ci:qa": "node --test scripts/qa/*.test.mjs",
-    "test:command-menu-layout": "node scripts/test-command-menu-layout.mjs"
+    "test:command-menu-layout": "node scripts/test-command-menu-layout.mjs",
+    "test:terminal:browser": "node scripts/test-terminal-history-layout.mjs"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.14.0",
@@ -52,9 +53,9 @@
     "@delinoio/delidev-api-client": "workspace:*",
     "@tanstack/react-query": "5.101.4",
     "@tauri-apps/api": "2.11.1",
-    "@xterm/addon-fit": "0.11.0",
-    "@xterm/addon-webgl": "0.19.0",
-    "@xterm/xterm": "6.0.0",
+    "@wterm/core": "0.5.4",
+    "@wterm/dom": "0.5.4",
+    "@wterm/ghostty": "0.5.4",
     "cmdk": "1.1.1",
     "i18next": "26.4.2",
     "react": "19.2.8",

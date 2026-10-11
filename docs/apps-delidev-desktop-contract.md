@@ -1014,18 +1014,28 @@ presentation Close. Details owns the future-creation shell override, Worker/shel
 state/cleanup and refresh/reattach/Close actions. Retain the accepted creation
 and explicit selection beyond the bounded 50-record history payload window.
 
-Pin xterm 6.0.0, WebGL addon 0.19.0 and Fit addon 0.11.0 with their MIT notices.
-Static CSS preserves the dark 14px monospace palette through tokens in all
-three shared theme palettes. Shared outward focus and terminal text/selection/
-control-border contrast remain audited in both application themes.
-The narrow package patch removes Viewport dynamic stylesheet insertion and
-makes the DOM renderer fallback fail closed; its source and ESM changes route
-both package entrypoints to the same patched ESM on repository Node24. Load
-WebGL before opening, dispose Terminal before addon teardown, and leave
-production style-src self unchanged. Renderer failure or context loss disables
-input and offers explicit original reattachment/Close. Do not install clipboard,
-web-link or attach addons; consume OSC 52/OSC 8 and keep detected links inert.
-Screen-reader output remains enabled and xterm diagnostic logging stays off.
+Pin @wterm/dom and @wterm/ghostty 0.5.4 and resolve @wterm/core to 0.5.4.
+The synchronous TerminalScreen factory owns one asynchronous initialization task,
+one supplied Ghostty core with 5000-line history and imageStorageLimit zero, and
+ordered original byte writes. Automatic focus/resize and debug output are disabled.
+Late initialization is fenced by disposal; WTerm and its separately owned core are
+both released on normal teardown, initialization failure and late completion.
+Renderer failures disable input and retain explicit original reattachment recovery. Disposal settles queued adapter work even while asset loading is pending; a late core is still disposed without DOM publication or focus.
+
+The exact package patches provide public coordinated reset/input/paste controls,
+localized English/Korean output announcements, bounded measurement, inert OSC 8
+text, content-free WASM logging and DOM construction with validated CSSOM cell
+properties. Both full and incremental painting avoid HTML style parsing. Keep
+static production style-src self; script-src adds only wasm-unsafe-eval and
+connect-src self permits the explicit hashed same-origin Ghostty WASM asset served
+as application/wasm, including after saved/local origin rewriting. No JavaScript
+eval, inline script/style, remote module or fallback engine is allowed. Preserve
+the dark 14px monospace palette, theme tokens, geometry, selection and scrollbars.
+OSC 52 requests are discarded; title, cwd and shell callbacks stay disconnected.
+Disabled input blocks keyboard, IME, mouse, paste, focus reports and parser replies
+while inspection and explicit copy remain available. Gap reset clears parser,
+both screens/history, selection, window queries and pending announcements before
+retained suffix parsing, preserving dimensions and host-owned focus.
 
 Pass ordered Uint8Array output directly to the emulator with exact bigint
 cursors and epoch checks. Keep at most 5000 scrollback lines. Explicit gaps reset
@@ -1064,7 +1074,7 @@ explicit Close, Archive and deletion retain independent native cleanup gates.
 
 - Repository heartbeat guidance follows `apps-delidev-desktop-contract.md`: use the selected Machine's projected original Worker lease, classify offline only above 45,000 ms, and keep missing/failed current observations unknown. Read-only rechecks preserve selected machine/canonical root/drafts and never inspect, save, start or adopt another Worker.
 
-- Terminal dependencies retain their MIT licenses and the three original copyright/license files in `public/terminal-notices`, copied into frontend distributions. Preserve the CSP/ESM modification notice and pinned xterm/WebGL/Fit versions; follow the desktop and repository license contracts.
+- Terminal distributions retain the complete Apache-2.0 wterm, MIT Ghostty/uucode/Hoehrmann, dual-license Wuffs and Unicode License V3 notices in `public/terminal-notices`, including package/WASM modification notices. Follow the desktop and repository license contracts.
 
 - Subscription cleanup includes fully disconnected service-native accounts without synthetic login IDs. Explicit failed initial ChatGPT deletion uses the shared durable cleanup controller, preserves the original public deletion revision/receipt while checkpoint revisions advance, and never retries a terminal attempt without fresh explicit confirmation. Retain original actor/native/vault/reference checks; no new RPC, protocol allocation or migration. Follow the subscription and account contracts.
 

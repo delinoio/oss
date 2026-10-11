@@ -27,14 +27,20 @@ const transport=createRouterTransport(router=>{
    if(request.action===TerminalAction.INPUT)await new Promise<void>(resolve=>{inputRelease=resolve;});else await pause(30);
    terminal=create(ResourceSchema,{...terminal,revision:terminal.revision+1n});return {terminal};},
   watchTerminalOutput:async function*(request,context){metrics.watches++;metrics.requests.push({epoch:request.epoch,afterSequence:request.afterSequence.toString()});
-   try {yield {epoch:newRequestId(),sequence:1n,data:new TextEncoder().encode(Array.from({length:80},(_,index)=>`unchanged synthetic line ${index}\r\n`).join("")),terminal};
+   try {yield {epoch:newRequestId(),sequence:1n,data:new TextEncoder().encode("\x1b[31;4;9mstyled\x1b[0m\x1b]8;;https://fixture.test/inert\x07inert\x1b]8;;\x07\r\n"+Array.from({length:80},(_,index)=>`unchanged synthetic line ${index}\r\n`).join("")),terminal};
     if(closed)return;
     await new Promise<void>(resolve=>{if(context.signal.aborted)resolve();else context.signal.addEventListener("abort",()=>resolve(),{once:true});});
    }finally{metrics.watchClosed++;}
   }
  });
 });
-Object.assign(window,{__terminalHistoryFixture:{metrics,releaseInput:()=>{inputRelease?.();inputRelease=undefined;}}});
-const observer=new MutationObserver(changes=>{for(const change of changes)for(const [nodes,key] of [[change.addedNodes,"screens"],[change.removedNodes,"removedScreens"]] as const)for(const node of nodes)if(node instanceof Element)metrics[key]+=Number(node.matches(".xterm"))+node.querySelectorAll(".xterm").length;});
+Object.assign(window,{__terminalHistoryFixture:{metrics,policy:()=>{
+ let evaluated=false;try{new Function("return 1")();evaluated=true;}catch{}
+ const script=document.createElement("script");script.textContent="window.__terminalInlineExecuted=true";document.body.append(script);script.remove();
+ const style=document.createElement("style");style.textContent=":root { --delidev-fixture-injected: yes; }";document.head.append(style);
+ const styled=getComputedStyle(document.documentElement).getPropertyValue("--delidev-fixture-injected").trim()==="yes";style.remove();
+ return {evaluated,styled};
+},releaseInput:()=>{inputRelease?.();inputRelease=undefined;}}});
+const observer=new MutationObserver(changes=>{for(const change of changes)for(const [nodes,key] of [[change.addedNodes,"screens"],[change.removedNodes,"removedScreens"]] as const)for(const node of nodes)if(node instanceof Element)metrics[key]+=Number(node.matches(".term-grid"))+node.querySelectorAll(".term-grid").length;});
 observer.observe(document.body,{subtree:true,childList:true});
 createRoot(document.getElementById("root")!).render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><TransportProvider transport={transport}><MutationIntents><section className="session-workspace terminal-open terminal-history-fixture"><div className="session-content"><div className="session-upper-content"/><div className="session-terminal-slot"><SessionTerminals session={session} close={()=>{}} /></div></div></section></MutationIntents></TransportProvider></QueryClientProvider>);
