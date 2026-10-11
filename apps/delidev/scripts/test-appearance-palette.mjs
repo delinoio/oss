@@ -78,38 +78,41 @@ try {
     ["dark", "light", "default"],
   ]) {
     await page.emulateMedia({ colorScheme: scheme });
-    const result = await page.evaluate(({ mode, palette }) => {
-      const fixture = window.paletteFixture;
-      const old = document.adoptedStyleSheets.at(-1);
-      fixture.retire?.();
-      const dark =
-        mode === "dark" ||
-        (mode === "system" &&
-          matchMedia("(prefers-color-scheme: dark)").matches);
-      document.documentElement.dataset.theme = dark ? "dark" : "light";
-      fixture.preferences.dark_palette = palette;
-      fixture.preferences.light_palette =
-        palette === "default" ? "default" : "nord";
-      const colors = fixture.selectedColors(fixture.preferences, dark);
-      fixture.retire = fixture.applyAppearanceColors(colors);
-      const actual = getComputedStyle(document.querySelector("#probe"));
-      const expected = document.createElement("div");
-      expected.style.cssText = `background:${colors.background};color:${colors.text};border:1px solid ${colors.accent}`;
-      document.body.append(expected);
-      const expectedStyle = getComputedStyle(expected);
-      const properties = ["backgroundColor", "color", "borderTopColor"];
-      const result = {
-        actual: properties.map((key) => actual[key]),
-        expected: properties.map((key) => expectedStyle[key]),
-        replaced:
-          old === fixture.unrelated ||
-          !document.adoptedStyleSheets.includes(old),
-        sheets: document.adoptedStyleSheets.length,
-        unrelated: document.adoptedStyleSheets.includes(fixture.unrelated),
-      };
-      expected.remove();
-      return result;
-    }, { mode, palette });
+    const result = await page.evaluate(
+      ({ mode, palette }) => {
+        const fixture = window.paletteFixture;
+        const old = document.adoptedStyleSheets.at(-1);
+        fixture.retire?.();
+        const dark =
+          mode === "dark" ||
+          (mode === "system" &&
+            matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+        fixture.preferences.dark_palette = palette;
+        fixture.preferences.light_palette =
+          palette === "default" ? "default" : "nord";
+        const colors = fixture.selectedColors(fixture.preferences, dark);
+        fixture.retire = fixture.applyAppearanceColors(colors);
+        const actual = getComputedStyle(document.querySelector("#probe"));
+        const expected = document.createElement("div");
+        expected.style.cssText = `background:${colors.background};color:${colors.text};border:1px solid ${colors.accent}`;
+        document.body.append(expected);
+        const expectedStyle = getComputedStyle(expected);
+        const properties = ["backgroundColor", "color", "borderTopColor"];
+        const result = {
+          actual: properties.map((key) => actual[key]),
+          expected: properties.map((key) => expectedStyle[key]),
+          replaced:
+            old === fixture.unrelated ||
+            !document.adoptedStyleSheets.includes(old),
+          sheets: document.adoptedStyleSheets.length,
+          unrelated: document.adoptedStyleSheets.includes(fixture.unrelated),
+        };
+        expected.remove();
+        return result;
+      },
+      { mode, palette },
+    );
     assert.deepEqual(
       result.actual,
       result.expected,
@@ -119,26 +122,30 @@ try {
     assert.equal(result.sheets, 2);
     cases++;
   }
-  assert(await page.evaluate(() => {
-    const fixture = window.paletteFixture;
-    fixture.retire();
-    fixture.retire();
-    const root = document.documentElement;
-    const fallback = getComputedStyle(root)
-      .getPropertyValue("--background")
-      .trim()
-      .toLowerCase();
-    return (
-      document.adoptedStyleSheets.length === 1 &&
-      document.adoptedStyleSheets[0] === fixture.unrelated &&
-      fallback === fixture.palettes.default.dark.background.toLowerCase()
-    );
-  }));
-  console.log(JSON.stringify({
-    operation: "appearance-palette",
-    cases,
-    nativeAcceptance: "not-performed",
-  }));
+  assert(
+    await page.evaluate(() => {
+      const fixture = window.paletteFixture;
+      fixture.retire();
+      fixture.retire();
+      const root = document.documentElement;
+      const fallback = getComputedStyle(root)
+        .getPropertyValue("--background")
+        .trim()
+        .toLowerCase();
+      return (
+        document.adoptedStyleSheets.length === 1 &&
+        document.adoptedStyleSheets[0] === fixture.unrelated &&
+        fallback === fixture.palettes.default.dark.background.toLowerCase()
+      );
+    }),
+  );
+  console.log(
+    JSON.stringify({
+      operation: "appearance-palette",
+      cases,
+      nativeAcceptance: "not-performed",
+    }),
+  );
 } finally {
   await browser.close();
 }
