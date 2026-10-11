@@ -39,6 +39,8 @@ export class QaRun {
     const build = await createRsbuild({ cwd: app, rsbuildConfig: {
       logLevel: "error", performance: { printFileSize: false },
       plugins: [pluginReact()], source: { entry: { index: join(app, "src/qa/main.tsx") } },
+      // The QA runner has its own config and needs the production WASM URL rule.
+      tools: { rspack: { module: { rules: [{ test: /\.wasm$/, resourceQuery: /url/, type: "asset/resource", generator: { filename: "static/wasm/[name].[contenthash:8][ext]" } }] } } },
       html: { template: join(app, "index.html"), title: "DeliDev browser QA" },
       output: { distPath: { root: this.assets }, assetPrefix: "/", sourceMap: false, cleanDistPath: true },
     } });
