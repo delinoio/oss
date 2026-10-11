@@ -57,7 +57,8 @@ async function measure(root) {
 // HTML entry or JS chunk. References that name a logical asset of any build
 // must resolve to a file of this build; otherwise a removed chunk is still
 // loaded somewhere. Unrelated strings that name no asset are ignored.
-const REFERENCE = /["'`(=]((?:\.{1,2}\/|\/)?(?:[\w.@-]+\/)*[\w.@-]+\.m?js)(?=["'`)\s>])/g;
+const REFERENCE =
+  /["'`(=]((?:\.{1,2}\/|\/)?(?:[\w.@-]+\/)*[\w.@-]+\.m?js)(?=["'`)\s>])/g;
 function brokenReferences(build, knownLogical) {
   const present = new Set(build.files.map((f) => f.path));
   const broken = new Set();
@@ -67,7 +68,11 @@ function brokenReferences(build, knownLogical) {
       const candidates = reference.startsWith("/")
         ? [reference.slice(1)]
         : reference.startsWith(".")
-          ? [path.posix.normalize(path.posix.join(path.posix.dirname(file), reference))]
+          ? [
+              path.posix.normalize(
+                path.posix.join(path.posix.dirname(file), reference),
+              ),
+            ]
           : [reference, path.posix.join(path.posix.dirname(file), reference)];
       if (candidates.some((c) => present.has(c))) continue;
       if (candidates.some((c) => knownLogical.has(logical(c))))
@@ -113,7 +118,9 @@ if (process.versions.node !== pin.node)
   throw new Error(`Measure with pinned Node ${pin.node}`);
 const builds = await Promise.all(roots.map(provenance));
 const names =
-  roots.length === 2 ? ["original", "optimized"] : ["original", "existing", "extended"];
+  roots.length === 2
+    ? ["original", "optimized"]
+    : ["original", "existing", "extended"];
 const mismatches = [];
 for (let i = 1; i < builds.length; i++)
   for (const key of PROVENANCE)
@@ -146,7 +153,9 @@ const comparisons = measured.slice(0, -1).map((baseline, i) => ({
 }));
 const loadingOk = Object.values(broken).every((list) => !list.length);
 const passed =
-  !mismatches.length && loadingOk && comparisons.every((c) => c.strictly_smaller);
+  !mismatches.length &&
+  loadingOk &&
+  comparisons.every((c) => c.strictly_smaller);
 const summary = (m) => ({
   raw: m.raw,
   gzip: m.gzip,
@@ -166,7 +175,9 @@ console.log(
         builds.map((b, i) => [names[i], b.optimizer ?? null]),
       ),
       provenance_mismatches: mismatches,
-      builds: Object.fromEntries(measured.map((m, i) => [names[i], summary(m)])),
+      builds: Object.fromEntries(
+        measured.map((m, i) => [names[i], summary(m)]),
+      ),
       // Removed chunks are legitimate when nothing still loads them.
       comparisons,
       broken_chunk_references: broken,

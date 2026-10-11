@@ -391,7 +391,10 @@ test("loads a structurally transformed module without property renaming", async 
       file.endsWith("main.ts"),
     );
     assert.ok(sourceIndex >= 0);
-    assert.match(chunk.map.sourcesContent[sourceIndex], /EventName.PointerDown/);
+    assert.match(
+      chunk.map.sourcesContent[sourceIndex],
+      /EventName.PointerDown/,
+    );
     await writeFile(
       path.join(root, "events.ts"),
       'export enum EventName { PointerDown = "down", PointerUp = "pointerup" }',

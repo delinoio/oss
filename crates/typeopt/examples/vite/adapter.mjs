@@ -51,14 +51,19 @@ export function typeopt(outputDirectory) {
       // before consuming any output, so a changed dependency invalidates
       // every result that could depend on it.
       const inputs = manifest.inputs ?? [];
-      if (!Array.isArray(inputs) || inputs.some((i) => !DIGEST.test(i.sha256 ?? "")))
+      if (
+        !Array.isArray(inputs) ||
+        inputs.some((i) => !DIGEST.test(i.sha256 ?? ""))
+      )
         throw new Error(
           "typeopt module mapping has an invalid input snapshot; regenerate with the matching CLI",
         );
       const stale = [];
       await Promise.all([
         ...manifest.modules
-          .filter((entry) => entry.kind !== "passthrough" || entry.source_sha256)
+          .filter(
+            (entry) => entry.kind !== "passthrough" || entry.source_sha256,
+          )
           .map(async (entry) => {
             const digest = await digestOf(entry.source, { stripBom: true });
             if (digest !== entry.source_sha256) stale.push(entry.source);

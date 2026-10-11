@@ -812,16 +812,14 @@ fn shorthand_property_reads_keep_inlined_functions() {
 /// so such a module is an unchecked boundary and stays untouched.
 #[test]
 fn ts_nocheck_modules_are_not_transformed() {
-    let code = format!(
-        "// @ts-nocheck\nfunction size() {{ return 2; }}\nconst table = {{ size }};\nexport \
-         default function read() {{ return size() + table.size(); }}\n"
-    );
+    let code = "// @ts-nocheck\nfunction size() { return 2; }\nconst table = { size };\nexport \
+                default function read() { return size() + table.size(); }\n";
     let temp = project(&[
         (
             "main.ts",
             "import read from './dep.ts';\nconsole.log(read());\n",
         ),
-        ("dep.ts", &code),
+        ("dep.ts", code),
     ]);
     let report = optimize(temp.path(), &[]);
     let dep = modules(temp.path())["modules"]
