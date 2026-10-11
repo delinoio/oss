@@ -535,3 +535,337 @@ console.log(api.twice(2), Object.keys(api));
         "escapes",
     );
 }
+
+// ---------------------------------------------------------------------------
+// discriminant-compaction
+// ---------------------------------------------------------------------------
+
+const DISCRIMINANT: &str = "discriminant-compaction";
+
+const SHAPES: &str = r#"
+export interface Circle { kind: "circle"; radius: number }
+export interface Rectangle { kind: "rectangle"; width: number; height: number }
+export type Shape = Circle | { kind: "triangle"; base: number; height: number } | Rectangle;
+
+export function circle(radius: number): Shape {
+  return { kind: "circle", radius };
+}
+
+export function rectangle(width: number, height: number): Rectangle {
+  return { kind: "rectangle", width, height };
+}
+
+export function area(shape: Shape): number {
+  switch (shape.kind) {
+    case "circle":
+      return Math.PI * shape.radius * shape.radius;
+    case "rectangle":
+      return shape.width * shape.height;
+    default:
+      return (shape.base * shape.height) / 2;
+  }
+}
+"#;
+
+/// Optimizes with only `discriminant-compaction`, checks behavior and
+/// returns the report.
+fn discriminant(files: &[(&str, &str)]) -> (tempfile::TempDir, Value) {
+    let temp = project(files);
+    let report = optimize(temp.path(), &args(&only(&[DISCRIMINANT])));
+    same_behavior(temp.path());
+    (temp, report)
+}
+
+/// Asserts that the shapes domain kept its tags for `reason`.
+fn tags_preserved(main: &str, reason: &str) {
+    let (temp, report) = discriminant(&[("main.ts", main), ("shapes.ts", SHAPES)]);
+    assert_eq!(applied(&report, DISCRIMINANT), 0, "{report:#}");
+    let reasons = skipped_reasons(&report, DISCRIMINANT);
+    assert!(
+        reasons.iter().any(|r| r == reason),
+        "expected {reason} in {reasons:?}"
+    );
+    assert!(emitted(temp.path(), "shapes.ts").contains("kind: \"circle\""));
+}
+
+#[test]
+fn closed_union_tags_become_small_numbers_across_modules() {
+    let files = [
+        (
+            "main.ts",
+            r#"
+import { area, circle, rectangle, type Shape } from "./shapes.ts";
+const shapes: Shape[] = [circle(1), rectangle(2, 3), { kind: "triangle", base: 4, height: 5 }];
+let total = 0;
+for (const shape of shapes) {
+  if (shape.kind !== "triangle") total += area(shape);
+}
+const round = shapes.filter((s) => s.kind === "rectangle" || s.kind === "circle").length;
+console.log(total.toFixed(3), round, shapes.map(area).map((a) => a.toFixed(2)).join(","));
+"#,
+        ),
+        ("shapes.ts", SHAPES),
+    ];
+    let (temp, report) = discriminant(&files);
+    assert_eq!(applied(&report, DISCRIMINANT), 1, "{report:#}");
+    assert!(saved(&report) > 0);
+    let shapes = emitted(temp.path(), "shapes.ts");
+    assert!(shapes.contains("return { kind: 0, radius };"), "{shapes}");
+    assert!(
+        shapes.contains("return { kind: 1, width, height };"),
+        "{shapes}"
+    );
+    assert!(
+        shapes.contains("case 0:") && shapes.contains("case 1:"),
+        "{shapes}"
+    );
+    let main = emitted(temp.path(), "main.ts");
+    assert!(main.contains("{ kind: 2, base: 4, height: 5 }"), "{main}");
+    assert!(main.contains("shape.kind !== 2"), "{main}");
+    assert!(main.contains("s.kind === 1 || s.kind === 0"), "{main}");
+    // The transformation is also chosen with every pass enabled.
+    let all = project(&files);
+    let report = optimize(all.path(), &[]);
+    assert_eq!(applied(&report, DISCRIMINANT), 1, "{report:#}");
+    same_behavior(all.path());
+}
+
+#[test]
+fn collections_copies_and_conditionals_keep_tags_consistent() {
+    let (temp, report) = discriminant(&[(
+        "main.ts",
+        r#"
+type Event =
+  | { type: "pointer-down"; x: number }
+  | { type: "pointer-up"; x: number }
+  | { type: "key-press"; key: string };
+const queue = new Map<string, Event[]>();
+function record(channel: string, event: Event) {
+  const list = queue.get(channel) ?? [];
+  list.push(event);
+  queue.set(channel, list);
+}
+function press(down: boolean, x: number): Event {
+  return { type: down ? "pointer-down" : "pointer-up", x };
+}
+function mirror(event: Event): Event {
+  return event.type === "key-press" ? event : { type: event.type, x: -event.x };
+}
+function sameType(a: Event, b: Event) {
+  return a.type === b.type;
+}
+record("main", press(true, 1));
+record("main", mirror(press(false, 2)));
+record("keys", { type: "key-press", key: "a" });
+const all = [...queue.values()].flat();
+const seen = new Set<Event>(all);
+let summary = "";
+for (const event of seen) {
+  switch (event.type) {
+    case "pointer-down":
+      summary += `d${event.x};`;
+      break;
+    case "pointer-up":
+      summary += `u${event.x};`;
+      break;
+    case "key-press":
+      summary += `k${event.key};`;
+  }
+}
+console.log(summary, sameType(all[0], all[1]), all.find((e) => e.type === "key-press") !== undefined);
+export {};
+"#,
+    )]);
+    assert_eq!(applied(&report, DISCRIMINANT), 1, "{report:#}");
+    let code = emitted(temp.path(), "main.ts");
+    assert!(code.contains("type: down ? 0 : 1"), "{code}");
+    assert!(code.contains("{ type: event.type, x: -event.x }"), "{code}");
+    assert!(code.contains("case 2:"), "{code}");
+    assert!(!code.contains("\"pointer-down\""), "{code}");
+}
+
+#[test]
+fn unrelated_domains_sharing_values_are_independent() {
+    let (temp, report) = discriminant(&[(
+        "main.ts",
+        r#"
+type Fill = { mode: "solid"; color: string } | { mode: "none" };
+type Stroke = { mode: "none" } | { mode: "dashed"; gap: number };
+function fill(on: boolean): Fill {
+  return on ? { mode: "solid", color: "red" } : { mode: "none" };
+}
+function stroke(on: boolean): Stroke {
+  return on ? { mode: "dashed", gap: 2 } : { mode: "none" };
+}
+function describe(f: Fill, s: Stroke) {
+  return [f.mode === "none" ? "no fill" : "fill", s.mode === "none" ? "no stroke" : "stroke"].join("/");
+}
+console.log(describe(fill(true), stroke(false)), describe(fill(false), stroke(true)), "none");
+export {};
+"#,
+    )]);
+    assert_eq!(applied(&report, DISCRIMINANT), 2, "{report:#}");
+    let code = emitted(temp.path(), "main.ts");
+    // Unrelated string values keep their spelling.
+    assert!(
+        code.contains("\"no fill\"") && code.contains(", \"none\")"),
+        "{code}"
+    );
+    assert!(
+        code.contains("f.mode === 1") && code.contains("s.mode === 0"),
+        "{code}"
+    );
+}
+
+#[test]
+fn disabled_discriminant_pass_never_runs() {
+    let temp = project(&[
+        (
+            "main.ts",
+            "import { area, circle } from \
+             './shapes.ts';\nconsole.log(area(circle(2)).toFixed(2));\n",
+        ),
+        ("shapes.ts", SHAPES),
+    ]);
+    let report = optimize(temp.path(), &["--disable-pass", DISCRIMINANT]);
+    assert_eq!(applied(&report, DISCRIMINANT), 0);
+    assert!(skipped_reasons(&report, DISCRIMINANT).is_empty());
+    assert!(emitted(temp.path(), "shapes.ts").contains("kind: \"circle\""));
+    same_behavior(temp.path());
+}
+
+#[test]
+fn serialization_logging_and_reflection_preserve_tags() {
+    // Scene-style JSON serialization observes the tag.
+    tags_preserved(
+        "import { circle } from './shapes.ts';\nconsole.log(JSON.stringify([circle(1)]));\n",
+        "external_boundary",
+    );
+    tags_preserved(
+        "import { circle } from './shapes.ts';\nconsole.log(circle(1));\n",
+        "external_boundary",
+    );
+    tags_preserved(
+        "import { circle } from './shapes.ts';\nconsole.log(Object.values(circle(1)).join());\n",
+        "external_boundary",
+    );
+    tags_preserved(
+        "import { circle } from './shapes.ts';\nconst keys: string[] = [];\nfor (const key in \
+         circle(1)) keys.push(key);\nconsole.log(keys);\n",
+        "reflection",
+    );
+    tags_preserved(
+        "import { circle } from './shapes.ts';\nconst wide: unknown = \
+         circle(1);\nconsole.log(typeof wide);\n",
+        "escapes",
+    );
+}
+
+#[test]
+fn tag_values_used_as_strings_preserve_tags() {
+    tags_preserved(
+        "import { circle } from './shapes.ts';\nconst s = circle(1);\nconsole.log(`shape: \
+         ${s.kind}`);\n",
+        "observable_operation",
+    );
+    tags_preserved(
+        "import { circle } from './shapes.ts';\nconst s = circle(1);\nconst kind = \
+         s.kind;\nconsole.log(kind.length);\n",
+        "observable_operation",
+    );
+    tags_preserved(
+        "import { circle } from './shapes.ts';\nconst labels = { circle: 'round', rectangle: \
+         'boxy', triangle: 'pointy' };\nconst s = circle(1);\nconsole.log(labels[s.kind]);\n",
+        "observable_operation",
+    );
+    tags_preserved(
+        "import { circle } from './shapes.ts';\nconst s = circle(1);\nconst { kind } = \
+         s;\nconsole.log(kind);\n",
+        "observable_operation",
+    );
+}
+
+#[test]
+fn external_producers_and_lookalikes_preserve_tags() {
+    tags_preserved(
+        "import { area, type Shape } from './shapes.ts';\nconst s = \
+         JSON.parse('{\"kind\":\"circle\",\"radius\":1}') as \
+         Shape;\nconsole.log(area(s).toFixed(2));\n",
+        "external_boundary",
+    );
+    tags_preserved(
+        "import { area } from './shapes.ts';\nconst lookalike = { kind: 'circle' as const, \
+         radius: 2 };\nconsole.log(area(lookalike).toFixed(2));\n",
+        "external_boundary",
+    );
+    tags_preserved(
+        "import { area, circle } from './shapes.ts';\nfunction same<T>(value: T): T { return \
+         value; }\nconsole.log(area(same(circle(1))).toFixed(2));\n",
+        "type_constraint",
+    );
+}
+
+#[test]
+fn type_level_uses_of_tags_preserve_tags() {
+    tags_preserved(
+        "import { circle, type Shape } from './shapes.ts';\ntype Round = Extract<Shape, { kind: \
+         'circle' }>;\nconst r = circle(1) as Round;\nconsole.log(r.radius);\n",
+        "type_constraint",
+    );
+    tags_preserved(
+        "import { circle, type Shape } from './shapes.ts';\nconst kinds: Shape['kind'][] = \
+         ['circle'];\nconsole.log(kinds.includes(circle(1).kind));\n",
+        "type_constraint",
+    );
+    // A type predicate that forgets the domain.
+    tags_preserved(
+        r#"
+import { circle, type Shape } from "./shapes.ts";
+type Named = { kind: string; name?: string };
+function named(value: Shape | Named): value is Named { return "name" in value; }
+const s: Shape | Named = circle(1);
+console.log(named(s) ? s.kind : "anonymous");
+"#,
+        "escapes",
+    );
+}
+
+#[test]
+fn public_and_javascript_boundaries_preserve_tags() {
+    // The entry exports the union type to external consumers.
+    tags_preserved(
+        "import { area, circle } from './shapes.ts';\nexport type { Shape } from \
+         './shapes.ts';\nconsole.log(area(circle(1)).toFixed(2));\n",
+        "public_export",
+    );
+    // An entry export returns domain values.
+    tags_preserved(
+        "import { circle } from './shapes.ts';\nexport function make() { return circle(1); \
+         }\nconsole.log(make().kind === 'circle');\n",
+        "public_export",
+    );
+    // JavaScript calls a function that produces domain values.
+    let temp = project(&[
+        (
+            "main.ts",
+            "import { describe } from './reader.js';\nconsole.log(describe());\n",
+        ),
+        (
+            "reader.js",
+            "import { circle } from './shapes.ts';\nexport function describe() { return \
+             JSON.stringify(circle(3)); }\n",
+        ),
+        ("shapes.ts", SHAPES),
+    ]);
+    std::fs::write(
+        temp.path().join("tsconfig.json"),
+        TSCONFIG.replace("\"strict\":true", "\"strict\":true,\"allowJs\":true"),
+    )
+    .unwrap();
+    let report = check(temp.path(), &args(&only(&[DISCRIMINANT])));
+    assert_eq!(applied(&report, DISCRIMINANT), 0, "{report:#}");
+    assert!(
+        skipped_reasons(&report, DISCRIMINANT).contains(&"external_boundary".to_owned()),
+        "{report:#}"
+    );
+}
