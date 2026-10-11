@@ -298,10 +298,7 @@ try {
     for (const width of [720, 480, 320]) {
       await page.setViewportSize({ width, height: 450 });
       await page.goto(`${origin}/?language=${language}`);
-      assert.equal(
-        await page.locator(".sidebar-wide-toggle").count(),
-        0,
-      );
+      assert.equal(await page.locator(".sidebar-wide-toggle").count(), 0);
       await page.locator(".sidebar-context-trigger").click();
       assert.equal(
         await page
