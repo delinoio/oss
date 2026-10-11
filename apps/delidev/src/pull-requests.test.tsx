@@ -572,6 +572,33 @@ it("distinguishes initial loading from a successful empty page", async () => {
 });
 
 it.each([Code.PermissionDenied, Code.Unavailable])(
+  "preserves cached empty-page guidance after refresh failure %s",
+  async (code) => {
+    const value = fixture([]);
+    render(<App transport={value.transport} />);
+    const pane = await open();
+    await pane.findByText("No repositories on this page.");
+
+    value.fail(code);
+    fireEvent.click(pane.getByRole("button", { name: "Refresh" }));
+    await pane.findByText(
+      "Refresh failed. Showing the previous repository page.",
+    );
+    expect(pane.getByText("No repositories on this page.")).toBeTruthy();
+    expect(pane.getByRole("alert")).toBeTruthy();
+    expect(value.query).not.toHaveBeenCalled();
+
+    value.fail();
+    fireEvent.click(pane.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(pane.queryByRole("alert")).toBeNull());
+    expect(pane.getByText("No repositories on this page.")).toBeTruthy();
+    expect(
+      pane.queryByText("Refresh failed. Showing the previous repository page."),
+    ).toBeNull();
+  },
+);
+
+it.each([Code.PermissionDenied, Code.Unavailable])(
   "distinguishes catalog failure %s from an empty page and preserves cached rows on failed Refresh",
   async (code) => {
     const value = fixture();
