@@ -198,24 +198,20 @@ function NativeSummary({
                         type="button"
                         onClick={() => open(group.sessionId)}
                       >
-                        {group.sessionName ||
-                          presentationLabels.identity(
-                            group.sessionId,
-                            "session",
-                          )}
+                        {presentationLabels.identity(
+                          group.sessionId,
+                          "session",
+                        )}
                       </button>
                       <p>
-                        {group.projectName ||
-                          presentationLabels.identity(
-                            group.projectId,
-                            "project",
-                          ) ||
-                          copy("native-accounting.extra.f634bca1f142")}
+                        {presentationLabels.identity(
+                          group.projectId,
+                          "project",
+                        ) || copy("native-accounting.extra.f634bca1f142")}
                       </p>
                     </td>
                     <td>
-                      {group.accountName ||
-                        presentationLabels.identity(group.accountId, "account")}
+                      {presentationLabels.identity(group.accountId, "account")}
                     </td>
                     <td>
                       <button
@@ -231,11 +227,10 @@ function NativeSummary({
                         {group.model?.nativeId ?? ""}
                       </button>
                       <p>
-                        {group.providerName ||
-                          presentationLabels.identity(
-                            group.providerId,
-                            "provider",
-                          )}
+                        {presentationLabels.identity(
+                          group.providerId,
+                          "provider",
+                        )}
                       </p>
                     </td>
                     <td>
