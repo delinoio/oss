@@ -433,4 +433,42 @@ mod tests {
         assert!(allocations.is_empty());
         assert_eq!(kept.len(), 4);
     }
+
+    #[test]
+    fn attribution_reflects_the_shaping_passes() {
+        let all = Strategy {
+            disambiguate: true,
+            ambiguate: true,
+        };
+        // Shared original names need disambiguation; reused names need
+        // ambiguation.
+        let (allocations, _) = allocate(&mut objects(), all);
+        assert!(allocations.iter().all(|a| a.separated && a.reused));
+        // Unique names in one object need neither.
+        let mut single = vec![Object {
+            file: "input.ts".into(),
+            start: 0,
+            properties: vec![property("onlyLongName", 2, 0)],
+            preservation: None,
+        }];
+        let (allocations, _) = allocate(&mut single, all);
+        assert_eq!(allocations.len(), 1);
+        assert!(!allocations[0].separated && !allocations[0].reused);
+        assert!(!allocations[0].finite_keys);
+        // Disabled passes never contribute.
+        let (allocations, _) = allocate(
+            &mut objects(),
+            Strategy {
+                disambiguate: false,
+                ambiguate: false,
+            },
+        );
+        assert!(allocations.iter().all(|a| !a.separated && !a.reused));
+        // Finite-key literal occurrences are recorded.
+        let mut keyed = single.clone();
+        keyed[0].properties[0].occurrences[1].key = true;
+        let (allocations, _) = allocate(&mut keyed, all);
+        assert!(allocations[0].finite_keys);
+        assert_eq!(allocations[0].edits[1].1.replacement, "a");
+    }
 }

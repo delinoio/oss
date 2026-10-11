@@ -285,7 +285,7 @@ impl Graph {
         let mut steps = 0usize;
         while let Some(cell) = self.queue.pop_front() {
             steps += 1;
-            if steps % 65536 == 0 {
+            if steps.is_multiple_of(65536) {
                 crate::app::check_cancelled()?;
             }
             self.queued[cell as usize] = false;
@@ -410,6 +410,8 @@ struct Builder<'a, 'c> {
     annotations: Vec<(Node, CellId)>,
     sinks: Vec<CellId>,
     constraints: Vec<CellId>,
+    /// `(receiver, key)` of every analyzed computed access.
+    computed_keys: Vec<(CellId, CellId)>,
     /// Exports observable through module namespace objects.
     exposed: HashSet<SymbolId>,
 }
@@ -1189,6 +1191,11 @@ impl Builder<'_, '_> {
                     self.store(node, UNKNOWN);
                 }
                 let receiver = self.expr(node.expression());
+                if node.kind() == SyntaxKind::ElementAccessExpression
+                    && let Key::Cell(key) = self.element_key(node)
+                {
+                    self.computed_keys.push((receiver, key));
+                }
                 if receiver > EMPTY {
                     let key = if node.kind() == SyntaxKind::PropertyAccessExpression {
                         self.static_key(node.name(), false)
@@ -1549,6 +1556,18 @@ impl Builder<'_, '_> {
                 }
             }
         }
+        // A key literal used on a receiver that is not purely tracked
+        // objects keeps its text.
+        for &(receiver, key) in &self.computed_keys {
+            let cell = &graph.cells[receiver as usize];
+            let owned = receiver > EMPTY
+                && !cell.unknown
+                && !cell.values.is_empty()
+                && cell.values.iter().all(|&v| graph.is_object(v));
+            if !owned {
+                preserve(&mut reasons, &mut token_escaped, key, None, true);
+            }
+        }
         // Writes into unknown receivers or unresolved keys escape the value.
         for store in &self.stores {
             let receiver = &graph.cells[store.receiver as usize];
@@ -1712,10 +1731,10 @@ impl Builder<'_, '_> {
                 region[r].get_or_insert(reason);
             }
         }
-        for object in 0..objects {
+        for (object, reason) in reasons.iter_mut().enumerate() {
             let r = root(&mut parents, object);
-            if let Some(reason) = &region[r] {
-                reasons[object].get_or_insert(reason.clone());
+            if let Some(region) = &region[r] {
+                reason.get_or_insert(region.clone());
             }
         }
         Evaluation {
@@ -1980,8 +1999,8 @@ fn exposed_exports(ctx: &mut Ctx) -> HashSet<SymbolId> {
         }
     }
     if all {
-        for file in 0..ctx.files.len() {
-            let symbol = ctx.files[file].node.symbol();
+        for file in &ctx.files {
+            let symbol = file.node.symbol();
             if symbol.is_some() {
                 modules.push(symbol);
             }
@@ -2099,6 +2118,7 @@ pub(super) fn analyze(ctx: &mut Ctx, options: Options) -> Result<Vec<Object>> {
         annotations: Vec::new(),
         sinks: Vec::new(),
         constraints: Vec::new(),
+        computed_keys: Vec::new(),
         exposed: HashSet::new(),
     };
     builder.build()?;

@@ -133,8 +133,16 @@ fn cyclic_modules(ctx: &mut Ctx) -> HashSet<usize> {
             ) {
                 continue;
             }
+            // `import type` and `export type` are erased and never evaluate
+            // the target module.
+            let type_only = if statement.kind() == SyntaxKind::ImportDeclaration {
+                let clause = statement.import_clause();
+                clause.is_some() && clause.is_type_only()
+            } else {
+                statement.is_type_only()
+            };
             let specifier = statement.module_specifier();
-            if specifier.is_nil() {
+            if type_only || specifier.is_nil() {
                 continue;
             }
             let module = ctx.checker.get_symbol_at_location(specifier, true);

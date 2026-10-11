@@ -170,16 +170,18 @@ fn shortening_follows_containment_until_the_container_escapes() {
         Some(&[SHORTENING]),
     );
     assert_eq!(renamed(&report), 2);
-    for code in [
-        // A contained object stored into an unknown receiver escapes; its
-        // container stays renamable.
-        "const outer = { innerObject: { deepPropertyName: 1 } };\nconst sink: any = \
-         {};\nsink.held = outer.innerObject;\nconsole.log(JSON.stringify(sink), \
-         outer.innerObject.deepPropertyName);\nexport {};\n",
-    ] {
-        let (temp, _) = run(&[("main.ts", code)], None);
-        assert!(emitted(temp.path(), "main.ts").contains("deepPropertyName: 1"));
-    }
+    // A contained object stored into an unknown receiver escapes; its
+    // container stays renamable.
+    let (temp, _) = run(
+        &[(
+            "main.ts",
+            "const outer = { innerObject: { deepPropertyName: 1 } };\nconst sink: any = \
+             {};\nsink.held = outer.innerObject;\nconsole.log(JSON.stringify(sink), \
+             outer.innerObject.deepPropertyName);\nexport {};\n",
+        )],
+        None,
+    );
+    assert!(emitted(temp.path(), "main.ts").contains("deepPropertyName: 1"));
     for code in [
         // The container escapes, so its contents do.
         "const outer = { innerObject: { deepPropertyName: 1 } \
@@ -644,6 +646,10 @@ fn finite_keys_preserve_unproven_and_observable_keys() {
         // The key text is observed.
         "const table = { firstEntryName: 1, secondEntryName: 2 };\nconst pick = Math.random() > 2 \
          ? 'firstEntryName' : 'secondEntryName';\nconsole.log(pick, table[pick]);\nexport {};\n",
+        // The same key also selects a property of an unknown object.
+        "const table = { firstEntryName: 1, secondEntryName: 2 };\nconst external: any = \
+         JSON.parse('{\"firstEntryName\":5}');\nconst pick = Math.random() < 2 ? 'firstEntryName' \
+         : 'secondEntryName';\nconsole.log(table[pick], external[pick]);\nexport {};\n",
         // Comparison observes the key text.
         "const table = { firstEntryName: 1, secondEntryName: 2 };\nconst pick = Math.random() > 2 \
          ? 'firstEntryName' : 'secondEntryName';\nconsole.log(pick === 'firstEntryName', \
