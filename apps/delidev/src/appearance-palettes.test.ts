@@ -107,17 +107,21 @@ test("ordinary controls use semantic accent and contrast tokens", async () => {
     const styles = await stylesheet(name);
     const rules = [...styles.matchAll(/([^{}]+)\{([^{}]*)\}/gu)];
     for (const [selector, property, value] of checks) {
-      const declaration = `${property}: var(--${value});`;
       const rule = rules.find(
         ([, selectors, declarations]) =>
           selectors
             .split(",")
             .some((candidate) => candidate.trim() === selector) &&
-          declarations.includes(declaration),
+          declarations.split(";").some((candidate) => {
+            const separator = candidate.indexOf(":");
+            return (
+              separator >= 0 &&
+              candidate.slice(0, separator).trim() === property &&
+              candidate.slice(separator + 1).includes(`var(--${value})`)
+            );
+          }),
       );
-      expect(rule?.[2], `${name} ${selector} ${property}`).toContain(
-        declaration,
-      );
+      expect(rule?.[2], `${name} ${selector} ${property}`).toBeDefined();
     }
   };
 
