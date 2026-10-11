@@ -41,6 +41,7 @@ export function useForegroundSessionInboxRead({ sessionId, eligible, loaded }: {
   const send = useRef(mutation.send); send.current = mutation.send;
   const uncertain = useRef(mutation.uncertain); uncertain.current = mutation.uncertain;
   const activation = useRef<{ done: boolean } | undefined>(undefined);
+  const busy = mutation.busy;
   const active = eligible && foreground;
   useEffect(() => {
     activation.current = active ? { done: false } : undefined;
@@ -48,10 +49,11 @@ export function useForegroundSessionInboxRead({ sessionId, eligible, loaded }: {
   }, [sessionId, active]);
   useEffect(() => {
     const current = activation.current;
-    if (!active || !loaded || !current || current.done) return;
+    // A busy retained request rejects replacement sends; wait for it to settle.
+    if (!active || !loaded || !current || current.done || busy) return;
     current.done = true;
     console.debug("delidev.session_inbox_read.admitted", { retry: uncertain.current });
     // An uncertain request blocks replacement and permits only its exact retry.
     void (uncertain.current ? send.current() : send.current({ requestId: newRequestId(), sessionId }));
-  }, [sessionId, active, loaded]);
+  }, [sessionId, active, loaded, busy]);
 }

@@ -1420,7 +1420,7 @@ The reconciled `CreateTerminalRequest` baseline retains original fields 1–4. T
 
 ## Session Inbox read allocation
 
-Issue #2530 owns System `SESSION_INBOX_READ_V1 = 81`,
+This feature owns System `SESSION_INBOX_READ_V1 = 81`,
 `InboxService.MarkSessionInboxRead`, request fields `request_id = 1` and
 `session_id = 2`, and response fields `request_id = 1`, `session_id = 2`,
 `marked_count = 3` (uint64), `observed_at = 4` (UTC timestamp string) and

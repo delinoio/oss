@@ -5240,7 +5240,7 @@ compact drawer and effective 200% browser checks are synthetic evidence only.
 
 ## Foreground chat Inbox acknowledgment
 
-Issue #2530. Require `SESSION_INBOX_READ_V1` from `GetStatus`; otherwise keep the
+Require `SESSION_INBOX_READ_V1` from `GetStatus`; otherwise keep the
 manual Inbox read behavior. Ordinary Project and General Chat conversations,
 including an independently opened Fork, call `MarkSessionInboxRead` once per
 activation (chat selection or return from background) after the authenticated

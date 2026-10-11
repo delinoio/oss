@@ -132,7 +132,7 @@ not substitute notification candidates or partial Inbox pages.
 
 ## Foreground session acknowledgment
 
-Issue #2530. `InboxService.MarkSessionInboxRead` is authenticated
+`InboxService.MarkSessionInboxRead` is authenticated
 owner/paired-client-only. The request carries `request_id = 1` and
 `session_id = 2` (both UUID-v7). The durable operation is `inbox.session-read`,
 bound to the actor and session. The original session must exist; its revision is
