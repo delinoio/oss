@@ -5237,3 +5237,7 @@ vertical scrolling, stable scrollbar gutter, overscroll protection and fixed
 Reset. Date precision, invalid drafts, presets, picker selection, query identity
 and mounted drafts retain their original owners. English/Korean, light/dark,
 compact drawer and effective 200% browser checks are synthetic evidence only.
+
+## Retired Agent Questions
+
+The conversation Agent requests tray separates retained interaction history from active presentation. Once the server holds a response for a Codex question, its original answer form is removed; only the response state and the exact receipt retry (when uncertain) remain. A question leaves the tray after confirmed closure (`native-closed` or `turn-ended`) with no response or an `accepted`/`canceled` response; queued, claimed, transmitted, uncertain and unknown states stay visible. Session outcome never implies completion. The disclosure is absent only when a complete, error-free, fully resident read leaves no displayed request; loading, errors, continuation and evicted pages keep it reachable. The composer is a sibling and is never remounted. Original documents and Inbox state are unchanged.

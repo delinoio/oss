@@ -18,6 +18,15 @@ const decisionNames: Record<Decision, string> = {
   get [Decision.Execpolicy]() { return copy("interactions.allowWithTheOfferedCommandRule_c081df"); }, get [Decision.Network]() { return copy("interactions.applyTheOfferedNetworkRule_a20a0f"); },
 };
 const responseLimit = 256 << 10;
+const confirmedClosures = new Set(["native-closed", "turn-ended"]);
+/** True only when the server confirms closure and no response delivery is unresolved; unknown states stay visible. */
+export function questionRetired(resource: Resource): boolean {
+  const data = document(resource);
+  if (text(data.type) !== InteractionType.Question || !confirmedClosures.has(text(data.closure))) return false;
+  if (data.response == null) return true;
+  const state = text(object(data.response).state);
+  return state === "accepted" || state === "canceled";
+}
 function own<T>(record: Record<string, T>, key: string): T | undefined { return Object.hasOwn(record, key) ? record[key] : undefined; }
 
 export function Interaction({ resource, refresh, draft, saveDraft, clearDraft, submissionAllowed = true, receiptRetryAllowed = true }: { resource: Resource; refresh: () => void; draft?: InboxInteractionDraft; saveDraft?: (value: InteractionDraftState) => void; clearDraft?: () => void; submissionAllowed?: boolean; receiptRetryAllowed?: boolean }) {
@@ -52,6 +61,8 @@ function Questions({ resource, accepted, draft, saveDraft, submissionAllowed, re
     setEditable({ ...editable, selected: choices, free: extra, unanswered: unansweredState }); setProblem("");
   };
   const missing = questions.some((q) => !answers()[text(q.id)].length && !own(unanswered, text(q.id)));
+  // Once the server holds a response, the original form is retired; only delivery state and exact retry remain.
+  if (data.response != null) return <><Problem error={mutation.error} />{mutation.uncertain ? <button type="button" disabled={mutation.busy || !receiptRetryAllowed} onClick={mutation.retry}>{copy("interactions.retryTheSameAnswers_572a30")}</button> : null}</>;
   return <form onSubmit={(event) => { event.preventDefault(); if (blocked || missing) return; void mutation.send({ mutation: { id: resource.id, expectedRevision: resource.revision, requestId: newRequestId() }, responseJson: encode({ answers: answers() }) }); }}>
     <fieldset disabled={blocked}>
       {questions.map((q, index) => { const id = text(q.id); return <fieldset key={id}><legend>{text(q.header) || copy("interactions.sentence.49c0fedf3648", { v0: index + 1 })}</legend><p>{text(q.text)}</p>

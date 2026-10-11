@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { EntityKind, InteractionService, ResourceSchema, newRequestId } from "@delinoio/delidev-api-client";
-import { Interaction } from "./interactions";
+import { Interaction, questionRetired } from "./interactions";
 import { MutationIntents } from "./mutation";
 import { encode } from "./documents";
 
@@ -89,4 +89,24 @@ it("refuses an unrecognized native approval version without inventing choices", 
   fireEvent.change(screen.getByRole("combobox", { name: "Decision" }), { target: { value: "1" } });
   fireEvent.submit(screen.getByRole("button", { name: "Send decision" }).closest("form")!);
   expect(value.approvals).not.toHaveBeenCalled();
+});
+
+it("retires the answer form once a response exists and keeps delivery state visible", async () => {
+  const value = fixture(question);
+  render(value.view());
+  fireEvent.click(screen.getByRole("checkbox", { name: /Unicode 답변/ }));
+  fireEvent.click(screen.getAllByRole("checkbox", { name: "Leave this question unanswered" })[1]);
+  fireEvent.click(screen.getByRole("button", { name: "Send answers" }));
+  await screen.findByText("Response: queued");
+  expect(screen.queryByRole("button", { name: "Send answers" })).toBeNull();
+  expect(value.questions).toHaveBeenCalledTimes(1);
+});
+
+it("retires questions only after confirmed closure without unresolved delivery", () => {
+  const make = (data: Record<string, unknown>) => create(ResourceSchema, { id: newRequestId(), sessionId: newRequestId(), kind: EntityKind.INTERACTION, schemaVersion: 1, revision: 1n, documentJson: encode({ ...question, ...data }) });
+  expect(questionRetired(make({}))).toBe(false);
+  expect(questionRetired(make({ closure: "native-closed" }))).toBe(true);
+  expect(questionRetired(make({ closure: "native-closed", response: { state: "accepted" } }))).toBe(true);
+  for (const state of ["queued", "claimed", "transmitted", "uncertain", "weird"]) expect(questionRetired(make({ closure: "turn-ended", response: { state } }))).toBe(false);
+  expect(questionRetired(make({ closure: "mystery" }))).toBe(false);
 });

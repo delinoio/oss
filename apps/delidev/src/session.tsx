@@ -74,7 +74,7 @@ import { useRetainedMutation, useRetainedMutationNotifications } from "./mutatio
 import { ServiceProblem, Failure, Problem, failureSummary } from "./ui";
 import { SessionActions, SessionIcon, SessionIconKind, SessionNotice } from "./session-presentation";
 import "./session.css";
-import { Interaction } from "./interactions";
+import { Interaction, questionRetired } from "./interactions";
 import { SessionTerminals } from "./session-terminals";
 import { PendingSidechatPane, SessionCreationAction, SessionForkAction } from "./session-fork";
 import { SidechatAuthoring } from "./sidechat-authoring";
@@ -477,7 +477,10 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
     target?.scrollIntoView?.({ block: "nearest" });
     setRevealSubmission(undefined);
   }, [revealSubmission, active]);
-  const requests = interactionRows(interactions.data?.resources ?? [], live.resources, live.removed, live.newInteractionIds, id, !!interactions.data && !interactions.data.nextPageToken);
+  const requests = interactionRows(interactions.data?.resources ?? [], live.resources, live.removed, live.newInteractionIds, id, !!interactions.data && !interactions.data.nextPageToken).filter(row => !questionRetired(row));
+  // Hide the tray only after a complete, error-free resident read leaves no request to show.
+  const requestsComplete = !!interactions.data && !interactions.isPending && !interactions.error && !interactions.nextPageToken && interactions.pages.length === interactions.payloadPages.length;
+  const showRequests = !(requestsComplete && requests.length === 0);
   const queued = pending.filter(isQueuedInput);
   const imageRejected = pending.filter(row => isImageStartupRejectedInput(row, session));
   // Evicted payloads can contain waiting inputs. Keep their exact restoration
@@ -642,12 +645,12 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         </article>)}
       </div>
       <div className="session-input-tray">
-        <Disclosure className="requests" open={requests.some(r => readDocument(r).closure === "open") || requestsOpen} onToggle={event => setRequestsOpen(event.currentTarget.open)}><DisclosureSummary>{interactions.isPending ? copy("session.loadingRequests") : <LocalizedText id="session.agentRequestsOnThisPage_5e8644" components={{ s0: <>{requests.length}</> }} />}</DisclosureSummary>
+        {showRequests ? <Disclosure className="requests" open={requests.some(r => readDocument(r).closure === "open") || requestsOpen} onToggle={event => setRequestsOpen(event.currentTarget.open)}><DisclosureSummary>{interactions.isPending ? copy("session.loadingRequests") : <LocalizedText id="session.agentRequestsOnThisPage_5e8644" components={{ s0: <>{requests.length}</> }} />}</DisclosureSummary>
           <div ref={requestsRoot} className="session-tray-content"><Failure failure={interactions.error?.failure} />
-            <ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={interactions} root={requestsRoot} active={conversationActive && requestsOpen}>{payload => interactionRows(payload, live.resources, live.removed, [], id, false).map(interactionRow)}</ScrollPayloadWindow>{!interactions.nextPageToken ? requests.filter(row => !interactions.rows.some(known => known.id === row.id)).map(interactionRow) : null}
+            <ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={interactions} root={requestsRoot} active={conversationActive && requestsOpen}>{payload => interactionRows(payload, live.resources, live.removed, [], id, false).filter(row => !questionRetired(row)).map(interactionRow)}</ScrollPayloadWindow>{!interactions.nextPageToken ? requests.filter(row => !interactions.rows.some(known => known.id === row.id)).map(interactionRow) : null}
             <ScrollContinuation query={interactions} root={requestsRoot} active={conversationActive && requestsOpen} label={copy("session.requestPages_d06a30")} />
           </div>
-        </Disclosure>
+        </Disclosure> : null}
         <PendingQueueInputs sessionId={id} presentInputIds={presentedQueueIds} refresh={queue.refresh} />
         {waitingSupported ? <WaitingQueue sessionId={id} session={session} active={conversationActive} revision={waitingRevision} drafts={queueDrafts.values} saveDraft={queueDrafts.save} readOnly={live.state !== ConnectionState.Live || Boolean(live.error)} refreshHistory={queue.refresh} /> : null}
         <div ref={queueRoot} className={`session-tray-content ${queued.some(isQueuedInput) ? "queue-compact-list" : "queue-read-state"}`} hidden={waitingSupported || confirmedEmptyQueue} aria-label={waitingSupported || confirmedEmptyQueue ? undefined : copy("queue.waitingInputs")}>
