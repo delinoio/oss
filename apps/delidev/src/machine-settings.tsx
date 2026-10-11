@@ -22,7 +22,26 @@ export function useMachineSettingsController(initial: Resource, active: boolean)
   const result = useQuery(ResourceQuery.getResource, { kind: EntityKind.MACHINE, id: initial.id }, { enabled: active, refetchInterval: active ? 5000 : false });
   const [acknowledged, setAcknowledged] = useState<Resource>();
   const exact = (row?: Resource): row is Resource => validRunnerObservation(row) && row.id === initial.id;
-  const current = [initial, result.data?.resource, acknowledged].filter(exact).reduce<Resource | undefined>((a, b) => !a || b.revision > a.revision ? b : a, undefined);
+  const [accepted, setAccepted] = useState<{ id: string; resource?: Resource; readAt: number; read?: Resource; acknowledgement?: Resource }>({ id: initial.id, readAt: 0 });
+  const previous: typeof accepted = accepted.id === initial.id ? accepted : { id: initial.id, readAt: 0 };
+  let current = previous.resource;
+  for (const row of [initial, acknowledged]) {
+    if (exact(row) && (!current || row.revision > current.revision || row === acknowledged && row !== previous.acknowledgement && row.revision === current.revision)) current = row;
+  }
+  const fetched = result.data?.resource;
+  const freshRead = !result.error && exact(fetched) && (previous.readAt !== result.dataUpdatedAt || previous.read !== fetched);
+  if (freshRead && (!current || fetched.revision > current.revision)) current = fetched;
+  else if (freshRead && current && fetched.revision === current.revision && fetched.schemaVersion === current.schemaVersion) {
+    // The server projects the current lease without changing business revision.
+    // Copy only that observation so an acknowledged configuration stays owned.
+    const fields = document(current), observation = document(fetched);
+    delete fields.last_seen;
+    if (observation.last_seen !== undefined) fields.last_seen = observation.last_seen;
+    current = { ...current, documentJson: encode(fields) };
+  }
+  if (accepted.id !== initial.id || current !== accepted.resource || freshRead || previous.acknowledgement !== acknowledged) {
+    setAccepted({ id: initial.id, resource: current, readAt: freshRead ? result.dataUpdatedAt : previous.readAt, read: freshRead ? fetched : previous.read, acknowledgement: acknowledged });
+  }
   const data = useMemo(() => document(current), [current]);
   const [edit, setEdit] = useState<{ revision: bigint; paths: Record<string, string> }>();
   const [verify, setVerifyValue] = useState(false);
