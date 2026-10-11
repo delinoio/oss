@@ -97,6 +97,42 @@ test("Default retains its complete original maps and five stable palette IDs", (
   ).toBe("08952cf9a976148b4192c87a19273f717e06686aa104a81936c62c2082e064ab");
 });
 
+const splitSelectorList = (selectors: string) => {
+  const result: string[] = [];
+  let start = 0;
+  let parentheses = 0;
+  let brackets = 0;
+  let quote: string | undefined;
+  let escaped = false;
+
+  for (let index = 0; index < selectors.length; index += 1) {
+    const character = selectors[index];
+    if (escaped) {
+      escaped = false;
+    } else if (character === "\\") {
+      escaped = true;
+    } else if (quote) {
+      if (character === quote) quote = undefined;
+    } else if (character === '"' || character === "'") {
+      quote = character;
+    } else if (character === "(") {
+      parentheses += 1;
+    } else if (character === ")") {
+      parentheses -= 1;
+    } else if (character === "[") {
+      brackets += 1;
+    } else if (character === "]") {
+      brackets -= 1;
+    } else if (character === "," && parentheses === 0 && brackets === 0) {
+      result.push(selectors.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+
+  result.push(selectors.slice(start).trim());
+  return result;
+};
+
 test("ordinary controls use semantic accent and contrast tokens", async () => {
   const stylesheet = async (name: string) =>
     readFile(resolve(process.cwd(), `src/${name}`), "utf8");
@@ -109,9 +145,7 @@ test("ordinary controls use semantic accent and contrast tokens", async () => {
     for (const [selector, property, value] of checks) {
       const rule = rules.find(
         ([, selectors, declarations]) =>
-          selectors
-            .split(",")
-            .some((candidate) => candidate.trim() === selector) &&
+          splitSelectorList(selectors).includes(selector) &&
           declarations.split(";").some((candidate) => {
             const separator = candidate.indexOf(":");
             return (
