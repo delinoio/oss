@@ -270,6 +270,20 @@ completed removal. The restore journal pins that safety image and candidate befo
 publication; startup reconciles the independent outcome before serving. Restoring
 an older backup cannot make those profiles active or reauthorize revoked clients.
 
+Raw external children own their close lifecycle independently of product windows.
+On macOS and Windows, `do_close` suppresses CEF's default parent-window close
+and posts destruction of the original browser's native child to the CEF UI
+thread. The original parent identity must still match; the task never looks up
+the selected replacement view. macOS removes only the child NSView; Windows
+destroys only the child HWND. Linux retains CEF's native child-close behavior.
+Each original client shares one browser-identity close receipt across handler
+interfaces. Duplicate and late callbacks cannot destroy replacement or sibling
+children, or release live-child accounting twice. Synchronous unmap before
+replacement, protected profiles, durable cleanup, explicit product close-to-tray
+and joined Quit keep their separate ownership. Structured close diagnostics
+exclude URLs, credentials and page content. Fixture and compilation results do
+not establish native product-window visibility or platform shutdown acceptance.
+
 A native poll reads the original local and saved client scopes, including unopened
 windows. Cleanup inventory reads use an independent read-only sidecar controller
 with a two-second joined-child deadline and cannot acquire the interactive
