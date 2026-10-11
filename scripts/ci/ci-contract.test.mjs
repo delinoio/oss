@@ -812,24 +812,23 @@ test("DeliDev desktop phases partition all tests and preserve uncached executabl
   assert.equal(job.strategy.matrix, "${{ fromJSON(needs.changes.outputs.delidev_frontend_matrix) }}");
   assert.equal(namedStep(job, "Build runner-owned Go fixture executable").if, "${{ matrix.phase != 'checks' }}");
   const manifest = JSON.parse(readFileSync(`${root}/apps/delidev/package.json`, "utf8"));
-  assert.equal(manifest.scripts["test:ci:tests-1"], "vitest run --shard=1/2");
-  assert.equal(manifest.scripts["test:ci:tests-2"], "vitest run --shard=2/2");
+  for (const shard of [1, 2, 3, 4]) assert.equal(manifest.scripts[`test:ci:tests-${shard}`], `vitest run --shard=${shard}/4`);
   for (const command of ["pnpm typecheck", "test:bundle-dry-run", "test:desktop-launch", "test:widget", "test:qa", "pnpm build", "qa/check-release.mjs"]) assert.ok(manifest.scripts["test:ci:checks"].includes(command));
   const desktop = JSON.parse(readFileSync(`${root}/apps/delidev/turbo.json`, "utf8"));
-  for (const shard of [1, 2]) {
+  for (const shard of [1, 2, 3, 4]) {
     assert.equal(desktop.tasks[`test:unit:${shard}`].cache, true);
     assert.equal(desktop.tasks[`test:integration:${shard}`].cache, false);
     assert.ok(desktop.tasks[`test:integration:${shard}`].dependsOn.includes(`test:unit:${shard}`));
     assert.ok(desktop.tasks[`test:integration:${shard}`].passThroughEnv.includes("DELIDEV_TEST_BINARY"));
-    assert.equal(manifest.scripts[`test:unit:${shard}`], `vitest run --exclude "**/*.integration.test.*" --shard=${shard}/2`);
-    assert.equal(manifest.scripts[`test:integration:${shard}`], `vitest run .integration.test. --shard=${shard}/2`);
+    assert.equal(manifest.scripts[`test:unit:${shard}`], `vitest run --exclude "**/*.integration.test.*" --shard=${shard}/4`);
+    assert.equal(manifest.scripts[`test:integration:${shard}`], `vitest run .integration.test. --shard=${shard}/4`);
   }
   const client = JSON.parse(readFileSync(`${root}/packages/delidev-api-client/turbo.json`, "utf8"));
   assert.equal(client.tasks["test:unit"].cache, true);
   assert.equal(client.tasks["test:integration"].cache, false);
   assert.ok(client.tasks["test:integration"].passThroughEnv.includes("DELIDEV_TEST_BINARY"));
   const phases = jobTaskGraph(job);
-  for (const name of ["test:unit:1", "test:unit:2", "test:integration:1", "test:integration:2", "typecheck", "test:widget", "ci:qa", "build:frontend"]) assert.ok(phases.has(`delidev-desktop#${name}`), name);
+  for (const name of ["test:unit:1", "test:unit:2", "test:unit:3", "test:unit:4", "test:integration:1", "test:integration:2", "test:integration:3", "test:integration:4", "typecheck", "test:widget", "ci:qa", "build:frontend"]) assert.ok(phases.has(`delidev-desktop#${name}`), name);
   for (const id of ["delidev-client", "delidev-frontend"]) assert.ok(jobCommands(workflow.jobs[id]).includes("ci:delidev:fixture"));
 
 });

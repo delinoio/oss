@@ -332,7 +332,7 @@ pub fn install_menu(app: &AppHandle<CefRuntime>) -> tauri::Result<()> {
     }
     let menu = Menu::default(app)?;
     let item = MenuItem::with_id(app, NEW_WINDOW, "New Window", true, Some("CmdOrCtrl+N"))?;
-    let close = MenuItem::with_id(app, CLOSE_WINDOW, "Close Window", true, Some("CmdOrCtrl+W"))?;
+    let close = MenuItem::with_id(app, CLOSE_WINDOW, "Close Window", true, None::<&str>)?;
     let file = menu.items()?.into_iter().enumerate().find(|(_, item)| {
         item.as_submenu()
             .is_some_and(|sub| sub.text().is_ok_and(|v| v == "File"))
