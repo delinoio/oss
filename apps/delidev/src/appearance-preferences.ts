@@ -243,7 +243,8 @@ export function appearanceIdentity(value: unknown): string {
 /** Only application-owned selectors and previously validated colors reach CSSOM. */
 export function applyAppearanceColors(
   colors: ColorMap,
-  selector = ":root",
+  // Outrank the built-in :root[data-theme="dark"] rule in main and tray windows.
+  selector = "html:root[data-theme]",
 ): () => void {
   if (typeof CSSStyleSheet.prototype.replaceSync !== "function")
     return () => {};
