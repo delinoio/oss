@@ -150,21 +150,31 @@ try {
             reference + "Original Worker guidance",
           );
           await page.keyboard.press("Tab");
-          assert(
-            await page
-              .locator("button")
-              .first()
-              .evaluate((e) => {
-                const style = getComputedStyle(e),
-                  focus = getComputedStyle(document.documentElement)
-                    .getPropertyValue("--focus")
-                    .trim();
-                return (
-                  e === document.activeElement &&
-                  parseFloat(style.outlineWidth) >= 2 &&
-                  style.outlineColor === focus
-                );
-              }),
+          const focusState = await page
+            .locator("button")
+            .first()
+            .evaluate((e) => {
+              const style = getComputedStyle(e);
+              const probe = document.createElement("span");
+              probe.style.color = "var(--focus)";
+              document.body.append(probe);
+              const focusColor = getComputedStyle(probe).color;
+              probe.remove();
+              return {
+                active: e === document.activeElement,
+                outlineWidth: style.outlineWidth,
+                outlineColor: style.outlineColor,
+                focusColor,
+              };
+            });
+          assert.deepEqual(
+            focusState,
+            {
+              active: true,
+              outlineWidth: "2px",
+              outlineColor: focusState.focusColor,
+              focusColor: focusState.focusColor,
+            },
             "keyboard focus uses the semantic focus token",
           );
           await page.locator("input").focus();
