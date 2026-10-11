@@ -169,3 +169,82 @@ it("retains monotonic session-local terminal numbers through inventory and prese
     sessionTabKey({ kind: SessionTabKind.Terminal, id: "opened", number: 2 }),
   );
 });
+
+it("refreshes only existing matching pages without publication for unchanged observations", () => {
+  const store = new SessionTabsStore();
+  const page = {
+    kind: SessionTabKind.Page as const,
+    profile: "original",
+    id: "a",
+    title: "old",
+    label: "https://fixture.test/old",
+  };
+  store.open("s", page);
+  store.open("s", { ...page, id: "b" });
+  store.open("s", { ...page, profile: "foreign" });
+  store.select("s", SessionTabKind.Conversation);
+  const previous = store.snapshot("s");
+  store.refreshPages("s", "original", [
+    { id: "a", title: "new", label: "https://fixture.test/new" },
+    { id: "absent", title: "unused" },
+  ]);
+  const updated = store.snapshot("s");
+  expect(updated.selected).toBe(previous.selected);
+  expect(updated.tabs.map(sessionTabKey)).toEqual(
+    previous.tabs.map(sessionTabKey),
+  );
+  expect(updated.tabs[1]).toMatchObject({
+    ...page,
+    title: "new",
+    label: "https://fixture.test/new",
+  });
+  expect(updated.tabs[2]).toEqual(previous.tabs[2]);
+  expect(updated.tabs[3]).toEqual(previous.tabs[3]);
+  store.refreshPages("s", "original", [
+    { id: "a", title: "new", label: "https://fixture.test/new" },
+  ]);
+  expect(store.snapshot("s")).toBe(updated);
+  expect(store.snapshot("other").tabs).toHaveLength(1);
+});
+it("dismisses an acknowledged page to its native survivor or Browser without removing other profiles", () => {
+  const store = new SessionTabsStore();
+  const page = {
+    kind: SessionTabKind.Page as const,
+    profile: "original",
+    id: "a",
+    title: "page",
+  };
+  store.open("s", { kind: SessionTabKind.Browser });
+  store.open("s", page);
+  store.open("s", { ...page, id: "b" });
+  const foreign = { ...page, profile: "foreign" };
+  store.open("s", foreign);
+  store.select("s", sessionTabKey(page));
+  store.dismissPage("s", "original", "a", "b");
+  expect(store.snapshot("s").selected).toBe(
+    sessionTabKey({ ...page, id: "b" }),
+  );
+  expect(store.snapshot("s").tabs).toContainEqual(foreign);
+  store.dismissPage("s", "original", "b", "");
+  expect(store.snapshot("s").selected).toBe(SessionTabKind.Browser);
+  expect(store.snapshot("s").tabs).toContainEqual(foreign);
+  const snapshot = store.snapshot("s");
+  store.dismissPage("s", "original", "absent", "");
+  expect(store.snapshot("s")).toBe(snapshot);
+});
+it("preserves selection when an inactive acknowledged page closes", () => {
+  const store = new SessionTabsStore();
+  const page = {
+    kind: SessionTabKind.Page as const,
+    profile: "original",
+    id: "a",
+    title: "page",
+  };
+  store.open("s", page);
+  store.open("s", { kind: SessionTabKind.Files });
+  store.dismissPage("s", "original", "a", "");
+  expect(store.snapshot("s").selected).toBe(SessionTabKind.Files);
+  expect(store.snapshot("s").tabs.map(sessionTabKey)).not.toContain(
+    sessionTabKey(page),
+  );
+});

@@ -3547,6 +3547,13 @@ without registration or page creation. The Browser entry lists retained pages an
 explicit New page; only a selected page presents native content. An explicit picker
 resource action restores its presentation after previous cleanup, sends that
 original action once and retains failures without automatic mutation retry.
+Owned native observations refresh only existing matching profile/page labels in
+place, preserving identity, order, selection and focus. Busy action completion
+reconciles the latest live shared selection once under active/profile/presentation,
+native-page and modal gates; failed or uncertain selection is not automatically
+retried. An original acknowledged native resource Close removes only its exact
+confirmed-absent descriptor and selects an existing same-profile page or Browser
+when needed. Failed, uncertain or malformed replies preserve the descriptor.
 Profile explanation, address/navigation, explicit resource Close, 16-page gate,
 original revision/account checks and uncertain registration retry remain unchanged.
 

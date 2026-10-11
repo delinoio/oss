@@ -88,6 +88,20 @@ automatic retries. Profile explanation uses the original accessible Modal and
 native visibility boundary. Initial explicit registration retains the local-summary/
 address card and no empty viewport. Page labels derive only from retained URLs;
 no title/favicon discovery, URL logging, page scripts or generalized key bridge.
+Owned native action results and bounded state observations refresh only existing
+matching profile/page descriptors. URL-derived titles and accessible labels change
+in place without altering identity, order, selection or focus, creating a page or
+sending navigation. Unchanged observations publish no descriptor update; results
+from a replaced or inactive presentation cannot refresh labels or send native
+selection.
+After a busy action settles, reconcile the latest live shared page selection once
+against the current active profile/presentation and native page inventory. Preserve
+modal visibility gates and do not automatically retry a failed or uncertain
+selection acknowledgment. A completed action cannot reselect a superseded shared
+page. Only a validated original Close acknowledgment that confirms the exact page
+is absent removes its shared descriptor. Selected resource closure chooses an
+existing same-profile survivor or Browser; inactive resource closure preserves
+selection. Failed, uncertain or malformed replies retain the descriptor.
 The original 16-page gate and explicit resource Close remain separate from shared
 presentation Close. Numeric selection has only typed, original-owner fenced
 local presentation authority under the desktop shortcut contract. The owner

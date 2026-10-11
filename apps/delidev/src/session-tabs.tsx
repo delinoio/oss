@@ -56,8 +56,7 @@ export const conversationTab: SessionTab = {
   kind: SessionTabKind.Conversation,
 };
 type SessionTabIntent =
-  | SessionTab
-  | { kind: SessionTabKind.Terminal; id: string };
+  SessionTab | { kind: SessionTabKind.Terminal; id: string };
 export function sessionTabKey(tab: SessionTabIntent): string {
   switch (tab.kind) {
     case SessionTabKind.File:
@@ -92,6 +91,7 @@ const initial: SessionTabsSnapshot = {
   selected: SessionTabKind.Conversation,
 };
 type SidechatTab = Extract<SessionTab, { kind: SessionTabKind.Sidechat }>;
+type PageTab = Extract<SessionTab, { kind: SessionTabKind.Page }>;
 
 /** Connection-owned descriptors contain no resource bodies, preview bytes or requests. */
 export class SessionTabsStore {
@@ -169,6 +169,57 @@ export class SessionTabsStore {
           ? sessionTabKey(previous.tabs[index - 1]!)
           : previous.selected,
     });
+  }
+  refreshPages(
+    id: string,
+    profile: string,
+    pages: readonly Omit<PageTab, "kind" | "profile">[],
+  ) {
+    const previous = this.snapshot(id);
+    const observed = new Map(pages.map((page) => [page.id, page]));
+    let changed = false;
+    const tabs = previous.tabs.map((tab) => {
+      if (tab.kind !== SessionTabKind.Page || tab.profile !== profile)
+        return tab;
+      const page = observed.get(tab.id);
+      if (!page || (page.title === tab.title && page.label === tab.label))
+        return tab;
+      changed = true;
+      return { ...tab, title: page.title, label: page.label };
+    });
+    if (changed) this.publish(id, { tabs, selected: previous.selected });
+  }
+  dismissPage(
+    id: string,
+    profile: string,
+    pageId: string,
+    nativeSelected: string,
+  ) {
+    const previous = this.snapshot(id);
+    const key = sessionTabKey({
+      kind: SessionTabKind.Page,
+      profile,
+      id: pageId,
+      title: "",
+    });
+    if (!previous.tabs.some((tab) => sessionTabKey(tab) === key)) return;
+    const tabs = previous.tabs.filter((tab) => sessionTabKey(tab) !== key);
+    let selected = previous.selected;
+    if (selected === key) {
+      const surviving = tabs.find(
+        (tab) =>
+          tab.kind === SessionTabKind.Page &&
+          tab.profile === profile &&
+          tab.id === nativeSelected,
+      );
+      if (surviving) selected = sessionTabKey(surviving);
+      else {
+        if (!tabs.some((tab) => tab.kind === SessionTabKind.Browser))
+          tabs.push({ kind: SessionTabKind.Browser });
+        selected = SessionTabKind.Browser;
+      }
+    }
+    this.publish(id, { tabs, selected });
   }
   dismissTerminal(id: string, terminalId: string, inventoryFallback = "") {
     const key = sessionTabKey({
