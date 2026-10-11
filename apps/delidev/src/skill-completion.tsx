@@ -157,7 +157,7 @@ export function useSkillCompletion({
   bindingsChanged?: (bindings: SkillTokenBinding[]) => void;
   retainTransportContext?: boolean;
 }) {
-  useLocale();
+  const locale = useLocale();
   const transport = useTransport(),
     id = useId();
   const scope = `${machineId}:${agentId}:${sessionId}:${projectId}`;
@@ -175,7 +175,7 @@ export function useSkillCompletion({
   }, [bindings, bindingsChanged]);
   const composing = useRef(false),
     editable = useRef(false);
-  const [, setComposition] = useState(false);
+  const [composition, setComposition] = useState(false);
   const completion = useRef<HTMLDivElement>(null),
     keyboardNavigation = useRef(false);
   editable.current = active && !disabled;
@@ -293,6 +293,64 @@ export function useSkillCompletion({
             ),
         )
       : [];
+  const confirmedCount = useRef<{
+    scope: string;
+    transport: typeof transport;
+    count?: number;
+  }>({ scope, transport });
+  const announcementLocale = useRef(locale);
+  const [announcement, setAnnouncement] = useState<{
+    scope: string;
+    transport: typeof transport;
+    locale: typeof locale;
+    count: number;
+  }>();
+  useEffect(() => {
+    if (announcementLocale.current !== locale) {
+      announcementLocale.current = locale;
+      // Retire the historical live message instead of translating it in place.
+      setAnnouncement(undefined);
+    }
+    if (
+      confirmedCount.current.scope !== scope ||
+      confirmedCount.current.transport !== transport
+    ) {
+      confirmedCount.current = { scope, transport };
+      setAnnouncement(undefined);
+    }
+    if (!inventoryKnown || composition) {
+      // Unknown is not zero. Retain the last confirmed count only for deduping,
+      // so refetching or IME cannot replay an unchanged absence announcement.
+      setAnnouncement(undefined);
+      return;
+    }
+    const count = unavailable.length,
+      previous = confirmedCount.current.count;
+    if (previous === count) return;
+    confirmedCount.current.count = count;
+    // Do not announce an initial zero; a confirmed recovery from absence does
+    // need a localized update even when the completion panel is dismissed.
+    if (count > 0 || (previous !== undefined && previous > 0))
+      setAnnouncement({ scope, transport, locale, count });
+  }, [
+    scope,
+    transport,
+    locale,
+    inventoryKnown,
+    composition,
+    unavailable.length,
+  ]);
+  const announcedCount =
+    inventoryKnown &&
+    !composition &&
+    announcementLocale.current === locale &&
+    confirmedCount.current.scope === scope &&
+    confirmedCount.current.transport === transport &&
+    announcement?.scope === scope &&
+    announcement.transport === transport &&
+    announcement.locale === locale
+      ? announcement.count
+      : undefined;
   const accept = (entry: SkillEntry) => {
     if (
       !canEdit() ||
@@ -547,6 +605,7 @@ export function useSkillCompletion({
         value={value}
         ranges={unavailable}
         descriptionId={`${id}-unavailable`}
+        announcedCount={announcedCount}
       >
         {child}
       </SkillText>
@@ -561,12 +620,14 @@ function SkillText({
   value,
   ranges,
   descriptionId,
+  announcedCount,
   children,
 }: {
   textarea: RefObject<HTMLTextAreaElement | null>;
   value: string;
   ranges: SkillToken[];
   descriptionId: string;
+  announcedCount?: number;
   children: ReactNode;
 }) {
   const frame = useRef<HTMLDivElement>(null),
@@ -647,6 +708,18 @@ function SkillText({
       data-skill-overlay={ranges.length > 0 || undefined}
     >
       {children}
+      <span
+        className="sidebar-sr-only"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {announcedCount === undefined
+          ? null
+          : announcedCount > 0
+            ? copy("skills.tokensUnavailable", { count: announcedCount })
+            : copy("skills.tokensAvailable")}
+      </span>
       {ranges.length ? (
         <>
           <div ref={frame} className="skill-text-overlay" aria-hidden="true">

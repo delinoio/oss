@@ -3,7 +3,13 @@ import { useRef, useState } from "react";
 import { createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
   SessionService,
@@ -91,6 +97,11 @@ function Composer({
     </>
   );
 }
+function countStatus(view: { container: HTMLElement }) {
+  return view.container.querySelector<HTMLElement>(
+    ".skill-textarea > [role='status']",
+  )!;
+}
 function fixture() {
   const send = vi.fn(),
     read = vi.fn(async () => ({ skills: entries }));
@@ -105,7 +116,7 @@ function fixture() {
       </QueryClientProvider>
     </TransportProvider>
   );
-  return { send, read, view };
+  return { send, read, view, client };
 }
 it("finds whitespace-delimited caret tokens without consuming surrounding Unicode", () => {
   expect(skillToken("한글\n$add-iss trailing", 11)).toEqual({
@@ -735,6 +746,7 @@ it("fences late previous-Runner inventory and leaves pending, failed and unsuppo
   const input = screen.getByRole("textbox");
   fireEvent.change(input, { target: { value: "$missing", selectionStart: 8 } });
   await screen.findByText("Loading skills…");
+  expect(countStatus(view).textContent).toBe("");
   expect(view.container.querySelector(".skill-text-overlay")).toBeNull();
   view.rerender(tree(next));
   await screen.findByText("Skills are unavailable. Your message is unchanged.");
@@ -743,6 +755,7 @@ it("fences late previous-Runner inventory and leaves pending, failed and unsuppo
   expect(view.container.querySelector(".skill-text-overlay")).toBeNull();
   expect(screen.queryByRole("option")).toBeNull();
   expect(view.container.textContent).not.toContain("Private inventory failure");
+  expect(countStatus(view).textContent).toBe("");
 });
 
 it("disabled-only retained rows never accept mouse, Enter or Tab; restored entries bind their fresh selection", async () => {
@@ -818,6 +831,7 @@ it("observes history-like tokens while dismissed, and does not claim absence fro
   const input = screen.getByRole("textbox");
   fireEvent.change(input, { target: { value: "$removed", selectionStart: 8 } });
   await screen.findByText("Skills are unavailable. Your message is unchanged.");
+  expect(countStatus(view).textContent).toBe("");
   expect(view.container.querySelector(".skill-text-overlay")).toBeNull();
   fireEvent.keyDown(input, { key: "Escape" });
   current = [entries[0]!];
@@ -878,12 +892,20 @@ it("leaves unsupported inventory unknown without reads and fences replacement tr
       view.container.querySelector(".skill-token-unavailable")?.textContent,
     ).toBe("$missing"),
   );
+  await waitFor(() =>
+    expect(countStatus(view).textContent).toBe(
+      "1 skill token is unavailable in this scope.",
+    ),
+  );
+  const status = countStatus(view),
+    announcement = status.firstChild;
   // The old request has a different inventory that would falsely make this name available.
   release();
   await new Promise((resolve) => setTimeout(resolve, 0));
   expect(
     view.container.querySelector(".skill-token-unavailable")?.textContent,
   ).toBe("$missing");
+  expect(status.firstChild).toBe(announcement);
 });
 
 function RecalledSkillComposer() {
@@ -983,4 +1005,230 @@ it("prioritizes a complete live inventory at the retention bound instead of carr
   await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(256));
   expect(screen.queryByText("add-issue", { selector: "strong" })).toBeNull();
   expect(screen.queryByRole("option", { name: /Unavailable/ })).toBeNull();
+});
+
+it("announces a deferred dismissed-panel count without moving focus and dedupes unchanged results", async () => {
+  const f = fixture();
+  let release!: () => void;
+  f.read.mockImplementationOnce(async () => {
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return { skills: entries };
+  });
+  const view = render(f.view());
+  const status = countStatus(view);
+  expect(status.getAttribute("aria-live")).toBe("polite");
+  expect(status.getAttribute("aria-atomic")).toBe("true");
+  expect(status.hasAttribute("aria-hidden")).toBe(false);
+  expect(status.textContent).toBe("");
+  const input = screen.getByRole("textbox");
+  input.focus();
+  fireEvent.change(input, {
+    target: { value: "$missing ", selectionStart: 9 },
+  });
+  fireEvent.keyDown(input, { key: "Escape" });
+  await waitFor(() => expect(f.read).toHaveBeenCalledOnce());
+  await act(async () => release());
+  await waitFor(() =>
+    expect(status.textContent).toBe(
+      "1 skill token is unavailable in this scope.",
+    ),
+  );
+  expect(countStatus(view)).toBe(status);
+  expect(document.activeElement).toBe(input);
+  expect(screen.queryByRole("listbox")).toBeNull();
+  expect(
+    screen.getByRole("textbox", {
+      description: "1 skill token is unavailable in this scope.",
+    }),
+  ).toBe(input);
+  const text = status.firstChild;
+  fireEvent.change(input, {
+    target: { value: "ordinary $missing ", selectionStart: 18 },
+  });
+  await act(async () => {});
+  expect(status.firstChild).toBe(text);
+  expect(document.activeElement).toBe(input);
+  // Count only added nonempty announcements; clearing an unknown observation
+  // cannot announce that every token has become available.
+  const updates: string[] = [];
+  const observer = new MutationObserver(() => {
+    if (status.textContent) updates.push(status.textContent);
+  });
+  observer.observe(status, {
+    childList: true,
+    characterData: true,
+    subtree: true,
+  });
+  try {
+    await act(async () => {
+      await f.client.invalidateQueries();
+    });
+    expect(f.read).toHaveBeenCalledTimes(2);
+    expect(updates).toEqual([]);
+    expect(countStatus(view)).toBe(status);
+    expect(f.send).not.toHaveBeenCalled();
+  } finally {
+    observer.disconnect();
+  }
+});
+
+it.each([
+  [
+    SupportedLanguage.English,
+    "1 skill token is unavailable in this scope.",
+    "No skill tokens are unavailable in this scope.",
+  ],
+  [
+    SupportedLanguage.Korean,
+    "현재 범위에서 스킬 토큰 1개를 사용할 수 없습니다.",
+    "현재 범위에서 사용할 수 없는 스킬 토큰이 없습니다.",
+  ],
+])(
+  "localizes confirmed recovery without announcing loading as zero in %s",
+  async (language, absent, recovered) => {
+    await i18n.changeLanguage(language);
+    let current = entries;
+    let release!: () => void;
+    let pending: Promise<void> | undefined;
+    const client = new QueryClient();
+    const transport = createRouterTransport((router) =>
+      router.service(SkillService, {
+        listSkills: async () => {
+          await pending;
+          return { skills: current };
+        },
+      }),
+    );
+    const view = render(
+      <TransportProvider transport={transport}>
+        <QueryClientProvider client={client}>
+          <Composer send={vi.fn()} />
+        </QueryClientProvider>
+      </TransportProvider>,
+    );
+    try {
+      const input = screen.getByRole("textbox");
+      input.focus();
+      fireEvent.change(input, {
+        target: { value: "$missing ", selectionStart: 9 },
+      });
+      const status = countStatus(view);
+      await waitFor(() => expect(status.textContent).toBe(absent));
+      pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let refetch!: Promise<void>;
+      act(() => {
+        refetch = client.invalidateQueries();
+      });
+      await waitFor(() => expect(status.textContent).toBe(""));
+      await act(async () => {
+        release();
+        await refetch;
+      });
+      expect(
+        status.textContent,
+        "an unchanged confirmed count is not replayed",
+      ).toBe("");
+      pending = undefined;
+      current = [
+        ...entries,
+        {
+          ...entries[0]!,
+          name: "missing",
+          selection: { ...entries[0]!.selection, skillId: newRequestId() },
+        },
+      ];
+      await act(async () => {
+        await client.invalidateQueries();
+      });
+      await waitFor(() => expect(status.textContent).toBe(recovered));
+      expect(document.activeElement).toBe(input);
+      expect((input as HTMLTextAreaElement).value).toBe("$missing ");
+      expect(input.hasAttribute("aria-describedby")).toBe(false);
+    } finally {
+      view.unmount();
+      await i18n.changeLanguage(SupportedLanguage.English);
+    }
+  },
+);
+
+it("retires a historical live announcement instead of translating it on locale change", async () => {
+  await i18n.changeLanguage(SupportedLanguage.English);
+  const f = fixture();
+  const view = render(f.view());
+  const input = screen.getByRole("textbox"),
+    status = countStatus(view);
+  fireEvent.change(input, {
+    target: { value: "$missing ", selectionStart: 9 },
+  });
+  await waitFor(() =>
+    expect(status.textContent).toBe(
+      "1 skill token is unavailable in this scope.",
+    ),
+  );
+  const announcements: string[] = [];
+  const observer = new MutationObserver(() => {
+    if (status.textContent) announcements.push(status.textContent);
+  });
+  observer.observe(status, {
+    childList: true,
+    characterData: true,
+    subtree: true,
+  });
+  try {
+    await act(async () => {
+      await i18n.changeLanguage(SupportedLanguage.Korean);
+    });
+    await act(async () => {});
+    expect(status.textContent).toBe("");
+    expect(announcements).toEqual([]);
+    fireEvent.change(input, {
+      target: { value: "$add-issue ", selectionStart: 11 },
+    });
+    await waitFor(() =>
+      expect(status.textContent).toBe(
+        "현재 범위에서 사용할 수 없는 스킬 토큰이 없습니다.",
+      ),
+    );
+  } finally {
+    observer.disconnect();
+    view.unmount();
+    await i18n.changeLanguage(SupportedLanguage.English);
+  }
+});
+
+it("defers confirmed count publication during composition and suppresses locked outcomes", async () => {
+  const f = fixture();
+  let release!: () => void;
+  f.read.mockImplementationOnce(async () => {
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return { skills: entries };
+  });
+  const view = render(f.view());
+  const input = screen.getByRole("textbox");
+  input.focus();
+  fireEvent.change(input, {
+    target: { value: "$missing ", selectionStart: 9 },
+  });
+  await waitFor(() => expect(f.read).toHaveBeenCalledOnce());
+  fireEvent.compositionStart(input);
+  await act(async () => release());
+  await act(async () => {});
+  expect(countStatus(view).textContent).toBe("");
+  fireEvent.compositionEnd(input);
+  await waitFor(() =>
+    expect(countStatus(view).textContent).toBe(
+      "1 skill token is unavailable in this scope.",
+    ),
+  );
+  view.rerender(f.view(machine, true));
+  expect(countStatus(view).textContent).toBe("");
+  expect(f.read).toHaveBeenCalledOnce();
+  expect((input as HTMLTextAreaElement).value).toBe("$missing ");
+  expect(f.send).not.toHaveBeenCalled();
 });

@@ -4762,6 +4762,15 @@ Confirmed absent token ranges use semantic muted text in a noninteractive aligne
 overlay. Keep the native textarea, exact draft, wrapping, scrolling, selection,
 caret, undo and IME; suppress the overlay during composition. Localized accessible
 status describes affected tokens without exposing prompt content in logs.
+Keep one mounted polite atomic count region in the shared composer wrapper,
+independent of panel visibility, and retain the textarea's count description and
+hidden painted mirror. Announce only changed counts proven by a complete current
+inventory, including recovery from a positive count to zero. Initial zero,
+unchanged results, ordinary edits and IME do not replay announcements. Unknown
+observations clear the status without claiming zero; keep the last confirmed
+count only for deduplication. Scope or transport replacement retires both that
+count and its status, so late results cannot announce for another owner. Preserve
+native focus, drafts, selections and the existing pending/uncertain locks.
 An open panel can retain previously displayed disappeared rows until dismissal or
 scope change. Bound retention to 256 entries with live entries taking priority.
 Unavailable rows retain original names, descriptions and provenance, show localized
