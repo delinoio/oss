@@ -249,7 +249,7 @@ pre {
   height: 36px;
   min-height: 36px;
   padding: 5px 9px;
-  border-color: var(--on-inverse-muted);
+  border-color: var(--control-border);
   border-radius: 7px;
   background: var(--surface);
   font-size: 13px;
@@ -988,7 +988,7 @@ summary {
   border-color: var(--accent);
   border-radius: 12px;
   background: var(--accent);
-  color: var(--on-inverse);
+  color: var(--on-accent);
 }
 .new-session-submit:hover {
   background: var(--accent-hover);
@@ -1808,7 +1808,7 @@ dialog nav {
 }
 .usage-row-measures .usage-metric {
   padding: 5px;
-  border-color: var(--on-inverse-muted);
+  border-color: var(--control-border);
   background: var(--surface-muted);
 }
 .usage-row-measures .usage-metric dt {
@@ -2076,7 +2076,7 @@ dialog nav {
 .inbox-row[aria-current] {
   background: var(--selected-background);
   color: var(--text);
-  border-color: var(--on-inverse-muted);
+  border-color: var(--control-border);
   border-left-color: var(--accent);
 }
 .inbox-row[aria-current]:hover {
@@ -4953,7 +4953,7 @@ dialog nav {
 .github-integrations button.primary[disabled] {
   color: var(--muted);
   background: var(--surface-inset);
-  border-color: var(--on-inverse-muted);
+  border-color: var(--control-border);
   opacity: 1;
 }
 .github-integrations button.integration-danger {

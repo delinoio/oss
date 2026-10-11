@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { expect, test } from "vitest";
 import {
   contrast,
@@ -95,6 +96,23 @@ test("Default retains its complete original maps and five stable palette IDs", (
       .update(JSON.stringify(palettes.default))
       .digest("hex"),
   ).toBe("08952cf9a976148b4192c87a19273f717e06686aa104a81936c62c2082e064ab");
+});
+
+test("ordinary controls use accent and control contrast tokens", async () => {
+  const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
+  const rules = [...styles.matchAll(/([^{}]+)\{([^{}]*)\}/gu)];
+  const declaration = (selector: string, property: string, value: string) => {
+    const rule = rules.find(([, selectors]) =>
+      selectors.split(",").some((candidate) => candidate.trim() === selector),
+    );
+    expect(rule?.[2]).toContain(`${property}: var(--${value});`);
+  };
+
+  declaration(".new-session-submit", "color", "on-accent");
+  declaration(".sidebar-new-session", "border-color", "control-border");
+  declaration(".usage-row-measures .usage-metric", "border-color", "control-border");
+  declaration(".inbox-row[aria-current]", "border-color", "control-border");
+  declaration(".github-integrations button.primary[disabled]", "border-color", "control-border");
 });
 
 for (const [name, modes] of Object.entries(cores)) {
