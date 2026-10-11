@@ -265,8 +265,14 @@ it("manually activates stable history tabs and excludes hidden controls from key
   await screen.findByText("Backup creation pending");
   const creation = screen.getByRole("tab", { name: "Creation jobs" });
   const deletion = screen.getByRole("tab", { name: "Deletion jobs" });
+  const strip = creation.closest<HTMLElement>(".desktop-tab-strip")!;
+  strip.scrollTop = 37;
+  vi.spyOn(strip, "getBoundingClientRect").mockReturnValue({ left: 0, right: 100, width: 100 } as DOMRect);
+  [creation, deletion].forEach((tab, index) => vi.spyOn(tab, "getBoundingClientRect").mockImplementation(() => ({ left: index * 90 - strip.scrollLeft, right: (index + 1) * 90 - strip.scrollLeft } as DOMRect)));
   creation.focus();
   fireEvent.keyDown(creation, { key: "ArrowRight" });
+  expect(strip.scrollLeft).toBe(80);
+  expect(strip.scrollTop).toBe(37);
   expect(document.activeElement).toBe(deletion);
   expect(deletion.getAttribute("aria-selected")).toBe("false");
   expect(creation.getAttribute("aria-selected")).toBe("true");

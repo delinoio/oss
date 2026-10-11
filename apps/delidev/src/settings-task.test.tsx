@@ -14,6 +14,7 @@ import { encode } from "./documents";
 import { ProjectEditTab, ProjectEditTabs } from "./project-edit-tabs";
 import { readFileSync } from "node:fs";
 const projectTabStyles = readFileSync("src/project-edit-tabs.css", "utf8");
+const sharedTabStyles = readFileSync("src/desktop-tabs.css", "utf8") + readFileSync("src/settings-task.css", "utf8");
 
 function renderTask(children: ReactNode) {
   const transport = createRouterTransport(() => {});
@@ -231,7 +232,7 @@ it("retains page cancellation and distinct nested return, while omitting empty t
 
 it("constrains the saved Project tab body through the mounted task wrapper", () => {
   renderTask(<SettingsTaskDialog title="Edit project" size={SettingsDialogSize.Form} close={() => {}}>
-    <style>{projectTabStyles}</style>
+    <style>{projectTabStyles + sharedTabStyles}</style>
     <form className="project-editor"><ProjectEditTabs disabled={false} panels={{
       [ProjectEditTab.General]: <label>Name<input defaultValue="Saved project" /></label>,
       [ProjectEditTab.Repositories]: <p>Repositories</p>,
@@ -255,6 +256,10 @@ it("constrains the saved Project tab body through the mounted task wrapper", () 
   expect(screen.getByRole("button", { name: "Save Project" }).closest(".settings-task-body")).toBeNull();
   fireEvent.click(screen.getByRole("tab", { name: "Execution" }));
   expect(screen.getByRole("tabpanel")).toBe(panels[2]);
+  const execution = screen.getByRole("tab", { name: "Execution" });
+  expect(getComputedStyle(execution).borderRadius).toBe("0");
+  expect(getComputedStyle(execution).minHeight).toBe("40px");
+  expect(getComputedStyle(screen.getByRole("button", { name: "Save Project" })).borderRadius).toBe("8px");
   // Internal task steps hide this retained wrapper; the flex rule must not undo it.
   wrapper.hidden = true;
   expect(getComputedStyle(wrapper).display).toBe("none");

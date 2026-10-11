@@ -83,6 +83,16 @@ try {
       return {pane:box(pane),tabs:box(tabs),info:box(info),view:box(view),page:document.documentElement.scrollWidth,viewport:innerWidth,splitters:document.querySelectorAll('.browser-splitter,.terminal-dock-separator').length,selected:tabs.querySelectorAll('[aria-selected="true"]').length,scale:parseFloat(getComputedStyle(document.body).zoom)||1};
     });
     assert.equal(matrix.selected,1);assert.equal(matrix.splitters,0);
+    const tabStyles = await page.locator('.desktop-tab-strip:visible').evaluateAll(strips => strips.map(strip => ({
+      baseline: getComputedStyle(strip).borderBottomWidth,
+      items: [...strip.querySelectorAll('.desktop-tab-item')].map(item => ({ radius: getComputedStyle(item).borderRadius, background: getComputedStyle(item).backgroundColor,
+        indicator: getComputedStyle(item, '::after').height, label: getComputedStyle(item.matches('button') ? item : item.querySelector('.desktop-tab-label')).fontSize }))
+    })));
+    assert(tabStyles.length >= 2, 'Actual workspace and native Browser controls share the strip');
+    for (const strip of tabStyles) {
+      assert.equal(strip.baseline, '1px');
+      for (const item of strip.items) { assert.equal(item.radius, '0px'); assert.equal(item.background, 'rgba(0, 0, 0, 0)'); assert.equal(item.indicator, '2px'); assert.equal(item.label, '14px'); }
+    }
     const closeGeometry = await page.locator(".session-tab-close").evaluateAll(nodes => nodes.map(node => { const close = node.getBoundingClientRect(), shell = node.parentElement.getBoundingClientRect(); return { width: close.width, height: close.height, left: close.left, right: close.right, shellLeft: shell.left, shellRight: shell.right }; }));
     assert(closeGeometry.every(row => row.width >= 40 * matrix.scale - 1 && row.height >= 40 * matrix.scale - 1 && row.left >= row.shellLeft - 1 && row.right <= row.shellRight + 1), JSON.stringify(closeGeometry));
     assert(matrix.tabs.bottom<=matrix.pane.top+1,JSON.stringify(matrix));

@@ -382,9 +382,13 @@ it("defaults to Overview, keeps three topmost semantic tabs and retains state wi
  expect(tabs.map(tab=>tab.getAttribute("aria-selected"))).toEqual(["true","false","false"]);
  expect(tabs.map(tab=>tab.tabIndex)).toEqual([0,-1,-1]);
  expect(screen.queryByRole("button",{name:"Model details and token pricing"})).toBeNull();
+ const strip=tabs[0].closest<HTMLElement>(".desktop-tab-strip")!; strip.scrollTop=37;
+ vi.spyOn(strip,"getBoundingClientRect").mockReturnValue({left:0,right:100,width:100} as DOMRect);
+ tabs.forEach((tab,index)=>vi.spyOn(tab,"getBoundingClientRect").mockImplementation(()=>({left:index*90-strip.scrollLeft,right:(index+1)*90-strip.scrollLeft} as DOMRect)));
  tabs[0].focus(); fireEvent.keyDown(tabs[0],{key:"ArrowLeft"}); expect(document.activeElement).toBe(tabs[2]);
+ expect(strip.scrollLeft).toBe(170); expect(strip.scrollTop).toBe(37);
  expect(screen.getByRole("tabpanel",{name:"Model prices"})).toBeTruthy();
- fireEvent.keyDown(tabs[2],{key:"Home"}); expect(document.activeElement).toBe(tabs[0]);
+ fireEvent.keyDown(tabs[2],{key:"Home"}); expect(document.activeElement).toBe(tabs[0]); expect(strip.scrollLeft).toBe(0);
  fireEvent.keyDown(tabs[0],{key:"ArrowRight"}); expect(document.activeElement).toBe(tabs[1]);
  expect(screen.getByRole("region",{name:"Known token totals"})).toBeTruthy();
  fireEvent.keyDown(tabs[1],{key:"End"}); expect(document.activeElement).toBe(tabs[2]);
