@@ -2,6 +2,7 @@
 package workspace
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,5 +61,37 @@ func TestDeletionWorkspaceProofLegacyImportsOnlyExactEqualPairs(t *testing.T) {
 				t.Fatal("foreign legacy proof changed", err)
 			}
 		})
+	}
+}
+
+func TestDeletionLegacyAbsentWorkspaceCannotAdoptRestoredContent(t *testing.T) {
+	root := t.TempDir()
+	work := deletionProofWork()
+	manager := Manager{Root: root}
+	if err := manager.initialize(); err != nil {
+		t.Fatal(err)
+	}
+	if err := security.PrivateDir(filepath.Join(manager.Root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	legacy := deletionWorkspaceProof{Version: 1, Digest: work.Digest()}
+	if err := writeDeletionWorkspaceProof(legacyDeletionWorkspacePath(manager.Root, work), legacy); err != nil {
+		t.Fatal(err)
+	}
+	restored := filepath.Join(manager.Root, "workspaces", string(work.SessionID))
+	if err := os.Mkdir(restored, 0700); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(restored, "foreign")
+	if err := os.WriteFile(sentinel, []byte("preserve"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	invoked := false
+	err := manager.DeleteOwnedWorkspace(context.Background(), work, true, func() error { invoked = true; return nil })
+	if err == nil || invoked {
+		t.Fatal("absence proof adopted restored workspace", err)
+	}
+	if raw, err := os.ReadFile(sentinel); err != nil || string(raw) != "preserve" {
+		t.Fatal("restored content was removed", err)
 	}
 }

@@ -37,6 +37,9 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 	pending := func() (sessionDeletionProof, string, *security.Lock, error) {
 		return proof, "", nil, domain.SessionDeletionPending()
 	}
+	if w.Validate() != nil {
+		return pending()
+	}
 	if security.PrivateDir(filepath.Join(root, "session-deletions")) != nil {
 		return pending()
 	}

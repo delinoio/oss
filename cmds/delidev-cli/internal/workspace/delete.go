@@ -118,6 +118,13 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 		}
 	}
 	stage = "owned-manifest"
+	if proof.Manifest == nil {
+		// The retained proof admitted absence, not a newly appearing workspace.
+		// This applies to exact legacy import as well as current keyed progress.
+		if _, err := os.Lstat(root); !errors.Is(err, os.ErrNotExist) {
+			return domain.SessionDeletionPending()
+		}
+	}
 	if proof.Manifest != nil {
 		manifest := *proof.Manifest
 		if manifest.SessionID != w.SessionID || manifest.MachineID != w.MachineID || !slices.Contains(w.PreparationDigests, manifest.InputDigest) {
