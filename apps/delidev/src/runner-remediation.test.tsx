@@ -125,3 +125,30 @@ it("retains consuming gates for an original diagnostic after selector shortcuts 
   await waitFor(() => expect(discover).toHaveBeenCalledTimes(2)); expect(discover.mock.calls[1][0]).toEqual(original);
   client.clear();
 });
+
+it.each(["succeeded", "failed", "canceled"])("releases consuming controls after %s while the inspection result stays available", async state => {
+  const row = machine("Completed Runner");
+  const job = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.JOB, schemaVersion: 1, revision: 1n, documentJson: encode({ state: "queued" }) });
+  let observed = job;
+  const discover = vi.fn(() => ({ job }));
+  const transport = createRouterTransport(router => { router.service(ResourceService, { getResource: request => ({ resource: request.kind === EntityKind.JOB ? observed : row }) }); router.service(WorkerService, { discoverHarnesses: discover }); });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function Surface() { const open = useRunnerRemediation(); return <><button onClick={() => open?.(row)}>Inspect Runner</button><input aria-label="Schedule name" defaultValue="Original draft" disabled={open?.pendingFor(row.id)} /><button disabled={open?.pendingFor(row.id)}>Next</button>{open?.body}</>; }
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><RunnerRemediationProvider active><Surface /></RunnerRemediationProvider></QueryClientProvider></TransportProvider>);
+  fireEvent.click(screen.getByText("Inspect Runner"));
+  fireEvent.click(await screen.findByRole("button", { name: "Edit executable paths" }));
+  fireEvent.change(screen.getByLabelText("claude-code executable path"), { target: { value: "/original/claude" } });
+  fireEvent.click(screen.getByRole("button", { name: "Run optional diagnostics" }));
+  await waitFor(() => expect(discover).toHaveBeenCalledOnce());
+  observed = create(ResourceSchema, { ...job, revision: 2n, documentJson: encode({ state }) });
+  await act(async () => { await client.invalidateQueries(); });
+  await screen.findByRole("button", { name: "Finish inspection" });
+  fireEvent.click(screen.getByRole("button", { name: "Close Inspect installed harnesses" }));
+  await waitFor(() => expect(screen.getByLabelText("Schedule name")).toHaveProperty("disabled", false));
+  expect(screen.getByLabelText("Schedule name")).toHaveProperty("value", "Original draft");
+  expect(screen.getByRole("button", { name: "Next" })).toHaveProperty("disabled", false);
+  fireEvent.click(screen.getByText("Inspect Runner"));
+  expect(await screen.findByRole("button", { name: "Finish inspection" })).toBeTruthy();
+  expect(discover).toHaveBeenCalledOnce();
+  client.clear();
+});

@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport, type Transport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -529,8 +530,8 @@ it("keeps repository save acknowledgment separate from completed Worker validati
   expect(screen.queryByRole("button", { name: "Return to retained draft" })).toBeNull();
   value.resources[1] = create(ResourceSchema, { ...job, revision: 3n, documentJson: encode({ type: "save-repository", state: "succeeded", output: { id: repository.id, revision: 2 } }) });
   await act(async () => { await value.client.invalidateQueries(); });
-  fireEvent.click(await screen.findByRole("button", { name: "Done" }));
-  expect(saved).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(saved).toHaveBeenCalledTimes(1));
+  expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
 });
 
 it.each(["failed", "canceled"] as const)("freshly reviews a %s repository save before returning to its retained draft", async state => {
@@ -1275,4 +1276,51 @@ it("reveals a hidden invalid Project branch prefix through complete-document Sav
  fireEvent.click(screen.getByRole("tab",{name:"Execution"}));const prefix=await screen.findByLabelText("Literal branch prefix");fireEvent.change(prefix,{target:{value:"bad..prefix"}});
  fireEvent.click(screen.getByRole("tab",{name:"General"}));const save=screen.getByRole("button",{name:"Save Project"});await waitFor(()=>expect(save).toHaveProperty("disabled",false));fireEvent.click(save);
  await waitFor(()=>expect(screen.getByRole("tab",{name:"Execution"}).getAttribute("aria-selected")).toBe("true"));await waitFor(()=>expect(document.activeElement).toBe(prefix));expect(f.save).not.toHaveBeenCalled();
+});
+
+it.each(["foreign", "stale", "malformed", "problem"])("retains an unconfirmed %s repository completion and retries only the original read", async reason => {
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", remote_url: "https://github.com/fixture/repo.git" });
+  const job = resource(EntityKind.JOB, { state: "succeeded", output: reason === "malformed" ? {} : { id: reason === "foreign" ? newRequestId() : repository.id, revision: reason === "stale" ? 1 : 2 }, ...(reason === "problem" ? { problem: { message: "Unresolved status problem" } } : {}) });
+  const value = fixture([repository, job]), saved = vi.fn();
+  value.save.mockImplementation(async request => ({ job, requestId: input(request).mutation.requestId }));
+  render(<NotificationProvider>{value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={saved} cancel={() => {}} />)}</NotificationProvider>);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Save Repository" })).toHaveProperty("disabled", false));
+  fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
+  const retry = await screen.findByRole("button", { name: "Retry original status read" });
+  expect(saved).not.toHaveBeenCalled();
+  expect(screen.queryByText("Repository saved.")).toBeNull();
+  value.resources[1] = create(ResourceSchema, { ...job, revision: 2n, documentJson: encode({ state: "succeeded", output: { id: repository.id, revision: 2 } }) });
+  await waitFor(() => expect(retry).toHaveProperty("disabled", false));
+  fireEvent.click(retry);
+  await waitFor(() => expect(saved).toHaveBeenCalledOnce());
+  expect(await screen.findByText("Repository saved.")).toBeTruthy();
+  await act(async () => { await value.client.invalidateQueries(); });
+  expect(saved).toHaveBeenCalledOnce();
+  expect(value.save).toHaveBeenCalledOnce();
+  expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
+  value.client.clear();
+});
+
+ it.each([true, false])("fences original repository completion with active=%s under Strict Mode", async active => {
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository", remote_url: "https://github.com/fixture/repo.git" });
+  const job = resource(EntityKind.JOB, { state: "queued" });
+  const value = fixture([repository, job]), saved = vi.fn();
+  value.save.mockImplementation(async request => ({ job, requestId: input(request).mutation.requestId }));
+  const view = (visible: boolean) => <StrictMode><NotificationProvider>{value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active={visible} saved={saved} cancel={() => {}} />)}</NotificationProvider></StrictMode>;
+  const rendered = render(view(true));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Save Repository" })).toHaveProperty("disabled", false));
+  fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
+  await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
+  rendered.rerender(view(active));
+  value.resources[1] = create(ResourceSchema, { ...job, revision: 2n, documentJson: encode({ state: "succeeded", output: { id: repository.id, revision: 2 } }) });
+  await act(async () => { await value.client.invalidateQueries(); });
+  if (active) {
+    await waitFor(() => expect(saved).toHaveBeenCalledOnce());
+    await act(async () => { await value.client.invalidateQueries(); });
+    expect(saved).toHaveBeenCalledOnce();
+  } else {
+    expect(saved).not.toHaveBeenCalled();
+    expect(screen.queryByText("Repository saved.")).toBeNull();
+  }
+  rendered.unmount(); value.client.clear();
 });

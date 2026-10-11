@@ -7,7 +7,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { expect, it, vi } from "vitest";
 import { EntityKind, ResourceSchema, ResourceService, newRequestId } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
-import { TrackedJob } from "./jobs";
+import { TrackedJob, type JobObservation } from "./jobs";
 import { i18n } from "./localization";
 
 function fixture(state = "queued") {
@@ -16,7 +16,7 @@ function fixture(state = "queued") {
   const read = vi.fn(async () => ({ resource: current }));
   const transport = createRouterTransport(router => router.service(ResourceService, { getResource: read }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const children = vi.fn((_state: string, output: Record<string, unknown>) => <><label>Result draft<input defaultValue="Keep focus" /></label>{output.result === "ready" ? <button>Finish inspection</button> : null}</>);
+  const children = vi.fn((_state: string, output: Record<string, unknown>, _observation: JobObservation) => <><label>Result draft<input defaultValue="Keep focus" /></label>{output.result === "ready" ? <button>Finish inspection</button> : null}</>);
   const view = <TransportProvider transport={transport}><QueryClientProvider client={client}><TrackedJob initial={initial} active>{children}</TrackedJob></QueryClientProvider></TransportProvider>;
   return { initial, read, client, children, view, state: (state: string) => { current = create(ResourceSchema, { ...initial, revision: initial.revision + 1n, documentJson: encode({ state, output: { result: "ready" } }) }); } };
 }
@@ -69,4 +69,23 @@ it("retains the original identity when a status response is foreign", async () =
   await waitFor(() => expect(screen.queryByRole("button", { name: "Retry original status read" })).toBeNull());
   expect(f.read).toHaveBeenCalledTimes(2);
   for (const [request] of f.read.mock.calls as unknown as [{ id: string }][]) expect(request.id).toBe(f.initial.id);
+});
+
+it.each(["foreign", "kind", "schema", "revision", "malformed", "unknown", "problem"])("does not verify a %s success observation", async reason => {
+  const f = fixture("succeeded");
+  const changed = create(ResourceSchema, { ...f.initial, ...(reason === "foreign" ? { id: newRequestId() } : {}), ...(reason === "kind" ? { kind: EntityKind.MACHINE } : {}), ...(reason === "schema" ? { schemaVersion: 999 } : {}), ...(reason === "revision" ? { revision: 1n } : {}), documentJson: reason === "malformed" ? new TextEncoder().encode("{") : encode({ state: reason === "unknown" ? "future-state" : "succeeded", ...(reason === "problem" ? { problem: { message: "Retained problem" } } : {}) }) });
+  f.read.mockResolvedValue({ resource: changed });
+  render(f.view);
+  await waitFor(() => expect(f.read).toHaveBeenCalledOnce());
+  await waitFor(() => expect(f.children.mock.lastCall?.[2]).toMatchObject({ pending: false, verified: false }));
+  f.client.clear();
+});
+
+it("rejects a revision older than an already observed original job", async () => {
+  const f = fixture(); render(f.view);
+  f.state("claimed"); await act(async () => { await f.client.invalidateQueries(); });
+  f.read.mockResolvedValue({ resource: create(ResourceSchema, { ...f.initial, documentJson: encode({ state: "succeeded" }) }) });
+  await act(async () => { await f.client.invalidateQueries(); });
+  expect(f.children.mock.lastCall?.[2]).toMatchObject({ verified: false, unreadable: true });
+  f.client.clear();
 });

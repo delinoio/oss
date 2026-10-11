@@ -1,0 +1,41 @@
+// SPDX-License-Identifier: Apache-2.0
+import { create } from "@bufbuild/protobuf";
+import { createRouterTransport } from "@connectrpc/connect";
+import { TransportProvider } from "@connectrpc/connect-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { expect, it, vi } from "vitest";
+import { EntityKind, ResourceSchema, ResourceService, WorkerService, newRequestId } from "@delinoio/delidev-api-client";
+import { encode } from "./documents";
+import { MutationIntents } from "./mutation";
+import { useMachineSettingsController } from "./machine-settings";
+import type { ReactNode } from "react";
+
+it.each(["succeeded", "failed", "canceled"])("settles only the submitted snapshot after %s and retains the result", async state => {
+  const machine = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.MACHINE, schemaVersion: 1, revision: 7n, documentJson: encode({ name: "Runner", disabled: false, installations: [] }) });
+  const job = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.JOB, schemaVersion: 1, revision: 1n, documentJson: encode({ state: "queued" }) });
+  let observed = job;
+  const discover = vi.fn(() => ({ job }));
+  const read = vi.fn((request: { kind: EntityKind }) => ({ resource: request.kind === EntityKind.JOB ? observed : machine }));
+  const transport = createRouterTransport(router => { router.service(ResourceService, { getResource: read }); router.service(WorkerService, { discoverHarnesses: discover }); });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const wrapper = ({ children }: { children: ReactNode }) => <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents>{children}</MutationIntents></QueryClientProvider></TransportProvider>;
+  const { result, rerender } = renderHook(({ active }) => useMachineSettingsController(machine, active), { initialProps: { active: true }, wrapper });
+  const submitted = { revision: 7n, paths: { codex: "/original/codex" } };
+  act(() => { result.current.setEdit(submitted); result.current.setVerify(true); });
+  await act(async () => { await result.current.discovery.send({ mutation: { id: machine.id, expectedRevision: 7n, requestId: newRequestId() }, verifyProtocol: true }); });
+  expect(result.current.locked).toBe(true);
+  const fresh = { revision: 7n, paths: { codex: "/fresh/codex" } };
+  act(() => { result.current.setEdit(fresh); result.current.setVerify(false); });
+  observed = create(ResourceSchema, { ...job, revision: 2n, documentJson: encode({ state, problem: state === "failed" ? { message: "Inspection failed" } : undefined }) });
+  await act(async () => { await client.invalidateQueries(); });
+  await waitFor(() => expect(result.current.pending).toBe(false));
+  expect(result.current.edit).toBe(fresh);
+  expect(result.current.locked).toBe(true);
+  expect(result.current.job).toBe(job);
+  rerender({ active: false });
+  expect(result.current.pending).toBe(false);
+  expect(result.current.job).toBe(job);
+  expect(discover).toHaveBeenCalledOnce();
+  client.clear();
+});
