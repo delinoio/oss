@@ -132,7 +132,7 @@ main:has(> .schedule-page:not([hidden]) > .schedule-creation)
 .schedule-creation-radio-cards label:has(:checked) {
   color: var(--selected-text);
   background: var(--selected-background);
-  border-color: var(--accent);
+  border-color: var(--selected-border);
 }
 .schedule-creation-radio-cards input[type="radio"] {
   width: 16px;
@@ -240,7 +240,7 @@ main:has(> .schedule-page:not([hidden]) > .schedule-creation)
   color: var(--muted);
 }
 .schedule-creation-progress li[aria-current="step"] {
-  color: var(--accent);
+  color: var(--link);
   font-weight: 600;
 }
 .schedule-creation-step-title {

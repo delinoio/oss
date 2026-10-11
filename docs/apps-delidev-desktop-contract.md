@@ -3128,6 +3128,20 @@ Default preserves the original colors. Custom libraries hold at most 32 UUID-v7
 identities, with names of at most 80 Unicode scalar values. Bundled themes are
 immutable; duplication creates a separate editable identity.
 
+Titanium, Nord, Dracula and Solarized each provide complete light/dark semantic
+maps in the shared bundled JSON. Their surfaces, text, borders, links, focus,
+selected states, inverse surfaces and conversation colors follow each family.
+The stored values use the approved encoded-sRGB channel blends with rounded
+opaque uppercase hex output; no runtime palette generator is used. Corresponding
+Default warning, danger and success values retain their meaning. Dark running
+status retains Default teal; light running status uses the darker teal variant.
+Default maps remain unchanged. Saved bundled references adopt updated bundled
+values; existing custom maps and earlier duplicates retain their stored values.
+Frontend distributions and the native host must rebuild from the shared JSON;
+tray projections use that same embedded source. Geometry, independent mode
+selection, mounted drafts and excluded terminal/backdrop/shadow/native surfaces
+retain their existing ownership.
+
 A custom editor owns its name and complete light/dark opaque semantic color maps.
 Its synthetic preview contains no conversation content. Save and import require
 explicit confirmation. Import accepts one version-1 JSON theme of at most 32 KiB,
@@ -3135,7 +3149,11 @@ with name and complete light/dark token maps, and always creates a new identity.
 Unknown fields/tokens, non-#RRGGBB colors and failing text/control contrast reject
 adoption. Terminal colors, backdrop, shadows and native OS surfaces are excluded.
 Validated tokens use an application-owned constructed CSS stylesheet without raw
-CSS injection or a CSP exception. Export captures one committed custom theme.
+CSS injection or a CSP exception. The selected root palette must outrank built-in
+theme rules in main and retained tray windows for explicit Light/Dark and resolved
+System mode. Replace or dispose only the exact owned sheet; preserve independent
+light/dark choices, default colors and scoped custom previews. Export captures one
+committed custom theme.
 Deletion requires confirmation and atomically returns all selected references to
 Default. Cancel discards only the editor/import draft. Concurrent revisions keep
 dirty drafts visible and block save until explicit discard/reload.
@@ -3652,7 +3670,7 @@ guards. Reflow must retain workspace controller and draft identities.
 
 The feature use two primary workspace rows: an approximately 72px identity/action header and a 52px navigation row. The feature uses a fixed 40×40px icon-only Open tool trigger beside the horizontally scrolling tablist. Center the decorative 18px outlined wrench from `SessionIconKind.Tools` in the existing renderer with zero padding and 8px corners. Keep localized Open tool / 도구 열기 as both its accessible name and title hint, with original semantic hover/expanded/focus treatment and menu ARIA relationships. It exposes Diff, Files, Terminals, Browser and Diagnostics in that order through their original entry callbacks and eligibility, followed by Open Sidechat only for the independently eligible original parent. The flat menu uses the existing localized label, including Sidechat 열기, with the decorative outline chat glyph from `SessionIconKind.Sidechat`. Sidechat is absent from the session overflow menu. Fork keeps its independent shared eligibility and original dialog. Opening focuses the first enabled item; arrows, Home/End and native Enter/Space select entries. Escape closes only the menu and restores its trigger; outside dismissal preserves destination focus. The 220px popup stays viewport-bounded and scrolls vertically. Tool selection closes it and focuses the selected singleton descriptor without new resources or observation reads.
 
-Tabs form a continuous gapless neutral editor strip attached to the active pane. Each tab is 40px high and at most 320px wide. Selected tabs use the surface background, 4px top corners, square bottom corners and a 2px accent underline; inactive tabs have transparent backgrounds and subtle separators. Every closeable tab encloses an always-visible 40px close target beside its truncated label, using sibling controls with independent focus treatment. This supersedes 's earlier rounded-shell appearance while preserving its enclosed close-control principle. Exactly one content region is active. Conversation is
+Tabs form a continuous gapless neutral editor strip attached to the active pane. Each tab is 40px high and at most 320px wide. Selected tabs use the surface background, 4px top corners, square bottom corners and a 2px selected-border underline; inactive tabs have transparent backgrounds and subtle separators. Every closeable tab encloses an always-visible 40px close target beside its truncated label, using sibling controls with independent focus treatment. This supersedes 's earlier rounded-shell appearance while preserving its enclosed close-control principle. Exactly one content region is active. Conversation is
 pinned first, initially selected and cannot be closed or moved. Files and Diff
 open typed content tabs keyed by session/repository/path and, for comparisons,
 comparison kind. Terminals use the original terminal ID; Browser pages use the
@@ -5707,3 +5725,13 @@ unsupported-server states retain the draft and original save validation.
 Unimplemented retains the preset summary and explains that saving determines
 the next run; no Custom interpretation is fabricated. All existing mutation,
 revision, fresh Local proof, pending/uncertain request bytes and retry owners remain.
+
+## Active conversation question presentation
+
+The Conversation Agent requests tray presents the latest authoritative interaction revision. A successful original answer response RPC joins the same revision projection as list reads, live updates and restored pages. Retain original arrival order, authenticated session scope and page-scoped counts. Keep lightweight revision/presentation metadata across payload eviction so older pages cannot revive an answered form. Full original documents remain in the existing bounded payload window.
+
+After confirmed server submission, remove the original question selection and text inputs. Show compact queued, claimed, transmitted, uncertain, failed or unavailable state while delivery or original receipt recovery remains unresolved. The explicit receipt retry retains the original UUID, revision and request bytes through closure; it cannot create a second answer or native send. Unknown or contradictory observations remain visible without response authority. Native acceptance and closure remain independent from session outcome.
+
+Retire a question only after authoritative native acceptance or confirmed closure without an unresolved response or retained mutation. Use that same projection for rendering, the page-scoped count and automatic expansion. Preserve unanswered questions and unrelated approval forms, identities and drafts. Original question/answer documents and Inbox inspection remain retained; tray retirement does not delete resources or mark Inbox items read.
+
+Hide the complete Agent requests disclosure only when a successful complete resident read proves there is no displayed request or unresolved operation. Initial loading, errors, continuation and evicted-page restoration remain reachable. An empty tray adds no completion badge, replacement message or vacant region. The composer moves upward naturally and retains its mounted controller, draft, dimensions, styling and controls at wide/compact widths and short heights. If retirement removes the focused control, focus the next actionable request or the composer. Do not steal focus from another connected active control. No RPC, protocol allocation, migration or native delivery change is required.
