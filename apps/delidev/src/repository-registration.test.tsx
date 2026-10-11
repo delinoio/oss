@@ -1,3 +1,4 @@
+import { numberedAction } from "./product-identity-test-utils";
 import { readFileSync } from "node:fs";
 import { chooseScrollOption, waitScrollChoices } from "./test-scroll-picker";
 // SPDX-License-Identifier: Apache-2.0
@@ -148,12 +149,12 @@ it.each([false, true])("retains the confirmed primary checkout when additional c
   });
   fireEvent.click(screen.getByRole("button", { name: "Inspect checkout" }));
   fireEvent.click(await screen.findByRole("button", { name: "Add inspected checkout" }));
-  const primary = within(screen.getByText(`${f.machine.id} · /canonical/oss`).closest("li")!);
-  const secondary = within(screen.getByText(`${other.id} · /canonical/B`).closest("li")!);
+  const primary = within(screen.getByText(/ · \/canonical\/oss$/).closest("li")!);
+  const secondary = within(screen.getByText(/ · \/canonical\/B$/).closest("li")!);
   expect((primary.getByRole("button", { name: "Remove checkout" }) as HTMLButtonElement).disabled).toBe(true);
   expect(primary.getByText("Use Change folder to replace this checkout.")).toBeTruthy();
   fireEvent.click(primary.getByRole("button", { name: "Remove checkout" }));
-  expect(screen.getByText(`${f.machine.id} · /canonical/oss`)).toBeTruthy();
+  expect(screen.getByText(/ · \/canonical\/oss$/)).toBeTruthy();
   expect((secondary.getByRole("button", { name: "Remove checkout" }) as HTMLButtonElement).disabled).toBe(false);
   if (removeAdditional) fireEvent.click(secondary.getByRole("button", { name: "Remove checkout" }));
   expect(within(screen.getByRole("region", { name: "Repository detected" })).getByText("/canonical/oss")).toBeTruthy();
@@ -168,7 +169,7 @@ it("keeps checkout removal available when editing an existing repository", async
   const f = fixture();
   const repository = row(EntityKind.REPOSITORY, { name: "Existing", checkouts: [{ machine_id: f.machine.id, path: "/existing" }], base: {}, starting: {}, auto_fetch: true });
   f.resources.set(repository.id, repository); f.mount();
-  fireEvent.click(await screen.findByRole("button", { name: `Edit Existing · ${repository.id}` }));
+  fireEvent.click(await screen.findByRole("button", { name: numberedAction(`Edit Existing`) }));
   const remove = screen.getByRole("button", { name: "Remove checkout" });
   expect((remove as HTMLButtonElement).disabled).toBe(false);
   expect(screen.queryByText("Use Change folder to replace this checkout.")).toBeNull();

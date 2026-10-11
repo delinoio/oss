@@ -1,3 +1,4 @@
+import { numberedAction } from "./product-identity-test-utils";
 // SPDX-License-Identifier: Apache-2.0
 import { resolve } from "node:path";
 import { createClient, type Transport } from "@connectrpc/connect";
@@ -49,7 +50,7 @@ it("saves and renames GitHub profiles through the real Go server and CLI", async
   const profiles = await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.INTEGRATION } });
   const savedProfile = profiles.resources.find(value => JSON.parse(new TextDecoder().decode(value.documentJson)).name === "Real server profile");
   expect(savedProfile).toBeTruthy();
-  fireEvent.click(await screen.findByRole("button", { name: `Rename Real server profile · ${savedProfile!.id}` }, { timeout: 15000 }));
+  fireEvent.click(await screen.findByRole("button", { name: numberedAction(`Rename Real server profile`) }, { timeout: 15000 }));
   fireEvent.change(screen.getByRole("textbox", { name: "Profile name" }), { target: { value: "Renamed server profile" } });
   fireEvent.click(screen.getByRole("button", { name: "Save profile" }));
   await screen.findByRole("button", { name: "Manage Renamed server profile" }, { timeout: 15000 });

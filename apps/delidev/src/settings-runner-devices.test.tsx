@@ -86,7 +86,7 @@ it("retains original order, parser fallback, full IDs and schema-gated inspect a
   const rows = [machine("Zulu"), machine("Alpha"), machine("Hidden future name", 2)], value = fixture(rows); open(value);
   const inventory = screen.getByRole("region", { name: "Saved runner devices" }); await within(inventory).findByText("Zulu");
   expect(Array.from(inventory.querySelectorAll("article h3"), node => node.textContent)).toEqual(["Zulu", "Alpha", "Unnamed"]);
-  for (const row of rows) expect(within(inventory).getByText(row.id)).toBeTruthy();
+  for (const row of rows) expect(within(inventory).queryByText(row.id)).toBeNull();
   expect((within(inventory).getAllByRole("button", { name: "Inspect installed harnesses" })[2] as HTMLButtonElement).disabled).toBe(true);
   expect(within(inventory).getAllByText("Status: Observed health")).toHaveLength(2);
   expect(value.get).not.toHaveBeenCalled();

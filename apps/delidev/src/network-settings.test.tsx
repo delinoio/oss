@@ -1,3 +1,4 @@
+import { numberedAction } from "./product-identity-test-utils";
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
@@ -275,7 +276,7 @@ it("fences an accepted inline selection response after collapse", async () => {
 it("names icon-only profile deletion with the original target and opens only its confirmation", async () => {
  const f = fixture(false, undefined, true, true);
  fireEvent.click(screen.getByRole("button", { name: "Network settings" }));
- const opener = await screen.findByRole("button", { name: `Delete profile · Pinned proxy · ${f.row.id}` });
+ const opener = await screen.findByRole("button", { name: numberedAction(`Delete profile · Pinned proxy`) });
  expect(opener.getAttribute("data-settings-action-presentation")).toBe("icon");
  act(() => opener.focus());
  fireEvent.click(opener);

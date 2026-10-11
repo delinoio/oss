@@ -66,7 +66,7 @@ it("shows exact known subtotals, missing fields and separate unavailable costs",
   expect(screen.getByText(/charts are unavailable from this server version/)).toBeTruthy();
   const table = screen.getByRole("table");
   expect(within(table).getByText("General Chat")).toBeTruthy();
-  expect(within(table).getByText(f.ids.account)).toBeTruthy();
+  expect(within(table).queryByText(f.ids.account)).toBeNull();
   expect(within(table).getByText("Original model")).toBeTruthy();
   fireEvent.click(within(table).getByRole("button", { name: "Retained session" }));
   expect(f.open).toHaveBeenCalledWith(f.ids.session);

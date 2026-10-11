@@ -1,3 +1,4 @@
+import { numberedAction } from "./product-identity-test-utils";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport, type Transport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -159,12 +160,12 @@ it("keeps Agent row content inert and actions scoped to exact supported configur
   const panel = heading.closest(".settings-agent-list")!;
   expect(panel.querySelectorAll(".settings-agent-row")).toHaveLength(2);
   const row = within(heading.closest("article")!);
-  expect(row.getByText(agent.id)).toBeTruthy();
+  expect(row.queryByText(agent.id)).toBeNull();
   expect(row.getByText("Codex")).toBeTruthy(); expect(row.getByText("Status: saved")).toBeTruthy();
   expect(heading.querySelector("b")).toBeNull();
   expect(row.getAllByRole("button").map((button) => button.textContent)).toEqual(["Edit", "Preview routing", "Delete"]);
   const futureRow = within(screen.getByRole("heading", { name: "Future Agent" }).closest("article")!);
-  expect(futureRow.getByText(future.id)).toBeTruthy();
+  expect(futureRow.queryByText(future.id)).toBeNull();
   expect(futureRow.queryByText(/Harness:|Status:/)).toBeNull();
   for (const button of futureRow.getAllByRole("button")) { expect((button as HTMLButtonElement).disabled).toBe(true); fireEvent.click(button); }
   expect(value.save).not.toHaveBeenCalled(); expect(value.remove).not.toHaveBeenCalled(); expect(value.preview).not.toHaveBeenCalled();
@@ -172,14 +173,14 @@ it("keeps Agent row content inert and actions scoped to exact supported configur
   await waitFor(() => expect(value.preview).toHaveBeenCalledWith(expect.objectContaining({ agentId: agent.id }), expect.anything()));
   expect(screen.getByRole("dialog").getAttribute("data-size")).toBe("form");
   fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^Close / }));
-  fireEvent.click(screen.getByRole("button", { name: `Edit ${name} · ${agent.id}` }));
+  fireEvent.click(screen.getByRole("button", { name: `Edit ${name} · Item 1` }));
   expect(screen.getByRole("dialog").getAttribute("data-size")).toBe("wide");
   expect(await screen.findByRole("heading", { name: "Harness" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
   expect(screen.queryByRole("button", { name: "New Agent Worker" })).toBeNull();
   expect((screen.getByRole("button", { name: "Projects" }) as HTMLButtonElement).disabled).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Close Edit Agent Worker" }));
-  fireEvent.click(screen.getByRole("button", { name: `Delete ${name} · ${agent.id}` }));
+  fireEvent.click(screen.getByRole("button", { name: `Delete ${name} · Item 1` }));
   expect(screen.getByText("Schedules using this configuration will be disabled for future runs. Already accepted sessions are retained.")).toBeTruthy();
   expect(value.remove).not.toHaveBeenCalled();
 });
@@ -200,7 +201,7 @@ it.each([
   const heading = await screen.findByRole("heading", { name });
   expect(heading.textContent).toBe(name);
   const row = within(heading.closest("article")!);
-  expect(row.getByText(future.id)).toBeTruthy();
+  expect(row.queryByText(future.id)).toBeNull();
   for (const label of [`Edit ${name} · ${future.id}`, `Preview routing for ${name}`, `Delete ${name} · ${future.id}`]) {
     expect((row.getByRole("button", { name: label }) as HTMLButtonElement).disabled).toBe(true);
   }
@@ -212,7 +213,7 @@ it("keeps the original Agent deletion revision and retry request within its open
   value.remove.mockRejectedValueOnce(new ConnectError("Acknowledgment lost", Code.Unavailable));
   render(value.view(<Settings />));
   fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
-  fireEvent.click(await screen.findByRole("button", { name: `Delete Retained Agent · ${agent.id}` }));
+  fireEvent.click(await screen.findByRole("button", { name: "Delete Retained Agent · Item 1" }));
   expect(value.remove).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Confirm configuration deletion" }));
   fireEvent.click(await screen.findByRole("button", { name: "Retry the same deletion" }));
@@ -397,11 +398,11 @@ it.each(["close", "category change"])("discards account filters, later pages, wi
   expect(screen.queryByRole("textbox", { name: "Entry name" })).toBeNull();
   expect(screen.queryByLabelText("API key")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
-  fireEvent.click(await screen.findByRole("button", { name: `Delete Saved instructions · ${instructions.id}` }));
+  fireEvent.click(await screen.findByRole("button", { name: numberedAction(`Delete Saved instructions`) }));
   expect(screen.getByRole("button", { name: "Confirm configuration deletion" })).toBeTruthy();
   leave();
   fireEvent.click(screen.getByRole("button", { name: "Instructions" }));
-  expect(await screen.findByRole("button", { name: `Delete Saved instructions · ${instructions.id}` })).toBeTruthy();
+  expect(await screen.findByRole("button", { name: numberedAction(`Delete Saved instructions`) })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Confirm configuration deletion" })).toBeNull();
   expect(value.save).not.toHaveBeenCalled();
   expect(value.connect).not.toHaveBeenCalled();
@@ -979,7 +980,7 @@ it("keeps repository source metadata inert and preserves schema-bound actions", 
   expect(screen.getByText("GitHub configured")).toBeTruthy();
   expect(screen.queryByText("Saved settings only. Inspect access to check permissions.")).toBeNull();
   expect(screen.getByText("/saved/checkout")).toBeTruthy();
-  expect(screen.getByText(row.id)).toBeTruthy();
+  expect(screen.queryByText(row.id)).toBeNull();
   expect(view.container.textContent).not.toContain("private-value");
   expect(view.container.textContent).not.toContain("example.invalid");
   expect((screen.getByRole("button", { name: "Edit Remote repository" }) as HTMLButtonElement).disabled).toBe(false);
@@ -994,7 +995,7 @@ it("keeps repository source metadata inert and preserves schema-bound actions", 
   expect(screen.getByText("Unsupported format")).toBeTruthy(); absentBrowser();
   expect(screen.getAllByRole("button").every(button => (button as HTMLButtonElement).disabled)).toBe(true);
   expect(screen.queryByText("/saved/checkout")).toBeNull();
-  expect(screen.getByText(row.id)).toBeTruthy();
+  expect(screen.queryByText(row.id)).toBeNull();
   view.rerender(value.view(<RepositoryRow row={resource(EntityKind.REPOSITORY, { name: "Unconfigured repository" })} edit={edit} remove={remove} />));
   expect(screen.getByText("GitHub not configured")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Inspect GitHub access" })).toBeNull();
@@ -1125,7 +1126,7 @@ it.each(["cancel", "close", "done"])("retains original inline model identities t
   value.remove.mockImplementation(async () => { visible = [second]; return {}; });
   render(value.view(<Settings />)); fireEvent.click(screen.getByRole("button", { name: "Agent Workers" }));
   await screen.findAllByText("original-inline-native"); expect(modelReads).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: `Delete First retained Worker · ${first.id}` }));
+  fireEvent.click(screen.getByRole("button", { name: numberedAction(`Delete First retained Worker`) }));
   if (exit === "done") fireEvent.click(screen.getByRole("button", { name: "Confirm configuration deletion" }));
   else {
     if (exit === "cancel") fireEvent(screen.getByRole("dialog"), new Event("cancel", { cancelable: true }));

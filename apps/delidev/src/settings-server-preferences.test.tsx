@@ -82,7 +82,7 @@ it.each(["empty-continuation", "singleton-continuation", "multiple", "unsupporte
   if (variant === "unsupported") rows[0].schemaVersion = 2;
   const value = fixture(rows, () => ({ resources: rows, nextPageToken: variant.endsWith("continuation") ? "opaque-page-2" : "" }));
   render(value.view(<Settings />)); chooseGit(); await screen.findByRole("region", { name: "Project defaults unavailable" });
-  for (const row of rows) expect(screen.getByText(row.id)).toBeTruthy();
+  for (const row of rows) expect(screen.queryByText(row.id)).toBeNull();
   expect(screen.queryByRole("form")).toBeNull(); expect(value.save).not.toHaveBeenCalled();
   if (variant.endsWith("continuation")) {
     fireEvent.click(screen.getByRole("button", { name: "Load more Settings pages" }));
@@ -224,7 +224,7 @@ it.each(["empty-continuation", "singleton-continuation", "multiple"])("does not 
   const value = fixture(rows, () => ({ resources: rows, nextPageToken: variant === "multiple" ? "" : "opaque-page-2" }));
   render(value.view(<Settings />)); choosePreferences();
   await screen.findByRole("region", { name: "Project defaults unavailable" });
-  for (const row of rows) expect(screen.getByText(row.id)).toBeTruthy();
+  for (const row of rows) expect(screen.queryByText(row.id)).toBeNull();
   expect(screen.queryByRole("form")).toBeNull(); expect(screen.queryByRole("navigation", { name: "Settings pages" })).toBeNull();
   expect(value.save).not.toHaveBeenCalled();
 });
@@ -245,7 +245,7 @@ it.each(["future", "invalid-json", "missing-policy", "unknown-routing", "invalid
   if (variant === "invalid-json") row.documentJson = new Uint8Array([255]);
   const value = fixture([row]); render(value.view(<Settings />)); choosePreferences();
   const unavailable = within(await screen.findByRole("region", { name: "Project defaults unavailable" }));
-  expect(unavailable.getByText(row.id)).toBeTruthy(); expect(unavailable.getByRole("status").textContent).toContain("Policy values are unavailable.");
+  expect(unavailable.queryByText(row.id)).toBeNull(); expect(unavailable.getByRole("status").textContent).toContain("Policy values are unavailable.");
   expect(screen.queryByRole("form")).toBeNull(); expect(screen.queryByLabelText("Default account routing")).toBeNull();
   expect(value.save).not.toHaveBeenCalled();
 });
@@ -387,7 +387,7 @@ it("keeps a retained draft read-only when refresh finds unsupported settings", a
   fireEvent.change(routing(), { target: { value: "fixed" } }); rows[0] = { ...original, schemaVersion: 2, revision: 9n };
   fireEvent.click(screen.getByRole("button", { name: "Refresh settings" }));
   await screen.findByRole("region", { name: "Project defaults unavailable" });
-  expect(screen.getByText(original.id)).toBeTruthy(); expect(screen.getByRole("form")).toBe(form);
+  expect(screen.queryByText(original.id)).toBeNull(); expect(screen.getByRole("form")).toBe(form);
   expect(routing().value).toBe("fixed"); expect(routing().matches(":disabled")).toBe(true); expect(saveButton().disabled).toBe(true);
   expect(value.save).not.toHaveBeenCalled();
 });

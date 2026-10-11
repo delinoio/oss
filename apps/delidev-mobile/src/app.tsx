@@ -88,29 +88,44 @@ function record(v: unknown): Record<string, unknown> {
     ? (v as Record<string, unknown>)
     : {};
 }
-type NamingScope = { numbers: Map<string, number>; names: Map<string, string> };
+type NamingScope = { numbers: Map<string, number>; names: Map<string, string>; distinguished: Set<string> };
 const namingScopes = new WeakMap<QueryClient, NamingScope>();
-const connectionScopes = new WeakMap<ProtectedState, Map<string, number>>();
+const connectionScopes = new WeakMap<ProtectedState, NamingScope>();
+const newNamingScope = (): NamingScope => ({ numbers: new Map(), names: new Map(), distinguished: new Set() });
+function observeName(scope: NamingScope, key: string, name: string) {
+  if (!scope.numbers.has(key)) scope.numbers.set(key, scope.numbers.size + 1);
+  scope.names.set(key, name);
+  for (const [other, observed] of scope.names) if (other !== key && observed === name) {
+    scope.distinguished.add(key); scope.distinguished.add(other);
+  }
+}
 function useResourceLabel() {
   const client = useQueryClient(), c = useCopy();
-  if (!namingScopes.has(client)) namingScopes.set(client, { numbers: new Map(), names: new Map() });
-  return (resource: Resource) => label(resource, c, namingScopes.get(client)!);
+  if (!namingScopes.has(client)) namingScopes.set(client, newNamingScope());
+  const scope = namingScopes.get(client)!;
+  // Observe only existing cache data. Pre-observation gives both duplicate rows
+  // their stable distinction in the same render without another server read.
+  for (const query of client.getQueryCache().getAll()) {
+    const data = query.state.data as { resource?: Resource; resources?: Resource[]; sessions?: Resource[] } | undefined;
+    const rows = [data?.resource, ...(Array.isArray(data?.resources) ? data.resources : []), ...(Array.isArray(data?.sessions) ? data.sessions : [])];
+    for (const row of rows) if (row && supportsResourceSchema(row)) observeName(scope, `${row.kind}:${row.id}`, text(value(row).name) || text(value(row).alias));
+  }
+  return (resource: Resource) => label(resource, c, scope);
 }
 function connectionLabel(owner: ProtectedState, id: string, name: string, c: Labels): string {
-  if (!connectionScopes.has(owner)) connectionScopes.set(owner, new Map());
-  const numbers = connectionScopes.get(owner)!;
-  let number = numbers.get(id);
-  if (number === undefined) { number = numbers.size + 1; numbers.set(id, number); }
-  return `${name || c.nameUnavailable} · ${number}`;
+  if (!connectionScopes.has(owner)) connectionScopes.set(owner, newNamingScope());
+  const scope = connectionScopes.get(owner)!;
+  for (const profile of owner.state.profiles) observeName(scope, profile.id, profile.name);
+  observeName(scope, id, name);
+  return name && !scope.distinguished.has(id) ? name : `${name || c.nameUnavailable} · ${scope.numbers.get(id)}`;
 }
 function label(resource: Resource, c: Labels, scope: NamingScope): string {
   const key = `${resource.kind}:${resource.id}`;
-  let number = scope.numbers.get(key);
-  if (number === undefined) { number = scope.numbers.size + 1; scope.numbers.set(key, number); }
-  const name = text(value(resource).name) || text(value(resource).alias);
-  if (supportsResourceSchema(resource)) scope.names.set(key, name);
+  if (supportsResourceSchema(resource)) observeName(scope, key, text(value(resource).name) || text(value(resource).alias));
+  if (!scope.numbers.has(key)) scope.numbers.set(key, scope.numbers.size + 1);
+  const name = scope.names.get(key);
   const kind = resource.kind === EntityKind.PROJECT ? c.project : resource.kind === EntityKind.AGENT ? c.agent : resource.kind === EntityKind.MACHINE ? c.runner : c.sessionLabel;
-  return `${scope.names.get(key) || `${kind} · ${c.nameUnavailable}`} · ${number}`;
+  return name && !scope.distinguished.has(key) ? name : `${name || `${kind} · ${c.nameUnavailable}`} · ${scope.numbers.get(key)}`;
 }
 function observation(v: unknown, c: Labels): string {
   const key = text(v);

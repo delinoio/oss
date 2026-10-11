@@ -33,7 +33,8 @@ it("preserves the exact desktop recovery pair for a later unsupported-server vis
  await vi.waitFor(() => expect((check as HTMLButtonElement).disabled).toBe(false));
  fireEvent.click(check);
  const candidate = await screen.findByRole("region", { name: "Original update" });
- const id = within(candidate).getByText(original.id).textContent!;
+ const id = original.id;
+ expect(within(candidate).queryByText(id)).toBeNull();
  const revision = within(candidate).getByText("9007199254740993").textContent!;
  fireEvent.click(within(candidate).getByRole("button", { name: "Download verified desktop update" }));
  fireEvent.click(await within(candidate).findByRole("button", { name: "Review and install desktop update" }));

@@ -46,6 +46,6 @@ export function SidechatFindings({ session, messages }: { session: Resource; mes
       <button disabled={blocked || parent.isFetching || !parent.data?.resource || chosen.length === 0 || chosen.length > 20 || bytes > 256 * 1024} onClick={send}>{copy("sidechat.sendSelectedFindingsToParentQueue_5db660")}</button>
     </>}
     <Problem error={parent.error} /><Problem error={mutation.error} />{mutation.uncertain ? <><p role="status">{copy("sidechat.theOriginalSelectedMessagesAndRevisions_45372d")}</p><button disabled={mutation.busy} onClick={mutation.retry}>{copy("sidechat.retryTheSameFindingsRequest_23e1d3")}</button></> : null}
-    {accepted ? <p role="status"><LocalizedText id="sidechat.selectedFindingsQueuedAsReviewThem_7c06ec" components={{ s0: <>{accepted}</> }} /></p> : null}
+    {accepted ? <p role="status"><LocalizedText id="sidechat.selectedFindingsQueuedAsReviewThem_7c06ec" components={{ s0: <><ProductIdentity id={accepted} kind={ProductKind.Input} /></> }} /></p> : null}
   </section>;
 }

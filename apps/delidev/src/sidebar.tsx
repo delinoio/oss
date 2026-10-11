@@ -267,10 +267,10 @@ function ProjectGroup({ projectId, label, fallback = false, fallbackRows = [], e
   const disclosureContentId1 = useId();
   useLocale();  const labels=useProductLabels();
   return <section className={`sidebar-project-group${fallback ? "" : " has-new-session has-project-menu"}`} data-project-id={projectId}>
-    <DisclosureButton aria-controls={disclosureContentId1} density={DisclosureDensity.Compact} type="button" className="sidebar-project-row" title={label} aria-label={copy("sidebar.projectId_656c43", { v0: label, v1: labels(projectId, ProductKind.Project) })} aria-expanded={expanded} onClick={toggle}>
+    <DisclosureButton aria-controls={disclosureContentId1} density={DisclosureDensity.Compact} type="button" className="sidebar-project-row" title={label} aria-label={labels(projectId, ProductKind.Project, label)} aria-expanded={expanded} onClick={toggle}>
       <Icon name="folder" className="sidebar-folder-icon" /><span className="sidebar-project-title">{label}</span><span className="sidebar-project-tooltip" aria-hidden="true">{label}</span>
     </DisclosureButton>
-    {!fallback ? <button type="button" className="sidebar-project-new-session" title={copy("sidebar.newSessionInProject", { v0: label })} aria-label={copy("sidebar.newSessionInProjectId", { v0: label, v1: labels(projectId, ProductKind.Project) })} disabled={projectSelectionBlocked} onClick={(event) => { event.currentTarget.focus(); newSession(projectId); }}><Icon name="plus" /></button> : null}
+    {!fallback ? <button type="button" className="sidebar-project-new-session" title={copy("sidebar.newSessionInProject", { v0: label })} aria-label={copy("sidebar.newSessionInProject", { v0: labels(projectId, ProductKind.Project, label) })} disabled={projectSelectionBlocked} onClick={(event) => { event.currentTarget.focus(); newSession(projectId); }}><Icon name="plus" /></button> : null}
     {!fallback ? <ProjectSettingsMenu projectId={projectId} label={label} active={active} /> : null}
     <DisclosureContent id={disclosureContentId1} hidden={!expanded}>{expanded ? <ProjectSessions projectId={projectId} label={label} fallback={fallback} fallbackRows={fallbackRows} home={home} includeArchived={includeArchived} selected={selected} activation={activation} open={open} active={active} root={root} /> : null}</DisclosureContent>
   </section>;

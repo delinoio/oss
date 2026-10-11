@@ -263,7 +263,7 @@ it.each(["en","ko"])("numbers every returned detail in %s while sending only the
   const value=fixture(numberedDetails);value.request.mockRejectedValueOnce(new ConnectError("lost acknowledgment",Code.Unavailable));render(<value.Harness />);
   const use=await screen.findByRole("button",{name:language==="en"?"Use":"사용"});await waitFor(()=>expect((use as HTMLButtonElement).disabled).toBe(false));fireEvent.click(use);
   for(let ordinal=1;ordinal<=3;ordinal++) expect(screen.getByText(language==="en"?`Reset credit ${ordinal}`:`리셋권 ${ordinal}`,{selector:"strong"})).toBeTruthy();
-  for(const credit of numberedDetails) expect(screen.getByText(`${language==="en"?"ID":"식별자"}: ${credit.id}`)).toBeTruthy();
+  for(const credit of numberedDetails) expect(screen.queryByText(new RegExp(credit.id))).toBeNull();
   expect(screen.queryByText("Private native title")).toBeNull();expect(screen.queryByText("Private native description")).toBeNull();
   expect(screen.queryByRole("button",{name:language==="en"?"Select Reset credit 1":"리셋권 1 선택"})).toBeNull();
   expect(globalThis.document.querySelectorAll(".reset-credit-row time").length).toBe(2);
@@ -282,9 +282,9 @@ it("retains captured ordinal and full identity through reorder, replacement, loc
  expect(confirmation.textContent).toContain("Consume reset credit 3");expect(confirmation.textContent).toContain(`ID: ${numberedDetails[2].id}`);
  expect((screen.getByRole("button",{name:"Confirm credit consumption"}) as HTMLButtonElement).disabled).toBe(true);
  expect(screen.getByRole("button",{name:"Select Reset credit 1"})).toBeTruthy();
- try {await i18n.changeLanguage("ko");expect(await screen.findByText("리셋권 3 사용")).toBeTruthy();expect(confirmation.textContent).toContain(numberedDetails[2].id);expect((screen.getByRole("button",{name:"리셋권 사용 확인"}) as HTMLButtonElement).disabled).toBe(true);}
+ try {await i18n.changeLanguage("ko");expect(await screen.findByText("리셋권 3 사용")).toBeTruthy();expect(confirmation.textContent).not.toContain(numberedDetails[2].id);expect((screen.getByRole("button",{name:"리셋권 사용 확인"}) as HTMLButtonElement).disabled).toBe(true);}
  finally {await i18n.changeLanguage("en")}
- fireEvent.click(screen.getByRole("button",{name:"Replace fixture credit"}));expect(confirmation.textContent).toContain("Consume reset credit 3");expect(confirmation.textContent).toContain(numberedDetails[2].id);
+ fireEvent.click(screen.getByRole("button",{name:"Replace fixture credit"}));expect(confirmation.textContent).toContain("Consume reset credit 3");expect(confirmation.textContent).not.toContain(numberedDetails[2].id);
  fireEvent.click(screen.getByRole("button",{name:"Keep credit"}));expect(globalThis.document.activeElement).toBe(screen.getByRole("heading",{name:"Reset credits"}));expect(value.request).not.toHaveBeenCalled();expect(value.reconcile).not.toHaveBeenCalled();
 });
 

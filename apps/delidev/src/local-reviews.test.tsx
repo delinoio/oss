@@ -70,7 +70,7 @@ it("retries the original grouped submission after navigation without rounding re
  expect((screen.getByRole("button", { name: "Delete comment" }) as HTMLButtonElement).disabled).toBe(true);
  fireEvent.click(screen.getByRole("button", { name: "Toggle review" })); fireEvent.click(screen.getByRole("button", { name: "Toggle review" }));
  fireEvent.click(await screen.findByRole("button", { name: "Retry original review submission" }));
- await screen.findByText(`Request changes queued as input ${f.inputId}.`);
+ await screen.findByText("Request changes queued as input Input.");
  expect(f.submit).toHaveBeenCalledTimes(2); expect(f.submit.mock.calls[1][0]).toEqual(original);
 });
 
@@ -226,14 +226,14 @@ it("isolates retained deletion by Session and preserves historical submissions",
  fireEvent.click(screen.getByRole("button", { name: "Switch session" }));
  await screen.findByText("No local reviews on this page.");
  expect(screen.queryByRole("button", { name: "Retry original comment deletion" })).toBeNull();
- expect(screen.queryByText(`Submitted review · plan · ${historical.id}`)).toBeNull();
+ expect(screen.queryByText(/Submitted review · plan · Request ·/)).toBeNull();
  fireEvent.click(screen.getByRole("button", { name: "Switch session" }));
- await screen.findByText(`Submitted review · plan · ${historical.id}`);
+ await screen.findByText(/Submitted review · plan · Request ·/);
  expect(screen.queryByRole("button", { name: "Delete comment" })).toBeNull();
  expect(f.remove).toHaveBeenCalledTimes(1);
  fireEvent.click(screen.getByRole("button", { name: "Retry original comment deletion" }));
  await waitFor(() => expect(screen.queryByRole("button", { name: "Retry original comment deletion" })).toBeNull());
- expect(screen.getByText(`Accepted input: ${f.inputId}`)).toBeTruthy();
+ expect(screen.getByText(/Accepted input: Input ·/)).toBeTruthy();
  expect(screen.getByText("<script>original feedback</script>")).toBeTruthy();
  expect(f.submit).not.toHaveBeenCalled();
 });

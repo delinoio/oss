@@ -1,3 +1,4 @@
+import { numberedAction } from "./product-identity-test-utils";
 // SPDX-License-Identifier: Apache-2.0
 import { create } from "@bufbuild/protobuf";
 import { StrictMode, useState } from "react";
@@ -70,8 +71,8 @@ it("groups rows in server order with complete identities, schema guards and no e
   const value = fixture([last, first, future]); openProjects(value);
   const list = await screen.findByRole("region", { name: "Saved projects" });
   expect(within(list).getAllByRole("heading").map(node => node.textContent)).toEqual(["Zulu " + "long project name ".repeat(30), "Alpha", "Unnamed"]);
-  for (const row of [last, first, future]) expect(within(list).getByText(row.id)).toBeTruthy();
-  for (const action of ["Edit", "Delete"]) expect((screen.getByRole("button", { name: `${action} Unnamed · ${future.id}` }) as HTMLButtonElement).disabled).toBe(true);
+  for (const row of [last, first, future]) expect(within(list).queryByText(row.id)).toBeNull();
+  for (const action of ["Edit", "Delete"]) expect((screen.getByRole("button", { name: numberedAction(`${action} Unnamed`) }) as HTMLButtonElement).disabled).toBe(true);
   expect(value.get).not.toHaveBeenCalled();
   expect(value.list.mock.calls.filter(([kind]) => kind === EntityKind.PROJECT)).toEqual([[EntityKind.PROJECT, ""], [EntityKind.PROJECT, ""]]);
 });
@@ -97,7 +98,7 @@ it.each([false, true])("retains cached content during refresh and reports failed
 it("preserves four tabs, repository order, primary clearing, restrictions and full documents", async () => {
   const first = resource(EntityKind.REPOSITORY, { name: "First" }), second = resource(EntityKind.REPOSITORY, { name: "Second" }), row = project("Editable project");
   row.documentJson = encode({ name: "Editable project", repositories: [first.id, second.id], primary_repository: first.id, agents: { configured: true, ids: [newRequestId()] }, accounts: { configured: false, ids: [] }, extension: { retained: true } });
-  const value = fixture([row, first, second]); openProjects(value); fireEvent.click(await screen.findByRole("button", { name: `Edit Editable project · ${row.id}` }));
+  const value = fixture([row, first, second]); openProjects(value); fireEvent.click(await screen.findByRole("button", { name: numberedAction(`Edit Editable project`) }));
   expect(screen.getByText("The harness starts in this repository. Select it explicitly after adding repositories.")).toBeTruthy();
   expect(screen.queryByText(/The first repository you select becomes the primary repository/)).toBeNull();
   expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
@@ -129,7 +130,7 @@ it("retries exact edit repository IDs without replacing unreadable names with se
     if (id === first.id && !readable) throw new ConnectError("Name read unavailable", Code.Unavailable);
     return { resource: [row, first, other].find(candidate => candidate.id === id) };
   });
-  openProjects(value); fireEvent.click(await screen.findByRole("button", { name: `Edit Name lookup project · ${row.id}` }));
+  openProjects(value); fireEvent.click(await screen.findByRole("button", { name: numberedAction(`Edit Name lookup project`) }));
   fireEvent.click(screen.getByRole("tab", { name: "Repositories" }));
   const primary = screen.getByRole("combobox", { name: "Primary repository" }) as HTMLSelectElement;
   const retry = await screen.findByRole("button", { name: "Retry repository loading" });
@@ -143,14 +144,14 @@ it("retries exact edit repository IDs without replacing unreadable names with se
 it.each(["revision", "failure"])("retains an edit draft and blocks Save after current-resource %s", async reason => {
   const row = project("Original"), value = fixture([row]);
   if (reason === "failure") value.get.mockRejectedValue(new ConnectError("current unavailable", Code.Unavailable)); else value.get.mockResolvedValue({ resource: create(ResourceSchema, { ...row, revision: 8n }) });
-  openProjects(value); fireEvent.click(await screen.findByRole("button", { name: `Edit Original · ${row.id}` })); fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Retained draft" } }); await screen.findByRole("alert");
+  openProjects(value); fireEvent.click(await screen.findByRole("button", { name: numberedAction(`Edit Original`) })); fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Retained draft" } }); await screen.findByRole("alert");
   expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Retained draft"); expect((screen.getByRole("button", { name: "Save Project" }) as HTMLButtonElement).disabled).toBe(true); expect(value.save).not.toHaveBeenCalled();
 });
 it.each(["save", "delete"])("explicitly retries the exact project %s request within its opening", async action => {
   const row = project("Retry project");
   row.documentJson = encode({ name: "Retry project", repositories: [creationRepository.id], primary_repository: creationRepository.id, agents: { configured: false, ids: [] }, accounts: { configured: false, ids: [] } });
   const value = fixture([row, creationRepository]), operation = action === "save" ? value.save : value.remove; operation.mockRejectedValueOnce(new ConnectError("ack lost", Code.Unavailable));
-  openProjects(value); fireEvent.click(await screen.findByRole("button", { name: `${action === "save" ? "Edit" : "Delete"} Retry project · ${row.id}` }));
+  openProjects(value); fireEvent.click(await screen.findByRole("button", { name: numberedAction(`${action === "save" ? "Edit" : "Delete"} Retry project`) }));
   if (action === "delete") { expect(screen.getByText(/Retained sessions and history remain/)).toBeTruthy(); expect(screen.getByText(/Schedules using this configuration will be disabled/)).toBeTruthy(); }
   const submit = action === "save" ? "Save Project" : "Confirm configuration deletion";
   // A complete valid document isolates exact retry identity without bypassing validation.

@@ -78,7 +78,7 @@ it("keeps a replacement draft and its accepted job independent of the old profil
  await waitFor(() => expect(fixture.client.isFetching()).toBe(0));
  expect(fixture.fork).toHaveBeenCalledTimes(1);
  expect(fixture.fork.mock.calls[0]?.[0]).toMatchObject({ mutation: { id: fixture.sources[1]!.id, expectedRevision: 8n }, name: "Source B fork" });
- expect(screen.getByText(`Source: ${fixture.sources[1]!.id} · Turn: msg_01960dcbe1fcABCDEFGHIJKLMN`)).not.toBeNull();
+ expect(screen.getByText(/Source: Source B · \d+ · Turn: msg_01960dcbe1fcABCDEFGHIJKLMN/)).not.toBeNull();
 });
 
 it("requires a new submission when the same source is reopened after discard", async () => {
@@ -449,7 +449,7 @@ it("preserves pending then uncertain original ownership through hiding and attem
  expect(fixture.fork.mock.calls[1]![0]).toEqual(fixture.fork.mock.calls[0]![0]);
  fireEvent.click(screen.getByRole("button", { name: "Close Fork session" }));
  fireEvent.click(screen.getByRole("button", { name: "Fork session" }));
- expect(screen.getByText(new RegExp(fixture.sources[0]!.id))).toBeDefined();
+ expect(screen.queryByText(new RegExp(fixture.sources[0]!.id))).toBeNull();
  expect(screen.queryByRole("button", { name: "Create fork" })).toBeNull();
  fireEvent.click(screen.getByRole("button", { name: "Open forked session" }));
  expect(fixture.open).toHaveBeenCalledWith([...fixture.children.values()][0]!.id);

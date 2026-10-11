@@ -31,7 +31,7 @@ export function PRFixAction({ row, set, value, selection, disabled, refreshed }:
  useLocale();
  const [open, setOpen] = useState(false), [project, setProject] = useState(""), [notice, setNotice] = useProductMessage("");
  const fix = useRetainedMutation(`pr-fix:${selection.remoteRepositoryId}:${selection.pullRequestId}`, PullRequestFixQuery.requestPullRequestFix, (response) => {
-  setNotice(ownedMessage("pr-fix.sentence.613a13e6da0e", { v0: response.session!.id })); setOpen(false); refreshed();
+  setNotice(ownedMessage("pr-fix.sentence.613a13e6da0e", { v0: copy("product-identity.sessionUnavailable") })); setOpen(false); refreshed();
  });
  const chain = readRemediationChain(document(set).remediation);
  const owner = text(chain?.active_attempt_id);

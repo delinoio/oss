@@ -235,7 +235,7 @@ it("reuses stale row evidence through dialog reopen and disposes Details on cate
  const f=fixture(),mounted=render(f.view()); await screen.findAllByText("USD 12.48");
  const open=()=>{fireEvent.click(screen.getByRole("button",{name:"More actions for OpenRouter"}));fireEvent.click(screen.getByRole("button",{name:"Details"}));};
  f.read.mockRejectedValueOnce(new ConnectError("Read denied",Code.PermissionDenied)); await act(async()=>{await f.client.refetchQueries();});
- open(); const dialog=screen.getByRole("dialog",{name:"Details"}); expect(within(dialog).getByText(/Showing stale usage/)).toBeTruthy(); expect(within(dialog).getByText("USD 12.48")).toBeTruthy(); expect(within(dialog).getByText(f.id)).toBeTruthy();
+ open(); const dialog=screen.getByRole("dialog",{name:"Details"}); expect(within(dialog).getByText(/Showing stale usage/)).toBeTruthy(); expect(within(dialog).getByText("USD 12.48")).toBeTruthy(); expect(within(dialog).queryByText(f.id)).toBeNull();
  fireEvent.click(within(dialog).getByRole("button",{name:"Close Details"})); await waitFor(()=>expect(screen.queryByRole("dialog")).toBeNull()); open(); expect(f.read).toHaveBeenCalledTimes(2);
  mounted.rerender(f.view(false)); await waitFor(()=>expect(screen.queryByRole("dialog")).toBeNull()); mounted.rerender(f.view()); expect(screen.queryByRole("dialog")).toBeNull(); expect(f.read).toHaveBeenCalledTimes(2);
  for(const callback of Object.values(f.callbacks)) expect(callback).not.toHaveBeenCalled();
@@ -243,7 +243,7 @@ it("reuses stale row evidence through dialog reopen and disposes Details on cate
 it("keeps unknown schemas read-only while allowing their full Details identity",async()=>{
  const f=fixture(); f.row.schemaVersion=4; render(f.view()); const opener=screen.getByRole("button",{name:"More actions for Unnamed"}); fireEvent.click(opener);
  expect(screen.getByRole("button",{name:"Edit preferences"})).toHaveProperty("disabled",true); expect(screen.getByRole("button",{name:"Delete entry"})).toHaveProperty("disabled",true); expect(screen.getByRole("button",{name:"Manage connection"})).toHaveProperty("disabled",true); expect(screen.getByRole("button",{name:"View usage"})).toHaveProperty("disabled",true);
- fireEvent.click(screen.getByRole("button",{name:"Details"})); expect(within(screen.getByRole("dialog",{name:"Details"})).getByText(f.id)).toBeTruthy(); expect(f.read).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole("button",{name:"Details"})); expect(within(screen.getByRole("dialog",{name:"Details"})).queryByText(f.id)).toBeNull(); expect(f.read).not.toHaveBeenCalled();
 });
 
 it("places the retained verification owner after the full summary without remounting it", async () => {

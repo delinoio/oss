@@ -1,3 +1,4 @@
+import { numberedAction } from "./product-identity-test-utils";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -273,7 +274,7 @@ it.each(["Rename Work", "Manage Work"])("pauses the original profile inventory b
 it("pins a paged profile Rename action to its original identity without observing other pages", async () => {
  const f = fixture();
  render(<SettingsActionScope>{f.view()}</SettingsActionScope>);
- const rename = await screen.findByRole("button", { name: `Rename Work · ${f.profile.id}` });
+ const rename = await screen.findByRole("button", { name: numberedAction(`Rename Work`) });
  expect(rename.getAttribute("data-settings-action-presentation")).toBe("icon");
  const reads = f.list.mock.calls.length;
  fireEvent.click(rename);
