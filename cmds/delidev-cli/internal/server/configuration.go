@@ -553,7 +553,20 @@ func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID,
 				}
 			}
 		}
-		return mustExist(tx, domain.TemplateKind, v.Templates...)
+		for _, templateID := range v.Templates {
+			record, err := tx.Get(domain.TemplateKind, templateID)
+			if err != nil {
+				return err
+			}
+			template, err := store.Decode[domain.Template](record)
+			if err != nil {
+				return err
+			}
+			if template.NativeImport != nil && (template.NativeImport.Kind != domain.NativeConfigurationInstruction || template.NativeImport.Harness != v.Harness) {
+				return domain.Fail(domain.PermissionDenied, "The imported package cannot supply Agent instructions.", "Select compatible instruction packages; extension packages remain inert.")
+			}
+		}
+		return nil
 	case *domain.Provider:
 		if v.Protocol == domain.NativeSubscription {
 			return domain.Fail(domain.InvalidArgument, "Subscription providers are retired.", "Create a subscription service account and native model instead.")

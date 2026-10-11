@@ -154,3 +154,102 @@ snapshot authority. Atomic graph validation and explicit target mappings remain.
 Earlier version-5/6 behavior and prefix paragraphs describe their original
 amendments. Their earlier-format import statements are superseded by version 7;
 no retired format is reactivated. Existing source portable files are never rewritten.
+
+## Explicit Worker-local Codex imports
+
+`PreviewNativeConfigurationImport` and `ApplyNativeConfigurationImport` use
+System `NATIVE_CONFIGURATION_IMPORT_V1 = 85` and Worker
+`NATIVE_CONFIGURATION_IMPORT_V1 = 57`. The server never opens a Worker path.
+The CLI exposes `configuration native-preview --input PATH|- [--wait]` and
+`configuration native-apply --preview-job ID --input PATH|- [--wait]`.
+Both accept the existing global `--request-id`; uncertain retries must preserve
+that identity and the exact original descriptor or selection.
+
+The version-1 preview descriptor selects Codex, one current machine revision,
+an ordered list of at most 16 explicit home/project directories, and exactly one
+existing destination with its revision. The destination is `server-defaults`,
+`project`, or `agent-worker`; server/project choices include a complete typed
+harness source scope. Agent choices include the exact source scope and route
+index. No route, ancestor, host home, native-selected profile, account or target
+is inferred. One optional explicitly named profile is read after the base values
+of each selected file. Project scopes must form an explicitly selected ancestor
+to descendant chain. A home scope, when selected, precedes project scopes.
+
+The Worker reads only `config.toml` for a home or `.codex/config.toml` for a
+project, plus `AGENTS.override.md` and `AGENTS.md` in each selected directory.
+The first nonempty instruction candidate wins at each directory. Selected
+instruction packages retain their complete UTF-8 bytes and native layer order.
+Configured fallback instruction filenames, external instruction paths and other
+native keys are unsupported; they cannot expand the selected read set. The
+[native home instruction reader](https://github.com/openai/codex/blob/1f3f93473394b620b35580859b7e6864f7a9f948/codex-rs/codex-home/src/instructions/mod.rs)
+and [project instruction reader](https://github.com/openai/codex/blob/1f3f93473394b620b35580859b7e6864f7a9f948/codex-rs/core/src/agents_md.rs)
+define override precedence independently of DeliDev's explicit selection.
+
+The reader rejects links, nonregular files, noncanonical directory selections,
+malformed TOML, invalid UTF-8, changing file identity/size/time, and exceeded
+bounds. Each source file is at most 128 KiB; complete selected sources are at
+most 384 KiB. Observations contain at most 128 entries and 512 KiB. RPC
+selection descriptors are at most 64 KiB. Each fixed candidate has its original
+SHA-256 and presence marker, including missing override candidates. Creating an
+override after preview changes the proof. No source write, native launch,
+provider request, install, login, trust operation or automatic scope discovery
+occurs.
+
+Supported settings are model, reasoning effort, sandbox permission, approval
+policy and service tier. Native `danger-full-access` maps explicitly to
+DeliDev `full-access`; other selectors retain their reviewed values. Preview
+classifies unsupported and excluded entries without returning their values or
+native key text. Authentication, credentials, managed restrictions and generated
+memory are excluded. Instruction text with credential markers is excluded.
+Hooks, plugins and MCP produce only closed inert category descriptors: original
+commands, environment values, endpoints, identities, package paths and trust
+flags are never imported. These descriptors grant no execution, trust or
+credential authority.
+
+Apply independently selects exact setting, instruction and inert-package entry
+IDs and binds the complete original preview digest. Instructions attach to the
+selected Agent only when `attach_instructions` is explicitly true; otherwise
+packages remain independently selectable. Server/project import creates
+independent instruction packages without changing an Agent. Selected settings
+follow the original preview order, so a selected later layer overrides a selected
+earlier value of the same field. Unselected entries never become configuration.
+Agent model import changes only the selected route, preserving account links,
+route order, weights and other inline sources.
+
+The accepted preview and apply jobs retain the authenticated actor, server,
+Worker device, original process instance, machine revision and destination
+revision. Acceptance, dispatch and result publication revalidate all authorities.
+A new apply must use a successful original preview no older than 24 hours.
+The original Worker rereads the exact sources and the server compares the entire
+canonical observation digest before publication. Source drift, Worker replacement,
+revocation, incompatible selections, cancellation or destination conflicts publish
+an unchanged-configuration failure. Validation precedes every configuration write;
+selected settings, all packages, events, successful job outcome and report receipt
+publish in one transaction. Storage failure rolls back the complete report and
+retains its original retry identity.
+
+Request receipts contain only the original job reference. Exact replay observes
+that job before freshness checks and never reads a replacement source or creates
+another package, including after expiry, restart or later package deletion.
+Apply outcomes retain only resource references and revisions, without another
+instruction/configuration copy. Existing active execution snapshots and source
+files remain unchanged. Logs contain only operation/request/job/Worker identity,
+closed state and counts; no source paths, keys, values or contents are logged.
+
+Imported Templates carry a closed version-1 `native_import` descriptor and use
+resource schema 2. Existing mutable Templates stay schema 1. Imported packages
+are immutable at the storage boundary; ordinary saves cannot remove or change
+that descriptor. Their source digest, harness, package kind, order and complete
+contents survive portable version-7 export, preview, apply and exact reuse.
+Malformed/null metadata rejects. Inert packages and incompatible harness packages
+cannot be attached to Agents through direct saves, portable imports or execution
+admission. Ordinary explicit deletion remains subject to existing reference checks;
+deleting a package neither rewrites an execution snapshot nor allows its original
+import receipt to recreate it. Importing a fresh package requires a new explicit
+request and preview.
+
+Regression fixtures must cover selected layers/profiles, override precedence,
+secret exclusion, independent entry selection, all three destinations, source and
+destination conflicts, original Worker replacement/revocation, atomic publication,
+immutable/inert packages, portable preservation, exact replay and unchanged
+active snapshots. Fixtures do not establish installed-native/account acceptance.

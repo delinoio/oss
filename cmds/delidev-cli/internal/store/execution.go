@@ -166,6 +166,9 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 		if err != nil {
 			return empty, err
 		}
+		if template.NativeImport != nil && (template.NativeImport.Kind != domain.NativeConfigurationInstruction || template.NativeImport.Harness != agent.Harness) {
+			return empty, domain.Fail(domain.PermissionDenied, "The imported package cannot supply execution instructions.", "Select a compatible instruction package; inert extensions have no execution authority.")
+		}
 		instructionBytes += len(template.Contents)
 		if len(templates) > 0 {
 			instructionBytes += 2
