@@ -384,3 +384,190 @@ export class Kept {
     assert!(dep.contains("genericCall()"), "{dep}");
     assert!(!dep.contains("removable"), "{dep}");
 }
+
+// ---------------------------------------------------------------------------
+// unused-field-removal
+
+const FIELDS: &[(&str, &str)] = &[
+    (
+        "main.ts",
+        r#"import { Tracker } from "./tracker.ts";
+const tracker = new Tracker("a");
+tracker.bump();
+console.log(tracker.bump(), tracker.log.join(","));
+const config = { used: 1, unusedProperty: 2, alsoUnusedProperty: "x" };
+config.unusedProperty = effect("write");
+console.log(config.used, (config.unusedProperty = 7));
+function effect(tag: string): number {
+  console.log("effect", tag);
+  return 5;
+}
+"#,
+    ),
+    (
+        "tracker.ts",
+        r#"export class Tracker {
+  count = 0;
+  unusedInitialized = 42;
+  unusedDeclared?: string;
+  static unusedStatic = "static";
+  #unusedPrivate = 1;
+  log: string[] = [];
+  deadWrite = 0;
+  constructor(label: string) {
+    this.deadWrite = sideEffect("ctor");
+    this.#unusedPrivate = 2;
+    this.log.push(label);
+  }
+  bump() {
+    this.count += 1;
+    return this.count;
+  }
+}
+function sideEffect(tag: string) {
+  console.log("effect", tag);
+  return 1;
+}
+"#,
+    ),
+];
+
+#[test]
+fn fields_unread_fields_and_dead_writes_are_removed() {
+    let (temp, report) = run(FIELDS, &[FIELD]);
+    assert!(applied(&report, FIELD) >= 6, "{report:#}");
+    let tracker = emitted(temp.path(), "tracker.ts");
+    for dead in [
+        "unusedInitialized",
+        "unusedDeclared",
+        "unusedStatic",
+        "#unusedPrivate",
+        "deadWrite",
+    ] {
+        assert!(!tracker.contains(dead), "{dead} in {tracker}");
+    }
+    // The right-hand side of the dead write still runs.
+    assert!(tracker.contains("sideEffect(\"ctor\")"), "{tracker}");
+    assert!(tracker.contains("count"), "{tracker}");
+    let main = emitted(temp.path(), "main.ts");
+    assert!(!main.contains("unusedProperty"), "{main}");
+    assert!(!main.contains("alsoUnusedProperty"), "{main}");
+    assert!(main.contains("effect(\"write\")"), "{main}");
+    assert!(saved(&report) > 0);
+}
+
+#[test]
+fn fields_with_all_passes_enabled() {
+    let (temp, report) = run_all(FIELDS);
+    assert!(applied(&report, FIELD) >= 6, "{report:#}");
+    assert!(!emitted(temp.path(), "tracker.ts").contains("unusedInitialized"));
+}
+
+#[test]
+fn fields_disabled_never_runs() {
+    let (temp, report) = run(FIELDS, &[METHOD, RESIDUAL]);
+    assert_eq!(applied(&report, FIELD), 0);
+    assert!(emitted_or_source(temp.path(), "tracker.ts").contains("unusedInitialized"));
+}
+
+/// Own properties of objects that escape stay: serialization, enumeration,
+/// spread, destructuring, `this` escapes, inheritance, extracted methods
+/// and impure initializers.
+#[test]
+fn fields_of_observable_objects_stay() {
+    let (temp, report) = run(
+        &[
+            (
+                "main.ts",
+                r#"import {
+  Serialized, Enumerated, Spread, Destructured, SelfEscaping, Child, Extracted, Impure,
+  StaticViaInstance,
+} from "./dep.ts";
+console.log(JSON.stringify(new Serialized()));
+console.log(Object.keys(new Enumerated()).join(","));
+const spread = new Spread();
+console.log(JSON.stringify({ ...spread }));
+const { hiddenRead } = new Destructured();
+console.log(hiddenRead);
+new SelfEscaping();
+console.log(new Child().base);
+const extracted = new Extracted();
+const other = {};
+const setter = extracted.set;
+setter.call(other);
+console.log(JSON.stringify(other));
+console.log(new Impure().kept);
+const options = { a: 1, b: 2 };
+console.log(Object.keys(options).length);
+const viaInstance = new StaticViaInstance();
+console.log(Object.keys(viaInstance.constructor).join(","));
+"#,
+            ),
+            (
+                "dep.ts",
+                r#"export class Serialized { serializedOnly = 1; }
+export class Enumerated { enumeratedOnly = 2; }
+export class Spread { spreadOnly = 3; }
+export class Destructured { hiddenRead = 4; }
+const registry: object[] = [];
+export class SelfEscaping {
+  escapingField = 5;
+  constructor() { registry.push(this); console.log(Object.keys(registry[0]).length); }
+}
+class Base { base = "base"; }
+export class Child extends Base { childOnly = 6; }
+export class Extracted {
+  written = 0;
+  set() { this.written = 1; }
+}
+function effect() { console.log("initializer effect"); return 7; }
+export class Impure {
+  kept = 0;
+  impureField = effect();
+}
+export class StaticViaInstance { static staticOnly = 8; }
+"#,
+            ),
+        ],
+        &[FIELD],
+    );
+    assert_eq!(applied(&report, FIELD), 0, "{report:#}");
+    let dep = emitted_or_source(temp.path(), "dep.ts");
+    for live in [
+        "serializedOnly",
+        "enumeratedOnly",
+        "spreadOnly",
+        "hiddenRead",
+        "escapingField",
+        "childOnly",
+        "this.written = 1",
+        "impureField",
+        "staticOnly",
+    ] {
+        assert!(dep.contains(live), "{live} missing in {dep}");
+    }
+    assert!(emitted_or_source(temp.path(), "main.ts").contains("b: 2"));
+    let reasons = skipped_reasons(&report, FIELD);
+    for reason in ["escapes", "inheritance", "mutation", "side_effects"] {
+        assert!(reasons.iter().any(|r| r == reason), "{reason}: {reasons:?}");
+    }
+}
+
+#[test]
+fn fields_public_entry_exports_stay() {
+    let (temp, report) = run(
+        &[(
+            "main.ts",
+            r#"export class Api {
+  unreadPublicField = 1;
+  used = 2;
+}
+console.log(new Api().used);
+"#,
+        )],
+        &[FIELD],
+    );
+    assert_eq!(applied(&report, FIELD), 0);
+    assert!(skipped_reasons(&report, FIELD).contains(&"public_export".to_owned()));
+    assert!(emitted_or_source(temp.path(), "main.ts").contains("unreadPublicField"));
+}

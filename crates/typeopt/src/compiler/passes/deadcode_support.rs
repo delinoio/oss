@@ -1167,20 +1167,26 @@ impl Keys {
     }
 }
 
-/// Text that is safe as an expression statement or operand when it replaces
-/// an assignment: parenthesized unless it is a plain call, identifier or
-/// literal form that cannot be misparsed.
-pub(super) fn evaluated(text: &str, statement: bool) -> String {
+/// Replacement text for an assignment `target = value` that keeps only
+/// the evaluation of `value`. The value fills the same grammar slot, so it
+/// only needs parentheses where it starts an expression statement or an
+/// arrow function body and could be misparsed as a block or declaration.
+pub(super) fn evaluated(assignment: Node, text: &str) -> String {
+    let outer = walk_up_outer(assignment);
+    let parent = outer.parent();
+    let leading = outer == assignment
+        && (parent.kind() == SyntaxKind::ExpressionStatement
+            || (parent.kind() == SyntaxKind::ArrowFunction && parent.body() == outer));
     let trimmed = text.trim_start();
     let ambiguous = trimmed.starts_with('{')
         || trimmed.starts_with("function")
         || trimmed.starts_with("class")
         || trimmed.starts_with("let")
         || trimmed.starts_with("async");
-    if statement && !ambiguous {
-        text.to_owned()
-    } else {
+    if leading && ambiguous {
         format!("({text})")
+    } else {
+        text.to_owned()
     }
 }
 
@@ -1196,14 +1202,24 @@ pub(super) struct Confinement {
     pub accesses: HashMap<String, Vec<Node>>,
     /// Methods that are read without being called on the receiver.
     pub extracted: HashSet<String>,
-    /// Fields and accessors whose values are called with the receiver.
-    pub field_calls: HashSet<String>,
+    /// Why an instance may reach other code, if it may.
+    pub instances: Option<crate::plan::Reason>,
+    /// Why the constructor may reach other code, if it may. Instances that
+    /// such code creates are not confined either.
+    pub constructor: Option<crate::plan::Reason>,
 }
 
-/// Proves that every instance and the constructor of `class` are only used
-/// as receivers of accesses to the class's own declared members: no value of
-/// the class reaches other code, reflection, enumeration or external code.
-/// Returns the reason when the proof fails.
+/// Which values of a class an access goes through.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum Side {
+    Instance,
+    Constructor,
+}
+
+/// Proves that the instances and the constructor of `class` are only used
+/// as receivers of accesses to the class's own declared members: no such
+/// value reaches other code, reflection, enumeration or external code. Each
+/// side records why its proof fails; class-wide obstacles fail both.
 pub(super) fn confine(
     ctx: &mut Ctx,
     class: Node,
@@ -1224,29 +1240,30 @@ pub(super) fn confine(
     {
         return Err(Reason::Inheritance);
     }
-    let mut instance_members = HashMap::<&'static str, SyntaxKind>::new();
-    let mut static_members = HashMap::<&'static str, SyntaxKind>::new();
+    let mut members: HashMap<(Side, &'static str), SyntaxKind> = HashMap::new();
     for member in class.members().iter() {
         if !member.decorators().is_empty() {
             return Err(Reason::Decorator);
         }
         if member.kind() == SyntaxKind::Constructor {
             for parameter in member.parameters().iter() {
-                if !parameter.modifier_flags().is_empty() {
-                    if let Some(name) = static_name(parameter) {
-                        instance_members.insert(name, SyntaxKind::PropertyDeclaration);
-                    }
+                if !parameter.decorators().is_empty() {
+                    return Err(Reason::Decorator);
+                }
+                if !parameter.modifier_flags().is_empty()
+                    && let Some(name) = static_name(parameter)
+                {
+                    members.insert((Side::Instance, name), SyntaxKind::Parameter);
                 }
             }
             continue;
         }
         if matches!(
             member.kind(),
-            SyntaxKind::SemicolonClassElement | SyntaxKind::IndexSignature
+            SyntaxKind::SemicolonClassElement
+                | SyntaxKind::IndexSignature
+                | SyntaxKind::ClassStaticBlockDeclaration
         ) {
-            continue;
-        }
-        if member.kind() == SyntaxKind::ClassStaticBlockDeclaration {
             continue;
         }
         let Some(name) = static_name(member) else {
@@ -1255,15 +1272,21 @@ pub(super) fn confine(
         if PROTOCOL_NAMES.contains(&name) {
             return Err(Reason::SpecialProperty);
         }
-        if is_static(member) {
-            static_members.insert(name, member.kind());
+        let side = if is_static(member) {
+            Side::Constructor
         } else {
-            instance_members.insert(name, member.kind());
-        }
+            Side::Instance
+        };
+        members.insert((side, name), member.kind());
     }
-    let mut confinement = Confinement {
-        accesses: HashMap::new(),
-        extracted: HashSet::new(),
+    let mut proof = Proof {
+        members: &members,
+        confinement: Confinement {
+            accesses: HashMap::new(),
+            extracted: HashSet::new(),
+            instances: None,
+            constructor: None,
+        },
         field_calls: HashSet::new(),
     };
     // The constructor value: only `new C(...)`, `C.staticMember` and type
@@ -1274,11 +1297,12 @@ pub(super) fn confine(
             RefKind::Declaration | RefKind::Alias | RefKind::Type => {}
             RefKind::New => {
                 let expression = walk_up_outer(r.node).parent();
-                instance_value(ctx, expression, &instance_members, &mut confinement)?;
+                let result = proof.instance_value(ctx, expression);
+                proof.fail(Side::Instance, result);
             }
             RefKind::Read | RefKind::Call | RefKind::Write => {
-                let outer = walk_up_outer(r.node);
-                member_access(outer, &static_members, &mut confinement)?;
+                let result = proof.member_access(walk_up_outer(r.node), Side::Constructor);
+                proof.fail(Side::Constructor, result);
             }
         }
     }
@@ -1295,120 +1319,139 @@ pub(super) fn confine(
         let owner = this_owner(this);
         if owner.parent() != class {
             // A nested function or class binds its own `this`. Such a
-            // function only receives an instance as `this` through a call
-            // that is itself an escape (an instance argument or a call
+            // function only receives a value of the class as `this` through
+            // a call that is itself an escape (an argument, or a call
             // through a non-arrow field), which the other checks reject.
             continue;
         }
-        let members = if is_static(owner) || owner.kind() == SyntaxKind::ClassStaticBlockDeclaration
-        {
-            &static_members
+        let side = if is_static(owner) || owner.kind() == SyntaxKind::ClassStaticBlockDeclaration {
+            Side::Constructor
         } else {
-            &instance_members
+            Side::Instance
         };
-        member_access(walk_up_outer(this), members, &mut confinement)?;
+        let result = proof.member_access(walk_up_outer(this), side);
+        proof.fail(side, result);
     }
     // A call through a field passes the receiver as `this` to the stored
     // function. Only arrow initializers that are never reassigned ignore it.
-    for name in confinement.field_calls.clone() {
+    for (side, name) in proof.field_calls.clone() {
         let arrow = class.members().iter().any(|member| {
             member.kind() == SyntaxKind::PropertyDeclaration
+                && (side == Side::Constructor) == is_static(member)
                 && static_name(member) == Some(name.as_str())
                 && member.initializer().is_some()
                 && skip_outer(member.initializer()).kind() == SyntaxKind::ArrowFunction
         });
-        let written = confinement
+        let written = proof
+            .confinement
             .accesses
             .get(&name)
             .is_some_and(|accesses| accesses.iter().any(|&a| is_write_access(a)));
         if !arrow || written {
-            return Err(Reason::Escapes);
+            proof.fail(side, Err(Reason::Escapes));
         }
+    }
+    let mut confinement = proof.confinement;
+    // Code that receives the constructor can create unconfined instances.
+    if confinement.instances.is_none() {
+        confinement.instances = confinement.constructor;
     }
     Ok(confinement)
 }
 
-/// A `new C(...)` value: discarded, used directly as a member receiver, or
-/// bound to a `const` whose every use is a member receiver.
-fn instance_value(
-    ctx: &mut Ctx,
-    expression: Node,
-    members: &HashMap<&'static str, SyntaxKind>,
-    confinement: &mut Confinement,
-) -> Result<(), crate::plan::Reason> {
-    use crate::plan::Reason;
-    let outer = walk_up_outer(expression);
-    let parent = outer.parent();
-    match parent.kind() {
-        SyntaxKind::ExpressionStatement => Ok(()),
-        SyntaxKind::PropertyAccessExpression if parent.expression() == outer => {
-            member_access(outer, members, confinement)
-        }
-        SyntaxKind::VariableDeclaration
-            if parent.initializer() == outer
-                && parent.name().kind() == SyntaxKind::Identifier
-                && parent.parent().flags().intersects(NodeFlags::CONST) =>
-        {
-            let binding = ctx.resolve(parent.name());
-            if binding.is_nil()
-                || ctx.public.contains(&binding)
-                || ctx.js_referenced.contains(&binding)
-            {
-                return Err(Reason::Escapes);
-            }
-            let refs = ctx.refs(binding).to_vec();
-            for r in refs {
-                match r.kind {
-                    RefKind::Declaration | RefKind::Type => {}
-                    RefKind::Read | RefKind::Call => {
-                        member_access(walk_up_outer(r.node), members, confinement)?
-                    }
-                    _ => return Err(Reason::Escapes),
-                }
-            }
-            Ok(())
-        }
-        _ => Err(Reason::Escapes),
-    }
+struct Proof<'a> {
+    members: &'a HashMap<(Side, &'static str), SyntaxKind>,
+    confinement: Confinement,
+    field_calls: HashSet<(Side, String)>,
 }
 
-/// `receiver.member` where `member` is declared by the class on this side.
-/// Calls through fields must target arrow functions; other calls pass the
-/// receiver as `this` to the class's own methods only.
-fn member_access(
-    receiver: Node,
-    members: &HashMap<&'static str, SyntaxKind>,
-    confinement: &mut Confinement,
-) -> Result<(), crate::plan::Reason> {
-    use crate::plan::Reason;
-    let access = receiver.parent();
-    if access.kind() != SyntaxKind::PropertyAccessExpression || access.expression() != receiver {
-        return Err(Reason::Escapes);
+impl Proof<'_> {
+    fn fail(&mut self, side: Side, result: Result<(), crate::plan::Reason>) {
+        if let Err(reason) = result {
+            let slot = match side {
+                Side::Instance => &mut self.confinement.instances,
+                Side::Constructor => &mut self.confinement.constructor,
+            };
+            slot.get_or_insert(reason);
+        }
     }
-    let name = access.name().text();
-    let Some(&kind) = members.get(name) else {
-        return Err(Reason::Escapes);
-    };
-    let outer = walk_up_outer(access);
-    let holder = outer.parent();
-    let called = matches!(
-        holder.kind(),
-        SyntaxKind::CallExpression | SyntaxKind::TaggedTemplateExpression
-    ) && (holder.kind() == SyntaxKind::CallExpression && holder.expression() == outer
-        || holder.kind() == SyntaxKind::TaggedTemplateExpression && holder.tag() == outer);
-    if called && kind != SyntaxKind::MethodDeclaration {
-        confinement.field_calls.insert(name.to_owned());
+
+    /// A `new C(...)` value: discarded, used directly as a member receiver,
+    /// or bound to a `const` whose every use is a member receiver.
+    fn instance_value(
+        &mut self,
+        ctx: &mut Ctx,
+        expression: Node,
+    ) -> Result<(), crate::plan::Reason> {
+        use crate::plan::Reason;
+        let outer = walk_up_outer(expression);
+        let parent = outer.parent();
+        match parent.kind() {
+            SyntaxKind::ExpressionStatement => Ok(()),
+            SyntaxKind::PropertyAccessExpression if parent.expression() == outer => {
+                self.member_access(outer, Side::Instance)
+            }
+            SyntaxKind::VariableDeclaration
+                if parent.initializer() == outer
+                    && parent.name().kind() == SyntaxKind::Identifier
+                    && (parent.parent().flags() & NodeFlags::BLOCK_SCOPED) == NodeFlags::CONST =>
+            {
+                let binding = ctx.resolve(parent.name());
+                if binding.is_nil()
+                    || ctx.public.contains(&binding)
+                    || ctx.js_referenced.contains(&binding)
+                {
+                    return Err(Reason::Escapes);
+                }
+                let refs = ctx.refs(binding).to_vec();
+                for r in refs {
+                    match r.kind {
+                        RefKind::Declaration if r.node == parent.name() => {}
+                        RefKind::Type => {}
+                        RefKind::Read | RefKind::Call => {
+                            self.member_access(walk_up_outer(r.node), Side::Instance)?
+                        }
+                        _ => return Err(Reason::Escapes),
+                    }
+                }
+                Ok(())
+            }
+            _ => Err(Reason::Escapes),
+        }
     }
-    if !called && kind == SyntaxKind::MethodDeclaration {
-        confinement.extracted.insert(name.to_owned());
+
+    /// `receiver.member` where `member` is declared by the class on this
+    /// side. Calls through fields must target arrow functions; other calls
+    /// pass the receiver as `this` to the class's own methods only.
+    fn member_access(&mut self, receiver: Node, side: Side) -> Result<(), crate::plan::Reason> {
+        use crate::plan::Reason;
+        let access = receiver.parent();
+        if access.kind() != SyntaxKind::PropertyAccessExpression || access.expression() != receiver
+        {
+            return Err(Reason::Escapes);
+        }
+        let name = access.name().text();
+        let Some(&kind) = self.members.get(&(side, name)) else {
+            return Err(Reason::Escapes);
+        };
+        let outer = walk_up_outer(access);
+        let holder = outer.parent();
+        if holder.kind() == SyntaxKind::DeleteExpression {
+            return Err(Reason::ObservableOperation);
+        }
+        let called = (holder.kind() == SyntaxKind::CallExpression && holder.expression() == outer)
+            || (holder.kind() == SyntaxKind::TaggedTemplateExpression && holder.tag() == outer);
+        if called && kind != SyntaxKind::MethodDeclaration {
+            self.field_calls.insert((side, name.to_owned()));
+        }
+        if !called && kind == SyntaxKind::MethodDeclaration {
+            self.confinement.extracted.insert(name.to_owned());
+        }
+        self.confinement
+            .accesses
+            .entry(name.to_owned())
+            .or_default()
+            .push(access);
+        Ok(())
     }
-    if holder.kind() == SyntaxKind::DeleteExpression {
-        return Err(Reason::ObservableOperation);
-    }
-    confinement
-        .accesses
-        .entry(name.to_owned())
-        .or_default()
-        .push(access);
-    Ok(())
 }
