@@ -232,7 +232,9 @@ export function AppearanceControls({
     values: readonly (string | number)[],
     grouped = false,
   ) => (
-    <label className={grouped ? "appearance-disclosure-option" : "appearance-row"}>
+    <label
+      className={grouped ? "appearance-disclosure-option" : "appearance-row"}
+    >
       {text(key)}
       <select
         aria-labelledby={`${rowId}-${key}-label`}
@@ -270,7 +272,10 @@ export function AppearanceControls({
       disabled={blocked}
     >
       <legend>{label(name)}</legend>
-      <p id={`${rowId}-${name}-section-help`} className="appearance-section-help">
+      <p
+        id={`${rowId}-${name}-section-help`}
+        className="appearance-section-help"
+      >
         {label(`help.${name}Section`)}
       </p>
       {children}
@@ -305,7 +310,10 @@ export function AppearanceControls({
         aria-describedby={`appearance-scope ${rowId}-theme-section-help`}
       >
         <legend>{copy("appearance.theme_efb52e")}</legend>
-        <p id={`${rowId}-theme-section-help`} className="appearance-section-help">
+        <p
+          id={`${rowId}-theme-section-help`}
+          className="appearance-section-help"
+        >
           {label("help.themeSection")}
         </p>
         {modeControls}
@@ -438,7 +446,11 @@ export function AppearanceControls({
               <small>{label("help.disclosureDefaults")}</small>
             </span>
             <div className="appearance-disclosure-controls">
-              {select("tool_disclosure", Object.values(DisclosureDefault), true)}
+              {select(
+                "tool_disclosure",
+                Object.values(DisclosureDefault),
+                true,
+              )}
               {select(
                 "reasoning_disclosure",
                 Object.values(DisclosureDefault),

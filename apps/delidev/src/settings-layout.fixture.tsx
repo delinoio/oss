@@ -1318,7 +1318,10 @@ createRoot(document.getElementById("root")!).render(
         read: async () => appearanceSnapshot,
         update: async (next, revision, preferences) => {
           if (revision !== appearanceSnapshot.revision)
-            return { ...appearanceSnapshot, problem: AppearanceProblem.Changed };
+            return {
+              ...appearanceSnapshot,
+              problem: AppearanceProblem.Changed,
+            };
           appearanceSnapshot = {
             revision: revision + 1,
             theme: next,

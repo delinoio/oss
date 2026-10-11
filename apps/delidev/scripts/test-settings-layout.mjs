@@ -2257,7 +2257,9 @@ try {
             .locator(".appearance-settings [role=status]")
             .filter({
               hasText:
-                fixtureLanguage === "en" ? "Theme saved." : "테마를 저장했습니다.",
+                fixtureLanguage === "en"
+                  ? "Theme saved."
+                  : "테마를 저장했습니다.",
             })
             .waitFor();
           const body = page.locator(".appearance-content");
@@ -2269,12 +2271,15 @@ try {
               width,
               overflow: node.scrollWidth > node.clientWidth,
               rowColumns: getComputedStyle(row).gridTemplateColumns.split(" "),
-              tileColumns: getComputedStyle(tiles).gridTemplateColumns.split(" "),
+              tileColumns:
+                getComputedStyle(tiles).gridTemplateColumns.split(" "),
               minimumRows: Array.from(
                 node.querySelectorAll(".appearance-row"),
               ).every((row) => row.getBoundingClientRect().height >= 64),
               described: Array.from(
-                node.querySelectorAll(".appearance-row input, .appearance-row select"),
+                node.querySelectorAll(
+                  ".appearance-row input, .appearance-row select",
+                ),
               ).every((control) => {
                 const label = document.getElementById(
                   control.getAttribute("aria-labelledby"),
@@ -2289,12 +2294,20 @@ try {
           assert(geometry.width <= 880 && !geometry.overflow);
           assert.equal(geometry.minimumRows, true);
           assert.equal(geometry.described, true);
-          assert.equal(geometry.rowColumns.length, geometry.width < 640 ? 1 : 2);
+          assert.equal(
+            geometry.rowColumns.length,
+            geometry.width < 640 ? 1 : 2,
+          );
           if (geometry.width >= 640)
             assert.equal(geometry.rowColumns[1], "220px");
-          assert.equal(geometry.tileColumns.length, geometry.width < 640 ? 1 : 3);
           assert.equal(
-            await body.locator(".appearance-disclosure-controls select").count(),
+            geometry.tileColumns.length,
+            geometry.width < 640 ? 1 : 3,
+          );
+          assert.equal(
+            await body
+              .locator(".appearance-disclosure-controls select")
+              .count(),
             3,
           );
           assert.equal(
@@ -2302,7 +2315,9 @@ try {
             custom ? 1 : 0,
           );
           assert.equal(
-            await body.locator("fieldset:disabled input[type=checkbox]").count(),
+            await body
+              .locator("fieldset:disabled input[type=checkbox]")
+              .count(),
             4,
           );
           assert.equal(

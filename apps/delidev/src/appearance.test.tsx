@@ -595,7 +595,9 @@ test("keeps described settings, separate disclosure choices and unavailable rend
   expect(screen.getByText("Changes save automatically.")).toBeTruthy();
   expect(
     Array.from(
-      view.container.querySelectorAll(".appearance-settings > fieldset > legend"),
+      view.container.querySelectorAll(
+        ".appearance-settings > fieldset > legend",
+      ),
     ).map((legend) => legend.textContent),
   ).toEqual(["Theme", "Composer", "Session status", "Display", "Images"]);
   for (const control of view.container.querySelectorAll(
