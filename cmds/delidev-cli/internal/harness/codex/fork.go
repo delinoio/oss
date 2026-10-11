@@ -184,6 +184,9 @@ func (c *Client) forkTurnsLocked(ctx context.Context, thread domain.ID) ([]json.
 				}
 				seen["item:"+identity.ID] = true
 				if identity.Type == "functionCallOutput" {
+					if c.sidechat != "" {
+						return nil, unsupportedFork()
+					}
 					if _, _, err := decodeFunctionOutput(item); err != nil {
 						return nil, unsupportedFork()
 					}

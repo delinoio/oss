@@ -125,6 +125,10 @@ func TestFunctionOutputPreservesProtectedHistoryAndDigests(t *testing.T) {
 			t.Fatal("original history changed", managed, err)
 		}
 	}
+	c.sidechat = ReadOnlySidechatV1
+	if _, err := c.forkTurnsLocked(context.Background(), c.thread); err == nil {
+		t.Fatal("read-only Sidechat accepted private function output history")
+	}
 	for _, sentinel := range []string{"private-image-sentinel", "private-file-sentinel", "private-audio-sentinel", "private-encrypted-sentinel"} {
 		if !bytes.Contains(history[0], []byte(sentinel)) {
 			t.Fatal("protected native evidence lost")
