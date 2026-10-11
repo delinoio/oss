@@ -20,5 +20,9 @@ if (required.some((name) => !process.env[name])) {
   process.stderr.write("fake Go received an unvalidated name\n");
   process.exitCode = 4;
 } else if (eventLog) {
-  await appendFile(eventLog, `${JSON.stringify({ tool: "go", action })}\n`, "utf8");
+  await appendFile(
+    eventLog,
+    `${JSON.stringify({ tool: "go", action })}\n`,
+    "utf8",
+  );
 }

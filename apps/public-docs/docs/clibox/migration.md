@@ -6,12 +6,12 @@ Published version **0.2.0** uses **`run env`** for environment execution, reject
 
 The port/hash names and option behavior below are already released in 0.1.6. Update scripts using earlier syntax when upgrading. The previous port/hash command names are rejected with exit code 2 and migration guidance; they are not aliases.
 
-| Previous use | New use |
-| --- | --- |
-| `clibox port which 3000` | `clibox port list 3000` |
-| `clibox hash encode --text hello` | `clibox hash compute --text hello` |
-| `clibox port which 3000 --quiet` (PIDs) | `clibox port list 3000 --pids` |
-| `--output -` (a file named `-`) | `--output ./-` |
+| Previous use                            | New use                            |
+| --------------------------------------- | ---------------------------------- |
+| `clibox port which 3000`                | `clibox port list 3000`            |
+| `clibox hash encode --text hello`       | `clibox hash compute --text hello` |
+| `clibox port which 3000 --quiet` (PIDs) | `clibox port list 3000 --pids`     |
+| `--output -` (a file named `-`)         | `--output ./-`                     |
 
 `--quiet` suppresses stdout results on port listing/termination, waits, and hash verification. It never suppresses failure diagnostics or changes the exit status. It conflicts with `--json`; `port list --pids` conflicts with both.
 

@@ -21,15 +21,19 @@ Schema 27 adds only the private diagnostic table/indexes, using the existing syn
 The desktop validates the complete page before display, preserves exact bigint revisions/durations, labels native versus HTTP provenance and provider-acceptance uncertainty, supports an exact execution filter, explicit refresh/pagination, Escape closure and restored trigger focus, and disposes diagnostic queries on close. Reads create no mutation intent or automatic retry. Unsupported server capability remains explicitly unavailable.
 
 ## Scope
+
 `cmds/delidev-cli/internal/server/diagnostics.go`, the domain diagnostic report, store capacity measurements and credential inspection boundary implement `delidev doctor` and `SystemService.GetDoctor`. The desktop Settings presentation consumes the same server report. This contract implements bounded metadata and existing protected-reference observations; it does not claim the complete issue's remaining integrations or platform acceptance.
 
 ## Runtime and Language
+
 Go owns observations and authorization. TypeScript renders the report through direct authenticated Connect RPC. Native credential and filesystem adapters use the existing server platform boundary; Rust does not inspect account secrets.
 
 ## Users and Operators
+
 The single server owner and its authorized paired clients may request diagnostics. Workers supply retained installation/version metadata through their existing authenticated observations; doctor does not start or probe a Worker or an installed harness.
 
 ## Interfaces and Contracts
+
 `delidev server overview` and `SystemService.GetOverview` provide a separate lightweight owner/client-only presentation observation. One authorized, three-second-bounded database read counts retained active execution ownership (including uncertain cleanup), current open unanswered interactions in active sessions, all registered Workers and currently connected Workers. Inbox read state does not affect pending counts. A Worker is connected only with an independently sampled live stream, enabled machine, unrevoked Worker device and fresh heartbeat lease; this is not selected-account or harness readiness. An oversized live inventory fails without partial counts. Exact uint64 values preserve zero and large counts. Observation time plus half-open UTC midnight-to-observation usage boundaries let clients request today's existing usage summary without relying on the client clock. No account-store inspection, inference, filesystem work, mutation, source document or credential is involved; ordinary `server status` remains unchanged.
 
 `GetDoctor` keeps its existing empty request and `report_json` response. `delidev doctor` emits the same JSON in the ordinary CLI result envelope. Version 2 adds `schema_version`, UTC observation time, running server/protocol/database schema versions, server platform, storage measurements, Worker observations and account credential observations. The original version, server identity, bound endpoint, database read result, loaded owner credential and `inference_probes: false` remain compatible with legacy consumers. A loaded owner credential is not proof of protected account-store availability.
@@ -59,30 +63,37 @@ Desktop layout, accessible disclosures, visible failure ownership and opening li
 - Follow `cmds-delidev-diagnostics-contract.md` for doctor. Inspect only existing exact credential references under the account gate, clear returned bytes, never initialize/repair vaults or enumerate native accounts, and recheck connection generations plus client authorization before publication. Keep database/native I/O separate, capacities as decimal strings, inventories explicitly bounded and raw paths/errors out of reports/logs.
 
 ## Storage
+
 Doctor never creates mutation receipts/events, repairs SQLite, runs a checkpoint/vacuum, creates missing vault state, reconciles credential scratch files or writes/removes native keys. Read SQLite page count/page size and resource-kind counts in one read transaction. Outside the transaction, inspect private regular database/WAL file sizes and OS filesystem capacity/space available to the server user. A missing optional WAL is zero; failed/unavailable measurements remain absent. Preserve already observed fields after a subsequent measurement failure, with a failed/unavailable result. Counts may also be incomplete on failure. Physical database bytes, WAL bytes and logical database bytes overlap and must not be added or interpreted as reclaimable storage. Backups, workspace disk usage, native history and user files are not recursively scanned.
 
 All uint64 sizes/counts are canonical decimal JSON strings, including zero. The desktop validates their range and formats with BigInt; it must not convert them through floating-point numbers. Missing/invalid fields stay unavailable rather than becoming zero.
 
 ## Security
+
 Revalidate paired-client authorization before database/native reads and again before report publication. Serialize each account inspection under the normal account gate, release SQLite transactions before native work and recheck all original connection identities at publication. Reuse the already open protected vault when available. Otherwise use `credentials.OpenExisting`: require the existing private directory, existing regular private lock, exclusive non-creating OS lock and matching server pin; never initialize or repair any state. The temporary vault is read-only and rejects Put/Delete, is closed after inspection, and is never installed as the normal writable server vault.
 
 The report/log boundary retains stable error codes and locally owned guidance only, not raw OS/provider diagnostics, executable paths, secret bytes, prompts or credential enumeration. On macOS, reading an exact protected reference may display an OS-owned Keychain authentication prompt in the server user's session under the credential contract. Approval continues the original read; cancellation or inability to display the prompt returns a safe failure without modifying product records. OS authorization may unlock the Keychain, but Doctor never collects a password or invokes a separate unlock operation. Linux and Windows inspection remains noninteractive. No platform accesses unrelated native entries. Ordinary tests use mock native storage, absent scopes or connected keyless fixture accounts; they do not read the user's credentials.
 
 ## Logging
+
 `doctor_observed` logs correlation, storage classification, inventory counts and truncation flags. Existing credential-read failures log only safe operation/owner/purpose/code fields; `AccountLogin` read failures omit the credential reference ID because it is the private subscription generation. API credential reads retain their separate original-reference diagnostics. A diagnostic request may produce operational logs, but it cannot alter product state. No measured content or secret value belongs in logs.
 
 ## Build and Test
+
 Run `go test -race ./cmds/delidev-cli/...` and `go vet ./cmds/delidev-cli/...`. Read-only credential tests cover exclusive scope locks, non-creating lock access, missing pins, preserved scratch files, failed writes/deletes and unchanged sealed bytes. Server/store tests cover real temporary SQLite/filesystem measurements, exact secret references and clearing, missing vault preservation, superseded connections, revocation after native access, explicit truncation, cancellation and metadata/secret leak checks. Windows/Linux cross-builds prove compilation only. Run `pnpm test` in `apps/delidev`; component tests cover partial/legacy/unknown reports, precision, stale refresh and inert guidance, and actual temporary Go integration checks the Settings report without user credentials or inference.
 
 ## Dependencies and Integrations
+
 Uses existing Connect System service, single-authority store, Worker stream registry and native credential adapters. No external monitoring service/exporter or additional reporting credentials are introduced.
 
 ## Change Triggers
+
 Update scoped CLI/desktop AGENTS, the protocol and desktop contracts, project index and validation records in pull requests, issues and CI logs/artifacts when report schemas, scope, limits, native access or presentation guarantees change. New credential families require their own exact ownership and read-only inspection contract before doctor may access them.
 
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - [DeliDev project](project-delidev.md)
 - [Issue requirements](cmds-delidev-requirements.md)
 - [CLI/server contract](cmds-delidev-contract.md)
@@ -92,4 +103,5 @@ Instruction-file updates in this requirement apply only to changes in developmen
 - [Repository defaults](repository-defaults.md)
 
 ### Codex native Fast tier
+
 Original Codex native input records preserve exact selected/effective `fast` through the closed native tier filter. This applies only to original Codex native source evidence; other native harnesses and provider HTTP observations retain their existing tier domains. Unknown values stay unavailable/redacted. The server projection uses the immutable execution configuration and original applied-setting event, never current Worker settings or requested-to-effective substitution. Frontend validation retains the same source/harness boundary. Native Fast observations grant no billing, acceleration, entitlement, account or retry authority.

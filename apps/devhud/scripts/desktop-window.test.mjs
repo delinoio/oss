@@ -11,10 +11,18 @@ function readNormalizedSource(path) {
   return readFileSync(path, "utf8").replaceAll("\r\n", "\n");
 }
 
-const desktopHost = readNormalizedSource(join(scriptsDirectory, "../src-tauri/src/main.rs"));
-const mobileHost = readNormalizedSource(join(scriptsDirectory, "../src-tauri/src/lib.rs"));
-const nativePlugin = readNormalizedSource(join(scriptsDirectory, "../src-tauri/src/native_plugin.rs"));
-const tauriConfig = JSON.parse(readFileSync(join(scriptsDirectory, "../src-tauri/tauri.conf.json"), "utf8"));
+const desktopHost = readNormalizedSource(
+  join(scriptsDirectory, "../src-tauri/src/main.rs"),
+);
+const mobileHost = readNormalizedSource(
+  join(scriptsDirectory, "../src-tauri/src/lib.rs"),
+);
+const nativePlugin = readNormalizedSource(
+  join(scriptsDirectory, "../src-tauri/src/native_plugin.rs"),
+);
+const tauriConfig = JSON.parse(
+  readFileSync(join(scriptsDirectory, "../src-tauri/tauri.conf.json"), "utf8"),
+);
 
 function segment(source, start, end) {
   const startIndex = source.indexOf(start);
@@ -37,15 +45,23 @@ test("desktop CEF main window is natively maximized only at creation", () => {
   const maximized = builder.indexOf(".maximized(true)");
   const build = builder.indexOf(".build()?");
 
-  assert(maximized >= 0, "desktop main window must request native maximization");
-  assert(maximized < build, "desktop maximization must be configured before build");
+  assert(
+    maximized >= 0,
+    "desktop main window must request native maximization",
+  );
+  assert(
+    maximized < build,
+    "desktop maximization must be configured before build",
+  );
   assert.match(builder, /\.inner_size\(960\.0, 640\.0\)/u);
   assert.match(builder, /\.min_inner_size\(640\.0, 480\.0\)/u);
   assert.doesNotMatch(builder, /\.fullscreen\(/u);
 });
 
 test("configuration preserves the desktop restored and minimum dimensions", () => {
-  const mainWindow = tauriConfig.app.windows.find((window) => window.label === "main");
+  const mainWindow = tauriConfig.app.windows.find(
+    (window) => window.label === "main",
+  );
 
   assert.deepEqual(mainWindow, {
     label: "main",
@@ -61,13 +77,22 @@ test("configuration preserves the desktop restored and minimum dimensions", () =
 
 test("desktop restoration and mobile creation never re-maximize", () => {
   for (const operations of [
-    restoredWindowOperations(desktopHost, "fn restore_main_window<R: tauri::Runtime>"),
-    restoredWindowOperations(nativePlugin, "fn restore_main_window<R: Runtime>"),
+    restoredWindowOperations(
+      desktopHost,
+      "fn restore_main_window<R: tauri::Runtime>",
+    ),
+    restoredWindowOperations(
+      nativePlugin,
+      "fn restore_main_window<R: Runtime>",
+    ),
   ]) {
     assert.match(operations, /window\.unminimize\(\)/u);
     assert.match(operations, /window\.show\(\)/u);
     assert.match(operations, /window\.set_focus\(\)/u);
-    assert.doesNotMatch(operations, /(?:maximized|fullscreen|inner_size|min_inner_size|set_size|set_position)/u);
+    assert.doesNotMatch(
+      operations,
+      /(?:maximized|fullscreen|inner_size|min_inner_size|set_size|set_position)/u,
+    );
   }
 
   const mobileBuilder = segment(

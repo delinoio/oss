@@ -4,8 +4,11 @@ import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 
 export function writeLocalizationOutput(path, value, check = false) {
   let existing;
-  try { existing = readFileSync(path, "utf8"); }
-  catch (error) { if (error.code !== "ENOENT" || check) throw error; }
+  try {
+    existing = readFileSync(path, "utf8");
+  } catch (error) {
+    if (error.code !== "ENOENT" || check) throw error;
+  }
   if (existing === value) return;
   if (check) throw new Error(`Stale localization output: ${path}`);
   // Concurrent frontend/widget preparation must never truncate a catalog while
@@ -15,5 +18,7 @@ export function writeLocalizationOutput(path, value, check = false) {
   try {
     writeFileSync(temporary, value, { flag: "wx" });
     renameSync(temporary, path);
-  } finally { rmSync(temporary, { force: true }); }
+  } finally {
+    rmSync(temporary, { force: true });
+  }
 }

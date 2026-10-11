@@ -18,7 +18,6 @@ Follow the [account](cmds-delidev-accounts-contract.md#connected-api-format-chan
 and [desktop](apps-delidev-desktop-contract.md#key-preserving-api-format-editing)
 contracts. No migration, native change or format conversion is introduced.
 
-
 The [OAuth format selection reservations](cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations)
 extend the existing API account format boundary to accepted OAuth profiles through
 ProviderInventory capability 8 and Start/attempt fields 4/7. The originating change established them on main
@@ -52,6 +51,7 @@ Failed-login subscription cleanup uses System capability 41 after main-first res
 Native execution option selection follows the [catalog contract](cmds-delidev-catalog-contract.md#native-execution-option-selection). Available settings pass unchanged to native execution; unavailable saved values remain explicit, and all four Codex API/subscription permission modes preserve authentication, applied-setting and cleanup/recovery ownership. No protocol or database migration is required.
 
 ## Goal
+
 Run personal AI sessions across projects, accounts, native harnesses, and execution machines with durable single-user ownership. The feature remains normative, with the explicit owner startup/presentation amendment in ; implementation and real-environment evidence are distinct.
 
 The feature makes a fresh main desktop launch sufficient to start its own admitted local runtime and verify the authenticated product connection. Native-service scope admission remains Go-owned; same-process Stop, renderer lifecycle, saved-window authority and independent server/Worker/session ownership stay separate. Each main process owns at most one resident CLI with an OS-assigned random loopback port pinned within that process. Normal Quit, crash and forced termination retire the app-owned CLI/server; graceful Quit retains the 35-second limit and original-child exit proof. External runtimes and independent Workers remain separate. Private generation proof precedes bearer release, while immutable device/pairing/recovery authority and Saved addresses are preserved. Routine startup/sidebar/tray use product wording; lifecycle, registration and saved-connection controls keep persistent original ownership and can present their supported remedies inline; Connection & diagnostics remains optional. The [desktop contract](apps-delidev-desktop-contract.md) defines the implementation; record actual platform acceptance and unresolved limits in the feature, its pull requests and CI logs/artifacts.
@@ -61,11 +61,13 @@ The feature adds Worker-owned session terminals with native Unix PTY/Windows Con
 Codex native flows use a common minimum SemVer `0.151.0` with no upper bound under the [harness contract](cmds-delidev-harness-contract.md). Preserve actual immutable executable/version attribution and independently verify native protocols and account authority. The [desktop contract](apps-delidev-desktop-contract.md) defines bounded sidecar lookup, and the [subscription Settings contract](apps-delidev-subscription-settings-contract.md) defines safe original-operation diagnostics. Feature PRs may record schema allocations with their implementation; optional document metadata adds no migration. Record fixture/build/native initialization and real account/platform evidence separately in pull requests and CI.
 
 ## Project ID
+
 `delidev`; the Go component is `delidev-cli` and its executable is `delidev`.
 
 Repositories use required remote URLs with optional Local folder connections under the [workspace contract](cmds-delidev-workspace-contract.md). System 37 and Worker 19 activate only after main reservations in the originating change. Desktop registration, CLI/configuration transfer and session/schedule preparation share this source authority; independent managed clones preserve Fork, Sidechat and storage/deletion lifetimes without rewriting accepted history.
 
 ## Domain Ownership Map
+
 - `apps/delidev`: desktop presentation and native host.
 - `apps/delidev-mobile`: separate HTTPS iOS/Android client, device-only platform state and target-bound internal beta candidates (both by default, explicit iOS-only supported); follow the [mobile contract](apps-delidev-mobile-contract.md).
 - `cmds/delidev-cli`: Go CLI, server, Worker, storage and native adapters.
@@ -78,10 +80,11 @@ New schedule creation adds frequency presets and a creation-only three-section l
 
 The desktop provides connection-scoped reusable [in-app toast notifications](apps-delidev-desktop-contract.md#in-app-toast-notifications), initially for acknowledged notification-preference and immediate configuration saves. These transient observations preserve independent OS delivery, Inbox state, mutation receipts and native acceptance boundaries.
 
- Named Home projects provide a New session shortcut beside their collapse control under the [chat-first creation contract](apps-delidev-desktop-contract.md#chat-first-session-creation). It selects the original project once in the mounted creation draft, preserves message/mode/budget/Options and shares existing project-selection locks without creating a session on navigation.
- The standalone [Pull requests sidebar](apps-delidev-desktop-contract.md#standalone-pull-requests) uses name-only repository rows, separate read-free Details disclosures for configured GitHub identity and the complete local UUID, and native segmented state choices. Validated repository selection loads page one automatically; state/page-size changes apply immediately and valid trimmed search applies after a 300 ms IME-aware debounce; the shared shell, pending PR operations and connection-scoped lifetimes remain independently owned.
+Named Home projects provide a New session shortcut beside their collapse control under the [chat-first creation contract](apps-delidev-desktop-contract.md#chat-first-session-creation). It selects the original project once in the mounted creation draft, preserves message/mode/budget/Options and shares existing project-selection locks without creating a session on navigation.
+The standalone [Pull requests sidebar](apps-delidev-desktop-contract.md#standalone-pull-requests) uses name-only repository rows, separate read-free Details disclosures for configured GitHub identity and the complete local UUID, and native segmented state choices. Validated repository selection loads page one automatically; state/page-size changes apply immediately and valid trimmed search applies after a 300 ms IME-aware debounce; the shared shell, pending PR operations and connection-scoped lifetimes remain independently owned.
 
 ## Domain Contract Documents
+
 - [Parallel browser QA](apps-delidev-qa-contract.md)
 - [macOS status widget](apps-delidev-widget-contract.md)
 - [Native package verification](apps-delidev-packaging-contract.md)
@@ -141,6 +144,7 @@ sessions and shared account profiles are preserved. The [storage contract](cmds-
 owns the lifecycle, snapshot-copy deletion integration and remaining database-restore/Sidechat limits.
 
 ## Cross-Domain Invariants
+
 - New session and New general chat keep independent accepted-request Agent Worker/Runner Device pairs per stable native server/device scope under the [session creation preferences contract](apps-delidev-desktop-contract.md#session-creation-preferences). The bounded, private native document stores only identity metadata outside server backups and configuration transfer. Exact-ID current resource eligibility, manual drafts, Local proof and original creation receipts retain their separate authority; preference failure or recovery never resends CreateSession. This feature adds no RPC, protocol allocation or database migration.
 
 - Token-first GitHub profile creation uses existing System capability 34 and two always-visible Classic/Fine grained creation shortcuts. Go permits an undeclared owner only for draft form preparation; confirmation, saved-profile forms and repository access retain explicit owner rules. Native opening stays closed, click-driven and guarded by the original Settings visit, with no new allocation or migration. See the [integration contract](cmds-delidev-integrations-contract.md#official-forms-and-local-browser-opening) and [desktop contract](apps-delidev-desktop-contract.md#github-profile-settings).
@@ -216,11 +220,13 @@ Generic diagnostic consumers must accept the complete closed stored resource-kin
 - `delidev` -> `apps/delidev`, `apps/delidev-mobile`, `cmds/delidev-cli`, `protos/delidev/v1`, `protos/gen/go/delidev/v1`, `packages/delidev-api-client`; follow `project-delidev.md` and the complete feature requirements. The executable is `delidev`; Go owns single-user server and Worker business logic. Keep implementation and real-environment evidence distinct in pull requests, issues and CI logs/artifacts.
 
 ## Change Policy
+
 Update the owning domain contract when behavior changes. Update this index only for ownership, its domain catalog or cross-domain invariants. Record each implementation/validation increment in pull requests, issues and CI logs/artifacts; do not add repository evidence documents. A validation-only increment does not require editing this index or an AGENTS file.
 
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - The related change
 - [Repository defaults](repository-defaults.md)
 - [Project template](project-template.md)
@@ -258,6 +264,7 @@ terminal reads or expose cached terminal errors; see the
 Remaining-feature delivery follows the [allocation workflow](cmds-delidev-structure-contract.md#allocation-workflow): complete feature PRs may include shared numeric and migration allocation records with their implementation and merge in dependency order. Reservation support and actual native/account/platform acceptance remain distinct.
 
 Native input accounting and request diagnostics activate their main-established independent capabilities with real migrations 26/27. Preserve once-only original Claude/OpenCode source attribution, nullable precise counters, immutable pricing and metadata-only requested/observed diagnostic evidence across authenticated RPC, CLI and desktop. The [usage](cmds-delidev-usage-contract.md) and [diagnostics](cmds-delidev-diagnostics-contract.md) contracts own these boundaries; no fixture establishes real-account acceptance.
+
 - Worker network bootstrap pins an original protected recipient and pending/paired identity, then independently reconciles desired/effective generation through authenticated control. Stale state blocks fresh work while original active generation and cleanup remain immutable. The separately claimed Codex API/title tunnel keeps upstream credentials in Go, verifies native proxy/shell policy and joins before cleanup; public native-route use is independent of control readiness and provider success. Follow the [network contract](cmds-delidev-network-contract.md).
 - Network product controls share existing Server preferences/Runner Device settings and exact Connect/CLI semantics; protected local preparation/import has a closed trusted-window bridge to Go. System capability activation, Worker negotiation, encrypted cache publication, authenticated control readiness and actual native route use remain independent. Settings visits cannot retain late callback authority or start/restart a Worker implicitly.
 
@@ -271,9 +278,7 @@ The feature extends native subagent observation to OpenCode 1.18.32 foreground t
 
 - The canonical 35-ID API provider registry preserves original wire IDs and shares product ordering across RPC/CLI/desktop. Real default migration 30 follows actual 26–29, retaining existing identities and deletions. Fixed native/private inspection authority is owned by the [provider inspection](cmds-delidev-providers-contract.md), [catalog](cmds-delidev-catalog-contract.md) and [activation](cmds-delidev-provider-activation-contract.md) contracts; discovery grants no inference or subscription authority.
 
-
 Workspace storage exposes original-job snapshot, usage preview, cleanup, inspection, restore, deletion and recovery through authenticated Connect RPC, CLI and the connection-owned desktop controller. Preserve independent terminal/forwarding cleanup gates and logical-versus-physical byte measurements under the [storage contract](cmds-delidev-storage-contract.md); runtime/account/platform acceptance remains separate from fixtures.
-
 
 - Signed updates use independent System 28/Worker 17 admission, original device/generation receipts, joined idle replacement and retained old binaries. Desktop install requires original trusted-window confirmation and preserves live server/harness lifetimes. System 29 SSH setup pins exact host identity and the server-compatible signed Worker release, with protected credentials and original remote operation inspection. An unset production public-root declaration blocks real signing/downloads; fixture/build evidence remains separate from production account/platform acceptance. See the [updates](cmds-delidev-updates-contract.md) and [SSH setup](cmds-delidev-ssh-setup-contract.md) contracts.
 - [DeliDev signed updates](cmds-delidev-updates-contract.md)
@@ -331,9 +336,9 @@ Earlier backups remain unsupported.
 The feature composes desktop-wide inline causes and supported remediation under the desktop, diagnostics and subscription Settings contracts. Each owning workflow shares original controllers, confirmations and uncertain-request authority; presentation adds no repair capability or automatic Doctor inspection. Bounded inventory facts cannot grant eligibility, and account-storage inspection and the removed Search shortcut remain removed. Record validation and remaining native/account/platform limits in PRs and CI rather than repository evidence documents.
 
 - Explicit native skills share composer, joined Worker observation, immutable session input, private Codex invocation and durable snapshot deletion ownership across the existing sessions, harness, desktop, storage and protocol contracts.
-Image inputs follow the [image input contract](cmds-delidev-image-input-contract.md): private Worker byte ownership, immutable ordered references and original session/Fork/Sidechat cleanup apply across desktop, protocol, server and harness flows. The feature alone permits its complete declarations and activation in one PR without a database migration. Creation-only attachment guidance shows static localized format, limit and supported execution requirements on plus hover/focus under the [desktop contract](apps-delidev-desktop-contract.md#creation-composer-toolbar); it adds no route reads or execution authority.
-Routing preview presentation follows the [desktop contract](apps-delidev-desktop-contract.md#agent-worker-routing-preview-presentation). Compact source comparisons preserve server ordering and every decision field. Only complete identical ordered final evidence may be deduplicated. Task-scoped safe account/provider projections share four read slots across the category owner and response generations; names grant no routing or execution authority.
-Server-owned ChatGPT quota uses independent System 46 under the [subscription ownership contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-quota). The explicit the feature batch exception permits same-PR allocation and activation; original Worker/execution/reset-credit ownership and confirmed cleanup remain independent.
+  Image inputs follow the [image input contract](cmds-delidev-image-input-contract.md): private Worker byte ownership, immutable ordered references and original session/Fork/Sidechat cleanup apply across desktop, protocol, server and harness flows. The feature alone permits its complete declarations and activation in one PR without a database migration. Creation-only attachment guidance shows static localized format, limit and supported execution requirements on plus hover/focus under the [desktop contract](apps-delidev-desktop-contract.md#creation-composer-toolbar); it adds no route reads or execution authority.
+  Routing preview presentation follows the [desktop contract](apps-delidev-desktop-contract.md#agent-worker-routing-preview-presentation). Compact source comparisons preserve server ordering and every decision field. Only complete identical ordered final evidence may be deduplicated. Task-scoped safe account/provider projections share four read slots across the category owner and response generations; names grant no routing or execution authority.
+  Server-owned ChatGPT quota uses independent System 46 under the [subscription ownership contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-quota). The explicit the feature batch exception permits same-PR allocation and activation; original Worker/execution/reset-credit ownership and confirmed cleanup remain independent.
 
 Managed ChatGPT/Codex Sidechat composes System 47, Worker 26,
 existing Sidechat 27/16 and managed authentication Worker 3. The session detail
@@ -400,6 +405,7 @@ Independent managed ChatGPT Fork is owned by the [Fork contract](cmds-delidev-fo
 The feature adds authenticated same-question Sidechat retry with System 57 / Worker 31. Preserve original public child/snapshots/reference ownership, freeze the latest accepted completed parent turn, retain all native generations and prior answer/usage history, and select a replacement answer only after verified completion. Complete dependent cleanup covers every retry runtime. See [the Sidechat contract](cmds-delidev-sidechat-contract.md#same-question-retry); no migration or broader native/account support is implied.
 
 ### Situation-specific notifications
+
 The Inbox, storage, subscription, Schedule and desktop contracts jointly own granular client choices, durable future-only operational claims and the trusted native original-connection observer under System 58. Preserve legacy preferences/receipts, real migration 32 ownership, original-source eligibility, separate quota recovery consent and explicit OS permission. EN/KO Settings/search and fresh original-target navigation are part of this boundary. Automated checks do not establish installed native/account/platform acceptance.
 
 Conversation Revert is owned by the existing compaction/context, sessions,
@@ -407,8 +413,10 @@ harness, usage, protocol and desktop contracts. It composes one exact original
 mutation with independent native replacement-history/cleanup proof, unsent
 prompt editing, immutable previous history/usage and original account/Worker
 ownership. System 62 / Worker 36 activate no filesystem rewind or migration.
+
 - Positive pre-send image rejection follows the image-input/direct startup contracts: optional startup field 11 and closed failure enum 0/1 require original adapter/Worker/queue/process proof plus independent cleanup. Preserve original image input and uncertainty; add no capability or migration.
 - Persistent sidebar collapse is computer-local under the desktop contract . Its native enum/revision document and product-window publication remain independent of Appearance, connections, server configuration and exported/backed-up data; compact drawer actions do not change the wide preference.
+
 ## Accepted-turn timing boundary
 
 Original atomic server acceptance/terminal receipts own immutable UTC timing in Session progress and primary-user Message metadata. Bounded desktop projections estimate only the active interval and freeze terminal or unconfirmed display; original inherited Fork attribution remains separate from new child input. Native assignments/checkpoints/digests and older Worker shapes omit display timing. Timing adds no outcome, recovery, cleanup, permission or continuation authority; no allocation or migration. Follow the sessions, storage, protocol, Fork and desktop contracts.

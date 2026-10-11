@@ -38,17 +38,17 @@ The sole external market statistic is **1.52 billion international tourist arriv
 
 Every company-specific metric is an assumption or target:
 
-| Model | Calculation |
-| --- | --- |
-| Revenue per booked trip | $800 commissionable trip value × 8% = $64 |
-| Contribution per booked trip | $64 revenue − $14 variable costs = $50 |
-| Cohort opportunity scenario | 200,000 travelers × 1.2 trips/year × $64 = $15.36M/year |
-| First-year bookings target | 500 + 1,500 + 3,000 + 5,000 = 10,000 |
-| First-year net revenue target | 10,000 bookings × $64 = $640,000 |
-| Acquisition target | $25 per first-time booker, blended across channels |
-| Repeat target | 25% second-booking rate within 90 days; Q4 customers with a complete observation window |
-| Fundraise allocation | $750K product/engineering + $375K demand + $225K supply/operations + $150K contingency = $1.5M |
-| Runway scenario | $1.5M ÷ 18 months ≈ $83K average monthly cash use |
+| Model                         | Calculation                                                                                    |
+| ----------------------------- | ---------------------------------------------------------------------------------------------- |
+| Revenue per booked trip       | $800 commissionable trip value × 8% = $64                                                      |
+| Contribution per booked trip  | $64 revenue − $14 variable costs = $50                                                         |
+| Cohort opportunity scenario   | 200,000 travelers × 1.2 trips/year × $64 = $15.36M/year                                        |
+| First-year bookings target    | 500 + 1,500 + 3,000 + 5,000 = 10,000                                                           |
+| First-year net revenue target | 10,000 bookings × $64 = $640,000                                                               |
+| Acquisition target            | $25 per first-time booker, blended across channels                                             |
+| Repeat target                 | 25% second-booking rate within 90 days; Q4 customers with a complete observation window        |
+| Fundraise allocation          | $750K product/engineering + $375K demand + $225K supply/operations + $150K contingency = $1.5M |
+| Runway scenario               | $1.5M ÷ 18 months ≈ $83K average monthly cash use                                              |
 
 All currency figures are USD. Commission is assumed net of cancellations; the scenario implies no secured partner terms. Lisbon and Barcelona are proposed pilot destinations. No actual users, bookings, revenues, team credentials, interviews, partners, or customer testimonials are claimed. The launch cohort is an arithmetic scenario rather than a sourced estimate of the addressable market.
 
@@ -56,10 +56,10 @@ All currency figures are USD. Commission is assumed net of cancellations; the sc
 
 The three original images were generated with the built-in `image_gen` tool on 24 September 2026 specifically for this example. They are not documentary destination photographs, customer material, or evidence of a shipping product. Exact prompts are retained in `prompts.json`. No fonts or third-party stock photographs are included.
 
-| File | Role |
-| --- | --- |
-| `coast.png` | Cover's Mediterranean travel concept |
-| `product.png` | Proposed ROAM itinerary interface mockup |
+| File          | Role                                        |
+| ------------- | ------------------------------------------- |
+| `coast.png`   | Cover's Mediterranean travel concept        |
+| `product.png` | Proposed ROAM itinerary interface mockup    |
 | `horizon.png` | Closing slide's train-window travel concept |
 
 These generated assets are included as repository example assets under the repository's Apache-2.0 license. Generating the presentation reuses the committed files and does not invoke an image service.

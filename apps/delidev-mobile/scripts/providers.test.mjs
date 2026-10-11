@@ -37,39 +37,116 @@ const manifest = {
 };
 
 test("Apple nested processing state and bounded group pagination preserve exact proof", async () => {
-  for (const scenario of ["second-page", "absent", "processing", "missing", "external", "hash-conflict", "foreign-next", "page-bound"]) {
-    let pages = 0, writes = 0;
+  for (const scenario of [
+    "second-page",
+    "absent",
+    "processing",
+    "missing",
+    "external",
+    "hash-conflict",
+    "foreign-next",
+    "page-bound",
+  ]) {
+    let pages = 0,
+      writes = 0;
     const fetcher = async (url, options) => {
       if (options.method !== "GET") writes++;
       if (url.endsWith("/apps/12"))
         return response({ data: { attributes: { bundleId: Identity } } });
       if (url.includes("/betaGroups/owned?"))
-        return response({ data: { attributes: { isInternalGroup: true, publicLinkEnabled: false },
-          relationships: { app: { data: { id: "12" } } } } });
+        return response({
+          data: {
+            attributes: { isInternalGroup: true, publicLinkEnabled: false },
+            relationships: { app: { data: { id: "12" } } },
+          },
+        });
       if (url.includes("/buildUploadFiles"))
-        return response({ data: [{ attributes: { uti: "com.apple.ipa", fileSize: 7,
-          sourceFileChecksums: { file: { algorithm: "SHA_256", hash: scenario === "hash-conflict" ? "wrong" : manifest.artifacts.ios.sha256 } } } }] });
+        return response({
+          data: [
+            {
+              attributes: {
+                uti: "com.apple.ipa",
+                fileSize: 7,
+                sourceFileChecksums: {
+                  file: {
+                    algorithm: "SHA_256",
+                    hash:
+                      scenario === "hash-conflict"
+                        ? "wrong"
+                        : manifest.artifacts.ios.sha256,
+                  },
+                },
+              },
+            },
+          ],
+        });
       if (url.includes("/betaGroups/owned/builds")) {
         pages++;
-        return response({ data: scenario === "second-page" && pages === 2 ? [{ id: "build" }] : [],
-          links: { next: scenario === "foreign-next" ? "https://foreign.example/page" :
-            (scenario === "page-bound" || scenario === "second-page" && pages === 1) ?
-              `https://api.appstoreconnect.apple.com/v1/betaGroups/owned/builds?page=${pages + 1}` : null } });
+        return response({
+          data:
+            scenario === "second-page" && pages === 2 ? [{ id: "build" }] : [],
+          links: {
+            next:
+              scenario === "foreign-next"
+                ? "https://foreign.example/page"
+                : scenario === "page-bound" ||
+                    (scenario === "second-page" && pages === 1)
+                  ? `https://api.appstoreconnect.apple.com/v1/betaGroups/owned/builds?page=${pages + 1}`
+                  : null,
+          },
+        });
       }
-      return response({ data: { id: "upload", attributes: {
-        cfBundleShortVersionString: "0.1.0", cfBundleVersion: "3", platform: "IOS",
-        state: scenario === "missing" ? undefined : { state: scenario === "processing" ? "PROCESSING" : "COMPLETE" },
-      } }, included: [{ type: "builds", id: "build", attributes: {
-        buildAudienceType: scenario === "external" ? "APP_STORE_ELIGIBLE" : "INTERNAL_ONLY",
-      } }] });
+      return response({
+        data: {
+          id: "upload",
+          attributes: {
+            cfBundleShortVersionString: "0.1.0",
+            cfBundleVersion: "3",
+            platform: "IOS",
+            state:
+              scenario === "missing"
+                ? undefined
+                : {
+                    state:
+                      scenario === "processing" ? "PROCESSING" : "COMPLETE",
+                  },
+          },
+        },
+        included: [
+          {
+            type: "builds",
+            id: "build",
+            attributes: {
+              buildAudienceType:
+                scenario === "external"
+                  ? "APP_STORE_ELIGIBLE"
+                  : "INTERNAL_ONLY",
+            },
+          },
+        ],
+      });
     };
-    const provider = appleProvider(environment, Buffer.from("fixture"), () => {}, fetcher);
+    const provider = appleProvider(
+      environment,
+      Buffer.from("fixture"),
+      () => {},
+      fetcher,
+    );
     await provider.preflight(manifest);
-    if (scenario === "foreign-next") await assert.rejects(provider.inspect(manifest, { providerId: "upload" }), /pagination/);
+    if (scenario === "foreign-next")
+      await assert.rejects(
+        provider.inspect(manifest, { providerId: "upload" }),
+        /pagination/,
+      );
     else {
       const result = await provider.inspect(manifest, { providerId: "upload" });
-      assert.equal(result.state, ["second-page", "absent"].includes(scenario) ? "present" : "unknown", scenario);
-      if (result.state === "present") assert.equal(result.distributed, scenario === "second-page");
+      assert.equal(
+        result.state,
+        ["second-page", "absent"].includes(scenario) ? "present" : "unknown",
+        scenario,
+      );
+      if (result.state === "present")
+        assert.equal(result.distributed, scenario === "second-page");
     }
     assert.equal(writes, 0);
     if (scenario === "page-bound") assert.equal(pages, 20);
@@ -78,39 +155,94 @@ test("Apple nested processing state and bounded group pagination preserve exact 
 
 test("Google staged membership requires commit on exact retained edit before Distributed", async () => {
   for (const scenario of ["success", "validation-failure", "lost-commit"]) {
-    let committed = false, uploads = 0, commits = 0, edits = 0;
+    let committed = false,
+      uploads = 0,
+      commits = 0,
+      edits = 0;
     const fetcher = async (url, options) => {
       if (url.includes("oauth2")) return response({ access_token: "fake" });
-      if (url.includes("/upload")) { uploads++; assert.fail("replacement upload"); }
-      if (url.endsWith("/edits") && options.method === "POST") { edits++; return response({ id: "observation" }); }
-      if (committed && url.includes("/edits/original/")) return new Response("", { status: 404 });
-      if (url.endsWith("/bundles")) return response({ bundles: [{ versionCode: 4, sha256: manifest.artifacts.android.sha256 }] });
-      if (url.endsWith("/tracks/internal")) return response({ releases: [{ status: "completed", versionCodes: ["4"] }] });
+      if (url.includes("/upload")) {
+        uploads++;
+        assert.fail("replacement upload");
+      }
+      if (url.endsWith("/edits") && options.method === "POST") {
+        edits++;
+        return response({ id: "observation" });
+      }
+      if (committed && url.includes("/edits/original/"))
+        return new Response("", { status: 404 });
+      if (url.endsWith("/bundles"))
+        return response({
+          bundles: [
+            { versionCode: 4, sha256: manifest.artifacts.android.sha256 },
+          ],
+        });
+      if (url.endsWith("/tracks/internal"))
+        return response({
+          releases: [{ status: "completed", versionCodes: ["4"] }],
+        });
       if (url.endsWith(":validate")) {
         assert.ok(url.includes("/edits/original:"));
-        return scenario === "validation-failure" ? new Response("", { status: 400 }) : response({});
+        return scenario === "validation-failure"
+          ? new Response("", { status: 400 })
+          : response({});
       }
       if (url.endsWith(":commit")) {
         assert.ok(url.includes("/edits/original:"));
-        commits++; committed = true;
-        if (scenario === "lost-commit") throw Error("lost acknowledgement with secret fixture");
+        commits++;
+        committed = true;
+        if (scenario === "lost-commit")
+          throw Error("lost acknowledgement with secret fixture");
         return response({});
       }
       assert.fail("unexpected operation");
     };
-    const changes = [], checkpoint = (r) => changes.push(structuredClone(r));
-    const provider = googleProvider(environment, Buffer.from("fixture"), checkpoint, fetcher);
-    const receipt = { candidateId: manifest.candidateId, platform: "android", stage: Stage.Uploaded,
-      providerId: "4", editId: "original" };
+    const changes = [],
+      checkpoint = (r) => changes.push(structuredClone(r));
+    const provider = googleProvider(
+      environment,
+      Buffer.from("fixture"),
+      checkpoint,
+      fetcher,
+    );
+    const receipt = {
+      candidateId: manifest.candidateId,
+      platform: "android",
+      stage: Stage.Uploaded,
+      providerId: "4",
+      editId: "original",
+    };
     await provider.preflight(manifest);
-    assert.equal((await provider.inspect(manifest, receipt)).distributed, false);
+    assert.equal(
+      (await provider.inspect(manifest, receipt)).distributed,
+      false,
+    );
     if (scenario === "success") {
-      assert.equal((await distribute(manifest, receipt, provider, checkpoint, { dryRun: false })).stage, Stage.Distributed);
+      assert.equal(
+        (
+          await distribute(manifest, receipt, provider, checkpoint, {
+            dryRun: false,
+          })
+        ).stage,
+        Stage.Distributed,
+      );
     } else {
-      await assert.rejects(distribute(manifest, receipt, provider, checkpoint, { dryRun: false }));
-      assert.equal(changes.some((r) => r.stage === Stage.Distributed), false);
+      await assert.rejects(
+        distribute(manifest, receipt, provider, checkpoint, { dryRun: false }),
+      );
+      assert.equal(
+        changes.some((r) => r.stage === Stage.Distributed),
+        false,
+      );
       if (scenario === "lost-commit")
-        assert.equal((await distribute(manifest, receipt, provider, checkpoint, { dryRun: false })).stage, Stage.Distributed);
+        assert.equal(
+          (
+            await distribute(manifest, receipt, provider, checkpoint, {
+              dryRun: false,
+            })
+          ).stage,
+          Stage.Distributed,
+        );
     }
     assert.equal(uploads, 0);
     assert.equal(commits, scenario === "validation-failure" ? 0 : 1);
@@ -385,72 +517,216 @@ test("Apple complete version inventory refuses reuse on a later page before crea
 });
 
 test("Apple returned MD5 corroborates only exact original receipt and locally verified SHA-256 bytes", async () => {
-  const bytes = Buffer.from("fixture"), sha256 = createHash("sha256").update(bytes).digest("hex"),
+  const bytes = Buffer.from("fixture"),
+    sha256 = createHash("sha256").update(bytes).digest("hex"),
     md5 = createHash("md5").update(bytes).digest("hex"),
-    m = { ...manifest, artifacts: { ...manifest.artifacts, ios: { sha256, bytes: bytes.length } } };
-  for (const scenario of ["owned", "missing-file", "foreign-file", "foreign-upload", "foreign-candidate", "wrong-md5", "wrong-sha", "processing", "external"]) {
+    m = {
+      ...manifest,
+      artifacts: {
+        ...manifest.artifacts,
+        ios: { sha256, bytes: bytes.length },
+      },
+    };
+  for (const scenario of [
+    "owned",
+    "missing-file",
+    "foreign-file",
+    "foreign-upload",
+    "foreign-candidate",
+    "wrong-md5",
+    "wrong-sha",
+    "processing",
+    "external",
+  ]) {
     let writes = 0;
-    const r = { candidateId: m.candidateId, providerId: "upload", fileId: "file" };
+    const r = {
+      candidateId: m.candidateId,
+      providerId: "upload",
+      fileId: "file",
+    };
     if (scenario === "missing-file") delete r.fileId;
     if (scenario === "foreign-file") r.fileId = "foreign";
     if (scenario === "foreign-upload") r.providerId = "foreign";
     if (scenario === "foreign-candidate") r.candidateId = "foreign";
     const fetcher = async (url, options) => {
       if (options.method !== "GET") writes++;
-      if (url.includes("/buildUploadFiles")) return response({ data: [{ id: "file", attributes: {
-        uti: "com.apple.ipa", fileSize: bytes.length, assetDeliveryState: { state: "COMPLETE" },
-        sourceFileChecksums: { file: { algorithm: "MD5", hash: scenario === "wrong-md5" ? "wrong" : md5 } },
-      } }] });
-      if (url.includes("/betaGroups/owned/builds")) return response({ data: [{ id: "build" }] });
-      return response({ data: { id: "upload", attributes: { cfBundleShortVersionString: m.version,
-        cfBundleVersion: m.iosBuild, platform: "IOS", state: { state: scenario === "processing" ? "PROCESSING" : "COMPLETE" } } },
-        included: [{ type: "builds", id: "build", attributes: { buildAudienceType: scenario === "external" ? "APP_STORE_ELIGIBLE" : "INTERNAL_ONLY" } }] });
+      if (url.includes("/buildUploadFiles"))
+        return response({
+          data: [
+            {
+              id: "file",
+              attributes: {
+                uti: "com.apple.ipa",
+                fileSize: bytes.length,
+                assetDeliveryState: { state: "COMPLETE" },
+                sourceFileChecksums: {
+                  file: {
+                    algorithm: "MD5",
+                    hash: scenario === "wrong-md5" ? "wrong" : md5,
+                  },
+                },
+              },
+            },
+          ],
+        });
+      if (url.includes("/betaGroups/owned/builds"))
+        return response({ data: [{ id: "build" }] });
+      return response({
+        data: {
+          id: "upload",
+          attributes: {
+            cfBundleShortVersionString: m.version,
+            cfBundleVersion: m.iosBuild,
+            platform: "IOS",
+            state: {
+              state: scenario === "processing" ? "PROCESSING" : "COMPLETE",
+            },
+          },
+        },
+        included: [
+          {
+            type: "builds",
+            id: "build",
+            attributes: {
+              buildAudienceType:
+                scenario === "external"
+                  ? "APP_STORE_ELIGIBLE"
+                  : "INTERNAL_ONLY",
+            },
+          },
+        ],
+      });
     };
-    const actual = await appleProvider(environment, bytes, () => {}, fetcher).inspect(
-      scenario === "wrong-sha" ? { ...m, artifacts: { ...m.artifacts, ios: { ...m.artifacts.ios, sha256: "0".repeat(64) } } } : m, r);
-    assert.equal(actual.state, scenario === "owned" ? "present" : "unknown", scenario);
+    const actual = await appleProvider(
+      environment,
+      bytes,
+      () => {},
+      fetcher,
+    ).inspect(
+      scenario === "wrong-sha"
+        ? {
+            ...m,
+            artifacts: {
+              ...m.artifacts,
+              ios: { ...m.artifacts.ios, sha256: "0".repeat(64) },
+            },
+          }
+        : m,
+      r,
+    );
+    assert.equal(
+      actual.state,
+      scenario === "owned" ? "present" : "unknown",
+      scenario,
+    );
     if (actual.state === "present") assert.equal(actual.sha256, sha256);
     assert.equal(writes, 0);
   }
 });
 test("Apple explicit recovery commits only positively acknowledged original transfers", async () => {
-  const bytes = Buffer.from("fixture"), sha256 = createHash("sha256").update(bytes).digest("hex"),
-    m = { ...manifest, artifacts: { ...manifest.artifacts, ios: { sha256, bytes: bytes.length } } };
-  for (const scenario of ["owned", "no-proof", "wrong-sha", "foreign-file", "foreign-version", "already-complete"]) {
+  const bytes = Buffer.from("fixture"),
+    sha256 = createHash("sha256").update(bytes).digest("hex"),
+    m = {
+      ...manifest,
+      artifacts: {
+        ...manifest.artifacts,
+        ios: { sha256, bytes: bytes.length },
+      },
+    };
+  for (const scenario of [
+    "owned",
+    "no-proof",
+    "wrong-sha",
+    "foreign-file",
+    "foreign-version",
+    "already-complete",
+  ]) {
     let commits = 0;
-    const receipt = { candidateId: m.candidateId, providerId: "upload", fileId: "file", transferComplete: true,
-      fileSha256: sha256, fileBytes: bytes.length };
+    const receipt = {
+      candidateId: m.candidateId,
+      providerId: "upload",
+      fileId: "file",
+      transferComplete: true,
+      fileSha256: sha256,
+      fileBytes: bytes.length,
+    };
     if (scenario === "no-proof") delete receipt.transferComplete;
     if (scenario === "wrong-sha") receipt.fileSha256 = "wrong";
     const fetcher = async (url, options) => {
       if (options.method === "PATCH") {
         commits++;
         assert.ok(url.endsWith("/buildUploadFiles/file"));
-        assert.deepEqual(JSON.parse(options.body).data.attributes, { uploaded: true });
+        assert.deepEqual(JSON.parse(options.body).data.attributes, {
+          uploaded: true,
+        });
         return response({});
       }
       assert.equal(options.method, "GET");
-      if (url.includes("/buildUploadFiles")) return response({ data: [{ id: scenario === "foreign-file" ? "foreign" : "file",
-        attributes: { uti: "com.apple.ipa", fileSize: bytes.length, assetDeliveryState: {
-          state: scenario === "already-complete" ? "COMPLETE" : "AWAITING_UPLOAD" } } }] });
-      return response({ data: { id: "upload", attributes: { cfBundleShortVersionString: m.version,
-        cfBundleVersion: scenario === "foreign-version" ? "9" : m.iosBuild, platform: "IOS" } } });
+      if (url.includes("/buildUploadFiles"))
+        return response({
+          data: [
+            {
+              id: scenario === "foreign-file" ? "foreign" : "file",
+              attributes: {
+                uti: "com.apple.ipa",
+                fileSize: bytes.length,
+                assetDeliveryState: {
+                  state:
+                    scenario === "already-complete"
+                      ? "COMPLETE"
+                      : "AWAITING_UPLOAD",
+                },
+              },
+            },
+          ],
+        });
+      return response({
+        data: {
+          id: "upload",
+          attributes: {
+            cfBundleShortVersionString: m.version,
+            cfBundleVersion: scenario === "foreign-version" ? "9" : m.iosBuild,
+            platform: "IOS",
+          },
+        },
+      });
     };
     const provider = appleProvider(environment, bytes, () => {}, fetcher);
-    if (["wrong-sha", "foreign-file", "foreign-version"].includes(scenario)) await assert.rejects(provider.recoverUpload(m, receipt));
+    if (["wrong-sha", "foreign-file", "foreign-version"].includes(scenario))
+      await assert.rejects(provider.recoverUpload(m, receipt));
     else await provider.recoverUpload(m, receipt);
     assert.equal(commits, scenario === "owned" ? 1 : 0, scenario);
   }
 });
 
 test("Apple upload durably acknowledges exact bytes before the checksum-free original file commit", async () => {
-  const bytes = Buffer.from("fixture"), sha256 = createHash("sha256").update(bytes).digest("hex"),
+  const bytes = Buffer.from("fixture"),
+    sha256 = createHash("sha256").update(bytes).digest("hex"),
     md5 = createHash("md5").update(bytes).digest("hex"),
-    m = { ...manifest, artifacts: { ...manifest.artifacts, ios: { sha256, bytes: bytes.length } } },
-    receipts = [], receipt = { candidateId: m.candidateId, platform: "ios", stage: Stage.Sending };
-  let puts = 0, commits = 0;
-  const upload = { id: "upload", attributes: { cfBundleShortVersionString: m.version,
-    cfBundleVersion: m.iosBuild, platform: "IOS", state: { state: "COMPLETE" } } };
+    m = {
+      ...manifest,
+      artifacts: {
+        ...manifest.artifacts,
+        ios: { sha256, bytes: bytes.length },
+      },
+    },
+    receipts = [],
+    receipt = {
+      candidateId: m.candidateId,
+      platform: "ios",
+      stage: Stage.Sending,
+    };
+  let puts = 0,
+    commits = 0;
+  const upload = {
+    id: "upload",
+    attributes: {
+      cfBundleShortVersionString: m.version,
+      cfBundleVersion: m.iosBuild,
+      platform: "IOS",
+      state: { state: "COMPLETE" },
+    },
+  };
   const fetcher = async (url, options) => {
     url = String(url);
     if (url === "https://storage.example/original") {
@@ -461,27 +737,69 @@ test("Apple upload durably acknowledges exact bytes before the checksum-free ori
       assert.equal(receipts.at(-1).transferComplete, undefined);
       return new Response("", { status: 200 });
     }
-    if (url.endsWith("/apps/12/buildUploads?limit=200")) return response({ data: [] });
-    if (url.endsWith("/buildUploads") && options.method === "POST") return response({ data: upload });
-    if (url.endsWith("/buildUploadFiles") && options.method === "POST") return response({ data: { id: "file", attributes: {
-      uploadOperations: [{ method: "PUT", url: "https://storage.example/original", offset: 0, length: bytes.length, requestHeaders: [] }],
-    } } });
+    if (url.endsWith("/apps/12/buildUploads?limit=200"))
+      return response({ data: [] });
+    if (url.endsWith("/buildUploads") && options.method === "POST")
+      return response({ data: upload });
+    if (url.endsWith("/buildUploadFiles") && options.method === "POST")
+      return response({
+        data: {
+          id: "file",
+          attributes: {
+            uploadOperations: [
+              {
+                method: "PUT",
+                url: "https://storage.example/original",
+                offset: 0,
+                length: bytes.length,
+                requestHeaders: [],
+              },
+            ],
+          },
+        },
+      });
     if (options.method === "PATCH") {
       commits++;
       assert.equal(puts, 1);
       assert.equal(receipts.at(-1).transferComplete, true);
       assert.equal(receipts.at(-1).fileId, "file");
-      assert.deepEqual(JSON.parse(options.body).data.attributes, { uploaded: true });
+      assert.deepEqual(JSON.parse(options.body).data.attributes, {
+        uploaded: true,
+      });
       return response({});
     }
-    if (url.includes("/buildUploadFiles")) return response({ data: [{ id: "file", attributes: {
-      uti: "com.apple.ipa", fileSize: bytes.length, assetDeliveryState: { state: "COMPLETE" },
-      sourceFileChecksums: { file: { algorithm: "MD5", hash: md5 } },
-    } }] });
+    if (url.includes("/buildUploadFiles"))
+      return response({
+        data: [
+          {
+            id: "file",
+            attributes: {
+              uti: "com.apple.ipa",
+              fileSize: bytes.length,
+              assetDeliveryState: { state: "COMPLETE" },
+              sourceFileChecksums: { file: { algorithm: "MD5", hash: md5 } },
+            },
+          },
+        ],
+      });
     if (url.includes("/betaGroups/owned/builds")) return response({ data: [] });
-    return response({ data: upload, included: [{ type: "builds", id: "build", attributes: { buildAudienceType: "INTERNAL_ONLY" } }] });
+    return response({
+      data: upload,
+      included: [
+        {
+          type: "builds",
+          id: "build",
+          attributes: { buildAudienceType: "INTERNAL_ONLY" },
+        },
+      ],
+    });
   };
-  const result = await appleProvider(environment, bytes, r => receipts.push(structuredClone(r)), fetcher).upload(m, receipt);
+  const result = await appleProvider(
+    environment,
+    bytes,
+    (r) => receipts.push(structuredClone(r)),
+    fetcher,
+  ).upload(m, receipt);
   assert.equal(result.state, "present");
   assert.equal(result.sha256, sha256);
   assert.equal(puts, 1);

@@ -36,7 +36,9 @@ import {
 } from "./run-tauri-arguments.mjs";
 
 const scriptPath = fileURLToPath(new URL("./run-tauri.mjs", import.meta.url));
-const processTreeChildPath = fileURLToPath(new URL("./process-tree-child.mjs", import.meta.url));
+const processTreeChildPath = fileURLToPath(
+  new URL("./process-tree-child.mjs", import.meta.url),
+);
 const configOverrides = [
   ["separated short option", ["build", "--", "-c", "alternate.json"]],
   ["equals-delimited short option", ["build", "--", "-c=alternate.json"]],
@@ -45,11 +47,23 @@ const configOverrides = [
   ["equals-delimited long option", ["build", "--", "--config=alternate.json"]],
 ];
 const targetOverrides = [
-  ["separated short target option", ["build", "--", "-t", "aarch64-apple-darwin"]],
-  ["equals-delimited short target option", ["build", "--", "-t=aarch64-apple-darwin"]],
+  [
+    "separated short target option",
+    ["build", "--", "-t", "aarch64-apple-darwin"],
+  ],
+  [
+    "equals-delimited short target option",
+    ["build", "--", "-t=aarch64-apple-darwin"],
+  ],
   ["attached short target option", ["build", "--", "-taarch64-apple-darwin"]],
-  ["separated long target option", ["build", "--", "--target", "aarch64-apple-darwin"]],
-  ["equals-delimited long target option", ["build", "--", "--target=aarch64-apple-darwin"]],
+  [
+    "separated long target option",
+    ["build", "--", "--target", "aarch64-apple-darwin"],
+  ],
+  [
+    "equals-delimited long target option",
+    ["build", "--", "--target=aarch64-apple-darwin"],
+  ],
 ];
 const appImageCefResources = [
   "chrome_100_percent.pak",
@@ -86,22 +100,21 @@ test("forwards the desktop CEF feature to the pinned Tauri command", () => {
     "--config",
     desktopTauriConfigPath,
   ]);
-  assert.deepEqual(
-    desktopTauriArguments("build", ["--bundles", "app"]),
-    [
-      "build",
-      "--features",
-      "desktop-cef",
-      "--config",
-      desktopTauriConfigPath,
-      "--bundles",
-      "app",
-    ],
-  );
+  assert.deepEqual(desktopTauriArguments("build", ["--bundles", "app"]), [
+    "build",
+    "--features",
+    "desktop-cef",
+    "--config",
+    desktopTauriConfigPath,
+    "--bundles",
+    "app",
+  ]);
 });
 
 test("uses only the repository-owned hardened release overlay for private builds", () => {
-  const arguments_ = desktopTauriArguments("build", ["--bundles", "app"], { DEVHUD_PRIVATE_RELEASE: "1" });
+  const arguments_ = desktopTauriArguments("build", ["--bundles", "app"], {
+    DEVHUD_PRIVATE_RELEASE: "1",
+  });
   assert.equal(arguments_[4], privateReleaseTauriConfigPath);
   assert.ok(!arguments_.includes(desktopTauriConfigPath));
 });
@@ -122,16 +135,18 @@ test("loads an opt-in Apple signing identity from repository-local Git config", 
     APPLE_SIGNING_IDENTITY: "Apple Development: Developer (TEAMID)",
     EXISTING: "value",
   });
-  assert.deepEqual(calls, [[
-    "git",
-    ["config", "--local", "--get", repositoryAppleSigningIdentityKey],
-    {
-      encoding: "utf8",
-      env: { EXISTING: "value", LC_ALL: "C" },
-      shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  ]]);
+  assert.deepEqual(calls, [
+    [
+      "git",
+      ["config", "--local", "--get", repositoryAppleSigningIdentityKey],
+      {
+        encoding: "utf8",
+        env: { EXISTING: "value", LC_ALL: "C" },
+        shell: false,
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    ],
+  ]);
 });
 
 test("keeps an explicit Apple signing identity ahead of repository-local config", () => {
@@ -187,48 +202,41 @@ test("leaves ad hoc signing unchanged when local signing is unavailable", () => 
 
 test("surfaces fatal repository-local Git configuration failures", () => {
   assert.throws(
-    () => repositoryAppleSigningEnvironment(
-      "dev",
-      "darwin",
-      {},
-      () => ({
+    () =>
+      repositoryAppleSigningEnvironment("dev", "darwin", {}, () => ({
         status: 1,
         stderr: "warning: unable to access '.git/config': Permission denied\n",
         stdout: "",
-      }),
-    ),
+      })),
     /exited with status 1/u,
   );
   assert.throws(
-    () => repositoryAppleSigningEnvironment(
-      "dev",
-      "darwin",
-      {},
-      () => ({
+    () =>
+      repositoryAppleSigningEnvironment("dev", "darwin", {}, () => ({
         status: 128,
         stderr: "fatal: bad config line 1 in file .git/config\n",
         stdout: "",
-      }),
-    ),
+      })),
     /exited with status 128/u,
   );
 });
 
 test("rejects malformed repository-local signing identities", () => {
   assert.throws(
-    () => repositoryAppleSigningEnvironment(
-      "dev",
-      "darwin",
-      {},
-      () => ({ status: 0, stdout: "Identity One\nIdentity Two\n" }),
-    ),
+    () =>
+      repositoryAppleSigningEnvironment("dev", "darwin", {}, () => ({
+        status: 0,
+        stdout: "Identity One\nIdentity Two\n",
+      })),
     /must be one non-empty line/u,
   );
 });
 
 test("derives the compiled package kind from one explicit Windows bundle", () => {
   assert.deepEqual(
-    desktopTauriEnvironment("build", ["--bundles", "msi"], "win32", { EXISTING: "value" }),
+    desktopTauriEnvironment("build", ["--bundles", "msi"], "win32", {
+      EXISTING: "value",
+    }),
     { EXISTING: "value", DEVHUD_PACKAGE_KIND: "windows-msi" },
   );
   assert.deepEqual(
@@ -239,7 +247,9 @@ test("derives the compiled package kind from one explicit Windows bundle", () =>
 
 test("derives the compiled package kind from one explicit Linux bundle", () => {
   assert.deepEqual(
-    desktopTauriEnvironment("build", ["--bundles", "deb"], "linux", { EXISTING: "value" }),
+    desktopTauriEnvironment("build", ["--bundles", "deb"], "linux", {
+      EXISTING: "value",
+    }),
     { EXISTING: "value", DEVHUD_PACKAGE_KIND: "linux-deb" },
   );
   assert.deepEqual(
@@ -281,9 +291,16 @@ function fixtureAnylinuxOptions() {
   return {
     environment: { PATH: "/safe/native/bin" },
     anylinuxPin: {
-      repository: "https://github.com/example/anylinux", revision: "revision",
-      source: { path: "anylinux.c", sha256: createHash("sha256").update("verified source").digest("hex") },
-      license: { path: "LICENSE", sha256: createHash("sha256").update("verified license").digest("hex") },
+      repository: "https://github.com/example/anylinux",
+      revision: "revision",
+      source: {
+        path: "anylinux.c",
+        sha256: createHash("sha256").update("verified source").digest("hex"),
+      },
+      license: {
+        path: "LICENSE",
+        sha256: createHash("sha256").update("verified license").digest("hex"),
+      },
     },
     runCompiler(command, args, options) {
       assert.equal(command, "cc");
@@ -302,12 +319,23 @@ for (const kind of ["source", "license"]) {
     const bytes = Buffer.from("verified sharun");
     const options = fixtureAnylinuxOptions();
     let compiled = false;
-    options.runCompiler = () => { compiled = true; };
-    await assert.rejects(prepareVerifiedAppImageSharun("x64", async (url) => {
-      if (url.endsWith("sharun-x86_64")) return new Response(bytes);
-      if (kind === "source" || url.endsWith("LICENSE")) return new Response("replacement");
-      return new Response("verified source");
-    }, fixtureSharunPin(bytes), options), new RegExp(`anylinux ${kind} checksum mismatch`, "u"));
+    options.runCompiler = () => {
+      compiled = true;
+    };
+    await assert.rejects(
+      prepareVerifiedAppImageSharun(
+        "x64",
+        async (url) => {
+          if (url.endsWith("sharun-x86_64")) return new Response(bytes);
+          if (kind === "source" || url.endsWith("LICENSE"))
+            return new Response("replacement");
+          return new Response("verified source");
+        },
+        fixtureSharunPin(bytes),
+        options,
+      ),
+      new RegExp(`anylinux ${kind} checksum mismatch`, "u"),
+    );
     assert.equal(compiled, false);
   });
 }
@@ -316,10 +344,26 @@ test("removes private AppImage staging when the anylinux compiler fails", async 
   const bytes = Buffer.from("verified sharun");
   const options = fixtureAnylinuxOptions();
   let stagedSource;
-  options.runCompiler = (_, args) => { stagedSource = args[3]; return { status: 1, stderr: "compiler fixture failure" }; };
-  await assert.rejects(prepareVerifiedAppImageSharun("x64", async (url) => new Response(
-    url.endsWith("sharun-x86_64") ? bytes : url.endsWith("LICENSE") ? "verified license" : "verified source",
-  ), fixtureSharunPin(bytes), options), /anylinux compilation failed/u);
+  options.runCompiler = (_, args) => {
+    stagedSource = args[3];
+    return { status: 1, stderr: "compiler fixture failure" };
+  };
+  await assert.rejects(
+    prepareVerifiedAppImageSharun(
+      "x64",
+      async (url) =>
+        new Response(
+          url.endsWith("sharun-x86_64")
+            ? bytes
+            : url.endsWith("LICENSE")
+              ? "verified license"
+              : "verified source",
+        ),
+      fixtureSharunPin(bytes),
+      options,
+    ),
+    /anylinux compilation failed/u,
+  );
   assert.equal(existsSync(stagedSource), false);
 });
 
@@ -334,8 +378,12 @@ for (const [architecture, assetName] of [
       architecture,
       async (url) => {
         if (url.endsWith(`/${assetName}`)) return new Response(bytes);
-        if (url.endsWith("/anylinux.c")) return new Response(Buffer.from("verified source"));
-        assert.equal(url, "https://raw.githubusercontent.com/example/anylinux/revision/LICENSE");
+        if (url.endsWith("/anylinux.c"))
+          return new Response(Buffer.from("verified source"));
+        assert.equal(
+          url,
+          "https://raw.githubusercontent.com/example/anylinux/revision/LICENSE",
+        );
         return new Response(Buffer.from("verified license"));
       },
       pin,
@@ -343,22 +391,51 @@ for (const [architecture, assetName] of [
     );
     try {
       const launcher = prepared.config.bundle.linux.appimage.files.sharun;
-      assert.deepEqual(Object.keys(prepared.config.bundle.linux.appimage.files), ["sharun", "lib/anylinux.so", "share/licenses/anylinux/LICENSE"]);
-      assert.equal(readFileSync(prepared.config.bundle.linux.appimage.files["lib/anylinux.so"], "utf8"), "compiled verified source");
-      assert.equal(readFileSync(prepared.config.bundle.linux.appimage.files["share/licenses/anylinux/LICENSE"], "utf8"), "verified license");
+      assert.deepEqual(
+        Object.keys(prepared.config.bundle.linux.appimage.files),
+        ["sharun", "lib/anylinux.so", "share/licenses/anylinux/LICENSE"],
+      );
+      assert.equal(
+        readFileSync(
+          prepared.config.bundle.linux.appimage.files["lib/anylinux.so"],
+          "utf8",
+        ),
+        "compiled verified source",
+      );
+      assert.equal(
+        readFileSync(
+          prepared.config.bundle.linux.appimage.files[
+            "share/licenses/anylinux/LICENSE"
+          ],
+          "utf8",
+        ),
+        "verified license",
+      );
       assert.deepEqual(readFileSync(launcher), bytes);
-      if (process.platform !== "win32") assert.equal(statSync(launcher).mode & 0o777, 0o755);
+      if (process.platform !== "win32")
+        assert.equal(statSync(launcher).mode & 0o777, 0o755);
     } finally {
       await prepared.close();
     }
-    assert.equal(existsSync(prepared.config.bundle.linux.appimage.files.sharun), false);
+    assert.equal(
+      existsSync(prepared.config.bundle.linux.appimage.files.sharun),
+      false,
+    );
   });
 }
 
 test("AppImage builds reject ambient helper download and integrity overrides", () => {
-  const environment = desktopTauriEnvironment("build", ["--bundles", "appimage"], "linux", {
-    SHARUN_LINK: "https://example.com/unverified", SKIP_INTEGRITY_CHECKS: "1", ANYLINUX_LIB_SOURCE: "https://example.com/unverified", ANYLINUX_LIB: "0",
-  });
+  const environment = desktopTauriEnvironment(
+    "build",
+    ["--bundles", "appimage"],
+    "linux",
+    {
+      SHARUN_LINK: "https://example.com/unverified",
+      SKIP_INTEGRITY_CHECKS: "1",
+      ANYLINUX_LIB_SOURCE: "https://example.com/unverified",
+      ANYLINUX_LIB: "0",
+    },
+  );
   assert.equal(environment.SHARUN_LINK, undefined);
   assert.equal(environment.SKIP_INTEGRITY_CHECKS, undefined);
   assert.equal(environment.ANYLINUX_LIB_SOURCE, undefined);
@@ -391,13 +468,17 @@ test("rejects an unsuccessful Linux AppImage launcher download", async () => {
 
 test("rejects an unsupported Linux AppImage launcher architecture", async () => {
   await assert.rejects(
-    prepareVerifiedAppImageSharun("ia32", () => assert.fail("asset must not be fetched")),
+    prepareVerifiedAppImageSharun("ia32", () =>
+      assert.fail("asset must not be fetched"),
+    ),
     /unsupported Linux AppImage architecture ia32/u,
   );
 });
 
 test("finalizes the AppImage with a kernel-executed CEF layout", (t) => {
-  const temporaryDirectory = mkdtempSync(join(tmpdir(), "devhud-appimage-layout-"));
+  const temporaryDirectory = mkdtempSync(
+    join(tmpdir(), "devhud-appimage-layout-"),
+  );
   t.after(() => rmSync(temporaryDirectory, { force: true, recursive: true }));
   const appDirectory = join(temporaryDirectory, "DevHUD.AppDir");
   createAppImageFixture(appDirectory);
@@ -417,7 +498,9 @@ test("finalizes the AppImage with a kernel-executed CEF layout", (t) => {
 });
 
 test("atomically repacks the finalized AppImage", (t) => {
-  const targetDirectory = mkdtempSync(join(tmpdir(), "devhud-appimage-target-"));
+  const targetDirectory = mkdtempSync(
+    join(tmpdir(), "devhud-appimage-target-"),
+  );
   t.after(() => rmSync(targetDirectory, { force: true, recursive: true }));
   const bundleDirectory = join(targetDirectory, "release/bundle/appimage");
   const appDirectory = join(bundleDirectory, "DevHUD.AppDir");
@@ -437,7 +520,11 @@ test("atomically repacks the finalized AppImage", (t) => {
     run(command, arguments_) {
       calls.push([command, arguments_]);
       if (command === appImage) {
-        return { status: 0, signal: null, stdout: "zsync|update-information\n" };
+        return {
+          status: 0,
+          signal: null,
+          stdout: "zsync|update-information\n",
+        };
       }
       const output = arguments_[arguments_.indexOf("--output") + 1];
       const name = arguments_[arguments_.indexOf("--name") + 1];
@@ -461,7 +548,9 @@ test("atomically repacks the finalized AppImage", (t) => {
     "zsync|update-information",
   ]);
   assert.equal(
-    readdirSync(bundleDirectory).some((name) => name.startsWith(".devhud-finalize-")),
+    readdirSync(bundleDirectory).some((name) =>
+      name.startsWith(".devhud-finalize-"),
+    ),
     false,
   );
 });
@@ -476,11 +565,20 @@ test("rejects ambiguous or conflicting Windows package builds", () => {
     /require exactly one --bundles msi or --bundles nsis/u,
   );
   assert.throws(
-    () => desktopTauriEnvironment("build", ["--bundles", "msi", "nsis"], "win32", {}),
+    () =>
+      desktopTauriEnvironment(
+        "build",
+        ["--bundles", "msi", "nsis"],
+        "win32",
+        {},
+      ),
     /require exactly one --bundles msi or --bundles nsis/u,
   );
   assert.throws(
-    () => desktopTauriEnvironment("build", ["-b=msi"], "win32", { DEVHUD_PACKAGE_KIND: "windows-nsis" }),
+    () =>
+      desktopTauriEnvironment("build", ["-b=msi"], "win32", {
+        DEVHUD_PACKAGE_KIND: "windows-nsis",
+      }),
     /does not match the selected msi bundle/u,
   );
 });
@@ -495,20 +593,38 @@ test("rejects ambiguous or conflicting Linux package builds", () => {
     /require exactly one --bundles deb or --bundles appimage/u,
   );
   assert.throws(
-    () => desktopTauriEnvironment("build", ["--bundles", "deb", "appimage"], "linux", {}),
+    () =>
+      desktopTauriEnvironment(
+        "build",
+        ["--bundles", "deb", "appimage"],
+        "linux",
+        {},
+      ),
     /require exactly one --bundles deb or --bundles appimage/u,
   );
   assert.throws(
-    () => desktopTauriEnvironment("build", ["-b=deb"], "linux", { DEVHUD_PACKAGE_KIND: "linux-appimage" }),
+    () =>
+      desktopTauriEnvironment("build", ["-b=deb"], "linux", {
+        DEVHUD_PACKAGE_KIND: "linux-appimage",
+      }),
     /does not match the selected deb bundle/u,
   );
 });
 
 test("does not require a package kind for development or macOS builds", () => {
   const environment = {};
-  assert.equal(desktopTauriEnvironment("dev", [], "win32", environment), environment);
-  assert.equal(desktopTauriEnvironment("dev", [], "linux", environment), environment);
-  assert.equal(desktopTauriEnvironment("build", [], "darwin", environment), environment);
+  assert.equal(
+    desktopTauriEnvironment("dev", [], "win32", environment),
+    environment,
+  );
+  assert.equal(
+    desktopTauriEnvironment("dev", [], "linux", environment),
+    environment,
+  );
+  assert.equal(
+    desktopTauriEnvironment("build", [], "darwin", environment),
+    environment,
+  );
 });
 
 for (const [name, args] of configOverrides) {
@@ -534,7 +650,10 @@ for (const [name, args] of targetOverrides) {
 
     assert.equal(result.signal, null);
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /devhud: -t\/--target cannot override the pinned desktop target/);
+    assert.match(
+      result.stderr,
+      /devhud: -t\/--target cannot override the pinned desktop target/,
+    );
   });
 }
 
@@ -585,7 +704,9 @@ test(
   "forwards an escalation signal while the child remains alive",
   { skip: process.platform === "win32", timeout: 20_000 },
   async (t) => {
-    const temporaryDirectory = mkdtempSync(join(tmpdir(), "devhud-signal-escalation-"));
+    const temporaryDirectory = mkdtempSync(
+      join(tmpdir(), "devhud-signal-escalation-"),
+    );
     const statusPath = join(temporaryDirectory, "status.json");
     let pid;
     t.after(() => {
@@ -625,7 +746,9 @@ test(
   "terminates and awaits the complete process tree",
   { timeout: 20_000 },
   async (t) => {
-    const temporaryDirectory = mkdtempSync(join(tmpdir(), "devhud-process-tree-"));
+    const temporaryDirectory = mkdtempSync(
+      join(tmpdir(), "devhud-process-tree-"),
+    );
     const statusPath = join(temporaryDirectory, "status.json");
     t.after(() => rmSync(temporaryDirectory, { force: true, recursive: true }));
 
@@ -654,7 +777,9 @@ test(
   "forwards escalation after the managed POSIX root exits",
   { skip: process.platform === "win32", timeout: 20_000 },
   async (t) => {
-    const temporaryDirectory = mkdtempSync(join(tmpdir(), "devhud-group-escalation-"));
+    const temporaryDirectory = mkdtempSync(
+      join(tmpdir(), "devhud-group-escalation-"),
+    );
     const statusPath = join(temporaryDirectory, "status.json");
     let processGroupId;
     t.after(() => {

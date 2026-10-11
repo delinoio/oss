@@ -44,5 +44,7 @@ if (result === 0) {
 const portConflictPattern =
   /(?:EADDRINUSE|port\s+46306\b[^\n]*(?:(?:already\s+)?in\s+use|occupied))/iu;
 if (!portConflictPattern.test(output)) {
-  throw new Error(`Development server failed before detecting the port collision:\n${output}`);
+  throw new Error(
+    `Development server failed before detecting the port collision:\n${output}`,
+  );
 }

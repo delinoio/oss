@@ -1,15 +1,19 @@
 # DeliDev retained inbox contract
 
 ## Scope
+
 The Go domain, store, server and CLI under `cmds/delidev-cli` own retained inbox records, per-client notification preferences and durable native-presentation reservations. The complete the feature remains normative; OS delivery and activation require the separate desktop adapter and platform evidence.
 
 ## Runtime and Language
+
 Go and the server's existing private SQLite/Connect boundary. No independent client database or notification service owns inbox state.
 
 ## Users and Operators
+
 One server owner and its authorized paired clients share read state. Execution Workers publish native observations but cannot mark requests read or authorize owner responses.
 
 ## Interfaces and Contracts
+
 Every inbox entry has its own UUID-v7 identity and revision, independent of its source interaction or execution. The initial closed source kinds are `interaction` and `execution-terminal`; read state is `unread` or `read`. Reading, listing, snapshotting and inspecting never change read state. Explicit read-state mutations cannot change source content, question revision, answer/claim/delivery, session state, routing, cleanup or execution authorization. Response acceptance never implicitly marks an entry read.
 
 A native question or typed native approval and its unread inbox reference must commit in the same publication transaction. A native terminal observation similarly retains an unread completion/failure/interruption entry with immutable execution/input/job/thread/turn identity, publication sequence and observed native outcome. Terminal outcome does not prove process cleanup and can differ from the independently retained session outcome after Stop or earlier failure. Original receipt replay never duplicates an entry or resets read state. Repeated native closure, cleanup, Archive/Restore and later state inspection preserve the original entry identity and current read state.
@@ -23,11 +27,13 @@ The CLI exposes `inbox list [--session-id ID] [--project-id ID] [--read-state al
 Pages are ordered by stable inbox UUID and bounded to 200 entries and 3 MiB of joined protobuf views including per-entry framing; complete source content is never truncated. Signed cursors bind session/project/source/read-state filters and the inbox event epoch. A source insertion/deletion or read-state change requires restarting pagination. Source/session details are current in each page's read transaction; response/closure changes that leave inbox membership unchanged do not by themselves expire its cursor. Existing session event streams announce source changes so clients can refresh current views. The dedicated reservation operations below own display deduplication separately from these read APIs; native delivery remains a desktop responsibility.
 
 ### Original OpenCode proposals
+
 Original OpenCode permission and question proposals now share the retained interaction inbox. Their separate native payload preserves request/event/tool ownership, ordered question matrices and permission scopes without conversion into Codex questions or approvals. Exact publication receipts create one unread entry, and read-state changes retain the original pending request. The separately claimed direct-response profile now accepts exact native question matrices/rejection and once/always/reject permission decisions with optional rejection feedback; response acceptance, delivery, native reply and closure remain independent of inbox read state. Native automatic policy closures preserve their separate context and cannot fabricate target responses or change read state. Native responses cannot enter Codex encoders. Actual registered native proposal evidence must be recorded separately from deterministic inbox reads and full notification acceptance in pull requests, issues and CI logs/artifacts.
 
 Original Stop cancellation additionally retains `turn-ended` and separate original cleanup evidence after exact native history and joined process termination. It never fabricates an answer, rejection or policy closure. An unclaimed queued response becomes canceled; a claimed/uncertain send cannot be erased by this boundary. Closure and exact receipt replay preserve the original inbox entry and its current read revision. The separately published native terminal creates its own completion/interruption entry without implying that earlier interactions were read.
 
 ### Native notification preferences and reservations
+
 `InboxService.GetNotificationPreferences` and `SetNotificationPreferences` operate only on the authenticated client. Paired clients have independent preferences; owner CLI calls use a separate owner scope. Requests cannot select another device. The default revision is 1 with interaction notifications enabled and terminal notifications disabled. Changes require the original preference revision and a durable actor-bound request ID; no-op writes preserve the revision, and exact replay returns the current preferences without restoring an older setting. A preference change does not clear existing delivery reservations. OS permission remains a separate native observation.
 
 `ListNotificationCandidates` returns at most 50 original inbox/session UUIDs and closed request/succeeded/failed/stopped kinds, with an explicit `more` flag and a three-second read budget. It contains no source content, session names, prompts, account aliases, credentials or paths. Interaction candidates require an active, claimed execution without recovery, the exact current original open interaction and no accepted question/approval response. Reading the inbox does not resolve or suppress the original interaction. Terminal candidates require explicit terminal notification preference, active visibility and unread retained terminal metadata; they do not imply process cleanup. Claimed entries leave subsequent batches. Listing cannot reserve, mark read, answer or mutate execution.
@@ -41,6 +47,7 @@ CLI parity is `notification preferences`, `notification configure --revision N -
 The desktop must acquire native permission independently, submit only a fresh grant and resolve activation through a fresh `GetInboxEntry` read in the original connection. A retained or delayed OS notification cannot renew an archived, answered, stopped or replaced request. Server-event presentation receives only metadata from TypeScript. The separate original-connection observer below reads status through the fixed Go sidecar; it does not subscribe to product streams or acquire execution authority. The ledger alone does not establish OS delivery or native activation acceptance.
 
 ### Situation-specific notifications
+
 System capability 58 owns the complete situation preferences, typed operational Inbox projection and original-connection native observer. The allocation manifest records its closed declarations. No Worker capability or database migration is required. Reserved real migration 32 retains its original reset ownership.
 
 An explicit `GetNotificationPreferencesRequest.situations` opt-in initializes twelve choices in the authenticated client scope. Legacy `interactions` maps to Questions and Approval requests; legacy `terminals` maps to Succeeded, Failed and Stopped. Explicit false values, the original revision and receipt bytes remain intact. New attention choices are Server lost, Worker unavailable, Account quota exhausted, Schedule could not start and Schedule skipped while offline; these default on. Server restored and Worker available default off. Account quota recovery consent remains independently managed per account. A complete granular write preserves the legacy fields. Once initialized, an omitted granular generation cannot overwrite these choices. Initialization and each operational re-enable capture the current durable event sequence before acknowledgment; earlier operational records never become display candidates.
@@ -80,6 +87,7 @@ CLI individual controls are `notification configure --revision N` with any of `-
 - Persist native approval observations through their dedicated pinned harness/version graph and the same atomic interaction/index/inbox/event transaction as questions. Deep-copy original scopes before outbox retention, preserve nullable collections and exact offered policy choices, and reject mixed payloads or unsolicited responses. Approval and question payloads share count/open/byte limits; the existing database byte column accounts for either type. Closure, terminal outcome and inbox read state cannot authorize a response or erase the original approval. Dedicated question response paths must reject approvals; approvals use their own owner acceptance/control delivery boundary.
 
 ## Storage
+
 Schema v17 adds per-client preference revisions and client/inbox-unique delivery reservations. It stores only opaque IDs, closed kinds/states and booleans, with inbox deletion cascading to that inbox's reservations. Migration from v1-v16 retains a synchronized pre-migration backup, preserves original resources/receipts/history and starts with no invented delivery evidence or preferences. Existing conflicting tables fail migration atomically; they are never adopted or overwritten. Reopening preserves reservations, including claimed-but-unreported uncertainty. Ordinary preference and delivery writes do not create inbox resource revisions/events.
 
 Schema v10 adds unique source-kind/source-ID ownership and read-state/session indexes over `inbox` entities. Creation, source publication, state/events and request receipts are atomic. Source IDs are interaction UUIDs or execution UUIDs; every terminal record also binds its original queue input. Existing source records remain authoritative and are never rewritten by inbox backfill or read-state changes.
@@ -87,23 +95,29 @@ Schema v10 adds unique source-kind/source-ID ownership and read-state/session in
 Migration from v1–v9 creates a synchronized private pre-migration backup, preserves earlier indexes/transcripts and backfills retained questions plus the terminal execution progress available in each legacy session. It does not invent missing historical native executions, closure, cleanup, answer acceptance or read state: newly materialized entries are unread, and their creation timestamp records backfill time. Process legacy entities in bounded pages within the migration transaction; malformed or contradictory source evidence aborts the migration and retains the original database and backup. Reopen cannot repeat a successful backfill. Retained source deletion must eventually remove associated inbox references through the coordinated session/deletion contract; public generic configuration cannot delete these records.
 
 ## Security
+
 Only validated server/native observations create entries. Inbox text, source questions and response content are not permissions. Secret answers cannot enter ordinary inbox records, and metadata-only events never duplicate original question/answer bodies. Revoked clients and Worker credentials cannot mutate read state or use owner response APIs. Private server-local storage intentionally follows the session contract instead of cloud object storage.
 
 ## Logging
+
 Use structured `log/slog` events with inbox/source/session/request/correlation identities and typed read state or failure codes. Never log question/answer text, transcript bodies, credentials or raw native diagnostics.
 
 ## Build and Test
+
 Run `go test -race -p 1 ./cmds/delidev-cli/...` and `go vet ./cmds/delidev-cli/...`. Verify migration/backups/reopen, source deduplication, publication rollback, immutable completion evidence, original content retention and read-state independence. Dedicated RPC/CLI integration must additionally cover concurrent reads/responses, stale revision, exact receipt replay, revoked clients, filtered pagination and bounded joined documents. Native notification acceptance remains separate from deterministic inbox tests.
 
 ## Dependencies and Integrations
+
 Native publication, retained interactions, execution completion, resource events, private SQLite, authenticated Connect and the future desktop inbox/notification presentation.
 
 ## Change Triggers
+
 Update this contract, command/session/protocol contracts, project index, validation records in pull requests, issues and CI logs/artifacts and scoped AGENTS whenever source kinds, read-state ownership, public operations, migration or notification boundaries change.
 
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - [Project](project-delidev.md)
 - [Session and interaction contract](cmds-delidev-sessions-contract.md)
 - [Connect protocol](protos-delidev-v1-contract.md)

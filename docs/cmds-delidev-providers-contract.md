@@ -14,7 +14,6 @@ validation. Custom URLs remain advisory. Credential state, late-publication
 revision/connection checks, bounded GET inspection, outbound routing and secret
 clearing retain their existing ownership.
 
-
 ## Ownership and scope
 
 The server owns non-inference API checks in `cmds/delidev-cli/internal/providers`, exposed through `AccountService.ValidateAccount` and `account validate --id ID --revision N`. The complete [the feature requirements](cmds-delidev-requirements.md) remain normative. This inspector implements bounded model-list inspection and credential evidence. Automatic catalog publication and provider presets are integrated through the separate [catalog contract](cmds-delidev-catalog-contract.md). Quota refresh, subscription authentication, API proxy execution and selected-model/harness validation remain required work and must preserve the same explicit authority and secret boundaries.
@@ -74,7 +73,6 @@ Successful model discovery with unobservable authentication records `state=unsup
 
 Provider enabled state and preset provenance are governed by the [provider activation contract](cmds-delidev-provider-activation-contract.md). Discovery requires both provider and discovery enabled; turning a provider Off cancels only its in-flight catalog work, prevents stale publication, and preserves previous model observations. Explicit account validation remains separate. Legacy providers without an activation field remain effectively enabled, while generic writes preserve a stored false value.
 
-
 ## Additional fixed hosted inspection profiles
 
 Official key-creation metadata is static presentation data on each hosted preset.
@@ -132,7 +130,6 @@ The generated native guidance JSON uses exact-path LF normalization so Windows c
 ListEndpointModels reuses fixed listing profiles and existing pagination/redaction/outbound/cancellation bounds, without gateway credential-validation requests. Its read neither changes account state nor stores catalogs, resources, events or receipts. Account validation keeps its independent credential-evidence behavior.
 
 Follow the complete [catalog amendment](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation) and [current-only reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset). This reservation changes no runtime support or native/account acceptance.
-
 
 ## Automatic API verification
 

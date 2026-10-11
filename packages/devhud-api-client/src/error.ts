@@ -98,5 +98,9 @@ function firstDetail<Desc extends DescMessage>(
 
 function getCorrelationId(error: ConnectError): string | undefined {
   const detail = error.findDetails(ErrorMetadataSchema)[0];
-  return detail?.correlationId?.value ?? error.metadata.get("x-devhud-correlation-id") ?? undefined;
+  return (
+    detail?.correlationId?.value ??
+    error.metadata.get("x-devhud-correlation-id") ??
+    undefined
+  );
 }

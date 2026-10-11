@@ -8,7 +8,6 @@ v1–3 import semantics. Capability-9 current/retained connection generations,
 Imported API accounts always start disconnected and cannot import old execution
 authority. See the [account contract](cmds-delidev-accounts-contract.md#connected-api-format-changes).
 
-
 ## API format bundle version 4
 
 Version 4 preserves Provider `api_formats` and Account `api_protocol` under the
@@ -21,7 +20,6 @@ atomic publication. Accounts start disconnected; connection pins, credential
 references, keyless cleanup proof state, validation/catalog/quota observations,
 routing state and session/Usage history are never exported. Existing target
 accounts cannot be reused or reconnected by import. No SQLite migration is added.
-
 
 ## Scope
 

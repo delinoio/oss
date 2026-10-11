@@ -1,9 +1,18 @@
 import { createElement } from "react";
 import type { ElementProps } from "./types.js";
 
-export enum SampleRate { Cd = 44100, Game = 48000 }
-export enum Channels { Mono = 1, Stereo = 2 }
-export enum Waveform { Sine = "sine", Triangle = "triangle" }
+export enum SampleRate {
+  Cd = 44100,
+  Game = 48000,
+}
+export enum Channels {
+  Mono = 1,
+  Stereo = 2,
+}
+export enum Waveform {
+  Sine = "sine",
+  Triangle = "triangle",
+}
 
 export interface SoundProps extends ElementProps {
   /** Total output length in seconds, including silence and tails (at most 30). */

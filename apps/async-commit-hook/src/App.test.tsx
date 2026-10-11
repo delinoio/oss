@@ -38,17 +38,23 @@ it("discards retired connection fields and preserves the run deep link", () => {
   const parsed = connection.readConnection();
   expect(parsed).toEqual({ run: "receipt" });
   expect(location.hash).toBe("#run=receipt");
-  expect(connection.describeError(new Error("fetch failed"))).toMatch(/Run ach ui/);
+  expect(connection.describeError(new Error("fetch failed"))).toMatch(
+    /Run ach ui/,
+  );
 });
 it("focuses the main content without replacing a run deep link", () => {
   history.replaceState(null, "", "/#run=receipt");
-  const transport = vi.spyOn(connection, "transportFor").mockImplementation(() =>
-    createRouterTransport((router) => router.service(LocalService, {
-      getVersion: () => ({ apiVersion: 1 }),
-      listRepositories: () => ({ repositories: [] }),
-      getRun: () => ({}),
-    })),
-  );
+  const transport = vi
+    .spyOn(connection, "transportFor")
+    .mockImplementation(() =>
+      createRouterTransport((router) =>
+        router.service(LocalService, {
+          getVersion: () => ({ apiVersion: 1 }),
+          listRepositories: () => ({ repositories: [] }),
+          getRun: () => ({}),
+        }),
+      ),
+    );
   const { unmount } = render(<App />);
   try {
     fireEvent.click(screen.getByRole("link", { name: "Skip to content" }));
@@ -61,15 +67,21 @@ it("focuses the main content without replacing a run deep link", () => {
 });
 it("focuses the incompatible-version recovery content from the skip link", async () => {
   history.replaceState(null, "", "/#run=receipt");
-  const transport = vi.spyOn(connection, "transportFor").mockImplementation(() =>
-    createRouterTransport((router) => router.service(LocalService, {
-      getVersion: () => ({ apiVersion: 2 }),
-      listRepositories: () => ({ repositories: [] }),
-    })),
-  );
+  const transport = vi
+    .spyOn(connection, "transportFor")
+    .mockImplementation(() =>
+      createRouterTransport((router) =>
+        router.service(LocalService, {
+          getVersion: () => ({ apiVersion: 2 }),
+          listRepositories: () => ({ repositories: [] }),
+        }),
+      ),
+    );
   const { unmount } = render(<App />);
   try {
-    await screen.findByText("Incompatible local API version. Install a matching ach version.");
+    await screen.findByText(
+      "Incompatible local API version. Install a matching ach version.",
+    );
     fireEvent.click(screen.getByRole("link", { name: "Skip to content" }));
     expect(location.hash).toBe("#run=receipt");
     expect(document.activeElement).toBe(screen.getByRole("main"));

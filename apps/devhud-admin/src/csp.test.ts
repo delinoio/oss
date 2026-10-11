@@ -7,13 +7,16 @@ describe("administrator content security policy", () => {
     ["http://localhost.:3001/oidc", "http://localhost.:3001"],
     ["http://127.0.0.2:3001/oidc", "http://127.0.0.2:3001"],
     ["http://[::1]:3001/oidc", "http://[::1]:3001"],
-  ])("allows the configured loopback Logto issuer origin %s", (issuer, origin) => {
-    const csp = developmentAdminCsp(issuer);
-    expect(csp).toContain(
-      `connect-src 'self' http://127.0.0.1:46307 ${origin}`,
-    );
-    expect(csp).not.toContain("/oidc");
-  });
+  ])(
+    "allows the configured loopback Logto issuer origin %s",
+    (issuer, origin) => {
+      const csp = developmentAdminCsp(issuer);
+      expect(csp).toContain(
+        `connect-src 'self' http://127.0.0.1:46307 ${origin}`,
+      );
+      expect(csp).not.toContain("/oidc");
+    },
+  );
 
   it("allows only the exact configured HTTPS issuer", () => {
     const csp = developmentAdminCsp("https://issuer.example/oidc");
@@ -33,6 +36,8 @@ describe("administrator content security policy", () => {
     expect(() =>
       developmentAdminCsp("http://127.0.0.2.example.com/oidc"),
     ).toThrow(/HTTPS outside loopback/u);
-    expect(() => developmentAdminCsp("file:///tmp/issuer")).toThrow(/HTTP or HTTPS/u);
+    expect(() => developmentAdminCsp("file:///tmp/issuer")).toThrow(
+      /HTTP or HTTPS/u,
+    );
   });
 });

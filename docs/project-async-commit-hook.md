@@ -1,12 +1,15 @@
 # Project: async-commit-hook
 
 ## Goal
+
 Run trusted repository checks asynchronously against committed source, with durable receipts and exact-commit validation shared by humans and coding agents.
 
 ## Project ID
+
 `async-commit-hook`; the only installed executable is `ach`.
 
 ## Domain Ownership Map
+
 - `cmds/async-commit-hook`: Go core, CLI, workers, local API, stdio MCP, installation and update lifecycle.
 - `apps/async-commit-hook`: React/Rsbuild UI embedded in ach.
 - `apps/public-docs/docs/async-commit-hook`: Rspress documentation content published at `https://oss.delino.io/async-commit-hook`; installer assets remain in `scripts/install`.
@@ -15,6 +18,7 @@ Run trusted repository checks asynchronously against committed source, with dura
 - `packaging/async-commit-hook`: supported release metadata and compatibility evidence.
 
 ## Domain Contract Documents
+
 - [Command contract](cmds-async-commit-hook-contract.md)
 - [Application contract](apps-async-commit-hook-contract.md)
 - [Public documentation contract](apps-async-commit-hook-docs-foundation.md)
@@ -24,6 +28,7 @@ Run trusted repository checks asynchronously against committed source, with dura
 - [Release and recovery contract](cmds-async-commit-hook-release-contract.md)
 
 ## Cross-Domain Invariants
+
 The feature is normative, with explicit owner amendments on 2026-09-19: actual six-target machine validation is excluded from this implementation, and public releases/deployments are prepared but not executed. Cross-compilation and local automated integration remain required. Never label an untested platform as integration-validated.
 
 Configuration, local storage, CLI JSON and API contracts start at version 1. Product IDs are UUID v7; commits retain Git object IDs. A successful commit or query is not successful validation. All clients use the same exact-commit, compatible-context, latest-accepted-attempt gate. Reading never acknowledges a run. Retention never resurrects an older success.
@@ -39,11 +44,13 @@ Release preparation is available through `Release Project` with project `async-c
 Primary public installation instructions follow the downloaded installers' latest-published-stable defaults, and upgrade instructions select the highest published stable release. Explicit version selection and rollback remain documented separately without pinning the primary commands to a historical release.
 
 ## Change Policy
+
 Update the owning domain contract, the relevant requirements or release contract, and relevant AGENTS.md alongside interface, ownership, security or lifecycle changes. Generate protocol sources; never edit generated output. Public documentation describes supported user workflows, not repository internals.
 
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - The related change
 - [Repository defaults](repository-defaults.md)
 - [Project template](project-template.md)

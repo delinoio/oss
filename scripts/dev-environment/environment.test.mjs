@@ -2,7 +2,15 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { EventEmitter, once } from "node:events";
 import { createServer } from "node:net";
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -42,7 +50,10 @@ import { windowsTerminationEnvironment } from "../spawn-dev-server.mjs";
 const testDirectory = dirname(fileURLToPath(import.meta.url));
 const fakeDirectory = resolve(testDirectory, "test");
 const cli = resolve(testDirectory, "cli.mjs");
-const apiScript = resolve(repositoryRoot, "servers/devhud-api/scripts/local.mjs");
+const apiScript = resolve(
+  repositoryRoot,
+  "servers/devhud-api/scripts/local.mjs",
+);
 const lateProvider = resolve(fakeDirectory, "fake-late-provider.mjs");
 const canaries = [
   "AUTH_TOKEN_MUST_NOT_LEAK",
@@ -56,7 +67,8 @@ const canaries = [
 
 function validApiEnvironment() {
   return {
-    DEVHUD_DATABASE_URL: "postgres://devhud:devhud@127.0.0.1:5432/devhud?sslmode=disable",
+    DEVHUD_DATABASE_URL:
+      "postgres://devhud:devhud@127.0.0.1:5432/devhud?sslmode=disable",
     DEVHUD_PUBLIC_API_URL: "http://127.0.0.1:46307",
     DEVHUD_LOGTO_ISSUER: "http://localhost:3001/oidc",
     DEVHUD_LOGTO_AUDIENCE: "urn:devhud:test",
@@ -135,7 +147,11 @@ async function events(path) {
   }
 }
 
-async function waitForEvent(path, predicate, { timeoutMs = 5_000, child } = {}) {
+async function waitForEvent(
+  path,
+  predicate,
+  { timeoutMs = 5_000, child } = {},
+) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const recorded = await events(path);
@@ -170,7 +186,8 @@ async function interruptCliDuring(args, environment, predicate) {
       completion,
       new Promise((_, reject) => {
         timeout = setTimeout(
-          () => reject(new Error("development command did not exit after SIGTERM")),
+          () =>
+            reject(new Error("development command did not exit after SIGTERM")),
           5_000,
         );
       }),
@@ -408,10 +425,14 @@ test("API, administrator, and frontend allowlists reject malformed configuration
     [{ ...valid, DEVHUD_DATABASE_URL: "" }, "environment.missing"],
     [{ ...valid, UNKNOWN_NAME: "canary" }, "environment.unknown"],
     [{ ...valid, PATH: "secret-path" }, "environment.unknown"],
-    [{ ...valid, DEVHUD_R2_ENDPOINT: "https://example.invalid" }, "environment.partial-group"],
+    [
+      { ...valid, DEVHUD_R2_ENDPOINT: "https://example.invalid" },
+      "environment.partial-group",
+    ],
   ]) {
     assert.throws(
-      () => validateInjectedEnvironment(apiContract, shape, { PATH: "safe-path" }),
+      () =>
+        validateInjectedEnvironment(apiContract, shape, { PATH: "safe-path" }),
       (error) => error instanceof EnvironmentError && error.code === expected,
     );
   }
@@ -556,8 +577,7 @@ test("preflight rejects URL escapes rejected by the Go service parser", () => {
     escapedIssuer,
   );
 
-  const escapedDatabaseURL =
-    "postgres://devhud:pass%40word@localhost/devhud";
+  const escapedDatabaseURL = "postgres://devhud:pass%40word@localhost/devhud";
   assert.equal(
     validateInjectedEnvironment(apiContract, {
       ...valid,
@@ -592,8 +612,7 @@ test("preflight rejects raw URL spaces and control characters rejected by the Go
       );
     }
 
-    const databaseURL =
-      `postgres://devhud:devhud@localhost/dev${controlCharacter}hud`;
+    const databaseURL = `postgres://devhud:devhud@localhost/dev${controlCharacter}hud`;
     assert.throws(
       () =>
         validateInjectedEnvironment(apiContract, {
@@ -642,11 +661,15 @@ test("preflight accepts the same loopback issuer hosts as the services", () => {
     "http://[0:0:0:0:0:0:0:1]:3001/oidc",
   ]) {
     assert.deepEqual(
-      validateInjectedEnvironment(adminContract, { DEVHUD_LOGTO_ISSUER: issuer }),
+      validateInjectedEnvironment(adminContract, {
+        DEVHUD_LOGTO_ISSUER: issuer,
+      }),
       { DEVHUD_LOGTO_ISSUER: issuer },
     );
     assert.deepEqual(
-      validateInjectedEnvironment(devhudFrontendContract, { DEVHUD_LOGTO_ISSUER: issuer }),
+      validateInjectedEnvironment(devhudFrontendContract, {
+        DEVHUD_LOGTO_ISSUER: issuer,
+      }),
       { DEVHUD_LOGTO_ISSUER: issuer },
     );
     assert.deepEqual(
@@ -701,14 +724,22 @@ test("preflight rejects numeric IPv4 spellings rejected by the Go service parser
 });
 
 test("OSS API, administrator, and frontend overrides must resolve to the same issuer", async (t) => {
-  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-issuer-test-"));
+  const temporaryDirectory = await mkdtemp(
+    resolve(tmpdir(), "devhud-issuer-test-"),
+  );
   t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
   const environmentFile = resolve(temporaryDirectory, ".env");
   const issuer = "https://auth.example.test/oidc";
   await writeFile(environmentFile, `DEVHUD_LOGTO_ISSUER=${issuer}\n`, "utf8");
 
-  const apiOverrides = await readServiceEnv(environmentFile, apiContract.ossOverrideNames);
-  const adminOverrides = await readServiceEnv(environmentFile, adminContract.ossOverrideNames);
+  const apiOverrides = await readServiceEnv(
+    environmentFile,
+    apiContract.ossOverrideNames,
+  );
+  const adminOverrides = await readServiceEnv(
+    environmentFile,
+    adminContract.ossOverrideNames,
+  );
   const frontendOverrides = await readServiceEnv(
     environmentFile,
     devhudFrontendContract.ossOverrideNames,
@@ -717,11 +748,16 @@ test("OSS API, administrator, and frontend overrides must resolve to the same is
   assert.deepEqual(adminOverrides, apiOverrides);
   assert.deepEqual(frontendOverrides, apiOverrides);
   assert.equal(
-    validateInjectedEnvironment(apiContract, { ...validApiEnvironment(), ...apiOverrides })
-      .DEVHUD_LOGTO_ISSUER,
+    validateInjectedEnvironment(apiContract, {
+      ...validApiEnvironment(),
+      ...apiOverrides,
+    }).DEVHUD_LOGTO_ISSUER,
     issuer,
   );
-  assert.deepEqual(validateInjectedEnvironment(adminContract, adminOverrides), adminOverrides);
+  assert.deepEqual(
+    validateInjectedEnvironment(adminContract, adminOverrides),
+    adminOverrides,
+  );
   assert.deepEqual(
     validateInjectedEnvironment(devhudFrontendContract, frontendOverrides),
     frontendOverrides,
@@ -734,17 +770,21 @@ test("OSS API, administrator, and frontend overrides must resolve to the same is
   assert.throws(
     () => resolveOssLogtoIssuer(issuer, "https://other.example.test/oidc"),
     (error) =>
-      error instanceof EnvironmentError && error.code === "environment.issuer-mismatch",
+      error instanceof EnvironmentError &&
+      error.code === "environment.issuer-mismatch",
   );
   assert.throws(
     () => resolveOssLogtoIssuer(undefined, issuer),
     (error) =>
-      error instanceof EnvironmentError && error.code === "environment.issuer-mismatch",
+      error instanceof EnvironmentError &&
+      error.code === "environment.issuer-mismatch",
   );
 });
 
 test("team setup initializes only through env:login and startup uses exact Infisical paths and flags without disclosure", async (t) => {
-  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-team-test-"));
+  const temporaryDirectory = await mkdtemp(
+    resolve(tmpdir(), "devhud-team-test-"),
+  );
   t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
   const environment = fakeEnvironment(temporaryDirectory);
   const { configFile, projectConfigDirectory } =
@@ -759,7 +799,8 @@ test("team setup initializes only through env:login and startup uses exact Infis
     const result = await runNode(cli, ["start", "team"], environment);
     assert.equal(result.code, 0, result.stderr);
     const disclosed = `${result.stdout}\n${result.stderr}`;
-    for (const canary of canaries) assert.equal(disclosed.includes(canary), false, canary);
+    for (const canary of canaries)
+      assert.equal(disclosed.includes(canary), false, canary);
   }
 
   const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
@@ -783,12 +824,16 @@ test("team setup initializes only through env:login and startup uses exact Infis
     ]) {
       assert.ok(event.args.includes(flag), flag);
     }
-    for (const canary of canaries) assert.equal(serialized.includes(canary), false, canary);
+    for (const canary of canaries)
+      assert.equal(serialized.includes(canary), false, canary);
   }
   const turbo = recorded.filter(
     (event) => event.tool === "pnpm" && event.action === "turbo",
   );
-  assert.deepEqual(turbo.map((event) => event.mode), ["team", "team"]);
+  assert.deepEqual(
+    turbo.map((event) => event.mode),
+    ["team", "team"],
+  );
   const firstAdminAssets = recorded.findIndex(
     (event) => event.tool === "pnpm" && event.action === "admin-assets",
   );
@@ -822,14 +867,30 @@ test("team startup binds migration and Turbo services to the preflight issuer", 
 
   const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
   const order = recorded.map((event) => `${event.tool}:${event.action}`);
-  assert.ok(order.indexOf("go:migrate") < order.indexOf("pnpm:turbo"), order.join(", "));
-  assert.ok(order.indexOf("pnpm:turbo") < order.indexOf("go:serve"), order.join(", "));
-  assert.ok(order.indexOf("go:serve") < order.indexOf("admin:serve"), order.join(", "));
-  assert.ok(order.indexOf("admin:serve") < order.indexOf("frontend:serve"), order.join(", "));
+  assert.ok(
+    order.indexOf("go:migrate") < order.indexOf("pnpm:turbo"),
+    order.join(", "),
+  );
+  assert.ok(
+    order.indexOf("pnpm:turbo") < order.indexOf("go:serve"),
+    order.join(", "),
+  );
+  assert.ok(
+    order.indexOf("go:serve") < order.indexOf("admin:serve"),
+    order.join(", "),
+  );
+  assert.ok(
+    order.indexOf("admin:serve") < order.indexOf("frontend:serve"),
+    order.join(", "),
+  );
   const { teamConfigurationPinFile } = resolveLocalStatePaths(environment);
   await assert.rejects(stat(teamConfigurationPinFile), { code: "ENOENT" });
   for (const canary of canaries) {
-    assert.equal(`${result.stdout}${result.stderr}`.includes(canary), false, canary);
+    assert.equal(
+      `${result.stdout}${result.stderr}`.includes(canary),
+      false,
+      canary,
+    );
   }
 });
 
@@ -851,10 +912,19 @@ test("team startup rejects issuer rotation before migration", async (t) => {
     result.stderr,
     /\[environment\.configuration-changed\].*DEVHUD_LOGTO_ISSUER/u,
   );
-  assert.equal(`${result.stdout}${result.stderr}`.includes(rotatedIssuer), false);
+  assert.equal(
+    `${result.stdout}${result.stderr}`.includes(rotatedIssuer),
+    false,
+  );
   const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
-  assert.equal(recorded.some((event) => event.tool === "go"), false);
-  assert.equal(recorded.some((event) => event.tool === "pnpm"), false);
+  assert.equal(
+    recorded.some((event) => event.tool === "go"),
+    false,
+  );
+  assert.equal(
+    recorded.some((event) => event.tool === "pnpm"),
+    false,
+  );
   const { teamConfigurationPinFile } = resolveLocalStatePaths(environment);
   await assert.rejects(stat(teamConfigurationPinFile), { code: "ENOENT" });
 });
@@ -878,11 +948,21 @@ test("Turbo-owned services reject issuer rotation after migration", async (t) =>
     result.stderr,
     /\[environment\.configuration-changed\].*DEVHUD_LOGTO_ISSUER/u,
   );
-  assert.equal(`${result.stdout}${result.stderr}`.includes(rotatedIssuer), false);
+  assert.equal(
+    `${result.stdout}${result.stderr}`.includes(rotatedIssuer),
+    false,
+  );
   const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
-  assert.ok(recorded.some((event) => event.tool === "go" && event.action === "migrate"));
-  assert.ok(recorded.some((event) => event.tool === "go" && event.action === "serve"));
-  assert.equal(recorded.some((event) => event.tool === "admin"), false);
+  assert.ok(
+    recorded.some((event) => event.tool === "go" && event.action === "migrate"),
+  );
+  assert.ok(
+    recorded.some((event) => event.tool === "go" && event.action === "serve"),
+  );
+  assert.equal(
+    recorded.some((event) => event.tool === "admin"),
+    false,
+  );
   const { teamConfigurationPinFile } = resolveLocalStatePaths(environment);
   await assert.rejects(stat(teamConfigurationPinFile), { code: "ENOENT" });
 });
@@ -942,7 +1022,9 @@ test("team configuration pin is private, exclusive, and released after Turbo", a
 });
 
 test("team tooling rejects suffixed or indirectly mentioned Infisical versions", async (t) => {
-  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-infisical-version-"));
+  const temporaryDirectory = await mkdtemp(
+    resolve(tmpdir(), "devhud-infisical-version-"),
+  );
   t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
 
   for (const output of [
@@ -982,8 +1064,14 @@ test("team startup rejects missing project binding or authentication without int
         : /\[authentication\.required\].*pnpm env:login/u,
     );
     const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
-    assert.equal(recorded.some((event) => ["login", "init"].includes(event.action)), false);
-    assert.equal(recorded.some((event) => ["go", "pnpm", "docker"].includes(event.tool)), false);
+    assert.equal(
+      recorded.some((event) => ["login", "init"].includes(event.action)),
+      false,
+    );
+    assert.equal(
+      recorded.some((event) => ["go", "pnpm", "docker"].includes(event.tool)),
+      false,
+    );
     if (scenario === "project") {
       await assert.rejects(readFile(configFile, "utf8"), /ENOENT/u);
     }
@@ -991,7 +1079,9 @@ test("team startup rejects missing project binding or authentication without int
 });
 
 test("team authentication or path failure is fail-closed and does not invoke OSS", async (t) => {
-  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-team-failure-"));
+  const temporaryDirectory = await mkdtemp(
+    resolve(tmpdir(), "devhud-team-failure-"),
+  );
   const environment = {
     ...fakeEnvironment(temporaryDirectory),
     DEVHUD_TEST_INFISICAL_FAILURE: "/devhud/api",
@@ -1000,18 +1090,34 @@ test("team authentication or path failure is fail-closed and does not invoke OSS
     resolveInfisicalConfigPaths(environment);
   await mkdir(projectConfigDirectory, { recursive: true });
   await writeFile(configFile, "{}\n", "utf8");
-  await writeFile(environment.DEVHUD_TEST_AUTH_STATE, "authenticated\n", "utf8");
+  await writeFile(
+    environment.DEVHUD_TEST_AUTH_STATE,
+    "authenticated\n",
+    "utf8",
+  );
   t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
 
   const result = await runNode(cli, ["start", "team"], environment);
   assert.equal(result.code, 1);
   assert.match(result.stderr, /authentication or secret path is unavailable/u);
-  assert.equal(`${result.stdout}${result.stderr}`.includes("INFISICAL_FAILURE_CANARY_MUST_NOT_LEAK"), false);
-  assert.equal((await events(environment.DEVHUD_TEST_EVENT_LOG)).some((event) => event.tool === "docker"), false);
+  assert.equal(
+    `${result.stdout}${result.stderr}`.includes(
+      "INFISICAL_FAILURE_CANARY_MUST_NOT_LEAK",
+    ),
+    false,
+  );
+  assert.equal(
+    (await events(environment.DEVHUD_TEST_EVENT_LOG)).some(
+      (event) => event.tool === "docker",
+    ),
+    false,
+  );
 });
 
 test("team startup and doctor reject mismatched API and administrator issuers", async (t) => {
-  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-team-issuer-"));
+  const temporaryDirectory = await mkdtemp(
+    resolve(tmpdir(), "devhud-team-issuer-"),
+  );
   const apiIssuer = "https://api-auth-canary.example.test/oidc";
   const adminIssuer = "https://admin-auth-canary.example.test/oidc";
   const environment = {
@@ -1027,19 +1133,30 @@ test("team startup and doctor reject mismatched API and administrator issuers", 
   for (const args of [["start", "team"], ["doctor"]]) {
     const result = await runNode(cli, args, environment);
     assert.equal(result.code, 1);
-    assert.match(result.stderr, /\[environment\.issuer-mismatch\].*DEVHUD_LOGTO_ISSUER/u);
+    assert.match(
+      result.stderr,
+      /\[environment\.issuer-mismatch\].*DEVHUD_LOGTO_ISSUER/u,
+    );
     const output = `${result.stdout}\n${result.stderr}`;
     assert.equal(output.includes(apiIssuer), false);
     assert.equal(output.includes(adminIssuer), false);
   }
 
   const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
-  assert.equal(recorded.some((event) => event.tool === "go"), false);
-  assert.equal(recorded.some((event) => event.tool === "pnpm"), false);
+  assert.equal(
+    recorded.some((event) => event.tool === "go"),
+    false,
+  );
+  assert.equal(
+    recorded.some((event) => event.tool === "pnpm"),
+    false,
+  );
 });
 
 test("service wrapper reports name/category-only contract failures and suppresses values", async (t) => {
-  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-contract-failure-"));
+  const temporaryDirectory = await mkdtemp(
+    resolve(tmpdir(), "devhud-contract-failure-"),
+  );
   t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
   for (const [shape, expectedName] of [
     ["missing", "DEVHUD_DATABASE_URL"],
@@ -1060,7 +1177,9 @@ test("service wrapper reports name/category-only contract failures and suppresse
 });
 
 test("team provider classification waits for accepted and rejected pipe output", async (t) => {
-  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-provider-pipes-"));
+  const temporaryDirectory = await mkdtemp(
+    resolve(tmpdir(), "devhud-provider-pipes-"),
+  );
   t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
   const environment = {
     ...fakeEnvironment(temporaryDirectory),
@@ -1071,19 +1190,27 @@ test("team provider classification waits for accepted and rejected pipe output",
   const accepted = await runNode(apiScript, ["validate"], environment);
   assert.equal(accepted.code, 0, accepted.stderr);
   assert.equal(accepted.stderr.includes("environment.unavailable"), false);
-  assert.equal(accepted.stderr.includes("INFISICAL_WARNING_CANARY_MUST_NOT_LEAK"), false);
+  assert.equal(
+    accepted.stderr.includes("INFISICAL_WARNING_CANARY_MUST_NOT_LEAK"),
+    false,
+  );
 
   const rejected = await runNode(apiScript, ["validate"], {
     ...environment,
     DEVHUD_TEST_LATE_PROVIDER_RESULT: "rejected",
   });
   assert.equal(rejected.code, 1);
-  assert.match(rejected.stderr, /\[environment\.missing\].*DEVHUD_DATABASE_URL/u);
+  assert.match(
+    rejected.stderr,
+    /\[environment\.missing\].*DEVHUD_DATABASE_URL/u,
+  );
   assert.equal(rejected.stderr.includes("environment.unavailable"), false);
 });
 
 test("administrator preflight probes the configured localhost binding", async (t) => {
-  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-admin-port-"));
+  const temporaryDirectory = await mkdtemp(
+    resolve(tmpdir(), "devhud-admin-port-"),
+  );
   const server = createServer();
   await new Promise((resolveListen, reject) => {
     server.once("error", reject);
@@ -1097,58 +1224,86 @@ test("administrator preflight probes the configured localhost binding", async (t
   const environment = fakeEnvironment(temporaryDirectory);
   const result = await runNode(cli, ["start", "team"], environment);
   assert.equal(result.code, 1);
-  assert.match(result.stderr, /DevHud administrator requires fixed port 46306/u);
+  assert.match(
+    result.stderr,
+    /DevHud administrator requires fixed port 46306/u,
+  );
   assert.deepEqual(await events(environment.DEVHUD_TEST_EVENT_LOG), []);
 });
 
 for (const [selector, remoteEndpoints] of [
   ["context", ["tcp://192.0.2.10:2376", "npipe:////server/pipe/docker_engine"]],
-  ["host", ["ssh://developer@example.test", "npipe:////server/pipe/docker_engine"]],
+  [
+    "host",
+    ["ssh://developer@example.test", "npipe:////server/pipe/docker_engine"],
+  ],
 ]) {
   for (const remoteEndpoint of remoteEndpoints) {
-    test(
-      `OSS startup rejects a remote Docker ${selector} endpoint before Compose startup: ${remoteEndpoint}`,
-      async (t) => {
-        const temporaryDirectory = await mkdtemp(
-          resolve(tmpdir(), `devhud-remote-docker-${selector}-`),
-        );
-        t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
-        const environment = fakeEnvironment(temporaryDirectory);
-        if (selector === "context") {
-          environment.DOCKER_CONTEXT = "remote-review-context";
-          environment.DOCKER_HOST = "unix:///tmp/ignored-local-docker.sock";
-          environment.DEVHUD_TEST_DOCKER_ENDPOINT = remoteEndpoint;
-        } else {
-          delete environment.DOCKER_CONTEXT;
-          environment.DOCKER_HOST = remoteEndpoint;
-        }
+    test(`OSS startup rejects a remote Docker ${selector} endpoint before Compose startup: ${remoteEndpoint}`, async (t) => {
+      const temporaryDirectory = await mkdtemp(
+        resolve(tmpdir(), `devhud-remote-docker-${selector}-`),
+      );
+      t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
+      const environment = fakeEnvironment(temporaryDirectory);
+      if (selector === "context") {
+        environment.DOCKER_CONTEXT = "remote-review-context";
+        environment.DOCKER_HOST = "unix:///tmp/ignored-local-docker.sock";
+        environment.DEVHUD_TEST_DOCKER_ENDPOINT = remoteEndpoint;
+      } else {
+        delete environment.DOCKER_CONTEXT;
+        environment.DOCKER_HOST = remoteEndpoint;
+      }
 
-        const result = await runNode(cli, ["start", "oss"], environment);
-        assert.equal(result.code, 1);
-        assert.match(result.stderr, /\[docker\.remote-daemon\]/u);
-        const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
-        assert.equal(recorded.some((event) => event.action === "up"), false);
-        assert.equal(recorded.some((event) => event.tool === "go"), false);
-        assert.equal(recorded.some((event) => event.tool === "pnpm"), false);
-      },
-    );
+      const result = await runNode(cli, ["start", "oss"], environment);
+      assert.equal(result.code, 1);
+      assert.match(result.stderr, /\[docker\.remote-daemon\]/u);
+      const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
+      assert.equal(
+        recorded.some((event) => event.action === "up"),
+        false,
+      );
+      assert.equal(
+        recorded.some((event) => event.tool === "go"),
+        false,
+      );
+      assert.equal(
+        recorded.some((event) => event.tool === "pnpm"),
+        false,
+      );
+    });
   }
 }
 
 test("OSS startup never invokes Infisical, orders health before migration and Turbo, and preserves volumes", async (t) => {
-  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-oss-test-"));
+  const temporaryDirectory = await mkdtemp(
+    resolve(tmpdir(), "devhud-oss-test-"),
+  );
   const environment = fakeEnvironment(temporaryDirectory);
   const localState = resolveLocalStatePaths(environment);
   t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
   const result = await runNode(cli, ["start", "oss"], environment);
   assert.equal(result.code, 0, result.stderr);
   const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
-  assert.equal(recorded.some((event) => event.tool === "infisical"), false);
+  assert.equal(
+    recorded.some((event) => event.tool === "infisical"),
+    false,
+  );
   const order = recorded.map((event) => `${event.tool}:${event.action}`);
-  assert.ok(order.indexOf("docker:up") < order.indexOf("go:migrate"), order.join(", "));
-  assert.ok(order.indexOf("go:migrate") < order.indexOf("pnpm:turbo"), order.join(", "));
-  assert.ok(order.indexOf("pnpm:turbo") < order.lastIndexOf("docker:down"), order.join(", "));
-  const downEvent = recorded.findLast((event) => event.tool === "docker" && event.action === "down");
+  assert.ok(
+    order.indexOf("docker:up") < order.indexOf("go:migrate"),
+    order.join(", "),
+  );
+  assert.ok(
+    order.indexOf("go:migrate") < order.indexOf("pnpm:turbo"),
+    order.join(", "),
+  );
+  assert.ok(
+    order.indexOf("pnpm:turbo") < order.lastIndexOf("docker:down"),
+    order.join(", "),
+  );
+  const downEvent = recorded.findLast(
+    (event) => event.tool === "docker" && event.action === "down",
+  );
   assert.equal(downEvent.args.includes("--volumes"), false);
   assert.equal(downEvent.args.includes("-v"), false);
   const key = await stat(localState.identityKeyFile);
@@ -1162,7 +1317,8 @@ test("OSS startup never invokes Infisical, orders health before migration and Tu
     assert.equal(event.dockerContext, environment.DOCKER_CONTEXT);
   }
   const composeEvents = recorded.filter(
-    (event) => event.tool === "docker" && ["port", "up", "down"].includes(event.action),
+    (event) =>
+      event.tool === "docker" && ["port", "up", "down"].includes(event.action),
   );
   const projectNames = composeEvents.map((event) => {
     const location = event.args.indexOf("--project-name");
@@ -1175,7 +1331,9 @@ test("OSS startup never invokes Infisical, orders health before migration and Tu
 });
 
 test("OSS startup is exclusive per checkout and releases ownership after cleanup", async (t) => {
-  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-oss-lock-"));
+  const temporaryDirectory = await mkdtemp(
+    resolve(tmpdir(), "devhud-oss-lock-"),
+  );
   const releaseFile = resolve(temporaryDirectory, "release-turbo");
   const firstEventLog = resolve(temporaryDirectory, "first-events.jsonl");
   const baseEnvironment = fakeEnvironment(temporaryDirectory);
@@ -1213,7 +1371,9 @@ test("OSS startup is exclusive per checkout and releases ownership after cleanup
   const firstResult = await first.completion;
   assert.equal(firstResult.code, 0, firstResult.stderr);
   await assert.rejects(
-    stat(resolve(baseEnvironment.DEVHUD_TEST_STATE_DIRECTORY, "oss-startup.lock")),
+    stat(
+      resolve(baseEnvironment.DEVHUD_TEST_STATE_DIRECTORY, "oss-startup.lock"),
+    ),
     { code: "ENOENT" },
   );
 
@@ -1225,7 +1385,9 @@ test("OSS startup is exclusive per checkout and releases ownership after cleanup
 });
 
 test("partial OSS startup is reaped and down remains volume-preserving", async (t) => {
-  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-oss-failure-"));
+  const temporaryDirectory = await mkdtemp(
+    resolve(tmpdir(), "devhud-oss-failure-"),
+  );
   t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
   const environment = fakeEnvironment(temporaryDirectory);
   const failedEnvironment = {
@@ -1270,7 +1432,9 @@ test(
     assert.equal(result.signal, "SIGTERM");
     const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
     assert.ok(
-      recorded.some((event) => event.tool === "docker" && event.action === "down"),
+      recorded.some(
+        (event) => event.tool === "docker" && event.action === "down",
+      ),
     );
   },
 );
@@ -1306,7 +1470,10 @@ for (const port of [5432, 3001, 3002, 46305, 46306, 46307]) {
       server.listen(port, "127.0.0.1", resolveListen);
     });
     t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
-    await assert.rejects(() => assertFixedPort(port, "test service"), new RegExp(String(port), "u"));
+    await assert.rejects(
+      () => assertFixedPort(port, "test service"),
+      new RegExp(String(port), "u"),
+    );
   });
 }
 
@@ -1437,7 +1604,9 @@ for (const [name, args, blockingVariable, tool, blockedAction] of [
   ],
 ]) {
   test(`interruption during ${name} terminates its process tree`, async (t) => {
-    const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-preflight-signal-"));
+    const temporaryDirectory = await mkdtemp(
+      resolve(tmpdir(), "devhud-preflight-signal-"),
+    );
     const environment = {
       ...fakeEnvironment(temporaryDirectory),
       [blockingVariable]: "1",
@@ -1451,8 +1620,14 @@ for (const [name, args, blockingVariable, tool, blockedAction] of [
     );
     assert.equal(result.signal, "SIGTERM");
     const recorded = await events(environment.DEVHUD_TEST_EVENT_LOG);
-    assert.equal(recorded.some((event) => event.tool === "go"), false);
-    assert.equal(recorded.some((event) => event.tool === "pnpm"), false);
+    assert.equal(
+      recorded.some((event) => event.tool === "go"),
+      false,
+    );
+    assert.equal(
+      recorded.some((event) => event.tool === "pnpm"),
+      false,
+    );
   });
 }
 
@@ -1462,8 +1637,14 @@ test("repository policy is immutable, orchestration-only, and free of first-part
     resolve(repositoryRoot, "scripts/dev-environment/postgres-init.sql"),
     "utf8",
   );
-  assert.match(compose, /postgres:15-bookworm@sha256:5d1d70e254e3c5d7d76847a9deebb18478cd518df37abf6b278d4bdb1fe5d96c/u);
-  assert.match(compose, /svhd\/logto:1\.41\.0@sha256:7f79547e3d1fe569a3ecae757968a7cfc579687aa8164eec35113c0adc983c5b/u);
+  assert.match(
+    compose,
+    /postgres:15-bookworm@sha256:5d1d70e254e3c5d7d76847a9deebb18478cd518df37abf6b278d4bdb1fe5d96c/u,
+  );
+  assert.match(
+    compose,
+    /svhd\/logto:1\.41\.0@sha256:7f79547e3d1fe569a3ecae757968a7cfc579687aa8164eec35113c0adc983c5b/u,
+  );
   assert.doesNotMatch(compose, /image:\s+[^\n]+:(?:latest|15-bookworm)\s*$/mu);
   assert.doesNotMatch(compose, /^name:/mu);
   assert.doesNotMatch(compose, /docker-entrypoint-initdb\.d/u);
@@ -1476,7 +1657,9 @@ test("repository policy is immutable, orchestration-only, and free of first-part
   assert.doesNotMatch(compose, /command: \["npm",/u);
   assert.match(postgresInit, /WHERE NOT EXISTS[\s\S]*\\gexec/u);
 
-  const turbo = JSON.parse(await readFile(resolve(repositoryRoot, "turbo.json"), "utf8"));
+  const turbo = JSON.parse(
+    await readFile(resolve(repositoryRoot, "turbo.json"), "utf8"),
+  );
   assert.deepEqual(turbo.tasks.dev.env, [
     "CARGO_HOME",
     "DEVHUD_LOCAL_MODE",
@@ -1492,8 +1675,16 @@ test("repository policy is immutable, orchestration-only, and free of first-part
     assert.equal(turbo.tasks.dev[name], undefined);
   }
 
-  const rootPackage = JSON.parse(await readFile(resolve(repositoryRoot, "package.json"), "utf8"));
-  for (const command of ["env:login", "env:doctor", "dev", "dev:oss", "dev:oss:down"]) {
+  const rootPackage = JSON.parse(
+    await readFile(resolve(repositoryRoot, "package.json"), "utf8"),
+  );
+  for (const command of [
+    "env:login",
+    "env:doctor",
+    "dev",
+    "dev:oss",
+    "dev:oss:down",
+  ]) {
     assert.equal(typeof rootPackage.scripts[command], "string");
   }
   assert.match(rootPackage.scripts.dev, /start team/u);
@@ -1505,7 +1696,10 @@ test("repository policy is immutable, orchestration-only, and free of first-part
     /--no-env/u,
   );
   assert.match(
-    await readFile(resolve(repositoryRoot, "apps/devhud/scripts/development.mjs"), "utf8"),
+    await readFile(
+      resolve(repositoryRoot, "apps/devhud/scripts/development.mjs"),
+      "utf8",
+    ),
     /devhudFrontendContract/u,
   );
   const issuerPattern = /^DEVHUD_LOGTO_ISSUER=(.+)$/mu;
@@ -1519,22 +1713,33 @@ test("repository policy is immutable, orchestration-only, and free of first-part
   );
   assert.match(adminExample, issuerPattern);
   assert.match(apiExample, issuerPattern);
-  assert.equal(adminExample.match(issuerPattern)?.[1], apiExample.match(issuerPattern)?.[1]);
+  assert.equal(
+    adminExample.match(issuerPattern)?.[1],
+    apiExample.match(issuerPattern)?.[1],
+  );
 
   const ignore = await readFile(resolve(repositoryRoot, ".gitignore"), "utf8");
-  const prepare = await readFile(resolve(repositoryRoot, "scripts/prepare-apps.sh"), "utf8");
+  const prepare = await readFile(
+    resolve(repositoryRoot, "scripts/prepare-apps.sh"),
+    "utf8",
+  );
   assert.doesNotMatch(ignore, /^\.vercel\/?$/mu);
   assert.match(ignore, /^\.env\.\*$/mu);
   assert.match(ignore, /^!\.env\.example$/mu);
   assert.doesNotMatch(prepare, /VERCEL/u);
   assert.match(prepare, /CI/u);
   assert.match(prepare, /prepare:app/u);
-  await assert.rejects(readFile(resolve(repositoryRoot, "scripts/setup/env-vars.sh"), "utf8"), /ENOENT/u);
+  await assert.rejects(
+    readFile(resolve(repositoryRoot, "scripts/setup/env-vars.sh"), "utf8"),
+    /ENOENT/u,
+  );
   await stat(resolve(repositoryRoot, ".agents/skills"));
 });
 
 test("generated identity material is stable, private, and never logged", async (t) => {
-  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-identity-test-"));
+  const temporaryDirectory = await mkdtemp(
+    resolve(tmpdir(), "devhud-identity-test-"),
+  );
   const environment = fakeEnvironment(temporaryDirectory);
   const localState = resolveLocalStatePaths(environment);
   t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
@@ -1548,7 +1753,9 @@ test("generated identity material is stable, private, and never logged", async (
   const first = await readFile(localState.identityKeyFile, "utf8");
   assert.deepEqual([...new Set(created)], [first.trim()]);
   assert.equal(Buffer.from(first.trim(), "base64").byteLength, 32);
-  assert.deepEqual(await readdir(localState.stateDirectory), ["identity-hmac-key"]);
+  assert.deepEqual(await readdir(localState.stateDirectory), [
+    "identity-hmac-key",
+  ]);
   assert.equal(await createLocalIdentityKey(environment), first.trim());
   assert.equal(await readFile(localState.identityKeyFile, "utf8"), first);
   if (process.platform !== "win32") {
@@ -1557,7 +1764,9 @@ test("generated identity material is stable, private, and never logged", async (
 });
 
 test("incomplete generated identity material fails closed", async (t) => {
-  const temporaryDirectory = await mkdtemp(resolve(tmpdir(), "devhud-identity-invalid-"));
+  const temporaryDirectory = await mkdtemp(
+    resolve(tmpdir(), "devhud-identity-invalid-"),
+  );
   const environment = fakeEnvironment(temporaryDirectory);
   const localState = resolveLocalStatePaths(environment);
   t.after(() => rm(temporaryDirectory, { recursive: true, force: true }));
@@ -1568,7 +1777,9 @@ test("incomplete generated identity material fails closed", async (t) => {
     createLocalIdentityKey(environment),
     /\[state\.identity-invalid\].*incomplete or invalid/u,
   );
-  assert.deepEqual(await readdir(localState.stateDirectory), ["identity-hmac-key"]);
+  assert.deepEqual(await readdir(localState.stateDirectory), [
+    "identity-hmac-key",
+  ]);
 });
 
 test("root documentation development commands bypass the DevHud team environment", async () => {
@@ -1586,9 +1797,16 @@ test("root documentation development commands bypass the DevHud team environment
     },
   ];
   for (const command of commands) {
-    assert.equal(rootPackage.scripts[command.name], command.value, command.name);
+    assert.equal(
+      rootPackage.scripts[command.name],
+      command.value,
+      command.name,
+    );
     for (const contract of command.contracts) {
-      const contents = await readFile(resolve(repositoryRoot, contract), "utf8");
+      const contents = await readFile(
+        resolve(repositoryRoot, contract),
+        "utf8",
+      );
       assert.ok(contents.includes(`pnpm ${command.name}`), contract);
     }
   }
@@ -1608,8 +1826,15 @@ test("environment source of truth, catalog, domain contracts, READMEs, and AGENT
     "servers/AGENTS.md",
   ];
   for (const relativePath of requiredConsumers) {
-    const contents = await readFile(resolve(repositoryRoot, relativePath), "utf8");
-    assert.match(contents, /repository-environment-contract\.md/u, relativePath);
+    const contents = await readFile(
+      resolve(repositoryRoot, relativePath),
+      "utf8",
+    );
+    assert.match(
+      contents,
+      /repository-environment-contract\.md/u,
+      relativePath,
+    );
   }
 
   const contract = await readFile(
@@ -1651,9 +1876,10 @@ test("environment source of truth, catalog, domain contracts, READMEs, and AGENT
       ) {
         continue;
       }
-      const publicText = await readFile(resolve(entry.parentPath, entry.name), "utf8").catch(
-        () => "",
-      );
+      const publicText = await readFile(
+        resolve(entry.parentPath, entry.name),
+        "utf8",
+      ).catch(() => "");
       assert.doesNotMatch(
         publicText,
         forbiddenPublicEnvironmentDetail,

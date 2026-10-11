@@ -28,7 +28,10 @@ if (eventLog) {
   );
 }
 
-if (action === "version" && process.env.DEVHUD_TEST_BLOCK_DOCKER_VERSION === "1") {
+if (
+  action === "version" &&
+  process.env.DEVHUD_TEST_BLOCK_DOCKER_VERSION === "1"
+) {
   if (eventLog) {
     await appendFile(
       eventLog,
@@ -48,11 +51,13 @@ if (action === "down" && process.env.DEVHUD_TEST_BLOCK_DOCKER_DOWN === "1") {
   }
   await new Promise(() => setInterval(() => {}, 1_000));
 }
-if (action === "version") process.stdout.write("Docker Compose version v2.40.0\n");
+if (action === "version")
+  process.stdout.write("Docker Compose version v2.40.0\n");
 if (action === "context-inspect") {
   process.stdout.write(
     `${process.env.DEVHUD_TEST_DOCKER_ENDPOINT ?? "unix:///tmp/devhud-test-docker.sock"}\n`,
   );
 }
 if (action === "port") process.exitCode = 1;
-if (action === "up" && process.env.DEVHUD_TEST_DOCKER_UP_FAILURE === "1") process.exitCode = 1;
+if (action === "up" && process.env.DEVHUD_TEST_DOCKER_UP_FAILURE === "1")
+  process.exitCode = 1;

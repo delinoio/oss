@@ -40,7 +40,6 @@ retain their original account/reference identity through any number of changes.
 No SQLite migration, native change, Provider identity change or format conversion
 is introduced.
 
-
 ## OAuth format selection extension
 
 The [OAuth format reservations](cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations)
@@ -74,7 +73,6 @@ JSON tokens and uint64 values exactly. Clearing explicit format identity is
 unsupported. Format edits preserve model/Usage/session identity and grant no
 inference, native execution or OAuth authority.
 
-
 A disconnected SQL record alone does not prove cleanup: a failed native Connect
 may retain protected staging intents. Disconnected format-change admission holds the account
 gate, checks the original revision and credential class, then verifies no remaining
@@ -96,13 +94,13 @@ Desktop edits of an existing Account patch only the top-level `alias`, `enabled`
 
 `account list` uses the ordinary paginated `ResourceService.ListResources` path and may select `--account-type api|subscription` and `--provider-id UUID`. Both selectors are optional for compatibility; subscription lists reject any Provider selector. The server composes supported selectors before pagination and binds them to the cursor; clients must not filter a fetched page locally. Snapshots and event streams remain unfiltered and unchanged.
 
-| CLI | Connect RPC | Meaning |
-| --- | --- | --- |
-| `account connect --id ID --revision N --key-stdin` | `AccountService.ConnectAccount` | Store a bounded API key through the protected server vault and record an unverified connection. |
-| `account connect --id ID --revision N --keyless` | `AccountService.ConnectAccount` | Explicitly connect a provider already configured with keyless local authentication; no native secret is written. |
-| `account disconnect --id ID --revision N` | `AccountService.DisconnectAccount` | Commit disconnection, remove every remaining protected reference owned by the account, then clear the cleanup marker. |
-| `account status --id ID` | `AccountService.GetAccountStatus` | Read current metadata without consulting or unlocking the native credential store. |
-| `account validate --id ID --revision N` | `AccountService.ValidateAccount` | Record a bounded non-inference endpoint/credential observation for the current connection. |
+| CLI                                                | Connect RPC                        | Meaning                                                                                                               |
+| -------------------------------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `account connect --id ID --revision N --key-stdin` | `AccountService.ConnectAccount`    | Store a bounded API key through the protected server vault and record an unverified connection.                       |
+| `account connect --id ID --revision N --keyless`   | `AccountService.ConnectAccount`    | Explicitly connect a provider already configured with keyless local authentication; no native secret is written.      |
+| `account disconnect --id ID --revision N`          | `AccountService.DisconnectAccount` | Commit disconnection, remove every remaining protected reference owned by the account, then clear the cleanup marker. |
+| `account status --id ID`                           | `AccountService.GetAccountStatus`  | Read current metadata without consulting or unlocking the native credential store.                                    |
+| `account validate --id ID --revision N`            | `AccountService.ValidateAccount`   | Record a bounded non-inference endpoint/credential observation for the current connection.                            |
 
 Mutations accept `--request-id UUID-V7` and return the existing version-1 CLI envelope. They never start a server implicitly. Worker credentials cannot invoke any account RPC. Owner and paired client authorization is rechecked before secret staging, at state/receipt commit and before cleanup completion; revoking an in-flight client cannot publish a connection after a native write.
 
@@ -183,12 +181,12 @@ The feature uses the closed service-native account/model contract in [managed su
 
 The [subscription batch contract](cmds-delidev-subscription-contract.md#failed-subscription-cleanup-reservations) admits failed initial ChatGPT server logins and fully disconnected subscription configurations for all supported services. Disconnected configuration children carry no synthetic LOGIN identity; pending/recovery/native/Worker ownership and protected vault references still prevent deletion. Batch and public configuration deletion share `checkAccountDeletionLocked` and `deleteConfigurationTx`, retaining original vault intent checks, exact revision, complete configuration/history references, schedule updates, tombstones and browser obligations. Confirmed batch deletion records its per-account outcome and parent counts in the same deletion receipt transaction. Original actor revocation or account/login changes preserve the account; cleanup never substitutes server bookkeeping authority for the requester's deletion authority.
 
-
 ## Automatic API connection verification
 
 Enabled connected API accounts acquire non-inference current-connection validation through the joined server maintenance owner under the [provider verification contract](cmds-delidev-providers-contract.md#automatic-api-verification). Missing evidence is immediately due; subsequent checks use persisted completion plus max(15 minutes, Retry-After). Provider disablement, account disablement, removal and changed connection/profile/revision fence automatic publication. Existing explicit validation, actor-bound replay, quota/exhaustion and immutable execution generations retain their authority. A readable saved key or successful public model list alone cannot become verified authentication.
 
 ## OpenCode Go subscriptions
+
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.
 
 ## cmds/delidev-cli constraints

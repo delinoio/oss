@@ -40,12 +40,12 @@ regression. Its negative control failed against the previous presentation.
 
 The remaining explicit steps, skipped by the failed `&&` chain, each passed:
 
-| Command from `apps/delidev` | Result | Measured elapsed seconds |
-| --- | --- | --- |
-| `pnpm test:bundle-dry-run` | 8 fixtures passed | 2.312 |
-| `pnpm test:desktop-launch` | 16 fixtures passed | 103.814 |
-| `pnpm test:widget` | Widget fixture checks passed | 27.892 |
-| `pnpm build` | Production build passed | 8.387 |
+| Command from `apps/delidev` | Result                       | Measured elapsed seconds |
+| --------------------------- | ---------------------------- | ------------------------ |
+| `pnpm test:bundle-dry-run`  | 8 fixtures passed            | 2.312                    |
+| `pnpm test:desktop-launch`  | 16 fixtures passed           | 103.814                  |
+| `pnpm test:widget`          | Widget fixture checks passed | 27.892                   |
+| `pnpm build`                | Production build passed      | 8.387                    |
 
 Logs use `/tmp/delidev-1227-eighth-<step>.log`; the exact command/results are in
 `/tmp/delidev-1227-eighth-remaining-results.json`. Builds and component fixtures

@@ -64,20 +64,39 @@ export function inputs(e) {
     androidSigner: e.DELIDEV_MOBILE_ANDROID_SIGNER,
   });
 }
-export function verifySourceRecords(input, original, recovery, environment = {}) {
+export function verifySourceRecords(
+  input,
+  original,
+  recovery,
+  environment = {},
+) {
   if (original.sha !== input.sourceSha || original.dirty)
     throw new Error("Candidate source revision or tracked state mismatch");
-  if (environment.DELIDEV_MOBILE_RECOVERY_SHA &&
-      (environment.MODE !== "resume" || !/^[a-f0-9]{40}$/.test(environment.DELIDEV_MOBILE_RECOVERY_SHA) ||
-       recovery?.sha !== environment.DELIDEV_MOBILE_RECOVERY_SHA || recovery.dirty ||
-       environment.GITHUB_SHA !== recovery.sha))
+  if (
+    environment.DELIDEV_MOBILE_RECOVERY_SHA &&
+    (environment.MODE !== "resume" ||
+      !/^[a-f0-9]{40}$/.test(environment.DELIDEV_MOBILE_RECOVERY_SHA) ||
+      recovery?.sha !== environment.DELIDEV_MOBILE_RECOVERY_SHA ||
+      recovery.dirty ||
+      environment.GITHUB_SHA !== recovery.sha)
+  )
     throw new Error("Reviewed recovery source revision or mode mismatch");
 }
 export function source(input) {
-  const read = cwd => ({ sha: capture("git", ["rev-parse", "HEAD"], cwd),
-    dirty: !!capture("git", ["status", "--porcelain", "--untracked-files=no"], cwd) });
-  verifySourceRecords(input, read(root), process.env.DELIDEV_MOBILE_RECOVERY_SHA ? read(toolRoot) : undefined,
-    process.env);
+  const read = (cwd) => ({
+    sha: capture("git", ["rev-parse", "HEAD"], cwd),
+    dirty: !!capture(
+      "git",
+      ["status", "--porcelain", "--untracked-files=no"],
+      cwd,
+    ),
+  });
+  verifySourceRecords(
+    input,
+    read(root),
+    process.env.DELIDEV_MOBILE_RECOVERY_SHA ? read(toolRoot) : undefined,
+    process.env,
+  );
 }
 function config(input) {
   const file = join(app, "src-tauri/tauri.conf.json"),
@@ -85,7 +104,8 @@ function config(input) {
     value = JSON.parse(original);
   value.version = input.version;
   value.bundle.iOS.bundleVersion = input.iosBuild;
-  if (input.target !== "ios") value.bundle.android.versionCode = Number(input.androidCode);
+  if (input.target !== "ios")
+    value.bundle.android.versionCode = Number(input.androidCode);
   writeFileSync(file, JSON.stringify(value, null, 2) + "\n");
   return () => writeFileSync(file, original);
 }
@@ -237,9 +257,17 @@ async function submit(input, resume) {
   });
 }
 /** Preserve both original platform intents before any provider access. */
-export async function submitPlatforms(manifest, directory, resume, providerFor) {
+export async function submitPlatforms(
+  manifest,
+  directory,
+  resume,
+  providerFor,
+) {
   const receipts = [];
-  const platforms = manifest.schema === 2 && manifest.target === "ios" ? ["ios"] : ["ios", "android"];
+  const platforms =
+    manifest.schema === 2 && manifest.target === "ios"
+      ? ["ios"]
+      : ["ios", "android"];
   if (Object.keys(manifest.artifacts).join(",") !== platforms.join(","))
     throw new Error("Original candidate platform mismatch");
   for (const platform of platforms) {
@@ -261,11 +289,13 @@ export async function submitPlatforms(manifest, directory, resume, providerFor) 
       const temporary = file + ".tmp";
       writeFileSync(temporary, JSON.stringify(value) + "\n", { mode: 0o600 });
       renameSync(temporary, file);
-      process.stdout.write(JSON.stringify({
-        operation: "mobile-beta-checkpoint",
-        platform,
-        stage: value.stage,
-      }) + "\n");
+      process.stdout.write(
+        JSON.stringify({
+          operation: "mobile-beta-checkpoint",
+          platform,
+          stage: value.stage,
+        }) + "\n",
+      );
     };
     receipts.push({ platform, file, receipt, checkpoint });
   }
@@ -282,12 +312,16 @@ export async function submitPlatforms(manifest, directory, resume, providerFor) 
         dryRun: false,
       });
     } catch {
-      process.stderr.write(JSON.stringify({
-        operation: "mobile-beta-distribution",
-        platform,
-        stage: JSON.parse(readFileSync(join(directory, `${platform}-receipt.json`))).stage,
-        outcome: "failed-retain-original",
-      }) + "\n");
+      process.stderr.write(
+        JSON.stringify({
+          operation: "mobile-beta-distribution",
+          platform,
+          stage: JSON.parse(
+            readFileSync(join(directory, `${platform}-receipt.json`)),
+          ).stage,
+          outcome: "failed-retain-original",
+        }) + "\n",
+      );
       throw new Error("Original platform distribution failed");
     }
   }

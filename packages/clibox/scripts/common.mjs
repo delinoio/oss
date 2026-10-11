@@ -18,25 +18,51 @@ export function sourceText(file) {
   return readFileSync(path.join(root, file), "utf8").replaceAll("\r\n", "\n");
 }
 
-export function metadata(read = (file) => readFileSync(path.join(root, file), "utf8")) {
+export function metadata(
+  read = (file) => readFileSync(path.join(root, file), "utf8"),
+) {
   const manifest = JSON.parse(read("packages/clibox/package.json"));
-  const cargo = read("crates/clibox/Cargo.toml").replaceAll("\r\n", "\n").match(/^\[package\]\s*\n([\s\S]*?)(?=^\[|$(?![\s\S]))/mu)?.[1];
+  const cargo = read("crates/clibox/Cargo.toml")
+    .replaceAll("\r\n", "\n")
+    .match(/^\[package\]\s*\n([\s\S]*?)(?=^\[|$(?![\s\S]))/mu)?.[1];
   const version = cargo?.match(/^version = "([^"]+)"$/mu)?.[1];
-  ensure(cargo?.includes('name = "clibox"\n') && manifest.name === "@delino/clibox", "Source package identity mismatch");
-  ensure(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u.test(version ?? "") && manifest.version === version, "Cargo/npm version mismatch or invalid version");
+  ensure(
+    cargo?.includes('name = "clibox"\n') && manifest.name === "@delino/clibox",
+    "Source package identity mismatch",
+  );
+  ensure(
+    /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u.test(version ?? "") &&
+      manifest.version === version,
+    "Cargo/npm version mismatch or invalid version",
+  );
   return { version, description: manifest.description };
 }
 
 export function revision() {
-  return execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+  return execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: root,
+    encoding: "utf8",
+  }).trim();
 }
 
 export function npm(args, options = {}) {
   // npm.cmd cannot be spawned without a shell on Windows. Use npm's Node entry
   // point in the standard Node installation, keeping all dynamic argv literal.
   const command = process.platform === "win32" ? process.execPath : "npm";
-  const prefix = process.platform === "win32" ? [path.join(path.dirname(process.execPath), "node_modules/npm/bin/npm-cli.js")] : [];
-  return execFileSync(command, [...prefix, ...args], { encoding: "utf8", stdio: "pipe", ...options });
+  const prefix =
+    process.platform === "win32"
+      ? [
+          path.join(
+            path.dirname(process.execPath),
+            "node_modules/npm/bin/npm-cli.js",
+          ),
+        ]
+      : [];
+  return execFileSync(command, [...prefix, ...args], {
+    encoding: "utf8",
+    stdio: "pipe",
+    ...options,
+  });
 }
 
 export function event(action, details) {
@@ -44,5 +70,7 @@ export function event(action, details) {
 }
 
 export function isMain(url) {
-  return process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(url);
+  return (
+    process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(url)
+  );
 }

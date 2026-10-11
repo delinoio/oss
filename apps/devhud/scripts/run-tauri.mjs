@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 
 import { tauriCommand } from "../../../scripts/tauri-cli.mjs";
-import { exitLikeChild, spawnDevServer } from "../../../scripts/spawn-dev-server.mjs";
+import {
+  exitLikeChild,
+  spawnDevServer,
+} from "../../../scripts/spawn-dev-server.mjs";
 import { finalizeLinuxAppImage } from "./finalize-appimage.mjs";
 import {
   desktopTauriArguments,
@@ -24,19 +27,29 @@ if (!command || !["dev", "build"].includes(command)) {
 
 if (
   forwardedArgs.some(
-    (argument) => argument.startsWith("-c") || argument === "--config" || argument.startsWith("--config="),
+    (argument) =>
+      argument.startsWith("-c") ||
+      argument === "--config" ||
+      argument.startsWith("--config="),
   )
 ) {
-  console.error("devhud: -c/--config cannot override the pinned application, CSP, or development origin");
+  console.error(
+    "devhud: -c/--config cannot override the pinned application, CSP, or development origin",
+  );
   process.exit(1);
 }
 
 if (
   forwardedArgs.some(
-    (argument) => argument.startsWith("-t") || argument === "--target" || argument.startsWith("--target="),
+    (argument) =>
+      argument.startsWith("-t") ||
+      argument === "--target" ||
+      argument.startsWith("--target="),
   )
 ) {
-  console.error("devhud: -t/--target cannot override the pinned desktop target");
+  console.error(
+    "devhud: -t/--target cannot override the pinned desktop target",
+  );
   process.exit(1);
 }
 
@@ -69,14 +82,16 @@ try {
     },
   );
   if (
-    result.code === 0
-    && result.signal === null
-    && environment.DEVHUD_PACKAGE_KIND === "linux-appimage"
+    result.code === 0 &&
+    result.signal === null &&
+    environment.DEVHUD_PACKAGE_KIND === "linux-appimage"
   ) {
     finalizeLinuxAppImage({ targetDirectory });
   }
 } catch (error) {
-  console.error(`devhud: failed to start the pinned Tauri CLI: ${error.message}`);
+  console.error(
+    `devhud: failed to start the pinned Tauri CLI: ${error.message}`,
+  );
   process.exitCode = 1;
 } finally {
   if (verifiedAppImageSharun) {

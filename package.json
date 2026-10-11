@@ -20,14 +20,15 @@
     "build": "turbo run build",
     "test": "turbo run test",
     "lint": "turbo run lint",
-    "format": "turbo run format",
+    "format": "turbo run format --filter=@delinoio/ci",
     "proto:generate": "buf generate && node scripts/delidev/proto-compat.mjs",
     "proto:generate:cached": "turbo run //#proto:generate",
     "proto:lint": "turbo run ci:proto:lint ci:proto:format --filter=@delinoio/ci",
     "proto:breaking": "turbo run ci:proto:breaking --filter=@delinoio/ci",
     "proto:fresh": "turbo run ci:proto:fresh --filter=@delinoio/ci",
     "proto:check": "turbo run ci:proto:check --filter=@delinoio/ci",
-    "dev:async-commit-hook": "pnpm --filter async-commit-hook dev"
+    "dev:async-commit-hook": "pnpm --filter async-commit-hook dev",
+    "format:check": "turbo run ci:format --filter=@delinoio/ci"
   },
   "pnpm": {
     "overrides": {
@@ -69,6 +70,7 @@
     "clibox-prebuilt": "npm:@delino/clibox@0.1.6",
     "js-yaml": "4.3.2",
     "lefthook": "^2.1.4",
+    "rstack": "0.8.3",
     "turbo": "^2.9.14"
   }
 }

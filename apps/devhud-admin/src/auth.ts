@@ -33,7 +33,12 @@ export class AdminAuth {
   static fromBootstrap(bootstrap: GetBootstrapResponse): AdminAuth {
     const { logtoIssuer, logtoAudience, logtoClients, logtoRedirects } =
       bootstrap;
-    if (!logtoIssuer || !logtoAudience || !logtoClients?.admin || !logtoRedirects?.admin) {
+    if (
+      !logtoIssuer ||
+      !logtoAudience ||
+      !logtoClients?.admin ||
+      !logtoRedirects?.admin
+    ) {
       throw new Error("Administrator authentication bootstrap is incomplete.");
     }
     return new AdminAuth(
@@ -60,7 +65,11 @@ export class AdminAuth {
     if (!(await this.client.isSignInRedirected(currentUrl))) return false;
     const expectedNonce = sessionStorage.getItem(NONCE_KEY);
     if (!expectedNonce) {
-      history.replaceState(null, "", new URL("/admin/", window.location.origin));
+      history.replaceState(
+        null,
+        "",
+        new URL("/admin/", window.location.origin),
+      );
       await this.client.clearAllTokens();
       return false;
     }

@@ -167,7 +167,6 @@ Successful `account/read` does not prove refresh. Both Worker and server require
 
 The pinned native login-completed envelope includes nullable `onboardingEntrypoint` metadata. Accept null or the pinned closed `life_sciences` value without launching another onboarding flow or treating presentation metadata as authentication evidence; reject unknown values while still requiring the original login identity and successful completion.
 
-
 ## Server browser login and account naming
 
 System `SERVER_SUBSCRIPTION_LOGIN_V1 = 30` activates the shared reservations established on main by the originating change. It is independent of service-account inventory capability 17 and Worker capabilities. An authenticated owner or paired client can omit `machine_id` for ChatGPT login, authentication refresh or logout. The server must have the verified Codex 0.151.0 installation. No Worker registration, startup or selection is required. Claude requires the explicit Runner lane under capability 38; Grok remains unsupported. API authentication, execution selection and existing quota authority do not change.
@@ -409,8 +408,8 @@ Instruction-file updates in this requirement apply only to changes in developmen
 - [Pinned native authentication storage](https://github.com/openai/codex/blob/d8673cb68e349c208659b986697773d3145dbb14/codex-rs/login/src/auth/storage.rs)
 - [Codex 0.159.2 account response profile](https://github.com/openai/codex/blob/ff6aec96948b70d94983af2641a6b67c94faeff5/codex-rs/app-server-protocol/src/protocol/v2/account.rs)
 
-
 ## Native quota and reset credits
+
 System capabilities 18 (`SUBSCRIPTION_QUOTA_V1`) and 19
 (`SUBSCRIPTION_RESET_CREDITS_V1`) negotiate the two product operations separately.
 Worker capability 8 retains the verified managed Codex profile for fresh idle native-owner admission. Active original Execute quota reads use the initialized execution protocol as described below. The
@@ -497,6 +496,7 @@ Codex sign-in attempts share the harness contract's minimum SemVer `0.151.0`, wi
 Missing executables report discovery with no detected version. Invalid or lower versions report version validation; newer versions run actual initialization. Keep the first native failure when cancellation, process cleanup or protected-file cleanup subsequently fails; the independent recovery state and cleanup result remain authoritative. A cleanup-only failure uses cleanup phase. Persist metadata through restart and transient presentation disposal without login URLs, device codes, credentials, identity, paths or raw output. Success clears failure metadata. Logs retain bounded version/phase/code/operation correlation and separate original outcome from cleanup/recovery, without account identifiers. No diagnostic may trigger login replay, callback resend or automatic retry.
 
 ## Server-owned ChatGPT quota
+
 System `SERVER_SUBSCRIPTION_QUOTA_V1 = 46` separately negotiates quota reads for idle server-owned ChatGPT accounts. For this issue, the owner's explicit batch instruction permits allocation and activation in one complete feature PR without a prior main reservation merge. This exception changes no other allocation, migration or native authority rule.
 
 The existing QUOTA request can omit `machine_id` under capability 46. Explicit machines retain capability 18 and the strict Worker claim/receipt lane. An active execution uses its original Worker process and lease, including an omitted-machine request resolved to that original lease. Worker reset-credit consumption retains capability 19 and original Worker ownership. The separately negotiated server lane is defined for this feature below. Authentication success or capability 30 alone grants no server quota authority.
@@ -516,6 +516,7 @@ Managed ChatGPT Sidechat follows [the feature’s protected Fork profile](cmds-d
 Managed subscription installation refusal describes missing verified Codex installation evidence, not an exact or minimum native version. Existing bounded version metadata, detected state, path, protocol, observation and capability predicates remain authoritative. Safe guidance directs the user to the selected Runner Device’s installed Codex and protocol verification without exposing native paths or output.
 
 ## Server-owned ChatGPT reset credits
+
 Managed Sidechat admission rejects an active original server-credit owner before
 creating a Fork job. Protected Take and Finish retain their original account,
 credential generation and independent cleanup fences.
@@ -575,6 +576,7 @@ real-account, remote-machine and platform acceptance. Record revision, commands,
 results and unresolved limits in PRs, issues and CI artifacts.
 
 ## Server-owned ChatGPT quota V2
+
 System `SERVER_SUBSCRIPTION_QUOTA_V2 = 50` expands omitted-machine QUOTA, Refresh all and five-minute maintenance to the selected server, independent of Worker registration, connectivity, verified installation, retained Worker ownership or an active Execute lease. Record allocation, declarations, generated bindings and complete activation together in the owning feature PR under the allocation workflow. Preserve System 18, 46 and 49 and explicit-machine legacy QUOTA/reset-credit semantics. No Worker capability, RPC, credential conversion or SQLite migration is added. Clients require capability 50 before issuing the expanded omitted-machine or batch request; older servers receive compatibility guidance without an automatic Worker fallback.
 
 V2 uses a separate quota-only native profile. Go reads the exact sealed AccountLogin generation, validates the original account/user commitment and supplies only access token, account and plan to official `account/login/start` external `chatgptAuthTokens` authentication. The native process uses ephemeral authentication, disabled plugins and the official provider, receives no ID or refresh token and writes no managed auth.json. Refuse every external-token refresh callback with one fixed safe error; rejected/expired access tokens fail the observation without renewing credentials. Native initialization includes bounded configuration and readiness reads and is not claimed to emit only the quota HTTP request. Validate and discard the pinned external login’s once-only `account/login/completed` success notification (`loginId`/`error`/`onboardingEntrypoint` null or omitted, typed `success: true`) before the quota request; failed, foreign, malformed and unknown completion fields fail closed. This private completion metadata grants no managed-login, callback or renewal authority. Use one bounded `account/rateLimits/read`, existing strict sparse projection and explicit server network routing. Unsupported server profiles fail with server guidance and never select a Worker.
@@ -586,14 +588,17 @@ Access-only quota can coexist with an original Execute credential writer. Its du
 Preserve last-success quota windows/timestamps on failures, truthful pending/failed/stale status, observed-recovery deduplication and bounded private reflection checks. Log only closed phases/errors/cleanup and operation identities, excluding authentication, user/account identities, quota values and native bodies. Synthetic protocol/ownership fixtures and build checks remain distinct from real native/account/remote/platform acceptance, which the owner performs separately and has explicitly made nonblocking for this batch.
 
 ## OpenCode Go subscriptions
+
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.
 
 Independent managed Fork now follows the separately negotiated System 53 / Worker 29 profile in [the Fork contract](cmds-delidev-forks-contract.md#managed-chatgpt-independent-fork). It reuses the exact accepted Fork EXECUTE lease and durable Finish receipt, including original generation, actor, cleanup and uncertainty checks. Legacy internal Sidechat-named receipt storage also serves this independent profile without changing existing receipt bytes or requiring a migration.
 
 ## Situation quota exhaustion notifications
+
 Only ChatGPT quota observations can publish this metadata-only operational Inbox kind. The original connection must move from complete fresh known usable evidence to explicitly confirmed exhausted evidence in a strictly ordered successful observation. Unknown/sparse/stale/failed observations, credit reset, reconnect, import and restore cannot establish that transition. Notification preference and display claims do not alter per-account quota recovery consent or start recovery. Follow `cmds-delidev-inbox-contract.md`; native/account acceptance remains independently recorded.
 
 ## Automatic reset-credit consent
+
 System `AUTOMATIC_RESET_CREDIT_CONSENT_V1 = 77` owns the closed
 `SetAutomaticResetCreditConsent` revision-checked mutation. Worker
 `CODEX_QUOTA_BLOCK_V1 = 52` owns bounded original failed-turn quota markers.
@@ -638,7 +643,9 @@ contract. Consumption outcomes and quota recovery remain separate.
 The approved Settings confirmation uses the existing task lifetime, retained
 mutation, theme tokens and English/Korean copy. Closing Settings does not revoke
 accepted server processing. No consumption resumes a failed session automatically.
+
 ## Paid-credit observations
+
 System `SUBSCRIPTION_PAID_CREDITS_V1 = 76` and Worker `SUBSCRIPTION_PAID_CREDITS_V1 = 51` independently negotiate the narrow ChatGPT/Codex paid-credit projection. Reuse authenticated original quota reads, leases, connection/credential generations, actor checks, joined native cleanup and existing refresh actions. No RPC, purchase, consumption action or SQLite migration is added. An older Worker omits these fields; the server rejects a paid-credit publication from a Worker without capability 51.
 
 Each native bucket owns its exact bounded ID, required hasCredits/unlimited flags, nullable balance and successful observation timestamp. Accept nonnegative plain decimal strings of at most 64 bytes without numeric conversion. Explicit null is unknown, zero is a real value, and unlimited takes presentation precedence. Never sum buckets or infer balance from quota, reset credits, plan type or hasCredits. Omitted credits/balance fields retain the last successful bucket and its timestamp; failed, malformed or reflected reads retain evidence without refreshing it. Credential-generation replacement clears observations. Ordinary configuration saves and legacy clients cannot replace protected subscription observations. Original identity/token reflection checks include paid bucket IDs and exact balance strings, including short/encoded secrets. Raw responses, unrelated billing/display text and credentials remain private.

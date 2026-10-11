@@ -11,10 +11,25 @@ test("fixture executable reuse leaves local builds and separate private state av
   const binary = join(directory, "immutable-binary");
   await writeFile(binary, "fixture");
   assert.equal(await fixtureBinary("local", {}), "local");
-  assert.equal(await fixtureBinary("first-private-scope", { DELIDEV_TEST_BINARY: binary }), binary);
-  assert.equal(await fixtureBinary("second-private-scope", { DELIDEV_TEST_BINARY: binary }), binary);
+  assert.equal(
+    await fixtureBinary("first-private-scope", { DELIDEV_TEST_BINARY: binary }),
+    binary,
+  );
+  assert.equal(
+    await fixtureBinary("second-private-scope", {
+      DELIDEV_TEST_BINARY: binary,
+    }),
+    binary,
+  );
   await mkdir(join(directory, "not-a-file"));
-  for (const value of ["", "relative", join(directory, "missing"), join(directory, "not-a-file")]) {
-    await assert.rejects(fixtureBinary("local", { DELIDEV_TEST_BINARY: value }));
+  for (const value of [
+    "",
+    "relative",
+    join(directory, "missing"),
+    join(directory, "not-a-file"),
+  ]) {
+    await assert.rejects(
+      fixtureBinary("local", { DELIDEV_TEST_BINARY: value }),
+    );
   }
 });

@@ -102,7 +102,7 @@ restart returns the original operation without another native launch.
 ### cmds/delidev-cli/internal/store constraints
 
 - Native model observations reuse generic immutable jobs and receipts without a migration under `cmds-delidev-native-models-contract.md`. Last-success lookup binds the original machine/account, installation generation/digest, connection and hidden policy; failed output cannot replace successful observations or modify canonical models.
- - Native model observations reuse generic immutable jobs and receipts without a migration under `cmds-delidev-native-models-contract.md`. Last-success lookup binds the original machine/account, installation generation/digest, connection and hidden policy; failed output cannot replace successful observations or modify canonical models.
+- Native model observations reuse generic immutable jobs and receipts without a migration under `cmds-delidev-native-models-contract.md`. Last-success lookup binds the original machine/account, installation generation/digest, connection and hidden policy; failed output cannot replace successful observations or modify canonical models.
 
 ### cmds/delidev-cli/internal/worker constraints
 

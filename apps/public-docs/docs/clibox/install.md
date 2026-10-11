@@ -56,7 +56,6 @@ Signed GNU Linux archives for x64 and arm64 are available from [clibox releases]
 
 Native packages are not published yet. After the first native package release, register the stable repository using the [Linux package setup guide](https://oss.delino.io/linux-packages), including its key fingerprint check. Then install with `sudo apt-get install clibox` or `sudo dnf install clibox` and check `clibox --version`. Native installation does not require Node.js. Update with `sudo apt-get install --only-upgrade clibox` or `sudo dnf upgrade clibox`; remove with `sudo apt-get remove clibox` or `sudo dnf remove clibox`. Desktop helpers remain separately installed runtime capabilities.
 
-
 ## Desktop prerequisites
 
 Linux clipboard access needs wl-clipboard on Wayland or xclip on X11; opening a resource needs xdg-utils. Install these separately with your operating system's package manager. HTTPS readiness checks need OS CA certificates, including on Alpine. See [System commands](/clibox/system) for session and memory requirements.

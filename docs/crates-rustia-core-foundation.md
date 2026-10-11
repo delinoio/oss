@@ -1,18 +1,22 @@
 # crates-rustia-core-foundation
 
 ## Scope
+
 - Project/component: `rustia` core runtime LLM data contract
 - Canonical path: `crates/rustia`
 
 ## Runtime and Language
+
 - Runtime: Rust library crate
 - Primary language: Rust
 
 ## Users and Operators
+
 - Rust developers consuming serde-based LLM argument parsing helpers
 - Maintainers preserving runtime compatibility for `rustia-macros` derive expansion
 
 ## Interfaces and Contracts
+
 - Stable component identifier: `core`.
 - Stable runtime identifiers:
   - `Validate` trait
@@ -74,38 +78,46 @@
 - `rustia` core crate changes must update `crates-rustia-core-foundation.md` and `project-rustia.md`.
 
 ## Storage
+
 - No persistent internal storage contract.
 - Parsing is in-memory and request-scoped.
 
 ## Security
+
 - Parsing path must remain fail-closed at serde validation boundaries.
 - Recursive parsing must continue enforcing the depth guard against stack-overflow-style inputs.
 
 ## Logging
+
 - Library-level logging remains opt-in and minimal.
 - No mandatory runtime logging side effects are introduced by default parsing methods.
 
 ## Release and Distribution
+
 - Crate remains publishable (`publish = true`) via `crates/rustia/Cargo.toml`.
 - Workspace release orchestration is owned by `cargo-mono publish`.
 - Publish tag eligibility for this crate is controlled by root
   `[workspace.metadata.cargo-mono.publish.tag].packages`.
 
 ## Build and Test
+
 - Local validation: `cargo test -p rustia`
 - Workspace baseline: `cargo test --workspace --all-targets`
 
 ## Dependencies and Integrations
+
 - Serde integration: `serde`, `serde_json`, `serde_path_to_error`.
 - Downstream integration: `rustia-macros` derive expansion compatibility.
 - Downstream integration: `rustia-llm` adapter input parsing via `LLMData::parse`.
 
 ## Change Triggers
+
 - Update `docs/project-rustia.md` and this file when runtime trait signatures, parsing error shapes, or lenient parsing semantics change.
 - Keep runtime/derive compatibility updates synchronized with `docs/crates-rustia-macros-foundation.md`.
 - Keep runtime/adapter compatibility updates synchronized with `docs/crates-rustia-llm-foundation.md`.
 
 ## References
+
 - `docs/project-rustia.md`
 - `docs/crates-rustia-llm-foundation.md`
 - `docs/crates-rustia-macros-foundation.md`

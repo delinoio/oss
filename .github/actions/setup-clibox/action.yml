@@ -6,7 +6,7 @@ inputs:
     default: .
   install:
     description: Set false when Node, pnpm and the locked workspace are already installed
-    default: 'true'
+    default: "true"
 runs:
   using: composite
   steps:

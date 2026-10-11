@@ -29,11 +29,11 @@ Guest users, authenticated individual users, maintainers, and platform release o
 
 The architecture definitions in `apps/devhud/platforms.json` are authoritative for the desktop foundation:
 
-| Platform | Architectures | Product minimum | Native CI definition |
-| --- | --- | --- | --- |
-| macOS | x64, arm64 | 13.0 | `macos-15-intel`, `macos-15` |
-| Windows | x64, arm64 | 10 22H2 | `windows-2022`, `windows-11-arm` |
-| Ubuntu X11 | x64, arm64 | 24.04 LTS | `ubuntu-24.04`, `ubuntu-24.04-arm` |
+| Platform   | Architectures | Product minimum | Native CI definition               |
+| ---------- | ------------- | --------------- | ---------------------------------- |
+| macOS      | x64, arm64    | 13.0            | `macos-15-intel`, `macos-15`       |
+| Windows    | x64, arm64    | 10 22H2         | `windows-2022`, `windows-11-arm`   |
+| Ubuntu X11 | x64, arm64    | 24.04 LTS       | `ubuntu-24.04`, `ubuntu-24.04-arm` |
 
 XWayland is best effort. Native Wayland is unsupported and rejected before CEF initialization. CI hosts newer than the macOS and Windows product minimums prove current native build/smoke compatibility, not the exact minimum OS; release qualification on macOS 13 and Windows 10 22H2 remains required. Ubuntu smoke certification is intentionally limited to Ubuntu 24.04+ with an X11 `DISPLAY`. The pinned GTK4-backed runtime requires GTK 4.14 or newer, which Ubuntu 24.04 supplies.
 

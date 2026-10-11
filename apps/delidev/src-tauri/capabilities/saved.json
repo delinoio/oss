@@ -24,7 +24,5 @@
     "generated-image-export",
     "inbox-badge"
   ],
-  "webviews": [
-    "server-*"
-  ]
+  "webviews": ["server-*"]
 }

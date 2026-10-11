@@ -1,7 +1,17 @@
 import { Code, ConnectError } from "@connectrpc/connect";
-import { createConnectQueryKey, useMutation, useQuery, useTransport, TransportProvider } from "@connectrpc/connect-query";
+import {
+  createConnectQueryKey,
+  useMutation,
+  useQuery,
+  useTransport,
+  TransportProvider,
+} from "@connectrpc/connect-query";
 import { createConnectTransport } from "@connectrpc/connect-web";
-import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   AccountFailureReason,
   AccountDeletionState,
@@ -14,20 +24,79 @@ import {
   type Account,
   type DevHudClientError,
 } from "@delinoio/devhud-api-client";
-import { createContext, use, useEffect, useMemo, useRef, useState, type PropsWithChildren, type RefObject } from "react";
-import { createIdentitySession, isTerminalAccessTokenError, sessionProfileId, validateBootstrap, type IdentitySession, type ValidatedBootstrap } from "./identity-client";
+import {
+  createContext,
+  use,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PropsWithChildren,
+  type RefObject,
+} from "react";
+import {
+  createIdentitySession,
+  isTerminalAccessTokenError,
+  sessionProfileId,
+  validateBootstrap,
+  type IdentitySession,
+  type ValidatedBootstrap,
+} from "./identity-client";
 import { clearDeckCaches } from "./deck.ts";
 import { invalidateDeckPolling } from "./deck-polling-cancellation.ts";
-import { assertDeviceLocalSettingsPersistable, clearAllContractedLocalData, clearAuthenticatedOriginData, clearAuthenticatedSettingsCache, clearGuestImportMarker, deviceLocalSettingsEqual, hasGuestSettings, readAuthenticatedSettingsCache, readCachedIdentityBootstrap, readGuestSettings, writeAuthenticatedSettingsCache, writeCachedIdentityBootstrap, writeGuestSettings } from "./local-data";
-import { SecureSettingKind, type NativeBridgeV1, type RuntimePlatform } from "./native-bridge";
+import {
+  assertDeviceLocalSettingsPersistable,
+  clearAllContractedLocalData,
+  clearAuthenticatedOriginData,
+  clearAuthenticatedSettingsCache,
+  clearGuestImportMarker,
+  deviceLocalSettingsEqual,
+  hasGuestSettings,
+  readAuthenticatedSettingsCache,
+  readCachedIdentityBootstrap,
+  readGuestSettings,
+  writeAuthenticatedSettingsCache,
+  writeCachedIdentityBootstrap,
+  writeGuestSettings,
+} from "./local-data";
+import {
+  SecureSettingKind,
+  type NativeBridgeV1,
+  type RuntimePlatform,
+} from "./native-bridge";
 import { profileRequiresSetup } from "./profile-secrets";
-import { AgentPromptSettingsSchemaVersion, canonicalDevHudSettings, CollidingSettingsSchemaVersion, defaultDevHudSettings, decodeVersionedDevHudSettings, encodeDevHudSettings, LegacySettingsSchemaVersion, parseDevHudSettings, PreviousSettingsSchemaVersion, R2SettingsSchemaVersion, SettingsSchemaVersion, StructuredSettingsSchemaVersion, withDeviceLocalSettings, type DevHudSettingsV1 } from "./settings-contract";
+import {
+  AgentPromptSettingsSchemaVersion,
+  canonicalDevHudSettings,
+  CollidingSettingsSchemaVersion,
+  defaultDevHudSettings,
+  decodeVersionedDevHudSettings,
+  encodeDevHudSettings,
+  LegacySettingsSchemaVersion,
+  parseDevHudSettings,
+  PreviousSettingsSchemaVersion,
+  R2SettingsSchemaVersion,
+  SettingsSchemaVersion,
+  StructuredSettingsSchemaVersion,
+  withDeviceLocalSettings,
+  type DevHudSettingsV1,
+} from "./settings-contract";
 import { diffSettings, type SettingsDiffEntry } from "./settings-diff";
 import { inactiveDesktopShortcutBindings } from "./shortcuts";
 import { getLocalStorage, isValidApiOrigin } from "./shell";
-import { appendDiagnosticCorrelation, beginDiagnosticWriteSuppression } from "./diagnostics";
+import {
+  appendDiagnosticCorrelation,
+  beginDiagnosticWriteSuppression,
+} from "./diagnostics";
 
-export type IdentityStatus = "guest" | "starting" | "signed-out" | "authenticated" | "blocked" | "deletion-pending" | "error";
+export type IdentityStatus =
+  | "guest"
+  | "starting"
+  | "signed-out"
+  | "authenticated"
+  | "blocked"
+  | "deletion-pending"
+  | "error";
 
 export interface SettingsConflict {
   readonly local: DevHudSettingsV1;
@@ -46,7 +115,9 @@ export interface IdentitySettingsValue {
   readonly readOnly: boolean;
   readonly shortcutHydrationReady: boolean;
   readonly activeShortcutBindings: DevHudSettingsV1["shortcuts"]["desktop"];
-  readonly setActiveShortcutBindings: (bindings: DevHudSettingsV1["shortcuts"]["desktop"]) => void;
+  readonly setActiveShortcutBindings: (
+    bindings: DevHudSettingsV1["shortcuts"]["desktop"],
+  ) => void;
   readonly offline: boolean;
   readonly error: string | null;
   readonly accountError: DevHudClientError | null;
@@ -68,18 +139,30 @@ export interface IdentitySettingsValue {
   readonly continueLocally: () => void;
   readonly uploadLocal: () => Promise<boolean>;
   readonly replaceLocal: () => Promise<boolean>;
-  readonly replaceSettings: (settings: DevHudSettingsV1 | ((current: DevHudSettingsV1) => DevHudSettingsV1)) => Promise<boolean>;
-  readonly replaceSettingsAt: (settings: DevHudSettingsV1 | ((current: DevHudSettingsV1) => DevHudSettingsV1), expectedRevision: bigint) => Promise<boolean>;
+  readonly replaceSettings: (
+    settings:
+      DevHudSettingsV1 | ((current: DevHudSettingsV1) => DevHudSettingsV1),
+  ) => Promise<boolean>;
+  readonly replaceSettingsAt: (
+    settings:
+      DevHudSettingsV1 | ((current: DevHudSettingsV1) => DevHudSettingsV1),
+    expectedRevision: bigint,
+  ) => Promise<boolean>;
   readonly adoptConflictServer: () => Promise<boolean>;
   readonly reapplyConflictLocal: () => Promise<boolean>;
   readonly logout: () => Promise<void>;
   readonly deleteAccount: () => Promise<void>;
   readonly restoreAccount: () => Promise<void>;
   readonly retryDeletionCleanup: () => Promise<void>;
-  readonly profileRequiresSetup: (kind: "github" | "r2", profileId: string) => Promise<boolean>;
+  readonly profileRequiresSetup: (
+    kind: "github" | "r2",
+    profileId: string,
+  ) => Promise<boolean>;
 }
 
-const IdentitySettingsContext = createContext<IdentitySettingsValue | null>(null);
+const IdentitySettingsContext = createContext<IdentitySettingsValue | null>(
+  null,
+);
 
 export function useIdentitySettings(): IdentitySettingsValue {
   const value = use(IdentitySettingsContext);
@@ -106,41 +189,99 @@ export function DevHudServiceBoundary(props: BoundaryProps) {
   const internalSessionRef = useRef<IdentitySession | null>(null);
   const sessionRef = props.identitySessionRef ?? internalSessionRef;
   const [identityEpoch, setIdentityEpoch] = useState(0);
-  const queryClient = useMemo(() => new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } }), [identityEpoch, props.apiOrigin]);
-  const transport = useMemo(() => createConnectTransport({
-    baseUrl: props.apiOrigin,
-    interceptors: [(next) => async (request) => {
-      if (!request.url.endsWith("/GetBootstrap") && sessionRef.current !== null) {
-        try {
-          const token = await sessionRef.current.getAccessToken();
-          request.header.set("Authorization", `Bearer ${token}`);
-        } catch (reason) {
-          if (isTerminalAccessTokenError(reason)) throw ConnectError.from(reason, Code.Unauthenticated);
-          throw reason;
-        }
-      }
-      const startedAt = performance.now();
-      try {
-        const response = await next(request);
-        appendDiagnosticCorrelation(getLocalStorage(), response.header.get("x-devhud-correlation-id"), request.url, performance.now() - startedAt);
-        return response;
-      } catch (reason) {
-        appendDiagnosticCorrelation(getLocalStorage(), reason instanceof ConnectError ? reason.metadata.get("x-devhud-correlation-id") : null, request.url, performance.now() - startedAt);
-        throw reason;
-      }
-    }],
-  }), [props.apiOrigin]);
+  const queryClient = useMemo(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: { retry: false },
+          mutations: { retry: false },
+        },
+      }),
+    [identityEpoch, props.apiOrigin],
+  );
+  const transport = useMemo(
+    () =>
+      createConnectTransport({
+        baseUrl: props.apiOrigin,
+        interceptors: [
+          (next) => async (request) => {
+            if (
+              !request.url.endsWith("/GetBootstrap") &&
+              sessionRef.current !== null
+            ) {
+              try {
+                const token = await sessionRef.current.getAccessToken();
+                request.header.set("Authorization", `Bearer ${token}`);
+              } catch (reason) {
+                if (isTerminalAccessTokenError(reason))
+                  throw ConnectError.from(reason, Code.Unauthenticated);
+                throw reason;
+              }
+            }
+            const startedAt = performance.now();
+            try {
+              const response = await next(request);
+              appendDiagnosticCorrelation(
+                getLocalStorage(),
+                response.header.get("x-devhud-correlation-id"),
+                request.url,
+                performance.now() - startedAt,
+              );
+              return response;
+            } catch (reason) {
+              appendDiagnosticCorrelation(
+                getLocalStorage(),
+                reason instanceof ConnectError
+                  ? reason.metadata.get("x-devhud-correlation-id")
+                  : null,
+                request.url,
+                performance.now() - startedAt,
+              );
+              throw reason;
+            }
+          },
+        ],
+      }),
+    [props.apiOrigin],
+  );
 
   useEffect(() => () => queryClient.clear(), [queryClient]);
 
-  return <TransportProvider transport={transport}><QueryClientProvider client={queryClient}>
-    <IdentitySettingsProvider key={identityEpoch} {...props} sessionRef={sessionRef} onIdentityReset={() => setIdentityEpoch((current) => current + 1)}>
-      {props.children}
-    </IdentitySettingsProvider>
-  </QueryClientProvider></TransportProvider>;
+  return (
+    <TransportProvider transport={transport}>
+      <QueryClientProvider client={queryClient}>
+        <IdentitySettingsProvider
+          key={identityEpoch}
+          {...props}
+          sessionRef={sessionRef}
+          onIdentityReset={() => setIdentityEpoch((current) => current + 1)}
+        >
+          {props.children}
+        </IdentitySettingsProvider>
+      </QueryClientProvider>
+    </TransportProvider>
+  );
 }
 
-function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, platform, bridge, onCallbackConsumed, onDeckLinkPolicyReady, onContinueLocally, onLoggedOut, initialAppearance, children, sessionRef, onIdentityReset }: BoundaryProps & { readonly sessionRef: RefObject<IdentitySession | null>; readonly onIdentityReset: () => void }) {
+function IdentitySettingsProvider({
+  apiOrigin,
+  active,
+  online,
+  callbackUrl,
+  platform,
+  bridge,
+  onCallbackConsumed,
+  onDeckLinkPolicyReady,
+  onContinueLocally,
+  onLoggedOut,
+  initialAppearance,
+  children,
+  sessionRef,
+  onIdentityReset,
+}: BoundaryProps & {
+  readonly sessionRef: RefObject<IdentitySession | null>;
+  readonly onIdentityReset: () => void;
+}) {
   const storage = getLocalStorage();
   const queryClient = useQueryClient();
   const transport = useTransport();
@@ -149,27 +290,40 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const [bootstrap, setBootstrap] = useState<ValidatedBootstrap | null>(null);
   const [settings, setSettings] = useState<DevHudSettingsV1>(() => {
     const guest = readGuestSettings(storage);
-    return !hasGuestSettings(storage) && initialAppearance ? { ...guest, appearance: initialAppearance } : guest;
+    return !hasGuestSettings(storage) && initialAppearance
+      ? { ...guest, appearance: initialAppearance }
+      : guest;
   });
   const settingsRef = useRef(settings);
   const deviceLocalSettingsGenerationRef = useRef(0);
   const [revision, setRevision] = useState(0n);
   const revisionRef = useRef(revision);
   const contentSHA256Ref = useRef(new Uint8Array());
-  const githubPatScopeId = useMemo(() => sessionProfileId(apiOrigin), [apiOrigin]);
+  const githubPatScopeId = useMemo(
+    () => sessionProfileId(apiOrigin),
+    [apiOrigin],
+  );
   const [error, setError] = useState<string | null>(null);
-  const [accountError, setAccountError] = useState<DevHudClientError | null>(null);
-  const [settingsError, setSettingsError] = useState<DevHudClientError | null>(null);
+  const [accountError, setAccountError] = useState<DevHudClientError | null>(
+    null,
+  );
+  const [settingsError, setSettingsError] = useState<DevHudClientError | null>(
+    null,
+  );
   const [deletionCleanupFailed, setDeletionCleanupFailed] = useState(false);
   const [deckAccessSuspended, setDeckAccessSuspended] = useState(false);
-  const [importDiff, setImportDiff] = useState<readonly SettingsDiffEntry[] | null>(null);
+  const [importDiff, setImportDiff] = useState<
+    readonly SettingsDiffEntry[] | null
+  >(null);
   const [conflict, setConflict] = useState<SettingsConflict | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
   const [networkReady, setNetworkReady] = useState(false);
   const [identityReady, setIdentityReady] = useState(false);
   const [settingsReady, setSettingsReady] = useState(false);
   const [shortcutSettingsReady, setShortcutSettingsReady] = useState(false);
-  const [activeShortcutBindings, setActiveShortcutBindings] = useState(() => settings.shortcuts.desktop);
+  const [activeShortcutBindings, setActiveShortcutBindings] = useState(
+    () => settings.shortcuts.desktop,
+  );
   const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
   const [signInPending, setSignInPending] = useState(false);
   const [identityResetAvailable, setIdentityResetAvailable] = useState(false);
@@ -184,10 +338,13 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   const githubPatReconciliationRef = useRef<Promise<boolean> | null>(null);
   const lastReconciledGitHubPatKeyRef = useRef<string | null>(null);
   const settingsWritableRef = useRef(false);
-  const replaceSettingsRef = useRef<IdentitySettingsValue["replaceSettings"]>(async () => false);
+  const replaceSettingsRef = useRef<IdentitySettingsValue["replaceSettings"]>(
+    async () => false,
+  );
 
   useEffect(() => {
-    if (session !== null || continuedLocally && networkReady) onDeckLinkPolicyReady?.();
+    if (session !== null || (continuedLocally && networkReady))
+      onDeckLinkPolicyReady?.();
   }, [continuedLocally, networkReady, onDeckLinkPolicyReady, session]);
 
   function applySettings(next: DevHudSettingsV1): void {
@@ -195,18 +352,55 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     setSettings(next);
   }
 
-  function applyRevision(next: bigint, contentSHA256: Uint8Array = next === 0n ? new Uint8Array() : contentSHA256Ref.current): void {
+  function applyRevision(
+    next: bigint,
+    contentSHA256: Uint8Array = next === 0n
+      ? new Uint8Array()
+      : contentSHA256Ref.current,
+  ): void {
     revisionRef.current = next;
     contentSHA256Ref.current = Uint8Array.from(contentSHA256);
     setRevision(next);
   }
 
-  const accountQueryKey = useMemo(() => createConnectQueryKey({ schema: AccountQuery.getAccount, transport, input: {}, cardinality: "finite" }), [transport]);
-  const settingsQueryKey = useMemo(() => createConnectQueryKey({ schema: SettingsQuery.getSettings, transport, input: {}, cardinality: "finite" }), [transport]);
+  const accountQueryKey = useMemo(
+    () =>
+      createConnectQueryKey({
+        schema: AccountQuery.getAccount,
+        transport,
+        input: {},
+        cardinality: "finite",
+      }),
+    [transport],
+  );
+  const settingsQueryKey = useMemo(
+    () =>
+      createConnectQueryKey({
+        schema: SettingsQuery.getSettings,
+        transport,
+        input: {},
+        cardinality: "finite",
+      }),
+    [transport],
+  );
 
-  const bootstrapQuery = useQuery(BootstrapQuery.getBootstrap, {}, { enabled: active && online && networkReady && isValidApiOrigin(apiOrigin) });
-  const accountQuery = useQuery(AccountQuery.getAccount, {}, { enabled: status === "authenticated" && online && !logoutCleanupPending });
-  const settingsQuery = useQuery(SettingsQuery.getSettings, {}, { enabled: status === "authenticated" && online && !logoutCleanupPending });
+  const bootstrapQuery = useQuery(
+    BootstrapQuery.getBootstrap,
+    {},
+    {
+      enabled: active && online && networkReady && isValidApiOrigin(apiOrigin),
+    },
+  );
+  const accountQuery = useQuery(
+    AccountQuery.getAccount,
+    {},
+    { enabled: status === "authenticated" && online && !logoutCleanupPending },
+  );
+  const settingsQuery = useQuery(
+    SettingsQuery.getSettings,
+    {},
+    { enabled: status === "authenticated" && online && !logoutCleanupPending },
+  );
   const replaceMutation = useMutation(SettingsQuery.replaceSettings);
   const deleteMutation = useMutation(AccountQuery.deleteAccount);
   const restoreMutation = useMutation(AccountQuery.restoreAccount);
@@ -226,7 +420,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   }
 
   function clearInvalidSession(): Promise<void> {
-    if (invalidSessionCleanupRef.current !== null) return invalidSessionCleanupRef.current;
+    if (invalidSessionCleanupRef.current !== null)
+      return invalidSessionCleanupRef.current;
     invalidateDeckPolling();
     const current = sessionRef.current;
     sessionRef.current = null;
@@ -251,9 +446,13 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         onIdentityReset();
       }
     })().then(
-      () => { if (invalidSessionCleanupRef.current === cleanup) invalidSessionCleanupRef.current = null; },
+      () => {
+        if (invalidSessionCleanupRef.current === cleanup)
+          invalidSessionCleanupRef.current = null;
+      },
       (reason: unknown) => {
-        if (invalidSessionCleanupRef.current === cleanup) invalidSessionCleanupRef.current = null;
+        if (invalidSessionCleanupRef.current === cleanup)
+          invalidSessionCleanupRef.current = null;
         throw reason;
       },
     );
@@ -268,7 +467,11 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     try {
       const localCleanupComplete = clearAllContractedLocalData(storage);
       try {
-        await bridge.request({ operation: "secure.purge", scope: "account-deletion", profileId: await sessionProfileId(apiOrigin) });
+        await bridge.request({
+          operation: "secure.purge",
+          scope: "account-deletion",
+          profileId: await sessionProfileId(apiOrigin),
+        });
         setDeletionCleanupFailed(!localCleanupComplete);
       } catch {
         setDeletionCleanupFailed(true);
@@ -286,7 +489,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     try {
       setStatus("error");
       const localCleanupComplete = clearAllContractedLocalData(storage);
-      if (!localCleanupComplete) throw new Error("local-data-cleanup-incomplete");
+      if (!localCleanupComplete)
+        throw new Error("local-data-cleanup-incomplete");
       await bridge.request({ operation: "secure.purge", scope: "logout" });
       sessionRef.current = null;
       setSession(null);
@@ -312,37 +516,58 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   }
 
   useEffect(() => {
-    if (!active || !isValidApiOrigin(apiOrigin)) { setNetworkReady(false); return; }
+    if (!active || !isValidApiOrigin(apiOrigin)) {
+      setNetworkReady(false);
+      return;
+    }
     let cancelled = false;
-    void bridge.request({ operation: "session.configure-origins", apiOrigin }).then((response) => {
-      if (cancelled || response.kind !== "session-network-policy") return;
-      if (response.changed) location.reload();
-      else setNetworkReady(true);
-    }).catch((reason) => {
-      if (!cancelled && !continueLocallyRef.current) { setStatus("error"); setError(safeError(reason)); }
-    });
-    return () => { cancelled = true; };
+    void bridge
+      .request({ operation: "session.configure-origins", apiOrigin })
+      .then((response) => {
+        if (cancelled || response.kind !== "session-network-policy") return;
+        if (response.changed) location.reload();
+        else setNetworkReady(true);
+      })
+      .catch((reason) => {
+        if (!cancelled && !continueLocallyRef.current) {
+          setStatus("error");
+          setError(safeError(reason));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [active, apiOrigin, bootstrapAttempt, bridge]);
 
   useEffect(() => {
     if (!active || !online || !networkReady || !bootstrapQuery.data) return;
     let cancelled = false;
-    if (!continueLocallyRef.current) setStatus((current) => current === "guest" ? "starting" : current);
+    if (!continueLocallyRef.current)
+      setStatus((current) => (current === "guest" ? "starting" : current));
     void (async () => {
       try {
         const validated = validateBootstrap(bootstrapQuery.data, platform);
         writeCachedIdentityBootstrap(storage, apiOrigin, validated);
-        const policy = await bridge.request({ operation: "session.configure-origins", apiOrigin, logtoIssuer: validated.issuer });
+        const policy = await bridge.request({
+          operation: "session.configure-origins",
+          apiOrigin,
+          logtoIssuer: validated.issuer,
+        });
         if (policy.kind === "session-network-policy" && policy.changed) {
           location.reload();
           return;
         }
-        const session = await createIdentitySession(validated, apiOrigin, bridge);
+        const session = await createIdentitySession(
+          validated,
+          apiOrigin,
+          bridge,
+        );
         let authenticated: boolean;
         try {
           authenticated = await session.isAuthenticated();
         } catch (reason) {
-          if (!cancelled && !continueLocallyRef.current) setIdentityResetAvailable(true);
+          if (!cancelled && !continueLocallyRef.current)
+            setIdentityResetAvailable(true);
           throw reason;
         }
         if (cancelled) return;
@@ -354,7 +579,13 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         setSession(session);
         setBootstrap(validated);
         setIdentityResetAvailable(false);
-        setStatus(continueLocallyRef.current ? "guest" : authenticated ? "authenticated" : "signed-out");
+        setStatus(
+          continueLocallyRef.current
+            ? "guest"
+            : authenticated
+              ? "authenticated"
+              : "signed-out",
+        );
         setIdentityReady(true);
         setError(null);
       } catch (reason) {
@@ -364,8 +595,20 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         }
       }
     })();
-    return () => { cancelled = true; };
-  }, [active, apiOrigin, bootstrapQuery.data, bridge, networkReady, online, platform, sessionRef, storage]);
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    active,
+    apiOrigin,
+    bootstrapQuery.data,
+    bridge,
+    networkReady,
+    online,
+    platform,
+    sessionRef,
+    storage,
+  ]);
 
   useEffect(() => {
     if (!active || online || !networkReady) return;
@@ -377,7 +620,11 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     let cancelled = false;
     void (async () => {
       try {
-        const policy = await bridge.request({ operation: "session.configure-origins", apiOrigin, logtoIssuer: cached.issuer });
+        const policy = await bridge.request({
+          operation: "session.configure-origins",
+          apiOrigin,
+          logtoIssuer: cached.issuer,
+        });
         if (policy.kind === "session-network-policy" && policy.changed) {
           location.reload();
           return;
@@ -387,7 +634,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         try {
           authenticated = await session.isAuthenticated();
         } catch (reason) {
-          if (!cancelled && !continueLocallyRef.current) setIdentityResetAvailable(true);
+          if (!cancelled && !continueLocallyRef.current)
+            setIdentityResetAvailable(true);
           throw reason;
         }
         if (cancelled) return;
@@ -399,7 +647,13 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         setSession(session);
         setBootstrap(cached);
         setIdentityResetAvailable(false);
-        setStatus(continueLocallyRef.current ? "guest" : authenticated ? "authenticated" : "signed-out");
+        setStatus(
+          continueLocallyRef.current
+            ? "guest"
+            : authenticated
+              ? "authenticated"
+              : "signed-out",
+        );
         setIdentityReady(true);
         setError(null);
       } catch (reason) {
@@ -409,16 +663,26 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         }
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [active, apiOrigin, bridge, networkReady, online, sessionRef, storage]);
 
   useEffect(() => {
-    if (!callbackUrl || callbackHandled.current === callbackUrl || session === null) return;
+    if (
+      !callbackUrl ||
+      callbackHandled.current === callbackUrl ||
+      session === null
+    )
+      return;
     callbackHandled.current = callbackUrl;
     void (async () => {
       await session.handleCallback(callbackUrl);
-      const pending = await bridge.request({ operation: "auth.take-pending-callback" });
-      if (pending.kind !== "auth-callback" || pending.url !== callbackUrl) throw new Error("auth-callback-unavailable");
+      const pending = await bridge.request({
+        operation: "auth.take-pending-callback",
+      });
+      if (pending.kind !== "auth-callback" || pending.url !== callbackUrl)
+        throw new Error("auth-callback-unavailable");
       onCallbackConsumed(callbackUrl);
       setStatus("authenticated");
       setError(null);
@@ -447,7 +711,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     } else if (next.deletionState === AccountDeletionState.PENDING) {
       setStatus("deletion-pending");
       void cleanPendingDeletion();
-    } else if (next.administrativeBlockState === AdministrativeBlockState.BLOCKED) setStatus("blocked");
+    } else if (
+      next.administrativeBlockState === AdministrativeBlockState.BLOCKED
+    )
+      setStatus("blocked");
   }, [accountQuery.data]);
 
   useEffect(() => {
@@ -456,15 +723,23 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     if (mapped.kind === "unauthenticated") {
       setAccountError(null);
       void clearInvalidSession().catch((reason) => setError(safeError(reason)));
-    } else if (mapped.kind === "accountPrecondition" && mapped.detail.reason === AccountFailureReason.PURGE_CLAIMED) {
+    } else if (
+      mapped.kind === "accountPrecondition" &&
+      mapped.detail.reason === AccountFailureReason.PURGE_CLAIMED
+    ) {
       setAccountError(null);
       void clearIrrecoverableAccount().catch(() => {});
     } else if (mapped.kind === "permissionDenied") {
-      if (mapped.detail.reason === PermissionFailureReason.ACCOUNT_DELETION_PENDING) {
+      if (
+        mapped.detail.reason ===
+        PermissionFailureReason.ACCOUNT_DELETION_PENDING
+      ) {
         setAccountError(null);
         setStatus("deletion-pending");
         void cleanPendingDeletion();
-      } else if (mapped.detail.reason === PermissionFailureReason.USER_BLOCKED) {
+      } else if (
+        mapped.detail.reason === PermissionFailureReason.USER_BLOCKED
+      ) {
         setAccountError(null);
         setStatus("blocked");
       } else {
@@ -482,8 +757,13 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     if (status === "blocked") {
       if (!settingsReady) {
         const cached = readAuthenticatedSettingsCache(storage, apiOrigin);
-        if (cached) { applySettings(cached.settings); applyRevision(cached.revision, cached.contentSHA256); }
-        setShortcutSettingsReady((ready) => ready || settingsReady || cached !== null);
+        if (cached) {
+          applySettings(cached.settings);
+          applyRevision(cached.revision, cached.contentSHA256);
+        }
+        setShortcutSettingsReady(
+          (ready) => ready || settingsReady || cached !== null,
+        );
       }
       return;
     }
@@ -491,8 +771,13 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     if (!online) {
       setSettingsReady(false);
       const cached = readAuthenticatedSettingsCache(storage, apiOrigin);
-      setShortcutSettingsReady((ready) => ready || settingsReady || cached !== null);
-      if (cached) { applySettings(cached.settings); applyRevision(cached.revision, cached.contentSHA256); }
+      setShortcutSettingsReady(
+        (ready) => ready || settingsReady || cached !== null,
+      );
+      if (cached) {
+        applySettings(cached.settings);
+        applyRevision(cached.revision, cached.contentSHA256);
+      }
       return;
     }
     if (!settingsQuery.data) return;
@@ -503,10 +788,19 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       try {
         validated = await validatedSettingsSnapshot(snapshot);
       } catch {
-        if (!cancelled && (snapshot === undefined || snapshot.revision >= revisionRef.current)) markSettingsContractInvalid();
+        if (
+          !cancelled &&
+          (snapshot === undefined || snapshot.revision >= revisionRef.current)
+        )
+          markSettingsContractInvalid();
         return;
       }
-      if (cancelled || sessionRef.current === null || validated.revision < revisionRef.current) return;
+      if (
+        cancelled ||
+        sessionRef.current === null ||
+        validated.revision < revisionRef.current
+      )
+        return;
       let server = validated.settings;
       let local: DevHudSettingsV1 | null = null;
       if (hasGuestSettings(storage)) {
@@ -514,7 +808,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         server = withDeviceLocalSettings(server, local);
       } else {
         const cached = readAuthenticatedSettingsCache(storage, apiOrigin);
-        server = withDeviceLocalSettings(server, cached?.settings ?? settingsRef.current);
+        server = withDeviceLocalSettings(
+          server,
+          cached?.settings ?? settingsRef.current,
+        );
         try {
           assertDeviceLocalSettingsPersistable(server);
         } catch {
@@ -522,7 +819,9 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
           return;
         }
       }
-      setError((current) => current === "settings-contract-invalid" ? null : current);
+      setError((current) =>
+        current === "settings-contract-invalid" ? null : current,
+      );
       setSettingsError(null);
       setSettingsReady(true);
       setShortcutSettingsReady(true);
@@ -532,14 +831,34 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         setImportDiff(diffSettings(local, server));
       } else {
         applySettings(server);
-        writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: server, revision: validated.revision, contentSHA256: validated.contentSHA256, cachedAt: new Date().toISOString() });
+        writeAuthenticatedSettingsCache(storage, apiOrigin, {
+          settings: server,
+          revision: validated.revision,
+          contentSHA256: validated.contentSHA256,
+          cachedAt: new Date().toISOString(),
+        });
       }
     })();
-    return () => { cancelled = true; };
-  }, [apiOrigin, logoutCleanupPending, online, settingsQuery.data, status, storage]);
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    apiOrigin,
+    logoutCleanupPending,
+    online,
+    settingsQuery.data,
+    status,
+    storage,
+  ]);
 
   useEffect(() => {
-    if (status !== "authenticated" || logoutCleanupPending || !online || !settingsQuery.error) return;
+    if (
+      status !== "authenticated" ||
+      logoutCleanupPending ||
+      !online ||
+      !settingsQuery.error
+    )
+      return;
     const mapped = mapDevHudError(settingsQuery.error);
     setSettingsReady(false);
     setSettingsError(mapped);
@@ -552,21 +871,38 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     if (mapped.kind === "unauthenticated") {
       void clearInvalidSession().catch((reason) => setError(safeError(reason)));
     } else if (mapped.kind === "permissionDenied") {
-      if (mapped.detail.reason === PermissionFailureReason.ACCOUNT_DELETION_PENDING) {
+      if (
+        mapped.detail.reason ===
+        PermissionFailureReason.ACCOUNT_DELETION_PENDING
+      ) {
         setStatus("deletion-pending");
         void cleanPendingDeletion();
       }
-      if (mapped.detail.reason === PermissionFailureReason.USER_BLOCKED) setStatus("blocked");
+      if (mapped.detail.reason === PermissionFailureReason.USER_BLOCKED)
+        setStatus("blocked");
     }
-  }, [apiOrigin, logoutCleanupPending, online, settingsQuery.error, status, storage]);
+  }, [
+    apiOrigin,
+    logoutCleanupPending,
+    online,
+    settingsQuery.error,
+    status,
+    storage,
+  ]);
 
   useEffect(() => {
-    if (status !== "authenticated" && status !== "blocked") setShortcutSettingsReady(false);
+    if (status !== "authenticated" && status !== "blocked")
+      setShortcutSettingsReady(false);
   }, [status]);
 
-  async function replaceAt(local: DevHudSettingsV1, expectedRevision: bigint, expectedContentSHA256: Uint8Array = contentSHA256Ref.current): Promise<boolean> {
+  async function replaceAt(
+    local: DevHudSettingsV1,
+    expectedRevision: bigint,
+    expectedContentSHA256: Uint8Array = contentSHA256Ref.current,
+  ): Promise<boolean> {
     if (!online) throw new Error("offline-read-only");
-    const deviceLocalSettingsGeneration = deviceLocalSettingsGenerationRef.current;
+    const deviceLocalSettingsGeneration =
+      deviceLocalSettingsGenerationRef.current;
     setSettingsError(null);
     let canonicalJson: Uint8Array;
     try {
@@ -577,28 +913,58 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       throw reason;
     }
     try {
-      const response = await replaceMutation.mutateAsync({ schemaVersion: SettingsSchemaVersion, canonicalJson: Uint8Array.from(canonicalJson), expectedRevision, expectedContentSha256: expectedRevision === 0n ? new Uint8Array() : Uint8Array.from(expectedContentSHA256) });
+      const response = await replaceMutation.mutateAsync({
+        schemaVersion: SettingsSchemaVersion,
+        canonicalJson: Uint8Array.from(canonicalJson),
+        expectedRevision,
+        expectedContentSha256:
+          expectedRevision === 0n
+            ? new Uint8Array()
+            : Uint8Array.from(expectedContentSHA256),
+      });
       let validated: ValidatedSettingsSnapshot;
       try {
-        if (!response.snapshot) throw new SettingsSnapshotError("settings response is missing its snapshot");
+        if (!response.snapshot)
+          throw new SettingsSnapshotError(
+            "settings response is missing its snapshot",
+          );
         validated = await validatedSettingsSnapshot(response.snapshot);
       } catch (reason) {
         markSettingsContractInvalid();
         throw reason;
       }
-      const hasNewerDeviceLocalSettings = deviceLocalSettingsGenerationRef.current !== deviceLocalSettingsGeneration;
-      const latestDeviceLocalSettings = hasNewerDeviceLocalSettings ? settingsRef.current : local;
-      const requiresDeviceLocalPersistence = hasGuestSettings(storage) || !hasNewerDeviceLocalSettings && !deviceLocalSettingsEqual(local, settingsRef.current);
-      const next = withDeviceLocalSettings(validated.settings, latestDeviceLocalSettings);
-      const persisted = writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: next, revision: validated.revision, contentSHA256: validated.contentSHA256, cachedAt: new Date().toISOString() });
+      const hasNewerDeviceLocalSettings =
+        deviceLocalSettingsGenerationRef.current !==
+        deviceLocalSettingsGeneration;
+      const latestDeviceLocalSettings = hasNewerDeviceLocalSettings
+        ? settingsRef.current
+        : local;
+      const requiresDeviceLocalPersistence =
+        hasGuestSettings(storage) ||
+        (!hasNewerDeviceLocalSettings &&
+          !deviceLocalSettingsEqual(local, settingsRef.current));
+      const next = withDeviceLocalSettings(
+        validated.settings,
+        latestDeviceLocalSettings,
+      );
+      const persisted = writeAuthenticatedSettingsCache(storage, apiOrigin, {
+        settings: next,
+        revision: validated.revision,
+        contentSHA256: validated.contentSHA256,
+        cachedAt: new Date().toISOString(),
+      });
       applySettings(next);
       applyRevision(validated.revision, validated.contentSHA256);
       setSettingsReady(true);
-      setError((current) => current === "settings-contract-invalid" ? null : current);
+      setError((current) =>
+        current === "settings-contract-invalid" ? null : current,
+      );
       setImportDiff(null);
       setConflict(null);
-      if (persisted || !requiresDeviceLocalPersistence) clearGuestImportMarker(storage);
-      if (requiresDeviceLocalPersistence && !persisted) throw new Error("device-local-settings-persistence-failed");
+      if (persisted || !requiresDeviceLocalPersistence)
+        clearGuestImportMarker(storage);
+      if (requiresDeviceLocalPersistence && !persisted)
+        throw new Error("device-local-settings-persistence-failed");
       return true;
     } catch (reason) {
       if (reason instanceof SettingsSnapshotError) throw reason;
@@ -614,10 +980,26 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
           throw snapshotReason;
         }
         setImportDiff(null);
-        const latestDeviceLocalSettings = deviceLocalSettingsGenerationRef.current !== deviceLocalSettingsGeneration ? settingsRef.current : local;
-        const latestLocal = withDeviceLocalSettings(local, latestDeviceLocalSettings);
-        const server = withDeviceLocalSettings(validated.settings, latestDeviceLocalSettings);
-        setConflict({ local: latestLocal, server, currentRevision: validated.revision, currentContentSHA256: validated.contentSHA256, diff: diffSettings(latestLocal, server) });
+        const latestDeviceLocalSettings =
+          deviceLocalSettingsGenerationRef.current !==
+          deviceLocalSettingsGeneration
+            ? settingsRef.current
+            : local;
+        const latestLocal = withDeviceLocalSettings(
+          local,
+          latestDeviceLocalSettings,
+        );
+        const server = withDeviceLocalSettings(
+          validated.settings,
+          latestDeviceLocalSettings,
+        );
+        setConflict({
+          local: latestLocal,
+          server,
+          currentRevision: validated.revision,
+          currentContentSHA256: validated.contentSHA256,
+          diff: diffSettings(latestLocal, server),
+        });
         return false;
       }
       setSettingsError(mapped);
@@ -648,7 +1030,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     try {
       await bridge.request({
         operation: "secure.remove",
-        setting: { kind: SecureSettingKind.LogtoSession, profileId: await sessionProfileId(apiOrigin) },
+        setting: {
+          kind: SecureSettingKind.LogtoSession,
+          profileId: await sessionProfileId(apiOrigin),
+        },
       });
       sessionRef.current = null;
       setSession(null);
@@ -670,40 +1055,83 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
 
   const localSettingsSession = status === "guest" || status === "signed-out";
   const localSettingsWritable = identityReady && localSettingsSession;
-  const settingsReadOnly = logoutCleanupPending || replaceMutation.isPending || (!localSettingsWritable
-    && (status !== "authenticated" || !online || !settingsReady || importDiff !== null || conflict !== null));
-  const shortcutHydrationReady = identityReady && (localSettingsSession || ((status === "authenticated" || status === "blocked") && shortcutSettingsReady && importDiff === null && conflict === null));
-  const githubPatSettingsReady = identityReady && !settingsReadOnly && conflict === null;
+  const settingsReadOnly =
+    logoutCleanupPending ||
+    replaceMutation.isPending ||
+    (!localSettingsWritable &&
+      (status !== "authenticated" ||
+        !online ||
+        !settingsReady ||
+        importDiff !== null ||
+        conflict !== null));
+  const shortcutHydrationReady =
+    identityReady &&
+    (localSettingsSession ||
+      ((status === "authenticated" || status === "blocked") &&
+        shortcutSettingsReady &&
+        importDiff === null &&
+        conflict === null));
+  const githubPatSettingsReady =
+    identityReady && !settingsReadOnly && conflict === null;
 
-  const replaceSettings: IdentitySettingsValue["replaceSettings"] = async (update) => {
-    const next = typeof update === "function" ? update(settingsRef.current) : update;
+  const replaceSettings: IdentitySettingsValue["replaceSettings"] = async (
+    update,
+  ) => {
+    const next =
+      typeof update === "function" ? update(settingsRef.current) : update;
     const parsed = parseDevHudSettings(next);
     assertDeviceLocalSettingsPersistable(parsed);
-    if (canonicalDevHudSettings(parsed) === canonicalDevHudSettings(settingsRef.current)) {
-      const changesDeviceLocalSettings = !deviceLocalSettingsEqual(parsed, settingsRef.current);
-      if (!shortcutHydrationReady) throw new Error("device-local-settings-not-ready");
+    if (
+      canonicalDevHudSettings(parsed) ===
+      canonicalDevHudSettings(settingsRef.current)
+    ) {
+      const changesDeviceLocalSettings = !deviceLocalSettingsEqual(
+        parsed,
+        settingsRef.current,
+      );
+      if (!shortcutHydrationReady)
+        throw new Error("device-local-settings-not-ready");
       if (localSettingsSession) {
-        if (!writeGuestSettings(storage, parsed)) throw new Error("device-local-settings-persistence-failed");
+        if (!writeGuestSettings(storage, parsed))
+          throw new Error("device-local-settings-persistence-failed");
       } else {
-        if (!writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: parsed, revision: revisionRef.current, contentSHA256: contentSHA256Ref.current, cachedAt: new Date().toISOString() })) throw new Error("device-local-settings-persistence-failed");
+        if (
+          !writeAuthenticatedSettingsCache(storage, apiOrigin, {
+            settings: parsed,
+            revision: revisionRef.current,
+            contentSHA256: contentSHA256Ref.current,
+            cachedAt: new Date().toISOString(),
+          })
+        )
+          throw new Error("device-local-settings-persistence-failed");
       }
-      if (changesDeviceLocalSettings) deviceLocalSettingsGenerationRef.current += 1;
+      if (changesDeviceLocalSettings)
+        deviceLocalSettingsGenerationRef.current += 1;
       applySettings(parsed);
       return true;
     }
     if (localSettingsSession) {
-      const changesDeviceLocalSettings = !deviceLocalSettingsEqual(parsed, settingsRef.current);
+      const changesDeviceLocalSettings = !deviceLocalSettingsEqual(
+        parsed,
+        settingsRef.current,
+      );
       encodeDevHudSettings(parsed);
-      if (!writeGuestSettings(storage, parsed)) throw new Error("device-local-settings-persistence-failed");
-      if (changesDeviceLocalSettings) deviceLocalSettingsGenerationRef.current += 1;
+      if (!writeGuestSettings(storage, parsed))
+        throw new Error("device-local-settings-persistence-failed");
+      if (changesDeviceLocalSettings)
+        deviceLocalSettingsGenerationRef.current += 1;
       applySettings(parsed);
       return true;
     }
     if (settingsReadOnly) throw new Error("settings-read-only");
     return replaceAt(parsed, revisionRef.current);
   };
-  const replaceSettingsAt: IdentitySettingsValue["replaceSettingsAt"] = async (update, expectedRevision) => {
-    const next = typeof update === "function" ? update(settingsRef.current) : update;
+  const replaceSettingsAt: IdentitySettingsValue["replaceSettingsAt"] = async (
+    update,
+    expectedRevision,
+  ) => {
+    const next =
+      typeof update === "function" ? update(settingsRef.current) : update;
     if (localSettingsSession) return replaceSettings(next);
     if (settingsReadOnly) throw new Error("settings-read-only");
     return replaceAt(next, expectedRevision);
@@ -716,21 +1144,33 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
   }
 
   function reconcileGitHubPats(): Promise<boolean> {
-    if (githubPatReconciliationRef.current !== null) return githubPatReconciliationRef.current;
+    if (githubPatReconciliationRef.current !== null)
+      return githubPatReconciliationRef.current;
     const reconciliation = (async () => {
       while (settingsWritableRef.current) {
         const snapshot = settingsRef.current;
         const snapshotKey = githubPatSnapshotKey(snapshot);
-        const activeProfileIds = snapshot.github.profiles.map((profile) => profile.id);
+        const activeProfileIds = snapshot.github.profiles.map(
+          (profile) => profile.id,
+        );
         const pendingProfileIds = snapshot.github.pendingPatRemovals;
         try {
-          await bridge.request({ operation: "secure.reconcile-github-pats", scopeId: await githubPatScopeId, profileIds: activeProfileIds });
+          await bridge.request({
+            operation: "secure.reconcile-github-pats",
+            scopeId: await githubPatScopeId,
+            profileIds: activeProfileIds,
+          });
           if (pendingProfileIds.length > 0) {
             if (!settingsWritableRef.current) return false;
             const processed = new Set(pendingProfileIds);
             const committed = await replaceSettingsRef.current((current) => ({
               ...current,
-              github: { ...current.github, pendingPatRemovals: current.github.pendingPatRemovals.filter((profileId) => !processed.has(profileId)) },
+              github: {
+                ...current.github,
+                pendingPatRemovals: current.github.pendingPatRemovals.filter(
+                  (profileId) => !processed.has(profileId),
+                ),
+              },
             }));
             if (!committed) return false;
           }
@@ -740,25 +1180,36 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
           setGitHubPatCleanupPending(true);
           throw error;
         }
-        if (githubPatSnapshotKey(settingsRef.current) === snapshotKey) return true;
+        if (githubPatSnapshotKey(settingsRef.current) === snapshotKey)
+          return true;
       }
       return false;
     })();
     githubPatReconciliationRef.current = reconciliation;
-    void reconciliation.finally(() => {
-      if (githubPatReconciliationRef.current === reconciliation) githubPatReconciliationRef.current = null;
-    }).catch(() => {});
+    void reconciliation
+      .finally(() => {
+        if (githubPatReconciliationRef.current === reconciliation)
+          githubPatReconciliationRef.current = null;
+      })
+      .catch(() => {});
     return reconciliation;
   }
 
-  const activeGitHubProfileKey = settings.github.profiles.map((profile) => profile.id).join(":");
-  const pendingGitHubPatRemovalKey = settings.github.pendingPatRemovals.join(":");
+  const activeGitHubProfileKey = settings.github.profiles
+    .map((profile) => profile.id)
+    .join(":");
+  const pendingGitHubPatRemovalKey =
+    settings.github.pendingPatRemovals.join(":");
   useEffect(() => {
     if (!githubPatSettingsReady) return;
     const snapshotKey = githubPatSnapshotKey(settings);
     if (lastReconciledGitHubPatKeyRef.current === snapshotKey) return;
     void reconcileGitHubPats().catch(() => {});
-  }, [activeGitHubProfileKey, githubPatSettingsReady, pendingGitHubPatRemovalKey]);
+  }, [
+    activeGitHubProfileKey,
+    githubPatSettingsReady,
+    pendingGitHubPatRemovalKey,
+  ]);
 
   const value: IdentitySettingsValue = {
     status,
@@ -806,7 +1257,9 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     },
     retrySettings: async () => {
       setSettingsError(null);
-      setError((current) => current === "settings-contract-invalid" ? null : current);
+      setError((current) =>
+        current === "settings-contract-invalid" ? null : current,
+      );
       await settingsQuery.refetch();
     },
     continueLocally: () => {
@@ -822,13 +1275,26 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     replaceLocal: async () => {
       let validated: ValidatedSettingsSnapshot;
       try {
-        validated = await validatedSettingsSnapshot(settingsQuery.data?.snapshot);
+        validated = await validatedSettingsSnapshot(
+          settingsQuery.data?.snapshot,
+        );
       } catch {
         markSettingsContractInvalid();
         return false;
       }
-      const next = withDeviceLocalSettings(validated.settings, settingsRef.current);
-      if (!writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: next, revision: validated.revision, contentSHA256: validated.contentSHA256, cachedAt: new Date().toISOString() })) throw new Error("device-local-settings-persistence-failed");
+      const next = withDeviceLocalSettings(
+        validated.settings,
+        settingsRef.current,
+      );
+      if (
+        !writeAuthenticatedSettingsCache(storage, apiOrigin, {
+          settings: next,
+          revision: validated.revision,
+          contentSHA256: validated.contentSHA256,
+          cachedAt: new Date().toISOString(),
+        })
+      )
+        throw new Error("device-local-settings-persistence-failed");
       applySettings(next);
       applyRevision(validated.revision, validated.contentSHA256);
       setImportDiff(null);
@@ -839,7 +1305,15 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     replaceSettingsAt,
     adoptConflictServer: async () => {
       if (!conflict) return false;
-      if (!writeAuthenticatedSettingsCache(storage, apiOrigin, { settings: conflict.server, revision: conflict.currentRevision, contentSHA256: conflict.currentContentSHA256, cachedAt: new Date().toISOString() })) throw new Error("device-local-settings-persistence-failed");
+      if (
+        !writeAuthenticatedSettingsCache(storage, apiOrigin, {
+          settings: conflict.server,
+          revision: conflict.currentRevision,
+          contentSHA256: conflict.currentContentSHA256,
+          cachedAt: new Date().toISOString(),
+        })
+      )
+        throw new Error("device-local-settings-persistence-failed");
       lastReconciledGitHubPatKeyRef.current = null;
       applySettings(conflict.server);
       applyRevision(conflict.currentRevision, conflict.currentContentSHA256);
@@ -847,7 +1321,14 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       clearGuestImportMarker(storage);
       return true;
     },
-    reapplyConflictLocal: async () => conflict ? replaceAt(conflict.local, conflict.currentRevision, conflict.currentContentSHA256) : false,
+    reapplyConflictLocal: async () =>
+      conflict
+        ? replaceAt(
+            conflict.local,
+            conflict.currentRevision,
+            conflict.currentContentSHA256,
+          )
+        : false,
     logout: async () => {
       invalidateDeckPolling();
       setDeckAccessSuspended(true);
@@ -855,7 +1336,8 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       try {
         setLogoutCleanupPending(true);
         const localCleanupComplete = clearAllContractedLocalData(storage);
-        if (!localCleanupComplete) throw new Error("local-data-cleanup-incomplete");
+        if (!localCleanupComplete)
+          throw new Error("local-data-cleanup-incomplete");
         await bridge.request({ operation: "secure.purge", scope: "logout" });
         await sessionRef.current?.clear();
         sessionRef.current = null;
@@ -890,12 +1372,17 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
         setAccount(response.account ?? null);
         setDeletionCleanupFailed(false);
         setDeckAccessSuspended(false);
-        const blocked = response.account?.administrativeBlockState === AdministrativeBlockState.BLOCKED;
+        const blocked =
+          response.account?.administrativeBlockState ===
+          AdministrativeBlockState.BLOCKED;
         setStatus(blocked ? "blocked" : "authenticated");
         if (!blocked) await settingsQuery.refetch();
       } catch (reason) {
         const mapped = mapDevHudError(reason);
-        if (mapped.kind === "accountPrecondition" && mapped.detail.reason === AccountFailureReason.PURGE_CLAIMED) {
+        if (
+          mapped.kind === "accountPrecondition" &&
+          mapped.detail.reason === AccountFailureReason.PURGE_CLAIMED
+        ) {
           await clearIrrecoverableAccount();
           return;
         }
@@ -903,9 +1390,10 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
       }
     },
     retryDeletionCleanup: cleanPendingDeletion,
-    profileRequiresSetup: async (kind, profileId) => kind === "github"
-      ? profileRequiresSetup(bridge, kind, profileId, await githubPatScopeId)
-      : profileRequiresSetup(bridge, kind, profileId),
+    profileRequiresSetup: async (kind, profileId) =>
+      kind === "github"
+        ? profileRequiresSetup(bridge, kind, profileId, await githubPatScopeId)
+        : profileRequiresSetup(bridge, kind, profileId),
   };
 
   function markSettingsContractInvalid(): void {
@@ -914,7 +1402,9 @@ function IdentitySettingsProvider({ apiOrigin, active, online, callbackUrl, plat
     setError("settings-contract-invalid");
   }
 
-  return <IdentitySettingsContext value={value}>{children}</IdentitySettingsContext>;
+  return (
+    <IdentitySettingsContext value={value}>{children}</IdentitySettingsContext>
+  );
 }
 
 interface ValidatedSettingsSnapshot {
@@ -925,20 +1415,62 @@ interface ValidatedSettingsSnapshot {
 
 class SettingsSnapshotError extends TypeError {}
 
-async function validatedSettingsSnapshot(snapshot: { readonly schemaVersion: number; readonly canonicalJson: Uint8Array; readonly revision: bigint; readonly contentSha256: Uint8Array } | undefined): Promise<ValidatedSettingsSnapshot> {
-  if (!snapshot) return { settings: defaultDevHudSettings, revision: 0n, contentSHA256: new Uint8Array() };
-  if (snapshot.schemaVersion !== LegacySettingsSchemaVersion && snapshot.schemaVersion !== PreviousSettingsSchemaVersion && snapshot.schemaVersion !== CollidingSettingsSchemaVersion && snapshot.schemaVersion !== StructuredSettingsSchemaVersion && snapshot.schemaVersion !== R2SettingsSchemaVersion && snapshot.schemaVersion !== AgentPromptSettingsSchemaVersion && snapshot.schemaVersion !== SettingsSchemaVersion) throw new SettingsSnapshotError("unsupported settings schema version");
+async function validatedSettingsSnapshot(
+  snapshot:
+    | {
+        readonly schemaVersion: number;
+        readonly canonicalJson: Uint8Array;
+        readonly revision: bigint;
+        readonly contentSha256: Uint8Array;
+      }
+    | undefined,
+): Promise<ValidatedSettingsSnapshot> {
+  if (!snapshot)
+    return {
+      settings: defaultDevHudSettings,
+      revision: 0n,
+      contentSHA256: new Uint8Array(),
+    };
+  if (
+    snapshot.schemaVersion !== LegacySettingsSchemaVersion &&
+    snapshot.schemaVersion !== PreviousSettingsSchemaVersion &&
+    snapshot.schemaVersion !== CollidingSettingsSchemaVersion &&
+    snapshot.schemaVersion !== StructuredSettingsSchemaVersion &&
+    snapshot.schemaVersion !== R2SettingsSchemaVersion &&
+    snapshot.schemaVersion !== AgentPromptSettingsSchemaVersion &&
+    snapshot.schemaVersion !== SettingsSchemaVersion
+  )
+    throw new SettingsSnapshotError("unsupported settings schema version");
   try {
     if (snapshot.schemaVersion === SettingsSchemaVersion) {
-      if (snapshot.contentSha256.byteLength !== 32) throw new SettingsSnapshotError("settings snapshot content digest is invalid");
-      const canonicalBuffer = new ArrayBuffer(snapshot.canonicalJson.byteLength);
+      if (snapshot.contentSha256.byteLength !== 32)
+        throw new SettingsSnapshotError(
+          "settings snapshot content digest is invalid",
+        );
+      const canonicalBuffer = new ArrayBuffer(
+        snapshot.canonicalJson.byteLength,
+      );
       new Uint8Array(canonicalBuffer).set(snapshot.canonicalJson);
-      const actual = new Uint8Array(await crypto.subtle.digest("SHA-256", canonicalBuffer));
-      if (actual.some((byte, index) => byte !== snapshot.contentSha256[index])) throw new SettingsSnapshotError("settings snapshot content digest does not match canonical JSON");
+      const actual = new Uint8Array(
+        await crypto.subtle.digest("SHA-256", canonicalBuffer),
+      );
+      if (actual.some((byte, index) => byte !== snapshot.contentSha256[index]))
+        throw new SettingsSnapshotError(
+          "settings snapshot content digest does not match canonical JSON",
+        );
     }
-    return { settings: decodeVersionedDevHudSettings(snapshot.canonicalJson, snapshot.schemaVersion), revision: snapshot.revision, contentSHA256: Uint8Array.from(snapshot.contentSha256) };
+    return {
+      settings: decodeVersionedDevHudSettings(
+        snapshot.canonicalJson,
+        snapshot.schemaVersion,
+      ),
+      revision: snapshot.revision,
+      contentSHA256: Uint8Array.from(snapshot.contentSha256),
+    };
   } catch (reason) {
-    throw new SettingsSnapshotError("invalid settings snapshot", { cause: reason });
+    throw new SettingsSnapshotError("invalid settings snapshot", {
+      cause: reason,
+    });
   }
 }
 
@@ -950,21 +1482,33 @@ export async function clearIdentityForApiChange(
 ): Promise<void> {
   const session = sessionRef?.current ?? null;
   if (sessionRef) sessionRef.current = null;
-  const discardedCallback = await bridge.request({ operation: "auth.take-pending-callback" });
-  if (discardedCallback.kind !== "auth-callback") throw new Error("auth-callback-discard-failed");
+  const discardedCallback = await bridge.request({
+    operation: "auth.take-pending-callback",
+  });
+  if (discardedCallback.kind !== "auth-callback")
+    throw new Error("auth-callback-discard-failed");
   await session?.clear();
   const scopeId = await sessionProfileId(oldApiOrigin);
-  await bridge.request({ operation: "secure.purge", scope: "api-change", profileId: scopeId });
+  await bridge.request({
+    operation: "secure.purge",
+    scope: "api-change",
+    profileId: scopeId,
+  });
   clearAuthenticatedOriginData(storage, oldApiOrigin);
   clearDeckCaches(storage, scopeId);
 }
 
-export function saveGuestSettings(storage: Storage, settings: DevHudSettingsV1): boolean {
+export function saveGuestSettings(
+  storage: Storage,
+  settings: DevHudSettingsV1,
+): boolean {
   return writeGuestSettings(storage, settings);
 }
 
 function safeError(reason: unknown): string {
-  if (reason instanceof Error && /^[a-z0-9-]{1,64}$/u.test(reason.message)) return reason.message;
-  if (reason instanceof Error && /^[A-Za-z]{1,64}$/u.test(reason.name)) return `identity-${reason.name.toLowerCase()}`;
+  if (reason instanceof Error && /^[a-z0-9-]{1,64}$/u.test(reason.message))
+    return reason.message;
+  if (reason instanceof Error && /^[A-Za-z]{1,64}$/u.test(reason.name))
+    return `identity-${reason.name.toLowerCase()}`;
   return "identity-boundary-failed";
 }

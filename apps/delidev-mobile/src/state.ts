@@ -6,7 +6,12 @@ import {
   type DescMessage,
   type Message,
 } from "@bufbuild/protobuf";
-import { Code, ConnectError, createClient, type Transport } from "@connectrpc/connect";
+import {
+  Code,
+  ConnectError,
+  createClient,
+  type Transport,
+} from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import {
   clientFailure,
@@ -158,7 +163,8 @@ function validate(value: unknown): State {
       profile.pending &&
       (!Object.values(Operation).includes(profile.pending.operation) ||
         profile.pending.request.length > 2 * 1024 * 1024 ||
-        (profile.pending.phase !== undefined && !Object.values(PendingPhase).includes(profile.pending.phase)))
+        (profile.pending.phase !== undefined &&
+          !Object.values(PendingPhase).includes(profile.pending.phase)))
     )
       throw new Error("protected-state-invalid");
     if (profile.pairing) {
@@ -205,12 +211,16 @@ enum MutationOutcome {
   Uncertain = "uncertain",
   ProtectedRecovery = "protected-recovery",
 }
-function initialValidationRejection(operation: Operation, reason: unknown): boolean {
+function initialValidationRejection(
+  operation: Operation,
+  reason: unknown,
+): boolean {
   const error = ConnectError.from(reason);
   return (
     validationRejections.has(operation) &&
     error.code === Code.InvalidArgument &&
-    error.findDetails(ErrorDetailSchema)[0]?.code === FailureCode.InvalidArgument &&
+    error.findDetails(ErrorDetailSchema)[0]?.code ===
+      FailureCode.InvalidArgument &&
     clientFailure(reason).code === FailureCode.InvalidArgument
   );
 }
@@ -219,21 +229,34 @@ function originalPending(
   original: Profile,
   pending: Pending,
 ): current is Profile {
-  return !!current &&
-    current.origin === original.origin && current.serverId === original.serverId &&
-    current.deviceId === original.deviceId && current.token === original.token &&
-    !current.pairing && !current.revoked && current.pending?.request === pending.request &&
-    current.pending.operation === pending.operation && current.pending.target === pending.target;
+  return (
+    !!current &&
+    current.origin === original.origin &&
+    current.serverId === original.serverId &&
+    current.deviceId === original.deviceId &&
+    current.token === original.token &&
+    !current.pairing &&
+    !current.revoked &&
+    current.pending?.request === pending.request &&
+    current.pending.operation === pending.operation &&
+    current.pending.target === pending.target
+  );
 }
 function protectedRecovery(): ConnectError {
   return new ConnectError(
     "The protected original request requires recovery.",
     Code.FailedPrecondition,
     undefined,
-    [{ desc: ErrorDetailSchema, value: create(ErrorDetailSchema, {
-      code: FailureCode.RecoveryRequired,
-      guidance: "Inspect the original request and protected storage before retrying.",
-    }) }],
+    [
+      {
+        desc: ErrorDetailSchema,
+        value: create(ErrorDetailSchema, {
+          code: FailureCode.RecoveryRequired,
+          guidance:
+            "Inspect the original request and protected storage before retrying.",
+        }),
+      },
+    ],
   );
 }
 export class ProtectedState {
@@ -389,7 +412,12 @@ export class ProtectedState {
       const p = s.profiles.find((p) => p.id === id);
       if (!p || p.pending || p.pairing || p.revoked)
         throw new Error("pending-operation");
-      p.pending = { operation, request: raw, target, phase: PendingPhase.Prepared };
+      p.pending = {
+        operation,
+        request: raw,
+        target,
+        phase: PendingPhase.Prepared,
+      };
     });
   }
   async perform(
@@ -413,7 +441,10 @@ export class ProtectedState {
       this.sending.delete(id);
     }
   }
-  private async dispatchPending(profile: Profile, p: Pending): Promise<unknown> {
+  private async dispatchPending(
+    profile: Profile,
+    p: Pending,
+  ): Promise<unknown> {
     const id = profile.id;
     const fresh = p.phase === PendingPhase.Prepared;
     const request = fromJsonString(schemas[p.operation], p.request);
@@ -436,27 +467,39 @@ export class ProtectedState {
       report: (r) => inbox.reportNotification(r),
       revoke: (r) => createClient(DeviceService, transport).revokeDevice(r),
     };
-    const updateOriginal = async (change: (current: Profile) => void, beforeSend = false) => {
+    const updateOriginal = async (
+      change: (current: Profile) => void,
+      beforeSend = false,
+    ) => {
       try {
         await this.update((s) => {
           const current = s.profiles.find((candidate) => candidate.id === id);
-          if (!originalPending(current, profile, p) ||
-              (beforeSend && current.pending!.phase !== p.phase) ||
-              (!beforeSend && current.pending!.phase !== PendingPhase.Sending))
+          if (
+            !originalPending(current, profile, p) ||
+            (beforeSend && current.pending!.phase !== p.phase) ||
+            (!beforeSend && current.pending!.phase !== PendingPhase.Sending)
+          )
             throw new Error("mutation-scope-changed");
           change(current);
         });
       } catch {
-        console.warn("mobile_mutation_outcome", { operation: p.operation, outcome: MutationOutcome.ProtectedRecovery });
+        console.warn("mobile_mutation_outcome", {
+          operation: p.operation,
+          outcome: MutationOutcome.ProtectedRecovery,
+        });
         throw protectedRecovery();
       }
     };
     // Persist before dispatch. Restored Sending, legacy absence and any prior
     // Uncertain are never promoted to a fresh rejection-clearing attempt.
-    await updateOriginal((current) => { current.pending!.phase = PendingPhase.Sending; }, true);
+    await updateOriginal((current) => {
+      current.pending!.phase = PendingPhase.Sending;
+    }, true);
     const current = this.profile(id);
-    if (!originalPending(current, profile, p) ||
-        current.pending!.phase !== PendingPhase.Sending)
+    if (
+      !originalPending(current, profile, p) ||
+      current.pending!.phase !== PendingPhase.Sending
+    )
       throw protectedRecovery();
     let result: unknown;
     try {
@@ -468,7 +511,10 @@ export class ProtectedState {
         else current.pending!.phase = PendingPhase.Uncertain;
       });
       console.warn("mobile_mutation_outcome", {
-        operation: p.operation, outcome: rejected ? MutationOutcome.ValidationRejected : MutationOutcome.Uncertain,
+        operation: p.operation,
+        outcome: rejected
+          ? MutationOutcome.ValidationRejected
+          : MutationOutcome.Uncertain,
         code: clientFailure(reason).code,
       });
       throw reason;

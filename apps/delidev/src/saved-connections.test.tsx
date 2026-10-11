@@ -1,39 +1,128 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { LocalWorkerAction, LocalWorkerState } from "./local-worker-controls";
 import { newRequestId } from "@delinoio/delidev-api-client";
-import { SavedConnections, SavedConnectionState, type SavedConnection, type SavedConnectionActions } from "./saved-connections";
+import {
+  SavedConnections,
+  SavedConnectionState,
+  type SavedConnection,
+  type SavedConnectionActions,
+} from "./saved-connections";
 
 function fixture() {
-  const profile: SavedConnection = { version: 1, revision: 1, id: newRequestId(), name: "Saved server", endpoint: "https://fixture.example.test", server_id: newRequestId(), pairing_id: newRequestId(), device_id: newRequestId(), state: SavedConnectionState.Paired, created_at: "2026-09-25T00:00:00Z" };
-  const grant = JSON.stringify({ version: 1, endpoint: profile.endpoint, server_id: profile.server_id, pairing_id: profile.pairing_id, code: "private-single-use-fixture-code" });
+  const profile: SavedConnection = {
+    version: 1,
+    revision: 1,
+    id: newRequestId(),
+    name: "Saved server",
+    endpoint: "https://fixture.example.test",
+    server_id: newRequestId(),
+    pairing_id: newRequestId(),
+    device_id: newRequestId(),
+    state: SavedConnectionState.Paired,
+    created_at: "2026-09-25T00:00:00Z",
+  };
+  const grant = JSON.stringify({
+    version: 1,
+    endpoint: profile.endpoint,
+    server_id: profile.server_id,
+    pairing_id: profile.pairing_id,
+    code: "private-single-use-fixture-code",
+  });
   const list = vi.fn(async () => [profile]);
-  const pair = vi.fn(async (id: string, _name: string, _grant: string) => ({ ...profile, id }));
+  const pair = vi.fn(async (id: string, _name: string, _grant: string) => ({
+    ...profile,
+    id,
+  }));
   const retry = vi.fn(async (_id: string) => profile);
   const open = vi.fn(async (_id: string) => {});
-  const rename = vi.fn(async (_id: string, _requestId: string, revision: number, name: string) => ({ ...profile, revision: revision + 1, name }));
-  const removed = vi.fn(async (_after: string) => ({ connections: [] as SavedConnection[] }));
-  const remove = vi.fn(async (_id: string, requestId: string, revision: number) => ({ ...profile, revision: revision + 1, state: SavedConnectionState.Removed, removal: { request_id: requestId, expected_revision: revision } }));
+  const rename = vi.fn(
+    async (
+      _id: string,
+      _requestId: string,
+      revision: number,
+      name: string,
+    ) => ({ ...profile, revision: revision + 1, name }),
+  );
+  const removed = vi.fn(async (_after: string) => ({
+    connections: [] as SavedConnection[],
+  }));
+  const remove = vi.fn(
+    async (_id: string, requestId: string, revision: number) => ({
+      ...profile,
+      revision: revision + 1,
+      state: SavedConnectionState.Removed,
+      removal: { request_id: requestId, expected_revision: revision },
+    }),
+  );
   const retainedWorker = vi.fn();
-  const actions: SavedConnectionActions = { list, pair, retry, rename, open, removed, remove, retainedWorker };
-  return { profile, grant, actions, list, pair, retry, rename, open, removed, remove, retainedWorker };
+  const actions: SavedConnectionActions = {
+    list,
+    pair,
+    retry,
+    rename,
+    open,
+    removed,
+    remove,
+    retainedWorker,
+  };
+  return {
+    profile,
+    grant,
+    actions,
+    list,
+    pair,
+    retry,
+    rename,
+    open,
+    removed,
+    remove,
+    retainedWorker,
+  };
 }
 it("retains an uncertain pairing and masked original input across dialog visibility", async () => {
-  const value = fixture(); value.pair.mockRejectedValueOnce("timed-out");
-  const view = render(<SavedConnections visible close={() => {}} actions={value.actions} />);
+  const value = fixture();
+  value.pair.mockRejectedValueOnce("timed-out");
+  const view = render(
+    <SavedConnections visible close={() => {}} actions={value.actions} />,
+  );
   await screen.findByRole("button", { name: "Open Saved server" });
-  fireEvent.change(screen.getByLabelText("Connection name"), { target: { value: "New server" } });
-  const input = screen.getByLabelText("Private client pairing document") as HTMLInputElement;
+  fireEvent.change(screen.getByLabelText("Connection name"), {
+    target: { value: "New server" },
+  });
+  const input = screen.getByLabelText(
+    "Private client pairing document",
+  ) as HTMLInputElement;
   expect(input.type).toBe("password");
   fireEvent.change(input, { target: { value: value.grant } });
-  expect(screen.getByText(`Pairing endpoint: ${value.profile.endpoint}`)).toBeTruthy();
+  expect(
+    screen.getByText(`Pairing endpoint: ${value.profile.endpoint}`),
+  ).toBeTruthy();
   expect(screen.queryByText("private-single-use-fixture-code")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Pair this server" }));
   await screen.findByText(/operation has not been confirmed/);
-  expect((screen.getByLabelText("Connection name") as HTMLInputElement).disabled).toBe(true);
-  view.rerender(<SavedConnections visible={false} close={() => {}} actions={value.actions} />);
-  view.rerender(<SavedConnections visible close={() => {}} actions={value.actions} />);
-  fireEvent.click(screen.getByRole("button", { name: "Retry original server pairing" }));
+  expect(
+    (screen.getByLabelText("Connection name") as HTMLInputElement).disabled,
+  ).toBe(true);
+  view.rerender(
+    <SavedConnections
+      visible={false}
+      close={() => {}}
+      actions={value.actions}
+    />,
+  );
+  view.rerender(
+    <SavedConnections visible close={() => {}} actions={value.actions} />,
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Retry original server pairing" }),
+  );
   await screen.findByText(/client pairing is saved/);
   expect(value.pair).toHaveBeenCalledTimes(2);
   expect(value.pair.mock.calls[0]).toEqual(value.pair.mock.calls[1]);
@@ -43,15 +132,46 @@ it("retains an uncertain pairing and masked original input across dialog visibil
 });
 it("loads only while visible and separates opening from exact persisted pairing retry", async () => {
   const value = fixture();
-  const pending = { ...value.profile, id: newRequestId(), name: "Pending server", state: SavedConnectionState.Pending, device_id: "" };
+  const pending = {
+    ...value.profile,
+    id: newRequestId(),
+    name: "Pending server",
+    state: SavedConnectionState.Pending,
+    device_id: "",
+  };
   value.list.mockResolvedValue([value.profile, pending]);
-  value.retry.mockImplementation(async (id) => ({ ...pending, id, state: SavedConnectionState.Paired, device_id: newRequestId() }));
-  const view = render(<SavedConnections visible={false} close={() => {}} actions={value.actions} />);
+  value.retry.mockImplementation(async (id) => ({
+    ...pending,
+    id,
+    state: SavedConnectionState.Paired,
+    device_id: newRequestId(),
+  }));
+  const view = render(
+    <SavedConnections
+      visible={false}
+      close={() => {}}
+      actions={value.actions}
+    />,
+  );
   expect(value.list).not.toHaveBeenCalled();
-  view.rerender(<SavedConnections visible close={() => {}} actions={value.actions} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Open Saved server" }));
-  await waitFor(() => expect(value.open).toHaveBeenCalledWith(value.profile.id));
-  await waitFor(() => expect((screen.getByRole("button", { name: "Retry Pending server" }) as HTMLButtonElement).disabled).toBe(false));
+  view.rerender(
+    <SavedConnections visible close={() => {}} actions={value.actions} />,
+  );
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Open Saved server" }),
+  );
+  await waitFor(() =>
+    expect(value.open).toHaveBeenCalledWith(value.profile.id),
+  );
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Retry Pending server",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
   fireEvent.click(screen.getByRole("button", { name: "Retry Pending server" }));
   await screen.findByText("The original client pairing is saved.");
   expect(value.retry).toHaveBeenCalledWith(pending.id);
@@ -60,37 +180,71 @@ it("loads only while visible and separates opening from exact persisted pairing 
 it("does not let an older inventory read erase a new pairing failure", async () => {
   const value = fixture();
   let release!: (profiles: SavedConnection[]) => void;
-  value.list.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+  value.list.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  );
   value.pair.mockRejectedValueOnce("timed-out");
   render(<SavedConnections visible close={() => {}} actions={value.actions} />);
-  fireEvent.change(screen.getByLabelText("Connection name"), { target: { value: "Retained" } });
-  fireEvent.change(screen.getByLabelText("Private client pairing document"), { target: { value: value.grant } });
+  fireEvent.change(screen.getByLabelText("Connection name"), {
+    target: { value: "Retained" },
+  });
+  fireEvent.change(screen.getByLabelText("Private client pairing document"), {
+    target: { value: value.grant },
+  });
   fireEvent.click(screen.getByRole("button", { name: "Pair this server" }));
   await screen.findByText(/operation has not been confirmed/);
   release([value.profile]);
-  await waitFor(() => expect(screen.getByText(/operation has not been confirmed/)).toBeTruthy());
+  await waitFor(() =>
+    expect(screen.getByText(/operation has not been confirmed/)).toBeTruthy(),
+  );
   expect(value.pair).toHaveBeenCalledTimes(1);
 });
 
 it("retains an uncertain name edit and its revision across hiding and newer inventory", async () => {
   const value = fixture();
   value.rename.mockRejectedValueOnce("timed-out");
-  const view = render(<SavedConnections visible close={() => {}} actions={value.actions} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Rename Saved server" }));
-  fireEvent.change(screen.getByLabelText("New connection name"), { target: { value: "First edit" } });
+  const view = render(
+    <SavedConnections visible close={() => {}} actions={value.actions} />,
+  );
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Rename Saved server" }),
+  );
+  fireEvent.change(screen.getByLabelText("New connection name"), {
+    target: { value: "First edit" },
+  });
   fireEvent.click(screen.getByRole("button", { name: "Save connection name" }));
   await screen.findByText(/operation has not been confirmed/);
-  expect((screen.getByLabelText("New connection name") as HTMLInputElement).disabled).toBe(true);
+  expect(
+    (screen.getByLabelText("New connection name") as HTMLInputElement).disabled,
+  ).toBe(true);
   const newer = { ...value.profile, revision: 3, name: "Later accepted name" };
   value.list.mockResolvedValue([newer]);
   value.rename.mockResolvedValue(newer);
-  view.rerender(<SavedConnections visible={false} close={() => {}} actions={value.actions} />);
-  view.rerender(<SavedConnections visible close={() => {}} actions={value.actions} />);
+  view.rerender(
+    <SavedConnections
+      visible={false}
+      close={() => {}}
+      actions={value.actions}
+    />,
+  );
+  view.rerender(
+    <SavedConnections visible close={() => {}} actions={value.actions} />,
+  );
   await screen.findByText(/This connection changed while you were editing/);
-  fireEvent.click(screen.getByRole("button", { name: "Retry original name edit" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Retry original name edit" }),
+  );
   await screen.findByText(/Current connection name: Later accepted name/);
   expect(value.rename.mock.calls[0]).toEqual(value.rename.mock.calls[1]);
-  expect(value.rename.mock.calls[0]).toEqual([value.profile.id, expect.any(String), 1, "First edit"]);
+  expect(value.rename.mock.calls[0]).toEqual([
+    value.profile.id,
+    expect.any(String),
+    1,
+    "First edit",
+  ]);
   expect(value.pair).not.toHaveBeenCalled();
   expect(value.retry).not.toHaveBeenCalled();
   expect(value.open).not.toHaveBeenCalled();
@@ -98,35 +252,77 @@ it("retains an uncertain name edit and its revision across hiding and newer inve
 it("preserves stale unsubmitted names and requires a fresh explicit edit", async () => {
   const value = fixture();
   render(<SavedConnections visible close={() => {}} actions={value.actions} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Rename Saved server" }));
-  fireEvent.change(screen.getByLabelText("New connection name"), { target: { value: "My draft" } });
-  value.list.mockResolvedValue([{ ...value.profile, revision: 2, name: "Peer edit" }]);
-  fireEvent.click(screen.getByRole("button", { name: "Refresh saved servers" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Rename Saved server" }),
+  );
+  fireEvent.change(screen.getByLabelText("New connection name"), {
+    target: { value: "My draft" },
+  });
+  value.list.mockResolvedValue([
+    { ...value.profile, revision: 2, name: "Peer edit" },
+  ]);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Refresh saved servers" }),
+  );
   await screen.findByText(/This connection changed while you were editing/);
-  expect((screen.getByLabelText("New connection name") as HTMLInputElement).value).toBe("My draft");
-  expect((screen.getByRole("button", { name: "Save connection name" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(
+    (screen.getByLabelText("New connection name") as HTMLInputElement).value,
+  ).toBe("My draft");
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Save connection name",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
   expect(value.rename).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Discard name edit" }));
   fireEvent.click(screen.getByRole("button", { name: "Rename Peer edit" }));
-  expect((screen.getByLabelText("New connection name") as HTMLInputElement).value).toBe("Peer edit");
+  expect(
+    (screen.getByLabelText("New connection name") as HTMLInputElement).value,
+  ).toBe("Peer edit");
 });
 
 it("requires removal confirmation, retains the original uncertain request, and clears only the selected client", async () => {
   const value = fixture();
   value.remove.mockRejectedValueOnce("timed-out");
-  const view = render(<SavedConnections visible close={() => {}} actions={value.actions} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Remove Saved server" }));
+  const view = render(
+    <SavedConnections visible close={() => {}} actions={value.actions} />,
+  );
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Remove Saved server" }),
+  );
   expect(value.remove).not.toHaveBeenCalled();
-  expect(screen.getByText(/closes all windows for this saved connection and discards their unsent drafts/)).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Confirm connection removal" }));
+  expect(
+    screen.getByText(
+      /closes all windows for this saved connection and discards their unsent drafts/,
+    ),
+  ).toBeTruthy();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Confirm connection removal" }),
+  );
   await screen.findByText(/operation has not been confirmed/);
-  view.rerender(<SavedConnections visible={false} close={() => {}} actions={value.actions} />);
-  view.rerender(<SavedConnections visible close={() => {}} actions={value.actions} />);
+  view.rerender(
+    <SavedConnections
+      visible={false}
+      close={() => {}}
+      actions={value.actions}
+    />,
+  );
+  view.rerender(
+    <SavedConnections visible close={() => {}} actions={value.actions} />,
+  );
   value.list.mockResolvedValue([]);
-  fireEvent.click(screen.getByRole("button", { name: "Retry original connection removal" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Retry original connection removal" }),
+  );
   await screen.findByText(/This local client connection was removed/);
   expect(value.remove.mock.calls[0]).toEqual(value.remove.mock.calls[1]);
-  expect(value.remove.mock.calls[0]).toEqual([value.profile.id, expect.any(String), 1]);
+  expect(value.remove.mock.calls[0]).toEqual([
+    value.profile.id,
+    expect.any(String),
+    1,
+  ]);
   expect(value.open).not.toHaveBeenCalled();
   expect(value.pair).not.toHaveBeenCalled();
   expect(value.retainedWorker).not.toHaveBeenCalled();
@@ -134,12 +330,29 @@ it("requires removal confirmation, retains the original uncertain request, and c
 it("recovers the accepted cleanup request from inventory after reopening the app", async () => {
   const value = fixture();
   const request = newRequestId();
-  value.list.mockResolvedValue([{ ...value.profile, state: SavedConnectionState.Removing, revision: 2, removal: { request_id: request, expected_revision: 1 } }]);
+  value.list.mockResolvedValue([
+    {
+      ...value.profile,
+      state: SavedConnectionState.Removing,
+      revision: 2,
+      removal: { request_id: request, expected_revision: 1 },
+    },
+  ]);
   render(<SavedConnections visible close={() => {}} actions={value.actions} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Retry removal of Saved server" }));
-  expect(screen.queryByRole("button", { name: "Open Saved server" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Retry Saved server" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Retry original connection removal" }));
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Retry removal of Saved server",
+    }),
+  );
+  expect(
+    screen.queryByRole("button", { name: "Open Saved server" }),
+  ).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Retry Saved server" }),
+  ).toBeNull();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Retry original connection removal" }),
+  );
   await screen.findByText(/This local client connection was removed/);
   expect(value.remove).toHaveBeenCalledWith(value.profile.id, request, 1);
   expect(value.retry).not.toHaveBeenCalled();
@@ -147,56 +360,168 @@ it("recovers the accepted cleanup request from inventory after reopening the app
 it("blocks a stale removal confirmation while keeping the selected connection visible", async () => {
   const value = fixture();
   render(<SavedConnections visible close={() => {}} actions={value.actions} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Remove Saved server" }));
-  value.list.mockResolvedValue([{ ...value.profile, revision: 2, name: "New name" }]);
-  fireEvent.click(screen.getByRole("button", { name: "Refresh saved servers" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Remove Saved server" }),
+  );
+  value.list.mockResolvedValue([
+    { ...value.profile, revision: 2, name: "New name" },
+  ]);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Refresh saved servers" }),
+  );
   await screen.findByText(/The connection changed. Keep it/);
-  expect((screen.getByRole("button", { name: "Confirm connection removal" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Confirm connection removal",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
   expect(value.remove).not.toHaveBeenCalled();
 });
 it("keeps independent Worker stop targeting its original generation after client removal", async () => {
-  const value = fixture(), request = newRequestId(), machine = newRequestId(), generation = newRequestId();
+  const value = fixture(),
+    request = newRequestId(),
+    machine = newRequestId(),
+    generation = newRequestId();
   value.list.mockResolvedValue([]);
-  value.removed.mockResolvedValue({ connections: [{ ...value.profile, state: SavedConnectionState.Removed, revision: 2, removal: { request_id: request, expected_revision: 1 } }] });
+  value.removed.mockResolvedValue({
+    connections: [
+      {
+        ...value.profile,
+        state: SavedConnectionState.Removed,
+        revision: 2,
+        removal: { request_id: request, expected_revision: 1 },
+      },
+    ],
+  });
   value.retainedWorker.mockImplementation(async (_id, action) => {
     if (action === LocalWorkerAction.Stop) throw "timed-out";
-    return { state: LocalWorkerState.Running, machine_id: machine, generation, controller_active: true };
+    return {
+      state: LocalWorkerState.Running,
+      machine_id: machine,
+      generation,
+      controller_active: true,
+    };
   });
-  const view = render(<SavedConnections visible close={() => {}} actions={value.actions} />);
-  fireEvent.click(screen.getByRole("button", { name: "Show removed connections" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Inspect retained Worker for Saved server" }));
-  const panel = await screen.findByRole("region", { name: "Retained Worker for Saved server" });
+  const view = render(
+    <SavedConnections visible close={() => {}} actions={value.actions} />,
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Show removed connections" }),
+  );
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Inspect retained Worker for Saved server",
+    }),
+  );
+  const panel = await screen.findByRole("region", {
+    name: "Retained Worker for Saved server",
+  });
   await within(panel).findByText(`Execution machine: ${machine}`);
-  expect(within(panel).queryByRole("button", { name: "Register this computer" })).toBeNull();
-  fireEvent.click(within(panel).getByRole("button", { name: "Stop local Worker" }));
-  fireEvent.click(within(panel).getByRole("button", { name: "Confirm Worker stop" }));
+  expect(
+    within(panel).queryByRole("button", { name: "Register this computer" }),
+  ).toBeNull();
+  fireEvent.click(
+    within(panel).getByRole("button", { name: "Stop local Worker" }),
+  );
+  fireEvent.click(
+    within(panel).getByRole("button", { name: "Confirm Worker stop" }),
+  );
   await within(panel).findByText(/original stop is unconfirmed/);
-  view.rerender(<SavedConnections visible={false} close={() => {}} actions={value.actions} />);
-  view.rerender(<SavedConnections visible close={() => {}} actions={value.actions} />);
-  await waitFor(() => expect((within(panel).getByRole("button", { name: "Retry original Worker stop" }) as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(within(panel).getByRole("button", { name: "Retry original Worker stop" }));
-  await waitFor(() => expect(value.retainedWorker.mock.calls.filter(([, action]) => action === LocalWorkerAction.Stop)).toHaveLength(2));
-  expect(value.retainedWorker.mock.calls.filter(([, action]) => action === LocalWorkerAction.Stop)).toEqual([[value.profile.id, LocalWorkerAction.Stop, generation], [value.profile.id, LocalWorkerAction.Stop, generation]]);
+  view.rerender(
+    <SavedConnections
+      visible={false}
+      close={() => {}}
+      actions={value.actions}
+    />,
+  );
+  view.rerender(
+    <SavedConnections visible close={() => {}} actions={value.actions} />,
+  );
+  await waitFor(() =>
+    expect(
+      (
+        within(panel).getByRole("button", {
+          name: "Retry original Worker stop",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+  fireEvent.click(
+    within(panel).getByRole("button", { name: "Retry original Worker stop" }),
+  );
+  await waitFor(() =>
+    expect(
+      value.retainedWorker.mock.calls.filter(
+        ([, action]) => action === LocalWorkerAction.Stop,
+      ),
+    ).toHaveLength(2),
+  );
+  expect(
+    value.retainedWorker.mock.calls.filter(
+      ([, action]) => action === LocalWorkerAction.Stop,
+    ),
+  ).toEqual([
+    [value.profile.id, LocalWorkerAction.Stop, generation],
+    [value.profile.id, LocalWorkerAction.Stop, generation],
+  ]);
   expect(value.open).not.toHaveBeenCalled();
 });
 
 it("requires explicit first history read, appends with exact cursor and fences hidden late responses", async () => {
   const value = fixture();
-  const removed = { ...value.profile, state: SavedConnectionState.Removed, name: "First removed" };
-  let resolve!: (page: { connections: SavedConnection[]; next_after?: string }) => void;
-  value.removed.mockResolvedValueOnce({ connections: [removed], next_after: removed.id } as { connections: SavedConnection[] });
-  value.removed.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
-  const view = render(<SavedConnections visible close={() => {}} actions={value.actions} />);
+  const removed = {
+    ...value.profile,
+    state: SavedConnectionState.Removed,
+    name: "First removed",
+  };
+  let resolve!: (page: {
+    connections: SavedConnection[];
+    next_after?: string;
+  }) => void;
+  value.removed.mockResolvedValueOnce({
+    connections: [removed],
+    next_after: removed.id,
+  } as { connections: SavedConnection[] });
+  value.removed.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  const view = render(
+    <SavedConnections visible close={() => {}} actions={value.actions} />,
+  );
   await screen.findByRole("button", { name: "Open Saved server" });
   expect(value.removed).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Show removed connections" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Show removed connections" }),
+  );
   await screen.findByRole("heading", { name: "First removed" });
-  fireEvent.click(screen.getByRole("button", { name: "Load more Removed connections" }));
-  await waitFor(() => expect(value.removed.mock.calls.map(([after]) => after)).toEqual(["", removed.id]));
-  view.rerender(<SavedConnections visible={false} close={() => {}} actions={value.actions} />);
-  resolve({ connections: [{ ...removed, id: newRequestId(), name: "Late removed" }] });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Load more Removed connections" }),
+  );
+  await waitFor(() =>
+    expect(value.removed.mock.calls.map(([after]) => after)).toEqual([
+      "",
+      removed.id,
+    ]),
+  );
+  view.rerender(
+    <SavedConnections
+      visible={false}
+      close={() => {}}
+      actions={value.actions}
+    />,
+  );
+  resolve({
+    connections: [{ ...removed, id: newRequestId(), name: "Late removed" }],
+  });
   await Promise.resolve();
-  expect(screen.queryByRole("heading", { name: "Late removed", hidden: true })).toBeNull();
+  expect(
+    screen.queryByRole("heading", { name: "Late removed", hidden: true }),
+  ).toBeNull();
   expect(value.retainedWorker).not.toHaveBeenCalled();
   expect(value.open).not.toHaveBeenCalled();
 });

@@ -578,7 +578,15 @@ export function ServerNotificationSettings({
     field: "interactions" | "terminals" | SituationKey,
     enabled: boolean,
   ) => {
-    if (!active || !preferences || query.isFetching || query.isError || busy || state.profile(id).pending) return;
+    if (
+      !active ||
+      !preferences ||
+      query.isFetching ||
+      query.isError ||
+      busy ||
+      state.profile(id).pending
+    )
+      return;
     setBusy(true);
     setFailed(false);
     try {
@@ -587,8 +595,13 @@ export function ServerNotificationSettings({
         Operation.Preferences,
         create(SetNotificationPreferencesRequestSchema, {
           requestId: uuid(),
-          ...(preferences.situations && field !== "interactions" && field !== "terminals"
-            ? { expectedRevision: preferences.revision, changes: { [field]: enabled } }
+          ...(preferences.situations &&
+          field !== "interactions" &&
+          field !== "terminals"
+            ? {
+                expectedRevision: preferences.revision,
+                changes: { [field]: enabled },
+              }
             : { preferences: { ...preferences, [field]: enabled } }),
         }),
         "",
@@ -603,29 +616,70 @@ export function ServerNotificationSettings({
   };
   return (
     <fieldset
-      disabled={!active || busy || !preferences || query.isError || query.isFetching || !!state.profile(id).pending}
+      disabled={
+        !active ||
+        busy ||
+        !preferences ||
+        query.isError ||
+        query.isFetching ||
+        !!state.profile(id).pending
+      }
     >
       <legend>{c.serverNotifications}</legend>
-      {(preferences?.situations ? situationGroups : [{ label: undefined, keys: legacyNotificationKeys }]).map((group, index) => <section key={group.label ?? index}>
-        {group.label ? <h3>{c[group.label]}</h3> : null}
-        {group.keys.map(field => <label key={field} className="check">
-          <input type="checkbox" checked={preferences?.situations && field !== "interactions" && field !== "terminals"
-            ? preferences.situations[field] : preferences?.[field as "interactions" | "terminals"] ?? false}
-            onChange={event => void update(field, event.target.checked)} />{c[field]}
-        </label>)}
-      </section>)}
+      {(preferences?.situations
+        ? situationGroups
+        : [{ label: undefined, keys: legacyNotificationKeys }]
+      ).map((group, index) => (
+        <section key={group.label ?? index}>
+          {group.label ? <h3>{c[group.label]}</h3> : null}
+          {group.keys.map((field) => (
+            <label key={field} className="check">
+              <input
+                type="checkbox"
+                checked={
+                  preferences?.situations &&
+                  field !== "interactions" &&
+                  field !== "terminals"
+                    ? preferences.situations[field]
+                    : (preferences?.[field as "interactions" | "terminals"] ??
+                      false)
+                }
+                onChange={(event) => void update(field, event.target.checked)}
+              />
+              {c[field]}
+            </label>
+          ))}
+        </section>
+      ))}
       {query.isError || failed ? <p role="alert">{c.error}</p> : null}
     </fieldset>
   );
 }
-type SituationKey = Exclude<keyof SituationNotificationPreferences, "$typeName" | "$unknown">;
+type SituationKey = Exclude<
+  keyof SituationNotificationPreferences,
+  "$typeName" | "$unknown"
+>;
 const legacyNotificationKeys = ["interactions", "terminals"] as const;
 const situationGroups = [
   { label: "notificationRequests", keys: ["questions", "approvals"] },
   { label: "notificationExecution", keys: ["succeeded", "failed", "stopped"] },
-  { label: "notificationConnections", keys: ["serverLost", "serverRestored", "workerUnavailable", "workerAvailable"] },
-  { label: "notificationOperations", keys: ["quotaExhausted", "scheduleStartFailed", "scheduleOffline"] },
-] as const satisfies readonly { label: keyof Labels; keys: readonly SituationKey[] }[];
+  {
+    label: "notificationConnections",
+    keys: [
+      "serverLost",
+      "serverRestored",
+      "workerUnavailable",
+      "workerAvailable",
+    ],
+  },
+  {
+    label: "notificationOperations",
+    keys: ["quotaExhausted", "scheduleStartFailed", "scheduleOffline"],
+  },
+] as const satisfies readonly {
+  label: keyof Labels;
+  keys: readonly SituationKey[];
+}[];
 
 function Connected({
   state,
@@ -851,7 +905,9 @@ function Connected({
                 enabled={enabled && !busy && !pending}
                 error={error}
                 mutate={async (r) => {
-                  await mutate(Operation.Create, r, "", () => setCreation(false));
+                  await mutate(Operation.Create, r, "", () =>
+                    setCreation(false),
+                  );
                 }}
               />
             </Modal>
@@ -1084,20 +1140,66 @@ export function NewSession({
     [prompt, setPrompt] = useState(""),
     [manualMode, setMode] = useState<string>();
   const status = useQuery(SystemQuery.getStatus, {}, { enabled });
-  const supportsDefaults = status.data?.capabilities.includes(SystemCapability.SESSION_DEFAULTS_V1) ?? false;
-  const defaults = useQuery(ResourceQuery.listResources, { filter: { kind: EntityKind.SETTINGS, pageSize: 2 } }, { enabled: enabled && supportsDefaults });
-  const selectedProject = useQuery(ResourceQuery.getResource, { kind: EntityKind.PROJECT, id: project }, { enabled: enabled && supportsDefaults && workspace === "worktree" && !!project });
+  const supportsDefaults =
+    status.data?.capabilities.includes(SystemCapability.SESSION_DEFAULTS_V1) ??
+    false;
+  const defaults = useQuery(
+    ResourceQuery.listResources,
+    { filter: { kind: EntityKind.SETTINGS, pageSize: 2 } },
+    { enabled: enabled && supportsDefaults },
+  );
+  const selectedProject = useQuery(
+    ResourceQuery.getResource,
+    { kind: EntityKind.PROJECT, id: project },
+    {
+      enabled:
+        enabled && supportsDefaults && workspace === "worktree" && !!project,
+    },
+  );
   const rows = defaults.data?.resources;
   const global = rows?.[0];
-  const globalReady = !defaults.isFetching && !defaults.isError && rows !== undefined && rows.length <= 1 && !defaults.data?.nextPageToken && (!global || global.kind === EntityKind.SETTINGS && global.revision > 0n && supportsResourceSchema(global));
+  const globalReady =
+    !defaults.isFetching &&
+    !defaults.isError &&
+    rows !== undefined &&
+    rows.length <= 1 &&
+    !defaults.data?.nextPageToken &&
+    (!global ||
+      (global.kind === EntityKind.SETTINGS &&
+        global.revision > 0n &&
+        supportsResourceSchema(global)));
   const selected = selectedProject.data?.resource;
-  const projectReady = workspace !== "worktree" || !project || !selectedProject.isFetching && !selectedProject.isError && selected?.kind === EntityKind.PROJECT && selected.id === project && selected.revision > 0n && supportsResourceSchema(selected);
-  const override = workspace !== "worktree" || !project ? "inherit" : text(record(value(selected).settings).plan_mode_default) || "inherit";
-  const modeReady = manualMode !== undefined || !status.isFetching && !status.isError && !!status.data && (!supportsDefaults || globalReady && projectReady && ["inherit", "enabled", "disabled"].includes(override));
-  const automaticMode = supportsDefaults && (override === "enabled" || override === "inherit" && value(global).plan_mode_default === true) ? "plan" : "execute";
+  const projectReady =
+    workspace !== "worktree" ||
+    !project ||
+    (!selectedProject.isFetching &&
+      !selectedProject.isError &&
+      selected?.kind === EntityKind.PROJECT &&
+      selected.id === project &&
+      selected.revision > 0n &&
+      supportsResourceSchema(selected));
+  const override =
+    workspace !== "worktree" || !project
+      ? "inherit"
+      : text(record(value(selected).settings).plan_mode_default) || "inherit";
+  const modeReady =
+    manualMode !== undefined ||
+    (!status.isFetching &&
+      !status.isError &&
+      !!status.data &&
+      (!supportsDefaults ||
+        (globalReady &&
+          projectReady &&
+          ["inherit", "enabled", "disabled"].includes(override))));
+  const automaticMode =
+    supportsDefaults &&
+    (override === "enabled" ||
+      (override === "inherit" && value(global).plan_mode_default === true))
+      ? "plan"
+      : "execute";
   const retainedMode = useRef("execute");
   if (enabled && modeReady) retainedMode.current = manualMode ?? automaticMode;
-  const mode = enabled ? manualMode ?? automaticMode : retainedMode.current;
+  const mode = enabled ? (manualMode ?? automaticMode) : retainedMode.current;
   const sessionName = validateSessionName(title, c.newSession);
   const valid =
     sessionName.valid &&
@@ -1168,12 +1270,18 @@ export function NewSession({
           {c.title}
           <input
             aria-invalid={!sessionName.valid}
-            aria-describedby={!sessionName.valid ? "session-name-guidance" : undefined}
+            aria-describedby={
+              !sessionName.valid ? "session-name-guidance" : undefined
+            }
             value={title}
             onChange={(e) => setTitle(e.target.value)}
           />
         </label>
-        {!sessionName.valid ? <p id="session-name-guidance" role="alert">{c.sessionNameTooLarge}</p> : null}
+        {!sessionName.valid ? (
+          <p id="session-name-guidance" role="alert">
+            {c.sessionNameTooLarge}
+          </p>
+        ) : null}
         <label>
           {c.mode}
           <select value={mode} onChange={(e) => setMode(e.target.value)}>
@@ -1189,23 +1297,71 @@ export function NewSession({
             onChange={(e) => setPrompt(e.target.value)}
           />
         </label>
-        {!modeReady ? <div><p role="status">{c.defaultsUnavailable}</p><button type="button" disabled={!enabled || status.isFetching || defaults.isFetching || selectedProject.isFetching} onClick={() => { void status.refetch(); if (supportsDefaults) void defaults.refetch(); if (supportsDefaults && project && workspace === "worktree") void selectedProject.refetch(); }}>{c.refresh}</button></div> : null}
+        {!modeReady ? (
+          <div>
+            <p role="status">{c.defaultsUnavailable}</p>
+            <button
+              type="button"
+              disabled={
+                !enabled ||
+                status.isFetching ||
+                defaults.isFetching ||
+                selectedProject.isFetching
+              }
+              onClick={() => {
+                void status.refetch();
+                if (supportsDefaults) void defaults.refetch();
+                if (supportsDefaults && project && workspace === "worktree")
+                  void selectedProject.refetch();
+              }}
+            >
+              {c.refresh}
+            </button>
+          </div>
+        ) : null}
         {error ? <p role="alert">{error}</p> : null}
         <button disabled={!valid}>{c.newSession}</button>
       </fieldset>
     </form>
   );
 }
-function ConversationPageControls({ reader, copy: c }: { reader: ReturnType<typeof useConversationPages>; copy: Labels }) {
-  return <div>
-    {reader.loading ? <p role="status">{c.loading}</p> : null}
-    {reader.error ? <p role="alert">{c.readIncomplete}</p> : null}
-    {reader.nextPageToken ? <p role="status">{c.moreAvailable}</p> : null}
-    {reader.loaded && !reader.loading && !reader.error && !reader.nextPageToken && !reader.resources.length ? <p>{c.empty}</p> : null}
-    <button disabled={!reader.loaded || reader.loading} onClick={reader.refresh}>{c.refresh}</button>
-    {reader.error ? <button disabled={reader.loading} onClick={reader.retry}>{c.retryRead}</button> : null}
-    {reader.nextPageToken && !reader.error ? <button disabled={reader.loading} onClick={() => void reader.more()}>{c.more}</button> : null}
-  </div>;
+function ConversationPageControls({
+  reader,
+  copy: c,
+}: {
+  reader: ReturnType<typeof useConversationPages>;
+  copy: Labels;
+}) {
+  return (
+    <div>
+      {reader.loading ? <p role="status">{c.loading}</p> : null}
+      {reader.error ? <p role="alert">{c.readIncomplete}</p> : null}
+      {reader.nextPageToken ? <p role="status">{c.moreAvailable}</p> : null}
+      {reader.loaded &&
+      !reader.loading &&
+      !reader.error &&
+      !reader.nextPageToken &&
+      !reader.resources.length ? (
+        <p>{c.empty}</p>
+      ) : null}
+      <button
+        disabled={!reader.loaded || reader.loading}
+        onClick={reader.refresh}
+      >
+        {c.refresh}
+      </button>
+      {reader.error ? (
+        <button disabled={reader.loading} onClick={reader.retry}>
+          {c.retryRead}
+        </button>
+      ) : null}
+      {reader.nextPageToken && !reader.error ? (
+        <button disabled={reader.loading} onClick={() => void reader.more()}>
+          {c.more}
+        </button>
+      ) : null}
+    </div>
+  );
 }
 function Conversation({
   id,
@@ -1246,7 +1402,11 @@ function Conversation({
     },
     { enabled },
   );
-  const interactions = useConversationPages(ConversationLane.Interactions, id, enabled);
+  const interactions = useConversationPages(
+    ConversationLane.Interactions,
+    id,
+    enabled,
+  );
   const queue = useConversationPages(ConversationLane.Queue, id, enabled);
   useEffect(() => {
     if (messages.data)
@@ -1306,45 +1466,65 @@ function Conversation({
         </button>
       ) : null}
       <section aria-label={c.interactions}>
-      <h3>{c.interactions}</h3>
-      <ConversationPageControls reader={interactions} copy={c} />
-      {interactions.resources.some(r => value(r).closure !== "open") ? <p>{c.closedRequests}: {interactions.resources.filter(r => value(r).closure !== "open").length}</p> : null}
-      {interactions.resources
-        .filter((r) => value(r).closure === "open")
-        .map((r) => (
-          <RequestResponse
-            key={r.id}
-            resource={r}
-            enabled={available && interactions.canWrite(r)}
-            copy={c}
-            send={async (question, response) => {
-              if (!interactions.canWrite(r)) throw new Error("stale-request");
-              const fresh = await createClient(
-                ResourceService,
-                transport,
-              ).getResource({ kind: EntityKind.INTERACTION, id: r.id }, { signal: interactions.signal() });
-              if (!interactions.canWrite(r) || !fresh.resource || fresh.resource.id !== r.id || !supportsResourceSchema(fresh.resource) || fresh.resource.kind !== EntityKind.INTERACTION || fresh.resource.sessionId !== id || fresh.resource.revision !== r.revision || value(fresh.resource).closure !== "open")
-                throw new Error("stale-request");
-              await mutate(
-                question ? Operation.Question : Operation.Approval,
-                create(
-                  question
-                    ? RespondQuestionRequestSchema
-                    : RespondApprovalRequestSchema,
-                  {
-                    mutation: {
-                      id: r.id,
-                      expectedRevision: r.revision,
-                      requestId: uuid(),
+        <h3>{c.interactions}</h3>
+        <ConversationPageControls reader={interactions} copy={c} />
+        {interactions.resources.some((r) => value(r).closure !== "open") ? (
+          <p>
+            {c.closedRequests}:{" "}
+            {
+              interactions.resources.filter((r) => value(r).closure !== "open")
+                .length
+            }
+          </p>
+        ) : null}
+        {interactions.resources
+          .filter((r) => value(r).closure === "open")
+          .map((r) => (
+            <RequestResponse
+              key={r.id}
+              resource={r}
+              enabled={available && interactions.canWrite(r)}
+              copy={c}
+              send={async (question, response) => {
+                if (!interactions.canWrite(r)) throw new Error("stale-request");
+                const fresh = await createClient(
+                  ResourceService,
+                  transport,
+                ).getResource(
+                  { kind: EntityKind.INTERACTION, id: r.id },
+                  { signal: interactions.signal() },
+                );
+                if (
+                  !interactions.canWrite(r) ||
+                  !fresh.resource ||
+                  fresh.resource.id !== r.id ||
+                  !supportsResourceSchema(fresh.resource) ||
+                  fresh.resource.kind !== EntityKind.INTERACTION ||
+                  fresh.resource.sessionId !== id ||
+                  fresh.resource.revision !== r.revision ||
+                  value(fresh.resource).closure !== "open"
+                )
+                  throw new Error("stale-request");
+                await mutate(
+                  question ? Operation.Question : Operation.Approval,
+                  create(
+                    question
+                      ? RespondQuestionRequestSchema
+                      : RespondApprovalRequestSchema,
+                    {
+                      mutation: {
+                        id: r.id,
+                        expectedRevision: r.revision,
+                        requestId: uuid(),
+                      },
+                      responseJson: documentBytes(response),
                     },
-                    responseJson: documentBytes(response),
-                  },
-                ),
-                r.id,
-              );
-            }}
-          />
-        ))}
+                  ),
+                  r.id,
+                );
+              }}
+            />
+          ))}
       </section>
       <form
         onSubmit={(e) => {
@@ -1394,41 +1574,41 @@ function Conversation({
         </fieldset>
       </form>
       <section aria-label={c.queue}>
-      <h3>{c.queue}</h3>
-      <ConversationPageControls reader={queue} copy={c} />
-      {queue.resources.map((input) => (
-        <article key={input.id}>
-          <p>{text(value(input).prompt)}</p>
-          <button
-            disabled={
-              !available ||
-              !queue.canWrite(input) ||
-              data.outcome !== "running" ||
-              !text(data.active_execution_id) ||
-              !text(record(data.execution).native_turn_id)
-            }
-            onClick={() => {
-              if (!queue.canWrite(input)) return;
-              void mutate(
-                Operation.Steer,
-                create(SteerQueuedInputRequestSchema, {
-                  mutation: {
-                    id: input.id,
-                    expectedRevision: input.revision,
-                    requestId: uuid(),
-                  },
-                  sessionId: id,
-                  expectedExecutionId: text(data.active_execution_id),
-                  expectedTurnId: text(record(data.execution).native_turn_id),
-                }),
-                id,
-              );
-            }}
-          >
-            {c.steer}
-          </button>
-        </article>
-      ))}
+        <h3>{c.queue}</h3>
+        <ConversationPageControls reader={queue} copy={c} />
+        {queue.resources.map((input) => (
+          <article key={input.id}>
+            <p>{text(value(input).prompt)}</p>
+            <button
+              disabled={
+                !available ||
+                !queue.canWrite(input) ||
+                data.outcome !== "running" ||
+                !text(data.active_execution_id) ||
+                !text(record(data.execution).native_turn_id)
+              }
+              onClick={() => {
+                if (!queue.canWrite(input)) return;
+                void mutate(
+                  Operation.Steer,
+                  create(SteerQueuedInputRequestSchema, {
+                    mutation: {
+                      id: input.id,
+                      expectedRevision: input.revision,
+                      requestId: uuid(),
+                    },
+                    sessionId: id,
+                    expectedExecutionId: text(data.active_execution_id),
+                    expectedTurnId: text(record(data.execution).native_turn_id),
+                  }),
+                  id,
+                );
+              }}
+            >
+              {c.steer}
+            </button>
+          </article>
+        ))}
       </section>
       <button
         disabled={!available}

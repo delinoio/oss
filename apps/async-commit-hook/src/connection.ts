@@ -9,7 +9,11 @@ export function readConnection(): { run: string } {
   const fragment = new URLSearchParams();
   if (run) fragment.set("run", run);
   if (window.location.hash)
-    history.replaceState(null, "", window.location.pathname + (run ? `#${fragment}` : ""));
+    history.replaceState(
+      null,
+      "",
+      window.location.pathname + (run ? `#${fragment}` : ""),
+    );
   return { run };
 }
 export function transportFor() {

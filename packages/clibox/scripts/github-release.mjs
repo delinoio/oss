@@ -1,42 +1,102 @@
-import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import { gzipSync, gunzipSync } from 'node:zlib';
-import { ensure, event, isMain, packageRoot, revision, sourceText } from './common.mjs';
-import { tarEntries, verifySet } from './package.mjs';
-import { identity, sha256 } from '../../../scripts/release/linux-packages/model.mjs';
-import { readElf, verifyBundle } from '../../../scripts/release/linux-packages/release-input.mjs';
+import { execFileSync } from "node:child_process";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { gzipSync, gunzipSync } from "node:zlib";
+import {
+  ensure,
+  event,
+  isMain,
+  packageRoot,
+  revision,
+  sourceText,
+} from "./common.mjs";
+import { tarEntries, verifySet } from "./package.mjs";
+import {
+  identity,
+  sha256,
+} from "../../../scripts/release/linux-packages/model.mjs";
+import {
+  readElf,
+  verifyBundle,
+} from "../../../scripts/release/linux-packages/release-input.mjs";
 
-export const archiveNames = ['clibox-linux-amd64.tar.gz', 'clibox-linux-arm64.tar.gz', 'clibox-darwin-amd64.tar.gz', 'clibox-darwin-arm64.tar.gz'];
-export const unsignedNames = [...archiveNames, 'SHA256SUMS'];
-export const assetNames = unsignedNames.flatMap((name) => [name, `${name}.sigstore.json`]);
+export const archiveNames = [
+  "clibox-linux-amd64.tar.gz",
+  "clibox-linux-arm64.tar.gz",
+  "clibox-darwin-amd64.tar.gz",
+  "clibox-darwin-arm64.tar.gz",
+];
+export const unsignedNames = [...archiveNames, "SHA256SUMS"];
+export const assetNames = unsignedNames.flatMap((name) => [
+  name,
+  `${name}.sigstore.json`,
+]);
 export function darwinNotices() {
   return new Map([
-    ['LICENSE', Buffer.from(sourceText('crates/clibox/LICENSE'))],
-    ['NOTICE', Buffer.from(sourceText('NOTICE'))],
+    ["LICENSE", Buffer.from(sourceText("crates/clibox/LICENSE"))],
+    ["NOTICE", Buffer.from(sourceText("NOTICE"))],
     // The embedded fspy, materialized-artifact and vt code share this original MIT notice.
-    ['LICENSE.fspy', Buffer.from(sourceText('crates/fspy/LICENSE'))],
+    ["LICENSE.fspy", Buffer.from(sourceText("crates/fspy/LICENSE"))],
   ]);
 }
 
 function entry(name, bytes, mode) {
   const header = Buffer.alloc(512);
   header.write(name);
-  const octal = (n, offset, width) => header.write(`${n.toString(8).padStart(width - 1, '0')}\0`, offset, width);
-  octal(mode, 100, 8); octal(0, 108, 8); octal(0, 116, 8); octal(bytes.length, 124, 12); octal(0, 136, 12);
-  header.fill(32, 148, 156); header[156] = 48; header.write('ustar\0', 257); header.write('00', 263);
-  header.write(`${header.reduce((sum, byte) => sum + byte, 0).toString(8).padStart(6, '0')}\0 `, 148, 8);
-  return Buffer.concat([header, bytes, Buffer.alloc((512 - bytes.length % 512) % 512)]);
+  const octal = (n, offset, width) =>
+    header.write(`${n.toString(8).padStart(width - 1, "0")}\0`, offset, width);
+  octal(mode, 100, 8);
+  octal(0, 108, 8);
+  octal(0, 116, 8);
+  octal(bytes.length, 124, 12);
+  octal(0, 136, 12);
+  header.fill(32, 148, 156);
+  header[156] = 48;
+  header.write("ustar\0", 257);
+  header.write("00", 263);
+  header.write(
+    `${header
+      .reduce((sum, byte) => sum + byte, 0)
+      .toString(8)
+      .padStart(6, "0")}\0 `,
+    148,
+    8,
+  );
+  return Buffer.concat([
+    header,
+    bytes,
+    Buffer.alloc((512 - (bytes.length % 512)) % 512),
+  ]);
 }
 
 // Fixed ustar metadata preserves existing single-file GNU archive bytes exactly.
 export function archive(binary, notices = new Map()) {
-  return gzipSync(Buffer.concat([entry('clibox', binary, 0o755), ...[...notices].map(([name, bytes]) => entry(name, bytes, 0o644)), Buffer.alloc(1024)]), { level: 9 });
+  return gzipSync(
+    Buffer.concat([
+      entry("clibox", binary, 0o755),
+      ...[...notices].map(([name, bytes]) => entry(name, bytes, 0o644)),
+      Buffer.alloc(1024),
+    ]),
+    { level: 9 },
+  );
 }
 
 export function inspectMachO(binary, arch) {
-  ensure(['amd64', 'arm64'].includes(arch) && binary.length >= 32 && binary.readUInt32LE(0) === 0xfeedfacf && binary.readUInt32LE(4) === (arch === 'amd64' ? 0x1000007 : 0x100000c) && binary.readUInt32LE(12) === 2, 'Wrong Mach-O executable architecture');
+  ensure(
+    ["amd64", "arm64"].includes(arch) &&
+      binary.length >= 32 &&
+      binary.readUInt32LE(0) === 0xfeedfacf &&
+      binary.readUInt32LE(4) === (arch === "amd64" ? 0x1000007 : 0x100000c) &&
+      binary.readUInt32LE(12) === 2,
+    "Wrong Mach-O executable architecture",
+  );
 }
 
 export function readDarwinArchive(bytes, arch) {
@@ -47,54 +107,125 @@ export function readDarwinArchive(bytes, arch) {
   while (offset + 512 <= tar.length) {
     const header = tar.subarray(offset, offset + 512);
     if (header.every((byte) => byte === 0)) break;
-    const text = (start, end) => header.subarray(start, end).toString().split('\0')[0];
+    const text = (start, end) =>
+      header.subarray(start, end).toString().split("\0")[0];
     const name = text(0, 100);
     const size = Number.parseInt(text(124, 136), 8);
     const mode = Number.parseInt(text(100, 108), 8);
-    const checksum = header.reduce((sum, byte, i) => sum + (i >= 148 && i < 156 ? 32 : byte), 0);
-    ensure(checksum === Number.parseInt(text(148, 156), 8) && text(257, 263) === 'ustar' && !text(345, 500) && header[156] === 48 && (name === 'clibox' || expected.has(name)) && !entries.has(name), 'Invalid Darwin archive entry');
-    ensure(Number.isSafeInteger(size) && size > 0 && offset + 512 + size <= tar.length && mode === (name === 'clibox' ? 0o755 : 0o644), 'Invalid Darwin archive payload');
+    const checksum = header.reduce(
+      (sum, byte, i) => sum + (i >= 148 && i < 156 ? 32 : byte),
+      0,
+    );
+    ensure(
+      checksum === Number.parseInt(text(148, 156), 8) &&
+        text(257, 263) === "ustar" &&
+        !text(345, 500) &&
+        header[156] === 48 &&
+        (name === "clibox" || expected.has(name)) &&
+        !entries.has(name),
+      "Invalid Darwin archive entry",
+    );
+    ensure(
+      Number.isSafeInteger(size) &&
+        size > 0 &&
+        offset + 512 + size <= tar.length &&
+        mode === (name === "clibox" ? 0o755 : 0o644),
+      "Invalid Darwin archive payload",
+    );
     entries.set(name, tar.subarray(offset + 512, offset + 512 + size));
     offset += 512 + Math.ceil(size / 512) * 512;
   }
-  ensure(entries.size === expected.size + 1 && entries.has('clibox') && offset + 1024 <= tar.length && tar.subarray(offset).every((byte) => byte === 0), 'Incomplete Darwin archive');
-  for (const [name, expectedBytes] of expected) ensure(entries.get(name)?.equals(expectedBytes), `Darwin license mismatch: ${name}`);
-  inspectMachO(entries.get('clibox'), arch);
+  ensure(
+    entries.size === expected.size + 1 &&
+      entries.has("clibox") &&
+      offset + 1024 <= tar.length &&
+      tar.subarray(offset).every((byte) => byte === 0),
+    "Incomplete Darwin archive",
+  );
+  for (const [name, expectedBytes] of expected)
+    ensure(
+      entries.get(name)?.equals(expectedBytes),
+      `Darwin license mismatch: ${name}`,
+    );
+  inspectMachO(entries.get("clibox"), arch);
   return entries;
 }
 
 export function stage(directory, output, sourceRevision, inspect = readElf) {
   const artifacts = verifySet(directory, sourceRevision);
-  const plan = identity({ project: 'clibox', version: artifacts[0].version, revision: sourceRevision });
+  const plan = identity({
+    project: "clibox",
+    version: artifacts[0].version,
+    revision: sourceRevision,
+  });
   const files = new Map();
-  const temp = mkdtempSync(path.join(tmpdir(), 'clibox-elf-'));
+  const temp = mkdtempSync(path.join(tmpdir(), "clibox-elf-"));
   try {
-    for (const [cpu, arch] of [['x64', 'amd64'], ['arm64', 'arm64']]) {
-      const artifact = artifacts.find(({ name }) => name === `@delino/clibox-linux-${cpu}-gnu`);
-      const binary = tarEntries(readFileSync(path.join(directory, artifact.filename))).get('bin/clibox').bytes;
+    for (const [cpu, arch] of [
+      ["x64", "amd64"],
+      ["arm64", "arm64"],
+    ]) {
+      const artifact = artifacts.find(
+        ({ name }) => name === `@delino/clibox-linux-${cpu}-gnu`,
+      );
+      const binary = tarEntries(
+        readFileSync(path.join(directory, artifact.filename)),
+      ).get("bin/clibox").bytes;
       const executable = path.join(temp, arch);
-      writeFileSync(executable, binary); inspect(executable, arch);
+      writeFileSync(executable, binary);
+      inspect(executable, arch);
       files.set(`clibox-linux-${arch}.tar.gz`, archive(binary));
     }
-    for (const [cpu, arch] of [['x64', 'amd64'], ['arm64', 'arm64']]) {
-      const artifact = artifacts.find(({ name }) => name === `@delino/clibox-darwin-${cpu}`);
-      const binary = tarEntries(readFileSync(path.join(directory, artifact.filename))).get('bin/clibox').bytes;
+    for (const [cpu, arch] of [
+      ["x64", "amd64"],
+      ["arm64", "arm64"],
+    ]) {
+      const artifact = artifacts.find(
+        ({ name }) => name === `@delino/clibox-darwin-${cpu}`,
+      );
+      const binary = tarEntries(
+        readFileSync(path.join(directory, artifact.filename)),
+      ).get("bin/clibox").bytes;
       inspectMachO(binary, arch);
-      files.set(`clibox-darwin-${arch}.tar.gz`, archive(binary, darwinNotices()));
+      files.set(
+        `clibox-darwin-${arch}.tar.gz`,
+        archive(binary, darwinNotices()),
+      );
     }
-  } finally { rmSync(temp, { recursive: true, force: true }); }
-  files.set('SHA256SUMS', Buffer.from([...files].map(([name, bytes]) => `${sha256(bytes)}  ${name}\n`).join('')));
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+  files.set(
+    "SHA256SUMS",
+    Buffer.from(
+      [...files].map(([name, bytes]) => `${sha256(bytes)}  ${name}\n`).join(""),
+    ),
+  );
   mkdirSync(output, { recursive: true });
-  for (const [name, bytes] of files) writeFileSync(path.join(output, name), bytes);
-  event('github_stage', { version: plan.version, revision: sourceRevision, assets: [...files.keys()] });
+  for (const [name, bytes] of files)
+    writeFileSync(path.join(output, name), bytes);
+  event("github_stage", {
+    version: plan.version,
+    revision: sourceRevision,
+    assets: [...files.keys()],
+  });
   return { plan, files };
 }
 
 function requireRelease(plan, release, releaseId) {
-  ensure(Number.isSafeInteger(releaseId) && releaseId > 0 && release?.id === releaseId &&
-    release.tag_name === plan.tag && typeof release.draft === 'boolean' && release.prerelease === false &&
-    typeof release.target_commitish === 'string' && release.target_commitish.length > 0 &&
-    (!release.draft || release.target_commitish === plan.revision) && Array.isArray(release.assets), 'Conflicting release identity');
+  ensure(
+    Number.isSafeInteger(releaseId) &&
+      releaseId > 0 &&
+      release?.id === releaseId &&
+      release.tag_name === plan.tag &&
+      typeof release.draft === "boolean" &&
+      release.prerelease === false &&
+      typeof release.target_commitish === "string" &&
+      release.target_commitish.length > 0 &&
+      (!release.draft || release.target_commitish === plan.revision) &&
+      Array.isArray(release.assets),
+    "Conflicting release identity",
+  );
   return release;
 }
 
@@ -104,128 +235,319 @@ async function discoverRelease(plan, api, prefix, report) {
   // GitHub's tag lookup returns published releases only. A full list scan must
   // establish unique ownership before absence can authorize draft creation.
   for (let page = 1; page <= 1000; page++) {
-    const releases = await api('GET', `${prefix}/releases?per_page=100&page=${page}`);
-    ensure(Array.isArray(releases) && releases.length <= 100 && releases.every((release) =>
-      Number.isSafeInteger(release?.id) && release.id > 0 && typeof release.tag_name === 'string' && release.tag_name.length > 0 &&
-      typeof release.draft === 'boolean' && typeof release.prerelease === 'boolean' &&
-      typeof release.target_commitish === 'string' && release.target_commitish.length > 0), 'Malformed release list; cannot establish release ownership');
+    const releases = await api(
+      "GET",
+      `${prefix}/releases?per_page=100&page=${page}`,
+    );
+    ensure(
+      Array.isArray(releases) &&
+        releases.length <= 100 &&
+        releases.every(
+          (release) =>
+            Number.isSafeInteger(release?.id) &&
+            release.id > 0 &&
+            typeof release.tag_name === "string" &&
+            release.tag_name.length > 0 &&
+            typeof release.draft === "boolean" &&
+            typeof release.prerelease === "boolean" &&
+            typeof release.target_commitish === "string" &&
+            release.target_commitish.length > 0,
+        ),
+      "Malformed release list; cannot establish release ownership",
+    );
     for (const release of releases) {
-      ensure(!seen.has(release.id), 'Repeated release ID; cannot establish release ownership');
+      ensure(
+        !seen.has(release.id),
+        "Repeated release ID; cannot establish release ownership",
+      );
       seen.add(release.id);
       if (release.tag_name === plan.tag) {
-        ensure(match === null, 'Multiple releases use the requested tag');
+        ensure(match === null, "Multiple releases use the requested tag");
         match = release;
       }
     }
     if (releases.length < 100) {
       if (match) requireRelease(plan, match, match.id);
-      report('github_discovery', { tag: plan.tag, release_id: match?.id ?? null, pages: page });
+      report("github_discovery", {
+        tag: plan.tag,
+        release_id: match?.id ?? null,
+        pages: page,
+      });
       return match;
     }
   }
   // A bounded or repeating scan is uncertain, never evidence of absence.
-  ensure(false, 'Incomplete release list; pagination limit reached');
+  ensure(false, "Incomplete release list; pagination limit reached");
 }
 
 function assetInventory(assets) {
   const seen = new Set();
   for (const asset of assets) {
-    ensure(Number.isSafeInteger(asset?.id) && asset.id > 0 && !seen.has(asset.id) && typeof asset.name === 'string' &&
-      Number.isSafeInteger(asset.size) && asset.size > 0 && asset.state === 'uploaded', 'Malformed release asset');
+    ensure(
+      Number.isSafeInteger(asset?.id) &&
+        asset.id > 0 &&
+        !seen.has(asset.id) &&
+        typeof asset.name === "string" &&
+        Number.isSafeInteger(asset.size) &&
+        asset.size > 0 &&
+        asset.state === "uploaded",
+      "Malformed release asset",
+    );
     seen.add(asset.id);
   }
   // Asset IDs bind the immutable bytes that were downloaded and verified. A
   // delete/re-upload changes the ID even when the replacement keeps the name.
-  return JSON.stringify(assets.map(({ id, name, size, state, digest }) => ({ id, name, size, state, digest })).sort((a, b) => a.id - b.id));
+  return JSON.stringify(
+    assets
+      .map(({ id, name, size, state, digest }) => ({
+        id,
+        name,
+        size,
+        state,
+        digest,
+      }))
+      .sort((a, b) => a.id - b.id),
+  );
 }
 
 // A draft is the recovery boundary. Existing bytes and signatures are verified
 // before any writes; public assets are immutable and a complete retry is read-only.
-export async function publish({ plan, files }, { api, download, upload, sign, verify, report = event }) {
-  const prefix = '/repos/delinoio/oss';
-  let object = (await api('GET', `${prefix}/git/ref/tags/${encodeURIComponent(plan.tag)}`)).object;
-  for (let depth = 0; object?.type === 'tag' && depth < 4; depth++) {
-    ensure(/^[a-f0-9]{40}$/u.test(object.sha), 'Invalid annotated tag');
-    object = (await api('GET', `${prefix}/git/tags/${object.sha}`)).object;
+export async function publish(
+  { plan, files },
+  { api, download, upload, sign, verify, report = event },
+) {
+  const prefix = "/repos/delinoio/oss";
+  let object = (
+    await api("GET", `${prefix}/git/ref/tags/${encodeURIComponent(plan.tag)}`)
+  ).object;
+  for (let depth = 0; object?.type === "tag" && depth < 4; depth++) {
+    ensure(/^[a-f0-9]{40}$/u.test(object.sha), "Invalid annotated tag");
+    object = (await api("GET", `${prefix}/git/tags/${object.sha}`)).object;
   }
-  ensure(object?.type === 'commit' && object.sha === plan.revision, 'Release tag does not match the exact source commit');
+  ensure(
+    object?.type === "commit" && object.sha === plan.revision,
+    "Release tag does not match the exact source commit",
+  );
   let release = await discoverRelease(plan, api, prefix, report);
-  const expected = [...files.keys()].flatMap((name) => [name, `${name}.sigstore.json`]);
+  const expected = [...files.keys()].flatMap((name) => [
+    name,
+    `${name}.sigstore.json`,
+  ]);
   const existing = new Map();
   if (release) {
     const candidate = release;
-    release = requireRelease(plan, await api('GET', `${prefix}/releases/${candidate.id}`), candidate.id);
-    ensure(release.draft === candidate.draft, 'Conflicting release identity');
+    release = requireRelease(
+      plan,
+      await api("GET", `${prefix}/releases/${candidate.id}`),
+      candidate.id,
+    );
+    ensure(release.draft === candidate.draft, "Conflicting release identity");
     assetInventory(release.assets);
     for (const asset of release.assets) {
-      ensure(expected.includes(asset.name) && !existing.has(asset.name), 'Unexpected release asset');
+      ensure(
+        expected.includes(asset.name) && !existing.has(asset.name),
+        "Unexpected release asset",
+      );
       existing.set(asset.name, await download(asset));
     }
     for (const [name, bytes] of files) {
-      if (existing.has(name)) ensure(existing.get(name).equals(bytes), `Conflicting immutable asset: ${name}`);
-      if (existing.has(`${name}.sigstore.json`)) await verify(name, bytes, existing.get(`${name}.sigstore.json`));
+      if (existing.has(name))
+        ensure(
+          existing.get(name).equals(bytes),
+          `Conflicting immutable asset: ${name}`,
+        );
+      if (existing.has(`${name}.sigstore.json`))
+        await verify(name, bytes, existing.get(`${name}.sigstore.json`));
     }
     if (!release.draft) {
-      ensure(existing.size === expected.length, 'Incomplete public release; refusing to mutate public assets');
-      report('github_reuse', { tag: plan.tag, release_id: release.id }); return;
+      ensure(
+        existing.size === expected.length,
+        "Incomplete public release; refusing to mutate public assets",
+      );
+      report("github_reuse", { tag: plan.tag, release_id: release.id });
+      return;
     }
   }
   if (!release) {
-    release = await api('POST', `${prefix}/releases`, { tag_name: plan.tag, target_commitish: plan.revision, name: plan.tag, draft: true, prerelease: false, generate_release_notes: true });
+    release = await api("POST", `${prefix}/releases`, {
+      tag_name: plan.tag,
+      target_commitish: plan.revision,
+      name: plan.tag,
+      draft: true,
+      prerelease: false,
+      generate_release_notes: true,
+    });
     requireRelease(plan, release, release?.id);
-    ensure(release.draft === true && release.assets.length === 0, 'Conflicting release identity');
+    ensure(
+      release.draft === true && release.assets.length === 0,
+      "Conflicting release identity",
+    );
   }
   const releaseId = release.id;
   for (const [name, bytes] of files) {
     if (!existing.has(name)) await upload(release, name, bytes);
-    report('github_asset', { tag: plan.tag, release_id: releaseId, asset: name, reused: existing.has(name) });
+    report("github_asset", {
+      tag: plan.tag,
+      release_id: releaseId,
+      asset: name,
+      reused: existing.has(name),
+    });
     const bundleName = `${name}.sigstore.json`;
     if (!existing.has(bundleName)) {
-      const bundle = await sign(name, bytes); await verify(name, bytes, bundle);
+      const bundle = await sign(name, bytes);
+      await verify(name, bytes, bundle);
       await upload(release, bundleName, bundle);
     }
   }
-  const ready = requireRelease(plan, await api('GET', `${prefix}/releases/${releaseId}`), releaseId);
-  ensure(ready.draft === true, 'Draft identity changed');
+  const ready = requireRelease(
+    plan,
+    await api("GET", `${prefix}/releases/${releaseId}`),
+    releaseId,
+  );
+  ensure(ready.draft === true, "Draft identity changed");
   const verifiedInventory = assetInventory(ready.assets);
-  ensure(ready.assets.length === expected.length && new Set(ready.assets.map(({ name }) => name)).size === expected.length, 'Incomplete signed release');
+  ensure(
+    ready.assets.length === expected.length &&
+      new Set(ready.assets.map(({ name }) => name)).size === expected.length,
+    "Incomplete signed release",
+  );
   for (const [name, bytes] of files) {
     const asset = ready.assets.find((item) => item.name === name);
-    const signature = ready.assets.find((item) => item.name === `${name}.sigstore.json`);
-    ensure(asset && signature && (await download(asset)).equals(bytes), 'Release readback mismatch');
+    const signature = ready.assets.find(
+      (item) => item.name === `${name}.sigstore.json`,
+    );
+    ensure(
+      asset && signature && (await download(asset)).equals(bytes),
+      "Release readback mismatch",
+    );
     await verify(name, bytes, await download(signature));
   }
   // Recheck uniqueness after verification, then read the pinned ID once more.
   // No missing or changed draft can authorize creation within this attempt.
   const soleRelease = await discoverRelease(plan, api, prefix, report);
-  ensure(soleRelease?.id === releaseId && soleRelease.draft === true, 'Pinned draft is no longer the sole release for this tag');
-  const final = requireRelease(plan, await api('GET', `${prefix}/releases/${releaseId}`), releaseId);
-  ensure(final.draft === true && assetInventory(final.assets) === verifiedInventory, 'Verified draft changed before publication');
-  await api('PATCH', `${prefix}/releases/${releaseId}`, { draft: false });
-  report('github_publish', { tag: plan.tag, release_id: releaseId, revision: plan.revision });
+  ensure(
+    soleRelease?.id === releaseId && soleRelease.draft === true,
+    "Pinned draft is no longer the sole release for this tag",
+  );
+  const final = requireRelease(
+    plan,
+    await api("GET", `${prefix}/releases/${releaseId}`),
+    releaseId,
+  );
+  ensure(
+    final.draft === true && assetInventory(final.assets) === verifiedInventory,
+    "Verified draft changed before publication",
+  );
+  await api("PATCH", `${prefix}/releases/${releaseId}`, { draft: false });
+  report("github_publish", {
+    tag: plan.tag,
+    release_id: releaseId,
+    revision: plan.revision,
+  });
 }
 
 export async function main() {
-  ensure(process.argv.slice(2).every((arg) => arg === '--publish') && process.argv.length <= 3, 'Unknown release argument');
-  const output = path.join(packageRoot, 'dist/github');
-  const candidate = stage(path.join(packageRoot, 'dist/tarballs'), output, revision());
-  if (!process.argv.includes('--publish')) return;
+  ensure(
+    process.argv.slice(2).every((arg) => arg === "--publish") &&
+      process.argv.length <= 3,
+    "Unknown release argument",
+  );
+  const output = path.join(packageRoot, "dist/github");
+  const candidate = stage(
+    path.join(packageRoot, "dist/tarballs"),
+    output,
+    revision(),
+  );
+  if (!process.argv.includes("--publish")) return;
   const { plan } = candidate;
-  ensure(process.env.GITHUB_REPOSITORY === 'delinoio/oss' && process.env.GITHUB_REF === `refs/tags/${plan.tag}` && process.env.GITHUB_SHA === plan.revision, 'Publication requires the exact first-party tag and commit');
-  ensure(process.env.GH_TOKEN && process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN, 'GitHub token and Actions OIDC are required');
+  ensure(
+    process.env.GITHUB_REPOSITORY === "delinoio/oss" &&
+      process.env.GITHUB_REF === `refs/tags/${plan.tag}` &&
+      process.env.GITHUB_SHA === plan.revision,
+    "Publication requires the exact first-party tag and commit",
+  );
+  ensure(
+    process.env.GH_TOKEN && process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
+    "GitHub token and Actions OIDC are required",
+  );
   const request = async (url, options = {}, allowMissing = false) => {
-    const response = await fetch(url, { ...options, headers: { Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', ...options.headers }, signal: AbortSignal.timeout(60000), redirect: 'error' });
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        Authorization: `Bearer ${process.env.GH_TOKEN}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        ...options.headers,
+      },
+      signal: AbortSignal.timeout(60000),
+      redirect: "error",
+    });
     if (allowMissing && response.status === 404) return null;
-    ensure(response.ok, `GitHub release request failed: HTTP ${response.status}`); return response;
+    ensure(
+      response.ok,
+      `GitHub release request failed: HTTP ${response.status}`,
+    );
+    return response;
   };
   await publish(candidate, {
-    api: async (method, endpoint, body, missing) => (await request(`https://api.github.com${endpoint}`, { method, body: body ? JSON.stringify(body) : undefined, headers: { 'Content-Type': 'application/json' } }, missing))?.json() ?? null,
+    api: async (method, endpoint, body, missing) =>
+      (
+        await request(
+          `https://api.github.com${endpoint}`,
+          {
+            method,
+            body: body ? JSON.stringify(body) : undefined,
+            headers: { "Content-Type": "application/json" },
+          },
+          missing,
+        )
+      )?.json() ?? null,
     // gh handles GitHub's authenticated asset redirects without forwarding our
     // authorization header to an arbitrary redirect destination.
-    download: (asset) => execFileSync('gh', ['api', `repos/delinoio/oss/releases/assets/${asset.id}`, '-H', 'Accept: application/octet-stream'], { maxBuffer: 300 * 1024 * 1024 }),
-    upload: (release, name, bytes) => request(`https://uploads.github.com/repos/delinoio/oss/releases/${release.id}/assets?name=${encodeURIComponent(name)}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: bytes }),
-    sign: (name) => { const file = path.join(output, name); execFileSync('cosign', ['sign-blob', '--yes', '--bundle', `${file}.sigstore.json`, file], { stdio: 'inherit' }); return readFileSync(`${file}.sigstore.json`); },
-    verify: (name, bytes, bundle) => { const file = path.join(output, name); writeFileSync(file, bytes); writeFileSync(`${file}.sigstore.json`, bundle); verifyBundle(file, `${file}.sigstore.json`, plan); },
+    download: (asset) =>
+      execFileSync(
+        "gh",
+        [
+          "api",
+          `repos/delinoio/oss/releases/assets/${asset.id}`,
+          "-H",
+          "Accept: application/octet-stream",
+        ],
+        { maxBuffer: 300 * 1024 * 1024 },
+      ),
+    upload: (release, name, bytes) =>
+      request(
+        `https://uploads.github.com/repos/delinoio/oss/releases/${release.id}/assets?name=${encodeURIComponent(name)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: bytes,
+        },
+      ),
+    sign: (name) => {
+      const file = path.join(output, name);
+      execFileSync(
+        "cosign",
+        ["sign-blob", "--yes", "--bundle", `${file}.sigstore.json`, file],
+        { stdio: "inherit" },
+      );
+      return readFileSync(`${file}.sigstore.json`);
+    },
+    verify: (name, bytes, bundle) => {
+      const file = path.join(output, name);
+      writeFileSync(file, bytes);
+      writeFileSync(`${file}.sigstore.json`, bundle);
+      verifyBundle(file, `${file}.sigstore.json`, plan);
+    },
   });
 }
-if (isMain(import.meta.url)) main().catch((error) => { console.error(JSON.stringify({ event: 'clibox_github_release_failed', message: error.message })); process.exitCode = 1; });
+if (isMain(import.meta.url))
+  main().catch((error) => {
+    console.error(
+      JSON.stringify({
+        event: "clibox_github_release_failed",
+        message: error.message,
+      }),
+    );
+    process.exitCode = 1;
+  });

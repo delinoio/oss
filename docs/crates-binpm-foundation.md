@@ -1,20 +1,24 @@
 # crates-binpm-foundation
 
 ## Scope
+
 - Project/component: `binpm` crate foundation contract
 - Canonical path: `crates/binpm`
 - Implementation status: runtime implementation has begun with a Rust CLI, clap command surface, typed contract foundations, source parsing, provider release lookup clients, source-form and local-command explain diagnostics, deterministic asset candidate scoring, actionable target rejection diagnostics, target override snippet generation, release asset download, archive extraction for documented formats, TOML-backed local manifest and lockfile records, global and project-local package records, global cache metadata, sanitized persisted URLs, SHA-256 cache verification, atomic file writes, structured tracing setup, centralized errors, README, and tests
 
 ## Runtime and Language
+
 - Runtime: Rust CLI
 - Primary language: Rust
 
 ## Users and Operators
+
 - Developers installing native command-line tools without requiring Node.js or language-specific package managers.
 - Maintainers documenting release asset naming and distribution compatibility across GitHub, GitHub Enterprise, and GitLab sources.
 - Operators troubleshooting binary resolution, download, extraction, and local installation behavior.
 
 ## Interfaces and Contracts
+
 - The Rust crate must expose the full documented command surface through clap.
 - Command dispatch must return explicit not-yet-implemented errors for flows whose release lookup, asset selection, download, cache mutation, extraction, install, update, remove, verification, explanation, listing, info, outdated, or process execution behavior is not yet implemented.
 - Implemented safe commands may perform read-only or bootstrap behavior when they do not violate storage or mutation contracts:
@@ -135,6 +139,7 @@
 - The current foundation implements binary discovery as a deterministic member-list heuristic and uses it during archive extraction and install finalization.
 
 ## Local Manifest and Lockfile
+
 - The local project root is the nearest ancestor containing `binpm.toml`; commands that create `binpm.toml` must use the current Git worktree root when available, otherwise the nearest ancestor containing `binpm.toml` when present, otherwise the current directory.
 - `binpm.toml` is the committed local tool declaration file. It must use TOML, `version = 1`, and `[tools.<cmd>]` tables keyed by the local command name.
 - In `binpm.toml`, each tool entry must include `source = "<source-without-version>"`, may include `version = "<release>"`, and may include `bin = "<upstream-binary-name-or-archive-member>"` when the executable selected from the release differs from the local command name or needs explicit disambiguation.
@@ -200,6 +205,7 @@ signature_verified = false
 ```
 
 ### Binary Release Pattern Catalog
+
 - Rust cargo-binstall defaults:
   - Filename candidates include `{name}-{target}-{version}{archive-suffix}`, `{name}-{target}-v{version}{archive-suffix}`, `{name}-{version}-{target}{archive-suffix}`, underscore variants, and versionless `{name}-{target}{archive-suffix}` forms.
   - Archive directory candidates include `{name}-{target}-v{version}`, `{name}-{target}-{version}`, `{name}-{version}-{target}`, `{name}-v{version}-{target}`, `{name}-{target}`, `{name}-{version}`, `{name}-v{version}`, and `{name}`.
@@ -419,6 +425,7 @@ signature_verified = false
 - Keep `.github/workflows/release-binpm.yml`, `scripts/install/binpm.sh`, `scripts/install/binpm.ps1`, and `crates/binpm/Cargo.toml` synchronized with release asset names and signing contracts.
 
 ## Storage
+
 - Global home directory: `~/.binpm`. This is a fixed binpm-owned home, not an XDG cache/data split. `BINPM_HOME` may override it for tests, isolated automation, or portable environments, but the override must be an absolute path.
 - Global executable link or copy directory: `~/.binpm/bin`
 - Global installed package records: `~/.binpm/packages`
@@ -450,6 +457,7 @@ signature_verified = false
 - Concurrent installs for the same asset must use temporary files plus atomic rename or a cache lock so partial downloads are never visible as reusable cache entries.
 
 ## Security
+
 - `binpm` must use HTTPS source-provider APIs and release asset URLs.
 - Source-provider release lookup may authenticate with provider tokens from environment variables only. Host-specific variables take precedence and are the only supported path for GitHub Enterprise and self-managed GitLab hosts:
   - GitHub.com: `BINPM_GITHUB_TOKEN_GITHUB_COM`, then `BINPM_GITHUB_TOKEN`, then `GITHUB_TOKEN`.
@@ -478,6 +486,7 @@ signature_verified = false
 - Archive extraction must reject absolute paths, parent-directory traversal, unsafe symlinks, and files that would escape the package extraction root.
 
 ## Logging
+
 - Use structured `tracing` logs for manifest discovery, lockfile parsing, release lookup, target normalization, asset candidate scoring, checksum discovery, download, extraction, binary discovery, install finalization, and `binpm x` command execution.
 - `binpm -v` and `binpm --verbose` are stable global flags that set the binpm tracing filter to `binpm=info`.
 - `binpm --debug` is a stable global flag that sets the binpm tracing filter to `binpm=debug`.
@@ -493,12 +502,14 @@ signature_verified = false
 - Failures in release lookup, asset selection, download streaming, or verification must mention `--verbose` or `--debug` when structured diagnostics are likely to help.
 
 ## Download Progress
+
 - Interactive installs must show human-facing progress on stderr for large or unknown-size release asset downloads. Progress output may be concise, but it must reassure users that the download is active and include a human-readable byte count when available.
 - Non-interactive output, including redirected stderr and `CI=true`, must not emit periodic progress lines so scripts and CI logs stay stable.
 - Retry messages for retryable download failures must explain which asset is being retried and the retry attempt, but must never include credentials, query strings, fragments, or expiring signed URL parameters.
 - Download logs and progress diagnostics must use sanitized URLs that remove query strings and fragments and redact URL userinfo before display.
 
 ## Release and Distribution
+
 - The crate remains publishable through `crates/binpm/Cargo.toml` so crates.io publication can carry first-party `cargo-binstall` metadata.
 - Publish tag eligibility is enabled through root `[workspace.metadata.cargo-mono.publish.tag].packages`, and binpm release tags must use `binpm@v<version>`.
 - Tag release automation is defined in `.github/workflows/release-binpm.yml` and must publish signed GitHub Release assets for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`, including standalone binaries (`binpm-<os>-<arch>[.exe]`) and archives (`binpm-<os>-<arch>.tar.gz|zip`).
@@ -515,6 +526,7 @@ signature_verified = false
 - Direct-install documentation must describe checksum verification through `SHA256SUMS`, include latest and pinned first-party raw GitHub installer command patterns, and keep binpm release verification separate from package verification.
 
 ## Build and Test
+
 - Local validation for binpm runtime changes must include `cargo test -p binpm` and the repository Rust baseline `cargo test --workspace --all-targets`.
 - Publishability validation must include `cargo publish -p binpm --dry-run` or `cargo package -p binpm` when registry authentication or crates.io state blocks a dry-run publish.
 - Initial skeleton tests must cover clap command availability, source spec parsing, target alias normalization, logging defaults, `init`, `env`, and read-only cache key foundations.
@@ -523,6 +535,7 @@ signature_verified = false
 - Execution tests must cover `binpm x` local PATH behavior, argument forwarding, current-working-directory preservation, explicit `--package` execution, missing-manifest failure, missing-command failure, install-on-demand from a valid lockfile, frozen-lockfile failures, `--no-frozen-lockfile` override behavior, and read-only diagnostics for `doctor`, `explain`, and `verify`.
 
 ## Dependencies and Integrations
+
 - Integrates with GitHub Releases through the GitHub API and release asset downloads.
 - Integrates with GitHub Enterprise Releases through explicit-host GitHub source specs.
 - Integrates with GitLab Releases and release asset links through explicit-host GitLab source specs.
@@ -533,6 +546,7 @@ signature_verified = false
 - Does not integrate with npm, pnpm, yarn, Bun, Cargo install, cargo-binstall, Homebrew, apt, rpm, or system package managers as install backends in v1. Source-like inputs that name those backend prefixes must be rejected with explicit unsupported-backend diagnostics rather than interpreted as release sources or command names.
 
 ## Change Triggers
+
 - Update `docs/project-binpm.md` with this file when CLI shape, local manifest or lockfile format, storage layout, cache behavior, security policy, target model, or asset selection heuristics change.
 - Update root `AGENTS.md` and `crates/AGENTS.md` when `binpm` project ownership, planned path status, release eligibility, or Rust-domain policy changes.
 - Update implementation tests in the same change set when heuristic scoring rules are implemented or changed.
@@ -540,6 +554,7 @@ signature_verified = false
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - `docs/project-binpm.md`
 - `docs/domain-template.md`
 - GitHub Release asset API: https://docs.github.com/en/rest/releases/assets

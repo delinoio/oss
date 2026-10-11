@@ -1,15 +1,19 @@
 # DeliDev schedules and occurrence contract
 
 ## Scope
+
 The feature requires server-owned recurring execution, schedule CRUD/pause/resume, next-run inspection, Run now, occurrence history, Overlap/Skip/Wait, offline skipping and reference-deletion disabling. This contract preserves that complete boundary. The calendar/domain/storage primitives, server coordinator and owner/client ScheduleService/CLI are implemented. The coordinator accepts independent sessions through the ordinary input/workspace path, reconciles accepted Wait work and records offline/overlap/capacity history. Referenced Project/Agent configuration deletion atomically disables affected schedules without making retained sessions depend on selectable configuration. Installed macOS Codex evidence covers manual Run now through native Worktree Execute and Local Plan, continuation and retained history. Actual wall-clock cron native acceptance is also verified for macOS Codex Worktree Execute; the remaining harness/platform matrix remains open.
 
 ## Runtime and Language
+
 Go, the existing server-owned SQLite database, and `github.com/robfig/cron/v3` at the existing pinned version `v3.0.1`, now a direct dependency. Go's bundled IANA timezone data is linked for platforms without a system timezone database. Native Git or harness processes are never launched by domain validation or database primitives.
 
 ## Users and Operators
+
 The server owns configuration, timers, accepted occurrence identity and history. An authorized owner/client configures schedules; Workers retain execution-machine ownership. Local requires independently authenticated originating Worker provenance. A viewing client, supplied machine UUID or loopback endpoint cannot establish that provenance. General Chat schedules are excluded.
 
 ## Interfaces and Contracts
+
 `ScheduleDefinition` contains name, enabled state, prompt, project, Agent Worker, execution machine, Worktree/Local selection, ordered explicit repository starting references, input mode, cron expression, IANA timezone and overlap policy. Defaults are Worktree, Execute and Overlap. This is editable selection, without resolved account, templates, effective native settings or origin assertions. Local forbids starting-reference overrides, as ordinary Local session creation does.
 
 The calendar uses five fields: minute, hour, day of month, month and day of week. Ranges, lists, steps and named months/weekdays follow the pinned parser. Inline timezone overrides, seconds fields, interval descriptors and implicit `Local` timezone are rejected; the explicit timezone field is authoritative. `NextRun` returns the first absolute UTC instant strictly after its supplied boundary. DST gaps are skipped and repeated wall times are distinct UTC instants. The pinned parser stops searching after five years; an adapter searches overlapping bounded windows over one Gregorian cycle so valid leap-day schedules spanning a non-leap century remain reachable. Impossible calendars return a typed error without inventing a due time. Remove that adapter when an upgraded parser supplies the required search horizon natively.
@@ -23,6 +27,7 @@ States are waiting, active, succeeded, failed, stopped and skipped. Waiting owns
 The coordinator implements Overlap with independent Worktree sessions and explicit same-machine Local sharing. Skip retains a skipped occurrence while a previous run is active. Wait retains accepted immutable occurrences and releases the earliest sequence only after preceding runs end. Approval/input waiting and disconnected uncertain execution remain active. Accepted Wait work survives server restart and schedule edits/pause/deletion. Offline due runs receive skipped history without creating a catch-up execution backlog. The current storage ceiling is 1,000 accepted waiting occurrences per schedule; overflow is atomic and never evicts prior work, and the coordinator records a `waiting-limit` skipped occurrence and advances that due instant without evicting accepted work.
 
 ## Coordinator lifecycle and acceptance
+
 The server owns one cancelable scheduling loop, joined before database and credential resources close. Each tick scans due and pending pages of at most 25 records independently. A due visit drains at most 25 calendar instants within one five-second context, retaining each skipped instant separately without allowing one old schedule to monopolize the loop. Pending reconciliation uses the same per-record deadline. No Git, provider or harness work runs inside scheduling transactions. Cron and public Run now share one acceptance routine; request identity binds schedule revision, trigger and actor but excludes the current clock, so an exact retry returns its original reference-only occurrence receipt. Time is sampled after acquiring the transaction, preventing a heartbeat committed while waiting for the database from appearing to be a future observation.
 
 An enabled due timer is rechecked against its exact resource revision. A due instant before this server process started becomes `server-offline`; an unavailable original Worker lease becomes `worker-offline`. Each skipped instant receives history and exact calendar advancement, without creating an execution backlog. An eligible occurrence atomically creates an ordinary independently owned session, queued prompt and workspace preparation job, derives `SCHEDULED` provenance, and advances its schedule. No account/template/native configuration snapshot is resolved at scheduling time. Product selection failures may become failed history only before the first write; storage/cancellation failures and any error after job creation roll back the entire transaction.
@@ -32,6 +37,7 @@ Skip and Wait inspect current source-linked sessions, including sessions explici
 Native question/approval waiting, recovery, active execution ownership, pending archive/preparation cleanup and queued automatic continuation all keep a run active. A native terminal event alone never releases a successor. Occurrence state follows the retained session outcome, while the owned completion job must match the independent native progress outcome; late native success after Stop/Archive therefore finishes the occurrence as stopped once cleanup is proved. Completion requires current terminal outcome, verified process cleanup, matching original execution job and accepted input identities/digests, and independently settled input/Steer/interaction records. A zero response-summary counter cannot conceal a claimed or uncertain original response. Pre-native Stop/failure requires the corresponding terminal preparation job. Terminal occurrence history remains immutable when a user later resumes the retained session, while that session again participates in overlap checks.
 
 ## Public lifecycle and CLI
+
 ScheduleService requires owner or paired-client authentication on every method; Worker credentials cannot configure, inspect or initiate schedules. A separately supplied Worker token is write-only secondary authentication for new or relocated Local selections. The CLI obtains it from a private paired `--local-worker-dir` after validating the selected server; raw credentials never belong in argv or definition documents. An edit retaining the same Local machine can retain its original authenticated provenance without resupplying the token, while the server still revalidates that original device. Changing from Worktree to Local or changing the Local machine requires fresh proof.
 
 ```text
@@ -67,6 +73,7 @@ Lists default to 50 records and allow at most 200, additionally bounded by the e
 - Reset Worker schedule availability on each exclusive server-store open, preserve instance recovery identity, and require fresh current-process observation without backdating reconnects.
 
 ## Storage
+
 SQLite schema 11 adds unique `(schedule_id, sequence)` and cron `(schedule_id, due_at)` indexes, bounded due/pending/history lookup indexes, and session source-link lookup. `AppendScheduleOccurrence` validates the original resource revision/configuration, immutable selection/origin/policy, exact due instant and next calendar step, then writes timer/sequence and occurrence within one transaction. Existing mutation receipts provide durable request replay. An independently detected duplicate cron instant rolls back the timer and sequence even if the timer had been rewound. Occurrence updates preserve original selection bytes and session ownership.
 
 History is ordered by acceptance sequence with bounded record and aggregate-byte pages. Wait-head lookup uses the same sequence. Occurrences remain independently retained after schedule configuration deletion. A failed mutation, conflicting revision or waiting-capacity error cannot partially advance the timer, create a session or remove an accepted occurrence. Coordinator session/job creation shares that transaction. Public receipt reconstruction joins current records without replaying side effects. Signed list/history cursors bind exact selection scope and their resource-kind event epoch; concurrent changes require pagination to restart. History uses numeric occurrence sequence rather than UUID order and remains accessible by the original schedule identity after configuration deletion.
@@ -74,30 +81,37 @@ History is ordered by acceptance sequence with bounded record and aggregate-byte
 Migration preserves a validated, synchronized pre-migration backup and is atomic. Existing schema-10 inbox entries are left intact; older inbox migrations run only for older versions. Unrecognized pre-schema-11 schedule/occurrence entities fail migration while preserving the database and backup, because earlier versions supplied no accepted execution contract for those records. Fresh databases and migrated databases both receive the same schema. Historical migration fixtures remove the schema-11 additions before representing an older database.
 
 ## Worker Availability
+
 `worker_instances.available_since` records the beginning of the current continuous observed 45-second lease. A different process instance, a lease gap or a backward clock step resets it. Heartbeats retain that beginning only while continuity remains supported by observations. Existing leases migrate conservatively from their last observed heartbeat, without inventing earlier online history.
 
 `WorkerAvailableAt` requires both coverage of the original due instant and a currently valid observed lease. A reconnect after the due instant cannot backdate availability. This is bounded connection evidence, not physical uptime attestation; the scheduling coordinator independently checks current machine/selection/Local authorization and server startup time at the due boundary. Native dispatch independently rechecks accepted session authority. Already accepted Wait occurrences use current availability when eventually released, rather than being discarded for an intervening disconnect.
 
 ## Security
+
 Definition documents cannot carry native effective settings or credentials. Retain Local origin identifiers only and recheck their current authorization at product mutation/dispatch boundaries. Database primitives do not grant new execution, native response, resume or Worker authority. Session provenance is derived from the owning occurrence and cannot be forged by ordinary CreateSession input. Configuration or schedule deletion never authorizes deletion of original Local checkouts or accepted session resources.
 
 ## Logging
+
 Calendar/domain/storage validation returns typed safe failures. The coordinator logs accepted schedule/occurrence/request identifiers, trigger and replay state, occurrence state changes, and safe scan/dispatch error codes through structured logging. Prompts, Worker tokens, native diagnostics, filesystem contents and account secrets never enter these logs. Unchanged pending entries do not create mutation receipts or state events.
 
 ## Build and Test
+
 Run `go test -race -p 1 ./cmds/delidev-cli/...` and `go vet ./cmds/delidev-cli/...`. Calendar tests cover timezone conversion, named fields, DST gaps/repetitions and a leap-century interval. Real SQLite fixtures cover concurrent receipt replay, atomic timer/sequence rollback, independent cron uniqueness, FIFO pages, immutable accepted selection, exact session linkage, full wait-capacity rejection, history retention after schedule deletion/restart, migration backup/rollback and preserved schema-10 inbox records. Worker lease tests cover original availability, late reconnect, expired lease, instance change and clock rollback. Coordinator fixtures cover atomic session/input/job creation, authenticated-origin retention, manual receipt replay/concurrency, independent workspaces, offline skips, FIFO/capacity behavior, deletion/restart preservation, explicit historical-session re-preparation, original selection failure/revocation, duplicate-cron rollback of newly created resources and loop cancellation. Existing native-publication RPC fixtures prove that only owned cleanup and settled original delivery records permit terminal reconciliation; these fixtures do not invoke a real installed harness. Public Connect tests cover role separation, concurrent receipt replay, strict definitions, Local proof retention/revocation, atomic reference-deletion disabling, current-resource joins and signed cursor scope/epoch refusal. Public CLI fixtures cover all lifecycle/read commands, explicit-server requirements and FIFO release after schedule deletion.
 
 The opt-in `TestManualNativeCLIScheduledWorkspaces` uses installed Codex 0.151.0, private actual Worker pairing/discovery, real Git workspaces and a keyless scripted loopback provider. It verifies public schedule creation/Run now, native Worktree Execute with two repositories and Local Plan, derived scheduled provenance, completed occurrence history, subsequent FIFO turns/Resume and immutable receipt joins. This is installed-harness manual scheduling evidence on macOS, not Windows/Linux installed-harness coverage, hosted-account verification or complete issue acceptance. The separate opt-in `TestManualNativeCLICronWorkspace` configures an enabled every-minute schedule through the public CLI, waits for its actual published future due instant without clock/state injection or Run now, verifies one cron-owned Worktree Execute session, pauses future scheduling, then verifies native completion, configuration deletion, retained occurrence/session inspection and subsequent FIFO/Resume continuity.
 
 ## Dependencies and Integrations
+
 The scheduling coordinator uses the existing session/input/workspace preparation transaction and leaves the first-dispatch snapshot/routing boundary intact. Waiting schedules resolve Agent configuration/templates/account routing at actual first execution; they never freeze a premature account or follow later edits to the already accepted prompt/selection. Stop/Archive, native cleanup, inbox/activity/usage and permanent deletion must preserve ordinary session ownership and independent outcome/recovery. ScheduleService/CLI owns create/list/get/edit/delete/pause/resume/next-run/history/Run now; generic configuration writes remain unable to activate schedules.
 
 ## Change Triggers
+
 Update this contract, the command and protocol contracts, project/catalog entries, scoped AGENTS and validation records in pull requests, issues and CI logs/artifacts when coordinator execution, lifecycle APIs, recurrence semantics, retention, limits or native scheduled execution change. Passing private primitive tests is not complete schedule acceptance.
 
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - [Complete requirements](cmds-delidev-requirements.md)
 - [Sessions](cmds-delidev-sessions-contract.md)
 - [Worker workspaces](cmds-delidev-workspace-contract.md)
@@ -109,4 +123,5 @@ Opening the exclusive server store invalidates persisted Worker availability int
 Schedule and occurrence pages measure the complete protobuf and protobuf-JSON response, including cursor/envelope, against the existing 4 MiB aggregate bound. A byte-limited page resumes strictly after the last returned row with its original filter epoch and occurrence acceptance ordering. Complete documents are never truncated.
 
 ## Situation notification publication
+
 The original occurrence transaction publishes one metadata-only operational Inbox record for selection failure, confirmed preparation failure before any InitialExecution, and server-offline/Worker-offline skips, including retained restart misses. Existing wait/overlap/capacity, pause, deletion and explicit Stop remain independent. Post-start execution failures retain the ordinary execution outcome and cannot become Schedule start alerts. Follow `cmds-delidev-inbox-contract.md` for future-only client checkpoints, durable claims and fresh read-only original-occurrence activation.

@@ -2,7 +2,11 @@
 
 import { create } from "@bufbuild/protobuf";
 import { createRouterTransport } from "@connectrpc/connect";
-import { TransportProvider, useMutation, useQuery } from "@connectrpc/connect-query";
+import {
+  TransportProvider,
+  useMutation,
+  useQuery,
+} from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { createElement, type PropsWithChildren } from "react";
@@ -64,7 +68,9 @@ describe("Connect Query integration", () => {
     expect(getSettingsHandler).toHaveBeenCalledOnce();
     query.unmount();
 
-    const mutation = renderHook(() => useMutation(replaceSettingsMutation), { wrapper });
+    const mutation = renderHook(() => useMutation(replaceSettingsMutation), {
+      wrapper,
+    });
     act(() => {
       mutation.result.current.mutate({
         schemaVersion: 1,

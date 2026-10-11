@@ -27,7 +27,6 @@ input. Numeric versions grant no admission authority. Historical version-1
 assignments remain readable. Title failure cannot block the primary conversation;
 existing account, original Worker, inference, cleanup and feature limits remain.
 
-
 The first successful response turn may atomically create at most one immutable title operation after verified native and workspace cleanup. The operation uses the first input accepted by that native conversation, including an edit made before dispatch, and freezes the original Agent, harness/version, model/effort/tier, account/connection, provider, machine, device and Worker instance. It never reruns routing, uses workspace/session history or instructions, creates a conversation input, or claims the conversation workspace lease. A stopped/failed first turn does not queue a title.
 
 If execution recovery later verifies the successful first turn, it may queue the pending title only when recovery completes on the exact original Worker device and instance. Recovery performed by another Worker settles the title as `skipped` with the `authority-lost` reason; title inference never transfers to a replacement.

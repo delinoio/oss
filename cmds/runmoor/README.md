@@ -78,11 +78,11 @@ runmoor run
 
 Both supported operating systems use:
 
-| Purpose | XDG location | Default |
-| --- | --- | --- |
-| Configuration | `$XDG_CONFIG_HOME/runmoor/config.toml` | `~/.config/runmoor/config.toml` |
-| State | `$XDG_STATE_HOME/runmoor` | `~/.local/state/runmoor` |
-| Managed images | `$XDG_DATA_HOME/runmoor` | `~/.local/share/runmoor` |
+| Purpose        | XDG location                           | Default                         |
+| -------------- | -------------------------------------- | ------------------------------- |
+| Configuration  | `$XDG_CONFIG_HOME/runmoor/config.toml` | `~/.config/runmoor/config.toml` |
+| State          | `$XDG_STATE_HOME/runmoor`              | `~/.local/state/runmoor`        |
+| Managed images | `$XDG_DATA_HOME/runmoor`               | `~/.local/share/runmoor`        |
 
 State/data may be overridden by absolute TOML paths. Configuration and credential files must be owned by your user, regular files, and mode 0600. Directories/socket are private to that user. Very long state paths exceed the Unix socket length limit and are rejected. Storage relocation requires drain, stop, and a complete installation backup; it is not a live reload.
 
@@ -265,7 +265,6 @@ Reload validates the entire candidate first. Existing jobs retain their original
 > managers keep their existing reload behavior. Reload does not download releases,
 > downgrade a manager or start a stopped service. Releases through 0.2.7 reload
 > configuration only.
-
 
 Real demand receives capacity before warm runners. Round-robin allocation shares remaining resources across pools. Minimum idle is best effort; running work is never preempted. CPU/memory reservations include image setup. Released DinD CPU accounting and the unreleased runner-only CPU change are described below; daemon memory remains reserved in both. Low disk blocks new work without evicting active jobs or sealed images.
 

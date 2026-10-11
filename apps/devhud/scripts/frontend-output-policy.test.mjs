@@ -65,6 +65,9 @@ test("requires an exact CSP directive source list", () => {
     "connect-src 'none' https://example.com",
     "connect-src 'none'; connect-src https://example.com",
   ]) {
-    assert.equal(hasExactCspDirectiveSources(policy, "connect-src", ["'none'"]), false);
+    assert.equal(
+      hasExactCspDirectiveSources(policy, "connect-src", ["'none'"]),
+      false,
+    );
   }
 });

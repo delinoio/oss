@@ -1,15 +1,19 @@
 # async-commit-hook command contract
 
 ## Scope
+
 `cmds/async-commit-hook` owns the `ach` executable and its common application service. The [requirements snapshot](cmds-async-commit-hook-requirements.md) preserves the complete issue specification.
 
 ## Runtime and Language
+
 Go; macOS 13+, Windows 10 22H2+, Ubuntu 22.04 LTS+, each amd64/arm64. Default shells are `sh` and Windows PowerShell. Explicit shell enums select sh, bash, powershell or pwsh. Git is required; Docker is not.
 
 ## Users and Operators
+
 One developer OS account, explicitly trusted repositories and linked worktrees, humans and local coding agents.
 
 ## Interfaces and Contracts
+
 `config validate` resolves the supplied repository directory to its Git worktree root and validates that worktree's current authoring file, including uncommitted edits. Nested `.config` files do not override the root file; linked worktrees use their own configuration. Run/plan validation remains commit-pinned.
 
 Commands: init; config validate; run; status; wait; logs; check; inbox; ack; failures; plan; doctor; compare; rerun; cancel; ui; hooks install/uninstall; agent install/uninstall; agent-guide; daemon start/status/stop; mcp; pre-push; prune; self-update; version.
@@ -266,6 +270,7 @@ Cancellation of an unstarted queued run acquires its worker ownership lock and a
 - Generate the UI with `pnpm --filter async-commit-hook build:embedded` before Go builds, tests or packaging. Serve only real embedded files with strict CSP, correct MIME, no-store HTML and immutable hashed assets/licenses.
 
 ## Storage
+
 Run aggregation uses explicit precedence: interrupted, cancelled, replaced, expired, failed, blocked, then passed. Check names and traversal order cannot change it. Optional failed/blocked checks are ignored for this aggregate, while cancellation/replacement/interruption remain visible. A failed prerequisite therefore yields a failed run even when a later-sorted dependent is blocked. No applicable checks still produces a failed, nonpassing run.
 
 SQLite WAL with foreign keys, transactional claims and durable accepted ordering. User-only state includes registry, attempts, checks, coordination, acknowledgements and diagnostics. Logs/reports are owned files with integrity metadata. On command completion, command-start failure and pre-launch cancellation, the execution path flushes redaction, syncs and closes the log, then records its exact size and digest before terminal publication. Empty logs are verifiable evidence, so stable startup diagnostics remain comparable. Log write/read failures remain explicit diagnostics and never become a successful integrity claim. Indefinite retention is default; pruning protects active work and retains authoritative expired-attempt records. Original-repository removal never deletes results. Run reloads resolve raw source path bytes through their registered worktree ID and read historical branch identity from its SQLite column; JSON display snapshots are not authoritative for filesystem access. This also recovers pre-existing snapshots whose invalid UTF-8 was normalized. Loading retained history does not require an available checkout.
@@ -273,11 +278,13 @@ SQLite WAL with foreign keys, transactional claims and durable accepted ordering
 Repeated pruning skips reclaimed expired records without appending diagnostics. If a crash leaves owned files after the expiry commit, pruning resumes their cleanup without adding another expiry diagnostic.
 
 ## Security
+
 Reports are parsed from the bounded original in-memory bytes (at most 64 MiB). Redaction uses bounded buffers and writes an atomic evidence file while computing its digest; the complete expanded copy is never held in memory. Redacted evidence is limited to 640 MiB, the maximum possible expansion of a one-byte secret into `[REDACTED]`. Extracted failure text retains only a bounded redacted prefix with explicit truncation. Extracted test/message/file/command text and the separate persisted report copy are redacted before storage. JUnit source lines are accepted only in the positive int32 range 1..2147483647. Malformed, nonpositive or overflowing lines are omitted as unknown (zero), including on legacy stored-summary and API reads; the failure, filename and original report evidence remain available. A secret matching XML/JSON syntax therefore cannot corrupt validation; the redacted evidence copy may no longer be syntactically parseable and is displayed as inert text, never used to rederive outcomes.
 
 Allowlisted system context plus declared inputs only. Credential references resolve locally; raw credentials/full environments never enter metadata. Streaming redaction covers chunk boundaries and report fields. Local state is account-restricted. Cancellation verifies process identity; cleanup is confined to owned paths. API security is specified in the protocol contract. A workspace isolates source, not hostile commands.
 
 ## Logging
+
 Pending-run reconciliation/storage failures retry after 1, 2, 4, 8, 16, 32 and then at most one attempt per 60 seconds per run, with structured `retry_after_ms` diagnostics. Scheduling claims remain intact and other runs remain eligible. On-demand workers retain pending retries until shutdown or completion; this is a retry delay, not a command timeout. A run owned by another worker is probed no more often than every 200 ms.
 
 Structured log/slog lifecycle events contain run/check IDs, outcomes and stable diagnostic codes. Never log credentials, pairing codes or complete environments. CLI colors honor NO_COLOR and nonterminal output.
@@ -285,19 +292,23 @@ Structured log/slog lifecycle events contain run/check IDs, outcomes and stable 
 An unexpected storage/worker failure reaps its owned commands even if the database can no longer persist cancellation. Restart reconciliation retains interruption instead of replaying commands. MCP preserves the same typed error codes, including `wait-expired`, as the CLI.
 
 ## Build and Test
+
 `go test ./cmds/async-commit-hook/...`, race tests, six-target CGO-free builds, generated protocol checks, installer/update and lifecycle integration tests. Repository-wide Go compilation first generates the DevHud administrator embed. Real six-target machine validation is explicitly excluded by the owner.
 
 Shared environment/redaction integration fixtures select native POSIX or PowerShell syntax while asserting the same environment exclusion, log masking and report failure behavior. Windows cross-compilation is recorded separately from executing these tests on Windows.
 
 ## Dependencies and Integrations
+
 SQLite modernc, UUID v7, Connect, official MCP Go SDK, Git, OS process APIs, TOML, Sigstore verification. Direct updates require stopped checks/servers, a consistent state backup, authenticated artifacts and recoverable replacement; Homebrew installs are never replaced by self-update.
 
 ## Change Triggers
+
 Update project index, protocol/client/app contracts and AGENTS when public behavior changes.
 
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - [Project](project-async-commit-hook.md)
 - [Repository defaults](repository-defaults.md)
 

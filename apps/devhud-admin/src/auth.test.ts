@@ -57,8 +57,12 @@ describe("AdminAuth", () => {
   });
 
   it("removes only a terminal OIDC issuer segment from the SDK endpoint", () => {
-    expect(logtoEndpointFromIssuer("https://identity.example/tenant/oidc/")).toBe("https://identity.example/tenant");
-    expect(logtoEndpointFromIssuer("https://identity.example/tenant")).toBe("https://identity.example/tenant");
+    expect(
+      logtoEndpointFromIssuer("https://identity.example/tenant/oidc/"),
+    ).toBe("https://identity.example/tenant");
+    expect(logtoEndpointFromIssuer("https://identity.example/tenant")).toBe(
+      "https://identity.example/tenant",
+    );
   });
 
   it("uses the exact bootstrap redirect and adds nonce to Logto PKCE/state sign-in", async () => {
@@ -70,9 +74,7 @@ describe("AdminAuth", () => {
     );
     await auth.begin();
     const options = methods.signIn.mock.calls[0]?.[0];
-    expect(options.redirectUri).toBe(
-      "http://localhost:46306/auth/callback",
-    );
+    expect(options.redirectUri).toBe("http://localhost:46306/auth/callback");
     expect(options.extraParams.nonce).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(sessionStorage.getItem(authStorage.nonceKey)).toBe(
       options.extraParams.nonce,
@@ -80,9 +82,11 @@ describe("AdminAuth", () => {
   });
 
   it("does not start sign-in when the nonce cannot be stored", async () => {
-    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new DOMException("Storage is unavailable", "SecurityError");
-    });
+    const setItem = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(() => {
+        throw new DOMException("Storage is unavailable", "SecurityError");
+      });
     const auth = new AdminAuth(
       "https://identity.example",
       "https://api.example",
@@ -114,7 +118,11 @@ describe("AdminAuth", () => {
   });
 
   it("discards callbacks whose nonce state is unavailable", async () => {
-    history.replaceState(null, "", "/admin/auth/callback?code=code&state=state#fragment");
+    history.replaceState(
+      null,
+      "",
+      "/admin/auth/callback?code=code&state=state#fragment",
+    );
     const auth = new AdminAuth(
       "https://identity.example",
       "https://api.example",
@@ -122,7 +130,9 @@ describe("AdminAuth", () => {
       "http://localhost:46306/auth/callback",
     );
 
-    await expect(auth.completeCallback(window.location.href)).resolves.toBe(false);
+    await expect(auth.completeCallback(window.location.href)).resolves.toBe(
+      false,
+    );
     expect(methods.handleSignInCallback).not.toHaveBeenCalled();
     expect(methods.clearAllTokens).toHaveBeenCalledOnce();
     expect(window.location.pathname).toBe("/admin/");

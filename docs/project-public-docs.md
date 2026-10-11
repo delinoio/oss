@@ -1,21 +1,26 @@
 # Project: public-docs
 
 ## Goal
+
 Provide the Rspress-based public documentation site for user-facing product and platform content.
 
 ## Project ID
+
 `public-docs`
 
 ## Domain Ownership Map
+
 - `apps/public-docs`
 - `packages/docs-site-switcher`
 
 ## Domain Contract Documents
+
 - `docs/apps-public-docs-foundation.md`
 - `docs/packages-docs-site-switcher-contract.md`
 - `docs/apps-react-forge-docs-foundation.md`
 
 ## Cross-Domain Invariants
+
 - Rspress clean routes, navigation, sidebar, and docs structure must stay aligned with documented contracts.
 - pnport's eleven public guide routes include `/pnport/preview-testing` for external Turbopack and TypeScript 7 testing; its sidebar, entry-page links and required headings/links stay aligned with the shared route catalog and `docs/apps-pnport-docs-foundation.md`.
 - User-facing content changes should be versioned alongside relevant contract updates.
@@ -34,10 +39,12 @@ Provide the Rspress-based public documentation site for user-facing product and 
 - `public-docs` -> `apps/public-docs`, `packages/docs-site-switcher`
 
 ## Change Policy
+
 - Update this index and `docs/apps-public-docs-foundation.md` in the same change for navigation, runtime, or publishing workflow updates.
 - Keep `apps/public-docs` route/content behavior aligned with contract documents.
 
 ## References
+
 - `docs/repository-defaults.md`
 - `docs/project-template.md`
 - `docs/domain-template.md`

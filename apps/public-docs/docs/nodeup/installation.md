@@ -8,13 +8,13 @@ Release asset names use `amd64` for the same 64-bit Intel/AMD CPU family that ma
 
 For most macOS and Linux users, start with Homebrew. For Windows users, start with the direct installer.
 
-| Method | Use this when |
-| --- | --- |
-| APT / DNF | Not published yet. See the planned [Linux APT and DNF](#linux-apt-and-dnf). |
-| Homebrew | You are on macOS or Linux and already use Homebrew, or you want the simplest managed install path. |
+| Method            | Use this when                                                                                                                    |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| APT / DNF         | Not published yet. See the planned [Linux APT and DNF](#linux-apt-and-dnf).                                                      |
+| Homebrew          | You are on macOS or Linux and already use Homebrew, or you want the simplest managed install path.                               |
 | Direct installers | You want a first-party release artifact without Homebrew or `cargo-binstall`. Use pinned commands in CI or audited environments. |
-| `cargo-binstall` | You already have Rust tooling and want to install from first-party GitHub Release assets without source-build fallback. |
-| binpm | You want a global CLI install managed by binpm, or you need a project-local manifest for reproducible per-repo tooling. |
+| `cargo-binstall`  | You already have Rust tooling and want to install from first-party GitHub Release assets without source-build fallback.          |
+| binpm             | You want a global CLI install managed by binpm, or you need a project-local manifest for reproducible per-repo tooling.          |
 
 ## binpm
 
@@ -246,14 +246,14 @@ nodeup completions bash >/tmp/nodeup.bash
 
 Nodeup runtime installation and shim dispatch support:
 
-| Host | CPU | Runtime archive |
-| --- | --- | --- |
-| macOS | x64 | `node-v<version>-darwin-x64.tar.xz` |
-| macOS | arm64 | `node-v<version>-darwin-arm64.tar.xz` |
-| Linux | x64 | `node-v<version>-linux-x64.tar.xz` |
-| Linux | arm64 | `node-v<version>-linux-arm64.tar.xz` |
-| Windows | x64 | `node-v<version>-win-x64.zip` |
-| Windows | arm64 | `node-v<version>-win-arm64.zip` |
+| Host    | CPU   | Runtime archive                       |
+| ------- | ----- | ------------------------------------- |
+| macOS   | x64   | `node-v<version>-darwin-x64.tar.xz`   |
+| macOS   | arm64 | `node-v<version>-darwin-arm64.tar.xz` |
+| Linux   | x64   | `node-v<version>-linux-x64.tar.xz`    |
+| Linux   | arm64 | `node-v<version>-linux-arm64.tar.xz`  |
+| Windows | x64   | `node-v<version>-win-x64.zip`         |
+| Windows | arm64 | `node-v<version>-win-arm64.zip`       |
 
 x86 hosts are unsupported. Runtime installation and shim dispatch fail with `unsupported-platform` before archive download or delegated command planning. JSON errors include deterministic diagnostics: `os`, `architecture`, `platform_source`, and `supported_platforms`.
 

@@ -4,23 +4,52 @@ import { relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const source = new URL("../dist/", import.meta.url);
-const destination = new URL("../../../cmds/async-commit-hook/internal/webassets/dist/", import.meta.url);
+const destination = new URL(
+  "../../../cmds/async-commit-hook/internal/webassets/dist/",
+  import.meta.url,
+);
 export async function validateBundle(root = source) {
-  const files = (await readdir(root, { recursive: true, withFileTypes: true }))
-    .filter((entry) => !entry.isDirectory());
-  for (const entry of files) assert.ok(entry.isFile(), "UI assets must be regular files");
-  const names = files.map((entry) => relative(fileURLToPath(root), resolve(entry.parentPath, entry.name)).replaceAll("\\", "/")).sort();
+  const files = (
+    await readdir(root, { recursive: true, withFileTypes: true })
+  ).filter((entry) => !entry.isDirectory());
+  for (const entry of files)
+    assert.ok(entry.isFile(), "UI assets must be regular files");
+  const names = files
+    .map((entry) =>
+      relative(
+        fileURLToPath(root),
+        resolve(entry.parentPath, entry.name),
+      ).replaceAll("\\", "/"),
+    )
+    .sort();
   assert.ok(names.includes("index.html"), "UI index is missing");
-  assert.ok(names.some((name) => name.endsWith(".js")), "UI JavaScript is missing");
-  assert.ok(names.some((name) => name.endsWith(".css")), "UI styles are missing");
-  for (const name of names) assert.match(name, /^(index\.html|assets\/[A-Za-z0-9_.-]+\.[0-9a-f]{8}\.(js|css)(\.LICENSE\.txt)?)$/, "unexpected UI asset");
+  assert.ok(
+    names.some((name) => name.endsWith(".js")),
+    "UI JavaScript is missing",
+  );
+  assert.ok(
+    names.some((name) => name.endsWith(".css")),
+    "UI styles are missing",
+  );
+  for (const name of names)
+    assert.match(
+      name,
+      /^(index\.html|assets\/[A-Za-z0-9_.-]+\.[0-9a-f]{8}\.(js|css)(\.LICENSE\.txt)?)$/,
+      "unexpected UI asset",
+    );
   const html = await readFile(new URL("index.html", root), "utf8");
   assert.match(html, /<html lang="en">/);
-  assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)|<style\b|\sstyle=|https?:\/\//i);
-  const references = [...html.matchAll(/(?:src|href)="\/?(assets\/[^"?]+)"/g)].map((match) => match[1]);
+  assert.doesNotMatch(
+    html,
+    /<script(?![^>]*\bsrc=)|<style\b|\sstyle=|https?:\/\//i,
+  );
+  const references = [
+    ...html.matchAll(/(?:src|href)="\/?(assets\/[^"?]+)"/g),
+  ].map((match) => match[1]);
   assert.ok(references.some((name) => name.endsWith(".js")));
   assert.ok(references.some((name) => name.endsWith(".css")));
-  for (const name of references) assert.ok(names.includes(name), "referenced UI asset is missing");
+  for (const name of references)
+    assert.ok(names.includes(name), "referenced UI asset is missing");
   return names;
 }
 

@@ -4,7 +4,10 @@ import { test } from "node:test";
 import { packArchive, unpackArchive } from "./archive.mjs";
 
 test("archives preserve bytes and executable permissions deterministically", () => {
-  const entries = [{ name: "bin/tool", data: Buffer.from([0, 255, 7]), mode: 0o755 }, { name: "LICENSE", data: "license" }];
+  const entries = [
+    { name: "bin/tool", data: Buffer.from([0, 255, 7]), mode: 0o755 },
+    { name: "LICENSE", data: "license" },
+  ];
   const archive = packArchive(entries);
   assert.deepEqual(archive, packArchive(entries));
   const extracted = unpackArchive(archive);
@@ -14,8 +17,21 @@ test("archives preserve bytes and executable permissions deterministically", () 
 });
 
 test("archive creation rejects unsafe paths and duplicate entries", () => {
-  for (const name of ["../tool", "/tool", "a/../tool", "a\\tool", "a//tool", "./tool"]) assert.throws(() => packArchive([{ name, data: "x" }]));
-  assert.throws(() => packArchive([{ name: "tool", data: "x" }, { name: "tool", data: "y" }]));
+  for (const name of [
+    "../tool",
+    "/tool",
+    "a/../tool",
+    "a\\tool",
+    "a//tool",
+    "./tool",
+  ])
+    assert.throws(() => packArchive([{ name, data: "x" }]));
+  assert.throws(() =>
+    packArchive([
+      { name: "tool", data: "x" },
+      { name: "tool", data: "y" },
+    ]),
+  );
 });
 
 test("archive extraction rejects corrupt headers, links and truncation", () => {
@@ -26,6 +42,12 @@ test("archive extraction rejects corrupt headers, links and truncation", () => {
   const link = Buffer.from(original);
   link[156] = 50;
   assert.throws(() => unpackArchive(gzipSync(link)), /unsupported/);
-  assert.throws(() => unpackArchive(gzipSync(original.subarray(0, 600))), /truncated/);
-  assert.throws(() => unpackArchive(gzipSync(original.subarray(0, 1024))), /end marker/);
+  assert.throws(
+    () => unpackArchive(gzipSync(original.subarray(0, 600))),
+    /truncated/,
+  );
+  assert.throws(
+    () => unpackArchive(gzipSync(original.subarray(0, 1024))),
+    /end marker/,
+  );
 });

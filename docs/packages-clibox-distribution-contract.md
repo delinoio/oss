@@ -1,15 +1,19 @@
 # clibox npm and native distribution
 
 ## Scope
+
 `packages/clibox` owns the private source workspace and generates the public `@delino/clibox` launcher, eight platform packages, and signed GNU Linux/macOS archives. It also verifies and publishes the macOS Homebrew Formula through the shared tap renderer.
 
 ## Runtime and Language
+
 The launcher is unbundled CommonJS using Node.js built-ins on Node.js 22+. Build and release tooling is ESM on the repository's Node.js 24 baseline. No frontend bundler is necessary for this native CLI wrapper.
 
 ## Users and Operators
+
 JavaScript developers using `pnpm add -D -E @delino/clibox` followed by `pnpm exec clibox`, npm users installing the same package as an exact dev dependency, and release maintainers.
 
 ## Interfaces and Contracts
+
 - The implemented CLI carries the Rust CLI consistency revision without launcher-side translation: renamed commands reject old names with static migration help; `--quiet` suppresses results, `port list --pids` selects PIDs, `--output -` selects stdout, and force requires real file output or in-place replacement. Native and installed consumer tests cover these contracts, including numeric owned-operation cancellation 130/143.
 - Published version 0.2.0 carries the port/hash names, `run env`, the five run wrappers, `system cpus`, and the output/cancellation semantics. The seven fspy commands exist in source for a later manual release; published-version examples must identify that distinction.
 - The installed command is `clibox`; no public JavaScript import API is provided. All eight native packages carry `run env`, `run with-rate-limit`, `run with-lock`, `run with-service`, `run with-retry`, `run with-timeout`, `port list`, `port kill`, `open`, text `clipboard copy`/`paste`, `system cpus`, `dotenv list`/`merge`, and `yaml normalize` from the Rust contract without feature flags. The source package also composes the fspy command family from `clibox-fspy`. Configuration commands retain bounded, offline processing and redacted diagnostics; the launcher forwards arguments unchanged. Linux desktop tools are runtime capabilities, not npm install scripts or bundled dependencies.
@@ -85,15 +89,19 @@ Windows console Ctrl+C and Ctrl+Break are broadcast to both Node and the attache
 - clibox supports macOS x64/arm64 only, using its version-bound signed Darwin archives. Preserve full LICENSE, NOTICE and LICENSE.fspy during installation. Test and audit the identical Formula on both native Mac architectures before acquiring tap-only credentials; reject downgrades and changed same-version Formula bytes. Never validate by mutating a developer's Homebrew installation. Follow `packages-clibox-distribution-contract.md`.
 
 ## Storage
+
 Generated packages and tarballs live under ignored `dist` or an explicitly supplied temporary output directory. Never track generated output; remove repository-owned `dist` directories after local verification. The installed runtime adds no settings, cache, or history apart from the Rust contract's private local hashed lock/bucket coordination state for explicitly requested `run with-lock` and `run with-rate-limit`. Native commands otherwise read requested input and write requested output plus temporary files required for atomic publication. Waits observe targets without file mutations or service termination. Operational rollback uses an earlier pinned package version and never deletes coordination state.
 
 ## Security
+
 Consumers need no install scripts, network downloads outside their package manager, or Rust compiler. Release jobs obtain OIDC only after all native builds and package checks succeed. Dry runs and regular CI never publish or receive registry credentials. npm publication uses fixed npm registry HTTPS endpoints; GitHub publication uses fixed first-party GitHub API/upload endpoints. Neither publisher prints tokens or raw process environments.
 
 ## Logging
+
 Packaging and publication report structured events containing action, package, target, version, revision, integrity, and outcome. Launcher diagnostics contain stable error codes and actionable messages, not raw argv or environment values.
 
 ## Build and Test
+
 - `pnpm --filter @delino/clibox test` runs deterministic launcher and packaging/release fixtures.
 - `pnpm --filter @delino/clibox test:package` builds the host CLI with `cargo build --locked --release`, creates tarballs, and installs them in temporary npm and pnpm consumers with scripts disabled. Use the stripped release profile so debug symbols cannot overflow the archive reader's 64 MiB decompressed-size bound. Release matrix calls that supply `--binary` use that exact prebuilt artifact without rebuilding or modifying it. Installed-launcher checks exercise JSON file readiness, environment execution, run-wrapper status propagation, empty argv and delegated status, all seven the feature commands, binary bytes, timezone output, and checksum verification as well as help/version and missing-subcommand help on stderr with exit code 2. Help assertions use the selected target's binary name, including `clibox.exe` on Windows.
 - Installed npm and pnpm smoke checks also exercise both `system cpus` kinds, JSON, quiet, invalid flag combinations, and missing `system` help through the selected native binary. The existing eight-target release and Alpine consumer checks inherit this smoke coverage.
@@ -105,6 +113,7 @@ Packaging and publication report structured events containing action, package, t
 - Fixtures cover selection, argument and signal forwarding, missing/mismatched dependencies, archive contents/modes, identical package integrity from isolated LF/CRLF source trees, version mismatch, partial publication recovery, conflicting registry integrity, and credential-free dry runs.
 
 ## Dependencies and Integrations
+
 `Release Project` synchronizes the Cargo and npm source versions in one version-only commit, validates that exact release source, and pushes the matching tag without waiting for main CI. Main CI runs independently; native build, test, and package validation remain enforced by the downstream workflow. `release-clibox.yml` accepts the exact version tag or a manual dry run. Publication requires the exact tag at the selected source commit and matching executable/npm source versions. Neither publisher queries crates.io. All six Rust crates are non-publishable; Release Project skips Cargo registry credentials, setup, and publication for clibox while retaining its immutable source validation and tag phase. The guarded publish job explicitly installs npm `11.6.2` before checking the OIDC minimum of `11.5.1` and publishing; Node.js 24's bundled npm is not the publication version contract.
 
 The `CLIBOX_NPM_PUBLISH_ENABLED` repository variable must be `true` for npm publication. All nine packages require a Trusted Publisher permitting publication from `delinoio/oss` and `release-clibox.yml`; tagged releases use OIDC and npm provenance. Leaving the variable unset or setting it to `false` disables npm publication and reports it as disabled; signed GitHub Release and native package publication remain independently enabled for real tagged releases. A rerun reconciles already-published identical bytes. Never rebuild or edit an artifact during a partial publication retry; retain the complete verified artifact set.
@@ -112,6 +121,7 @@ The `CLIBOX_NPM_PUBLISH_ENABLED` repository variable must be `true` for npm publ
 Public package READMEs describe installation, supported platforms, all seven the feature commands, quoting, byte/newline semantics, calendar/DST behavior, bundled timezone updates, checksum path resolution, atomic file replacement, partial stdout, exit codes, and troubleshooting. Publisher configuration, credentials, repository paths, and release internals stay in this document and the repository workflow contract.
 
 ## Change Triggers
+
 Keep the project index, Rust contract, package tests, CI path rules, release coordinator, workflows, and root/package AGENTS rules synchronized.
 
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
@@ -119,6 +129,7 @@ Instruction-file updates in this requirement apply only to changes in developmen
 Public consumer documentation is maintained at `apps/public-docs/docs/clibox` and `https://oss.delino.io/clibox`; follow `docs/apps-clibox-docs-foundation.md`. Both consumer READMEs retain their detailed guidance and link to that section.
 
 ## References
+
 - [Project index](project-clibox.md)
 - [Rust foundation](crates-clibox-foundation.md)
 - [Repository defaults](repository-defaults.md)

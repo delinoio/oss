@@ -10,11 +10,11 @@ The 0.1.2 release provides [prebuilt GitHub archives](https://github.com/delinoi
 
 The published and planned platforms are:
 
-| Host | Architectures | First release |
-| --- | --- | --- |
-| macOS 15 or newer | x64, arm64 | 0.1.0, available |
-| Ubuntu 22.04-equivalent glibc Linux | x64, arm64 | 0.1.0, available |
-| Windows 10 22H2 or newer, MSVC | x64, arm64 | 0.2.0, planned |
+| Host                                | Architectures | First release    |
+| ----------------------------------- | ------------- | ---------------- |
+| macOS 15 or newer                   | x64, arm64    | 0.1.0, available |
+| Ubuntu 22.04-equivalent glibc Linux | x64, arm64    | 0.1.0, available |
+| Windows 10 22H2 or newer, MSVC      | x64, arm64    | 0.2.0, planned   |
 
 The stable 0.1.2 build passed native execution, installed npm/Yarn and direct-install checks, inline/split TypeScript and numerical benchmarks on macOS 15 and Ubuntu 22.04 for both architectures. Linux checks include static children. These checks do not establish compatibility with every executable or complete filesystem/process acceptance. Musl hosts and mixed-architecture execution are excluded. Both Windows targets retain complete validation requirements before 0.2.0. The 0.1.x npm launcher reports Windows as unsupported without downloading or starting another executable.
 

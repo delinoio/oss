@@ -8,7 +8,8 @@ const eventLog = process.env.DEVHUD_TEST_EVENT_LOG;
 const authState = process.env.DEVHUD_TEST_AUTH_STATE;
 
 async function log(event) {
-  if (eventLog) await appendFile(eventLog, `${JSON.stringify(event)}\n`, "utf8");
+  if (eventLog)
+    await appendFile(eventLog, `${JSON.stringify(event)}\n`, "utf8");
 }
 
 async function exists(path) {
@@ -28,8 +29,7 @@ async function priorPathRuns(path) {
       .split(/\r?\n/u)
       .filter(Boolean)
       .map((line) => JSON.parse(line))
-      .filter((event) => event.action === "run" && event.path === path)
-      .length;
+      .filter((event) => event.action === "run" && event.path === path).length;
   } catch (error) {
     if (error.code === "ENOENT") return 0;
     throw error;
@@ -47,7 +47,8 @@ if (args.includes("--version")) {
   );
 } else if (args.includes("user") && args.includes("token")) {
   await log({ tool: "infisical", action: "auth-probe" });
-  if (authState && (await exists(authState))) process.stdout.write("AUTH_TOKEN_MUST_NOT_LEAK\n");
+  if (authState && (await exists(authState)))
+    process.stdout.write("AUTH_TOKEN_MUST_NOT_LEAK\n");
   else process.exitCode = 1;
 } else if (args.includes("login")) {
   await log({ tool: "infisical", action: "login" });
@@ -56,7 +57,9 @@ if (args.includes("--version")) {
   await log({ tool: "infisical", action: "init" });
   await writeFile(resolve(process.cwd(), ".infisical.json"), "{}\n", "utf8");
 } else if (args.includes("run")) {
-  const path = args.find((arg) => arg.startsWith("--path="))?.slice("--path=".length);
+  const path = args
+    .find((arg) => arg.startsWith("--path="))
+    ?.slice("--path=".length);
   const pathRun = (await priorPathRuns(path)) + 1;
   await log({ tool: "infisical", action: "run", path, args });
   if (process.env.DEVHUD_TEST_INFISICAL_FAILURE === path) {
@@ -67,7 +70,8 @@ if (args.includes("--version")) {
     const command = args[separator + 1];
     const commandArgs = args.slice(separator + 2);
     const api = {
-      DEVHUD_DATABASE_URL: "postgres://devhud:API_DATABASE_CANARY@127.0.0.1:5432/devhud?sslmode=disable",
+      DEVHUD_DATABASE_URL:
+        "postgres://devhud:API_DATABASE_CANARY@127.0.0.1:5432/devhud?sslmode=disable",
       DEVHUD_PUBLIC_API_URL: "http://127.0.0.1:46307",
       DEVHUD_LOGTO_ISSUER:
         (pathRun > 1
@@ -93,9 +97,12 @@ if (args.includes("--version")) {
         "http://localhost:3001/oidc",
     };
     const secrets = path === "/devhud/api" ? api : admin;
-    if (process.env.DEVHUD_TEST_SECRET_SHAPE === "unknown") secrets.DEVHUD_UNKNOWN_CANARY = "UNKNOWN_VALUE_CANARY";
-    if (process.env.DEVHUD_TEST_SECRET_SHAPE === "partial") secrets.DEVHUD_R2_ENDPOINT = "https://example.invalid";
-    if (process.env.DEVHUD_TEST_SECRET_SHAPE === "missing") delete secrets.DEVHUD_DATABASE_URL;
+    if (process.env.DEVHUD_TEST_SECRET_SHAPE === "unknown")
+      secrets.DEVHUD_UNKNOWN_CANARY = "UNKNOWN_VALUE_CANARY";
+    if (process.env.DEVHUD_TEST_SECRET_SHAPE === "partial")
+      secrets.DEVHUD_R2_ENDPOINT = "https://example.invalid";
+    if (process.env.DEVHUD_TEST_SECRET_SHAPE === "missing")
+      delete secrets.DEVHUD_DATABASE_URL;
     const child = spawn(command, commandArgs, {
       cwd: process.cwd(),
       env: { ...process.env, ...secrets },

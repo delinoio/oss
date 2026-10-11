@@ -20,21 +20,23 @@ function complete(result) {
 
 async function main() {
   if (extra.length > 0 || (command !== "start" && argument !== undefined)) {
-    throw new Error("[arguments.invalid] development commands do not accept passthrough arguments");
+    throw new Error(
+      "[arguments.invalid] development commands do not accept passthrough arguments",
+    );
   }
   if (command === "login") {
     return complete(await runWithLifecycle((lifecycle) => login(lifecycle)));
   }
   if (command === "doctor") return doctor();
   if (command === "down") {
-    return complete(
-      await runWithLifecycle((lifecycle) => down({ lifecycle })),
-    );
+    return complete(await runWithLifecycle((lifecycle) => down({ lifecycle })));
   }
   if (command === "start") {
     return complete(await start(argument));
   }
-  throw new Error("[command.invalid] use login, doctor, start team, start oss, or down");
+  throw new Error(
+    "[command.invalid] use login, doctor, start team, start oss, or down",
+  );
 }
 
 try {

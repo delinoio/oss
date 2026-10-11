@@ -19,7 +19,7 @@ Executed verification on the working repair:
   because the bridge changed a preflight entry. Log:
   `/tmp/delidev-1227-eighth-env-red.log`.
 - `GOMAXPROCS=2 go test -race -v -p 1 ./cmds/delidev-cli/internal/workspace -run
-  '^TestOriginalPRGitEnvironment|^TestPRGitEnvironment' -count=1 -timeout=2m`
+'^TestOriginalPRGitEnvironment|^TestPRGitEnvironment' -count=1 -timeout=2m`
   passed (package 2.019 seconds). Coverage includes distinct POSIX aliases, last
   exact-name values, modeled Windows case-insensitive last values, stable
   resnapshotting and the actual native POSIX preflight/bridge environment.

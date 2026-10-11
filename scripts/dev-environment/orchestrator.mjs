@@ -168,7 +168,9 @@ function testingOverrides(source = process.env) {
   if (source.DEVHUD_ENVIRONMENT_TESTING !== "1") return {};
   return Object.fromEntries(
     Object.entries(source).filter(
-      ([name]) => name === "DEVHUD_ENVIRONMENT_TESTING" || name.startsWith("DEVHUD_TEST_"),
+      ([name]) =>
+        name === "DEVHUD_ENVIRONMENT_TESTING" ||
+        name.startsWith("DEVHUD_TEST_"),
     ),
   );
 }
@@ -222,7 +224,9 @@ export async function assertFixedPort(port, owner, host = "127.0.0.1") {
 
 function toolInvocation(name, overrideName) {
   const fake =
-    process.env.DEVHUD_ENVIRONMENT_TESTING === "1" ? process.env[overrideName] : null;
+    process.env.DEVHUD_ENVIRONMENT_TESTING === "1"
+      ? process.env[overrideName]
+      : null;
   return fake
     ? { command: process.execPath, prefix: [fake] }
     : commandInvocation(name);
@@ -237,7 +241,14 @@ function infisicalInvocation() {
 }
 
 function composeArgs(projectName, ...args) {
-  return ["compose", "--project-name", projectName, "--file", composeFile, ...args];
+  return [
+    "compose",
+    "--project-name",
+    projectName,
+    "--file",
+    composeFile,
+    ...args,
+  ];
 }
 
 async function assertAppPorts() {
@@ -312,12 +323,10 @@ async function exactInfisicalVersion(lifecycle) {
       `[tool.missing] Infisical CLI ${supportedInfisicalVersion} is required and is not installed automatically`,
     );
   }
-  const versions = result.stdout
-    .split(/\r?\n/u)
-    .flatMap((line) => {
-      const match = /^infisical version (\S+)$/u.exec(line);
-      return match ? [match[1]] : [];
-    });
+  const versions = result.stdout.split(/\r?\n/u).flatMap((line) => {
+    const match = /^infisical version (\S+)$/u.exec(line);
+    return match ? [match[1]] : [];
+  });
   if (versions.length !== 1 || versions[0] !== supportedInfisicalVersion) {
     throw new Error(
       `[tool.version] Infisical CLI ${supportedInfisicalVersion} is required; install that exact supported version`,
@@ -350,10 +359,14 @@ async function requireTeamEnvironment(lifecycle) {
   await exactInfisicalVersion(lifecycle);
   const { configFile } = resolveInfisicalConfigPaths();
   if (!(await exists(configFile))) {
-    throw new Error("[project.uninitialized] local Infisical project configuration is missing; run pnpm env:login");
+    throw new Error(
+      "[project.uninitialized] local Infisical project configuration is missing; run pnpm env:login",
+    );
   }
   if (!(await authenticated(lifecycle))) {
-    throw new Error("[authentication.required] Infisical authentication is required; run pnpm env:login");
+    throw new Error(
+      "[authentication.required] Infisical authentication is required; run pnpm env:login",
+    );
   }
 }
 
@@ -369,7 +382,9 @@ async function runInteractiveInfisical(args, cwd = repositoryRoot, lifecycle) {
     },
   );
   if (result.code !== 0 || result.signal) {
-    throw new Error("[authentication.failed] Infisical authentication or local project initialization did not complete");
+    throw new Error(
+      "[authentication.failed] Infisical authentication or local project initialization did not complete",
+    );
   }
 }
 
@@ -391,7 +406,9 @@ export async function login(lifecycle) {
       lifecycle,
     );
   }
-  process.stdout.write("Team environment authentication and local project configuration are ready.\n");
+  process.stdout.write(
+    "Team environment authentication and local project configuration are ready.\n",
+  );
 }
 
 function extractComparisons(stdout) {
@@ -435,7 +452,9 @@ async function runService(lifecycle, mode, service, action, comparisonKey) {
     if (result.stderr) process.stderr.write(result.stderr);
   }
   if (result.code !== 0 || result.signal) {
-    throw new Error(`[service.${action}] ${service} ${action} failed; see the name/category diagnostic above`);
+    throw new Error(
+      `[service.${action}] ${service} ${action} failed; see the name/category diagnostic above`,
+    );
   }
   if (comparisonKey) {
     if (
@@ -558,10 +577,14 @@ async function checkDocker(lifecycle) {
     );
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
-    throw new Error("[tool.missing] Docker with Compose support is required for pnpm dev:oss");
+    throw new Error(
+      "[tool.missing] Docker with Compose support is required for pnpm dev:oss",
+    );
   }
   if (result.code !== 0) {
-    throw new Error("[tool.missing] Docker with Compose support is required for pnpm dev:oss");
+    throw new Error(
+      "[tool.missing] Docker with Compose support is required for pnpm dev:oss",
+    );
   }
   await assertLocalDockerDaemon(lifecycle, docker);
 }
@@ -591,7 +614,9 @@ export function dockerEndpointIsLocal(endpoint) {
   if (parsed.protocol === "npipe:") {
     return normalized.toLowerCase().startsWith("npipe:////./pipe/");
   }
-  return parsed.protocol === "tcp:" && dockerTcpHostnameIsLoopback(parsed.hostname);
+  return (
+    parsed.protocol === "tcp:" && dockerTcpHostnameIsLoopback(parsed.hostname)
+  );
 }
 
 async function inspectDockerEndpoint(lifecycle, docker, context) {
@@ -633,10 +658,7 @@ async function assertLocalDockerDaemon(lifecycle, docker) {
 function validateLocalIdentityKey(identityKey) {
   const normalized = identityKey.trim();
   const decoded = Buffer.from(normalized, "base64");
-  if (
-    decoded.byteLength !== 32 ||
-    decoded.toString("base64") !== normalized
-  ) {
+  if (decoded.byteLength !== 32 || decoded.toString("base64") !== normalized) {
     throw new Error(
       "[state.identity-invalid] generated checkout identity is incomplete or invalid; stop OSS development processes and remove only the ignored identity key before retrying",
     );
@@ -707,7 +729,9 @@ export async function createLocalIdentityKey(source = process.env) {
   let handle;
   try {
     handle = await open(temporaryKeyFile, "wx", 0o600);
-    await handle.writeFile(`${randomBytes(32).toString("base64")}\n`, { encoding: "utf8" });
+    await handle.writeFile(`${randomBytes(32).toString("base64")}\n`, {
+      encoding: "utf8",
+    });
     await handle.sync();
     await handle.close();
     handle = null;
@@ -762,12 +786,19 @@ export async function down({ quiet = false, projectName, lifecycle } = {}) {
       : await inherited(docker.command, args, options);
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
-    throw new Error("[tool.missing] Docker with Compose support is required for OSS cleanup");
+    throw new Error(
+      "[tool.missing] Docker with Compose support is required for OSS cleanup",
+    );
   }
   if (result.code !== 0 || result.signal) {
-    throw new Error("[dependencies.down] repository-owned OSS dependencies could not be stopped");
+    throw new Error(
+      "[dependencies.down] repository-owned OSS dependencies could not be stopped",
+    );
   }
-  if (!quiet) process.stdout.write("OSS dependencies stopped; persistent volumes were preserved.\n");
+  if (!quiet)
+    process.stdout.write(
+      "OSS dependencies stopped; persistent volumes were preserved.\n",
+    );
 }
 
 async function startTurbo(lifecycle, mode) {
@@ -792,9 +823,8 @@ async function startTeam(lifecycle) {
   await assertAppPorts();
   await requireTeamEnvironment(lifecycle);
   const configurationPin = await validateTeamServices(lifecycle);
-  const releaseConfigurationPin = await acquireTeamConfigurationPin(
-    configurationPin,
-  );
+  const releaseConfigurationPin =
+    await acquireTeamConfigurationPin(configurationPin);
   try {
     await runService(lifecycle, "team", "api", "migrate");
     return await startTurbo(lifecycle, "team");
@@ -834,13 +864,19 @@ async function startOss(lifecycle) {
       );
       dependenciesStarted = true;
       if (up.code !== 0 || up.signal) {
-        throw new Error("[dependencies.start] OSS dependencies did not become healthy");
+        throw new Error(
+          "[dependencies.start] OSS dependencies did not become healthy",
+        );
       }
       await runService(lifecycle, "oss", "api", "migrate");
       return await startTurbo(lifecycle, "oss");
     } finally {
       if (dependenciesStarted || lifecycle.signal) {
-        await down({ quiet: Boolean(lifecycle.signal), projectName, lifecycle });
+        await down({
+          quiet: Boolean(lifecycle.signal),
+          projectName,
+          lifecycle,
+        });
       }
     }
   } finally {
@@ -850,7 +886,9 @@ async function startOss(lifecycle) {
 
 export async function start(mode) {
   if (!["team", "oss"].includes(mode)) {
-    throw new Error("[mode.invalid] development mode must be exactly one of: team, oss");
+    throw new Error(
+      "[mode.invalid] development mode must be exactly one of: team, oss",
+    );
   }
   return runWithLifecycle((lifecycle) =>
     mode === "team" ? startTeam(lifecycle) : startOss(lifecycle),

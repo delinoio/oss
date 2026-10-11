@@ -1,18 +1,23 @@
 # Project: cargo-mono
 
 ## Goal
+
 Provide a Cargo subcommand for Rust monorepo lifecycle management, including version bump and publish orchestration.
 
 ## Project ID
+
 `cargo-mono`
 
 ## Domain Ownership Map
+
 - `crates/cargo-mono`
 
 ## Domain Contract Documents
+
 - `docs/crates-cargo-mono-foundation.md`
 
 ## Cross-Domain Invariants
+
 - The binary must remain compatible with `cargo mono` invocation conventions.
 - Release automation integration must keep stable command semantics.
 - Release tagging responsibility is split by command: `bump` must not create Git tags, while `publish` may create local Git tags for configured packages.
@@ -36,6 +41,7 @@ Provide a Cargo subcommand for Rust monorepo lifecycle management, including ver
 - `cargo-mono` -> `crates/cargo-mono`
 
 ## Change Policy
+
 - Update this index and `docs/crates-cargo-mono-foundation.md` together when command shape, release workflow, or ownership changes.
 - Keep `scripts/install/cargo-mono.sh`, `scripts/install/cargo-mono.ps1`, and `crates/cargo-mono/Cargo.toml` synchronized with release asset names and signing contracts.
 - Keep `crates/AGENTS.md` and root `AGENTS.md` aligned with structural changes.
@@ -43,6 +49,7 @@ Provide a Cargo subcommand for Rust monorepo lifecycle management, including ver
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - `docs/project-template.md`
 - `docs/domain-template.md`
 - `docs/README.md`

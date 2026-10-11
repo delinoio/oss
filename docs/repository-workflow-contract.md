@@ -43,7 +43,6 @@ Only a person-merged main catalog is consumed by installed servers. GitHub sched
 delivery is best effort; manual dispatch can recover a missed run. A real workflow
 run and App permission acceptance are separate from local fixture validation.
 
-
 DeliDev source decomposition, independent evidence and stable numeric reservations
 follow [the structure contract](cmds-delidev-structure-contract.md). These are source
 ownership changes; existing required checks and repository rulesets remain intact.
@@ -67,7 +66,7 @@ Windows regressions, using isolated temporary directories:
 - `TestSnapshotObservationStopsAtAggregateGitInventory`
 - `TestSnapshotAdmissionReservesPrivatePathHeadroom`
 
- Failure output retains structured closed-stage diagnostics.
+Failure output retains structured closed-stage diagnostics.
 Investigation and packaging use separate per-ref concurrency groups and neither
 cancels an active run.
 This bounded investigation mode preserves read-only access and is separate from
@@ -261,22 +260,22 @@ establish hosted remote-cache performance.
 
 The central planner publishes `go_test_matrix` from the committed native matrix inventory before runner allocation. PRs allocate five independent Ubuntu runners (`core`, `server`, `harness`, `worker` and `workspace`), including shared-input and forced validation. Selected main pushes retain one Ubuntu runner and five independent Windows runners. Default affected manual dispatch uses the five Ubuntu PR shards. No periodic CI schedule is added.
 
-| Event/input | Ubuntu | Windows | macOS |
-| --- | --- | --- | --- |
-| Ordinary PR or affected manual | Affected packages across five shards | No runners allocated | No runners allocated |
-| Shared-input or forced PR/affected manual | Complete package inventory across five shards | No runners allocated | No runners allocated |
-| Ordinary main push | Complete package inventory | Affected packages | No runners allocated |
-| Shared-input or forced main push | Complete package inventory | Complete package inventory | No runners allocated |
+| Event/input                               | Ubuntu                                        | Windows                    | macOS                |
+| ----------------------------------------- | --------------------------------------------- | -------------------------- | -------------------- |
+| Ordinary PR or affected manual            | Affected packages across five shards          | No runners allocated       | No runners allocated |
+| Shared-input or forced PR/affected manual | Complete package inventory across five shards | No runners allocated       | No runners allocated |
+| Ordinary main push                        | Complete package inventory                    | Affected packages          | No runners allocated |
+| Shared-input or forced main push          | Complete package inventory                    | Complete package inventory | No runners allocated |
 
 PR and affected manual Go results establish Linux coverage only. Windows regressions are checked on main. macOS acceptance remains a local or owning release validation requirement. Every selected package runs its complete tests; no test-name filters or separate core-test inventory are introduced. `scripts/ci/go-test.mjs --shard all` preserves the complete `go test -count=1 -json -timeout=20m ./...` suite for selected Ubuntu main jobs and forced full validation on eligible hosts. Affected Ubuntu PR/manual and Windows main execution uses the exact planned base/head. Shared Go dependencies and other shared inputs retain the affected selector's conservative full-inventory fallback. Ubuntu PR and affected manual shards use the same five disjoint package owners as Windows. Each shard runs complete selected packages with `-count=1 -json -timeout=20m`, at Go's default compiler and package parallelism, without a separate precompilation phase. Main Ubuntu jobs retain `--shard all`. Each Windows runner discovers its native `go list ./...` inventory and passes its selected package paths to `go test -count=1 -json -p=1` with a 20-minute package watchdog for `core`, `server` and `harness`, and a 45-minute package watchdog for `worker` and `workspace`. All runners hydrate LFS assets and generate the real administrator and ach UI embeds before testing. The matrix retains `fail-fast: false`, the existing affected selection, and the required `CI Result` aggregate.
 
-| PR Ubuntu / Windows shard | Package ownership |
-| --- | --- |
-| `core` | Every package outside `cmds/delidev-cli`, including async-commit-hook, derun, runmoor, DevHud API and protocols |
-| `server` | DeliDev `internal/server` and `internal/store`, including descendants |
-| `harness` | DeliDev `internal/cli` and `internal/harness`, including descendants |
-| `worker` | Every other DeliDev package, including the command root, worker and future packages outside the other shard owners |
-| `workspace` | DeliDev `internal/workspace`, including descendants, on an independent runner |
+| PR Ubuntu / Windows shard | Package ownership                                                                                                  |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `core`                    | Every package outside `cmds/delidev-cli`, including async-commit-hook, derun, runmoor, DevHud API and protocols    |
+| `server`                  | DeliDev `internal/server` and `internal/store`, including descendants                                              |
+| `harness`                 | DeliDev `internal/cli` and `internal/harness`, including descendants                                               |
+| `worker`                  | Every other DeliDev package, including the command root, worker and future packages outside the other shard owners |
+| `workspace`               | DeliDev `internal/workspace`, including descendants, on an independent runner                                      |
 
 Partition rules match full path segments, so similarly named siblings cannot be mistaken for owned descendants. The five sets cover the discovered inventory exactly once; newly added and native-only packages require no allowlist update. Invalid selectors, empty inventories, empty shards, discovery errors, compilation errors and test failures fail validation. The runner uses literal argument arrays without a shell, preserves build diagnostics, bounded failure diagnostics and nonzero statuses, and logs shard membership, package counts, compile time, test time and total elapsed seconds.
 
@@ -447,7 +446,6 @@ All nine packages require a Trusted Publisher permitting publication from `delin
 Repository-wide Go quality/tests and ach-specific compilation must first generate the app-owned ach UI embed using `pnpm --filter async-commit-hook build:embedded`. The root Go checks also retain the existing administrator embed prerequisite. The consolidated `public-docs` build renders the async content under `/async-commit-hook`; the executable release builder regenerates the local UI before cross-compilation.
 
 The scoped Go formatting helper discovers tracked files with `git ls-files -z` and passes original NUL-separated paths as literal `gofmt -l` arguments. Git display quoting and embedded newlines must not omit or split files. Checks leave source bytes unchanged and retain discovery, formatter, missing-scope and empty-inventory failures. `scripts/ci/check-go-format.test.mjs` belongs to the existing central CI contract fixture suite.
-
 
 ### React Forge validation
 
@@ -784,3 +782,15 @@ Release automation baseline:
 - Go formatting inventory uses NUL-separated Git paths and passes literal arguments to the formatter. Preserve source bytes and Git, formatter, missing-scope and empty-inventory failures; cover quoted non-ASCII and newline names in the central contract fixtures.
 
 - Runner-owned DeliDev Go fixture preparation uses a five-minute cold-build watchdog, separate from fixture lifetimes, product deadlines and Go package watchdogs. Publish structured start/failure timing; share only the resulting executable path.
+
+## Changed source and documentation formatting
+
+The `source-format` Ubuntu job checks changed JS/TS (including JSX/TSX and module extensions), CSS, JSON/JSONC/JSON5, YAML and Markdown/MDX files through pinned Rstack CLI `rs fmt --check --no-cache`. The root `rstack.config.ts` owns `define.fmt()` options and ignore patterns. Markdown prose wrapping is preserved and embedded-language formatting is disabled. Generated bindings, generated localization resources and generated guidance, package-manager lockfiles, build output, vendored code, and fixture/testdata directories retain their original bytes. Authored localization JSON, including extension `_locales/*/messages.json`, and ordinary test sources remain eligible. Rust, Go and Protobuf checks retain their existing owners.
+
+PR, main push and affected manual jobs pass the central planner's exact base/head SHAs to the uncached `@delinoio/ci` task. Selection uses NUL-separated Git paths with rename detection disabled, then checks whole files in the validation checkout, including PR merge contents. Deleted files and symlinks are excluded. No candidate files, or only files excluded by Rstack configuration, is a successful no-op. Invalid or missing comparisons, Git failures, formatter startup failures and parser errors fail validation. The final CI result requires a successful selected job. Logs record comparison and validation revisions, candidate counts and exit status without file contents.
+
+For an explicit local repository-wide pass, use `pnpm format -- --all`; this option is rejected in CI. This pass checks tracked files present in the working tree and skips unstaged deletions. Other filesystem errors fail the pass. Imported agent skills retain their upstream formatting.
+
+Root `pnpm format:check` checks and `pnpm format` fixes the same candidates. Local execution defaults to the merge base of `origin/main` and HEAD and includes tracked working changes and untracked non-ignored files. Explicit `--base <sha> --head <sha>` arguments after the Turbo `--` separator select a committed range, as do `TURBO_SCM_BASE` and `TURBO_SCM_HEAD` in CI. CI requires an explicit comparison. Formatter configuration changes do not expand validation to unchanged files; configuration regressions belong to the central contract fixtures.
+
+The formatting job reuses the shared Node setup, frozen script-disabled install, successful-main-only pnpm cache saves, and Turbo summary artifacts. It needs no Rust or Go installation and never allocates a macOS runner.

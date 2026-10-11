@@ -6,6 +6,7 @@ import { isAbsolute } from "node:path";
 export async function fixtureBinary(fallback, env = process.env) {
   const binary = env.DELIDEV_TEST_BINARY;
   if (binary === undefined) return fallback;
-  if (!isAbsolute(binary) || !(await stat(binary)).isFile()) throw new Error("Invalid DeliDev fixture executable");
+  if (!isAbsolute(binary) || !(await stat(binary)).isFile())
+    throw new Error("Invalid DeliDev fixture executable");
   return binary;
 }

@@ -166,8 +166,7 @@ const containsAsciiControlOrSpace = (value) => {
 };
 
 const hasGoCompatibleURLSpelling = (value) =>
-  !containsAsciiControlOrSpace(value) &&
-  !/%(?![0-9A-Fa-f]{2})/u.test(value);
+  !containsAsciiControlOrSpace(value) && !/%(?![0-9A-Fa-f]{2})/u.test(value);
 
 const localHttp = (value) => {
   if (!hasGoCompatibleURLSpelling(value)) return false;
@@ -186,7 +185,8 @@ const localHttp = (value) => {
       return false;
     }
     if (parsed.protocol === "https:") return true;
-    if (parsed.protocol !== "http:" || !isLoopbackHost(parsed.hostname)) return false;
+    if (parsed.protocol !== "http:" || !isLoopbackHost(parsed.hostname))
+      return false;
     if (!isIPv4Host(parsed.hostname)) return true;
     // WHATWG canonicalizes numeric IPv4 aliases that Go's net.ParseIP rejects.
     // Compare the raw spelling so wrapper preflight matches the service parser.
@@ -213,7 +213,10 @@ const database = (value) => {
   }
   try {
     const parsed = new URL(value);
-    return ["postgres:", "postgresql:"].includes(parsed.protocol) && Boolean(parsed.hostname);
+    return (
+      ["postgres:", "postgresql:"].includes(parsed.protocol) &&
+      Boolean(parsed.hostname)
+    );
   } catch {
     return false;
   }
@@ -222,12 +225,17 @@ const hmacRing = (value) => {
   if (!nonempty(value)) return false;
   return value.split(",").every((entry) => {
     const normalized = entry.trim();
-    if (!/^[A-Za-z0-9+/]+={0,2}$/u.test(normalized) || normalized.length % 4 !== 0) {
+    if (
+      !/^[A-Za-z0-9+/]+={0,2}$/u.test(normalized) ||
+      normalized.length % 4 !== 0
+    ) {
       return false;
     }
     try {
       const decoded = Buffer.from(normalized, "base64");
-      return decoded.byteLength >= 32 && decoded.toString("base64") === normalized;
+      return (
+        decoded.byteLength >= 32 && decoded.toString("base64") === normalized
+      );
     } catch {
       return false;
     }
@@ -308,14 +316,17 @@ export const devhudFrontendContract = Object.freeze({
   optionalValidators: Object.freeze({}),
 });
 
-export function validateInjectedEnvironment(contract, environment, baselineEnvironment = {}) {
+export function validateInjectedEnvironment(
+  contract,
+  environment,
+  baselineEnvironment = {},
+) {
   const baseline = new Map(Object.entries(baselineEnvironment));
   const requiredNames = Object.keys(contract.required);
   const optionalNames = contract.optionalGroups.flat();
   const allowed = new Set([...requiredNames, ...optionalNames]);
   const injectedNames = Object.keys(environment).filter(
-    (name) =>
-      (!baseline.has(name) || baseline.get(name) !== environment[name]),
+    (name) => !baseline.has(name) || baseline.get(name) !== environment[name],
   );
   const unknown = injectedNames.filter((name) => !allowed.has(name));
   if (unknown.length > 0) {
@@ -352,7 +363,9 @@ export function validateInjectedEnvironment(contract, environment, baselineEnvir
   for (const group of contract.optionalGroups) {
     if (group.every((name) => nonempty(environment[name]))) {
       invalid.push(
-        ...group.filter((name) => !contract.optionalValidators[name](environment[name])),
+        ...group.filter(
+          (name) => !contract.optionalValidators[name](environment[name]),
+        ),
       );
     }
   }

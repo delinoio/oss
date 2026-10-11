@@ -10,7 +10,6 @@ Generated AccountQuery and AccountService expose StartAccountOAuth, CompleteAcco
 
 Generated `SessionQuery.listRequestDiagnostics` and `SystemCapability.REQUEST_DIAGNOSTICS_V1` expose the previous feature metadata read. Preserve native-input versus proxy-HTTP enum provenance, optional unavailable observations, exact bigint revisions/latency and original session/execution/page selection. The client performs no matching by time/model, usage ingestion, request reconstruction or receipt-driven HTTP retry. Follow the [diagnostics contract](cmds-delidev-diagnostics-contract.md); bindings remain tool-generated.
 
-
 Buf generates service-specific modules. The normal protocol generation command
 also runs `scripts/delidev/proto-compat.mjs` to remove retired historical aggregate
 module, Connect Query and Go descriptor facades. Protocol-2 consumers import the
@@ -18,17 +17,20 @@ canonical split service modules or package-root exports. Earlier facade paths
 are unsupported; original field and capability allocations keep their meanings.
 
 ## Scope
+
 `packages/delidev-api-client` owns private `@delinoio/delidev-api-client`, generated messages and service-specific Connect Query namespaces, explicit transport, typed errors, UUID-v7 request identities and bounded resource synchronization. This is the client integration boundary for desktop implementation; it does not itself constitute a desktop app or complete the feature.
 
 ## Runtime and Language
+
 TypeScript ES2022 modules run in the desktop renderer. Development uses the repository Node/pnpm versions and TypeScript compiler. Business rules and durable authority remain in Go. There is no browser product deployment or Rust product proxy.
 
 ## Users and Operators
+
 The DeliDev desktop client connects to one explicitly selected authenticated local/remote server. Maintainers generate bindings from the canonical protobuf and validate them against the actual Go server.
 
 ## Interfaces and Contracts
-Generated `EntityKind.SUBAGENT` and `SystemCapability.SUBAGENT_OBSERVATION_V1` support [session child-observation reads](cmds-delidev-subagents-contract.md) through existing Resource/System Connect Query descriptors. Preserve exact native IDs, independent requested/observed models, partial output and nullable string counters. Native usage reports are exact JSON strings. No client mutation or native control is derived from observations.
 
+Generated `EntityKind.SUBAGENT` and `SystemCapability.SUBAGENT_OBSERVATION_V1` support [session child-observation reads](cmds-delidev-subagents-contract.md) through existing Resource/System Connect Query descriptors. Preserve exact native IDs, independent requested/observed models, partial output and nullable string counters. Native usage reports are exact JSON strings. No client mutation or native control is derived from observations.
 
 `NativeModelQuery` exports generated discovery/status/list/cancel descriptors
 under the [native model contract](cmds-delidev-native-models-contract.md). Keep
@@ -38,6 +40,7 @@ public Resource documents; observation pages remain advisory. Client parsing and
 registration preparation grant no authorization or implicit model save.
 
 Generated `ListResourcesRequest` exposes optional account-only provider and account-type selectors. Keep these fields in the list request and its query key/cursor input; do not move them into the shared `Filter` used by snapshots or event streams. The Go server performs filtering before pagination and binds both fields into continuation cursors. Provider inventory reports `ACCOUNT_TYPE_FILTER` separately from its activation/model/provider-filter capabilities; split account views require all of them.
+
 - `buf.gen.yaml` generates messages and Connect Query descriptors exclusively from `delidev.v1`. Root generation/freshness and Turbo input/output tracking include the package. Existing Go/DevHud/ach output remains reproducible.
 - `ActivityQuery` remains a generated compatibility export under the [Activity retirement contract](cmds-delidev-activity-contract.md). Authorized owner and current paired-client requests receive typed `UNSUPPORTED` with Connect `Unimplemented`; missing, invalid or revoked credentials and Worker actors retain their authentication or permission refusal. Retain original protocol numbers and generated declarations without exposing live Activity or source inspection. `ActivityCapability.PR_HANDLING_V1` is a reserved/generated compatibility declaration only; retired `ListActivity` returns `Unimplemented` without a response and cannot advertise it. Active manual PR fixes negotiate `PullRequestFixProfile.CODEX_GIT_V1` through `GetPullRequestFixCapabilities`. Independent PR handling retains exact identity strings, bigint revisions, content-version references and separate dismissal, attempt and verified outcomes.
 - `UsageQuery` exports generated summary/current-price/historical-price descriptors and the explicit price mutation. Preserve nullable decimal rates, exact amount/counter strings, separate currencies and token-basis versus native coverage. The additive summary request supports explicit day granularity and IANA zone; optional daily/model analytics are server-owned results from the same snapshot as existing totals. Only the server computes historical estimates and Other-model totals; no client-side aggregation or inferred actual cost.
@@ -185,28 +188,35 @@ Canceling a read cannot close or recreate the native terminal.
 - Current protocol-2 imports use canonical generated service modules and package-root exports. Retire historical aggregate/query facades. The shared parser supports only schema-4 inline Agent routes and rejects Model resources, ambiguous source identities and older/mixed Agent layouts; preserve all currently activated unrelated Project/Settings/API-profile schemas.
 
 ## Storage
+
 No implicit persistence. Tokens remain caller-owned; cursors, resource revision/size accounting and duplicate IDs exist only during the selected connection. No SQLite, workspace, account browser or secure-vault access is implemented here. A client switches server/device only after canceling prior streams and clearing their query/resource caches.
 
 ## Security
+
 HTTP is restricted to literal `127.0.0.1`, `[::1]` or `localhost`; remote origins require HTTPS. Raw authority validation precedes WHATWG normalization, rejecting numeric IPv4 aliases, credentials, paths, queries and fragments. Redirects, browser cookies and HTTP caching are disabled. No auth discovery/fallback, secret logging, Web Storage, Tauri traffic proxy or harness/provider endpoint access occurs. Query keys must never contain credentials. RPC authorization and all product mutations remain server-enforced.
 
 ## Logging
+
 The library does not log resource documents, credentials, cursors, exception objects or request bodies. It exposes closed connection states and typed safe failures with correlation IDs so the consuming desktop can report actionable status. Actual server-side RPC logs retain their existing sanitized boundary.
 
 ## Build and Test
+
 - `pnpm --filter @delinoio/delidev-api-client lint`, `test`, and `build` validate types, synchronization/transport fixtures and generated exports.
 - The test command compiles and starts the real Go server in a private temporary scope, exercises binary RPC, coherent snapshots, revision events, idempotent mutation replay, indexed deletion and typed authentication failure, then stops its owned process. It never reads user credentials, invokes inference, or starts a Worker. Go is required; the integration task is uncached.
 - Run root protocol formatting/lint/compatibility and repeat generation without drift. The dedicated `delidev-protocol` CI job runs client validation, DeliDev Go binding tests and desktop tests. DeliDev desktop/command/protocol/client and shared configuration inputs select it; DevHud-only source inputs do not. Shared `pnpm proto:check` retains repository-wide schema checks. Generated `dist` is an explicit compilation output and is removed from the final worktree.
 
 ## Dependencies and Integrations
+
 Pinned Buf protobuf 2.14.0, Connect/Connect Web 2.1.2 and Connect Query 2.3.1 follow repository versions. React Query integration uses generated service namespaces; no second product transport or client-side routing/eligibility engine is introduced. The Go server and its canonical resource schemas remain authoritative.
 
 ## Change Triggers
+
 Update generated bindings, package/domain AGENTS, protocol contract, project index, validation records in pull requests, issues and CI logs/artifacts, generation freshness/Turbo outputs and CI when schemas, origin/auth boundaries, synchronization behavior or validation commands change.
 
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - [Project](project-delidev.md)
 - [Protocol](protos-delidev-v1-contract.md)
 - [Requirements](cmds-delidev-requirements.md)
@@ -225,22 +235,20 @@ The existing `Resource.document_json` usage shape may contain a typed `claude_ob
 Generated `SessionQuery.readSessionWorkspace` exposes the [file explorer contract](cmds-delidev-files-contract.md). Presentation keeps decimal size strings exact and uses bounded, nonpersistent caches without mutation intents, background polling or automatic retries. File text stays inert; clients cannot supply absolute roots or turn native transcript paths into access authority.
 
 ## Portable configuration
+
 Generated `ConfigurationQuery` exposes export, preview and apply. Clients preserve the original document bytes, explicit target mappings, exact reviewed plan and retained request identity; JavaScript numeric parsing is never the serialization authority. Preview editing invalidates apply, and accepted jobs are observed independently of mutation retries. Follow [portable configuration](cmds-delidev-configuration-transfer-contract.md).
 
 ### Session Git comparisons
 
 `SessionQuery.readSessionWorkspace` also carries the closed `git-diff` query/result described in the [workspace read contract](cmds-delidev-files-contract.md). Clients validate repository/comparison/path ownership, exact Git object and revision strings, bounded inert patch text and separate untracked paths; they retain no persistent file cache. The existing generated Connect service surface is unchanged.
 
-
 ## Local review coordinates
 
 Generated `SessionQuery.readSessionReviewContext` exposes the exact original Worker diff and validated file/line coordinates. Preserve original side numbers, hunk identity, final-newline absence and non-line file-only states. The Go domain remains coordinate authority; clients cannot turn these read-only observations into implicit mutation or execution. Follow the [workspace contract](cmds-delidev-files-contract.md).
 
-
 ## Durable local review client
 
 Generated `SessionQuery` includes comment creation/edit/deletion and grouped submission. Use `ResourceQuery` for scoped review reads. Preserve bigint entity revisions and decimal-string content revisions without numeric rounding, strict comment/submission document variants, original anchor/context and immutable submitted copies. Current data cannot replace selected request revisions or uncertain wire requests. The desktop uses connection-scoped mutation retention and does not infer agent execution from queue acceptance. Follow [local reviews](cmds-delidev-files-contract.md).
-
 
 `IntegrationQuery` exports generated SaveIntegrationProfile, ReplaceIntegrationToken, ValidateIntegrationProfile and DeleteIntegrationProfile descriptors. PATs are bounded write-only fields; no token belongs in query keys, resource documents or read responses. Preserve pending-operation decimal revisions and actor-bound exact request identities under the [integration contract](cmds-delidev-integrations-contract.md).
 
@@ -260,19 +268,15 @@ PR-only `feedback` uses the existing generated repository query without caller p
 
 PR-only `reviewers` uses the same generated query and current selected repository/profile binding. Validate complete feedback/author/App coverage, current numeric/node identity correspondence, native actor types, exact standard/custom permission intervals and content-version-specific attribution. Keep unavailable capabilities independent; Bot names, public visibility and historical observations cannot create execution authority. No new transport or generated fields are needed.
 
-
 Generated IntegrationQuery now includes RefreshPullRequestProblems, ListPullRequestProblems and DismissPullRequestProblem. Retain exact request UUIDs, big integer resource revisions, stable remote numeric strings and content versions. Collection inputs contain only local repository selection/PR number; callers cannot submit evidence. Read history without implicit collection and preserve signed page tokens and explicit stale-cursor recovery. Local UI mutations do not authorize execution.
 
-
 The generated PR collection kind enum adds independent CI/conflict reads while omitted/explicit feedback preserve the original receipt family. Unknown numeric kinds are rejected on the server. Shared Resource envelopes retain typed original CI proof references and conflict transitions; callers must keep historical evidence separate from current prerequisites and cannot infer handling or execution from a response.
-
 
 IntegrationQuery also exports generated ListPullRequestRemediationAttempts and ResumePullRequestRemediation bindings. Callers preserve exact stable numeric strings and original set/request/revision identity; paginated history and explicit allowance resumption cannot infer execution authority or perform implicit mutation retries. These methods share the existing authenticated direct Connect transport and require no new client persistence or environment configuration.
 
 ### Managed database backup observation
 
 SystemService exposes owner/client backup creation, metadata pagination and explicit integrity inspection through generated Connect queries and the CLI. Settings > Backups retains exact creation retries and displays precise byte counts. Listing is not integrity or restoration evidence; failed reinspection clears prior success. Follow the [storage contract](cmds-delidev-storage-contract.md) for bounds, identity checks, pagination and the separate permanent-session deletion and managed restoration boundary. `DeleteBackup` and `ListBackupDeletions` expose durable irreversible image deletion, original inspected revision/metadata/hash, explicit confirmation, retained exact retries and restart-visible pending/completed jobs. Logical image bytes and unknown interrupted unlink counts never imply physical free-space recovery.
-
 
 ### Durable backup creation
 
@@ -325,7 +329,6 @@ Generated SystemQuery exports `getUserService` and `controlUserService` with the
 
 The feature follows the [session forwarding contract](cmds-delidev-forwarding-contract.md). Additive `ForwardService` start/get/stop, one-shot claim, streaming traffic and original cleanup RPCs plus `WorkerService.WatchForwardRequests` preserve authenticated client/session/Worker ownership and typed `SESSION_FORWARDING_V1` capabilities. Generated Go/TypeScript descriptors and `ForwardQuery` expose the shared API. The CLI owns an explicit loopback listener and returns its exact endpoint. Stop preserves forwards; Archive/deletion/revocation close them, and every Archive completion requires independently confirmed original cleanup. Receipt replay and reconnect cannot recreate a claimed native lifetime. Model API endpoints remain server-relative. Generic schema-24 entities/receipts retain metadata without traffic or a relational migration.
 
-
 Generated `SessionQuery.deleteSession`/`getSessionDeletion` expose confirmed
 irreversible acceptance and independent original-job observation. Generated
 Worker cleanup queries and `PERMANENT_SESSION_DELETION_V1` retain the additive
@@ -344,6 +347,7 @@ The feature generates the native accounting profile and unit enums with the exis
 ## Managed Codex subscription clients
 
 The generated SubscriptionService/action types and closed managed-Codex Worker capability are exported with a SubscriptionQuery namespace. Owner/client lifecycle and login-presentation requests remain separate from the protected Go Worker bundle channel. Bundle bytes may never enter query keys, saved state, synchronized resources, errors or ordinary outputs. See [managed subscriptions](cmds-delidev-subscription-contract.md); generated clients alone do not enable desktop login or prove account/platform acceptance.
+
 ## Browser client
 
 [Protected browser ownership and cleanup](cmds-delidev-browser-contract.md) use the service-owned `BrowserService`, typed profile/state/capability models and generated `BrowserQuery` descriptors. Existing shared enum/field numbers and future migration reservations remain unchanged. Browser messages carry ownership metadata only, never native paths or browsing content.
@@ -407,6 +411,7 @@ Generated SubscriptionQuery exports cleanupFailedSubscriptions and getFailedSubs
 Generated `ConfigurationQuery` exposes `listProjectPromptHistory` and `clearProjectPromptHistory`, the closed entry type, System capability 48 and entity kind 35. Preserve exact text, bigint acceptance order, actor/project-bound cursors and original confirmed-clear request identity. Reads never restore skill, image or execution authority. Capability absence preserves ordinary composer behavior.
 
 ## Repository branch discovery
+
 Generated System 51 and Worker 27 plus `DiscoverRepositoryBranches` independently
 negotiate remote starting-branch metadata. Reuse existing Job resources and
 original revision/request identities. The desktop validates up to 10,000 sorted

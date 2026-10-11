@@ -22,12 +22,12 @@ DeliDev is a personal desktop Agent Runner for managing multiple projects, AI ac
 
 ## Components and Interfaces
 
-| Component | Responsibility |
-|---|---|
-| DeliDev Desktop | Tauri UI for projects, accounts, agent configurations, machines, and sessions. |
-| `delidev-cli` | Go business logic, distributed as the standalone and bundled-sidecar `delidev` binary. |
+| Component        | Responsibility                                                                                                                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| DeliDev Desktop  | Tauri UI for projects, accounts, agent configurations, machines, and sessions.                                                                                                                          |
+| `delidev-cli`    | Go business logic, distributed as the standalone and bundled-sidecar `delidev` binary.                                                                                                                  |
 | `delidev server` | Single-user authority for state, credentials, routing, schedules, API credential proxy, usage, integrations, and Workers; explicit `start`, `stop`, and `status`. Multiple desktop clients may connect. |
-| `delidev worker` | Execution process on a local/remote machine; supports `start`; server manages registration, listing, status, updates, and deregistration. |
+| `delidev worker` | Execution process on a local/remote machine; supports `start`; server manages registration, listing, status, updates, and deregistration.                                                               |
 
 **Product Surface Parity and CLI Automation**
 
@@ -54,17 +54,17 @@ DeliDev is a personal desktop Agent Runner for managing multiple projects, AI ac
 
 ## Concepts
 
-| Concept | Definition |
-|---|---|
-| Project | One or more repositories; independently restricts Agent Workers and AI Accounts. |
-| Repository | Git identity separate from per-machine checkout locations. |
-| Agent Worker | Reusable Harness + Model + Reasoning effort/options, candidate accounts, and routing configuration; distinct from the execution machine. Snapshotted immediately before first execution. |
-| AI Account | Subscription/API identity, separate from GitHub PATs. Unlimited connected accounts, including multiple per provider; many-to-many Agent Worker links. |
-| Agent Session | Persistent conversation/execution using one Agent Worker and machine. Worktree/Local selects one project; General Chat is projectless. Supports Archive/restore and native independent forks. |
-| Workspace Type | Typed Worktree, Local, or General Chat choice. |
-| Schedule | Server-owned cron template producing independent project sessions. |
-| Harness | All four initial targets required: Codex, Claude Code, OpenCode, Grok Build; extensible adapters. |
-| DeliDev Worker | Local/remote execution computer and its Worker process. |
+| Concept        | Definition                                                                                                                                                                                    |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Project        | One or more repositories; independently restricts Agent Workers and AI Accounts.                                                                                                              |
+| Repository     | Git identity separate from per-machine checkout locations.                                                                                                                                    |
+| Agent Worker   | Reusable Harness + Model + Reasoning effort/options, candidate accounts, and routing configuration; distinct from the execution machine. Snapshotted immediately before first execution.      |
+| AI Account     | Subscription/API identity, separate from GitHub PATs. Unlimited connected accounts, including multiple per provider; many-to-many Agent Worker links.                                         |
+| Agent Session  | Persistent conversation/execution using one Agent Worker and machine. Worktree/Local selects one project; General Chat is projectless. Supports Archive/restore and native independent forks. |
+| Workspace Type | Typed Worktree, Local, or General Chat choice.                                                                                                                                                |
+| Schedule       | Server-owned cron template producing independent project sessions.                                                                                                                            |
+| Harness        | All four initial targets required: Codex, Claude Code, OpenCode, Grok Build; extensible adapters.                                                                                             |
+| DeliDev Worker | Local/remote execution computer and its Worker process.                                                                                                                                       |
 
 **Project Selection Restrictions**
 
@@ -77,11 +77,11 @@ DeliDev is a personal desktop Agent Runner for managing multiple projects, AI ac
 
 - Every session has an explicit workspace type and execution-machine identity:
 
-| Workspace Type | Execution Behavior | Sidebar Icon |
-|---|---|---|
-| Worktree | Requires a project. Create a separate worktree for each project repository on the selected local or remote DeliDev Worker. This is the default for project sessions. | Branch/worktree |
-| Local | Requires a project. Explicitly use its existing checkouts on the user's own computer. This option does not mean an arbitrary existing checkout on a remote Worker. | Computer |
-| General Chat | Has no project. Use a separate session-owned working directory on the selected execution machine, with file and terminal capabilities. | Chat bubble |
+| Workspace Type | Execution Behavior                                                                                                                                                   | Sidebar Icon    |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| Worktree       | Requires a project. Create a separate worktree for each project repository on the selected local or remote DeliDev Worker. This is the default for project sessions. | Branch/worktree |
+| Local          | Requires a project. Explicitly use its existing checkouts on the user's own computer. This option does not mean an arbitrary existing checkout on a remote Worker.   | Computer        |
+| General Chat   | Has no project. Use a separate session-owned working directory on the selected execution machine, with file and terminal capabilities.                               | Chat bubble     |
 
 - Local sessions retain the actual originating execution-machine identity. Viewing them from another client does not relocate execution or reinterpret which computer is local.
 - General Chat working directories are isolated from other sessions and retained for resumption. Archiving does not erase their files.
@@ -168,14 +168,14 @@ DeliDev is a personal desktop Agent Runner for managing multiple projects, AI ac
 
 - Provide a right-side app area next to the main AI session, with the following apps. Opening, closing, and switching them must preserve the main session, its execution, and unsent input.
 
-| App | Required Behavior |
-|---|---|
-| Embedded browser | Browse and inspect web content alongside the session. |
-| Diff review | Inspect the session's file changes, add file/line review comments, and send grouped change requests to the session's agent. |
-| File explorer | Browse the session's actual workspace on its execution machine. |
-| Terminal | Interact with a terminal in that same workspace and execution machine, including a remote Worktree or General Chat workspace. |
-| Sidechat | Hold a separate, read-only supporting conversation using context from the main session. |
-| Subagent status | Show the real subagent hierarchy and status when exposed by the selected harness and installed version. |
+| App              | Required Behavior                                                                                                             |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Embedded browser | Browse and inspect web content alongside the session.                                                                         |
+| Diff review      | Inspect the session's file changes, add file/line review comments, and send grouped change requests to the session's agent.   |
+| File explorer    | Browse the session's actual workspace on its execution machine.                                                               |
+| Terminal         | Interact with a terminal in that same workspace and execution machine, including a remote Worktree or General Chat workspace. |
+| Sidechat         | Hold a separate, read-only supporting conversation using context from the main session.                                       |
+| Subagent status  | Show the real subagent hierarchy and status when exposed by the selected harness and installed version.                       |
 
 - Diff review is an agent feedback workflow: review changes, write file/line comments, submit a **Request changes** to the current session's agent, and inspect the updated diff after the agent responds. Bind feedback to the reviewed repository, file/line, and diff revision so stale comments are recognizable.
 - Sending a review request uses the existing session-input rules: an idle session can receive a new turn; while it is running, queue by default and use steering only when explicitly selected and supported. Avoid duplicate submissions on reconnect.
@@ -252,13 +252,13 @@ DeliDev is a personal desktop Agent Runner for managing multiple projects, AI ac
 
 Support six typed policies, with a server default and explicit per-Agent Worker inheritance/override. Initial server default: **Sequential exhaustion**.
 
-| Policy | Selection Behavior |
-|---|---|
-| Fixed | One explicitly selected eligible account. |
-| Priority | First eligible account in configured order. |
-| Round-robin | Persisted rotation across eligible candidates with relative weights, equal by default. |
-| Remaining quota | Greatest comparable remaining fraction; score each account by the minimum fraction across its applicable blocking windows, never sum windows/providers. |
-| Reset-window | Nearest fresh, trustworthy, comparable quota reset. |
+| Policy                | Selection Behavior                                                                                                                                                                                                                   |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Fixed                 | One explicitly selected eligible account.                                                                                                                                                                                            |
+| Priority              | First eligible account in configured order.                                                                                                                                                                                          |
+| Round-robin           | Persisted rotation across eligible candidates with relative weights, equal by default.                                                                                                                                               |
+| Remaining quota       | Greatest comparable remaining fraction; score each account by the minimum fraction across its applicable blocking windows, never sum windows/providers.                                                                              |
+| Reset-window          | Nearest fresh, trustworthy, comparable quota reset.                                                                                                                                                                                  |
 | Sequential exhaustion | Continue assigning new sessions to the current eligible ordered account until confirmed quota exhaustion; then advance the persisted per-Agent Worker cursor. Earlier recovery does not move it backward before traversal completes. |
 
 - Candidates intersect current project restrictions, snapshotted ordered account links, harness/model compatibility, and enabled/authenticated readiness. General Chat omits only project restrictions. Confirmed exhausted accounts are ineligible; unknown is not measured zero. Account-less drafts remain saveable but cannot execute.

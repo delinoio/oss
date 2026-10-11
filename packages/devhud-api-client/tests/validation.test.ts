@@ -67,30 +67,47 @@ const encodedLocalPathParameterUrls = [
   "https://example.com/#source=%2Fworkspace%2Fprivate%2Fapp.ts",
 ] as const;
 const publicAssetBaseUrl = "https://assets.example.com/uploads/";
-const validateReason = (reason: string) => validateAdminReason(reason, publicAssetBaseUrl);
+const validateReason = (reason: string) =>
+  validateAdminReason(reason, publicAssetBaseUrl);
 
 describe("wire validation helpers", () => {
   it("accepts only canonical UUID v7 and 32-byte digests", () => {
     expect(() => assertUuidV7(uuid)).not.toThrow();
-    expect(() => assertUuidV7("018F47A2-7B3C-7DEF-8ABC-1234567890AB")).toThrow(TypeError);
-    expect(() => assertUuidV7("018f47a2-7b3c-6def-8abc-1234567890ab")).toThrow(TypeError);
+    expect(() => assertUuidV7("018F47A2-7B3C-7DEF-8ABC-1234567890AB")).toThrow(
+      TypeError,
+    );
+    expect(() => assertUuidV7("018f47a2-7b3c-6def-8abc-1234567890ab")).toThrow(
+      TypeError,
+    );
     expect(() => assertSha256(new Uint8Array(32))).not.toThrow();
     expect(() => assertSha256(new Uint8Array(31))).toThrow(RangeError);
   });
 
   it("validates bounded sensitive-content-safe administrator reasons", () => {
-    expect(() => validateReason("Quarantined after repeated policy violations.")).not.toThrow();
+    expect(() =>
+      validateReason("Quarantined after repeated policy violations."),
+    ).not.toThrow();
     expect(() => validateReason("Expected yes / no")).not.toThrow();
-    expect(() => validateReason("Reviewed incident from 2026/08/15.")).not.toThrow();
+    expect(() =>
+      validateReason("Reviewed incident from 2026/08/15."),
+    ).not.toThrow();
     expect(() => validateReason("Rolled back release 1/2/3.")).not.toThrow();
     expect(() => validateReason("Reviewed callback?code=review")).not.toThrow();
     expect(() => validateReason("\u0085Reviewed policy breach")).not.toThrow();
-    expect(() => validateReason("é".repeat(MAX_ADMIN_REASON_BYTES / 2))).not.toThrow();
     expect(() =>
-      validateReason("Reviewed https://docs.example.com/policy?v=42#quarantine"),
+      validateReason("é".repeat(MAX_ADMIN_REASON_BYTES / 2)),
     ).not.toThrow();
-    expect(() => validateReason("Escalated to mailto:ops@example.com")).not.toThrow();
-    expect(() => validateReason("Observed via wss://monitor.example.test/events")).not.toThrow();
+    expect(() =>
+      validateReason(
+        "Reviewed https://docs.example.com/policy?v=42#quarantine",
+      ),
+    ).not.toThrow();
+    expect(() =>
+      validateReason("Escalated to mailto:ops@example.com"),
+    ).not.toThrow();
+    expect(() =>
+      validateReason("Observed via wss://monitor.example.test/events"),
+    ).not.toThrow();
     expect(() =>
       validateReason("Reviewed https://example.com/?na%6de=release"),
     ).not.toThrow();
@@ -106,22 +123,30 @@ describe("wire validation helpers", () => {
       validateReason("Reviewed https://assets.example.com/docs/upload-policy"),
     ).not.toThrow();
     expect(() =>
-      validateReason("Reviewed https://assets.example.com/uploads-archive/image-policy"),
+      validateReason(
+        "Reviewed https://assets.example.com/uploads-archive/image-policy",
+      ),
     ).not.toThrow();
-    expect(() => validateReason(`Reviewed ${r2UnsignedMetadataUrl}`)).not.toThrow();
+    expect(() =>
+      validateReason(`Reviewed ${r2UnsignedMetadataUrl}`),
+    ).not.toThrow();
     expect(() =>
       validateReason("ERROR_CODE=E_UPLOAD RETRY_COUNT=3 TOKEN_COUNT=2"),
     ).not.toThrow();
-    expect(() => validateReason("Reviewed service.component.error.")).not.toThrow();
+    expect(() =>
+      validateReason("Reviewed service.component.error."),
+    ).not.toThrow();
 
     expect(() => validateReason("")).toThrow(TypeError);
     expect(() => validateReason(" \n\t ")).toThrow(TypeError);
     expect(() => validateReason("\u0085\u2007\u2028")).toThrow(TypeError);
     expect(() => validateReason("\ud800")).toThrow(TypeError);
-    expect(() => validateReason("Reviewed policy\0violation")).toThrow(TypeError);
-    expect(() => validateReason("é".repeat(MAX_ADMIN_REASON_BYTES / 2 + 1))).toThrow(
-      RangeError,
+    expect(() => validateReason("Reviewed policy\0violation")).toThrow(
+      TypeError,
     );
+    expect(() =>
+      validateReason("é".repeat(MAX_ADMIN_REASON_BYTES / 2 + 1)),
+    ).toThrow(RangeError);
 
     for (const reason of [
       "Authorization: Bearer unsafe-value",
@@ -151,7 +176,9 @@ describe("wire validation helpers", () => {
       expect(() => validateReason(reason), reason).toThrow(TypeError);
     }
 
-    expect(() => validateAdminReason("Reviewed policy", "relative/assets")).toThrow(TypeError);
+    expect(() =>
+      validateAdminReason("Reviewed policy", "relative/assets"),
+    ).toThrow(TypeError);
   });
 
   it("rejects noncanonical settings JSON", () => {
@@ -159,7 +186,9 @@ describe("wire validation helpers", () => {
       validateCanonicalSettingsJson(new TextEncoder().encode('{"a":1,"b":2}')),
     ).not.toThrow();
     expect(() =>
-      validateCanonicalSettingsJson(new TextEncoder().encode('{ "b": 2, "a": 1 }')),
+      validateCanonicalSettingsJson(
+        new TextEncoder().encode('{ "b": 2, "a": 1 }'),
+      ),
     ).toThrow(TypeError);
     expect(() =>
       validateCanonicalSettingsJson(
@@ -173,9 +202,15 @@ describe("wire validation helpers", () => {
     const source = '{"decks":[],"nested":{"a":true,"z":1},"theme":"dark"}';
 
     expect(canonicalizeSettingsJson(value)).toBe(source);
-    expect(new TextDecoder().decode(encodeCanonicalSettingsJson(value))).toBe(source);
-    expect(validateCanonicalSettingsJson(encodeCanonicalSettingsJson(value))).toEqual(value);
-    expect(() => encodeCanonicalSettingsJson("x".repeat(1_048_576))).toThrow(RangeError);
+    expect(new TextDecoder().decode(encodeCanonicalSettingsJson(value))).toBe(
+      source,
+    );
+    expect(
+      validateCanonicalSettingsJson(encodeCanonicalSettingsJson(value)),
+    ).toEqual(value);
+    expect(() => encodeCanonicalSettingsJson("x".repeat(1_048_576))).toThrow(
+      RangeError,
+    );
   });
 
   it("accepts deeply nested canonical settings JSON", () => {
@@ -190,13 +225,15 @@ describe("wire validation helpers", () => {
   it("rejects lone surrogates in settings JSON strings and object keys", () => {
     const textEncoder = new TextEncoder();
 
-    expect(() => validateCanonicalSettingsJson(textEncoder.encode('"😀"'))).not.toThrow();
-    expect(() => validateCanonicalSettingsJson(textEncoder.encode('"\\ud800"'))).toThrow(
-      TypeError,
-    );
-    expect(() => validateCanonicalSettingsJson(textEncoder.encode('{"\\udc00":1}'))).toThrow(
-      TypeError,
-    );
+    expect(() =>
+      validateCanonicalSettingsJson(textEncoder.encode('"😀"')),
+    ).not.toThrow();
+    expect(() =>
+      validateCanonicalSettingsJson(textEncoder.encode('"\\ud800"')),
+    ).toThrow(TypeError);
+    expect(() =>
+      validateCanonicalSettingsJson(textEncoder.encode('{"\\udc00":1}')),
+    ).toThrow(TypeError);
   });
 
   it("rejects incomplete crash report envelopes", () => {
@@ -249,7 +286,10 @@ describe("wire validation helpers", () => {
       validateCrashReport(
         create(SubmitCrashReportRequestSchema, {
           ...safeCrashReport,
-          clientBuild: { ...clientBuild, platform: DiagnosticPlatform.UNSPECIFIED },
+          clientBuild: {
+            ...clientBuild,
+            platform: DiagnosticPlatform.UNSPECIFIED,
+          },
         }),
       ),
     ).toThrow(TypeError);
@@ -281,10 +321,14 @@ describe("wire validation helpers", () => {
       ),
     ).toThrow(TypeError);
     for (const field of ["appVersion", "buildId", "osVersion"] as const) {
-      expect(() => validateCrashReport(create(SubmitCrashReportRequestSchema, {
-        ...safeCrashReport,
-        clientBuild: { ...clientBuild, [field]: "" },
-      }))).toThrow(TypeError);
+      expect(() =>
+        validateCrashReport(
+          create(SubmitCrashReportRequestSchema, {
+            ...safeCrashReport,
+            clientBuild: { ...clientBuild, [field]: "" },
+          }),
+        ),
+      ).toThrow(TypeError);
     }
   });
 
@@ -294,7 +338,9 @@ describe("wire validation helpers", () => {
       occurredAt: { ...safeCrashReport.occurredAt!, seconds, nanos },
     });
 
-    expect(() => validateCrashReport(withTimestamp(-62_135_596_800n, 0))).not.toThrow();
+    expect(() =>
+      validateCrashReport(withTimestamp(-62_135_596_800n, 0)),
+    ).not.toThrow();
     expect(() =>
       validateCrashReport(withTimestamp(253_402_300_799n, 999_999_999)),
     ).not.toThrow();
@@ -306,7 +352,9 @@ describe("wire validation helpers", () => {
       [0n, 1.5],
       [0n, 1_000_000_000],
     ] as const) {
-      expect(() => validateCrashReport(withTimestamp(seconds, nanos))).toThrow(RangeError);
+      expect(() => validateCrashReport(withTimestamp(seconds, nanos))).toThrow(
+        RangeError,
+      );
     }
   });
 
@@ -351,11 +399,18 @@ describe("wire validation helpers", () => {
       tauriRevision: "",
       cefRevision: "",
     };
-    expect(() => validateCrashReport({ ...safeCrashReport, clientBuild: browserBuild })).not.toThrow();
-    expect(() => validateCrashReport({
-      ...safeCrashReport,
-      clientBuild: { ...clientBuild, architecture: DiagnosticArchitecture.UNSPECIFIED },
-    })).toThrow(TypeError);
+    expect(() =>
+      validateCrashReport({ ...safeCrashReport, clientBuild: browserBuild }),
+    ).not.toThrow();
+    expect(() =>
+      validateCrashReport({
+        ...safeCrashReport,
+        clientBuild: {
+          ...clientBuild,
+          architecture: DiagnosticArchitecture.UNSPECIFIED,
+        },
+      }),
+    ).toThrow(TypeError);
   });
 
   it("allows ARMv7 only for Android reports", () => {
@@ -368,35 +423,48 @@ describe("wire validation helpers", () => {
     ]) {
       const browser = platform === DiagnosticPlatform.BROWSER;
       const mobile = platform === DiagnosticPlatform.IOS;
-      expect(() => validateCrashReport({
+      expect(() =>
+        validateCrashReport({
+          ...safeCrashReport,
+          clientBuild: {
+            ...clientBuild,
+            platform,
+            architecture: DiagnosticArchitecture.ARMV7,
+            tauriRevision: browser ? "" : clientBuild.tauriRevision,
+            cefRevision: browser || mobile ? "" : clientBuild.cefRevision,
+          },
+        }),
+      ).toThrow(TypeError);
+    }
+    expect(() =>
+      validateCrashReport({
         ...safeCrashReport,
         clientBuild: {
           ...clientBuild,
-          platform,
+          platform: DiagnosticPlatform.ANDROID,
           architecture: DiagnosticArchitecture.ARMV7,
-          tauriRevision: browser ? "" : clientBuild.tauriRevision,
-          cefRevision: browser || mobile ? "" : clientBuild.cefRevision,
+          cefRevision: "",
         },
-      })).toThrow(TypeError);
-    }
-    expect(() => validateCrashReport({
-      ...safeCrashReport,
-      clientBuild: {
-        ...clientBuild,
-        platform: DiagnosticPlatform.ANDROID,
-        architecture: DiagnosticArchitecture.ARMV7,
-        cefRevision: "",
-      },
-    })).not.toThrow();
+      }),
+    ).not.toThrow();
   });
 
   it("rejects lone surrogates in every crash diagnostic string", () => {
     const loneSurrogate = "\ud800";
     const invalidDiagnostics = [
       { ...safeCrashReport, errorCode: loneSurrogate },
-      { ...safeCrashReport, clientBuild: { ...clientBuild, appVersion: loneSurrogate } },
-      { ...safeCrashReport, clientBuild: { ...clientBuild, buildId: loneSurrogate } },
-      { ...safeCrashReport, clientBuild: { ...clientBuild, osVersion: loneSurrogate } },
+      {
+        ...safeCrashReport,
+        clientBuild: { ...clientBuild, appVersion: loneSurrogate },
+      },
+      {
+        ...safeCrashReport,
+        clientBuild: { ...clientBuild, buildId: loneSurrogate },
+      },
+      {
+        ...safeCrashReport,
+        clientBuild: { ...clientBuild, osVersion: loneSurrogate },
+      },
       { ...safeCrashReport, redactedSummary: loneSurrogate },
       { ...safeCrashReport, redactedStackTrace: loneSurrogate },
     ];
@@ -438,21 +506,33 @@ describe("wire validation helpers", () => {
 
     for (const diagnostic of ["2026/08/15", "1/2/3"]) {
       const reports = [
-        { ...safeCrashReport, clientBuild: { ...clientBuild, appVersion: diagnostic } },
-        { ...safeCrashReport, clientBuild: { ...clientBuild, buildId: diagnostic } },
-        { ...safeCrashReport, clientBuild: { ...clientBuild, osVersion: diagnostic } },
+        {
+          ...safeCrashReport,
+          clientBuild: { ...clientBuild, appVersion: diagnostic },
+        },
+        {
+          ...safeCrashReport,
+          clientBuild: { ...clientBuild, buildId: diagnostic },
+        },
+        {
+          ...safeCrashReport,
+          clientBuild: { ...clientBuild, osVersion: diagnostic },
+        },
         { ...safeCrashReport, redactedSummary: diagnostic },
         { ...safeCrashReport, redactedStackTrace: diagnostic },
       ];
 
       for (const report of reports) {
         expect(
-          () => validateCrashReport(create(SubmitCrashReportRequestSchema, report)),
+          () =>
+            validateCrashReport(create(SubmitCrashReportRequestSchema, report)),
           diagnostic,
         ).not.toThrow();
       }
     }
-    expect(() => validateCrashReport({ ...safeCrashReport, errorCode: "2026/08/15" })).toThrow(TypeError);
+    expect(() =>
+      validateCrashReport({ ...safeCrashReport, errorCode: "2026/08/15" }),
+    ).toThrow(TypeError);
   });
 
   it("rejects local paths and credential-shaped crash diagnostics", () => {
@@ -475,13 +555,18 @@ describe("wire validation helpers", () => {
       ...safe,
       redactedStackTrace: "at render (/Users/example/project/app.ts:10:2)",
     });
-    expect(() => validateCrashReport(parenthesizedLocalPath)).toThrow(TypeError);
+    expect(() => validateCrashReport(parenthesizedLocalPath)).toThrow(
+      TypeError,
+    );
 
     const parenthesizedWindowsPath = create(SubmitCrashReportRequestSchema, {
       ...safe,
-      redactedStackTrace: "at render (C:\\Users\\example\\project\\app.ts:10:2)",
+      redactedStackTrace:
+        "at render (C:\\Users\\example\\project\\app.ts:10:2)",
     });
-    expect(() => validateCrashReport(parenthesizedWindowsPath)).toThrow(TypeError);
+    expect(() => validateCrashReport(parenthesizedWindowsPath)).toThrow(
+      TypeError,
+    );
 
     for (const absolutePath of [
       "/workspace/oss/app.ts",
@@ -493,7 +578,9 @@ describe("wire validation helpers", () => {
         ...safe,
         redactedStackTrace: `at render (${absolutePath}:10:2)`,
       });
-      expect(() => validateCrashReport(report), absolutePath).toThrow(TypeError);
+      expect(() => validateCrashReport(report), absolutePath).toThrow(
+        TypeError,
+      );
     }
 
     for (const stackTrace of [
@@ -514,7 +601,9 @@ describe("wire validation helpers", () => {
       ...safe,
       redactedStackTrace: `at load (${encodedLocalFileUrl})`,
     });
-    expect(() => validateCrashReport(encodedLocalFileUrlReport)).toThrow(TypeError);
+    expect(() => validateCrashReport(encodedLocalFileUrlReport)).toThrow(
+      TypeError,
+    );
 
     for (const stackTrace of [
       "at render (app.ts:10:2)",
@@ -561,7 +650,8 @@ describe("wire validation helpers", () => {
       ];
       for (const report of relativePathDiagnostics) {
         expect(
-          () => validateCrashReport(create(SubmitCrashReportRequestSchema, report)),
+          () =>
+            validateCrashReport(create(SubmitCrashReportRequestSchema, report)),
           relativePath,
         ).toThrow(TypeError);
       }
@@ -605,7 +695,9 @@ describe("wire validation helpers", () => {
         ...safe,
         redactedStackTrace: `at load (${credentialUrl})`,
       });
-      expect(() => validateCrashReport(report), credentialUrl).toThrow(TypeError);
+      expect(() => validateCrashReport(report), credentialUrl).toThrow(
+        TypeError,
+      );
     }
 
     const credential = create(SubmitCrashReportRequestSchema, {
@@ -675,9 +767,15 @@ describe("wire validation helpers", () => {
     ]) {
       const credentialDiagnostics = [
         { ...safe, errorCode: credentialValue },
-        { ...safe, clientBuild: { ...clientBuild, appVersion: credentialValue } },
+        {
+          ...safe,
+          clientBuild: { ...clientBuild, appVersion: credentialValue },
+        },
         { ...safe, clientBuild: { ...clientBuild, buildId: credentialValue } },
-        { ...safe, clientBuild: { ...clientBuild, osVersion: credentialValue } },
+        {
+          ...safe,
+          clientBuild: { ...clientBuild, osVersion: credentialValue },
+        },
         { ...safe, redactedSummary: credentialValue },
         { ...safe, redactedStackTrace: credentialValue },
       ];
@@ -704,7 +802,9 @@ describe("wire validation helpers", () => {
     }
 
     const oversizedValue = "a".repeat(MAX_CRASH_IDENTIFIER_BYTES + 1);
-    expect(() => validateCrashReport({ ...safe, errorCode: oversizedValue })).toThrow(TypeError);
+    expect(() =>
+      validateCrashReport({ ...safe, errorCode: oversizedValue }),
+    ).toThrow(TypeError);
     const oversizedIdentifiers = [
       { ...safe, clientBuild: { ...clientBuild, appVersion: oversizedValue } },
       { ...safe, clientBuild: { ...clientBuild, buildId: oversizedValue } },
@@ -722,10 +822,14 @@ describe("wire validation helpers", () => {
     for (let decoding = 1; decoding < 8; decoding += 1) {
       atBound = atBound.replaceAll("%", "%25");
     }
-    expect(() => validateCrashReport({ ...safeCrashReport, redactedSummary: atBound })).not.toThrow();
+    expect(() =>
+      validateCrashReport({ ...safeCrashReport, redactedSummary: atBound }),
+    ).not.toThrow();
 
     const beyondBound = atBound.replaceAll("%", "%25");
-    expect(() => validateCrashReport({ ...safeCrashReport, redactedSummary: beyondBound })).toThrow(TypeError);
+    expect(() =>
+      validateCrashReport({ ...safeCrashReport, redactedSummary: beyondBound }),
+    ).toThrow(TypeError);
   });
 
   it("bounds nested crash diagnostic parameter scanning", () => {
@@ -763,20 +867,30 @@ describe("wire validation helpers", () => {
   });
 
   it("keeps narrative filtering off enum error codes", () => {
-    for (const errorCode of ["SCREENSHOT_CAPTURE_FAILED", "BROWSER_DOM_REDACTED"]) {
-      expect(() => validateCrashReport({ ...safeCrashReport, errorCode })).not.toThrow();
+    for (const errorCode of [
+      "SCREENSHOT_CAPTURE_FAILED",
+      "BROWSER_DOM_REDACTED",
+    ]) {
+      expect(() =>
+        validateCrashReport({ ...safeCrashReport, errorCode }),
+      ).not.toThrow();
     }
   });
 
   it("rejects NUL bytes in every persisted crash text group", () => {
     const invalidDiagnostics = [
-      { ...safeCrashReport, clientBuild: { ...clientBuild, osVersion: "macOS\u000015.0" } },
+      {
+        ...safeCrashReport,
+        clientBuild: { ...clientBuild, osVersion: "macOS\u000015.0" },
+      },
       { ...safeCrashReport, redactedSummary: "classified\0summary" },
       { ...safeCrashReport, redactedStackTrace: "render\0frame" },
     ];
 
     for (const report of invalidDiagnostics) {
-      expect(() => validateCrashReport(create(SubmitCrashReportRequestSchema, report))).toThrow(TypeError);
+      expect(() =>
+        validateCrashReport(create(SubmitCrashReportRequestSchema, report)),
+      ).toThrow(TypeError);
     }
   });
 
@@ -804,18 +918,22 @@ describe("wire validation helpers", () => {
   });
 
   it("accepts only the pinned Tauri revision on native reports", () => {
-    expect(() => validateCrashReport({
-      ...safeCrashReport,
-      clientBuild: { ...clientBuild, tauriRevision: "a".repeat(40) },
-    })).toThrow(TypeError);
+    expect(() =>
+      validateCrashReport({
+        ...safeCrashReport,
+        clientBuild: { ...clientBuild, tauriRevision: "a".repeat(40) },
+      }),
+    ).toThrow(TypeError);
     expect(() => validateCrashReport(safeCrashReport)).not.toThrow();
   });
 
   it("accepts only the pinned CEF revision on desktop reports", () => {
-    expect(() => validateCrashReport({
-      ...safeCrashReport,
-      clientBuild: { ...clientBuild, cefRevision: "x" },
-    })).toThrow(TypeError);
+    expect(() =>
+      validateCrashReport({
+        ...safeCrashReport,
+        clientBuild: { ...clientBuild, cefRevision: "x" },
+      }),
+    ).toThrow(TypeError);
     expect(() => validateCrashReport(safeCrashReport)).not.toThrow();
   });
 });

@@ -1,18 +1,22 @@
 # crates-nodeup-foundation
 
 ## Scope
+
 - Project/component: `nodeup` crate foundation contract
 - Canonical path: `crates/nodeup`
 
 ## Runtime and Language
+
 - Runtime: Rust CLI and shim dispatch runtime
 - Primary language: Rust
 
 ## Users and Operators
+
 - Developers managing local Node.js versions
 - Maintainers operating release and distribution workflows
 
 ## Interfaces and Contracts
+
 - Channel and command identifiers must remain stable and documented.
 - Binary entrypoints must force-link `swc_malloc` allocator policy, while the library target remains allocator-agnostic for downstream consumers.
 - Shim dispatch behavior must remain deterministic by executable name (`node`, `npm`, `npx`, `yarn`, `pnpm`).
@@ -146,11 +150,13 @@
 - Keep checksum mismatch and runtime download diagnostics for mirror overrides explicit about sanitized release index and download-base source details. URL diagnostics must strip credentials, query strings, and fragments, and hints must tell users to verify that `NODEUP_INDEX_URL` and `NODEUP_DOWNLOAD_BASE_URL` point to matching Node.js release data.
 
 ## Storage
+
 - Maintains local version metadata, installation roots, and shim state.
 - Downloaded runtime artifacts must follow deterministic path resolution.
 - Linked runtime records are stored in settings under `linked_runtimes`; removing a link must also remove the matching tracked selector while preserving external runtime directories.
 
 ## Security
+
 - Download and install flows must validate source and artifact integrity.
 - Secrets must not be logged, and sensitive file paths should be minimized in logs.
 - URL diagnostics in error messages must omit query strings and fragments.
@@ -158,6 +164,7 @@
 - Channel resolution that uses stale release-index cache after refresh failure must expose selector, selected version, cache age, TTL, fallback reason, and sanitized source URL in logs and JSON command output where the command resolves a channel.
 
 ## Logging
+
 - Use structured `tracing` logs for install, resolve, and dispatch flows.
 - Default log filters must remain `nodeup=warn` for managed alias dispatch, `nodeup=warn` for human management commands, and `nodeup=off` for JSON management commands, quiet runtime lists, and completion generation unless `RUST_LOG` explicitly overrides them.
 - Include resolution source, requested channel, selected version, result state, release-index cache fallback state, and sanitized URL diagnostics.
@@ -165,6 +172,7 @@
 - Completion generation logs must include shell, command scope, and `generated|failed` outcome state.
 
 ## Build and Test
+
 - Temporary fixture cleanup is bounded to its own root; never delete the shared temporary parent needed by later workspace tests.
 - Local validation: `cargo test -p nodeup`
 - Workspace baseline: `cargo test --workspace --all-targets`
@@ -186,15 +194,18 @@
 - Runtime uninstall coverage must include default reference blockers, directory override reference blockers, combined default-and-override blockers, JSON blocker diagnostics, and distinct channel-selector rejection.
 
 ## Dependencies and Integrations
+
 - Integrates with filesystem runtime shims and remote distribution channels.
 - Integrates with release automation and package manager update workflows.
 
 ## Change Triggers
+
 - Update `docs/project-nodeup.md` with this file when dispatch, storage, or channel contracts change.
 - Update `crates/AGENTS.md` and root `AGENTS.md` when ownership or policy contracts change.
 
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - `docs/project-nodeup.md`
 - `docs/domain-template.md`

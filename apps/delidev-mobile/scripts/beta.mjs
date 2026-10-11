@@ -13,9 +13,10 @@ export function validateInputs(input) {
     !["both", "ios"].includes(target) ||
     !/^\d+\.\d+\.\d+$/.test(input.version) ||
     !/^[1-9]\d{0,17}$/.test(input.iosBuild) ||
-    (target === "both" && (!/^[1-9]\d{0,9}$/.test(input.androidCode) ||
-    Number(input.androidCode) < 1 ||
-    Number(input.androidCode) > 2100000000)) ||
+    (target === "both" &&
+      (!/^[1-9]\d{0,9}$/.test(input.androidCode) ||
+        Number(input.androidCode) < 1 ||
+        Number(input.androidCode) > 2100000000)) ||
     (target === "ios" && !!input.androidCode) ||
     !/^[a-f0-9]{40}$/.test(input.sourceSha) ||
     input.appleGroupType !== "INTERNAL" ||
@@ -34,7 +35,9 @@ export function candidate(input, ios, android) {
   const iosOnly = input.target === "ios";
   for (const [artifact, platform, version, signer] of [
     [ios, "ios", input.iosBuild, input.appleSigner],
-    ...(iosOnly ? [] : [[android, "android", input.androidCode, input.androidSigner]]),
+    ...(iosOnly
+      ? []
+      : [[android, "android", input.androidCode, input.androidSigner]]),
   ]) {
     if (
       !artifact ||
@@ -68,11 +71,15 @@ export function candidate(input, ios, android) {
         bytes: ios.bytes.length,
         signer: ios.signer,
       },
-      ...(iosOnly ? {} : { android: {
-        sha256: digest(android.bytes),
-        bytes: android.bytes.length,
-        signer: android.signer,
-      } }),
+      ...(iosOnly
+        ? {}
+        : {
+            android: {
+              sha256: digest(android.bytes),
+              bytes: android.bytes.length,
+              signer: android.signer,
+            },
+          }),
     },
   };
   return { ...manifest, candidateId: digest(JSON.stringify(manifest)) };
@@ -190,12 +197,16 @@ export function credentials(environment, target = "both") {
     "DELIDEV_MOBILE_APPLE_TEAM",
     "DELIDEV_MOBILE_APPLE_APP_ID",
     "DELIDEV_MOBILE_APPLE_INTERNAL_GROUP",
-    ...(target === "ios" ? [] : ["DELIDEV_MOBILE_GOOGLE_SERVICE_ACCOUNT",
-    "DELIDEV_MOBILE_GOOGLE_PRINCIPAL",
-    "DELIDEV_MOBILE_ANDROID_KEYSTORE",
-    "DELIDEV_MOBILE_ANDROID_KEY_ALIAS",
-    "DELIDEV_MOBILE_ANDROID_KEY_PASSWORD",
-    "DELIDEV_MOBILE_ANDROID_STORE_PASSWORD"]),
+    ...(target === "ios"
+      ? []
+      : [
+          "DELIDEV_MOBILE_GOOGLE_SERVICE_ACCOUNT",
+          "DELIDEV_MOBILE_GOOGLE_PRINCIPAL",
+          "DELIDEV_MOBILE_ANDROID_KEYSTORE",
+          "DELIDEV_MOBILE_ANDROID_KEY_ALIAS",
+          "DELIDEV_MOBILE_ANDROID_KEY_PASSWORD",
+          "DELIDEV_MOBILE_ANDROID_STORE_PASSWORD",
+        ]),
   ]) {
     if (typeof environment[name] !== "string" || !environment[name].trim())
       throw new Error("Protected beta credentials are incomplete");

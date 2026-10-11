@@ -45,37 +45,41 @@ async function request(
   let response;
   try {
     response = await fetcher(origin + path, {
-    method,
-    redirect: "error",
-    headers: {
-      authorization: `Bearer ${token}`,
-      ...(body ? { "content-type": "application/json" } : {}),
-      ...headers,
-    },
-    body:
-      body === undefined
-        ? undefined
-        : typeof body === "string"
-          ? body
-          : JSON.stringify(body),
+      method,
+      redirect: "error",
+      headers: {
+        authorization: `Bearer ${token}`,
+        ...(body ? { "content-type": "application/json" } : {}),
+        ...headers,
+      },
+      body:
+        body === undefined
+          ? undefined
+          : typeof body === "string"
+            ? body
+            : JSON.stringify(body),
     });
   } catch {
-    process.stderr.write(JSON.stringify({
-      operation: "mobile-beta-provider-request",
-      provider: origin === appleOrigin ? "apple" : "google",
-      method,
-      outcome: "transport-failure",
-    }) + "\n");
+    process.stderr.write(
+      JSON.stringify({
+        operation: "mobile-beta-provider-request",
+        provider: origin === appleOrigin ? "apple" : "google",
+        method,
+        outcome: "transport-failure",
+      }) + "\n",
+    );
     throw new Error("Provider transport failed");
   }
   if (!response.ok) {
-    process.stderr.write(JSON.stringify({
-      operation: "mobile-beta-provider-request",
-      provider: origin === appleOrigin ? "apple" : "google",
-      method,
-      outcome: "http-failure",
-      status: response.status,
-    }) + "\n");
+    process.stderr.write(
+      JSON.stringify({
+        operation: "mobile-beta-provider-request",
+        provider: origin === appleOrigin ? "apple" : "google",
+        method,
+        outcome: "http-failure",
+        status: response.status,
+      }) + "\n",
+    );
     const error = new Error(`Provider operation failed (${response.status})`);
     error.status = response.status;
     throw error;
@@ -112,17 +116,22 @@ export function appleProvider(environment, bytes, checkpoint, fetcher = fetch) {
       (f) =>
         f.attributes?.uti === "com.apple.ipa" &&
         f.attributes.fileSize === m.artifacts.ios.bytes &&
-        (f.attributes?.sourceFileChecksums?.file?.algorithm === "SHA_256" &&
-          f.attributes.sourceFileChecksums.file.hash === m.artifacts.ios.sha256 ||
+        ((f.attributes?.sourceFileChecksums?.file?.algorithm === "SHA_256" &&
+          f.attributes.sourceFileChecksums.file.hash ===
+            m.artifacts.ios.sha256) ||
           // IPA uploads return MD5 despite the generic SHA_256 schema. Only the
           // retained original file may corroborate locally reverified SHA-256
           // bytes; never adopt a handleless inventory match using MD5.
-          r.candidateId === m.candidateId && r.providerId === upload.id &&
-          r.fileId === f.id && bytes.length === m.artifacts.ios.bytes &&
-          createHash("sha256").update(bytes).digest("hex") === m.artifacts.ios.sha256 &&
-          f.attributes.assetDeliveryState?.state === "COMPLETE" &&
-          f.attributes.sourceFileChecksums?.file?.algorithm === "MD5" &&
-          f.attributes.sourceFileChecksums.file.hash === createHash("md5").update(bytes).digest("hex")),
+          (r.candidateId === m.candidateId &&
+            r.providerId === upload.id &&
+            r.fileId === f.id &&
+            bytes.length === m.artifacts.ios.bytes &&
+            createHash("sha256").update(bytes).digest("hex") ===
+              m.artifacts.ios.sha256 &&
+            f.attributes.assetDeliveryState?.state === "COMPLETE" &&
+            f.attributes.sourceFileChecksums?.file?.algorithm === "MD5" &&
+            f.attributes.sourceFileChecksums.file.hash ===
+              createHash("md5").update(bytes).digest("hex"))),
     );
     if (matching.length !== 1 || upload.attributes.state?.state !== "COMPLETE")
       return { state: "unknown" };
@@ -183,20 +192,37 @@ export function appleProvider(environment, bytes, checkpoint, fetcher = fetch) {
     },
     async recoverUpload(m, r) {
       if (!r.transferComplete) return;
-      if (r.candidateId !== m.candidateId || !r.providerId || !r.fileId ||
-          r.fileSha256 !== m.artifacts.ios.sha256 || r.fileBytes !== bytes.length ||
-          createHash("sha256").update(bytes).digest("hex") !== r.fileSha256)
+      if (
+        r.candidateId !== m.candidateId ||
+        !r.providerId ||
+        !r.fileId ||
+        r.fileSha256 !== m.artifacts.ios.sha256 ||
+        r.fileBytes !== bytes.length ||
+        createHash("sha256").update(bytes).digest("hex") !== r.fileSha256
+      )
         throw new Error("Apple original transfer receipt mismatch");
-      const upload = (await api(`/v1/buildUploads/${encodeURIComponent(r.providerId)}`)).data;
-      if (!sameUpload(upload, m)) throw new Error("Apple original upload mismatch");
-      const file = (await files(upload.id)).find(f => f.id === r.fileId);
-      if (!file || file.attributes?.uti !== "com.apple.ipa" ||
-          file.attributes.fileSize !== r.fileBytes)
+      const upload = (
+        await api(`/v1/buildUploads/${encodeURIComponent(r.providerId)}`)
+      ).data;
+      if (!sameUpload(upload, m))
+        throw new Error("Apple original upload mismatch");
+      const file = (await files(upload.id)).find((f) => f.id === r.fileId);
+      if (
+        !file ||
+        file.attributes?.uti !== "com.apple.ipa" ||
+        file.attributes.fileSize !== r.fileBytes
+      )
         throw new Error("Apple original transfer file mismatch");
       if (file.attributes.assetDeliveryState?.state === "AWAITING_UPLOAD")
         await api(`/v1/buildUploadFiles/${encodeURIComponent(r.fileId)}`, {
-          method: "PATCH", body: { data: { type: "buildUploadFiles", id: r.fileId,
-            attributes: { uploaded: true } } },
+          method: "PATCH",
+          body: {
+            data: {
+              type: "buildUploadFiles",
+              id: r.fileId,
+              attributes: { uploaded: true },
+            },
+          },
         });
     },
     async inspect(m, r) {

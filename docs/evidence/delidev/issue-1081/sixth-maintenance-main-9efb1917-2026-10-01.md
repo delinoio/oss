@@ -56,7 +56,7 @@ validation and hooks.
   manual-fix UI cases in isolation (1.35 seconds). This focused result does not
   replace either failed broad frontend run.
 - `GOMAXPROCS=2 go test -race -p 1 ./cmds/delidev-cli/... -count=1
-  -timeout=20m` completed with exit 1 (3,762.819 seconds). The CLI package failed
+-timeout=20m` completed with exit 1 (3,762.819 seconds). The CLI package failed
   `TestCLISessionAcceptanceQueueAndArchive`: its review-create command returned
   an unavailable workspace reader with retained recovery-required diagnostics.
   Workspace failed `TestWorkspaceDiffUnbornAndBoundedResults` with a
@@ -71,16 +71,16 @@ validation and hooks.
   issue or a security fix.
 - `GOMAXPROCS=2 go vet -p 1 ./cmds/delidev-cli/...` passed (70.360 seconds).
   `GOMAXPROCS=2 go build -p 1 -o /tmp/delidev-1227-sixth-cli
-  ./cmds/delidev-cli` passed (24.400 seconds).
+./cmds/delidev-cli` passed (24.400 seconds).
 - After the broad run's CLI workspace-reader failure,
   `GOMAXPROCS=2 go test -race -p 1 ./cmds/delidev-cli/internal/cli
-  -run '^TestCLISessionAcceptanceQueueAndArchive$' -count=1 -timeout=3m`
+-run '^TestCLISessionAcceptanceQueueAndArchive$' -count=1 -timeout=3m`
   passed in isolation (package duration 89.658 seconds). The broad failure is
   retained; this diagnostic run does not convert it into a full-suite pass.
 - `GOMAXPROCS=2 go test -race -p 1 ./cmds/delidev-cli/internal/server
-  ./cmds/delidev-cli/internal/store ./cmds/delidev-cli/internal/cli
-  -run 'Backup|Restore|PRFix|ManualPRFix|PRRemediation|SessionDeletion'
-  -count=1 -timeout=20m` passed in 199.586 seconds. This selection exercises
+./cmds/delidev-cli/internal/store ./cmds/delidev-cli/internal/cli
+-run 'Backup|Restore|PRFix|ManualPRFix|PRRemediation|SessionDeletion'
+-count=1 -timeout=20m` passed in 199.586 seconds. This selection exercises
   both restored authority/deletion/receipt gates and manual remediation behavior
   in the reconciled tree. It ran while the full race attempt remained active.
 

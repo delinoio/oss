@@ -7,7 +7,7 @@
 ## Status and ownership
 
 This is the common boundary for the feature (Claude), (Codex) and
- (OpenCode). Claude owns its implemented settled-boundary product profile.
+(OpenCode). Claude owns its implemented settled-boundary product profile.
 Codex implements its independently negotiated settled-boundary product profile.
 OpenCode implements its independently negotiated settled-boundary product profile.
 A reservation never advertises support or enables dispatch. Each complete native
@@ -27,14 +27,14 @@ Go and TypeScript bindings must be regenerated together when activated.
 `protos/delidev/allocations.json` reserves these existing-declaration additions
 for this feature with as shared consumers:
 
-| Declaration | Member | Number |
-| --- | --- | --- |
-| EntityKind | ENTITY_KIND_COMPACTION | 32 |
-| SystemCapability | SYSTEM_CAPABILITY_NATIVE_SESSION_COMPACTION_V1 | 15 |
-| WorkerCapability | WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1 | 5 |
-| SessionChange | compaction_job | 9 |
-| CompactSessionRequest | expected_execution_id | 2 |
-| CompactSessionResponse | session | 4 |
+| Declaration            | Member                                         | Number |
+| ---------------------- | ---------------------------------------------- | ------ |
+| EntityKind             | ENTITY_KIND_COMPACTION                         | 32     |
+| SystemCapability       | SYSTEM_CAPABILITY_NATIVE_SESSION_COMPACTION_V1 | 15     |
+| WorkerCapability       | WORKER_CAPABILITY_NATIVE_SESSION_COMPACTION_V1 | 5      |
+| SessionChange          | compaction_job                                 | 9      |
+| CompactSessionRequest  | expected_execution_id                          | 2      |
+| CompactSessionResponse | session                                        | 4      |
 
 The action is distinct from its Worker job and ordinary input/execution.
 The request uses an exact session mutation and expected predecessor
@@ -202,7 +202,6 @@ compaction response usage therefore remains unavailable when the native profile
 provides no live response observation. Never copy overlapping token snapshots or
 historical response usage into a new charge, substitute a requested setting for
 an observed setting, or add an unsupported raw-events resume parameter.
-
 
 ## Codex continuation context lineage
 
@@ -413,6 +412,7 @@ remain readable. Fixture/build checks do not establish installed-native, account
 or platform acceptance.
 
 ## Conversation Revert and edit
+
 Revert is a separate owner/client operation under System 62 and Worker 36. Its
 closed version-4 context action shares the existing durable context-job storage,
 workspace lease, account lease and independent cleanup fences. It is not a

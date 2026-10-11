@@ -11,7 +11,6 @@ connection generations and observations. Portable configuration excludes every
 generation and key reference. See the
 [account contract](cmds-delidev-accounts-contract.md#connected-api-format-changes).
 
-
 ## Startup metadata without migration
 
 [Direct startup](cmds-delidev-execution-startup-contract.md) stores the current bounded startup record in existing session JSON and mirrors it into the original terminal job JSON. Readiness and first failure remain separate immutable observations. Report receipts use existing durable mutations without changing the claimed assignment revision or its input bytes. Explicit retry retains the failed job/input and creates distinct IDs. Original private executable identity, process and outbox journals remain Worker-owned. No table or SQLite migration is added.
@@ -19,7 +18,6 @@ generation and key reference. See the
 ## Request diagnostic retention
 
 Schema 27 adds bounded metadata-only request diagnostic rows and session/execution indexes under the existing synchronized pre-migration backup boundary. It preserves all historical state, title claims, backup obligations and usage; no historical requests are synthesized. Rows retain immutable event-time attribution, exact revision checks and original publication receipts. Proxy revisions publish session invalidation events atomically at the unchanged session-state revision, while native observations share their original session publication. The 4 KiB row and 10,000-per-session admission limits do not evict history; existing observations may settle. Session deletion cascades rows, and reference-only old receipts cannot recreate them. Single-record and page reads reject row/body identity, session, execution or revision mismatches without exposing partial records. See the [diagnostics contract](cmds-delidev-diagnostics-contract.md) for publication/cancellation/read ownership.
-
 
 ## Scope
 
@@ -32,8 +30,7 @@ session deletion, database restore and Worker-local workspace snapshots and rest
 ## Subscription retirement
 
 Migration 28 implements the feature
-after the real Claude accounting and request-diagnostics migrations at 26 and
-27. Reservations reached main before implementation. Complete accounting and diagnostics precede real migration 28 and independent server capability 17; no empty predecessor is permitted.
+after the real Claude accounting and request-diagnostics migrations at 26 and 27. Reservations reached main before implementation. Complete accounting and diagnostics precede real migration 28 and independent server capability 17; no empty predecessor is permitted.
 
 The reset backs up first and atomically retires legacy subscription
 Accounts, native-subscription Providers and their provider-bound Models into
@@ -71,7 +68,6 @@ new exchange authority. A fresh server lifetime interrupts awaiting attempts
 and fences claimed exchanges for explicit original local recovery. The
 [OAuth contract](cmds-delidev-account-oauth-contract.md) owns the original dispatch,
 protected reference and cancellation/publication gates.
-
 
 ## API OAuth token generations
 
@@ -1122,7 +1118,6 @@ Before creating retirement tables or changing configuration, live upgrades rejec
 
 Affected Agents retain names, options, templates and original model IDs with server-owned `reconfiguration_required`; ordered surviving account weights remain unchanged. Project account restrictions preserve their configured flag even when all IDs retire. Only affected Schedules disable their timer and retain accepted occurrence history with explicit reset guidance. Session/snapshot/transcript/usage bodies and their revisions remain unchanged. Pricing retains original API attribution and independently stores the service identity of newly configured native models.
 
-
 ## Desktop workspace storage and permanent deletion
 
 The connection-owned `SessionStorageProvider` in `apps/delidev/src/session-storage.tsx`
@@ -1250,6 +1245,7 @@ original atomic claim; preserve one outstanding assignment and original job IDs.
 Sidechat storage retirement decodes original storage/recovery inputs with the owning strict 3 MiB rule, even when no Sidechat is selected. Its private retirement wrapper permits the existing complete 4 MiB deletion plan plus 4 KiB fixed operation metadata, consistently at publication and restart. The allowance preserves complete original child cleanup obligations and grants no additional native removal authority or ordinary entity capacity.
 
 Server-owned subscription login retains optional original server_operation metadata and a disjoint native_started credential fence. Pending, claimed or recovery-required server ownership blocks managed restore and deletion like original Worker ownership; a terminal record grants no external authority. Restart preserves original pending/runtime obligations as recovery-required without relaunch. No new SQLite migration is required. Follow the managed subscription contract.
+
 ## Pre-release database baseline reservation
 
 The [pre-release reset](cmds-delidev-structure-contract.md#pre-release-compatibility-reset)
@@ -1289,6 +1285,7 @@ v2 omits protected subscription ownership; imported account preferences start
 without authentication. Native checkpoints serialize no profile paths or auth
 files and pin only the accepted profile reference through their comparison
 digest. Follow the [subscription contract](cmds-delidev-subscription-contract.md#native-claude-subscriptions).
+
 ## Failed subscription cleanup jobs
 
 Server-owned `cleanup-failed-subscriptions` parent jobs and `cleanup-failed-subscription` children use existing generic entities, jobs and receipts, without a database migration. The subscription owner validates their closed input/checkpoint/results, original actor/server, fixed account revisions and original login/deletion identities. Only confirmed account cleanup transactions advance child revisions. Terminal retained attempts cannot rerun automatically; tombstone, deletion receipt, child result and parent counts are atomic. Narrow pending-job filtering occurs before bounds so unrelated Worker history cannot hide the one active batch.
@@ -1334,6 +1331,7 @@ Terminal lookups occur only for the exact request; maintenance never scans lifet
 receipt history. Tombstones reject delayed dispatch and preserve replacements.
 Prepared result recovery normalizes delivery instances only through the complete
 immutable original preparation proof; ordinary inventory scope checks stay strict.
+
 ## Session image removal and restore
 
 Image attachment jobs retain closed references and the original Worker device. Empty entity session scope preserves independent Fork lifetime. Synchronized permanent deletion drops only its session owner. Last-owner images join original Worker plans; image-only plans grant no workspace authority. Native cleanup joins before deletion. Offline Workers retain durable pending work. Completion and replay require the original deletion receipt and absent data and metadata; reappearing files remain protected. Purge requires original Worker acknowledgement.
@@ -1361,6 +1359,7 @@ documents remain rejected before candidate publication. Source backup bytes and
 the live database remain unchanged on rejection.
 
 ## Reviewer accounting without a migration
+
 Optional closed reviewer selection, review progress and builtin/unknown model attribution remain in existing immutable JSON documents. Original API response-reference rows use an empty private model slot only for a proved bounded builtin reviewer scope; root/child scopes retain catalog IDs and cannot adopt those references. Response usage preserves original native digest deduplication and independent pricing snapshots. Reviewer/unknown records remain unpriced and cannot borrow a root model, retroactively rewrite historical attribution or fabricate billing evidence. No relational layout or migration allocation changes. Follow the harness, proxy and usage contracts.
 
 ## Same-question Sidechat retry
@@ -1368,6 +1367,7 @@ Optional closed reviewer selection, review progress and builtin/unknown model at
 Sidechat retry adds strict JSON `sidechat_retries`, `sidechat_current_answer` and `sidechat_active_retry` in existing session records, a generated-input generation marker, and closed retry references in Fork/execution/deletion inputs. No SQLite migration is introduced. Freeze original native Fork checkpoint digests and every child-owned retry job/runtime in the existing deletion plan, including failed, unpublished and uncertain work. Retry Forks reuse the original child reference and grant no new unpublished-child metadata owner. Reconcile original journals and native processes before runtime removal; compare exact checkpoint policy/digests and retain replacement or missing proof as pending. Parent dependency retirement still joins every child obligation and preserves independent Forks. Admission dry-runs the parent/dependent outer plan with bounded headroom and checks the existing copy limit before queuing native work. Follow [same-question retry](cmds-delidev-sidechat-contract.md#same-question-retry).
 
 ## Situation notification metadata ownership
+
 The existing private `metadata` table owns three closed version-1 envelopes without DDL: `notification-situations-v1:<client>` couples twelve values and six operational enable checkpoints to the original `notification_preferences` revision; `notification-delivery-v1:<inbox>:<client>` reserves new typed question/approval/operational deliveries; `notification-worker-baseline-v1:<machine>` retains one original device/instance/server-epoch lease baseline. Each value is at most 8 KiB and rejects unknown fields or inconsistent versions/identities. Legacy delivery CHECK values and original receipts remain unchanged. New kinds never masquerade as legacy kinds. Claims have no TTL, eviction or terminal-result retry; retained Inbox/source ownership controls their lifetime. The client scope is the paired UUID or the existing owner scope, never a caller-selected device.
 
 Source publication, original-source eligibility, preference checkpoints and claims use the same SQLite transaction as their existing resource/preference writes. Initial opt-in preserves the old public revision. Re-enable checkpoints capture the durable `sqlite_sequence` event high-water mark, including compacted history. Candidate reads page retained metadata under the existing read deadline; ineligible earlier sources cannot hide later eligible records. Deleting a machine/account/occurrence removes its operational Inbox entries and their typed reservations. Ordinary Inbox deletion removes typed reservations in the same transaction. Machine deletion removes its baseline. Revocation suppresses current candidates/claims and clears future observation authority; it never creates a transition.
@@ -1375,11 +1375,13 @@ Source publication, original-source eligibility, preference checkpoints and clai
 Restore overlays the current granular preference rows together with their typed metadata, retains current operational records only while their original source is retained, preserves current delivery reservations and removes orphan reservations. Existing receipt quarantine and revocations remain authoritative. Restore advances every operational enable checkpoint past both durable event timelines. Worker leases and notification baselines are cleared, so restored state establishes a fresh baseline rather than an edge. The Inbox pagination epoch also observes the restore event floor. These transformations share the existing atomic restore image publication; they cannot replay an old display grant or restore a stale preference generation. No migration allocation is consumed; real reserved migration 32 remains outside this feature.
 
 The native connection lane separately owns a protected per-original-connection preference cache and at most 256 retained original scopes, each with 10,000 immutable local edge reservations. Its key hashes length-delimited original server/client/endpoint/runtime/profile/credential identity; raw connection material is not stored in filenames, documents or logs. The native ledger never deletes reservations to retry or evade its bound. A full or unavailable ledger suppresses new presentation and retains the original Inbox-free uncertainty. Its owner-only directory and atomic preference replacement belong to the existing trusted native storage root. Native connection events never enter server delivery tables.
+
 ## Atomic turn timing retention
 
 Existing Session and Message JSON retains optional server-owned accepted/terminal UTC observations with no schema or migration. The existing mutation clock is captured once after receipt lookup; exact retries do not recapture time. Primary acceptance, and later matching terminal publication, share their original receipts and resource/event transaction. Terminal retention selects bounded primary-user records through the existing execution index, checks original session/execution/input/native thread/turn and accepted observation, then updates only timing with their original content and index ownership intact. Any mismatch rolls back all Message, progress, outcome, Inbox and receipt writes. Legacy omissions are never backfilled. Backups preserve retained observations; deletion uses original resource ownership. Native assignment/checkpoint/digest projections omit display timing.
 
 ### Automatic reset-credit state
+
 Standing consent, bounded original-turn fences, exhaustion episode and original
 observation operation share protected account JSON and the existing mutation
 receipt transaction. No migration is added. Managed restore explicitly clears
@@ -1421,6 +1423,7 @@ Current inventory/restore fixtures explicitly publish retained durable jobs;
 retirement does not change independent backup deletion or restore obligations.
 
 ## Private waiting order and Fork image snapshots
+
 `session-queue-order:<session-id>` is version-1 private metadata, bounded to 1,000 unique original input IDs and 64 KiB. Missing metadata means acceptance order and generation zero. Generation-only records preserve that order until the first genuine move captures IDs. Captured IDs must match the entire currently waiting set; duplicates, foreign/missing IDs, malformed versions or overflow require RecoveryRequired before dispatch. All membership writers update this metadata atomically with their queue records; content-only edits retain it. No public Queue document rank and no SQLite migration is added.
 
 New Fork jobs retain a bounded version-1 `fork-image-snapshot:<job-id>` with exact original source, child, execution, native turn, job-input digest and ordered image references. Empty references are explicit. The private cutover marker distinguishes legacy jobs from newly admitted jobs; uncertain missing snapshots fail closed. The existing protected image records remain the byte/Worker authority. Durable session purge removes its order metadata and retires Fork snapshots only after both original job and dependent child are gone. Backup images preserve their own private order and Fork snapshots. Restore excludes these owners from the current safety-metadata overlay, validates the restored membership and advances order generation beyond both timelines to expire old waiting cursors. It does not synthesize rank, membership or image authority. Do not copy raw image bytes or native transcript into this metadata.

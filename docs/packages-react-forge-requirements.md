@@ -46,12 +46,12 @@ The existing presentation engine also does not cover word-processing documents, 
 
 ### Required format capabilities
 
-| Format | Required capabilities |
-|---|---|
-| PPTX | ’s rich text, lists, PNG/JPEG images, shapes, merged tables, editable bar charts, connectors, and row/column/canvas layouts. |
-| DOCX | Rich paragraphs, headings, lists, tables and merged cells, images, hyperlinks, sections, page breaks, headers/footers, and editable 2D bar, line, and pie charts. |
-| XLSX | Multiple worksheets; text, numeric, date, and Boolean cells; formulas; formatting; merges; row/column dimensions; freeze panes; autofilters; hyperlinks; and editable 2D bar, line, and pie charts. |
-| PDF | Independent document authoring with pages, text, images, shapes, tables, links, flow layout, automatic pagination, and semantic tagging. |
+| Format | Required capabilities                                                                                                                                                                               |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PPTX   | ’s rich text, lists, PNG/JPEG images, shapes, merged tables, editable bar charts, connectors, and row/column/canvas layouts.                                                                        |
+| DOCX   | Rich paragraphs, headings, lists, tables and merged cells, images, hyperlinks, sections, page breaks, headers/footers, and editable 2D bar, line, and pie charts.                                   |
+| XLSX   | Multiple worksheets; text, numeric, date, and Boolean cells; formulas; formatting; merges; row/column dimensions; freeze panes; autofilters; hyperlinks; and editable 2D bar, line, and pie charts. |
+| PDF    | Independent document authoring with pages, text, images, shapes, tables, links, flow layout, automatic pagination, and semantic tagging.                                                            |
 
 Charts include data, legends, labels, and axes where applicable. Preserve native Office chart editability and associated data.
 
@@ -152,19 +152,19 @@ Use same-filesystem temporary output and atomic publication. Failed or canceled 
 
 Adopt these limits:
 
-| Resource | Limit |
-|---|---:|
-| Office package input/output | 256 MiB |
-| PDF output | 256 MiB |
-| Total expanded Office package | 512 MiB |
-| ZIP entries | 10,000 |
-| Individual ZIP/XML part | 64 MiB |
-| XML depth | 128 |
-| XML nodes per part | 1,000,000 |
-| Serialized newly rendered React document tree | 16 MiB |
-| Rendered tree depth | 48 |
-| Rendered tree nodes | 20,000 |
-| Individual image | 64 MiB and 64,000,000 pixels |
+| Resource                                      |                        Limit |
+| --------------------------------------------- | ---------------------------: |
+| Office package input/output                   |                      256 MiB |
+| PDF output                                    |                      256 MiB |
+| Total expanded Office package                 |                      512 MiB |
+| ZIP entries                                   |                       10,000 |
+| Individual ZIP/XML part                       |                       64 MiB |
+| XML depth                                     |                          128 |
+| XML nodes per part                            |                    1,000,000 |
+| Serialized newly rendered React document tree |                       16 MiB |
+| Rendered tree depth                           |                           48 |
+| Rendered tree nodes                           |                       20,000 |
+| Individual image                              | 64 MiB and 64,000,000 pixels |
 
 Opaque preserved source content is governed by package limits. Retain applicable stricter existing PPTX limits. Publish limits through documentation and a diagnostic/capability interface.
 
@@ -234,8 +234,8 @@ Caller-supplied React/TSX is trusted code running with the caller’s permission
 - PDF/UA certification and direct Microsoft Office validation in this initial issue.
 - Feature flags, remote telemetry, and cloud operations.
 
-
 ## MCP follow-up
+
 The subsequent explicit request adds a local stdio `react-forge mcp` server for all existing formats, TSX code/file inputs, retained memory sessions and state, inspection/measurement, explicit file export or Figma publication, and cleanup. It preserves the original complete-format scope and existing Forge interfaces. The [MCP contract](packages-react-forge-mcp-contract.md) defines the added acceptance boundary; it adds no HTTP hosting, public distribution or automatic persistence.
 
 ## 2026-09-25 static 3D follow-up
@@ -258,6 +258,7 @@ checks. Khronos/ufbx interoperability, Blender re-imports and product image
 inspection remain local acceptance evidence.
 
 ## Sprite Follow-up
+
 The explicit 2026-09-25 request extends React Forge to author game sprites and requires real implementation and tests. The [sprite contract](packages-react-forge-sprite-contract.md) defines React pixel/shape/image composition, palettes, frame animations, native rasterization, PNG atlas and individual PNG exports with JSON metadata in one atomic archive, and library/CLI/MCP integration. This additive extension was included in npm `0.2.0`; it does not replace any Office/PDF/Figma requirements.
 
 ## SFX follow-up
@@ -293,6 +294,5 @@ README and public guides together; preserve static release history and identify
 animation as unreleased. Existing-file import, automatic rigging/weights, IK,
 retargeting, physics, clip blending/playback runtime, Unity/Unreal acceptance and
 npm publication are excluded. Looping belongs to consumers.
-
 
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.

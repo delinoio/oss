@@ -1,6 +1,9 @@
 import { SettingsTextLimit } from "./contract-limits.ts";
 import type { GitHubDeckPullRequest, GitHubRate } from "./github-provider.ts";
-import type { DeckRepositoryRef, GitHubCredentialKind } from "./settings-contract.ts";
+import type {
+  DeckRepositoryRef,
+  GitHubCredentialKind,
+} from "./settings-contract.ts";
 
 export const WidgetContractVersion = 1 as const;
 export const WidgetRepositoryLimit = 10 as const;
@@ -17,7 +20,8 @@ export const WidgetRefreshState = {
   Permission: "permission",
   Error: "error",
 } as const;
-export type WidgetRefreshState = (typeof WidgetRefreshState)[keyof typeof WidgetRefreshState];
+export type WidgetRefreshState =
+  (typeof WidgetRefreshState)[keyof typeof WidgetRefreshState];
 
 export interface WidgetDeckConfiguration {
   readonly version: typeof WidgetContractVersion;
@@ -62,7 +66,10 @@ export interface WidgetDeckSnapshot {
 }
 
 /** Counts are mutually exclusive: draft takes precedence, followed by merged, closed, and open. */
-export function widgetDeckCounts(total: number, results: readonly GitHubDeckPullRequest[]): WidgetDeckCounts {
+export function widgetDeckCounts(
+  total: number,
+  results: readonly GitHubDeckPullRequest[],
+): WidgetDeckCounts {
   const counts = { open: 0, draft: 0, merged: 0, closed: 0 };
   for (const pullRequest of results.slice(0, WidgetResultLimit)) {
     if (pullRequest.draft) counts.draft += 1;
@@ -73,7 +80,9 @@ export function widgetDeckCounts(total: number, results: readonly GitHubDeckPull
   return { total, ...counts, bounded: total > WidgetResultLimit };
 }
 
-export function widgetPullRequests(results: readonly GitHubDeckPullRequest[]): readonly WidgetPullRequest[] {
+export function widgetPullRequests(
+  results: readonly GitHubDeckPullRequest[],
+): readonly WidgetPullRequest[] {
   return results.slice(0, WidgetResultLimit).map((pullRequest) => ({
     nodeId: pullRequest.nodeId,
     number: pullRequest.number,
@@ -84,14 +93,27 @@ export function widgetPullRequests(results: readonly GitHubDeckPullRequest[]): r
   }));
 }
 
-export function widgetSnapshotIsStale(snapshot: WidgetDeckSnapshot, now = Date.now()): boolean {
-  return snapshot.lastSuccessfulAt === null || now - Date.parse(snapshot.lastSuccessfulAt) >= WidgetStaleAfterMilliseconds;
+export function widgetSnapshotIsStale(
+  snapshot: WidgetDeckSnapshot,
+  now = Date.now(),
+): boolean {
+  return (
+    snapshot.lastSuccessfulAt === null ||
+    now - Date.parse(snapshot.lastSuccessfulAt) >= WidgetStaleAfterMilliseconds
+  );
 }
 
-export function widgetRefreshState(lastSuccessfulAt: string | null, failure: "missing-token" | "rate-limit" | "permission" | "error" | null, now = Date.now()): WidgetRefreshState {
+export function widgetRefreshState(
+  lastSuccessfulAt: string | null,
+  failure: "missing-token" | "rate-limit" | "permission" | "error" | null,
+  now = Date.now(),
+): WidgetRefreshState {
   if (failure === "missing-token") return WidgetRefreshState.MissingToken;
   if (failure === "rate-limit") return WidgetRefreshState.RateLimit;
   if (failure === "permission") return WidgetRefreshState.Permission;
   if (failure === "error") return WidgetRefreshState.Error;
-  return lastSuccessfulAt === null || now - Date.parse(lastSuccessfulAt) >= WidgetStaleAfterMilliseconds ? WidgetRefreshState.Stale : WidgetRefreshState.Fresh;
+  return lastSuccessfulAt === null ||
+    now - Date.parse(lastSuccessfulAt) >= WidgetStaleAfterMilliseconds
+    ? WidgetRefreshState.Stale
+    : WidgetRefreshState.Fresh;
 }

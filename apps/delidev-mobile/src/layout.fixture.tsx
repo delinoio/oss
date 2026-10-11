@@ -27,7 +27,8 @@ const resource = (id: string, kind: EntityKind, data: unknown) =>
     id,
     kind,
     revision: 1n,
-    schemaVersion: kind === EntityKind.SETTINGS || kind === EntityKind.PROJECT ? 3 : 1,
+    schemaVersion:
+      kind === EntityKind.SETTINGS || kind === EntityKind.PROJECT ? 3 : 1,
     documentJson: documentBytes(data),
   });
 const sessions = [
@@ -44,7 +45,11 @@ const sessions = [
   }),
 ];
 const saved = [
-  resource(uuid(), EntityKind.SETTINGS, { plan_mode_default: true, automatic_plan_approval: false, branch_prefix: "delidev/" }),
+  resource(uuid(), EntityKind.SETTINGS, {
+    plan_mode_default: true,
+    automatic_plan_approval: false,
+    branch_prefix: "delidev/",
+  }),
   resource(project, EntityKind.PROJECT, {
     name: "Project with a long readable name",
     settings: { plan_mode_default: "inherit" },
@@ -91,8 +96,28 @@ const transport = createRouterTransport(({ service }) => {
   service(InboxService, {
     listInbox: () => ({ entries: [] }),
     getNotificationPreferences: () => ({
-      preferences: { revision: 1n, interactions: true, terminals: false,
-        ...(granular ? { situations: { questions: true, approvals: true, succeeded: false, failed: true, stopped: false, serverLost: true, serverRestored: false, workerUnavailable: true, workerAvailable: false, quotaExhausted: true, scheduleStartFailed: true, scheduleOffline: false } } : {}),
+      preferences: {
+        revision: 1n,
+        interactions: true,
+        terminals: false,
+        ...(granular
+          ? {
+              situations: {
+                questions: true,
+                approvals: true,
+                succeeded: false,
+                failed: true,
+                stopped: false,
+                serverLost: true,
+                serverRestored: false,
+                workerUnavailable: true,
+                workerAvailable: false,
+                quotaExhausted: true,
+                scheduleStartFailed: true,
+                scheduleOffline: false,
+              },
+            }
+          : {}),
       },
     }),
   });

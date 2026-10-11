@@ -25,7 +25,6 @@ keyless credential ownership. No SQLite migration or native change is authorized
 Capability 7 and its existing cleanup-required configuration operation remain
 unchanged; capability 9 owns the dedicated extension.
 
-
 ## OAuth format selection extension
 
 The [OAuth format reservations](cmds-delidev-account-oauth-contract.md#oauth-api-format-selection-reservations)
@@ -119,43 +118,43 @@ availability declarations, not promises about each model, tool or installed
 server version. Regional keys, billing/access restrictions, preview features and
 provider limitations remain independent validation and execution conditions.
 
-| Preset | Inference profiles | Official source |
-| --- | --- | --- |
-| Vercel AI Gateway | R: `https://ai-gateway.vercel.sh/v1` (B)<br>C: `https://ai-gateway.vercel.sh/v1` (B)<br>M: `https://ai-gateway.vercel.sh/v1` (B) | [REST 1](https://vercel.com/docs/ai-gateway/sdks-and-apis), [REST 2](https://vercel.com/docs/ai-gateway/anthropic-messages-api) |
-| OpenRouter | R: `https://openrouter.ai/api/v1` (B)<br>C: `https://openrouter.ai/api/v1` (B)<br>M: `https://openrouter.ai/api/v1` (B) | [REST 1](https://openrouter.ai/docs/api/api-reference/responses/create-responses), [REST 2](https://openrouter.ai/docs/api/api-reference/anthropic-messages/create-messages) |
-| OpenAI | R: `https://api.openai.com/v1` (B)<br>C: `https://api.openai.com/v1` (B) | [REST 1](https://developers.openai.com/api/reference/resources/responses), [REST 2](https://developers.openai.com/api/reference/resources/chat) |
-| Anthropic | C: `https://api.anthropic.com/v1` (B)<br>M: `https://api.anthropic.com/v1` (K) | [REST 1](https://platform.claude.com/docs/en/api/messages), [REST 2](https://platform.claude.com/docs/en/cli-sdks-libraries/libraries/openai-sdk) |
-| xAI | R: `https://api.x.ai/v1` (B)<br>C: `https://api.x.ai/v1` (B)<br>M: `https://api.x.ai/v1` (B) | [REST 1](https://docs.x.ai/developers/rest-api-reference/inference), [REST 2](https://docs.x.ai/developers/rest-api-reference/inference/legacy) |
-| DeepSeek | R: `https://api.deepseek.com/v1` (B)<br>C: `https://api.deepseek.com/v1` (B)<br>M: `https://api.deepseek.com/anthropic/v1` (K) | [REST 1](https://api-docs.deepseek.com/quick_start/agent_integrations/codex/), [REST 2](https://api-docs.deepseek.com/guides/anthropic_api/) |
-| Ollama | R: `http://127.0.0.1:11434/v1` (L)<br>C: `http://127.0.0.1:11434/v1` (L)<br>M: `http://127.0.0.1:11434/v1` (L) | [REST 1](https://docs.ollama.com/api/openai-compatibility), [REST 2](https://docs.ollama.com/api/anthropic-compatibility) |
-| LM Studio | R: `http://127.0.0.1:1234/v1` (L)<br>C: `http://127.0.0.1:1234/v1` (L)<br>M: `http://127.0.0.1:1234/v1` (L) | [REST 1](https://lmstudio.ai/docs/developer/rest) |
-| vLLM | R: `http://127.0.0.1:8000/v1` (L)<br>C: `http://127.0.0.1:8000/v1` (L)<br>M: `http://127.0.0.1:8000/v1` (L) | [REST 1](https://docs.vllm.ai/en/latest/serving/online_serving/) |
-| Google Gemini | C: `https://generativelanguage.googleapis.com/v1beta/openai` (B) | [REST 1](https://ai.google.dev/gemini-api/docs/openai) |
-| Groq | R: `https://api.groq.com/openai/v1` (B)<br>C: `https://api.groq.com/openai/v1` (B) | [REST 1](https://console.groq.com/docs/responses-api) |
-| Mistral | C: `https://api.mistral.ai/v1` (B) | [REST 1](https://docs.mistral.ai/api/endpoint/chat) |
-| Together AI | C: `https://api.together.ai/v1` (B) | [REST 1](https://docs.together.ai/reference/chat-completions) |
-| Fireworks AI | R: `https://api.fireworks.ai/inference/v1` (B)<br>C: `https://api.fireworks.ai/inference/v1` (B)<br>M: `https://api.fireworks.ai/inference/v1` (B) | [REST 1](https://docs.fireworks.ai/api-reference/post-responses), [REST 2](https://docs.fireworks.ai/api-reference/anthropic-messages) |
-| Perplexity Router | R: `https://api.perplexity.ai/router/v1` (B)<br>C: `https://api.perplexity.ai/router/v1` (B)<br>M: `https://api.perplexity.ai/router/v1` (B) | [REST 1](https://docs.perplexity.ai/docs/router/quickstart), [REST 2](https://docs.perplexity.ai/api-reference/gateway-messages-post) |
-| Cohere | C: `https://api.cohere.ai/compatibility/v1` (B) | [REST 1](https://docs.cohere.com/docs/compatibility-api) |
-| Cerebras | C: `https://api.cerebras.ai/v1` (B) | [REST 1](https://inference-docs.cerebras.ai/api-reference/chat-completions) |
-| Nebius Token Factory | C: `https://api.tokenfactory.nebius.com/v1` (B) | [REST 1](https://docs.tokenfactory.nebius.com/api-reference/inference/create-chat-completion) |
-| Novita | C: `https://api.novita.ai/openai/v1` (B)<br>M: `https://api.novita.ai/anthropic/v1` (B) | [REST 1](https://novita.ai/docs/api-reference/model-apis-llm-create-chat-completion), [REST 2](https://blogs.novita.ai/es/use-minimax-m2-7-in-claude-code-via-novita-ai/) |
-| DeepInfra | R: `https://api.deepinfra.com/v1` (B)<br>C: `https://api.deepinfra.com/v1/openai` (B)<br>M: `https://api.deepinfra.com/anthropic/v1` (B) | [REST 1](https://docs.deepinfra.com/api-reference/responses/openai-responses), [REST 2](https://docs.deepinfra.com/api-reference/chat-completions/anthropic-messages) |
-| Hugging Face Inference Providers | R: `https://router.huggingface.co/v1` (B)<br>C: `https://router.huggingface.co/v1` (B)<br>M: `https://router.huggingface.co/v1` (B) | [REST 1](https://huggingface.co/docs/inference-providers/guides/responses-api), [REST 2](https://huggingface.co/docs/inference-providers/integrations/claude-code) |
-| Venice | C: `https://api.venice.ai/api/v1` (B) | [REST 1](https://docs.venice.ai/api-reference/endpoint/chat/completions) |
-| Scaleway | C: `https://api.scaleway.ai/v1` (B) | [REST 1](https://www.scaleway.com/en/developers/api/generative-apis) |
-| Baseten | C: `https://inference.baseten.co/v1` (B)<br>M: `https://inference.baseten.co/v1` (B) | [REST 1](https://docs.baseten.co/reference/inference-api/messages) |
-| Moonshot / Kimi — Global | R: `https://api.moonshot.ai/v1` (B)<br>C: `https://api.moonshot.ai/v1` (B)<br>M: `https://api.moonshot.ai/anthropic/v1` (B) | [REST 1](https://platform.kimi.ai/docs/api/responses), [REST 2](https://platform.kimi.ai/docs/guide/claude-code-kimi) |
-| Moonshot / Kimi — China | R: `https://api.moonshot.cn/v1` (B)<br>C: `https://api.moonshot.cn/v1` (B)<br>M: `https://api.moonshot.cn/anthropic/v1` (B) | [REST 1](https://platform.kimi.com/docs/guide/codex-kimi), [REST 2](https://platform.kimi.com/docs/guide/claude-code-kimi) |
-| MiniMax — Global | R: `https://api.minimax.io/v1` (B)<br>C: `https://api.minimax.io/v1` (B)<br>M: `https://api.minimax.io/anthropic/v1` (B) | [REST 1](https://platform.minimax.io/docs/api-reference/responses-create), [REST 2](https://platform.minimax.io/docs/api-reference/text-chat-anthropic) |
-| MiniMax — China | R: `https://api.minimax.cn/v1` (B)<br>C: `https://api.minimax.cn/v1` (B)<br>M: `https://api.minimax.cn/anthropic/v1` (B) | [REST 1](https://platform.minimax.cn/docs/api-reference/responses-create), [REST 2](https://platform.minimax.cn/docs/api-reference/text-chat-anthropic) |
-| SiliconFlow — Global | C: `https://api.siliconflow.com/v1` (B)<br>M: `https://api.siliconflow.com/v1` (B) | [REST 1](https://www.siliconflow.com/es/blog/deepseek-v4-pro-claude-code-siliconflow) |
-| SiliconFlow — China | C: `https://api.siliconflow.cn/v1` (B)<br>M: `https://api.siliconflow.cn/v1` (B) | [REST 1](https://api-docs.siliconflow.cn/docs/api/messages-post) |
-| Baidu Qianfan | R: `https://qianfan.baidubce.com/v2` (B)<br>C: `https://qianfan.baidubce.com/v2` (B) | [REST 1](https://cloud.baidu.com/doc/qianfan-api/s/vmhejnuy8) |
-| Tencent TokenHub — China | R: `https://tokenhub.tencentmaas.com/v1` (B)<br>C: `https://tokenhub.tencentmaas.com/v1` (B)<br>M: `https://tokenhub.tencentmaas.com/v1` (K) | [REST 1](https://cloud.tencent.com/document/product/1823/138677) |
-| Tencent TokenHub — International | R: `https://tokenhub-intl.tencentmaas.com/v1` (B)<br>C: `https://tokenhub-intl.tencentmaas.com/v1` (B)<br>M: `https://tokenhub-intl.tencentmaas.com/v1` (K) | [REST 1](https://cloud.tencent.com/document/product/1823/130078), [REST 2](https://intl.cloud.tencent.com/ind/document/product/1300/84216) |
-| Alibaba Model Studio — International | R: `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` (B)<br>C: `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` (B)<br>M: `https://dashscope-intl.aliyuncs.com/apps/anthropic/v1` (B) | [REST 1](https://help.aliyun.com/zh/model-studio/base-url), [REST 2](https://help.aliyun.com/en/model-studio/qwen-api-via-openai-responses), [REST 3](https://help.aliyun.com/en/model-studio/anthropic-api-messages) |
-| Alibaba Model Studio — Hong Kong | R: `https://cn-hongkong.dashscope.aliyuncs.com/compatible-mode/v1` (B)<br>C: `https://cn-hongkong.dashscope.aliyuncs.com/compatible-mode/v1` (B)<br>M: `https://cn-hongkong.dashscope.aliyuncs.com/apps/anthropic/v1` (B) | [REST 1](https://help.aliyun.com/zh/model-studio/base-url), [REST 2](https://help.aliyun.com/en/model-studio/qwen-api-via-openai-responses), [REST 3](https://help.aliyun.com/en/model-studio/anthropic-api-messages) |
+| Preset                               | Inference profiles                                                                                                                                                                                                        | Official source                                                                                                                                                                                                       |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Vercel AI Gateway                    | R: `https://ai-gateway.vercel.sh/v1` (B)<br>C: `https://ai-gateway.vercel.sh/v1` (B)<br>M: `https://ai-gateway.vercel.sh/v1` (B)                                                                                          | [REST 1](https://vercel.com/docs/ai-gateway/sdks-and-apis), [REST 2](https://vercel.com/docs/ai-gateway/anthropic-messages-api)                                                                                       |
+| OpenRouter                           | R: `https://openrouter.ai/api/v1` (B)<br>C: `https://openrouter.ai/api/v1` (B)<br>M: `https://openrouter.ai/api/v1` (B)                                                                                                   | [REST 1](https://openrouter.ai/docs/api/api-reference/responses/create-responses), [REST 2](https://openrouter.ai/docs/api/api-reference/anthropic-messages/create-messages)                                          |
+| OpenAI                               | R: `https://api.openai.com/v1` (B)<br>C: `https://api.openai.com/v1` (B)                                                                                                                                                  | [REST 1](https://developers.openai.com/api/reference/resources/responses), [REST 2](https://developers.openai.com/api/reference/resources/chat)                                                                       |
+| Anthropic                            | C: `https://api.anthropic.com/v1` (B)<br>M: `https://api.anthropic.com/v1` (K)                                                                                                                                            | [REST 1](https://platform.claude.com/docs/en/api/messages), [REST 2](https://platform.claude.com/docs/en/cli-sdks-libraries/libraries/openai-sdk)                                                                     |
+| xAI                                  | R: `https://api.x.ai/v1` (B)<br>C: `https://api.x.ai/v1` (B)<br>M: `https://api.x.ai/v1` (B)                                                                                                                              | [REST 1](https://docs.x.ai/developers/rest-api-reference/inference), [REST 2](https://docs.x.ai/developers/rest-api-reference/inference/legacy)                                                                       |
+| DeepSeek                             | R: `https://api.deepseek.com/v1` (B)<br>C: `https://api.deepseek.com/v1` (B)<br>M: `https://api.deepseek.com/anthropic/v1` (K)                                                                                            | [REST 1](https://api-docs.deepseek.com/quick_start/agent_integrations/codex/), [REST 2](https://api-docs.deepseek.com/guides/anthropic_api/)                                                                          |
+| Ollama                               | R: `http://127.0.0.1:11434/v1` (L)<br>C: `http://127.0.0.1:11434/v1` (L)<br>M: `http://127.0.0.1:11434/v1` (L)                                                                                                            | [REST 1](https://docs.ollama.com/api/openai-compatibility), [REST 2](https://docs.ollama.com/api/anthropic-compatibility)                                                                                             |
+| LM Studio                            | R: `http://127.0.0.1:1234/v1` (L)<br>C: `http://127.0.0.1:1234/v1` (L)<br>M: `http://127.0.0.1:1234/v1` (L)                                                                                                               | [REST 1](https://lmstudio.ai/docs/developer/rest)                                                                                                                                                                     |
+| vLLM                                 | R: `http://127.0.0.1:8000/v1` (L)<br>C: `http://127.0.0.1:8000/v1` (L)<br>M: `http://127.0.0.1:8000/v1` (L)                                                                                                               | [REST 1](https://docs.vllm.ai/en/latest/serving/online_serving/)                                                                                                                                                      |
+| Google Gemini                        | C: `https://generativelanguage.googleapis.com/v1beta/openai` (B)                                                                                                                                                          | [REST 1](https://ai.google.dev/gemini-api/docs/openai)                                                                                                                                                                |
+| Groq                                 | R: `https://api.groq.com/openai/v1` (B)<br>C: `https://api.groq.com/openai/v1` (B)                                                                                                                                        | [REST 1](https://console.groq.com/docs/responses-api)                                                                                                                                                                 |
+| Mistral                              | C: `https://api.mistral.ai/v1` (B)                                                                                                                                                                                        | [REST 1](https://docs.mistral.ai/api/endpoint/chat)                                                                                                                                                                   |
+| Together AI                          | C: `https://api.together.ai/v1` (B)                                                                                                                                                                                       | [REST 1](https://docs.together.ai/reference/chat-completions)                                                                                                                                                         |
+| Fireworks AI                         | R: `https://api.fireworks.ai/inference/v1` (B)<br>C: `https://api.fireworks.ai/inference/v1` (B)<br>M: `https://api.fireworks.ai/inference/v1` (B)                                                                        | [REST 1](https://docs.fireworks.ai/api-reference/post-responses), [REST 2](https://docs.fireworks.ai/api-reference/anthropic-messages)                                                                                |
+| Perplexity Router                    | R: `https://api.perplexity.ai/router/v1` (B)<br>C: `https://api.perplexity.ai/router/v1` (B)<br>M: `https://api.perplexity.ai/router/v1` (B)                                                                              | [REST 1](https://docs.perplexity.ai/docs/router/quickstart), [REST 2](https://docs.perplexity.ai/api-reference/gateway-messages-post)                                                                                 |
+| Cohere                               | C: `https://api.cohere.ai/compatibility/v1` (B)                                                                                                                                                                           | [REST 1](https://docs.cohere.com/docs/compatibility-api)                                                                                                                                                              |
+| Cerebras                             | C: `https://api.cerebras.ai/v1` (B)                                                                                                                                                                                       | [REST 1](https://inference-docs.cerebras.ai/api-reference/chat-completions)                                                                                                                                           |
+| Nebius Token Factory                 | C: `https://api.tokenfactory.nebius.com/v1` (B)                                                                                                                                                                           | [REST 1](https://docs.tokenfactory.nebius.com/api-reference/inference/create-chat-completion)                                                                                                                         |
+| Novita                               | C: `https://api.novita.ai/openai/v1` (B)<br>M: `https://api.novita.ai/anthropic/v1` (B)                                                                                                                                   | [REST 1](https://novita.ai/docs/api-reference/model-apis-llm-create-chat-completion), [REST 2](https://blogs.novita.ai/es/use-minimax-m2-7-in-claude-code-via-novita-ai/)                                             |
+| DeepInfra                            | R: `https://api.deepinfra.com/v1` (B)<br>C: `https://api.deepinfra.com/v1/openai` (B)<br>M: `https://api.deepinfra.com/anthropic/v1` (B)                                                                                  | [REST 1](https://docs.deepinfra.com/api-reference/responses/openai-responses), [REST 2](https://docs.deepinfra.com/api-reference/chat-completions/anthropic-messages)                                                 |
+| Hugging Face Inference Providers     | R: `https://router.huggingface.co/v1` (B)<br>C: `https://router.huggingface.co/v1` (B)<br>M: `https://router.huggingface.co/v1` (B)                                                                                       | [REST 1](https://huggingface.co/docs/inference-providers/guides/responses-api), [REST 2](https://huggingface.co/docs/inference-providers/integrations/claude-code)                                                    |
+| Venice                               | C: `https://api.venice.ai/api/v1` (B)                                                                                                                                                                                     | [REST 1](https://docs.venice.ai/api-reference/endpoint/chat/completions)                                                                                                                                              |
+| Scaleway                             | C: `https://api.scaleway.ai/v1` (B)                                                                                                                                                                                       | [REST 1](https://www.scaleway.com/en/developers/api/generative-apis)                                                                                                                                                  |
+| Baseten                              | C: `https://inference.baseten.co/v1` (B)<br>M: `https://inference.baseten.co/v1` (B)                                                                                                                                      | [REST 1](https://docs.baseten.co/reference/inference-api/messages)                                                                                                                                                    |
+| Moonshot / Kimi — Global             | R: `https://api.moonshot.ai/v1` (B)<br>C: `https://api.moonshot.ai/v1` (B)<br>M: `https://api.moonshot.ai/anthropic/v1` (B)                                                                                               | [REST 1](https://platform.kimi.ai/docs/api/responses), [REST 2](https://platform.kimi.ai/docs/guide/claude-code-kimi)                                                                                                 |
+| Moonshot / Kimi — China              | R: `https://api.moonshot.cn/v1` (B)<br>C: `https://api.moonshot.cn/v1` (B)<br>M: `https://api.moonshot.cn/anthropic/v1` (B)                                                                                               | [REST 1](https://platform.kimi.com/docs/guide/codex-kimi), [REST 2](https://platform.kimi.com/docs/guide/claude-code-kimi)                                                                                            |
+| MiniMax — Global                     | R: `https://api.minimax.io/v1` (B)<br>C: `https://api.minimax.io/v1` (B)<br>M: `https://api.minimax.io/anthropic/v1` (B)                                                                                                  | [REST 1](https://platform.minimax.io/docs/api-reference/responses-create), [REST 2](https://platform.minimax.io/docs/api-reference/text-chat-anthropic)                                                               |
+| MiniMax — China                      | R: `https://api.minimax.cn/v1` (B)<br>C: `https://api.minimax.cn/v1` (B)<br>M: `https://api.minimax.cn/anthropic/v1` (B)                                                                                                  | [REST 1](https://platform.minimax.cn/docs/api-reference/responses-create), [REST 2](https://platform.minimax.cn/docs/api-reference/text-chat-anthropic)                                                               |
+| SiliconFlow — Global                 | C: `https://api.siliconflow.com/v1` (B)<br>M: `https://api.siliconflow.com/v1` (B)                                                                                                                                        | [REST 1](https://www.siliconflow.com/es/blog/deepseek-v4-pro-claude-code-siliconflow)                                                                                                                                 |
+| SiliconFlow — China                  | C: `https://api.siliconflow.cn/v1` (B)<br>M: `https://api.siliconflow.cn/v1` (B)                                                                                                                                          | [REST 1](https://api-docs.siliconflow.cn/docs/api/messages-post)                                                                                                                                                      |
+| Baidu Qianfan                        | R: `https://qianfan.baidubce.com/v2` (B)<br>C: `https://qianfan.baidubce.com/v2` (B)                                                                                                                                      | [REST 1](https://cloud.baidu.com/doc/qianfan-api/s/vmhejnuy8)                                                                                                                                                         |
+| Tencent TokenHub — China             | R: `https://tokenhub.tencentmaas.com/v1` (B)<br>C: `https://tokenhub.tencentmaas.com/v1` (B)<br>M: `https://tokenhub.tencentmaas.com/v1` (K)                                                                              | [REST 1](https://cloud.tencent.com/document/product/1823/138677)                                                                                                                                                      |
+| Tencent TokenHub — International     | R: `https://tokenhub-intl.tencentmaas.com/v1` (B)<br>C: `https://tokenhub-intl.tencentmaas.com/v1` (B)<br>M: `https://tokenhub-intl.tencentmaas.com/v1` (K)                                                               | [REST 1](https://cloud.tencent.com/document/product/1823/130078), [REST 2](https://intl.cloud.tencent.com/ind/document/product/1300/84216)                                                                            |
+| Alibaba Model Studio — International | R: `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` (B)<br>C: `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` (B)<br>M: `https://dashscope-intl.aliyuncs.com/apps/anthropic/v1` (B)                      | [REST 1](https://help.aliyun.com/zh/model-studio/base-url), [REST 2](https://help.aliyun.com/en/model-studio/qwen-api-via-openai-responses), [REST 3](https://help.aliyun.com/en/model-studio/anthropic-api-messages) |
+| Alibaba Model Studio — Hong Kong     | R: `https://cn-hongkong.dashscope.aliyuncs.com/compatible-mode/v1` (B)<br>C: `https://cn-hongkong.dashscope.aliyuncs.com/compatible-mode/v1` (B)<br>M: `https://cn-hongkong.dashscope.aliyuncs.com/apps/anthropic/v1` (B) | [REST 1](https://help.aliyun.com/zh/model-studio/base-url), [REST 2](https://help.aliyun.com/en/model-studio/qwen-api-via-openai-responses), [REST 3](https://help.aliyun.com/en/model-studio/anthropic-api-messages) |
 
 OpenRouter's three inference paths are `/api/v1/responses`,
 `/api/v1/chat/completions` and `/api/v1/messages`, all with Bearer. Its credential
@@ -179,7 +178,6 @@ separate from the ordinary OpenAI catalog. Provider-side compatibility is not
 DeliDev translation. Together Link, SiliconFlow's local Responses converter and
 Venice's local Codex/Claude converter do not declare another direct REST profile
 on their ordinary preset endpoints.
-
 
 A disconnected SQL record alone does not prove cleanup: a failed native Connect
 may retain protected staging intents. Disconnected format-change admission holds the account
@@ -293,7 +291,6 @@ If a reviewer closes that PR without merging, the publisher records the closed
 candidate version and does not reopen it until a genuinely changed catalog is
 collected.
 
-
 ## Scope
 
 Native Codex observations and explicit registration are owned
@@ -316,56 +313,56 @@ The owner and paired clients manage provider/model configuration. Execution Work
 
 `ProviderService` exposes these operations:
 
-| RPC | CLI | Result |
-| --- | --- | --- |
-| `ListProviderInventory` | `provider list [--query TEXT] [--enabled-only] [--limit N] [--page-token TOKEN]` | Bounded active/custom provider inventory, exact account counts and compatibility capabilities |
-| `ListProviderPresets` | `provider presets` | Closed, editable provider defaults with key guidance, documentation and compatibility limits |
-| Existing `SaveConfiguration`, using a selected preset | `provider create --preset PRESET [--name NAME]` | Ordinary saved provider configuration and a durable request receipt |
-| `DiscoverModels` | `provider discover --account-id ID --revision N` | Accepted discovery observation plus current account metadata |
-| `SearchModels` | `model search [--query TEXT] [--provider-id ID] [--include-hidden] [--limit N] [--page-token TOKEN]` | Model records, represented provider records and an opaque continuation |
-| `ResolveModel` | `model resolve --selector UUID_OR_ALIAS_OR_NATIVE_ID [--provider-id ID]` | One canonical model record or a typed missing/ambiguity error |
+| RPC                                                   | CLI                                                                                                  | Result                                                                                        |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `ListProviderInventory`                               | `provider list [--query TEXT] [--enabled-only] [--limit N] [--page-token TOKEN]`                     | Bounded active/custom provider inventory, exact account counts and compatibility capabilities |
+| `ListProviderPresets`                                 | `provider presets`                                                                                   | Closed, editable provider defaults with key guidance, documentation and compatibility limits  |
+| Existing `SaveConfiguration`, using a selected preset | `provider create --preset PRESET [--name NAME]`                                                      | Ordinary saved provider configuration and a durable request receipt                           |
+| `DiscoverModels`                                      | `provider discover --account-id ID --revision N`                                                     | Accepted discovery observation plus current account metadata                                  |
+| `SearchModels`                                        | `model search [--query TEXT] [--provider-id ID] [--include-hidden] [--limit N] [--page-token TOKEN]` | Model records, represented provider records and an opaque continuation                        |
+| `ResolveModel`                                        | `model resolve --selector UUID_OR_ALIAS_OR_NATIVE_ID [--provider-id ID]`                             | One canonical model record or a typed missing/ambiguity error                                 |
 
 Mutations accept the normal `--request-id` option. Creating an unsaved preset uses its concrete provider document as the saved request input; it does not create an account or imply authentication. The 32 hosted presets are saved On by default, so `provider create --preset ID` for an existing hosted preset returns a duplicate conflict; use inventory and edit its saved resource to change availability. `provider create --input FILE|-` remains the custom-provider path. Presets are stable enum-style identifiers:
 
 Provider inventory's closed capability enum separately advertises provider activation, active-provider model filtering, account-provider filtering and `ACCOUNT_TYPE_FILTER`. The first three gate provider/model controls; separate API/subscription account lists and the guided API account flow require all four. Inventory filters are cursor-bound and server-owned; callers must not replace unavailable inventory with generic resource pages.
 
-| Preset | API base | Default protocol | Authentication |
-| --- | --- | --- | --- |
-| `openai` | `https://api.openai.com/v1` | OpenAI Responses | Bearer |
-| `anthropic` | `https://api.anthropic.com/v1` | Anthropic Messages | API key |
-| `openrouter` | `https://openrouter.ai/api/v1` | OpenAI Chat Completions | Bearer |
-| `vercel-ai-gateway` | `https://ai-gateway.vercel.sh/v1` | OpenAI Chat Completions | Bearer |
-| `xai` | `https://api.x.ai/v1` | OpenAI Responses | Bearer |
-| `deepseek` | `https://api.deepseek.com/v1` | OpenAI Chat Completions | Bearer |
-| `gemini` | `https://generativelanguage.googleapis.com/v1beta/openai` | OpenAI Chat Completions | Bearer |
-| `groq` | `https://api.groq.com/openai/v1` | OpenAI Chat Completions | Bearer |
-| `mistral` | `https://api.mistral.ai/v1` | OpenAI Chat Completions | Bearer |
-| `together-ai` | `https://api.together.ai/v1` | OpenAI Chat Completions | Bearer |
-| `fireworks-ai` | `https://api.fireworks.ai/inference/v1` | OpenAI Chat Completions | Bearer |
-| `perplexity` | `https://api.perplexity.ai/router/v1` | OpenAI Chat Completions | Bearer |
-| `cohere` | `https://api.cohere.ai/compatibility/v1` | OpenAI Chat Completions | Bearer |
-| `cerebras` | `https://api.cerebras.ai/v1` | OpenAI Chat Completions | Bearer |
-| `nebius` | `https://api.tokenfactory.nebius.com/v1` | OpenAI Chat Completions | Bearer |
-| `novita` | `https://api.novita.ai/openai/v1` | OpenAI Chat Completions | Bearer |
-| `deepinfra` | `https://api.deepinfra.com/v1/openai` | OpenAI Chat Completions | Bearer |
-| `hugging-face` | `https://router.huggingface.co/v1` | OpenAI Chat Completions | Bearer |
-| `venice` | `https://api.venice.ai/api/v1` | OpenAI Chat Completions | Bearer |
-| `scaleway` | `https://api.scaleway.ai/v1` | OpenAI Chat Completions | Bearer |
-| `baseten` | `https://inference.baseten.co/v1` | OpenAI Chat Completions | Bearer |
-| `moonshot` | `https://api.moonshot.ai/v1` | OpenAI Chat Completions | Bearer |
-| `moonshot-cn` | `https://api.moonshot.cn/v1` | OpenAI Chat Completions | Bearer |
-| `minimax` | `https://api.minimax.io/v1` | OpenAI Chat Completions | Bearer |
-| `minimax-cn` | `https://api.minimax.cn/v1` | OpenAI Chat Completions | Bearer |
-| `siliconflow` | `https://api.siliconflow.com/v1` | OpenAI Chat Completions | Bearer |
-| `siliconflow-cn` | `https://api.siliconflow.cn/v1` | OpenAI Chat Completions | Bearer |
-| `qianfan` | `https://qianfan.baidubce.com/v2` | OpenAI Chat Completions | Bearer |
-| `tencent-tokenhub` | `https://tokenhub.tencentmaas.com/v1` | OpenAI Chat Completions | Bearer |
-| `tencent-tokenhub-international` | `https://tokenhub-intl.tencentmaas.com/v1` | OpenAI Chat Completions | Bearer |
-| `alibaba-model-studio-international` | `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` | OpenAI Chat Completions | Bearer |
-| `alibaba-model-studio-hong-kong` | `https://cn-hongkong.dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI Chat Completions | Bearer |
-| `ollama` | `http://127.0.0.1:11434/v1` | OpenAI Chat Completions | Explicit keyless |
-| `lm-studio` | `http://127.0.0.1:1234/v1` | OpenAI Chat Completions | Explicit keyless |
-| `vllm` | `http://127.0.0.1:8000/v1` | OpenAI Chat Completions | Explicit keyless |
+| Preset                               | API base                                                        | Default protocol        | Authentication   |
+| ------------------------------------ | --------------------------------------------------------------- | ----------------------- | ---------------- |
+| `openai`                             | `https://api.openai.com/v1`                                     | OpenAI Responses        | Bearer           |
+| `anthropic`                          | `https://api.anthropic.com/v1`                                  | Anthropic Messages      | API key          |
+| `openrouter`                         | `https://openrouter.ai/api/v1`                                  | OpenAI Chat Completions | Bearer           |
+| `vercel-ai-gateway`                  | `https://ai-gateway.vercel.sh/v1`                               | OpenAI Chat Completions | Bearer           |
+| `xai`                                | `https://api.x.ai/v1`                                           | OpenAI Responses        | Bearer           |
+| `deepseek`                           | `https://api.deepseek.com/v1`                                   | OpenAI Chat Completions | Bearer           |
+| `gemini`                             | `https://generativelanguage.googleapis.com/v1beta/openai`       | OpenAI Chat Completions | Bearer           |
+| `groq`                               | `https://api.groq.com/openai/v1`                                | OpenAI Chat Completions | Bearer           |
+| `mistral`                            | `https://api.mistral.ai/v1`                                     | OpenAI Chat Completions | Bearer           |
+| `together-ai`                        | `https://api.together.ai/v1`                                    | OpenAI Chat Completions | Bearer           |
+| `fireworks-ai`                       | `https://api.fireworks.ai/inference/v1`                         | OpenAI Chat Completions | Bearer           |
+| `perplexity`                         | `https://api.perplexity.ai/router/v1`                           | OpenAI Chat Completions | Bearer           |
+| `cohere`                             | `https://api.cohere.ai/compatibility/v1`                        | OpenAI Chat Completions | Bearer           |
+| `cerebras`                           | `https://api.cerebras.ai/v1`                                    | OpenAI Chat Completions | Bearer           |
+| `nebius`                             | `https://api.tokenfactory.nebius.com/v1`                        | OpenAI Chat Completions | Bearer           |
+| `novita`                             | `https://api.novita.ai/openai/v1`                               | OpenAI Chat Completions | Bearer           |
+| `deepinfra`                          | `https://api.deepinfra.com/v1/openai`                           | OpenAI Chat Completions | Bearer           |
+| `hugging-face`                       | `https://router.huggingface.co/v1`                              | OpenAI Chat Completions | Bearer           |
+| `venice`                             | `https://api.venice.ai/api/v1`                                  | OpenAI Chat Completions | Bearer           |
+| `scaleway`                           | `https://api.scaleway.ai/v1`                                    | OpenAI Chat Completions | Bearer           |
+| `baseten`                            | `https://inference.baseten.co/v1`                               | OpenAI Chat Completions | Bearer           |
+| `moonshot`                           | `https://api.moonshot.ai/v1`                                    | OpenAI Chat Completions | Bearer           |
+| `moonshot-cn`                        | `https://api.moonshot.cn/v1`                                    | OpenAI Chat Completions | Bearer           |
+| `minimax`                            | `https://api.minimax.io/v1`                                     | OpenAI Chat Completions | Bearer           |
+| `minimax-cn`                         | `https://api.minimax.cn/v1`                                     | OpenAI Chat Completions | Bearer           |
+| `siliconflow`                        | `https://api.siliconflow.com/v1`                                | OpenAI Chat Completions | Bearer           |
+| `siliconflow-cn`                     | `https://api.siliconflow.cn/v1`                                 | OpenAI Chat Completions | Bearer           |
+| `qianfan`                            | `https://qianfan.baidubce.com/v2`                               | OpenAI Chat Completions | Bearer           |
+| `tencent-tokenhub`                   | `https://tokenhub.tencentmaas.com/v1`                           | OpenAI Chat Completions | Bearer           |
+| `tencent-tokenhub-international`     | `https://tokenhub-intl.tencentmaas.com/v1`                      | OpenAI Chat Completions | Bearer           |
+| `alibaba-model-studio-international` | `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`        | OpenAI Chat Completions | Bearer           |
+| `alibaba-model-studio-hong-kong`     | `https://cn-hongkong.dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI Chat Completions | Bearer           |
+| `ollama`                             | `http://127.0.0.1:11434/v1`                                     | OpenAI Chat Completions | Explicit keyless |
+| `lm-studio`                          | `http://127.0.0.1:1234/v1`                                      | OpenAI Chat Completions | Explicit keyless |
+| `vllm`                               | `http://127.0.0.1:8000/v1`                                      | OpenAI Chat Completions | Explicit keyless |
 
 Every preset enables discovery initially. Local presets require the user to run/configure that local API server; if it requires a key, change authentication before connecting. DeliDev neither installs a model server/model nor treats the preset as proof of a chosen model/harness/protocol combination. Empty discovered `harnesses` explicitly means compatibility has not been configured; execution checks cannot treat it as universal support.
 
@@ -609,17 +606,16 @@ acceptance. Record validation in PRs and CI, never repository evidence documents
 
 Saved Agent options retain bounded exact values, including selections that lack a native execution adapter. Saving or changing harnesses never deletes or converts those values. Execution validates adapter availability before admission and reports the exact unavailable option name. The editor disables unavailable controls, explains why below the field and offers explicit clearing of a retained value.
 
-| Harness | Forwarded native settings | Unavailable settings |
-| --- | --- | --- |
-| Codex API and subscription | All four permission modes; bounded exact root effort, approval policy, service tier, same-account child model/effort, uint32 concurrency and User/AI approval reviewer | Custom approval-review model and Claude permission |
-| Claude | Native permission modes, including auto, and bounded exact effort | Codex sandbox, approval policy, service tier and Codex child overrides |
-| OpenCode | Native Build/Plan primary-agent policy and exact model `options.reasoningEffort` | Codex sandbox/approval, Claude permission, service tier and Codex child overrides |
-| Grok Build | Existing default permission and native Execute/Plan selection | Effort without an applied-setting observation adapter, Codex sandbox/approval, Claude permission, service tier and Codex child overrides |
+| Harness                    | Forwarded native settings                                                                                                                                              | Unavailable settings                                                                                                                     |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Codex API and subscription | All four permission modes; bounded exact root effort, approval policy, service tier, same-account child model/effort, uint32 concurrency and User/AI approval reviewer | Custom approval-review model and Claude permission                                                                                       |
+| Claude                     | Native permission modes, including auto, and bounded exact effort                                                                                                      | Codex sandbox, approval policy, service tier and Codex child overrides                                                                   |
+| OpenCode                   | Native Build/Plan primary-agent policy and exact model `options.reasoningEffort`                                                                                       | Codex sandbox/approval, Claude permission, service tier and Codex child overrides                                                        |
+| Grok Build                 | Existing default permission and native Execute/Plan selection                                                                                                          | Effort without an applied-setting observation adapter, Codex sandbox/approval, Claude permission, service tier and Codex child overrides |
 
 Forwarded settings are not restricted by advertised model/effort lists or a DeliDev concurrency maximum of 64. Preserve format/size bounds, canonical model/account references and immutable execution digests. Unselected values omit native overrides and retain native defaults. Native initialization must independently verify actual applied settings before input; drift is an error, never permission to normalize or retry with a default. Native rejection uses the existing execution error path. Positive no-send and cleanup proof remain necessary for any retry; uncertain input delivery retains original recovery ownership.
 
 Codex subscription default/full-access do not waive managed authentication ownership, canonical non-overlapping private homes, original-process verification, final credential comparison or independent cleanup. Full-access may let native tools access managed authentication files. Structured failure logs contain the stage and closed option names, never credentials, selected values or raw native output. Public RPC, stored document formats and historical execution records remain unchanged; add no migration or format conversion.
-
 
 Automatic validation uses the [provider verification boundary](cmds-delidev-providers-contract.md#automatic-api-verification). Its persisted due time and Retry-After do not replace catalog scheduling. Authentication and model observations retain separate request receipts, connection ownership and completion times. New-format generations require fresh observations; original executions and shared key references remain unchanged. No public protocol, migration, native adapter or reserved model-system activation accompanies this scheduler.
 
@@ -664,11 +660,13 @@ native ownership do not enter portable documents.
 The once-only automatic plan policy decision stays in the original server-owned interaction record. Public schema-1 Interaction JSON omits that private provenance so strict legacy Worker decoders continue to read the unchanged native request and queued response. Restart receipts retain the private first decision and original response ID.
 
 ### Explicit Codex Fast mode
+
 Agent Worker configuration presents Native default, Fast mode and Custom service tier through the shared legacy and ordered-source form. Native default explicitly omits `options.service_tier`; Fast saves exact `fast`. Existing other nonempty strings select Custom and remain exact, including whitespace, until edited. Opening the editor never changes absent, empty or null values. Custom entry retains the existing bound. Other harnesses retain disabled saved values and the original explicit clearing action; source/loading/save admission gates remain owned by the existing wizard/editor.
 
 Fast is an explicit native Codex request for API and ChatGPT subscription sources, subject to original model/account availability. The localized control links [official guidance](https://learn.chatgpt.com/docs/agent-configuration/speed) and explains potentially higher subscription usage without a fixed billing multiplier, entitlement or speed claim. Saving grants no native support. No account defaults, session switches, feature flag, version gate, protocol allocation or migration are added. Immutable execution and continuation configurations retain their original tier after Worker edits. Existing applied-setting verification rejects null/different native tiers before input and never downgrades or retries with defaults.
 
 ## New-session defaults and literal branch prefixes
+
 The complete feature uses System capability 56 and schema-3 Project/Settings
 JSON, preserving capability 52 and readable schema-1/2 documents. Legacy full
 writes cannot replace a newer document with an older schema. Portable exports
@@ -718,7 +716,9 @@ Settings search, keyboard access and responsive presentation. Diagnostics retain
 operation identities, revisions and safe outcomes, never prefixes/instructions.
 
 ## Codex reviewer selection
+
 Configure exposes a separate localized User / AI auto-review picker for Codex. AI selection explicitly sets `on-request` while preserving sandbox and unrelated native options. The server capability `CODEX_APPROVAL_REVIEW_V1 = 55` enables this configuration surface; the selected Runner must independently advertise Worker capability 30 before dispatch. Unsupported consumers fail without stripping a selected reviewer. The retained foreign option has an explicit Clear action; harness switching alone never clears it. Portable configuration and atomic Agent/Worker saves preserve this optional enum through the existing typed options document, without changing absent historical bytes or adding a database migration. Follow the [native reviewer profile](cmds-delidev-harness-contract.md#codex-ai-approval-reviewer).
 
 ## OpenCode Go subscriptions
+
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.

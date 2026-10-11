@@ -121,7 +121,10 @@ export class CredentialReader {
     checkSignal(signal);
     if (this.failed) return this.authenticationFailure();
     if (this.current) {
-      if (this.current.expiresAt !== undefined && this.current.expiresAt <= Date.now() + 30_000)
+      if (
+        this.current.expiresAt !== undefined &&
+        this.current.expiresAt <= Date.now() + 30_000
+      )
         return this.reread(signal);
       return this.current.token;
     }

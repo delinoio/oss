@@ -55,7 +55,10 @@ test("environment checker invalidates a warm cache when its development graph ch
     "scripts/dev-environment/contracts.mjs",
     "scripts/spawn-dev-server.mjs",
     "packages/devhud-api-client/package.json",
-    ...owners.flatMap((owner) => [`${owner}/package.json`, `${owner}/turbo.json`]),
+    ...owners.flatMap((owner) => [
+      `${owner}/package.json`,
+      `${owner}/turbo.json`,
+    ]),
   ]) {
     const content = readFileSync(join(repositoryRoot, path), "utf8");
     sources.set(path, content);
@@ -67,12 +70,16 @@ test("environment checker invalidates a warm cache when its development graph ch
     sources.set(clientConfig, content);
     write(clientConfig, content);
   }
-  write(".gitignore", "node_modules\n.turbo\n.env\n.infisical.json\n.dev-environment\n");
-  const git = (...args) => execFileSync("git", args, {
-    cwd,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  write(
+    ".gitignore",
+    "node_modules\n.turbo\n.env\n.infisical.json\n.dev-environment\n",
+  );
+  const git = (...args) =>
+    execFileSync("git", args, {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
   git("init", "-b", "main");
   git("config", "user.name", "Environment Cache Fixture");
   git("config", "user.email", "ci@example.invalid");
@@ -99,7 +106,10 @@ test("environment checker invalidates a warm cache when its development graph ch
     } else {
       const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
       const launcher = join(bin, "turbo");
-      writeFileSync(launcher, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(turbo)} "$@"\n`);
+      writeFileSync(
+        launcher,
+        `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(turbo)} "$@"\n`,
+      );
       chmodSync(launcher, 0o755);
     }
   };
@@ -115,20 +125,32 @@ test("environment checker invalidates a warm cache when its development graph ch
 
   const canary = "environment-cache-fixture-sensitive-value";
   const run = (...args) => {
-    const result = spawnSync(process.execPath, [turbo, "run", task,
-      "--filter=@delinoio/ci", "--cache=local:rw", "--cache-dir", cacheDir, ...args], {
-      cwd,
-      encoding: "utf8",
-      shell: false,
-      timeout: 30_000,
-      env: {
-        ...safeBaseEnvironment(),
-        CI: "true",
-        CI_CACHE_CONTEXT: "environment-cache-fixture",
-        DEVHUD_DATABASE_URL: canary,
-        TURBO_TELEMETRY_DISABLED: "1",
+    const result = spawnSync(
+      process.execPath,
+      [
+        turbo,
+        "run",
+        task,
+        "--filter=@delinoio/ci",
+        "--cache=local:rw",
+        "--cache-dir",
+        cacheDir,
+        ...args,
+      ],
+      {
+        cwd,
+        encoding: "utf8",
+        shell: false,
+        timeout: 30_000,
+        env: {
+          ...safeBaseEnvironment(),
+          CI: "true",
+          CI_CACHE_CONTEXT: "environment-cache-fixture",
+          DEVHUD_DATABASE_URL: canary,
+          TURBO_TELEMETRY_DISABLED: "1",
+        },
       },
-    });
+    );
     assert.ifError(result.error);
     assert.doesNotMatch(result.stdout + result.stderr, new RegExp(canary, "u"));
     return result;
@@ -137,7 +159,9 @@ test("environment checker invalidates a warm cache when its development graph ch
   const hash = () => {
     const result = run("--dry=json");
     assert.equal(result.status, 0, output(result));
-    return JSON.parse(result.stdout).tasks.find(({ task: name }) => name === task).hash;
+    return JSON.parse(result.stdout).tasks.find(
+      ({ task: name }) => name === task,
+    ).hash;
   };
   const cold = run();
   assert.equal(cold.status, 0, output(cold));
@@ -157,13 +181,21 @@ test("environment checker invalidates a warm cache when its development graph ch
     await t.test(`${path}: ${label}`, () => {
       try {
         mutateJson(path, mutate);
-        assert.notEqual(hash(), baselineHash, "graph changes must change the checker hash");
+        assert.notEqual(
+          hash(),
+          baselineHash,
+          "graph changes must change the checker hash",
+        );
         const result = run();
         assert.match(result.stdout, /cache miss/u, output(result));
         if (valid) {
           assert.equal(result.status, 0, output(result));
         } else {
-          assert.notEqual(result.status, 0, "a warm success must not hide an invalid graph");
+          assert.notEqual(
+            result.status,
+            0,
+            "a warm success must not hide an invalid graph",
+          );
           assert.match(output(result), /AssertionError/u);
         }
       } finally {
@@ -174,46 +206,84 @@ test("environment checker invalidates a warm cache when its development graph ch
   };
   for (const owner of owners) {
     for (const property of ["env", "passThroughEnv"]) {
-      await checkChange(`${owner}/turbo.json`, `forbidden dev.${property}`, (config) => {
-        config.tasks.dev = { [property]: ["DEVHUD_LOCAL_MODE", "DEVHUD_DATABASE_URL"] };
-      }, false);
+      await checkChange(
+        `${owner}/turbo.json`,
+        `forbidden dev.${property}`,
+        (config) => {
+          config.tasks.dev = {
+            [property]: ["DEVHUD_LOCAL_MODE", "DEVHUD_DATABASE_URL"],
+          };
+        },
+        false,
+      );
     }
-    await checkChange(`${owner}/package.json`, "missing required dev task", (manifest) => {
-      delete manifest.scripts.dev;
-    }, false);
-    await checkChange(`${owner}/package.json`, "valid dev script change", (manifest) => {
-      manifest.scripts.dev += " --fixture-option";
-    }, true);
+    await checkChange(
+      `${owner}/package.json`,
+      "missing required dev task",
+      (manifest) => {
+        delete manifest.scripts.dev;
+      },
+      false,
+    );
+    await checkChange(
+      `${owner}/package.json`,
+      "valid dev script change",
+      (manifest) => {
+        manifest.scripts.dev += " --fixture-option";
+      },
+      true,
+    );
   }
   for (const property of ["env", "passThroughEnv"]) {
-    await checkChange("turbo.json", `forbidden root dev.${property}`, (config) => {
-      config.tasks.dev[property] = ["DEVHUD_LOCAL_MODE", "DEVHUD_DATABASE_URL"];
-    }, false);
+    await checkChange(
+      "turbo.json",
+      `forbidden root dev.${property}`,
+      (config) => {
+        config.tasks.dev[property] = [
+          "DEVHUD_LOCAL_MODE",
+          "DEVHUD_DATABASE_URL",
+        ];
+      },
+      false,
+    );
   }
-  await checkChange("packages/devhud-api-client/package.json", "dependency task change", (manifest) => {
-    manifest.scripts["build:api"] = "node --version";
-  }, true);
-  await t.test("new dependency configuration invalidates and rejects forbidden environment", () => {
-    const path = clientConfig;
-    try {
-      const config = JSON.parse(sources.get(path) ?? '{"extends":["//"],"tasks":{}}');
-      config.tasks["build:api"] = { env: ["DEVHUD_DATABASE_URL"] };
-      write(path, JSON.stringify(config));
-      assert.notEqual(hash(), baselineHash);
-      const result = run();
-      assert.notEqual(result.status, 0, output(result));
-      assert.match(result.stdout, /cache miss/u);
-      assert.match(output(result), /AssertionError/u);
-    } finally {
-      restoreFixture();
-    }
-  });
+  await checkChange(
+    "packages/devhud-api-client/package.json",
+    "dependency task change",
+    (manifest) => {
+      manifest.scripts["build:api"] = "node --version";
+    },
+    true,
+  );
+  await t.test(
+    "new dependency configuration invalidates and rejects forbidden environment",
+    () => {
+      const path = clientConfig;
+      try {
+        const config = JSON.parse(
+          sources.get(path) ?? '{"extends":["//"],"tasks":{}}',
+        );
+        config.tasks["build:api"] = { env: ["DEVHUD_DATABASE_URL"] };
+        write(path, JSON.stringify(config));
+        assert.notEqual(hash(), baselineHash);
+        const result = run();
+        assert.notEqual(result.status, 0, output(result));
+        assert.match(result.stdout, /cache miss/u);
+        assert.match(output(result), /AssertionError/u);
+      } finally {
+        restoreFixture();
+      }
+    },
+  );
   await t.test("workspace inventory invalidates the checker", () => {
     const path = "pnpm-workspace.yaml";
     try {
       const source = sources.get(path);
       const newline = source.includes("\r\n") ? "\r\n" : "\n";
-      write(path, source.replace(`  - apps/*${newline}`, `  - apps/unused-*${newline}`));
+      write(
+        path,
+        source.replace(`  - apps/*${newline}`, `  - apps/unused-*${newline}`),
+      );
       assert.notEqual(hash(), baselineHash);
       const result = run();
       assert.notEqual(result.status, 0, output(result));

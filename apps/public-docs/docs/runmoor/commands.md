@@ -2,7 +2,6 @@
 
 > **Version note:** Runmoor 0.2.0 introduced automatic setup and managed runner updates. Guided Mac VM creation during `init` and `image create --ipsw latest` are in the next release. Version 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor version` before using release-specific commands.
 
-
 ```yaml
 jobs:
   build:
@@ -48,30 +47,29 @@ Reload validates the requested configuration first. Managed image changes prepar
 > downgrade a manager or start a stopped service. Releases through 0.2.7 reload
 > configuration only.
 
-
 Real demand receives capacity before warm runners. Round-robin allocation shares remaining resources across pools. Minimum idle is best effort; running work is never preempted. CPU/memory reservations include DinD and image setup. Low disk blocks new work without evicting active jobs or sealed images.
 
 ## Complete CLI reference
 
 All commands accept `--config PATH` and `--no-color`. Commands and flags are case sensitive.
 
-| Command | Additional options and behavior |
-| --- | --- |
-| `init` | Interactive Tart setup can create and supervise a new Apple-IPSW VM, then resume after interruption; scripted setup uses `--target`, `--backend`, `--auth`, `--credential-env`/`--credential-file`, App IDs and `--image`/`--image-source`; `--image-only` creates an empty setup configuration; never overwrites |
-| `config validate` | Reject unknown fields, versions and contradictory budgets |
-| `config show --resolved` | Read calculated settings and committed runner versions without preparing images |
-| `runner update` | Optional `--pool NAME`; request an immediate managed runner check |
-| `run` | Foreground manager; interruption requests a drain |
-| `status`, `doctor` | `--json` for stable versioned structured output |
-| `reload` | Validate and atomically accept the whole candidate; unreleased versions also advance an older owned service to the installed CLI |
-| `pause`, `resume`, `drain` | Optional `--pool NAME`; drain waits for cleanup |
-| `stop` | Optional `--pool NAME` and `--force`; whole-manager stop exits |
-| `version` | Print version and source revision |
-| `service install`, `start`, `stop`, `uninstall` | Operate the user service; use the `service` prefix for each |
-| `image create` | `--name NAME`, optional `--cpu N` and `--memory-mib N`, exactly one `--ipsw latest\|PATH` or `--from SOURCE`; optional `--source-home PATH` for an external local image |
-| `image open`, `remove` | `--id UUID`; use the `image` prefix for each |
-| `image seal` | `--id UUID`, optional `--runner-version latest|VERSION` and `--runner-path PATH`; omission installs latest |
-| `image list` | Optional `--json`; includes preparation/sealed revisions and problems |
+| Command                                         | Additional options and behavior                                                                                                                                                                                                                                                                                   |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `init`                                          | Interactive Tart setup can create and supervise a new Apple-IPSW VM, then resume after interruption; scripted setup uses `--target`, `--backend`, `--auth`, `--credential-env`/`--credential-file`, App IDs and `--image`/`--image-source`; `--image-only` creates an empty setup configuration; never overwrites |
+| `config validate`                               | Reject unknown fields, versions and contradictory budgets                                                                                                                                                                                                                                                         |
+| `config show --resolved`                        | Read calculated settings and committed runner versions without preparing images                                                                                                                                                                                                                                   |
+| `runner update`                                 | Optional `--pool NAME`; request an immediate managed runner check                                                                                                                                                                                                                                                 |
+| `run`                                           | Foreground manager; interruption requests a drain                                                                                                                                                                                                                                                                 |
+| `status`, `doctor`                              | `--json` for stable versioned structured output                                                                                                                                                                                                                                                                   |
+| `reload`                                        | Validate and atomically accept the whole candidate; unreleased versions also advance an older owned service to the installed CLI                                                                                                                                                                                  |
+| `pause`, `resume`, `drain`                      | Optional `--pool NAME`; drain waits for cleanup                                                                                                                                                                                                                                                                   |
+| `stop`                                          | Optional `--pool NAME` and `--force`; whole-manager stop exits                                                                                                                                                                                                                                                    |
+| `version`                                       | Print version and source revision                                                                                                                                                                                                                                                                                 |
+| `service install`, `start`, `stop`, `uninstall` | Operate the user service; use the `service` prefix for each                                                                                                                                                                                                                                                       |
+| `image create`                                  | `--name NAME`, optional `--cpu N` and `--memory-mib N`, exactly one `--ipsw latest\|PATH` or `--from SOURCE`; optional `--source-home PATH` for an external local image                                                                                                                                           |
+| `image open`, `remove`                          | `--id UUID`; use the `image` prefix for each                                                                                                                                                                                                                                                                      |
+| `image seal`                                    | `--id UUID`, optional `--runner-version latest                                                                                                                                                                                                                                                                    | VERSION`and`--runner-path PATH`; omission installs latest |
+| `image list`                                    | Optional `--json`; includes preparation/sealed revisions and problems                                                                                                                                                                                                                                             |
 
 Image commands print structured revision data. Image changes require a running manager; `image list` also works offline. See [Tart image preparation](./tart) for starting without any pools. CPU values are whole cores and memory values are MiB. Use `--help` to list commands. Read [operations and recovery](./operations) before force-stop or image removal.
 

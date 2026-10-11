@@ -71,14 +71,14 @@ gate before atomic claim; a scan wake never grants native cleanup authority.
 ### cmds/delidev-cli/internal/cli constraints
 
 - `session sidechat` requires independent server support before purpose submission, preserves original parent workspace and accepts no Local override. `session sidechat send` freezes exact selected reply and parent revisions under one request; receipt retry never infers or automatically Steers. Follow `cmds-delidev-sidechat-contract.md`.
-Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
+  Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
 - Sidechat creation and observation retain the native fork 145-second command deadline; selected findings submission retains the immediate ordinary deadline. A bounded wait failure returns the original accepted job identity.
 
 ### cmds/delidev-cli/internal/domain constraints
 
 - Sidechat uses a closed Codex read-only overlay of the complete original API account snapshot, with no child-account or permission expansion. Preserve the separate parent snapshot, version-3 fork seed and ordinary omitted-purpose bytes; follow `cmds-delidev-sidechat-contract.md`.
-Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
+  Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
 - Permanent-deletion ownership envelopes retain the original unpublished Sidechat child ID only for a Fork copy. Their dedicated strict JSON bound is 4 MiB; public command JSON retains 1 MiB. Preserve the 4,096-copy bound and reject malformed or extra authority.
 
@@ -91,14 +91,14 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### cmds/delidev-cli/internal/server constraints
 
 - Sidechat admission/publication/execution require the original parent, account, completed native boundary and Worker capability 16. Selected complete replies use exact child/message/parent revisions and the ordinary queue receipt. Parent storage retirement and deletion freeze complete child obligations before cancellation; retirement inspection never grants early cleanup. Follow `cmds-delidev-sidechat-contract.md`.
-Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
+  Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
 - Primary Worker dependency rescans follow the Sidechat/storage contracts. Retain one earliest skipped predecessor cursor for blocked cleanup/recovery, restore it on completion/store wake/heartbeat, and preserve later independent progress, bounded pages, original atomic dependent-retirement gates and one outstanding assignment.
 
 ### cmds/delidev-cli/internal/store constraints
 
 - Sidechat publication atomically records its bounded parent dependency. Keep it until original native, database and backup retirement finishes. Synchronized complete parent/storage intents reconstruct only their original child plans across SQL rollback and response loss; compare immutable ownership inventories, never substitute current work. Follow `cmds-delidev-sidechat-contract.md`.
-Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
+  Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
 - Permanent deletion derives unpublished Sidechat child IDs only from original immutable failed/canceled Fork assignments. Persist the complete synchronized plan within its 4 MiB bound, preserving legacy omitted fields and original request/digest identities; no current child lookup can reconstruct ownership.
 
@@ -109,7 +109,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 ### cmds/delidev-cli/internal/worker constraints
 
 - Sidechat pins the Codex native read-only profile for source inspection, Fork and every Execute/Plan/Steer/compaction continuation. Reference original workspace roots without owning their removal. A publication/deletion race may release an assignment only after authenticated exact retiring-envelope comparison; retain native uncertainty and let the joined deletion lane prove cleanup. Follow `cmds-delidev-sidechat-contract.md`.
-Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
+  Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
 - After a failed native Sidechat fork joins its original process, discard only its original inode-bound unpublished metadata under bounded cleanup. Foreign or replaced metadata remains pending. Revalidate the closed Sidechat native configuration/features immediately before manual compaction claim/send.
 
@@ -245,6 +245,7 @@ envelope, evict accepted references, add RPCs or add a migration.
 Sidechat adds no image deletion owner. Readback requires the current nondeleting parent owner and exact original succeeded Fork job prefix. Validate its input digest, session, machine, Worker device and runtime. Later parent images, changed jobs and restored quarantined metadata grant no access. Parent deletion joins dependent cleanup before last-owner image removal.
 
 ## Managed ChatGPT Sidechat
+
 System `MANAGED_CODEX_SIDECHAT_V1 = 47` and Worker
 `MANAGED_CODEX_SIDECHAT_V1 = 26` extend the closed Codex Sidechat profile.
 System 27 and Worker 16 retain API Sidechat ownership; protected subscriptions
@@ -330,6 +331,7 @@ survive and sidebar reopening selects the child under its parent. Independent
 Fork lifetime and deletion ownership remain separate.
 
 ## Same-question retry
+
 System capability 57 and Worker capability 31 implement same-question retry
 through `RetrySidechatQuestion` and `GetSidechatQuestionRetry`. Compose them with
 original Sidechat 27/16 and, for managed ChatGPT, 47/26 plus protected Worker 3.

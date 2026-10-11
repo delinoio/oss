@@ -1,18 +1,22 @@
 # crates-cargo-mono-foundation
 
 ## Scope
+
 - Project/component: `cargo-mono` crate foundation contract
 - Canonical path: `crates/cargo-mono`
 
 ## Runtime and Language
+
 - Runtime: Rust CLI (`cargo` subcommand integration)
 - Primary language: Rust
 
 ## Users and Operators
+
 - Release engineers operating monorepo version and publish workflows
 - Maintainers running local and CI release automation
 
 ## Interfaces and Contracts
+
 - Binary naming contract: `cargo-mono` must remain compatible with `cargo mono` invocation.
 - Binary entrypoint must force-link `swc_malloc` allocator policy, while the library target remains allocator-agnostic for downstream consumers.
 - Command identifiers for lifecycle operations must remain stable and documented.
@@ -58,20 +62,24 @@
 - Keep direct installers and `cargo-binstall` metadata aligned with release asset names, signing contracts, and install docs.
 
 ## Storage
+
 - Uses workspace metadata and package manifests as canonical input.
 - Uses temporary local files/caches only for transient command execution.
 
 ## Security
+
 - Publishing workflows must rely on explicit credentials and least-privilege secrets.
 - Logs and errors must avoid exposing secret registry tokens.
 
 ## Logging
+
 - Use structured `tracing` logs for release automation operations.
 - Include command phase, package target, and outcome status for debugging.
 - Retry logs must include retry reason, retry attempt number, configured retry-limit mode, and computed delay seconds.
 - Keep `CARGO_MONO_LOG_COLOR` semantics scoped to structured log rendering (separate from human result-output color controls).
 
 ## Error UX Contract
+
 - Runtime errors must use a fixed three-line format:
   - `Summary: ...`
   - `Context: key=value, ...`
@@ -86,6 +94,7 @@
 - Error and log output must not expose secret credentials or registry tokens.
 
 ## Build and Test
+
 - Local validation: `cargo test -p cargo-mono`
 - Workspace validation baseline: `cargo test --workspace --all-targets`
 - CI alignment: `.github/workflows/CI.yml` generic Rust jobs use the verified published 0.6.9 binary for affected package detection, including manifest path dependents. Shared inputs and manual runs retain the full baseline; the repository workflow contract owns selection, runtime edges, exclusions and failure handling. The selector does not compile this crate from the checkout.
@@ -96,6 +105,7 @@
 - `apps/public-docs` is not required to surface repo-local direct-installer script examples.
 
 ## Dependencies and Integrations
+
 - Integrates with Cargo workspace metadata and release workflows.
 - Publish ordering uses workspace package manifest dependency declarations rather than only Cargo's default-feature resolve graph, so optional workspace path dependencies are published before dependents that expose them behind features.
 - Integrates with manual `Release Project` orchestration through selected-package publication and exact remote tag recovery.
@@ -103,11 +113,13 @@
 - Integrates with direct installer scripts and `cargo-binstall` metadata for prebuilt binary distribution.
 
 ## Change Triggers
+
 - Update `docs/project-cargo-mono.md` with this file when command identifiers or ownership changes.
 - Update `crates/AGENTS.md` and root `AGENTS.md` when policy or path contracts change.
 
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - `docs/project-cargo-mono.md`
 - `docs/domain-template.md`

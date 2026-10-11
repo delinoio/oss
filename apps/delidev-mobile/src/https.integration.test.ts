@@ -449,23 +449,43 @@ it("creates Worktree and General Chat and exactly replays Create/Send after ackn
     discovery: false,
   });
   const account = await save(EntityKind.ACCOUNT, {
-    alias: "Fixture keyless", type: "api", provider_id: provider.id,
-    enabled: true, health: "disconnected",
+    alias: "Fixture keyless",
+    type: "api",
+    provider_id: provider.id,
+    enabled: true,
+    health: "disconnected",
   });
   await createClient(AccountService, transport).connectAccount({
     keyless: true,
-    mutation: { id: account.id, expectedRevision: account.revision, requestId: uuid() },
+    mutation: {
+      id: account.id,
+      expectedRevision: account.revision,
+      requestId: uuid(),
+    },
   });
-  const agent = (await config.saveAgentWorker({
-    mutation: { requestId: uuid() }, schemaVersion: 4,
-    routeModels: [{ selection: { case: "nativeId", value: "fixture" } }],
-    documentJson: documentBytes({
-      name: "Owned keyless Agent", harness: "codex",
-      routes: [{ model: { provider_id: provider.id, native_id: "fixture", metadata_source: "unknown" },
-        accounts: [{ id: account.id, weight: 1 }] }],
-      templates: [], options: { permission: "default" },
-    }),
-  })).resource!;
+  const agent = (
+    await config.saveAgentWorker({
+      mutation: { requestId: uuid() },
+      schemaVersion: 4,
+      routeModels: [{ selection: { case: "nativeId", value: "fixture" } }],
+      documentJson: documentBytes({
+        name: "Owned keyless Agent",
+        harness: "codex",
+        routes: [
+          {
+            model: {
+              provider_id: provider.id,
+              native_id: "fixture",
+              metadata_source: "unknown",
+            },
+            accounts: [{ id: account.id, weight: 1 }],
+          },
+        ],
+        templates: [],
+        options: { permission: "default" },
+      }),
+    })
+  ).resource!;
   const repository = await save(EntityKind.REPOSITORY, {
     name: "Remote fixture",
     remote_url: "git@github.com:fixture/mobile.git",
@@ -885,13 +905,22 @@ it("foreground synchronization fences old streams, resnapshots and never retries
 }, 15000);
 
 it("retains granular false presence and the original revision through HTTPS acknowledgment loss, reload and exact retry", async () => {
-  let raw: string | null = null, lost = true;
+  let raw: string | null = null,
+    lost = true;
   const bodies: string[] = [];
-  const storage = { read: async () => raw, write: async (value: string) => { raw = value; } };
+  const storage = {
+    read: async () => raw,
+    write: async (value: string) => {
+      raw = value;
+    },
+  };
   const fetcher: typeof fetch = async (input, init) => {
     const request = new Request(input, init);
-    if (!request.url.endsWith("/SetNotificationPreferences")) return trustedFetch(request);
-    bodies.push(Buffer.from(await request.clone().arrayBuffer()).toString("hex"));
+    if (!request.url.endsWith("/SetNotificationPreferences"))
+      return trustedFetch(request);
+    bodies.push(
+      Buffer.from(await request.clone().arrayBuffer()).toString("hex"),
+    );
     const response = await trustedFetch(request);
     if (lost && response.status === 200) {
       lost = false;
@@ -902,18 +931,35 @@ it("retains granular false presence and the original revision through HTTPS ackn
   };
   const state = new ProtectedState(storage, fetcher);
   // A fresh client grant avoids adopting any shared interaction/Inbox fixture.
-  const id = await state.preparePair("Granular preferences", first.origin, await grant(first));
+  const id = await state.preparePair(
+    "Granular preferences",
+    first.origin,
+    await grant(first),
+  );
   await state.pair(id);
   const inbox = createClient(InboxService, state.transport(id));
-  const original = (await inbox.getNotificationPreferences({ situations: true })).preferences!;
+  const original = (
+    await inbox.getNotificationPreferences({ situations: true })
+  ).preferences!;
   expect(original.situations).toBeDefined();
   const request = create(SetNotificationPreferencesRequestSchema, {
-    requestId: uuid(), expectedRevision: original.revision, changes: { questions: false },
+    requestId: uuid(),
+    expectedRevision: original.revision,
+    changes: { questions: false },
   });
-  await expect(state.perform(id, Operation.Preferences, request, "")).rejects.toThrow();
+  await expect(
+    state.perform(id, Operation.Preferences, request, ""),
+  ).rejects.toThrow();
   const pending = state.profile(id).pending!;
-  const retained = fromJsonString(SetNotificationPreferencesRequestSchema, pending.request);
-  expect(retained).toMatchObject({ requestId: request.requestId, expectedRevision: original.revision, changes: { questions: false } });
+  const retained = fromJsonString(
+    SetNotificationPreferencesRequestSchema,
+    pending.request,
+  );
+  expect(retained).toMatchObject({
+    requestId: request.requestId,
+    expectedRevision: original.revision,
+    changes: { questions: false },
+  });
   expect(retained.preferences).toBeUndefined();
   expect(retained.changes?.approvals).toBeUndefined();
   // Subsequent draft edits cannot change the durably captured false selection.
@@ -921,26 +967,48 @@ it("retains granular false presence and the original revision through HTTPS ackn
   const reloaded = new ProtectedState(storage, fetcher);
   await reloaded.load();
   expect(reloaded.profile(id).pending).toEqual(pending);
-  const current = (await inbox.getNotificationPreferences({ situations: true })).preferences!;
+  const current = (await inbox.getNotificationPreferences({ situations: true }))
+    .preferences!;
   expect(current.revision).toBe(original.revision + 1n);
-  expect(current.situations).toEqual({ ...original.situations, questions: false });
+  expect(current.situations).toEqual({
+    ...original.situations,
+    questions: false,
+  });
   expect(reloaded.profile(id).pending).toEqual(pending);
   // Another explicit server-side change advances the snapshot. Receipt replay
   // must preserve it rather than replacing preferences with the old snapshot.
-  const concurrent = await createClient(InboxService, createDeliDevTransport({ origin: first.origin, getToken: () => state.profile(id).token, fetch: trustedFetch })).setNotificationPreferences({
-    requestId: uuid(), expectedRevision: current.revision,
+  const concurrent = await createClient(
+    InboxService,
+    createDeliDevTransport({
+      origin: first.origin,
+      getToken: () => state.profile(id).token,
+      fetch: trustedFetch,
+    }),
+  ).setNotificationPreferences({
+    requestId: uuid(),
+    expectedRevision: current.revision,
     changes: { approvals: !current.situations!.approvals },
   });
   expect(concurrent.preferences?.revision).toBe(current.revision + 1n);
   const replay = await reloaded.retry(id);
-  expect(replay).toMatchObject({ requestId: retained.requestId, replayed: true, preferences: concurrent.preferences });
+  expect(replay).toMatchObject({
+    requestId: retained.requestId,
+    replayed: true,
+    preferences: concurrent.preferences,
+  });
   expect(bodies).toHaveLength(2);
   expect(bodies[0]).toBe(bodies[1]);
   expect(reloaded.profile(id).pending).toBeUndefined();
   const stale = create(SetNotificationPreferencesRequestSchema, {
-    requestId: uuid(), expectedRevision: original.revision, changes: { questions: true },
+    requestId: uuid(),
+    expectedRevision: original.revision,
+    changes: { questions: true },
   });
-  await expect(reloaded.perform(id, Operation.Preferences, stale, "")).rejects.toMatchObject({ code: Code.Aborted });
+  await expect(
+    reloaded.perform(id, Operation.Preferences, stale, ""),
+  ).rejects.toMatchObject({ code: Code.Aborted });
   expect(reloaded.profile(id).pending?.request).toContain(stale.requestId);
-  expect((await inbox.getNotificationPreferences({ situations: true })).preferences).toEqual(concurrent.preferences);
+  expect(
+    (await inbox.getNotificationPreferences({ situations: true })).preferences,
+  ).toEqual(concurrent.preferences);
 }, 30000);

@@ -89,13 +89,13 @@ A write failure or interruption **while emitting stdout can leave partial output
 
 On Windows, Ctrl+C or Ctrl+Break lets the native command finish cancellation cleanup before the npm/pnpm launcher returns its exit code.
 
-| Outcome | Exit code |
-|---|---:|
-| Success | 0 |
-| Content, filesystem, resource-limit, or other runtime failure | 1 |
-| Missing, malformed, or conflicting CLI arguments | 2 |
-| Handled Ctrl+C | 130 |
-| Handled Unix SIGTERM | 143 |
+| Outcome                                                       | Exit code |
+| ------------------------------------------------------------- | --------: |
+| Success                                                       |         0 |
+| Content, filesystem, resource-limit, or other runtime failure |         1 |
+| Missing, malformed, or conflicting CLI arguments              |         2 |
+| Handled Ctrl+C                                                |       130 |
+| Handled Unix SIGTERM                                          |       143 |
 
 English structured diagnostics go to stderr, with warnings/errors enabled by default. Use `RUST_LOG=clibox=debug` for operation progress (or `RUST_LOG` filters for more detail). Diagnostic color is used only on a terminal and respects `NO_COLOR`. Diagnostics omit input content, keys, values, paths, raw arguments, and dependency error text; intentional command results are separate.
 

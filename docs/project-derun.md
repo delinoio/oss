@@ -1,18 +1,23 @@
 # Project: derun
 
 ## Goal
+
 Provide a Go CLI that preserves terminal fidelity for AI-agent workflows and bridges MCP output transport.
 
 ## Project ID
+
 `derun`
 
 ## Domain Ownership Map
+
 - `cmds/derun`
 
 ## Domain Contract Documents
+
 - `docs/cmds-derun-foundation.md`
 
 ## Cross-Domain Invariants
+
 - `cmds/derun/internal/version/version.go` is the canonical release version source, initialized from `derun@v0.1.0`; MCP `serverInfo.version` uses the same constant.
 - Manual version selection and bot-owned release orchestration follow `docs/repository-workflow-contract.md`; the `Release Project` workflow supports patch, minor, and major increments while preserving this project’s existing distribution channels.
 - CLI command identifiers and output contracts must remain stable for automation consumers.
@@ -28,6 +33,7 @@ Provide a Go CLI that preserves terminal fidelity for AI-agent workflows and bri
 - `derun` -> `cmds/derun`
 
 ## Change Policy
+
 - Update this index and `docs/cmds-derun-foundation.md` together whenever command shape or runtime contracts change.
 - Update this index and `docs/cmds-derun-foundation.md` together whenever user-facing error message contracts or compatibility tokens change.
 - Update `.github/workflows/release-derun.yml`, `scripts/release/update-homebrew.sh`, and `packaging/homebrew/templates/derun.rb.tmpl` in the same change when derun release artifact names, target matrix, or package-manager distribution contracts change.
@@ -37,6 +43,7 @@ Provide a Go CLI that preserves terminal fidelity for AI-agent workflows and bri
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - `docs/project-template.md`
 - `docs/domain-template.md`
 - `docs/README.md`

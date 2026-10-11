@@ -20,7 +20,11 @@ export function hasExecutableRemoteLoad(text) {
   return executableRemoteLoadPatterns.some((pattern) => pattern.test(text));
 }
 
-export function hasExactCspDirectiveSources(policy, directiveName, expectedSources) {
+export function hasExactCspDirectiveSources(
+  policy,
+  directiveName,
+  expectedSources,
+) {
   const matchingDirectives = policy
     .split(";")
     .map((directive) => directive.trim())
@@ -31,6 +35,8 @@ export function hasExactCspDirectiveSources(policy, directiveName, expectedSourc
   return (
     matchingDirectives.length === 1 &&
     matchingDirectives[0].length === expectedSources.length + 1 &&
-    expectedSources.every((source, index) => matchingDirectives[0][index + 1] === source)
+    expectedSources.every(
+      (source, index) => matchingDirectives[0][index + 1] === source,
+    )
   );
 }
