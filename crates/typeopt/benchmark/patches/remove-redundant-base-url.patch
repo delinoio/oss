@@ -1,0 +1,12 @@
+diff --git a/tsconfig.json b/tsconfig.json
+index da8329db..942857c2 100644
+--- a/tsconfig.json
++++ b/tsconfig.json
+@@ -17,7 +17,6 @@
+     "isolatedModules": true,
+     "noEmit": true,
+     "jsx": "react-jsx",
+-    "baseUrl": ".",
+     "paths": {
+       "@excalidraw/common": ["./packages/common/src/index.ts"],
+       "@excalidraw/common/*": ["./packages/common/src/*"],

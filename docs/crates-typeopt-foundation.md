@@ -22,7 +22,7 @@ Resolve reachable workspace sources using the project's configuration. Declarati
 
 Emit JS and source maps plus versioned `modules.json`, `properties.json` and `report.json`. Module mappings link original paths to output JS/maps; property mappings include stable group identities and original/final names. Reports explain transformations and preservation reasons and include analysis statistics. Identical inputs/configuration/tool versions produce identical code and mappings. Exclude time and peak-memory measurements from deterministic comparisons. Zero safe changes is a valid explained result.
 
-The Vite example substitutes mapped JS under original module identities and composes source maps. Keep assets in the original project and preserve resolution context. It is not a separately published plugin. Roll back by restoring original build inputs/configuration.
+The Vite example substitutes mapped JS for modules with actual property edits under original module identities; preserved TS modules retain the original Vite transpilation. Compose source maps through the original module identities. Keep assets in the original project and preserve resolution context. It is not a separately published plugin. Roll back by restoring original build inputs/configuration.
 
 ## Storage
 

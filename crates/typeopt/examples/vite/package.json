@@ -1,0 +1,17 @@
+{
+  "name": "typeopt-vite-example",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "scripts": {
+    "test": "node --test adapter.test.mjs"
+  },
+  "devDependencies": {
+    "vite": "5.0.12"
+  },
+  "pnpm": {
+    "overrides": {
+      "source-map-js": "1.2.2"
+    }
+  }
+}
