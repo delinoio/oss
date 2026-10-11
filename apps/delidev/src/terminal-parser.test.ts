@@ -326,3 +326,13 @@ it("localizes terminal input/output and keyboard escape guidance without changin
   ).toBe("터미널 출력");
   expect(terminal.bridge).toBe(core);
 });
+
+it("disables automatic focus while preserving the public explicit focus call", async () => {
+  const core = await create(),
+    { terminal, input } = await screen(core);
+  expect(document.activeElement).not.toBe(input);
+  terminal.focus();
+  expect(document.activeElement).toBe(input);
+  terminal.reset();
+  expect(document.activeElement).toBe(input);
+});
