@@ -26,10 +26,12 @@ func (s *Store) Sessions(ctx context.Context, f SessionFilter) ([]Record, bool, 
 		// This JSON field exists only in the authorized response. One bounded
 		// query projects the original page without writes or per-row reads;
 		// sessionPage accounts for the projected bytes in its envelope bound.
+		// SQLite JSON functions return TEXT, which modernc scans as string;
+		// Record.Data is json.RawMessage, so retain the stored-body BLOB scan type.
 		query := `SELECT s.id,s.kind,s.revision,s.session_id,s.project_id,
-json_set(s.body,'$.awaiting_user_response',json(CASE WHEN EXISTS(
+CAST(json_set(s.body,'$.awaiting_user_response',json(CASE WHEN EXISTS(
 SELECT 1 FROM entities i WHERE i.session_id=s.id AND ` + currentUnansweredInteraction + `
-) THEN 'true' ELSE 'false' END)),s.created_at,s.updated_at
+) THEN 'true' ELSE 'false' END)) AS BLOB),s.created_at,s.updated_at
 FROM entities s WHERE s.kind='session' AND s.id>?`
 		args := []any{f.After}
 		if f.ProjectID != "" {
