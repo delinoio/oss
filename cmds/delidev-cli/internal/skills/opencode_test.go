@@ -3,6 +3,7 @@ package skills
 
 import (
 	"context"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"os"
 	"path/filepath"
 	"testing"
@@ -99,5 +100,53 @@ func TestOpenCodeRuntimeRejectsForeignAndChangedResources(t *testing.T) {
 				t.Fatal("runtime drift remained eligible")
 			}
 		})
+	}
+}
+
+func TestOpenCodeInventoryExcludesAmbientHostPackages(t *testing.T) {
+	ctx := context.Background()
+	server, worker := domain.NewID(), domain.NewID()
+	manager := Manager{Root: t.TempDir(), Home: t.TempDir()}
+	scope := domain.SkillReadRequest{Harness: domain.OpenCode, ManagedServerID: server, WorkerDeviceID: worker}
+	for _, name := range []string{"first", "second"} {
+		source := openCodePackageFixture(t, name, "")
+		files, digest, err := packageFiles(ctx, filepath.Dir(source.Path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		id := domain.NewID()
+		target := filepath.Join(managedRoot(manager.Root, server, worker), "retained", string(id))
+		if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := writePackage(ctx, files, digest, target); err != nil {
+			t.Fatal(err)
+		}
+		scope.ManagedPackages = append(scope.ManagedPackages, domain.ManagedSkillPackage{ID: id, WorkerDeviceID: worker, Revision: 1, ContentRevision: digest, Name: name, Description: "Fixture package", Provenance: "worker-import", Enabled: true})
+	}
+	ambient := openCodePackageFixture(t, "ambient", "")
+	files, ambientDigest, _ := packageFiles(ctx, filepath.Dir(ambient.Path))
+	target := filepath.Join(manager.Home, ".agents", "skills", "ambient")
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := writePackage(ctx, files, ambientDigest, target); err != nil {
+		t.Fatal(err)
+	}
+	inventory, err := manager.List(ctx, scope, []string{manager.Home})
+	if err != nil || len(inventory.Entries) != 2 {
+		t.Fatalf("selected-only inventory: %#v %v", inventory, err)
+	}
+	for _, entry := range inventory.Entries {
+		if entry.Name == "ambient" {
+			t.Fatal("host skill was offered to native OpenCode")
+		}
+	}
+}
+func TestOpenCodeRejectsDuplicateNativeNamesBeforeCopy(t *testing.T) {
+	first := openCodePackageFixture(t, "same", "")
+	second := openCodePackageFixture(t, "same", "")
+	if _, err := CopyOpenCodeRuntime(context.Background(), []NativeSelection{first, second}, t.TempDir()); err == nil {
+		t.Fatal("duplicate native names were copied")
 	}
 }

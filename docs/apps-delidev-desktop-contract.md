@@ -4592,7 +4592,7 @@ and uncertain requests never clear it. Token edits remove bindings. Changed cont
 before sending; unselected manually typed tokens remain ordinary text. Loading,
 empty, unsupported and retry states preserve the draft in English and Korean.
 Inventory belongs to the selected Runner and Harness, including remote Runners;
-renderer-local skill directories are never discovery authority. Codex alone is
+renderer-local skill directories are never discovery authority. Codex and the separately negotiated OpenCode native skill profile are
 supported. Follow the sessions contract's Explicit native skills section for
 snapshot, native input, recovery, protocol and cleanup ownership.
 
@@ -5331,3 +5331,14 @@ Dialogs support Esc and focus return, and the single import input receives focus
 Rows/actions reflow on narrow layouts using existing theme tokens. All new copy has
 English/Korean entries. Synthetic fixtures and parser checks do not establish
 installed desktop, screen-reader, native-runtime or effective-200% acceptance.
+
+
+## OpenCode native skill composer capability
+
+The existing explicit skill completion also accepts the independently negotiated
+OpenCode native skill capability. The server and original Runner still prove
+Harness eligibility and the selected managed generation. Its supported native
+input is one bound command at the start of an input with ordered arguments;
+unsupported shapes fail before native input. Selection, queue edits and reconnects
+retain the existing opaque package binding and original text. Typed unbound tokens
+remain text. This adds no new dialog, renderer-local discovery or Sidechat support.

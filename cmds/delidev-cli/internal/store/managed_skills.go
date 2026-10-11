@@ -196,7 +196,7 @@ func (t *Tx) ResolveManagedSkillGeneration(list *domain.ManagedSkillSelectionLis
 		if !defs[index].Enabled {
 			continue
 		}
-		if harness != domain.Codex {
+		if harness != domain.Codex && harness != domain.OpenCode {
 			return nil, domain.Fail(domain.Unsupported, "Managed native skills are unsupported for this Harness.", "Use its independently accepted native adapter.")
 		}
 		for _, prior := range selected {

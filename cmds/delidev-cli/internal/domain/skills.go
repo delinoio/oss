@@ -56,6 +56,7 @@ type SkillPreparationProof struct {
 }
 
 type SkillReadRequest struct {
+	Harness          Harness                `json:"harness,omitempty"`
 	ManagedServerID  ID                     `json:"managed_server_id,omitempty"`
 	ManagedPackages  []ManagedSkillPackage  `json:"managed_packages,omitempty"`
 	Action           SkillReadAction        `json:"action,omitempty"`

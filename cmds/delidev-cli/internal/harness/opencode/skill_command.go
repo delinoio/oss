@@ -82,7 +82,7 @@ func nativeSkillCommand(selection skills.OpenCodeSelection, arguments string) (*
 	last := 0
 	for _, match := range nativeCommandPlaceholder.FindAllStringSubmatch(template, -1) {
 		number, err := strconv.Atoi(match[1])
-		if err != nil {
+		if err != nil || number < 1 {
 			return nil, incompatible()
 		}
 		if number > last {
@@ -108,6 +108,9 @@ func nativeSkillCommand(selection skills.OpenCodeSelection, arguments string) (*
 	text = strings.TrimSpace(text)
 	if domain.Text(text, "native skill input", 256<<10, true) != nil {
 		return nil, sessionInvalid()
+	}
+	if domain.Text(text, "native command text", domain.MaxMessageText, false) != nil {
+		return nil, incompatible()
 	}
 	return &SkillCommand{Name: selection.Name, Location: selection.Path, Arguments: arguments, ContentRevision: selection.ContentRevision, Text: text}, nil
 }

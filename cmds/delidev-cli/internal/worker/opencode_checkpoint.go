@@ -23,6 +23,7 @@ type openCodeCheckpointReference struct {
 	Claim                 openCodeClaimReference     `json:"claim"`
 	Completion            domain.ExecutionCompletion `json:"completion"`
 	InputMode             domain.SessionMode         `json:"input_mode"`
+	NativeInputSHA256     string                     `json:"native_input_sha256,omitempty"`
 	PromptSHA256          string                     `json:"prompt_sha256"`
 	ClaimsSHA256          string                     `json:"claims_sha256"`
 	AssignmentInputSHA256 string                     `json:"assignment_input_sha256,omitempty"`
@@ -40,6 +41,9 @@ type openCodeExecutionCheckpoint struct {
 func (r openCodeCheckpointReference) validate() error {
 	c := r.Completion
 	if r.Claim.validate() != nil || c.ValidateForHarness(domain.OpenCode) != nil || c.Version != 1 || c.ExecutionID != r.Claim.ExecutionID || c.InputID != r.Claim.InputID || !r.InputMode.Valid() {
+		return executionCheckpointUncertain()
+	}
+	if r.NativeInputSHA256 != "" && !canonicalDigest(r.NativeInputSHA256) {
 		return executionCheckpointUncertain()
 	}
 	for _, value := range []string{r.PromptSHA256, r.ClaimsSHA256} {
@@ -65,9 +69,13 @@ func (p openCodeExecutionCheckpoint) matches(ref openCodeCheckpointReference) bo
 		creation = ref.CreationRequestID
 		validVersion = validVersion && (original.Version != 1 || creation == original.ThreadRequestID && ref.HistoryExecutionID == original.ExecutionID)
 	}
+	nativeInput := ref.PromptSHA256
+	if ref.NativeInputSHA256 != "" {
+		nativeInput = ref.NativeInputSHA256
+	}
 	return ref.validate() == nil && validVersion && p.Reference == ref &&
 		native.OwnerID == original.JobID && native.CreationRequestID == creation && native.InputRequestID == original.InputRequestID &&
-		native.SessionID == string(completion.NativeThreadID) && native.InputID == string(completion.NativeTurnID) && native.InputSHA256 == ref.PromptSHA256 &&
+		native.SessionID == string(completion.NativeThreadID) && native.InputID == string(completion.NativeTurnID) && native.InputSHA256 == nativeInput &&
 		(completion.Outcome == domain.ExecutionSucceeded || native.RequiresResume) && len(p.Native) > 0 && len(p.Native) <= 8<<20 &&
 		json.Valid(p.Native) && executionInputDigest(p.Native) == native.SHA256
 }
@@ -127,7 +135,7 @@ func (c *OpenCodeEventPublisher) RetainCheckpoint(ctx context.Context) (string, 
 	if err != nil {
 		return fail(executionCheckpointUncertain())
 	}
-	ref := openCodeCheckpointReference{Claim: b.reference, Completion: *c.completion, InputMode: input.Input.Mode, PromptSHA256: executionInputDigest([]byte(input.Input.Prompt)), ClaimsSHA256: executionInputDigest(claimBytes)}
+	ref := openCodeCheckpointReference{NativeInputSHA256: openCodeNativeInputDigest(claims), Claim: b.reference, Completion: *c.completion, InputMode: input.Input.Mode, PromptSHA256: executionInputDigest([]byte(input.Input.Prompt)), ClaimsSHA256: executionInputDigest(claimBytes)}
 	var assignment domain.Job
 	if domain.Decode(b.publisher.config.Assignment.DocumentJson, &assignment) != nil {
 		return fail(executionCheckpointUncertain())

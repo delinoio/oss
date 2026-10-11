@@ -2492,10 +2492,48 @@ contribute structured skill inputs. Equal-name explicit/managed roots compose on
 when their complete content revision agrees. Foreign collisions fail closed.
 
 The management catalog exposes Codex's adapter profile as requiring verification,
-not installed native acceptance. Unsupported Claude Code, OpenCode and Grok
+not installed native acceptance. Unsupported Claude Code and Grok
 profiles stay unavailable until their independently accepted adapters consume this
 same immutable generation boundary. Existing explicit invocation, original history,
 continuation and independent ordinary Fork/Sidechat cleanup retain their authority.
 No host configuration, native authentication or prompt-text skill emulation is
 introduced. Code inspection and fixtures cannot establish installed native,
 remote-Worker, account or platform acceptance.
+
+
+## OpenCode selected native skill profile
+
+The selected native source revision is `545f51d26cc39a907d2867492d498d9607ea5fa4`.
+The HTTP instance exposes `/skill` and `/command`; the legacy HTTP session registry
+executes the legacy native skill tool. The private adapter validates that exact
+inventory and tool schema independently of the v2 configuration loader.
+Complete selected packages live under the private native configuration directory's
+`skills/<name>` directory, a location both pinned loaders discover. The existing
+private environment, project-source absence guards and disabled external skill
+scanners remain mandatory. No host root is enabled.
+
+Before input the adapter checks exact native skill name, location, description,
+content and native command template, with no foreign discovered entry beyond the
+pinned builtin. Native agent permission composition is compared in full. Skill
+permission denies every name except automatically invocable selected packages;
+explicit-only packages remain available solely through the bound native command.
+Package YAML supports only verified name, description and boolean invocation
+policy. Unsupported fields and name/command collisions fail before input.
+
+Native `/session/{id}/command` receives the original selected name, ordered raw
+arguments, caller-owned message ID, native primary agent and configured model.
+The adapter's template calculation is comparison evidence only. A single consumed
+Worker claim owns one synchronous native HTTP operation running beside the event
+reader, and cleanup joins that operation. The generated user part is accepted only
+after immutable native bytes and settings match the original claim. Native
+`command.executed` supplies original name, arguments and final assistant identity;
+idle status and HTTP acknowledgement cannot replace that proof.
+
+The native skill tool's input name, completed title, metadata name/directory,
+content wrapper and sampled resource paths must match one selected package's
+complete digest and executable modes. Foreign and explicit-only automatic tool
+loads fail closed. Private checkpoint tool profile 14 retains this positive inline
+skill evidence and existing interaction closure requirements. Checkpoint settings
+pin sorted package name, complete revision and invocation policy while preserving
+historical absolute paths as provenance. Fixtures and builds do not establish
+actual native/account/platform acceptance.

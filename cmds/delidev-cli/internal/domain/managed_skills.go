@@ -11,6 +11,7 @@ import (
 
 const ManagedSkillManagementV1 WorkerCapability = "managed-skill-management-v1"
 const ManagedNativeSkillsV1 WorkerCapability = "managed-native-skills-v1"
+const OpenCodeNativeSkillsV1 WorkerCapability = "opencode-native-skills-v1"
 
 type ManagedSkillAction string
 

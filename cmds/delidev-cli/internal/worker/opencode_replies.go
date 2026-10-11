@@ -9,7 +9,14 @@ import (
 )
 
 func (b *OpenCodeBindingPublisher) validPublicationClaims(claims []opencode.SessionClaim) bool {
-	want := 2 + len(b.replyClaims)
+	offset := 2
+	if b.inputClaim.Kind == opencode.SubmitSkillCommandMutation {
+		if len(claims) < 3 || claims[2].Kind != opencode.ObserveSkillInputMutation || openCodeClaimPart(claims) != b.originalInputPart() {
+			return false
+		}
+		offset = 3
+	}
+	want := offset + len(b.replyClaims)
 	if b.stopClaim != nil {
 		want++
 	}
@@ -17,7 +24,7 @@ func (b *OpenCodeBindingPublisher) validPublicationClaims(claims []opencode.Sess
 		return false
 	}
 	for i, claim := range b.replyClaims {
-		if claims[i+2] != claim {
+		if claims[i+offset] != claim {
 			return false
 		}
 	}

@@ -854,7 +854,7 @@ Manually typed tokens remain plain text. Editing a selected token removes its
 binding; changed connection, Runner, Agent, project or session context requires
 reselection. Selection alone creates no session, accepted input or inference.
 
-Only Codex supports this profile. `SkillService.ListSkills` uses authenticated
+Codex and the independently negotiated OpenCode native skill profile support selection. `SkillService.ListSkills` uses authenticated
 owner/client access and the selected Worker's joined keyless read lane. New
 sessions enumerate eligible user packages only. Existing prepared sessions can
 also enumerate verified workspace project roots. Discovery never prepares a
@@ -1037,3 +1037,41 @@ Only the actual native package's invocation policy controls implicit invocation.
 Existing explicit-only package policy, accepted-input proofs and dependent cleanup
 remain authoritative. Unsupported harness adapters refuse execution without prompt
 emulation.
+
+
+## OpenCode native skill generations
+
+System and Worker `OPENCODE_NATIVE_SKILLS_V1` authorize only the independently
+implemented OpenCode adapter. OpenCode composer inventories contain the selected
+enabled managed generation. They exclude ambient host/project packages and bind
+the original Harness as well as the existing actor, Worker, Agent and session
+scope. Complete selected packages, resource bytes and executable modes are copied
+to the private native configuration directory and reverified before input.
+Duplicate names, nested native declarations and unsupported metadata fail closed.
+
+The adapter uses native automatic discovery and the native skill tool. An
+explicit bound token at the beginning of one input invokes the native command
+route with its original ordered arguments and original user message identity.
+One explicit command per input is supported; multiple packages remain available
+for automatic discovery. Extra explicit selections, attachments, file-reference
+expansion, pre-input shell substitution and unsupported command placeholders are
+rejected before input. No ordinary prompt request emulates skill execution.
+A typed token without its bound selection remains ordinary text.
+
+The original Worker journal consumes one immutable command body before send and
+separately retains the observed native-generated user part after exact storage
+comparison. Lost HTTP responses cannot grant another send. Completion requires
+the original native command event, exact user/assistant identities and complete
+stored history. Disconnect reconciliation retains those facts; missing invocation
+or changed history remains recovery-required. Public input text retains the
+original accepted token and arguments; private native history retains native
+expanded content and its package identity.
+
+Checkpoints pin the complete immutable package generation and invocation policy.
+Continuation and compaction use authenticated predecessor copies, independent of
+later catalog changes. Independent Fork copies use the narrow authenticated native
+skill relocation profile in the Fork contract. Read-only Sidechat remains limited
+to its existing supported Harness. Codex structured skill inputs and ambient-host
+exclusion remain unchanged. Durable session deletion owns accepted snapshot and
+runtime cleanup; neither package deletion nor a failed invocation transfers that
+authority. This profile adds no database migration.

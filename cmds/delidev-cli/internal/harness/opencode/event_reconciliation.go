@@ -418,11 +418,15 @@ func (s *sessionAPI) readReconciliationSnapshot(ctx context.Context) (reconcilia
 func (o *inputObserver) reconciliationCopy() *inputObserver {
 	// Called with o.mu held. Copy every mutable comparison owner; failed joining
 	// must not change a published prefix, response receipt, or usage observation.
-	c := &inputObserver{contextOverflow: maps.Clone(o.contextOverflow), contextRecords: cloneContextRecords(o.contextRecords), contextUsers: maps.Clone(o.contextUsers), contextPending: o.contextPending, contextParent: o.contextParent, contextManual: o.contextManual, contextPruned: slices.Clone(o.contextPruned), contextBaseInventory: cloneHistoryInventory(o.contextBaseInventory), creation: o.creation, input: o.input, cwd: o.cwd, root: o.root, logger: o.logger, owner: o.owner,
+	c := &inputObserver{contextOverflow: maps.Clone(o.contextOverflow), contextRecords: cloneContextRecords(o.contextRecords), contextUsers: maps.Clone(o.contextUsers), contextPending: o.contextPending, contextParent: o.contextParent, contextManual: o.contextManual, contextPruned: slices.Clone(o.contextPruned), contextBaseInventory: cloneHistoryInventory(o.contextBaseInventory), skillPackages: slices.Clone(o.skillPackages), creation: o.creation, input: o.input, cwd: o.cwd, root: o.root, logger: o.logger, owner: o.owner,
 		seen: maps.Clone(o.seen), reconciliationText: maps.Clone(o.reconciliationText), bytes: o.bytes, messages: map[string]*observedMessage{}, messageOrder: slices.Clone(o.messageOrder),
 		parts: map[string]*observedPart{}, attachments: maps.Clone(o.attachments), calls: maps.Clone(o.calls), progress: o.progress,
 		ctx: o.ctx, cancel: o.cancel, interactions: map[string]*observedInteraction{}, responseIDs: maps.Clone(o.responseIDs),
 		alwaysOrder: slices.Clone(o.alwaysOrder), sessionPermissions: slices.Clone(o.sessionPermissions), rejectionPolicy: o.rejectionPolicy, retries: slices.Clone(o.retries)}
+	if o.skillCommand != nil {
+		proof := *o.skillCommand
+		c.skillCommand = &proof
+	}
 	for id, m := range o.messages {
 		v := *m
 		v.raw = slices.Clone(m.raw)
@@ -575,6 +579,14 @@ func (o *inputObserver) joinReconciliation(snapshot reconciliationSnapshot, even
 	}
 	for _, event := range events {
 		if event.Kind == PermissionRepliedEvent || event.Kind == QuestionRepliedEvent || event.Kind == QuestionRejectedEvent {
+			continue
+		}
+		if event.Kind == CommandExecutedEvent && !c.seen[event.ID] {
+			observation, err := c.observe(context.Background(), event)
+			if err != nil {
+				return nil, nil, err
+			}
+			observations = append(observations, observation)
 			continue
 		}
 		if err := c.coveredReconciliationEvent(event); err != nil {

@@ -315,7 +315,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			config.quotaBlockSupported = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1)
 			titleCapabilityExpected = true
 			profile := "implemented-adapters-v1"
-			for _, capability := range []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_SKILL_MANAGEMENT_V1, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_NATIVE_SKILLS_V1} {
+			for _, capability := range []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_SKILL_MANAGEMENT_V1, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_NATIVE_SKILLS_V1} {
 				if slices.Contains(attached.Msg.SupportedWorkerCapabilities, capability) {
 					profile += "\x00" + capability.String()
 				}
@@ -434,7 +434,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				capabilityAttachID, capabilityProfile = domain.NewID(), profile
 			}
 			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
-			for _, capability := range []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_SKILL_MANAGEMENT_V1, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_NATIVE_SKILLS_V1} {
+			for _, capability := range []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_SKILL_MANAGEMENT_V1, pb.WorkerCapability_WORKER_CAPABILITY_MANAGED_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_NATIVE_SKILLS_V1} {
 				if slices.Contains(attached.Msg.SupportedWorkerCapabilities, capability) {
 					capabilities = append(capabilities, capability)
 				}

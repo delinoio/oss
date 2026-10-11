@@ -34,7 +34,8 @@ func inspectCompletedOpenCodeCheckpoint(ctx context.Context, root string, ref Co
 		return executionCheckpointUncertain()
 	}
 	expected := openCodeCheckpointReference{
-		Claim: claim, Completion: c.Completion, InputMode: c.InputMode, PromptSHA256: hex.EncodeToString(c.PromptDigest[:]),
+		NativeInputSHA256: openCodeNativeInputDigest(claims),
+		Claim:             claim, Completion: c.Completion, InputMode: c.InputMode, PromptSHA256: hex.EncodeToString(c.PromptDigest[:]),
 		ClaimsSHA256: executionInputDigest(raw), AssignmentInputSHA256: c.AssignmentInputDigest,
 		HistoryExecutionID: c.HistoryExecutionID, CreationRequestID: native.CreationRequestID,
 	}

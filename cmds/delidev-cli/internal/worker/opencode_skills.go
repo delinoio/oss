@@ -79,3 +79,32 @@ func openCodeClaimPart(claims []opencode.SessionClaim) string {
 	}
 	return part
 }
+
+func (b *OpenCodeBindingPublisher) originalInputPart() string {
+	if b.inputPart != "" {
+		return b.inputPart
+	}
+	return b.inputClaim.PartID // Historical ordinary-text bindings remain valid.
+}
+func (b *OpenCodeBindingPublisher) originalNativeInputText(text string) bool {
+	if b.inputClaim.Kind == opencode.SubmitInputMutation {
+		return text == b.publisher.input.Input.Prompt
+	}
+	command, err := openCodeCommandForInput(b.publisher.config.Root, b.publisher.input)
+	return err == nil && command != nil && text == command.Text
+}
+func openCodeNativeInputDigest(claims []opencode.SessionClaim) string {
+	if len(claims) < 2 || claims[1].Kind != opencode.SubmitSkillCommandMutation {
+		return ""
+	}
+	part := openCodeClaimPart(claims)
+	if part == "" {
+		return ""
+	}
+	for _, c := range claims[2:] {
+		if c.Kind == opencode.ObserveSkillInputMutation && c.PartID == part {
+			return c.BodyDigest
+		}
+	}
+	return ""
+}
