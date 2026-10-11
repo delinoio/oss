@@ -296,7 +296,7 @@ export function WaitingQueue({
             payload.map((row) => (
               <div
                 key={row.id}
-                className={insertion === row.id ? "queue-insertion" : undefined}
+                className={`queue-drop-row${insertion === row.id ? " queue-insertion" : ""}`}
                 onDragOver={(event) => {
                   if (dragged && !locked && dragged !== row.id) {
                     event.preventDefault();
@@ -322,25 +322,30 @@ export function WaitingQueue({
                   readOnly={locked}
                   movement={movement(row)}
                 />
+                {dragged &&
+                !locked &&
+                !query.nextPageToken &&
+                query.rows.at(-1)?.id === row.id ? (
+                  <div
+                    className={`queue-drop-end${insertion === "end" ? " queue-insertion" : ""}`}
+                    onDragOver={(event) => {
+                      // The final row owns this target; do not turn an end drop
+                      // into the containing row's move-before operation.
+                      event.stopPropagation();
+                      event.preventDefault();
+                      setInsertion("end");
+                    }}
+                    onDrop={(event) => {
+                      event.stopPropagation();
+                      event.preventDefault();
+                      drop("");
+                    }}
+                  />
+                ) : null}
               </div>
             ))
           }
         </ScrollPayloadWindow>
-        {!query.nextPageToken && query.rows.length ? (
-          <div
-            className={`queue-drop-end${insertion === "end" ? " queue-insertion" : ""}`}
-            onDragOver={(event) => {
-              if (dragged && !locked) {
-                event.preventDefault();
-                setInsertion("end");
-              }
-            }}
-            onDrop={(event) => {
-              event.preventDefault();
-              drop("");
-            }}
-          />
-        ) : null}
         <ScrollContinuation
           query={query}
           root={root}
