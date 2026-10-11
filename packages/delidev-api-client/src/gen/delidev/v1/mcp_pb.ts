@@ -297,4 +297,3 @@ export const MCPService: GenService<{
   },
 }> = /*@__PURE__*/
   serviceDesc(file_delidev_v1_mcp, 0);
-
