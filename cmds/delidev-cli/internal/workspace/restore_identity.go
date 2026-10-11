@@ -40,8 +40,10 @@ func directoryPathIdentity(path string) (string, error) {
 	if err != nil || !before.IsDir() || before.Mode()&os.ModeSymlink != 0 {
 		return "", ResultUncertain()
 	}
+	// Git for Windows emits forward slashes. Normalize separators before the
+	// canonical-path check; links must still resolve to this exact directory.
 	canonical, err := filepath.EvalSymlinks(path)
-	if err != nil || canonical != path {
+	if err != nil || canonical != filepath.FromSlash(path) {
 		return "", ResultUncertain()
 	}
 	file, err := os.Open(path)
