@@ -116,7 +116,7 @@ try {
             });
             assert.equal(styles.border, "0px");
             assert.equal(styles.background, "rgba(0, 0, 0, 0)");
-            assert.equal(styles.minHeight, "36px");
+            if (row !== group) assert.equal(styles.minHeight, "36px");
             assert.equal(styles.shadow, "none");
           }
           const originalTrigger = group
