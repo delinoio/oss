@@ -8,3 +8,6 @@
 #palette-conversation-card { min-height: 80px; }
 #palette-card { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; }
 #palette-card p { margin: 0; }
+
+#palette-focus-consumers { display: grid; gap: 16px; }
+#palette-focus-consumers > .sidebar { display: block; position: relative; padding: 8px; }

@@ -61,6 +61,36 @@ try {
     }
     checks++;
   }
+  const focusConsumers = ["focus-runner-column", "focus-runner-worker", "focus-inbox-execution", "focus-conversation", "focus-wide", "focus-project-more", "focus-repository", "focus-agent", "focus-disclosure", "focus-session", "focus-project"];
+  const luminance = color => {
+    const channels = color.match(/[\d.]+/g).slice(0, 3).map(value => Number(value) / 255).map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4);
+    return channels.reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index], 0);
+  };
+  const contrast = (a, b) => { const x = luminance(a), y = luminance(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
+  async function assertFocusConsumers(expected) {
+    for (const id of focusConsumers) {
+      const control = page.locator(`#${id}`);
+      await control.focus();
+      await page.keyboard.press("Tab");
+      await page.keyboard.press("Shift+Tab");
+      const actual = await control.evaluate(node => {
+        const style = getComputedStyle(node);
+        function background(element) {
+          for (let current = element; current; current = current.parentElement) {
+            const color = getComputedStyle(current).backgroundColor;
+            if (color !== "transparent" && color !== "rgba(0, 0, 0, 0)") return color;
+          }
+          return getComputedStyle(document.documentElement).getPropertyValue("--background").trim();
+        }
+        return { focused: document.activeElement === node, visible: node.matches(":focus-visible"), outline: style.outlineColor, width: style.outlineWidth, inside: background(node), outside: background(node.parentElement) };
+      });
+      assert(actual.focused && actual.visible, `${id}: retains keyboard focus`);
+      assert(parseFloat(actual.width) >= 2, `${id}: preserves required focus geometry`);
+      assert.equal(actual.outline, rgb(expected.focus), `${id}: uses approved semantic focus token`);
+      for (const surface of [actual.inside, actual.outside]) assert(contrast(actual.outline, surface) >= 3, `${id}: actual focus/adjacent ${surface} contrast >=3:1`);
+      checks++;
+    }
+  }
   const commit = (theme, custom = false, defaults = false) => page.evaluate(({ theme, custom, defaults }) => window.appearanceColorsFixture.commit(theme, custom, defaults), { theme, custom, defaults });
   await assertMap(palettes.dracula.dark, "dark");
   // Exercise all eight maps through the real provider/cascade, not copied CSS.
@@ -75,6 +105,7 @@ try {
       assert(await page.locator("textarea").evaluate(node => document.activeElement === node));
       await page.keyboard.press("Shift+Tab");
       assert.equal(await page.locator("#palette-link").evaluate(node => getComputedStyle(node).outlineColor), rgb(palettes[family][mode].focus));
+      await assertFocusConsumers(palettes[family][mode]);
     }
   }
   // Same content/control geometry in both modes at ordinary and effective-200%
@@ -85,7 +116,7 @@ try {
     for (const family of ["titanium", "nord", "dracula", "solarized"]) for (const mode of ["light", "dark"]) {
       await page.evaluate(({ family, mode }) => window.appearanceColorsFixture.select(family, family, mode), { family, mode });
       await assertMap(palettes[family][mode], mode);
-      const geometry = await page.evaluate(() => ["palette-sidebar", "palette-card", "palette-selected", "palette-link", "palette-conversation", "palette-conversation-card"].map(id => { const rect = document.getElementById(id).getBoundingClientRect(); return [rect.x, rect.y, rect.width, rect.height]; }));
+      const geometry = await page.evaluate(ids => ["palette-sidebar", "palette-card", "palette-selected", "palette-link", "palette-conversation", "palette-conversation-card", ...ids].map(id => { const rect = document.getElementById(id).getBoundingClientRect(); return [rect.x, rect.y, rect.width, rect.height]; }), focusConsumers);
       if (!baseline) baseline = geometry; else assert.deepEqual(geometry, baseline, "Color-only changes preserve fixture geometry");
       assert(await page.locator("#palette-selected").isVisible());
     }

@@ -5,6 +5,10 @@ import { AppearanceProvider, Theme, type AppearanceBridge, type AppearanceSnapsh
 import { defaultPreferences, Palette, palettes, type AppearancePreferences } from "./appearance-preferences";
 import "./styles.css";
 import "./doctor.css";
+import "./disclosure.css";
+import "./agent-configuration.css";
+import "./session.css";
+import "./project-list.css";
 import "./themes.css";
 import "./appearance-colors.fixture.css";
 
@@ -27,6 +31,19 @@ root.render(<AppearanceProvider bridge={bridge}><main id="appearance-probe">
   <section className="appearance-preview"><div id="palette-card"><p>Body text</p><small id="palette-muted">Secondary text</small><a id="palette-link" className="diagnostics-symbol" href="#appearance-probe">Example link</a></div></section>
   <section id="palette-conversation" className="usage-page"><div id="palette-conversation-card" className="usage-chart-panel">Synthetic conversation surface</div></section>
   <textarea aria-label="Retained draft" defaultValue="unsent" />
+  <section id="palette-focus-consumers" aria-label="Synthetic focus consumers">
+    <div id="focus-runner-column" className="settings-runner-column" tabIndex={0}>Runner column</div>
+    <details className="settings-runner-worker-details"><summary id="focus-runner-worker">Runner details</summary></details>
+    <details className="inbox-execution-metadata"><summary id="focus-inbox-execution">Execution metadata</summary></details>
+    <aside className="sidebar"><div className="sidebar-conversation-line"><button id="focus-conversation" className="sidebar-conversation-disclosure disclosure-header">Expand</button><button id="focus-project-more" className="sidebar-project-more">More</button></div></aside>
+    <button id="focus-wide" className="sidebar-wide-toggle">Sidebar</button>
+    <form className="repository-profile-association"><button id="focus-repository" type="button">Repository profile</button></form>
+    <button id="focus-agent" className="agent-configuration">Agent</button>
+    <details className="disclosure"><summary id="focus-disclosure" className="disclosure-header">Disclosure</summary></details>
+    <div className="session-tab"><button id="focus-session" type="button">Session tab</button></div>
+    <details className="project-original-details"><summary id="focus-project">Project details</summary></details>
+    <button id="focus-sentinel" type="button">End of focus probes</button>
+  </section>
 </main></AppearanceProvider>);
 const fixture = {
   commit(theme: Theme, custom = false, defaults = false) {

@@ -2935,7 +2935,12 @@ must be rebuilt because native embeds the shared JSON; native tray snapshots use
 `Preferences::palette_colors` from that same source. Regression coverage checks
 exact values/key sets, unchanged Default bytes/custom storage, text/link contrast
 of at least 4.5:1 and required control/focus pairs of at least 3:1 against actual
-adjacent surfaces. The production-provider browser CI checks all eight maps,
+adjacent surfaces. Application focus declarations use `focus`, including Runner
+Device columns/details, execution metadata, sidebar disclosure/wide-toggle/project
+menus, repository-profile controls, agent controls, shared disclosures, session
+labels and project details. Replace only their former accent color references;
+retain selectors, widths, offsets, layout and keyboard/ownership behavior.
+The production-provider browser CI checks all eight maps,
 representative sidebar/card/selected/conversation colors, hover/focus, live System
 changes and retained drafts at ordinary and effective-200% CSS viewports. Fixtures,
 builds and native projections do not establish installed CEF/platform acceptance.
