@@ -329,7 +329,7 @@
   padding-inline: 0;
   background: transparent;
   border: 0;
-  color: var(--accent);
+  color: var(--link);
   text-align: left;
 }
 .account-oauth-card footer {

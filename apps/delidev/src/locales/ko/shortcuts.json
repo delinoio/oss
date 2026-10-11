@@ -27,6 +27,7 @@
   "shortcuts.messageRequired": "먼저 메시지를 입력하세요.",
   "shortcuts.activeSessionRequired": "활성 세션이 필요합니다.",
   "shortcuts.searchRequired": "먼저 검색어를 입력하세요.",
+  "shortcut-settings.catalog": "단축키 목록",
   "shortcut-settings.scope": "이 컴퓨터에 저장됩니다. 변경 사항은 변경 사항 저장 후 적용됩니다.",
   "shortcut-settings.disabled": "사용 안 함",
   "shortcut-settings.session": "세션",

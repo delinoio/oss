@@ -617,8 +617,89 @@ mod tests {
             .dark
             .insert("backdrop".into(), "#000000".into());
         assert!(!preferences.valid());
+        for dark in [false, true] {
+            preferences.custom_themes[0] = theme.clone();
+            let colors = if dark {
+                &mut preferences.custom_themes[0].dark
+            } else {
+                &mut preferences.custom_themes[0].light
+            };
+            let text = colors["text-secondary"].clone();
+            colors.insert("surface-hover".into(), text);
+            assert!(preferences.valid());
+        }
         preferences.custom_themes = vec![theme.clone(); 33];
         assert!(!preferences.valid());
+    }
+
+    #[test]
+    fn embedded_bundled_maps_validate_and_project_without_rewriting_custom_colors() {
+        let bundled: std::collections::BTreeMap<String, PaletteColors> =
+            serde_json::from_str(include_str!("../../src/appearance-palettes.json")).unwrap();
+        assert_eq!(bundled.len(), 5);
+        for (id, colors) in &bundled {
+            assert_eq!(colors.light.len(), 38);
+            assert_eq!(colors.dark.len(), 38);
+            assert!(valid_colors(&colors.light), "{id} light");
+            assert!(valid_colors(&colors.dark), "{id} dark");
+            let preferences = Preferences {
+                light_palette: id.clone(),
+                dark_palette: id.clone(),
+                ..Preferences::default()
+            };
+            let projected = preferences.palette_colors().unwrap();
+            assert_eq!(projected.light, colors.light);
+            assert_eq!(projected.dark, colors.dark);
+        }
+        let custom = CustomTheme {
+            version: 1,
+            id: uuid::Uuid::now_v7().to_string(),
+            name: "Earlier duplicate".into(),
+            light: bundled["default"].light.clone(),
+            dark: bundled["default"].dark.clone(),
+        };
+        let preferences = Preferences {
+            light_palette: custom.id.clone(),
+            dark_palette: custom.id.clone(),
+            custom_themes: vec![custom.clone()],
+            ..Preferences::default()
+        };
+        let projected = preferences.palette_colors().unwrap();
+        assert_eq!(projected.light, custom.light);
+        assert_eq!(projected.dark, custom.dark);
+        assert_eq!(preferences.custom_themes[0], custom);
+    }
+
+    #[test]
+    fn previously_valid_custom_theme_remains_readable_with_low_contrast_hover_surface() {
+        let directory = tempfile::tempdir().unwrap();
+        let source: serde_json::Value =
+            serde_json::from_str(include_str!("../../src/appearance-palettes.json")).unwrap();
+        let mut theme = CustomTheme {
+            version: 1,
+            id: uuid::Uuid::now_v7().to_string(),
+            name: "Legacy hover contrast".into(),
+            light: serde_json::from_value(source["default"]["light"].clone()).unwrap(),
+            dark: serde_json::from_value(source["default"]["dark"].clone()).unwrap(),
+        };
+        for colors in [&mut theme.light, &mut theme.dark] {
+            let text = colors["text-secondary"].clone();
+            colors.insert("surface-hover".into(), text);
+        }
+        let preferences = Preferences {
+            light_palette: theme.id.clone(),
+            dark_palette: theme.id.clone(),
+            custom_themes: vec![theme],
+            ..Preferences::default()
+        };
+        assert!(preferences.valid());
+
+        let path = directory.path().join("appearance.json");
+        persist(&path, Theme::Dark, &preferences).unwrap();
+        let observed = AppearanceStore::new(Some(directory.path().into())).read();
+        assert_eq!(observed.theme, Theme::Dark);
+        assert_eq!(observed.preferences, preferences);
+        assert_eq!(observed.problem, None);
     }
 
     #[test]

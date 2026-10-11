@@ -1,3 +1,4 @@
+import { DraftEditGenerations } from "./draft-edit-generations";
 import { SessionInboxReadBoundary } from "./session-inbox-read";
 import { InboxBadgePresentation } from "./inbox-badge";
 import { SessionNameEditorProvider } from "./session-name-editor";
@@ -29,7 +30,6 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
-  useId,
   useMemo,
   useRef,
   useState,
@@ -70,7 +70,8 @@ import { TrayDestination } from "./tray";
 import { NotificationPresentation } from "./notification-presentation";
 import { NotificationProvider } from "./toast-notifications";
 import { refreshCreatedSessionNavigation } from "./home-navigation-query";
-import { Sidebar, Icon } from "./sidebar";
+import { Sidebar } from "./sidebar";
+import type { SidebarPresentation } from "./sidebar-motion";
 import type { ChooseRepositoryFolder } from "./repository-registration";
 import {
   SettingsEntryDestination,
@@ -156,18 +157,29 @@ function Shell({
     sidebarPreference.snapshot.sidebar_preference ===
     SidebarPreference.Collapsed;
   const sidebarPaneVisible = wideSidebar ? !sidebarCollapsed : drawerOpen;
-  const sidebarToggle = useRef<HTMLButtonElement>(null);
-  const sidebarPaneId = useId();
-  const toggleSidebar = () =>
+  const [sidebarPresentation, setSidebarPresentation] =
+    useState<SidebarPresentation>({
+      generation: 0,
+      settled: true,
+      collapsed: false,
+      focusAllowed: false,
+    });
+  const toggleSidebar = () => {
     sidebarPreference.select(
       sidebarCollapsed
         ? SidebarPreference.Expanded
         : SidebarPreference.Collapsed,
     );
-  const openSidebar = () =>
-    wideSidebar
-      ? sidebarPreference.select(SidebarPreference.Expanded)
-      : setDrawerOpen(true);
+  };
+  const openSidebar = () => {
+    if (wideSidebar)
+      return (
+        !sidebarCollapsed ||
+        sidebarPreference.select(SidebarPreference.Expanded)
+      );
+    setDrawerOpen(true);
+    return true;
+  };
 
   const [selected, setSelected] = useState("");
   const [sessionNavigationActivation, setSessionNavigationActivation] =
@@ -205,12 +217,14 @@ function Shell({
     error?: string;
   }>({ drafts: new Map() });
   const draftOwner = useRef(draftState);
+  const [draftEdits] = useState(() => new DraftEditGenerations());
   const { drafts } = draftState;
   // Keep text and typed invocation ownership atomic, including before unmount.
   const saveDraft = (
     id: string,
     prompt?: string,
     bindings?: SkillTokenBinding[],
+    userEdit = false,
   ) => {
     const current = draftOwner.current,
       previous = current.drafts.get(id);
@@ -219,9 +233,10 @@ function Shell({
       bindings: bindings ?? previous?.bindings ?? [],
     };
     if (
-      (previous?.prompt === next.prompt &&
+      !userEdit &&
+      ((previous?.prompt === next.prompt &&
         previous.bindings === next.bindings) ||
-      (!previous && !next.prompt && !next.bindings.length)
+        (!previous && !next.prompt && !next.bindings.length))
     )
       return true;
     const size = new TextEncoder().encode(next.prompt).byteLength;
@@ -238,7 +253,8 @@ function Shell({
       total > 4 << 20 ||
       ((next.prompt || next.bindings.length) &&
         !previous &&
-        current.drafts.size >= 1000)
+        current.drafts.size >= 1000) ||
+      (userEdit && !draftEdits.advance(id))
     ) {
       draftOwner.current = {
         ...current,
@@ -424,7 +440,9 @@ function Shell({
     navigate(destination);
     pendingFocusDestination.current = destination;
   };
-  const sidebarShortcuts = useShortcuts([
+  const sidebarShortcutEnabled =
+    !sidebarPreference.operation && !sidebarPreference.snapshot.problem;
+  const shortcutDeclarations = useShortcuts([
     {
       id: ShortcutId.ToggleSidebar,
       scope: ShortcutScope.Global,
@@ -432,8 +450,7 @@ function Shell({
       bindings: globalShortcutBindings[ShortcutId.ToggleSidebar],
       input: ShortcutInput.Allow,
       active: wideSidebar,
-      enabled:
-        !sidebarPreference.operation && !sidebarPreference.snapshot.problem,
+      enabled: sidebarShortcutEnabled,
       run: toggleSidebar,
     },
     {
@@ -470,10 +487,17 @@ function Shell({
   ]);
   useLayoutEffect(() => {
     const destination = pendingFocusDestination.current;
+    if (!destination) return;
+    if (destination !== surface) {
+      pendingFocusDestination.current = undefined;
+      return;
+    }
+    // The compact drawer closes in a child layout effect. Keep this request
+    // until that state update lets the wide destination receive focus.
+    if (drawerOpen) return;
     pendingFocusDestination.current = undefined;
-    if (!destination || destination !== surface || drawerOpen) return;
-    // Child layout effects close the drawer first. Consuming here keeps Search's
-    // existing first-entry animation frame authoritative, with no later handoff.
+    // Search's existing first-entry animation frame remains authoritative, with
+    // no later focus handoff after the visible destination receives focus.
     const compact =
       typeof window.matchMedia === "function" &&
       window.matchMedia("(max-width: 759px)").matches;
@@ -487,7 +511,11 @@ function Shell({
       inline={!connectionReady}
       onRequest={onConnectionHelp}
     >
-      <RunnerRemediationProvider active authority={pairingAuthority}>
+      <RunnerRemediationProvider
+        active
+        connectionReady={connectionReady}
+        authority={pairingAuthority}
+      >
         <RunnerPreferenceProvider
           readLocalWorker={readLocalWorker}
           scope={
@@ -510,6 +538,14 @@ function Shell({
                   closeDrawer={() => setDrawerOpen(false)}
                   drawerOpen={drawerOpen}
                   paneVisible={sidebarPaneVisible}
+                  paneSettled={
+                    !wideSidebar ||
+                    (sidebarPresentation.settled &&
+                      sidebarPresentation.collapsed === sidebarCollapsed)
+                  }
+                  paneGeneration={sidebarPresentation.generation}
+                  paneFocusAllowed={sidebarPresentation.focusAllowed}
+                  paneProblem={Boolean(sidebarPreference.snapshot.problem)}
                   openDrawer={openSidebar}
                 >
                   <div
@@ -520,9 +556,16 @@ function Shell({
                     </a>
                     <Sidebar
                       collapsed={sidebarCollapsed}
-                      paneId={sidebarPaneId}
-                      toggleRef={sidebarToggle}
+                      motionReady={
+                        sidebarPreference.snapshot.revision > 0 &&
+                        !sidebarPreference.snapshot.problem
+                      }
+                      motionScope={transport}
+                      presentationChanged={setSidebarPresentation}
                       compactFocusRef={contextOpener}
+                      focusHandoffPending={
+                        pendingFocusDestination.current !== undefined
+                      }
                       openCommandMenu={toggleCommandMenu}
                       connectionReady={connectionReady}
                       serverPresentation={serverPresentation}
@@ -556,34 +599,16 @@ function Shell({
                         })}
                       />
                     ) : null}
-                    <main ref={main} id="main" tabIndex={-1}>
-                      <button
-                        ref={sidebarToggle}
-                        type="button"
-                        className="sidebar-wide-toggle"
-                        aria-label={copy(
-                          sidebarCollapsed
-                            ? "sidebar-preference.expand"
-                            : "sidebar-preference.collapse",
-                        )}
-                        title={copy(
-                          sidebarCollapsed
-                            ? "sidebar-preference.expand"
-                            : "sidebar-preference.collapse",
-                        )}
-                        aria-expanded={!sidebarCollapsed}
-                        aria-controls={sidebarPaneId}
-                        aria-keyshortcuts={sidebarShortcuts.aria(
-                          ShortcutId.ToggleSidebar,
-                        )}
-                        aria-disabled={Boolean(
-                          sidebarPreference.operation ||
-                          sidebarPreference.snapshot.problem,
-                        )}
-                        onClick={toggleSidebar}
-                      >
-                        <Icon name="sidebar-toggle" />
-                      </button>
+                    <main
+                      ref={main}
+                      id="main"
+                      tabIndex={-1}
+                      aria-keyshortcuts={
+                        wideSidebar && sidebarShortcutEnabled
+                          ? shortcutDeclarations.aria(ShortcutId.ToggleSidebar)
+                          : undefined
+                      }
+                    >
                       <SidebarPreferenceNotice />
                       <button
                         ref={contextOpener}
@@ -652,8 +677,9 @@ function Shell({
                               id={id}
                               draft={drafts.get(id)?.prompt ?? ""}
                               initialSkills={drafts.get(id)?.bindings}
-                              setDraft={(value, bindings) =>
-                                saveDraft(id, value, bindings)
+                              draftGeneration={() => draftEdits.read(id)}
+                              setDraft={(value, bindings, userEdit) =>
+                                saveDraft(id, value, bindings, userEdit)
                               }
                               changeSkills={(bindings) => {
                                 saveDraft(id, undefined, bindings);

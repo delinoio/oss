@@ -27,6 +27,7 @@ type threadFixture struct {
 	historyChangeAfterRead bool
 	historyNotification    *fixtureHistoryNotification
 	sidechatDrift          string
+	reverted               bool
 }
 
 func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {
@@ -104,6 +105,12 @@ func (f *threadFixture) handle(id json.RawMessage, method string, raw json.RawMe
 	}
 	f.thread = map[string]any{"id": threadID, "sessionId": threadID, "cliVersion": fixtureVersion(), "cwd": params["cwd"], "modelProvider": params["modelProvider"], "createdAt": int64(1), "updatedAt": int64(1), "ephemeral": false, "preview": "", "projectId": nil, "source": "appServer", "status": map[string]any{"type": "idle"}, "turns": []any{}}
 	f.thread["historyMode"] = "legacy"
+	if strings.HasPrefix(f.mode, "thread-revert-paginated-") {
+		f.thread["historyMode"] = "paginated"
+	}
+	if f.mode == "thread-revert-omitted" {
+		delete(f.thread, "historyMode")
+	}
 	f.thread["extra"] = nil
 	f.thread["canAcceptDirectInput"] = true
 	policy := params["approvalPolicy"]

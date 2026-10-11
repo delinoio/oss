@@ -103,6 +103,7 @@ import { NativeContextCompaction } from "./native-context-compaction";
 import { NativeClaudeProgress } from "./native-claude-progress";
 import { NativeClaudeTool } from "./native-claude-tool";
 import { NativeReasoning } from "./native-reasoning";
+import { CodexReasoning, codexReasoning } from "./codex-reasoning";
 import { SessionContext } from "./session-context";
 import { SessionBudget } from "./session-budget";
 import { ExecutionConfiguration } from "./execution-configuration";
@@ -147,6 +148,7 @@ import {
 import {
   useRetainedMutation,
   useRetainedMutationNotifications,
+  useRetainedMutationIntents,
 } from "./mutation";
 import { ServiceProblem, Failure, Problem, failureSummary } from "./ui";
 import {
@@ -156,7 +158,13 @@ import {
   SessionNotice,
 } from "./session-presentation";
 import "./session.css";
-import { Interaction } from "./interactions";
+import { Interaction, PendingInteractionReceipt } from "./interactions";
+import {
+  InteractionPresentationStore,
+  InteractionPresentation,
+  displayedInteraction,
+  completeEmptyInteractionTray,
+} from "./interaction-presentation";
 import { SessionTerminals } from "./session-terminals";
 import {
   PendingSidechatPane,
@@ -425,11 +433,13 @@ export const TranscriptItem = memo(function TranscriptItem({
   resource,
   active = true,
   actions,
+  revertAction,
   contextRevision = 0,
 }: {
   resource: Resource;
   active?: boolean;
   actions?: ReactNode;
+  revertAction?: ReactNode;
   contextRevision?: number;
 }) {
   useLocale();
@@ -510,6 +520,38 @@ export const TranscriptItem = memo(function TranscriptItem({
   const artifact = object(data.artifact);
   const completed = object(artifact.completed);
   const started = object(artifact.started);
+  const reasoning =
+    data.role === "artifact" &&
+    data.tool == null &&
+    data.progress == null &&
+    !text(data.text) &&
+    [
+      "grok_text",
+      "claude",
+      "claude_tool",
+      "claude_progress",
+      "claude_interruption",
+    ].every((key) => !Object.hasOwn(data, key))
+      ? codexReasoning(data.artifact, text(data.state))
+      : undefined;
+  if (reasoning)
+    return (
+      <article
+        className="message message-codex-reasoning"
+        aria-label={copy("native-reasoning.codexReasoning")}
+      >
+        <ConversationStatus state={text(data.state)} />
+        {Number(data.context_revision ?? 0) < contextRevision ? (
+          <small>{copy("session.previousContext")}</small>
+        ) : null}
+        <RetainedImages
+          value={data.attachments}
+          sessionId={resource.sessionId}
+          active={active}
+        />
+        <CodexReasoning data={reasoning} />
+      </article>
+    );
   const progress = object(data.progress);
   const plan = object(progress.plan);
   const textRole =
@@ -529,7 +571,7 @@ export const TranscriptItem = memo(function TranscriptItem({
       : textRole && data.role === "assistant"
         ? " message-assistant"
         : "";
-  return (
+  const message = (
     <article
       className={`message${roleClass}`}
       aria-label={
@@ -736,6 +778,19 @@ export const TranscriptItem = memo(function TranscriptItem({
       ) : null}
     </article>
   );
+  if (!textRole || data.role !== "user") return message;
+  return (
+    <div
+      className="user-transcript-item"
+      role="group"
+      aria-label={copy("session.userTurn")}
+    >
+      {message}
+      {revertAction ? (
+        <div className="user-transcript-actions">{revertAction}</div>
+      ) : null}
+    </div>
+  );
 });
 
 const submissionLabels = {
@@ -787,6 +842,7 @@ export function SessionView({
   id,
   draft,
   setDraft,
+  draftGeneration,
   initialSkills,
   changeSkills,
   active = true,
@@ -794,7 +850,12 @@ export function SessionView({
 }: {
   id: string;
   draft: string;
-  setDraft: (value: string, bindings?: SkillTokenBinding[]) => boolean | void;
+  setDraft: (
+    value: string,
+    bindings?: SkillTokenBinding[],
+    userEdit?: boolean,
+  ) => boolean | void;
+  draftGeneration?: () => bigint;
   initialSkills?: SkillTokenBinding[];
   changeSkills?: (bindings: SkillTokenBinding[]) => void;
   active?: boolean;
@@ -936,13 +997,48 @@ export function SessionView({
     useState(false);
   const queueDrafts = useConversationDrafts<QueuedInputDraft>();
   const requestDrafts = useConversationDrafts<InboxInteractionDraft>();
+  const [interactionPresentation] = useState(
+    () => new InteractionPresentationStore(),
+  );
+  const [responseResources, setResponseResources] = useState<
+    ReadonlyMap<string, Resource>
+  >(new Map());
+  const responseIntents = useRetainedMutationIntents("");
+  const observeResponse = (result: Resource) => {
+    if (
+      result.sessionId !== id ||
+      result.kind !== EntityKind.INTERACTION ||
+      !supportsResourceSchema(result)
+    )
+      return;
+    interactionPresentation.observe(result);
+    setResponseResources((current) => {
+      const prior = current.get(result.id);
+      if (prior && prior.revision >= result.revision) return current;
+      return new Map(current).set(result.id, result);
+    });
+  };
+  const latestInteractions = new Map(live.resources);
+  for (const [responseId, result] of responseResources) {
+    const observed = latestInteractions.get(responseId);
+    if (!observed || result.revision > observed.revision)
+      latestInteractions.set(responseId, result);
+  }
+  for (const row of latestInteractions.values())
+    if (row.kind === EntityKind.INTERACTION && row.sessionId === id)
+      interactionPresentation.observe(row);
   const interactionRow = (row: Resource) => {
+    const projection = interactionPresentation.observe(row);
+    if (!displayedInteraction(projection, pendingQuestionKeys)) return null;
     const draft =
       requestDrafts.values.get(row.id) ?? initialInteractionDraft(row);
     return (
       <Interaction
         key={row.id}
         resource={row}
+        activeTray
+        projection={projection}
+        observe={observeResponse}
         refresh={interactions.refresh}
         draft={draft}
         saveDraft={(editable) => {
@@ -988,6 +1084,23 @@ export function SessionView({
   );
   const [acknowledged, setAcknowledged] = useState<Resource>();
   useRetainedMutationNotifications((key, _request, result) => {
+    if (
+      ["answer:", "opencode-answer:", "claude-answer:", "grok-answer:"].some(
+        (prefix) => key.startsWith(prefix),
+      )
+    ) {
+      const response = (result as { interaction?: Resource }).interaction;
+      const mutation = (
+        _request as { mutation?: { id?: string; expectedRevision?: bigint } }
+      ).mutation;
+      if (
+        response &&
+        response.id === mutation?.id &&
+        response.revision > (mutation.expectedRevision ?? 0n)
+      )
+        observeResponse(response);
+      return;
+    }
     if (key !== `session-name:${id}`) return;
     const renamed = (result as { change?: { session?: Resource } }).change
       ?.session;
@@ -1188,6 +1301,7 @@ export function SessionView({
       window.removeEventListener("resize", fit);
     };
   }, [session?.id]);
+  const localDraftGeneration = useRef(0n);
   const skills = useSkillCompletion({
     value: draft,
     change: (value, bindings) => {
@@ -1196,7 +1310,9 @@ export function SessionView({
         return false;
       }
       setImageTextLimit(false);
-      return setDraft(value, bindings);
+      const accepted = setDraft(value, bindings, true);
+      if (accepted !== false) localDraftGeneration.current += 1n;
+      return accepted;
     },
     textarea: composer,
     machineId: text(data.machine_id),
@@ -1212,6 +1328,7 @@ export function SessionView({
     session,
     active: conversationActive,
     draft,
+    draftGeneration: draftGeneration ?? (() => localDraftGeneration.current),
     composer,
     blocked: locked || images.images.length > 0,
     changed: setAcknowledged,
@@ -1387,12 +1504,106 @@ export function SessionView({
   }, [revealSubmission, active]);
   const requests = interactionRows(
     interactions.data?.resources ?? [],
-    live.resources,
+    latestInteractions,
     live.removed,
     live.newInteractionIds,
     id,
     !!interactions.data && !interactions.data.nextPageToken,
   );
+  for (const row of requests) interactionPresentation.observe(row);
+  const pendingQuestionKeys = new Set(
+    responseIntents
+      .filter((intent) =>
+        [...interactionPresentation.entries()].some(
+          ([, projection]) =>
+            projection.question && projection.mutationKey === intent.key,
+        ),
+      )
+      .map((intent) => intent.key),
+  );
+  const displayedRequests = requests.filter((row) =>
+    displayedInteraction(
+      interactionPresentation.observe(row),
+      pendingQuestionKeys,
+    ),
+  );
+  const missingQuestionReceipts = [...interactionPresentation.entries()].filter(
+    ([requestId, projection]) =>
+      pendingQuestionKeys.has(projection.mutationKey) &&
+      !requests.some((row) => row.id === requestId),
+  );
+  const requestsExpanded =
+    requests.some((row) => {
+      const projection = interactionPresentation.observe(row);
+      return (
+        displayedInteraction(projection, pendingQuestionKeys) &&
+        projection.presentation === InteractionPresentation.Form &&
+        readDocument(row).closure === "open"
+      );
+    }) || requestsOpen;
+  const confirmedEmptyRequests = completeEmptyInteractionTray({
+    loaded: Boolean(interactions.data),
+    loading: Boolean(
+      interactions.loading &&
+      interactions.loading !== ReadStage.Refresh &&
+      interactions.loading !== ReadStage.Reload,
+    ),
+    failed:
+      Boolean(interactions.error || live.error) ||
+      live.state !== ConnectionState.Live,
+    continuation: Boolean(interactions.nextPageToken),
+    resident: interactions.pages.every((page) =>
+      interactions.payloadPages.some((payload) => payload.token === page.token),
+    ),
+    displayed: displayedRequests.length,
+    pending: pendingQuestionKeys.size,
+  });
+  // Drop RPC payloads after their resident page expires or a list/live revision
+  // catches up. Monotonic metadata survives without retaining answer documents.
+  useEffect(() => {
+    setResponseResources((current) => {
+      const resident = new Map(
+        (interactions.data?.resources ?? []).map((row) => [row.id, row]),
+      );
+      const next = new Map(
+        [...current].filter(([key, value]) => {
+          const row = resident.get(key),
+            observed = live.resources.get(key);
+          return (
+            row &&
+            row.revision < value.revision &&
+            (!observed || observed.revision < value.revision)
+          );
+        }),
+      );
+      return next.size === current.size ? current : next;
+    });
+  }, [interactions.data, live.resources]);
+  const requestFocus =
+    typeof window === "undefined" ? null : window.document.activeElement;
+  const retiringFocus =
+    requestFocus instanceof HTMLElement &&
+    Boolean(requestFocus.closest(".requests"))
+      ? requestFocus
+      : null;
+  useLayoutEffect(() => {
+    if (!retiringFocus || retiringFocus.isConnected) return;
+    const focused = window.document.activeElement;
+    if (
+      focused &&
+      focused !== window.document.body &&
+      focused !== retiringFocus &&
+      focused.isConnected
+    )
+      return;
+    const next = requestsRoot.current?.querySelector<HTMLElement>(
+      "input:not(:disabled), textarea:not(:disabled), select:not(:disabled), button:not(:disabled)",
+    );
+    (next ?? composer.current)?.focus({ preventScroll: true });
+  });
+  useEffect(() => {
+    if (confirmedEmptyRequests) setRequestsOpen(false);
+  }, [confirmedEmptyRequests]);
   const queued = pending.filter(isQueuedInput);
   const imageRejected = pending.filter((row) =>
     isImageStartupRejectedInput(row, session),
@@ -2109,14 +2320,12 @@ export function SessionView({
                             resource={row}
                             active={conversationActive}
                             contextRevision={Number(data.context_revision ?? 0)}
+                            revertAction={revert.action(row)}
                             actions={
-                              <>
-                                {revert.action(row)}
-                                <SidechatRetryAction
-                                  controller={retryQuestion}
-                                  inputId={text(readDocument(row).input_id)}
-                                />
-                              </>
+                              <SidechatRetryAction
+                                controller={retryQuestion}
+                                inputId={text(readDocument(row).input_id)}
+                              />
                             }
                           />
                         )}
@@ -2236,65 +2445,85 @@ export function SessionView({
                     ))}
                   </div>
                   <div className="session-input-tray">
-                    <Disclosure
-                      className="requests"
-                      open={
-                        requests.some(
-                          (r) => readDocument(r).closure === "open",
-                        ) || requestsOpen
-                      }
-                      onToggle={(event) =>
-                        setRequestsOpen(event.currentTarget.open)
-                      }
-                    >
-                      <DisclosureSummary>
-                        {interactions.isPending ? (
-                          copy("session.loadingRequests")
-                        ) : (
-                          <LocalizedText
-                            id="session.agentRequestsOnThisPage_5e8644"
-                            components={{ s0: <>{requests.length}</> }}
-                          />
-                        )}
-                      </DisclosureSummary>
-                      <div ref={requestsRoot} className="session-tray-content">
-                        <Failure failure={interactions.error?.failure} />
-                        <ScrollPayloadWindow
-                          identity={paginationIdentity}
-                          revision={paginationRevision}
-                          query={interactions}
-                          root={requestsRoot}
-                          active={conversationActive && requestsOpen}
+                    {!confirmedEmptyRequests ? (
+                      <Disclosure
+                        className="requests"
+                        open={requestsExpanded}
+                        onToggle={(event) =>
+                          setRequestsOpen(event.currentTarget.open)
+                        }
+                      >
+                        <DisclosureSummary>
+                          {interactions.isPending ? (
+                            copy("session.loadingRequests")
+                          ) : (
+                            <LocalizedText
+                              id="session.agentRequestsOnThisPage_5e8644"
+                              components={{
+                                s0: (
+                                  <>
+                                    {displayedRequests.length +
+                                      missingQuestionReceipts.length}
+                                  </>
+                                ),
+                              }}
+                            />
+                          )}
+                        </DisclosureSummary>
+                        <div
+                          ref={requestsRoot}
+                          className="session-tray-content"
                         >
-                          {(payload) =>
-                            interactionRows(
-                              payload,
-                              live.resources,
-                              live.removed,
-                              [],
-                              id,
-                              false,
-                            ).map(interactionRow)
-                          }
-                        </ScrollPayloadWindow>
-                        {!interactions.nextPageToken
-                          ? requests
-                              .filter(
-                                (row) =>
-                                  !interactions.rows.some(
-                                    (known) => known.id === row.id,
-                                  ),
-                              )
-                              .map(interactionRow)
-                          : null}
-                        <ScrollContinuation
-                          query={interactions}
-                          root={requestsRoot}
-                          active={conversationActive && requestsOpen}
-                          label={copy("session.requestPages_d06a30")}
-                        />
-                      </div>
-                    </Disclosure>
+                          <Failure failure={interactions.error?.failure} />
+                          <ScrollPayloadWindow
+                            identity={paginationIdentity}
+                            revision={paginationRevision}
+                            query={interactions}
+                            root={requestsRoot}
+                            active={conversationActive && requestsExpanded}
+                          >
+                            {(payload) =>
+                              interactionRows(
+                                payload,
+                                latestInteractions,
+                                live.removed,
+                                [],
+                                id,
+                                false,
+                              ).map(interactionRow)
+                            }
+                          </ScrollPayloadWindow>
+                          {!interactions.nextPageToken
+                            ? requests
+                                .filter(
+                                  (row) =>
+                                    !interactions.rows.some(
+                                      (known) => known.id === row.id,
+                                    ),
+                                )
+                                .map(interactionRow)
+                            : null}
+                          {missingQuestionReceipts.map(
+                            ([requestId, projection]) => (
+                              <PendingInteractionReceipt
+                                key={requestId}
+                                projection={projection}
+                                accepted={(result) => {
+                                  if (result) observeResponse(result);
+                                  void interactions.refresh();
+                                }}
+                              />
+                            ),
+                          )}
+                          <ScrollContinuation
+                            query={interactions}
+                            root={requestsRoot}
+                            active={conversationActive && requestsExpanded}
+                            label={copy("session.requestPages_d06a30")}
+                          />
+                        </div>
+                      </Disclosure>
+                    ) : null}
                     <PendingQueueInputs
                       sessionId={id}
                       presentInputIds={presentedQueueIds}

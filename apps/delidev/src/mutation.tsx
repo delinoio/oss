@@ -53,6 +53,7 @@ class IntentRegistry {
   alive = true;
   revision = 0;
   entries = new Map<string, Intent>();
+  presentations = new Map<string, { value: object; bytes: number }>();
   listeners = new Set<() => void>();
   acceptedListeners = new Map<string, Set<() => void>>();
   acceptedObservers = new Set<
@@ -104,6 +105,26 @@ class IntentRegistry {
   }
   put(key: string, value: Intent) {
     this.entries.set(key, value);
+    this.revision += 1;
+    for (const listener of this.listeners) listener();
+  }
+  retainPresentation(key: string, value: object, bytes: number) {
+    const total = [...this.presentations].reduce(
+      (sum, [id, entry]) => sum + (id === key ? 0 : entry.bytes),
+      bytes,
+    );
+    if (
+      !this.alive ||
+      !Number.isSafeInteger(bytes) ||
+      bytes < 0 ||
+      total > 4 << 20 ||
+      (!this.presentations.has(key) && this.presentations.size >= 1000)
+    )
+      throw new ConnectError(
+        "Resolve retained operations before starting more work.",
+        Code.ResourceExhausted,
+      );
+    this.presentations.set(key, { value, bytes });
     this.revision += 1;
     for (const listener of this.listeners) listener();
   }
@@ -202,6 +223,7 @@ export function MutationIntents({ children }: { children: ReactNode }) {
     const dispose = () => {
       registry.alive = false;
       registry.entries.clear();
+      registry.presentations.clear();
       registry.acceptedListeners.clear();
       registry.acceptedObservers.clear();
       registry.outcomeObservers.clear();
@@ -220,6 +242,26 @@ export function MutationIntents({ children }: { children: ReactNode }) {
       <Context.Provider value={registry}>{children}</Context.Provider>
     </ConnectionContext.Provider>
   );
+}
+
+/** Bounded presenter metadata shares the exact original mutation registry.
+ * It carries no RPC authority and survives only that connection/opening. */
+export function useRetainedMutationPresentation<T extends object>(key: string) {
+  const registry = useIntentRegistry(key);
+  if (!registry)
+    throw new Error("A connection-scoped mutation registry is required.");
+  const value = useSyncExternalStore(
+    registry.subscribe,
+    () => registry.presentations.get(key)?.value as T | undefined,
+  );
+  const save = (next: T, bytes: number) => {
+    registry.retainPresentation(key, next, bytes);
+  };
+  return {
+    value,
+    save,
+    read: () => registry.presentations.get(key)?.value as T | undefined,
+  };
 }
 
 // Connection-owned attachment drafts observe the exact accepted request even
@@ -320,6 +362,7 @@ export function useRetainedMutation<
   accepted?: (result: MessageShape<O>, request: MessageShape<I>) => void,
   acknowledge?: (result: MessageShape<O>, request: MessageShape<I>) => boolean,
   retainOnError = false,
+  rejected?: (request: MessageInitShape<I>) => void,
 ) {
   const registry = useIntentRegistry(key);
   if (!registry)
@@ -348,6 +391,18 @@ export function useRetainedMutation<
       mounted.current = false;
     };
   }, []);
+  // Connection-owned metadata may need rejection cleanup after its presenter
+  // leaves. This callback has no send/replay authority or receipt semantics.
+  const reject = (request: MessageInitShape<I>) => {
+    if (!registry.alive || opening?.disposed) return;
+    try {
+      rejected?.(request);
+    } catch (error) {
+      console.warn("delidev.mutation.rejection_observer_failed", {
+        classification: clientFailure(error).code,
+      });
+    }
+  };
   const send = async (
     input?: MessageInitShape<I>,
     retainedAcknowledgement?: (
@@ -379,6 +434,7 @@ export function useRetainedMutation<
       retained = fromBinary(method.input, wire);
     } catch (error) {
       setLocalError({ key, error, rejected: true });
+      reject((current.input ?? input!) as MessageInitShape<I>);
       registry.notifyOutcome(
         key,
         current.input ?? input!,
@@ -451,6 +507,7 @@ export function useRetainedMutation<
         acknowledge: uncertain ? verify : undefined,
         error,
       });
+      if (!uncertain) reject(retained);
       registry.notifyOutcome(
         key,
         retained,

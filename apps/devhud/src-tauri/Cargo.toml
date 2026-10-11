@@ -31,7 +31,7 @@ base64 = "=0.22.1"
 dirs = "6"
 ed25519-dalek = { version = "=2.2.0", features = ["hazmat"] }
 fontdue = "=0.9.3"
-flate2 = "=1.1.9"
+flate2 = "=1.1.10"
 image = { version = "=0.25.10", default-features = false, features = ["png"] }
 hmac = "=0.12.1"
 keyring = "=4.1.6"
@@ -69,7 +69,7 @@ xcb = { version = "=1.6.0", features = ["randr"] }
 rdev = "0.5.3"
 
 [target.'cfg(unix)'.dependencies]
-libc = "=0.2.182"
+libc = "=0.2.186"
 
 [features]
 default = []
