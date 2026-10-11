@@ -34,11 +34,18 @@ func currentTimeRequest(t *testing.T, c *Client) nativewire.Event {
 	fixtureSignal(t, c, "current-time", map[string]any{"requestId": 17, "params": map[string]any{"threadId": c.thread}})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	event, err := c.wire.Next(ctx)
-	if err != nil || event.Method != "currentTime/read" || event.Kind != nativewire.ServerRequest {
-		t.Fatal("original time request missing", err)
+	for {
+		event, err := c.wire.Next(ctx)
+		if err != nil {
+			t.Fatal("original time request missing", err)
+		}
+		if event.Method == "currentTime/read" && event.Kind == nativewire.ServerRequest {
+			return event
+		}
+		if event.Kind != nativewire.Notification {
+			t.Fatalf("unexpected native event before original time request: kind %s", event.Kind)
+		}
 	}
-	return event
 }
 
 func TestCurrentTimeWholeWorkerSecondsDoNotAcknowledgeOrCompleteTurn(t *testing.T) {
