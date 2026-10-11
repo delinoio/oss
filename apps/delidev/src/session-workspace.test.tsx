@@ -158,6 +158,7 @@ function fixture(
         : {}),
     }),
   }));
+  const setBudget = vi.fn(() => budget());
   const list = vi.fn(
     async (_request: { filter?: { kind: EntityKind; pageToken: string } }) => ({
       resources: [] as ReturnType<typeof create<typeof ResourceSchema>>[],
@@ -234,6 +235,7 @@ function fixture(
       },
       listQueue,
       getSessionBudget: budget,
+      setSessionBudget: setBudget,
       enqueueInput: enqueue,
       renameSession: rename,
       controlSession: control,
@@ -298,6 +300,7 @@ function fixture(
     control,
     recover,
     budget,
+    setBudget,
     draft,
     list,
     publish,
@@ -1180,16 +1183,30 @@ it("projects accepted live preparation, claim and response transitions without r
   ).toContain(
     "Reconnect the original execution machine; the accepted input remains queued.",
   );
-  within(info).getByRole("heading", { name: "Session information" }).focus();
-  expect(document.activeElement).toBe(
-    within(info).getByRole("heading", { name: "Session information" }),
+  const editBudget = within(info).getByRole("button", {
+    name: "Edit session budget",
+  });
+  await waitFor(() => expect(editBudget).toHaveProperty("disabled", false));
+  fireEvent.click(editBudget);
+  fireEvent.click(
+    within(info).getByRole("checkbox", {
+      name: "Enable estimated-cost budget",
+    }),
   );
+  const threshold = within(info).getByRole("textbox", {
+    name: "Estimated-cost threshold",
+  });
+  fireEvent.change(threshold, { target: { value: "12.345" } });
+  threshold.focus();
+  expect(document.activeElement).toBe(threshold);
   act(() =>
     update(10n, { preparation: { job_id: preparation, state: "ready" } }),
   );
   await screen.findByText("Waiting to start");
   expectHiddenInfo();
   expect(document.activeElement).toBe(composer);
+  expect(threshold.isConnected).toBe(true);
+  expect(threshold).toHaveProperty("value", "12.345");
   const selection = {
     active_execution_id: execution,
     initial_execution: { id: execution, input_id: input },
@@ -1290,6 +1307,10 @@ it("projects accepted live preparation, claim and response transitions without r
   );
   expectVisibleInfo();
   expect(document.activeElement).toBe(composer);
+  expect(
+    within(info).getByRole("textbox", { name: "Estimated-cost threshold" }),
+  ).toBe(threshold);
+  expect(threshold).toHaveProperty("value", "12.345");
   act(() => {
     f.publish({
       ...assistant,
@@ -1317,6 +1338,7 @@ it("projects accepted live preparation, claim and response transitions without r
   expectVisibleInfo();
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
   expect(composer).toHaveProperty("value", "Original ongoing draft");
+  expect(f.setBudget).not.toHaveBeenCalled();
   expect(f.enqueue).not.toHaveBeenCalled();
   expect(f.control).not.toHaveBeenCalled();
   expect(f.recover).not.toHaveBeenCalled();
@@ -1428,12 +1450,15 @@ it("keeps initial startup Info available for a reached original budget", async (
     false,
     initialResponseWaiting(),
   );
-  render(f.view());
-  const info = await screen.findByRole("complementary", {
-    name: "Session information",
-  });
-  await waitFor(() => expect(f.budget).toHaveBeenCalled());
-  expect(info).toHaveProperty("hidden", false);
+  const { container } = render(f.view());
+  await screen.findByText(
+    "Budget threshold reached. New turns and Resume are blocked; pending input and accepted work are retained.",
+  );
+  const info = container.querySelector(".session-information")!;
+  await waitFor(() => expect(info).toHaveProperty("hidden", false));
+  expect(
+    screen.getByRole("complementary", { name: "Session information" }),
+  ).toBe(info);
   expect(info.hasAttribute("inert")).toBe(false);
   expect(f.control).not.toHaveBeenCalled();
   expect(f.enqueue).not.toHaveBeenCalled();
