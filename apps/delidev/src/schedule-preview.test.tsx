@@ -70,3 +70,23 @@ it("rejects malformed or nonfuture server observations",async()=>{
  const f=fixture(()=>{const response=result();response.nextRunAt=response.calculatedAt;return response;});render(f.view());
  expect(await screen.findByText("Preview unavailable. Saving determines the next run.")).toBeTruthy();expect(screen.getByRole("status").textContent).not.toContain("October");
 });
+it("rejects an old input response on the same transport and localizes the exact zone",async()=>{
+ let settle!:(value:ReturnType<typeof result>)=>void;let calls=0;
+ const f=fixture(()=>calls++===0?new Promise(resolve=>{settle=resolve;}):result());const rendered=render(f.view());
+ await waitFor(()=>expect(f.preview).toHaveBeenCalledTimes(1));
+ rendered.rerender(f.view({timezone:"Asia/Seoul"}));await act(async()=>{settle(result());});
+ expect(screen.getByRole("status").textContent).not.toContain("October");
+ await waitFor(()=>expect(f.preview).toHaveBeenCalledTimes(2));
+ await waitFor(()=>expect(screen.getByRole("status").textContent).toContain("6:00 PM"));
+ expect(screen.getByRole("status").textContent).toContain("Asia/Seoul");
+});
+it("does not resurrect an in-flight response after a same-transport reconnect",async()=>{
+ let settle!:(value:ReturnType<typeof result>)=>void;let calls=0;
+ const f=fixture(()=>calls++===0?new Promise(resolve=>{settle=resolve;}):result());const rendered=render(f.view());
+ await waitFor(()=>expect(f.preview).toHaveBeenCalledTimes(1));
+ rendered.rerender(f.view({connectionReady:false}));await act(async()=>{settle(result());});
+ expect(screen.getByRole("status").textContent).not.toContain("October");
+ rendered.rerender(f.view());expect(screen.getByRole("status").textContent).not.toContain("October");
+ await waitFor(()=>expect(f.preview).toHaveBeenCalledTimes(2));
+ expect(await screen.findByText(/October 12, 2026/)).toBeTruthy();
+});
