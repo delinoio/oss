@@ -1,3 +1,7 @@
+import {
+  ConfigurationNameJobFailure,
+  isConfigurationNameConflict,
+} from "./configuration-name-conflict";
 import { revealProjectInvalidControl } from "./project-edit-tabs";
 import { defaultBranchPrefix, validBranchPrefix } from "./session-defaults";
 // SPDX-License-Identifier: Apache-2.0
@@ -407,6 +411,8 @@ export function ConfigurationEditor({
   const [keepsFormatKey, setKeepsFormatKey] = useState(false);
   const [fieldsBlocked, setFieldsBlocked] = useState(false);
   const [problem, setProblem] = useProductMessage("");
+  const [nameConflict, setNameConflict] = useState(false);
+  const observedNameConflict = useRef<unknown>(undefined);
   const [conflict, setConflict] = useState(false);
   const observedConflict = useRef<unknown>(undefined);
   const form = useRef<HTMLFormElement>(null);
@@ -530,6 +536,16 @@ export function ConfigurationEditor({
           )
       : undefined,
   );
+  useEffect(() => {
+    if (
+      !mutation.error ||
+      observedNameConflict.current === mutation.error ||
+      !isConfigurationNameConflict(mutation.error)
+    )
+      return;
+    observedNameConflict.current = mutation.error;
+    setNameConflict(true);
+  }, [mutation.error]);
   const formatMutation = useRetainedMutation(
     `account-change-format:${source?.id ?? "new"}`,
     AccountQuery.changeAccountApiFormat,
@@ -691,6 +707,7 @@ export function ConfigurationEditor({
       setProblem(ownedMessage("settings.extra.0097158d86f7"));
       return;
     }
+    if (value.name !== data.name) setNameConflict(false);
     setData(value);
     setProblem("");
   };
@@ -731,57 +748,69 @@ export function ConfigurationEditor({
                 : undefined
             }
           >
-            {(state, _output, observation) =>
-              state === JobState.Succeeded &&
-              kind === EntityKind.REPOSITORY &&
-              source ? (
-                <RepositorySaveCompletion
-                  key={job.id}
-                  job={job}
-                  submission={repositorySave}
-                  completed={completedRepositoryJobs.current}
+            {(state, _output, observation) => (
+              <>
+                <ConfigurationNameJobFailure
                   observation={observation}
-                  active={active}
-                  saved={() => {
+                  active={active && taskVisible}
+                  onConflict={() => {
                     mutation.resolveJob(job.id);
-                    saved();
+                    setNameConflict(true);
+                    setJob(undefined);
                   }}
                 />
-              ) : state === JobState.Succeeded ? (
-                <>
-                  <p>
-                    {copy(
-                      "settings.configurationSavedAfterWorkerValidation_d2b875",
-                    )}
-                  </p>
-                  <SettingsActionButton
-                    icon={SettingsActionIcon.Cancel}
-                    onClick={saved}
-                  >
-                    {copy("settings.done_11a676")}
-                  </SettingsActionButton>
-                </>
-              ) : (state === JobState.Failed || state === JobState.Canceled) &&
-                observation.verified ? (
-                kind === EntityKind.REPOSITORY && source ? (
-                  <RepositorySaveReview
-                    initial={source}
+                {state === JobState.Succeeded &&
+                kind === EntityKind.REPOSITORY &&
+                source ? (
+                  <RepositorySaveCompletion
+                    key={job.id}
+                    job={job}
+                    submission={repositorySave}
+                    completed={completedRepositoryJobs.current}
+                    observation={observation}
                     active={active}
-                    review={() => {
+                    saved={() => {
                       mutation.resolveJob(job.id);
-                      setJob(undefined);
+                      saved();
                     }}
                   />
-                ) : (
-                  <SettingsActionButton
-                    icon={SettingsActionIcon.Back}
-                    onClick={() => setJob(undefined)}
-                  >
-                    {copy("settings.returnToRetainedDraft_213f1b")}
-                  </SettingsActionButton>
-                )
-              ) : null
-            }
+                ) : state === JobState.Succeeded ? (
+                  <>
+                    <p>
+                      {copy(
+                        "settings.configurationSavedAfterWorkerValidation_d2b875",
+                      )}
+                    </p>
+                    <SettingsActionButton
+                      icon={SettingsActionIcon.Cancel}
+                      onClick={saved}
+                    >
+                      {copy("settings.done_11a676")}
+                    </SettingsActionButton>
+                  </>
+                ) : (state === JobState.Failed ||
+                    state === JobState.Canceled) &&
+                  observation.verified ? (
+                  kind === EntityKind.REPOSITORY && source ? (
+                    <RepositorySaveReview
+                      initial={source}
+                      active={active}
+                      review={() => {
+                        mutation.resolveJob(job.id);
+                        setJob(undefined);
+                      }}
+                    />
+                  ) : (
+                    <SettingsActionButton
+                      icon={SettingsActionIcon.Back}
+                      onClick={() => setJob(undefined)}
+                    >
+                      {copy("settings.returnToRetainedDraft_213f1b")}
+                    </SettingsActionButton>
+                  )
+                ) : null}
+              </>
+            )}
           </TrackedJob>
         )}
       </section>
@@ -942,6 +971,7 @@ export function ConfigurationEditor({
       );
       return;
     }
+    setNameConflict(false);
     void mutation.send({
       mutation: {
         id: source?.id ?? "",
@@ -961,6 +991,7 @@ export function ConfigurationEditor({
     return (
       <ResourceSelectionPending.Provider value={reportSelectionPending}>
         <ProjectCreationWizard
+          nameConflict={nameConflict}
           registrationAdapters={registrationAdapters}
           data={data}
           change={change}
@@ -976,7 +1007,13 @@ export function ConfigurationEditor({
           retry={mutation.retry}
         >
           {problem ? <p role="alert">{problem}</p> : null}
-          <Problem error={mutation.error} />
+          <Problem
+            error={
+              isConfigurationNameConflict(mutation.error)
+                ? undefined
+                : mutation.error
+            }
+          />
         </ProjectCreationWizard>
       </ResourceSelectionPending.Provider>
     );
@@ -1032,6 +1069,7 @@ export function ConfigurationEditor({
         ) : null}
         {kind === EntityKind.PROJECT ? (
           <ConfigurationFields
+            nameConflict={nameConflict}
             disabled={blocked || childPending}
             supportsProjectBehavior={supportsProjectBehavior}
             supportsSessionDefaults={supportsSessionDefaults}
@@ -1057,6 +1095,7 @@ export function ConfigurationEditor({
             }
           >
             <ConfigurationFields
+              nameConflict={nameConflict}
               disabled={blocked || childPending}
               supportsProjectBehavior={supportsProjectBehavior}
               supportsSessionDefaults={supportsSessionDefaults}
@@ -1120,7 +1159,9 @@ export function ConfigurationEditor({
         />
         <Problem
           error={
-            mutation.error ||
+            (isConfigurationNameConflict(mutation.error)
+              ? undefined
+              : mutation.error) ||
             formatMutation.error ||
             (repositoryNeedsRemoteCapability
               ? repositoryStatus.error

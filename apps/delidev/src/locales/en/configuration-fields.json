@@ -224,5 +224,7 @@
   "configuration-fields.projectEdit.repositories": "Repositories",
   "configuration-fields.projectEdit.execution": "Execution",
   "configuration-fields.projectEdit.access": "Access",
-  "configuration-fields.planApprovalHeading": "Plan approval"
+  "configuration-fields.planApprovalHeading": "Plan approval",
+  "configuration-fields.projectNameConflict": "A project with this name already exists. Choose another name.",
+  "configuration-fields.repositoryNameConflict": "A repository with this name already exists. Choose another name."
 }

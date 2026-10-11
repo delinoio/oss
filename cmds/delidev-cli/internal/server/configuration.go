@@ -437,6 +437,24 @@ func all(tx configurationView, kind domain.Kind) ([]store.Record, error) {
 	}
 }
 func validateRelationships(tx configurationView, kind domain.Kind, id domain.ID, expected uint64, value validatable) error {
+	if kind == domain.ProjectKind || kind == domain.RepositoryKind {
+		if expected > 0 {
+			old, err := tx.Get(kind, id)
+			if err != nil {
+				return err
+			}
+			if old.Revision != expected {
+				return domain.Fail(domain.Conflict, "The entity revision changed.", "Read its latest revision before editing.")
+			}
+		}
+		raw, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		if err := store.ValidateConfigurationName(tx, kind, id, raw); err != nil {
+			return err
+		}
+	}
 	switch v := value.(type) {
 	case *domain.Project:
 		if v.Settings != nil && v.Settings.Remediation != nil {

@@ -451,3 +451,7 @@ remain independently paginated. No new business RPC or transport authority is
 added. Follow the [mobile contract](apps-delidev-mobile-contract.md).
 
 Current schema-4 Agent routes embed exact source/native identity and non-secret metadata. The shared parser rejects Model resources, mixed UUID routes and older Agent schemas. Other currently activated Project, Settings and API-profile schemas remain supported. Protocol-2 connection verification rejects protocol 1 without adopting its state.
+
+## Configuration name failure projection
+
+`ClientFailure.cause` optionally exposes the closed `FailureCause.ConfigurationNameConflict` value. The client projects it only from the existing typed ErrorDetail when its code is Conflict and its cause is exactly `configuration_name_conflict`. Unknown causes, other categories and raw transport messages cannot establish a name collision. Protocol declarations remain unchanged.

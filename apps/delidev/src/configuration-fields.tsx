@@ -1,3 +1,4 @@
+import { configurationNameConflictCopy } from "./configuration-name-conflict";
 import { ProjectEditTabs, ProjectEditTab } from "./project-edit-tabs";
 import { defaultBranchPrefix, validBranchPrefix } from "./session-defaults";
 import { useSidebarActivity } from "./sidebar-context";
@@ -289,6 +290,7 @@ export function TextField({
   markRequired = false,
   placeholder,
   unavailable = false,
+  error,
 }: {
   label: string;
   value: unknown;
@@ -299,9 +301,28 @@ export function TextField({
   markRequired?: boolean;
   placeholder?: string;
   unavailable?: boolean;
+  error?: string;
 }) {
   useLocale();
-  const help = useId();
+  const help = useId(),
+    input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!error) return;
+    const node = input.current;
+    node
+      ?.closest<HTMLElement>("[data-project-edit-panel]")
+      ?.dispatchEvent(new Event("project-reveal-invalid", { bubbles: true }));
+    for (
+      let parent = node?.parentElement;
+      parent;
+      parent = parent.parentElement
+    )
+      if (parent instanceof HTMLDetailsElement) parent.open = true;
+    const frame = requestAnimationFrame(() => {
+      if (node?.isConnected && !node.closest("[hidden], [inert]")) node.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [error]);
   return (
     <>
       <label>
@@ -318,7 +339,9 @@ export function TextField({
         )}
         <input
           aria-label={markRequired ? label : undefined}
-          aria-describedby={unavailable ? help : undefined}
+          ref={input}
+          aria-invalid={Boolean(error) || undefined}
+          aria-describedby={unavailable || error ? help : undefined}
           placeholder={placeholder}
           value={text(value)}
           required={required}
@@ -327,6 +350,11 @@ export function TextField({
           onChange={(event) => change(event.target.value)}
         />
       </label>
+      {error ? (
+        <p id={help} role="alert" className="configuration-name-conflict">
+          {error}
+        </p>
+      ) : null}
       {unavailable ? (
         <div id={help}>
           <NativeOptionExplanation
@@ -1521,6 +1549,7 @@ export enum ServerPreferenceSection {
   ProjectDefaults = "project-defaults",
 }
 interface FieldsProps {
+  nameConflict?: boolean;
   disabled?: boolean;
   supportsProjectBehavior?: boolean;
   supportsSessionDefaults?: boolean;
@@ -2057,6 +2086,7 @@ export function projectRepositoryOption(
     : name;
 }
 function ProjectFields({
+  nameConflict = false,
   data,
   change,
   active,
@@ -2084,6 +2114,11 @@ function ProjectFields({
               <TextField
                 label={copy("configuration-fields.name_dcd1d5")}
                 value={data.name}
+                error={
+                  nameConflict
+                    ? configurationNameConflictCopy(EntityKind.PROJECT)
+                    : undefined
+                }
                 required
                 change={(name) => change({ ...data, name })}
               />
@@ -2372,6 +2407,7 @@ function RemediationFields({
 }
 
 export function RepositoryFields({
+  nameConflict = false,
   data,
   change,
   active,
@@ -2428,6 +2464,11 @@ export function RepositoryFields({
       <TextField
         label={copy("configuration-fields.name_dcd1d5")}
         value={data.name}
+        error={
+          nameConflict
+            ? configurationNameConflictCopy(EntityKind.REPOSITORY)
+            : undefined
+        }
         required
         change={(name) => change({ ...data, name })}
       />
