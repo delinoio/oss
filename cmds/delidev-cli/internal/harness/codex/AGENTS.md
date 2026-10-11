@@ -13,6 +13,7 @@
 - [DeliDev protected credential storage](../../../../../docs/cmds-delidev-credentials-contract.md)
 - [DeliDev direct execution startup](../../../../../docs/cmds-delidev-execution-startup-contract.md)
 - [DeliDev same-account native session forks](../../../../../docs/cmds-delidev-forks-contract.md)
+- [Codex Windows sandbox safety notices](../../../../../docs/cmds-delidev-harness-contract.md#codex-windows-sandbox-safety-notices)
 - [DeliDev native harness adapter contract](../../../../../docs/cmds-delidev-harness-contract.md)
 - [DeliDev image input contract](../../../../../docs/cmds-delidev-image-input-contract.md)
 - [DeliDev provider inspection](../../../../../docs/cmds-delidev-providers-contract.md)
