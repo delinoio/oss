@@ -1,9 +1,6 @@
 {
   "date": "2026-09-25",
-  "implementationCommits": [
-    "99ac9c6b",
-    "da9855f0"
-  ],
+  "implementationCommits": ["99ac9c6b", "da9855f0"],
   "availability": "unreleased; absent from npm 0.1.1",
   "host": {
     "os": "macOS 26.6.2 (25G83)",
@@ -25,10 +22,7 @@
     "pillow": "12.3.0"
   },
   "render": {
-    "resolution": [
-      2048,
-      2048
-    ],
+    "resolution": [2048, 2048],
     "samples": 96,
     "seed": 0,
     "device": "METAL",
@@ -48,20 +42,14 @@
       "bounds": {
         "coordinateSpace": "world",
         "min": [
-          -0.17000001192092895,
-          -0.014999999832361936,
-          -0.1550000011920929
+          -0.17000001192092895, -0.014999999832361936, -0.1550000011920929
         ],
-        "max": [
-          0.43000001192092896,
-          0.3604999995231628,
-          0.1550000011920929
-        ],
+        "max": [0.43000001192092896, 0.3604999995231628, 0.1550000011920929],
         "revision": 1
       },
       "triangles": 78982,
       "textures": 5,
-      "worldBoundsErrorMeters": 2.1457672083613488e-08,
+      "worldBoundsErrorMeters": 2.1457672083613488e-8,
       "validatorErrors": 0,
       "renders": [
         {
@@ -91,20 +79,14 @@
       "bounds": {
         "coordinateSpace": "world",
         "min": [
-          -0.17000001192092895,
-          -0.014999999832361936,
-          -0.1550000011920929
+          -0.17000001192092895, -0.014999999832361936, -0.1550000011920929
         ],
-        "max": [
-          0.43000001192092896,
-          0.3604999995231628,
-          0.1550000011920929
-        ],
+        "max": [0.43000001192092896, 0.3604999995231628, 0.1550000011920929],
         "revision": 1
       },
       "triangles": 78982,
       "textures": 10,
-      "worldBoundsErrorMeters": 2.1457672083613488e-08,
+      "worldBoundsErrorMeters": 2.1457672083613488e-8,
       "validatorErrors": null,
       "renders": [
         {
@@ -134,20 +116,14 @@
       "bounds": {
         "coordinateSpace": "world",
         "min": [
-          -0.13399999955296515,
-          0.14300000128149987,
-          -0.059289998449385165
+          -0.13399999955296515, 0.14300000128149987, -0.059289998449385165
         ],
-        "max": [
-          0.13399999955296515,
-          0.3604999995231628,
-          0.059289998449385165
-        ],
+        "max": [0.13399999955296515, 0.3604999995231628, 0.059289998449385165],
         "revision": 1
       },
       "triangles": 33664,
       "textures": 3,
-      "worldBoundsErrorMeters": 2.1457672083613488e-08,
+      "worldBoundsErrorMeters": 2.1457672083613488e-8,
       "validatorErrors": 0,
       "renders": [
         {
@@ -177,20 +153,14 @@
       "bounds": {
         "coordinateSpace": "world",
         "min": [
-          -0.13399999955296515,
-          0.14300000128149987,
-          -0.059289998449385165
+          -0.13399999955296515, 0.14300000128149987, -0.059289998449385165
         ],
-        "max": [
-          0.13399999955296515,
-          0.3604999995231628,
-          0.059289998449385165
-        ],
+        "max": [0.13399999955296515, 0.3604999995231628, 0.059289998449385165],
         "revision": 1
       },
       "triangles": 33664,
       "textures": 5,
-      "worldBoundsErrorMeters": 2.1457672083613488e-08,
+      "worldBoundsErrorMeters": 2.1457672083613488e-8,
       "validatorErrors": null,
       "renders": [
         {
@@ -220,20 +190,14 @@
       "bounds": {
         "coordinateSpace": "world",
         "min": [
-          -0.10999999940395355,
-          0.0009999998100101949,
-          -0.09049999994412064
+          -0.10999999940395355, 0.0009999998100101949, -0.09049999994412064
         ],
-        "max": [
-          0.10999999940395355,
-          0.07250000000000001,
-          0.10625000001187437
-        ],
+        "max": [0.10999999940395355, 0.07250000000000001, 0.10625000001187437],
         "revision": 1
       },
       "triangles": 38404,
       "textures": 5,
-      "worldBoundsErrorMeters": 4.48222273186083e-09,
+      "worldBoundsErrorMeters": 4.48222273186083e-9,
       "validatorErrors": 0,
       "renders": [
         {
@@ -263,20 +227,14 @@
       "bounds": {
         "coordinateSpace": "world",
         "min": [
-          -0.10999999940395355,
-          0.0009999998100101949,
-          -0.09049999994412064
+          -0.10999999940395355, 0.0009999998100101949, -0.09049999994412064
         ],
-        "max": [
-          0.10999999940395355,
-          0.07250000000000001,
-          0.10625000001187437
-        ],
+        "max": [0.10999999940395355, 0.07250000000000001, 0.10625000001187437],
         "revision": 1
       },
       "triangles": 38404,
       "textures": 10,
-      "worldBoundsErrorMeters": 5.117617547616138e-09,
+      "worldBoundsErrorMeters": 5.117617547616138e-9,
       "validatorErrors": null,
       "renders": [
         {
@@ -306,20 +264,14 @@
       "bounds": {
         "coordinateSpace": "world",
         "min": [
-          -0.07500000298023224,
-          0.003999999783933162,
-          -0.06499999761581421
+          -0.07500000298023224, 0.003999999783933162, -0.06499999761581421
         ],
-        "max": [
-          0.07500000298023224,
-          0.3470000000521541,
-          0.06499999761581421
-        ],
+        "max": [0.07500000298023224, 0.3470000000521541, 0.06499999761581421],
         "revision": 1
       },
       "triangles": 5186,
       "textures": 4,
-      "worldBoundsErrorMeters": 2.8088688597271982e-09,
+      "worldBoundsErrorMeters": 2.8088688597271982e-9,
       "validatorErrors": 0,
       "renders": [
         {
@@ -349,20 +301,14 @@
       "bounds": {
         "coordinateSpace": "world",
         "min": [
-          -0.07500000298023224,
-          0.003999999783933162,
-          -0.06499999761581421
+          -0.07500000298023224, 0.003999999783933162, -0.06499999761581421
         ],
-        "max": [
-          0.07500000298023224,
-          0.3470000000521541,
-          0.06499999761581421
-        ],
+        "max": [0.07500000298023224, 0.3470000000521541, 0.06499999761581421],
         "revision": 1
       },
       "triangles": 5186,
       "textures": 6,
-      "worldBoundsErrorMeters": 4.59700822894038e-09,
+      "worldBoundsErrorMeters": 4.59700822894038e-9,
       "validatorErrors": null,
       "renders": [
         {
@@ -386,18 +332,11 @@
   ],
   "profile": {
     "result": "passed",
-    "projections": [
-      "perspective",
-      "orthographic"
-    ],
-    "lights": [
-      "directional",
-      "point",
-      "spot"
-    ],
+    "projections": ["perspective", "orthographic"],
+    "lights": ["directional", "point", "spot"],
     "negativeNonuniformScale": true,
     "opacity": 0.4,
-    "worldVertexErrorMeters": 6.705522537231445e-08
+    "worldVertexErrorMeters": 6.705522537231445e-8
   },
   "pixelComparison": [
     {
@@ -517,17 +456,8 @@
     "browser": "Codex in-app browser",
     "browserVersion": "not exposed by the browser tool",
     "three": "0.186.1",
-    "products": [
-      "studio",
-      "headphones",
-      "dac",
-      "stand"
-    ],
-    "actions": [
-      "load",
-      "rotate",
-      "zoom"
-    ],
+    "products": ["studio", "headphones", "dac", "stand"],
+    "actions": ["load", "rotate", "zoom"],
     "consoleErrors": [],
     "captures": [
       {

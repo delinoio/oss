@@ -60,13 +60,13 @@ Published version **0.2.0** includes `system cpus`, `run env`, and the five `run
 
 The examples below use `run env` from published version **0.2.0**. Version 0.1.6 used `env run`; update scripts when upgrading. Rejected old names return exit code 2 with migration guidance and are not aliases. See the [file access workflow guide](https://oss.delino.io/clibox/fspy) for the upcoming `fspy` commands and their limits.
 
-| Previous use | New use |
-| --- | --- |
-| `clibox env run KEY=VALUE command` | `clibox run env KEY=VALUE command` |
-| `clibox port which 3000` | `clibox port list 3000` |
-| `clibox hash encode --text hello` | `clibox hash compute --text hello` |
-| `clibox port which 3000 --quiet` (PIDs) | `clibox port list 3000 --pids` |
-| `--output -` (a file named `-`) | `--output ./-` |
+| Previous use                            | New use                            |
+| --------------------------------------- | ---------------------------------- |
+| `clibox env run KEY=VALUE command`      | `clibox run env KEY=VALUE command` |
+| `clibox port which 3000`                | `clibox port list 3000`            |
+| `clibox hash encode --text hello`       | `clibox hash compute --text hello` |
+| `clibox port which 3000 --quiet` (PIDs) | `clibox port list 3000 --pids`     |
+| `--output -` (a file named `-`)         | `--output ./-`                     |
 
 `--quiet` suppresses stdout results on port listing/termination, waits, and hash verification. It never suppresses failure diagnostics or changes the exit status. It conflicts with `--json`; `port list --pids` conflicts with both.
 
@@ -396,13 +396,13 @@ Default success output is one summary, such as `tcp ready after 1250 ms (3 attem
 
 `kind` is `tcp`, `http`, or `file`. `status` is `ready`, `timeout`, `failed`, or `cancelled`. `elapsed_ms` is nonnegative elapsed milliseconds; `attempts` counts started checks. Failures replace `error` with an object containing a stable `code` and a safe, actionable `message`. Timeout messages include the last retryable failure classification when available. CLI validation failures produce stderr diagnostics and no JSON.
 
-| Outcome | Exit code |
-|---|---:|
-| Ready | 0 |
-| Runtime failure or overall timeout | 1 |
-| Invalid CLI input | 2 |
-| Ctrl+C, or Ctrl+Break on Windows | 130 |
-| Unix SIGTERM | 143 |
+| Outcome                            | Exit code |
+| ---------------------------------- | --------: |
+| Ready                              |         0 |
+| Runtime failure or overall timeout |         1 |
+| Invalid CLI input                  |         2 |
+| Ctrl+C, or Ctrl+Break on Windows   |       130 |
+| Unix SIGTERM                       |       143 |
 
 Ctrl+C, Ctrl+Break on Windows, and Unix SIGTERM stop waiting and release owned resources without terminating the target service or changing the target file. Wait commands never consume stdin or launch subsequent commands. They do not support reverse waiting, multiple targets, or continuous monitoring. They create no persistent application state, configuration, cache, or operation history.
 
@@ -517,13 +517,13 @@ A write failure or interruption **while emitting stdout can leave partial output
 
 On Windows, Ctrl+C or Ctrl+Break lets the native command finish cancellation cleanup before the npm/pnpm launcher returns its exit code.
 
-| Outcome | Exit code |
-|---|---:|
-| Success | 0 |
-| Content, filesystem, resource-limit, or other runtime failure | 1 |
-| Missing, malformed, or conflicting CLI arguments | 2 |
-| Handled Ctrl+C | 130 |
-| Handled Unix SIGTERM | 143 |
+| Outcome                                                       | Exit code |
+| ------------------------------------------------------------- | --------: |
+| Success                                                       |         0 |
+| Content, filesystem, resource-limit, or other runtime failure |         1 |
+| Missing, malformed, or conflicting CLI arguments              |         2 |
+| Handled Ctrl+C                                                |       130 |
+| Handled Unix SIGTERM                                          |       143 |
 
 English structured diagnostics go to stderr, with warnings/errors enabled by default. Use `RUST_LOG=clibox=debug` for operation progress (or `RUST_LOG` filters for more detail). Diagnostic color is used only on a terminal and respects `NO_COLOR`. Diagnostics omit input content, keys, values, paths, raw arguments, and dependency error text; intentional command results are separate.
 

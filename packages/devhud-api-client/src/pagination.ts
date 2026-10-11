@@ -17,11 +17,15 @@ export function createPageRequest(
   pageToken = "",
 ): PageRequest {
   if (!Number.isInteger(pageSize) || pageSize < 0 || pageSize > MAX_PAGE_SIZE) {
-    throw new RangeError(`pageSize must be an integer from 0 through ${MAX_PAGE_SIZE}`);
+    throw new RangeError(
+      `pageSize must be an integer from 0 through ${MAX_PAGE_SIZE}`,
+    );
   }
   assertWellFormedUnicode(pageToken, "pageToken");
   if (textEncoder.encode(pageToken).byteLength > MAX_PAGE_TOKEN_BYTES) {
-    throw new RangeError(`pageToken must not exceed ${MAX_PAGE_TOKEN_BYTES} UTF-8 bytes`);
+    throw new RangeError(
+      `pageToken must not exceed ${MAX_PAGE_TOKEN_BYTES} UTF-8 bytes`,
+    );
   }
 
   return create(PageRequestSchema, {

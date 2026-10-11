@@ -40,7 +40,11 @@ export function terminateWindowsProcessTree(child, signal) {
       if (child.exitCode === null && child.signalCode === null) {
         child.kill(signal);
       }
-      reject(new Error(`failed to terminate Windows process tree for PID ${child.pid}: ${error.message}`));
+      reject(
+        new Error(
+          `failed to terminate Windows process tree for PID ${child.pid}: ${error.message}`,
+        ),
+      );
     });
 
     taskkill.once("close", (code, taskkillSignal) => {
@@ -52,8 +56,14 @@ export function terminateWindowsProcessTree(child, signal) {
       if (child.exitCode === null && child.signalCode === null) {
         child.kill(signal);
       }
-      const outcome = taskkillSignal ? `signal ${taskkillSignal}` : `exit code ${code}`;
-      reject(new Error(`failed to terminate Windows process tree for PID ${child.pid}: taskkill ${outcome}`));
+      const outcome = taskkillSignal
+        ? `signal ${taskkillSignal}`
+        : `exit code ${code}`;
+      reject(
+        new Error(
+          `failed to terminate Windows process tree for PID ${child.pid}: taskkill ${outcome}`,
+        ),
+      );
     });
   });
 }
@@ -72,8 +82,15 @@ function linuxProcessGroupHasLiveMembers(processGroupId) {
     }
     try {
       const stat = readFileSync(`/proc/${entry}/stat`, "utf8");
-      const [state, , groupId] = stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/u);
-      if (groupId === String(processGroupId) && state !== "Z" && state !== "X") {
+      const [state, , groupId] = stat
+        .slice(stat.lastIndexOf(")") + 1)
+        .trim()
+        .split(/\s+/u);
+      if (
+        groupId === String(processGroupId) &&
+        state !== "Z" &&
+        state !== "X"
+      ) {
         return true;
       }
     } catch (error) {
@@ -107,7 +124,9 @@ function waitForPosixProcessGroupExit(processGroupId) {
         }
         if (error.code !== "EPERM" || process.platform !== "linux") {
           reject(
-            new Error(`failed to await POSIX process group ${-processGroupId}: ${error.message}`),
+            new Error(
+              `failed to await POSIX process group ${-processGroupId}: ${error.message}`,
+            ),
           );
           return;
         }
@@ -165,7 +184,10 @@ export async function terminatePosixProcessGroup(child, signal) {
     await waitForPosixProcessGroupExit(processGroupId);
     return;
   } catch (error) {
-    if (!(error instanceof PosixProcessGroupExitTimeout) || signal === "SIGKILL") {
+    if (
+      !(error instanceof PosixProcessGroupExitTimeout) ||
+      signal === "SIGKILL"
+    ) {
       throw error;
     }
   }
@@ -180,7 +202,8 @@ export async function spawnDevServer(
   options,
   { terminateProcessTree = false } = {},
 ) {
-  const managePosixProcessGroup = process.platform !== "win32" && terminateProcessTree;
+  const managePosixProcessGroup =
+    process.platform !== "win32" && terminateProcessTree;
   const child = spawn(
     command,
     args,
@@ -206,12 +229,11 @@ export async function spawnDevServer(
       }
 
       forwardedSignal = signal;
-      const terminationPromise =
-        terminateProcessTree
-          ? process.platform === "win32"
-            ? terminateWindowsProcessTree(child, signal)
-            : terminatePosixProcessGroup(child, signal)
-          : Promise.resolve(child.kill(signal));
+      const terminationPromise = terminateProcessTree
+        ? process.platform === "win32"
+          ? terminateWindowsProcessTree(child, signal)
+          : terminatePosixProcessGroup(child, signal)
+        : Promise.resolve(child.kill(signal));
       terminationPromises.push(terminationPromise);
       // The child may take longer to exit than the termination command takes to
       // fail. Attach a handler now and rethrow when both operations are awaited.

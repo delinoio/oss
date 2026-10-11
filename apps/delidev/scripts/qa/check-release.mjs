@@ -9,10 +9,16 @@ async function check(directory) {
     if (entry.isDirectory()) await check(path);
     else if (/\.(js|html|json)$/.test(entry.name)) {
       const bytes = await readFile(path, "utf8");
-      if (/__qa\/|delidev-qa-appearance|DeliDev browser QA|qa-environments|qa-owner\.json|__prSidebarFixture|__usageFixture|__accountRemediationFixture|__sessionRemediationFixture|__claudeRunnersFixture|__transcriptRoleFixture|__imageInputFixture|__sessionComposerFixture|__sessionHeaderFixture|__browserSplitFixture|__generalChatFixture|__projectSessionFixture|__planModeFixture|__apiDetailsFixture|__inboxFilterFixture|__apiVerificationFixture|__connectionsFixture|__subscriptionRailFixture|__shortcutPreferencesFixture|__commandMenuFixture|__terminalHistoryFixture/.test(bytes)) throw new Error("QA code leaked into the release frontend");
-
+      if (
+        /__qa\/|delidev-qa-appearance|DeliDev browser QA|qa-environments|qa-owner\.json|__prSidebarFixture|__usageFixture|__accountRemediationFixture|__sessionRemediationFixture|__claudeRunnersFixture|__transcriptRoleFixture|__imageInputFixture|__sessionComposerFixture|__sessionHeaderFixture|__browserSplitFixture|__generalChatFixture|__projectSessionFixture|__planModeFixture|__apiDetailsFixture|__inboxFilterFixture|__apiVerificationFixture|__connectionsFixture|__subscriptionRailFixture|__shortcutPreferencesFixture|__commandMenuFixture|__terminalHistoryFixture/.test(
+          bytes,
+        )
+      )
+        throw new Error("QA code leaked into the release frontend");
     }
   }
 }
 await check(join(app, "dist"));
-console.log(JSON.stringify({ operation: "qa-release-exclusion", result: "passed" }));
+console.log(
+  JSON.stringify({ operation: "qa-release-exclusion", result: "passed" }),
+);

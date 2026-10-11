@@ -1,15 +1,19 @@
 # DeliDev current-user service contract
 
 ## Scope
+
 The feature adds optional native server and Worker registrations. Go owns `cmds/delidev-cli/internal/userservice`, the CLI infrastructure boundary, and authenticated `SystemService` operations. This is separate from Worker job, workspace and native harness process ownership. The complete product requirements remain in [requirements](cmds-delidev-requirements.md).
 
 ## Runtime and Language
+
 The installed Go `delidev` executable is registered directly. macOS uses the current user's GUI LaunchAgents domain; Linux uses the existing `systemd --user` manager; Windows uses Task Scheduler with the current SID, `InteractiveToken`, `LeastPrivilege` and `IgnoreNew`. No system service, password, elevation, pre-login execution, linger enablement or logout-survival guarantee is introduced.
 
 ## Users and Operators
+
 Local control requires an existing private owner server scope or a separate already-paired Worker scope. Installation neither initializes a database nor pairs a device. Owner and currently authorized paired-client Connect callers may control the server computer's server and its fixed local `<server-scope>/worker`; Worker credentials cannot invoke these product operations. Remote Workers use their local CLI infrastructure boundary, not a server-selected remote filesystem path.
 
 ## Interfaces and Contracts
+
 - `delidev server service install|status|start|stop|remove [--revision N]`.
 - `delidev worker service install|status|start|stop|remove [--worker-dir PATH --revision N]`.
 - `delidev service-control install|status|start|stop|remove --kind server|worker [--revision N]` uses authenticated Connect on the selected server.
@@ -59,6 +63,7 @@ Authenticated native service control holds the selected server's original lifecy
 - Optional current-user server/Worker services follow `cmds-delidev-user-services-contract.md`. Keep stopped installation, existing foreground exclusivity, current-user/executable/definition/process-birth ownership, durable Stop before native disable, bounded native attempts, actor/revision-bound no-replay receipts, and independently confirmed controller cleanup before removal. Preserve all data/authentication/native session evidence; no system services, passwords, linger or foreign registration replacement.
 
 ## Storage
+
 Private per-kind atomic JSON records retain the installation's canonical scope identity, executable file identity/SHA-256, user identity and safe configuration references, exact revision, desired state, and up to 1,024 original request claims with matching metadata-only events. A single synchronized replacement publishes intent/event/receipt acceptance atomically. State and control locks serialize bounded publication and native writes. Completed receipts cannot repeat native effects; incomplete claims preserve uncertainty, including after client loss. A separate per-installation runtime record retains the original process birth and UUID-v7 instance/start identities, with positive completion published only after the product controller joins. Removed registrations retain all historical records.
 
 Every status observation, including startup polling and pre-control validation, holds the state gate against new controller admission. It probes the runtime lock before reading the completion record and retains a successfully acquired lock through observation. This orders the record read after the original controller's completion publication and prevents observation from claiming a runtime lock needed by a concurrently admitted controller. After joining the product controller and intent observer, completion publication also holds the state gate, excluding transient Windows permission-inspection handles from atomic replacement while retaining runtime ownership until the positive record is durable. This bounded publication must survive cancellation of the already-joined controller. An active lock keeps shutdown pending; a free lock with incomplete completion evidence remains uncertain.
@@ -66,6 +71,7 @@ Every status observation, including startup polling and pre-control validation, 
 Native definitions contain executable/scope/installation references only. macOS and Linux publish definitions exclusively from synchronized temporary files. Removal atomically claims the original Unix definition without replacement and verifies the original file identity and complete bytes before unlink; changed claims remain preserved for recovery. Windows retains the original exclusively created task's canonical exported XML in private state and compares its entire graph except the separately controlled Enabled setting.
 
 ## Security
+
 Before native control, independently validate the stored scope/executable identities and bytes, user, complete native definition, and any live manager PID against the private launch record, current executable, user and exact process birth. Never signal a PID directly or adopt an unknown definition. Linux additionally rejects drop-ins and validates loaded executable argv, fragment, user, restart and kill properties through typed D-Bus values. It accepts one absolute filesystem-backed Unix bus path, including standard percent escapes and optional 16-byte GUID metadata, and rejects remote/abstract/autolaunch or multiple-address fallback. It uses only an existing same-user Unix user-bus socket and passes only required user-bus/runtime selectors to systemctl; no bus autolaunch or inherited product credentials. Windows COM operations are constant PowerShell source with dynamic values supplied as bounded UTF-8 JSON on stdin; creation uses CREATE, never replacement, and no password. Bind a running task engine to the original action's kernel parent and then independently verify the action's process birth/user/executable.
 
 Windows process image observation resolves the Win32 path with the same canonicalization used during installation before comparing the original executable path and file identity. An 8.3 spelling of that same file remains compatible; a different path, changed file identity, SID or process birth remains recovery-required. Native path normalization never replaces independent ownership evidence.
@@ -85,9 +91,11 @@ Opening a fresh main desktop process is intentional local Start only for an ordi
 `AdmitKindLaunch` extends the existing server admission gate to the fixed current-user Worker scope; `AdmitLaunch` preserves its server interface. The main desktop may reuse a live compatible Worker controlled by an installed service, but cannot change desired/login intent, invoke the manager or create a competing foreground/detached controller. Hold the original kind-specific service control gate through Worker lifecycle reservation and original process lock acquisition. Removed registrations allow ordinary desktop admission; malformed/stopped/unresolved installed registrations remain explicit service-managed failures. Worker preparation and signed update ownership are separately revalidated before controller effects. No OS registration, login startup or logout-survival guarantee is added.
 
 ## Logging
+
 Structured `slog` diagnostics include service kind, stable action/stage/state, request/installation IDs and typed safe error codes. The service entry point appends to an identity-checked owner-only per-kind log in its private scope, including macOS and Windows where native default output would otherwise be discarded. Native stderr, full definitions, environment, commands, credentials, prompt/output and private paths are excluded from service control diagnostics.
 
 ## Build and Test
+
 Run root `go test -race ./cmds/delidev-cli/...` and `go vet ./cmds/delidev-cli/...`, `pnpm proto:check`, and the DeliDev API client's lint/test/build commands. Required generated bindings are tool-owned. Remove ignored generated `dist` directories from the final worktree.
 
 Deterministic controlled-native fixtures cover repeat install/start/stop/remove, exact receipt replay after a newer start, stale revisions, delayed login after Stop, joined cleanup barriers, foreign definitions/PIDs, replaced executable/scope identity, foreground exclusivity, cancellation, revoked authority and unconfirmed native writes. Real Connect/SQLite checks verify actor authorization, typed metadata, correlation, revision conflicts, receipt-only replay and redaction. The TypeScript client reads absent service metadata without invoking a real service manager.
@@ -95,14 +103,17 @@ Deterministic controlled-native fixtures cover repeat install/start/stop/remove,
 `DELIDEV_NATIVE_USER_SERVICE_TEST=1 go test -race ./cmds/delidev-cli/internal/cli -run '^TestNativeUserServiceLifecycle$' -v` explicitly selects a real native fixture using temporary server/Worker scopes and uniquely named current-user registrations. It preserves authentication/data, verifies Worker attachment, self-Stop acknowledgment and controller cleanup, refuses a competing foreground server and a delayed stopped launch, and repeats server startup/removal. Native Windows/Linux execution, real logout/relogin, platform distribution and account acceptance remain separate evidence requirements; cross-compilation is not native evidence. Record actual results and unresolved limits in pull requests, issues and CI logs/artifacts.
 
 ## Dependencies and Integrations
+
 Reuse the existing protected-file locks, process-birth observation primitives, foreground server/Worker controllers, authenticated Connect transport, Go/TypeScript generators and existing godbus dependency. No dependency or SQLite schema migration is added.
 
 ## Change Triggers
+
 Update this document, the project and CLI/protocol/client contracts, validation records in pull requests, issues and CI logs/artifacts, and scoped AGENTS whenever registration ownership, authorization, native definitions, intent/receipt semantics, cleanup proof, command shape or platform support changes.
 
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - [Microsoft process image observation](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-queryfullprocessimagenamew)
 - [Microsoft short filename conversion](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getshortpathnamew)
 - [Go Windows path canonicalization](https://go.dev/src/path/filepath/symlink_windows.go)

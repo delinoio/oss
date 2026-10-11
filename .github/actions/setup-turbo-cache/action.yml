@@ -4,11 +4,11 @@ inputs:
   team:
     description: Vercel team ID or slug from the workflow variable
     required: false
-    default: ''
+    default: ""
   policy:
     description: Optional exact OIDC policy ID from the workflow variable
     required: false
-    default: ''
+    default: ""
 runs:
   using: composite
   steps:

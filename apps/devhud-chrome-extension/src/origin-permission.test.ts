@@ -11,7 +11,10 @@ describe("configured origin permission patterns", () => {
     expect(configuredOriginPermissionPattern(origin)).toBe(expected);
   });
 
-  it.each(["https://example.com/path", "file:///tmp/page", "not-an-origin"])("rejects invalid configured origin %s", (origin) => {
-    expect(configuredOriginPermissionPattern(origin)).toBeNull();
-  });
+  it.each(["https://example.com/path", "file:///tmp/page", "not-an-origin"])(
+    "rejects invalid configured origin %s",
+    (origin) => {
+      expect(configuredOriginPermissionPattern(origin)).toBeNull();
+    },
+  );
 });

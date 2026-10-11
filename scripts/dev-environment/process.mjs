@@ -63,14 +63,18 @@ export function safeBaseEnvironment(
     "CI",
   ];
   return Object.fromEntries(
-    names.filter((name) => source[name] !== undefined).map((name) => [name, source[name]]),
+    names
+      .filter((name) => source[name] !== undefined)
+      .map((name) => [name, source[name]]),
   );
 }
 
 export function dockerClientEnvironment(source = process.env) {
   const names = ["DOCKER_HOST", "DOCKER_CONTEXT"];
   return Object.fromEntries(
-    names.filter((name) => source[name] !== undefined).map((name) => [name, source[name]]),
+    names
+      .filter((name) => source[name] !== undefined)
+      .map((name) => [name, source[name]]),
   );
 }
 

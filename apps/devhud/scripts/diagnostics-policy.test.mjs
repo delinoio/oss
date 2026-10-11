@@ -7,10 +7,15 @@ const diagnosticsSources = [
   new URL("../src/diagnostics-ui.tsx", import.meta.url),
   new URL("../src/service-boundary.tsx", import.meta.url),
 ];
-const nativeDiagnosticsSource = new URL("../src-tauri/src/native_plugin.rs", import.meta.url);
+const nativeDiagnosticsSource = new URL(
+  "../src-tauri/src/native_plugin.rs",
+  import.meta.url,
+);
 
 test("diagnostics has no analytics SDK or remote feature-flag dependency", async () => {
-  const source = (await Promise.all(diagnosticsSources.map((file) => readFile(file, "utf8")))).join("\n");
+  const source = (
+    await Promise.all(diagnosticsSources.map((file) => readFile(file, "utf8")))
+  ).join("\n");
   for (const prohibited of [
     /segment\.com|@segment\//iu,
     /sentry|datadog|mixpanel|amplitude/iu,
@@ -22,5 +27,8 @@ test("diagnostics has no analytics SDK or remote feature-flag dependency", async
 
 test("persistent native diagnostics omit backend exception text", async () => {
   const source = await readFile(nativeDiagnosticsSource, "utf8");
-  assert.doesNotMatch(source, /(?:%|\?)(?:reason|error)\b|(?:reason|error)\s*=\s*(?:%|\?)/u);
+  assert.doesNotMatch(
+    source,
+    /(?:%|\?)(?:reason|error)\b|(?:reason|error)\s*=\s*(?:%|\?)/u,
+  );
 });

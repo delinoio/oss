@@ -1,30 +1,38 @@
 # React Forge Validation
 
 ## Scope
+
 Acceptance evidence and repeatable validation for `packages/react-forge`, its native engines and the shared Forge boundary. The complete requirements remain normative; this document records evidence without expanding platform, performance, Office or accessibility claims.
 
 ## Runtime and Language
+
 Parley/Fontique 0.9.0 (CoreText enumeration and macOS 15 CJK fallback fixes), Node.js 24, React 19.2.8, react-reconciler 0.33.0, TypeScript 5.9.3 and pinned Rust nightly-2026-01-01 on macOS/Windows/glibc Linux x64/arm64. Historical local measurements below used Node.js 24.20.0 on macOS arm64. Test scripts use JavaScript and Python; production generation uses only JavaScript and Rust.
 
 ## Users and Operators
+
 Repository developers and CI maintainers reproducing document, preservation and session behavior.
 
 ## Interfaces and Contracts
+
 - `pnpm exec turbo run build typecheck lint test --filter=@delino/react-forge` builds and validates the real library plus workspace and packed-consumer CLI.
 - `pnpm --filter @delino/react-forge test:render --output <directory>` creates four formats, edits three external Office fixtures, renders their originals for comparison, and independently verifies package XML, extracted text, native chart visibility, CJK and PDF semantics.
 - `pnpm --filter @delino/react-forge benchmark --output <report.json>` records eleven fresh-process workload samples.
 - CI `react-forge` runs on Windows x64 and Linux x64/arm64. The exact-tag release retains all six native platform/architecture runners. Its native/system-font work is uncached and its seven-day artifacts contain Office/PDF files, page PNGs, provenance and benchmark reports.
 
 ## Storage
+
 Committed `packages/react-forge/tests/evidence` JSON records contain local observation data and version/font checksums. Rendered artifacts are explicitly requested local output or short-lived CI artifacts; no system fonts are copied or redistributed. Existing external fixture bytes and their reproducible generators remain under their owning native crate tests. Generated package dist is removed from final worktrees.
 
 ## Security
+
 Fixtures contain synthetic repository-owned content. Test-only tools do not become production dependencies. Diagnostics and committed evidence contain no credentials, document-user data or local user paths. Caller task execution is trusted and unsandboxed. No package/release publication, telemetry or Microsoft Office automation is part of these checks.
 
 ## Logging
+
 Runtime diagnostics are checked for safe classifications and model locations, observer failure isolation and scoped native tracing. Benchmark logs identify format/workload and summary timing/memory. Renderer evidence records tool versions, font file names/version/checksums, raster hashes and structural check results.
 
 ## Build and Test
+
 Run from the repository root after `pnpm install`:
 
 ```sh
@@ -52,39 +60,38 @@ Root `cargo test` also requires the existing DevHud frontend build prerequisite 
 
 Coverage includes:
 
-| Boundary | Evidence |
-| --- | --- |
-| React behavior | Real reconciler tests for composition, state/reducers, memo/Context, refs, effects/Strict Mode, classes/errors, profiler, external stores, Suspense/use/lazy/rejection, transitions/deferred/action state and Activity |
-| Session lifecycle | Revision pinning, font revision changes, stale handles, overlapping/in-flight mounts, simultaneous exports, disposal and cancellation |
-| Publication | Conflicts, overwrite, original-source changes, concurrent saves, symlink behavior, FIFO rejection, no-clobber races, cleanup and truthful post-publication results |
-| CLI | All four workspace and installed tasks, ESM/CommonJS tasks, JSON/human errors, invalid arguments, task failures, SIGINT/SIGTERM and cleanup |
-| Office preservation | External PPTX/python-pptx, DOCX/python-docx and XLSX/openpyxl fixtures; unchanged package/XML bytes, repeated external PPTX edits, chart/data replacement, numbering/drawing ID collisions and opaque regions |
-| Spreadsheet | Typed cells and formula caches/recalculation, dimensions, merge/freeze/filter/link behavior, three charts, five conditional-format families and seven validation families, unsupported extensions |
-| Fonts | System and caller fonts, CJK/RTL/mixed direction/color emoji, missing glyphs and color representations, restricted/no-subsetting/bitmap-only embedding flags |
-| PDF | Paragraph/table splitting, repeated-header artifacts, first-header/body placement, overflow, language/alternate text/links and structure-tree page/MCID logical reading order |
-| Limits | Input/output/part/expanded bytes, ZIP count, XML depth/nodes/entities, image bytes/pixels, React tree bytes/depth/count, chart/merge expansion |
-| Legacy contracts | Existing Forge engines, CLI and official MCP client, optional-renderer test, immutable DevHud desktop/mobile pins and affected CI contracts |
+| Boundary            | Evidence                                                                                                                                                                                                               |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| React behavior      | Real reconciler tests for composition, state/reducers, memo/Context, refs, effects/Strict Mode, classes/errors, profiler, external stores, Suspense/use/lazy/rejection, transitions/deferred/action state and Activity |
+| Session lifecycle   | Revision pinning, font revision changes, stale handles, overlapping/in-flight mounts, simultaneous exports, disposal and cancellation                                                                                  |
+| Publication         | Conflicts, overwrite, original-source changes, concurrent saves, symlink behavior, FIFO rejection, no-clobber races, cleanup and truthful post-publication results                                                     |
+| CLI                 | All four workspace and installed tasks, ESM/CommonJS tasks, JSON/human errors, invalid arguments, task failures, SIGINT/SIGTERM and cleanup                                                                            |
+| Office preservation | External PPTX/python-pptx, DOCX/python-docx and XLSX/openpyxl fixtures; unchanged package/XML bytes, repeated external PPTX edits, chart/data replacement, numbering/drawing ID collisions and opaque regions          |
+| Spreadsheet         | Typed cells and formula caches/recalculation, dimensions, merge/freeze/filter/link behavior, three charts, five conditional-format families and seven validation families, unsupported extensions                      |
+| Fonts               | System and caller fonts, CJK/RTL/mixed direction/color emoji, missing glyphs and color representations, restricted/no-subsetting/bitmap-only embedding flags                                                           |
+| PDF                 | Paragraph/table splitting, repeated-header artifacts, first-header/body placement, overflow, language/alternate text/links and structure-tree page/MCID logical reading order                                          |
+| Limits              | Input/output/part/expanded bytes, ZIP count, XML depth/nodes/entities, image bytes/pixels, React tree bytes/depth/count, chart/merge expansion                                                                         |
+| Legacy contracts    | Existing Forge engines, CLI and official MCP client, optional-renderer test, immutable DevHud desktop/mobile pins and affected CI contracts                                                                            |
 
 Rendering evidence checks seven generated/edited cases with LibreOffice 26.8.0.3, Poppler and pinned pypdf/lxml/Pillow versions recorded in the committed report. Every edited fixture is compared against its source pagination; the external XLSX's pre-existing blank page and split print chart remain preserved. Native PDF has three pages with repeated table headers and logical structure tags. Word charts show native series data, and its text extraction retains CJK. PNG page images were also visually inspected. This is structural and LibreOffice/Poppler interoperability evidence, not direct Microsoft Office validation or PDF/UA certification.
 
 The benchmark uses the normal development native profile on an Apple M5 Max. Near-limit workloads use 950 PPTX slides, 9,500 Word/PDF paragraphs or 19,000 spreadsheet cells. Peak RSS includes the whole fresh Node process and native/font allocations. System color-emoji font loading makes the representative PDF sample materially larger than a Latin-only document. Event-loop p99/max includes TSX loading, React reconciliation and serialization as well as awaiting native work; native processing does not imply zero JavaScript blocking. Exact observations are in the committed report and vary by machine, fonts and load. There is no latency, memory or throughput SLO.
 
-
 Measured on 2026-09-24 (development build; observations only):
 
-| Format | Workload | Total ms | Peak RSS MiB | Event-loop p99 ms |
-| --- | --- | ---: | ---: | ---: |
-| PPTX | representative | 278.1 | 107.1 | 57.1 |
-| DOCX | representative | 132.4 | 112.3 | 52.0 |
-| XLSX | representative | 136.9 | 108.5 | 84.0 |
-| PDF | representative | 190.5 | 595.2 | 53.0 |
-| PPTX | preserved edit | 132.8 | 81.4 | 7.8 |
-| DOCX | preserved edit | 468.7 | 85.3 | 5.8 |
-| XLSX | preserved edit | 79.4 | 81.1 | 8.6 |
-| PPTX | near limit | 3088.2 | 135.4 | 6.1 |
-| DOCX | near limit | 4225.5 | 219.6 | 5.7 |
-| XLSX | near limit | 2298.1 | 261.0 | 5.7 |
-| PDF | near limit | 2466.6 | 268.8 | 5.7 |
+| Format | Workload       | Total ms | Peak RSS MiB | Event-loop p99 ms |
+| ------ | -------------- | -------: | -----------: | ----------------: |
+| PPTX   | representative |    278.1 |        107.1 |              57.1 |
+| DOCX   | representative |    132.4 |        112.3 |              52.0 |
+| XLSX   | representative |    136.9 |        108.5 |              84.0 |
+| PDF    | representative |    190.5 |        595.2 |              53.0 |
+| PPTX   | preserved edit |    132.8 |         81.4 |               7.8 |
+| DOCX   | preserved edit |    468.7 |         85.3 |               5.8 |
+| XLSX   | preserved edit |     79.4 |         81.1 |               8.6 |
+| PPTX   | near limit     |   3088.2 |        135.4 |               6.1 |
+| DOCX   | near limit     |   4225.5 |        219.6 |               5.7 |
+| XLSX   | near limit     |   2298.1 |        261.0 |               5.7 |
+| PDF    | near limit     |   2466.6 |        268.8 |               5.7 |
 
 ## Scoped Package Identity
 
@@ -101,14 +108,17 @@ The deck imported successfully into Artifact Tool without rewriting it, and test
 The compact evidence record is `packages/react-forge/tests/evidence/travel-ir-macos-arm64.json`. The delivered export's SHA-256 identifies the reviewed artifact; subsequent exports can differ because new document/node IDs are UUID v7. PPTX/PDF/PNG outputs and tool-owned validation receipts stay local and untracked.
 
 ## Dependencies and Integrations
+
 Foundation the originating change at `303fa6747d89fae427725b6f50e6a1a58b10bafb` is the reused repository implementation. Test fixtures document their generating tool versions beside their sources. CI installs optional renderers only on its disposable test host; the private package never downloads tools or fonts.
 
 ## Change Triggers
+
 Update evidence and relevant project/native/Node contracts when formats, preservation, runtime compatibility, fonts, lifecycle, limits or validation commands change. Keep central CI path selection, required result aggregation and owning AGENTS rules synchronized.
 
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - [Project](project-react-forge.md).
 - [Complete requirements](packages-react-forge-requirements.md).
 - [Node contract](packages-react-forge-contract.md).
@@ -117,16 +127,17 @@ Instruction-file updates in this requirement apply only to changes in developmen
 - [Workflow contract](repository-workflow-contract.md).
 
 ## Cross-platform extension
+
 The 2026-09-24 the originating change follow-up expands the initial macOS-arm64 observations above to six native hosts. The CI matrix runs build, native and React regressions, installed consumers, system-font tests, ROAM example generation and benchmarks on every host, plus isolated Windows console cancellation and macOS/Linux render checks. Each Rust invocation selects the matching target explicitly, including Windows arm64, and Node asserts its actual host architecture. The initial macOS evidence records remain historical observations rather than proof for another operating system.
 
-| Native ID | Runner | Native target |
-| --- | --- | --- |
-| `darwin-x64` | `macos-15-intel` | `x86_64-apple-darwin` |
-| `darwin-arm64` | `macos-15` | `aarch64-apple-darwin` |
-| `linux-x64-gnu` | `ubuntu-22.04` | `x86_64-unknown-linux-gnu` |
-| `linux-arm64-gnu` | `ubuntu-22.04-arm` | `aarch64-unknown-linux-gnu` |
-| `win32-x64-msvc` | `windows-2022` | `x86_64-pc-windows-msvc` |
-| `win32-arm64-msvc` | `windows-11-arm` | `aarch64-pc-windows-msvc` |
+| Native ID          | Runner             | Native target               |
+| ------------------ | ------------------ | --------------------------- |
+| `darwin-x64`       | `macos-15-intel`   | `x86_64-apple-darwin`       |
+| `darwin-arm64`     | `macos-15`         | `aarch64-apple-darwin`      |
+| `linux-x64-gnu`    | `ubuntu-22.04`     | `x86_64-unknown-linux-gnu`  |
+| `linux-arm64-gnu`  | `ubuntu-22.04-arm` | `aarch64-unknown-linux-gnu` |
+| `win32-x64-msvc`   | `windows-2022`     | `x86_64-pc-windows-msvc`    |
+| `win32-arm64-msvc` | `windows-11-arm`   | `aarch64-pc-windows-msvc`   |
 
 The [initial matrix](https://github.com/delinoio/oss/actions/runs/35992992719) at `fba6059d` passed both macOS and Windows architectures and exposed Linux's monochrome emoji fallback failure. After the color-first grapheme repair, both Linux jobs, both Windows jobs and macOS arm64 passed at `6fa32003` in the [runtime validation run](https://github.com/delinoio/oss/actions/runs/35994740028). Final follow-up results, including the complete investor example on every host, are recorded in the originating change's checks and PR description. These are native executions, not cross-compilation-only evidence.
 
@@ -159,7 +170,6 @@ Final local macOS arm64 verification at the repaired implementation (`140974d6`)
 The Linux repair leaves a denied syscall parked until cleanup queues its termination signal, avoiding the short-child exit race. Offline native Ubuntu 22.04 arm64 Docker passed all 64 pnport tests and Clippy; the deterministic stopped-child regression fails with the old premature continuation and passes with the repair. This is native arm64 evidence, not native x64 execution.
 
 All six React Forge native jobs passed at `70efa714` in the [pre-repair matrix](https://github.com/delinoio/oss/actions/runs/35996920474). That result covers the six-platform implementation before these review repairs. CI is rerun by the single final repair push; this local record does not claim a result for that newer remote head. Microsoft Office execution and PDF/UA certification remain outside the evidence boundary.
-
 
 ## Figma PR review repair validation
 
@@ -313,7 +323,6 @@ main/native installed-package smoke test for all five local output formats.
 No production code or public contract changed; native Intel Mac execution of the
 repair remains a CI validation step.
 
-
 ## The originating change merge and review repair (2026-09-25)
 
 Merged `origin/main` at `bcc35d49` without rebasing, preserving both the static
@@ -355,7 +364,6 @@ repair does not claim a new visual render or execution on another host. Final
 push CI results are separate evidence. Generated repository-owned `dist`
 directories are removed after verification.
 
-
 ## AURA source texture Git LFS migration (2026-09-25)
 
 The originating change stores all seven AURA source PNGs in Git LFS through the exact
@@ -387,7 +395,6 @@ Source-consuming CI and release build checkouts now enable LFS, and attribute
 changes select both native/package validation and scene-render jobs. Generated
 repository-owned `dist` directories were removed after these checks.
 
-
 ## The originating change shared LFS policy merge repair (2026-09-25)
 
 Merged `main` at `13391e4a` without rebasing. The resolved attribute file
@@ -412,7 +419,6 @@ clibox 0.1.6 tools. The repository mount was read-only and the test/tool copies
 were temporary. No source change was needed for those environment limitations.
 Generated repository-owned `dist` directories were removed after validation.
 
-
 ## The originating change scene render ordering repair (2026-09-25)
 
 The final review snapshot identified concurrent explicit scene renders bypassing
@@ -436,7 +442,6 @@ After resolving the merge, the macOS arm64 package build, typecheck, lint and st
 
 On the merged code at `3e938a14`, public main/native candidate installation passed with six generated local formats. The final prepared root `TMPDIR=/private/tmp cargo test` run passed 1,938 tests with 3 existing opt-in tests ignored. Generated repository-owned `dist` output was removed after validation.
 
-
 ## The originating change sprite integration merge repair (2026-09-25)
 
 Merged `main` at `6debb999` without rebasing. Conflict resolution retains
@@ -451,7 +456,6 @@ tests** passed, including installed-archive CLI/MCP generation for all eight loc
 formats. Standalone example type checks, **81 CI contract tests**, and workflow
 validation also passed. These checks do not claim new visual renders or remote
 platform execution.
-
 
 ## The originating change scene file-export ordering repair (2026-09-25)
 
@@ -469,7 +473,6 @@ failure regressions prove that a rejected file export must retain the preceding
 render's queue slot. Existing revision, disposal, cancellation and recovery tests
 remain passing.
 
-
 Final verification of implementation `cd7ac0a6` passed root
 `TMPDIR=/private/tmp cargo test --locked -- --test-threads=1` with **1,944 passed,
 zero failed and three existing opt-in tests ignored**, after the documented
@@ -481,7 +484,6 @@ The earlier **81 CI contract tests** and workflow validation cover the unchanged
 merged workflow configuration. Only macOS arm64 was run locally; the final push's
 CI results and new visual renders are not claimed. Generated repository-owned
 `dist` directories were removed after verification.
-
 
 ## The originating change schema CI and event-matrix repair (2026-09-25)
 
@@ -511,7 +513,6 @@ and the full DevHud app `pnpm test` plus frontend build. The imported schedule
 coordinator lifecycle regression passed three consecutive runs. This evidence
 does not claim new renders or hosted results after the repair push.
 
-
 The final merged root `TMPDIR=/private/tmp cargo test --locked --
 --test-threads=1` run passed **1,944 tests**, with zero failures and three existing
 opt-in tests ignored. Clibox, the scene/exporter/sprite/SFX engines and the native
@@ -519,7 +520,6 @@ adapter passed Clippy with warnings denied; repository formatting also passed.
 The root test used the documented frontend and separate generic/pnport preload
 preparation. Generated repository-owned `dist` directories were removed, and
 `git lfs fsck` passed before the single repair push.
-
 
 ## The originating change public-guide merge repair (2026-09-25)
 
@@ -558,7 +558,6 @@ passed eight local formats. Public-docs validation passed the **25 selector
 tests**, rendered route/build checks and **15 validator regressions**. The font
 fixture was hydrated through Git LFS before the passing package run. This is
 local host evidence; other hosts and new visual renders were not run.
-
 
 ## GLB/FBX animation acceptance (2026-09-26, Unreleased)
 
@@ -640,7 +639,6 @@ shows Blender's six imported-clip videos. Tests and visual scripts are local onl
 preserving the scene CI exclusion. Root Rust validation uses the documented
 DevHud frontend and separate generic/pnport preload preparation above. Remove
 generated repository-owned dist directories after the complete validation run.
-
 
 After the final native changes, prepared root
 `TMPDIR=/private/tmp cargo test --locked -- --test-threads=1` passed **1,951 tests**,

@@ -22,34 +22,34 @@ passing test/subtest results, 427 skipped results, no failed result and no
 unfinished test**. These counts include parent/subtest events, not independent
 acceptance scenarios. No package watchdog expired.
 
-| Package | Result | Package-reported seconds |
-| --- | --- | ---: |
-| delidev-cli | skip | 0 |
-| apiproxy | pass | 1.874 |
-| cli | pass | 229.119 |
-| connections | pass | 18.983 |
-| credentials | pass | 5.849 |
-| domain | pass | 4.264 |
-| forwarding | pass | 3.702 |
-| harness | pass | 17.685 |
-| harness/claude | pass | 120.65 |
-| harness/codex | pass | 119.184 |
-| harness/grok | pass | 967.406 |
-| harness/nativewire | pass | 12.954 |
-| harness/opencode | pass | 53.335 |
-| integrations/github | pass | 14.675 |
-| outbound | pass | 5.307 |
-| outboundtest | skip | 0 |
-| presentation | pass | 6.982 |
-| process | pass | 16.885 |
-| providers | pass | 8.615 |
-| rpc | skip | 0 |
-| security | pass | 4.906 |
-| server | pass | 853.653 |
-| store | pass | 347.427 |
-| userservice | pass | 8.576 |
-| worker | pass | 227.532 |
-| workspace | pass | 858.56 |
+| Package             | Result | Package-reported seconds |
+| ------------------- | ------ | -----------------------: |
+| delidev-cli         | skip   |                        0 |
+| apiproxy            | pass   |                    1.874 |
+| cli                 | pass   |                  229.119 |
+| connections         | pass   |                   18.983 |
+| credentials         | pass   |                    5.849 |
+| domain              | pass   |                    4.264 |
+| forwarding          | pass   |                    3.702 |
+| harness             | pass   |                   17.685 |
+| harness/claude      | pass   |                   120.65 |
+| harness/codex       | pass   |                  119.184 |
+| harness/grok        | pass   |                  967.406 |
+| harness/nativewire  | pass   |                   12.954 |
+| harness/opencode    | pass   |                   53.335 |
+| integrations/github | pass   |                   14.675 |
+| outbound            | pass   |                    5.307 |
+| outboundtest        | skip   |                        0 |
+| presentation        | pass   |                    6.982 |
+| process             | pass   |                   16.885 |
+| providers           | pass   |                    8.615 |
+| rpc                 | skip   |                        0 |
+| security            | pass   |                    4.906 |
+| server              | pass   |                  853.653 |
+| store               | pass   |                  347.427 |
+| userservice         | pass   |                    8.576 |
+| worker              | pass   |                  227.532 |
+| workspace           | pass   |                   858.56 |
 
 Skipped results include explicit private native harness/credential fixtures and
 public GitHub capture fixtures. For example, native Secret Service requires a

@@ -1,4 +1,7 @@
-export function assertWellFormedUnicode(value: string, field = "settings JSON"): void {
+export function assertWellFormedUnicode(
+  value: string,
+  field = "settings JSON",
+): void {
   for (let index = 0; index < value.length; index += 1) {
     const codeUnit = value.charCodeAt(index);
     if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {

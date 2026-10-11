@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 export const en = {
-  readIncomplete: "The list is incomplete. Retry the read or refresh; current targets must be verified before acting.",
+  readIncomplete:
+    "The list is incomplete. Retry the read or refresh; current targets must be verified before acting.",
   moreAvailable: "More items remain. Load the next page to see them.",
   retryRead: "Retry reading",
   closedRequests: "Loaded closed requests",
@@ -26,7 +27,8 @@ export const en = {
   terminal: "Session outcome",
 
   serverNotifications: "This server’s notification categories",
-  defaultsUnavailable: "Plan defaults are unavailable. Refresh observations or choose a mode.",
+  defaultsUnavailable:
+    "Plan defaults are unavailable. Refresh observations or choose a mode.",
   notificationRequests: "Requests",
   notificationExecution: "Execution",
   notificationConnections: "Connections",
@@ -167,7 +169,8 @@ export const en = {
     "Original pairing is retained. Retry it without generating another credential.",
 } as const;
 export const ko: Record<keyof typeof en, string> = {
-  readIncomplete: "목록이 완전하지 않습니다. 읽기를 재시도하거나 새로 고침하세요. 동작 전에 현재 대상을 확인해야 합니다.",
+  readIncomplete:
+    "목록이 완전하지 않습니다. 읽기를 재시도하거나 새로 고침하세요. 동작 전에 현재 대상을 확인해야 합니다.",
   moreAvailable: "항목이 더 있습니다. 다음 페이지를 불러오세요.",
   retryRead: "읽기 재시도",
   closedRequests: "불러온 종료된 요청",
@@ -193,7 +196,8 @@ export const ko: Record<keyof typeof en, string> = {
   terminal: "세션 결과",
 
   serverNotifications: "이 서버의 알림 유형",
-  defaultsUnavailable: "Plan 기본값을 확인할 수 없습니다. 관측을 새로 고치거나 모드를 선택하세요.",
+  defaultsUnavailable:
+    "Plan 기본값을 확인할 수 없습니다. 관측을 새로 고치거나 모드를 선택하세요.",
   notificationRequests: "요청",
   notificationExecution: "실행",
   notificationConnections: "연결",

@@ -222,8 +222,7 @@ export class OfficialFigmaConnection implements FigmaConnection {
           this.tools.add(tool.name);
           if (tool.name === "use_figma") {
             const code = tool.inputSchema.properties?.code as
-              | { maxLength?: number }
-              | undefined;
+              { maxLength?: number } | undefined;
             if (code?.maxLength && Number.isSafeInteger(code.maxLength))
               this.codeLimit = Math.min(this.codeLimit, code.maxLength);
           }
@@ -390,7 +389,10 @@ export class OfficialFigmaConnection implements FigmaConnection {
                       ? ErrorCode.Conflict
                       : http?.status === 413
                         ? ErrorCode.ResourceLimit
-                        : http && http.status >= 400 && http.status < 500 && http.status !== 408
+                        : http &&
+                            http.status >= 400 &&
+                            http.status < 500 &&
+                            http.status !== 408
                           ? ErrorCode.MalformedInput
                           : ErrorCode.Remote;
           problem = new RemoteError(

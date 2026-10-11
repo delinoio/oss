@@ -172,6 +172,11 @@
 - Wrap all file paths in quotes by default in shell commands and scripts to prevent whitespace and glob-expansion bugs.
 - Apply strict quoting and escaping for all dynamic shell values to prevent command injection and parsing bugs.
 
+## Formatting Rules
+
+- Use the pinned Rstack CLI through root `pnpm format` and `pnpm format:check` for changed JS/TS, CSS, JSON, YAML and Markdown files. Keep shared options and exclusions in `rstack.config.ts`.
+- CI must check the exact planner comparison without rewriting sources or expanding to a repository-wide formatting migration. Preserve Rust, Go and Protobuf format checks. Follow `docs/repository-workflow-contract.md`.
+
 ## Logging Rules
 
 - Write sufficient logs to support debugging, incident analysis, and operational troubleshooting.

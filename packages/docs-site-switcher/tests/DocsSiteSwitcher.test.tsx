@@ -23,7 +23,9 @@ describe("DocsSiteSwitcher", () => {
 
     const trigger = screen.getByRole("button", { name: "Runmoor" });
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
-    expect(trigger.getAttribute("aria-controls")).toMatch(/^delino-docs-site-menu-/);
+    expect(trigger.getAttribute("aria-controls")).toMatch(
+      /^delino-docs-site-menu-/,
+    );
 
     fireEvent.click(trigger);
 
@@ -96,13 +98,15 @@ describe("DocsSiteSwitcher", () => {
   });
 
   it("maps nested integrated paths to the correct site", () => {
-    expect(getDocumentationSiteForPathname("/")).toBe(DocumentationSiteId.PublicDocs);
+    expect(getDocumentationSiteForPathname("/")).toBe(
+      DocumentationSiteId.PublicDocs,
+    );
     expect(getDocumentationSiteForPathname("/nodeup/reference")).toBe(
       DocumentationSiteId.Nodeup,
     );
-    expect(getDocumentationSiteForPathname("/async-commit-hook/validation/")).toBe(
-      DocumentationSiteId.AsyncCommitHook,
-    );
+    expect(
+      getDocumentationSiteForPathname("/async-commit-hook/validation/"),
+    ).toBe(DocumentationSiteId.AsyncCommitHook);
     expect(getDocumentationSiteForPathname("/unrelated-route")).toBe(
       DocumentationSiteId.PublicDocs,
     );
@@ -121,7 +125,10 @@ describe("DocsSiteSwitcher", () => {
 
   it.each(["/clibox-extra", "/cliboxish/wait"])(
     "does not select clibox for unrelated path %s",
-    (pathname) => expect(getDocumentationSiteForPathname(pathname)).toBe(DocumentationSiteId.PublicDocs),
+    (pathname) =>
+      expect(getDocumentationSiteForPathname(pathname)).toBe(
+        DocumentationSiteId.PublicDocs,
+      ),
   );
 
   it.each(["/pnport", "/pnport/", "/pnport/editors", "/pnport/diagnostics/"])(
@@ -137,23 +144,31 @@ describe("DocsSiteSwitcher", () => {
 
   it.each(["/pnport-extra", "/pnportish/editors"])(
     "does not select pnport for unrelated path %s",
-    (pathname) => expect(getDocumentationSiteForPathname(pathname)).toBe(DocumentationSiteId.PublicDocs),
+    (pathname) =>
+      expect(getDocumentationSiteForPathname(pathname)).toBe(
+        DocumentationSiteId.PublicDocs,
+      ),
   );
 
-  it.each(["/react-forge", "/react-forge/", "/react-forge/formats/figma/", "/react-forge/mcp/"])(
-    "selects React Forge for %s",
-    (pathname) => {
-      renderSwitcher(getDocumentationSiteForPathname(pathname));
-      fireEvent.click(screen.getByRole("button", { name: "React Forge" }));
-      const selected = screen.getByRole("menuitem", { name: "React Forge" });
-      expect(selected.getAttribute("aria-current")).toBe("page");
-      expect(document.activeElement).toBe(selected);
-    },
-  );
+  it.each([
+    "/react-forge",
+    "/react-forge/",
+    "/react-forge/formats/figma/",
+    "/react-forge/mcp/",
+  ])("selects React Forge for %s", (pathname) => {
+    renderSwitcher(getDocumentationSiteForPathname(pathname));
+    fireEvent.click(screen.getByRole("button", { name: "React Forge" }));
+    const selected = screen.getByRole("menuitem", { name: "React Forge" });
+    expect(selected.getAttribute("aria-current")).toBe("page");
+    expect(document.activeElement).toBe(selected);
+  });
 
   it.each(["/react-forge-extra", "/react-forgeish/mcp"])(
     "does not select React Forge for unrelated path %s",
-    (pathname) => expect(getDocumentationSiteForPathname(pathname)).toBe(DocumentationSiteId.PublicDocs),
+    (pathname) =>
+      expect(getDocumentationSiteForPathname(pathname)).toBe(
+        DocumentationSiteId.PublicDocs,
+      ),
   );
 
   it("retains same-origin destinations on the consolidated development server", () => {
@@ -161,7 +176,10 @@ describe("DocsSiteSwitcher", () => {
     renderSwitcher(DocumentationSiteId.Clibox);
     fireEvent.click(screen.getByRole("button", { name: "clibox" }));
     for (const [index, item] of screen.getAllByRole("menuitem").entries()) {
-      const destination = new URL(item.getAttribute("href")!, window.location.href);
+      const destination = new URL(
+        item.getAttribute("href")!,
+        window.location.href,
+      );
       expect(destination.origin).toBe(window.location.origin);
       expect(destination.pathname).toBe(DOCUMENTATION_SITES[index].href);
     }

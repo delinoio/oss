@@ -45,8 +45,11 @@ Automated route fixtures stage real owned images and assert that all three unsup
 Queued edits include typed attachment field 5. Explicit selections must match the immutable original ordered references; old-client omission preserves them. Mixed skill/image Fork proofs retain the original Worker image lookup while copying child-owned skill packages; no new byte ownership or native call is inferred.
 
 ## Image-view observation separation
+
 [Codex image-view metadata](cmds-delidev-harness-contract.md#codex-image-view-observations) uses the original tool/reference identity, not an image-input attachment. Its native location and prepared-root scope grant no source file read, transfer, image-input claim or source-file deletion. Existing authenticated attachment reads continue to require an original claimed upload and immutable byte ownership; an image-view observation alone cannot satisfy them. The metadata-only transcript explicitly reports unavailable preview. Do not reopen a displayed path or download a URL to supply missing native bytes. Existing attachment cleanup and independent workspace/native cleanup retain their original authority.
+
 ## Pre-send image rejection classification
+
 Follow the direct startup contract's positive image rejection profile. The exact original native model modality response may reject image preparation before turn/start; model names or generic error codes do not establish support or send status. Retain the opaque original adapter proof, exact synchronized Worker claim and independent cleanup before publishing IMAGE_INPUT_REJECTED. Missing or changed proof remains uncertain. Preserve the accepted original prompt and ordered image references, authenticated image ownership and existing explicit retry guards; do not replace attachments, reconstruct native history or resend from observation. The optional startup field 11 and enum values 0/1 add no capability or migration.
 
 ## Original native generated images

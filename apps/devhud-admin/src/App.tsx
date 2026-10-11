@@ -101,7 +101,9 @@ export function App() {
   const [locale, setLocale] = useState<Locale>(localeInitial);
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [initializationAttempt, setInitializationAttempt] = useState(0);
-  const [signInState, setSignInState] = useState<"idle" | "pending" | "error">("idle");
+  const [signInState, setSignInState] = useState<"idle" | "pending" | "error">(
+    "idle",
+  );
   const copy = text(locale);
 
   useEffect(() => {
@@ -173,7 +175,9 @@ export function App() {
           <Brand title={copy.app} subtitle={copy.subtitle} />
           <p>{copy.permission}</p>
           {signInState === "error" && (
-            <p className="inline-error" role="alert">{copy.signInError}</p>
+            <p className="inline-error" role="alert">
+              {copy.signInError}
+            </p>
           )}
           <button
             className="primary"
@@ -222,7 +226,9 @@ function Console({
   const [view, setView] = useState<View>("users");
   return (
     <div className="shell">
-      <a className="skip-link" href="#main-content">{copy.skip}</a>
+      <a className="skip-link" href="#main-content">
+        {copy.skip}
+      </a>
       <header className="topbar">
         <Brand title={copy.app} subtitle={copy.subtitle} />
         <div className="top-actions">
@@ -288,7 +294,9 @@ function Users({
 }) {
   const [query, setQuery] = useState("");
   const [appliedQuery, setAppliedQuery] = useState("");
-  const [state, setState] = useState<Loadable<{ users: AdminUser[]; next: string }>>({
+  const [state, setState] = useState<
+    Loadable<{ users: AdminUser[]; next: string }>
+  >({
     kind: "loading",
   });
   const [mutation, setMutation] = useState<AdminUser | null>(null);
@@ -299,7 +307,11 @@ function Users({
   const requestGeneration = useRef(0);
   const usageRequestGeneration = useRef(0);
 
-  const load = async (token = "", append = false, searchQuery = appliedQuery) => {
+  const load = async (
+    token = "",
+    append = false,
+    searchQuery = appliedQuery,
+  ) => {
     if (append && continuationPendingRef.current) return;
     if (append) {
       continuationPendingRef.current = true;
@@ -411,7 +423,11 @@ function Users({
           </button>
         </form>
       </div>
-      {conflict && <p className="inline-error" role="alert">{copy.conflict}</p>}
+      {conflict && (
+        <p className="inline-error" role="alert">
+          {copy.conflict}
+        </p>
+      )}
       <Resource
         state={state}
         copy={copy}
@@ -424,7 +440,9 @@ function Users({
                 <article className="card" key={user.userId?.value}>
                   <div className="card-title">
                     <div>
-                      <h2>{user.displayName || user.email || user.logtoSubject}</h2>
+                      <h2>
+                        {user.displayName || user.email || user.logtoSubject}
+                      </h2>
                       <p>{user.email || "—"}</p>
                     </div>
                   </div>
@@ -444,7 +462,11 @@ function Users({
                               : "neutral"
                         }
                       >
-                        {copy.administrativeBlockStates[user.administrativeBlockState]}
+                        {
+                          copy.administrativeBlockStates[
+                            user.administrativeBlockState
+                          ]
+                        }
                       </Status>
                     </dd>
                     <dt>{copy.deletionState}</dt>
@@ -453,7 +475,8 @@ function Users({
                         tone={
                           user.deletionState === AccountDeletionState.ACTIVE
                             ? "success"
-                            : user.deletionState === AccountDeletionState.UNSPECIFIED
+                            : user.deletionState ===
+                                AccountDeletionState.UNSPECIFIED
                               ? "neutral"
                               : "danger"
                         }
@@ -540,17 +563,22 @@ function Users({
           ) : (
             <dl className="quota-list">
               {usage.counters.map((counter, index) => (
-                <div key={`${counter.quota}-${counter.submissionId?.value ?? index}`}>
+                <div
+                  key={`${counter.quota}-${counter.submissionId?.value ?? index}`}
+                >
                   <dt>{copy.quotaKinds[counter.quota]}</dt>
                   <dd>
                     {counter.submissionId && (
                       <span>
-                        {copy.submission}: {" "}
-                        <span className="mono">{counter.submissionId.value}</span>
+                        {copy.submission}:{" "}
+                        <span className="mono">
+                          {counter.submissionId.value}
+                        </span>
                       </span>
                     )}
                     <span>
-                      {counter.used.toLocaleString()} / {counter.limit.toLocaleString()}
+                      {counter.used.toLocaleString()} /{" "}
+                      {counter.limit.toLocaleString()}
                     </span>
                   </dd>
                 </div>
@@ -658,7 +686,9 @@ function Uploads({
   locale: Locale;
   publicAssetBaseUrl: string;
 }) {
-  const [state, setState] = useState<Loadable<{ uploads: AdminUpload[]; next: string }>>({
+  const [state, setState] = useState<
+    Loadable<{ uploads: AdminUpload[]; next: string }>
+  >({
     kind: "loading",
   });
   const [selected, setSelected] = useState<{
@@ -721,7 +751,11 @@ function Uploads({
           <h1 id="uploads-title">{copy.uploads}</h1>
         </div>
       </div>
-      {conflict && <p className="inline-error" role="alert">{copy.conflict}</p>}
+      {conflict && (
+        <p className="inline-error" role="alert">
+          {copy.conflict}
+        </p>
+      )}
       <Resource state={state} copy={copy} onRetry={() => void load()}>
         {(value) => (
           <>
@@ -742,11 +776,17 @@ function Uploads({
                 <tbody>
                   {value.uploads.map((upload) => (
                     <tr key={upload.uploadId?.value}>
-                      <td className="mono">{upload.ownerUserId?.value ?? "—"}</td>
-                      <td className="mono">{upload.submissionId?.value ?? "—"}</td>
+                      <td className="mono">
+                        {upload.ownerUserId?.value ?? "—"}
+                      </td>
+                      <td className="mono">
+                        {upload.submissionId?.value ?? "—"}
+                      </td>
                       <td className="mono">{upload.uploadId?.value}</td>
                       <td className="mono">{upload.uploadGroupId?.value}</td>
-                      <td><Status>{copy.uploadStates[upload.state]}</Status></td>
+                      <td>
+                        <Status>{copy.uploadStates[upload.state]}</Status>
+                      </td>
                       <td>{formatBytes(upload.sizeBytes)}</td>
                       <td>{formatTime(upload.createdAt, locale)}</td>
                       <td className="row-actions">
@@ -845,11 +885,17 @@ function UploadMutationDialog({
     <Dialog title={label} onClose={close}>
       <dl>
         <dt>{copy.owner}</dt>
-        <dd className="mono break">{selection.upload.ownerUserId?.value ?? "—"}</dd>
+        <dd className="mono break">
+          {selection.upload.ownerUserId?.value ?? "—"}
+        </dd>
         <dt>{copy.submission}</dt>
-        <dd className="mono break">{selection.upload.submissionId?.value ?? "—"}</dd>
+        <dd className="mono break">
+          {selection.upload.submissionId?.value ?? "—"}
+        </dd>
         <dt>{copy.upload}</dt>
-        <dd className="mono break">{selection.upload.uploadId?.value ?? "—"}</dd>
+        <dd className="mono break">
+          {selection.upload.uploadId?.value ?? "—"}
+        </dd>
       </dl>
       <MutationFields
         confirmed={confirmed}
@@ -901,7 +947,9 @@ function Audit({
   copy: ReturnType<typeof text>;
   locale: Locale;
 }) {
-  const [state, setState] = useState<Loadable<{ events: AuditEvent[]; next: string }>>({
+  const [state, setState] = useState<
+    Loadable<{ events: AuditEvent[]; next: string }>
+  >({
     kind: "loading",
   });
   const [continuationPending, setContinuationPending] = useState(false);
@@ -967,7 +1015,9 @@ function Audit({
                   <div>
                     <strong>{copy.auditActions[event.action]}</strong>
                     <p>{event.reason || "—"}</p>
-                    {(event.actorUserId || event.targetUserId || event.targetUploadId) && (
+                    {(event.actorUserId ||
+                      event.targetUserId ||
+                      event.targetUploadId) && (
                       <dl className="audit-identifiers">
                         {event.actorUserId && (
                           <>
@@ -984,7 +1034,9 @@ function Audit({
                         {event.targetUploadId && (
                           <>
                             <dt>{copy.targetUpload}</dt>
-                            <dd className="mono">{event.targetUploadId.value}</dd>
+                            <dd className="mono">
+                              {event.targetUploadId.value}
+                            </dd>
                           </>
                         )}
                       </dl>
@@ -992,11 +1044,18 @@ function Audit({
                     <span className="mono">{event.correlationId?.value}</span>
                   </div>
                   <div className="timeline-meta">
-                    <Status tone={event.outcome === AuditOutcome.REJECTED ? "danger" : "success"}>
+                    <Status
+                      tone={
+                        event.outcome === AuditOutcome.REJECTED
+                          ? "danger"
+                          : "success"
+                      }
+                    >
                       {event.outcome === AuditOutcome.REJECTED
                         ? `${copy.auditOutcomes[event.outcome]} · ${
                             copy.auditRejectionReasons[
-                              event.rejectionReason ?? AuditRejectionReason.UNSPECIFIED
+                              event.rejectionReason ??
+                                AuditRejectionReason.UNSPECIFIED
                             ]
                           }`
                         : copy.auditOutcomes[event.outcome]}
@@ -1053,7 +1112,9 @@ function MutationFields({
         rows={4}
         value={reason}
       />
-      <p className="help" id="mutation-reason-help">{copy.reasonHelp}</p>
+      <p className="help" id="mutation-reason-help">
+        {copy.reasonHelp}
+      </p>
       {reason !== "" && !reasonValid && (
         <p className="inline-error" id="mutation-reason-error" role="alert">
           {copy.reasonInvalid}
@@ -1086,7 +1147,11 @@ function DialogActions({
 }) {
   return (
     <div className="dialog-actions">
-      <button className="secondary" disabled={cancelDisabled} onClick={onCancel}>
+      <button
+        className="secondary"
+        disabled={cancelDisabled}
+        onClick={onCancel}
+      >
         {copy.cancel}
       </button>
       <button className="danger-button" disabled={disabled} onClick={onConfirm}>
@@ -1103,7 +1168,9 @@ function MutationFailure({
   copy: ReturnType<typeof text>;
   error: DevHudClientError;
 }) {
-  return <ClientFailure copy={copy} error={error} fallback={copy.mutationError} />;
+  return (
+    <ClientFailure copy={copy} error={error} fallback={copy.mutationError} />
+  );
 }
 
 function ClientFailure({
@@ -1129,7 +1196,9 @@ function ClientFailure({
         </p>
       )}
       {onRetry && retryable && (
-        <button className="primary" onClick={onRetry}>{copy.retry}</button>
+        <button className="primary" onClick={onRetry}>
+          {copy.retry}
+        </button>
       )}
     </div>
   );
@@ -1161,12 +1230,18 @@ function Resource<T>({
           </p>
         )}
         {retryable && (
-          <button className="primary" onClick={onRetry}>{copy.retry}</button>
+          <button className="primary" onClick={onRetry}>
+            {copy.retry}
+          </button>
         )}
       </div>
     );
   }
-  const value = state.value as T & { users?: unknown[]; uploads?: unknown[]; events?: unknown[] };
+  const value = state.value as T & {
+    users?: unknown[];
+    uploads?: unknown[];
+    events?: unknown[];
+  };
   if (
     value.users?.length === 0 ||
     value.uploads?.length === 0 ||
@@ -1222,8 +1297,13 @@ function StatePage({
 function Brand({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div className="brand">
-      <span aria-hidden="true" className="brand-mark">D</span>
-      <div><strong>{title}</strong><span>{subtitle}</span></div>
+      <span aria-hidden="true" className="brand-mark">
+        D
+      </span>
+      <div>
+        <strong>{title}</strong>
+        <span>{subtitle}</span>
+      </div>
     </div>
   );
 }
@@ -1245,7 +1325,10 @@ function formatBytes(value: bigint): string {
     : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function isAdminReasonValid(reason: string, publicAssetBaseUrl: string): boolean {
+function isAdminReasonValid(
+  reason: string,
+  publicAssetBaseUrl: string,
+): boolean {
   try {
     validateAdminReason(reason, publicAssetBaseUrl);
     return true;

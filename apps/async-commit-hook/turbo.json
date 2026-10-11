@@ -1,12 +1,8 @@
 {
-  "extends": [
-    "//"
-  ],
+  "extends": ["//"],
   "tasks": {
     "dev": {
-      "dependsOn": [
-        "^build"
-      ],
+      "dependsOn": ["^build"],
       "cache": false,
       "persistent": true,
       "env": []
@@ -16,9 +12,7 @@
     },
     "test:unit": {
       "cache": true,
-      "dependsOn": [
-        "^build"
-      ],
+      "dependsOn": ["^build"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",
@@ -29,15 +23,11 @@
         "$TURBO_ROOT$/go.sum"
       ],
       "outputs": [],
-      "env": [
-        "CI_CACHE_CONTEXT"
-      ]
+      "env": ["CI_CACHE_CONTEXT"]
     },
     "ci:contracts": {
       "cache": false,
-      "dependsOn": [
-        "build:frontend"
-      ],
+      "dependsOn": ["build:frontend"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",
@@ -53,12 +43,7 @@
     },
     "ci:check": {
       "cache": false,
-      "dependsOn": [
-        "typecheck",
-        "test:unit",
-        "build:frontend",
-        "ci:contracts"
-      ]
+      "dependsOn": ["typecheck", "test:unit", "build:frontend", "ci:contracts"]
     }
   }
 }

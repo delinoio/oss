@@ -5,10 +5,18 @@ import yaml from "js-yaml";
 import platforms from "../../packages/clibox/src/platforms.cjs";
 import { Event, jobPaths, planJobs } from "./plan.mjs";
 
-const source = (file) => readFileSync(new URL(`../../${file}`, import.meta.url), "utf8");
+const source = (file) =>
+  readFileSync(new URL(`../../${file}`, import.meta.url), "utf8");
 const release = yaml.load(source(".github/workflows/release-clibox.yml"));
 const ci = yaml.load(source(".github/workflows/CI.yml"));
-const nativeCrates = ["clibox", "clibox-config", "clibox-fspy", "clibox-system", "clibox-transform", "clibox-wait"];
+const nativeCrates = [
+  "clibox",
+  "clibox-config",
+  "clibox-fspy",
+  "clibox-system",
+  "clibox-transform",
+  "clibox-wait",
+];
 
 test("clibox release covers all eight native targets and Alpine consumer execution", () => {
   assert.deepEqual(release.on.push.tags, ["clibox@v*"]);
@@ -16,28 +24,71 @@ test("clibox release covers all eight native targets and Alpine consumer executi
   assert.equal(release.concurrency.group, "release-clibox");
   assert.equal(release.concurrency["cancel-in-progress"], false);
   const matrix = release.jobs.build.strategy.matrix.include;
-  assert.deepEqual(matrix.map(({ target }) => target).sort(), platforms.targets.map(({ rust }) => rust).sort());
-  for (const target of platforms.targets) assert.equal(matrix.find((entry) => entry.target === target.rust).suffix, target.suffix);
+  assert.deepEqual(
+    matrix.map(({ target }) => target).sort(),
+    platforms.targets.map(({ rust }) => rust).sort(),
+  );
+  for (const target of platforms.targets)
+    assert.equal(
+      matrix.find((entry) => entry.target === target.rust).suffix,
+      target.suffix,
+    );
   const steps = release.jobs.build.steps;
-  assert.equal(steps.flatMap(({ run }) => run?.split("\n") ?? []).filter((line) => line.trim() === 'cargo test --locked -p clibox-fspy --target "$CLIBOX_TARGET" -- --test-threads=1').length, 1);
-  assert.equal(steps.flatMap(({ run }) => run?.split("\n") ?? []).filter((line) => line.trim() === 'cargo test --locked -p clibox -p clibox-config -p clibox-system -p clibox-transform -p clibox-wait --target "$CLIBOX_TARGET"').length, 1);
-  const alpine = steps.find(({ name }) => name === "Smoke-test musl consumers in Alpine");
+  assert.equal(
+    steps
+      .flatMap(({ run }) => run?.split("\n") ?? [])
+      .filter(
+        (line) =>
+          line.trim() ===
+          'cargo test --locked -p clibox-fspy --target "$CLIBOX_TARGET" -- --test-threads=1',
+      ).length,
+    1,
+  );
+  assert.equal(
+    steps
+      .flatMap(({ run }) => run?.split("\n") ?? [])
+      .filter(
+        (line) =>
+          line.trim() ===
+          'cargo test --locked -p clibox -p clibox-config -p clibox-system -p clibox-transform -p clibox-wait --target "$CLIBOX_TARGET"',
+      ).length,
+    1,
+  );
+  const alpine = steps.find(
+    ({ name }) => name === "Smoke-test musl consumers in Alpine",
+  );
   assert.equal(alpine.if, "endsWith(matrix.target, '-musl')");
   assert.match(alpine.run, /node:24-alpine/u);
   assert.match(alpine.run, /test:package/u);
-  const build = steps.find(({ run }) => run?.includes("cargo build --locked --release -p clibox"));
+  const build = steps.find(({ run }) =>
+    run?.includes("cargo build --locked --release -p clibox"),
+  );
   assert.ok(build);
-  assert.match(build.run, /cargo test --locked -p clibox -p clibox-config -p clibox-system -p clibox-transform -p clibox-wait --target/u);
+  assert.match(
+    build.run,
+    /cargo test --locked -p clibox -p clibox-config -p clibox-system -p clibox-transform -p clibox-wait --target/u,
+  );
   for (const arch of ["X86_64", "AARCH64"]) {
-    assert.equal(build.env[`CARGO_TARGET_${arch}_UNKNOWN_LINUX_MUSL_LINKER`], "rust-lld");
-    assert.equal(build.env[`CARGO_TARGET_${arch}_UNKNOWN_LINUX_MUSL_RUSTFLAGS`], "-C link-self-contained=yes");
+    assert.equal(
+      build.env[`CARGO_TARGET_${arch}_UNKNOWN_LINUX_MUSL_LINKER`],
+      "rust-lld",
+    );
+    assert.equal(
+      build.env[`CARGO_TARGET_${arch}_UNKNOWN_LINUX_MUSL_RUSTFLAGS`],
+      "-C link-self-contained=yes",
+    );
   }
-  const compiler = steps.find(({ name }) => name === "Prepare musl crypto compiler");
+  const compiler = steps.find(
+    ({ name }) => name === "Prepare musl crypto compiler",
+  );
   assert.equal(compiler.if, "endsWith(matrix.target, '-musl')");
   assert.match(compiler.run, /apt-get install -y musl-tools/u);
   assert.equal(build.env.CC_x86_64_unknown_linux_musl, "musl-gcc");
   assert.equal(build.env.CC_aarch64_unknown_linux_musl, "musl-gcc");
-  assert.match(build.run, /cargo test --locked -p clibox -p clibox-config -p clibox-system -p clibox-transform -p clibox-wait --target/u);
+  assert.match(
+    build.run,
+    /cargo test --locked -p clibox -p clibox-config -p clibox-system -p clibox-transform -p clibox-wait --target/u,
+  );
   assert.match(alpine.run, /ca-certificates/u);
   assert.ok(steps.find(({ run }) => run?.includes("package.mjs binary")));
 });
@@ -45,31 +96,75 @@ test("clibox release covers all eight native targets and Alpine consumer executi
 test("OIDC is restricted to exact-tag enabled publication after the complete verified artifact", () => {
   assert.deepEqual(release.permissions, { contents: "read" });
   for (const [id, job] of Object.entries(release.jobs)) {
-    if (!["publish", "publish-release", "linux-packages"].includes(id)) assert.equal(job.permissions, undefined, id);
-    for (const step of job.steps ?? []) if (step.uses?.startsWith("actions/checkout@")) assert.equal(step.with["persist-credentials"], false);
+    if (!["publish", "publish-release", "linux-packages"].includes(id))
+      assert.equal(job.permissions, undefined, id);
+    for (const step of job.steps ?? [])
+      if (step.uses?.startsWith("actions/checkout@"))
+        assert.equal(step.with["persist-credentials"], false);
   }
   assert.deepEqual(release.jobs.package.needs, ["prepare", "build"]);
   assert.deepEqual(release.jobs.publish.needs, ["prepare", "package"]);
-  assert.deepEqual(release.jobs.publish.permissions, { contents: "read", "id-token": "write" });
-  for (const condition of ["dry_run == 'false'", "vars.CLIBOX_NPM_PUBLISH_ENABLED == 'true'", "github.repository == 'delinoio/oss'", "refs/tags/clibox@v"]) assert.ok(release.jobs.publish.if.includes(condition));
-  const publish = release.jobs.publish.steps.find(({ run }) => run?.includes("publish.mjs --publish"));
-  assert.equal(publish.env.CLIBOX_NPM_PUBLISH_ENABLED, "${{ vars.CLIBOX_NPM_PUBLISH_ENABLED }}");
-  assert.ok(release.jobs.package.steps.find(({ run }) => run?.includes("publish.mjs") && !run.includes("--publish")));
-  assert.doesNotMatch(JSON.stringify(release), /NODE_AUTH_TOKEN|NPM_TOKEN|action-gh-release/u);
-  assert.match(source(".github/workflows/release-clibox.yml"), /npm publication disabled/u);
-  const uploaded = release.jobs.package.steps.find(({ uses }) => uses?.startsWith("actions/upload-artifact@"));
-  const downloaded = release.jobs.publish.steps.find(({ uses }) => uses?.startsWith("actions/download-artifact@"));
+  assert.deepEqual(release.jobs.publish.permissions, {
+    contents: "read",
+    "id-token": "write",
+  });
+  for (const condition of [
+    "dry_run == 'false'",
+    "vars.CLIBOX_NPM_PUBLISH_ENABLED == 'true'",
+    "github.repository == 'delinoio/oss'",
+    "refs/tags/clibox@v",
+  ])
+    assert.ok(release.jobs.publish.if.includes(condition));
+  const publish = release.jobs.publish.steps.find(({ run }) =>
+    run?.includes("publish.mjs --publish"),
+  );
+  assert.equal(
+    publish.env.CLIBOX_NPM_PUBLISH_ENABLED,
+    "${{ vars.CLIBOX_NPM_PUBLISH_ENABLED }}",
+  );
+  assert.ok(
+    release.jobs.package.steps.find(
+      ({ run }) => run?.includes("publish.mjs") && !run.includes("--publish"),
+    ),
+  );
+  assert.doesNotMatch(
+    JSON.stringify(release),
+    /NODE_AUTH_TOKEN|NPM_TOKEN|action-gh-release/u,
+  );
+  assert.match(
+    source(".github/workflows/release-clibox.yml"),
+    /npm publication disabled/u,
+  );
+  const uploaded = release.jobs.package.steps.find(({ uses }) =>
+    uses?.startsWith("actions/upload-artifact@"),
+  );
+  const downloaded = release.jobs.publish.steps.find(({ uses }) =>
+    uses?.startsWith("actions/download-artifact@"),
+  );
   assert.equal(uploaded.with.name, downloaded.with.name);
 });
 
 test("publication installs an exact OIDC-capable npm before checking and using it", () => {
   const steps = release.jobs.publish.steps;
-  const setup = steps.findIndex(({ uses }) => uses?.startsWith("actions/setup-node@"));
-  const install = steps.findIndex(({ name }) => name === "Install pinned npm for trusted publishing");
-  const check = steps.findIndex(({ name }) => name === "Check npm trusted publishing support");
-  const publish = steps.findIndex(({ run }) => run?.includes("publish.mjs --publish"));
-  assert.ok(setup >= 0 && setup < install && install < check && check < publish);
-  assert.equal(steps[install].run, "npm install --global npm@11.6.2 --ignore-scripts --no-audit --no-fund");
+  const setup = steps.findIndex(({ uses }) =>
+    uses?.startsWith("actions/setup-node@"),
+  );
+  const install = steps.findIndex(
+    ({ name }) => name === "Install pinned npm for trusted publishing",
+  );
+  const check = steps.findIndex(
+    ({ name }) => name === "Check npm trusted publishing support",
+  );
+  const publish = steps.findIndex(({ run }) =>
+    run?.includes("publish.mjs --publish"),
+  );
+  assert.ok(
+    setup >= 0 && setup < install && install < check && check < publish,
+  );
+  assert.equal(
+    steps[install].run,
+    "npm install --global npm@11.6.2 --ignore-scripts --no-audit --no-fund",
+  );
   assert.match(steps[check].run, /npm\(\['--version'\]\)/u);
   assert.match(steps[check].run, /npm 11\.5\.1\+ is required for OIDC/u);
 });
@@ -86,21 +181,52 @@ test("macOS Homebrew validates both native architectures before obtaining tap-on
   const job = release.jobs.homebrew;
   assert.deepEqual(job.needs, ["prepare", "homebrew-test"]);
   for (const guarded of [native, job]) {
-    for (const condition of ["dry_run == 'false'", "github.repository == 'delinoio/oss'", "refs/tags/clibox@v"]) assert.ok(guarded.if.includes(condition));
+    for (const condition of [
+      "dry_run == 'false'",
+      "github.repository == 'delinoio/oss'",
+      "refs/tags/clibox@v",
+    ])
+      assert.ok(guarded.if.includes(condition));
     assert.doesNotMatch(guarded.if, /NPM_PUBLISH_ENABLED/u);
   }
-  const verify = job.steps.findIndex(({ run }) => run?.includes('homebrew.mjs prepare --validated'));
-  const token = job.steps.findIndex(({ uses }) => uses?.startsWith('actions/create-github-app-token@'));
-  const publish = job.steps.findIndex(({ run }) => run?.includes('homebrew.mjs publish --validated'));
+  const verify = job.steps.findIndex(({ run }) =>
+    run?.includes("homebrew.mjs prepare --validated"),
+  );
+  const token = job.steps.findIndex(({ uses }) =>
+    uses?.startsWith("actions/create-github-app-token@"),
+  );
+  const publish = job.steps.findIndex(({ run }) =>
+    run?.includes("homebrew.mjs publish --validated"),
+  );
   assert.ok(verify >= 0 && verify < token && token < publish);
-  assert.equal(job.steps[token].with.repositories, 'homebrew-tap');
-  assert.equal(job.steps[token].with['permission-contents'], 'write');
-  for (const [id, value] of Object.entries(release.jobs)) if (id !== 'homebrew') assert.doesNotMatch(JSON.stringify(value), /DELINO_RELEASE_BOT_PRIVATE_KEY/u);
-  assert.equal(job.steps.filter(({ uses }) => uses?.startsWith('actions/download-artifact@')).length, 2);
-  assert.deepEqual(release.jobs['homebrew-readback'].needs, ['prepare', 'homebrew']);
-  assert.deepEqual(release.jobs['homebrew-readback'].strategy.matrix.runner, ['macos-15-intel', 'macos-14']);
-  assert.match(JSON.stringify(release.jobs['homebrew-readback']), /brew install delinoio\/tap\/clibox/u);
-  for (const name of ['homebrew-test', 'homebrew', 'homebrew-readback']) assert.ok(release.jobs.summary.needs.includes(name));
+  assert.equal(job.steps[token].with.repositories, "homebrew-tap");
+  assert.equal(job.steps[token].with["permission-contents"], "write");
+  for (const [id, value] of Object.entries(release.jobs))
+    if (id !== "homebrew")
+      assert.doesNotMatch(
+        JSON.stringify(value),
+        /DELINO_RELEASE_BOT_PRIVATE_KEY/u,
+      );
+  assert.equal(
+    job.steps.filter(({ uses }) =>
+      uses?.startsWith("actions/download-artifact@"),
+    ).length,
+    2,
+  );
+  assert.deepEqual(release.jobs["homebrew-readback"].needs, [
+    "prepare",
+    "homebrew",
+  ]);
+  assert.deepEqual(release.jobs["homebrew-readback"].strategy.matrix.runner, [
+    "macos-15-intel",
+    "macos-14",
+  ]);
+  assert.match(
+    JSON.stringify(release.jobs["homebrew-readback"]),
+    /brew install delinoio\/tap\/clibox/u,
+  );
+  for (const name of ["homebrew-test", "homebrew", "homebrew-readback"])
+    assert.ok(release.jobs.summary.needs.includes(name));
   assert.match(JSON.stringify(release.jobs.package), /homebrew.mjs render/u);
 });
 
@@ -108,24 +234,54 @@ test("clibox input changes select its aggregated consumer checks and force exter
   const id = "node-clibox-test";
   assert.equal(jobPaths[id].workspace, "@delino/clibox");
   assert.ok(ci.jobs["ci-result"].needs.includes(id));
-  assert.equal(ci.jobs[id].strategy.matrix, "${{ fromJSON(needs.changes.outputs.clibox_matrix) }}");
-  assert.equal(ci.jobs[id].steps.filter(({ run }) => run === "node scripts/ci/run-affected.mjs @delinoio/ci ci:clibox:native").length, 1);
+  assert.equal(
+    ci.jobs[id].strategy.matrix,
+    "${{ fromJSON(needs.changes.outputs.clibox_matrix) }}",
+  );
+  assert.equal(
+    ci.jobs[id].steps.filter(
+      ({ run }) =>
+        run ===
+        "node scripts/ci/run-affected.mjs @delinoio/ci ci:clibox:native",
+    ).length,
+    1,
+  );
   const smoke = source("packages/clibox/scripts/smoke.mjs");
-  for (const command of ["text", "time", "base64", "hash"]) assert.ok(smoke.includes('invoke(["' + command + '"'));
+  for (const command of ["text", "time", "base64", "hash"])
+    assert.match(smoke, new RegExp(`invoke\\(\\s*\\[\\s*"${command}"`, "u"));
   for (const event of [Event.Push, Event.PullRequest]) {
-    for (const file of ["packages/clibox/src/launcher.cjs", "crates/clibox/src/main.rs", "crates/clibox-config/src/lib.rs", "crates/clibox-fspy/src/lib.rs", "crates/fspy/src/lib.rs", "crates/clibox-system/src/lib.rs", "crates/clibox-transform/src/lib.rs", "crates/clibox-wait/src/lib.rs", ".github/workflows/release-clibox.yml", "scripts/release/project.mjs", "packaging/homebrew/templates/clibox.rb.tmpl", "scripts/release/update-homebrew.sh", "NOTICE"]) {
+    for (const file of [
+      "packages/clibox/src/launcher.cjs",
+      "crates/clibox/src/main.rs",
+      "crates/clibox-config/src/lib.rs",
+      "crates/clibox-fspy/src/lib.rs",
+      "crates/fspy/src/lib.rs",
+      "crates/clibox-system/src/lib.rs",
+      "crates/clibox-transform/src/lib.rs",
+      "crates/clibox-wait/src/lib.rs",
+      ".github/workflows/release-clibox.yml",
+      "scripts/release/project.mjs",
+      "packaging/homebrew/templates/clibox.rb.tmpl",
+      "scripts/release/update-homebrew.sh",
+      "NOTICE",
+    ]) {
       const plan = planJobs(event, [file]);
       assert.equal(plan.jobs[id], true, file);
       assert.equal(plan.forced[id], !file.startsWith("packages/clibox/"), file);
     }
-    assert.equal(planJobs(event, ["apps/public-docs/docs/projects-overview.md"]).jobs[id], false);
+    assert.equal(
+      planJobs(event, ["apps/public-docs/docs/projects-overview.md"]).jobs[id],
+      false,
+    );
   }
   const turbo = JSON.parse(source("packages/clibox/turbo.json"));
   assert.equal(turbo.tasks["test:package"].cache, false);
   assert.equal(turbo.tasks["publish:npm"].cache, false);
   for (const task of ["test", "test:package"]) {
     for (const crate of nativeCrates) {
-      assert.ok(turbo.tasks[task].inputs.includes(`$TURBO_ROOT$/crates/${crate}/**`));
+      assert.ok(
+        turbo.tasks[task].inputs.includes(`$TURBO_ROOT$/crates/${crate}/**`),
+      );
     }
   }
 });
@@ -134,22 +290,51 @@ test("native publication follows the independently guarded signed GNU release", 
   const job = release.jobs["publish-release"];
   assert.deepEqual(job.needs, ["prepare", "package"]);
   assert.deepEqual(job.permissions, { contents: "write", "id-token": "write" });
-  for (const condition of ["dry_run == 'false'", "github.repository == 'delinoio/oss'", "refs/tags/clibox@v"]) assert.ok(job.if.includes(condition));
+  for (const condition of [
+    "dry_run == 'false'",
+    "github.repository == 'delinoio/oss'",
+    "refs/tags/clibox@v",
+  ])
+    assert.ok(job.if.includes(condition));
   assert.doesNotMatch(job.if, /NPM_PUBLISH_ENABLED/u);
-  assert.ok(release.jobs.package.steps.some(({ run }) => run?.includes("github-release.mjs") && !run.includes("--publish")));
-  const gnu = release.jobs.build.steps.find(({ name }) => name === "Build GNU Linux with the pinned compatibility image");
+  assert.ok(
+    release.jobs.package.steps.some(
+      ({ run }) =>
+        run?.includes("github-release.mjs") && !run.includes("--publish"),
+    ),
+  );
+  const gnu = release.jobs.build.steps.find(
+    ({ name }) =>
+      name === "Build GNU Linux with the pinned compatibility image",
+  );
   assert.equal(gnu.if, "endsWith(matrix.target, '-linux-gnu')");
   assert.match(gnu.run, /build-rust.sh clibox/u);
-  assert.deepEqual(release.jobs["linux-packages"].needs, ["prepare", "publish-release"]);
-  for (const file of ["crates/clibox/src/main.rs", "crates/clibox-config/src/lib.rs", "crates/clibox-fspy/src/lib.rs", "crates/clibox-system/src/lib.rs", "crates/clibox-transform/src/lib.rs", "crates/clibox-wait/src/lib.rs", "packages/clibox/scripts/github-release.mjs"]) {
-    assert.equal(planJobs(Event.PullRequest, [file]).jobs["linux-packages"], false);
+  assert.deepEqual(release.jobs["linux-packages"].needs, [
+    "prepare",
+    "publish-release",
+  ]);
+  for (const file of [
+    "crates/clibox/src/main.rs",
+    "crates/clibox-config/src/lib.rs",
+    "crates/clibox-fspy/src/lib.rs",
+    "crates/clibox-system/src/lib.rs",
+    "crates/clibox-transform/src/lib.rs",
+    "crates/clibox-wait/src/lib.rs",
+    "packages/clibox/scripts/github-release.mjs",
+  ]) {
+    assert.equal(
+      planJobs(Event.PullRequest, [file]).jobs["linux-packages"],
+      false,
+    );
     assert.equal(planJobs(Event.Push, [file]).jobs["linux-packages"], true);
   }
 });
 
 test("clibox workspace crates cannot be published and publishers have no crates.io prerequisite", () => {
   const workspace = source("Cargo.toml");
-  const tags = workspace.split("[workspace.metadata.cargo-mono.publish.tag]")[1].split("\n\n")[0];
+  const tags = workspace
+    .split("[workspace.metadata.cargo-mono.publish.tag]")[1]
+    .split("\n\n")[0];
   assert.doesNotMatch(tags, /"clibox"/u);
   for (const crate of nativeCrates) {
     assert.ok(workspace.includes(`"crates/${crate}"`));
@@ -157,7 +342,11 @@ test("clibox workspace crates cannot be published and publishers have no crates.
     assert.match(manifest, /^publish = false$/mu);
     if (crate !== "clibox") {
       assert.doesNotMatch(manifest, /^clibox(?:-[a-z]+)?\s*=/mu);
-      assert.ok(source("crates/clibox/Cargo.toml").includes(`${crate} = { path = "../${crate}" }`));
+      assert.ok(
+        source("crates/clibox/Cargo.toml").includes(
+          `${crate} = { path = "../${crate}" }`,
+        ),
+      );
     }
   }
   for (const file of ["publish.mjs", "github-release.mjs"]) {
@@ -171,5 +360,8 @@ test("clibox workspace crates cannot be published and publishers have no crates.
 
 test("clibox Turbo native task retains all six crate suites", () => {
   const ci = JSON.parse(source("scripts/ci/package.json"));
-  assert.equal(ci.scripts["ci:clibox:native"], "node from-root.mjs cargo test --locked -p clibox -p clibox-config -p clibox-fspy -p clibox-system -p clibox-transform -p clibox-wait");
+  assert.equal(
+    ci.scripts["ci:clibox:native"],
+    "node from-root.mjs cargo test --locked -p clibox -p clibox-config -p clibox-fspy -p clibox-system -p clibox-transform -p clibox-wait",
+  );
 });

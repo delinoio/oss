@@ -1,7 +1,5 @@
 {
-  "extends": [
-    "//"
-  ],
+  "extends": ["//"],
   "tasks": {
     "test": {
       "cache": false
@@ -21,15 +19,11 @@
         "$TURBO_ROOT$/scripts/delidev/proto-layout.json"
       ],
       "outputs": [],
-      "env": [
-        "CI_CACHE_CONTEXT"
-      ]
+      "env": ["CI_CACHE_CONTEXT"]
     },
     "test:integration": {
       "cache": false,
-      "dependsOn": [
-        "test:unit"
-      ],
+      "dependsOn": ["test:unit"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",
@@ -50,12 +44,7 @@
     },
     "ci:check": {
       "cache": false,
-      "dependsOn": [
-        "typecheck",
-        "test:unit",
-        "test:integration",
-        "build"
-      ]
+      "dependsOn": ["typecheck", "test:unit", "test:integration", "build"]
     }
   }
 }

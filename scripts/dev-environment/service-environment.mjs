@@ -17,14 +17,22 @@ import {
   resolveLocalStatePaths,
   validateInjectedEnvironment,
 } from "./contracts.mjs";
-import { commandInvocation, safeBaseEnvironment, terminateTree } from "./process.mjs";
+import {
+  commandInvocation,
+  safeBaseEnvironment,
+  terminateTree,
+} from "./process.mjs";
 import { spawnDevServer } from "../spawn-dev-server.mjs";
 
 function emitRejected(error) {
   const safe =
     error instanceof EnvironmentError
       ? { code: error.code, message: error.message, names: error.names }
-      : { code: "environment.invalid", message: "service configuration could not be validated", names: [] };
+      : {
+          code: "environment.invalid",
+          message: "service configuration could not be validated",
+          names: [],
+        };
   process.stderr.write(`${rejectedMarker}${JSON.stringify(safe)}\n`);
 }
 
@@ -32,7 +40,9 @@ function testEnvironment(source = process.env) {
   if (source.DEVHUD_ENVIRONMENT_TESTING !== "1") return {};
   return Object.fromEntries(
     Object.entries(source).filter(
-      ([name]) => name === "DEVHUD_ENVIRONMENT_TESTING" || name.startsWith("DEVHUD_TEST_"),
+      ([name]) =>
+        name === "DEVHUD_ENVIRONMENT_TESTING" ||
+        name.startsWith("DEVHUD_TEST_"),
     ),
   );
 }
@@ -63,7 +73,9 @@ function forwardAfterMarker(child) {
     const location = stdoutBeforeAcceptance.indexOf(acceptedMarker);
     if (location === -1) return;
     accepted = true;
-    const after = stdoutBeforeAcceptance.slice(location + acceptedMarker.length).replace(/^\r?\n/u, "");
+    const after = stdoutBeforeAcceptance
+      .slice(location + acceptedMarker.length)
+      .replace(/^\r?\n/u, "");
     stdoutBeforeAcceptance = "";
     if (after) process.stdout.write(after);
     stderrBeforeAcceptance = "";
@@ -123,7 +135,11 @@ async function runInjected({
     const baseline = JSON.parse(process.env[baselineVariable] ?? "{}");
     const candidateEnvironment = { ...process.env };
     delete candidateEnvironment[baselineVariable];
-    const configuration = validateInjectedEnvironment(contract, candidateEnvironment, baseline);
+    const configuration = validateInjectedEnvironment(
+      contract,
+      candidateEnvironment,
+      baseline,
+    );
     const comparisonKey = baseline[comparisonKeyName];
     const expectedComparison = baseline[comparisonExpectedName];
     if (
@@ -210,7 +226,13 @@ async function readTeamConfigurationPin() {
   };
 }
 
-async function runTeam({ contract, action, comparisonName, scriptPath, execute }) {
+async function runTeam({
+  contract,
+  action,
+  comparisonName,
+  scriptPath,
+  execute,
+}) {
   const injectedArgument = process.argv[3];
   if (injectedArgument?.startsWith("--injected=")) {
     return runInjected({
@@ -222,7 +244,8 @@ async function runTeam({ contract, action, comparisonName, scriptPath, execute }
     });
   }
 
-  const launchPin = action === "validate" ? {} : await readTeamConfigurationPin();
+  const launchPin =
+    action === "validate" ? {} : await readTeamConfigurationPin();
   const baseline = {
     ...safeBaseEnvironment(),
     ...testEnvironment(),
@@ -233,9 +256,13 @@ async function runTeam({ contract, action, comparisonName, scriptPath, execute }
     DEVHUD_LOCAL_MODE: "team",
   };
   const baselineVariable = `DEVHUD_INTERNAL_${randomBytes(16).toString("hex").toUpperCase()}`;
-  const environment = { ...baseline, [baselineVariable]: JSON.stringify(baseline) };
+  const environment = {
+    ...baseline,
+    [baselineVariable]: JSON.stringify(baseline),
+  };
   const fakeExecutable =
-    process.env.DEVHUD_ENVIRONMENT_TESTING === "1" && process.env.DEVHUD_TEST_INFISICAL
+    process.env.DEVHUD_ENVIRONMENT_TESTING === "1" &&
+    process.env.DEVHUD_TEST_INFISICAL
       ? process.env.DEVHUD_TEST_INFISICAL
       : null;
   const executable = fakeExecutable ? process.execPath : "infisical";
@@ -257,18 +284,24 @@ async function runTeam({ contract, action, comparisonName, scriptPath, execute }
     action,
     `--injected=${baselineVariable}`,
   ];
-  const child = spawn(executable, fakeExecutable ? [fakeExecutable, ...args] : args, {
-    cwd: repositoryRoot,
-    env: environment,
-    shell: false,
-    detached: process.platform !== "win32",
-    stdio: ["inherit", "pipe", "pipe"],
-  });
+  const child = spawn(
+    executable,
+    fakeExecutable ? [fakeExecutable, ...args] : args,
+    {
+      cwd: repositoryRoot,
+      env: environment,
+      shell: false,
+      detached: process.platform !== "win32",
+      stdio: ["inherit", "pipe", "pipe"],
+    },
+  );
   const buffered = forwardAfterMarker(child);
   const result = await awaitProvider(child);
   const output = buffered();
   if (!output.accepted) {
-    const rejection = parseRejected(`${output.stdoutBeforeAcceptance}\n${output.stderrBeforeAcceptance}`);
+    const rejection = parseRejected(
+      `${output.stdoutBeforeAcceptance}\n${output.stderrBeforeAcceptance}`,
+    );
     throw (
       rejection ??
       new EnvironmentError(
@@ -301,7 +334,9 @@ export async function readServiceEnv(path, allowedNames) {
       "service-local OSS configuration syntax is invalid",
     );
   }
-  const unknown = Object.keys(parsed).filter((name) => !allowedNames.includes(name));
+  const unknown = Object.keys(parsed).filter(
+    (name) => !allowedNames.includes(name),
+  );
   if (unknown.length > 0) {
     throw new EnvironmentError(
       "environment.unknown",
@@ -323,7 +358,10 @@ export async function runService({
   try {
     const mode = requireMode();
     if (!["validate", "migrate", "serve"].includes(action)) {
-      throw new EnvironmentError("action.invalid", "local service action is invalid");
+      throw new EnvironmentError(
+        "action.invalid",
+        "local service action is invalid",
+      );
     }
     if (mode === "team") {
       return await runTeam({
@@ -352,7 +390,12 @@ export async function runService({
   }
 }
 
-export async function executeArgv(command, args, environment, cwd = repositoryRoot) {
+export async function executeArgv(
+  command,
+  args,
+  environment,
+  cwd = repositoryRoot,
+) {
   const invocation = commandInvocation(command);
   return runChild(
     invocation.command,

@@ -79,6 +79,7 @@ cargo mono --output json <command>
 The integration suite at `crates/cargo-mono/tests/cli.rs` covers end-to-end command behavior across real temporary git workspaces.
 
 Coverage highlights:
+
 - `list`: workspace discovery and publishability reporting.
 - `changed`: base override, include/exclude filters, invalid glob rejection, direct-only vs dependent expansion, include-uncommitted behavior, and global-impact file handling.
 - `bump`: clean-tree preflight, non-publishable skip behavior, manifest/version/dependency updates, dependent patch propagation, and release commit creation (no tag creation).

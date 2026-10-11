@@ -94,7 +94,17 @@ export class FakeCanvas {
       },
     });
     this.nodes.set(value.id, proxy);
-    if (this.page && !["DOCUMENT", "PAGE", "COLLECTION", "VARIABLE", "PAINT_STYLE", "TEXT_STYLE"].includes(type))
+    if (
+      this.page &&
+      ![
+        "DOCUMENT",
+        "PAGE",
+        "COLLECTION",
+        "VARIABLE",
+        "PAINT_STYLE",
+        "TEXT_STYLE",
+      ].includes(type)
+    )
       this.page.appendChild(proxy);
     return proxy;
   }

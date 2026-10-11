@@ -7,11 +7,7 @@
   "planTier": "pro",
   "font": {
     "family": "DM Sans",
-    "styles": [
-      "Regular",
-      "Medium",
-      "Bold"
-    ],
+    "styles": ["Regular", "Medium", "Bold"],
     "reason": "Available in Figma; the existing example's Avenir Next was not available."
   },
   "fileKey": "ccKXvoUvorNx58j9YLs5iC",
@@ -114,11 +110,7 @@
       ],
       "existingIdsRetained": 209,
       "preservedNodeCount": 113,
-      "unchangedScreens": [
-        "Search",
-        "Destination",
-        "Saved"
-      ],
+      "unchangedScreens": ["Search", "Destination", "Saved"],
       "noOpWriteCalls": 0,
       "calls": 19,
       "retries": 0,
@@ -129,16 +121,8 @@
       "url": "https://www.figma.com/design/wyvfmaofzMTzG5m8UoXLX7",
       "status": "complete",
       "createdNodeIds": [],
-      "mutatedNodeIds": [
-        "1:2",
-        "1:3"
-      ],
-      "preservedIds": [
-        "1:4",
-        "1:5",
-        "1:6",
-        "1:7"
-      ],
+      "mutatedNodeIds": ["1:2", "1:3"],
+      "preservedIds": ["1:4", "1:5", "1:6", "1:7"],
       "calls": 5,
       "retries": 0,
       "waitMs": 20415

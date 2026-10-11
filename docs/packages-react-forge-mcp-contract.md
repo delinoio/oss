@@ -1,28 +1,32 @@
 # React Forge MCP Contract
 
 ## Scope
+
 `packages/react-forge/src/mcp` owns the React Forge stdio server, shared Node execution process, TSX loader and session registry. The private source workspace assembles these modules into the public npm package. The explicit MCP follow-up supersedes the original the feature exclusion of a new MCP interface. Existing Forge MCP, React Forge library and one-shot CLI behavior remain supported.
 
 ## Runtime and Language
+
 Use the existing Node.js 24, React 19.2.8 and six-host native inventory. TypeScript owns MCP and React execution; validated native computations remain in the existing Rust workers. All sessions share one execution process and canonical React/React Forge imports, including Figma's per-authentication rate admission and per-file publication queues. Authenticated Figma retains its existing macOS Keychain boundary; this extension does not claim new Figma authentication platforms.
 
 ## Users and Operators
+
 Node.js developers and local MCP clients executing trusted document tasks. Start the installed package with `react-forge mcp [--cwd <directory>]`. The working directory defaults to the launch directory and must exist. There is no HTTP listener, hosted service or automatic client configuration change.
 
 ## Interfaces and Contracts
+
 The official TypeScript MCP SDK owns stdio framing and protocol negotiation. The server exposes tools only, using the `react_forge_` prefix:
 
-| Suffix | Input and behavior |
-| --- | --- |
-| `capabilities` | No arguments; existing format/runtime limits plus MCP source, inspection, trust and lifecycle contract. |
-| `execute` | Exactly one of `code` or `entry`, optional `sessionId` and JSON `data`. Evaluates a fresh TSX entry, then calls its default export with `{ session, state, data, signal }`. |
-| `sessions` | `offset` and `limit`; lists active session IDs, formats, current revisions and idle/running/closing status. |
-| `inspect` | `sessionId`, optional `nodeId`/`kind`, `offset`, `limit`, and `view` (`targets` or `receipt`). Local targets come from a settled snapshot; Figma targets are cached. Receipt view never republishes. |
-| `measure` | `sessionId`, `nodeId`, exact `revision`, optional scene-only `animation: { clip: clipNodeId, time }`. Local callers obtain the revision through inspect; Figma requires a completed published revision. |
-| `refresh` | Figma `sessionId`, optional `pageId`, up to 24 `nodeIds`, and `resources`. Delegates to the existing scoped remote reader. |
-| `export` | Local session, `output`, optional `overwrite` (default false). Extension must match PPTX/DOCX/XLSX/PDF/GLB/FBX/WAV, or `.sprite.zip` for sprites. |
-| `publish` | Figma session, optional `receiptPath` ending in `.figma.json`, optional `overwrite` (default false). Without a path, publishes without saving a local receipt. |
-| `close` | `sessionId`; serializes behind prior work, disposes the session, and clears its state. |
+| Suffix         | Input and behavior                                                                                                                                                                                      |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `capabilities` | No arguments; existing format/runtime limits plus MCP source, inspection, trust and lifecycle contract.                                                                                                 |
+| `execute`      | Exactly one of `code` or `entry`, optional `sessionId` and JSON `data`. Evaluates a fresh TSX entry, then calls its default export with `{ session, state, data, signal }`.                             |
+| `sessions`     | `offset` and `limit`; lists active session IDs, formats, current revisions and idle/running/closing status.                                                                                             |
+| `inspect`      | `sessionId`, optional `nodeId`/`kind`, `offset`, `limit`, and `view` (`targets` or `receipt`). Local targets come from a settled snapshot; Figma targets are cached. Receipt view never republishes.    |
+| `measure`      | `sessionId`, `nodeId`, exact `revision`, optional scene-only `animation: { clip: clipNodeId, time }`. Local callers obtain the revision through inspect; Figma requires a completed published revision. |
+| `refresh`      | Figma `sessionId`, optional `pageId`, up to 24 `nodeIds`, and `resources`. Delegates to the existing scoped remote reader.                                                                              |
+| `export`       | Local session, `output`, optional `overwrite` (default false). Extension must match PPTX/DOCX/XLSX/PDF/GLB/FBX/WAV, or `.sprite.zip` for sprites.                                                       |
+| `publish`      | Figma session, optional `receiptPath` ending in `.figma.json`, optional `overwrite` (default false). Without a path, publishes without saving a local receipt.                                          |
+| `close`        | `sessionId`; serializes behind prior work, disposes the session, and clears its state.                                                                                                                  |
 
 `sessionId` is the session's lowercase UUID-v7 `documentId`. A new execute call must return a live `DocumentSession`, `SceneSession` or `FigmaSession`; an update returns void or that same object. Returning another session never replaces the selected one; an unregistered rejected replacement is disposed. Session-owned `state` is a persistent `Map<string, unknown>` for components, setters, refs, mount handles and caller state. It is never serialized. `McpTaskContext` and `McpSessionTask` are type-only package exports. Tasks own cleanup for resources they create and throw away before returning a session.
 
@@ -64,17 +68,21 @@ EOF, transport close, SIGINT/SIGTERM and Windows SIGBREAK stop admission, abort 
 - MCP cancellation fixtures must install abort waiters before publishing readiness and handle signals that are already aborted; exercise late continuation without widening timeouts to hide missed cancellation.
 
 ## Storage
+
 Sessions, state Maps and source text are memory-only. Node's evaluated module cache lives until the execution process exits; closing a document releases its owned session resources but is not an ESM module-cache eviction guarantee. Explicit exports/receipts use the existing local-file exception to R2 storage. No recovery database or revision archive is added. Disposal never deletes exported files or remote content. Imported sources and canonical aliases remain protected even when overwrite is true.
 
 ## Security
+
 TSX is trusted code running with the caller's permissions, not a sandbox. The subprocess boundary protects MCP transport and diagnostics, not the filesystem, network or credentials from deliberate caller code. No HTTP authentication surface or credentials are added. Figma continues to use only its selected existing host credential, with the existing single reread allowance and no refresh/writeback.
 
 The UTF-8 TSX entry plus serialized JSON data is capped at 16 MiB before evaluation; file entries must be regular `.tsx` files and use bounded reads. Existing document/image/package limits remain in force. The stdio read buffer also bounds unfinished frames while allowing sixfold JSON escaping plus a small envelope allowance. State Maps and arbitrary caller dependencies are caller-owned trusted code, not process-wide resource governance. No implicit asset downloads or runtime installations are introduced.
 
 ## Logging
+
 The parent emits structured stderr diagnostics containing fixed operation/stage, duration and stable error classification. The execution child's stdout/stderr, including direct descriptor writes and task cleanup output, are disconnected from both protocol output and operational logs. The sole exception for caller exception text is the bounded, explicit MCP tool error result described above; that message can itself contain sensitive caller data. Never relay arbitrary exceptions, task text, paths, XML, asset bytes or credentials to operational logs. Do not add full stacks, source excerpts or absolute host paths as structured error fields. SDK protocol errors are logged using a fixed classification without their raw message. stdout contains only MCP messages.
 
 ## Build and Test
+
 Build the native binding and TypeScript output before server or packed-consumer tests. Run package build, typecheck, lint, test and `typecheck:examples`. All six existing CI hosts execute real SDK stdio tests and installed consumers for the four local formats and fake Figma; standalone examples are checked after the build. Existing CLI, React, native integration and preservation tests remain required.
 
 MCP coverage includes relative/inline imports, module singleton identity, fresh entry evaluation, actual React hook/Suspense state, mounted Office edits, exact revision measurement, original/output conflicts, filtered pagination, malformed/oversized source, bounded inline/file/import compiler diagnostics, module-resolution and callback exceptions, uncaught render detail and recovery, stderr redaction, direct stdout writes, queued cancellation, late returned-session cleanup, EOF/signals, a blocked event loop, worker loss, and Figma complete/partial/unknown publication receipts without blind retries. Offline Figma tests use synthetic credentials/fake MCP only. Remove generated `dist` after validation.
@@ -86,14 +94,17 @@ Cancellation fixtures register their abort waiter before publishing readiness an
 Stdio test fixtures wait for the server process close event before deleting their working directory. Filesystem cleanup tolerates a short Windows handle-release delay, while a server that does not close still fails the fixture.
 
 ## Dependencies and Integrations
+
 Reuse pinned `@modelcontextprotocol/sdk`, `tsx` and the existing native engines. Declare exact direct `esbuild` and `zod` dependencies matching the existing lockfile versions for virtual TSX transformation and shared runtime/advertised schemas. The parent alone owns protocol stdout; one execution child owns all sessions. No existing Forge CLI/MCP or native defaults change.
 
 ## Change Triggers
+
 Keep this contract, Node/Figma contracts, original requirements follow-up, project/docs indexes, relevant AGENTS rules, README, tool descriptions and installed-consumer tests synchronized when interfaces or boundaries change.
 
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - [Project](project-react-forge.md).
 - [Node sessions and CLI](packages-react-forge-contract.md).
 - [Figma publication](packages-react-forge-figma-contract.md).
@@ -105,6 +116,7 @@ Instruction-file updates in this requirement apply only to changes in developmen
 The generation-only GLB/FBX extension follows [the scene contract](packages-react-forge-scene-contract.md). `SceneSession` shares local publication and MCP lifecycle, uses independent world-space bounds and native scene engines, and introduces no runtime conversion dependency.
 
 ## Sprite Follow-up (Published in npm 0.2.0)
+
 The sprite extension reuses `DocumentSession` and all existing tools: `execute` resolves `/sprite` to the canonical package, `inspect` exposes authored nodes, `measure` reports logical frame geometry, and `export` publishes one `.sprite.zip`. No additional tools or asset downloads are introduced. Both inline-source tests and installed-consumer CLI/MCP tests exercise it. See the [sprite contract](packages-react-forge-sprite-contract.md).
 
 ## SFX follow-up (Published in npm 0.2.0)

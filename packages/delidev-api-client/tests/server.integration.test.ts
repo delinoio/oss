@@ -7,10 +7,22 @@ import { fileURLToPath } from "node:url";
 import { createClient, type Transport } from "@connectrpc/connect";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { fixtureBinary } from "../../../scripts/ci/fixture-binary.mjs";
-import { ConfigurationService, EntityKind, ResourceService, SystemService, SystemCapability, UserServiceKind, UserServiceState } from "../src/index.js";
+import {
+  ConfigurationService,
+  EntityKind,
+  ResourceService,
+  SystemService,
+  SystemCapability,
+  UserServiceKind,
+  UserServiceState,
+} from "../src/index.js";
 import { createDeliDevTransport } from "../src/transport.js";
 import { clientFailure, FailureCode } from "../src/errors.js";
-import { ConnectionState, SyncKind, synchronizeResources } from "../src/synchronization.js";
+import {
+  ConnectionState,
+  SyncKind,
+  synchronizeResources,
+} from "../src/synchronization.js";
 import { newRequestId } from "../src/validation.js";
 
 const execute = promisify(execFile);
@@ -24,21 +36,40 @@ const pause = () => new Promise((resolve) => setTimeout(resolve, 25));
 
 beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), "delidev-ts-"));
-  const localBinary = join(directory, process.platform === "win32" ? "delidev.exe" : "delidev");
+  const localBinary = join(
+    directory,
+    process.platform === "win32" ? "delidev.exe" : "delidev",
+  );
   const binary = await fixtureBinary(localBinary);
-  if (binary === localBinary) await execute("go", ["build", "-o", binary, "./cmds/delidev-cli"], { cwd: fileURLToPath(new URL("../../../", import.meta.url)), timeout: 120000 });
+  if (binary === localBinary)
+    await execute("go", ["build", "-o", binary, "./cmds/delidev-cli"], {
+      cwd: fileURLToPath(new URL("../../../", import.meta.url)),
+      timeout: 120000,
+    });
   const data = join(directory, "server");
-  server = spawn(binary, ["--data-dir", data, "server", "run", "--listen", "127.0.0.1:0"], { stdio: "ignore" });
+  server = spawn(
+    binary,
+    ["--data-dir", data, "server", "run", "--listen", "127.0.0.1:0"],
+    { stdio: "ignore" },
+  );
   const until = Date.now() + 15000;
   while (Date.now() < until) {
-    if (server.exitCode !== null) throw new Error("The isolated Go server failed to start.");
+    if (server.exitCode !== null)
+      throw new Error("The isolated Go server failed to start.");
     let protocolVersion: number;
     try {
-      origin = JSON.parse(await readFile(join(data, "server.json"), "utf8")).url;
+      origin = JSON.parse(
+        await readFile(join(data, "server.json"), "utf8"),
+      ).url;
       // Test-owned temporary credentials only; never read the user's scope.
-      token = JSON.parse(await readFile(join(data, "owner.json"), "utf8")).token;
+      token = JSON.parse(
+        await readFile(join(data, "owner.json"), "utf8"),
+      ).token;
       transport = createDeliDevTransport({ origin, getToken: () => token });
-      const status = await createClient(SystemService, transport).getStatus({}, { timeoutMs: 1000 });
+      const status = await createClient(SystemService, transport).getStatus(
+        {},
+        { timeoutMs: 1000 },
+      );
       protocolVersion = status.protocolVersion;
     } catch {
       await pause();
@@ -54,11 +85,20 @@ beforeAll(async () => {
 afterAll(async () => {
   stopped.abort();
   if (server && server.exitCode === null) {
-    try { await createClient(SystemService, transport).stopServer({ requestId: newRequestId() }, { timeoutMs: 2000 }); } catch { /* Fixture teardown still owns its child. */ }
+    try {
+      await createClient(SystemService, transport).stopServer(
+        { requestId: newRequestId() },
+        { timeoutMs: 2000 },
+      );
+    } catch {
+      /* Fixture teardown still owns its child. */
+    }
     const until = Date.now() + 3000;
     while (server.exitCode === null && Date.now() < until) await pause();
     if (server.exitCode === null) {
-      const exited = new Promise<void>((resolve) => server!.once("exit", () => resolve()));
+      const exited = new Promise<void>((resolve) =>
+        server!.once("exit", () => resolve()),
+      );
       server.kill("SIGKILL");
       await exited;
     }
@@ -69,31 +109,70 @@ afterAll(async () => {
 it("uses real Go Connect binary messages, atomic events, replay receipts and indexed deletion", async () => {
   const configuration = createClient(ConfigurationService, transport);
   const resources = createClient(ResourceService, transport);
-  const stream = synchronizeResources(resources, { kind: EntityKind.TEMPLATE }, { signal: stopped.signal });
-  expect((await stream.next()).value).toMatchObject({ state: ConnectionState.Connecting });
-  expect((await stream.next()).value).toMatchObject({ kind: SyncKind.Snapshot, resources: [] });
-  expect((await stream.next()).value).toMatchObject({ state: ConnectionState.Live });
+  const stream = synchronizeResources(
+    resources,
+    { kind: EntityKind.TEMPLATE },
+    { signal: stopped.signal },
+  );
+  expect((await stream.next()).value).toMatchObject({
+    state: ConnectionState.Connecting,
+  });
+  expect((await stream.next()).value).toMatchObject({
+    kind: SyncKind.Snapshot,
+    resources: [],
+  });
+  expect((await stream.next()).value).toMatchObject({
+    state: ConnectionState.Live,
+  });
   const next = stream.next();
   const mutation = { requestId: newRequestId(), id: newRequestId() };
-  const request = { mutation, kind: EntityKind.TEMPLATE, schemaVersion: 1, documentJson: new TextEncoder().encode(JSON.stringify({ name: "Private fixture", contents: "Unicode 한글 café retained." })) };
+  const request = {
+    mutation,
+    kind: EntityKind.TEMPLATE,
+    schemaVersion: 1,
+    documentJson: new TextEncoder().encode(
+      JSON.stringify({
+        name: "Private fixture",
+        contents: "Unicode 한글 café retained.",
+      }),
+    ),
+  };
   const accepted = await configuration.saveConfiguration(request);
   expect(accepted.resource?.revision).toBe(1n);
   const updated = (await next).value;
-  expect(updated).toMatchObject({ kind: SyncKind.Upsert, resource: { id: mutation.id, revision: 1n } });
+  expect(updated).toMatchObject({
+    kind: SyncKind.Upsert,
+    resource: { id: mutation.id, revision: 1n },
+  });
   const replay = await configuration.saveConfiguration(request);
   expect(replay.replayed).toBe(true);
   const removed = stream.next();
-  await configuration.deleteConfiguration({ kind: EntityKind.TEMPLATE, mutation: { id: mutation.id, expectedRevision: 1n, requestId: newRequestId() } });
+  await configuration.deleteConfiguration({
+    kind: EntityKind.TEMPLATE,
+    mutation: {
+      id: mutation.id,
+      expectedRevision: 1n,
+      requestId: newRequestId(),
+    },
+  });
   // A replay must not publish another Created event ahead of deletion.
-  expect((await removed).value).toMatchObject({ kind: SyncKind.Remove, id: mutation.id });
+  expect((await removed).value).toMatchObject({
+    kind: SyncKind.Remove,
+    id: mutation.id,
+  });
   stopped.abort();
   expect((await stream.next()).done).toBe(true);
 }, 15000);
 
 it("decodes the Go server's typed authentication error without returning credentials", async () => {
-  const invalid = createClient(SystemService, createDeliDevTransport({ origin, getToken: () => "z".repeat(43) }));
-  try { await invalid.getStatus({}); throw new Error("Expected authentication rejection."); }
-  catch (reason) {
+  const invalid = createClient(
+    SystemService,
+    createDeliDevTransport({ origin, getToken: () => "z".repeat(43) }),
+  );
+  try {
+    await invalid.getStatus({});
+    throw new Error("Expected authentication rejection.");
+  } catch (reason) {
     const problem = clientFailure(reason);
     expect(problem.code).toBe(FailureCode.Unauthenticated);
     expect(problem.correlationId).toMatch(/^[0-9a-f-]{36}$/);
@@ -103,15 +182,28 @@ it("decodes the Go server's typed authentication error without returning credent
 
 it("exposes typed user-service capability and metadata without native side effects", async () => {
   const system = createClient(SystemService, transport);
-  expect((await system.getStatus({})).capabilities).toEqual(expect.arrayContaining([
-    SystemCapability.AUTOMATIC_TITLES_V1,
-    SystemCapability.SESSION_FORWARDING_V1,
-    SystemCapability.USER_SERVICES_V1,
-    SystemCapability.WORKSPACE_STORAGE_V1,
-    SystemCapability.SESSION_TERMINALS_V1,
-  ]));
+  expect((await system.getStatus({})).capabilities).toEqual(
+    expect.arrayContaining([
+      SystemCapability.AUTOMATIC_TITLES_V1,
+      SystemCapability.SESSION_FORWARDING_V1,
+      SystemCapability.USER_SERVICES_V1,
+      SystemCapability.WORKSPACE_STORAGE_V1,
+      SystemCapability.SESSION_TERMINALS_V1,
+    ]),
+  );
   const result = await system.getUserService({ kind: UserServiceKind.SERVER });
-  expect(result.service).toMatchObject({ kind: UserServiceKind.SERVER, revision: 0n, state: UserServiceState.ABSENT, loginEnabled: false });
-  expect(JSON.stringify(result, (_, value) => typeof value === "bigint" ? value.toString() : value)).not.toContain(token);
-  await expect(system.getUserService({ kind: UserServiceKind.UNSPECIFIED })).rejects.toMatchObject({ code: 3 });
+  expect(result.service).toMatchObject({
+    kind: UserServiceKind.SERVER,
+    revision: 0n,
+    state: UserServiceState.ABSENT,
+    loginEnabled: false,
+  });
+  expect(
+    JSON.stringify(result, (_, value) =>
+      typeof value === "bigint" ? value.toString() : value,
+    ),
+  ).not.toContain(token);
+  await expect(
+    system.getUserService({ kind: UserServiceKind.UNSPECIFIED }),
+  ).rejects.toMatchObject({ code: 3 });
 });

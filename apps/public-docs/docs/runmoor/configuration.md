@@ -2,7 +2,6 @@
 
 > **Version note:** Runmoor 0.2.0 introduced automatic setup and managed runner updates. Guided creation of a new Mac VM during `init` is in the next release. Version 0.1.3 uses the explicit pinned configuration and manual image preparation also documented below. Check `runmoor version` before using release-specific commands.
 
-
 ```sh
 runmoor init
 runmoor config validate
@@ -13,11 +12,11 @@ runmoor run
 
 Both supported operating systems use:
 
-| Purpose | XDG location | Default |
-| --- | --- | --- |
-| Configuration | `$XDG_CONFIG_HOME/runmoor/config.toml` | `~/.config/runmoor/config.toml` |
-| State | `$XDG_STATE_HOME/runmoor` | `~/.local/state/runmoor` |
-| Managed images | `$XDG_DATA_HOME/runmoor` | `~/.local/share/runmoor` |
+| Purpose        | XDG location                           | Default                         |
+| -------------- | -------------------------------------- | ------------------------------- |
+| Configuration  | `$XDG_CONFIG_HOME/runmoor/config.toml` | `~/.config/runmoor/config.toml` |
+| State          | `$XDG_STATE_HOME/runmoor`              | `~/.local/state/runmoor`        |
+| Managed images | `$XDG_DATA_HOME/runmoor`               | `~/.local/share/runmoor`        |
 
 State/data may be overridden by absolute TOML paths. Configuration and credential files must be owned by your user, regular files, and mode 0600. Directories/socket are private to that user. Very long state paths exceed the Unix socket length limit and are rejected. Storage relocation requires drain, stop, and a complete installation backup; it is not a live reload.
 
@@ -64,9 +63,9 @@ In GitHub, open **Settings → Developer settings → Personal access tokens →
 Fine-grained tokens → Generate new token**. Select the repository owner and the
 repositories this Runmoor connection will manage, then grant:
 
-| Target | Fine-grained PAT permissions |
-| --- | --- |
-| Repository | Repository **Administration: Read and write** |
+| Target       | Fine-grained PAT permissions                                                      |
+| ------------ | --------------------------------------------------------------------------------- |
+| Repository   | Repository **Administration: Read and write**                                     |
 | Organization | Organization **Administration: Read** and **Self-hosted runners: Read and write** |
 
 The token owner must already have access to manage the target's runners.

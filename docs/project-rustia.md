@@ -1,22 +1,27 @@
 # Project: rustia
 
 ## Goal
+
 Provide serde-based LLM JSON parsing and function-calling tool adapter utilities for Rust with three crates: runtime (`rustia`), derive proc-macro companion (`rustia-macros`), and aisdk adapter (`rustia-llm`).
 
 ## Project ID
+
 `rustia`
 
 ## Domain Ownership Map
+
 - `crates/rustia` (`core`)
 - `crates/rustia-llm` (`llm`)
 - `crates/rustia-macros` (`macros`)
 
 ## Domain Contract Documents
+
 - `docs/crates-rustia-core-foundation.md`
 - `docs/crates-rustia-llm-foundation.md`
 - `docs/crates-rustia-macros-foundation.md`
 
 ## Cross-Domain Invariants
+
 - Component identifiers remain stable: `core`, `llm`, `macros`.
 - Runtime and macro boundaries remain explicitly separated across crates.
 - Runtime, adapter, and macro crates remain publishable (`publish = true`) and are eligible for workspace-managed `cargo-mono publish`.
@@ -43,6 +48,7 @@ Provide serde-based LLM JSON parsing and function-calling tool adapter utilities
 - `rustia` -> `crates/rustia`, `crates/rustia-llm`, `crates/rustia-macros`
 
 ## Change Policy
+
 - Update this index and related crate contract docs together when runtime parsing semantics, adapter contracts, or derive expansion contracts change.
 - Keep root and crate-domain `AGENTS.md` ownership mappings synchronized with this index when rustia component paths or stability policies change.
 - Update root `Cargo.toml` publish-tag package configuration in the same change when rustia package release eligibility changes.
@@ -51,6 +57,7 @@ Provide serde-based LLM JSON parsing and function-calling tool adapter utilities
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - `docs/project-template.md`
 - `docs/domain-template.md`
 - `docs/README.md`

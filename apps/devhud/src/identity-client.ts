@@ -1,7 +1,29 @@
-import { ProjectId, StaticCapability, type GetBootstrapResponse } from "@delinoio/devhud-api-client";
-import LogtoClient, { createRequester, isLogtoRequestError, LogtoClientError, type ClientAdapter, type Storage as LogtoStorage } from "@logto/client";
-import { isValidLogtoAudience, logtoEndpointFromIssuer, normalizeLogtoIssuer, normalizeNetworkOrigin, normalizePublicAssetUrl } from "./identity-contract.ts";
-import { nativeBridge, RuntimePlatform, SecureSettingKind, type NativeBridgeV1, type RuntimePlatform as RuntimePlatformType } from "./native-bridge";
+import {
+  ProjectId,
+  StaticCapability,
+  type GetBootstrapResponse,
+} from "@delinoio/devhud-api-client";
+import LogtoClient, {
+  createRequester,
+  isLogtoRequestError,
+  LogtoClientError,
+  type ClientAdapter,
+  type Storage as LogtoStorage,
+} from "@logto/client";
+import {
+  isValidLogtoAudience,
+  logtoEndpointFromIssuer,
+  normalizeLogtoIssuer,
+  normalizeNetworkOrigin,
+  normalizePublicAssetUrl,
+} from "./identity-contract.ts";
+import {
+  nativeBridge,
+  RuntimePlatform,
+  SecureSettingKind,
+  type NativeBridgeV1,
+  type RuntimePlatform as RuntimePlatformType,
+} from "./native-bridge";
 
 export const NativeAuthCallback = "devhud://auth/callback" as const;
 export const SupportedProtocolSchemaVersion = 2 as const;
@@ -23,30 +45,79 @@ export class BootstrapContractError extends TypeError {
   }
 }
 
-export function validateBootstrap(response: GetBootstrapResponse, platform: RuntimePlatformType): ValidatedBootstrap {
-  if (response.projectId !== ProjectId.DEVHUD) throw new BootstrapContractError("Bootstrap project ID does not match DevHud");
-  if (response.protocolSchemaVersion !== SupportedProtocolSchemaVersion) throw new BootstrapContractError("unsupported protocol schema version");
+export function validateBootstrap(
+  response: GetBootstrapResponse,
+  platform: RuntimePlatformType,
+): ValidatedBootstrap {
+  if (response.projectId !== ProjectId.DEVHUD)
+    throw new BootstrapContractError(
+      "Bootstrap project ID does not match DevHud",
+    );
+  if (response.protocolSchemaVersion !== SupportedProtocolSchemaVersion)
+    throw new BootstrapContractError("unsupported protocol schema version");
   const issuer = normalizeLogtoIssuer(response.logtoIssuer);
-  if (issuer === null) throw new BootstrapContractError("Logto issuer must be an HTTPS or loopback HTTP URL without credentials, query, or fragment");
-  if (!isValidLogtoAudience(response.logtoAudience)) throw new BootstrapContractError("Logto audience must be nonblank");
+  if (issuer === null)
+    throw new BootstrapContractError(
+      "Logto issuer must be an HTTPS or loopback HTTP URL without credentials, query, or fragment",
+    );
+  if (!isValidLogtoAudience(response.logtoAudience))
+    throw new BootstrapContractError("Logto audience must be nonblank");
   const audience = response.logtoAudience;
-  if (response.logtoRedirects?.native !== NativeAuthCallback) throw new BootstrapContractError("native redirect URI does not match the application contract");
-  const clientId = platform === RuntimePlatform.Ios ? response.logtoClients?.ios : platform === RuntimePlatform.Android ? response.logtoClients?.android : response.logtoClients?.desktop;
-  if (clientId === undefined || !/^[\x21-\x7e]{1,256}$/u.test(clientId)) throw new BootstrapContractError("platform Logto client ID is missing or invalid");
-  const publicAssetBaseUrl = normalizePublicAssetUrl(response.publicAssetBaseUrl);
-  if (publicAssetBaseUrl === null) throw new BootstrapContractError("public asset base URL must be HTTPS or loopback HTTP without credentials, query, or fragment");
+  if (response.logtoRedirects?.native !== NativeAuthCallback)
+    throw new BootstrapContractError(
+      "native redirect URI does not match the application contract",
+    );
+  const clientId =
+    platform === RuntimePlatform.Ios
+      ? response.logtoClients?.ios
+      : platform === RuntimePlatform.Android
+        ? response.logtoClients?.android
+        : response.logtoClients?.desktop;
+  if (clientId === undefined || !/^[\x21-\x7e]{1,256}$/u.test(clientId))
+    throw new BootstrapContractError(
+      "platform Logto client ID is missing or invalid",
+    );
+  const publicAssetBaseUrl = normalizePublicAssetUrl(
+    response.publicAssetBaseUrl,
+  );
+  if (publicAssetBaseUrl === null)
+    throw new BootstrapContractError(
+      "public asset base URL must be HTTPS or loopback HTTP without credentials, query, or fragment",
+    );
   const capabilities = Object.freeze([...new Set(response.capabilities ?? [])]);
-  const officialUploads = capabilities.includes(StaticCapability.OFFICIAL_UPLOADS);
+  const officialUploads = capabilities.includes(
+    StaticCapability.OFFICIAL_UPLOADS,
+  );
   const advertisedUploadOrigin = response.officialUploadOrigin ?? "";
-  const officialUploadOrigin = advertisedUploadOrigin === "" ? null : normalizeNetworkOrigin(advertisedUploadOrigin);
-  if (officialUploads && officialUploadOrigin === null) throw new BootstrapContractError("official upload origin is required when official uploads are enabled");
-  if (!officialUploads && advertisedUploadOrigin !== "") throw new BootstrapContractError("official upload origin must be empty when official uploads are disabled");
-  return { issuer, audience, clientId, redirectUri: NativeAuthCallback, publicAssetBaseUrl, officialUploadOrigin, capabilities };
+  const officialUploadOrigin =
+    advertisedUploadOrigin === ""
+      ? null
+      : normalizeNetworkOrigin(advertisedUploadOrigin);
+  if (officialUploads && officialUploadOrigin === null)
+    throw new BootstrapContractError(
+      "official upload origin is required when official uploads are enabled",
+    );
+  if (!officialUploads && advertisedUploadOrigin !== "")
+    throw new BootstrapContractError(
+      "official upload origin must be empty when official uploads are disabled",
+    );
+  return {
+    issuer,
+    audience,
+    clientId,
+    redirectUri: NativeAuthCallback,
+    publicAssetBaseUrl,
+    officialUploadOrigin,
+    capabilities,
+  };
 }
 
 export function isTerminalAccessTokenError(reason: unknown): boolean {
-  return (reason instanceof LogtoClientError && reason.code === "not_authenticated")
-    || (isLogtoRequestError(reason) && reason.code === "invalid_grant");
+  return (
+    (reason instanceof LogtoClientError &&
+      reason.code === "not_authenticated") ||
+    (isLogtoRequestError(reason) && reason.code === "invalid_grant")
+  );
 }
 
 export class SecureLogtoStorage implements LogtoStorage<string> {
@@ -79,17 +150,29 @@ export class SecureLogtoStorage implements LogtoStorage<string> {
 
   async clear(): Promise<void> {
     await this.#enqueue(async () => {
-      await this.#bridge.request({ operation: "secure.remove", setting: this.#setting() });
+      await this.#bridge.request({
+        operation: "secure.remove",
+        setting: this.#setting(),
+      });
     });
   }
 
-  async #mutate(update: (values: Record<string, string>) => Record<string, string>): Promise<void> {
+  async #mutate(
+    update: (values: Record<string, string>) => Record<string, string>,
+  ): Promise<void> {
     await this.#enqueue(async () => {
       const next = update(await this.#read());
       if (Object.keys(next).length === 0) {
-        await this.#bridge.request({ operation: "secure.remove", setting: this.#setting() });
+        await this.#bridge.request({
+          operation: "secure.remove",
+          setting: this.#setting(),
+        });
       } else {
-        await this.#bridge.request({ operation: "secure.write", setting: this.#setting(), value: JSON.stringify(next) });
+        await this.#bridge.request({
+          operation: "secure.write",
+          setting: this.#setting(),
+          value: JSON.stringify(next),
+        });
       }
     });
   }
@@ -101,11 +184,20 @@ export class SecureLogtoStorage implements LogtoStorage<string> {
   }
 
   async #read(): Promise<Record<string, string>> {
-    const response = await this.#bridge.request({ operation: "secure.read", setting: this.#setting() });
+    const response = await this.#bridge.request({
+      operation: "secure.read",
+      setting: this.#setting(),
+    });
     if (response.kind !== "secure-value" || response.value === null) return {};
     try {
       const parsed: unknown = JSON.parse(response.value);
-      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed) || Object.values(parsed).some((value) => typeof value !== "string")) throw new Error();
+      if (
+        parsed === null ||
+        typeof parsed !== "object" ||
+        Array.isArray(parsed) ||
+        Object.values(parsed).some((value) => typeof value !== "string")
+      )
+        throw new Error();
       return parsed as Record<string, string>;
     } catch {
       throw new TypeError("secure Logto session is malformed");
@@ -113,7 +205,10 @@ export class SecureLogtoStorage implements LogtoStorage<string> {
   }
 
   #setting() {
-    return { kind: SecureSettingKind.LogtoSession, profileId: this.#profileId } as const;
+    return {
+      kind: SecureSettingKind.LogtoSession,
+      profileId: this.#profileId,
+    } as const;
   }
 }
 
@@ -127,31 +222,56 @@ export interface IdentitySession {
   readonly clear: () => Promise<void>;
 }
 
-export async function createIdentitySession(bootstrap: ValidatedBootstrap, apiOrigin: string, bridge: NativeBridgeV1 = nativeBridge): Promise<IdentitySession> {
-  const storage = new SecureLogtoStorage(bridge, await sessionProfileId(apiOrigin));
+export async function createIdentitySession(
+  bootstrap: ValidatedBootstrap,
+  apiOrigin: string,
+  bridge: NativeBridgeV1 = nativeBridge,
+): Promise<IdentitySession> {
+  const storage = new SecureLogtoStorage(
+    bridge,
+    await sessionProfileId(apiOrigin),
+  );
   const adapter: ClientAdapter = {
     requester: createRequester(fetch),
     storage,
     navigate: async (url, parameters) => {
       if (parameters.for === "post-sign-in") return;
-      await bridge.request({ operation: "auth.open-system-browser", url, issuer: bootstrap.issuer });
+      await bridge.request({
+        operation: "auth.open-system-browser",
+        url,
+        issuer: bootstrap.issuer,
+      });
     },
     generateState: () => randomBase64Url(32),
     generateCodeVerifier: () => randomBase64Url(64),
-    generateCodeChallenge: async (verifier) => base64Url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)))),
+    generateCodeChallenge: async (verifier) =>
+      base64Url(
+        new Uint8Array(
+          await crypto.subtle.digest(
+            "SHA-256",
+            new TextEncoder().encode(verifier),
+          ),
+        ),
+      ),
   };
   const endpoint = logtoEndpointFromIssuer(bootstrap.issuer);
-  if (endpoint === null) throw new BootstrapContractError("Logto issuer is invalid");
-  const client = new LogtoClient({ endpoint, appId: bootstrap.clientId, resources: [bootstrap.audience] }, adapter);
+  if (endpoint === null)
+    throw new BootstrapContractError("Logto issuer is invalid");
+  const client = new LogtoClient(
+    { endpoint, appId: bootstrap.clientId, resources: [bootstrap.audience] },
+    adapter,
+  );
   let currentAccessToken: Promise<string> | null = null;
   return {
     client,
     storage,
     getAccessToken: () => {
       if (currentAccessToken === null) {
-        const tracked = client.getAccessToken(bootstrap.audience).finally(() => {
-          if (currentAccessToken === tracked) currentAccessToken = null;
-        });
+        const tracked = client
+          .getAccessToken(bootstrap.audience)
+          .finally(() => {
+            if (currentAccessToken === tracked) currentAccessToken = null;
+          });
         currentAccessToken = tracked;
       }
       return currentAccessToken;
@@ -168,7 +288,12 @@ export async function createIdentitySession(bootstrap: ValidatedBootstrap, apiOr
 }
 
 export async function sessionProfileId(apiOrigin: string): Promise<string> {
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(new URL(apiOrigin).origin)));
+  const digest = new Uint8Array(
+    await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(new URL(apiOrigin).origin),
+    ),
+  );
   return `origin.${base64Url(digest)}`;
 }
 
@@ -181,5 +306,8 @@ function randomBase64Url(bytes: number): string {
 function base64Url(value: Uint8Array): string {
   let binary = "";
   for (const byte of value) binary += String.fromCharCode(byte);
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
+  return btoa(binary)
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/u, "");
 }

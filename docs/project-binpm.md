@@ -1,20 +1,25 @@
 # Project: binpm
 
 ## Goal
+
 Provide a Rust-based, Node-free binary package manager for installing and running command-line tools from release assets. `binpm` exists to replace dependency-heavy installer flows, especially npm-based global installers and `npx`-style execution paths that require Node.js even when the delivered artifact is only a native executable.
 
 ## Project ID
+
 `binpm`
 
 ## Domain Ownership Map
+
 - `crates/binpm`
 - `apps/public-docs/docs/binpm`
 
 ## Domain Contract Documents
+
 - `docs/crates-binpm-foundation.md`
 - `docs/apps-binpm-docs-foundation.md`
 
 ## Cross-Domain Invariants
+
 - Manual version selection and bot-owned release orchestration follow `docs/repository-workflow-contract.md`; the `Release Project` workflow supports patch, minor, and major increments while preserving this project’s existing distribution channels.
 - `binpm` is implemented as a Rust CLI under `crates/binpm`.
 - `apps/public-docs/docs/binpm` is the Rspress content root for `binpm`.
@@ -93,6 +98,7 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - `binpm` -> `crates/binpm`, `apps/public-docs/docs/binpm`
 
 ## Change Policy
+
 - Update this index and `docs/crates-binpm-foundation.md` together when CLI shape, local manifest or lockfile format, target selection, storage layout, cache behavior, security behavior, release distribution, installer behavior, or heuristic scoring changes.
 - Update this index and `docs/apps-binpm-docs-foundation.md` in the same change for the binpm content path, route, theme repository-link surface, toolchain, validation, production URL, or publication contract.
 - Update root `AGENTS.md`, `apps/AGENTS.md`, and `crates/AGENTS.md` when `binpm` ownership, planned path status, or repository policy boundaries change.
@@ -102,6 +108,7 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - `docs/project-template.md`
 - `docs/domain-template.md`
 - `docs/README.md`

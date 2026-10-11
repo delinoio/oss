@@ -62,7 +62,9 @@ function printPortConflict(portInUse) {
   console.error("");
   console.error("Recovery:");
 
-  console.error(`  1. Find the listener: pnpm exec clibox port list ${portInUse}`);
+  console.error(
+    `  1. Find the listener: pnpm exec clibox port list ${portInUse}`,
+  );
   console.error("  2. Stop that process, then rerun this command.");
 
   if (hasOverride) {
@@ -83,14 +85,7 @@ if (hasHostArg(rspressArgs)) {
 }
 
 const host = defaultHost;
-const args = [
-  command,
-  ...rspressArgs,
-  "--host",
-  host,
-  "--port",
-  String(port),
-];
+const args = [command, ...rspressArgs, "--host", host, "--port", String(port)];
 
 const isAvailable = await checkPortAvailable(port, host);
 if (!isAvailable) {

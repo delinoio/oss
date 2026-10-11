@@ -19,7 +19,9 @@ export const ADMIN_CSP = contentSecurityPolicy(BASE_CONNECT_SOURCES);
 
 export function developmentAdminCsp(rawIssuer: string | undefined): string {
   if (rawIssuer === undefined || rawIssuer.trim() === "") {
-    throw new Error("DEVHUD_LOGTO_ISSUER is required for DevHud Admin development");
+    throw new Error(
+      "DEVHUD_LOGTO_ISSUER is required for DevHud Admin development",
+    );
   }
 
   let issuer: URL;
@@ -52,7 +54,9 @@ function isLoopbackHost(hostname: string): boolean {
   const normalized = hostname.toLowerCase().replace(/\.$/u, "");
   if (normalized === "localhost" || normalized === "[::1]") return true;
   const octets = normalized.split(".");
-  return octets.length === 4 && octets[0] === "127" && octets.every(isIPv4Octet);
+  return (
+    octets.length === 4 && octets[0] === "127" && octets.every(isIPv4Octet)
+  );
 }
 
 function isIPv4Octet(value: string): boolean {

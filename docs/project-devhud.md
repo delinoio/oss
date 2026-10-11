@@ -207,6 +207,7 @@ Update this index, affected domain contracts, `docs/README.md`, and applicable r
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - [Repository environment contract](repository-environment-contract.md)
 - [Repository defaults](repository-defaults.md)
 - [Project index template](project-template.md)

@@ -27,7 +27,12 @@ const styles = paths.filter((file) =>
 const licenses = paths.filter((file) =>
   /^static\/js\/assets\/index\.[a-f0-9]{8}\.js\.LICENSE\.txt$/u.test(file),
 );
-const expected = ["index.html", ...styles, ...javascript, ...licenses].toSorted();
+const expected = [
+  "index.html",
+  ...styles,
+  ...javascript,
+  ...licenses,
+].toSorted();
 
 if (paths.some((file) => file.endsWith(".map"))) {
   throw new Error("Production source maps must not be emitted.");
@@ -38,11 +43,15 @@ if (styles.length !== 1 || javascript.length !== 1 || licenses.length !== 1) {
   );
 }
 if (JSON.stringify(paths) !== JSON.stringify(expected)) {
-  throw new Error(`Production output contains unexpected files: ${JSON.stringify(paths)}.`);
+  throw new Error(
+    `Production output contains unexpected files: ${JSON.stringify(paths)}.`,
+  );
 }
 for (const file of output) {
   if ((await stat(file)).size === 0) {
-    throw new Error(`Production output file is empty: ${relative(dist, file)}.`);
+    throw new Error(
+      `Production output file is empty: ${relative(dist, file)}.`,
+    );
   }
 }
 for (const asset of [...styles, ...javascript]) {

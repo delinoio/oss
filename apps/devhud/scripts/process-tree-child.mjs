@@ -6,11 +6,15 @@ import { fileURLToPath } from "node:url";
 const [mode, statusPath, managerPid] = process.argv.slice(2);
 
 if (mode === "manager") {
-  const child = spawn(process.execPath, [fileURLToPath(import.meta.url), "server", statusPath], {
-    shell: false,
-    stdio: "ignore",
-    windowsHide: true,
-  });
+  const child = spawn(
+    process.execPath,
+    [fileURLToPath(import.meta.url), "server", statusPath],
+    {
+      shell: false,
+      stdio: "ignore",
+      windowsHide: true,
+    },
+  );
 
   if (process.platform !== "win32") {
     // Model the managed Cargo/Tauri tree by reaping the server before the

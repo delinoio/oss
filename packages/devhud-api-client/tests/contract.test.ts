@@ -2,23 +2,44 @@ import type { DescMessage, DescService } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 
 import * as AccountQuery from "../src/gen/devhud/v1/account-AccountService_connectquery.js";
-import { AccountService, file_devhud_v1_account } from "../src/gen/devhud/v1/account_pb.js";
+import {
+  AccountService,
+  file_devhud_v1_account,
+} from "../src/gen/devhud/v1/account_pb.js";
 import * as AdminQuery from "../src/gen/devhud/v1/admin-AdminService_connectquery.js";
-import { AdminService, file_devhud_v1_admin } from "../src/gen/devhud/v1/admin_pb.js";
+import {
+  AdminService,
+  file_devhud_v1_admin,
+} from "../src/gen/devhud/v1/admin_pb.js";
 import * as BootstrapQuery from "../src/gen/devhud/v1/bootstrap-BootstrapService_connectquery.js";
-import { BootstrapService, file_devhud_v1_bootstrap } from "../src/gen/devhud/v1/bootstrap_pb.js";
+import {
+  BootstrapService,
+  file_devhud_v1_bootstrap,
+} from "../src/gen/devhud/v1/bootstrap_pb.js";
 import { file_devhud_v1_common } from "../src/gen/devhud/v1/common_pb.js";
 import * as DiagnosticsQuery from "../src/gen/devhud/v1/diagnostics-DiagnosticsService_connectquery.js";
-import { DiagnosticsService, file_devhud_v1_diagnostics } from "../src/gen/devhud/v1/diagnostics_pb.js";
+import {
+  DiagnosticsService,
+  file_devhud_v1_diagnostics,
+} from "../src/gen/devhud/v1/diagnostics_pb.js";
 import * as SettingsQuery from "../src/gen/devhud/v1/settings-SettingsService_connectquery.js";
-import { SettingsService, file_devhud_v1_settings } from "../src/gen/devhud/v1/settings_pb.js";
+import {
+  SettingsService,
+  file_devhud_v1_settings,
+} from "../src/gen/devhud/v1/settings_pb.js";
 import * as UploadQuery from "../src/gen/devhud/v1/upload-UploadService_connectquery.js";
-import { UploadService, file_devhud_v1_upload } from "../src/gen/devhud/v1/upload_pb.js";
+import {
+  UploadService,
+  file_devhud_v1_upload,
+} from "../src/gen/devhud/v1/upload_pb.js";
 
 const services: ReadonlyArray<[DescService, ReadonlyArray<string>]> = [
   [BootstrapService, ["GetBootstrap"]],
   [SettingsService, ["GetSettings", "ReplaceSettings"]],
-  [UploadService, ["CreateUpload", "FinalizeUpload", "ListUploads", "DeleteUpload"]],
+  [
+    UploadService,
+    ["CreateUpload", "FinalizeUpload", "ListUploads", "DeleteUpload"],
+  ],
   [AccountService, ["GetAccount", "DeleteAccount", "RestoreAccount"]],
   [DiagnosticsService, ["SubmitCrashReport"]],
   [
@@ -40,14 +61,18 @@ describe("devhud.v1 service contract", () => {
     expect(services.flatMap(([service]) => service.methods)).toHaveLength(18);
     for (const [service, expected] of services) {
       expect(service.methods.map((method) => method.name)).toEqual(expected);
-      expect(service.methods.every((method) => method.methodKind === "unary")).toBe(true);
+      expect(
+        service.methods.every((method) => method.methodKind === "unary"),
+      ).toBe(true);
     }
   });
 
   it("puts response correlation metadata on every successful response", () => {
     for (const [service] of services) {
       for (const method of service.methods) {
-        expect(method.output.field.metadata?.message?.typeName).toBe("devhud.v1.ResponseMetadata");
+        expect(method.output.field.metadata?.message?.typeName).toBe(
+          "devhud.v1.ResponseMetadata",
+        );
       }
     }
   });
@@ -61,7 +86,11 @@ describe("devhud.v1 service contract", () => {
       "listUploads",
       "deleteUpload",
     ]);
-    expectExactQueryExports(AccountQuery, ["getAccount", "deleteAccount", "restoreAccount"]);
+    expectExactQueryExports(AccountQuery, [
+      "getAccount",
+      "deleteAccount",
+      "restoreAccount",
+    ]);
     expectExactQueryExports(DiagnosticsQuery, ["submitCrashReport"]);
     expectExactQueryExports(AdminQuery, [
       "listUsers",
@@ -104,13 +133,20 @@ describe("devhud.v1 service contract", () => {
     for (const file of files) {
       for (const message of file.messages) {
         for (const field of message.fields) {
-          expect(forbiddenFields.has(field.name), `${message.typeName}.${field.name}`).toBe(false);
+          expect(
+            forbiddenFields.has(field.name),
+            `${message.typeName}.${field.name}`,
+          ).toBe(false);
         }
       }
     }
 
     const reachable = collectReachableAdminMessages(AdminService);
-    expect([...reachable].some((message) => message.typeName === "devhud.v1.SettingsSnapshot")).toBe(false);
+    expect(
+      [...reachable].some(
+        (message) => message.typeName === "devhud.v1.SettingsSnapshot",
+      ),
+    ).toBe(false);
     expect(
       [...reachable].some(
         (message) =>
@@ -118,24 +154,35 @@ describe("devhud.v1 service contract", () => {
           message.typeName === "devhud.v1.UploadReservation",
       ),
     ).toBe(false);
-    expect([...reachable].some((message) => message.field.canonicalJson !== undefined)).toBe(false);
+    expect(
+      [...reachable].some(
+        (message) => message.field.canonicalJson !== undefined,
+      ),
+    ).toBe(false);
     expect(
       [...reachable].some((message) =>
         message.fields.some(
-          (field) => field.name === "public_url" || field.name === "signed_put_url",
+          (field) =>
+            field.name === "public_url" || field.name === "signed_put_url",
         ),
       ),
     ).toBe(false);
   });
 });
 
-function expectExactQueryExports(namespace: object, expected: ReadonlyArray<string>): void {
+function expectExactQueryExports(
+  namespace: object,
+  expected: ReadonlyArray<string>,
+): void {
   expect(Object.keys(namespace).sort()).toEqual([...expected].sort());
 }
 
 function collectReachableAdminMessages(service: DescService): Set<DescMessage> {
   const seen = new Set<DescMessage>();
-  const pending = service.methods.flatMap((method) => [method.input, method.output]);
+  const pending = service.methods.flatMap((method) => [
+    method.input,
+    method.output,
+  ]);
 
   while (pending.length > 0) {
     const message = pending.pop();

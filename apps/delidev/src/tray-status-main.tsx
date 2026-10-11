@@ -4,5 +4,8 @@
 import { createRoot } from "react-dom/client";
 import { TrayStatus, trayPanelBridge } from "./tray-status";
 import "./themes.css";
-const instance = new URLSearchParams(window.location.search).get("instance") ?? "";
-createRoot(document.getElementById("root")!).render(<TrayStatus instance={instance} bridge={trayPanelBridge(instance)} />);
+const instance =
+  new URLSearchParams(window.location.search).get("instance") ?? "";
+createRoot(document.getElementById("root")!).render(
+  <TrayStatus instance={instance} bridge={trayPanelBridge(instance)} />,
+);

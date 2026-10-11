@@ -1,11 +1,6 @@
 {
   "identifier": "main",
   "description": "Only local main webview lifecycle events; remote documents receive no native permissions.",
-  "windows": [
-    "main"
-  ],
-  "permissions": [
-    "core:event:allow-listen",
-    "core:event:allow-unlisten"
-  ]
+  "windows": ["main"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
 }

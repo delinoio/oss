@@ -10,7 +10,10 @@ import {
   QuotaKind,
 } from "../src/gen/devhud/v1/common_pb.js";
 import { SettingsRevisionConflictSchema } from "../src/gen/devhud/v1/settings_pb.js";
-import { UploadFailureReason, UploadFailureSchema } from "../src/gen/devhud/v1/upload_pb.js";
+import {
+  UploadFailureReason,
+  UploadFailureSchema,
+} from "../src/gen/devhud/v1/upload_pb.js";
 import { mapDevHudError } from "../src/error.js";
 
 const correlationId = "018f47a2-7b3c-7def-8abc-1234567890ab";
@@ -63,9 +66,13 @@ describe("Connect error mapping", () => {
   });
 
   it("uses the exposed response header when typed metadata is unavailable", () => {
-    const error = new ConnectError("missing credentials", Code.Unauthenticated, {
-      "x-devhud-correlation-id": correlationId,
-    });
+    const error = new ConnectError(
+      "missing credentials",
+      Code.Unauthenticated,
+      {
+        "x-devhud-correlation-id": correlationId,
+      },
+    );
     expect(mapDevHudError(error)).toMatchObject({
       kind: "unauthenticated",
       correlationId,
@@ -87,6 +94,9 @@ function connectError<Desc extends DescMessage>(
 ): ConnectError {
   return new ConnectError("contracted failure", code, undefined, [
     { desc, value },
-    { desc: ErrorMetadataSchema, value: { correlationId: { value: correlationId } } },
+    {
+      desc: ErrorMetadataSchema,
+      value: { correlationId: { value: correlationId } },
+    },
   ]);
 }

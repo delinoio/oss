@@ -14,12 +14,18 @@ for (const [title, valid] of [
   ["a".repeat(250) + "가😀", false],
 ]) {
   test(`validates ${new TextEncoder().encode(title).length} UTF-8 bytes`, () => {
-    assert.deepEqual(validateSessionName(title, fallback), { name: title, valid });
+    assert.deepEqual(validateSessionName(title, fallback), {
+      name: title,
+      valid,
+    });
   });
 }
 test("validates the trimmed payload without truncating the draft", () => {
   const name = "가".repeat(84) + "😀";
-  assert.deepEqual(validateSessionName(`  ${name}  `, fallback), { name, valid: true });
+  assert.deepEqual(validateSessionName(`  ${name}  `, fallback), {
+    name,
+    valid: true,
+  });
 });
 test("validates the exact localized empty-title fallback", () => {
   for (const name of [fallback, "새 세션", "가".repeat(100)]) {

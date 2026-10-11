@@ -11,7 +11,15 @@ import {
   StaticCapability,
   UploadState,
 } from "@delinoio/devhud-api-client";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
@@ -84,9 +92,18 @@ beforeEach(() => {
   runtime.fromBootstrap.mockReturnValue(runtime.auth);
   runtime.auth.completeCallback.mockResolvedValue(false);
   runtime.auth.isAuthenticated.mockResolvedValue(true);
-  runtime.client.listUsers.mockResolvedValue({ users: [user], nextPageToken: "" });
-  runtime.client.listUploads.mockResolvedValue({ uploads: [upload], nextPageToken: "" });
-  runtime.client.listAuditEvents.mockResolvedValue({ auditEvents: [], nextPageToken: "" });
+  runtime.client.listUsers.mockResolvedValue({
+    users: [user],
+    nextPageToken: "",
+  });
+  runtime.client.listUploads.mockResolvedValue({
+    uploads: [upload],
+    nextPageToken: "",
+  });
+  runtime.client.listAuditEvents.mockResolvedValue({
+    auditEvents: [],
+    nextPageToken: "",
+  });
   HTMLDialogElement.prototype.showModal = function showModal() {
     this.setAttribute("open", "");
   };
@@ -96,10 +113,14 @@ afterEach(cleanup);
 
 describe("administrator console review regressions", () => {
   it("falls back to the browser locale when Web Storage is unavailable", async () => {
-    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-      throw new DOMException("Storage is unavailable", "SecurityError");
-    });
-    const language = vi.spyOn(navigator, "language", "get").mockReturnValue("ko-KR");
+    const getItem = vi
+      .spyOn(Storage.prototype, "getItem")
+      .mockImplementation(() => {
+        throw new DOMException("Storage is unavailable", "SecurityError");
+      });
+    const language = vi
+      .spyOn(navigator, "language", "get")
+      .mockReturnValue("ko-KR");
 
     try {
       render(<App />);
@@ -112,9 +133,11 @@ describe("administrator console review regressions", () => {
   });
 
   it("switches locale in memory when Web Storage writes are unavailable", async () => {
-    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new DOMException("Storage is unavailable", "SecurityError");
-    });
+    const setItem = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(() => {
+        throw new DOMException("Storage is unavailable", "SecurityError");
+      });
     try {
       render(<App />);
       await screen.findByText("Identity");
@@ -128,9 +151,13 @@ describe("administrator console review regressions", () => {
 
   it("surfaces a retryable sign-in start failure", async () => {
     runtime.auth.isAuthenticated.mockResolvedValue(false);
-    runtime.auth.begin.mockRejectedValueOnce(new DOMException("Storage is unavailable", "SecurityError"));
+    runtime.auth.begin.mockRejectedValueOnce(
+      new DOMException("Storage is unavailable", "SecurityError"),
+    );
     render(<App />);
-    const signIn = await screen.findByRole("button", { name: "Sign in with Logto" });
+    const signIn = await screen.findByRole("button", {
+      name: "Sign in with Logto",
+    });
     fireEvent.click(signIn);
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Sign-in could not start. Allow browser session storage, then try again.",
@@ -144,7 +171,9 @@ describe("administrator console review regressions", () => {
   it("offers a fresh sign-in after an unusable callback is discarded", async () => {
     runtime.auth.isAuthenticated.mockResolvedValue(false);
     render(<App />);
-    expect(await screen.findByRole("button", { name: "Sign in with Logto" })).toBeTruthy();
+    expect(
+      await screen.findByRole("button", { name: "Sign in with Logto" }),
+    ).toBeTruthy();
   });
 
   it("single-flights initialization across StrictMode effect replays", async () => {
@@ -177,9 +206,11 @@ describe("administrator console review regressions", () => {
   it("renders correlated initialization failures and retries explicitly", async () => {
     const correlationId = "018f7c1e-7b4a-7abc-8def-0123456789be";
     runtime.getBootstrap
-      .mockRejectedValueOnce(new ConnectError("temporarily unavailable", Code.Unavailable, {
-        "x-devhud-correlation-id": correlationId,
-      }))
+      .mockRejectedValueOnce(
+        new ConnectError("temporarily unavailable", Code.Unavailable, {
+          "x-devhud-correlation-id": correlationId,
+        }),
+      )
       .mockResolvedValueOnce({
         capabilities: [StaticCapability.OFFICIAL_UPLOADS],
         publicAssetBaseUrl: "https://assets.example.com/uploads/",
@@ -187,7 +218,9 @@ describe("administrator console review regressions", () => {
 
     render(<App />);
     expect(
-      await screen.findByText("The administrator service is temporarily unavailable. Try again."),
+      await screen.findByText(
+        "The administrator service is temporarily unavailable. Try again.",
+      ),
     ).toBeTruthy();
     expect(screen.getByText(correlationId)).toBeTruthy();
 
@@ -203,13 +236,17 @@ describe("administrator console review regressions", () => {
       .mockResolvedValueOnce({ users: [], nextPageToken: "" });
     render(<App />);
     const search = await screen.findByRole("search");
-    const input = screen.getByPlaceholderText("Search by name, email, or Logto subject");
+    const input = screen.getByPlaceholderText(
+      "Search by name, email, or Logto subject",
+    );
     fireEvent.change(input, { target: { value: "submitted" } });
     fireEvent.submit(search);
     await screen.findByRole("button", { name: "Load more" });
     fireEvent.change(input, { target: { value: "draft" } });
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
-    await waitFor(() => expect(runtime.client.listUsers).toHaveBeenCalledTimes(3));
+    await waitFor(() =>
+      expect(runtime.client.listUsers).toHaveBeenCalledTimes(3),
+    );
     expect(runtime.client.listUsers.mock.calls[2]?.[0]).toMatchObject({
       query: "submitted",
       page: { pageToken: "scoped-token" },
@@ -217,7 +254,10 @@ describe("administrator console review regressions", () => {
   });
 
   it("prevents duplicate user continuation requests", async () => {
-    type UserListResponse = { users: Array<typeof user>; nextPageToken: string };
+    type UserListResponse = {
+      users: Array<typeof user>;
+      nextPageToken: string;
+    };
     let resolveContinuation = (_response: UserListResponse) => {};
     const continuation = new Promise<UserListResponse>((resolve) => {
       resolveContinuation = resolve;
@@ -246,7 +286,10 @@ describe("administrator console review regressions", () => {
   });
 
   it("ignores user responses superseded by a newer search", async () => {
-    type UserListResponse = { users: Array<typeof user>; nextPageToken: string };
+    type UserListResponse = {
+      users: Array<typeof user>;
+      nextPageToken: string;
+    };
     let resolveInitial = (_response: UserListResponse) => {};
     const initial = new Promise<UserListResponse>((resolve) => {
       resolveInitial = resolve;
@@ -267,9 +310,12 @@ describe("administrator console review regressions", () => {
 
     render(<App />);
     const search = await screen.findByRole("search");
-    fireEvent.change(screen.getByPlaceholderText("Search by name, email, or Logto subject"), {
-      target: { value: "newer" },
-    });
+    fireEvent.change(
+      screen.getByPlaceholderText("Search by name, email, or Logto subject"),
+      {
+        target: { value: "newer" },
+      },
+    );
     fireEvent.submit(search);
     expect(await screen.findByText("Newer Result")).toBeTruthy();
 
@@ -285,13 +331,17 @@ describe("administrator console review regressions", () => {
   it("rejects search input exceeding 512 UTF-8 bytes before submission", async () => {
     render(<App />);
     const search = await screen.findByRole("search");
-    const input = screen.getByPlaceholderText("Search by name, email, or Logto subject");
+    const input = screen.getByPlaceholderText(
+      "Search by name, email, or Logto subject",
+    );
     const submit = within(search).getByRole("button", { name: "Users" });
 
     fireEvent.change(input, { target: { value: "가".repeat(171) } });
     expect((submit as HTMLButtonElement).disabled).toBe(true);
     expect(
-      screen.getByText("Search text must be no longer than 512 bytes of UTF-8."),
+      screen.getByText(
+        "Search text must be no longer than 512 bytes of UTF-8.",
+      ),
     ).toBeTruthy();
     fireEvent.submit(search);
     expect(runtime.client.listUsers).toHaveBeenCalledOnce();
@@ -299,13 +349,17 @@ describe("administrator console review regressions", () => {
     fireEvent.change(input, { target: { value: "가".repeat(170) } });
     expect((submit as HTMLButtonElement).disabled).toBe(false);
     fireEvent.submit(search);
-    await waitFor(() => expect(runtime.client.listUsers).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(runtime.client.listUsers).toHaveBeenCalledTimes(2),
+    );
   });
 
   it("validates the normalized full-case-folded search size", async () => {
     render(<App />);
     const search = await screen.findByRole("search");
-    const input = screen.getByPlaceholderText("Search by name, email, or Logto subject");
+    const input = screen.getByPlaceholderText(
+      "Search by name, email, or Logto subject",
+    );
     const submit = within(search).getByRole("button", { name: "Users" });
 
     fireEvent.change(input, { target: { value: "İ".repeat(171) } });
@@ -316,7 +370,9 @@ describe("administrator console review regressions", () => {
     fireEvent.change(input, { target: { value: "İ".repeat(170) } });
     expect((submit as HTMLButtonElement).disabled).toBe(false);
     fireEvent.submit(search);
-    await waitFor(() => expect(runtime.client.listUsers).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(runtime.client.listUsers).toHaveBeenCalledTimes(2),
+    );
     expect(runtime.client.listUsers.mock.calls[1]?.[0]).toMatchObject({
       query: "i\u0307".repeat(170),
     });
@@ -342,10 +398,14 @@ describe("administrator console review regressions", () => {
     const second = new Promise<UsageResponse>((resolve) => {
       resolveSecond = resolve;
     });
-    runtime.client.getUserUsage.mockReturnValueOnce(first).mockReturnValueOnce(second);
+    runtime.client.getUserUsage
+      .mockReturnValueOnce(first)
+      .mockReturnValueOnce(second);
 
     render(<App />);
-    const usageButtons = await screen.findAllByRole("button", { name: "Usage and quota" });
+    const usageButtons = await screen.findAllByRole("button", {
+      name: "Usage and quota",
+    });
     fireEvent.click(usageButtons[0]);
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     fireEvent.click(usageButtons[1]);
@@ -354,26 +414,36 @@ describe("administrator console review regressions", () => {
       resolveSecond({ counters: [] });
       await second;
     });
-    expect(within(screen.getByRole("dialog")).getByText("Other User")).toBeTruthy();
+    expect(
+      within(screen.getByRole("dialog")).getByText("Other User"),
+    ).toBeTruthy();
 
     await act(async () => {
       resolveFirst({ counters: [] });
       await first;
     });
-    expect(within(screen.getByRole("dialog")).getByText("Other User")).toBeTruthy();
-    expect(within(screen.getByRole("dialog")).queryByText("Target User")).toBeNull();
+    expect(
+      within(screen.getByRole("dialog")).getByText("Other User"),
+    ).toBeTruthy();
+    expect(
+      within(screen.getByRole("dialog")).queryByText("Target User"),
+    ).toBeNull();
   });
 
   it("renders and retries typed quota errors with correlation metadata", async () => {
     const correlationId = "018f7c1e-7b4a-7abc-8def-0123456789bd";
     runtime.client.getUserUsage
-      .mockRejectedValueOnce(new ConnectError("temporarily unavailable", Code.Unavailable, {
-        "x-devhud-correlation-id": correlationId,
-      }))
+      .mockRejectedValueOnce(
+        new ConnectError("temporarily unavailable", Code.Unavailable, {
+          "x-devhud-correlation-id": correlationId,
+        }),
+      )
       .mockResolvedValueOnce({ counters: [] });
 
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: "Usage and quota" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Usage and quota" }),
+    );
     const dialog = await screen.findByRole("dialog");
     expect(
       await within(dialog).findByText(
@@ -382,23 +452,29 @@ describe("administrator console review regressions", () => {
     ).toBeTruthy();
     expect(within(dialog).getByText(correlationId)).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: "Retry" }));
-    expect(await within(dialog).findByText("No records match these filters.")).toBeTruthy();
+    expect(
+      await within(dialog).findByText("No records match these filters."),
+    ).toBeTruthy();
     expect(runtime.client.getUserUsage).toHaveBeenCalledTimes(2);
   });
 
   it("renders the submission identifier for submission-scoped quotas", async () => {
     const submissionId = { value: "018f7c1e-7b4a-7abc-8def-0123456789bb" };
     runtime.client.getUserUsage.mockResolvedValue({
-      counters: [{
-        quota: QuotaKind.SUBMISSION_IMAGES,
-        used: 9n,
-        limit: 10n,
-        submissionId,
-      }],
+      counters: [
+        {
+          quota: QuotaKind.SUBMISSION_IMAGES,
+          used: 9n,
+          limit: 10n,
+          submissionId,
+        },
+      ],
     });
 
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: "Usage and quota" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Usage and quota" }),
+    );
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText(submissionId.value)).toBeTruthy();
     expect(within(dialog).getByText("9 / 10")).toBeTruthy();
@@ -406,11 +482,13 @@ describe("administrator console review regressions", () => {
 
   it("renders account deletion independently from administrative blocking", async () => {
     runtime.client.listUsers.mockResolvedValue({
-      users: [{
-        ...user,
-        deletionState: AccountDeletionState.PENDING,
-        recoverableUntil: { seconds: 1_776_427_200n, nanos: 0 },
-      }],
+      users: [
+        {
+          ...user,
+          deletionState: AccountDeletionState.PENDING,
+          recoverableUntil: { seconds: 1_776_427_200n, nanos: 0 },
+        },
+      ],
       nextPageToken: "",
     });
 
@@ -418,7 +496,9 @@ describe("administrator console review regressions", () => {
     const blockLabel = await screen.findByText("Administrative block");
     expect(blockLabel.nextElementSibling?.textContent).toBe("Unblocked");
     const deletionLabel = screen.getByText("Account deletion");
-    expect(deletionLabel.nextElementSibling?.textContent).toBe("Deletion pending");
+    expect(deletionLabel.nextElementSibling?.textContent).toBe(
+      "Deletion pending",
+    );
     const recoveryLabel = screen.getByText("Recoverable until");
     expect(recoveryLabel.nextElementSibling?.textContent).not.toBe("—");
   });
@@ -444,8 +524,12 @@ describe("administrator console review regressions", () => {
     await screen.findByText("Target User");
     fireEvent.click(screen.getByRole("button", { name: "Uploads" }));
 
-    expect(await screen.findByRole("columnheader", { name: "Owner user" })).toBeTruthy();
-    expect(screen.getByRole("columnheader", { name: "Submission" })).toBeTruthy();
+    expect(
+      await screen.findByRole("columnheader", { name: "Owner user" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("columnheader", { name: "Submission" }),
+    ).toBeTruthy();
     expect(screen.getByText(upload.ownerUserId.value)).toBeTruthy();
     expect(screen.getByText(upload.submissionId.value)).toBeTruthy();
 
@@ -470,7 +554,10 @@ describe("administrator console review regressions", () => {
       uploadId: { value: "018f7c1e-7b4a-7abc-8def-0123456789b3" },
     };
     runtime.client.listUploads
-      .mockResolvedValueOnce({ uploads: [upload], nextPageToken: "upload-token" })
+      .mockResolvedValueOnce({
+        uploads: [upload],
+        nextPageToken: "upload-token",
+      })
       .mockReturnValueOnce(continuation);
 
     render(<App />);
@@ -510,7 +597,10 @@ describe("administrator console review regressions", () => {
       resolveContinuation = resolve;
     });
     runtime.client.listAuditEvents
-      .mockResolvedValueOnce({ auditEvents: [firstEvent], nextPageToken: "audit-token" })
+      .mockResolvedValueOnce({
+        auditEvents: [firstEvent],
+        nextPageToken: "audit-token",
+      })
       .mockReturnValueOnce(continuation);
 
     render(<App />);
@@ -534,15 +624,17 @@ describe("administrator console review regressions", () => {
     const targetUserId = { value: "018f7c1e-7b4a-7abc-8def-0123456789b8" };
     const targetUploadId = { value: "018f7c1e-7b4a-7abc-8def-0123456789b9" };
     runtime.client.listAuditEvents.mockResolvedValue({
-      auditEvents: [{
-        auditEventId: { value: "018f7c1e-7b4a-7abc-8def-0123456789ba" },
-        action: AuditAction.UPLOAD_DELETED,
-        outcome: AuditOutcome.REJECTED,
-        rejectionReason: AuditRejectionReason.INVALID_ARGUMENT,
-        actorUserId,
-        targetUserId,
-        targetUploadId,
-      }],
+      auditEvents: [
+        {
+          auditEventId: { value: "018f7c1e-7b4a-7abc-8def-0123456789ba" },
+          action: AuditAction.UPLOAD_DELETED,
+          outcome: AuditOutcome.REJECTED,
+          rejectionReason: AuditRejectionReason.INVALID_ARGUMENT,
+          actorUserId,
+          targetUserId,
+          targetUploadId,
+        },
+      ],
       nextPageToken: "",
     });
 
@@ -563,14 +655,18 @@ describe("administrator console review regressions", () => {
   it("renders correlated unavailable errors and retries from the first page", async () => {
     const correlationId = "018f7c1e-7b4a-7abc-8def-0123456789b2";
     runtime.client.listUsers
-      .mockRejectedValueOnce(new ConnectError("temporarily unavailable", Code.Unavailable, {
-        "x-devhud-correlation-id": correlationId,
-      }))
+      .mockRejectedValueOnce(
+        new ConnectError("temporarily unavailable", Code.Unavailable, {
+          "x-devhud-correlation-id": correlationId,
+        }),
+      )
       .mockResolvedValueOnce({ users: [user], nextPageToken: "" });
 
     render(<App />);
     expect(
-      await screen.findByText("The administrator service is temporarily unavailable. Try again."),
+      await screen.findByText(
+        "The administrator service is temporarily unavailable. Try again.",
+      ),
     ).toBeTruthy();
     expect(screen.getByText(correlationId)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
@@ -582,12 +678,17 @@ describe("administrator console review regressions", () => {
 
   it("renders the typed pagination recovery path", async () => {
     runtime.client.listUsers.mockRejectedValueOnce(
-      new ConnectError("page token scope mismatch", Code.InvalidArgument, undefined, [
-        {
-          desc: PaginationFailureSchema,
-          value: { reason: PaginationFailureReason.TOKEN_SCOPE_MISMATCH },
-        },
-      ]),
+      new ConnectError(
+        "page token scope mismatch",
+        Code.InvalidArgument,
+        undefined,
+        [
+          {
+            desc: PaginationFailureSchema,
+            value: { reason: PaginationFailureReason.TOKEN_SCOPE_MISMATCH },
+          },
+        ],
+      ),
     );
 
     render(<App />);
@@ -621,7 +722,9 @@ describe("administrator console review regressions", () => {
     });
     render(<App />);
     await screen.findByText("Target User");
-    expect(screen.queryByRole("button", { name: "Usage and quota" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Usage and quota" }),
+    ).toBeNull();
   });
 
   it("validates mutation reasons by shared UTF-8 and sensitive-content rules", async () => {
@@ -637,12 +740,20 @@ describe("administrator console review regressions", () => {
     expect((submit as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(reason, { target: { value: "가".repeat(1366) } });
     expect((submit as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText("Enter a safe reason no longer than 4 KiB of UTF-8.")).toBeTruthy();
-    fireEvent.change(reason, { target: { value: "See /Users/example/private/incident.txt" } });
+    expect(
+      screen.getByText("Enter a safe reason no longer than 4 KiB of UTF-8."),
+    ).toBeTruthy();
+    fireEvent.change(reason, {
+      target: { value: "See /Users/example/private/incident.txt" },
+    });
     expect((submit as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(reason, { target: { value: "Reviewed policy\0violation" } });
+    fireEvent.change(reason, {
+      target: { value: "Reviewed policy\0violation" },
+    });
     expect((submit as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(reason, { target: { value: "Reviewed the policy violation." } });
+    fireEvent.change(reason, {
+      target: { value: "Reviewed the policy violation." },
+    });
     expect((submit as HTMLButtonElement).disabled).toBe(false);
   });
 
@@ -655,22 +766,30 @@ describe("administrator console review regressions", () => {
     fireEvent.change(screen.getByLabelText("Reason"), {
       target: { value: " \tCafe\u0301 reviewed.\n" },
     });
-    fireEvent.click(screen.getByLabelText("I understand this action is destructive."));
+    fireEvent.click(
+      screen.getByLabelText("I understand this action is destructive."),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
-    await waitFor(() => expect(runtime.client.setUserBlocked).toHaveBeenCalledWith(
-      expect.objectContaining({ reason: "Café reviewed." }),
-    ));
+    await waitFor(() =>
+      expect(runtime.client.setUserBlocked).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: "Café reviewed." }),
+      ),
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Uploads" }));
     fireEvent.click(await screen.findByRole("button", { name: "Quarantine" }));
     fireEvent.change(screen.getByLabelText("Reason"), {
       target: { value: " \tCafe\u0301 upload reviewed.\n" },
     });
-    fireEvent.click(screen.getByLabelText("I understand this action is destructive."));
+    fireEvent.click(
+      screen.getByLabelText("I understand this action is destructive."),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
-    await waitFor(() => expect(runtime.client.quarantineUpload).toHaveBeenCalledWith(
-      expect.objectContaining({ reason: "Café upload reviewed." }),
-    ));
+    await waitFor(() =>
+      expect(runtime.client.quarantineUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: "Café upload reviewed." }),
+      ),
+    );
   });
 
   it("keeps a user mutation dialog open while its request is pending", async () => {
@@ -685,11 +804,18 @@ describe("administrator console review regressions", () => {
     fireEvent.change(screen.getByLabelText("Reason"), {
       target: { value: "Reviewed the policy violation." },
     });
-    fireEvent.click(screen.getByLabelText("I understand this action is destructive."));
+    fireEvent.click(
+      screen.getByLabelText("I understand this action is destructive."),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     const dialog = screen.getByRole("dialog");
-    expect((within(dialog).getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled)
-      .toBe(true);
+    expect(
+      (
+        within(dialog).getByRole("button", {
+          name: "Cancel",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
     fireEvent(dialog, new Event("cancel", { bubbles: true, cancelable: true }));
     expect(screen.getByRole("dialog")).toBeTruthy();
 
@@ -714,11 +840,18 @@ describe("administrator console review regressions", () => {
     fireEvent.change(screen.getByLabelText("Reason"), {
       target: { value: "Reviewed the uploaded object." },
     });
-    fireEvent.click(screen.getByLabelText("I understand this action is destructive."));
+    fireEvent.click(
+      screen.getByLabelText("I understand this action is destructive."),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     const dialog = screen.getByRole("dialog");
-    expect((within(dialog).getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled)
-      .toBe(true);
+    expect(
+      (
+        within(dialog).getByRole("button", {
+          name: "Cancel",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
     fireEvent(dialog, new Event("cancel", { bubbles: true, cancelable: true }));
     expect(screen.getByRole("dialog")).toBeTruthy();
 
@@ -730,29 +863,41 @@ describe("administrator console review regressions", () => {
   });
 
   it("reloads user and upload records after concurrent mutation conflicts", async () => {
-    runtime.client.setUserBlocked.mockRejectedValue(new ConnectError("changed", Code.Aborted));
-    runtime.client.quarantineUpload.mockRejectedValue(new ConnectError("changed", Code.Aborted));
+    runtime.client.setUserBlocked.mockRejectedValue(
+      new ConnectError("changed", Code.Aborted),
+    );
+    runtime.client.quarantineUpload.mockRejectedValue(
+      new ConnectError("changed", Code.Aborted),
+    );
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Block" }));
     fireEvent.change(screen.getByLabelText("Reason"), {
       target: { value: "Reviewed the policy violation." },
     });
-    fireEvent.click(screen.getByLabelText("I understand this action is destructive."));
+    fireEvent.click(
+      screen.getByLabelText("I understand this action is destructive."),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     await screen.findByText(
       "The record changed. Current data was reloaded; review it before trying again.",
     );
-    await waitFor(() => expect(runtime.client.listUsers).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(runtime.client.listUsers).toHaveBeenCalledTimes(2),
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Uploads" }));
     fireEvent.click(await screen.findByRole("button", { name: "Quarantine" }));
     fireEvent.change(screen.getByLabelText("Reason"), {
       target: { value: "Reviewed the uploaded object." },
     });
-    fireEvent.click(screen.getByLabelText("I understand this action is destructive."));
+    fireEvent.click(
+      screen.getByLabelText("I understand this action is destructive."),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
-    await waitFor(() => expect(runtime.client.listUploads).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(runtime.client.listUploads).toHaveBeenCalledTimes(2),
+    );
     expect(
       screen.getByText(
         "The record changed. Current data was reloaded; review it before trying again.",
@@ -765,26 +910,40 @@ describe("administrator console review regressions", () => {
     const uploadCorrelation = "018f7c1e-7b4a-7abc-8def-0123456789b7";
     const internalCorrelation = "018f7c1e-7b4a-7abc-8def-0123456789b8";
     runtime.client.setUserBlocked
-      .mockRejectedValueOnce(new ConnectError("forbidden", Code.PermissionDenied))
-      .mockRejectedValueOnce(new ConnectError("expired", Code.Unauthenticated, {
-        "x-devhud-correlation-id": sessionCorrelation,
-      }));
+      .mockRejectedValueOnce(
+        new ConnectError("forbidden", Code.PermissionDenied),
+      )
+      .mockRejectedValueOnce(
+        new ConnectError("expired", Code.Unauthenticated, {
+          "x-devhud-correlation-id": sessionCorrelation,
+        }),
+      );
     runtime.client.quarantineUpload
-      .mockRejectedValueOnce(new ConnectError("temporarily unavailable", Code.Unavailable, {
-        "x-devhud-correlation-id": uploadCorrelation,
-      }))
-      .mockRejectedValueOnce(new ConnectError("unknown outcome", Code.Internal, {
-        "x-devhud-correlation-id": internalCorrelation,
-      }));
+      .mockRejectedValueOnce(
+        new ConnectError("temporarily unavailable", Code.Unavailable, {
+          "x-devhud-correlation-id": uploadCorrelation,
+        }),
+      )
+      .mockRejectedValueOnce(
+        new ConnectError("unknown outcome", Code.Internal, {
+          "x-devhud-correlation-id": internalCorrelation,
+        }),
+      );
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Block" }));
     fireEvent.change(screen.getByLabelText("Reason"), {
       target: { value: "Reviewed the policy violation." },
     });
-    fireEvent.click(screen.getByLabelText("I understand this action is destructive."));
+    fireEvent.click(
+      screen.getByLabelText("I understand this action is destructive."),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
-    expect(await screen.findByText("You need the devhud-admin role to use this console.")).toBeTruthy();
+    expect(
+      await screen.findByText(
+        "You need the devhud-admin role to use this console.",
+      ),
+    ).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     expect(
@@ -800,7 +959,9 @@ describe("administrator console review regressions", () => {
     fireEvent.change(screen.getByLabelText("Reason"), {
       target: { value: "Reviewed the uploaded object." },
     });
-    fireEvent.click(screen.getByLabelText("I understand this action is destructive."));
+    fireEvent.click(
+      screen.getByLabelText("I understand this action is destructive."),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     expect(
       await screen.findByText(
@@ -821,12 +982,14 @@ describe("administrator console review regressions", () => {
   it("renders administrator labels and enum values in Korean", async () => {
     localStorage.setItem("devhud.admin.locale", "ko");
     runtime.client.listAuditEvents.mockResolvedValue({
-      auditEvents: [{
-        auditEventId: { value: "018f7c1e-7b4a-7abc-8def-0123456789aa" },
-        action: AuditAction.USER_BLOCKED,
-        outcome: AuditOutcome.REJECTED,
-        rejectionReason: AuditRejectionReason.INVALID_ARGUMENT,
-      }],
+      auditEvents: [
+        {
+          auditEventId: { value: "018f7c1e-7b4a-7abc-8def-0123456789aa" },
+          action: AuditAction.USER_BLOCKED,
+          outcome: AuditOutcome.REJECTED,
+          rejectionReason: AuditRejectionReason.INVALID_ARGUMENT,
+        },
+      ],
       nextPageToken: "",
     });
     render(<App />);
@@ -839,7 +1002,9 @@ describe("administrator console review regressions", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "업로드" }));
     expect(await screen.findByText("콘텐츠 관리")).toBeTruthy();
-    expect(screen.getByRole("columnheader", { name: "소유 사용자" })).toBeTruthy();
+    expect(
+      screen.getByRole("columnheader", { name: "소유 사용자" }),
+    ).toBeTruthy();
     expect(screen.getByRole("columnheader", { name: "제출" })).toBeTruthy();
     expect(screen.getByRole("columnheader", { name: "그룹" })).toBeTruthy();
     expect(screen.getByText("완료됨")).toBeTruthy();

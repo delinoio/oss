@@ -58,11 +58,11 @@ jobs:
       - name: Unit, lifecycle and mocked API tests
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:runmoor:unit
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
       - name: Local Docker integration without GitHub job assignment
         env:
           RUNMOOR_DOCKER_TEST: "1"
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:runmoor:docker
       - name: Save Go cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outputs.cache-hit != 'true' }}

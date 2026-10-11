@@ -131,7 +131,8 @@ function focusSearchDialogStart() {
   }
 
   const input = dialog.querySelector<HTMLElement>(".rp-search-panel__input");
-  const firstFocusable = input ?? getFocusableSearchElements(dialog)[0] ?? dialog;
+  const firstFocusable =
+    input ?? getFocusableSearchElements(dialog)[0] ?? dialog;
   firstFocusable.focus();
 }
 
@@ -218,10 +219,7 @@ function syncSearchDialogAccessibility() {
   wasSearchDialogOpen = isOpen;
 }
 
-function isDrawerOpen(
-  drawer: Element | null,
-  openClassName: string,
-): boolean {
+function isDrawerOpen(drawer: Element | null, openClassName: string): boolean {
   return drawer?.classList.contains(openClassName) ?? false;
 }
 
@@ -282,7 +280,8 @@ function syncHeadingPermalinks() {
   )) {
     const headingId = heading.id;
     const headingText = getHeadingText(heading);
-    const anchor = heading.querySelector<HTMLAnchorElement>("a.rp-header-anchor");
+    const anchor =
+      heading.querySelector<HTMLAnchorElement>("a.rp-header-anchor");
 
     if (!anchor) {
       continue;
@@ -381,7 +380,9 @@ function syncAccessibleControls() {
 
   for (const button of document.querySelectorAll(".rp-nav-hamburger")) {
     const isOpen = button.classList.contains("rp-nav-hamburger--active");
-    const isNavigationDrawer = window.matchMedia(NAVIGATION_DRAWER_QUERY).matches;
+    const isNavigationDrawer = window.matchMedia(
+      NAVIGATION_DRAWER_QUERY,
+    ).matches;
     setButtonName(
       button,
       isNavigationDrawer
@@ -448,10 +449,7 @@ function AccessibilitySync() {
       const target = event.target;
       rememberSearchTrigger(target);
 
-      if (
-        event.key.toLowerCase() === "k" &&
-        (event.ctrlKey || event.metaKey)
-      ) {
+      if (event.key.toLowerCase() === "k" && (event.ctrlKey || event.metaKey)) {
         searchTriggerElement = getSearchTrigger();
       }
 

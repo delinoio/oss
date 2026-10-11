@@ -4,14 +4,33 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isPreviewVersion } from "../../packages/pnport/scripts/version.mjs";
 
-export const Project = Object.freeze({ Binpm: "binpm", CargoMono: "cargo-mono", Nodeup: "nodeup", WithWatch: "with-watch", Derun: "derun", Runmoor: "runmoor", Clibox: "clibox", Pnport: "pnport", AsyncCommitHook: "async-commit-hook", ReactForge: "react-forge", DeliDev: "delidev" });
-export const Bump = Object.freeze({ Patch: "patch", Minor: "minor", Major: "major", Next: "next" });
+export const Project = Object.freeze({
+  Binpm: "binpm",
+  CargoMono: "cargo-mono",
+  Nodeup: "nodeup",
+  WithWatch: "with-watch",
+  Derun: "derun",
+  Runmoor: "runmoor",
+  Clibox: "clibox",
+  Pnport: "pnport",
+  AsyncCommitHook: "async-commit-hook",
+  ReactForge: "react-forge",
+  DeliDev: "delidev",
+});
+export const Bump = Object.freeze({
+  Patch: "patch",
+  Minor: "minor",
+  Major: "major",
+  Next: "next",
+});
 export const Kind = Object.freeze({ Rust: "rust", Go: "go", Node: "node" });
 const repository = "delinoio/oss";
 const botName = "delino-release-bot[bot]";
 const root = fileURLToPath(new URL("../..", import.meta.url));
 export function releaseTag(project, version) {
-  return project === Project.DeliDev ? `delidev-v${version}` : `${project}@v${version}`;
+  return project === Project.DeliDev
+    ? `delidev-v${version}`
+    : `${project}@v${version}`;
 }
 const versions = Object.freeze({
   delidev: { kind: Kind.Rust, file: "apps/delidev/src-tauri/Cargo.toml" },
@@ -23,12 +42,18 @@ const versions = Object.freeze({
   "with-watch": { kind: Kind.Rust, file: "crates/with-watch/Cargo.toml" },
   derun: { kind: Kind.Go, file: "cmds/derun/internal/version/version.go" },
   runmoor: { kind: Kind.Go, file: "cmds/runmoor/internal/runmoor/types.go" },
-  "async-commit-hook": { kind: Kind.Go, file: "cmds/async-commit-hook/internal/core/model.go" },
+  "async-commit-hook": {
+    kind: Kind.Go,
+    file: "cmds/async-commit-hook/internal/core/model.go",
+  },
   "react-forge": { kind: Kind.Node, file: "packages/react-forge/package.json" },
 });
 const asyncCommitHookVersions = Object.freeze([
   { file: "apps/async-commit-hook/package.json", name: "async-commit-hook" },
-  { file: "packages/async-commit-hook-api-client/package.json", name: "@delinoio/async-commit-hook-api-client" },
+  {
+    file: "packages/async-commit-hook-api-client/package.json",
+    name: "@delinoio/async-commit-hook-api-client",
+  },
   { file: "packaging/async-commit-hook/release-metadata.json" },
 ]);
 const shaPattern = /^[a-f0-9]{40}$/u;
@@ -38,37 +63,70 @@ function requireValue(condition, message) {
   if (!condition) throw new Error(message);
 }
 function descriptor(project) {
-  requireValue(Object.values(Project).includes(project), "Unknown release project");
+  requireValue(
+    Object.values(Project).includes(project),
+    "Unknown release project",
+  );
   return versions[project];
 }
 
 // Rust source versioning is independent from registry distribution: clibox
 // and pnport ship through npm and native packages; DeliDev ships native downloads.
 export function requiresCargoPublish(project) {
-  return descriptor(project).kind === Kind.Rust && ![Project.Clibox, Project.Pnport, Project.DeliDev].includes(project);
+  return (
+    descriptor(project).kind === Kind.Rust &&
+    ![Project.Clibox, Project.Pnport, Project.DeliDev].includes(project)
+  );
 }
 
 function replaceLockVersion(lock, project, previous, next) {
   if (project === Project.DeliDev) project = "delidev-desktop";
-  const sections = [...lock.matchAll(/^\[\[package\]\]\n[\s\S]*?(?=^\[\[|$(?![\s\S]))/gmu)]
-    .filter(([section]) => section.split("\n").includes(`name = "${project}"`));
-  requireValue(sections.length === 1, "Missing or ambiguous Cargo.lock package");
+  const sections = [
+    ...lock.matchAll(/^\[\[package\]\]\n[\s\S]*?(?=^\[\[|$(?![\s\S]))/gmu),
+  ].filter(([section]) => section.split("\n").includes(`name = "${project}"`));
+  requireValue(
+    sections.length === 1,
+    "Missing or ambiguous Cargo.lock package",
+  );
   const section = sections[0][0];
-  requireValue(!/^source = /mu.test(section), "Release lock entry must be a workspace package");
+  requireValue(
+    !/^source = /mu.test(section),
+    "Release lock entry must be a workspace package",
+  );
   const fields = [...section.matchAll(/^version = "([^"]+)"$/gmu)];
-  requireValue(fields.length === 1 && fields[0][1] === previous, "Manifest and Cargo.lock versions disagree");
-  requireValue(!lock.includes(` "${project} ${previous}`), "Version-qualified workspace dependents require an explicit release contract");
-  return lock.replace(section, section.replace(/^version = "[^"]+"$/mu, `version = "${next}"`));
+  requireValue(
+    fields.length === 1 && fields[0][1] === previous,
+    "Manifest and Cargo.lock versions disagree",
+  );
+  requireValue(
+    !lock.includes(` "${project} ${previous}`),
+    "Version-qualified workspace dependents require an explicit release contract",
+  );
+  return lock.replace(
+    section,
+    section.replace(/^version = "[^"]+"$/mu, `version = "${next}"`),
+  );
 }
 function versionParts(version, pnport = false) {
   if (pnport && isPreviewVersion(version)) return [0n, 1n, 0n];
-  requireValue(typeof version === "string" && version.length <= 62 && semverPattern.test(version), "An exact stable MAJOR.MINOR.PATCH version is required");
+  requireValue(
+    typeof version === "string" &&
+      version.length <= 62 &&
+      semverPattern.test(version),
+    "An exact stable MAJOR.MINOR.PATCH version is required",
+  );
   const parts = version.split(".").map(BigInt);
-  requireValue(parts.every((part) => part <= 18446744073709551615n), "Version component overflow");
+  requireValue(
+    parts.every((part) => part <= 18446744073709551615n),
+    "Version component overflow",
+  );
   return parts;
 }
 export function bumpVersion(version, bump) {
-  requireValue([Bump.Patch, Bump.Minor, Bump.Major].includes(bump), "Unknown stable version bump");
+  requireValue(
+    [Bump.Patch, Bump.Minor, Bump.Major].includes(bump),
+    "Unknown stable version bump",
+  );
   const parts = versionParts(version);
   const index = { major: 0, minor: 1, patch: 2 }[bump];
   parts[index] += 1n;
@@ -85,76 +143,168 @@ function replaceVersion(source, project, kind, next) {
   if (project === Project.DeliDev) project = "delidev-desktop";
   if (kind === Kind.Node) {
     const manifest = JSON.parse(source);
-    requireValue(manifest.name === "@delino/react-forge" && manifest.private === true, "React Forge source package identity mismatch");
+    requireValue(
+      manifest.name === "@delino/react-forge" && manifest.private === true,
+      "React Forge source package identity mismatch",
+    );
     const pattern = /^  "version": "([^"]+)",$/gmu;
     const matches = [...source.matchAll(pattern)];
-    requireValue(matches.length === 1 && matches[0][1] === manifest.version, "Missing or ambiguous React Forge version");
+    requireValue(
+      matches.length === 1 && matches[0][1] === manifest.version,
+      "Missing or ambiguous React Forge version",
+    );
     versionParts(manifest.version);
-    return { current: manifest.version, text: next ? source.replace(pattern, `  "version": "${next}",`) : source };
+    return {
+      current: manifest.version,
+      text: next ? source.replace(pattern, `  "version": "${next}",`) : source,
+    };
   }
-  const pattern = kind === Kind.Rust
-    ? /(^\[package\]\s*\n)([\s\S]*?)(?=^\[|$(?![\s\S]))/gmu
-    : /^const Version = "([^"]+)"$/gmu;
+  const pattern =
+    kind === Kind.Rust
+      ? /(^\[package\]\s*\n)([\s\S]*?)(?=^\[|$(?![\s\S]))/gmu
+      : /^const Version = "([^"]+)"$/gmu;
   const matches = [...source.matchAll(pattern)];
-  requireValue(matches.length === 1, "Missing or ambiguous source version declaration");
+  requireValue(
+    matches.length === 1,
+    "Missing or ambiguous source version declaration",
+  );
   if (kind === Kind.Go) {
     const current = matches[0][1];
     versionParts(current);
-    return { current, text: next ? source.replace(pattern, `const Version = "${next}"`) : source };
+    return {
+      current,
+      text: next
+        ? source.replace(pattern, `const Version = "${next}"`)
+        : source,
+    };
   }
   const section = matches[0][2];
-  requireValue([...section.matchAll(/^name = "([^"]+)"$/gmu)].length === 1 && section.includes(`name = "${project}"\n`), "Manifest package identity mismatch");
+  requireValue(
+    [...section.matchAll(/^name = "([^"]+)"$/gmu)].length === 1 &&
+      section.includes(`name = "${project}"\n`),
+    "Manifest package identity mismatch",
+  );
   const fields = [...section.matchAll(/^version = "([^"]+)"$/gmu)];
   requireValue(fields.length === 1, "Missing or ambiguous manifest version");
   const current = fields[0][1];
-  versionParts(current, ["pnport", "pnport-core", "pnport-preload"].includes(project));
-  return { current, text: next ? source.replace(pattern, (_, header, body) => header + body.replace(/^version = "[^"]+"$/mu, `version = "${next}"`)) : source };
+  versionParts(
+    current,
+    ["pnport", "pnport-core", "pnport-preload"].includes(project),
+  );
+  return {
+    current,
+    text: next
+      ? source.replace(
+          pattern,
+          (_, header, body) =>
+            header +
+            body.replace(/^version = "[^"]+"$/mu, `version = "${next}"`),
+        )
+      : source,
+  };
 }
 
 // Preserve every byte outside these release fields, including installer trust
 // identities. New or ambiguous layouts need an explicit versioning contract.
 function asyncCommitHookVersionChanges(read, current, next = current) {
-  return Object.fromEntries(asyncCommitHookVersions.map(({ file, name, pattern }) => {
-    const source = read(file);
-    if (!pattern) {
-      const metadata = JSON.parse(source);
-      requireValue(name ? metadata.name === name : metadata.tag_prefix === `${Project.AsyncCommitHook}@v` && metadata.executable === "ach", `Release identity mismatch: ${file}`);
-      requireValue([...source.matchAll(/"version"\s*:/gu)].length === 1, `Missing or ambiguous version declaration: ${file}`);
-      requireValue(metadata.version === current, `async-commit-hook source versions disagree: ${file}`);
-      pattern = /^(  "version": ")([^"\r\n]+)(",)$/gmu;
-    }
-    const matches = [...source.matchAll(pattern)];
-    requireValue(matches.length === 1, `Missing or ambiguous version declaration: ${file}`);
-    requireValue(matches[0][2] === current, `async-commit-hook source versions disagree: ${file}`);
-    return [file, source.replace(pattern, (_, prefix, version, suffix) => `${prefix}${next}${suffix}`)];
-  }));
+  return Object.fromEntries(
+    asyncCommitHookVersions.map(({ file, name, pattern }) => {
+      const source = read(file);
+      if (!pattern) {
+        const metadata = JSON.parse(source);
+        requireValue(
+          name
+            ? metadata.name === name
+            : metadata.tag_prefix === `${Project.AsyncCommitHook}@v` &&
+                metadata.executable === "ach",
+          `Release identity mismatch: ${file}`,
+        );
+        requireValue(
+          [...source.matchAll(/"version"\s*:/gu)].length === 1,
+          `Missing or ambiguous version declaration: ${file}`,
+        );
+        requireValue(
+          metadata.version === current,
+          `async-commit-hook source versions disagree: ${file}`,
+        );
+        pattern = /^(  "version": ")([^"\r\n]+)(",)$/gmu;
+      }
+      const matches = [...source.matchAll(pattern)];
+      requireValue(
+        matches.length === 1,
+        `Missing or ambiguous version declaration: ${file}`,
+      );
+      requireValue(
+        matches[0][2] === current,
+        `async-commit-hook source versions disagree: ${file}`,
+      );
+      return [
+        file,
+        source.replace(
+          pattern,
+          (_, prefix, version, suffix) => `${prefix}${next}${suffix}`,
+        ),
+      ];
+    }),
+  );
 }
 
 function delidevVersionChanges(read, current, next = current) {
-  return Object.fromEntries(["apps/delidev/package.json", "apps/delidev/src-tauri/tauri.conf.json"].map(file => {
-    const source = read(file);
-    const value = JSON.parse(source);
-    requireValue(file.endsWith("package.json") ? value.name === "delidev-desktop" && value.private === true : value.identifier === "io.delino.delidev", "DeliDev release identity mismatch");
-    requireValue(value.version === current && [...source.matchAll(/"version"\s*:/gu)].length === 1, "DeliDev source versions disagree");
-    const pattern = /^  "version": "([^"\r\n]+)",$/gmu;
-    requireValue([...source.matchAll(pattern)].length === 1, "Missing or ambiguous DeliDev version");
-    return [file, source.replace(pattern, `  "version": "${next}",`)];
-  }));
+  return Object.fromEntries(
+    ["apps/delidev/package.json", "apps/delidev/src-tauri/tauri.conf.json"].map(
+      (file) => {
+        const source = read(file);
+        const value = JSON.parse(source);
+        requireValue(
+          file.endsWith("package.json")
+            ? value.name === "delidev-desktop" && value.private === true
+            : value.identifier === "io.delino.delidev",
+          "DeliDev release identity mismatch",
+        );
+        requireValue(
+          value.version === current &&
+            [...source.matchAll(/"version"\s*:/gu)].length === 1,
+          "DeliDev source versions disagree",
+        );
+        const pattern = /^  "version": "([^"\r\n]+)",$/gmu;
+        requireValue(
+          [...source.matchAll(pattern)].length === 1,
+          "Missing or ambiguous DeliDev version",
+        );
+        return [file, source.replace(pattern, `  "version": "${next}",`)];
+      },
+    ),
+  );
 }
 
-export function readVersion(project, read = (file) => readFileSync(path.join(root, file), "utf8")) {
+export function readVersion(
+  project,
+  read = (file) => readFileSync(path.join(root, file), "utf8"),
+) {
   const { file, kind } = descriptor(project);
   const current = replaceVersion(read(file), project, kind).current;
   if (project === Project.Clibox) {
     const npm = JSON.parse(read("packages/clibox/package.json"));
-    requireValue(npm.name === "@delino/clibox" && npm.version === current, "clibox Cargo/npm versions disagree");
+    requireValue(
+      npm.name === "@delino/clibox" && npm.version === current,
+      "clibox Cargo/npm versions disagree",
+    );
   }
   if (project === Project.Pnport) {
     const npm = JSON.parse(read("packages/pnport/package.json"));
-    requireValue(npm.name === "@delino/pnport" && npm.version === current, "pnport Cargo/npm versions disagree");
-    for (const name of ["pnport-core", "pnport-preload"]) requireValue(replaceVersion(read(`crates/${name}/Cargo.toml`), name, Kind.Rust).current === current, "pnport CLI/core/preload versions disagree");
+    requireValue(
+      npm.name === "@delino/pnport" && npm.version === current,
+      "pnport Cargo/npm versions disagree",
+    );
+    for (const name of ["pnport-core", "pnport-preload"])
+      requireValue(
+        replaceVersion(read(`crates/${name}/Cargo.toml`), name, Kind.Rust)
+          .current === current,
+        "pnport CLI/core/preload versions disagree",
+      );
   }
-  if (project === Project.AsyncCommitHook) asyncCommitHookVersionChanges(read, current);
+  if (project === Project.AsyncCommitHook)
+    asyncCommitHookVersionChanges(read, current);
   if (project === Project.DeliDev) delidevVersionChanges(read, current);
   return current;
 }
@@ -162,81 +312,191 @@ export function readVersion(project, read = (file) => readFileSync(path.join(roo
 export function versionChanges(project, bump, read) {
   const { file, kind } = descriptor(project);
   const previous_version = readVersion(project, read);
-  requireValue(bump !== Bump.Next || project === Project.Pnport, "The next bump is reserved for pnport");
-  if ([Project.Pnport, Project.ReactForge].includes(project) && previous_version === "0.0.0" && bump !== Bump.Next) {
-    requireValue(bump === Bump.Minor, `${project} first public release requires a minor bump to 0.1.0`);
+  requireValue(
+    bump !== Bump.Next || project === Project.Pnport,
+    "The next bump is reserved for pnport",
+  );
+  if (
+    [Project.Pnport, Project.ReactForge].includes(project) &&
+    previous_version === "0.0.0" &&
+    bump !== Bump.Next
+  ) {
+    requireValue(
+      bump === Bump.Minor,
+      `${project} first public release requires a minor bump to 0.1.0`,
+    );
   }
   let version;
   if (project === Project.Pnport && bump === Bump.Next) {
-    requireValue(previous_version === "0.0.0" || isPreviewVersion(previous_version), "pnport preview preparation requires the unreleased or preview source line");
-    version = previous_version === "0.0.0" ? "0.1.0-next.1" : `0.1.0-next.${BigInt(previous_version.slice("0.1.0-next.".length)) + 1n}`;
-    requireValue(isPreviewVersion(version) && JSON.parse(read("packages/pnport/package.json")).pnportPreviewVersion === version, "pnport next version requires exact reviewed source-version authorization");
+    requireValue(
+      previous_version === "0.0.0" || isPreviewVersion(previous_version),
+      "pnport preview preparation requires the unreleased or preview source line",
+    );
+    version =
+      previous_version === "0.0.0"
+        ? "0.1.0-next.1"
+        : `0.1.0-next.${BigInt(previous_version.slice("0.1.0-next.".length)) + 1n}`;
+    requireValue(
+      isPreviewVersion(version) &&
+        JSON.parse(read("packages/pnport/package.json"))
+          .pnportPreviewVersion === version,
+      "pnport next version requires exact reviewed source-version authorization",
+    );
   } else if (project === Project.Pnport && isPreviewVersion(previous_version)) {
-    requireValue(bump === Bump.Minor, "pnport preview promotion requires a minor bump to 0.1.0");
+    requireValue(
+      bump === Bump.Minor,
+      "pnport preview promotion requires a minor bump to 0.1.0",
+    );
     version = "0.1.0";
   } else version = bumpVersion(previous_version, bump);
-  const changes = { [file]: replaceVersion(read(file), project, kind, version).text };
+  const changes = {
+    [file]: replaceVersion(read(file), project, kind, version).text,
+  };
   if (kind === Kind.Rust) {
-    changes["Cargo.lock"] = replaceLockVersion(read("Cargo.lock"), project, previous_version, version);
+    changes["Cargo.lock"] = replaceLockVersion(
+      read("Cargo.lock"),
+      project,
+      previous_version,
+      version,
+    );
   }
   if (project === Project.Clibox) {
     const file = "packages/clibox/package.json";
     const source = read(file);
-    requireValue([...source.matchAll(/^  "version": "[^"]+",$/gmu)].length === 1, "Missing or ambiguous npm source version");
-    changes[file] = source.replace(/^  "version": "[^"]+",$/mu, `  "version": "${version}",`);
+    requireValue(
+      [...source.matchAll(/^  "version": "[^"]+",$/gmu)].length === 1,
+      "Missing or ambiguous npm source version",
+    );
+    changes[file] = source.replace(
+      /^  "version": "[^"]+",$/mu,
+      `  "version": "${version}",`,
+    );
   }
   if (project === Project.Pnport) {
     for (const name of ["pnport-core", "pnport-preload"]) {
       const file = `crates/${name}/Cargo.toml`;
       changes[file] = replaceVersion(read(file), name, Kind.Rust, version).text;
-      changes["Cargo.lock"] = replaceLockVersion(changes["Cargo.lock"], name, previous_version, version);
+      changes["Cargo.lock"] = replaceLockVersion(
+        changes["Cargo.lock"],
+        name,
+        previous_version,
+        version,
+      );
     }
     const npm = "packages/pnport/package.json";
     const source = read(npm);
-    requireValue([...source.matchAll(/^  "version": "[^"]+",$/gmu)].length === 1, "Missing or ambiguous pnport npm source version");
-    changes[npm] = source.replace(/^  "version": "[^"]+",$/mu, `  "version": "${version}",`);
+    requireValue(
+      [...source.matchAll(/^  "version": "[^"]+",$/gmu)].length === 1,
+      "Missing or ambiguous pnport npm source version",
+    );
+    changes[npm] = source.replace(
+      /^  "version": "[^"]+",$/mu,
+      `  "version": "${version}",`,
+    );
   }
-  if (project === Project.AsyncCommitHook) Object.assign(changes, asyncCommitHookVersionChanges(read, previous_version, version));
+  if (project === Project.AsyncCommitHook)
+    Object.assign(
+      changes,
+      asyncCommitHookVersionChanges(read, previous_version, version),
+    );
   if (project === Project.DeliDev) {
-    requireValue(version.split(".").every(part => BigInt(part) <= 0xffffffffn), "DeliDev version component overflow");
-    Object.assign(changes, delidevVersionChanges(read, previous_version, version));
+    requireValue(
+      version.split(".").every((part) => BigInt(part) <= 0xffffffffn),
+      "DeliDev version component overflow",
+    );
+    Object.assign(
+      changes,
+      delidevVersionChanges(read, previous_version, version),
+    );
   }
-  return { project, bump, kind, previous_version, version, tag: releaseTag(project, version), changes };
+  return {
+    project,
+    bump,
+    kind,
+    previous_version,
+    version,
+    tag: releaseTag(project, version),
+    changes,
+  };
 }
 
-export function sourceMetadata({ project, event, ref, requestedVersion, requestedDryRun }, read) {
+export function sourceMetadata(
+  { project, event, ref, requestedVersion, requestedDryRun },
+  read,
+) {
   descriptor(project);
-  requireValue(["push", "workflow_dispatch"].includes(event), "Unsupported release event");
+  requireValue(
+    ["push", "workflow_dispatch"].includes(event),
+    "Unsupported release event",
+  );
   const dry_run = event === "push" ? "false" : requestedDryRun;
-  requireValue(["true", "false"].includes(dry_run), "Invalid release dry-run mode");
-  const version = event === "push" ? ref?.replace(`refs/tags/${releaseTag(project, "")}`, "") : requestedVersion;
+  requireValue(
+    ["true", "false"].includes(dry_run),
+    "Invalid release dry-run mode",
+  );
+  const version =
+    event === "push"
+      ? ref?.replace(`refs/tags/${releaseTag(project, "")}`, "")
+      : requestedVersion;
   versionParts(version, project === Project.Pnport);
-  if (project === Project.Pnport && isPreviewVersion(version)) requireValue(JSON.parse(read("packages/pnport/package.json")).pnportPreviewVersion === version, "pnport preview source is not the exact authorized version");
-  requireValue(readVersion(project, read) === version, "Requested release version does not match source");
+  if (project === Project.Pnport && isPreviewVersion(version))
+    requireValue(
+      JSON.parse(read("packages/pnport/package.json")).pnportPreviewVersion ===
+        version,
+      "pnport preview source is not the exact authorized version",
+    );
+  requireValue(
+    readVersion(project, read) === version,
+    "Requested release version does not match source",
+  );
   const tag = releaseTag(project, version);
-  requireValue(event !== "push" || ref === `refs/tags/${tag}`, "Release push must be the exact project tag");
-  requireValue(dry_run === "true" || ref === "refs/heads/main" || ref === `refs/tags/${tag}`, "Publication requires main or the exact version tag");
-  if (descriptor(project).kind === Kind.Rust) replaceLockVersion(read("Cargo.lock"), project, version, version);
+  requireValue(
+    event !== "push" || ref === `refs/tags/${tag}`,
+    "Release push must be the exact project tag",
+  );
+  requireValue(
+    dry_run === "true" ||
+      ref === "refs/heads/main" ||
+      ref === `refs/tags/${tag}`,
+    "Publication requires main or the exact version tag",
+  );
+  if (descriptor(project).kind === Kind.Rust)
+    replaceLockVersion(read("Cargo.lock"), project, version, version);
   return { version, tag, dry_run };
 }
 
 export function git(directory, args, options = {}) {
   try {
     const { trim = true, ...execOptions } = options;
-    const result = execFileSync("git", args, { cwd: directory, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"], ...execOptions });
+    const result = execFileSync("git", args, {
+      cwd: directory,
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+      ...execOptions,
+    });
     return trim ? result.trim() : result;
   } catch {
     // Git transport failures may include credential-helper output. Report only
     // the operation; authentication and remote refusal remain hard failures.
-    throw new Error(`Git ${args[0]} failed; inspect repository access or retry after resolving the conflict`);
+    throw new Error(
+      `Git ${args[0]} failed; inspect repository access or retry after resolving the conflict`,
+    );
   }
 }
-const authArgs = ["-c", "credential.helper=", "-c", "credential.helper=!gh auth git-credential"];
+const authArgs = [
+  "-c",
+  "credential.helper=",
+  "-c",
+  "credential.helper=!gh auth git-credential",
+];
 
 function validateRun(project, bump, runId) {
   descriptor(project);
   requireValue(Object.values(Bump).includes(bump), "Unknown version bump");
-  requireValue(bump !== Bump.Next || project === Project.Pnport, "The next bump is reserved for pnport");
+  requireValue(
+    bump !== Bump.Next || project === Project.Pnport,
+    "The next bump is reserved for pnport",
+  );
   requireValue(/^[1-9]\d{0,19}$/u.test(runId ?? ""), "Invalid release run ID");
 }
 function releaseMessage(plan, runId) {
@@ -245,100 +505,250 @@ function releaseMessage(plan, runId) {
 export function validateCommit(directory, revision, project, bump, runId) {
   validateRun(project, bump, runId);
   requireValue(shaPattern.test(revision ?? ""), "Invalid release commit");
-  const parents = git(directory, ["show", "-s", "--format=%P", revision]).split(" ");
-  requireValue(parents.length === 1 && shaPattern.test(parents[0]), "Release commit must have one parent");
-  const plan = versionChanges(project, bump, (file) => git(directory, ["show", `${parents[0]}:${file}`], { trim: false }));
-  requireValue(git(directory, ["show", "-s", "--format=%B", revision]) === releaseMessage(plan, runId), "Release journal does not match this run");
-  const changed = git(directory, ["diff-tree", "--no-commit-id", "--name-only", "--no-renames", "-r", revision]).split("\n").sort();
-  requireValue(JSON.stringify(changed) === JSON.stringify(Object.keys(plan.changes).sort()), "Release commit contains unexpected paths");
+  const parents = git(directory, ["show", "-s", "--format=%P", revision]).split(
+    " ",
+  );
+  requireValue(
+    parents.length === 1 && shaPattern.test(parents[0]),
+    "Release commit must have one parent",
+  );
+  const plan = versionChanges(project, bump, (file) =>
+    git(directory, ["show", `${parents[0]}:${file}`], { trim: false }),
+  );
+  requireValue(
+    git(directory, ["show", "-s", "--format=%B", revision]) ===
+      releaseMessage(plan, runId),
+    "Release journal does not match this run",
+  );
+  const changed = git(directory, [
+    "diff-tree",
+    "--no-commit-id",
+    "--name-only",
+    "--no-renames",
+    "-r",
+    revision,
+  ])
+    .split("\n")
+    .sort();
+  requireValue(
+    JSON.stringify(changed) ===
+      JSON.stringify(Object.keys(plan.changes).sort()),
+    "Release commit contains unexpected paths",
+  );
   for (const [file, text] of Object.entries(plan.changes)) {
-    requireValue(git(directory, ["show", `${revision}:${file}`], { trim: false }) === text, "Release commit is not the exact version-only change");
+    requireValue(
+      git(directory, ["show", `${revision}:${file}`], { trim: false }) === text,
+      "Release commit is not the exact version-only change",
+    );
   }
   const { changes, ...identity } = plan;
   return { ...identity, revision };
 }
 
-export async function prepareRelease({ directory, project, bump, runId, name, email, preflight = async () => {} }) {
+export async function prepareRelease({
+  directory,
+  project,
+  bump,
+  runId,
+  name,
+  email,
+  preflight = async () => {},
+}) {
   validateRun(project, bump, runId);
-  requireValue(name === botName && /^\d+\+delino-release-bot\[bot\]@users\.noreply\.github\.com$/u.test(email ?? ""), "Unexpected release bot commit identity");
-  requireValue(git(directory, ["status", "--porcelain"]) === "", "Release checkout must be clean");
-  git(directory, ["fetch", "--no-tags", "origin", "refs/heads/main:refs/remotes/origin/main"]);
-  const candidates = git(directory, ["log", "origin/main", "--format=%H", "--fixed-strings", `--grep=Release-Run: ${repository}/${runId}`])
-    .split("\n").filter(Boolean).filter((sha) => git(directory, ["show", "-s", "--format=%B", sha]).split("\n").includes(`Release-Run: ${repository}/${runId}`));
-  requireValue(candidates.length <= 1, "Multiple commits claim this release run");
+  requireValue(
+    name === botName &&
+      /^\d+\+delino-release-bot\[bot\]@users\.noreply\.github\.com$/u.test(
+        email ?? "",
+      ),
+    "Unexpected release bot commit identity",
+  );
+  requireValue(
+    git(directory, ["status", "--porcelain"]) === "",
+    "Release checkout must be clean",
+  );
+  git(directory, [
+    "fetch",
+    "--no-tags",
+    "origin",
+    "refs/heads/main:refs/remotes/origin/main",
+  ]);
+  const candidates = git(directory, [
+    "log",
+    "origin/main",
+    "--format=%H",
+    "--fixed-strings",
+    `--grep=Release-Run: ${repository}/${runId}`,
+  ])
+    .split("\n")
+    .filter(Boolean)
+    .filter((sha) =>
+      git(directory, ["show", "-s", "--format=%B", sha])
+        .split("\n")
+        .includes(`Release-Run: ${repository}/${runId}`),
+    );
+  requireValue(
+    candidates.length <= 1,
+    "Multiple commits claim this release run",
+  );
   if (candidates.length === 1) {
-    const identity = validateCommit(directory, candidates[0], project, bump, runId);
+    const identity = validateCommit(
+      directory,
+      candidates[0],
+      project,
+      bump,
+      runId,
+    );
     git(directory, ["checkout", "--detach", identity.revision]);
     return { ...identity, resumed: true };
   }
   git(directory, ["checkout", "--detach", "origin/main"]);
-  const plan = versionChanges(project, bump, (file) => readFileSync(path.join(directory, file), "utf8"));
+  const plan = versionChanges(project, bump, (file) =>
+    readFileSync(path.join(directory, file), "utf8"),
+  );
   await preflight(plan);
-  for (const [file, text] of Object.entries(plan.changes)) writeFileSync(path.join(directory, file), text);
+  for (const [file, text] of Object.entries(plan.changes))
+    writeFileSync(path.join(directory, file), text);
   git(directory, ["config", "user.name", name]);
   git(directory, ["config", "user.email", email]);
   git(directory, ["add", "--", ...Object.keys(plan.changes)]);
-  git(directory, ["commit", "--file=-"], { input: releaseMessage(plan, runId) + "\n" });
+  git(directory, ["commit", "--file=-"], {
+    input: releaseMessage(plan, runId) + "\n",
+  });
   const revision = git(directory, ["rev-parse", "HEAD"]);
   const identity = validateCommit(directory, revision, project, bump, runId);
-  git(directory, [...authArgs, "push", "origin", `${revision}:refs/heads/main`]);
+  git(directory, [
+    ...authArgs,
+    "push",
+    "origin",
+    `${revision}:refs/heads/main`,
+  ]);
   return { ...identity, resumed: false };
 }
 
 export async function githubRequest(route, { method = "GET", body } = {}) {
-  requireValue(route.startsWith(`/repos/${repository}/`) || route === `/users/${encodeURIComponent(botName)}`, "Unsupported GitHub API route");
-  requireValue(["GET", "POST"].includes(method), "Unsupported GitHub API method");
-  requireValue(body === undefined || method === "POST", "GitHub request body requires POST");
-  requireValue(Boolean(process.env.GH_TOKEN), "A scoped GitHub token is required");
+  requireValue(
+    route.startsWith(`/repos/${repository}/`) ||
+      route === `/users/${encodeURIComponent(botName)}`,
+    "Unsupported GitHub API route",
+  );
+  requireValue(
+    ["GET", "POST"].includes(method),
+    "Unsupported GitHub API method",
+  );
+  requireValue(
+    body === undefined || method === "POST",
+    "GitHub request body requires POST",
+  );
+  requireValue(
+    Boolean(process.env.GH_TOKEN),
+    "A scoped GitHub token is required",
+  );
   let response;
   try {
-    const headers = { Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };
+    const headers = {
+      Authorization: `Bearer ${process.env.GH_TOKEN}`,
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+    };
     if (body !== undefined) headers["Content-Type"] = "application/json";
     response = await fetch(`https://api.github.com${route}`, {
-      method, headers, body: body === undefined ? undefined : JSON.stringify(body), redirect: "error", signal: AbortSignal.timeout(30000),
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      redirect: "error",
+      signal: AbortSignal.timeout(30000),
     });
-  } catch { throw new Error("GitHub API transport failed"); }
-  requireValue([200, 201, 404, 422].includes(response.status), `GitHub API failed with HTTP ${response.status}`);
-  if ([404, 422].includes(response.status)) return { status: response.status, body: null };
-  try { return { status: response.status, body: await response.json() }; }
-  catch { throw new Error("Invalid GitHub API response"); }
+  } catch {
+    throw new Error("GitHub API transport failed");
+  }
+  requireValue(
+    [200, 201, 404, 422].includes(response.status),
+    `GitHub API failed with HTTP ${response.status}`,
+  );
+  if ([404, 422].includes(response.status))
+    return { status: response.status, body: null };
+  try {
+    return { status: response.status, body: await response.json() };
+  } catch {
+    throw new Error("Invalid GitHub API response");
+  }
 }
 
 export async function tagRevision(tag, request) {
-  const result = await request(`/repos/${repository}/git/ref/tags/${encodeURIComponent(tag)}`);
+  const result = await request(
+    `/repos/${repository}/git/ref/tags/${encodeURIComponent(tag)}`,
+  );
   if (result.status === 404) return null;
   requireValue(result.status === 200, "Cannot establish tag ownership");
   let object = result.body?.object;
   for (let depth = 0; object?.type === "tag" && depth < 4; depth++) {
     requireValue(shaPattern.test(object.sha ?? ""), "Invalid annotated tag");
-    const tagObject = await request(`/repos/${repository}/git/tags/${object.sha}`);
+    const tagObject = await request(
+      `/repos/${repository}/git/tags/${object.sha}`,
+    );
     requireValue(tagObject.status === 200, "Cannot resolve annotated tag");
     object = tagObject.body?.object;
   }
-  requireValue(object?.type === "commit" && shaPattern.test(object.sha ?? ""), "Invalid release tag target");
+  requireValue(
+    object?.type === "commit" && shaPattern.test(object.sha ?? ""),
+    "Invalid release tag target",
+  );
   return object.sha;
 }
 
 export async function releaseExists(tag, request) {
-  const published = await request(`/repos/${repository}/releases/tags/${encodeURIComponent(tag)}`);
+  const published = await request(
+    `/repos/${repository}/releases/tags/${encodeURIComponent(tag)}`,
+  );
   if (published.status === 200) return true;
   requireValue(published.status === 404, "Cannot establish release ownership");
   for (let page = 1; ; page++) {
-    const result = await request(`/repos/${repository}/releases?per_page=100&page=${page}`);
-    requireValue(result.status === 200 && Array.isArray(result.body) && result.body.length <= 100
-      && result.body.every((release) => Number.isSafeInteger(release?.id) && release.id > 0 && typeof release.tag_name === "string"), "Cannot establish release ownership");
+    const result = await request(
+      `/repos/${repository}/releases?per_page=100&page=${page}`,
+    );
+    requireValue(
+      result.status === 200 &&
+        Array.isArray(result.body) &&
+        result.body.length <= 100 &&
+        result.body.every(
+          (release) =>
+            Number.isSafeInteger(release?.id) &&
+            release.id > 0 &&
+            typeof release.tag_name === "string",
+        ),
+      "Cannot establish release ownership",
+    );
     if (result.body.some((release) => release.tag_name === tag)) return true;
     if (result.body.length < 100) return false;
     // Bound a broken or repeating pagination response without treating it as absence.
-    requireValue(page < 1000, "Release pagination limit reached; cannot establish release ownership");
+    requireValue(
+      page < 1000,
+      "Release pagination limit reached; cannot establish release ownership",
+    );
   }
 }
 
 // These older publishers also support manual main releases. Version agreement
 // alone cannot authorize attaching a new build to an existing historical tag.
-export async function legacyReleaseMetadata({ revision, ...input }, read, request) {
-  requireValue([Project.Binpm, Project.CargoMono, Project.Nodeup, Project.WithWatch, Project.Derun].includes(input.project), "Unsupported legacy release project");
-  requireValue(shaPattern.test(revision ?? ""), "Invalid release source revision");
+export async function legacyReleaseMetadata(
+  { revision, ...input },
+  read,
+  request,
+) {
+  requireValue(
+    [
+      Project.Binpm,
+      Project.CargoMono,
+      Project.Nodeup,
+      Project.WithWatch,
+      Project.Derun,
+    ].includes(input.project),
+    "Unsupported legacy release project",
+  );
+  requireValue(
+    shaPattern.test(revision ?? ""),
+    "Invalid release source revision",
+  );
   const metadata = sourceMetadata(input, read);
   if (metadata.dry_run === "false") {
     const existing = await tagRevision(metadata.tag, request);
@@ -346,8 +756,15 @@ export async function legacyReleaseMetadata({ revision, ...input }, read, reques
       // A deleted tag can leave a published or draft GitHub Release behind.
       // The release uploader reuses that release, so a missing ref is
       // publishable only when every release listing is also absent.
-      requireValue(!(await releaseExists(metadata.tag, request)), "Existing GitHub release has no verified tag target");
-    } else requireValue(existing === revision, "Existing release tag belongs to a different commit");
+      requireValue(
+        !(await releaseExists(metadata.tag, request)),
+        "Existing GitHub release has no verified tag target",
+      );
+    } else
+      requireValue(
+        existing === revision,
+        "Existing release tag belongs to a different commit",
+      );
   }
   // Always use the immutable build SHA, including when the tag is absent and
   // main advances between validation and GitHub's release/tag creation.
@@ -359,15 +776,36 @@ export async function createLegacyReleaseTag({ tag, revision, request }) {
   if (existing === null) {
     // The source check runs before signing. Recheck the release list here so a
     // release created during signing cannot be paired with a newly created tag.
-    requireValue(!(await releaseExists(tag, request)), "Existing GitHub release has no verified tag target");
-    const created = await request(`/repos/${repository}/git/refs`, { method: "POST", body: { ref: `refs/tags/${tag}`, sha: revision } });
-    requireValue(created.status === 201, created.status === 422 ? "Release tag appeared during atomic creation" : "Release tag creation failed");
-  } else requireValue(existing === revision, "Existing release tag belongs to a different commit");
-  requireValue(await tagRevision(tag, request) === revision, "Remote release tag verification failed");
+    requireValue(
+      !(await releaseExists(tag, request)),
+      "Existing GitHub release has no verified tag target",
+    );
+    const created = await request(`/repos/${repository}/git/refs`, {
+      method: "POST",
+      body: { ref: `refs/tags/${tag}`, sha: revision },
+    });
+    requireValue(
+      created.status === 201,
+      created.status === 422
+        ? "Release tag appeared during atomic creation"
+        : "Release tag creation failed",
+    );
+  } else
+    requireValue(
+      existing === revision,
+      "Existing release tag belongs to a different commit",
+    );
+  requireValue(
+    (await tagRevision(tag, request)) === revision,
+    "Remote release tag verification failed",
+  );
   if (existing === null) {
     // Do not hand off to the release action if an orphaned release appeared
     // while the tag was being created. The action may reuse that release.
-    requireValue(!(await releaseExists(tag, request)), "Existing GitHub release has no verified tag target");
+    requireValue(
+      !(await releaseExists(tag, request)),
+      "Existing GitHub release has no verified tag target",
+    );
   }
   return { tag, revision, target_commitish: revision };
 }
@@ -376,43 +814,103 @@ export async function reactForgeVersionPublished(version, request = fetch) {
   versionParts(version);
   let response;
   try {
-    response = await request(`https://registry.npmjs.org/${encodeURIComponent("@delino/react-forge")}/${version}`, { redirect: "error", signal: AbortSignal.timeout(30000) });
-  } catch { throw new Error("React Forge npm registry lookup failed"); }
+    response = await request(
+      `https://registry.npmjs.org/${encodeURIComponent("@delino/react-forge")}/${version}`,
+      { redirect: "error", signal: AbortSignal.timeout(30000) },
+    );
+  } catch {
+    throw new Error("React Forge npm registry lookup failed");
+  }
   if (response.status === 404) return false;
-  requireValue(response.ok, `React Forge npm registry lookup failed with HTTP ${response.status}`);
+  requireValue(
+    response.ok,
+    `React Forge npm registry lookup failed with HTTP ${response.status}`,
+  );
   let metadata;
-  try { metadata = await response.json(); }
-  catch { throw new Error("Invalid React Forge npm registry response"); }
-  requireValue(metadata.name === "@delino/react-forge" && metadata.version === version && typeof metadata.dist?.integrity === "string", "React Forge npm registry identity mismatch");
+  try {
+    metadata = await response.json();
+  } catch {
+    throw new Error("Invalid React Forge npm registry response");
+  }
+  requireValue(
+    metadata.name === "@delino/react-forge" &&
+      metadata.version === version &&
+      typeof metadata.dist?.integrity === "string",
+    "React Forge npm registry identity mismatch",
+  );
   return true;
 }
 
-export async function preflightVersion(plan, request, reactForgePublished = reactForgeVersionPublished) {
-  if (plan.project === Project.ReactForge && plan.previous_version !== "0.0.0" && plan.bump !== Bump.Patch) {
-    requireValue(await reactForgePublished(plan.previous_version), "A failed React Forge release requires the next patch version");
+export async function preflightVersion(
+  plan,
+  request,
+  reactForgePublished = reactForgeVersionPublished,
+) {
+  if (
+    plan.project === Project.ReactForge &&
+    plan.previous_version !== "0.0.0" &&
+    plan.bump !== Bump.Patch
+  ) {
+    requireValue(
+      await reactForgePublished(plan.previous_version),
+      "A failed React Forge release requires the next patch version",
+    );
   }
-  requireValue(await tagRevision(plan.tag, request) === null, "Next version tag already exists");
-  requireValue(!(await releaseExists(plan.tag, request)), "Next version release already exists or cannot be checked");
+  requireValue(
+    (await tagRevision(plan.tag, request)) === null,
+    "Next version tag already exists",
+  );
+  requireValue(
+    !(await releaseExists(plan.tag, request)),
+    "Next version release already exists or cannot be checked",
+  );
 }
 
 export async function pushReleaseTag({ directory, identity, request }) {
   const existing = await tagRevision(identity.tag, request);
-  requireValue(existing === null || existing === identity.revision, "Existing release tag belongs to a different commit");
-  if (existing === null) git(directory, [...authArgs, "push", "origin", `${identity.revision}:refs/tags/${identity.tag}`]);
-  requireValue(await tagRevision(identity.tag, request) === identity.revision, "Remote release tag verification failed");
-  return { tag: identity.tag, revision: identity.revision, reused: existing !== null };
+  requireValue(
+    existing === null || existing === identity.revision,
+    "Existing release tag belongs to a different commit",
+  );
+  if (existing === null)
+    git(directory, [
+      ...authArgs,
+      "push",
+      "origin",
+      `${identity.revision}:refs/tags/${identity.tag}`,
+    ]);
+  requireValue(
+    (await tagRevision(identity.tag, request)) === identity.revision,
+    "Remote release tag verification failed",
+  );
+  return {
+    tag: identity.tag,
+    revision: identity.revision,
+    reused: existing !== null,
+  };
 }
 
 function output(values) {
-  if (process.env.GITHUB_OUTPUT) for (const [key, value] of Object.entries(values)) {
-    requireValue(/^[a-z_]+$/u.test(key) && !/[\r\n]/u.test(String(value)), "Unsafe workflow output");
-    appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${value}\n`);
-  }
+  if (process.env.GITHUB_OUTPUT)
+    for (const [key, value] of Object.entries(values)) {
+      requireValue(
+        /^[a-z_]+$/u.test(key) && !/[\r\n]/u.test(String(value)),
+        "Unsafe workflow output",
+      );
+      appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${value}\n`);
+    }
   console.log(JSON.stringify(values));
 }
-function log(value) { console.error(JSON.stringify({ component: "release.project", ...value })); }
+function log(value) {
+  console.error(JSON.stringify({ component: "release.project", ...value }));
+}
 function workflowContext() {
-  requireValue(process.env.GITHUB_REPOSITORY === repository && process.env.GITHUB_REF === "refs/heads/main" && process.env.GITHUB_EVENT_NAME === "workflow_dispatch", "Release coordinator requires a manual main run in delinoio/oss");
+  requireValue(
+    process.env.GITHUB_REPOSITORY === repository &&
+      process.env.GITHUB_REF === "refs/heads/main" &&
+      process.env.GITHUB_EVENT_NAME === "workflow_dispatch",
+    "Release coordinator requires a manual main run in delinoio/oss",
+  );
   const project = process.env.RELEASE_PROJECT;
   const bump = process.env.RELEASE_BUMP;
   const runId = process.env.GITHUB_RUN_ID;
@@ -423,52 +921,153 @@ function workflowContext() {
 export async function main(command) {
   if (["legacy-source", "legacy-tag"].includes(command)) {
     const revision = process.env.GITHUB_SHA;
-    requireValue(process.env.GITHUB_REPOSITORY === repository, "Legacy release requires delinoio/oss");
-    requireValue(shaPattern.test(revision ?? "") && git(root, ["rev-parse", "HEAD"]) === revision, "Checkout is not the workflow source revision");
-    const metadata = await legacyReleaseMetadata({ project: process.env.RELEASE_PROJECT, revision, event: process.env.GITHUB_EVENT_NAME, ref: process.env.GITHUB_REF, requestedVersion: process.env.REQUESTED_VERSION, requestedDryRun: process.env.REQUESTED_DRY_RUN }, (file) => readFileSync(path.join(root, file), "utf8"), githubRequest);
+    requireValue(
+      process.env.GITHUB_REPOSITORY === repository,
+      "Legacy release requires delinoio/oss",
+    );
+    requireValue(
+      shaPattern.test(revision ?? "") &&
+        git(root, ["rev-parse", "HEAD"]) === revision,
+      "Checkout is not the workflow source revision",
+    );
+    const metadata = await legacyReleaseMetadata(
+      {
+        project: process.env.RELEASE_PROJECT,
+        revision,
+        event: process.env.GITHUB_EVENT_NAME,
+        ref: process.env.GITHUB_REF,
+        requestedVersion: process.env.REQUESTED_VERSION,
+        requestedDryRun: process.env.REQUESTED_DRY_RUN,
+      },
+      (file) => readFileSync(path.join(root, file), "utf8"),
+      githubRequest,
+    );
     if (command === "legacy-tag") {
-      requireValue(metadata.dry_run === "false", "Release tag creation requires a real publication");
-      await createLegacyReleaseTag({ tag: metadata.tag, revision, request: githubRequest });
+      requireValue(
+        metadata.dry_run === "false",
+        "Release tag creation requires a real publication",
+      );
+      await createLegacyReleaseTag({
+        tag: metadata.tag,
+        revision,
+        request: githubRequest,
+      });
     }
-    log({ phase: command, project: process.env.RELEASE_PROJECT, tag: metadata.tag, revision, dry_run: metadata.dry_run, outcome: "verified" });
+    log({
+      phase: command,
+      project: process.env.RELEASE_PROJECT,
+      tag: metadata.tag,
+      revision,
+      dry_run: metadata.dry_run,
+      outcome: "verified",
+    });
     output(metadata);
     return;
   }
   if (command === "source") {
-    output(sourceMetadata({ project: process.env.RELEASE_PROJECT, event: process.env.GITHUB_EVENT_NAME, ref: process.env.GITHUB_REF, requestedVersion: process.env.REQUESTED_VERSION, requestedDryRun: process.env.REQUESTED_DRY_RUN }, (file) => readFileSync(path.join(root, file), "utf8")));
+    output(
+      sourceMetadata(
+        {
+          project: process.env.RELEASE_PROJECT,
+          event: process.env.GITHUB_EVENT_NAME,
+          ref: process.env.GITHUB_REF,
+          requestedVersion: process.env.REQUESTED_VERSION,
+          requestedDryRun: process.env.REQUESTED_DRY_RUN,
+        },
+        (file) => readFileSync(path.join(root, file), "utf8"),
+      ),
+    );
     return;
   }
   if (command === "plan") {
-    const { changes, ...plan } = versionChanges(process.env.RELEASE_PROJECT, process.env.RELEASE_BUMP, (file) => readFileSync(path.join(root, file), "utf8"));
-    output({ ...plan, cargo_publish: requiresCargoPublish(plan.project), files: Object.keys(changes).join(",") });
+    const { changes, ...plan } = versionChanges(
+      process.env.RELEASE_PROJECT,
+      process.env.RELEASE_BUMP,
+      (file) => readFileSync(path.join(root, file), "utf8"),
+    );
+    output({
+      ...plan,
+      cargo_publish: requiresCargoPublish(plan.project),
+      files: Object.keys(changes).join(","),
+    });
     return;
   }
   if (command === "bot-identity") {
     const result = await githubRequest(`/users/${encodeURIComponent(botName)}`);
-    requireValue(result.status === 200 && result.body?.login === botName && result.body.type === "Bot" && Number.isSafeInteger(result.body.id), "Cannot resolve release bot identity");
-    output({ name: botName, email: `${result.body.id}+${botName}@users.noreply.github.com` });
+    requireValue(
+      result.status === 200 &&
+        result.body?.login === botName &&
+        result.body.type === "Bot" &&
+        Number.isSafeInteger(result.body.id),
+      "Cannot resolve release bot identity",
+    );
+    output({
+      name: botName,
+      email: `${result.body.id}+${botName}@users.noreply.github.com`,
+    });
     return;
   }
   const context = workflowContext();
-  log({ phase: command, project: context.project, run_id: context.runId, outcome: "started" });
+  log({
+    phase: command,
+    project: context.project,
+    run_id: context.runId,
+    outcome: "started",
+  });
   if (command === "prepare") {
-    output(await prepareRelease({ ...context, name: process.env.RELEASE_BOT_NAME, email: process.env.RELEASE_BOT_EMAIL, preflight: (plan) => preflightVersion(plan, githubRequest) }));
+    output(
+      await prepareRelease({
+        ...context,
+        name: process.env.RELEASE_BOT_NAME,
+        email: process.env.RELEASE_BOT_EMAIL,
+        preflight: (plan) => preflightVersion(plan, githubRequest),
+      }),
+    );
     return;
   }
-  const identity = validateCommit(root, process.env.RELEASE_REVISION, context.project, context.bump, context.runId);
-  requireValue(git(root, ["rev-parse", "HEAD"]) === identity.revision, "Checkout is not the release commit");
+  const identity = validateCommit(
+    root,
+    process.env.RELEASE_REVISION,
+    context.project,
+    context.bump,
+    context.runId,
+  );
+  requireValue(
+    git(root, ["rev-parse", "HEAD"]) === identity.revision,
+    "Checkout is not the release commit",
+  );
   if (command === "validate") {
-    git(root, ["merge-base", "--is-ancestor", identity.revision, "origin/main"]);
+    git(root, [
+      "merge-base",
+      "--is-ancestor",
+      identity.revision,
+      "origin/main",
+    ]);
     const existing = await tagRevision(identity.tag, githubRequest);
-    requireValue(existing === null || existing === identity.revision, "Existing release tag belongs to a different commit");
+    requireValue(
+      existing === null || existing === identity.revision,
+      "Existing release tag belongs to a different commit",
+    );
     output(identity);
     return;
   }
-  if (command === "tag") { output(await pushReleaseTag({ directory: root, identity, request: githubRequest })); return; }
+  if (command === "tag") {
+    output(
+      await pushReleaseTag({
+        directory: root,
+        identity,
+        request: githubRequest,
+      }),
+    );
+    return;
+  }
   throw new Error("Unknown release command");
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (
+  process.argv[1] &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
   main(process.argv[2]).catch((error) => {
     log({ phase: process.argv[2], outcome: "failed", message: error.message });
     process.exitCode = 1;

@@ -396,7 +396,18 @@ jobs:
       mode: publish
 
   summary:
-    needs: [prepare, build, package, publish, publish-release, linux-packages, homebrew-test, homebrew, homebrew-readback]
+    needs:
+      [
+        prepare,
+        build,
+        package,
+        publish,
+        publish-release,
+        linux-packages,
+        homebrew-test,
+        homebrew,
+        homebrew-readback,
+      ]
     if: always()
     runs-on: ubuntu-22.04
     steps:

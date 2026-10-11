@@ -38,17 +38,21 @@ const expectedTaskEnvironment = [
   "XAUTHORITY",
   "XDG_RUNTIME_DIR",
 ];
-assert.deepEqual(resolved.globalCacheInputs.environmentVariables.specified.env, []);
+assert.deepEqual(
+  resolved.globalCacheInputs.environmentVariables.specified.env,
+  [],
+);
 assert.equal(
   resolved.globalCacheInputs.environmentVariables.specified.passThroughEnv,
   null,
 );
 
 const devTasks = resolved.tasks.filter((task) => task.task === "dev");
-assert.deepEqual(
-  devTasks.map((task) => task.package).sort(),
-  ["@delinoio/devhud-api", "devhud", "devhud-admin"],
-);
+assert.deepEqual(devTasks.map((task) => task.package).sort(), [
+  "@delinoio/devhud-api",
+  "devhud",
+  "devhud-admin",
+]);
 for (const task of devTasks) {
   // The locked Turbo summary uses <NONEXISTENT> for graph nodes without a
   // matching package script. Those nodes cannot satisfy the required inventory.
@@ -60,7 +64,10 @@ for (const task of devTasks) {
   );
   assert.deepEqual(task.resolvedTaskDefinition.env, expectedTaskEnvironment);
   assert.equal(task.resolvedTaskDefinition.passThroughEnv, null);
-  assert.deepEqual(task.environmentVariables.specified.env, expectedTaskEnvironment);
+  assert.deepEqual(
+    task.environmentVariables.specified.env,
+    expectedTaskEnvironment,
+  );
   assert.equal(task.environmentVariables.specified.passThroughEnv, null);
 }
 

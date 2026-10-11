@@ -109,10 +109,14 @@ export function assertSha256(value: Uint8Array): void {
 
 export function validateCanonicalSettingsJson(value: Uint8Array): unknown {
   if (value.byteLength > MAX_SETTINGS_JSON_BYTES) {
-    throw new RangeError(`settings JSON must not exceed ${MAX_SETTINGS_JSON_BYTES} bytes`);
+    throw new RangeError(
+      `settings JSON must not exceed ${MAX_SETTINGS_JSON_BYTES} bytes`,
+    );
   }
   if (value[0] === 0xef && value[1] === 0xbb && value[2] === 0xbf) {
-    throw new TypeError("settings JSON must not begin with a UTF-8 byte-order mark");
+    throw new TypeError(
+      "settings JSON must not begin with a UTF-8 byte-order mark",
+    );
   }
 
   const source = textDecoder.decode(value);
@@ -123,9 +127,14 @@ export function validateCanonicalSettingsJson(value: Uint8Array): unknown {
   return parsed;
 }
 
-export function validateAdminReason(reason: string, publicAssetBaseUrl: string): void {
+export function validateAdminReason(
+  reason: string,
+  publicAssetBaseUrl: string,
+): void {
   if (!unicodeNonWhitespacePattern.test(reason)) {
-    throw new TypeError("reason must contain at least one non-whitespace character");
+    throw new TypeError(
+      "reason must contain at least one non-whitespace character",
+    );
   }
   if (reason.includes("\0")) {
     throw new TypeError("reason must not contain NUL characters");
@@ -155,19 +164,34 @@ export function validateCrashReport(report: SubmitCrashReportRequest): void {
     report.occurredAt.nanos < 0 ||
     report.occurredAt.nanos > MAX_PROTOBUF_TIMESTAMP_NANOS
   ) {
-    throw new RangeError("occurredAt must be a valid google.protobuf.Timestamp");
+    throw new RangeError(
+      "occurredAt must be a valid google.protobuf.Timestamp",
+    );
   }
   if (!diagnosticPlatforms.has(report.clientBuild.platform)) {
-    throw new TypeError("clientBuild.platform must be a recognized nonzero value");
+    throw new TypeError(
+      "clientBuild.platform must be a recognized nonzero value",
+    );
   }
   const browser = report.clientBuild.platform === DiagnosticPlatform.BROWSER;
-  if (!diagnosticArchitectures.has(report.clientBuild.architecture)
-      && !(browser && report.clientBuild.architecture === DiagnosticArchitecture.UNSPECIFIED)) {
-    throw new TypeError("clientBuild.architecture must be recognized or unknown only in browsers");
+  if (
+    !diagnosticArchitectures.has(report.clientBuild.architecture) &&
+    !(
+      browser &&
+      report.clientBuild.architecture === DiagnosticArchitecture.UNSPECIFIED
+    )
+  ) {
+    throw new TypeError(
+      "clientBuild.architecture must be recognized or unknown only in browsers",
+    );
   }
-  if (report.clientBuild.architecture === DiagnosticArchitecture.ARMV7
-      && report.clientBuild.platform !== DiagnosticPlatform.ANDROID) {
-    throw new TypeError("clientBuild.architecture ARMv7 is supported only on Android");
+  if (
+    report.clientBuild.architecture === DiagnosticArchitecture.ARMV7 &&
+    report.clientBuild.platform !== DiagnosticPlatform.ANDROID
+  ) {
+    throw new TypeError(
+      "clientBuild.architecture ARMv7 is supported only on Android",
+    );
   }
   if (!diagnosticComponents.has(report.component)) {
     throw new TypeError("component must be a recognized nonzero value");
@@ -180,13 +204,17 @@ export function validateCrashReport(report: SubmitCrashReportRequest): void {
   }
   assertUuidV7(report.clientCorrelationId.value);
   if (report.relatedCorrelationIds.length > MAX_CRASH_RELATED_CORRELATIONS) {
-    throw new RangeError(`relatedCorrelationIds must not exceed ${MAX_CRASH_RELATED_CORRELATIONS}`);
+    throw new RangeError(
+      `relatedCorrelationIds must not exceed ${MAX_CRASH_RELATED_CORRELATIONS}`,
+    );
   }
   if (
     report.durationMilliseconds < 0n ||
     report.durationMilliseconds > MAX_CRASH_DURATION_MILLISECONDS
   ) {
-    throw new RangeError("durationMilliseconds must be between zero and 24 hours");
+    throw new RangeError(
+      "durationMilliseconds must be between zero and 24 hours",
+    );
   }
   if (!diagnosticErrorCodePattern.test(report.errorCode)) {
     throw new TypeError("errorCode must be an enum-style classification");
@@ -217,8 +245,14 @@ export function validateCrashReport(report: SubmitCrashReportRequest): void {
     MAX_CRASH_IDENTIFIER_BYTES,
     "clientBuild.cefRevision",
   );
-  if (!report.clientBuild.appVersion || !report.clientBuild.buildId || !report.clientBuild.osVersion) {
-    throw new TypeError("clientBuild version and operating-system fields must not be empty");
+  if (
+    !report.clientBuild.appVersion ||
+    !report.clientBuild.buildId ||
+    !report.clientBuild.osVersion
+  ) {
+    throw new TypeError(
+      "clientBuild version and operating-system fields must not be empty",
+    );
   }
   if (browser !== (report.clientBuild.tauriRevision.length === 0)) {
     throw new TypeError(
@@ -226,15 +260,28 @@ export function validateCrashReport(report: SubmitCrashReportRequest): void {
     );
   }
   if (!browser && report.clientBuild.tauriRevision !== EXACT_TAURI_REVISION) {
-    throw new TypeError("clientBuild.tauriRevision must be the supported native revision");
+    throw new TypeError(
+      "clientBuild.tauriRevision must be the supported native revision",
+    );
   }
-  const desktop = report.clientBuild.platform === DiagnosticPlatform.MACOS
-    || report.clientBuild.platform === DiagnosticPlatform.WINDOWS
-    || report.clientBuild.platform === DiagnosticPlatform.LINUX;
-  if (desktop ? report.clientBuild.cefRevision !== EXACT_CEF_REVISION : report.clientBuild.cefRevision.length !== 0) {
-    throw new TypeError("clientBuild.cefRevision must be the supported desktop revision or empty on mobile and browser hosts");
+  const desktop =
+    report.clientBuild.platform === DiagnosticPlatform.MACOS ||
+    report.clientBuild.platform === DiagnosticPlatform.WINDOWS ||
+    report.clientBuild.platform === DiagnosticPlatform.LINUX;
+  if (
+    desktop
+      ? report.clientBuild.cefRevision !== EXACT_CEF_REVISION
+      : report.clientBuild.cefRevision.length !== 0
+  ) {
+    throw new TypeError(
+      "clientBuild.cefRevision must be the supported desktop revision or empty on mobile and browser hosts",
+    );
   }
-  validateDiagnosticText(report.redactedSummary, MAX_CRASH_SUMMARY_BYTES, "redactedSummary");
+  validateDiagnosticText(
+    report.redactedSummary,
+    MAX_CRASH_SUMMARY_BYTES,
+    "redactedSummary",
+  );
   validateDiagnosticText(
     report.redactedStackTrace,
     MAX_CRASH_STACK_BYTES,
@@ -242,10 +289,19 @@ export function validateCrashReport(report: SubmitCrashReportRequest): void {
   );
   const stackLines = report.redactedStackTrace.split("\n");
   if (stackLines.length > MAX_CRASH_STACK_LINES) {
-    throw new RangeError(`redactedStackTrace must not exceed ${MAX_CRASH_STACK_LINES} lines`);
+    throw new RangeError(
+      `redactedStackTrace must not exceed ${MAX_CRASH_STACK_LINES} lines`,
+    );
   }
-  if (stackLines.some((line) => textEncoder.encode(line).byteLength > MAX_CRASH_STACK_LINE_BYTES)) {
-    throw new RangeError(`redactedStackTrace lines must not exceed ${MAX_CRASH_STACK_LINE_BYTES} bytes`);
+  if (
+    stackLines.some(
+      (line) =>
+        textEncoder.encode(line).byteLength > MAX_CRASH_STACK_LINE_BYTES,
+    )
+  ) {
+    throw new RangeError(
+      `redactedStackTrace lines must not exceed ${MAX_CRASH_STACK_LINE_BYTES} bytes`,
+    );
   }
   const seenCorrelations = new Set([report.clientCorrelationId.value]);
   for (const correlationId of report.relatedCorrelationIds) {
@@ -257,7 +313,11 @@ export function validateCrashReport(report: SubmitCrashReportRequest): void {
   }
 }
 
-function validateDiagnosticText(value: string, maximum: number, field: string): void {
+function validateDiagnosticText(
+  value: string,
+  maximum: number,
+  field: string,
+): void {
   validateTextShape(value, maximum, field);
   if (containsForbiddenDiagnosticContent(value)) {
     throw new TypeError(`${field} contains prohibited diagnostic content`);
@@ -282,7 +342,9 @@ function containsForbiddenDiagnosticContentWithBudget(
     if (valueBytes > budget.remainingBytes) return true;
     budget.remainingBytes -= valueBytes;
     if (
-      forbiddenDiagnosticContentPatterns.some((pattern) => pattern.test(value)) ||
+      forbiddenDiagnosticContentPatterns.some((pattern) =>
+        pattern.test(value),
+      ) ||
       forbiddenSensitiveTextPatterns.some((pattern) => pattern.test(value)) ||
       containsForbiddenCredentialAssignment(value) ||
       containsForbiddenLocalPath(value) ||
@@ -325,20 +387,31 @@ function validateSensitiveText(
       ? "sensitive or local-path"
       : "sensitive, public asset locator, or local-path";
   if (containsForbiddenLocalPath(value)) {
-    throw new TypeError(`${field} contains forbidden ${forbiddenContent} content`);
+    throw new TypeError(
+      `${field} contains forbidden ${forbiddenContent} content`,
+    );
   }
   for (const pattern of forbiddenSensitiveTextPatterns) {
     if (pattern.test(value)) {
-      throw new TypeError(`${field} contains forbidden ${forbiddenContent} content`);
+      throw new TypeError(
+        `${field} contains forbidden ${forbiddenContent} content`,
+      );
     }
   }
-  const urlPolicy = publicAssetBaseUrl === undefined ? {} : { publicAssetBaseUrl };
+  const urlPolicy =
+    publicAssetBaseUrl === undefined ? {} : { publicAssetBaseUrl };
   if (containsForbiddenUrlContent(value, urlPolicy)) {
-    throw new TypeError(`${field} contains forbidden ${forbiddenContent} content`);
+    throw new TypeError(
+      `${field} contains forbidden ${forbiddenContent} content`,
+    );
   }
 }
 
-function validateTextShape(value: string, maximum: number, field: string): void {
+function validateTextShape(
+  value: string,
+  maximum: number,
+  field: string,
+): void {
   assertWellFormedUnicode(value, field);
   if (value.includes("\0")) {
     throw new TypeError(`${field} must not contain NUL bytes`);
@@ -361,7 +434,9 @@ function containsForbiddenLocalPath(value: string): boolean {
     }
 
     if (
-      matchesForbiddenLocalPath(decodePercentEncodedOctets(value.slice(previousEnd, match.index)))
+      matchesForbiddenLocalPath(
+        decodePercentEncodedOctets(value.slice(previousEnd, match.index)),
+      )
     ) {
       return true;
     }
@@ -378,7 +453,9 @@ function containsForbiddenLocalPath(value: string): boolean {
     previousEnd = match.index + matchedUrl.length;
   }
 
-  return matchesForbiddenLocalPath(decodePercentEncodedOctets(value.slice(previousEnd)));
+  return matchesForbiddenLocalPath(
+    decodePercentEncodedOctets(value.slice(previousEnd)),
+  );
 }
 
 function matchesForbiddenLocalPath(value: string): boolean {
@@ -416,7 +493,10 @@ interface UrlScanPolicy {
   readonly diagnosticBudget?: DiagnosticScanBudget;
 }
 
-function containsForbiddenUrlContent(value: string, policy: UrlScanPolicy = {}): boolean {
+function containsForbiddenUrlContent(
+  value: string,
+  policy: UrlScanPolicy = {},
+): boolean {
   let previousEnd = 0;
   for (const match of value.matchAll(urlPattern)) {
     const matchedUrl = match[0];
@@ -425,7 +505,10 @@ function containsForbiddenUrlContent(value: string, policy: UrlScanPolicy = {}):
     }
     if (
       policy.diagnosticBudget !== undefined &&
-      containsForbiddenRelativeUrlContent(value.slice(previousEnd, match.index), policy)
+      containsForbiddenRelativeUrlContent(
+        value.slice(previousEnd, match.index),
+        policy,
+      )
     ) {
       return true;
     }
@@ -479,13 +562,18 @@ function containsForbiddenUrlContent(value: string, policy: UrlScanPolicy = {}):
   );
 }
 
-function containsForbiddenRelativeUrlContent(value: string, policy: UrlScanPolicy): boolean {
+function containsForbiddenRelativeUrlContent(
+  value: string,
+  policy: UrlScanPolicy,
+): boolean {
   for (const match of value.matchAll(urlParametersPattern)) {
     const matchedParameters = match[0];
     if (matchedParameters === undefined) {
       continue;
     }
-    const parameters = matchedParameters.slice(1).replace(trailingUrlPunctuationPattern, "");
+    const parameters = matchedParameters
+      .slice(1)
+      .replace(trailingUrlPunctuationPattern, "");
     if (containsForbiddenParameterContent(parameters, policy)) {
       return true;
     }
@@ -498,10 +586,15 @@ function isPublicAssetLocator(url: URL, publicAssetBaseUrl: URL): boolean {
     return false;
   }
 
-  const basePath = decodeURIComponent(publicAssetBaseUrl.pathname).replace(/\/+$/u, "");
+  const basePath = decodeURIComponent(publicAssetBaseUrl.pathname).replace(
+    /\/+$/u,
+    "",
+  );
   const candidatePath = decodeURIComponent(url.pathname);
   return (
-    basePath === "" || candidatePath === basePath || candidatePath.startsWith(`${basePath}/`)
+    basePath === "" ||
+    candidatePath === basePath ||
+    candidatePath.startsWith(`${basePath}/`)
   );
 }
 
@@ -521,8 +614,10 @@ function containsForbiddenParameterContent(
       policy.diagnosticBudget.remainingParameters -= 1;
     }
     const separatorIndex = parameter.search(/[=:]/u);
-    const encodedName = separatorIndex === -1 ? parameter : parameter.slice(0, separatorIndex);
-    const encodedValue = separatorIndex === -1 ? "" : parameter.slice(separatorIndex + 1);
+    const encodedName =
+      separatorIndex === -1 ? parameter : parameter.slice(0, separatorIndex);
+    const encodedValue =
+      separatorIndex === -1 ? "" : parameter.slice(separatorIndex + 1);
 
     let name: string;
     let value: string;
@@ -537,8 +632,12 @@ function containsForbiddenParameterContent(
     }
     if (policy.diagnosticBudget !== undefined) {
       if (
-        containsForbiddenDiagnosticContentWithBudget(value, policy.diagnosticBudget) ||
-        (value !== encodedValue && containsForbiddenParameterContent(value, policy))
+        containsForbiddenDiagnosticContentWithBudget(
+          value,
+          policy.diagnosticBudget,
+        ) ||
+        (value !== encodedValue &&
+          containsForbiddenParameterContent(value, policy))
       ) {
         return true;
       }
@@ -548,7 +647,8 @@ function containsForbiddenParameterContent(
         forbiddenSensitiveTextPatterns.some((pattern) => pattern.test(value)) ||
         containsForbiddenCredentialAssignment(value) ||
         containsForbiddenUrlContent(value, policy) ||
-        (value !== encodedValue && containsForbiddenParameterContent(value, policy))
+        (value !== encodedValue &&
+          containsForbiddenParameterContent(value, policy))
       ) {
         return true;
       }
@@ -615,7 +715,9 @@ export function canonicalizeSettingsJson(value: unknown): string {
         pending.push({ kind: "token", value: JSON.stringify(key) });
       }
     } else {
-      throw new TypeError("settings JSON contains a value outside the JSON data model");
+      throw new TypeError(
+        "settings JSON contains a value outside the JSON data model",
+      );
     }
   }
 
@@ -625,7 +727,9 @@ export function canonicalizeSettingsJson(value: unknown): string {
 export function encodeCanonicalSettingsJson(value: unknown): Uint8Array {
   const encoded = textEncoder.encode(canonicalizeSettingsJson(value));
   if (encoded.byteLength > MAX_SETTINGS_JSON_BYTES) {
-    throw new RangeError(`settings JSON must not exceed ${MAX_SETTINGS_JSON_BYTES} bytes`);
+    throw new RangeError(
+      `settings JSON must not exceed ${MAX_SETTINGS_JSON_BYTES} bytes`,
+    );
   }
   return encoded;
 }

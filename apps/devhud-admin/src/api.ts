@@ -31,7 +31,10 @@ export function createAdminClient(auth: AdminAuth): AdminClient {
     baseUrl: apiBaseUrl(),
     interceptors: [
       (next) => async (request) => {
-        request.header.set("Authorization", `Bearer ${await auth.accessToken()}`);
+        request.header.set(
+          "Authorization",
+          `Bearer ${await auth.accessToken()}`,
+        );
         return next(request);
       },
     ],

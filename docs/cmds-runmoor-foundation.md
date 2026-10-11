@@ -161,7 +161,6 @@ installation, configuration/storage references, original/target definitions and
 file identities, native process identity, UUID-v7 token and typed operation stage.
 It contains no credentials and adds no public field or SQLite migration.
 
-
 Publication has its own private typed stages: prepared, claim-pending, claimed,
 publish-pending, published, restore-pending and restored. Derive the claim name
 from the journal's UUID-v7 token beside the canonical definition. Persist claim
@@ -201,7 +200,6 @@ the current owner is live. A confirmed exited owner permits reclamation; legacy
 records without an initiator remain conservative until recovery claims them.
 The retry removes its journal only after readiness and final normal reload
 acceptance succeed.
-
 
 Linux atomically publishes the target definition, performs `daemon-reload`,
 opens a retained Linux pidfd before final process proof, and revalidates the
@@ -630,7 +628,7 @@ larger. Acquisition rechecks current eligibility and capacity after polling so a
 concurrent capacity reduction cannot admit work under the previous ceiling.
 
 `init` creates a minimal valid configuration through terminal prompts or flags.
-It accepts target, backend, authentication and credential *references*, plus an
+It accepts target, backend, authentication and credential _references_, plus an
 image/source when needed. It never overwrites an existing configuration, accepts
 credential values, installs host dependencies or starts a service. `--image-only`
 creates a configuration for manual initial macOS setup. `config show --resolved`

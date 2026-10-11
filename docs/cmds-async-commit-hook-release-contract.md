@@ -1,15 +1,19 @@
 # async-commit-hook release contract
 
 ## Scope
+
 The command release boundary owns six `ach` archives, shell/PowerShell installers, a Homebrew formula, artifact verification and explicit self-update. The release workflow validates the static app and the consolidated public documentation; `public-docs` is the sole documentation publisher. The initial version is `0.1.0`.
 
 ## Runtime and Language
+
 The Go binary uses CGO-free builds for darwin/linux/windows and amd64/arm64. Python assembles and inspects archives; GitHub Actions orchestrates validation, Sigstore signing and release publication, while the consolidated `public-docs` project automatically deploys the documentation tree through Cloudflare Pages from `main`. A release archive contains exactly one regular `ach` or `ach.exe`, with no executable alias. Identical executable bytes produce identical archives: Unix tar members and gzip headers have fixed timestamps, gzip carries no filename, and ownership/mode metadata is fixed; Windows ZIP entries retain their fixed timestamp and mode. Archive checksums therefore do not depend on the time a retry runs.
 
 ## Users and Operators
+
 Direct-install users, Homebrew users and authorized release maintainers. The owner explicitly excluded real six-target machine qualification and actual publication/deployment from the September 2026 implementation. Cross-build results must never be described as native integration results.
 
 ## Interfaces and Contracts
+
 `packaging/async-commit-hook/release-metadata.json`, the Go version constant and both package versions must match. Release identity is `async-commit-hook@v<MAJOR.MINOR.PATCH>`. Archives are named `ach-<goos>-<goarch>.tar.gz` or `ach-windows-<goarch>.zip`.
 The installers query GitHub releases and select the highest non-draft, non-prerelease `async-commit-hook@v<version>` release by default, never the repository-wide latest release. The shell installer accepts `--version MAJOR.MINOR.PATCH`, overriding `ACH_VERSION`; PowerShell accepts the same exact version through `-Version`. Explicit versions require canonical three-part numeric values without leading zeroes. Unknown arguments and malformed versions fail before any download or installation work.
 
@@ -64,30 +68,36 @@ After an interrupted draft upload or a downstream Homebrew failure, use GitHub A
 - Public installers are authored under `scripts/install/async-commit-hook.sh` and `scripts/install/async-commit-hook.ps1`; release preparation copies those exact bytes into downloadable assets.
 
 ## Storage
+
 Installed executable replacement uses a same-volume candidate, a retained previous executable, a durable account-scoped update journal and a consistent SQLite `VACUUM INTO` backup plus owned evidence. State version 1 is validated before use; unknown versions fail without conversion. Backups remain account-private and exclude filesystem symlink traversal.
 
 ## Security
+
 Installers and self-update verify both the checksum manifest and chosen archive's Sigstore bundle before extraction or execution. The exact trusted certificate identity is `https://github.com/delinoio/oss/.github/workflows/release-async-commit-hook.yml@refs/heads/main`, with issuer `https://token.actions.githubusercontent.com`. The Go verifier validates trusted roots, certificate identity, transparency evidence and artifact integrity. A valid signature belonging to another workflow is insufficient.
 
 Direct self-update refuses active components, pending work and Homebrew-owned paths. Candidate `ach version --json` must match the requested release. A lifecycle lock excludes concurrent starts and mode/port/state changes; a pending journal requires explicit recovery. Windows uses a separate replacement helper after the original process exits. Recovery verifies journal-bound digests and restores the previous executable when replacement was interrupted. When the executable is absent, its recorded backup must be a regular nonsymlink file, at most 128 MiB, with bytes matching `OriginalSHA256`. Recovery atomically creates the executable from that authenticated snapshot without overwriting a concurrently restored path; it retains the backup rather than renaming a mutable backup path. Missing, changed, nonregular or oversized backups and failed publication keep the original recovery journal intact. No background automatic update is installed.
 
 ## Logging
+
 Archive generation emits structured target, artifact and SHA-256 evidence. Runtime failures use bounded stable codes. Do not log tokens, pairing material, resolved secrets or full environment variables.
 
 ## Build and Test
+
 Run `node --test scripts/release/async-commit-hook.test.mjs` for dependency-free artifact/installer fixtures and offline publication recovery fixtures. Publication fixtures intercept every GitHub command and tag lookup; they cover partial uploads, lost creation responses, changed signatures on retry, wrong ownership/commit, completed releases, lookup/tag failures and incomplete or mismatched remote assets without network mutations. After the frozen workspace install, run `node --test scripts/ci/async-commit-hook-release.test.mjs`, `pnpm ci:workflows` and `pnpm ci:contracts` for YAML workflow and publication-retry contracts. Also run Go updater/installer ownership fixtures and the six-target builder. Signature tests include real upstream Sigstore verification evidence with an untrusted workflow, forged bundles and tampered bytes. Shell installer tests use isolated download/signature fixtures to prove fail-closed publication ordering. Windows installation and replacement receive cross-build/source checks here, not a falsely claimed Windows execution result.
 
 ## Validation Status
+
 Desktop Chrome credential-free local-UI smoke, controls, accessibility-tree and focus validation passed. Desktop Edge validation remains pending because Edge was unavailable in the validation environment; no owner-approved exclusion has been recorded. Release readiness must not treat the original Edge accessibility requirement as complete until that validation is executed or explicitly waived. The only approved implementation exclusions remain real six-target machine qualification and actual public release/site deployment.
 
 ## Agent-Client Validation
+
 The recorded actual-client result is limited to skill/MCP installation and connection checks performed with isolated temporary configuration and state; it does not establish completion of the full agent-client workflow. The observed client statuses were:
 
-| Client | Recorded validation status |
-| --- | --- |
-| Codex CLI 0.145.0 | Owned isolated skill and MCP entry discovered successfully |
-| Claude Code 2.1.126 | Isolated installation and MCP connection succeeded |
-| OpenCode 1.1.53 | Isolated installation and MCP connection succeeded |
+| Client              | Recorded validation status                                 |
+| ------------------- | ---------------------------------------------------------- |
+| Codex CLI 0.145.0   | Owned isolated skill and MCP entry discovered successfully |
+| Claude Code 2.1.126 | Isolated installation and MCP connection succeeded         |
+| OpenCode 1.1.53     | Isolated installation and MCP connection succeeded         |
 
 Reproduce the integration setup from a temporary `HOME`, client configuration directories and registered test repository, never a personal configuration or credential store:
 
@@ -102,6 +112,7 @@ ach mcp
 Use each actual client executable to discover its owned skill and MCP entry. The full CLI/MCP workflow—starting a check, allowing `wait` to expire without cancelling execution, waiting for terminal completion, inspecting logs, failures, comparison and acknowledgement behavior, and exercising rerun and cancellation—was covered through the official Go MCP client and automated protocol tests without invoking agent-model sessions. Therefore actual Codex, Claude Code and OpenCode workflow validation remains pending. Remove each integration with the matching client/scope command after validation. No remote results, telemetry or diagnostic uploads are part of this check.
 
 ## Process-Ownership Validation
+
 The Unix ownership backend is validated by the committed lifecycle tests `TestScopeStartBarrierAndOutput`, `TestScopeReapsDaemonizedDescendants`, `TestReplaceReapsDaemonizedDescendantsBeforeNextStarts`, `TestScopeCancellationDoesNotTouchAnotherCheck`, `TestScopeJournalNeverStoresResolvedEnvironment`, `TestScopeMissingJournalCannotConfirmCompletion`, `TestLegacyScopeCannotClaimUnknownDescendantsExited` and `TestSupervisorLeaseBlocksConfigurationWithoutWorker`. macOS-specific supervisor recovery is covered by `TestScopeRecoveryAfterSupervisorDeath`; Linux-specific lost-subreaper recovery is covered by `TestScopeLostSubreaperFailsClosedUntilBootChanges`.
 
 Reproduce the cross-platform lifecycle coverage with:
@@ -129,11 +140,13 @@ go vet ./cmds/async-commit-hook/...
 The recorded local contexts are macOS 26.6.2 arm64 for supervisor-death recovery and a network-disabled Linux arm64 `node:24-bookworm` container for focused lifecycle coverage. These results do not qualify macOS 13 or the other five supported targets as native machine validation.
 
 ## Change Triggers
+
 Update this contract, packaging AGENTS, version metadata and public upgrade/compatibility guidance when artifact names, trust identity, update ownership or deployment behavior changes. Keep the process-ownership validation commands, Edge status and owner-approved exclusions in this contract synchronized with those changes.
 
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - [Project](project-async-commit-hook.md)
 - [Command contract](cmds-async-commit-hook-contract.md)
 

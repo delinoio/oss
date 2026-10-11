@@ -4,7 +4,9 @@
   "private": true,
   "description": "A native CLI distributed through native packages and npm",
   "license": "Apache-2.0",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test": "node --test test/*.test.mjs",
     "test:package": "node scripts/smoke.mjs",

@@ -9,4 +9,16 @@ import "./themes.css";
 import "./styles.css";
 import "./settings-presentation.css";
 
-createRoot(document.getElementById("root")!).render(<LanguageProvider><AppearanceProvider><SidebarProvider><DateFormatProvider><ShortcutPreferenceProvider><Desktop /></ShortcutPreferenceProvider></DateFormatProvider></SidebarProvider></AppearanceProvider></LanguageProvider>);
+createRoot(document.getElementById("root")!).render(
+  <LanguageProvider>
+    <AppearanceProvider>
+      <SidebarProvider>
+        <DateFormatProvider>
+          <ShortcutPreferenceProvider>
+            <Desktop />
+          </ShortcutPreferenceProvider>
+        </DateFormatProvider>
+      </SidebarProvider>
+    </AppearanceProvider>
+  </LanguageProvider>,
+);

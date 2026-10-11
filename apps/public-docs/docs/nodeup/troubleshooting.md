@@ -30,11 +30,11 @@ nodeup run --install <runtime> node --version
 
 Comparison:
 
-| Path | Installs missing version runtime? | What to do |
-| --- | --- | --- |
-| `nodeup run <runtime> node --version` | No | Retry as `nodeup run --install <runtime> node --version` or run `nodeup toolchain install <runtime>` first. |
-| Managed `node`, `npm`, `npx`, `yarn`, or `pnpm` shim | Yes, for version runtimes selected by default or override | Check `nodeup default` or `nodeup override list` if the wrong runtime is selected. |
-| Linked runtime | No | Fix the external runtime path or relink a different runtime. |
+| Path                                                 | Installs missing version runtime?                         | What to do                                                                                                  |
+| ---------------------------------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `nodeup run <runtime> node --version`                | No                                                        | Retry as `nodeup run --install <runtime> node --version` or run `nodeup toolchain install <runtime>` first. |
+| Managed `node`, `npm`, `npx`, `yarn`, or `pnpm` shim | Yes, for version runtimes selected by default or override | Check `nodeup default` or `nodeup override list` if the wrong runtime is selected.                          |
+| Linked runtime                                       | No                                                        | Fix the external runtime path or relink a different runtime.                                                |
 
 In JSON mode, missing-runtime errors from `nodeup run` include `diagnostics.install_on_demand_eligible: false` and `diagnostics.retry_with_install`.
 

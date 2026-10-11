@@ -4,12 +4,12 @@
 
 ## Choose by availability
 
-| Workflow | Availability |
-| --- | --- |
-| Local PPTX, DOCX, XLSX, PDF, CLI, and MCP | Available since `0.1.1` for the six supported native hosts. |
-| Figma creation and editing | Available since `0.1.1`; live authentication has the narrower macOS arm64 validation described below. |
-| [GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/) | Available since `0.2.0` for the six supported native hosts. |
-| [Game SFX](/react-forge/formats/sfx/) and [pixel sprites](/react-forge/formats/sprite/) | Available since `0.2.0` for the six supported native hosts. |
+| Workflow                                                                                | Availability                                                                                          |
+| --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Local PPTX, DOCX, XLSX, PDF, CLI, and MCP                                               | Available since `0.1.1` for the six supported native hosts.                                           |
+| Figma creation and editing                                                              | Available since `0.1.1`; live authentication has the narrower macOS arm64 validation described below. |
+| [GLB](/react-forge/formats/glb/) and [FBX](/react-forge/formats/fbx/)                   | Available since `0.2.0` for the six supported native hosts.                                           |
+| [Game SFX](/react-forge/formats/sfx/) and [pixel sprites](/react-forge/formats/sprite/) | Available since `0.2.0` for the six supported native hosts.                                           |
 
 ```sh
 npm install @delino/react-forge

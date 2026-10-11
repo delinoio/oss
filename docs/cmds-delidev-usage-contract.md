@@ -1,15 +1,19 @@
 # DeliDev native usage ledger
 
 ## Scope
+
 `cmds/delidev-cli/internal/domain`, `internal/harness/codex`, `internal/harness/opencode`, `internal/worker`, `internal/server`, and `internal/store` own the normalized response usage pipeline. The feature requires DeliDev-only aggregation, the dashboard, attributable actual costs, separate historical token-price estimates and optional session budgets. The implemented boundary includes exact Codex response ingestion, durable deduplication, coherent read-only RPC/CLI aggregation and desktop presentation. Immutable user-declared pricing, per-currency estimate aggregation and owner/client pricing RPC/CLI are implemented. Desktop pricing forms and historical estimate presentation are implemented. Optional lifetime session budgets are implemented across creation, RPC, CLI and desktop. Remaining native usage scopes remain required work.
 
 ## Runtime and Language
+
 Go owns decoding, attribution, authorization and SQLite persistence. Native harness JSON is the only usage source. The relay, account catalogs and account-wide billing APIs cannot generate usage or establish spend.
 
 ## Users and Operators
+
 Paired Workers publish observations for their exact accepted execution. The single-user server owns attribution and retained history. Owner/client reads use the bounded aggregation API below; neither the API nor internal ledger reader grants filesystem/database access.
 
 ## Interfaces and Contracts
+
 [Native child usage](cmds-delidev-subagents-contract.md) is separately retained observation data. Exact source-scoped child cumulative and provider-response reports, nullable counters and native JSON metadata never enter the additive response ledger, price/cost estimates or budget totals. Parent-inclusive, task, context and child reports can overlap and are never summed. Missing child counts remain unavailable; no synthetic total or observed model is derived.
 
 Codex `0.151.0` emits `rawResponse/completed` for one upstream Responses completion, independently of cumulative `thread/tokenUsage/updated` snapshots. The pinned official protocol describes this exact completion as neither accumulated, estimated nor replayed. The closed adapter validates original thread/turn ownership and the exact response schema. It hashes the bounded provider response identity with SHA-256 before publication, retaining only lowercase 64-character digest identity. Foreign child threads remain private until a dedicated child adapter exists; unknown turns and late publication cannot acquire current execution authority.
@@ -23,6 +27,7 @@ Required counters in a present native usage object retain the pinned input/outpu
 `usageMetadata.amount` has no authoritative currency or billing semantics in this pinned contract. The adapter validates its bounded native presence, discards its value, and retains only `missing` or `unspecified-native-metadata`. Neither is an actual-cost amount, token-price estimate, currency or subscription charge. Unknown actual cost is unavailable.
 
 ### Read-only aggregation
+
 `UsageService.GetUsageSummary` and `delidev usage summary` are owner/paired-client-only. Existing `usage list/get` cumulative observation reads remain available. Filters use original session/project/account/provider/model UUIDs or projectless General Chat, with a half-open first-retention-time range. Omitted bounds default to server now and 30 days before the upper bound; explicit ranges are positive, at most 366 days and within the supported calendar range. CLI timestamps are RFC3339 with explicit timezone.
 
 One authorized two-second SQLite read transaction computes overall and per-session/account/provider/model groups from unique exact response rows, including Archive. No current configuration is required to retain those original identities. Current display labels are optional metadata from the same snapshot; renamed/deleted labels cannot change original UUID attribution. Each input/output/cache/reasoning/total measure contains an exact decimal-string known subtotal, measured-response count and unavailable-response count. Empty subtotal is unavailable; `"0"` is measured zero. Arbitrary-precision addition preserves values beyond JavaScript and signed 64-bit limits; overlapping categories are never added to total.
@@ -42,6 +47,7 @@ The Usage page freezes a detected IANA zone into each applied query and query ke
 Calendar boundaries use the first real instant of the next existing civil date. A missing midnight starts at the timezone transition into that date, even when `time.Date` would normalize backward into the previous date. A repeated midnight uses its first occurrence and retains both repeated hours in the same day. A wholly skipped date produces no empty bucket. Buckets remain positive and contiguous, preserve clipped endpoints and reconcile exactly with overall totals; this changes no retained ledger row or timezone policy.
 
 ### Desktop analysis layout
+
 Responses is the default analysis tab; Native accounting and Cost evidence retain separate panels under the same applied interval, IANA zone and incomplete/stale/pending disclosures. Arrow keys, Home and End select and focus the tab. Mounted window state preserves the tab and disclosure choices across navigation and Refresh; changing the connection starts a new lifetime. Tabs and disclosures do not add reads, mutations or accounting authority.
 
 Responses presents Known tokens, Input, Output and Recorded responses as four compact cards. The remaining three token measures remain in Token breakdown, with all six original measured/unavailable counters. The strict empty-recorded six-measure exception above remains unchanged. Original ordered Session/Project, Account and Model/API identities, exact Input/Output/Total/Responses and historical estimates appear in the detail table before initially collapsed daily/model charts and accounting definitions. Native-only groups remain outside these response views.
@@ -61,9 +67,11 @@ ownership, retained drafts and Reset retain their existing behavior.
 The existing context pane groups Time range, Scope and Source in an independently scrolling body with Reset fixed below it. Automatic filters retain their existing atomic/date-validation ownership and never close the drawer. Scoped semantic light/dark styling uses a 1280px body, 24px desktop padding, 16px gaps, 12px table cells, 8px corners and at least 40px new controls. Narrow layouts stack cards and use the shared drawer with internal table scrolling. Full inert identities and exact decimal values remain available in English and Korean, including effective 200% viewport layouts. Browser fixtures prove synthetic layout and keyboard behavior only, not packaged or native acceptance.
 
 ### API Keys summary presentation
+
 AI API Keys reuses account-scoped generated GetUsageSummary reads for the current bounded Account page and the server-default last 30 days. It requests the independent native accounting profile without daily analytics. Summary rows consume server-derived subtotals without aggregation, currency conversion, repricing or accounting-unit merging. Missing and measured-zero totals remain distinct; unavailable Claude totals are not derived. A successfully retrieved empty interval displays estimated cost **$0** and observed tokens **0**, each with **No usage in this period**. This presentation requires present response totals, the returned `NATIVE_UNITS_V1` profile, zero response and accounting-unit counts, present totals for every returned native summary with zero units, and zero accepted executions/compactions without response usage. Missing totals, an older accounting profile, accepted work without usage, and unreported tokens or prices remain unavailable. The empty display does not create measured ledger values, assert actual charges or change budget evaluation; account health and saved quotas remain independent. Confirmed quota exhaustion and saved quota observations come from the separate Account resource, never from the usage ledger or billing APIs. Explicit Refresh usage rereads the current page and active summaries without native/provider effects or polling. Failures retain stale same-account evidence and an explicit read retry. The Settings opening disposes its queries independently of the Usage dashboard. Explicit View usage carries the exact original account and returned half-open bounds through a once-consumed in-memory event; dashboard drafts survive later navigation/reconnect without event replay. No RPC, storage schema or telemetry source changes.
 
 ### Immutable token-price estimates
+
 `UsageService.GetModelPricing`, `GetPricingVersion` and `SetModelPricing` are owner/client-only. Current-price reads require an existing model and may return an absent basis; immutable version reads preserve historical access after configuration deletion. Writes bind the model UUID and configuration revision, independent expected pricing revision (zero initially), original actor and complete basis to an exact request receipt. A retry returns the originally accepted immutable version, without replacing a newer active basis. Each write and its model metadata event commit atomically without changing the model configuration revision. Read and write authorization is rechecked in SQLite, including after revocation; Worker access is denied. Settings → Models → Token pricing provides current basis reads and staged version creation. The form captures both model and pricing revisions, keeps nullable rates as text, preserves drafts and original uncertain requests across hide/reopen, refuses new stale writes and allows only an explicit exact retry after uncertainty. Polling refreshes reads only. Historical Usage details show source/date/rates/exclusions and category coverage without recomputing amounts in JavaScript. A basis retains its source description, `YYYY-MM-DD` as-of date, explicit three-uppercase-letter currency denomination, input pricing mode, nullable input/cached-input/output rates per million and bounded exclusions. Rates are nonnegative decimal strings with at most 18 integer and nine fractional digits. Missing rates remain unavailable. No source URL is fetched, verified or converted into an actual-billing claim automatically.
 
 Uniform input pricing applies one explicitly chosen rate to the native reported input total, including its cache subsets. Cache-discount pricing separates reported cached reads from uncached input only when the pinned input subset is consistent and cache-write usage is explicitly zero. Unknown/nonzero write usage or an invalid subset leaves input/cache estimates unsupported, retaining only any known output subtotal. Output already includes reasoning and receives no additional reasoning or total-token charge. Provider fees, taxes, conversion and unobserved usage are outside this token basis regardless of its per-response category completeness.
@@ -77,6 +85,7 @@ The summary joins each original response with its retained estimate and basis in
 Current CLI commands are `usage pricing get --provider-id ID --native-id NATIVE`, `usage pricing version --id ID`, and `usage pricing set --provider-id ID --native-id NATIVE --provider-revision P --policy-revision Q --revision N --input PATH [--request-id ID]`. The alternative source is `--subscription-service SERVICE`. `usage pricing mode` binds the same source and original revisions with `--mode automatic|manual`; `usage pricing refresh` explicitly requests the joined upstream update. The input is a strict non-secret `TokenPricing` JSON document with snake-case fields; omitted/null rates are unavailable and explicit `"0"` is zero. It may use stdin unless stdin already supplies authentication. Only the explicit pricing refresh command fetches the fixed public reference. No pricing command performs inference.
 
 ### Optional session budgets
+
 `SessionService.GetSessionBudget` and `SetSessionBudget` are owner/client-only. Creation may include `estimated_cost_budget`; later writes bind the original session revision, actor and full replacement or explicit removal to a durable request identity. Exact retries return the current authorized session and evidence, never reinstall an older budget. Generic configuration cannot write budgets. Currency is three uppercase letters; the nonnegative decimal threshold allows 18 integer and 15 fractional digits without floating-point conversion. Zero remains an explicit known threshold, not a missing value.
 
 A budget compares the session's lifetime known historical estimated subtotal in its selected currency, including retained archived history. It never uses the dashboard's selected time range, current prices, actual-billing guesses or currency conversion. At known subtotal greater than or equal to threshold, both automatic initial/FIFO dispatch and explicit Resume (including an empty Resume) fail with `budget_reached` before routing or input claim. Queue and pending input remain intact; accepted native work, publication and same-turn Steer are not canceled. Raising/removing the budget permits already eligible dispatch but does not resume paused/archived sessions or clear unrelated recovery. Restoring Archive remains paused.
@@ -86,6 +95,7 @@ Below the known threshold, or with no known subtotal, evaluation is `ALLOW_INCOM
 CLI commands are `session budget get --id ID`, `session budget set --id ID --revision N --currency USD --threshold DECIMAL`, and `session budget remove --id ID --revision N`, with retained `--request-id` for exact retries. JSON output preserves exact amount strings and protobuf uint64 strings; `budget_reached` is a failed precondition and CLI exit 5. Desktop creation exposes an optional budget, and retained sessions provide explicit read/edit/remove controls and reached/incomplete warnings. Stale edits preserve their draft and require explicit adoption of the latest revision; uncertain writes allow only the original retry. Read polling does not submit changes. A known reached observation disables Resume as a convenience; the server remains authoritative.
 
 ### Auxiliary title usage
+
 Automatic title responses retain the existing immutable usage record with purpose `session-title`, original execution attribution, and a separate native thread/turn. A valid title may still be applied when native usage is missing; missing counters, prices and actual spend remain unavailable. Usage summary response counts and accepted-execution-missing-response coverage include only purpose `conversation`, so title inference never appears as a conversation turn. Lifetime session estimate totals and the matching-currency budget gate include a title response estimate once when the original usage and price basis are available. No separate budget, reservation or billing guarantee is introduced.
 
 ### cmds/delidev-cli/internal/cli constraints
@@ -157,6 +167,7 @@ Automatic title responses retain the existing immutable usage record with purpos
 - Every supplied child usage observation carries its original bounded native report and passes shared source-family schema and exact nullable counter-parity validation before publication. Codex history uses native cumulative/last/context counters; Claude tasks use all three unsigned task counters; Claude content/history uses the closed native provider-response graph. Missing reports remain unavailable usage, not fabricated counter evidence; retain original bytes and never expose arbitrary diagnostic extensions.
 
 ## Storage
+
 Schema 14 adds `response_usage` with one UUID-v7 record and a unique `(account_id, provider_id, response_digest)` key. The response body is bounded to 16 KiB. First publication commits the ledger, session progress, event and receipt in one transaction. An exact repeated response under another publication sequence/observation UUID returns the original ID without changing its timestamp, sequence, attribution or counts. A reused observation UUID or native identity with changed evidence requires recovery and rolls back the complete publication; it cannot double charge, silently upgrade missing counters or move inherited history to a new execution/turn/session. Reopening the server preserves this identity check.
 
 The server's first-commit timestamp is `observed_at`; it is not represented as a provider timestamp. Time/session/project indexes support bounded aggregation. Deleting the owning session cascades its derived ledger records. Archive and configuration deletion retain history. Permanent deletion and managed-backup erasure remain part of the separate full-issue cleanup contract.
@@ -170,25 +181,31 @@ Schema 23 adds a closed `response_usage.purpose` with existing rows defaulted to
 Migration from schemas 1–15 first publishes a validated, synchronized original backup, then changes schema atomically. Schema-13 migration does not rerun search or earlier ownership migrations; schema-14 migration adds pricing and budget totals, while schema-15 migration adds only budget totals. No legacy cumulative usage is converted into exact response records. Schema conflicts retain the original database and backup without resetting history.
 
 ## Security
+
 Publication retains all existing session/input/job/account/connection/Worker and terminal checks. Counter or identity conflicts cannot consume an event sequence. Raw provider response IDs, Codex native metadata amounts, instructions and content never enter normalized usage, journals or logs. The separately typed OpenCode observation below retains its original native estimate spelling without currency or billing authority; it remains excluded from logs. This path needs no additional reporting credential and never authorizes inference or changes account health, pause, outcome or queue capacity.
 
 ## Logging
+
 Budget writes log `session_budget_recorded` with correlation/session/request identities, replay state and explicit removal only, never thresholds or totals. Price writes log `model_pricing_recorded` with correlation, model/version UUIDs, revision and replay state only, excluding source, rates and amounts. Read completion uses `usage_summary_read_completed` with correlation ID and bounded group/response counts, never filter values, labels or token/cost totals. Structured `execution_event_committed` logs include the closed response-usage event kind, job/execution UUIDs, sequence and receipt replay classification. Exclude raw native bodies, response digests, amounts and token counters. Typed failures retain original ownership without logging provider diagnostics.
 
 ## Build and Test
+
 Run package Go tests and vet from `cmds/delidev-cli`. Ordinary tests cover exact nullable counts, closed schema/privacy, ownership, duplicate identities, conflicting evidence, rollback, restart, session deletion and schema-13 backup/migration failure. Ordinary tests never run installed harnesses. Opt-in `TestManualNativeCodexUsesRegisteredServerRelay` accepts an explicit pinned executable and verifies the real structured response through the Worker outbox and server ledger using a private runtime and scripted loopback provider; it cannot establish hosted billing, subscription, child, or other-platform evidence.
 
 ## Dependencies and Integrations
+
 - [Native harness contract](cmds-delidev-harness-contract.md)
 - [Session and durable event contract](cmds-delidev-sessions-contract.md)
 - [Connect protocol](protos-delidev-v1-contract.md)
 
 ## Change Triggers
+
 Update this contract, the project index, protocol/session/harness docs, validation records in pull requests, issues and CI logs/artifacts and `cmds/delidev-cli/AGENTS.md` when usage scope, deduplication, pricing, cost evidence, migrations or dashboard interfaces change. Do not promote fixture evidence into actual billing or cross-platform acceptance.
 
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - [DeliDev project](project-delidev.md)
 - [Complete requirements](cmds-delidev-requirements.md)
 - [Repository defaults](repository-defaults.md)
@@ -200,14 +217,15 @@ Instruction-file updates in this requirement apply only to changes in developmen
 - [Pinned cumulative token replay](https://github.com/openai/codex/blob/d8673cb68e349c208659b986697773d3145dbb14/codex-rs/app-server/src/request_processors/token_usage_replay.rs)
 
 ### OpenCode native observation boundary
+
 OpenCode `1.18.32` retains original finished-step and finalized-assistant counters through the Worker outbox and authenticated publication transaction as separate `UsageKind` documents with `opencode_observation`. Server-derived execution/account/connection/provider/model/version/native scope remains immutable. Each source is retained once per execution, with exact receipt replay; a new request or UUID cannot replace an existing source. The existing kind/session index and an explicit 100,000-observation session limit bound source checks across prior executions. Capacity failure retains original evidence and consumes no sequence; it never truncates historical records. No SQLite or protobuf migration is required.
 
 The profile preserves decimal-string uncached input, cache-read/write input, nonreasoning output and reasoning output separately. Missing total stays null. The pinned native implementation may have defaulted unknown fields to zero, and step/message observations overlap. Native estimate strings have no authoritative currency or billing semantics; original spelling is retained, not converted into a rate or charge. These records never enter `response_usage`, response summaries, token-price estimates or budget subtotals. Existing Codex normalized usage remains unchanged and cannot accept this profile.
 
 `session.execution.latest_usage_id` points to the latest original observation, independently from `latest_response_usage_id`. Existing authenticated usage list/get reads retain full source history. The desktop follows that exact resource reference and checks its session/execution/harness/version before displaying source, separate native categories, missing total and currency-unspecified estimate. It labels preceding-execution and stale observations, exposes no inferred total or current account relabeling, and has no mutation capability. This remains incomplete native telemetry and does not enable public OpenCode execution.
 
-
 ### Claude native observation boundary
+
 Claude `2.1.236` publishes original provider message-start, completed-block and message-metadata usage after the corresponding stored text lifecycle, followed independently by its original input-result usage. Each `UsageKind` resource contains a typed `claude_observation` and server-derived immutable execution/account/connection/provider/model/version/thread/turn attribution. Provider reports bind the existing product/provider message, selected model and original native envelope; block reports require its completed native block. Result usage requires closed messages but never publishes a session outcome or cleanup claim. A result can report failed native work; usage is independent of success.
 
 All signed-64-bit nonnegative counters cross Resource JSON as canonical decimal strings. Null/missing remains unavailable; the string `0` is measured zero. Native decimal USD estimate spelling remains a string. Preserve cache-duration and output-thinking detail, service tier, speed, geography, server-tool counts, ordered message/compaction/advisor/fallback iterations and typed fallback-credit status as observations only. Native input excludes cache-read/creation, output includes thinking, and no total is manufactured. Main-loop result usage is per input and excludes auxiliary/subagent calls; model and cost ledgers are cumulative within the original owned runtime. Never subtract snapshots, infer reset boundaries or charge overlapping report families. Separate streaming thinking estimates cannot enter this profile.
@@ -404,11 +422,13 @@ remain readable. Fixture/build checks do not establish installed-native, account
 or platform acceptance.
 
 ## Codex reviewer attribution
+
 Raw native response-completion notifications lack a model field. With AI review selected, default their immutable event-time model attribution to `unknown-auto-review-model` instead of borrowing the parent model. Only the original same-account/connection response reference proved by the bounded API relay may establish root, child or the builtin canonical reviewer attribution `codex-reviewer-gpt-5.6-luna`. A canonical reviewer model also selected as root/child remains ambiguous. Managed native review and parent-model fallback without distinguishing evidence remain unknown.
 
 Retain observed counters and original session/execution/account ownership, separate unknown and builtin reviewer groups, and expose the canonical builtin name only when proved. Builtin/unknown rows have no catalog model detail authority, no inferred pricing or actual spend and explicit unpriced coverage. Existing JSON response records and summary projections carry the closed attribution type; existing relational tables retain independent private response references without a migration. Historical records and duplicate receipts keep their original attribution.
 
 ## Conversation context attribution
+
 Execution assignments, transcript messages and exact Codex response-usage records
 retain their event-time context revision. Omitted revision is the historical
 initial context. Revert advances only the current session context after native
@@ -424,6 +444,7 @@ The Time range fieldset offers equal-width 24 hours, 7 days and 30 days buttons 
 Refresh reads the captured interval again; choosing the same preset captures a new interval. Manual date edits immediately clear the indicator while retaining the last valid selection during the existing 300ms validation delay. Reset and newly consumed Usage entries clear the indicator; Reset retains server-relative default bounds. Navigation preserves mounted drafts and active-only reads. The localized helper says the rolling range ends when selected. Keep semantic selected/focus styling, wrapping controls, independent filter scrolling and the fixed Reset footer. No polling, new wire fields, aggregation or native/account authority is added.
 
 ## Exact provider reference rates
+
 The separate `internal/tokenprices` collector validates provider-specific models.dev data without binary floating-point conversion. Preserve exact supported USD per-million decimals, explicit zero and unavailable rates. Match exact upstream provider and native ID, never `canonical_model_id`, model names or URL resemblance. Context tiers and distinct reasoning/audio/media variants retain bounded reference metadata without an applicable estimate. Distinct cache-write rates remain excluded from the supported input/cache-read/output basis; existing conservative cache-write accounting and unpriced Grok units remain separate.
 
 The collector alone activates no automatic policy or execution support. Complete activation composes source/native-ID identity, immutable future first-retention prices, durable Manual precedence, authenticated policy/refresh operations and the approved Model prices surface with the catalog's inline-model/reset ownership. Original historical unavailable estimates, prices, publication replay and budget subtotals cannot change on refresh.
@@ -453,6 +474,7 @@ rates; subscription references are explicitly API-equivalent. Grok closed-input
 units remain unavailable for token estimates and budgets.
 
 ### Automatic source-specific token prices
+
 The protocol-2 current layout supersedes the saved-Model pricing and Settings → Models flows described above. Usage filters and price links retain one exact Provider or subscription service plus the original native ID. They use typed `ModelIdentity` values; legacy Model UUID fields remain empty. Diagnostics, charts, routing evidence and immutable execution details preserve the same original source identity. Current Worker readiness accepts schema-4 inline routes and retains existing account, installation and startup checks.
 
 Model prices provides one source/native-ID picker. The compact header contains Automatic (models.dev) or Manual, Refresh prices and Edit. Show input, cached input and output rates, currency, retrieval freshness and the once-per-day update cadence. Missing rates differ from explicit zero. Detailed reference identity, snapshot digest, exclusions and immutable historical versions remain collapsed. Do not display a persistent Model UUID or a separate redundant Model details header. Retired API sources expose historical prices read-only; their metadata does not authorize new policies or rates. Provider deletion atomically retains the original non-secret Provider record in the existing retired configuration table. Live configuration reads never adopt that record, and neither matching nor no-match refreshes may change its retained active price.

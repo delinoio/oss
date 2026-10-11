@@ -1,30 +1,123 @@
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
-import { ownedMessage, useProductMessage, LocalizedText, copy, useLocale  } from "./localization";
+import {
+  ownedMessage,
+  useProductMessage,
+  LocalizedText,
+  copy,
+  useLocale,
+} from "./localization";
 import { useEffect, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 
-export enum ProviderGuidanceAction { Documentation = "documentation", ApiKeys = "api-keys", CodexFast = "codex-fast" }
-export function ProviderGuidance({ preset, documentation, keyCreation, documentationAction = ProviderGuidanceAction.Documentation, documentationLabel }: { preset?: string; documentation: string; keyCreation?: string; documentationAction?: ProviderGuidanceAction; documentationLabel?: string }) {
+export enum ProviderGuidanceAction {
+  Documentation = "documentation",
+  ApiKeys = "api-keys",
+  CodexFast = "codex-fast",
+}
+export function ProviderGuidance({
+  preset,
+  documentation,
+  keyCreation,
+  documentationAction = ProviderGuidanceAction.Documentation,
+  documentationLabel,
+}: {
+  preset?: string;
+  documentation: string;
+  keyCreation?: string;
+  documentationAction?: ProviderGuidanceAction;
+  documentationLabel?: string;
+}) {
   useLocale();
-  const [busy, setBusy] = useState(false), [status, setStatus] = useProductMessage("");
-  const owner = useRef(0), pending = useRef(false);
-  useEffect(() => { owner.current++; pending.current = false; setBusy(false); setStatus(""); return () => { owner.current++; }; }, [preset]);
+  const [busy, setBusy] = useState(false),
+    [status, setStatus] = useProductMessage("");
+  const owner = useRef(0),
+    pending = useRef(false);
+  useEffect(() => {
+    owner.current++;
+    pending.current = false;
+    setBusy(false);
+    setStatus("");
+    return () => {
+      owner.current++;
+    };
+  }, [preset]);
   const open = async (action: ProviderGuidanceAction) => {
     if (!preset || pending.current || !isTauri()) return;
-    const original = owner.current; pending.current = true; setBusy(true); setStatus("");
+    const original = owner.current;
+    pending.current = true;
+    setBusy(true);
+    setStatus("");
     try {
       // The native host selects its compiled official URL from this closed
       // identity/action. Server-provided help text cannot expand OS authority.
       await invoke("open_provider_guidance", { preset, action });
-      if (owner.current === original) setStatus(ownedMessage("provider-guidance.extra.028de0ea70b9"));
-    } catch { if (owner.current === original) setStatus(ownedMessage("provider-guidance.extra.45a2c8995dcd")); }
-    finally { if (owner.current === original) { pending.current = false; setBusy(false); } }
+      if (owner.current === original)
+        setStatus(ownedMessage("provider-guidance.extra.028de0ea70b9"));
+    } catch {
+      if (owner.current === original)
+        setStatus(ownedMessage("provider-guidance.extra.45a2c8995dcd"));
+    } finally {
+      if (owner.current === original) {
+        pending.current = false;
+        setBusy(false);
+      }
+    }
   };
-  return <div>
-    {preset && isTauri() ? <div className="actions">
-      {keyCreation ? <SettingsActionButton icon={SettingsActionIcon.Open} type="button" disabled={busy} onClick={() => void open(ProviderGuidanceAction.ApiKeys)}>{copy("provider-guidance.openOfficialKeyCreation_1c1c04")}</SettingsActionButton> : null}
-      {documentation ? <SettingsActionButton icon={SettingsActionIcon.Open} type="button" disabled={busy} onClick={() => void open(documentationAction)}>{documentationLabel ?? copy("provider-guidance.openProviderDocumentation_9682aa")}</SettingsActionButton> : null}
-    </div> : <>{keyCreation ? <p><LocalizedText id="provider-guidance.officialKeyCreation_adef05" components={{ s0: <code>{keyCreation}</code> }} /></p> : null}{documentationAction === ProviderGuidanceAction.CodexFast ? <a href="https://learn.chatgpt.com/docs/agent-configuration/speed" target="_blank" rel="noreferrer">{documentationLabel}</a> : documentation ? <p><LocalizedText id="provider-guidance.providerDocumentation_7eeff8" components={{ s0: <code>{documentation}</code> }} /></p> : null}</>}
-    {status ? <p role="status">{status}</p> : null}
-  </div>;
+  return (
+    <div>
+      {preset && isTauri() ? (
+        <div className="actions">
+          {keyCreation ? (
+            <SettingsActionButton
+              icon={SettingsActionIcon.Open}
+              type="button"
+              disabled={busy}
+              onClick={() => void open(ProviderGuidanceAction.ApiKeys)}
+            >
+              {copy("provider-guidance.openOfficialKeyCreation_1c1c04")}
+            </SettingsActionButton>
+          ) : null}
+          {documentation ? (
+            <SettingsActionButton
+              icon={SettingsActionIcon.Open}
+              type="button"
+              disabled={busy}
+              onClick={() => void open(documentationAction)}
+            >
+              {documentationLabel ??
+                copy("provider-guidance.openProviderDocumentation_9682aa")}
+            </SettingsActionButton>
+          ) : null}
+        </div>
+      ) : (
+        <>
+          {keyCreation ? (
+            <p>
+              <LocalizedText
+                id="provider-guidance.officialKeyCreation_adef05"
+                components={{ s0: <code>{keyCreation}</code> }}
+              />
+            </p>
+          ) : null}
+          {documentationAction === ProviderGuidanceAction.CodexFast ? (
+            <a
+              href="https://learn.chatgpt.com/docs/agent-configuration/speed"
+              target="_blank"
+              rel="noreferrer"
+            >
+              {documentationLabel}
+            </a>
+          ) : documentation ? (
+            <p>
+              <LocalizedText
+                id="provider-guidance.providerDocumentation_7eeff8"
+                components={{ s0: <code>{documentation}</code> }}
+              />
+            </p>
+          ) : null}
+        </>
+      )}
+      {status ? <p role="status">{status}</p> : null}
+    </div>
+  );
 }

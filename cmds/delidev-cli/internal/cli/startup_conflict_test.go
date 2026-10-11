@@ -121,12 +121,20 @@ func TestDesktopStartupOccupiedListenerDoesNotRemap(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer original.Close()
+	// Windows exclusive listeners can report access denied instead of address
+	// in use. That ambiguous error must retain the unclassified conflict.
+	probe, bindErr := net.Listen("tcp4", original.Addr().String())
+	if bindErr == nil {
+		probe.Close()
+		t.Fatal("occupied listener accepted a second bind")
+	}
+	want := safeDesktopFailure(desktopListenerFailure(bindErr)).StartupConflict
 	root := filepath.Join(t.TempDir(), "scope")
 	var out bytes.Buffer
 	code := runDesktopHostCommand(context.Background(), options{dataDir: root}, []string{"--control-version", "2", "--listen", original.Addr().String()}, IO{In: bytes.NewReader(nil), Out: &out, Err: &bytes.Buffer{}})
 	var reply desktopReply
-	if json.Unmarshal(out.Bytes(), &reply) != nil || code == 0 || reply.Error == nil || reply.Error.StartupConflict != startupOwnership {
-		t.Fatal("occupied listener was not classified")
+	if json.Unmarshal(out.Bytes(), &reply) != nil || code == 0 || reply.Error == nil || reply.Error.Code != domain.Conflict || reply.Error.StartupConflict != want {
+		t.Fatalf("occupied listener classification differs from native bind: code=%d reply=%+v", code, reply.Error)
 	}
 	if replacement, err := net.Listen("tcp4", original.Addr().String()); err == nil {
 		replacement.Close()

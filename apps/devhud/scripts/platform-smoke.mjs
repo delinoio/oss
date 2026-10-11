@@ -18,7 +18,9 @@ import { waitForChildClose } from "./platform-smoke-child.mjs";
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(appRoot, "../..");
-const definitions = JSON.parse(readFileSync(join(appRoot, "platforms.json"), "utf8"));
+const definitions = JSON.parse(
+  readFileSync(join(appRoot, "platforms.json"), "utf8"),
+);
 const target = definitions.targets.find(
   ({ os, arch }) => os === process.platform && arch === process.arch,
 );
@@ -55,25 +57,48 @@ function parseArguments() {
 
 function defaultArtifact() {
   if (process.platform === "darwin") {
-    return join(repoRoot, "target/release/bundle/macos/DevHUD.app/Contents/MacOS/devhud");
+    return join(
+      repoRoot,
+      "target/release/bundle/macos/DevHUD.app/Contents/MacOS/devhud",
+    );
   }
-  return join(repoRoot, `target/release/devhud${process.platform === "win32" ? ".exe" : ""}`);
+  return join(
+    repoRoot,
+    `target/release/devhud${process.platform === "win32" ? ".exe" : ""}`,
+  );
 }
 
 function requiredResources(executable) {
   const binaryDir = dirname(executable);
   if (process.platform === "darwin") {
     const contents = resolve(binaryDir, "..");
-    const helpers = ["GPU", "Renderer", "Plugin", "Alerts", null].map((kind) => {
-      const helper = kind ? `devhud Helper (${kind})` : "devhud Helper";
-      return join(contents, `Frameworks/${helper}.app/Contents/MacOS/${helper}`);
-    });
+    const helpers = ["GPU", "Renderer", "Plugin", "Alerts", null].map(
+      (kind) => {
+        const helper = kind ? `devhud Helper (${kind})` : "devhud Helper";
+        return join(
+          contents,
+          `Frameworks/${helper}.app/Contents/MacOS/${helper}`,
+        );
+      },
+    );
     return {
       paths: [
-        join(contents, "Frameworks/Chromium Embedded Framework.framework/Chromium Embedded Framework"),
-        join(contents, "Frameworks/Chromium Embedded Framework.framework/Resources/icudtl.dat"),
-        join(contents, "Frameworks/Chromium Embedded Framework.framework/Resources/resources.pak"),
-        join(contents, "Frameworks/Chromium Embedded Framework.framework/Libraries/libcef_sandbox.dylib"),
+        join(
+          contents,
+          "Frameworks/Chromium Embedded Framework.framework/Chromium Embedded Framework",
+        ),
+        join(
+          contents,
+          "Frameworks/Chromium Embedded Framework.framework/Resources/icudtl.dat",
+        ),
+        join(
+          contents,
+          "Frameworks/Chromium Embedded Framework.framework/Resources/resources.pak",
+        ),
+        join(
+          contents,
+          "Frameworks/Chromium Embedded Framework.framework/Libraries/libcef_sandbox.dylib",
+        ),
         ...helpers,
       ],
     };
@@ -88,9 +113,9 @@ function requiredResources(executable) {
         ? binaryDir
         : sharunResourceDir && existsSync(join(sharunResourceDir, "libcef.so"))
           ? sharunResourceDir
-        : existsSync(join(binaryDir, "libcef.so"))
-          ? binaryDir
-          : resolve(binaryDir, "../share/DevHUD")
+          : existsSync(join(binaryDir, "libcef.so"))
+            ? binaryDir
+            : resolve(binaryDir, "../share/DevHUD")
       : binaryDir;
   const names =
     process.platform === "win32"
@@ -126,12 +151,16 @@ function validateMinimumHost() {
   if (process.platform === "darwin") {
     const kernelMajor = Number.parseInt(release().split(".")[0], 10);
     if (kernelMajor < target.minimumKernelMajor) {
-      fail(`platform smoke requires ${target.minimum}, found Darwin ${release()}`);
+      fail(
+        `platform smoke requires ${target.minimum}, found Darwin ${release()}`,
+      );
     }
   } else if (process.platform === "win32") {
     const build = Number.parseInt(release().split(".")[2], 10);
     if (build < target.minimumBuild) {
-      fail(`platform smoke requires ${target.minimum}, found Windows ${release()}`);
+      fail(
+        `platform smoke requires ${target.minimum}, found Windows ${release()}`,
+      );
     }
   } else if (process.platform === "linux") {
     const distribution = Object.fromEntries(
@@ -140,16 +169,24 @@ function validateMinimumHost() {
         .filter((line) => line.includes("="))
         .map((line) => {
           const separator = line.indexOf("=");
-          return [line.slice(0, separator), line.slice(separator + 1).replace(/^"|"$/gu, "")];
+          return [
+            line.slice(0, separator),
+            line.slice(separator + 1).replace(/^"|"$/gu, ""),
+          ];
         }),
     );
-    if (distribution.ID !== "ubuntu" || Number.parseFloat(distribution.VERSION_ID) < 24.04) {
+    if (
+      distribution.ID !== "ubuntu" ||
+      Number.parseFloat(distribution.VERSION_ID) < 24.04
+    ) {
       fail(
         `platform smoke requires Ubuntu 24.04+, found ${distribution.ID} ${distribution.VERSION_ID}`,
       );
     }
     const hasDisplay = Boolean(process.env.DISPLAY);
-    const hasWayland = Boolean(process.env.WAYLAND_DISPLAY) || process.env.XDG_SESSION_TYPE === "wayland";
+    const hasWayland =
+      Boolean(process.env.WAYLAND_DISPLAY) ||
+      process.env.XDG_SESSION_TYPE === "wayland";
     if (!hasDisplay && hasWayland) {
       fail("native Wayland is unsupported; use X11 or XWayland");
     }
@@ -196,7 +233,9 @@ async function runScenario(
       const outcome = child.signalCode
         ? `was terminated by ${child.signalCode}`
         : `exited ${exitCode}`;
-      throw new Error(`${mode} smoke ${outcome}, expected exit ${expectedExit}\n${output}`);
+      throw new Error(
+        `${mode} smoke ${outcome}, expected exit ${expectedExit}\n${output}`,
+      );
     }
     for (const marker of expectedMarkers) {
       if (!output.includes(marker)) {
@@ -210,7 +249,9 @@ async function runScenario(
     if (persistedLogPaths.length === 0) {
       throw new Error(`${mode} smoke did not create a dated diagnostic log`);
     }
-    const persistedOutput = persistedLogPaths.map((path) => readFileSync(path, "utf8")).join("");
+    const persistedOutput = persistedLogPaths
+      .map((path) => readFileSync(path, "utf8"))
+      .join("");
     const persistedEntries = persistedOutput
       .trim()
       .split("\n")
@@ -218,17 +259,26 @@ async function runScenario(
         try {
           return JSON.parse(line);
         } catch (error) {
-          throw new Error(`${mode} smoke persisted invalid JSON on line ${index + 1}: ${error.message}`);
+          throw new Error(
+            `${mode} smoke persisted invalid JSON on line ${index + 1}: ${error.message}`,
+          );
         }
       });
     for (const [index, entry] of persistedEntries.entries()) {
-      if (typeof entry.timestamp !== "string" || Number.isNaN(Date.parse(entry.timestamp))) {
-        throw new Error(`${mode} smoke persisted an invalid timestamp on line ${index + 1}`);
+      if (
+        typeof entry.timestamp !== "string" ||
+        Number.isNaN(Date.parse(entry.timestamp))
+      ) {
+        throw new Error(
+          `${mode} smoke persisted an invalid timestamp on line ${index + 1}`,
+        );
       }
     }
     for (const marker of expectedMarkers) {
       if (!persistedOutput.includes(marker)) {
-        throw new Error(`${mode} smoke did not persist ${marker}\n${persistedOutput}`);
+        throw new Error(
+          `${mode} smoke did not persist ${marker}\n${persistedOutput}`,
+        );
       }
     }
   } finally {
@@ -252,7 +302,9 @@ try {
 const resources = requiredResources(executable);
 const missing = [executable, ...resources.paths].filter((path) => {
   try {
-    return !readdirSync(dirname(path)).includes(path.slice(dirname(path).length + 1));
+    return !readdirSync(dirname(path)).includes(
+      path.slice(dirname(path).length + 1),
+    );
   } catch {
     return true;
   }
@@ -262,7 +314,9 @@ if (missing.length > 0) {
 }
 
 if (process.platform === "linux") {
-  const sandbox = resources.paths.find((path) => path.endsWith("chrome-sandbox"));
+  const sandbox = resources.paths.find((path) =>
+    path.endsWith("chrome-sandbox"),
+  );
   const metadata = statSync(sandbox);
   const sandboxMode = metadata.mode & 0o7777;
   if (metadata.uid !== 0 || metadata.gid !== 0 || sandboxMode !== 0o4755) {
@@ -295,4 +349,6 @@ await runScenario(
   ["cef_fatal_initialization", "resource-pack"],
   { rustLog: "off" },
 );
-console.log(`devhud: platform smoke passed for ${target.id} (${target.minimum})`);
+console.log(
+  `devhud: platform smoke passed for ${target.id} (${target.minimum})`,
+);

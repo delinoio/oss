@@ -4,6 +4,7 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"os"
 	"path/filepath"
 	"strings"
@@ -399,7 +400,7 @@ func TestForkOriginalGitMarkerSurvivesPhaseBoundaries(t *testing.T) {
 					}
 				}
 				marker := filepath.Join(source.PrimaryPath, ".git")
-				original, err := os.Lstat(marker)
+				original, err := security.StableStat(marker)
 				if err != nil {
 					t.Fatal(err)
 				}

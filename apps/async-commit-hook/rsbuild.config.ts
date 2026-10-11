@@ -6,7 +6,10 @@ export default defineConfig({
   source: { entry: { index: "./src/main.tsx" } },
   html: { template: "./index.html" },
   server: {
-    host: "localhost", port: 46308, strictPort: true, cors: false,
+    host: "localhost",
+    port: 46308,
+    strictPort: true,
+    cors: false,
     proxy: {
       "/async_commit_hook.v1.LocalService/": {
         target: "http://127.0.0.1:46309",

@@ -32,14 +32,14 @@ unchanged commit and clean working tree before publishing verified output. The c
 rejects cross compilation as native evidence. `--plan` prints the same six-entry
 matrix consumed by CI; it requires neither dependencies nor credentials.
 
-| Target | Native runner | Package |
-| --- | --- | --- |
-| `x86_64-apple-darwin` | `macos-15-intel` | Ad-hoc signed `.app` in a tar archive |
-| `aarch64-apple-darwin` | `macos-15` | Ad-hoc signed `.app` in a tar archive |
-| `x86_64-pc-windows-msvc` | `windows-2022` | Unsigned MSI |
-| `aarch64-pc-windows-msvc` | `windows-11-arm` | Unsigned MSI |
-| `x86_64-unknown-linux-gnu` | `ubuntu-24.04` | Unsigned DEB |
-| `aarch64-unknown-linux-gnu` | `ubuntu-24.04-arm` | Unsigned DEB |
+| Target                      | Native runner      | Package                               |
+| --------------------------- | ------------------ | ------------------------------------- |
+| `x86_64-apple-darwin`       | `macos-15-intel`   | Ad-hoc signed `.app` in a tar archive |
+| `aarch64-apple-darwin`      | `macos-15`         | Ad-hoc signed `.app` in a tar archive |
+| `x86_64-pc-windows-msvc`    | `windows-2022`     | Unsigned MSI                          |
+| `aarch64-pc-windows-msvc`   | `windows-11-arm`   | Unsigned MSI                          |
+| `x86_64-unknown-linux-gnu`  | `ubuntu-24.04`     | Unsigned DEB                          |
+| `aarch64-unknown-linux-gnu` | `ubuntu-24.04-arm` | Unsigned DEB                          |
 
 Linux desktop packages require Ubuntu 24.04 or newer on X11. The pinned GTK4-backed runtime requires system GTK 4.14 or newer. The shared Tauri CLI remains compatible with the Ubuntu 22.04 glibc baseline used to build its immutable prebuilt release.
 
@@ -65,7 +65,6 @@ CEF license and the exact distribution's Chromium `CREDITS.html`. Distribution
 identity and complete packaged notice bytes are checked; the report also records
 the Chromium credits SHA-256. Ordinary `bundle:native` is development packaging;
 only the verified dry-run path currently assembles the complete native notice set.
-
 
 ### Localization resources
 

@@ -1,18 +1,23 @@
 # Project: with-watch
 
 ## Goal
+
 Provide a Rust-based CLI wrapper that reruns delegated shell utilities and arbitrary commands when inferred or explicit filesystem inputs change.
 
 ## Project ID
+
 `with-watch`
 
 ## Domain Ownership Map
+
 - `crates/with-watch`
 
 ## Domain Contract Documents
+
 - `docs/crates-with-watch-foundation.md`
 
 ## Cross-Domain Invariants
+
 - Manual version selection and bot-owned release orchestration follow `docs/repository-workflow-contract.md`; the `Release Project` workflow supports patch, minor, and major increments while preserving this project’s existing distribution channels.
 - Root passthrough mode must remain `with-watch [--no-hash] [--clear] <utility> [args...]`.
 - Shell mode must remain `with-watch [--no-hash] [--clear] --shell '<expr>'` and is the supported entrypoint for `&&`, `||`, and `|`.
@@ -47,6 +52,7 @@ Provide a Rust-based CLI wrapper that reruns delegated shell utilities and arbit
 - `with-watch` -> `crates/with-watch`
 
 ## Change Policy
+
 - Update this index and `docs/crates-with-watch-foundation.md` together when CLI shape, watch inference behavior, operator guidance, release automation, side-effect suppression, or storage/logging contracts change.
 - Update root `Cargo.toml`, `.github/workflows/release-with-watch.yml`, `scripts/release/update-homebrew.sh`, and `packaging/homebrew/templates/with-watch.rb.tmpl` in the same change when with-watch release tags, artifact names, or package-manager distribution contracts change.
 - Keep `scripts/install/with-watch.sh`, `scripts/install/with-watch.ps1`, and `crates/with-watch/Cargo.toml` synchronized with release asset names and signing contracts.
@@ -55,6 +61,7 @@ Provide a Rust-based CLI wrapper that reruns delegated shell utilities and arbit
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - `docs/project-template.md`
 - `docs/domain-template.md`
 - `docs/README.md`

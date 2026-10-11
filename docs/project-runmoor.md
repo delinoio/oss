@@ -20,6 +20,7 @@ Runmoor manages disposable, single-job GitHub Actions runners on one developer o
 - [Runmoor public documentation contract](apps-runmoor-docs-foundation.md).
 
 ## Cross-Domain Invariants
+
 - Manual version selection and bot-owned release orchestration follow `docs/repository-workflow-contract.md`; the `Release Project` workflow supports patch, minor, and major increments while preserving this project’s existing distribution channels.
 
 - Runmoor public guides are owned directly by `apps/public-docs/docs/runmoor` and published under `/runmoor`. Stable routes are `/runmoor/`, `/runmoor/install`, `/runmoor/configuration`, `/runmoor/commands`, `/runmoor/docker`, `/runmoor/tart`, `/runmoor/host`, and `/runmoor/operations`.

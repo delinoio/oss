@@ -1,33 +1,54 @@
-import assert from 'node:assert/strict';
-import {readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync, existsSync} from 'node:fs';
-import {tmpdir} from 'node:os';
-import {join} from 'node:path';
-import {createHash} from 'node:crypto';
-import {spawnSync} from 'node:child_process';
-import test from 'node:test';
-const root = new URL('../../', import.meta.url);
-const read = (path) => readFileSync(new URL(path, root), 'utf8');
-test('source versions and six target contract agree', () => {
- const result=spawnSync('python3',['scripts/release/build-async-commit-hook.py','--validate'],{cwd:root,encoding:'utf8'});
- assert.equal(result.status,0,result.stderr);
- const metadata=JSON.parse(result.stdout);assert.equal(metadata.targets.length,6);assert.equal(metadata.executable,'ach');
+import assert from "node:assert/strict";
+import {
+  readFileSync,
+  writeFileSync,
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  existsSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
+import test from "node:test";
+const root = new URL("../../", import.meta.url);
+const read = (path) => readFileSync(new URL(path, root), "utf8");
+test("source versions and six target contract agree", () => {
+  const result = spawnSync(
+    "python3",
+    ["scripts/release/build-async-commit-hook.py", "--validate"],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  const metadata = JSON.parse(result.stdout);
+  assert.equal(metadata.targets.length, 6);
+  assert.equal(metadata.executable, "ach");
 });
-test('installers verify signatures and checksum before extraction and preserve existing installs', () => {
- for(const path of ['install.sh','install.ps1']) {
-  const text=read(`scripts/install/async-commit-hook.${path.endsWith('.ps1') ? 'ps1' : 'sh'}`);
-  assert.match(text,/verify-blob/);assert.match(text,/SHA256SUMS.sigstore.json/);
-  assert.match(text,/release-async-commit-hook.yml@refs\/heads\/main/);
-  assert.match(text,/token.actions.githubusercontent.com/);
-  assert.match(text,/api\.github\.com\/repos\/delinoio\/oss\/releases/);
-  assert.match(text,/prerelease/);
-  assert.doesNotMatch(text,/releases\/latest\/download/);
-  assert.match(text,/self-update/);assert.match(text,/Checksum mismatch/);
- }
- const shell=spawnSync('sh',['-n','scripts/install/async-commit-hook.sh'],{cwd:root,encoding:'utf8'});
- assert.equal(shell.status,0,shell.stderr);
+test("installers verify signatures and checksum before extraction and preserve existing installs", () => {
+  for (const path of ["install.sh", "install.ps1"]) {
+    const text = read(
+      `scripts/install/async-commit-hook.${path.endsWith(".ps1") ? "ps1" : "sh"}`,
+    );
+    assert.match(text, /verify-blob/);
+    assert.match(text, /SHA256SUMS.sigstore.json/);
+    assert.match(text, /release-async-commit-hook.yml@refs\/heads\/main/);
+    assert.match(text, /token.actions.githubusercontent.com/);
+    assert.match(text, /api\.github\.com\/repos\/delinoio\/oss\/releases/);
+    assert.match(text, /prerelease/);
+    assert.doesNotMatch(text, /releases\/latest\/download/);
+    assert.match(text, /self-update/);
+    assert.match(text, /Checksum mismatch/);
+  }
+  const shell = spawnSync(
+    "sh",
+    ["-n", "scripts/install/async-commit-hook.sh"],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(shell.status, 0, shell.stderr);
 });
-test('archives reject extra paths and formula supports four Unix targets', () => {
- const code=`import importlib.util, io, tarfile, zipfile, sys
+test("archives reject extra paths and formula supports four Unix targets", () => {
+  const code = `import importlib.util, io, tarfile, zipfile, sys
 sys.dont_write_bytecode=True
 spec=importlib.util.spec_from_file_location('build','scripts/release/build-async-commit-hook.py')
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
@@ -41,72 +62,155 @@ hashes={f'ach-{o}-{a}.tar.gz':'a'*64 for o in ['darwin','linux'] for a in ['amd6
 f=m.formula('0.1.0',hashes)
 assert f.count('sha256')==4 and 'bin.install "ach"' in f
 `;
- const result=spawnSync('python3',['-c',code],{cwd:root,encoding:'utf8'});
- assert.equal(result.status,0,result.stderr);
+  const result = spawnSync("python3", ["-c", code], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
 });
 
-test('shell installer rejects invalid signature and checksum before publishing an executable', () => {
- const directory=mkdtempSync(join(tmpdir(),'ach-installer-'));
- try {
-  const bin=join(directory,'tools'), assets=join(directory,'assets');mkdirSync(bin);mkdirSync(assets);
-  writeFileSync(join(bin,'cosign'),'#!/bin/sh\nexit "$TEST_SIGNATURE_EXIT"\n',{mode:0o755});
-  writeFileSync(join(bin,'curl'),'#!/bin/sh\nurl=\nwhile [ "$#" -gt 0 ]; do case "$1" in https://*) url=$1;; -o) shift; output=$1;; esac; shift; done\ncase "$url" in *api.github.com/repos/delinoio/oss/releases*page=1) cat "$TEST_RELEASES";; *api.github.com/repos/delinoio/oss/releases*) printf "[]";; *) name=${url##*/}; cp "$TEST_ASSETS/$name" "$output";; esac\n',{mode:0o755});
-  const platform=process.platform==='darwin'?'darwin':'linux', arch=process.arch==='arm64'?'arm64':'amd64';
-  const asset=`ach-${platform}-${arch}.tar.gz`;
-  const archive=spawnSync('python3',['-c',`import io,tarfile,sys; a=tarfile.open(sys.argv[1],'w:gz'); i=tarfile.TarInfo('ach'); i.size=7; i.mode=0o755; a.addfile(i,io.BytesIO(b'fixture')); a.close()`,join(assets,asset)]);
-  assert.equal(archive.status,0);
-  writeFileSync(join(assets,'releases.json'),'[{"tag_name":"async-commit-hook@v0.1.0","draft":false,"prerelease":false}]');
-  for (const name of [asset+'.sigstore.json','SHA256SUMS.sigstore.json']) writeFileSync(join(assets,name),'fixture');
-  const digest=createHash('sha256').update(readFileSync(join(assets,asset))).digest('hex');
-  for(const [signatureExit,checksum,success] of [['1',digest,false],['0','0'.repeat(64),false],['0',digest,true]]) {
-   writeFileSync(join(assets,'SHA256SUMS'),`${checksum}  ${asset}\n`);
-   const destination=join(directory,`install-${signatureExit}-${checksum.slice(0,8)}`);
-   const result=spawnSync('sh',['scripts/install/async-commit-hook.sh'],{cwd:root,env:{...process.env,PATH:bin+':'+process.env.PATH,ACH_INSTALL_DIR:destination,TEST_ASSETS:assets,TEST_RELEASES:join(assets,'releases.json'),TEST_SIGNATURE_EXIT:signatureExit},encoding:'utf8'});
-   assert.equal(result.status===0,success,result.stderr);
-   if(success) assert.equal(readFileSync(join(destination,'ach'),'utf8'),'fixture');
+test("shell installer rejects invalid signature and checksum before publishing an executable", () => {
+  const directory = mkdtempSync(join(tmpdir(), "ach-installer-"));
+  try {
+    const bin = join(directory, "tools"),
+      assets = join(directory, "assets");
+    mkdirSync(bin);
+    mkdirSync(assets);
+    writeFileSync(
+      join(bin, "cosign"),
+      '#!/bin/sh\nexit "$TEST_SIGNATURE_EXIT"\n',
+      { mode: 0o755 },
+    );
+    writeFileSync(
+      join(bin, "curl"),
+      '#!/bin/sh\nurl=\nwhile [ "$#" -gt 0 ]; do case "$1" in https://*) url=$1;; -o) shift; output=$1;; esac; shift; done\ncase "$url" in *api.github.com/repos/delinoio/oss/releases*page=1) cat "$TEST_RELEASES";; *api.github.com/repos/delinoio/oss/releases*) printf "[]";; *) name=${url##*/}; cp "$TEST_ASSETS/$name" "$output";; esac\n',
+      { mode: 0o755 },
+    );
+    const platform = process.platform === "darwin" ? "darwin" : "linux",
+      arch = process.arch === "arm64" ? "arm64" : "amd64";
+    const asset = `ach-${platform}-${arch}.tar.gz`;
+    const archive = spawnSync("python3", [
+      "-c",
+      `import io,tarfile,sys; a=tarfile.open(sys.argv[1],'w:gz'); i=tarfile.TarInfo('ach'); i.size=7; i.mode=0o755; a.addfile(i,io.BytesIO(b'fixture')); a.close()`,
+      join(assets, asset),
+    ]);
+    assert.equal(archive.status, 0);
+    writeFileSync(
+      join(assets, "releases.json"),
+      '[{"tag_name":"async-commit-hook@v0.1.0","draft":false,"prerelease":false}]',
+    );
+    for (const name of [asset + ".sigstore.json", "SHA256SUMS.sigstore.json"])
+      writeFileSync(join(assets, name), "fixture");
+    const digest = createHash("sha256")
+      .update(readFileSync(join(assets, asset)))
+      .digest("hex");
+    for (const [signatureExit, checksum, success] of [
+      ["1", digest, false],
+      ["0", "0".repeat(64), false],
+      ["0", digest, true],
+    ]) {
+      writeFileSync(join(assets, "SHA256SUMS"), `${checksum}  ${asset}\n`);
+      const destination = join(
+        directory,
+        `install-${signatureExit}-${checksum.slice(0, 8)}`,
+      );
+      const result = spawnSync("sh", ["scripts/install/async-commit-hook.sh"], {
+        cwd: root,
+        env: {
+          ...process.env,
+          PATH: bin + ":" + process.env.PATH,
+          ACH_INSTALL_DIR: destination,
+          TEST_ASSETS: assets,
+          TEST_RELEASES: join(assets, "releases.json"),
+          TEST_SIGNATURE_EXIT: signatureExit,
+        },
+        encoding: "utf8",
+      });
+      assert.equal(result.status === 0, success, result.stderr);
+      if (success)
+        assert.equal(readFileSync(join(destination, "ach"), "utf8"), "fixture");
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
   }
- } finally {rmSync(directory,{recursive:true,force:true});}
 });
 
-test('installer selects the highest published project release by default and exact versions when requested', () => {
- const directory=mkdtempSync(join(tmpdir(),'ach-installer-version-'));
- try {
-  const bin=join(directory,'tools'), requests=join(directory,'requests'), releases=join(directory,'releases.json');mkdirSync(bin);
-  writeFileSync(join(bin,'cosign'),'#!/bin/sh\nexit 0\n',{mode:0o755});
-  writeFileSync(join(bin,'curl'),'#!/bin/sh\nurl=\nwhile [ "$#" -gt 0 ]; do case "$1" in https://*) url=$1;; -o) shift; output=$1;; esac; printf "%s\\n" "$1" >> "$TEST_REQUESTS"; shift; done\ncase "$url" in *api.github.com/repos/delinoio/oss/releases*page=1) cat "$TEST_RELEASES"; exit 0;; *api.github.com/repos/delinoio/oss/releases*) printf "[]"; exit 0;; *) exit 77;; esac\n',{mode:0o755});
-  writeFileSync(releases,'[{"tag_name":"async-commit-hook@v0.2.0","draft":false,"prerelease":false},{"tag_name":"async-commit-hook@v0.3.0","draft":false,"prerelease":false},{"tag_name":"async-commit-hook@v9.0.0-rc.1","draft":false,"prerelease":true},{"tag_name":"devhud@v9.0.0","draft":false,"prerelease":false},{"tag_name":"async-commit-hook@v8.0.0","draft":true,"prerelease":false}]');
-  for(const [args,environment,version] of [
-   [[],undefined,'0.3.0'],
-   [[], '0.2.0','0.2.0'],
-   [['--version','0.3.0'], '0.2.0','0.3.0'],
-   [['--version','0.4.0'], 'invalid','0.4.0'],
-   [['--version'],undefined,null],
-   [['--version',''],undefined,null],
-   [['--version','0.1'],undefined,null],
-   [['--version','01.2.3'],undefined,null],
-   [['--version','0.1.0;touch'],undefined,null],
-   [['--unknown'],undefined,null],
-   [['0.2.0'],undefined,null],
-   [['--version','0.2.0','extra'],undefined,null],
-  ]) {
-   rmSync(requests,{force:true});
-   const result=spawnSync('sh',['scripts/install/async-commit-hook.sh',...args],{
-    cwd:root,encoding:'utf8',env:{...process.env,PATH:bin+':'+process.env.PATH,ACH_VERSION:environment,TEST_REQUESTS:requests,TEST_RELEASES:releases},
-   });
-   assert.equal(result.status,version?77:2,`${JSON.stringify(args)}: ${result.stderr}`);
-   if(version === '0.3.0') {
-    const requested=readFileSync(requests,'utf8');
-    assert.match(requested,/async-commit-hook@v0\.3\.0\/ach-/);
-    assert.doesNotMatch(requested,/releases\/latest\/download/);
-   }
-   else if(version) assert.ok(readFileSync(requests,'utf8').includes(`/async-commit-hook@v${version}/ach-`));
-   else assert.equal(existsSync(requests),false,'invalid arguments started a download');
+test("installer selects the highest published project release by default and exact versions when requested", () => {
+  const directory = mkdtempSync(join(tmpdir(), "ach-installer-version-"));
+  try {
+    const bin = join(directory, "tools"),
+      requests = join(directory, "requests"),
+      releases = join(directory, "releases.json");
+    mkdirSync(bin);
+    writeFileSync(join(bin, "cosign"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    writeFileSync(
+      join(bin, "curl"),
+      '#!/bin/sh\nurl=\nwhile [ "$#" -gt 0 ]; do case "$1" in https://*) url=$1;; -o) shift; output=$1;; esac; printf "%s\\n" "$1" >> "$TEST_REQUESTS"; shift; done\ncase "$url" in *api.github.com/repos/delinoio/oss/releases*page=1) cat "$TEST_RELEASES"; exit 0;; *api.github.com/repos/delinoio/oss/releases*) printf "[]"; exit 0;; *) exit 77;; esac\n',
+      { mode: 0o755 },
+    );
+    writeFileSync(
+      releases,
+      '[{"tag_name":"async-commit-hook@v0.2.0","draft":false,"prerelease":false},{"tag_name":"async-commit-hook@v0.3.0","draft":false,"prerelease":false},{"tag_name":"async-commit-hook@v9.0.0-rc.1","draft":false,"prerelease":true},{"tag_name":"devhud@v9.0.0","draft":false,"prerelease":false},{"tag_name":"async-commit-hook@v8.0.0","draft":true,"prerelease":false}]',
+    );
+    for (const [args, environment, version] of [
+      [[], undefined, "0.3.0"],
+      [[], "0.2.0", "0.2.0"],
+      [["--version", "0.3.0"], "0.2.0", "0.3.0"],
+      [["--version", "0.4.0"], "invalid", "0.4.0"],
+      [["--version"], undefined, null],
+      [["--version", ""], undefined, null],
+      [["--version", "0.1"], undefined, null],
+      [["--version", "01.2.3"], undefined, null],
+      [["--version", "0.1.0;touch"], undefined, null],
+      [["--unknown"], undefined, null],
+      [["0.2.0"], undefined, null],
+      [["--version", "0.2.0", "extra"], undefined, null],
+    ]) {
+      rmSync(requests, { force: true });
+      const result = spawnSync(
+        "sh",
+        ["scripts/install/async-commit-hook.sh", ...args],
+        {
+          cwd: root,
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            PATH: bin + ":" + process.env.PATH,
+            ACH_VERSION: environment,
+            TEST_REQUESTS: requests,
+            TEST_RELEASES: releases,
+          },
+        },
+      );
+      assert.equal(
+        result.status,
+        version ? 77 : 2,
+        `${JSON.stringify(args)}: ${result.stderr}`,
+      );
+      if (version === "0.3.0") {
+        const requested = readFileSync(requests, "utf8");
+        assert.match(requested, /async-commit-hook@v0\.3\.0\/ach-/);
+        assert.doesNotMatch(requested, /releases\/latest\/download/);
+      } else if (version)
+        assert.ok(
+          readFileSync(requests, "utf8").includes(
+            `/async-commit-hook@v${version}/ach-`,
+          ),
+        );
+      else
+        assert.equal(
+          existsSync(requests),
+          false,
+          "invalid arguments started a download",
+        );
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
   }
- } finally {rmSync(directory,{recursive:true,force:true});}
 });
 
-test('release tag verification peels tags and rejects wrong revisions before publication', () => {
- const code=`import importlib.util, os, subprocess, tempfile, sys
+test("release tag verification peels tags and rejects wrong revisions before publication", () => {
+  const code = `import importlib.util, os, subprocess, tempfile, sys
 sys.dont_write_bytecode=True
 spec=importlib.util.spec_from_file_location('build','scripts/release/build-async-commit-hook.py')
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
@@ -144,12 +248,15 @@ with tempfile.TemporaryDirectory(prefix='ach-tags-') as directory:
  except subprocess.CalledProcessError: pass
  else: raise AssertionError('unavailable remote accepted')
 `;
- const result=spawnSync('python3',['-c',code],{cwd:root,encoding:'utf8'});
- assert.equal(result.status,0,result.stderr);
+  const result = spawnSync("python3", ["-c", code], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
 });
 
-test('release archive bytes and checksums ignore the wall clock', () => {
- const code=`import importlib.util, io, hashlib, tarfile, zipfile, sys
+test("release archive bytes and checksums ignore the wall clock", () => {
+  const code = `import importlib.util, io, hashlib, tarfile, zipfile, sys
 from unittest.mock import patch
 sys.dont_write_bytecode=True
 spec=importlib.util.spec_from_file_location('build','scripts/release/build-async-commit-hook.py')
@@ -174,11 +281,18 @@ for windows in [False, True]:
    assert member.uid==member.gid==0 and member.uname==member.gname==''
    assert archive.extractfile(member).read()==payload
 `;
- const result=spawnSync('python3',['-c',code],{cwd:root,encoding:'utf8'});
- assert.equal(result.status,0,result.stderr);
+  const result = spawnSync("python3", ["-c", code], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
 });
 
-test('publication resumes owned incomplete drafts and protects immutable releases offline', () => {
- const result=spawnSync('python3',['scripts/release/async-commit-hook-publish-fixtures.py','-v'],{cwd:root,encoding:'utf8'});
- assert.equal(result.status,0,result.stdout+'\n'+result.stderr);
+test("publication resumes owned incomplete drafts and protects immutable releases offline", () => {
+  const result = spawnSync(
+    "python3",
+    ["scripts/release/async-commit-hook-publish-fixtures.py", "-v"],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stdout + "\n" + result.stderr);
 });

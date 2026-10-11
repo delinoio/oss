@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { androidManifest, iosBuildScript, execution, iosEnvironment } from "./mobile.mjs";
+import {
+  androidManifest,
+  iosBuildScript,
+  execution,
+  iosEnvironment,
+} from "./mobile.mjs";
 test("mobile generated overlays prohibit cleartext and backups and retain keyboard resize", () => {
   const m = androidManifest(
     '<uses-permission android:name="android.permission.INTERNET" />\n<application\n android:usesCleartextTraffic="${usesCleartextTraffic}"><activity android:launchMode="singleTask"/></application>',

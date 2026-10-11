@@ -27,12 +27,13 @@ input. Numeric versions grant no admission authority. Historical version-1
 assignments remain readable. Title failure cannot block the primary conversation;
 existing account, original Worker, inference, cleanup and feature limits remain.
 
-
 The first successful response turn may atomically create at most one immutable title operation after verified native and workspace cleanup. The operation uses the first input accepted by that native conversation, including an edit made before dispatch, and freezes the original Agent, harness/version, model/effort/tier, account/connection, provider, machine, device and Worker instance. It never reruns routing, uses workspace/session history or instructions, creates a conversation input, or claims the conversation workspace lease. A stopped/failed first turn does not queue a title.
 
 If execution recovery later verifies the successful first turn, it may queue the pending title only when recovery completes on the exact original Worker device and instance. Recovery performed by another Worker settles the title as `skipped` with the `authority-lost` reason; title inference never transfers to a replacement.
 
 `WatchAuxiliaryWork` uses its own request/response messages and `ReportWork` uses a capability-negotiated auxiliary lane, separate from ordinary `WatchWork`. A Worker owns at most one active title job; the server allows at most four active title jobs. Excess queued work remains durable. The primary lane skips title jobs before generic claim and before delivery, including titles already claimed by the original auxiliary owner, while ordinary work and targeted controls remain available. Only auxiliary admission transitions a queued title to running. Old Workers receive no title assignment. Reconnect, Worker replacement or a new server epoch cannot transfer the original native attempt or resend its inference.
+
+The auxiliary receiver cancels the watch and active title context immediately on EOF or stream failure, including while the consumer waits for the active job. The original receive cause remains available. The Worker joins that job and its cleanup before returning; cancellation prevents a late successful report and never permits inference replay. Exact-job cancellation and the independent heartbeat deadline remain in effect.
 
 Paired Worker credentials may call only the endpoint-allowlisted Worker procedures, including `WatchAuxiliaryWork`. That handler independently requires the authenticated Worker to match the current machine and instance and to have negotiated automatic-title capability; the credential still cannot invoke owner product operations.
 

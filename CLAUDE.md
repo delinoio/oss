@@ -4,7 +4,7 @@ When working in a specific directory, apply the rules from that directory and al
 
 ## While working on `.`
 
-*Source: `AGENTS.md`*
+_Source: `AGENTS.md`_
 
 ### Instructions
 
@@ -56,6 +56,7 @@ When working in a specific directory, apply the rules from that directory and al
 - `docs/project-derun.md`: Derun CLI project index.
 - `docs/project-public-docs.md`: Public docs app project index.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
+
 ### Project Identifier Contract
 
 Treat project IDs as stable enum-style values:
@@ -173,6 +174,7 @@ enum SerdeFeatherComponent {
 Repository-wide quality CI is defined in `.github/workflows/CI.yml`.
 
 Coverage expectations:
+
 - `go-quality`: runs `go fmt ./...` (fails if formatting changes are applied) and `go vet ./...` on Ubuntu.
 - `go-test`: runs `go test ./...` on `ubuntu-latest`, `macos-latest`, and `windows-latest`.
 - `rust-fmt`: runs `cargo fmt --all --check`.
@@ -182,12 +184,14 @@ Coverage expectations:
 - `ci-result`: provides a single aggregate status that fails when any executed domain job fails or is cancelled.
 
 Change-scoped execution rules:
+
 - CI uses path-based change detection to skip unaffected domain jobs by default.
 - Changes to `.github/workflows/CI.yml` force all `go`, `node`, and `rust` domain jobs to run.
 - `workflow_dispatch` runs all domain jobs regardless of changed paths.
 - When build or test commands change in project contracts, update this section and `.github/workflows/CI.yml` in the same commit.
 
 Release automation baseline:
+
 - `auto-publish` is defined in `.github/workflows/auto-publish.yml`.
 - Trigger contract: runs on `push` to `main` and supports `workflow_dispatch`.
 - Branch guard contract: publish job runs only when `github.ref == 'refs/heads/main'`.
@@ -212,12 +216,11 @@ Release automation baseline:
 - After addressing pull request review comments and pushing updates, resolve the corresponding review threads.
 - If a project splits into multiple deployables, the project index must include path ownership and integration boundaries, and component-level domain docs must exist.
 
-
 ---
 
 ## While working on `apps`
 
-*Source: `apps/AGENTS.md`*
+_Source: `apps/AGENTS.md`_
 
 ### Instructions for `apps/`
 
@@ -243,12 +246,11 @@ Release automation baseline:
 - If `apps/public-docs` changes, run `pnpm --filter public-docs test` before finishing.
 - Update relevant docs in `docs/` for every behavior, structure, or interface change.
 
-
 ---
 
 ## While working on `cmds`
 
-*Source: `cmds/AGENTS.md`*
+_Source: `cmds/AGENTS.md`_
 
 ### Instructions for `cmds/`
 
@@ -278,12 +280,11 @@ Release automation baseline:
 - Run relevant Go tests (`go test`) when code in this domain changes.
 - Update `docs/project-derun.md` and `docs/cmds-derun-foundation.md` whenever derun command contracts change.
 
-
 ---
 
 ## While working on `crates`
 
-*Source: `crates/AGENTS.md`*
+_Source: `crates/AGENTS.md`_
 
 ### Instructions for `crates/`
 
@@ -337,12 +338,11 @@ Release automation baseline:
 - Keep logs sufficient for debugging install, dispatch, and runtime resolution flow.
 - Keep CLI logs colorized by default for human operators, with explicit opt-out controls.
 
-
 ---
 
 ## While working on `servers`
 
-*Source: `servers/AGENTS.md`*
+_Source: `servers/AGENTS.md`_
 
 ### Instructions for `servers/`
 

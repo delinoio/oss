@@ -5,7 +5,8 @@ export { prepareVerifiedAppImageSharun } from "../../../scripts/appimage-tools.m
 
 const desktopTauriFeatures = ["--features", "desktop-cef"];
 export const repositoryAppleSigningIdentityKey = "devhud.appleSigningIdentity";
-const noRepositoryGitConfigError = "fatal: --local can only be used inside a git repository";
+const noRepositoryGitConfigError =
+  "fatal: --local can only be used inside a git repository";
 export const desktopTauriConfigPath = fileURLToPath(
   new URL("../src-tauri/tauri.desktop.conf.json", import.meta.url),
 );
@@ -13,14 +14,20 @@ export const privateReleaseTauriConfigPath = fileURLToPath(
   new URL("../src-tauri/tauri.private-release.conf.json", import.meta.url),
 );
 
-
-function requestedPackageBundle(forwardedArguments, platformName, packageKinds) {
+function requestedPackageBundle(
+  forwardedArguments,
+  platformName,
+  packageKinds,
+) {
   const bundles = [];
   for (let index = 0; index < forwardedArguments.length; index += 1) {
     const argument = forwardedArguments[index];
     if (argument === "--bundles" || argument === "-b") {
       let valueIndex = index + 1;
-      while (valueIndex < forwardedArguments.length && !forwardedArguments[valueIndex].startsWith("-")) {
+      while (
+        valueIndex < forwardedArguments.length &&
+        !forwardedArguments[valueIndex].startsWith("-")
+      ) {
         bundles.push(...forwardedArguments[valueIndex].split(","));
         valueIndex += 1;
       }
@@ -34,8 +41,12 @@ function requestedPackageBundle(forwardedArguments, platformName, packageKinds) 
 
   const selected = [...new Set(bundles.filter(Boolean))];
   if (selected.length !== 1 || !Object.hasOwn(packageKinds, selected[0])) {
-    const choices = Object.keys(packageKinds).map((bundle) => `--bundles ${bundle}`).join(" or ");
-    throw new Error(`${platformName} package builds require exactly one ${choices} selection`);
+    const choices = Object.keys(packageKinds)
+      .map((bundle) => `--bundles ${bundle}`)
+      .join(" or ");
+    throw new Error(
+      `${platformName} package builds require exactly one ${choices} selection`,
+    );
   }
   return selected[0];
 }
@@ -50,7 +61,6 @@ const packageKindsByPlatform = {
     bundles: { deb: "linux-deb", appimage: "linux-appimage" },
   },
 };
-
 
 export function repositoryAppleSigningEnvironment(
   command,
@@ -77,7 +87,9 @@ export function repositoryAppleSigningEnvironment(
     },
   );
   if (result.error) {
-    throw new Error(`failed to read ${repositoryAppleSigningIdentityKey}: ${result.error.message}`);
+    throw new Error(
+      `failed to read ${repositoryAppleSigningIdentityKey}: ${result.error.message}`,
+    );
   }
   const stderr = typeof result.stderr === "string" ? result.stderr.trim() : "";
   // Git uses status 1 for both a missing key and some unreadable-config errors,
@@ -96,26 +108,40 @@ export function repositoryAppleSigningEnvironment(
     );
   }
 
-  const identity = typeof result.stdout === "string" ? result.stdout.trim() : "";
+  const identity =
+    typeof result.stdout === "string" ? result.stdout.trim() : "";
   if (
     !identity ||
     /[\0\r\n]/u.test(identity) ||
     Buffer.byteLength(identity, "utf8") > 1024
   ) {
-    throw new Error(`${repositoryAppleSigningIdentityKey} must be one non-empty line of at most 1024 UTF-8 bytes`);
+    throw new Error(
+      `${repositoryAppleSigningIdentityKey} must be one non-empty line of at most 1024 UTF-8 bytes`,
+    );
   }
 
   return { ...environment, APPLE_SIGNING_IDENTITY: identity };
 }
 
-export function desktopTauriArguments(command, forwardedArguments, environment = process.env) {
+export function desktopTauriArguments(
+  command,
+  forwardedArguments,
+  environment = process.env,
+) {
   // The pinned CLI detects the desktop runtime dependency by target. Keep the
   // app-owned desktop marker and bundle configuration together.
-  const config = command === "build" && environment.DEVHUD_PRIVATE_RELEASE === "1"
-    ? privateReleaseTauriConfigPath
-    : desktopTauriConfigPath;
+  const config =
+    command === "build" && environment.DEVHUD_PRIVATE_RELEASE === "1"
+      ? privateReleaseTauriConfigPath
+      : desktopTauriConfigPath;
   return command
-    ? [command, ...desktopTauriFeatures, "--config", config, ...forwardedArguments]
+    ? [
+        command,
+        ...desktopTauriFeatures,
+        "--config",
+        config,
+        ...forwardedArguments,
+      ]
     : [];
 }
 
@@ -134,7 +160,10 @@ export function desktopTauriEnvironment(
     packageConfiguration.bundles,
   );
   const packageKind = packageConfiguration.bundles[bundle];
-  if (environment.DEVHUD_PACKAGE_KIND && environment.DEVHUD_PACKAGE_KIND !== packageKind) {
+  if (
+    environment.DEVHUD_PACKAGE_KIND &&
+    environment.DEVHUD_PACKAGE_KIND !== packageKind
+  ) {
     throw new Error(
       `DEVHUD_PACKAGE_KIND ${environment.DEVHUD_PACKAGE_KIND} does not match the selected ${bundle} bundle`,
     );

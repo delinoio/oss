@@ -7,14 +7,18 @@ export const DEVHUD_DEVELOPMENT_CSP = createDevHudDevelopmentCsp(
 );
 
 const { rawPublicVars } = loadEnv({ prefixes: ["TAURI_"] });
-const mobileFrontend = new Set(["android", "ios"]).has(rawPublicVars.TAURI_ENV_PLATFORM ?? "");
+const mobileFrontend = new Set(["android", "ios"]).has(
+  rawPublicVars.TAURI_ENV_PLATFORM ?? "",
+);
 
 export default defineConfig({
   plugins: [pluginReact()],
   source: {
     preEntry: mobileFrontend ? undefined : "./src/realqa-font.css",
     entry: {
-      index: mobileFrontend ? "./src/main.mobile.tsx" : "./src/main.desktop.tsx",
+      index: mobileFrontend
+        ? "./src/main.mobile.tsx"
+        : "./src/main.desktop.tsx",
     },
   },
   html: {

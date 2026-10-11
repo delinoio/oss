@@ -70,7 +70,7 @@ jobs:
         if: ${{ fromJSON(steps.plan.outputs.jobs)['rust-test'] || fromJSON(steps.plan.outputs.jobs)['rust-clippy'] }}
         env:
           CARGO_MONO_TEST_BINARY: ${{ steps.cargo-mono.outputs.binary }}
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:rust:selection-fixture
       - name: Select final Rust packages and jobs
         if: ${{ fromJSON(steps.plan.outputs.jobs)['rust-test'] || fromJSON(steps.plan.outputs.jobs)['rust-clippy'] }}
@@ -141,19 +141,19 @@ jobs:
         if: ${{ runner.os == 'Linux' }}
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:workflows
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Validate CI contracts and affected behavior
         if: ${{ runner.os == 'Linux' }}
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:contracts
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Validate protocol launcher on native host
         if: ${{ runner.os != 'Linux' }}
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:proto:launcher
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -214,12 +214,11 @@ jobs:
 
       - name: Check Go formatting and vet
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
           CI_GO_MODE: ${{ (github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && needs.changes.outputs.mode == 'affected')) && !fromJSON(needs.changes.outputs.forced)['go-quality'] && 'affected' || 'full' }}
           CI_GO_BASE: ${{ needs.changes.outputs.base }}
           CI_GO_HEAD: ${{ needs.changes.outputs.head }}
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:go:quality
-
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -285,14 +284,14 @@ jobs:
       - name: Verify native affected Go discovery
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:go:discovery
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Run go test
         # The central runner uses -count=1 for execution and reuses compiled objects.
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:go:test
         env:
           CI_GO_TEST_SHARD: ${{ matrix.shard }}
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
           CI_GO_MODE: ${{ (github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && needs.changes.outputs.mode == 'affected') || (github.event_name == 'push' && matrix.os != 'ubuntu-latest')) && !fromJSON(needs.changes.outputs.forced)['go-test'] && 'affected' || 'full' }}
           CI_GO_BASE: ${{ needs.changes.outputs.base }}
           CI_GO_HEAD: ${{ needs.changes.outputs.head }}
@@ -365,7 +364,7 @@ jobs:
       - name: Test repository environment contract
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:environment ci:environment:turbo
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -379,6 +378,55 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: turbo-repository-environment-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .turbo/runs/*.json
+          if-no-files-found: ignore
+
+  source-format:
+    needs: changes
+    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['source-format'] }}
+    name: Rstack formatting
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        id: ci-node
+        uses: ./.github/actions/setup-ci-node
+      - name: Setup Turbo remote cache
+        uses: ./.github/actions/setup-turbo-cache
+        with:
+          team: ${{ vars.TURBO_TEAM }}
+          policy: ${{ vars.TURBO_OIDC_POLICY }}
+
+      - name: Install locked workspace tools
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Check changed files with Rstack
+        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:format
+        env:
+          FORCE_RUN: "true"
+          TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
+          TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
+
+      - name: Save pnpm cache after successful main validation
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.ci-node.outputs.cache-path }}
+          key: ${{ steps.ci-node.outputs.cache-key }}
+
+      - name: Preserve Turbo run summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: turbo-source-format-${{ strategy.job-index }}-${{ github.run_attempt }}
           path: .turbo/runs/*.json
           if-no-files-found: ignore
 
@@ -418,7 +466,7 @@ jobs:
       - name: Run rustfmt
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:rust:fmt ci:rust:fmt-fixture
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -491,7 +539,7 @@ jobs:
         run: node scripts/ci/run-rust.mjs clippy
         env:
           RUST_PACKAGES: ${{ needs.changes.outputs.rust_packages }}
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -570,7 +618,7 @@ jobs:
         run: node scripts/ci/run-rust.mjs test
         env:
           RUST_PACKAGES: ${{ needs.changes.outputs.rust_packages }}
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -633,12 +681,12 @@ jobs:
       - name: Test DSL, native PPTX preservation, revisions and official MCP client
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:forge:test
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Check Forge formatting and Clippy
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:rust:fmt ci:forge:clippy
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -695,7 +743,7 @@ jobs:
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:forge:render
         env:
           FORGE_RENDER_ARTIFACTS: ${{ runner.temp }}/forge-render
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Retain render evidence
         if: always()
@@ -791,8 +839,8 @@ jobs:
         run: node scripts/ci/run-affected.mjs @delino/react-forge ci:host
         env:
           REACT_FORGE_TARGET: ${{ matrix.target }}
-          REACT_FORGE_SKIP_SCENE_TESTS: '1'
-          FORCE_RUN: 'true'
+          REACT_FORGE_SKIP_SCENE_TESTS: "1"
+          FORCE_RUN: "true"
 
       - name: Retain rendering and benchmark evidence
         if: always()
@@ -833,8 +881,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {runner: ubuntu-latest, arch: amd64}
-          - {runner: ubuntu-24.04-arm, arch: arm64}
+          - { runner: ubuntu-latest, arch: amd64 }
+          - { runner: ubuntu-24.04-arm, arch: arm64 }
     steps:
       - uses: actions/checkout@v6
         with:
@@ -957,7 +1005,7 @@ jobs:
       - name: Type check and test DevHud API client
         run: node scripts/ci/run-affected.mjs @delinoio/devhud-api-client typecheck test
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Run affected frontend contracts
         run: node scripts/ci/run-affected.mjs devhud ci:check
@@ -969,7 +1017,7 @@ jobs:
       - name: Verify immutable desktop and mobile pins
         run: node scripts/ci/run-affected.mjs devhud verify:pins
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -1018,7 +1066,7 @@ jobs:
       - name: Typecheck, test accessibility, and build deterministic ZIPs
         run: node scripts/ci/run-affected.mjs devhud-chrome-extension ci:check
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -1078,7 +1126,7 @@ jobs:
       - name: Run capture, shortcut, IPC, and updater suites
         run: node scripts/ci/run-affected.mjs devhud test:native:capture test:native:shortcuts test:native:ipc test:native:updater
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -1127,7 +1175,7 @@ jobs:
       - name: Run credential, lifecycle, redaction, GitHub, R2, and agent fixtures
         run: node scripts/ci/run-affected.mjs devhud ci:security
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -1170,7 +1218,6 @@ jobs:
       - name: Prepare immutable host Tauri CLI
         id: prebuilt
         uses: ./.github/actions/setup-prebuilt
-
 
       - name: Install macOS Rust targets
         if: ${{ matrix.os == 'macos' }}
@@ -1473,7 +1520,6 @@ jobs:
           path: ${{ steps.prebuilt.outputs.cache-path }}
           key: ${{ steps.prebuilt.outputs.cache-key }}
 
-
   devhud-mobile-contracts:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['devhud-mobile-contracts'] }}
@@ -1506,7 +1552,7 @@ jobs:
       - name: Verify shared frontend and mobile contracts
         run: node scripts/ci/run-affected.mjs devhud ci:build:frontend mobile:check test:components
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -1566,7 +1612,6 @@ jobs:
         id: prebuilt
         uses: ./.github/actions/setup-prebuilt
 
-
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
@@ -1578,7 +1623,7 @@ jobs:
 
       - uses: ./.github/actions/setup-clibox
         with:
-          install: 'false'
+          install: "false"
 
       - name: Download checksum-pinned bundletool
         id: bundletool
@@ -1659,7 +1704,6 @@ jobs:
           path: ${{ steps.prebuilt.outputs.cache-path }}
           key: ${{ steps.prebuilt.outputs.cache-key }}
 
-
   delidev-protocol:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['delidev-protocol'] }}
@@ -1699,13 +1743,13 @@ jobs:
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:proto:check
         env:
           DEVHUD_PROTO_BASELINE: ${{ github.event_name == 'push' && github.event.before || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && 'HEAD^') || 'origin/main' }}
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Test Go bindings
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:delidev:bindings
         env:
           DEVHUD_PROTO_BASELINE: ${{ github.event_name == 'push' && github.event.before || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && 'HEAD^') || 'origin/main' }}
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -1763,7 +1807,7 @@ jobs:
       - name: Build runner-owned Go fixture executable
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:delidev:fixture
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
       - name: Run affected client checks
         env:
           TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
@@ -1831,7 +1875,7 @@ jobs:
         if: ${{ matrix.phase != 'checks' }}
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:delidev:fixture
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
       - name: Run affected desktop checks
         env:
           TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
@@ -1890,7 +1934,7 @@ jobs:
       - name: Test administrator SPA and verify generated embedded assets
         run: node scripts/ci/run-affected.mjs devhud-admin ci:check
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -1945,7 +1989,7 @@ jobs:
       - name: Check API formatting, vet, builds, and unit tests
         run: node scripts/ci/run-affected.mjs @delinoio/devhud-api ci:format ci:vet ci:build ci:unit ci:migrations ci:api ci:sweeper
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Start PostgreSQL
         run: |
@@ -1979,7 +2023,7 @@ jobs:
         run: node scripts/ci/run-affected.mjs @delinoio/devhud-api ci:integration
         env:
           DEVHUD_TEST_DATABASE_URL: postgres://devhud:devhud@127.0.0.1:5432/devhud_api_test?sslmode=disable
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Stop PostgreSQL
         if: ${{ always() }}
@@ -2091,13 +2135,13 @@ jobs:
           DEVHUD_TEST_DATABASE_URL: postgres://devhud:devhud@127.0.0.1:5432/devhud_api_test?sslmode=disable
           OCI_TARGET: ${{ matrix.target }}
           CI_SYFT_COMMAND: ${{ steps.syft.outputs.cmd }}
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Verify embedded migrations against PostgreSQL
         run: node scripts/ci/run-affected.mjs @delinoio/devhud-api ci:oci:integration
         env:
           DEVHUD_TEST_DATABASE_URL: postgres://devhud:devhud@127.0.0.1:5432/devhud_api_test?sslmode=disable
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Stop PostgreSQL
         if: ${{ always() }}
@@ -2159,7 +2203,7 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts --filter delinoio-oss-workspace
       - uses: ./.github/actions/setup-clibox
         with:
-          install: 'false'
+          install: "false"
 
       - name: Setup Go for native signature fixture
         id: ci-go
@@ -2172,13 +2216,13 @@ jobs:
         if: ${{ runner.os != 'Windows' }}
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:supply-chain
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Validate Windows signature failure and success fixtures
         if: ${{ runner.os == 'Windows' }}
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:windows-signature
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Save Go cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && runner.os == 'Windows' && steps.ci-go.outputs.cache-hit != 'true' }}
@@ -2232,12 +2276,12 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts --filter delinoio-oss-workspace
       - uses: ./.github/actions/setup-clibox
         with:
-          install: 'false'
+          install: "false"
 
       - name: Validate deterministic release contracts
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:release-fixtures
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -2287,7 +2331,7 @@ jobs:
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:ach:check
         env:
           DEVHUD_PROTO_BASELINE: ${{ github.event_name == 'push' && github.event.before || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && 'HEAD^') || 'origin/main' }}
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -2347,21 +2391,21 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
       - uses: ./.github/actions/setup-clibox
         with:
-          install: 'false'
+          install: "false"
       - name: Test pinned repository utilities
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:tools
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Verify affected workspace runner
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:runner
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Test Rust utilities, readiness, configuration processing, and OS adapters
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:clibox:native
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Test launcher and native npm consumers
         env:
@@ -2410,7 +2454,7 @@ jobs:
       - name: Verify source version, package metadata, and fail-closed publication
         run: node scripts/ci/run-affected.mjs @delino/pnport test ci:release ci:package
         env:
-          FORCE_RUN: 'true'
+          FORCE_RUN: "true"
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
@@ -2508,6 +2552,7 @@ jobs:
       - go-test
       - repository-environment
       - rust-fmt
+      - source-format
       - rust-clippy
       - rust-test
       - forge-test

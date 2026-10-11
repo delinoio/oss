@@ -1,15 +1,19 @@
 # Forge Rust Foundation
 
 ## Scope
+
 The private `forge-tree-doc`, `forge-pptx`, and `delino-forge` packages implement the PPTX v1 vertical slice described by [project-forge.md](project-forge.md). The executable is `delino-forge`; the internal library is `forge_tree_doc`.
 
 ## Runtime and Language
+
 Rust on the root pinned toolchain, with Linux, macOS, and Windows validation. No Python, Node, Office installation, or model provider is required at runtime for generation or editing. Optional previews invoke LibreOffice and Poppler directly without a shell.
 
 ## Users and Operators
+
 Local users and AI agents generating and editing presentations through CLI or MCP. Workspace files and document text are untrusted input.
 
 ## Interfaces and Contracts
+
 DSL version 1 has `presentation` and `patch` kinds, pt geometry, typed nodes, document-unique keys, and UUID-v7 document/node identifiers. Unknown fields, versions, and enum variants fail validation. Supported nodes are row, column, canvas, text, list, image, shape, table, bar chart, and connector. Shape presets are rectangle, rounded rectangle, and ellipse; images are PNG/JPEG with contain/cover placement. Tables support rich text, formatting, explicit/equal column widths and rectangular nonoverlapping merges. Charts support horizontal/vertical bars, series, legends and value labels with synchronized embedded workbook data. Connectors reference same-slide nodes and cardinal anchors, using straight or elbow paths.
 
 Row/column layout supports fixed sizes, hug, fill, padding and gaps. Canvas children require parent-relative frames. Fill shares remaining space equally. Unknown/cyclic dimensions, overflow, and unresolvable references fail. Theme, named style, node style, then run style determine text properties. Plain text and paragraphs/runs are mutually exclusive. Overflow defaults to error; explicit shrink respects a minimum font size. Text measurement uses cosmic-text and bundled, source-pinned Noto Sans KR; unavailable requested fonts are diagnosed. System fonts with the same default-family name cannot override the pinned font. Generated PPTX embeds its unchanged sfnt payload in an uncompressed EOT wrapper with embedding permissions preserved. Preview prepares the same font in a disposable copy when necessary; managed source parts remain unchanged.
@@ -99,6 +103,7 @@ Editable imported text bodies require explicit zero insets, square wrapping, top
 - Keep CLI logs colorized by default for human operators, with explicit opt-out controls.
 
 ## Storage
+
 The user-data directory owns registered assets, document originals, immutable revisions, and atomically replaced state pointers. `--state-dir` overrides the default. Persistent state is private to the user. Open/apply do not overwrite source files. Export verifies source fingerprints, serializes writers, validates candidate bytes and atomically publishes from the same filesystem to a separate output path. Replacing that separate output requires an explicit overwrite option. Export to the tracked source, including canonical path aliases, returns `unsupported_edit` with a different-output-path instruction even when overwrite is requested. A fingerprint check followed by unconditional replacement cannot protect another application's save between the two operations; document locks do not exclude external editors. This rejection precedes publication and leaves the original, managed revision, and state pointer unchanged. CLI help, MCP tool descriptions and `capabilities.export.tracked_source_overwrite: false` expose this boundary. Close removes only the selected managed document; shared assets and lock files are retained. An interrupted generation is unreachable until the atomic pointer commit, and old generations remain available. Source fingerprints are checked before mutation and again before committing an edit. Local storage is an explicit exception to the repository's R2 default.
 
 For compatibility with interrupted source-replacing exports from earlier builds, retain recovery of their durable journals containing the document ID, revision, original fingerprint and output fingerprint. Current exports never create those journals or replace a tracked source. Under the document lock, the next operation reconciles a legacy interrupted export only when the source still matches either its original bytes or that exact managed revision. It repairs fingerprint persistence without advancing the revision; other source changes remain conflicts. Cancellation or a failed state-pointer write after an earlier build's publication therefore remains recoverable after restart.
@@ -106,6 +111,7 @@ For compatibility with interrupted source-replacing exports from earlier builds,
 Atomic file publication syncs file bytes before rename, then syncs the destination parent directory on Unix. Windows uses same-volume `MoveFileExW` with `MOVEFILE_WRITE_THROUGH` and explicit replacement policy. Publication returns only after its directory entry is flushed; flush failures propagate. Legacy journal fixtures use this same publication primitive. Recovery tests cover interrupted publication states, not physical power-cut certification. See [fsync directory durability](https://www.man7.org/linux/man-pages/man2/fsync.2.html) and [Windows move guarantees](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw).
 
 ## Security
+
 Bound JSON, ZIP expansion, entry count, XML depth, image decoding and tree traversal before expensive processing. Reject duplicate/traversing package paths, DTD/entity input, unsafe references and ambiguous identity. Do not execute embedded content or follow external assets. Preview uses a private profile, discarded subprocess output, cancellation and 120-second per-renderer timeouts, and reaps owned descendants through Unix process groups or Windows Job Objects. Its 96-dpi raster budget is 100 slides, 40 million pixels per slide and 250 million pixels per document; the resulting page count must match. Logs must not contain document text, image bytes, source XML, or host paths.
 
 Package roots require exactly one internal Transitional `officeDocument` relationship. Multiple roots, including mixed internal/external roots, reject validation and import regardless of relationship order; Forge never selects the first of ambiguous presentation roots.
@@ -115,12 +121,15 @@ Create/apply load only asset handles referenced by image nodes, deduplicated acr
 Document locks explicitly unlock when their operation guard drops on success or error. Closing a descriptor alone can leave a Unix lock alive while another thread's forked child retains a duplicate before exec. A regression retains a duplicate descriptor and verifies that the next operation can acquire the lock immediately, while competing operations still receive `busy`. Unlock failures emit only structured operation, stage and error-code diagnostics.
 
 ## Logging
+
 Use tracing on stderr with operation, stage, stable error code, and elapsed duration. Errors use structured codes and model/node paths; underlying parser/process errors are not exposed verbatim. stdout remains machine-readable even with logging enabled.
 
 ## Build and Test
+
 Run package unit/integration tests, schema/example checks, cargo fmt and Clippy. Run root `cargo test` after preparing required generated DevHud frontend assets. Add affected three-OS Forge validation and Linux LibreOffice/Poppler rendering to central CI selection and aggregation. Test external PPTX round trips, opaque XML/part preservation, native chart workbooks, revision conflicts, concurrent updates, cancellation, atomic output, MCP interoperability, and renderer absence. Tests use isolated temporary state. Remove repository-owned generated dist directories before finishing.
 
 ## Dependencies and Integrations
+
 The shared bounded ZIP/XML primitives now live in `crates/forge-package`; `forge-pptx` retains its original public APIs and internal module facade. This extraction does not change the Forge CLI/MCP or font defaults.
 
 Use serde/schemars for the DSL, cosmic-text for shaping, official rmcp for stdio MCP, pptx for new Office elements, and a Forge-owned ZIP/XML preservation layer for existing documents. Noto Sans KR must carry its source hash and OFL license. LibreOffice and Poppler are optional external renderers. No automatic installation or remote fetching occurs in the product.
@@ -128,18 +137,20 @@ Use serde/schemars for the DSL, cosmic-text for shaping, official rmcp for stdio
 New packages match every content-type override's path spelling to its actual ZIP member. The pinned pptx 0.1.0 writer lowercases overrides while retaining mixed-case members. Although OPC defines ASCII-case-insensitive equivalence, exact spelling also supports case-sensitive inspectors and older readers. This compatibility normalization runs only on newly generated packages, never on imported XML. The generated round-trip regression checks every override against its exact ZIP member. See [Microsoft's package URI compatibility note](https://learn.microsoft.com/en-us/dotnet/core/compatibility/core-libraries/8.0/system-io-packaging-case-insensitive-uri).
 
 ## Change Triggers
+
 Keep project index, AGENTS rules, schema/examples, CLI/MCP descriptions and CI contracts synchronized. All packages remain unpublished until a separate release contract is approved.
 
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - [Project](project-forge.md).
 - [Repository defaults](repository-defaults.md).
 - [MCP tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools).
 - [PresentationML](https://learn.microsoft.com/en-us/office/open-xml/presentation/working-with-presentation-slides).
 
-
 ## Implementation and Validation Evidence
+
 - `crates/forge-tree-doc/schema.json` is generated by `delino-forge schema`; a regression test rejects drift. `overview.json` is directly runnable, while `all-nodes.json` requires registering the supplied fixture image and replacing its example asset handle.
 - `crates/delino-forge/README.md` documents the local CLI/MCP contract and supported editing boundaries.
 - External PPTX fixtures are authored with python-pptx 1.0.2 and Pillow by the checked-in fixture script. These tools are not production dependencies. Namespace changes and unbound extensions are applied in Rust tests.
@@ -148,6 +159,7 @@ Instruction-file updates in this requirement apply only to changes in developmen
 - CI selection and aggregation include `forge-test` on all three desktop OS families and `forge-render` on Linux. Hosted Windows/Linux results remain pending until CI runs; local tests must not be presented as hosted matrix evidence.
 
 ### Format references
+
 - [EOT header and unchanged sfnt payload](https://www.w3.org/submissions/EOT/).
 - [LibreOffice renderer parameters](https://help.libreoffice.org/latest/en-GB/text/shared/guide/start_parameters.html).
 - [DrawingML preset connection sites](https://github.com/LibreOffice/core/blob/master/oox/source/drawingml/customshapes/presetShapeDefinitions.xml).

@@ -82,7 +82,6 @@ All repository-owned Linux packages, including the keyring, declare Apache-2.0 a
 
 Public registration instructions write the complete source configuration from the documentation with quoted heredocs. They must preserve the literal DNF `$basearch` variable, APT Signed-By and both DNF signature checks. Downloaded repository configuration must not become the authority for enabling signature verification: storage-write credentials are separate from signing authority. The generated setup files remain available for controlled publisher/fixture validation, while users bootstrap from the documentation's explicit configuration after checking the public key fingerprint.
 
-
 ## APT certificate updates and signing-subkey rotation
 
 The auxiliary `delino-archive-keyring` package is architecture `all`, is present in both suites, and owns `/usr/share/keyrings/delino-packages.gpg` as package data rather than a conffile. Each CLI `.deb` depends on it. It has no scripts, services or source-configuration ownership and is not an additional CLI release-project input. Bootstrap the same path only after checking the public primary fingerprint. Normal APT upgrades then deliver certificate updates through the already authenticated repository, including to preview-only users.

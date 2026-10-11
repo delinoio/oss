@@ -33,22 +33,21 @@ function makeRun(id: string, parentId = "") {
   });
 }
 
-function renderWorkspace(
-  rerun: () => RerunResult,
-  initialRun = "source",
-) {
+function renderWorkspace(rerun: () => RerunResult, initialRun = "source") {
   const transport = createRouterTransport((router) =>
     router.service(LocalService, {
       getVersion: () => ({ apiVersion: 1 }),
       listRepositories: () => ({
-        repositories: [{
-          id: "repo",
-          name: "Repository",
-          worktrees: [
-            { id: "tree", path: "/repo", branch: "main" },
-            { id: "other-tree", path: "/other", branch: "feature" },
-          ],
-        }],
+        repositories: [
+          {
+            id: "repo",
+            name: "Repository",
+            worktrees: [
+              { id: "tree", path: "/repo", branch: "main" },
+              { id: "other-tree", path: "/other", branch: "feature" },
+            ],
+          },
+        ],
       }),
       listBranches: () => ({
         branches: [
@@ -79,9 +78,13 @@ it("writes the accepted rerun to the refreshable fragment", async () => {
   const rerun = vi.fn(() => ({ runId: "accepted-run" }));
   const first = renderWorkspace(rerun, readConnection().run);
   try {
-    fireEvent.click(await screen.findByRole("button", { name: "Rerun all checks" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Rerun all checks" }),
+    );
     await waitFor(() => expect(location.hash).toBe("#run=accepted-run"));
-    expect(await screen.findByRole("heading", { name: /accepted-run/ })).toBeTruthy();
+    expect(
+      await screen.findByRole("heading", { name: /accepted-run/ }),
+    ).toBeTruthy();
 
     first.unmount();
     first.client.clear();
@@ -89,7 +92,9 @@ it("writes the accepted rerun to the refreshable fragment", async () => {
     expect(remounted).toEqual({ run: "accepted-run" });
     const second = renderWorkspace(rerun, remounted.run);
     try {
-      expect(await screen.findByRole("heading", { name: /accepted-run/ })).toBeTruthy();
+      expect(
+        await screen.findByRole("heading", { name: /accepted-run/ }),
+      ).toBeTruthy();
     } finally {
       second.unmount();
       second.client.clear();
@@ -112,10 +117,14 @@ it("keeps the source fragment until a startup-failed rerun is opened", async () 
   }));
   const view = renderWorkspace(rerun, readConnection().run);
   try {
-    fireEvent.click(await screen.findByRole("button", { name: "Rerun all checks" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Rerun all checks" }),
+    );
     await screen.findByText("Rerun accepted; startup needs attention");
     expect(location.hash).toBe("#run=source");
-    fireEvent.click(screen.getByRole("button", { name: "Open accepted execution" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open accepted execution" }),
+    );
     await waitFor(() => expect(location.hash).toBe("#run=accepted-run"));
   } finally {
     view.unmount();
@@ -125,9 +134,14 @@ it("keeps the source fragment until a startup-failed rerun is opened", async () 
 
 it("clears the fragment when leaving detail or changing workspace filters", async () => {
   history.replaceState(null, "", "/#run=source");
-  const view = renderWorkspace(() => ({ runId: "accepted-run" }), readConnection().run);
+  const view = renderWorkspace(
+    () => ({ runId: "accepted-run" }),
+    readConnection().run,
+  );
   try {
-    fireEvent.click(await screen.findByRole("button", { name: "← All executions" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "← All executions" }),
+    );
     await waitFor(() => expect(location.hash).toBe(""));
 
     const source = await screen.findByRole("button", { name: /source-commi/ });
@@ -138,13 +152,17 @@ it("clears the fragment when leaving detail or changing workspace filters", asyn
     });
     await waitFor(() => expect(location.hash).toBe(""));
 
-    fireEvent.click(await screen.findByRole("button", { name: /source-commi/ }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /source-commi/ }),
+    );
     await waitFor(() => expect(location.hash).toBe("#run=source"));
     fireEvent.click(screen.getByRole("button", { name: "Changes" }));
     await waitFor(() => expect(location.hash).toBe(""));
 
     fireEvent.click(screen.getByRole("button", { name: "Checks" }));
-    fireEvent.click(await screen.findByRole("button", { name: /source-commi/ }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /source-commi/ }),
+    );
     await waitFor(() => expect(location.hash).toBe("#run=source"));
     fireEvent.click(screen.getByRole("button", { name: /\/other/ }));
     await waitFor(() => expect(location.hash).toBe(""));

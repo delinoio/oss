@@ -16,12 +16,13 @@ async function observeProc(mock, code) {
     signals.push(signal);
     return true;
   });
-  mock.method(fs, "readdirSync", path => {
+  mock.method(fs, "readdirSync", (path) => {
     assert.equal(path, "/proc");
     return ["11", "12"];
   });
-  mock.method(fs, "readFileSync", path => {
-    if (path === "/proc/11/stat") throw Object.assign(new Error("Synthetic proc failure"), { code });
+  mock.method(fs, "readFileSync", (path) => {
+    if (path === "/proc/11/stat")
+      throw Object.assign(new Error("Synthetic proc failure"), { code });
     assert.equal(path, "/proc/12/stat");
     return "12 (retained zombie) Z 1 123 123";
   });
@@ -37,10 +38,14 @@ async function observeProc(mock, code) {
 }
 
 for (const code of ["ENOENT", "ESRCH"]) {
-  test(`joins the original group when a proc stat task disappears with ${code}`, async ({ mock }) => {
+  test(`joins the original group when a proc stat task disappears with ${code}`, async ({
+    mock,
+  }) => {
     assert.deepEqual(await observeProc(mock, code), ["SIGTERM", 0]);
   });
 }
-test("keeps proc access denial uncertain without escalating or adopting another group", async ({ mock }) => {
+test("keeps proc access denial uncertain without escalating or adopting another group", async ({
+  mock,
+}) => {
   await assert.rejects(observeProc(mock, "EACCES"), { code: "EACCES" });
 });

@@ -89,7 +89,10 @@ export function getDocumentationSiteForPathname(pathname: string) {
       }
 
       const sitePath = site.href.replace(/\/$/, "");
-      return normalizedPathname === sitePath || normalizedPathname.startsWith(`${sitePath}/`);
+      return (
+        normalizedPathname === sitePath ||
+        normalizedPathname.startsWith(`${sitePath}/`)
+      );
     })?.id ?? PUBLIC_DOCS_SITE.id
   );
 }
@@ -103,7 +106,10 @@ function getNextIndex(index: number, offset: number, count: number) {
   return (index + offset + count) % count;
 }
 
-export function DocsSiteSwitcher({ currentSite, className }: DocsSiteSwitcherProps) {
+export function DocsSiteSwitcher({
+  currentSite,
+  className,
+}: DocsSiteSwitcherProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuItemRefs = useRef<Array<HTMLAnchorElement | null>>([]);
@@ -111,10 +117,13 @@ export function DocsSiteSwitcher({ currentSite, className }: DocsSiteSwitcherPro
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const menuId = `delino-docs-site-menu-${useId().replace(/:/g, "")}`;
   const currentSiteDefinition =
-    DOCUMENTATION_SITES.find((site) => site.id === currentSite) ?? PUBLIC_DOCS_SITE;
+    DOCUMENTATION_SITES.find((site) => site.id === currentSite) ??
+    PUBLIC_DOCS_SITE;
   const currentSiteIndex = Math.max(
     0,
-    DOCUMENTATION_SITES.findIndex((site) => site.id === currentSiteDefinition.id),
+    DOCUMENTATION_SITES.findIndex(
+      (site) => site.id === currentSiteDefinition.id,
+    ),
   );
 
   const closeMenu = useCallback((restoreFocus: boolean) => {
@@ -145,7 +154,10 @@ export function DocsSiteSwitcher({ currentSite, className }: DocsSiteSwitcherPro
     }
 
     function handleOutsidePointerDown(event: MouseEvent) {
-      if (event.target instanceof Node && !rootRef.current?.contains(event.target)) {
+      if (
+        event.target instanceof Node &&
+        !rootRef.current?.contains(event.target)
+      ) {
         closeMenu(false);
       }
     }
@@ -224,7 +236,9 @@ export function DocsSiteSwitcher({ currentSite, className }: DocsSiteSwitcherPro
     }
   }
 
-  const rootClassName = ["delino-docs-site-switcher", className].filter(Boolean).join(" ");
+  const rootClassName = ["delino-docs-site-switcher", className]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <div className={rootClassName} ref={rootRef}>
@@ -272,7 +286,10 @@ export function DocsSiteSwitcher({ currentSite, className }: DocsSiteSwitcherPro
             >
               <span>{site.label}</span>
               {isCurrent ? (
-                <span aria-hidden="true" className="delino-docs-site-switcher__check">
+                <span
+                  aria-hidden="true"
+                  className="delino-docs-site-switcher__check"
+                >
                   ✓
                 </span>
               ) : null}

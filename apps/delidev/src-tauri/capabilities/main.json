@@ -26,8 +26,5 @@
     "generated-image-export",
     "inbox-badge"
   ],
-  "webviews": [
-    "main",
-    "local-*"
-  ]
+  "webviews": ["main", "local-*"]
 }

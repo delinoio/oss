@@ -1,20 +1,24 @@
 # apps-public-docs-foundation
 
 ## Scope
+
 - Project/component: public documentation web app contract
 - Canonical path: `apps/public-docs`
 
 ## Runtime and Language
+
 - Runtime: Rspress static documentation app
 - Primary language: Markdown/TypeScript content and configuration with web build tooling
 - Production deployment target: Cloudflare Pages static output
 - The development server binds to loopback on fixed port `46302`, rejects host overrides, preflights availability, and exits on conflicts without automatically selecting another port.
 
 ## Users and Operators
+
 - External users reading public product documentation
 - Internal maintainers publishing and reviewing docs updates
 
 ## Interfaces and Contracts
+
 - Rspress route, navigation, and sidebar contracts in `apps/public-docs/rspress.config.ts` must remain aligned with this contract. The root site's top-level navbar is intentionally empty; route access remains available through the sidebar and documented links.
 - Documentation sources live in `apps/public-docs/docs`; the production output directory is `apps/public-docs/doc_build` and is not source-controlled.
 - The publication root owns Cloudflare Pages control files. Its `_headers` contains the path-scoped security headers for `/async-commit-hook/*`.
@@ -84,20 +88,24 @@
 - Public native-package registration examples must spell out the complete repository configuration with a quoted heredoc, preserving APT Signed-By and both DNF signature checks. Do not bootstrap trust by installing an unverified configuration file downloaded from package storage.
 
 ## Storage
+
 - Source docs are versioned in-repo.
 - Build artifacts are generated in `apps/public-docs/doc_build`, including the seven project subpaths, and the complete tree is published through the single `public-docs` Cloudflare Pages project.
 
 ## Security
+
 - Public content must avoid leaking internal-only secrets or environment details. Shared HTML/CSS validators derive project-route exemptions from one explicit stable-route catalog; root directory routes may omit their trailing slash, but project prefixes never exempt arbitrary descendants.
 - Stylesheet validation applies the same raw credential patterns used for HTML to the complete CSS source, including comments and custom properties, in addition to parsed resource URL checks. Diagnostics identify only the output file and error classification.
 - Public content must avoid exposing internal architecture, operational, CI, or repository-layout details that are not part of a stable public contract.
 - Documentation publishing pipelines must use approved credentials only.
 
 ## Logging
+
 - Build and publish logs should include page IDs, changed files, and publish status.
 - Log output must remain safe for public CI surfaces.
 
 ## Build and Test
+
 - Development: package-local `pnpm dev` or repository-root `pnpm dev:public-docs`.
 - Local validation: `pnpm --filter public-docs test`, which runs the shared `@delinoio/docs-site-switcher` interaction suite, builds the complete root and project-subpath tree, and validates every route artifact, required heading/link/accessibility landmark, site-selector state, public-content limit, clean link, and forbidden path or URL credential.
 - CI alignment: `node-public-docs-test`, selected and forced for this app and the shared site-switcher package.
@@ -106,14 +114,17 @@
 - Production build: `pnpm --filter public-docs build`; Cloudflare Pages must publish `apps/public-docs/doc_build`.
 
 ## Dependencies and Integrations
+
 - Integrates with repository contract docs under `docs/`.
 - Integrates with the seven in-tree project content roots, the existing canonical installer assets, the shared site-selector contract, and Cloudflare Pages deployment tooling.
 
 ## Change Triggers
+
 - Update `docs/project-public-docs.md` and this file when navigation or public doc platform contracts change.
 - If user-facing content behavior changes, update corresponding `apps/public-docs` pages in the same change set.
 
 ## References
+
 - `docs/project-public-docs.md`
 - `docs/repository-defaults.md`
 - `docs/domain-template.md`

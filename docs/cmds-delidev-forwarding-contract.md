@@ -1,15 +1,19 @@
 # DeliDev Session Development-Server Forwarding
 
 ## Scope
+
 `cmds/delidev-cli/internal/forwarding`, the server/Worker forwarding handlers and `session forward` CLI own the feature's authenticated session-bound TCP forwarding. The Go client owns a local listener; the execution Worker owns outbound connections to one explicitly selected Worker-loopback development port. This is independent of agent execution and the server-relative model API relay.
 
 ## Runtime and Language
+
 Go owns durable control, authorization, bounded traffic relay, private cleanup receipts and native TCP handles. Connect server streams plus bounded unary frames use the existing authenticated outbound Worker connection. No inbound Worker listener, WebSocket product transport or hosted public tunnel is introduced.
 
 ## Users and Operators
+
 The server owner or an authorized paired client can create a forward for a current unarchived session and its explicitly selected owning machine. Each forward belongs to its original client principal, paired Worker device, Worker instance and primary stream. Another client cannot claim, observe through ForwardService, stop or send traffic for it. Generic resource metadata is non-secret shared product state; it grants no forwarding authority.
 
 ## Interfaces and Contracts
+
 - `ForwardService.StartForward` requires a UUID-v7 request ID, exact session revision, session/machine IDs and Worker port 1–65535. Local port zero requests an OS-assigned port; an occupied explicit port fails without remapping. The forward ID is the original start request ID. Start is durable acceptance, separate from listener readiness.
 - `GetForward` reports current metadata. `StopForward` requires the exact forward revision and owning session. Start/stop receipts bind the authenticated actor and exact original request; replay returns current records without recreating side effects.
 - `ClaimForward` grants each original client/Worker runtime one native lifetime before Listen or Dial. A repeated receipt returns `granted: false`; another request cannot reclaim it. A lost claim acknowledgment stays unconfirmed and cannot be retried as native authority.
@@ -32,28 +36,35 @@ The server owner or an authorized paired client can create a forward for a curre
 - DeliDev session forwards follow `cmds-delidev-forwarding-contract.md`: preserve explicit loopback port selection, original client/Worker/device/instance ownership, negotiated capabilities and bounded ordered opaque traffic. Native claims precede sockets and receipt replay grants no new lifetime. Keep Stop independent from Archive, gate every Archive completion on both original cleanup outcomes, and retain positive private cleanup receipts through offline reporting without redialing or recreating listeners. Worker credentials receive only their original forwarding peer endpoints.
 
 ## Storage
+
 Forward resources use the existing schema-24 generic entity, session, revision, event and receipt storage; no relational migration or destructive schema change is needed. Each record retains only ownership, ports, endpoint, state and cleanup flags. Actor-bound receipts store references, not traffic. Existing records are preserved.
 
 Client/Worker private `forward-cleanup/<runtime-id>.json` journals bind the original endpoint, peer and cleanup request ID. They are synchronized before native work and marked clean only after joined original closure. Clean receipts can be reported after reconnect/server replacement without another claim or dial. Completed acknowledged files are removed; incomplete files remain recovery evidence. Inventory is bounded to 256 entries. Missing, changed or incomplete records cannot establish cleanup. No tokens or traffic enter these files. This private local state follows DeliDev's explicit exception to the repository's default R2 storage.
 
 ## Security
+
 Every operation, including loopback traffic, is authenticated. Public control is owner/client-only; paired Worker credentials receive only the forwarding-request lane and original peer claim/traffic/cleanup endpoints. Each live operation rechecks current client and Worker authorization, exact session/machine binding, primary stream and server epoch. Traffic is opaque untrusted external content and gains no Connect, native command, credential or product authority. Existing exact allowed-origin/loopback Host validation remains active. Remote transport uses the existing mandatory HTTPS boundary. No port discovery or target expansion occurs. Model-provider localhost still means the server machine.
 
 ## Logging
+
 Use structured `slog` events for accepted starts, lane/lifetime interruption, confirmed cleanup and retained cleanup failures. Debug traffic observations include only forward/connection UUIDs, role, closed frame kind, sequence and byte count. Never log traffic bytes, HTTP bodies/headers, authentication tokens, private journal content, local paths or raw native/network errors.
 
 ## Build and Test
+
 Run `go test -race ./cmds/delidev-cli/...` and `go vet ./cmds/delidev-cli/...` from the root, plus `pnpm proto:check` for schema/generated changes. Run the generated client package's tests/typecheck. Tests use isolated SQLite, paired credentials, loopback TCP fixtures and private temporary cleanup state. Verify exact binary bidirectional bytes, half-close, start/claim receipt replay, foreign devices/sessions, explicit port conflicts, bounded order/backpressure, Stop versus Archive, revocation and receipt-only offline cleanup. Hydrate only assets consumed by validation and remove any generated repository-owned `dist` before completion. Fixture success does not establish real remote TLS, provider-account, native desktop or release acceptance.
 
 ## Dependencies and Integrations
+
 The existing authenticated primary Worker stream and connection lease remain mandatory. Forwarding is independent of workspace observation, title execution, model API routing and agent job ownership. Additive `delidev.v1` schemas generate Go and TypeScript/Connect Query bindings; `ForwardQuery` is exported by the client package. No new upstream dependency is needed.
 
 ## Change Triggers
+
 Update this contract, the project index, protocol/client contracts, validation records in pull requests, issues and CI logs/artifacts and relevant command/protocol/package `AGENTS.md` when ownership, cleanup, bounds, capabilities, CLI shapes or wire schemas change.
 
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - [DeliDev project](project-delidev.md)
 - [Complete product requirements](cmds-delidev-requirements.md)
 - [CLI/server/Worker contract](cmds-delidev-contract.md)

@@ -85,14 +85,12 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-
       - name: Save verified CLI after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.prebuilt.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ steps.prebuilt.outputs.cache-path }}
           key: ${{ steps.prebuilt.outputs.cache-key }}
-
 
   workspace-fixtures:
     if: ${{ inputs.workspace_fixture_only }}

@@ -36,9 +36,13 @@ const appImageArchitectures = {
 };
 
 function onlyEntry(directory, predicate, description) {
-  const matches = readdirSync(directory, { withFileTypes: true }).filter(predicate);
+  const matches = readdirSync(directory, { withFileTypes: true }).filter(
+    predicate,
+  );
   if (matches.length !== 1) {
-    throw new Error(`expected exactly one ${description}, found ${matches.length}`);
+    throw new Error(
+      `expected exactly one ${description}, found ${matches.length}`,
+    );
   }
   return join(directory, matches[0].name);
 }
@@ -64,10 +68,12 @@ export function finalizeAppImageLayout(appDirectory) {
     const wrapperMetadata = statSync(wrapper);
     const sharunMetadata = statSync(sharun);
     if (
-      wrapperMetadata.dev !== sharunMetadata.dev
-      || wrapperMetadata.ino !== sharunMetadata.ino
+      wrapperMetadata.dev !== sharunMetadata.dev ||
+      wrapperMetadata.ino !== sharunMetadata.ino
     ) {
-      throw new Error("AppImage devhud wrapper is not the expected sharun hard link");
+      throw new Error(
+        "AppImage devhud wrapper is not the expected sharun hard link",
+      );
     }
   } else if (currentWrapperTarget !== wrapperTarget) {
     throw new Error("AppImage devhud wrapper has an unexpected symlink target");
@@ -86,7 +92,9 @@ export function finalizeAppImageLayout(appDirectory) {
       throw new Error(`AppImage shared CEF resource already exists: ${name}`);
     }
     if (currentTarget !== undefined && currentTarget !== target) {
-      throw new Error(`AppImage shared CEF resource has an unexpected target: ${name}`);
+      throw new Error(
+        `AppImage shared CEF resource has an unexpected target: ${name}`,
+      );
     }
     return { currentTarget, destination, target };
   });
@@ -103,7 +111,9 @@ export function finalizeAppImageLayout(appDirectory) {
 }
 
 function commandOutcome(result) {
-  return result.signal ? `signal ${result.signal}` : `exit ${result.status ?? "unknown"}`;
+  return result.signal
+    ? `signal ${result.signal}`
+    : `exit ${result.status ?? "unknown"}`;
 }
 
 export function finalizeLinuxAppImage({
@@ -132,21 +142,29 @@ export function finalizeLinuxAppImage({
   accessSync(appImageTool, constants.X_OK);
   finalizeAppImageLayout(appDirectory);
 
-  const updateInformationResult = run(appImage, ["--appimage-updateinformation"], {
-    encoding: "utf8",
-    env: environment,
-    shell: false,
-  });
+  const updateInformationResult = run(
+    appImage,
+    ["--appimage-updateinformation"],
+    {
+      encoding: "utf8",
+      env: environment,
+      shell: false,
+    },
+  );
   if (updateInformationResult.error) throw updateInformationResult.error;
   if (updateInformationResult.status !== 0) {
-    throw new Error(`AppImage update-information query failed with ${commandOutcome(updateInformationResult)}`);
+    throw new Error(
+      `AppImage update-information query failed with ${commandOutcome(updateInformationResult)}`,
+    );
   }
   const updateInformation = (updateInformationResult.stdout ?? "").trim();
   if (/\r|\n/u.test(updateInformation)) {
     throw new Error("AppImage update information must be one line");
   }
 
-  const repackDirectory = mkdtempSync(join(bundleDirectory, ".devhud-finalize-"));
+  const repackDirectory = mkdtempSync(
+    join(bundleDirectory, ".devhud-finalize-"),
+  );
   try {
     const arguments_ = [
       "--output",

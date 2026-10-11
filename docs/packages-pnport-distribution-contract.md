@@ -33,18 +33,22 @@ limits remain visible; new candidate failures must be fixed. This authorization
 is specific to 0.1.2 and does not close or add Windows support.
 
 ## Scope
+
 Native CI and release candidate jobs additionally run installed hidden-cache directory/mutation conformance and prepared offline Yarn 4.18.0 / Vitest 5.0.1 / Vite 8.3.0 cache conformance. Execute the prepared `vitest` package bin through the supplied packaged CLI's `run --` path, with its matching companion, so Vitest and its workers use the native view. Yarn/npm are used only for fixture preparation. Each fresh temporary project must create its first lockfile under `CI=true`; disable immutable installs only for its preparation call, without changing repository install policy or offline execution settings. Default settings create `.vite` inside physical `node_modules`; two inline/split runs must preserve cache bytes, native dependency access and doctor readiness. Source-only support does not mutate or grant capabilities to published 0.1.0/preview artifacts.
 
 macOS packages and CLI admission require private companion ABI format 3 for the pending-image constructor lease protocol. Package inspection rejects older format 1/2 macOS libraries; Linux/Windows retain their independent format 1. Build and install the executable and companion together. This private protocol change retains CLI commands, doctor JSON v1 and the exact-version publication guard.
 `packages/pnport` owns the private npm source, launcher and four native packages for 0.1.0; the two Windows packages are deferred to 0.2.0. Native release archives include the matching interception artifacts. All distribution requirements in [](crates-pnport-requirements.md) remain stable release gates; the explicitly authorized experimental next channel retains the complete four-host package gates and discloses unfinished acceptance.
 
 ## Runtime and Language
+
 Node.js 22+ for the built-in-only CommonJS launcher; Node.js 24 for repository build/release tooling. The standalone Rust CLI does not require Node.js. No bundler is needed for a native wrapper.
 
 ## Users and Operators
+
 npm/Yarn 4 users and maintainers of fixed-version native, Homebrew and npm installs.
 
 ## Interfaces and Contracts
+
 The public launcher is @delino/pnport with command pnport. Exact-version optional native packages use suffixes darwin-x64, darwin-arm64, linux-x64-gnu, linux-arm64-gnu for 0.1.0. The reserved future Windows suffixes are win32-x64-msvc and win32-arm64-msvc for 0.2.0; they are not optional dependencies or publication inputs in 0.1.x. Declare os/cpu and GNU libc where applicable; native packages use preferUnplugged so Yarn PnP can execute before virtualization starts. Require version agreement with the native CLI. Preserve argv, cwd, environment, stdio, signals and status. Missing or incompatible packages fail with reinstall guidance, never runtime downloads, compilation, PATH fallback or install scripts.
 
 GitHub archives, checksums, Sigstore material, POSIX installers and prebuilt-only Homebrew cover the same four targets for 0.1.0. The retained PowerShell implementation rejects requests before any network, file or process side effects until Windows 0.2.0 acceptance; its eventual latest-version discovery remains part of that deferred contract. Supported installers resolve `latest` across every GitHub Releases page and select the highest stable pnport version, even when other projects occupy the first page. Changes to either installer select the four-host native CI execution matrix on main. Installation smoke must execute the installer-created public `pnport` or `pnport.cmd` launcher before and after a rejected tampered install, while checking the adjacent installed library. Explicit installation controls updates/rollback. No crates.io, APT/RPM, Apple notarization or Windows Authenticode.
@@ -84,15 +88,19 @@ Manual Release Project adds pnport with immutable pnport@v<MAJOR.MINOR.PATCH> id
 - pnport offline benchmarks use already prepared synthetic TypeScript fixtures, a native executable with an explicit declared build revision, and a new private output directory. Repeat identical filesystem and compiler workloads at least five times for each cold/warm cache condition; reset compiler incremental state in both conditions. Record tool/source/artifact/fixture identities, median and range, instrumented filesystem calls/read bytes, sampled descendant RSS with its limits, and inode-aware cache disk bytes. Never publish raw process inventories, child output or environment values. Development measurements do not open the release gate or replace minimum-OS/four-target acceptance.
 
 ## Storage
+
 Generated packages use an explicit temporary directory or ignored dist. Different native cache formats coexist; an older fixed version never migrates newer entries. Remove repository-owned generated dist after validation.
 
 ## Security
+
 Regular CI and dry runs are credential-free and never publish. Only guarded complete-set publication can obtain OIDC/write authority. Runtime is offline except for the child's own behavior. Do not modify user project manifests or install dependencies.
 
 ## Logging
+
 Stable bounded launcher error codes on stderr; no raw argv, environments, child output or file content. Structured packaging events identify target, version, revision and integrity without credentials.
 
 ## Build and Test
+
 After packaging and direct installation on each native CI/candidate host, rerun `crates/pnport/tests/process_lifecycle.rs` and `native_conformance.rs` through Cargo with `PNPORT_TEST_BINARY` set to the absolute packaged executable and the selected Rust target. Keep the default parallel runner and matched adjacent injection library. The lifecycle gate exercises the shipped process owners, signals, crash recovery, cache release, fork/spawn propagation and supported terminal behavior. Native conformance covers inline/split ZIP library constructors, nested loading/fork callbacks, direct package bins, mmap/read-only data, dependency watch registration and actual source-file/output-directory events; Linux adds a fully static watch child. Debug/source-only checks cannot replace either installed suite. Native records and assembly require explicit `installed-process-lifecycle` and `installed-native-conformance` gates. Record native evidence and begin benchmarking only after both suites pass. They do not establish the remaining detached macOS, broader job-control or minimum-OS requirements.
 
 Use Node built-in tests, four-target native execution and temporary npm/Yarn 4 PnP consumers installed with scripts disabled. Validate inventories, exact versions, executable modes, missing optional packages, source identity, signature verification and partial-publication recovery. Release cannot pass by cross-compilation alone. The canonical package registry also supplies both workflow matrices through `scripts/native-matrix.mjs`; assembly requires exactly four native archives and five npm tarballs. The private source manifest normally has `pnportReleaseReady: false` until full native, minimum-OS, and benchmark acceptance is reviewed. The 2026-10-04 amendment authorizes exactly 0.1.0 after its retained final gates. Stable publication requires boolean true and an exact reviewed `pnportReleaseVersion` matching the nonzero stable source version; experimental publication instead requires the exact reviewed `pnportPreviewVersion` matching the source. Dry runs remain available, and version preparation preserves both authorization fields. Explicit POSIX archive installation accepts the preview version for native candidate validation, while latest discovery remains stable-only and Homebrew refuses previews.
@@ -183,9 +191,11 @@ node packages/pnport/scripts/benchmark.mjs /temporary/prepared-typescript /tempo
 [Native foundation](crates-pnport-foundation.md), [repository workflow](repository-workflow-contract.md), and consolidated public guides. Source workspace remains private and does not depend on unpublished platform packages.
 
 ## Change Triggers
+
 Synchronize CLI/package versions, launchers, installers, CI/release selectors and all pnport contracts when interfaces change.
 
 ## References
+
 - [Project](project-pnport.md)
 - [Requirements](crates-pnport-requirements.md)
 - [Repository defaults](repository-defaults.md)

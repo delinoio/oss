@@ -48,7 +48,6 @@ Metadata loading/failures block Continue. Older servers show their default forma
 and retain an explicit API-key alternative. Google project binding and Baseten
 server-owned device authorization remain independent and unchanged.
 
-
 ## General API OAuth reservations
 
 The approved extension covers direct ordinary API credentials only: OpenRouter
@@ -263,7 +262,6 @@ Advertise capability 5 only together with the implemented product lifecycle.
 
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
-
 ## Acceptance criteria and verification
 
 - Eligible official OpenRouter selection opens one browser authorization and connects one default account automatically after approval; no copied API key is required.
@@ -287,11 +285,9 @@ Instruction-file updates in this requirement apply only to changes in developmen
 9. **Storage:** test fresh schema 29 and backup-first 25-to-29 success/rollback after real migrations 26–28, copied awaiting/claimed database images opened in a new process, preserved old state/receipts/default deletions, orphan staging/cleanup restart. Inspect DB/backup/receipt/status/log/native event fixtures for absence of verifier/code/key/URLs. No copied backup can reacquire exchange authority.
 10. **Required checks:** run `go test ./...`, race tests and vet in `cmds/delidev-cli`; protobuf lint/breaking/generated freshness and typed-client checks; `pnpm test` in `apps/delidev`; root `cargo test` after native Rust changes. Prepare required generated dist/assets and LFS hydration first, remove generated dist afterward. Validate approved viewports/keyboard and actual browser callback on supported native hosts; record fixture versus real provider/platform evidence separately without using user credentials in automation.
 
-
 ## Out of scope
 
 Subscription/Codex/Claude login; embedded browser/account-profile work ; OAuth for custom or other providers; new providers; generic opener/renderer networking; inference, automatic validation/discovery; provider management-key/revocation automation; backup restore; saved-account preference migration; feature flags; implementing related naming/Settings-reset work.
-
 
 ## Project requirements
 
@@ -382,6 +378,7 @@ recovery or used to publish a connection, its private metadata must match the
 original account/connection/provider, client digest, quota project, staging token
 ID and idle refresh state. A changed app registration cannot adopt an earlier
 protected result. Explicit cancellation remains available for its original cleanup.
+
 ## Baseten Device OAuth
 
 Baseten uses the server-owned Device adapter only for its exact enabled managed

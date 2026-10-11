@@ -7,7 +7,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const scriptRoot = dirname(fileURLToPath(import.meta.url));
 export const repositoryRoot = resolve(scriptRoot, "../..");
-export const metadataPath = join(repositoryRoot, "packaging/devhud/release-metadata.json");
+export const metadataPath = join(
+  repositoryRoot,
+  "packaging/devhud/release-metadata.json",
+);
 
 export const artifactGroups = Object.freeze({
   desktop: Object.freeze([
@@ -39,16 +42,76 @@ export const artifactGroups = Object.freeze({
 });
 
 export const updaterTargets = Object.freeze([
-  Object.freeze({ id: "macos-x64", platform: "darwin", architecture: "x86_64", packageKind: "macos-app", artifact: "devhud-macos-x64-macos-app.tar.gz" }),
-  Object.freeze({ id: "macos-arm64", platform: "darwin", architecture: "aarch64", packageKind: "macos-app", artifact: "devhud-macos-arm64-macos-app.tar.gz" }),
-  Object.freeze({ id: "windows-x64-msi", platform: "windows", architecture: "x86_64", packageKind: "windows-msi", artifact: "devhud-windows-x64-windows-msi.msi" }),
-  Object.freeze({ id: "windows-x64-nsis", platform: "windows", architecture: "x86_64", packageKind: "windows-nsis", artifact: "devhud-windows-x64-windows-nsis.exe" }),
-  Object.freeze({ id: "windows-arm64-msi", platform: "windows", architecture: "aarch64", packageKind: "windows-msi", artifact: "devhud-windows-arm64-windows-msi.msi" }),
-  Object.freeze({ id: "windows-arm64-nsis", platform: "windows", architecture: "aarch64", packageKind: "windows-nsis", artifact: "devhud-windows-arm64-windows-nsis.exe" }),
-  Object.freeze({ id: "ubuntu-x64-appimage", platform: "linux", architecture: "x86_64", packageKind: "linux-appimage", artifact: "devhud-ubuntu-x64-linux-appimage.AppImage" }),
-  Object.freeze({ id: "ubuntu-x64-deb", platform: "linux", architecture: "x86_64", packageKind: "linux-deb", artifact: "devhud-ubuntu-x64-linux-deb.deb" }),
-  Object.freeze({ id: "ubuntu-arm64-appimage", platform: "linux", architecture: "aarch64", packageKind: "linux-appimage", artifact: "devhud-ubuntu-arm64-linux-appimage.AppImage" }),
-  Object.freeze({ id: "ubuntu-arm64-deb", platform: "linux", architecture: "aarch64", packageKind: "linux-deb", artifact: "devhud-ubuntu-arm64-linux-deb.deb" }),
+  Object.freeze({
+    id: "macos-x64",
+    platform: "darwin",
+    architecture: "x86_64",
+    packageKind: "macos-app",
+    artifact: "devhud-macos-x64-macos-app.tar.gz",
+  }),
+  Object.freeze({
+    id: "macos-arm64",
+    platform: "darwin",
+    architecture: "aarch64",
+    packageKind: "macos-app",
+    artifact: "devhud-macos-arm64-macos-app.tar.gz",
+  }),
+  Object.freeze({
+    id: "windows-x64-msi",
+    platform: "windows",
+    architecture: "x86_64",
+    packageKind: "windows-msi",
+    artifact: "devhud-windows-x64-windows-msi.msi",
+  }),
+  Object.freeze({
+    id: "windows-x64-nsis",
+    platform: "windows",
+    architecture: "x86_64",
+    packageKind: "windows-nsis",
+    artifact: "devhud-windows-x64-windows-nsis.exe",
+  }),
+  Object.freeze({
+    id: "windows-arm64-msi",
+    platform: "windows",
+    architecture: "aarch64",
+    packageKind: "windows-msi",
+    artifact: "devhud-windows-arm64-windows-msi.msi",
+  }),
+  Object.freeze({
+    id: "windows-arm64-nsis",
+    platform: "windows",
+    architecture: "aarch64",
+    packageKind: "windows-nsis",
+    artifact: "devhud-windows-arm64-windows-nsis.exe",
+  }),
+  Object.freeze({
+    id: "ubuntu-x64-appimage",
+    platform: "linux",
+    architecture: "x86_64",
+    packageKind: "linux-appimage",
+    artifact: "devhud-ubuntu-x64-linux-appimage.AppImage",
+  }),
+  Object.freeze({
+    id: "ubuntu-x64-deb",
+    platform: "linux",
+    architecture: "x86_64",
+    packageKind: "linux-deb",
+    artifact: "devhud-ubuntu-x64-linux-deb.deb",
+  }),
+  Object.freeze({
+    id: "ubuntu-arm64-appimage",
+    platform: "linux",
+    architecture: "aarch64",
+    packageKind: "linux-appimage",
+    artifact: "devhud-ubuntu-arm64-linux-appimage.AppImage",
+  }),
+  Object.freeze({
+    id: "ubuntu-arm64-deb",
+    platform: "linux",
+    architecture: "aarch64",
+    packageKind: "linux-deb",
+    artifact: "devhud-ubuntu-arm64-linux-deb.deb",
+  }),
 ]);
 
 export const signingInputs = Object.freeze([
@@ -92,10 +155,15 @@ function cargoPackageVersion(path) {
 
 export function validateVersion(version) {
   const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u.exec(version);
-  if (!match) throw new Error("DevHud release version must be stable MAJOR.MINOR.PATCH SemVer");
+  if (!match)
+    throw new Error(
+      "DevHud release version must be stable MAJOR.MINOR.PATCH SemVer",
+    );
   for (const component of match.slice(1).map(Number)) {
     if (!Number.isSafeInteger(component) || component > 65_535) {
-      throw new Error("DevHud version components must fit Chrome's 0..65535 manifest range");
+      throw new Error(
+        "DevHud version components must fit Chrome's 0..65535 manifest range",
+      );
     }
   }
   return version;
@@ -103,69 +171,124 @@ export function validateVersion(version) {
 
 export function validateStoreBuildNumber(value) {
   const text = String(value);
-  if (!/^[1-9]\d*$/u.test(text)) throw new Error("store build number must be a positive decimal integer");
+  if (!/^[1-9]\d*$/u.test(text))
+    throw new Error("store build number must be a positive decimal integer");
   const parsed = Number(text);
-  if (!Number.isSafeInteger(parsed) || parsed > 2_100_000_000) throw new Error("store build number exceeds the supported range");
+  if (!Number.isSafeInteger(parsed) || parsed > 2_100_000_000)
+    throw new Error("store build number exceeds the supported range");
   return parsed;
 }
 
 export function loadReleaseMetadata(path = metadataPath) {
   const metadata = json(path);
-  if (metadata.schemaVersion !== 1) throw new Error("unsupported DevHud release metadata schema");
+  if (metadata.schemaVersion !== 1)
+    throw new Error("unsupported DevHud release metadata schema");
   const version = validateVersion(metadata.version);
   const storeBuildNumber = validateStoreBuildNumber(metadata.storeBuildNumber);
   const releaseNotes = metadata.releaseNotes;
   for (const locale of ["en", "ko"]) {
-    if (typeof releaseNotes?.[locale] !== "string" || releaseNotes[locale].trim() === "" || Buffer.byteLength(releaseNotes[locale]) > 32 * 1024) {
-      throw new Error(`release note ${locale} must be nonempty and at most 32 KiB`);
+    if (
+      typeof releaseNotes?.[locale] !== "string" ||
+      releaseNotes[locale].trim() === "" ||
+      Buffer.byteLength(releaseNotes[locale]) > 32 * 1024
+    ) {
+      throw new Error(
+        `release note ${locale} must be nonempty and at most 32 KiB`,
+      );
     }
   }
-  return { schemaVersion: 1, version, storeBuildNumber, releaseNotes: { en: releaseNotes.en, ko: releaseNotes.ko } };
+  return {
+    schemaVersion: 1,
+    version,
+    storeBuildNumber,
+    releaseNotes: { en: releaseNotes.en, ko: releaseNotes.ko },
+  };
 }
 
 export function sourceVersions(root = repositoryRoot) {
   return Object.freeze({
     appPackage: json(join(root, "apps/devhud/package.json")).version,
-    extensionPackage: json(join(root, "apps/devhud-chrome-extension/package.json")).version,
-    tauriConfig: json(join(root, "apps/devhud/src-tauri/tauri.conf.json")).version,
-    tauriCargo: cargoPackageVersion(join(root, "apps/devhud/src-tauri/Cargo.toml")),
-    nativeHostCargo: cargoPackageVersion(join(root, "crates/devhud-native-messaging-host/Cargo.toml")),
+    extensionPackage: json(
+      join(root, "apps/devhud-chrome-extension/package.json"),
+    ).version,
+    tauriConfig: json(join(root, "apps/devhud/src-tauri/tauri.conf.json"))
+      .version,
+    tauriCargo: cargoPackageVersion(
+      join(root, "apps/devhud/src-tauri/Cargo.toml"),
+    ),
+    nativeHostCargo: cargoPackageVersion(
+      join(root, "crates/devhud-native-messaging-host/Cargo.toml"),
+    ),
   });
 }
 
 export function validateSourceVersions(version, versions = sourceVersions()) {
-  const mismatches = Object.entries(versions).filter(([, candidate]) => candidate !== version);
+  const mismatches = Object.entries(versions).filter(
+    ([, candidate]) => candidate !== version,
+  );
   if (mismatches.length > 0) {
-    throw new Error(`DevHud release version ${version} does not match ${mismatches.map(([name, candidate]) => `${name}=${candidate}`).join(", ")}`);
+    throw new Error(
+      `DevHud release version ${version} does not match ${mismatches.map(([name, candidate]) => `${name}=${candidate}`).join(", ")}`,
+    );
   }
 }
 
-export function validateStoreBuildSources(storeBuildNumber, root = repositoryRoot) {
-  const ios = json(join(root, "apps/devhud/src-tauri/tauri.ios.conf.json")).bundle?.iOS?.bundleVersion;
-  const android = json(join(root, "apps/devhud/src-tauri/tauri.android.conf.json")).bundle?.android?.versionCode;
+export function validateStoreBuildSources(
+  storeBuildNumber,
+  root = repositoryRoot,
+) {
+  const ios = json(join(root, "apps/devhud/src-tauri/tauri.ios.conf.json"))
+    .bundle?.iOS?.bundleVersion;
+  const android = json(
+    join(root, "apps/devhud/src-tauri/tauri.android.conf.json"),
+  ).bundle?.android?.versionCode;
   if (ios !== String(storeBuildNumber) || android !== storeBuildNumber) {
-    throw new Error(`DevHud store build ${storeBuildNumber} does not match iOS=${ios} and Android=${android}`);
+    throw new Error(
+      `DevHud store build ${storeBuildNumber} does not match iOS=${ios} and Android=${android}`,
+    );
   }
 }
 
 export function signingStatus(environment = process.env) {
-  return signingInputs.map((name) => Object.freeze({ name, present: typeof environment[name] === "string" && environment[name] !== "" }));
+  return signingInputs.map((name) =>
+    Object.freeze({
+      name,
+      present:
+        typeof environment[name] === "string" && environment[name] !== "",
+    }),
+  );
 }
 
 export function validateSigningInputs(environment = process.env) {
-  const missing = signingStatus(environment).filter(({ present }) => !present).map(({ name }) => name);
-  if (missing.length > 0) throw new Error(`signed-private packaging requires signing configuration: ${missing.join(", ")}`);
+  const missing = signingStatus(environment)
+    .filter(({ present }) => !present)
+    .map(({ name }) => name);
+  if (missing.length > 0)
+    throw new Error(
+      `signed-private packaging requires signing configuration: ${missing.join(", ")}`,
+    );
 }
 
-export function releasePlan({ metadata = loadReleaseMetadata(), environment = process.env, signed = false } = {}) {
+export function releasePlan({
+  metadata = loadReleaseMetadata(),
+  environment = process.env,
+  signed = false,
+} = {}) {
   validateSourceVersions(metadata.version);
   validateStoreBuildSources(metadata.storeBuildNumber);
-  const trustRoot = json(join(repositoryRoot, "apps/devhud/updater-trust-root.json"));
+  const trustRoot = json(
+    join(repositoryRoot, "apps/devhud/updater-trust-root.json"),
+  );
   if (signed) {
     validateSigningInputs(environment);
-    if (trustRoot.productionReady !== true) throw new Error("signed-private packaging requires the production-ready updater trust root");
+    if (trustRoot.productionReady !== true)
+      throw new Error(
+        "signed-private packaging requires the production-ready updater trust root",
+      );
   }
-  const artifacts = Object.fromEntries(Object.entries(artifactGroups).map(([group, names]) => [group, [...names]]));
+  const artifacts = Object.fromEntries(
+    Object.entries(artifactGroups).map(([group, names]) => [group, [...names]]),
+  );
   return {
     schemaVersion: 1,
     project: "devhud",
@@ -173,12 +296,27 @@ export function releasePlan({ metadata = loadReleaseMetadata(), environment = pr
     tag: `devhud@v${metadata.version}`,
     storeBuildNumber: metadata.storeBuildNumber,
     readiness: signed ? "private-signed-candidate" : "plan-only",
-    publication: { pushesTag: false, createsRelease: false, submitsStores: false, pushesImages: false, deploys: false },
+    publication: {
+      pushesTag: false,
+      createsRelease: false,
+      submitsStores: false,
+      pushesImages: false,
+      deploys: false,
+    },
     releaseNotes: metadata.releaseNotes,
     artifacts,
-    updaterTargets: updaterTargets.map((target) => ({ ...target, manifest: `updater/manifests/stable/${target.platform}/${target.architecture}/${target.packageKind}.json`, artifactSignature: `updater/signatures/stable/${target.platform}/${target.architecture}/${target.packageKind}.artifact.ed25519`, manifestSignature: `updater/signatures/stable/${target.platform}/${target.architecture}/${target.packageKind}.manifest.ed25519` })),
+    updaterTargets: updaterTargets.map((target) => ({
+      ...target,
+      manifest: `updater/manifests/stable/${target.platform}/${target.architecture}/${target.packageKind}.json`,
+      artifactSignature: `updater/signatures/stable/${target.platform}/${target.architecture}/${target.packageKind}.artifact.ed25519`,
+      manifestSignature: `updater/signatures/stable/${target.platform}/${target.architecture}/${target.packageKind}.manifest.ed25519`,
+    })),
     signingMaterial: signingStatus(environment),
-    updaterTrustRoot: { keyId: trustRoot.keyId, fingerprint: trustRoot.fingerprint, productionReady: trustRoot.productionReady === true },
+    updaterTrustRoot: {
+      keyId: trustRoot.keyId,
+      fingerprint: trustRoot.fingerprint,
+      productionReady: trustRoot.productionReady === true,
+    },
   };
 }
 
@@ -188,19 +326,30 @@ export function sha256(path) {
 
 export function validateExtensionParity(artifactsDirectory) {
   const store = join(artifactsDirectory, "devhud-chrome-web-store.zip");
-  const validation = join(artifactsDirectory, "devhud-chrome-github-validation.zip");
-  if (sha256(store) !== sha256(validation)) throw new Error("Chrome Web Store and GitHub validation ZIPs are not byte-equivalent");
+  const validation = join(
+    artifactsDirectory,
+    "devhud-chrome-github-validation.zip",
+  );
+  if (sha256(store) !== sha256(validation))
+    throw new Error(
+      "Chrome Web Store and GitHub validation ZIPs are not byte-equivalent",
+    );
 }
 
 function parseArguments(arguments_) {
-  const result = { command: arguments_[0] ?? "plan", signed: false, output: null };
+  const result = {
+    command: arguments_[0] ?? "plan",
+    signed: false,
+    output: null,
+  };
   for (let index = 1; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
     if (argument === "--signed") result.signed = true;
     else if (argument === "--output") result.output = arguments_[++index];
     else throw new Error(`unknown argument: ${argument}`);
   }
-  if (result.command !== "plan") throw new Error(`unsupported command: ${result.command}`);
+  if (result.command !== "plan")
+    throw new Error(`unsupported command: ${result.command}`);
   if (result.output === undefined) throw new Error("--output requires a path");
   return result;
 }

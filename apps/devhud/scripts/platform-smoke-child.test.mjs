@@ -11,12 +11,40 @@ import test from "node:test";
 import { terminatePosixProcessGroup } from "../../../scripts/spawn-dev-server.mjs";
 import { waitForChildClose } from "./platform-smoke-child.mjs";
 
-const processTreeChildPath = fileURLToPath(new URL("./process-tree-child.mjs", import.meta.url));
-const captureSource = readFileSync(fileURLToPath(new URL("../src-tauri/src/capture.rs", import.meta.url)), "utf8");
-const tauriConfig = JSON.parse(readFileSync(fileURLToPath(new URL("../src-tauri/tauri.conf.json", import.meta.url)), "utf8"));
-const macTauriConfig = JSON.parse(readFileSync(fileURLToPath(new URL("../src-tauri/tauri.macos.conf.json", import.meta.url)), "utf8"));
-const macInfoPlist = readFileSync(fileURLToPath(new URL("../src-tauri/Info.desktop.plist", import.meta.url)), "utf8");
-const koreanInfoPlist = readFileSync(fileURLToPath(new URL("../src-tauri/infoplist/ko.lproj/InfoPlist.strings", import.meta.url)), "utf8");
+const processTreeChildPath = fileURLToPath(
+  new URL("./process-tree-child.mjs", import.meta.url),
+);
+const captureSource = readFileSync(
+  fileURLToPath(new URL("../src-tauri/src/capture.rs", import.meta.url)),
+  "utf8",
+);
+const tauriConfig = JSON.parse(
+  readFileSync(
+    fileURLToPath(new URL("../src-tauri/tauri.conf.json", import.meta.url)),
+    "utf8",
+  ),
+);
+const macTauriConfig = JSON.parse(
+  readFileSync(
+    fileURLToPath(
+      new URL("../src-tauri/tauri.macos.conf.json", import.meta.url),
+    ),
+    "utf8",
+  ),
+);
+const macInfoPlist = readFileSync(
+  fileURLToPath(new URL("../src-tauri/Info.desktop.plist", import.meta.url)),
+  "utf8",
+);
+const koreanInfoPlist = readFileSync(
+  fileURLToPath(
+    new URL(
+      "../src-tauri/infoplist/ko.lproj/InfoPlist.strings",
+      import.meta.url,
+    ),
+  ),
+  "utf8",
+);
 
 async function waitForStatus(statusPath, timeoutMs = 10_000) {
   const deadline = Date.now() + timeoutMs;
@@ -35,7 +63,6 @@ async function waitForStatus(statusPath, timeoutMs = 10_000) {
   throw new Error("timed out waiting for the process-tree child status");
 }
 
-
 test("readiness JSON waits for complete publication", async (t) => {
   for (const initial of ["", '{"pid":']) {
     await t.test(`partial ${JSON.stringify(initial)}`, async () => {
@@ -43,7 +70,10 @@ test("readiness JSON waits for complete publication", async (t) => {
       const statusPath = join(directory, "status.json");
       const expected = { pid: 123, port: 456 };
       writeFileSync(statusPath, initial);
-      const publication = setTimeout(() => writeFileSync(statusPath, JSON.stringify(expected)), 50);
+      const publication = setTimeout(
+        () => writeFileSync(statusPath, JSON.stringify(expected)),
+        50,
+      );
       try {
         assert.deepEqual(await waitForStatus(statusPath), expected);
       } finally {
@@ -75,7 +105,10 @@ test("readiness JSON remains bounded for missing and malformed documents", async
         if (initial !== null) writeFileSync(statusPath, initial);
         // Shorten only this helper regression's bound; process-tree callers
         // retain the original ten-second deadline and 25 ms polling interval.
-        await assert.rejects(waitForStatus(statusPath, 50), /timed out waiting for the process-tree child status/u);
+        await assert.rejects(
+          waitForStatus(statusPath, 50),
+          /timed out waiting for the process-tree child status/u,
+        );
       } finally {
         rmSync(directory, { recursive: true, force: true });
       }
@@ -86,7 +119,10 @@ test("readiness JSON remains bounded for missing and malformed documents", async
 test("readiness JSON propagates non-transient filesystem errors", async () => {
   const directory = mkdtempSync(join(tmpdir(), "devhud-readiness-"));
   try {
-    await assert.rejects(waitForStatus(directory), (error) => error.code === "EISDIR");
+    await assert.rejects(
+      waitForStatus(directory),
+      (error) => error.code === "EISDIR",
+    );
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -111,7 +147,10 @@ function assertProcessIsNotLive(pid) {
   }
   if (process.platform === "linux") {
     const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
-    const [state] = stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/u);
+    const [state] = stat
+      .slice(stat.lastIndexOf(")") + 1)
+      .trim()
+      .split(/\s+/u);
     assert.ok(state === "Z" || state === "X");
     return;
   }
@@ -157,25 +196,35 @@ test("desktop capture smoke contracts cover each supported native adapter", () =
   assert.deepEqual(macTauriConfig.bundle.resources, {
     "infoplist/ko.lproj/InfoPlist.strings": "ko.lproj/InfoPlist.strings",
   });
-  assert.match(koreanInfoPlist, /^NSInputMonitoringUsageDescription = ".+";$/mu);
+  assert.match(
+    koreanInfoPlist,
+    /^NSInputMonitoringUsageDescription = ".+";$/mu,
+  );
   assert.match(koreanInfoPlist, /^NSScreenCaptureUsageDescription = ".+";$/mu);
   assert.match(koreanInfoPlist, /키보드 입력/u);
   assert.match(koreanInfoPlist, /화면/u);
 });
 
 test("waits for a timed-out child to close before rejecting", async () => {
-  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1_000)"], {
-    detached: process.platform !== "win32",
-    stdio: "ignore",
-    windowsHide: true,
-  });
+  const child = spawn(
+    process.execPath,
+    ["-e", "setInterval(() => {}, 1_000)"],
+    {
+      detached: process.platform !== "win32",
+      stdio: "ignore",
+      windowsHide: true,
+    },
+  );
   await once(child, "spawn");
   let closed = false;
   child.once("close", () => {
     closed = true;
   });
 
-  await assert.rejects(waitForChildClose(child, "hung", 50), /hung smoke timed out/u);
+  await assert.rejects(
+    waitForChildClose(child, "hung", 50),
+    /hung smoke timed out/u,
+  );
   assert.equal(closed, true);
 });
 
@@ -223,7 +272,10 @@ test(
     };
 
     let settled = false;
-    const terminationPromise = terminatePosixProcessGroup(child, "SIGTERM").finally(() => {
+    const terminationPromise = terminatePosixProcessGroup(
+      child,
+      "SIGTERM",
+    ).finally(() => {
       settled = true;
     });
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -239,19 +291,28 @@ test(
   "terminates and awaits a timed-out process tree",
   { timeout: 20_000 },
   async (t) => {
-    const temporaryDirectory = mkdtempSync(join(tmpdir(), "devhud-smoke-process-tree-"));
+    const temporaryDirectory = mkdtempSync(
+      join(tmpdir(), "devhud-smoke-process-tree-"),
+    );
     const statusPath = join(temporaryDirectory, "status.json");
     t.after(() => rmSync(temporaryDirectory, { force: true, recursive: true }));
 
-    const child = spawn(process.execPath, [processTreeChildPath, "manager", statusPath], {
-      detached: process.platform !== "win32",
-      shell: false,
-      stdio: "ignore",
-      windowsHide: true,
-    });
+    const child = spawn(
+      process.execPath,
+      [processTreeChildPath, "manager", statusPath],
+      {
+        detached: process.platform !== "win32",
+        shell: false,
+        stdio: "ignore",
+        windowsHide: true,
+      },
+    );
     const { pid, port } = await waitForStatus(statusPath);
 
-    await assert.rejects(waitForChildClose(child, "hung-tree", 50), /hung-tree smoke timed out/u);
+    await assert.rejects(
+      waitForChildClose(child, "hung-tree", 50),
+      /hung-tree smoke timed out/u,
+    );
     assertProcessIsNotLive(pid);
     await listenOnPort(port);
   },

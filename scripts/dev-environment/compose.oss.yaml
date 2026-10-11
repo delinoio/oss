@@ -10,7 +10,8 @@ services:
     volumes:
       - devhud-postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "devhud", "-d", "devhud"]
+      test:
+        ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "devhud", "-d", "devhud"]
       interval: 2s
       timeout: 2s
       retries: 30

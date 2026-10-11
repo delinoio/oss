@@ -47,7 +47,7 @@ regression evidence before this P1 can be resolved. This PR is not merge-ready.
 - `GOMAXPROCS=2 pnpm test` from `apps/delidev`: failed one existing App fixture
   after 5,223 ms exceeded its 5,000 ms limit; 98 files and 1,269 tests passed.
   The failing case was `discards notification and import drafts on close without
-  saving`. The composite command stopped before its later bundle/build steps.
+saving`. The composite command stopped before its later bundle/build steps.
 - `pnpm test:unit src/App.test.tsx -t 'discards notification and import drafts on close without saving' --maxWorkers=1`:
   passed the isolated case, with 43 other cases intentionally skipped. This
   retry does not convert the failed full command into a full-suite pass.

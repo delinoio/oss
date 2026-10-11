@@ -1,19 +1,23 @@
 # crates-with-watch-foundation
 
 ## Scope
+
 - Project/component: `with-watch` crate foundation contract
 - Canonical path: `crates/with-watch`
 
 ## Runtime and Language
+
 - Runtime: Rust CLI watcher runtime
 - Primary language: Rust
 
 ## Users and Operators
+
 - Developers who want POSIX/coreutils-style commands to rerun automatically when their inputs change
 - Maintainers validating generic watch planning and rerun behavior across platforms
 - Release engineers operating crate publication and binary distribution workflows
 
 ## Interfaces and Contracts
+
 - Root passthrough mode must remain `with-watch [--no-hash] [--clear] <utility> [args...]`.
 - Shell mode must remain `with-watch [--no-hash] [--clear] --shell '<expr>'`.
 - `exec` mode must remain `with-watch exec [--no-hash] [--clear] --input <glob>... -- <command> [args...]`.
@@ -76,21 +80,25 @@
 - Keep direct installers and `cargo-binstall` metadata aligned with release asset names, signing contracts, and install docs.
 
 ## Storage
+
 - `with-watch` does not persist project state.
 - Snapshot state is in-memory only for the current process.
 
 ## Security
+
 - Delegated commands run with inherited stdio and current-process privileges.
 - `with-watch` must not rewrite delegated argv or inject changed-path placeholders into child processes in v1.
 - Logging must avoid printing secret environment values passed through delegated commands.
 - Release automation must publish checksum manifests and Sigstore bundle sidecars without exposing registry or tap-write credentials.
 
 ## Logging
+
 - Use structured `tracing` logs for command planning, watcher setup, snapshot capture, debounce decisions, and rerun causes.
 - Diagnostic `tracing` logs are operator opt-in: they are disabled by default and enabled via `WW_LOG`.
 - Logs must include `command_source`, `detection_mode`, `output_refresh_mode`, input counts, `adapter_id`, `fallback_used`, `default_watch_root_used`, `filtered_output_count`, `side_effect_profile`, snapshot modes, snapshot entry counts, snapshot capture elapsed time, and rerun suppression outcomes.
 
 ## Build and Test
+
 - Local validation: `cargo test -p with-watch`
 - Workspace validation baseline: `cargo test --workspace --all-targets`
 - Tests must cover CLI modes, immediate startup execution, shell parsing, adapter classification, fallback ambiguity handling, snapshot diffing, self-write suppression, TTY-only output clearing, and representative rerun flows.
@@ -103,6 +111,7 @@
 - `apps/public-docs` is not required to surface repo-local direct-installer script examples.
 
 ## Dependencies and Integrations
+
 - Uses `clap` for CLI parsing.
 - Uses `starbase_args` for shell command-line parsing.
 - Uses `notify` for filesystem event delivery.
@@ -112,11 +121,13 @@
 - Integrates with direct installer scripts and `cargo-binstall` metadata for prebuilt binary distribution.
 
 ## Change Triggers
+
 - Update `docs/project-with-watch.md` with this file when command shape, detection behavior, release distribution, or ownership changes.
 - Update `docs/README.md`, root `AGENTS.md`, and `crates/AGENTS.md` when project registration or policy changes.
 
 Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
 
 ## References
+
 - `docs/project-with-watch.md`
 - `docs/domain-template.md`

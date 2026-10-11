@@ -25,7 +25,12 @@ const input = {
   androidSigner: "c".repeat(64),
 };
 test("iOS-only candidates require no Android authority and preserve legacy both-platform schema", () => {
-  const appleOnly = { ...input, target: "ios", androidCode: "", androidSigner: undefined };
+  const appleOnly = {
+    ...input,
+    target: "ios",
+    androidCode: "",
+    androidSigner: undefined,
+  };
   const m = candidate(appleOnly, ios);
   assert.equal(m.schema, 2);
   assert.equal(m.target, "ios");
@@ -34,9 +39,11 @@ test("iOS-only candidates require no Android authority and preserve legacy both-
   assert.equal(candidate(input, ios, android).schema, 1);
   assert.throws(() => validateInputs({ ...appleOnly, androidCode: "8" }));
   assert.throws(() => candidate({ ...appleOnly, target: "foreign" }, ios));
-  const environment = Object.fromEntries([
-    "ISSUER", "KEY_ID", "PRIVATE_KEY", "TEAM", "APP_ID", "INTERNAL_GROUP",
-  ].map((name) => [`DELIDEV_MOBILE_APPLE_${name}`, "fixture"]));
+  const environment = Object.fromEntries(
+    ["ISSUER", "KEY_ID", "PRIVATE_KEY", "TEAM", "APP_ID", "INTERNAL_GROUP"].map(
+      (name) => [`DELIDEV_MOBILE_APPLE_${name}`, "fixture"],
+    ),
+  );
   assert.equal(credentials(environment, "ios"), true);
   assert.throws(() => credentials(environment));
 });

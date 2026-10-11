@@ -6,15 +6,15 @@ These commands run a newly launched program with your current user permissions. 
 
 ## Commands
 
-| Command | Use |
-| --- | --- |
-| `record` | Save a complete execution as versioned NDJSON. |
-| `compare` | Compare two complete records. |
-| `autowatch` | Rerun when observed project inputs change. |
-| `assetcov` | Measure which selected existing files were actually read. |
-| `latencylab` | Compare baseline runs with runs that delay selected file operations. |
-| `min-repro` | Collect observed inputs and verify a failing command in a separate working directory. |
-| `fbreak` | Pause a matching calling thread just before a file operation. |
+| Command      | Use                                                                                   |
+| ------------ | ------------------------------------------------------------------------------------- |
+| `record`     | Save a complete execution as versioned NDJSON.                                        |
+| `compare`    | Compare two complete records.                                                         |
+| `autowatch`  | Rerun when observed project inputs change.                                            |
+| `assetcov`   | Measure which selected existing files were actually read.                             |
+| `latencylab` | Compare baseline runs with runs that delay selected file operations.                  |
+| `min-repro`  | Collect observed inputs and verify a failing command in a separate working directory. |
+| `fbreak`     | Pause a matching calling thread just before a file operation.                         |
 
 ```sh
 clibox fspy record --output trace.ndjson -- cargo test

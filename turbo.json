@@ -25,15 +25,10 @@
         "packages/async-commit-hook-api-client/src/gen/**",
         "packages/delidev-api-client/src/gen/**"
       ],
-      "env": [
-        "CI_CACHE_CONTEXT",
-        "CI_PROTO_CACHE_CONTEXT"
-      ]
+      "env": ["CI_CACHE_CONTEXT", "CI_PROTO_CACHE_CONTEXT"]
     },
     "dev": {
-      "dependsOn": [
-        "build:api"
-      ],
+      "dependsOn": ["build:api"],
       "cache": false,
       "env": [
         "CARGO_HOME",
@@ -46,9 +41,7 @@
       "persistent": true
     },
     "build:api": {
-      "dependsOn": [
-        "^build:api"
-      ],
+      "dependsOn": ["^build:api"],
       "inputs": [
         ".env",
         "src/**",
@@ -72,27 +65,13 @@
         "$TURBO_ROOT$/go.mod",
         "$TURBO_ROOT$/go.sum"
       ],
-      "outputs": [
-        "dist/**",
-        ".next/**"
-      ],
-      "env": [
-        "CI_CACHE_CONTEXT"
-      ]
+      "outputs": ["dist/**", ".next/**"],
+      "env": ["CI_CACHE_CONTEXT"]
     },
     "build:frontend": {
-      "dependsOn": [
-        "^build"
-      ],
-      "outputs": [
-        "dist/**",
-        "build/**",
-        "artifacts/**",
-        "doc_build/**"
-      ],
-      "env": [
-        "CI_CACHE_CONTEXT"
-      ],
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "build/**", "artifacts/**", "doc_build/**"],
+      "env": ["CI_CACHE_CONTEXT"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",
@@ -104,10 +83,7 @@
       ]
     },
     "build": {
-      "dependsOn": [
-        "^build",
-        "build:api"
-      ],
+      "dependsOn": ["^build", "build:api"],
       "inputs": [
         "$TURBO_DEFAULT$",
         ".env",
@@ -140,14 +116,10 @@
         "artifacts/**",
         "doc_build/**"
       ],
-      "env": [
-        "CI_CACHE_CONTEXT"
-      ]
+      "env": ["CI_CACHE_CONTEXT"]
     },
     "test": {
-      "env": [
-        "CI_CACHE_CONTEXT"
-      ],
+      "env": ["CI_CACHE_CONTEXT"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",
@@ -159,12 +131,8 @@
       ]
     },
     "typecheck": {
-      "dependsOn": [
-        "^build"
-      ],
-      "env": [
-        "CI_CACHE_CONTEXT"
-      ],
+      "dependsOn": ["^build"],
+      "env": ["CI_CACHE_CONTEXT"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",
@@ -176,9 +144,7 @@
       ]
     },
     "test:unit": {
-      "env": [
-        "CI_CACHE_CONTEXT"
-      ],
+      "env": ["CI_CACHE_CONTEXT"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",
@@ -190,9 +156,7 @@
       ]
     },
     "test:components": {
-      "env": [
-        "CI_CACHE_CONTEXT"
-      ],
+      "env": ["CI_CACHE_CONTEXT"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",
@@ -204,9 +168,7 @@
       ]
     },
     "test:accessibility": {
-      "env": [
-        "CI_CACHE_CONTEXT"
-      ],
+      "env": ["CI_CACHE_CONTEXT"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",
@@ -218,9 +180,7 @@
       ]
     },
     "test:security": {
-      "env": [
-        "CI_CACHE_CONTEXT"
-      ],
+      "env": ["CI_CACHE_CONTEXT"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",
@@ -232,9 +192,7 @@
       ]
     },
     "test:adapters": {
-      "env": [
-        "CI_CACHE_CONTEXT"
-      ],
+      "env": ["CI_CACHE_CONTEXT"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",
@@ -246,12 +204,8 @@
       ]
     },
     "lint": {
-      "dependsOn": [
-        "^lint"
-      ],
-      "env": [
-        "CI_CACHE_CONTEXT"
-      ],
+      "dependsOn": ["^lint"],
+      "env": ["CI_CACHE_CONTEXT"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",
@@ -263,9 +217,7 @@
       ]
     },
     "async-commit-hook#test": {
-      "dependsOn": [
-        "^build"
-      ],
+      "dependsOn": ["^build"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/scripts/spawn-dev-server.mjs",
@@ -277,23 +229,15 @@
         "$TURBO_ROOT$/go.mod",
         "$TURBO_ROOT$/go.sum"
       ],
-      "outputs": [
-        "dist/**"
-      ],
-      "env": [
-        "CI_CACHE_CONTEXT"
-      ]
+      "outputs": ["dist/**"],
+      "env": ["CI_CACHE_CONTEXT"]
     },
     "ci:check": {
       "cache": false
     },
     "ci:typecheck": {
-      "dependsOn": [
-        "^build"
-      ],
-      "env": [
-        "CI_CACHE_CONTEXT"
-      ],
+      "dependsOn": ["^build"],
+      "env": ["CI_CACHE_CONTEXT"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",

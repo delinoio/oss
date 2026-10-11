@@ -30,7 +30,6 @@ keyless cleanup proofs. The common server resolver owns every consuming flow;
 regenerate bindings from the reconciled declarations. No SQLite migration or
 Worker assignment extension is introduced.
 
-
 ## Direct execution startup allocation and activation
 
 The originating change established the complete [startup allocation](cmds-delidev-execution-startup-contract.md)
@@ -257,8 +256,7 @@ owning feature PR; do not insert empty migrations to skip unfinished work.
 
 The feature reserves migration 28 for service-native subscription identity and
 legacy configuration retirement, after the real implementations of 26 and 27.
-Its independent `SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1` allocation is
-17. Both reservations reached main before dependent implementation. The real
+Its independent `SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1` allocation is 17. Both reservations reached main before dependent implementation. The real
 retirement migration follows accounting and diagnostics; reservations alone never
 activate runtime support. Migration provenance uses one original PR or owning
 issue when no implementation PR exists yet, preserving that identity thereafter.
@@ -363,6 +361,7 @@ source-bound validation and unresolved native/account/platform acceptance in PRs
 and CI. Reservation completion cannot close a feature issue.
 
 Sidechat reference preparation privately owns sidechat-preparations/ under the workspace Manager. Original Fork job/parent/child and native metadata identities bind each bounded claim before manifest publication. Permanent deletion composes that ownership only after original process cleanup; the server receives IDs and digests, never filesystem authority.
+
 ## Pre-release compatibility reset
 
 The owner-approved pre-release cleanup establishes database baseline 32 and
@@ -438,6 +437,7 @@ ownership. Regenerate shared outputs from reconciled sources. Current feature al
 delivery follows the [shared allocation workflow](#allocation-workflow). The original
 batch approval does not waive other domain contracts or authorize merging, native
 acceptance claims or reassignment of unrelated allocations.
+
 ## The feature batch allocation exception
 
 The owner explicitly permits System `SERVER_SUBSCRIPTION_QUOTA_V1 = 46` allocation, declaration, generated bindings and activation in the same complete feature PR for the feature. The original batch approval waived the prior main reservation merge; current feature delivery follows the [shared allocation workflow](cmds-delidev-structure-contract.md#allocation-workflow). Existing QUOTA and Refresh all RPCs retain their allocations; no new RPC, Worker capability, migration or native change is introduced. Follow the [server quota ownership contract](cmds-delidev-subscription-contract.md#server-owned-chatgpt-quota). Capabilities 18, 19 and 30 retain independent ownership.
@@ -464,6 +464,7 @@ The feature records System `SERVER_SUBSCRIPTION_RESET_CREDITS_V1 = 49` with comp
 The feature owns System 50 `SERVER_SUBSCRIPTION_QUOTA_V2`, recorded with its complete feature implementation under the [allocation workflow](#allocation-workflow). It expands omitted-machine server quota only; retain original System 18/46/49 and all Worker allocations. No migration or new RPC is required. Real native/account/remote/platform acceptance remains owner-assigned and nonblocking for the authorized batch; fixtures/builds never substitute for that evidence.
 
 ## OpenCode Go subscriptions
+
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.
 
 ### Managed independent Codex Fork allocation closure
