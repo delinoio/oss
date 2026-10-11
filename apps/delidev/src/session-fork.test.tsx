@@ -1620,9 +1620,7 @@ it("preserves pending then uncertain original ownership through hiding and attem
   );
   fireEvent.click(screen.getByRole("button", { name: "Close Fork session" }));
   fireEvent.click(screen.getByRole("button", { name: "Fork session" }));
-  expect(
-    screen.getByText(safePresentation(fixture.sources[0]!.id)),
-  ).toBeDefined();
+  expect(screen.getByText(/Source:/).textContent).toContain("Record 1");
   expect(screen.queryByRole("button", { name: "Create fork" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Open forked session" }));
   expect(fixture.open).toHaveBeenCalledWith(

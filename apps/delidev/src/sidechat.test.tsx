@@ -139,8 +139,16 @@ it("retains selected complete reply revisions across navigation and uncertain fi
       name: "Retry the same findings request",
     }),
   );
-  await screen.findByText(
-    safePresentation(`Selected findings queued as ${input.id}`),
+  await waitFor(() =>
+    expect(
+      screen
+        .getAllByRole("status")
+        .some((status) =>
+          /Selected findings queued as Record \d+\./.test(
+            status.textContent ?? "",
+          ),
+        ),
+    ).toBe(true),
   );
   expect(sent[1]).toEqual(sent[0]);
   expect(sent[0]).toMatchObject({

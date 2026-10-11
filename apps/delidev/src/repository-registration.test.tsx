@@ -569,12 +569,16 @@ it.each([false, true])(
     );
     const primary = within(
       screen
-        .getByText(safePresentation(`${f.machine.id} · /canonical/oss`))
+        .getByText(
+          safePresentation(`${f.machine.id} · /canonical/oss`, "Runner Device"),
+        )
         .closest("li")!,
     );
     const secondary = within(
       screen
-        .getByText(safePresentation(`${other.id} · /canonical/B`))
+        .getByText(
+          safePresentation(`${other.id} · /canonical/B`, "Runner Device"),
+        )
         .closest("li")!,
     );
     expect(
@@ -589,7 +593,9 @@ it.each([false, true])(
     ).toBeTruthy();
     fireEvent.click(primary.getByRole("button", { name: "Remove checkout" }));
     expect(
-      screen.getByText(safePresentation(`${f.machine.id} · /canonical/oss`)),
+      screen.getByText(
+        safePresentation(`${f.machine.id} · /canonical/oss`, "Runner Device"),
+      ),
     ).toBeTruthy();
     expect(
       (
@@ -644,7 +650,7 @@ it("keeps checkout removal available when editing an existing repository", async
   f.mount();
   fireEvent.click(
     await screen.findByRole("button", {
-      name: safePresentation(`Edit Existing · ${repository.id}`),
+      name: safePresentation(`Edit Existing · ${repository.id}`, "Repository"),
     }),
   );
   const remove = screen.getByRole("button", { name: "Remove checkout" });

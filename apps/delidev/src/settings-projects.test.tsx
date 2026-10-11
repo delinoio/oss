@@ -461,7 +461,7 @@ it.each(["revision", "failure"])(
     openProjects(value);
     fireEvent.click(
       await screen.findByRole("button", {
-        name: safePresentation(`Edit Original · ${row.id}`),
+        name: safePresentation(`Edit Original · ${row.id}`, "Project"),
       }),
     );
     fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {

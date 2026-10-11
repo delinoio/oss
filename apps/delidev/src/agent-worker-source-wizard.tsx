@@ -1106,7 +1106,7 @@ function SourceGroup({
                 refreshAccount &&
                 provider.data?.resource
               )
-                void endpoint.mutateAsync({
+                endpoint.mutate({
                   accountId: refreshAccount.id,
                   expectedAccountRevision: refreshAccount.revision,
                   expectedProviderRevision: provider.data.resource.revision,

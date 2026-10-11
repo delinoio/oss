@@ -5,6 +5,7 @@ import { expect, it, vi } from "vitest";
 import { SessionTabBar } from "./session-tab-bar";
 import { SessionTabKind } from "./session-tabs";
 import { i18n } from "./localization";
+import { newRequestId } from "@delinoio/delidev-api-client";
 it("roves focus and selection without an absent-position alias and leaves pinned Conversation noncloseable", () => {
   const close = vi.fn();
   function View() {
@@ -44,7 +45,7 @@ it("recomputes an unnamed sidechat fallback when the locale changes", async () =
   await act(() => i18n.changeLanguage("en"));
   const sidechat = {
     kind: SessionTabKind.Sidechat,
-    id: "sidechat-id",
+    id: newRequestId(),
     name: "",
   } as const;
   const mounted = render(
