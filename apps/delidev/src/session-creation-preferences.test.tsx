@@ -1456,25 +1456,28 @@ it("keeps manual Execute without rereading defaults", async () => {
   expect(submittedMode(f)).toBe("execute");
 });
 
-it("clears a prior automatic-default failure after accepted manual creation", async () => {
-  const f = fixture(true, false, { global: false });
-  render(f.view());
-  const button = await readyAutomaticCreation(f);
-  f.list.mockRejectedValue(
-    new ConnectError("Defaults temporarily unavailable", Code.Unavailable),
-  );
-  fireEvent.click(button);
-  await screen.findByRole("button", { name: "Retry Plan Mode defaults" });
-  fireEvent.click(screen.getByRole("checkbox", { name: "Plan Mode" }));
-  fireEvent.click(button);
+it(
+  "clears a prior automatic-default failure after accepted manual creation",
+  async () => {
+    const f = fixture(true, false, { global: false });
+    render(f.view());
+    const button = await readyAutomaticCreation(f);
+    f.list.mockRejectedValue(
+      new ConnectError("Defaults temporarily unavailable", Code.Unavailable),
+    );
+    fireEvent.click(button);
+    await screen.findByRole("button", { name: "Retry Plan Mode defaults" });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Plan Mode" }));
+    fireEvent.click(button);
 
-  await waitFor(() => expect(f.createSession).toHaveBeenCalledOnce());
-  await waitFor(() =>
-    expect(
-      screen.queryByRole("button", { name: "Retry Plan Mode defaults" }),
-    ).not.toBeInTheDocument(),
-  );
-});
+    await waitFor(() => expect(f.createSession).toHaveBeenCalledOnce());
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Retry Plan Mode defaults" }),
+      ).not.toBeInTheDocument(),
+    );
+  },
+);
 
 it.each(["current", "departure", "connection"])(
   "serializes automatic preflight and fences its scope (%s)",

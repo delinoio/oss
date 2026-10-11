@@ -680,7 +680,11 @@ export function NewSession({
     next: T | undefined,
   ) => {
     if (!next) return previous;
-    if (!previous || previous.id !== next.id || next.revision > previous.revision)
+    if (
+      !previous ||
+      previous.id !== next.id ||
+      next.revision > previous.revision
+    )
       return next;
     return previous;
   };
