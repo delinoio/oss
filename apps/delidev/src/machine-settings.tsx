@@ -14,7 +14,12 @@ import {
   installationObservation,
   validRunnerObservation,
 } from "./runner-observation";
-import { useQuery } from "@connectrpc/connect-query";
+import {
+  createConnectQueryKey,
+  useQuery,
+  useTransport,
+} from "@connectrpc/connect-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
   EntityKind,
   ResourceQuery,
@@ -22,6 +27,7 @@ import {
   newRequestId,
   type Resource,
 } from "@delinoio/delidev-api-client";
+import type { Transport } from "@connectrpc/connect";
 import {
   document,
   encode,
@@ -42,29 +48,48 @@ export function useMachineSettingsController(
   initial: Resource,
   active: boolean,
 ) {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  const input = { kind: EntityKind.MACHINE, id: initial.id };
+  const queryKey = createConnectQueryKey({
+    schema: ResourceQuery.getResource,
+    transport,
+    input,
+    cardinality: "finite",
+  });
   const result = useQuery(
     ResourceQuery.getResource,
-    { kind: EntityKind.MACHINE, id: initial.id },
+    input,
     { enabled: active, refetchInterval: active ? 5000 : false },
   );
+  const readUpdateCount =
+    queryClient.getQueryState(queryKey)?.dataUpdateCount ?? 0;
   const [acknowledged, setAcknowledged] = useState<Resource>();
   const exact = (row?: Resource): row is Resource =>
     validRunnerObservation(row) && row.id === initial.id;
   const [observation, setObservation] = useState<{
     id: string;
+    transport: Transport;
+    queryClient: QueryClient;
     current?: Resource;
-    read?: typeof result.data;
+    readUpdateCount: number;
     acknowledged?: Resource;
   }>(() => ({
     id: initial.id,
-    read: result.data,
+    transport,
+    queryClient,
+    readUpdateCount,
   }));
   const retained =
-    observation.id === initial.id
+    observation.id === initial.id &&
+    observation.transport === transport &&
+    observation.queryClient === queryClient
       ? observation
       : {
           id: initial.id,
-          read: result.data,
+          transport,
+          queryClient,
+          readUpdateCount,
         };
   let current = [retained?.current, initial, acknowledged]
     .filter(exact)
@@ -82,7 +107,8 @@ export function useMachineSettingsController(
   const freshRead =
     result.isSuccess &&
     !result.error &&
-    result.data !== retained?.read;
+    readUpdateCount > retained.readUpdateCount;
+  const readCounterReset = readUpdateCount < retained.readUpdateCount;
   const readResource = result.data?.resource;
   const readExceedsAcknowledgement =
     exact(readResource) &&
@@ -102,12 +128,15 @@ export function useMachineSettingsController(
     !retained ||
     current !== retained.current ||
     freshRead ||
+    readCounterReset ||
     newAcknowledgement
   )
     setObservation({
       id: initial.id,
+      transport,
+      queryClient,
       current,
-      read: freshRead || newAcknowledgement ? result.data : retained?.read,
+      readUpdateCount,
       acknowledged,
     });
   const data = useMemo(() => document(current), [current]);
