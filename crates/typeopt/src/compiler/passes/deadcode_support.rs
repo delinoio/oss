@@ -733,6 +733,8 @@ pub(super) fn reflective_call(node: Node) -> Option<NodeSlice> {
 /// name a class method or accessor.
 pub(super) struct DynamicSites {
     sites: Vec<(Node, Node, crate::plan::Reason)>,
+    /// Application JavaScript is unchecked: its lookups are not indexed.
+    javascript: bool,
 }
 
 impl DynamicSites {
@@ -782,12 +784,19 @@ impl DynamicSites {
                 }
             }
         }
-        Self { sites }
+        Self {
+            sites,
+            javascript: ctx.files.iter().any(|f| f.js),
+        }
     }
 
     /// The first site that may look up a member of the class by a name that
     /// is not spelled in the source.
     pub fn observes(&self, ctx: &mut Ctx, holders: &Holders) -> Option<crate::plan::Reason> {
+        // Imprecisely typed values may flow into unchecked JavaScript.
+        if holders.escapes && self.javascript {
+            return Some(crate::plan::Reason::ExternalBoundary);
+        }
         let mut provenance = KeyProvenance::default();
         for &(receiver, key, reason) in &self.sites {
             if (key.is_nil() || provenance.opaque(ctx, key, 0)) && holders.may_hold(ctx, receiver) {
