@@ -25,6 +25,20 @@ type workerStream struct {
 	Cancel   context.CancelFunc
 }
 
+type workerStoreWake struct {
+	store   *store.Store
+	changed <-chan struct{}
+}
+
+func (w *workerStoreWake) channel() <-chan struct{} {
+	if w.changed == nil {
+		w.changed = w.store.Changed()
+	}
+	return w.changed
+}
+
+func (w *workerStoreWake) consume() { w.changed = nil }
+
 func workerActor(ctx context.Context, machine, instance string) error {
 	actor, ok := domain.PrincipalFrom(ctx)
 	if !ok || actor.Type != domain.WorkerDevice || string(actor.MachineID) != machine {
@@ -361,8 +375,9 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 	var cancellationSent domain.ID
 	responseControlsSent := map[domain.ID]bool{}
 	steerControlsSent := map[domain.ID]bool{}
+	wake := workerStoreWake{store: s.Store}
 	for {
-		changed := s.Store.Changed()
+		changed := wake.channel()
 		var records []store.Record
 		var cancelJob domain.ID
 		var responseControls []*pb.QuestionResponseControl
@@ -643,15 +658,26 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 			}
 			after = record.ID
 		}
-		if assigned || len(records) == store.MaxPage && !waitForNetwork {
+		if assigned {
+			// The assigned job remains the sole in-flight operation. A later
+			// terminal report restores the dependency cursor before another scan.
+			wake.consume()
+			continue
+		}
+		if len(records) == store.MaxPage && !waitForNetwork {
+			// Keep the scan's original wake channel across pages. Replacing it here
+			// could lose a dependency-retirement signal delivered after an earlier
+			// blocked job was checked.
 			continue
 		}
 		select {
 		case <-ctx.Done():
 			return rpc.Error(ctx.Err(), correlation)
 		case <-changed:
+			wake.consume()
 			retryDependencies()
 		case <-ticker.C:
+			wake.consume()
 			retryDependencies()
 			if err := s.Store.Heartbeat(ctx, machine, instance); err != nil {
 				return rpc.Error(err, correlation)

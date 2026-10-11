@@ -293,6 +293,30 @@ func retireBlockedStorageDependent(t *testing.T, f *storageFixture, ref blockedS
 	}
 }
 
+func TestWorkerStoreWakeObservationSurvivesPagination(t *testing.T) {
+	f := newStorageFixture(t)
+	wake := workerStoreWake{store: f.service.Store}
+	observed := wake.channel()
+	_, err := f.service.Store.Mutate(f.ownerContext, domain.NewID(), "fixture.page-wake", nil, func(*store.Tx) (any, error) {
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nextPage := wake.channel(); nextPage != observed {
+		t.Fatal("pagination replaced the scan's store wake observation")
+	}
+	select {
+	case <-observed:
+	default:
+		t.Fatal("mutation did not wake the scan's original channel")
+	}
+	wake.consume()
+	if nextScan := wake.channel(); nextScan == observed {
+		t.Fatal("consumed store wake channel was reused by the next scan")
+	}
+}
+
 func TestPrimaryWorkAdvancesPastFullDependencyBlockedPage(t *testing.T) {
 	for _, recovery := range []bool{false, true} {
 		name := "cleanup"
