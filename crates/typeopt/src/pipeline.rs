@@ -253,10 +253,13 @@ impl<B: Backend> Gate<'_, B> {
                     return Ok(Decision::Reject(Reason::ModuleInitialization));
                 };
                 for specifier in removed {
-                    let site = self
-                        .imports
-                        .get(&file)
-                        .and_then(|sites| sites.iter().find(|s| s.specifier == specifier));
+                    let site = self.imports.get(&file).and_then(|sites| {
+                        sites.iter().find(|s| {
+                            s.specifier == specifier
+                                || rewritten_specifier(&s.specifier).as_deref()
+                                    == Some(specifier.as_str())
+                        })
+                    });
                     let Some(site) = site else {
                         return Ok(Decision::Reject(Reason::ModuleInitialization));
                     };
@@ -266,7 +269,7 @@ impl<B: Backend> Gate<'_, B> {
                         insertions.push(FileEdit::insert(
                             &file,
                             site.offset,
-                            format!("import {};\n", quote(&specifier)),
+                            format!("import {};\n", quote(&site.specifier)),
                         ));
                     } else {
                         return Ok(Decision::Reject(Reason::ModuleInitialization));
@@ -999,4 +1002,27 @@ mod tests {
 /// Double-quoted JavaScript string literal.
 fn quote(value: &str) -> String {
     serde_json::to_string(value).expect("strings serialize")
+}
+
+/// The emitted spelling of a relative TypeScript-extension specifier under
+/// `rewriteRelativeImportExtensions`, which the emitted import list uses.
+fn rewritten_specifier(specifier: &str) -> Option<String> {
+    if !specifier.starts_with("./") && !specifier.starts_with("../") {
+        return None;
+    }
+    if specifier.ends_with(".d.ts") {
+        return None;
+    }
+    [
+        (".tsx", ".js"),
+        (".ts", ".js"),
+        (".mts", ".mjs"),
+        (".cts", ".cjs"),
+    ]
+    .iter()
+    .find_map(|(from, to)| {
+        specifier
+            .strip_suffix(from)
+            .map(|stem| format!("{stem}{to}"))
+    })
 }
