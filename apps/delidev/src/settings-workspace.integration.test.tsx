@@ -168,14 +168,33 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   fireEvent.click(enableBudget);
   expect(enableBudget.checked).toBe(false);
   const saveBudget = screen.getByRole("button", { name: "Save session budget" }) as HTMLButtonElement;
-  if (saveBudget.disabled) {
+  const rebaseRetainedBudgetDraft = async () => {
     expect(screen.getByRole("alert").textContent).toContain("The session changed. Your budget draft is retained.");
-    const latestRevision = screen.getByRole("button", { name: "Use latest revision with this draft" });
+    const latestRevision = await screen.findByRole("button", { name: "Use latest revision with this draft" }, { timeout: 20000 });
     fireEvent.click(latestRevision);
     await waitFor(() => expect(saveBudget.disabled).toBe(false));
     expect(enableBudget.checked).toBe(false);
+  };
+  if (saveBudget.disabled) {
+    await rebaseRetainedBudgetDraft();
   }
-  fireEvent.click(saveBudget);
+  // The real Worker can advance this session between its latest read and save.
+  // Keep retries in this fixture and require explicit rebasing of the retained
+  // draft; remove this path if the fixture stops sharing revision writers.
+  let budgetRemoved = false;
+  for (let attempt = 0; attempt < 3 && !budgetRemoved; attempt += 1) {
+    fireEvent.click(saveBudget);
+    const result = await waitFor(() => {
+      const saved = Boolean(screen.queryByText("No estimated-cost budget is configured."));
+      const stale = Boolean(screen.queryByRole("button", { name: "Use latest revision with this draft" }));
+      expect(saved || stale).toBe(true);
+      return saved ? "saved" : "stale";
+    }, { timeout: 20000 });
+    if (result === "saved") { budgetRemoved = true; break; }
+    expect(attempt).toBeLessThan(2);
+    await rebaseRetainedBudgetDraft();
+  }
+  expect(budgetRemoved).toBe(true);
   await screen.findByText("No estimated-cost budget is configured.");
   expect((await budgetClient.getSessionBudget({ sessionId: budgetSession.id })).view?.state).toBe(BudgetState.DISABLED);
   cleanup();
