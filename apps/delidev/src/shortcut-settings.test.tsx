@@ -131,3 +131,14 @@ it.each([['en','Add message to queue','Fixed: Enter'],['ko','메시지 대기열
  expect(screen.getAllByText('Shift + Enter').length).toBeGreaterThan(0);
  await act(()=>i18n.changeLanguage('en'));
 });
+
+it.each([['en', 'Open Settings'], ['ko', '설정 열기']])("shows localized fixed Settings without customization and suppresses navigation during capture in %s", async (language, label) => {
+ await act(() => i18n.changeLanguage(language)); const f = fixture(), run = vi.fn();
+ function SettingsAction() { useShortcuts([{ id: ShortcutId.OpenSettings, scope: ShortcutScope.Global, label: "shortcuts.openSettings", bindings: globalShortcutBindings[ShortcutId.OpenSettings], input: ShortcutInput.Allow, run }]); return null; }
+ render(<ShortcutPreferenceProvider bridge={f.bridge}><ShortcutProvider><SettingsAction /><SettingsActionScope><ShortcutSettings /></SettingsActionScope></ShortcutProvider></ShortcutPreferenceProvider>);
+ const row = screen.getByText(label).closest("div")!; expect(row.textContent).toContain("Ctrl + ,"); expect(row.querySelector("button")).toBeNull();
+ const captureButton = screen.getByRole("button", { name: language === 'en' ? 'Capture shortcut for New session' : '새 세션 단축키 입력' });
+ await waitFor(() => expect(captureButton.hasAttribute('disabled')).toBe(false)); fireEvent.click(captureButton);
+ await waitFor(() => expect(screen.getByRole("button", { name: language === 'en' ? 'Cancel capture' : '단축키 입력 취소' })).toBeTruthy());
+ fireEvent.keyDown(document.body, { key: ",", ctrlKey: true }); expect(run).not.toHaveBeenCalled(); expect(f.bridge.update).not.toHaveBeenCalled();
+});

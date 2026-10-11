@@ -1,4 +1,5 @@
 {
+  "shortcuts.openSettings": "Open Settings",
   "shortcuts.title": "Keyboard shortcuts",
   "shortcuts.currentScreen": "Current screen: {{name}}",
   "shortcuts.close": "Close keyboard shortcuts",

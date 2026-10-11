@@ -66,3 +66,9 @@ it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])("captures physical chord
   expect(captureShortcut(altGraph, platform)).toBeUndefined();
   expect(captureShortcut(new KeyboardEvent("keydown", { key: "ㅏ", code: "KeyK", ...modifiers }), platform)).toBeUndefined();
 });
+
+it("keeps Settings fixed and excludes comma from capture and the seven-action document", () => {
+ expect(editableShortcutCatalog).toHaveLength(7);
+ expect(() => parseShortcutOverrides({ [ShortcutId.OpenSettings]: { state: ShortcutOverrideState.Disabled } })).toThrow();
+ for (const platform of [ShortcutPlatform.Mac, ShortcutPlatform.Other]) expect(captureShortcut(new KeyboardEvent("keydown", { key: ",", metaKey: platform === ShortcutPlatform.Mac, ctrlKey: platform === ShortcutPlatform.Other }), platform)).toBeUndefined();
+});
