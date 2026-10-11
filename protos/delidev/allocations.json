@@ -13268,6 +13268,13 @@
       "declaration": "SystemCapability",
       "member": "SYSTEM_CAPABILITY_HARNESS_DEFAULTS_V1",
       "number": 81
+    },
+    {
+      "issue": 1986,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_HARNESS_DEFAULTS_V1",
+      "number": 53
     }
   ],
   "rpcReservations": [

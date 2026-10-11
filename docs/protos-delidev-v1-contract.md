@@ -1454,3 +1454,9 @@ Existing RPC methods carry the additive closed configuration data; this
 capability does not change an accepted session or imply native support for
 any individual Harness option. The Harness contract owns resolution and
 validation behavior.
+
+`WorkerCapability.HARNESS_DEFAULTS_V1 = 53` declares support for frozen
+Harness settings and their source provenance in execution assignments.
+Admission requires this Worker capability only when an assignment carries that
+provenance, so older Workers never receive a configuration shape they reject.
+The capability does not imply support for every native Harness option.
