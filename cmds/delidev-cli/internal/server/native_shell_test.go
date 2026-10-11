@@ -57,6 +57,14 @@ func TestNativeShellHumanReceiptExactReplayAndQueuedCancellation(t *testing.T) {
 	if _, err := client.RunNativeShell(ctx, ownerRequest(f.identity, &changed)); err == nil {
 		t.Fatal("receipt reused for changed command")
 	}
+	stale := *req
+	stale.Mutation = &pb.Mutation{Id: req.Mutation.Id, ExpectedRevision: req.Mutation.ExpectedRevision, RequestId: string(domain.NewID())}
+	if _, err := client.RunNativeShell(ctx, ownerRequest(f.identity, &stale)); err == nil {
+		t.Fatal("stale session revision acquired a second action")
+	}
+	if _, err := client.GetNativeShell(ctx, ownerRequest(f.identity, &pb.GetNativeShellRequest{SessionId: string(domain.NewID()), ActionId: resource.Id})); err == nil {
+		t.Fatal("foreign session adopted original native action")
+	}
 	if _, err := client.RunNativeShell(ctx, ownerRequest(f.workerIdentity, req)); err == nil {
 		t.Fatal("Worker authenticated agent flow authorized native shell")
 	}
