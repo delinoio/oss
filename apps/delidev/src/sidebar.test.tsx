@@ -65,6 +65,7 @@ function mountSidebar({
   sessions,
   props = {},
   stateful = false,
+  withApp = false,
 }: {
   projects: (
     pageToken: string,
@@ -79,6 +80,7 @@ function mountSidebar({
     | { sessions: Resource[]; nextPageToken?: string }
     | Promise<{ sessions: Resource[]; nextPageToken?: string }>;
   stateful?: boolean;
+  withApp?: boolean;
   props?: Partial<ComponentProps<typeof Sidebar>>;
 }) {
   const projectRequests: string[] = [];
@@ -157,7 +159,9 @@ function mountSidebar({
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>
         <MutationIntents>
-          <Harness />
+          {withApp ? (
+            <div className="app"><Harness /></div>
+          ) : <Harness />}
         </MutationIntents>
       </QueryClientProvider>
     </TransportProvider>
@@ -2194,4 +2198,75 @@ it("preserves an external composer selection through collapse and expansion", ()
   expect(composer.value).toBe("Unsent draft");
   expect(composer.selectionStart).toBe(2);
   expect(composer.selectionEnd).toBe(8);
+});
+
+it("closes logical activity and focus before the visual interval, then settles once", () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }));
+  const original = getComputedStyle;
+  let rendered = 288;
+  vi.stubGlobal("getComputedStyle", (element: Element) =>
+    element.classList.contains("app")
+      ? {
+          gridTemplateColumns: `${53 + rendered}px 1000px`,
+          transitionDuration: "0.18s",
+        }
+      : original(element),
+  );
+  const changed = vi.fn();
+  const view = mountSidebar({
+    projects: () => ({ resources: [] }),
+    sessions: () => ({ sessions: [] }),
+    withApp: true,
+    props: { motionReady: true, presentationChanged: changed },
+  });
+  const pane = view.container.querySelector<HTMLDialogElement>(
+    ".sidebar-pane-dialog",
+  )!;
+  const content = pane.querySelector(".sidebar-pane");
+  pane.querySelector<HTMLButtonElement>("button")!.focus();
+  view.setProps({ collapsed: true });
+  expect(pane.hidden).toBe(false);
+  expect(pane.inert).toBe(true);
+  expect(pane.getAttribute("aria-hidden")).toBe("true");
+  expect(document.activeElement).toBe(
+    view.container.querySelector(".sidebar-rail [aria-current='page']"),
+  );
+  act(() => vi.advanceTimersByTime(240));
+  expect(pane.hidden).toBe(true);
+  expect(pane.open).toBe(false);
+  rendered = 0;
+  view.setProps({ collapsed: false });
+  expect(pane.hidden).toBe(false);
+  expect(pane.inert).toBe(false);
+  expect(changed.mock.calls.at(-1)![0].settled).toBe(false);
+  act(() => vi.advanceTimersByTime(240));
+  expect(pane.querySelector(".sidebar-pane")).toBe(content);
+  expect(changed.mock.calls.at(-1)![0].settled).toBe(true);
+  expect(document.activeElement).toBe(
+    view.container.querySelector(".sidebar-rail [aria-current='page']"),
+  );
+  rendered = 288;
+  view.setProps({ collapsed: true });
+  expect(pane.hidden).toBe(false);
+  view.setProps({ motionScope: {} });
+  expect(pane.hidden).toBe(true);
+  expect(changed.mock.calls.at(-1)![0]).toMatchObject({
+    settled: true,
+    focusAllowed: false,
+  });
+  rendered = 0;
+  view.setProps({ collapsed: false });
+  expect(changed.mock.calls.at(-1)![0].settled).toBe(false);
+  view.setProps({ surface: Surface.Search });
+  expect(pane.hidden).toBe(false);
+  expect(changed.mock.calls.at(-1)![0]).toMatchObject({
+    settled: true,
+    focusAllowed: false,
+  });
+  view.unmount();
 });

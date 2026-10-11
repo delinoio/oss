@@ -7,7 +7,11 @@ interface SidebarOutlet {
   closeDrawer: () => void;
   drawerOpen: boolean;
   paneVisible?: boolean;
-  openDrawer?: () => void;
+  paneSettled?: boolean;
+  paneGeneration?: number;
+  paneProblem?: boolean;
+  paneFocusAllowed?: boolean;
+  openDrawer?: () => boolean;
 }
 
 const SidebarOutletContext = createContext<SidebarOutlet>({
@@ -21,13 +25,27 @@ export function SidebarOutletProvider({
   closeDrawer,
   drawerOpen,
   paneVisible = true,
+  paneSettled = true,
+  paneGeneration = 0,
+  paneProblem = false,
+  paneFocusAllowed = true,
   openDrawer,
   children,
 }: SidebarOutlet & { children: ReactNode }) {
   useLocale();
   return (
     <SidebarOutletContext.Provider
-      value={{ target, closeDrawer, drawerOpen, paneVisible, openDrawer }}
+      value={{
+        target,
+        closeDrawer,
+        drawerOpen,
+        paneVisible,
+        paneSettled,
+        paneGeneration,
+        paneProblem,
+        paneFocusAllowed,
+        openDrawer,
+      }}
     >
       {children}
     </SidebarOutletContext.Provider>
@@ -74,7 +92,22 @@ export function useSidebarDrawerOpen() {
   return useContext(SidebarOutletContext).drawerOpen;
 }
 export function useOpenSidebarDrawer() {
-  return useContext(SidebarOutletContext).openDrawer ?? (() => undefined);
+  return useContext(SidebarOutletContext).openDrawer ?? (() => false);
+}
+
+export function useSidebarPresentation() {
+  const {
+    paneSettled = true,
+    paneGeneration = 0,
+    paneProblem = false,
+    paneFocusAllowed = true,
+  } = useContext(SidebarOutletContext);
+  return {
+    settled: paneSettled,
+    generation: paneGeneration,
+    problem: paneProblem,
+    focusAllowed: paneFocusAllowed,
+  };
 }
 
 const SidebarActivityContext = createContext(true);

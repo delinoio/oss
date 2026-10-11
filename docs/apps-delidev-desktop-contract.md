@@ -5123,21 +5123,37 @@ releases the pane's 288px (256px through 1100px) grid track. Keep the localized
 shortcut Help declaration and original mounted pane across page changes.
 
 Keep Sidebar, portals, filters, scroll snapshots, selected resources, drafts and
-pending/uncertain controllers mounted. Set the hidden pane's `hidden`, `inert`
-and `aria-hidden` boundaries explicitly; closing a nonmodal dialog alone does not
-hide its CSS flex layout. Suspend Home navigation polling, hover timers,
+pending/uncertain controllers mounted. Accepted wide preference changes animate
+the pane track and main boundary for 180ms with cubic-bezier(0.2, 0, 0, 1).
+Keep the 52px rail fixed and pane content at its expanded width; translate the
+content left and clip it during closure without scaling or continuous text reflow.
+Set logical `inert` and `aria-hidden` immediately. Keep the closing pane visually
+open only for this interval, then explicitly set `hidden` and remove its nonmodal
+open state; closing a nonmodal dialog alone does not hide its CSS flex layout.
+Suspend Home navigation polling, hover timers,
 sidebar selectors, repository/schedule navigation refresh and continuation through
 existing activity gates. Main content observation keeps its independent owner.
 Before hiding a focused pane descendant, focus the current rail navigation
 button, falling back to the first rail navigation button. Preserve composer
 focus/caret/selection otherwise; expansion never steals focus.
 
+Each admitted reversal begins at the current rendered geometry. Retire stale
+completion work; use the current track transition completion and a generation-fenced
+240ms fallback. Cancellation, disposal, reduced-motion changes, width breakpoints,
+page navigation and connection changes settle the latest valid endpoint directly.
+Initial preference hydration and breakpoint restoration never animate. Reduced
+motion reaches endpoints immediately. Motion has no preference-write or execution
+authority; pending, failed and uncertain saves retain committed presentation and
+their original recovery controls. Rejected toggles are never queued.
+
 Below 760px retain the purpose-named compact opener and modal drawer. Deactivate
 primary+B. Drawer opening/closing never saves the wide preference. On return to
 wide layout, reapply the committed choice, retire any modal drawer and use the
 same current/first rail fallback when collapsed. Search initial focus cannot
 target a hidden pane; explicit Search focus may request the original
-pane opening and waits for visible committed presentation.
+pane opening and waits for the current committed opening to settle. Fence pending
+Search focus by its presentation generation and active destination; cancellation,
+reversal, rejection or navigation replacement cannot focus an obsolete destination.
 
 `sidebar_preference.json` is an independent computer-local, bounded 4096-byte
 version-1 document containing only the Expanded/Collapsed enum and its document

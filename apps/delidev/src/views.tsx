@@ -33,6 +33,7 @@ import {
   useCloseSidebarDrawer,
   useSidebarDrawerOpen,
   useOpenSidebarDrawer,
+  useSidebarPresentation,
 } from "./sidebar-context";
 import { Surface } from "./surface";
 export { Surface } from "./surface";
@@ -94,10 +95,13 @@ export function Search({
   const root = useScrollRoot(content);
   const searchInput = useRef<HTMLInputElement>(null);
   const focusedOnce = useRef(false);
-  const requestedFocus = useRef(false);
+  const requestedFocus = useRef<
+    { generation: number; opening: boolean } | undefined
+  >(undefined);
   const closeDrawer = useCloseSidebarDrawer();
   const drawerOpen = useSidebarDrawerOpen();
   const paneVisible = useSidebarPaneVisible();
+  const presentation = useSidebarPresentation();
   const openDrawer = useOpenSidebarDrawer();
   const request = useCallback(
     (token: string) => ({
@@ -124,13 +128,50 @@ export function Search({
     result.refresh,
   );
   useEffect(() => {
-    if (requestedFocus.current && paneVisible) {
-      requestedFocus.current = false;
-      searchInput.current?.focus();
+    const request = requestedFocus.current;
+    if (!active || presentation.problem) {
+      requestedFocus.current = undefined;
+      return;
     }
-  }, [drawerOpen, paneVisible]);
+    if (!request) return;
+    if (request.generation !== presentation.generation) {
+      if (
+        !request.opening &&
+        presentation.focusAllowed &&
+        paneVisible &&
+        presentation.generation === request.generation + 1
+      ) {
+        request.generation = presentation.generation;
+        request.opening = true;
+      } else {
+        requestedFocus.current = undefined;
+        return;
+      }
+    }
+    if (paneVisible && presentation.settled) {
+      requestedFocus.current = undefined;
+      searchInput.current?.focus();
+      focusedOnce.current = true;
+    }
+  }, [
+    active,
+    drawerOpen,
+    paneVisible,
+    presentation.settled,
+    presentation.generation,
+    presentation.problem,
+    presentation.focusAllowed,
+  ]);
   useEffect(() => {
-    if (!active || !paneVisible || focusedOnce.current) return;
+    if (!active) return;
+    // Activating Search behind a collapsed pane must not turn a later ordinary
+    // expansion into a focus request. The explicit shortcut owns that request.
+    if (!paneVisible) {
+      focusedOnce.current = true;
+      return;
+    }
+    if (!presentation.settled || presentation.problem || focusedOnce.current)
+      return;
     if (
       typeof window.matchMedia === "function" &&
       window.matchMedia("(max-width: 759px)").matches &&
@@ -142,7 +183,15 @@ export function Search({
       focusedOnce.current = true;
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [active, drawerOpen, paneVisible]);
+  }, [
+    active,
+    drawerOpen,
+    paneVisible,
+    presentation.settled,
+    presentation.generation,
+    presentation.problem,
+    presentation.focusAllowed,
+  ]);
   const shortcuts = useShortcuts([
     {
       id: ShortcutId.SearchFocus,
@@ -152,9 +201,12 @@ export function Search({
       bindings: [{ key: "i", primary: true }],
       input: ShortcutInput.Allow,
       run: () => {
-        if (!paneVisible) {
-          requestedFocus.current = true;
-          openDrawer();
+        if (!paneVisible || !presentation.settled) {
+          if (openDrawer())
+            requestedFocus.current = {
+              generation: presentation.generation,
+              opening: paneVisible,
+            };
         } else searchInput.current?.focus();
       },
     },
