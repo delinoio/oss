@@ -173,6 +173,35 @@ export const toUnits = (value: number) => convertWithFactor(value) * UNIT_FACTOR
     same_behavior(temp.path());
 }
 
+#[test]
+fn inlines_function_local_constants_after_their_declaration() {
+    let temp = project(&[(
+        "main.ts",
+        r#"function summarize(values: number[]) {
+  const report = () => {
+    try {
+      return describeValue(values.length);
+    } catch (error) {
+      return (error as Error).name;
+    }
+  };
+  const early = report();
+  const describeValue = (count: number) => "count=" + count;
+  const halfLength = (count: number) => count / 2;
+  return [early, describeValue(values.length), halfLength(values.length)].join(" ");
+}
+console.log(summarize([1, 2, 3]));
+"#,
+    )]);
+    let report = optimize(temp.path(), &args(&only(&[INLINE, RESIDUAL])));
+    assert!(applied_count(&report, INLINE) > 0, "{report:#}");
+    let main = emitted(temp.path(), "main.ts");
+    assert!(!main.contains("halfLength"), "{main}");
+    // `report` may run before `describeValue` is initialized.
+    assert!(main.contains("describeValue(values.length)"), "{main}");
+    same_behavior(temp.path());
+}
+
 // ---------------------------------------------------------------------------
 // call-inlining: safety boundaries
 // ---------------------------------------------------------------------------

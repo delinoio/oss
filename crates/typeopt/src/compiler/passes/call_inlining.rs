@@ -210,6 +210,9 @@ struct Target {
     return_names: Vec<FreeName>,
     /// Statement removed with the declaration.
     statement: Node,
+    /// A function-local `const` whose temporal dead zone is checked per
+    /// call site.
+    local: bool,
 }
 
 type Rejection = (Reason, Node);
@@ -244,6 +247,7 @@ impl Target {
         if ctx.refs(symbol).iter().any(|r| r.kind == RefKind::Write) {
             return reject(Reason::Mutation);
         }
+        let mut local = false;
         let statement = match shape.declaration.kind() {
             SyntaxKind::VariableDeclaration => {
                 let list = shape.declaration.parent();
@@ -253,8 +257,19 @@ impl Target {
                 {
                     return reject(Reason::Mutation);
                 }
+                let statement = list.parent();
                 if !facts.initialized_early(ctx, symbol) {
-                    return reject(Reason::ModuleInitialization);
+                    // A function-local constant is safe at sites that the
+                    // declaration's own function reaches after it.
+                    if statement.parent().kind() == SyntaxKind::SourceFile
+                        || matches!(
+                            statement.parent().kind(),
+                            SyntaxKind::CaseClause | SyntaxKind::DefaultClause
+                        )
+                    {
+                        return reject(Reason::ModuleInitialization);
+                    }
+                    local = true;
                 }
                 if list.declarations().nodes().len() == 1 {
                     list.parent()
@@ -348,6 +363,7 @@ impl Target {
             retype,
             return_names,
             statement,
+            local,
         })
     }
 }
@@ -951,6 +967,9 @@ fn site(
         // Type assertions on the callee change the call's type.
         return Err(Reason::TypeConstraint);
     }
+    if target.local && !reached_after(target.shape.declaration, call) {
+        return Err(Reason::ModuleInitialization);
+    }
     // Recursion: the site lies inside the target itself.
     let mut ancestor = call.parent();
     while ancestor.is_some() {
@@ -1249,4 +1268,19 @@ fn assertion(text: &str, operand: Node, annotation: &str) -> String {
     } else {
         format!("(({text}) as {annotation})")
     }
+}
+
+/// Whether `site` runs only after the local declaration initialized its
+/// binding: it follows the declaration in the same function body, without
+/// crossing into a closure that could run earlier.
+fn reached_after(declaration: Node, site: Node) -> bool {
+    fn function_of(mut node: Node) -> Node {
+        loop {
+            node = node.parent();
+            if node.is_nil() || is_function_like(node) || node.kind() == SyntaxKind::SourceFile {
+                return node;
+            }
+        }
+    }
+    Ctx::start(site) >= declaration.end() as usize && function_of(site) == function_of(declaration)
 }
