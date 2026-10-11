@@ -2,6 +2,7 @@
 package codex
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"testing"
@@ -72,8 +73,8 @@ func TestAssistantContinuationKeepsRawHistoryWithoutNewAuthority(t *testing.T) {
 	turn["itemsView"] = "full"
 	turn["items"] = []any{user, raw}
 	page, _ := json.Marshal(map[string]any{"data": []any{turn}, "nextCursor": nil, "backwardsCursor": nil})
-	original := string(raw)
-	if _, inputs, err := decodeLatestTurnInputs(page); err != nil || len(inputs) != 1 || string(raw) != original {
+	original := sha256.Sum256(page)
+	if _, inputs, err := decodeLatestTurnInputs(page); err != nil || len(inputs) != 1 || inputs[0].PromptDigest != (domain.SessionInput{Prompt: "Original input"}).InputDigest() || sha256.Sum256(page) != original {
 		t.Fatal("history changed or gained message/input authority", err)
 	}
 	turn["items"] = []any{user, json.RawMessage(`{"type":"agentMessage","id":"original-assistant","text":"Original","delivery":"sync"}`)}

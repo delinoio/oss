@@ -3,6 +3,7 @@ package domain
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -39,5 +40,30 @@ func TestCodexAssistantCompletionCannotReplaceOriginalEvidence(t *testing.T) {
 	(*clone.Questions)[0].Title = "changed"
 	if (*first.Questions)[0].Title != "q" {
 		t.Fatal("caller changed original observation")
+	}
+}
+
+func TestCodexAssistantMetadataBounds(t *testing.T) {
+	options := make([]string, 129)
+	questions := make([]CodexEmbeddedQuestion, 129)
+	for i := range questions {
+		questions[i] = CodexEmbeddedQuestion{Title: "Original"}
+	}
+	total := make([]string, 17)
+	for i := range total {
+		total[i] = strings.Repeat("x", 16384)
+	}
+	for _, value := range []any{
+		map[string]any{"questions": questions},
+		map[string]any{"questions": []CodexEmbeddedQuestion{{Title: "Original", Options: &options}}},
+		map[string]any{"questions": []CodexEmbeddedQuestion{{Title: strings.Repeat("x", 16385)}}},
+		map[string]any{"questions": []map[string]any{{"title": "Original", "options": []string{strings.Repeat("x", 16385)}}}},
+		map[string]any{"questions": []CodexEmbeddedQuestion{{Title: "Original", Options: &total}}},
+	} {
+		raw, _ := json.Marshal(value)
+		var metadata CodexAssistantMetadata
+		if Decode(raw, &metadata) == nil {
+			t.Fatal("metadata owning bound was enlarged")
+		}
 	}
 }
