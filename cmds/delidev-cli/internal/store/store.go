@@ -698,6 +698,24 @@ func (t *Tx) Put(kind domain.Kind, id domain.ID, expected uint64, sessionID, pro
 			return Record{}, err
 		}
 	}
+	// Preserve identity and revision conflicts before checking display names.
+	if expected == 0 && (kind == domain.ProjectKind || kind == domain.RepositoryKind) {
+		if err := t.RequireUnusedID(id); err != nil {
+			return Record{}, err
+		}
+	}
+	if expected > 0 && (kind == domain.ProjectKind || kind == domain.RepositoryKind) {
+		old, err := t.Get(kind, id)
+		if err != nil {
+			return Record{}, err
+		}
+		if old.Revision != expected {
+			return Record{}, domain.Fail(domain.Conflict, "The entity revision changed.", "Read its latest revision before editing.")
+		}
+	}
+	if err := ValidateConfigurationName(t, kind, id, body); err != nil {
+		return Record{}, err
+	}
 	now := t.now.UnixMilli()
 	created := now
 	action := Created

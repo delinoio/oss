@@ -1,3 +1,4 @@
+import { configurationNameConflictCopy } from "./configuration-name-conflict";
 import "./wizard-presentation.css";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
@@ -132,7 +133,9 @@ export function ProjectCreationWizard({
   retry,
   children,
   registrationAdapters,
+  nameConflict = false,
 }: {
+  nameConflict?: boolean;
   data: Document;
   change: (value: Document) => void;
   active: boolean;
@@ -169,6 +172,12 @@ export function ProjectCreationWizard({
     focused = useRef(false);
   const formId = useId(),
     inputId = useId();
+  useEffect(() => {
+    if (!nameConflict || !active || !visible || uncertain) return;
+    setStep(Step.Configure);
+    setValidationField("name");
+    setFocusAttempt((value) => value + 1);
+  }, [nameConflict, active, visible, uncertain]);
   const catalog = useProjectRepositoryCatalog(active && visible);
   const query = useDeferredValue(search.trim().toLowerCase());
   const names = useMemo(
@@ -541,6 +550,10 @@ export function ProjectCreationWizard({
             <label>
               {copy("project-creation.name")}
               <input
+                aria-invalid={nameConflict || undefined}
+                aria-describedby={
+                  nameConflict ? `${inputId}-name-conflict` : undefined
+                }
                 data-project-focus="name"
                 required
                 maxLength={256}
@@ -552,6 +565,15 @@ export function ProjectCreationWizard({
                 }}
               />
             </label>
+            {nameConflict ? (
+              <p
+                id={`${inputId}-name-conflict`}
+                role="alert"
+                className="configuration-name-conflict"
+              >
+                {configurationNameConflictCopy(EntityKind.PROJECT)}
+              </p>
+            ) : null}
             {!nameEdited ? <p>{copy("project-creation.nameHelp")}</p> : null}
             {nameEdited && !validName(text(data.name)) ? (
               <p role="alert">{copy("project-creation.invalidName")}</p>

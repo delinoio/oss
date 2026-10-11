@@ -20,6 +20,7 @@ import {
   EntityKind,
   ResourceSchema,
   ResourceService,
+  ErrorDetailSchema,
   newRequestId,
   type Resource,
 } from "@delinoio/delidev-api-client";
@@ -966,4 +967,52 @@ it("uses labeled scoped registration actions while preserving original opener an
   await screen.findByRole("button", { name: /^Move repository 1:/ });
   expect(f.registrationSave).toHaveBeenCalledOnce();
   expect(f.save).not.toHaveBeenCalled();
+});
+
+it("returns a confirmed name collision to the retained name step and permits correction", async () => {
+  const value = fixture();
+  value.save.mockRejectedValueOnce(
+    new ConnectError("Name collision", Code.Aborted, undefined, [
+      {
+        desc: ErrorDetailSchema,
+        value: create(ErrorDetailSchema, {
+          code: "conflict",
+          cause: "configuration_name_conflict",
+        }),
+      },
+    ]),
+  );
+  render(value.view());
+  await choose("oss");
+  next();
+  fireEvent.change(name(), { target: { value: " alpha " } });
+  next();
+  fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
+  const copy = "A project with this name already exists. Choose another name.";
+  await screen.findByText(copy);
+  await waitFor(() => expect(document.activeElement).toBe(name()));
+  expect(name().value).toBe(" alpha ");
+  expect(name().getAttribute("aria-describedby")).toBe(
+    screen.getByText(copy).id,
+  );
+  await act(async () => {
+    await i18n.changeLanguage(SupportedLanguage.Korean);
+  });
+  expect(
+    screen.getByText(
+      "이 이름의 프로젝트가 이미 있습니다. 다른 이름을 입력하세요.",
+    ),
+  ).toBeTruthy();
+  await act(async () => {
+    await i18n.changeLanguage(SupportedLanguage.English);
+  });
+  fireEvent.change(name(), { target: { value: "Beta" } });
+  expect(screen.queryByText(copy)).toBeNull();
+  next();
+  fireEvent.click(screen.getByRole("button", { name: "Save Project" }));
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(2));
+  const request = value.save.mock.calls[1][0];
+  expect(JSON.parse(new TextDecoder().decode(request.documentJson)).name).toBe(
+    "Beta",
+  );
 });

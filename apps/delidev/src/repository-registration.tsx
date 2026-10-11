@@ -1,3 +1,8 @@
+import {
+  ConfigurationNameJobFailure,
+  isConfigurationNameConflict,
+  configurationNameConflictCopy,
+} from "./configuration-name-conflict";
 // SPDX-License-Identifier: Apache-2.0
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import {
@@ -358,6 +363,8 @@ export function RepositoryRegistration({
     true,
   );
   const runnerTouched = useRef(false);
+  const [nameConflict, setNameConflict] = useState(false);
+  const observedNameConflict = useRef<unknown>(undefined);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useProductMessage("");
   const [workerProblem, setWorkerProblem] = useState(false),
@@ -480,6 +487,16 @@ export function RepositoryRegistration({
       else setSaveJob("unknown");
     },
   );
+  useEffect(() => {
+    if (
+      !save.error ||
+      observedNameConflict.current === save.error ||
+      !isConfigurationNameConflict(save.error)
+    )
+      return;
+    observedNameConflict.current = save.error;
+    setNameConflict(true);
+  }, [save.error]);
   const serverMachine = useQuery(
     ResourceQuery.getResource,
     { kind: EntityKind.MACHINE, id: source?.machine ?? "" },
@@ -714,7 +731,10 @@ export function RepositoryRegistration({
       return;
     }
     draftEdited.current = true;
-    if (next.name !== data.name) nameEdited.current = true;
+    if (next.name !== data.name) {
+      nameEdited.current = true;
+      setNameConflict(false);
+    }
     setData(next);
     setProblem("");
   };
@@ -911,8 +931,43 @@ export function RepositoryRegistration({
             </p>
           ) : (
             <TrackedJob initial={cloneJob} active={active}>
-              {(state, output) => (
+              {(state, output, observation) => (
                 <>
+                  <ConfigurationNameJobFailure
+                    observation={observation}
+                    active={active && taskVisible}
+                    onConflict={() => {
+                      const inspection = object(output.inspection);
+                      const root = text(inspection.root),
+                        machineId = text(document(cloneJob).machine_id);
+                      // Cloning already transferred this checkout to Local user ownership.
+                      // Correct registration using the existing checkout; never reclone it.
+                      if (root && machineId) {
+                        const selected = {
+                          path: root,
+                          machine: machineId,
+                          name: text(data.name),
+                          local: true,
+                        };
+                        setSource(selected);
+                        setSummary({ output: inspection, source: selected });
+                        setVerifiedMachine(machineId);
+                        pendingSource.current = selected;
+                        setPath(root);
+                        setMachine(machineId);
+                        setComputer(Computer.Local);
+                        setConnectFolder(true);
+                        setData((current) => ({
+                          ...current,
+                          checkouts: [{ machine_id: machineId, path: root }],
+                        }));
+                      }
+                      clone.resolveJob(cloneJob.id);
+                      setCloneLocally(false);
+                      setNameConflict(true);
+                      setCloneJob(undefined);
+                    }}
+                  />
                   <SaveCompletion
                     state={state}
                     output={output}
@@ -963,8 +1018,17 @@ export function RepositoryRegistration({
             </p>
           ) : (
             <TrackedJob initial={saveJob} active={active}>
-              {(state, output) => (
+              {(state, output, observation) => (
                 <>
+                  <ConfigurationNameJobFailure
+                    observation={observation}
+                    active={active && taskVisible}
+                    onConflict={() => {
+                      save.resolveJob(saveJob.id);
+                      setNameConflict(true);
+                      setSaveJob(undefined);
+                    }}
+                  />
                   <SaveCompletion
                     state={state}
                     output={output}
@@ -1053,6 +1117,11 @@ export function RepositoryRegistration({
               <TextField
                 label={copy("repository-registration.inline.a2b1b3f24a")}
                 value={data.name}
+                error={
+                  nameConflict
+                    ? configurationNameConflictCopy(EntityKind.REPOSITORY)
+                    : undefined
+                }
                 required
                 change={(name) => {
                   nameEdited.current = true;
@@ -1503,7 +1572,15 @@ export function RepositoryRegistration({
             </>
           ) : null}
           {problem ? <p role="alert">{problem}</p> : null}
-          <Problem error={inspect.error || save.error || clone.error} />
+          <Problem
+            error={
+              inspect.error ||
+              (isConfigurationNameConflict(save.error)
+                ? undefined
+                : save.error) ||
+              clone.error
+            }
+          />
           {inspect.uncertain ? (
             <SettingsActionButton
               icon={SettingsActionIcon.Retry}
@@ -1539,7 +1616,8 @@ export function RepositoryRegistration({
                 type="button"
                 className="primary"
                 disabled={blocked || !ready}
-                onClick={() =>
+                onClick={() => {
+                  setNameConflict(false);
                   void save.send({
                     mutation: {
                       requestId: newRequestId(),
@@ -1550,8 +1628,8 @@ export function RepositoryRegistration({
                     documentJson: encode(
                       repositoryRegistrationDocument(data, legacyReady),
                     ),
-                  })
-                }
+                  });
+                }}
               >
                 {copy("repository-registration.addRepository_2eda4d")}
               </SettingsActionButton>

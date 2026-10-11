@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -23,8 +24,8 @@ func TestPRRemediationWorkspacePlanUsesCurrentExplicitSelectionWithoutDispatch(t
 		t.Fatal(err)
 	}
 	_, err := f.service.Store.Mutate(owner, domain.NewID(), "fixture.pr-planning-project", nil, func(tx *store.Tx) (any, error) {
-		for _, id := range []domain.ID{repository, companion} {
-			value := domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "Fixture", Checkouts: []domain.Checkout{{MachineID: policy.MachineID, Path: "/tmp/pr-planning-" + string(id)}}, PreferredRemote: "upstream", Base: domain.Reference{Type: domain.RemoteBranch, Remote: "upstream", Name: "main"}, Starting: domain.Reference{Type: domain.RemoteBranch, Remote: "upstream", Name: "main"}, AutoFetch: false}
+		for index, id := range []domain.ID{repository, companion} {
+			value := domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: fmt.Sprintf("Fixture repository %d", index+1), Checkouts: []domain.Checkout{{MachineID: policy.MachineID, Path: "/tmp/pr-planning-" + string(id)}}, PreferredRemote: "upstream", Base: domain.Reference{Type: domain.RemoteBranch, Remote: "upstream", Name: "main"}, Starting: domain.Reference{Type: domain.RemoteBranch, Remote: "upstream", Name: "main"}, AutoFetch: false}
 			if _, err := tx.Put(domain.RepositoryKind, id, 0, "", "", value); err != nil {
 				return nil, err
 			}

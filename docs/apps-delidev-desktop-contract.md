@@ -5757,6 +5757,14 @@ compact drawer and effective 200% browser checks are synthetic evidence only.
 
 Queue refresh footer stability: both queue presenters (legacy history-based and negotiated waiting queue) keep a retained complete empty presentation hidden during healthy automatic Refresh/Reload rereads of the same queue identity. Refresh status is announced through a screen-reader-only live region that adds no normal-flow height, so repeated rereads cannot shift the tray, Agent requests, transcript boundary or composer. Initial loading, failures with Retry, incomplete pagination, payload restoration and explicit boundary recovery stay visible. Retained emptiness is cached presentation, not fresh authoritative zero or mutation permission. Populated rows are retained during rereads. No API, protocol, migration or native change.
 
+## Configuration name correction
+
+The server owns Project and Repository name availability. Loaded client pages cannot prove global availability; the client adds no catalog scan or availability RPC. Only Conflict with the typed `configuration_name_conflict` cause receives name-specific treatment. Revision, identity, denied and uncertain outcomes retain their existing presentation and request guards.
+
+Show “A project with this name already exists. Choose another name.” beneath the existing Project name field. Repository copy uses “repository”. Korean copy is “이 이름의 프로젝트가 이미 있습니다. 다른 이름을 입력하세요.” and “이 이름의 저장소가 이미 있습니다. 다른 이름을 입력하세요.” Connect the wrapping alert to its input with `aria-describedby` and `aria-invalid`; use the existing semantic danger color. Preserve field geometry, themes, draft spelling, keyboard flow and opener restoration. A confirmed failure returns to the wizard name step or editor General panel, focuses its field and permits correction with a fresh explicit request. Pending or uncertain requests retain immutable original bytes.
+
+A verified asynchronous repository name collision releases only its original settled request and returns to the retained draft. A completed clone collision retains the reported existing Local checkout and allows corrected registration without cloning or deleting that checkout. Narrow widths and effective 200% layout retain readable, wrapping guidance.
+
 ## Sidebar response attention
 
 Home navigation retains only the literal boolean true from the supported

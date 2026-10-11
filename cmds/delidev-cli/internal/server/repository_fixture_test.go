@@ -9,6 +9,10 @@ import (
 )
 
 func (f *integrationFixture) repository(profile domain.ID) *pb.Resource {
+	return f.repositoryNamed(profile, "Fixture repository")
+}
+
+func (f *integrationFixture) repositoryNamed(profile domain.ID, name string) *pb.Resource {
 	f.t.Helper()
 	id := domain.NewID()
 	var record store.Record
@@ -17,7 +21,7 @@ func (f *integrationFixture) repository(profile domain.ID) *pb.Resource {
 	// native checkout preparation claim and never touches the placeholder path.
 	_, err := f.service.Store.Mutate(ctx, domain.NewID(), "test.repository", id, func(tx *store.Tx) (any, error) {
 		var e error
-		record, e = tx.Put(domain.RepositoryKind, id, 0, "", "", domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: "Fixture repository", Checkouts: []domain.Checkout{{MachineID: domain.NewID(), Path: "/fixture/unused"}}, GitHubOwner: "fixture-owner", GitHubName: "repo", IntegrationID: profile})
+		record, e = tx.Put(domain.RepositoryKind, id, 0, "", "", domain.Repository{RemoteURL: "https://github.com/fixture/repo.git", Name: name, Checkouts: []domain.Checkout{{MachineID: domain.NewID(), Path: "/fixture/unused"}}, GitHubOwner: "fixture-owner", GitHubName: "repo", IntegrationID: profile})
 		return record, e
 	})
 	if err != nil {
