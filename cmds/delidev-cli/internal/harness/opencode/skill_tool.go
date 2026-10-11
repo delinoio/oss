@@ -15,6 +15,14 @@ func (o *inputObserver) verifySkillTool(tool *NativeToolPart) error {
 	if tool == nil || tool.Name != "skill" {
 		return nil
 	}
+	// The pinned processor emits an empty pending input before arguments arrive.
+	// It grants no package use; running/completed input must identify a selection.
+	if tool.State == ToolPending {
+		fields, err := object(tool.Input)
+		if err == nil && len(fields) == 0 {
+			return nil
+		}
+	}
 	var input struct {
 		Name string `json:"name"`
 	}
