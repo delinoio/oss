@@ -106,6 +106,41 @@ func TestQuotaDisplayNameAllowsFixedQuotaMetadata(t *testing.T) {
 	}
 }
 
+func TestQuotaDisplayNameChecksOriginalIdentifiersOnly(t *testing.T) {
+	t.Run("projected window suffix", func(t *testing.T) {
+		home := t.TempDir()
+		if err := security.WriteAtomic(filepath.Join(home, "auth.json"), quotaDisplayNameBundle(t, "codex:primary", false)); err != nil {
+			t.Fatal(err)
+		}
+		client := &Client{managedHome: home}
+		value := domain.SubscriptionQuotaObservation{Windows: []domain.SubscriptionQuotaWindow{{ID: "codex:primary"}}}
+		if err := client.validateQuotaReflection(value); err != nil {
+			t.Fatalf("generated window suffix was mistaken for an original bucket ID: %v", err)
+		}
+	})
+
+	t.Run("paid balance", func(t *testing.T) {
+		home := t.TempDir()
+		if err := security.WriteAtomic(filepath.Join(home, "auth.json"), quotaDisplayNameBundle(t, "0", false)); err != nil {
+			t.Fatal(err)
+		}
+		client := &Client{managedHome: home}
+		balance := "0"
+		value := domain.SubscriptionQuotaObservation{PaidCredits: []domain.SubscriptionPaidCreditBucket{{ID: "paid", Balance: &balance}}}
+		if err := client.validateQuotaReflection(value); err != nil {
+			t.Fatalf("paid balance was mistaken for an identifier: %v", err)
+		}
+	})
+
+	t.Run("credential balance remains protected", func(t *testing.T) {
+		balance := "token-value"
+		value := domain.SubscriptionQuotaObservation{PaidCredits: []domain.SubscriptionPaidCreditBucket{{ID: "paid", Balance: &balance}}}
+		if err := ValidateQuotaSecrets(value, "token-value"); err == nil {
+			t.Fatal("credential reflection in a paid balance was accepted")
+		}
+	})
+}
+
 func TestQuotaDisplayNameAbsentKeepsUnrelatedIdentifiers(t *testing.T) {
 	home := t.TempDir()
 	if err := security.WriteAtomic(filepath.Join(home, "auth.json"), quotaDisplayNameBundle(t, "", false)); err != nil {
