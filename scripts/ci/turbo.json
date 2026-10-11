@@ -1,7 +1,5 @@
 {
-  "extends": [
-    "//"
-  ],
+  "extends": ["//"],
   "tasks": {
     "ci:workflows": {
       "cache": true,
@@ -19,10 +17,7 @@
         "$TURBO_ROOT$/docs/repository-*-contract.md"
       ],
       "outputs": [],
-      "env": [
-        "CI_CACHE_CONTEXT",
-        "CI_GO_CACHE_CONTEXT"
-      ],
+      "env": ["CI_CACHE_CONTEXT", "CI_GO_CACHE_CONTEXT"],
       "passThroughEnv": [
         "CARGO_HOME",
         "RUSTUP_HOME",
@@ -120,9 +115,7 @@
         "$TURBO_ROOT$/docs/repository-*-contract.md"
       ],
       "outputs": [],
-      "env": [
-        "CI_CACHE_CONTEXT"
-      ],
+      "env": ["CI_CACHE_CONTEXT"],
       "passThroughEnv": [
         "CARGO_HOME",
         "RUSTUP_HOME",
@@ -151,9 +144,7 @@
         "$TURBO_ROOT$/docs/repository-*-contract.md"
       ],
       "outputs": [],
-      "env": [
-        "CI_CACHE_CONTEXT"
-      ],
+      "env": ["CI_CACHE_CONTEXT"],
       "passThroughEnv": [
         "CARGO_HOME",
         "RUSTUP_HOME",
@@ -252,10 +243,7 @@
         "$TURBO_ROOT$/**/*.go"
       ],
       "outputs": [],
-      "env": [
-        "CI_CACHE_CONTEXT",
-        "CI_GO_CACHE_CONTEXT"
-      ],
+      "env": ["CI_CACHE_CONTEXT", "CI_GO_CACHE_CONTEXT"],
       "passThroughEnv": [
         "CARGO_HOME",
         "RUSTUP_HOME",
@@ -357,10 +345,7 @@
         "$TURBO_ROOT$/**/rustfmt.toml"
       ],
       "outputs": [],
-      "env": [
-        "CI_CACHE_CONTEXT",
-        "CI_RUST_CACHE_CONTEXT"
-      ],
+      "env": ["CI_CACHE_CONTEXT", "CI_RUST_CACHE_CONTEXT"],
       "passThroughEnv": [
         "CARGO_HOME",
         "RUSTUP_HOME",
@@ -377,10 +362,7 @@
       "cache": false,
       "dependsOn": [],
       "outputs": [],
-      "passThroughEnv": [
-        "CARGO_HOME",
-        "RUSTUP_HOME"
-      ]
+      "passThroughEnv": ["CARGO_HOME", "RUSTUP_HOME"]
     },
     "ci:rust:clippy": {
       "cache": false,
@@ -578,10 +560,7 @@
         "$TURBO_ROOT$/protos/**"
       ],
       "outputs": [],
-      "env": [
-        "CI_CACHE_CONTEXT",
-        "CI_PROTO_CACHE_CONTEXT"
-      ],
+      "env": ["CI_CACHE_CONTEXT", "CI_PROTO_CACHE_CONTEXT"],
       "passThroughEnv": [
         "CARGO_HOME",
         "RUSTUP_HOME",
@@ -612,10 +591,7 @@
         "$TURBO_ROOT$/protos/**"
       ],
       "outputs": [],
-      "env": [
-        "CI_CACHE_CONTEXT",
-        "CI_PROTO_CACHE_CONTEXT"
-      ],
+      "env": ["CI_CACHE_CONTEXT", "CI_PROTO_CACHE_CONTEXT"],
       "passThroughEnv": [
         "CARGO_HOME",
         "RUSTUP_HOME",
@@ -696,9 +672,7 @@
     },
     "ci:delidev:bindings": {
       "cache": false,
-      "dependsOn": [
-        "ci:proto:check"
-      ],
+      "dependsOn": ["ci:proto:check"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",
@@ -782,9 +756,7 @@
     },
     "ci:ach:native": {
       "cache": false,
-      "dependsOn": [
-        "async-commit-hook#build:embedded"
-      ],
+      "dependsOn": ["async-commit-hook#build:embedded"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",
@@ -840,14 +812,8 @@
     },
     "ci:ach:package": {
       "cache": false,
-      "dependsOn": [
-        "ci:ach:native"
-      ],
-      "passThroughEnv": [
-        "RUNNER_TEMP",
-        "GOCACHE",
-        "GOPATH"
-      ]
+      "dependsOn": ["ci:ach:native"],
+      "passThroughEnv": ["RUNNER_TEMP", "GOCACHE", "GOPATH"]
     },
     "ci:ach:check": {
       "cache": false,
@@ -863,9 +829,7 @@
     },
     "ci:rust:test:devhud": {
       "cache": false,
-      "dependsOn": [
-        "devhud#ci:build:frontend"
-      ],
+      "dependsOn": ["devhud#ci:build:frontend"],
       "outputs": [],
       "passThroughEnv": [
         "CARGO_HOME",
@@ -904,9 +868,7 @@
     },
     "ci:rust:test:pnport": {
       "cache": false,
-      "dependsOn": [
-        "ci:pnport:companion"
-      ],
+      "dependsOn": ["ci:pnport:companion"],
       "outputs": [],
       "passThroughEnv": [
         "CARGO_HOME",
@@ -946,10 +908,7 @@
     },
     "ci:rust:test:devhud-pnport": {
       "cache": false,
-      "dependsOn": [
-        "devhud#ci:build:frontend",
-        "ci:pnport:companion"
-      ],
+      "dependsOn": ["devhud#ci:build:frontend", "ci:pnport:companion"],
       "outputs": [],
       "passThroughEnv": [
         "CARGO_HOME",
@@ -1012,9 +971,7 @@
     },
     "ci:rust:clippy:devhud": {
       "cache": false,
-      "dependsOn": [
-        "devhud#ci:build:frontend"
-      ],
+      "dependsOn": ["devhud#ci:build:frontend"],
       "outputs": [],
       "passThroughEnv": [
         "CARGO_HOME",
@@ -1237,6 +1194,18 @@
         "DOCKER_HOST",
         "DOCKER_CONTEXT"
       ]
+    },
+    "ci:format": {
+      "cache": false,
+      "dependsOn": [],
+      "outputs": [],
+      "passThroughEnv": ["CI", "TURBO_SCM_BASE", "TURBO_SCM_HEAD"]
+    },
+    "format": {
+      "cache": false,
+      "dependsOn": [],
+      "outputs": [],
+      "passThroughEnv": ["CI", "TURBO_SCM_BASE", "TURBO_SCM_HEAD"]
     }
   }
 }
