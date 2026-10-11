@@ -2141,3 +2141,76 @@ it("keeps the drawer close affordance outside the compact Home header and creati
   const header = value.container.querySelector(".sidebar-header")!;
   expect(header.nextElementSibling?.className).toBe("sidebar-drawer-close");
 });
+
+it("places one decorative response indicator before independent execution/archive glyphs and translates its description", async () => {
+  const name = "A long response-waiting session ".repeat(8);
+  const session = resource(EntityKind.SESSION, name, "", {
+    workspace: "local",
+    outcome: "running",
+    archive: "active",
+    awaiting_user_response: true,
+  });
+  const value = mountSidebar({
+    projects: () => ({ resources: [] }),
+    sessions: () => ({ sessions: [session] }),
+  });
+  const row = await screen.findByRole("button", {
+    name: /Waiting for your response/,
+  });
+  const statuses = row.querySelector(".sidebar-statuses")!;
+  expect(statuses.querySelectorAll(".sidebar-response-waiting")).toHaveLength(
+    1,
+  );
+  expect(
+    statuses.firstElementChild?.classList.contains("sidebar-response-waiting"),
+  ).toBe(true);
+  expect(statuses.querySelector(".sidebar-status-running")).toBeTruthy();
+  const indicator = statuses.firstElementChild!;
+  expect(indicator.getAttribute("aria-hidden")).toBe("true");
+  expect(indicator.getAttribute("focusable")).toBe("false");
+  expect(indicator.hasAttribute("tabindex")).toBe(false);
+  expect(row.querySelector(".sidebar-session-title")?.textContent).toBe(name);
+  act(() => row.focus());
+  const card = screen.getByRole("tooltip");
+  expect(within(card).getByText("Waiting for your response")).toBeTruthy();
+  expect(card.querySelectorAll(".sidebar-response-waiting")).toHaveLength(0);
+  const reads = value.sessionRequests.length;
+  try {
+    await act(async () => {
+      await i18n.changeLanguage(SupportedLanguage.Korean);
+    });
+    expect(row.getAttribute("aria-label")).toContain("응답 대기 중");
+    expect(screen.getByRole("tooltip")).toBe(card);
+    expect(within(card).getByText("응답 대기 중")).toBeTruthy();
+    expect(document.activeElement).toBe(row);
+    expect(value.sessionRequests).toHaveLength(reads);
+    fireEvent.click(row);
+    expect(value.openSession).toHaveBeenCalledExactlyOnceWith(session.id);
+  } finally {
+    await act(async () => {
+      await i18n.changeLanguage(SupportedLanguage.English);
+    });
+  }
+});
+
+it("keeps unknown execution/archive question marks independent and hides unsupported response metadata", async () => {
+  const sessions = [true, false, "true", undefined].map((waiting, index) =>
+    resource(EntityKind.SESSION, `Unknown status ${index}`, "", {
+      workspace: "general-chat",
+      awaiting_user_response: waiting,
+    }),
+  );
+  mountSidebar({
+    projects: () => ({ resources: [] }),
+    sessions: () => ({ sessions }),
+  });
+  for (let index = 0; index < sessions.length; index++) {
+    const row = await screen.findByRole("button", {
+      name: new RegExp(`Unknown status ${index}`),
+    });
+    expect(row.querySelectorAll(".sidebar-status-unknown")).toHaveLength(2);
+    expect(row.querySelectorAll(".sidebar-response-waiting")).toHaveLength(
+      index === 0 ? 1 : 0,
+    );
+  }
+});

@@ -480,6 +480,9 @@ button.sidebar-project-row:hover {
   width: 14px;
   height: 14px;
 }
+.sidebar-response-waiting {
+  color: var(--link);
+}
 .sidebar-status-running {
   animation: sidebar-status-spin 1.2s linear infinite;
 }
@@ -5274,13 +5277,13 @@ dialog nav {
     opacity: 1;
   }
 }
-.sidebar-statuses[data-outcome="running"] > :first-child {
+.sidebar-statuses[data-outcome="running"] > .sidebar-execution-glyph {
   color: var(--execution-running);
 }
-.sidebar-statuses[data-outcome="succeeded"] > :first-child {
+.sidebar-statuses[data-outcome="succeeded"] > .sidebar-execution-glyph {
   color: var(--success-text);
 }
-.sidebar-statuses[data-outcome="failed"] > :first-child {
+.sidebar-statuses[data-outcome="failed"] > .sidebar-execution-glyph {
   color: var(--danger-text);
 }
 .sidebar-session-menu {

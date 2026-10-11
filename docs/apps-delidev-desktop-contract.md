@@ -5506,3 +5506,24 @@ and mounted drafts retain their original owners. English/Korean, light/dark,
 compact drawer and effective 200% browser checks are synthetic evidence only.
 
 Queue refresh footer stability: both queue presenters (legacy history-based and negotiated waiting queue) keep a retained complete empty presentation hidden during healthy automatic Refresh/Reload rereads of the same queue identity. Refresh status is announced through a screen-reader-only live region that adds no normal-flow height, so repeated rereads cannot shift the tray, Agent requests, transcript boundary or composer. Initial loading, failures with Retry, incomplete pagination, payload restoration and explicit boundary recovery stay visible. Retained emptiness is cached presentation, not fresh authoritative zero or mutation permission. Populated rows are retained during rereads. No API, protocol, migration or native change.
+
+## Sidebar response attention
+
+Home navigation retains only the literal boolean true from the supported
+Session `awaiting_user_response` list projection. Missing, malformed,
+non-Session or unsupported document metadata shows no response indicator.
+The shared wide pane and compact navigation drawer render one static,
+nonfocusable 14px outlined-circle question mark immediately before the existing
+execution and archive glyphs. Use the semantic blue link color, preserving its
+light/dark theme contrast and the independent execution colors. The decorative
+SVG is hidden from assistive technology and has no separate click action or
+keyboard stop. Unknown execution/archive question marks retain their meaning.
+
+Append **Waiting for your response** / **응답 대기 중** to the complete row
+accessible description and existing hover card. Preserve 32px rows, title
+ellipsis before status glyphs, selection, rename, actions, focus outlines and
+scroll ownership, including long names and 200% zoom. Use existing accepted
+list refresh and reconnect handling, including updates at the same Session
+revision. Do not add polling, telemetry, question-content logs or a feature
+flag. The session contract owns the authoritative derived predicate; presentation
+never grants response, execution or mutation authority.
