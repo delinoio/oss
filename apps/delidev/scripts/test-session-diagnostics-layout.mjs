@@ -18,6 +18,7 @@ const browser = await chromium.launch({
   channel: process.env.DELIDEV_QA_BROWSER_CHANNEL ?? "chrome",
 });
 let checks = 0;
+const geometryFailures = [];
 const reference = "01900000-0000-7000-8000-000000000001".repeat(6);
 try {
   // Half-size CSS viewports cover effective 200% reflow, not native browser zoom.
@@ -76,6 +77,15 @@ try {
               requestX: rect(content.querySelector("aside")).x,
               labels: labels.map(rect),
               values: values.map(rect),
+              dlRowGap: getComputedStyle(first.querySelector("dl")).rowGap,
+              labelMargins: labels.map((e) => {
+                const style = getComputedStyle(e);
+                return { top: style.marginTop, bottom: style.marginBottom };
+              }),
+              valueMargins: values.map((e) => {
+                const style = getComputedStyle(e);
+                return { top: style.marginTop, bottom: style.marginBottom };
+              }),
               pageOverflow:
                 document.documentElement.scrollWidth > window.innerWidth,
               panelOverflow: content.scrollWidth > content.clientWidth,
@@ -90,55 +100,95 @@ try {
             };
           });
           const narrow = panelWidth < 640;
-          assert.equal(geometry.inset, narrow ? 16 : 32);
-          assert.equal(geometry.bodySize, "14px");
-          assert.equal(geometry.lineHeight, "21px");
-          assert.equal(geometry.headingSize, "16px");
-          assert.equal(geometry.headingGap, 16);
-          assert(Math.abs(geometry.sectionGap - 32) <= 1, "section rhythm");
-          assert(
-            Math.abs(geometry.portalItemGap + geometry.portalItemInset - 33) <=
-              1,
-            "all portal items receive section rhythm",
-          );
-          assert(geometry.contentWidth <= 1040, "content cap");
-          assert.equal(geometry.firstX, geometry.requestX, "shared inset");
-          assert(
-            !geometry.pageOverflow && !geometry.panelOverflow,
-            "long reference overflow",
-          );
-          assert(
-            geometry.controls.every((r) => r.height >= 40),
-            "minimum control height",
-          );
+          const scenario = `${viewport.width}x${viewport.height}/panel-${panelWidth}/${language}/${theme}`;
+          const checkGeometry = (name, callback) => {
+            try {
+              callback();
+            } catch (error) {
+              geometryFailures.push({
+                scenario,
+                name,
+                error: error.message,
+                geometry,
+              });
+            }
+          };
+          const geometryChecks = [
+            ["inset", () => assert.equal(geometry.inset, narrow ? 16 : 32)],
+            ["body size", () => assert.equal(geometry.bodySize, "14px")],
+            ["line height", () => assert.equal(geometry.lineHeight, "21px")],
+            ["heading size", () => assert.equal(geometry.headingSize, "16px")],
+            ["heading gap", () => assert.equal(geometry.headingGap, 16)],
+            [
+              "section rhythm",
+              () => assert(Math.abs(geometry.sectionGap - 32) <= 1),
+            ],
+            [
+              "all portal items receive section rhythm",
+              () =>
+                assert(
+                  Math.abs(
+                    geometry.portalItemGap + geometry.portalItemInset - 33,
+                  ) <= 1,
+                ),
+            ],
+            ["content cap", () => assert(geometry.contentWidth <= 1040)],
+            [
+              "shared inset",
+              () => assert.equal(geometry.firstX, geometry.requestX),
+            ],
+            [
+              "long reference overflow",
+              () => assert(!geometry.pageOverflow && !geometry.panelOverflow),
+            ],
+            [
+              "minimum control height",
+              () => assert(geometry.controls.every((r) => r.height >= 40)),
+            ],
+          ];
+          for (const [name, callback] of geometryChecks)
+            checkGeometry(name, callback);
           for (let i = 0; i < geometry.labels.length; i++) {
             const label = geometry.labels[i],
               value = geometry.values[i];
             if (narrow) {
-              assert.equal(value.x, label.x);
-              assert.equal(value.y - label.bottom, 4);
+              checkGeometry(`label/value horizontal alignment ${i}`, () =>
+                assert.equal(value.x, label.x),
+              );
+              checkGeometry(`label/value gap ${i}`, () =>
+                assert.equal(value.y - label.bottom, 4),
+              );
             } else {
-              assert.equal(value.x - label.x, 224);
-              assert.equal(value.y, label.y);
+              checkGeometry(`label/value horizontal gap ${i}`, () =>
+                assert.equal(value.x - label.x, 224),
+              );
+              checkGeometry(`label/value vertical alignment ${i}`, () =>
+                assert.equal(value.y, label.y),
+              );
             }
           }
-          assert.equal(
-            geometry.values[1].y -
-              (narrow ? geometry.labels[1].bottom : geometry.values[0].bottom),
-            narrow ? 4 : 12,
+          checkGeometry("second label/value gap", () =>
+            assert.equal(
+              geometry.values[1].y -
+                (narrow
+                  ? geometry.labels[1].bottom
+                  : geometry.values[0].bottom),
+              narrow ? 4 : 12,
+            ),
           );
           if (narrow)
-            assert.equal(
-              geometry.labels[1].y - geometry.values[0].bottom,
-              12,
-              "between-pair spacing",
+            checkGeometry("between-pair spacing", () =>
+              assert.equal(
+                geometry.labels[1].y - geometry.values[0].bottom,
+                12,
+              ),
             );
-          assert.equal(
-            geometry.otherDisplay,
-            "block",
-            "other surface grid unchanged",
+          checkGeometry("other surface grid unchanged", () =>
+            assert.equal(geometry.otherDisplay, "block"),
           );
-          assert.notEqual(geometry.otherIndent, "0px");
+          checkGeometry("other surface indentation", () =>
+            assert.notEqual(geometry.otherIndent, "0px"),
+          );
           assert.deepEqual(
             await page
               .locator('ol[aria-label="Saved account order"] li')
@@ -228,8 +278,10 @@ try {
       checks,
       fixture: "synthetic-session-diagnostics",
       nativeAcceptance: false,
+      geometryFailures,
     }),
   );
+  assert.equal(geometryFailures.length, 0, "layout geometry assertions");
 } finally {
   await browser.close();
 }
