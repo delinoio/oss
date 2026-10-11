@@ -70,7 +70,7 @@ The server does not call the provider directly. Only the original paired Worker 
 
 Worker revocation cancels an unassigned title and records `skipped`/`authority-lost`; a pending Archive may finish when session workspace ownership is clear. A claimed title becomes `uncertain`/`cleanup-uncertain`, and Archive stays pending until the native title runtime's cleanup is confirmed.
 
-The Worker uses a private temporary native home/work directory and joined process ownership. Cleanup must be confirmed before a successful title report. Uncertain process cleanup remains explicit and cannot trigger another native request. Fixed instructions, an effective read-only sandbox, no tools and disabled retry limits are all required; sandbox mode alone is insufficient.
+The Worker uses a private temporary native home/work directory and joined process ownership. Cleanup must be confirmed before a successful title report. Native shutdown, proxy shutdown, original process reconciliation, runtime removal and parent-directory synchronization must all succeed. Any cleanup failure retains `RecoveryRequired` even after an inference error; join independent owners before removing private runtime evidence, and preserve the original failed cleanup outcome through deferred finalization. Uncertain process cleanup remains explicit and cannot trigger another native request. Fixed instructions, an effective read-only sandbox, no tools and disabled retry limits are all required; sandbox mode alone is insufficient.
 
 ## Logging
 
