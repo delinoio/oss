@@ -4,7 +4,6 @@ package workspace
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"path"
 	"strings"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
@@ -28,14 +27,8 @@ func ObserveImageViewLocation(input domain.ExecutionJobInput, workerOS, location
 	if err != nil {
 		return domain.ImageViewObservation{}, err
 	}
-	normalize := func(value string) string {
-		if workerOS == "windows" {
-			return strings.ReplaceAll(value, "\\", "/")
-		}
-		return value
-	}
-	location = normalize(location)
-	if domain.Text(location, "native image location", 4096, true) != nil || path.Clean(location) != location || strings.Contains(location, "://") {
+	location = normalizeWorkerPath(location, workerOS)
+	if !validWorkerAbsolutePath(location, workerOS) || strings.Contains(location, "://") {
 		return domain.ImageViewObservation{}, ResultUncertain()
 	}
 	roots := manifest.Repositories
@@ -45,8 +38,8 @@ func ObserveImageViewLocation(input domain.ExecutionJobInput, workerOS, location
 	selected := PreparedRepository{}
 	relative := ""
 	for _, root := range roots {
-		base := normalize(root.Path)
-		if strings.HasPrefix(location, base+"/") && len(base) > len(normalize(selected.Path)) {
+		base := normalizeWorkerPath(root.Path, workerOS)
+		if strings.HasPrefix(location, base+"/") && len(base) > len(normalizeWorkerPath(selected.Path, workerOS)) {
 			selected, relative = root, strings.TrimPrefix(location, base+"/")
 		}
 	}
@@ -77,10 +70,7 @@ func ValidateImageViewReference(input domain.ExecutionJobInput, workerOS string,
 	if root == "" {
 		return ResultUncertain()
 	}
-	normalized := root
-	if workerOS == "windows" {
-		normalized = strings.ReplaceAll(root, "\\", "/")
-	}
+	normalized := normalizeWorkerPath(root, workerOS)
 	expected, err := ObserveImageViewLocation(input, workerOS, normalized+"/"+observation.Location, observation.ReferenceID)
 	if err != nil || expected != observation {
 		return ResultUncertain()

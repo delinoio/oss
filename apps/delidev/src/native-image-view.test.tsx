@@ -63,6 +63,9 @@ test.each([
   "/absolute.png",
   "https://example.com/image.png",
   "images//image.png",
+  "C:/image.png",
+  "C:\\image.png",
+  "\\\\server\\share\\image.png",
 ])("rejects unscoped location %s", (location) => {
   const tool = fixture();
   tool.started.image_view.location = location;
@@ -71,4 +74,23 @@ test.each([
   expect(
     screen.getByText("This image-view observation is unavailable."),
   ).toBeTruthy();
+});
+
+test.each([
+  "screens/frame:01.png",
+  "screens/frame\\01.png",
+  "screens\\archive/frame:01.png",
+  "frame:01.png",
+])("preserves inert POSIX filename %s", (location) => {
+  const fetch = vi.spyOn(globalThis, "fetch");
+  const tool = fixture();
+  tool.started.image_view.location = location;
+  tool.completed.image_view.location = location;
+  const { container } = render(
+    <NativeImageView tool={tool} state="complete" />,
+  );
+  expect(screen.getByText(location)).toBeTruthy();
+  expect(container.querySelector("a,img,button,input,iframe")).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
+  fetch.mockRestore();
 });
