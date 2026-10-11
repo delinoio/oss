@@ -661,7 +661,7 @@ export function NewSession({
       serverId: preferenceScope?.server_id,
       deviceId: preferenceScope?.device_id,
     },
-    settings: defaultSettings.data?.resources[0],
+    settings: new Map<string, Resource>(),
     project: selectedProject.data?.resource,
   });
   const observation = observedDefaults.current;
@@ -678,9 +678,16 @@ export function NewSession({
         serverId: preferenceScope?.server_id,
         deviceId: preferenceScope?.device_id,
       },
-      settings: undefined,
+      settings: new Map<string, Resource>(),
       project: undefined,
     };
+  }
+  // Keep each identity observed in this scope so a later singleton cannot
+  // hide a server-side identity change from the direct submit preflight.
+  for (const nextSettings of defaultSettings.data?.resources ?? []) {
+    const previous = observedDefaults.current.settings.get(nextSettings.id);
+    if (!previous || nextSettings.revision > previous.revision)
+      observedDefaults.current.settings.set(nextSettings.id, nextSettings);
   }
   const rememberObservation = <T extends Resource>(
     previous: T | undefined,
@@ -689,16 +696,12 @@ export function NewSession({
     if (!next) return previous;
     if (
       !previous ||
-      previous.id !== next.id ||
+      next.id !== previous.id ||
       next.revision > previous.revision
     )
       return next;
     return previous;
   };
-  observedDefaults.current.settings = rememberObservation(
-    observedDefaults.current.settings,
-    defaultSettings.data?.resources[0],
-  );
   observedDefaults.current.project = rememberObservation(
     observedDefaults.current.project,
     selectedProject.data?.resource,
@@ -792,7 +795,10 @@ export function NewSession({
       if (!manualMode && supportsDefaults) {
         try {
           // Direct reads cannot reuse the mounted queries' cached defaults.
-          const initialObserved = observedDefaults.current;
+          const initialObserved = {
+            settings: new Map(observedDefaults.current.settings),
+            project: observedDefaults.current.project,
+          };
           const client = createClient(ResourceService, transport);
           const [settings, selected] = await Promise.all([
             client.listResources({
@@ -815,10 +821,11 @@ export function NewSession({
                 supportsResourceSchema(row) &&
                 (document(row).plan_mode_default === undefined ||
                   typeof document(row).plan_mode_default === "boolean"))) &&
-            [initialObserved.settings, observed.settings].every(
-              (cached) =>
-                !cached ||
-                (row?.id === cached.id && row.revision >= cached.revision),
+            [initialObserved.settings, observed.settings].every((cached) =>
+              [...cached].every(
+                ([id, resource]) =>
+                  row?.id === id && row.revision >= resource.revision,
+              ),
             );
           const selectedRow = selected?.resource;
           const validProject =

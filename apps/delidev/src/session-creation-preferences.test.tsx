@@ -1436,6 +1436,27 @@ it("keeps the highest mounted defaults revision after a lower refresh", async ()
   expect(f.createSession).not.toHaveBeenCalled();
 });
 
+it("blocks automatic creation after the mounted Settings identity changes", async () => {
+  const f = fixture(true, false, { global: false });
+  render(f.view());
+  await readyAutomaticCreation(f);
+
+  const replacement = { ...f.defaultSettings, id: newRequestId() };
+  const original = f.list.getMockImplementation()!;
+  f.list.mockImplementation(async (request) =>
+    request.filter?.kind === EntityKind.SETTINGS
+      ? { resources: [replacement] }
+      : original(request),
+  );
+  await act(async () => {
+    await f.client.invalidateQueries();
+  });
+
+  fireEvent.click(await readyAutomaticCreation(f));
+  await screen.findByRole("button", { name: "Retry Plan Mode defaults" });
+  expect(f.createSession).not.toHaveBeenCalled();
+});
+
 it("keeps manual Execute without rereading defaults", async () => {
   const f = fixture(true, false, { global: false });
   render(f.view());
