@@ -209,6 +209,14 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 				rows.Close()
 				return err
 			}
+			if v.Type == domain.CompactSessionJob {
+				// The outer storage allowance does not prove the immutable
+				// compaction input or its original Job invariants.
+				if err := domain.DecodeCompactionJob(raw, &v); err != nil {
+					rows.Close()
+					return err
+				}
+			}
 			if v.Type == domain.ImageAttachmentJob {
 				var upload domain.ImageUpload
 				if domain.Decode(v.Input, &upload) != nil || validateImageUpload(upload) != nil {

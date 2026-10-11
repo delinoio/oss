@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,6 +28,71 @@ func historyRecoveryInput(t *testing.T, size int) json.RawMessage {
 	return raw
 }
 
+// historyCompactionInput retains a valid immutable source and continuation.
+// Opaque workspace evidence gives the typed envelope its requested fixture size;
+// this fixture grants no native process, filesystem or account authority.
+func historyCompactionInput(t *testing.T, size int) json.RawMessage {
+	t.Helper()
+	account := domain.NewID()
+	assignment := domain.ExecutionJobInput{
+		Version: 1, SessionID: domain.NewID(), MachineID: domain.NewID(), ExecutionID: domain.NewID(),
+		InputID: domain.NewID(), ThreadRequestID: domain.NewID(), TurnRequestID: domain.NewID(), AccountID: account, ConnectionID: domain.NewID(),
+		Configuration: domain.ExecutionConfiguration{AgentID: domain.NewID(), AgentRevision: 1, Harness: domain.Codex,
+			ModelRevision: 1, ProviderID: domain.NewID(), NativeModel: "fixture-model", Routing: domain.Priority,
+			Accounts: []domain.WeightedAccount{{ID: account, Weight: 1}}, Options: domain.AgentOptions{Permission: domain.PermissionReadOnly}},
+		Input: domain.SessionInput{Mode: domain.ExecuteMode, Prompt: "retained fixture input"},
+		Installation: domain.Installation{Harness: domain.Codex, State: domain.InstallationDetected, Version: domain.CodexProtocolVersion,
+			ProtocolVerified: true, Protocol: &domain.ProtocolObservation{Protocol: domain.CodexAppServer, State: domain.ProtocolVerified}},
+		Preparation: json.RawMessage(`{}`), Manifest: json.RawMessage(`{}`),
+	}
+	assignment.Configuration.ModelID = (domain.ModelIdentity{ProviderID: assignment.Configuration.ProviderID, NativeID: assignment.Configuration.NativeModel}).Key()
+	assignment.ConfigurationDigest, _ = assignment.Configuration.Digest()
+	done := domain.ExecutionCompletion{Version: 2, ExecutionID: assignment.ExecutionID, InputID: assignment.InputID,
+		NativeThreadID: domain.NativeIdentity(domain.NewID()), NativeTurnID: domain.NativeIdentity(domain.NewID()),
+		LastSequence: 3, Outcome: domain.ExecutionSucceeded, CleanupVerified: true, NativeCheckpointDigest: strings.Repeat("ab", 32)}
+	source, action := domain.NewID(), domain.NewID()
+	progress := domain.ExecutionProgress{JobID: source, ExecutionID: assignment.ExecutionID, InputID: assignment.InputID,
+		NativeThreadID: string(done.NativeThreadID), NativeTurnID: string(done.NativeTurnID), LastSequence: done.LastSequence,
+		Outcome: done.Outcome, CleanupVerified: true,
+		Observed:       domain.ObservedExecutionSettings{Model: assignment.Configuration.NativeModel, Permission: domain.PermissionReadOnly, ApprovalPolicy: "never"},
+		AcceptedInputs: []domain.ExecutionInputBinding{domain.BindSessionInput(assignment.InputID, assignment.Input)},
+	}
+	restored := assignment
+	restored.Version, restored.ExecutionID, restored.InputID = 2, action, domain.NewID()
+	restored.ThreadRequestID, restored.TurnRequestID = domain.NewID(), domain.NewID()
+	restored.Continuation = &domain.ExecutionContinuation{HistoryExecutionID: assignment.ExecutionID, HistoryRequestID: domain.NewID(),
+		Previous: progress, Completion: done, InputMode: assignment.Input.Mode,
+		PromptDigest: domain.BindSessionInput(assignment.InputID, assignment.Input).PromptDigest, Intent: domain.ContinueAutomatically}
+	input := domain.SessionCompactionInput{Version: 2, ActionID: action, SourceJobID: source, Assignment: assignment, Restore: restored,
+		Completion: done, Dispatch: domain.DispatchReady, Intent: domain.ContinueAutomatically}
+	encode := func() json.RawMessage {
+		original, err := json.Marshal(input.Assignment)
+		if err != nil {
+			t.Fatal(err)
+		}
+		digest := sha256.Sum256(original)
+		input.Restore.Continuation.AssignmentInputDigest = fmt.Sprintf("%x", digest)
+		raw, err := json.Marshal(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	raw := encode()
+	if size > len(raw) {
+		padding, err := json.Marshal(strings.Repeat("x", (size-len(raw))/2))
+		if err != nil {
+			t.Fatal(err)
+		}
+		input.Assignment.Preparation, input.Restore.Preparation = padding, padding
+		raw = encode()
+	}
+	if err := input.Validate(); err != nil {
+		t.Fatal("invalid typed compaction fixture", err)
+	}
+	return raw
+}
+
 func TestBackupRestoreSupportedTypedJobHistory(t *testing.T) {
 	for _, test := range []struct {
 		name   string
@@ -38,6 +104,7 @@ func TestBackupRestoreSupportedTypedJobHistory(t *testing.T) {
 		{"compaction-small", domain.CompactSessionJob, 512 << 10, false},
 		{"compaction-large", domain.CompactSessionJob, 2 << 20, false},
 		{"compaction-queued", domain.CompactSessionJob, 2 << 20, true},
+		{"compaction-near-input-bound", domain.CompactSessionJob, domain.MaxCompactionInputBytes - 1024, false},
 		{"storage-recovery-large", domain.WorkspaceStorageJob, 600 << 10, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -49,6 +116,9 @@ func TestBackupRestoreSupportedTypedJobHistory(t *testing.T) {
 			}{strings.Repeat("x", test.size)})
 			if err != nil {
 				t.Fatal(err)
+			}
+			if test.kind == domain.CompactSessionJob {
+				input = historyCompactionInput(t, test.size)
 			}
 			if test.kind == domain.WorkspaceStorageJob {
 				input = historyRecoveryInput(t, test.size)
@@ -137,7 +207,7 @@ func TestBackupRestoreSupportedTypedJobHistory(t *testing.T) {
 }
 
 func TestRestoreJobTransformationRejectsUnsupportedDocumentsBeforePublication(t *testing.T) {
-	for _, mode := range []string{"ordinary-size", "compaction-size", "recovery-size", "unknown", "duplicate", "utf8"} {
+	for _, mode := range []string{"ordinary-size", "compaction-size", "compaction-input-size", "compaction-input-unknown", "compaction-input-malformed", "compaction-input-invariant", "compaction-invalid-state", "recovery-size", "unknown", "duplicate", "utf8"} {
 		t.Run(mode, func(t *testing.T) {
 			s, root, ctx, in, session := restoreFixture(t)
 			id := domain.NewID()
@@ -174,6 +244,34 @@ func TestRestoreJobTransformationRejectsUnsupportedDocumentsBeforePublication(t 
 				}
 				job.Input, _ = json.Marshal(strings.Repeat("x", size))
 				raw, _ = json.Marshal(job)
+			case "compaction-input-size", "compaction-input-unknown", "compaction-input-malformed", "compaction-input-invariant", "compaction-invalid-state":
+				job.Type = domain.CompactSessionJob
+				job.Input = historyCompactionInput(t, 512)
+				switch mode {
+				case "compaction-input-size":
+					job.Input = historyCompactionInput(t, domain.MaxCompactionInputBytes+1024)
+				case "compaction-input-unknown":
+					job.Input = append(job.Input[:len(job.Input)-1], []byte(`,"unknown":true}`)...)
+				case "compaction-input-malformed":
+					job.Input = json.RawMessage(`{"version":2}`)
+				case "compaction-input-invariant":
+					var input domain.SessionCompactionInput
+					if err := json.Unmarshal(job.Input, &input); err != nil {
+						t.Fatal(err)
+					}
+					input.Completion.CleanupVerified = false
+					job.Input, err = json.Marshal(input)
+					if err != nil {
+						t.Fatal(err)
+					}
+				case "compaction-invalid-state":
+					job.State = domain.JobState("foreign-state")
+				}
+				raw, err = json.Marshal(job)
+				if err != nil || len(raw) >= domain.MaxCompactionJobBytes {
+					t.Fatal("typed regression must remain below the outer cap", err, len(raw))
+				}
+
 			case "recovery-size":
 				job.Type = domain.WorkspaceStorageJob
 				job.Input = historyRecoveryInput(t, 2<<20)
@@ -185,7 +283,15 @@ func TestRestoreJobTransformationRejectsUnsupportedDocumentsBeforePublication(t 
 			case "utf8":
 				raw = bytes.Replace(raw, []byte(`"input":{}`), []byte{'"', 'i', 'n', 'p', 'u', 't', '"', ':', '"', 0xff, '"'}, 1)
 			}
-			if _, err := Decode[domain.Job](Record{ID: id, Kind: domain.JobKind, Data: raw}); err == nil {
+			if strings.HasPrefix(mode, "compaction-input-") || mode == "compaction-invalid-state" {
+				if _, err := Decode[domain.Job](Record{ID: id, Kind: domain.JobKind, Data: raw}); err != nil {
+					t.Fatal("outer-only decoder unexpectedly rejected regression", err)
+				}
+				var compact domain.Job
+				if domain.DecodeCompactionJob(raw, &compact) == nil {
+					t.Fatal("owning compaction decoder accepted unsupported input", mode)
+				}
+			} else if _, err := Decode[domain.Job](Record{ID: id, Kind: domain.JobKind, Data: raw}); err == nil {
 				t.Fatal("owning decoder accepted unsupported document", mode)
 			}
 			if _, err := Decode[domain.Job](Record{ID: id, Kind: domain.JobKind, Data: append(append([]byte(nil), live.Data...), []byte(` {}`)...)}); err == nil {
@@ -204,6 +310,16 @@ func TestRestoreJobTransformationRejectsUnsupportedDocumentsBeforePublication(t 
 			}
 			if err := prepareRestoreImage(ctx, candidate, source, BackupRestore{RequestID: domain.NewID(), Input: in, CreatedAt: now}); err == nil {
 				t.Fatal("unsupported candidate transformed", mode)
+			}
+			candidateDB, err := sql.Open("sqlite", databaseURI(candidate, true))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var rejected []byte
+			readErr := candidateDB.QueryRowContext(ctx, "SELECT body FROM entities WHERE id=?", id).Scan(&rejected)
+			closeErr := candidateDB.Close()
+			if readErr != nil || closeErr != nil || !bytes.Equal(rejected, raw) {
+				t.Fatal("rejected candidate published a partial quarantine", readErr, closeErr)
 			}
 			after, err := s.Get(ctx, domain.JobKind, id)
 			if err != nil || !bytes.Equal(after.Data, live.Data) || after.Revision != live.Revision {

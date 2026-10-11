@@ -1352,7 +1352,10 @@ Managed backups capture history. Open and backup validation check closed documen
 
 The private restore candidate uses the owning storage Job decoder for retained
 history. Supported compaction and workspace recovery Jobs retain their closed
-type-specific document bounds; ordinary Jobs retain the generic 1 MiB bound.
+type-specific document bounds; ordinary Jobs retain the generic 1 MiB bound. Before
+quarantine, compaction history passes `domain.DecodeCompactionJob`, including
+original Job validation, the 3 MiB typed input bound and complete input invariants;
+the 4 MiB outer allowance alone cannot admit historical compaction input.
 This does not enlarge other documents or the aggregate transformation bounds of
 100,000 documents and 256 MiB. Preserve original input, output and attribution,
 and quarantine nonterminal historical Jobs without granting native authority.
