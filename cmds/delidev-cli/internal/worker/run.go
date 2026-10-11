@@ -356,6 +356,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if revertExpected {
 				profile += "\x00codex-session-revert-v1"
 			}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_NATIVE_SHELL_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_NATIVE_SHELL_V1)
+			}
 			if compactionExpected {
 				profile += "\x00codex-session-compaction-v1"
 			}

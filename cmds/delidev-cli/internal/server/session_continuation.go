@@ -66,6 +66,7 @@ func queueContinuation(tx *store.Tx, sr store.Record, session domain.Session, ex
 	account, connection := session.ContinuationAccount()
 	candidate := continuationAssignment(session, assignment, completion, assignmentDigest, intent, account, connection)
 	candidate.ContextRevision = session.ContextRevision
+	candidate.Continuation.NativeShell = session.NativeShellForExecution(assignment.ExecutionID)
 	if session.Compaction != nil && session.Compaction.ExecutionID == assignment.ExecutionID {
 		candidate.Continuation.Compaction = session.Compaction
 	}

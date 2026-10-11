@@ -30,6 +30,9 @@ func controlNativeSession(tx *store.Tx, sr store.Record, session *domain.Session
 			if _, err := tx.PutJob(r.ID, r.Revision, r.SessionID, r.ProjectID, job); err != nil {
 				return err
 			}
+			if err := settleLostNativeShell(tx, r, job); err != nil {
+				return err
+			}
 			session.CompactionJobID = ""
 		}
 		session.Dispatch, session.NextExecutionIntent = domain.DispatchPaused, ""

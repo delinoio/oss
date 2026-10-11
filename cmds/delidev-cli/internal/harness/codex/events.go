@@ -97,6 +97,7 @@ func validationStage(method string) eventValidationStage {
 }
 
 const (
+	NativeShellEvent              EventKind = "native-shell"
 	AutoReviewEvent               EventKind = "auto-review"
 	CompactionEvent               EventKind = "compaction"
 	SubagentEvent                 EventKind = "subagent"
@@ -156,6 +157,7 @@ type Message struct {
 }
 
 type Event struct {
+	NativeShell      *domain.NativeShellObservation
 	NativeError      *NativeErrorObservation `json:"-"`
 	AutoReview       *domain.AutoReviewObservation
 	ImageGeneration  *ImageGeneration `json:"-"`
@@ -292,6 +294,9 @@ func privateNative(event nativewire.Event) Event {
 	return Event{Kind: NativeExtensionEvent, Native: &event, ExtensionStage: validationStage(event.Method)}
 }
 func (c *Client) observeEventLocked(native nativewire.Event) (Event, error) {
+	if event, handled, err := c.observeNativeShellLocked(native); handled {
+		return event, err
+	}
 	if native.Kind == nativewire.LateResponse {
 		return c.observeLateTurnLocked(native)
 	}

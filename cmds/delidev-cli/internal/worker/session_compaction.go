@@ -51,6 +51,7 @@ const (
 type compactionClaimName string
 
 const (
+	nativeShellSendClaim          compactionClaimName = "native-shell-send.json"
 	compactionRegistrationClaim   compactionClaimName = "compaction-registration.json"
 	compactionCommandClaim        compactionClaimName = "compaction-command.json"
 	openCodeCompactionResumeClaim compactionClaimName = "opencode-resume-claim.json"
@@ -122,7 +123,7 @@ func readCompactionClaimRecords(root string, job domain.ID, input domain.Session
 }
 
 func writeCompactionClaim(root string, job domain.ID, name compactionClaimName, value any) error {
-	if job.Validate() != nil || name != compactionRegistrationClaim && name != compactionCommandClaim && name != openCodeCompactionResumeClaim && name != openCodeCompactionNativeClaim {
+	if job.Validate() != nil || name != nativeShellSendClaim && name != compactionRegistrationClaim && name != compactionCommandClaim && name != openCodeCompactionResumeClaim && name != openCodeCompactionNativeClaim {
 		return domain.CompactionUncertain()
 	}
 	// Compaction has no execution publisher to create its per-job directory.
@@ -183,7 +184,12 @@ func compactionCheckpointPath(root string, action domain.ID) (string, error) {
 	return filepath.Join(dir, string(action)+".json"), nil
 }
 func executeSessionCompaction(ctx context.Context, config Config, owner domain.ID, job domain.Job) (output json.RawMessage, returned error) {
-	bounded, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	duration := 15 * time.Minute
+	var profile domain.SessionCompactionInput
+	if domain.DecodeCompactionInput(job.Input, &profile) == nil && profile.NativeShell != nil {
+		duration = time.Hour + time.Minute
+	}
+	bounded, cancel := context.WithTimeout(ctx, duration)
 	defer cancel()
 	ctx = bounded
 	c := config.execution

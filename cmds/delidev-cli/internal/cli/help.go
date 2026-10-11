@@ -131,6 +131,9 @@ Usage: delidev [--data-dir PATH] [--server URL --token-stdin] COMMAND
   session enqueue --id ID --input FILE|-
   session steer --id SESSION --input-id INPUT --revision N --execution-id EXECUTION --turn-id TURN
   session stop|archive|restore|resume --id ID --revision N
+  session native-shell run --id ID --revision N --command COMMAND --confirm-full-access [--timeout-ms N]
+  session native-shell status --id ID --action ACTION
+  session native-shell cancel --id ID --action ACTION --revision N
   session compact --id ID --revision N
   session context --id ID
   session switch-account --id ID --revision N --account-id ID

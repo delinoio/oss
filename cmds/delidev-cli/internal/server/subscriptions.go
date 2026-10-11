@@ -538,12 +538,12 @@ func (s *Service) TakeSubscription(ctx context.Context, req *connect.Request[pb.
 				forkRevision = jr.Revision
 			case domain.CompactSessionJob:
 				var compact domain.SessionCompactionInput
-				if domain.DecodeCompactionInput(job.Input, &compact) != nil || compact.Validate() != nil || (compact.Version != 2 && compact.Version != 4) {
+				if domain.DecodeCompactionInput(job.Input, &compact) != nil || compact.Validate() != nil || (compact.Version != 2 && compact.Version != 4 && compact.Version != 5) {
 					return nil, subscriptionDenied()
 				}
 				sr, session, err := sessionRecord(tx, jr.SessionID)
 				_, machine, machineErr := activeMachine(tx, input.Machine)
-				if err != nil || machineErr != nil || !machineCapabilityContains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !machineCapabilityContains(machine.WorkerCapabilities, domain.CodexSessionCompactionV1) || session.CompactionJobID != jr.ID || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.ActiveExecutionID != "" || !session.OwnsExecution(compact.Assignment) {
+				if err != nil || machineErr != nil || (compact.NativeShell == nil && (!machineCapabilityContains(machine.WorkerCapabilities, domain.NativeSessionCompactionV1) || !machineCapabilityContains(machine.WorkerCapabilities, domain.CodexSessionCompactionV1)) || compact.NativeShell != nil && !machineCapabilityContains(machine.WorkerCapabilities, domain.CodexNativeShellV1)) || session.CompactionJobID != jr.ID || session.Archive != domain.NotArchived || session.Recovery != domain.NoRecovery || session.ActiveExecutionID != "" || !session.OwnsExecution(compact.Assignment) {
 					return nil, subscriptionDenied()
 				}
 				if err := checkedExecutionSource(tx, sr, session, machine, compact.Assignment); err != nil {

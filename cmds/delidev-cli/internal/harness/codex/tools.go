@@ -152,6 +152,7 @@ func decodeTool(raw json.RawMessage, kind string, completed bool) (*Tool, error)
 	switch kind {
 	case "commandExecution":
 		var item struct {
+			SandboxType      *string           `json:"sandboxType,omitempty"`
 			Type             string            `json:"type"`
 			ID               string            `json:"id"`
 			Status           ToolStatus        `json:"status"`
@@ -176,6 +177,9 @@ func decodeTool(raw json.RawMessage, kind string, completed bool) (*Tool, error)
 			return nil, incompatible()
 		}
 		if !slices.Contains([]CommandSource{AgentCommand, UserShellCommand, ExecStartupCommand, ExecInputCommand}, source) {
+			return nil, incompatible()
+		}
+		if item.SandboxType != nil && (source != UserShellCommand || *item.SandboxType != "none") {
 			return nil, incompatible()
 		}
 		for _, field := range []struct {

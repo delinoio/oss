@@ -70,7 +70,7 @@ func (s *Service) RevertSession(ctx context.Context, req *connect.Request[pb.Rev
 		if err != nil || domain.Decode(ej.Input, &assigned) != nil || assigned.Validate() != nil || assigned.InputID != target.InputID || assigned.ContextRevision > session.ContextRevision || assigned.ContextRevision < session.ContextRevision && (session.Revert == nil || !session.Revert.Contains(turn)) || domain.Decode(ej.Output, &done) != nil || done.NativeThreadID != domain.NativeIdentity(target.NativeThreadID) || done.NativeTurnID != turn {
 			return nil, continuationConflict()
 		}
-		input, err := contextActionSource(tx, sr, session, domain.ID(m.RequestId), true)
+		input, err := contextActionSource(tx, sr, session, domain.ID(m.RequestId), true, false)
 		if err != nil {
 			return nil, err
 		}
