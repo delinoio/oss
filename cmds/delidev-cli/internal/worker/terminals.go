@@ -304,7 +304,7 @@ func (m *terminalManager) execute(a terminal.Assignment) terminal.Result {
 			return result
 		}
 		if workspace.RequiresNamedDirectories(*a.Preparation) && !m.namedWorkspaceDirectories.Load() {
-			result.State, result.CleanupVerified, result.Problem = domain.TerminalExited, true, workspace.NamedDirectoriesUnsupported()
+			result.State, result.CleanupVerified, result.Problem = domain.TerminalExited, true, domain.SafeError(workspace.NamedDirectoriesUnsupported())
 			return result
 		}
 		ctx, cancel := context.WithTimeout(m.ctx, 15*time.Second)
