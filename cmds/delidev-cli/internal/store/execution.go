@@ -2,6 +2,7 @@ package store
 
 import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 )
 
 // Routing reads one Agent Worker's persisted selection state. Existing stores
@@ -207,6 +208,12 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 	}
 	route, accounts := preview.Route, preview.Accounts
 	selected := accounts[route.Selected]
+	if selected.Type == domain.APIAccount {
+		provider, err = providers.ResolveAccountProfile(provider, selected)
+		if err != nil {
+			return empty, err
+		}
+	}
 	authentication := provider.Authentication
 	if configuration.Subscription {
 		authentication = domain.SubscriptionAuth
