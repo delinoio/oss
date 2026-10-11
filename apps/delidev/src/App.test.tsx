@@ -2328,16 +2328,16 @@ it(
     const composer = await screen.findByRole("textbox", { name: "Message" });
     fireEvent.change(composer, { target: { value: "Keep my unsent input" } });
     fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
     expect(
-      screen.getByRole("region", { name: "Session browser" }),
+      screen.getByRole("complementary", { name: "Session files" }),
     ).toBeTruthy();
     expect(composer.isConnected).toBe(true);
     expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
     expect((composer as HTMLTextAreaElement).value).toBe(
       "Keep my unsent input",
     );
-    fireEvent.click(screen.getByRole("button", { name: "Close Browser tab" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close Files tab" }));
     expect(window.document.activeElement).toBe(
       screen.getByRole("tab", { name: "Conversation" }),
     );

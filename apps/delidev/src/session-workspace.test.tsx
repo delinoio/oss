@@ -669,12 +669,25 @@ it("keeps Info independent of all tabs with one active content region and retain
   for (const name of ["Files", "Diff", "Terminals", "Browser", "Diagnostics"]) {
     fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
     fireEvent.click(screen.getByRole("menuitem", { name }));
+    if (name === "Browser") {
+      expect(
+        screen.getByRole("dialog", { name: "New browser page" }),
+      ).toBeTruthy();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Close New browser page" }),
+      );
+      continue;
+    }
     const tabName = name === "Terminals" ? "Terminal 1" : name;
     await screen.findByRole("tab", { name: tabName });
     expect(
       screen.getByRole("tab", { name: tabName }).getAttribute("aria-selected"),
     ).toBe("true");
-    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+    expect(
+      screen
+        .getAllByRole("tabpanel")
+        .filter((panel) => panel.classList.contains("session-upper-content")),
+    ).toHaveLength(1);
     expect(info).toHaveProperty("hidden", false);
     expect(composer.isConnected).toBe(true);
     expect(composer.closest("[hidden]")).not.toBeNull();
@@ -699,7 +712,7 @@ it("replaces dock/split coexistence with exact selection and presentation-only c
   const view = render(f.view());
   await screen.findByRole("heading", { name: "Original session" });
   fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
-  fireEvent.click(screen.getByRole("menuitem", { name: "Browser" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
   fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
   fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
   await screen.findByRole("tab", { name: "Terminal 1" });
@@ -709,7 +722,7 @@ it("replaces dock/split coexistence with exact selection and presentation-only c
       .getAttribute("aria-selected"),
   ).toBe("true");
   expect(screen.queryByRole("region", { name: "Session browser" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Close Browser tab" }));
+  fireEvent.click(screen.getByRole("button", { name: "Close Files tab" }));
   expect(
     screen
       .getByRole("tab", { name: "Terminal 1" })
@@ -744,7 +757,11 @@ it.each([580, 120])(
     expect(
       screen.queryByRole("button", { name: "Maximize terminal dock" }),
     ).toBeNull();
-    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+    expect(
+      screen
+        .getAllByRole("tabpanel")
+        .filter((panel) => panel.classList.contains("session-upper-content")),
+    ).toHaveLength(1);
     fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
     expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
     expect(composer).toHaveProperty("value", "Original draft");
@@ -1260,7 +1277,12 @@ it("last verified terminal exit restores the actual Session conversation, focus 
     });
     fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
-    fireEvent.click(await screen.findByRole("button", { name: /Terminal 1/ }));
+    fireEvent.click(
+      await within(screen.getByRole("group", { name: "Terminals" })).findByRole(
+        "button",
+        { name: /^Terminal 1/ },
+      ),
+    );
     await waitFor(() =>
       expect(document.querySelector(".terminal-view")).not.toBeNull(),
     );
@@ -1317,7 +1339,12 @@ it("verified terminal removal skips intervening Files and selects the original l
     await screen.findByRole("textbox", { name: "Message" });
     fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
-    fireEvent.click(await screen.findByRole("button", { name: /Terminal 1/ }));
+    fireEvent.click(
+      await within(screen.getByRole("group", { name: "Terminals" })).findByRole(
+        "button",
+        { name: /^Terminal 1/ },
+      ),
+    );
     await waitFor(() =>
       expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[0]!.id),
     );
@@ -1325,11 +1352,21 @@ it("verified terminal removal skips intervening Files and selects the original l
     fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
     fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
-    fireEvent.click(await screen.findByRole("button", { name: /Terminal 2/ }));
+    fireEvent.click(
+      await within(screen.getByRole("group", { name: "Terminals" })).findByRole(
+        "button",
+        { name: /^Terminal 2/ },
+      ),
+    );
     await waitFor(() =>
       expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[1]!.id),
     );
-    fireEvent.click(await screen.findByRole("button", { name: /Terminal 3/ }));
+    fireEvent.click(
+      await within(screen.getByRole("group", { name: "Terminals" })).findByRole(
+        "button",
+        { name: /^Terminal 3/ },
+      ),
+    );
     await waitFor(() =>
       expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[2]!.id),
     );

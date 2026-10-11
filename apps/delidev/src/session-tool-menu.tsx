@@ -36,7 +36,6 @@ export function SessionToolMenu({
     menu = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const opener = useRef<HTMLElement | null>(null),
-    mounted = useRef(false),
     actionDismissal = useRef(false),
     currentActive = useRef(active);
   currentActive.current = active;
@@ -67,12 +66,6 @@ export function SessionToolMenu({
     },
   ]);
   useLayoutEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
-  useLayoutEffect(() => {
     if (!active) setOpen(false);
   }, [active]);
   useLayoutEffect(() => {
@@ -84,13 +77,19 @@ export function SessionToolMenu({
       ?.focus();
     return () => {
       node.close();
-      if (actionDismissal.current || !currentActive.current || !mounted.current)
-        return;
-      if (availableShortcutTarget(opener.current))
-        opener.current?.focus({ preventScroll: true });
     };
   }, [open, active]);
-  const close = () => setOpen(false);
+  const close = () => {
+    dialog.current?.close();
+    if (
+      !actionDismissal.current &&
+      currentActive.current &&
+      availableShortcutTarget(opener.current)
+    )
+      opener.current?.focus({ preventScroll: true });
+    opener.current = null;
+    setOpen(false);
+  };
   return (
     <div className="session-tool-popup">
       <button
