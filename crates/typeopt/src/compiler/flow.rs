@@ -304,7 +304,26 @@ impl Graph {
 
 struct Function {
     parameters: Vec<Node>,
+    /// Cells of destructured parameters; identifier parameters use their
+    /// binding cell.
+    patterns: Vec<Option<CellId>>,
     result: CellId,
+}
+
+/// Why a function receives no trusted summary.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum FunctionBoundary {
+    /// Script, namespace or bodiless declaration.
+    Scope,
+    AsyncOrGenerator,
+    /// Nested pattern, rest or `this` parameters.
+    Parameters,
+    /// `this`, `super`, `arguments` or `new.target`.
+    Receiver,
+    /// Public, JavaScript-visible, exposed or merged symbol.
+    External,
+    /// A reference other than a direct fixed-arity call.
+    References,
 }
 
 #[derive(Clone)]
@@ -391,6 +410,8 @@ struct Builder<'a, 'c> {
     annotations: Vec<(Node, CellId)>,
     sinks: Vec<CellId>,
     constraints: Vec<CellId>,
+    /// Exports observable through module namespace objects.
+    exposed: HashSet<SymbolId>,
 }
 
 /// Everything decided from the current cells.
@@ -465,6 +486,24 @@ fn in_namespace(mut node: Node) -> bool {
     false
 }
 
+/// `{a, b: c, d = e}` with identifier bindings, static keys and no rest.
+fn flat_pattern(pattern: Node) -> bool {
+    pattern.kind() == SyntaxKind::ObjectBindingPattern
+        && pattern.elements().iter().all(|element| {
+            let key = if element.property_name().is_some() {
+                element.property_name()
+            } else {
+                element.name()
+            };
+            element.dot_dot_dot_token().is_nil()
+                && element.name().kind() == SyntaxKind::Identifier
+                && matches!(
+                    key.kind(),
+                    SyntaxKind::Identifier | SyntaxKind::StringLiteral
+                )
+        })
+}
+
 /// A string usable as a property key literal that may be renamed.
 fn renamable_key(text: &str) -> bool {
     !text.is_empty() && !SPECIAL_NAMES.contains(&text)
@@ -517,6 +556,11 @@ impl Builder<'_, '_> {
             .collect()
     }
 
+    /// Every runtime use of the symbol is an indexed reference.
+    fn internal(&mut self, symbol: SymbolId) -> bool {
+        !self.exposed.contains(&symbol) && self.ctx.is_internal(symbol)
+    }
+
     fn symbol(&self, node: Node) -> Option<SymbolId> {
         self.symbols.get(&node).map(|&(symbol, _)| symbol)
     }
@@ -536,25 +580,33 @@ impl Builder<'_, '_> {
         }
     }
 
-    fn closed_function(&mut self, node: Node, binding: Node, symbol: SymbolId) -> bool {
+    fn closed_function(
+        &mut self,
+        node: Node,
+        binding: Node,
+        symbol: SymbolId,
+    ) -> Result<(), FunctionBoundary> {
         let file = get_source_file_of_node(node);
-        if !is_external_module(file)
-            || get_combined_modifier_flags(node).intersects(ModifierFlags::ASYNC)
-            || node.asterisk_token().is_some()
-            || !node.type_parameters().is_empty()
-            || node.body().is_nil()
-            || in_namespace(node)
-        {
-            return false;
+        if !is_external_module(file) || in_namespace(node) || node.body().is_nil() {
+            return Err(FunctionBoundary::Scope);
         }
+        if get_combined_modifier_flags(node).intersects(ModifierFlags::ASYNC)
+            || node.asterisk_token().is_some()
+        {
+            return Err(FunctionBoundary::AsyncOrGenerator);
+        }
+        // Generic signatures are fine: an annotation naming a type
+        // parameter is a type constraint on the values it describes.
         let parameters: Vec<Node> = node.parameters().iter().collect();
         if !parameters.iter().all(|p| {
-            p.name().kind() == SyntaxKind::Identifier
-                && p.name().text() != "this"
-                && p.initializer().is_nil()
-                && p.dot_dot_dot_token().is_nil()
+            p.dot_dot_dot_token().is_nil()
+                && match p.name().kind() {
+                    SyntaxKind::Identifier => p.name().text() != "this",
+                    SyntaxKind::ObjectBindingPattern => flat_pattern(p.name()),
+                    _ => false,
+                }
         }) {
-            return false;
+            return Err(FunctionBoundary::Parameters);
         }
         let mut body = Vec::new();
         collect_nodes(node.body(), &mut body);
@@ -564,13 +616,16 @@ impl Builder<'_, '_> {
                 SyntaxKind::ThisKeyword | SyntaxKind::SuperKeyword | SyntaxKind::MetaProperty
             ) || (n.kind() == SyntaxKind::Identifier && n.text() == "arguments")
         }) {
-            return false;
+            return Err(FunctionBoundary::Receiver);
         }
-        if !self.ctx.is_internal(symbol) || self.ctx.checker.sym(symbol).declarations.len() != 1 {
-            return false;
+        if !self.internal(symbol) || self.ctx.checker.sym(symbol).declarations.len() != 1 {
+            return Err(FunctionBoundary::External);
         }
-        self.ctx.refs(symbol).iter().all(|r| match r.kind {
-            RefKind::Declaration => r.node == binding,
+        let calls_only = self.ctx.refs(symbol).iter().all(|r| match r.kind {
+            // Export specifiers name the alias they declare.
+            RefKind::Declaration => {
+                r.node == binding || r.node.parent().kind() == SyntaxKind::ExportSpecifier
+            }
             RefKind::Alias => matches!(
                 r.node.parent().kind(),
                 SyntaxKind::ImportSpecifier
@@ -589,7 +644,12 @@ impl Builder<'_, '_> {
                         .any(|a| a.kind() == SyntaxKind::SpreadElement)
             }
             _ => false,
-        })
+        });
+        if calls_only {
+            Ok(())
+        } else {
+            Err(FunctionBoundary::References)
+        }
     }
 
     fn target(&self, call: Node) -> Option<usize> {
@@ -814,24 +874,62 @@ impl Builder<'_, '_> {
         }
     }
 
-    /// A flat destructuring declaration `const {a, b: c = d} = value`.
-    fn supported_pattern(pattern: Node) -> bool {
-        pattern.kind() == SyntaxKind::ObjectBindingPattern
-            && pattern.parent().kind() == SyntaxKind::VariableDeclaration
-            && pattern.parent().initializer().is_some()
-            && pattern.elements().iter().all(|element| {
-                let key = if element.property_name().is_some() {
-                    element.property_name()
-                } else {
-                    element.name()
-                };
-                element.dot_dot_dot_token().is_nil()
-                    && element.name().kind() == SyntaxKind::Identifier
-                    && matches!(
-                        key.kind(),
-                        SyntaxKind::Identifier | SyntaxKind::StringLiteral
-                    )
-            })
+    /// A flat destructuring declaration `const {a, b: c = d} = value` or
+    /// a flat destructured parameter of a summarized function.
+    fn supported_pattern(&self, pattern: Node) -> bool {
+        flat_pattern(pattern)
+            && match pattern.parent().kind() {
+                SyntaxKind::VariableDeclaration => pattern.parent().initializer().is_some(),
+                SyntaxKind::Parameter => self.owners.contains_key(&pattern.parent().parent()),
+                _ => false,
+            }
+    }
+
+    /// The cell receiving a summarized function's argument.
+    fn parameter_cell(&self, function: usize, position: usize) -> Option<CellId> {
+        let f = &self.functions[function];
+        match f.patterns[position] {
+            Some(cell) => Some(cell),
+            None => self
+                .symbol(f.parameters[position].name())
+                .and_then(|s| self.bindings.get(&s))
+                .copied(),
+        }
+    }
+
+    /// Loads of a flat object pattern from `receiver`.
+    fn destructure(&mut self, receiver: CellId, pattern: Node) {
+        for element in pattern.elements().iter() {
+            let key = if element.property_name().is_some() {
+                element.property_name()
+            } else {
+                element.name()
+            };
+            let Some(&cell) = self
+                .symbol(element.name())
+                .and_then(|s| self.bindings.get(&s))
+            else {
+                continue;
+            };
+            if receiver == UNKNOWN {
+                self.graph.set_unknown(cell);
+            } else if receiver != EMPTY {
+                self.graph
+                    .flow(receiver, Key::Name(key.text()), cell, false);
+            }
+            if element.initializer().is_some() {
+                let from = self.expr(element.initializer());
+                self.graph.edge(from, cell);
+            }
+            if receiver > EMPTY {
+                let key = self.static_key(key, element.property_name().is_nil());
+                self.accesses.push(Access {
+                    receiver,
+                    key,
+                    operation: false,
+                });
+            }
+        }
     }
 
     fn build(&mut self) -> Result<()> {
@@ -876,7 +974,9 @@ impl Builder<'_, '_> {
             }
         }
         self.graph = Graph::new(self.objects.len(), names);
+        self.exposed = exposed_exports(self.ctx);
         // Function summaries.
+        let mut boundaries = std::collections::BTreeMap::<FunctionBoundary, usize>::new();
         for &file in &files {
             for index in 0..self.ctx.files[file].nodes.len() {
                 let node = self.ctx.files[file].nodes[index];
@@ -897,13 +997,26 @@ impl Builder<'_, '_> {
                 let Some(symbol) = self.symbol(binding) else {
                     continue;
                 };
-                if !self.closed_function(node, binding, symbol) {
+                if let Err(boundary) = self.closed_function(node, binding, symbol) {
+                    *boundaries.entry(boundary).or_default() += 1;
                     continue;
                 }
                 let result = self.graph.cell(false);
                 let index = self.functions.len();
+                let parameters: Vec<Node> = node.parameters().iter().collect();
+                let mut patterns = Vec::new();
+                for &parameter in &parameters {
+                    if parameter.name().kind() == SyntaxKind::Identifier {
+                        patterns.push(None);
+                    } else {
+                        let cell = self.graph.cell(false);
+                        self.annotate(parameter.type_(), cell);
+                        patterns.push(Some(cell));
+                    }
+                }
                 self.functions.push(Function {
-                    parameters: node.parameters().iter().collect(),
+                    parameters,
+                    patterns,
                     result,
                 });
                 self.targets.insert(symbol, index);
@@ -911,6 +1024,11 @@ impl Builder<'_, '_> {
                 self.annotate(node.type_(), result);
             }
         }
+        tracing::debug!(
+            summaries = self.functions.len(),
+            ?boundaries,
+            "function summaries classified"
+        );
         // Bindings: variables, parameters and destructured names.
         for &file in &files {
             let module = is_external_module(self.ctx.files[file].node);
@@ -934,7 +1052,7 @@ impl Builder<'_, '_> {
                     None => {
                         let cell = self.graph.cell(false);
                         self.bindings.insert(symbol, cell);
-                        if !module || in_namespace(node) || !self.ctx.is_internal(symbol) {
+                        if !module || in_namespace(node) || !self.internal(symbol) {
                             self.graph.set_unknown(cell);
                             self.sinks.push(cell);
                         }
@@ -947,7 +1065,7 @@ impl Builder<'_, '_> {
                             || node.parent().parent().kind() == SyntaxKind::VariableStatement
                     }
                     SyntaxKind::Parameter => self.owners.contains_key(&node.parent()),
-                    _ => Self::supported_pattern(node.parent()),
+                    _ => self.supported_pattern(node.parent()),
                 };
                 if !understood {
                     self.graph.set_unknown(cell);
@@ -1020,39 +1138,31 @@ impl Builder<'_, '_> {
                         let from = self.expr(node.initializer());
                         self.graph.edge(from, cell);
                     }
-                } else if Self::supported_pattern(name) {
+                } else if self.supported_pattern(name) {
                     let receiver = self.expr(node.initializer());
-                    for element in name.elements().iter() {
-                        let key = if element.property_name().is_some() {
-                            element.property_name()
-                        } else {
-                            element.name()
-                        };
-                        let Some(&cell) = self
-                            .symbol(element.name())
-                            .and_then(|s| self.bindings.get(&s))
-                        else {
-                            continue;
-                        };
-                        if receiver == UNKNOWN {
-                            self.graph.set_unknown(cell);
-                        } else if receiver != EMPTY {
-                            self.graph
-                                .flow(receiver, Key::Name(key.text()), cell, false);
-                        }
-                        if element.initializer().is_some() {
-                            let from = self.expr(element.initializer());
-                            self.graph.edge(from, cell);
-                        }
-                        if receiver > EMPTY {
-                            let key = self.static_key(key, element.property_name().is_nil());
-                            self.accesses.push(Access {
-                                receiver,
-                                key,
-                                operation: false,
-                            });
-                        }
-                    }
+                    self.destructure(receiver, name);
+                }
+            }
+            SyntaxKind::Parameter => {
+                let Some(&function) = self.owners.get(&node.parent()) else {
+                    return;
+                };
+                let position = node
+                    .parent()
+                    .parameters()
+                    .iter()
+                    .position(|p| p == node)
+                    .expect("parameter belongs to its function");
+                let Some(cell) = self.parameter_cell(function, position) else {
+                    return;
+                };
+                // A default value applies when the argument is undefined.
+                if node.initializer().is_some() {
+                    let from = self.expr(node.initializer());
+                    self.graph.edge(from, cell);
+                }
+                if node.name().kind() == SyntaxKind::ObjectBindingPattern {
+                    self.destructure(cell, node.name());
                 }
             }
             SyntaxKind::BinaryExpression
@@ -1106,13 +1216,10 @@ impl Builder<'_, '_> {
             }
             SyntaxKind::CallExpression => {
                 if let Some(index) = self.target(node) {
-                    let parameters = self.functions[index].parameters.clone();
-                    for (argument, parameter) in node.arguments().iter().zip(parameters) {
+                    let arguments: Vec<Node> = node.arguments().iter().collect();
+                    for (position, argument) in arguments.into_iter().enumerate() {
                         let from = self.expr(argument);
-                        if let Some(&cell) = self
-                            .symbol(parameter.name())
-                            .and_then(|s| self.bindings.get(&s))
-                        {
+                        if let Some(cell) = self.parameter_cell(index, position) {
                             self.graph.edge(from, cell);
                         }
                     }
@@ -1303,14 +1410,21 @@ impl Builder<'_, '_> {
                     } else {
                         ESCAPE
                     }
-                } else if Self::supported_pattern(name) {
+                } else if self.supported_pattern(name) {
                     (None, true)
                 } else {
                     (Some(Preservation2::Unsupported), true)
                 }
             }
+            SyntaxKind::Parameter if parent.initializer() == node => {
+                if self.owners.contains_key(&parent.parent()) {
+                    ACCEPT
+                } else {
+                    ESCAPE
+                }
+            }
             SyntaxKind::BindingElement if parent.initializer() == node => {
-                if Self::supported_pattern(parent.parent()) {
+                if self.supported_pattern(parent.parent()) {
                     ACCEPT
                 } else {
                     ESCAPE
@@ -1825,6 +1939,125 @@ impl Builder<'_, '_> {
     }
 }
 
+/// Exports that code can reach without an indexed reference: every export
+/// of a module whose namespace object is a value (dynamic `import()`,
+/// `import * as ns` used other than as `ns.member`, a namespace re-exported
+/// from an entry, or a namespace that JavaScript imports). A dynamic import
+/// with a computed specifier exposes every module.
+fn exposed_exports(ctx: &mut Ctx) -> HashSet<SymbolId> {
+    let mut modules = Vec::<SymbolId>::new();
+    let mut all = false;
+    for file in 0..ctx.files.len() {
+        for index in 0..ctx.files[file].nodes.len() {
+            let node = ctx.files[file].nodes[index];
+            if node.kind() != SyntaxKind::CallExpression
+                || node.expression().kind() != SyntaxKind::ImportKeyword
+            {
+                continue;
+            }
+            let specifier = node.arguments().first();
+            match specifier {
+                Some(specifier) if specifier.kind() == SyntaxKind::StringLiteral => {
+                    let module = ctx.checker.get_symbol_at_location(specifier, true);
+                    if module.is_some() {
+                        modules.push(module);
+                    }
+                }
+                // A computed specifier with a data-file extension (for
+                // example `./locales/${code}.json`) cannot load a module.
+                Some(specifier)
+                    if specifier.kind() == SyntaxKind::TemplateExpression
+                        && specifier
+                            .template_spans()
+                            .nodes()
+                            .last()
+                            .is_some_and(|span| {
+                                let tail = span.literal().text();
+                                tail.ends_with(".json") || tail.ends_with(".css")
+                            }) => {}
+                _ => all = true,
+            }
+        }
+    }
+    if all {
+        for file in 0..ctx.files.len() {
+            let symbol = ctx.files[file].node.symbol();
+            if symbol.is_some() {
+                modules.push(symbol);
+            }
+        }
+    }
+    // Namespace values: module symbols referenced other than as `ns.member`.
+    let mut symbols: Vec<SymbolId> = ctx.public.iter().copied().collect();
+    symbols.extend(ctx.js_referenced.iter().copied());
+    symbols.sort_by_key(|s| s.0);
+    for symbol in symbols {
+        if ctx
+            .checker
+            .sym(symbol)
+            .flags
+            .intersects(SymbolFlags::VALUE_MODULE)
+        {
+            modules.push(symbol);
+        }
+    }
+    for symbol in ctx.sorted_symbols() {
+        if !ctx
+            .checker
+            .sym(symbol)
+            .flags
+            .intersects(SymbolFlags::VALUE_MODULE)
+        {
+            continue;
+        }
+        let escapes = ctx.refs(symbol).iter().any(|r| match r.kind {
+            RefKind::Alias | RefKind::Declaration => false,
+            _ => {
+                let parent = r.node.parent();
+                !((parent.kind() == SyntaxKind::PropertyAccessExpression
+                    && parent.expression() == r.node)
+                    || (parent.kind() == SyntaxKind::QualifiedName && parent.left() == r.node))
+            }
+        });
+        if escapes {
+            modules.push(symbol);
+        }
+    }
+    let mut exposed = HashSet::new();
+    let mut seen = HashSet::new();
+    while let Some(module) = modules.pop() {
+        let module = ctx.checker.get_merged_symbol_exported(module);
+        if !seen.insert(module)
+            || !ctx
+                .checker
+                .sym(module)
+                .flags
+                .intersects(SymbolFlags::VALUE_MODULE)
+        {
+            continue;
+        }
+        for export in ctx.checker.get_exports_of_module_exported(module) {
+            let target = ctx.skip_alias(export);
+            exposed.insert(export);
+            exposed.insert(target);
+            if ctx
+                .checker
+                .sym(target)
+                .flags
+                .intersects(SymbolFlags::VALUE_MODULE)
+            {
+                modules.push(target);
+            }
+        }
+    }
+    tracing::debug!(
+        modules = seen.len(),
+        symbols = exposed.len(),
+        "module namespace exports exposed"
+    );
+    exposed
+}
+
 /// Byte span of a property name; compiler positions are UTF-8 offsets
 /// including leading trivia.
 fn occurrence(file: &str, node: Node, shorthand: bool) -> Occurrence {
@@ -1866,6 +2099,7 @@ pub(super) fn analyze(ctx: &mut Ctx, options: Options) -> Result<Vec<Object>> {
         annotations: Vec::new(),
         sinks: Vec::new(),
         constraints: Vec::new(),
+        exposed: HashSet::new(),
     };
     builder.build()?;
     builder.finish()
