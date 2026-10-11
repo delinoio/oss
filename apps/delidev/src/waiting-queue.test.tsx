@@ -18,7 +18,7 @@ function fixture() {
  const move=vi.fn(async(request:MoveQueuedInputRequest)=>({change:{requestId:request.mutation!.requestId,session},currentQueueGeneration:9007199254740994n}));
  const transport=createRouterTransport(router=>router.service(SessionService,{listWaitingQueue:read,moveQueuedInput:move}));
  const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
- const view=(revision="1")=><TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><WaitingQueue sessionId={session.id} session={session} active revision={revision} drafts={new Map()} saveDraft={()=>{}} readOnly={false} refreshHistory={()=>{}}/></MutationIntents></QueryClientProvider></TransportProvider>;
+ const view=(revision="1",readOnly=false)=><TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><WaitingQueue sessionId={session.id} session={session} active revision={revision} drafts={new Map()} saveDraft={()=>{}} readOnly={readOnly} refreshHistory={()=>{}}/></MutationIntents></QueryClientProvider></TransportProvider>;
  return {session,rows,read,move,view,replace:(next:typeof rows)=>{visible=next;}};
 }
 it("uses authoritative move-before revisions and exact bigint generations without optimistic ordering",async()=>{
@@ -55,4 +55,52 @@ it("retains movement when the response has no original acknowledgement",async()=
  fireEvent.click(screen.getByRole("button",{name:"Retry the same movement"}));await waitFor(()=>expect(f.move).toHaveBeenCalledTimes(2));
  expect(f.move.mock.calls[1][0]).toEqual(original);
  await waitFor(()=>expect(screen.queryByRole("button",{name:"Retry the same movement"})).toBeNull());
+});
+
+it("drops at the final row boundary with the original end movement and restores focus after acknowledgement",async()=>{
+ const f=fixture(); const view=render(f.view()); await screen.findByText("Third");
+ const first=screen.getByText("First").closest("article")!;
+ const handle=within(first).getByRole("button",{name:"Move waiting input"});
+ const end=view.container.querySelector<HTMLElement>(".queue-drop-end")!;
+ expect(end.parentElement?.querySelector(".queue-preview")?.textContent).toBe("Third");
+ expect(end.dataset.dragging).toBe("false");
+ fireEvent.dragStart(handle,{dataTransfer:{setData:vi.fn()}});
+ expect(end.dataset.dragging).toBe("true");
+ fireEvent.dragOver(end);
+ fireEvent.drop(end);
+ await waitFor(()=>expect(f.move).toHaveBeenCalledOnce());
+ expect(f.move.mock.calls[0][0]).toMatchObject({mutation:{id:f.rows[0].id,expectedRevision:3n},sessionId:f.session.id,expectedQueueGeneration:9007199254740993n,beforeInputId:"",beforeInputRevision:0n});
+ await waitFor(()=>expect(document.activeElement).toBe(handle));
+ expect(end.dataset.dragging).toBe("false");
+});
+it("retains a singleton terminal anchor and original final keyboard movement boundary",async()=>{
+ const f=fixture(); f.replace([f.rows[0]]);const view=render(f.view());await screen.findByText("First");
+ const anchor=view.container.querySelector(".sidebar-continuation")!;
+ expect(anchor.textContent).toBe("");expect(anchor.childElementCount).toBe(0);
+ const row=screen.getByText("First").closest("article")!;
+ fireEvent.click(within(row).getByRole("button",{name:"More input actions"}));
+ expect((within(row).getByRole("menuitem",{name:"Move up"}) as HTMLButtonElement).disabled).toBe(true);
+ expect((within(row).getByRole("menuitem",{name:"Move down"}) as HTMLButtonElement).disabled).toBe(true);
+ expect(f.move).not.toHaveBeenCalled();
+ f.replace([]);view.rerender(f.view("2"));
+ await waitFor(()=>expect(view.container.querySelector(".queue-compact-list")?.hasAttribute("hidden")).toBe(true));
+});
+
+it("keeps the original keyboard move-down operation at the final loaded boundary",async()=>{
+ const f=fixture();render(f.view());await screen.findByText("Third");
+ const second=screen.getByText("Second").closest("article")!;
+ fireEvent.click(within(second).getByRole("button",{name:"More input actions"}));
+ fireEvent.click(within(second).getByRole("menuitem",{name:"Move down"}));
+ await waitFor(()=>expect(f.move).toHaveBeenCalledOnce());
+ expect(f.move.mock.calls[0][0]).toMatchObject({mutation:{id:f.rows[1].id,expectedRevision:4n},sessionId:f.session.id,expectedQueueGeneration:9007199254740993n,beforeInputId:"",beforeInputRevision:0n});
+});
+
+it("disables the final overlay when the current queue becomes read-only during a drag",async()=>{
+ const f=fixture();const view=render(f.view());await screen.findByText("Third");
+ const handle=within(screen.getByText("First").closest("article")!).getByRole("button",{name:"Move waiting input"});
+ fireEvent.dragStart(handle,{dataTransfer:{setData:vi.fn()}});
+ const end=view.container.querySelector<HTMLElement>(".queue-drop-end")!;
+ expect(end.dataset.dragging).toBe("true");
+ view.rerender(f.view("1",true));expect(end.dataset.dragging).toBe("false");
+ fireEvent.drop(end);expect(f.move).not.toHaveBeenCalled();
 });

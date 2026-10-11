@@ -43,7 +43,8 @@
     "test:integration:1": "vitest run .integration.test. --shard=1/2",
     "test:integration:2": "vitest run .integration.test. --shard=2/2",
     "ci:qa": "node --test scripts/qa/*.test.mjs",
-    "test:command-menu-layout": "node scripts/test-command-menu-layout.mjs"
+    "test:command-menu-layout": "node scripts/test-command-menu-layout.mjs",
+    "test:waiting-queue-layout": "node scripts/test-waiting-queue-layout.mjs"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.14.0",
