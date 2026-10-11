@@ -3,11 +3,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 const app = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const modulePath = process.env.DELIDEV_LAYOUT_PLAYWRIGHT_MODULE;
-const { chromium } = await import(modulePath ? pathToFileURL(resolve(modulePath)).href : "playwright");
+const { chromium } = await import("playwright");
 const css = (await Promise.all(["themes.css", "styles.css", "session.css"].map(name => readFile(resolve(app, "src", name), "utf8")))).join("\n");
 const browser = await chromium.launch({ headless: true });
 let cases = 0;

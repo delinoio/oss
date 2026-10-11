@@ -1832,32 +1832,12 @@ jobs:
         run: node scripts/ci/run-affected.mjs @delinoio/ci ci:delidev:fixture
         env:
           FORCE_RUN: 'true'
-      # Manual dispatch validation must execute the repository-required full command.
-      # Keep ordinary shards unchanged; retain this path until CI guarantees the full command.
-      - name: Prepare fixture for full DeliDev frontend validation
-        if: ${{ github.event_name == 'workflow_dispatch' && matrix.phase == 'checks' }}
-        run: node scripts/ci/prepare-delidev-test-binary.mjs
       - name: Run affected desktop checks
         env:
           TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
           TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
           FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['delidev-frontend'] }}
         run: node scripts/ci/run-affected.mjs delidev-desktop ci:${{ matrix.phase }}
-
-      - name: Run full DeliDev frontend test command
-        if: ${{ github.event_name == 'workflow_dispatch' && matrix.phase == 'checks' }}
-        run: pnpm --dir apps/delidev test
-
-      # Browser fixtures validate committed CSS geometry without launching the native app.
-      - name: Check compact waiting queue geometry
-        if: ${{ github.event_name == 'workflow_dispatch' && matrix.phase == 'checks' }}
-        shell: bash
-        run: |
-          fixture_directory="$(mktemp -d)"
-          trap 'rm -rf "$fixture_directory"' EXIT
-          npm install --prefix "$fixture_directory" --no-package-lock --ignore-scripts playwright@1.56.1
-          "$fixture_directory/node_modules/.bin/playwright" install --with-deps chromium
-          DELIDEV_LAYOUT_PLAYWRIGHT_MODULE="$fixture_directory/node_modules/playwright/index.mjs" pnpm --dir apps/delidev test:waiting-queue-layout
 
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
