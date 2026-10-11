@@ -184,6 +184,8 @@ func TestRemoteControlReaderFencesAcceptedInputAndJoinsOriginalClose(t *testing.
 	if completed.Turn.Status != TurnCompleted || c.problem != problem || !c.execution.paused {
 		t.Fatal("terminal replaced original recovery")
 	}
+	// The fixture emits a status supplement after the terminal event.
+	nextKind(t, c, ThreadStatusEvent)
 	// A malformed later event must not replace the first policy cause either.
 	fixtureSignal(t, c, "notify", map[string]any{"method": "remoteControl/status/changed", "params": map[string]any{"status": "unknown"}})
 	_, err = c.NextEvent(context.Background())
