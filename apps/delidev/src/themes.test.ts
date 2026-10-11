@@ -7,6 +7,7 @@ import { visibleFocusColor } from "./appearance-preferences";
 
 const directory = join(process.cwd(), "src");
 const source = readFileSync(join(directory, "themes.css"), "utf8");
+const usageStyles = readFileSync(join(directory, "usage.css"), "utf8");
 const quotaColors = readFileSync(join(directory, "quota-color.ts"), "utf8");
 const palettes = [
   ...source.matchAll(/color-scheme: (?:light|dark);([^}]+)/g),
@@ -108,6 +109,12 @@ test("semantic text, states, primary controls and focus retain accessible contra
       contrast(palette.get("control-border")!, palette.get("surface")!),
     ).toBeGreaterThanOrEqual(3);
   }
+});
+
+test("Usage token breakdown focus uses the inverse-surface contrast token", () => {
+  expect(usageStyles).toMatch(
+    /:root\s+\.usage-page\s+\.usage-summary-breakdown\s*>\s*\.disclosure-header:focus-visible\s*\{\s*outline-color:\s*var\(--on-inverse\);\s*\}/u,
+  );
 });
 
 test("all native modal backdrops use the same subtle dimming token without surface overrides", () => {
