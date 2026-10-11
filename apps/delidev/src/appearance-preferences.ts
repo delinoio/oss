@@ -258,10 +258,7 @@ export function applyAppearanceColors(
   const rule = sheet.cssRules[0] as CSSStyleRule;
   for (const [token, value] of Object.entries(colors))
     rule.style.setProperty(`--${token}`, value);
-  rule.style.setProperty(
-    "--revert-hover-surface",
-    visibleHoverSurface(colors),
-  );
+  rule.style.setProperty("--revert-hover-surface", visibleHoverSurface(colors));
   rule.style.setProperty(
     "--focus-on-selected",
     visibleFocusColor(colors.focus, colors["surface-selected"]),
