@@ -85,8 +85,6 @@ try {
       ? { channel: process.env.DELIDEV_LAYOUT_BROWSER_CHANNEL }
       : {}),
   });
-  const page = await browser.newPage();
-  page.on("pageerror", (error) => errors.push(error.message));
   const origin = `http://127.0.0.1:${server.address().port}`;
   const sizes = [
     { width: 1440, height: 900 },
@@ -98,10 +96,18 @@ try {
   for (const language of ["en", "ko"])
     for (const theme of ["light", "dark", "system"])
       for (const size of sizes) {
-        await page.setViewportSize({ width: size.width, height: size.height });
+        // Model effective browser zoom with CSS viewport reflow, rather than
+        // scaling top-layer viewport units through body CSS zoom.
+        const scale = size.zoom ?? 1;
+        const page = await browser.newPage({
+          viewport: { width: size.width / scale, height: size.height / scale },
+          deviceScaleFactor: scale,
+        });
+        page.setDefaultTimeout(5000);
+        page.on("pageerror", (error) => errors.push(error.message));
         await page.emulateMedia({ colorScheme: "dark" });
         await page.goto(
-          `${origin}/?language=${language}&theme=${theme}&zoom=${size.zoom ?? 1}`,
+          `${origin}/?language=${language}&theme=${theme}&zoom=1`,
         );
         await page
           .getByRole("heading", { name: "Synthetic Browser session" })
@@ -111,13 +117,13 @@ try {
             ? {
                 conversation: "Conversation",
                 browser: "Browser",
-                open: "Open account browser",
+                open: "Open page",
                 files: "Files",
               }
             : {
                 conversation: "대화",
                 browser: "브라우저",
-                open: "계정 브라우저 열기",
+                open: "페이지 열기",
                 files: "파일",
               };
         const composer = page.locator(".composer textarea");
@@ -399,6 +405,7 @@ try {
           }) + "\n",
         );
         cases++;
+        await page.close();
       }
   assert.deepEqual(errors, []);
   process.stdout.write(
