@@ -169,7 +169,6 @@ function ManagedSkillCatalog({
   const [deleting, setDeleting] = useState<ManagedSkillPackage>();
   const [viewing, setViewing] = useState<ManagedSkillPackage>();
   const [failure, setFailure] = useState<unknown>();
-  const trigger = useRef<HTMLButtonElement | null>(null);
   const live = useRef(active);
   live.current = active;
   useEffect(
@@ -264,11 +263,10 @@ function ManagedSkillCatalog({
         </label>
         <SettingsActionButton
           icon={SettingsActionIcon.Add}
-          ref={trigger}
           type="button"
           disabled={blocked}
           onClick={(event) => {
-            trigger.current = event.currentTarget;
+            event.currentTarget.focus();
             setDirectory("");
             setImporting(true);
           }}
@@ -341,7 +339,7 @@ function ManagedSkillCatalog({
                 type="button"
                 disabled={!active}
                 onClick={(e) => {
-                  trigger.current = e.currentTarget;
+                  e.currentTarget.focus();
                   setViewing(p);
                 }}
               >
@@ -371,7 +369,7 @@ function ManagedSkillCatalog({
                 type="button"
                 disabled={blocked || Boolean(p.agent_references?.length)}
                 onClick={(e) => {
-                  trigger.current = e.currentTarget;
+                  e.currentTarget.focus();
                   setDeleting(p);
                 }}
               >
@@ -382,11 +380,7 @@ function ManagedSkillCatalog({
         ))}
       </div>
       {importing ? (
-        <Modal
-          title={copy("managed-skills.import")}
-          close={dismiss}
-          returnFocus={trigger}
-        >
+        <Modal title={copy("managed-skills.import")} close={dismiss}>
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -419,11 +413,7 @@ function ManagedSkillCatalog({
         </Modal>
       ) : null}
       {deleting ? (
-        <Modal
-          title={copy("managed-skills.delete")}
-          close={dismiss}
-          returnFocus={trigger}
-        >
+        <Modal title={copy("managed-skills.delete")} close={dismiss}>
           <p>{copy("managed-skills.deleteConfirm", { name: deleting.name })}</p>
           <button
             type="button"
@@ -446,7 +436,7 @@ function ManagedSkillCatalog({
         </Modal>
       ) : null}
       {viewing ? (
-        <Modal title={viewing.name} close={dismiss} returnFocus={trigger}>
+        <Modal title={viewing.name} close={dismiss}>
           <ManagedSkillView machine={machine} entry={viewing} active={active} />
           <button type="button" onClick={dismiss}>
             {copy("managed-skills.close")}
