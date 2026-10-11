@@ -27,7 +27,7 @@ import { ImageAttachmentInput, RetainedImages, imageEntryHandlers } from "./imag
 import { useImageDraft, useImageRoute } from "./image-drafts";
 import { RunnerTaskRemediation } from "./session-runner-remediation";
 import { sessionControlEligibility, useSessionControl } from "./session-control";
-import { paginationIdentity, paginationRevision } from "./scroll-pagination";
+import { paginationIdentity, paginationRevision, ReadStage } from "./scroll-pagination";
 import { useConversationDrafts } from "./conversation-drafts";
 import { initialInteractionDraft, interactionRequestIdentity, type InboxInteractionDraft } from "./inbox-drafts";
 import { useConversationPages } from "./conversation-pagination";
@@ -465,6 +465,8 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   };
   const shortcuts = useShortcuts([
     ...(!embedded ? Array.from({length:9},(_,index)=>({id: tabShortcutIds[index]!,scope:Surface.Sessions,label:`shortcuts.tab${index+1}` as import("./localization").MessageKey,bindings:[{key:String(index+1),primary:true}],input:ShortcutInput.Allow,terminal:true,active,enabled:index<tabs.tabs.length,run:()=>{document.getElementById(`session-tab-${id}-${index}`)?.focus({preventScroll:true});tabs.store.position(id,index+1);}})) : []),
+    // Fixed primary+W closes the selected closeable tool tab; Conversation stays pinned and the chord never reaches the window.
+    ...(!embedded ? [{id:ShortcutId.SessionCloseTab,scope:Surface.Sessions,label:"shortcuts.closeTab" as import("./localization").MessageKey,bindings:[{key:"w",primary:true}],input:ShortcutInput.Allow,terminal:true,active,enabled:tabs.tabs.findIndex(tab=>sessionTabKey(tab)===tabs.selected)>0,unavailableReason:"shortcuts.conversationTabPinned" as import("./localization").MessageKey,run:()=>closeTab(tabs.selected)}] : []),
     { id: ShortcutId.SessionFocus, scope: Surface.Sessions, label: "shortcuts.focusMessage", bindings: [{ key: "i", primary: true }], input: ShortcutInput.Allow, active: conversationActive, enabled: !locked, unavailableReason: "shortcuts.pending", run: () => composer.current?.focus() },
     { id: ShortcutId.SessionSend, scope: Surface.Sessions, label: "shortcuts.queueMessage", bindings: [{ key: "Enter" }, { key: "Enter", primary: true }], target: composer, input: ShortcutInput.Target, active: conversationActive, enabled: canSend, unavailableReason: locked ? "shortcuts.pending" : text(data.archive) !== "active" ? "shortcuts.activeSessionRequired" : "shortcuts.messageRequired", run: () => composer.current?.form?.requestSubmit() },
     { id: ShortcutId.SessionNewline, scope: Surface.Sessions, label: "shortcuts.newline", bindings: [{ key: "Enter", shift: true }], target: composer, input: ShortcutInput.Target, execution: ShortcutExecution.Native, active: conversationActive, enabled: !locked, unavailableReason: "shortcuts.pending" },
@@ -499,7 +501,9 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   // Evicted payloads can contain waiting inputs. Keep their exact restoration
   // controls reachable; retained IDs alone cannot establish an empty queue.
   const completeQueuePayloads = queue.pages.every(page => queue.payloadPages.some(payload => payload.token === page.token));
-  const confirmedEmptyQueue = live.state === ConnectionState.Live && !live.error && Boolean(queue.data) && !queue.error && !queue.isPending && !queue.loading && !queue.nextPageToken && completeQueuePayloads && !queued.length;
+  const queueFailed = useRef(false);
+  if (queue.error) queueFailed.current = true; else if (!queue.isPending && !queue.loading) queueFailed.current = false;
+  const confirmedEmptyQueue = !queueFailed.current && live.state === ConnectionState.Live && !live.error && Boolean(queue.data) && !queue.error && !queue.isPending && (!queue.loading || queue.loading === ReadStage.Refresh || queue.loading === ReadStage.Reload) && !queue.nextPageToken && completeQueuePayloads && !queued.length;
   const presentedQueueIds = new Set(queue.payloadPages.flatMap(page => queueRows(page.payload, live.resources, live.removed, [], id, false).filter(row => isQueuedInput(row) || isImageStartupRejectedInput(row, session)).map(row => row.id)).concat(!queue.nextPageToken ? [...queued, ...imageRejected].filter(row => !queue.rows.some(known => known.id === row.id)).map(row => row.id) : []));
   const panelButtons = {
     [SessionPanel.Files]: filesButton, [SessionPanel.Diff]: diffButton,
@@ -614,7 +618,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         </SessionActions>
       </div>
     </header>
-    {!embedded ? <div className="session-navigation"><SessionTabBar id={id} tabs={tabs.tabs} selected={tabs.selected} select={key=>tabs.store.select(id,key)} close={closeTab}/><SessionToolMenu active={active}>{tools.map(tool => <button role="menuitem" key={tool.panel} type="button" ref={panelButtons[tool.panel]} disabled={tool.panel===SessionPanel.Terminals&&Boolean(object(data.fork).sidechat_parent_snapshot)} onClick={()=>togglePanel(tool.panel)}><SessionIcon kind={tool.icon}/>{tool.label}</button>)}{session && tabs.tab.kind !== SessionTabKind.Sidechat && tabs.tab.kind !== SessionTabKind.PendingSidechat ? <SessionForkAction source={session} action={SessionCreationAction.Sidechat} disabled={control.busy || control.uncertain}/> : null}</SessionToolMenu></div> : null}
+    {!embedded ? <div className="session-navigation"><SessionTabBar id={id} tabs={tabs.tabs} selected={tabs.selected} select={key=>tabs.store.select(id,key)} close={closeTab} closeAria={shortcuts.aria(ShortcutId.SessionCloseTab)}/><SessionToolMenu active={active}>{tools.map(tool => <button role="menuitem" key={tool.panel} type="button" ref={panelButtons[tool.panel]} disabled={tool.panel===SessionPanel.Terminals&&Boolean(object(data.fork).sidechat_parent_snapshot)} onClick={()=>togglePanel(tool.panel)}><SessionIcon kind={tool.icon}/>{tool.label}</button>)}{session && tabs.tab.kind !== SessionTabKind.Sidechat && tabs.tab.kind !== SessionTabKind.PendingSidechat ? <SessionForkAction source={session} action={SessionCreationAction.Sidechat} disabled={control.busy || control.uncertain}/> : null}</SessionToolMenu></div> : null}
     <div className="session-content">
     <div id={`session-pane-${id}`} role={embedded ? undefined : "tabpanel"} aria-labelledby={embedded ? undefined : `session-tab-${id}-${tabs.tabs.findIndex(tab=>sessionTabKey(tab)===tabs.selected)}`} ref={upperContent} className="session-upper-content">
     <div ref={conversationRegion} className="session-conversation-region">
@@ -666,6 +670,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
         </Disclosure> : null}
         <PendingQueueInputs sessionId={id} presentInputIds={presentedQueueIds} refresh={queue.refresh} />
         {waitingSupported ? <WaitingQueue sessionId={id} session={session} active={conversationActive} revision={waitingRevision} drafts={queueDrafts.values} saveDraft={queueDrafts.save} readOnly={live.state !== ConnectionState.Live || Boolean(live.error)} refreshHistory={queue.refresh} /> : null}
+        {!waitingSupported ? <p className="sidebar-sr-only" role="status" aria-live="polite">{confirmedEmptyQueue && queue.loading ? copy("session.loadingQueue") : ""}</p> : null}
         <div ref={queueRoot} className={`session-tray-content ${queued.some(isQueuedInput) ? "queue-compact-list" : "queue-read-state"}`} hidden={waitingSupported || confirmedEmptyQueue} aria-label={waitingSupported || confirmedEmptyQueue ? undefined : copy("queue.waitingInputs")}>
           {queue.isPending ? <p role="status">{copy("session.loadingQueue")}</p> : null}<Failure failure={queue.error?.failure} />
             <ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={queue} root={queueRoot} active={conversationActive}>{payload => queueRows(payload, live.resources, live.removed, [], id, false).filter(isQueuedInput).map(row => <QueuedInput compact active={conversationActive} key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />)}</ScrollPayloadWindow>{!queue.nextPageToken ? [...queued, ...imageRejected].filter(row => !queue.rows.some(known => known.id === row.id)).map(row => <QueuedInput compact active={conversationActive} key={row.id} resource={row} session={session} refresh={queue.refresh} draft={queueDrafts.values.get(row.id)} changeDraft={value => queueDrafts.save(row.id, value)} readOnly={Boolean(queue.error)} />) : null}

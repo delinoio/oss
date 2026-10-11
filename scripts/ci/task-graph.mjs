@@ -37,7 +37,7 @@ export function jobTaskGraph(job) {
       // The closed desktop matrix selects one phase at runtime. Contract
       // inventory follows every phase without treating expression words as tasks.
       if (match[2] === "ci:${{ matrix.phase }}") {
-        for (const phase of ["checks", "tests-1", "tests-2"]) visit(match[1], `ci:${phase}`);
+        for (const phase of ["checks", "tests-1", "tests-2", "tests-3", "tests-4"]) visit(match[1], `ci:${phase}`);
       } else for (const name of match[2].split(" ")) visit(match[1], name);
     }
     const rust = run?.match(/^node scripts\/ci\/run-rust\.mjs (test|clippy)$/u);
