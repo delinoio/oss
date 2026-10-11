@@ -25,6 +25,8 @@ pub enum Preservation {
 
 #[derive(Clone, Debug)]
 pub struct Occurrence {
+    /// Module containing the occurrence. Object regions can span modules.
+    pub file: String,
     pub start: usize,
     pub end: usize,
     pub shorthand: bool,
@@ -32,6 +34,9 @@ pub struct Occurrence {
     /// Type-only occurrence (for example an inline parameter type) that is
     /// renamed for consistency but removed from emitted JavaScript.
     pub erased: bool,
+    /// String literal whose runtime value reaches computed property keys
+    /// only (finite-key coordination).
+    pub key: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -77,6 +82,15 @@ pub struct Allocation {
     pub start: usize,
     pub edits: Vec<(String, Edit)>,
     pub mappings: Vec<Mapping>,
+    /// The unit renames a property whose original name also belongs to
+    /// another object region; without disambiguation both would form one
+    /// name-based identity.
+    pub separated: bool,
+    /// The unit receives a name that another region also uses; without
+    /// ambiguation every new name is globally unique.
+    pub reused: bool,
+    /// The unit renames string-literal keys of finite computed accesses.
+    pub finite_keys: bool,
 }
 
 struct Group {
@@ -215,6 +229,24 @@ pub fn allocate(objects: &mut [Object], strategy: Strategy) -> (Vec<Allocation>,
         used_globally.insert(candidate.clone());
         renamed[g] = Some(candidate);
     }
+    // Attribution facts. An original name shared by several objects is only
+    // independent with disambiguation; a final name used by several groups
+    // (or equal to another object's retained name) is only available with
+    // ambiguation.
+    let mut name_objects = BTreeMap::<&str, BTreeSet<usize>>::new();
+    for (o, object) in objects.iter().enumerate() {
+        for property in &object.properties {
+            name_objects.entry(&property.name).or_default().insert(o);
+        }
+    }
+    let mut final_names = BTreeMap::<String, BTreeSet<usize>>::new();
+    for (g, group) in groups.iter().enumerate() {
+        let (o, p) = group.members[0];
+        let name = renamed[g]
+            .clone()
+            .unwrap_or_else(|| objects[o].properties[p].name.clone());
+        final_names.entry(name).or_default().insert(g);
+    }
     let mut units = BTreeMap::<usize, Allocation>::new();
     let mut preserved = Vec::new();
     for (g, group) in groups.iter().enumerate() {
@@ -243,10 +275,23 @@ pub fn allocate(objects: &mut [Object], strategy: Strategy) -> (Vec<Allocation>,
                 start: object.start,
                 edits: Vec::new(),
                 mappings: Vec::new(),
+                separated: false,
+                reused: false,
+                finite_keys: false,
             });
+            unit.separated |= strategy.disambiguate
+                && name_objects
+                    .get(property.name.as_str())
+                    .is_some_and(|set| set.len() > 1);
+            unit.reused |= strategy.ambiguate
+                && (final_names.get(new_name).is_some_and(|set| set.len() > 1)
+                    || name_objects
+                        .get(new_name.as_str())
+                        .is_some_and(|set| set.iter().any(|&other| other != o)));
             for occurrence in &property.occurrences {
+                unit.finite_keys |= occurrence.key;
                 unit.edits.push((
-                    object.file.clone(),
+                    occurrence.file.clone(),
                     Edit {
                         start: occurrence.start,
                         end: occurrence.end,
@@ -292,11 +337,13 @@ mod tests {
             name: name.into(),
             occurrences: (0..count)
                 .map(|i| Occurrence {
+                    file: "input.ts".into(),
                     start: base + i * 30,
                     end: base + i * 30 + name.len(),
                     shorthand: false,
                     quoted: false,
                     erased: false,
+                    key: false,
                 })
                 .collect(),
         }
