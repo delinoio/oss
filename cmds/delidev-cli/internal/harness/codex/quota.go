@@ -259,7 +259,7 @@ func ValidateQuotaSecrets(value domain.SubscriptionQuotaObservation, secrets ...
 			return subscription.Invalid()
 		}
 		needle := []byte(token)
-		if len(needle) >= 8 && bytes.Contains(projected, needle) {
+		if reflected, err := quotaContainsProtectedSubstring(projected, token); err != nil || reflected {
 			return subscription.Invalid()
 		}
 		for _, encoding := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
@@ -272,6 +272,28 @@ func ValidateQuotaSecrets(value domain.SubscriptionQuotaObservation, secrets ...
 		}
 	}
 	return nil
+}
+
+// quotaContainsProtectedSubstring also checks JSON-escaped protected text because
+// json.Marshal escapes quotes, backslashes, and HTML-sensitive characters.
+func quotaContainsProtectedSubstring(projected []byte, protected string) (bool, error) {
+	if len(protected) < 8 {
+		return false, nil
+	}
+	needle := []byte(protected)
+	defer clear(needle)
+	if bytes.Contains(projected, needle) {
+		return true, nil
+	}
+	escaped, err := json.Marshal(protected)
+	if err != nil {
+		return false, err
+	}
+	defer clear(escaped)
+	if len(escaped) < 2 {
+		return false, nil
+	}
+	return bytes.Contains(projected, escaped[1:len(escaped)-1]), nil
 }
 
 // Only the adapter-owned final window suffix is removed. Exact matching keeps

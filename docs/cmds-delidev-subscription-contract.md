@@ -658,9 +658,11 @@ suffix matching and reset/paid-credit identifier checks remain unchanged.
 
 Exact matching preserves harmless short-word substrings and removes only the
 original final primary, secondary or spend suffix. Long protected substring
-checks retain their existing behavior. An absent display name adds no reflection
-input. External access-token-only quota lacks a parsed name source and retains
-only its original token/account scope; never infer or import a display name.
+checks compare raw values and their JSON-escaped forms, so quotes, backslashes
+and HTML-sensitive escaping cannot hide reflections. An absent display name adds
+no reflection input. External access-token-only quota lacks a parsed name source
+and retains only its original token/account scope; never infer or import a display
+name.
 Reflection rejection preserves last good values/timestamps, exhaustion state,
 immutable operation receipts and independently confirmed protected cleanup.
 Raw names, native responses and credentials remain excluded from diagnostics.

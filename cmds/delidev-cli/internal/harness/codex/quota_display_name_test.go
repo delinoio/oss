@@ -83,6 +83,27 @@ func TestQuotaDisplayNameRejectsShortRawAndAllCompleteEncodings(t *testing.T) {
 		}
 	}
 }
+
+func TestQuotaDisplayNameRejectsEscapedJSONSubstrings(t *testing.T) {
+	for _, source := range []string{"name", "profile"} {
+		for _, name := range []string{`Jane "JJ" Doe`, `Jane \JJ\ Doe`, "<Jane & Doe>"} {
+			home := t.TempDir()
+			if err := security.WriteAtomic(filepath.Join(home, "auth.json"), quotaDisplayNameBundle(t, source, name)); err != nil {
+				t.Fatal(err)
+			}
+			client := &Client{managedHome: home}
+			windowID := "prefix-" + name + ":primary"
+			if err := client.validateQuotaReflection(domain.SubscriptionQuotaObservation{Windows: []domain.SubscriptionQuotaWindow{{ID: windowID}}}); err == nil {
+				t.Fatalf("escaped display-name substring accepted from %s claim", source)
+			}
+			balance := "prefix-" + name
+			if err := client.validateQuotaReflection(domain.SubscriptionQuotaObservation{PaidCredits: []domain.SubscriptionPaidCreditBucket{{ID: "credit", Balance: &balance}}}); err == nil {
+				t.Fatalf("escaped display-name balance accepted from %s claim", source)
+			}
+		}
+	}
+}
+
 func TestQuotaDisplayNameOmissionDoesNotInventExternalAuthority(t *testing.T) {
 	home := t.TempDir()
 	if err := security.WriteAtomic(filepath.Join(home, "auth.json"), quotaDisplayNameBundle(t, "name", "")); err != nil {
