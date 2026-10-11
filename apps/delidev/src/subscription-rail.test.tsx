@@ -59,7 +59,7 @@ function resource(name: string, service = "chatgpt", extra = {}): Resource {
           id: "weekly",
           remaining: 0.28,
           state: "observed",
-          observed_at: new Date().toISOString(),
+          observed_at: new Date(now).toISOString(),
           comparison_group: "weekly",
           blocking: true,
         },
@@ -327,7 +327,7 @@ it("refreshes reached pages atomically without discovering an unseen tail", asyn
                 id: "weekly",
                 remaining: 0.64,
                 state: "observed",
-                observed_at: new Date().toISOString(),
+                observed_at: new Date(now).toISOString(),
                 comparison_group: "weekly",
                 blocking: true,
               },
@@ -556,7 +556,7 @@ it("shows sidebar reset countdowns without quota or account operations", async (
         id: "weekly",
         remaining: 0.28,
         state: "observed",
-        observed_at: new Date().toISOString(),
+        observed_at: new Date(now).toISOString(),
         reset_at: reset,
         comparison_group: "weekly",
         blocking: true,
@@ -600,7 +600,7 @@ it.each([
         id: "weekly",
         remaining: 0.28,
         state: "observed",
-        observed_at: new Date().toISOString(),
+        observed_at: new Date(now).toISOString(),
         comparison_group: "weekly",
         blocking: true,
       },
@@ -628,7 +628,7 @@ it.each([
         id: "weekly",
         remaining: 0.28,
         state: "failed",
-        observed_at: new Date().toISOString(),
+        observed_at: new Date(now).toISOString(),
         comparison_group: "weekly",
         blocking: true,
       },
@@ -815,7 +815,7 @@ it("retains duplicate-alias ownership and every native window in original order 
     remaining: 0.57,
     blocking: true,
     comparison_group: "shared",
-    observed_at: new Date().toISOString(),
+    observed_at: new Date(now).toISOString(),
   });
   const rows = ["chatgpt", "claude", "grok"].flatMap((service) => [
     resource("Same alias", service, {
@@ -897,7 +897,7 @@ for (const [name, extra, percent, state] of [
             remaining: 0.57,
             blocking: true,
             comparison_group: "primary",
-            observed_at: new Date().toISOString(),
+            observed_at: new Date(now).toISOString(),
           },
           extra,
         ),
@@ -1172,7 +1172,7 @@ it("retains credit values and timestamps across failed and deferred reads until 
   fireEvent.click(
     within(popup).getByRole("button", { name: "Recheck saved quota evidence" }),
   );
-  await within(popup).findByText("Refresh failed; retained observation");
+  await within(popup).findByText(/Refresh failed; retained observation/);
   expect(within(popup).getByText("60,961.11")).toBeTruthy();
   expect(
     [...popup.querySelectorAll(".subscription-paid-observation time")].map(
@@ -1185,13 +1185,13 @@ it("retains credit values and timestamps across failed and deferred reads until 
   );
   await waitFor(() => expect(f.requests).toHaveBeenCalledTimes(3));
   expect(
-    within(popup).getByText("Refresh failed; retained observation"),
+    within(popup).getByText(/Refresh failed; retained observation/),
   ).toBeTruthy();
   await act(async () => finish({ resources: [replacement] }));
   await within(popup).findByText("12.00");
   expect(within(popup).queryByText("60,961.11")).toBeNull();
   expect(
-    within(popup).queryByText("Refresh failed; retained observation"),
+    within(popup).queryByText(/Refresh failed; retained observation/),
   ).toBeNull();
 });
 it.each([now - 300001, now + 60000])(
