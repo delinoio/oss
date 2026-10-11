@@ -100,7 +100,7 @@ func TestWorkspaceAmbiguityAndDrift(t *testing.T) {
 		name   string
 		refs   map[int][2]string
 		reason string
-	}{{"cycle", map[int][2]string{1: {"a", "b"}, 2: {"b", "a"}}, "cycle"}, {"parents", map[int][2]string{1: {"main", "b"}, 2: {"other", "b"}, 3: {"b", "c"}}, "competing_parents"}} {
+	}{{"self-cycle", map[int][2]string{1: {"same", "same"}}, "cycle"}, {"cycle", map[int][2]string{1: {"a", "b"}, 2: {"b", "a"}}, "cycle"}, {"parents", map[int][2]string{1: {"main", "b"}, 2: {"other", "b"}, 3: {"b", "c"}}, "competing_parents"}} {
 		t.Run(tc.name, func(t *testing.T) {
 			v, e := workspaceFixture(t, tc.refs, nil).Workspace(context.Background(), []byte("private-fixture-pat"), "fixture-owner", "repo", []string{"1"})
 			if e != nil {

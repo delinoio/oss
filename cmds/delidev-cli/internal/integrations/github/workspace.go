@@ -272,6 +272,13 @@ func (c *Client) Workspace(ctx context.Context, token []byte, owner, name string
 		b, _ := strconv.ParseUint(numbers[j], 10, 64)
 		return a < b
 	})
+	for _, n := range numbers {
+		item := nodes[n].Item
+		if item.BaseRef == item.HeadRef && item.HeadRepository != nil && item.HeadRepository.Repository != nil && item.HeadRepository.Repository.ID == result.Repository.ID {
+			reason("cycle")
+			result.State = domain.PRWorkspaceAmbiguous
+		}
+	}
 	parents := map[string]int{}
 	children := map[string][]string{}
 	for _, a := range numbers {
@@ -384,7 +391,11 @@ func (c *Client) Commits(ctx context.Context, token []byte, owner, name, number,
 		if !ok || !fok {
 			return r, queryUnavailable()
 		}
-		commit := domain.PRCommit{SHA: stringField(f, "oid"), Message: stringField(f, "message"), Counts: parseCounts(f), Parents: []string{}}
+		var message string
+		if json.Unmarshal(f["message"], &message) != nil || string(f["message"]) == "null" {
+			return r, queryUnavailable()
+		}
+		commit := domain.PRCommit{SHA: stringField(f, "oid"), Message: message, Counts: parseCounts(f), Parents: []string{}}
 		person := func(raw []byte) (domain.PRCommitPerson, bool) {
 			f, ok := jsonObject(raw)
 			if !ok {

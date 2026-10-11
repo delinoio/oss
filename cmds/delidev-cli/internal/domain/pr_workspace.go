@@ -67,6 +67,8 @@ func (w PRWorkspace) Validate() bool {
 		return false
 	}
 	seen := map[string]RepositoryItem{}
+	identities := map[string]bool{}
+	nodeIDs := map[string]bool{}
 	seeds := map[string]bool{}
 	for _, n := range w.Seeds {
 		if !PositiveDecimal(n) || seeds[n] {
@@ -82,7 +84,21 @@ func (w PRWorkspace) Validate() bool {
 		if _, ok := seen[n.Item.Number]; ok {
 			return false
 		}
+		if identities[n.Item.ID] || nodeIDs[n.Item.NodeID] {
+			return false
+		}
+		identities[n.Item.ID], nodeIDs[n.Item.NodeID] = true, true
 		seen[n.Item.Number] = n.Item
+	}
+	if w.State == PRWorkspaceComplete {
+		if len(w.Reasons) != 0 {
+			return false
+		}
+		for seed := range seeds {
+			if _, ok := seen[seed]; !ok {
+				return false
+			}
+		}
 	}
 	for _, edge := range w.Edges {
 		a, aok := seen[edge.Parent]
