@@ -145,6 +145,29 @@
   margin-bottom: 0;
   color: var(--muted);
 }
+/* Shortcuts uses the available category height. If heading/guidance/footer
+   exceed it, their natural overflow remains reachable through the main owner. */
+.settings-content.settings-shortcuts {
+  height: 100%;
+}
+.settings-shortcuts > .settings-task-background,
+.settings-shortcuts .settings-content-column,
+.settings-shortcuts .settings-shortcut-column {
+  height: 100%;
+  min-height: 0;
+}
+.settings-shortcuts .settings-shortcut-column {
+  display: flex;
+  flex-direction: column;
+}
+.settings-shortcuts .settings-category-heading {
+  flex: 0 0 auto;
+}
+.settings-shortcuts .settings-panels {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
 .settings-content[aria-label] .settings-toolbar {
   display: flex;
   flex-wrap: wrap;
