@@ -871,7 +871,7 @@ export function ConfigurationEditor({
           inline
             ? copy(
                 serverPreferenceSection === ServerPreferenceSection.Harnesses
-                  ? "harness-settings.codex"
+                  ? "harness-settings.harnesses"
                   : "settings.projectDefaultsForm",
               )
             : undefined
@@ -1388,7 +1388,7 @@ export const settingsCategories: Record<
       return copy("harness-settings.harnesses");
     },
     get description() {
-      return copy("harness-settings.help");
+      return copy("harness-settings.allHarnessesHelp");
     },
     kind: EntityKind.SETTINGS,
     area: SettingsArea.Configuration,
@@ -2425,7 +2425,7 @@ function SettingsWorkspace({
                       <p>
                         {copy(
                           isHarnesses
-                            ? "harness-settings.help"
+                            ? "harness-settings.allHarnessesHelp"
                             : "settings.projectDefaultsDescription",
                         )}
                       </p>

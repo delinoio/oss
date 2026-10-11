@@ -48,9 +48,9 @@
   "harness-settings.nativeUnverified": "이 소스의 네이티브 기본값이 검증되지 않았습니다. 기본값을 추정하지 않았습니다.",
   "harness-settings.routeModel": "각 경로의 모델 단계에서 에이전트 워커 모델 또는 상속을 설정하세요. 이 미리 보기는 위 소스의 기본값을 보여 줍니다.",
   "harness-settings.executionGate": "설정 값의 미리 보기입니다. 서버는 실행 전에 선택한 계정, API 프로필, 네이티브 기본값 및 실행 장치 지원을 검증합니다. 빈 값과 0은 명시적 재정의로 유지됩니다.",
-  "harness-settings.saving": "Codex 기본값 저장 중…",
-  "harness-settings.saveUnknown": "Codex 기본값 저장 결과를 확인할 수 없습니다. 초안을 유지하고 원래 저장 결과를 확인한 후 다시 시도하세요.",
-  "harness-settings.unsaved": "저장하지 않은 Codex 기본값",
+  "harness-settings.saving": "하네스 기본값 저장 중…",
+  "harness-settings.saveUnknown": "하네스 기본값 저장 결과를 확인할 수 없습니다. 초안을 유지하고 원래 저장 결과를 확인한 후 다시 시도하세요.",
+  "harness-settings.unsaved": "저장하지 않은 하네스 기본값",
   "harness-settings.reviewerHelp": "AI 자동 검토에는 on-request 승인 정책이 필요합니다. 서버는 실행 전에 적용 정책과 실행 장치 지원을 검증합니다.",
   "harness-settings.webSearch": "웹 검색",
   "harness-settings.useInherited": "상위 설정 사용",
@@ -59,5 +59,12 @@
   "harness-settings.searchLive": "실시간",
   "harness-settings.searchSourceUnavailable": "이 소스의 네이티브 검색 지원을 확인할 수 없습니다. 캐시 또는 실시간을 설정하려면 ChatGPT 구독 범위를 선택하세요.",
   "harness-settings.searchPolicy": "입력을 보내기 전에 네이티브 계정 지원, 프로젝트 제한 및 권한 정책을 확인합니다. 변경 사항은 이후 실행에 적용됩니다.",
-  "harness-settings.retryRead": "설정 다시 읽기"
+  "harness-settings.retryRead": "설정 다시 읽기",
+  "harness-settings.claude": "Claude Code CLI",
+  "harness-settings.claudeHelp": "연결된 서버의 Claude 기본값을 편집합니다. 프로젝트와 에이전트 워커 재정의는 같은 설정을 사용합니다.",
+  "harness-settings.allHarnessesHelp": "연결된 서버의 Codex 및 Claude 기본값을 편집합니다. 프로젝트와 에이전트 워커 재정의는 같은 설정을 사용합니다.",
+  "harness-settings.claudeAllSources": "모든 Claude 소스",
+  "harness-settings.claudeAllServices": "모든 Claude 구독 서비스",
+  "harness-settings.claudePermissionHelp": "Claude는 네이티브 도구 권한 모드를 사용합니다. 계획 입력은 네이티브 Plan 동작을 유지합니다. 서버는 실행 전에 선택한 계정의 모델, 추론 강도 및 권한 지원을 검증합니다.",
+  "harness-settings.claudeExtensionsUnavailable": "이 편집기에서는 추가 Claude 확장 설정을 사용할 수 없습니다. 네이티브 훅, 플러그인, MCP 서버 및 스킬에는 각각 지원되는 설정과 신뢰 제어가 필요합니다."
 }

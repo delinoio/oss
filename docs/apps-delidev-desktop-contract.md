@@ -5376,3 +5376,36 @@ existing semantic light/dark tokens, 40-pixel controls, 8-pixel corners and
 wrapping below 640 pixels follow the surrounding shared editor/session contract.
 Native/account/platform acceptance remains separate from fixtures and browser
 presentation checks.
+
+## Shared Claude Harness settings
+
+Settings > Harnesses > Claude Code CLI and the Project Execution panel use the
+shared Harness settings panel. The selected Claude Agent Worker's Configure step
+uses the same typed editor for `harness_settings`. Server and Project entries use
+`harness_defaults` with the exact `claude-code` source scope. Both harness editors
+remain mounted in one original resource draft and share its Save/Discard,
+expected revision and uncertain request owner. No separate settings store,
+protocol, capability or host-file write is introduced.
+
+Claude exposes model, effort and `claude_permission`. Offer its native permission
+modes and bounded effort choices, retaining unsupported saved values explicitly.
+Empty overrides remain distinct from inheritance. Model steps continue to own
+Agent route selectors. Codex-only sandbox, approval, subagent and tier controls
+are absent; additional Claude extensions show an unavailable reason and cannot
+acquire configuration, trust, credentials or execution authority through this
+menu. Require the existing harness-defaults capability; older peers retain the
+legacy Agent controls. Native support still requires source/account/Runner checks
+at execution admission, and edits cannot alter a running execution's frozen
+configuration.
+
+General, API/Provider/protocol and Claude subscription scopes follow the existing
+[inheritance contract](cmds-delidev-catalog-contract.md#harness-defaults-and-live-inheritance).
+Reset removes only the selected override and previews the current enclosing value
+and observed revision. Preserve other harness entries, unsupported hidden
+selectors, empty/zero values and unrelated resource fields. Failed or incomplete
+ancestor reads disable edits and expose unavailable guidance; stale/reconnected
+reads and uncertain saves retain the original draft. English/Korean search
+indexes bundled Claude labels and help with stable model, effort and permission
+anchors. Use the existing keyboard controls and focus ownership, a 720-pixel
+panel bound, 40-pixel controls and wrapping layout. Native/account/platform
+acceptance remains separate from frontend fixtures and builds.

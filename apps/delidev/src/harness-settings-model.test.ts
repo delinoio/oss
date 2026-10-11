@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, it } from "vitest";
 import {
+  claudeScope,
   codexScope,
   configuredHarnessValue,
   HarnessScopeSource,
@@ -155,4 +156,69 @@ it("updates only the exact source scope and keeps imported selectors and other h
   expect(saved.entries[1].settings).toMatchObject({
     permission: { mode: "inherit" },
   });
+});
+
+it("previews conflicting Claude Agent, Project and exact-source server defaults and reset adopts the current ancestor", () => {
+  const source: HarnessScope = {
+    ...claudeScope,
+    source: HarnessScopeSource.Subscription,
+    subscription_service: "claude",
+  };
+  const server = {
+    version: 1,
+    entries: [
+      { scope: codexScope, settings: { effort: override("foreign") } },
+      { scope: claudeScope, settings: { effort: override("low") } },
+      { scope: source, settings: { effort: override("medium") } },
+    ],
+  };
+  const project = {
+    version: 1,
+    entries: [{ scope: claudeScope, settings: { effort: override("high") } }],
+  };
+  let agent = {
+    version: 1,
+    effort: override("max"),
+    claude_permission: override(""),
+  };
+  const resolve = () =>
+    configuredHarnessValue("effort", [
+      { owner: HarnessSettingsOwner.Agent, settings: [agent], revision: "5" },
+      {
+        owner: HarnessSettingsOwner.Project,
+        settings: matchingHarnessSettings(project, source),
+        revision: "6",
+      },
+      {
+        owner: HarnessSettingsOwner.Server,
+        settings: matchingHarnessSettings(server, source),
+        revision: "7",
+      },
+    ]);
+  expect(resolve()).toEqual({
+    value: "max",
+    owner: HarnessSettingsOwner.Agent,
+    revision: "5",
+  });
+  agent = setHarnessSelector(
+    agent,
+    "effort",
+    HarnessSettingMode.Inherit,
+    "",
+  ) as typeof agent;
+  project.entries[0].settings.effort = override("xhigh");
+  expect(resolve()).toEqual({
+    value: "xhigh",
+    owner: HarnessSettingsOwner.Project,
+    revision: "6",
+  });
+  project.entries[0].settings.effort = { mode: "inherit" } as ReturnType<
+    typeof override
+  >;
+  expect(resolve()).toEqual({
+    value: "medium",
+    owner: HarnessSettingsOwner.Server,
+    revision: "7",
+  });
+  expect(agent.claude_permission).toEqual(override(""));
 });

@@ -48,9 +48,9 @@
   "harness-settings.nativeUnverified": "Native default unverified for this source. No default value has been assumed.",
   "harness-settings.routeModel": "Set the Agent Worker model or inheritance in each route’s Model step. This preview shows defaults for the source above.",
   "harness-settings.executionGate": "This is a configured-value preview. The server verifies the selected account, API profile, native defaults and Runner Device support before execution. Empty values and zero remain explicit overrides.",
-  "harness-settings.saving": "Saving Codex defaults…",
-  "harness-settings.saveUnknown": "Codex defaults save outcome unknown. Keep this draft and inspect the original save before trying again.",
-  "harness-settings.unsaved": "Unsaved Codex defaults",
+  "harness-settings.saving": "Saving Harness defaults…",
+  "harness-settings.saveUnknown": "Harness defaults save outcome unknown. Keep this draft and inspect the original save before trying again.",
+  "harness-settings.unsaved": "Unsaved Harness defaults",
   "harness-settings.reviewerHelp": "AI auto-review requires the on-request approval policy. The server verifies the effective policy and Runner Device support before execution.",
   "harness-settings.webSearch": "Web search",
   "harness-settings.useInherited": "Use inherited setting",
@@ -59,5 +59,12 @@
   "harness-settings.searchLive": "Live",
   "harness-settings.searchSourceUnavailable": "Native search support is unavailable for this source. Choose a ChatGPT subscription scope to configure Cached or Live.",
   "harness-settings.searchPolicy": "Native account support, project restrictions and permission policy are verified before input. Changes apply to future executions.",
-  "harness-settings.retryRead": "Retry settings read"
+  "harness-settings.retryRead": "Retry settings read",
+  "harness-settings.claude": "Claude Code CLI",
+  "harness-settings.claudeHelp": "Edit Claude defaults on the connected server. Project and Agent Worker overrides use the same settings.",
+  "harness-settings.allHarnessesHelp": "Edit Codex and Claude defaults on the connected server. Project and Agent Worker overrides use the same settings.",
+  "harness-settings.claudeAllSources": "All Claude sources",
+  "harness-settings.claudeAllServices": "All Claude subscription services",
+  "harness-settings.claudePermissionHelp": "Claude uses its native tool permission modes. Plan inputs retain native Plan behavior. The server verifies model, effort and permission support for the selected account before execution.",
+  "harness-settings.claudeExtensionsUnavailable": "Additional Claude extension settings are unavailable in this editor. Native hooks, plugins, MCP servers and skills require their own supported configuration and trust controls."
 }

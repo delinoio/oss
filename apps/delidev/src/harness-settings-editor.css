@@ -47,3 +47,11 @@
 .harness-setting-effective {
   font-size: 0.875rem;
 }
+
+.harness-settings-panel {
+  display: grid;
+  gap: 32px;
+  width: 100%;
+  max-width: 720px;
+  min-width: 0;
+}

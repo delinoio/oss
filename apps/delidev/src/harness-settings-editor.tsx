@@ -41,7 +41,7 @@ interface SettingField {
   unsupported?: boolean;
   numeric?: boolean;
 }
-const fields: readonly SettingField[] = [
+const codexFields: readonly SettingField[] = [
   {
     key: "web_search",
     label: "harness-settings.webSearch",
@@ -93,6 +93,27 @@ const fields: readonly SettingField[] = [
     unsupported: true,
   },
 ];
+const claudeFields: readonly SettingField[] = [
+  { key: "model", label: "harness-settings.model" },
+  {
+    key: "effort",
+    label: "harness-settings.effort",
+    choices: ["", "low", "medium", "high", "xhigh", "max"],
+  },
+  {
+    key: "claude_permission",
+    label: "harness-settings.permission",
+    choices: [
+      "",
+      "default",
+      "plan",
+      "acceptEdits",
+      "dontAsk",
+      "bypassPermissions",
+      "auto",
+    ],
+  },
+];
 const ownerLabels: Record<HarnessSettingsOwner, MessageKey> = {
   [HarnessSettingsOwner.Server]: "harness-settings.server",
   [HarnessSettingsOwner.Project]: "harness-settings.project",
@@ -110,16 +131,27 @@ export function HarnessSettingsEditor({
   owner,
   active,
   revision,
+  harness = "codex",
 }: {
   data: Document;
   change: (data: Document) => void;
   owner: HarnessSettingsOwner;
   active: boolean;
   revision?: string;
+  harness?: HarnessScope["harness"];
 }) {
   useLocale();
   const id = useId();
-  const [scope, setScope] = useState<HarnessScope>(codexScope);
+  const [scope, setScope] = useState<HarnessScope>(() => ({
+    ...codexScope,
+    harness,
+  }));
+  const claude = harness === "claude-code";
+  const fields = claude ? claudeFields : codexFields;
+  const searchPrefix = claude ? "claude" : "codex";
+  const allSources = claude
+    ? "harness-settings.claudeAllSources"
+    : "harness-settings.allSources";
   const [previewProject, setPreviewProject] = useState<Resource>();
   const status = useQuery(SystemQuery.getStatus, {}, { enabled: active });
   const supported =
@@ -189,7 +221,7 @@ export function HarnessSettingsEditor({
     (settings.version !== undefined && settings.version !== 1);
   const entries = items(defaults.entries)
     .map(object)
-    .filter((entry) => object(entry.scope).harness === "codex");
+    .filter((entry) => object(entry.scope).harness === harness);
   const update = (next: Document) =>
     change(
       owner === HarnessSettingsOwner.Agent
@@ -202,14 +234,18 @@ export function HarnessSettingsEditor({
   return (
     <section
       className="harness-settings-editor"
-      data-settings-search-target="codex-harness"
+      data-settings-search-target={`${searchPrefix}-harness`}
       aria-labelledby={`${id}-title`}
       data-settings-search-pending={
         !status.data && !status.error ? "true" : undefined
       }
     >
-      <h3 id={`${id}-title`}>{copy("harness-settings.codex")}</h3>
-      <p>{copy("harness-settings.help")}</p>
+      <h3 id={`${id}-title`}>
+        {copy(claude ? "harness-settings.claude" : "harness-settings.codex")}
+      </h3>
+      <p>
+        {copy(claude ? "harness-settings.claudeHelp" : "harness-settings.help")}
+      </p>
       <Problem error={status.error || server.error} />
       {status.error || server.error ? (
         <button
@@ -278,7 +314,12 @@ export function HarnessSettingsEditor({
                     key={harnessScopeKey(saved)}
                     value={harnessScopeKey(saved)}
                   >
-                    {copy(sourceLabels[saved.source])} · {index + 1}
+                    {copy(
+                      saved.source === HarnessScopeSource.Any
+                        ? allSources
+                        : sourceLabels[saved.source],
+                    )}{" "}
+                    · {index + 1}
                     {saved.api_protocol
                       ? ` · ${apiFormatLabels[saved.api_protocol as APIFormatId]}`
                       : ""}
@@ -294,14 +335,18 @@ export function HarnessSettingsEditor({
             value={scope.source}
             onChange={(event) =>
               setScope({
-                harness: "codex",
+                harness,
                 source: event.target.value as HarnessScopeSource,
               })
             }
           >
             {Object.values(HarnessScopeSource).map((source) => (
               <option key={source} value={source}>
-                {copy(sourceLabels[source])}
+                {copy(
+                  source === HarnessScopeSource.Any
+                    ? allSources
+                    : sourceLabels[source],
+                )}
               </option>
             ))}
           </select>
@@ -317,7 +362,7 @@ export function HarnessSettingsEditor({
               active={active}
               change={(provider_id) =>
                 setScope({
-                  harness: "codex",
+                  harness,
                   source: HarnessScopeSource.Api,
                   ...(provider_id ? { provider_id } : {}),
                 })
@@ -356,7 +401,7 @@ export function HarnessSettingsEditor({
               value={scope.subscription_service ?? ""}
               onChange={(event) =>
                 setScope({
-                  harness: "codex",
+                  harness,
                   source: HarnessScopeSource.Subscription,
                   ...(event.target.value
                     ? { subscription_service: event.target.value }
@@ -364,8 +409,18 @@ export function HarnessSettingsEditor({
                 })
               }
             >
-              <option value="">{copy("harness-settings.allServices")}</option>
-              <option value={SubscriptionServiceId.ChatGPT}>ChatGPT</option>
+              <option value="">
+                {copy(
+                  claude
+                    ? "harness-settings.claudeAllServices"
+                    : "harness-settings.allServices",
+                )}
+              </option>
+              {claude ? (
+                <option value={SubscriptionServiceId.Claude}>Claude</option>
+              ) : (
+                <option value={SubscriptionServiceId.ChatGPT}>ChatGPT</option>
+              )}
             </select>
           </label>
         ) : null}
@@ -466,7 +521,7 @@ export function HarnessSettingsEditor({
             <section
               key={field.key}
               className="harness-setting"
-              data-settings-search-target={`codex-${field.key}`}
+              data-settings-search-target={`${searchPrefix}-${field.key}`}
             >
               <h4>{copy(field.label)}</h4>
               {webSearch ? (
@@ -603,6 +658,32 @@ export function HarnessSettingsEditor({
                   )}
                 </label>
               ) : null}
+              {field.key === "claude_permission" ? (
+                <>
+                  <p>{copy("harness-settings.claudePermissionHelp")}</p>
+                  {controlValue === "acceptEdits" ? (
+                    <p>
+                      {copy(
+                        "configuration-fields.claudeCanAcceptFileEditsAnd_71cb59",
+                      )}
+                    </p>
+                  ) : null}
+                  {controlValue === "dontAsk" ? (
+                    <p>
+                      {copy(
+                        "configuration-fields.claudeDeniesOperationsThatWouldRequire_4763c5",
+                      )}
+                    </p>
+                  ) : null}
+                  {controlValue === "bypassPermissions" ? (
+                    <p>
+                      {copy(
+                        "configuration-fields.bypassSkipsNativePermissionPromptsSelect_8c3404",
+                      )}
+                    </p>
+                  ) : null}
+                </>
+              ) : null}
               {field.key === "approvals_reviewer" ? (
                 <p>{copy("harness-settings.reviewerHelp")}</p>
               ) : null}
@@ -629,6 +710,11 @@ export function HarnessSettingsEditor({
           );
         })}
       </fieldset>
+      {claude ? (
+        <p role="status">
+          {copy("harness-settings.claudeExtensionsUnavailable")}
+        </p>
+      ) : null}
       <p>{copy("harness-settings.executionGate")}</p>
     </section>
   );

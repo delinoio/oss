@@ -11,6 +11,10 @@ import { SettingsCategory as Category } from "./settings-category";
 import "./settings-search.css";
 export enum SettingsSearchTarget {
   Codex = "codex-harness",
+  Claude = "claude-harness",
+  ClaudeModel = "claude-model",
+  ClaudeEffort = "claude-effort",
+  ClaudePermissions = "claude-claude_permission",
   CodexModel = "codex-model",
   CodexEffort = "codex-effort",
   CodexPermissions = "codex-permission",
@@ -106,6 +110,26 @@ export const settingsSearchTargets: Partial<
       "harness-settings.subagentModel",
     ),
     target(SettingsSearchTarget.CodexTier, "harness-settings.tier"),
+    target(
+      SettingsSearchTarget.Claude,
+      "harness-settings.claude",
+      "harness-settings.claudeHelp",
+    ),
+    target(
+      SettingsSearchTarget.ClaudeModel,
+      "harness-settings.model",
+      "harness-settings.claude",
+    ),
+    target(
+      SettingsSearchTarget.ClaudeEffort,
+      "harness-settings.effort",
+      "harness-settings.claude",
+    ),
+    target(
+      SettingsSearchTarget.ClaudePermissions,
+      "harness-settings.permission",
+      "harness-settings.claudePermissionHelp",
+    ),
   ],
   [Category.ProjectDefaults]: [
     target(

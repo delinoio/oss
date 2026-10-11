@@ -359,3 +359,19 @@ it("finds Codex source defaults and native settings in English and Korean", asyn
     matchSettings("하위 에이전트 모델", harness).map((row) => row.target),
   ).toContain(SettingsSearchTarget.CodexSubagents);
 });
+
+it("finds Claude defaults and native permission targets in both languages", async () => {
+  const categories = [
+    { category: SettingsCategory.Harnesses, label: "Harnesses", help: "" },
+  ];
+  expect(
+    matchSettings("Claude", categories).map((row) => row.target),
+  ).toContain(SettingsSearchTarget.Claude);
+  expect(
+    matchSettings("Claude", categories).map((row) => row.target),
+  ).toContain(SettingsSearchTarget.ClaudePermissions);
+  await act(() => i18n.changeLanguage("ko"));
+  expect(matchSettings("권한", categories).map((row) => row.target)).toContain(
+    SettingsSearchTarget.ClaudePermissions,
+  );
+});

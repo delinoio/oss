@@ -16,7 +16,7 @@ export enum HarnessSettingsOwner {
   Agent = "agent",
 }
 export interface HarnessScope {
-  harness: "codex";
+  harness: "codex" | "claude-code";
   source: HarnessScopeSource;
   provider_id?: string;
   subscription_service?: string;
@@ -24,6 +24,10 @@ export interface HarnessScope {
 }
 export const codexScope: HarnessScope = {
   harness: "codex",
+  source: HarnessScopeSource.Any,
+};
+export const claudeScope: HarnessScope = {
+  harness: "claude-code",
   source: HarnessScopeSource.Any,
 };
 export function harnessScopeKey(scope: HarnessScope): string {

@@ -1,3 +1,4 @@
+import { HarnessSettingsPanel } from "./harness-settings-panel";
 import { HarnessSettingsEditor } from "./harness-settings-editor";
 import { HarnessSettingsOwner } from "./harness-settings-model";
 import { ProjectEditTabs, ProjectEditTab } from "./project-edit-tabs";
@@ -1566,7 +1567,7 @@ export function ConfigurationFields({
     serverPreferenceSection === ServerPreferenceSection.Harnesses
   )
     return (
-      <HarnessSettingsEditor
+      <HarnessSettingsPanel
         data={data}
         change={change}
         active={active}
@@ -1790,8 +1791,8 @@ export function ConfigurationFields({
   }
   if (kind === EntityKind.MODEL) return <ModelFields {...props} />;
   if (kind === EntityKind.AGENT) {
-    const typedCodex =
-      data.harness === Harness.Codex &&
+    const typedHarness =
+      (data.harness === Harness.Codex || data.harness === Harness.Claude) &&
       (data.harness_settings !== undefined ||
         reviewerStatus.data?.capabilities.includes(
           SystemCapability.HARNESS_DEFAULTS_V1,
@@ -1830,7 +1831,7 @@ export function ConfigurationFields({
           </>
         }
         permissions={
-          typedCodex ? undefined : (
+          typedHarness ? undefined : (
             <AgentPermissions
               reviewSupported={
                 reviewerStatus.data?.capabilities.includes(
@@ -1846,7 +1847,7 @@ export function ConfigurationFields({
           )
         }
         reasoning={
-          typedCodex ? undefined : (
+          typedHarness ? undefined : (
             <>
               <ReasoningEffortField
                 label={copy("configuration-fields.reasoningEffort_3236ae")}
@@ -1907,8 +1908,12 @@ export function ConfigurationFields({
           />
         }
         native={
-          typedCodex ? (
+          typedHarness ? (
             <HarnessSettingsEditor
+              key={String(data.harness)}
+              harness={
+                data.harness === Harness.Claude ? "claude-code" : "codex"
+              }
               data={data}
               change={change}
               active={active}
@@ -2236,7 +2241,7 @@ function ProjectFields({
         ),
         [ProjectEditTab.Execution]: (
           <>
-            <HarnessSettingsEditor
+            <HarnessSettingsPanel
               data={data}
               change={change}
               active={active}
