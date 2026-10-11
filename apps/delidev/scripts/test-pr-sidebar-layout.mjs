@@ -46,9 +46,10 @@ try {
   const assertLayout = async (pane, context) => {
     const geometry = await pane.evaluate(node => {
       const box = node.getBoundingClientRect();
-      return { overflow: node.scrollWidth > node.clientWidth, outside: [...node.querySelectorAll("button, input:not([type=radio]), select, .pr-repository-details")].filter(item => item.getClientRects().length).some(item => { const rect = item.getBoundingClientRect(); return rect.left < box.left - 1 || rect.right > box.right + 1 || item.scrollWidth > item.clientWidth + 1; }), targets: [...node.querySelectorAll("button, .pr-state-choice")].filter(item => item.getClientRects().length).every(item => item.getBoundingClientRect().height >= 40) };
+      const popupOutside = [...node.querySelectorAll(".pr-repository-details")].filter(item => item.getClientRects().length).some(item => { const rect = item.getBoundingClientRect(); return rect.left < -1 || rect.top < -1 || rect.right > window.innerWidth + 1 || rect.bottom > window.innerHeight + 1 || !node.contains(item); });
+      return { popupOutside, overflow: node.scrollWidth > node.clientWidth, outside: [...node.querySelectorAll("button, input:not([type=radio]), select")].filter(item => item.getClientRects().length).some(item => { const rect = item.getBoundingClientRect(); return rect.left < box.left - 1 || rect.right > box.right + 1 || item.scrollWidth > item.clientWidth + 1; }), targets: [...node.querySelectorAll("button, .pr-state-choice")].filter(item => item.getClientRects().length).every(item => item.getBoundingClientRect().height >= 40) };
     });
-    assert(!geometry.overflow && !geometry.outside && geometry.targets, `${context}: ${JSON.stringify(geometry)}`);
+    assert(!geometry.overflow && !geometry.outside && !geometry.popupOutside && geometry.targets, `${context}: ${JSON.stringify(geometry)}`);
     const titleRow = pane.locator(".pr-sidebar-title");
     assert.equal(await pane.locator("h2").count(), 1, `${context}: one sidebar title`);
     assert.equal(await pane.locator(".sidebar-list-heading").count(), 0, `${context}: no former repository heading row`);
