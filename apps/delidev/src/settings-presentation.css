@@ -477,25 +477,34 @@
   gap: 8px;
   height: 64px;
   padding: 8px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--appearance-preview-light-border);
   border-radius: 4px;
-  background: var(--surface);
+  background: var(--appearance-preview-light-surface);
 }
 .appearance-miniature::before {
   content: "";
-  background: var(--surface-inset);
-  border-right: 1px solid var(--border);
+  background: var(--appearance-preview-light-inset);
+  border-right: 1px solid var(--appearance-preview-light-border);
 }
 .appearance-miniature::after {
   content: "";
-  border-block: 6px solid var(--border);
-  background: var(--surface-muted);
+  border-block: 6px solid var(--appearance-preview-light-border);
+  background: var(--appearance-preview-light-muted);
 }
 .appearance-miniature[data-preview="dark"] {
-  background: var(--inverse-surface);
+  border-color: var(--appearance-preview-dark-border);
+  background: var(--appearance-preview-dark-surface);
+}
+.appearance-miniature[data-preview="dark"]::before {
+  background: var(--appearance-preview-dark-inset);
+  border-right-color: var(--appearance-preview-dark-border);
+}
+.appearance-miniature[data-preview="dark"]::after {
+  border-block-color: var(--appearance-preview-dark-border);
+  background: var(--appearance-preview-dark-muted);
 }
 .appearance-miniature[data-preview="system"] {
-  border-inline-end: 24px solid var(--inverse-surface);
+  border-inline-end: 24px solid var(--appearance-preview-dark-surface);
 }
 @container appearance-body (width < 640px) {
   .appearance-choices {

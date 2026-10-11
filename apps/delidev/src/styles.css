@@ -249,7 +249,7 @@ pre {
   height: 36px;
   min-height: 36px;
   padding: 5px 9px;
-  border-color: var(--on-inverse-muted);
+  border-color: var(--control-border);
   border-radius: 7px;
   background: var(--surface);
   font-size: 13px;
@@ -928,6 +928,34 @@ summary {
   min-width: 0;
   flex: 1;
 }
+.resource-empty-create {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+.resource-empty-create > span {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.resource-empty-create > button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  border-radius: 8px;
+  white-space: normal;
+}
+.resource-empty-create svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
 /* Align the attachment action with the actual picker input, not its outer margins. */
 .new-session-selectors .scroll-picker {
   margin: 0;
@@ -991,7 +1019,7 @@ summary {
   border-color: var(--accent);
   border-radius: 12px;
   background: var(--accent);
-  color: var(--on-inverse);
+  color: var(--on-accent);
 }
 .new-session-submit:hover {
   background: var(--accent-hover);
@@ -1628,13 +1656,13 @@ dialog nav {
 }
 .usage-line {
   fill: none;
-  stroke: var(--accent);
+  stroke: var(--selected-border);
   stroke-width: 3;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 .usage-point {
-  fill: var(--accent);
+  fill: var(--selected-border);
   stroke: var(--surface);
   stroke-width: 2;
 }
@@ -1657,7 +1685,7 @@ dialog nav {
   fill: var(--border-subtle);
 }
 .usage-model-bar {
-  fill: var(--accent);
+  fill: var(--selected-border);
 }
 .usage-model-row-selected .usage-model-bar {
   fill: var(--selected-text);
@@ -1678,7 +1706,7 @@ dialog nav {
   gap: 2px;
   min-width: 0;
   padding: 7px 8px;
-  border-left: 3px solid var(--accent);
+  border-left: 3px solid var(--selected-border);
   background: var(--surface-muted);
   overflow-wrap: anywhere;
 }
@@ -1811,7 +1839,7 @@ dialog nav {
 }
 .usage-row-measures .usage-metric {
   padding: 5px;
-  border-color: var(--on-inverse-muted);
+  border-color: var(--control-border);
   background: var(--surface-muted);
 }
 .usage-row-measures .usage-metric dt {
@@ -2079,8 +2107,8 @@ dialog nav {
 .inbox-row[aria-current] {
   background: var(--selected-background);
   color: var(--text);
-  border-color: var(--on-inverse-muted);
-  border-left-color: var(--accent);
+  border-color: var(--control-border);
+  border-left-color: var(--selected-border);
 }
 .inbox-row[aria-current]:hover {
   background: var(--selected-background);
@@ -3787,7 +3815,7 @@ dialog nav {
   background: var(--accent);
 }
 .settings-runner-column:focus-visible {
-  outline-color: var(--accent);
+  outline-color: var(--focus);
 }
 .settings-runner-column .actions {
   min-width: 0;
@@ -3837,7 +3865,7 @@ dialog nav {
   color: var(--text);
 }
 .settings-runner-worker-details > summary:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
   border-radius: 8px;
 }
@@ -4815,7 +4843,7 @@ dialog nav {
   width: 52px;
   height: 52px;
   margin-bottom: 16px;
-  color: var(--accent);
+  color: var(--selected-border);
   background: var(--selected-background);
 }
 .integration-empty h3 {
@@ -4956,7 +4984,7 @@ dialog nav {
 .github-integrations button.primary[disabled] {
   color: var(--muted);
   background: var(--surface-inset);
-  border-color: var(--on-inverse-muted);
+  border-color: var(--control-border);
   opacity: 1;
 }
 .github-integrations button.integration-danger {
@@ -5392,7 +5420,7 @@ dialog nav {
   font-size: 12px;
 }
 .inbox-execution-metadata > summary:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 4px;
   border-radius: 8px;
 }
@@ -5669,7 +5697,7 @@ dialog nav {
   color: var(--text-subtle);
 }
 .sidebar-conversation-disclosure:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 /* Project centering uses the collapsed primary range; expanded bodies stay in flow. */
@@ -5730,28 +5758,37 @@ dialog nav {
 }
 /* Keep the rail and mounted pane independent of the wide preference. */
 @media (min-width: 760px) {
+  .app > .sidebar {
+    min-width: 0;
+    grid-template-columns: 52px minmax(0, 1fr);
+  }
+  .app .sidebar-pane-dialog {
+    min-width: 0;
+  }
+  .app .sidebar-pane {
+    flex: none;
+    width: 288px;
+  }
+  .app.sidebar-motion {
+    transition: grid-template-columns 180ms cubic-bezier(0.2, 0, 0, 1);
+  }
+  .app.sidebar-motion .sidebar-pane {
+    transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);
+  }
   .app.sidebar-collapsed {
     grid-template-columns: 53px minmax(0, 1fr);
   }
-  .app.sidebar-collapsed > .sidebar {
-    grid-template-columns: 52px;
+}
+@media (min-width: 760px) and (max-width: 1100px) {
+  .app .sidebar-pane {
+    width: 256px;
   }
 }
-.sidebar-wide-toggle {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  min-width: 40px;
-  height: 40px;
-  min-height: 40px;
-  padding: 0;
-  margin: 12px 16px;
-  border-radius: 8px;
-  background: var(--surface);
-}
-.sidebar-wide-toggle:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+@media (prefers-reduced-motion: reduce) {
+  .app.sidebar-motion,
+  .app.sidebar-motion .sidebar-pane {
+    transition: none;
+  }
 }
 .sidebar-preference-notice {
   margin: 12px 16px;
@@ -5761,12 +5798,6 @@ dialog nav {
 .sidebar-preference-notice button {
   min-height: 40px;
 }
-@media (max-width: 759px) {
-  .sidebar-wide-toggle {
-    display: none;
-  }
-}
-
 /* Home groups remain shared disclosures, with a bounded flat navigation surface. */
 .sidebar-project-group
   > button.sidebar-project-row.disclosure-header.disclosure-header {
@@ -5818,7 +5849,7 @@ dialog nav {
   background: var(--surface-hover);
 }
 .sidebar-project-more:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 
@@ -5844,6 +5875,6 @@ dialog nav {
   white-space: normal;
 }
 .repository-profile-association button:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }

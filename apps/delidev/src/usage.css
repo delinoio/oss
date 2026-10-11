@@ -118,6 +118,10 @@
   cursor: pointer;
   overflow-wrap: anywhere;
 }
+/* The token breakdown sits over inverse metric surfaces. */
+:root .usage-page .usage-summary-breakdown > .disclosure-header:focus-visible {
+  outline-color: var(--on-inverse);
+}
 .usage-page .usage-accounting-source > details {
   margin: 0;
   padding: 0;

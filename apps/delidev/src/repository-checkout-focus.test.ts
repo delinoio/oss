@@ -24,7 +24,7 @@ it("keeps both grouped checkout disclosure indicators inside their clipped row",
       expect(button.matches(":focus-visible")).toBe(true);
       const computed = getComputedStyle(button);
       expect(computed.outlineOffset).toBe("-4px");
-      expect(computed.outline).toBe("2px solid var(--accent)");
+      expect(computed.outline).toBe("2px solid var(--focus)");
       expect(parseFloat(computed.outlineOffset)).toBeLessThanOrEqual(-2);
     }
   } finally {

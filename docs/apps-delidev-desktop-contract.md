@@ -444,6 +444,36 @@ Named Home project rows expose an always-visible New session plus immediately le
 
 The shortcut opens the existing mounted creation page with the exact project ID, closes the compact navigation drawer and focuses First message. Bind this entry to the existing activation and consume it once, including rejected locked entries; manual edits, language changes, same-identity reconnect and later request settlement cannot replay it. A changed project clears Agent Worker, Runs on and starting references and selects Worktree, while retaining the message, mode, budget and Options. Reselecting the same project preserves all selections. The shortcut shares the Project selector's pending Local proof, pending/uncertain creation and unreadable-acknowledgment locks. Ordinary New session and Back retain their existing draft and selected-conversation behavior. Navigation alone creates no session, execution, protocol or persistent-state authority.
 
+### Empty Agent Worker inventory creation entry
+
+New session and New Chat replace only their Agent Worker selector with the
+localized **Create agent worker** button (**에이전트 워커 생성**) after the current
+validated unfiltered first inventory page proves zero resources with no
+continuation. Retain that evidence in the existing bounded query projection,
+before project filtering. Require an active original transport, no retained
+selected identity, no read error and no pending refresh. Loading, denied,
+unavailable, malformed, stale, restricted and continuing-page observations
+retain their separate selector states. A later empty page never proves absence.
+Suppress the generic empty-page sentence on these two controls; restricted
+results retain explicit project restriction guidance and continuation remains
+available.
+
+Keep the Agent Worker label above an outlined 40px native non-submit button with
+an inert plus icon, 8px corners, existing selector width, semantic theme colors,
+localized accessible name and visible keyboard focus. Preserve scrollable
+960×640 and 200% reflow layouts. Enter/Space uses ordinary button activation.
+
+The typed `SettingsEntryDestination.NewAgentWorker` enters Settings > Agent
+Workers with the existing creation wizard already open at Harness. Reuse the
+Settings visit/navigation boundary, destination focus and wizard focus behavior.
+Navigation performs no worker save, session submission, project-policy edit or
+execution authorization. Both mounted creation controllers retain their
+independent messages, project/workspace/references, Runner Device, Plan Mode,
+Options/budget and image attachments across this visit. Saving uses existing
+inventory invalidation. Return restores ordinary selection when a worker exists,
+without selecting it or starting a conversation. Existing eligible-selection
+and submission gates remain required.
+
 ### Dedicated General Chat creation
 
 Home provides a 36px **New Chat** action (English; Korean remains **새 일반 대화**) immediately below **New session**, with a decorative chat-plus icon and its own selected-page state. `Surface.NewGeneralChat` belongs to the same Home rail, Inbox/Search header, inventory/scroll scope and compact drawer. Existing New session retains its Project and Worktree/Local flow.
@@ -574,6 +604,34 @@ Append/refresh/restoration preserve connected focus and measured scroll anchors.
 Conversation resources retain forward returned order and higher revisions;
 independently bounded live streams join new arrivals only after final coverage.
 The feature groups reached tool records by the original session/execution/native-thread/native-turn tuple. One initially collapsed **Tool calls** disclosure is anchored at the first reached tool position, including active execution and records separated by commentary. Non-tool rows retain their relative order; tool entries retain original observation order. Each entry starts collapsed and uses its original validated renderer for exact inert commands, arguments, patches, output and unavailable states. Grok observations remain separate entries without reconstructed unique-call attribution or numeric call counts. Missing, malformed, mixed or foreign ownership retains standalone rendering.
+
+Recognized tool groups use borderless text disclosure rows with gray chevrons,
+36px targets, semantic hover feedback and visible keyboard focus. Grouped entries
+omit the original article header and primary trigger; routine complete/completed
+labels are suppressed while running, failure, interruption, rejection and
+unavailable evidence remain. Expanded groups retain reached-record guidance.
+
+Command previews are transient views of resident validated payloads. Codex uses
+only the exclusive command adapter, Claude reuses the complete exact Bash
+validator (applied proposal before initial input), and OpenCode reuses immutable
+shell snapshots. Grok and malformed/partial records retain their original tool
+name/fallback. Muted monospace previews show a literal `> ` prefix with visual
+ellipsis and the complete accessible string. Only Codex's exact leading
+`/bin/zsh -lc ` is hidden in the preview; no shell parsing, trimming, unquoting or
+other rewriting occurs. The full original command remains in collapsed Details.
+
+Expanding a recognized command displays original output directly in inert
+`pre`/`code` blocks. Codex prefers completed aggregate output, including empty
+strings, otherwise the retained stream; distinct stream observations stay
+separate in Details. Claude preserves original text/block boundaries, structured
+results, error flags and non-execution evidence. OpenCode displays completed
+output, running preview or failed error with original exit, interruption and
+truncation warnings. Empty output differs from absent output. Inputs, working
+directory, provenance and additional observations remain in initially collapsed
+Details; paths are inert and grant no reads. Output is never parsed as Markdown,
+HTML, links, ANSI controls or execution instructions. Manual disclosure choices,
+focus and original restore tokens survive revision, locale, reconnect and payload
+eviction; no command/output enters display metadata or persistence.
 
 Conversation display projections may retain only bounded tool owner/name/status metadata in addition to identity/revision/order. Full documents remain in the original three-page payload window and independently bounded live stream. A group spans accepted pages and the final historical/live boundary; an evicted anchor still presents that group's projection. Evicted entry details restore only their original accepted page token. Expanding a group does not enumerate an entire turn or unread history. The list explicitly describes reached-record coverage; the existing history continuation controls retain admission, measured restoration, scroll anchors and focus protection. Disclosure choices, including nested output details, remain within the mounted session/connection owner across revisions, reconnect, localization and payload eviction; disposal resets them. Approval/questions remain expanded and independently actionable in the original tray. No execution, response, composer, artifact, account, protocol, migration or native ownership changes are introduced. English/Korean shared compact disclosures use semantic theme tokens and native keyboard/focus behavior.
 
@@ -1365,7 +1423,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Skill availability presentation follows the desktop explicit skill completion contract. Only complete successful current authenticated scope inventory confirms absence; retain unknown on loading/error/unsupported scope. Keep native textarea overlays aligned and noninteractive, skip disabled retained rows, bound panel retention to 256 and discard on dismissal/scope change. Prompt history remains text-only and supplies no completion candidates or binding authority.
 
-- Persistent sidebar collapse follows the desktop contract for : computer-local native preference above connection lifetimes, retained 52px rail and mounted pane controllers, wide-only 40px toggle/primary+B, compact drawer independence and explicit failure reload. Preserve independent Appearance and shortcut preferences; add no server RPC, protocol/migration or OS-global shortcut authority.
+- Persistent sidebar collapse follows the desktop contract for : computer-local native preference above connection lifetimes, retained 52px rail and mounted pane controllers, wide-only primary+B shortcut with no shell toggle or spacer, compact drawer independence and explicit failure reload. Preserve independent Appearance and shortcut preferences; add no server RPC, protocol/migration or OS-global shortcut authority.
 
 - Reset-credit row names follow the subscription Settings contract: localized one-based ordinals include unavailable returned details, full original IDs remain secondary, and confirmation captures the selected ordinal with the original identity and revision bindings. Reorder and locale changes cannot transfer selection or grant consumption authority. Preserve count-only native-next, once-only confirmation, exact uncertain requests, cleanup gates and native title privacy; add no durable identity or protocol field.
 
@@ -2469,7 +2527,7 @@ All three backup list adapters reject an entire page with duplicate nonempty IDs
 
 - The feature image startup guidance requires validated closed settled provenance. Present the exact original rejected input and images. English/Korean guidance directs users to start a new session with an explicitly image-capable Agent Worker and Runner Device, or start a new text-only session; retrying the rejected session retains its original input and selection. Queuing text in that session does not repair its startup retry admission. Keep generic/unverified failures under existing generic guidance; preserve current drafts, attachment identities and explicit retry/recovery guards. Missing or mixed metadata cannot offer image-specific retry. Follow the image-input and direct startup contracts.
 
-- Persistent sidebar collapse follows the feature and the desktop contract. Keep the rail, original controllers, portals, drafts and request identities mounted; explicitly hide/inert the pane and suspend only hidden navigation activity. The persistent 40px shell toggle and fixed primary+B share dispatch/help/ARIA, ordinary-input admission and existing exclusions. Preserve focus/caret, compact drawer independence, visible navigation handoffs and explicit reload after failed/uncertain computer-local writes. SidebarProvider stays above connection/Settings lifetimes; browser fixtures use memory only.
+- Persistent sidebar collapse follows the feature and the desktop contract. Keep the rail, original controllers, portals, drafts and request identities mounted; explicitly hide/inert the pane and suspend only hidden navigation activity. The fixed primary+B shortcut shares dispatch/help/ARIA, ordinary-input admission and existing exclusions; the shell has no expand/collapse toggle or replacement spacer. Preserve focus/caret, compact drawer independence, visible navigation handoffs and explicit reload after failed/uncertain computer-local writes. SidebarProvider stays above connection/Settings lifetimes; browser fixtures use memory only.
 
 - The feature per-turn timing uses bounded original owner/input/timestamp metadata and one mounted active timer isolated from transcript payload rendering. Anchor a pre-user line before the first bounded original matching native record, then relocate it before the primary input; reject foreign/earlier/inherited scope. Freeze retained terminal timing and unconfirmed disconnect estimates, preserve zero/unavailable, inherited source attribution, Steer identity, three-page anchors/tokens/scroll/focus and drafts. READY/pre-send states cannot create timing. Keep localized semantic wrapping and aria-live off; display timing grants no control/native authority.
 
@@ -3070,6 +3128,20 @@ Default preserves the original colors. Custom libraries hold at most 32 UUID-v7
 identities, with names of at most 80 Unicode scalar values. Bundled themes are
 immutable; duplication creates a separate editable identity.
 
+Titanium, Nord, Dracula and Solarized each provide complete light/dark semantic
+maps in the shared bundled JSON. Their surfaces, text, borders, links, focus,
+selected states, inverse surfaces and conversation colors follow each family.
+The stored values use the approved encoded-sRGB channel blends with rounded
+opaque uppercase hex output; no runtime palette generator is used. Corresponding
+Default warning, danger and success values retain their meaning. Dark running
+status retains Default teal; light running status uses the darker teal variant.
+Default maps remain unchanged. Saved bundled references adopt updated bundled
+values; existing custom maps and earlier duplicates retain their stored values.
+Frontend distributions and the native host must rebuild from the shared JSON;
+tray projections use that same embedded source. Geometry, independent mode
+selection, mounted drafts and excluded terminal/backdrop/shadow/native surfaces
+retain their existing ownership.
+
 A custom editor owns its name and complete light/dark opaque semantic color maps.
 Its synthetic preview contains no conversation content. Save and import require
 explicit confirmation. Import accepts one version-1 JSON theme of at most 32 KiB,
@@ -3077,7 +3149,11 @@ with name and complete light/dark token maps, and always creates a new identity.
 Unknown fields/tokens, non-#RRGGBB colors and failing text/control contrast reject
 adoption. Terminal colors, backdrop, shadows and native OS surfaces are excluded.
 Validated tokens use an application-owned constructed CSS stylesheet without raw
-CSS injection or a CSP exception. Export captures one committed custom theme.
+CSS injection or a CSP exception. The selected root palette must outrank built-in
+theme rules in main and retained tray windows for explicit Light/Dark and resolved
+System mode. Replace or dispose only the exact owned sheet; preserve independent
+light/dark choices, default colors and scoped custom previews. Export captures one
+committed custom theme.
 Deletion requires confirmation and atomically returns all selected references to
 Default. Cancel discards only the editor/import draft. Concurrent revisions keep
 dirty drafts visible and block save until explicit discard/reload.
@@ -3594,7 +3670,7 @@ guards. Reflow must retain workspace controller and draft identities.
 
 The feature use two primary workspace rows: an approximately 72px identity/action header and a 52px navigation row. The feature uses a fixed 40×40px icon-only Open tool trigger beside the horizontally scrolling tablist. Center the decorative 18px outlined wrench from `SessionIconKind.Tools` in the existing renderer with zero padding and 8px corners. Keep localized Open tool / 도구 열기 as both its accessible name and title hint, with original semantic hover/expanded/focus treatment and menu ARIA relationships. It exposes Diff, Files, Terminals, Browser and Diagnostics in that order through their original entry callbacks and eligibility, followed by Open Sidechat only for the independently eligible original parent. The flat menu uses the existing localized label, including Sidechat 열기, with the decorative outline chat glyph from `SessionIconKind.Sidechat`. Sidechat is absent from the session overflow menu. Fork keeps its independent shared eligibility and original dialog. Opening focuses the first enabled item; arrows, Home/End and native Enter/Space select entries. Escape closes only the menu and restores its trigger; outside dismissal preserves destination focus. The 220px popup stays viewport-bounded and scrolls vertically. Tool selection closes it and focuses the selected singleton descriptor without new resources or observation reads.
 
-Tabs form a continuous gapless neutral editor strip attached to the active pane. Each tab is 40px high and at most 320px wide. Selected tabs use the surface background, 4px top corners, square bottom corners and a 2px accent underline; inactive tabs have transparent backgrounds and subtle separators. Every closeable tab encloses an always-visible 40px close target beside its truncated label, using sibling controls with independent focus treatment. This supersedes 's earlier rounded-shell appearance while preserving its enclosed close-control principle. Exactly one content region is active. Conversation is
+Tabs form a continuous gapless neutral editor strip attached to the active pane. Each tab is 40px high and at most 320px wide. Selected tabs use the surface background, 4px top corners, square bottom corners and a 2px selected-border underline; inactive tabs have transparent backgrounds and subtle separators. Every closeable tab encloses an always-visible 40px close target beside its truncated label, using sibling controls with independent focus treatment. This supersedes 's earlier rounded-shell appearance while preserving its enclosed close-control principle. Exactly one content region is active. Conversation is
 pinned first, initially selected and cannot be closed or moved. Files and Diff
 open typed content tabs keyed by session/repository/path and, for comparisons,
 comparison kind. Terminals use the original terminal ID; Browser pages use the
@@ -3663,8 +3739,8 @@ and 12px/16px padding, with left-aligned content and readable headers, details
 and keyboard focus. Generic assistant roots, validated Grok text roots and the
 validated Claude assistant wrapper are left-aligned without an outer background,
 border, rounded container or card padding. Invalid native records, unknown roles,
-tools, progress, artifacts and interruption presentations retain their existing
-treatment. Native details keep their own borders and disclosures. Recognized
+tools, progress, other artifacts and interruption presentations retain their existing
+treatment. Validated Codex indexed reasoning uses the dedicated presentation below. Native details keep their own borders and disclosures. Recognized
 conversation roots omit visible User/Assistant labels and routine complete or
 completed badges, including Grok response-text completion. Omit empty header
 rows. Projected user submissions omit the visible role label while retaining
@@ -4732,6 +4808,15 @@ Confirmed absent token ranges use semantic muted text in a noninteractive aligne
 overlay. Keep the native textarea, exact draft, wrapping, scrolling, selection,
 caret, undo and IME; suppress the overlay during composition. Localized accessible
 status describes affected tokens without exposing prompt content in logs.
+Keep one mounted polite atomic count region in the shared composer wrapper,
+independent of panel visibility, and retain the textarea's count description and
+hidden painted mirror. Announce only changed counts proven by a complete current
+inventory, including recovery from a positive count to zero. Initial zero,
+unchanged results, ordinary edits and IME do not replay announcements. Unknown
+observations clear the status without claiming zero; keep the last confirmed
+count only for deduplication. Scope or transport replacement retires both that
+count and its status, so late results cannot announce for another owner. Preserve
+native focus, drafts, selections and the existing pending/uncertain locks.
 An open panel can retain previously displayed disappeared rows until dismissal or
 scope change. Bound retention to 256 entries with live entries taking priority.
 Unavailable rows retain original names, descriptions and provenance, show localized
@@ -4754,7 +4839,21 @@ use one horizontal option row: name, original description and an unshrunk neutra
 User/Project badge. Project and General Chat creation constrain both the content grid item and its
 fieldset with `min-width: 0`, so intrinsic candidate text cannot widen the
 820px-capped content or responsive composer. Keep project grid placement and
-General Chat centering independent of this shrink boundary. The in-flow panel has a 220px maximum scroll height, 4px padding,
+General Chat centering independent of this shrink boundary. One nonmodal manual
+top-layer popover stays in its original DOM and owning-dialog boundary. It
+reserves no normal-flow height or spacing. At constant draft and textarea size,
+opening, filtering, loading/error transitions, dismissal and reopening preserve
+the heading, form, composer, textarea, toolbar, hints and ancestor scroll geometry
+within 1 CSS pixel. Anchor left aligned to the textarea with matched width, an
+8px gap and 8px usable-surface margins. Prefer above; use below when the full
+bounded panel cannot fit above and fits below. Otherwise use the side with more
+space and reduce height with internal scrolling. Clamp to the visual viewport
+and any owning modal surface. Reposition on anchor/manual textarea resize,
+ancestor scroll, window resize and visual viewport changes. Hidden, inert,
+disabled, disconnected or unmounted original composers dispose the presentation.
+Keep input focus and avoid automatic focus transfer or ancestor scrolling;
+loading, empty, unavailable, unsupported and retry states share this overlay.
+The panel has a 220px maximum border-box scroll height, 4px padding,
 a neutral border and 8px corners. Rows have a 40px minimum height, 12px horizontal
 padding, 12px gaps and 8px corners. Names use 14px/20px semibold text; descriptions
 use muted 12px/18px text. Preserve full original text in the DOM and accessible
@@ -4786,6 +4885,27 @@ Inventory belongs to the selected Runner and Harness, including remote Runners;
 renderer-local skill directories are never discovery authority. Codex alone is
 supported. Follow the sessions contract's Explicit native skills section for
 snapshot, native input, recovery, protocol and cleanup ownership.
+
+Valid explicit selected spans use semantic `--link` color and a thin underline
+in the same noninteractive mirror. Retain exact literal `$name` prompt bytes,
+opaque selections, font, baseline, wrapping and dimensions; add no Markdown,
+chip, navigation target, click action, link role or extra focus stop. Derive
+styling only from one exact nonstale, unambiguous binding in the original resolved
+Runner/Agent/project/session and retained connection scope. Unselected matching
+text remains ordinary. Outside edits move the existing bound span; token edits
+and explicit clearing remove its selected decoration. Bound selected painted
+spans to 16 and never add another mirror.
+
+Confirmed unavailable styling takes precedence. Loading, failed or disabled
+inventory reads remain unknown and may retain a valid selected decoration;
+selection styling never proves availability or enables acceptance. Changed or
+unresolved scope removes selected decoration while preserving reselection
+warnings and send guards. Suppress both decorations during IME. Preserve native
+textarea identity, focus, caret, selection, undo, scroll, existing localized
+status ownership and pending/uncertain draft and binding locks. Apply the same
+rules to project creation, General Chat creation, follow-up and queued editing,
+including semantic themes, typography changes and 200% zoom. Fixture or browser
+geometry coverage does not establish installed-native or assistive acceptance.
 
 Typed queued edits restore selected token bindings from immutable accepted metadata.
 They support explicit selection clearing and reselection, preserve bindings and
@@ -5192,6 +5312,26 @@ history/usage/Fork/Sidechat snapshots, and replacement of the current draft.
 Preserve the exact source revision, context revision and retained mutation
 request; stale sources and uncertain outcomes cannot submit new input.
 
+The exact connection-owned Revert busy intent also fences the composer, even
+when its presenter is reused or remounted and the session row predates job
+admission. Retain action/message/context, draft guard, replacement and restored
+action identity with that original mutation owner. Acknowledgment alone does
+not prove native completion; definitive rejection releases only the matching
+original guard. Retain uncertain bytes for explicit original-request replay.
+Other sessions and connections remain independent, and disposal grants no
+completion or fresh-input authority.
+
+Accepted user text edits synchronously advance a per-session monotonic unsigned
+64-bit generation before React rendering, including same-value events, undo and
+accepted edits from another retained view. Empty draft payload deletion does
+not erase that history. Capture the original generation at confirmation and
+require it, original ownership and text equality for automatic restoration.
+Keep edited drafts and offer the existing explicit restore action. Bound edit
+history to 1000 session owners; reject an edit rather than wrap or discard its
+guard. Mutation-owned presentation is limited to 1000 entries and 4 MiB, with a
+pending guard reserving the 1 MiB document bound for verified replacement text.
+Never evict a busy/uncertain guard or retain it across connection disposal.
+
 Verified completion restores the original prompt text as an unsent draft and
 focuses the active composer. Automatic and explicit restoration preserve the
 current composer Plan/Execute choice; historical input mode remains validated
@@ -5213,28 +5353,45 @@ Refresh reads the captured interval again; choosing the same preset captures a n
 
 ## Persistent context-pane collapse
 
-At widths of at least 760px, the 40px icon button at the beginning of the main
-shell and logical primary+B toggle only the context pane. The 52px rail and its
-navigation/subscription actions remain available. Collapse releases the pane's
-288px (256px through 1100px) grid track. The localized button shares typed
-shortcut/help/ARIA declarations and controls the original mounted pane. It has
-visible focus and `aria-expanded`; it remains available across page changes.
+At widths of at least 760px, logical primary+B toggles only the context pane.
+The main shell has no expand/collapse button or replacement spacer: remove its
+complete 64px row while retaining each surface's own padding and scroll root.
+The 52px rail and its navigation/subscription actions remain available. Collapse
+releases the pane's 288px (256px through 1100px) grid track. Keep the localized
+shortcut Help declaration and original mounted pane across page changes.
 
 Keep Sidebar, portals, filters, scroll snapshots, selected resources, drafts and
-pending/uncertain controllers mounted. Set the hidden pane's `hidden`, `inert`
-and `aria-hidden` boundaries explicitly; closing a nonmodal dialog alone does not
-hide its CSS flex layout. Suspend Home navigation polling, hover timers,
+pending/uncertain controllers mounted. Accepted wide preference changes animate
+the pane track and main boundary for 180ms with cubic-bezier(0.2, 0, 0, 1).
+Keep the 52px rail fixed and pane content at its expanded width; translate the
+content left and clip it during closure without scaling or continuous text reflow.
+Set logical `inert` and `aria-hidden` immediately. Keep the closing pane visually
+open only for this interval, then explicitly set `hidden` and remove its nonmodal
+open state; closing a nonmodal dialog alone does not hide its CSS flex layout.
+Suspend Home navigation polling, hover timers,
 sidebar selectors, repository/schedule navigation refresh and continuation through
 existing activity gates. Main content observation keeps its independent owner.
-Before hiding a focused pane descendant, focus the persistent toggle. Preserve
-composer focus/caret/selection otherwise; expansion never steals focus.
+Before hiding a focused pane descendant, focus the current rail navigation
+button, falling back to the first rail navigation button. Preserve composer
+focus/caret/selection otherwise; expansion never steals focus.
 
-Below 760px retain the purpose-named compact opener and modal drawer. Hide the
-wide toggle and deactivate primary+B. Drawer opening/closing never saves the
-wide preference. On return to wide layout, reapply the committed choice, retire
-any modal drawer and use a visible toggle/rail fallback for focus. Search initial
-focus cannot target a hidden pane; explicit Search focus may request the original
-pane opening and waits for visible committed presentation.
+Each admitted reversal begins at the current rendered geometry. Retire stale
+completion work; use the current track transition completion and a generation-fenced
+240ms fallback. Cancellation, disposal, reduced-motion changes, width breakpoints,
+page navigation and connection changes settle the latest valid endpoint directly.
+Initial preference hydration and breakpoint restoration never animate. Reduced
+motion reaches endpoints immediately. Motion has no preference-write or execution
+authority; pending, failed and uncertain saves retain committed presentation and
+their original recovery controls. Rejected toggles are never queued.
+
+Below 760px retain the purpose-named compact opener and modal drawer. Deactivate
+primary+B. Drawer opening/closing never saves the wide preference. On return to
+wide layout, reapply the committed choice, retire any modal drawer and use the
+same current/first rail fallback when collapsed. Search initial focus cannot
+target a hidden pane; explicit Search focus may request the original
+pane opening and waits for the current committed opening to settle. Fence pending
+Search focus by its presentation generation and active destination; cancellation,
+reversal, rejection or navigation replacement cannot focus an obsolete destination.
 
 `sidebar_preference.json` is an independent computer-local, bounded 4096-byte
 version-1 document containing only the Expanded/Collapsed enum and its document
@@ -5527,3 +5684,37 @@ list refresh and reconnect handling, including updates at the same Session
 revision. Do not add polling, telemetry, question-content logs or a feature
 flag. The session contract owns the authoritative derived predicate; presentation
 never grants response, execution or mutation authority.
+
+
+### Codex reasoning summary disclosure
+
+Ordinary Session and General Chat retain Codex reasoning in its original resource and
+transcript position. Validated indexed `reasoning` records use a text-only disclosure:
+a gray left chevron and the first non-whitespace completed summary part, falling
+back to the first such initial summary part, then **Thinking** / **생각 과정**.
+Preserve the selected string; CSS alone applies single-line ellipsis while its full
+accessible text and expanded source remain available. Keep the 36px target, shared
+native keyboard behavior and visible focus. The resting row has no background,
+border, rounded box, shadow, Artifact label, raw kind or routine completion badge.
+
+Expanded content retains the same summary row and plain inert source text beside
+one subtle vertical rule with approximately 20px indentation. Show Initial
+observation, Streamed observations and Final observation only when they contain
+supplied text. Keep summary/content families, original part indices, delta kinds,
+order and exact Unicode/whitespace separate. Never merge, deduplicate, generate
+summaries, split sentences or reconstruct content from deltas. Empty records keep
+the disclosure and show **No reasoning content was supplied.** / **제공된 생각
+과정이 없습니다.** when expanded. No hidden reasoning recovery is implied.
+
+The original default is collapsed; the existing `reasoning_disclosure` Expanded
+and Collapsed preferences govern initial mount. Explicit user choices and focus
+survive revisions, completion and locale changes. Preserve actual streaming,
+interrupted, failed, recovery and unavailable states. Malformed, mixed and unknown
+records retain the original fallback; OpenCode reasoning-text, Claude thinking
+and other artifacts retain their source-specific rules. Preserve reader gates,
+mounting, measured history wrappers, pagination, scroll anchors and live/history
+ordering. Disclosure adds no reads, execution authority, RPC, schema, migration,
+dependency or native operation. Semantic themes, English/Korean, narrow widths
+and 200% reflow keep expanded text readable without horizontal overflow. Component
+and browser fixtures establish presentation only; installed CEF/native acceptance
+remains separate.

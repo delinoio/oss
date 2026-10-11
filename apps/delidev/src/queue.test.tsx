@@ -16,14 +16,18 @@ import {
   EntityKind,
   ResourceSchema,
   SessionService,
+  SkillProvenance,
+  SkillService,
   newRequestId,
 } from "@delinoio/delidev-api-client";
 import { QueuedInput, type QueuedInputDraft } from "./queue";
 import { MutationIntents } from "./mutation";
-import { encode } from "./documents";
+import { encode, document as readDocument } from "./documents";
 
 function fixture(prompt = "Original queued input") {
   const id = newRequestId(),
+    machineId = newRequestId(),
+    agentId = newRequestId(),
     execution = newRequestId(),
     turn = newRequestId();
   const session = create(ResourceSchema, {
@@ -32,6 +36,8 @@ function fixture(prompt = "Original queued input") {
     schemaVersion: 1,
     revision: 4n,
     documentJson: encode({
+      machine_id: machineId,
+      agent_id: agentId,
       outcome: "running",
       archive: "active",
       active_execution_id: execution,
@@ -67,13 +73,31 @@ function fixture(prompt = "Original queued input") {
   }));
   const steer = vi.fn(async (_request: unknown) => ({}));
   const remove = vi.fn(async (_request: unknown) => ({}));
-  const transport = createRouterTransport((router) =>
+  const transport = createRouterTransport((router) => {
     router.service(SessionService, {
       editQueuedInput: edit,
       steerQueuedInput: steer,
       removeQueuedInput: remove,
-    }),
-  );
+    });
+    router.service(SkillService, {
+      listSkills: async () => ({
+        skills: [
+          {
+            name: "available",
+            description: "Available fixture skill",
+            provenance: SkillProvenance.USER,
+            selection: {
+              $typeName: "delidev.v1.SkillSelection" as const,
+              inventoryId: newRequestId(),
+              workerDeviceId: newRequestId(),
+              skillId: newRequestId(),
+              contentRevision: "a".repeat(64),
+            },
+          },
+        ],
+      }),
+    });
+  });
   const client = new QueryClient();
   const view = (input = resource, compact = false, readOnly = false) => (
     <TransportProvider transport={transport}>
@@ -103,6 +127,27 @@ function fixture(prompt = "Original queued input") {
     client,
   };
 }
+
+it("keeps the queued editor label stable when unavailable tokens are announced", async () => {
+  const value = fixture();
+  const view = render(value.view());
+  fireEvent.click(screen.getByRole("button", { name: "Edit input" }));
+  const editor = screen.getByRole("textbox", { name: "Edited input" });
+  fireEvent.change(editor, {
+    target: { value: "$missing ", selectionStart: 9 },
+  });
+  await waitFor(() =>
+    expect(
+      screen.getByRole("textbox", {
+        name: "Edited input",
+        description: "1 skill token is unavailable in this scope.",
+      }),
+    ).toBe(editor),
+  );
+  expect(view.container.querySelector('[role="status"]')?.textContent).toBe(
+    "1 skill token is unavailable in this scope.",
+  );
+});
 
 it.each([
   { name: "100,000-byte queued ASCII prompt", prompt: "a".repeat(100000) },
@@ -361,6 +406,11 @@ it("edits skill-bound input with explicit retained selections and clears them de
     skillId = newRequestId(),
     inventoryId = newRequestId(),
     workerDeviceId = newRequestId();
+  f.session.documentJson = encode({
+    ...readDocument(f.session),
+    machine_id: newRequestId(),
+    agent_id: newRequestId(),
+  });
   const bound = create(ResourceSchema, {
     ...f.resource,
     documentJson: encode({
@@ -380,7 +430,7 @@ it("edits skill-bound input with explicit retained selections and clears them de
       skill_names: { [skillId]: "add-issue" },
     }),
   });
-  render(f.view(bound));
+  const view = render(f.view(bound));
   expect(
     (
       screen.getByRole("button", {
@@ -389,9 +439,17 @@ it("edits skill-bound input with explicit retained selections and clears them de
     ).disabled,
   ).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Edit input" }));
+  expect(
+    view.container.querySelector(".skill-token-selected")?.textContent,
+  ).toBe("$add-issue");
   fireEvent.change(screen.getByRole("textbox", { name: "Edited input" }), {
     target: { value: "New Before $add-issue after", selectionStart: 0 },
   });
+  expect(
+    view.container
+      .querySelector(".skill-token-selected")
+      ?.getAttribute("data-skill-start"),
+  ).toBe("11");
   fireEvent.click(screen.getByRole("button", { name: "Save input" }));
   await waitFor(() => expect(f.edit).toHaveBeenCalledTimes(1));
   expect(f.edit.mock.calls[0]![0]).toMatchObject({
@@ -410,6 +468,11 @@ it("edits skill-bound input with explicit retained selections and clears them de
 it("explicitly clears selected bindings without altering visible text", async () => {
   const f = fixture(),
     skillId = newRequestId();
+  f.session.documentJson = encode({
+    ...readDocument(f.session),
+    machine_id: newRequestId(),
+    agent_id: newRequestId(),
+  });
   const bound = create(ResourceSchema, {
     ...f.resource,
     documentJson: encode({
@@ -429,11 +492,15 @@ it("explicitly clears selected bindings without altering visible text", async ()
       skill_names: { [skillId]: "add-issue" },
     }),
   });
-  render(f.view(bound));
+  const view = render(f.view(bound));
   fireEvent.click(screen.getByRole("button", { name: "Edit input" }));
+  expect(
+    view.container.querySelector(".skill-token-selected")?.textContent,
+  ).toBe("$add-issue");
   fireEvent.click(
     screen.getByRole("button", { name: "Clear selected skills" }),
   );
+  expect(view.container.querySelector(".skill-token-selected")).toBeNull();
   expect(screen.getByRole("textbox", { name: "Edited input" })).toHaveProperty(
     "value",
     "$add-issue remains plain",
@@ -521,6 +588,11 @@ it.each(["two packages", "earlier literal"])(
         kind === "two packages"
           ? [newRequestId(), newRequestId()]
           : [newRequestId()];
+    f.session.documentJson = encode({
+      ...readDocument(f.session),
+      machine_id: newRequestId(),
+      agent_id: newRequestId(),
+    });
     const resource = create(ResourceSchema, {
       ...f.resource,
       documentJson: encode({
@@ -538,9 +610,10 @@ it.each(["two packages", "earlier literal"])(
         skill_names: Object.fromEntries(ids.map((id) => [id, "same"])),
       }),
     });
-    render(f.view(resource));
+    const view = render(f.view(resource));
     fireEvent.click(screen.getByRole("button", { name: "Edit input" }));
     const input = screen.getByRole("textbox", { name: "Edited input" });
+    expect(view.container.querySelector(".skill-token-selected")).toBeNull();
     for (const value of ["$other $same", "$same $other", "plain text"]) {
       fireEvent.change(input, { target: { value, selectionStart: 0 } });
       expect(
@@ -550,6 +623,7 @@ it.each(["two packages", "earlier literal"])(
           }) as HTMLButtonElement
         ).disabled,
       ).toBe(true);
+      expect(view.container.querySelector(".skill-token-selected")).toBeNull();
       fireEvent.submit(input.closest("form")!);
       expect(f.edit).not.toHaveBeenCalled();
     }
