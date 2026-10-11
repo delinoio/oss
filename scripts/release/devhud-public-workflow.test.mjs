@@ -198,7 +198,7 @@ test("every downstream environment-bound mutation rechecks the retained configur
     const current = job(name);
     assert.match(
       current,
-      /needs: \[[^\n]*preflight/u,
+      /needs:\s*\[[^\]]*\bpreflight\b/u,
       `${name} must directly retain the preflight fingerprint`,
     );
     for (const variable of releaseFingerprintVariables) {
@@ -406,7 +406,7 @@ test("store submission, review, and cleanup retain the preflight-bound identitie
     review.slice(identityCheck, firstQuery),
     /store-identity-fingerprint[\s\S]*test "\$actual" = "\$EXPECTED_STORE_IDENTITY_FINGERPRINT"/u,
   );
-  assert.match(cleanup, /needs: \[identity, preflight,[^\n]*stores_public\]/u);
+  assert.match(cleanup, /needs:\s*\[\s*identity,\s*preflight,[^\]]*\bstores_public\s*,?\s*\]/u);
 });
 
 test("same-commit retries reconcile public stores without repeating store mutations", () => {
@@ -1061,7 +1061,7 @@ test("dry-run cannot enter publication and rollback stops at store publication",
     job("rollback_pre_store"),
     /needs\.stores_public\.result == 'skipped'/u,
   );
-  assert.match(job("rollback_pre_store"), /needs: \[[^\n]*stores_public/u);
+  assert.match(job("rollback_pre_store"), /needs:\s*\[[^\]]*\bstores_public\b/u);
   assert.match(
     job("rollback_pre_store"),
     /needs\.identity\.outputs\.retry != 'true'/u,
