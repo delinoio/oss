@@ -95,8 +95,147 @@ try {
           requestAnimationFrame(() => requestAnimationFrame(resolve)),
         ),
     );
-  let overlayCases = 0;
+  let overlayCases = 0,
+    selectedOverlayCases = 0;
+  const checkSelectedOverlay = async (root, input) => {
+    await input.fill("한글\n$add-iss");
+    await root.locator(".skill-completion").getByRole("option").waitFor();
+    await input.press("Enter");
+    const selected = root.locator(".skill-token-selected");
+    await selected.waitFor();
+    assert.equal(await input.inputValue(), "한글\n$add-issue");
+    assert.equal(await selected.getAttribute("data-skill-start"), "3");
+    assert.equal(await root.locator(".skill-text-overlay").count(), 1);
+    assert.equal(await root.locator(".skill-token-unavailable").count(), 0);
+    assert.equal(await input.getAttribute("aria-describedby"), null);
+    assert.equal(
+      await root
+        .locator(
+          ".skill-text-overlay a, .skill-text-overlay [tabindex], .skill-text-overlay [role=link]",
+        )
+        .count(),
+      0,
+    );
+    const prefixed = "wrap 한글 ".repeat(30) + "한글\n$add-issue";
+    await input.fill(prefixed);
+    const draft = prefixed + "\n" + "after ".repeat(30);
+    await input.fill(draft);
+    await input.press("Escape");
+    await selected.waitFor();
+    assert.equal(
+      await selected.getAttribute("data-skill-start"),
+      String(draft.indexOf("$add-issue")),
+    );
+    const originalStyle = await input.getAttribute("style");
+    for (const zoom of ["", "2"]) {
+      await input.evaluate((node, zoom) => {
+        node.parentElement.style.zoom = zoom;
+        node.parentElement.style.setProperty("--link", "rgb(20, 80, 180)");
+        if (zoom) {
+          node.style.fontFamily = "monospace";
+          node.style.fontSize = "18px";
+          node.style.lineHeight = "1.6";
+          node.style.letterSpacing = "0.4px";
+          node.style.width = "90%";
+        }
+        window.dispatchEvent(new Event("resize"));
+      }, zoom);
+      await frame();
+      const geometry = await input.evaluate((node) => {
+        const overlay = node.parentElement.querySelector(".skill-text-overlay"),
+          text = overlay.firstElementChild,
+          selected = overlay.querySelector(".skill-token-selected"),
+          native = getComputedStyle(node),
+          mirrored = getComputedStyle(text),
+          style = getComputedStyle(selected);
+        return {
+          width: node.clientWidth,
+          overlayWidth: overlay.clientWidth,
+          textWidth: text.clientWidth,
+          height: node.scrollHeight,
+          textHeight: text.scrollHeight,
+          fonts: [
+            native.fontFamily,
+            native.fontSize,
+            native.lineHeight,
+            native.letterSpacing,
+            native.padding,
+          ].join("|"),
+          mirrored: [
+            mirrored.fontFamily,
+            mirrored.fontSize,
+            mirrored.lineHeight,
+            mirrored.letterSpacing,
+            mirrored.padding,
+          ].join("|"),
+          color: style.color,
+          decoration: style.textDecorationLine,
+          thickness: style.textDecorationThickness,
+          pointer: getComputedStyle(overlay).pointerEvents,
+          hidden: overlay.getAttribute("aria-hidden"),
+        };
+      });
+      assert.equal(geometry.width, geometry.overlayWidth);
+      assert.equal(geometry.width, geometry.textWidth);
+      assert.equal(geometry.fonts, geometry.mirrored);
+      assert(
+        Math.abs(geometry.height - geometry.textHeight) <= 1,
+        JSON.stringify(geometry),
+      );
+      assert.equal(geometry.color, "rgb(20, 80, 180)");
+      assert.equal(geometry.decoration, "underline");
+      assert.equal(geometry.thickness, "1px");
+      assert.equal(geometry.pointer, "none");
+      assert.equal(geometry.hidden, "true");
+    }
+    await input.evaluate((node, originalStyle) => {
+      if (originalStyle === null) node.removeAttribute("style");
+      else node.setAttribute("style", originalStyle);
+      node.parentElement.style.zoom = "";
+      node.parentElement.style.removeProperty("--link");
+      window.dispatchEvent(new Event("resize"));
+      node.scrollTop = 100;
+      node.dispatchEvent(new Event("scroll"));
+      node.setSelectionRange(3, 17);
+    }, originalStyle);
+    await frame();
+    assert.equal(await input.evaluate((node) => node.selectionStart), 3);
+    assert.equal(await input.evaluate((node) => node.selectionEnd), 17);
+    const scroll = await input.evaluate((node) => ({
+      top: node.scrollTop,
+      transform: node.parentElement.querySelector(".skill-text-overlay > div")
+        .style.transform,
+    }));
+    assert(scroll.top > 0);
+    assert.equal(scroll.transform, `translate(0px, ${-scroll.top}px)`);
+    await input.evaluate((node) => {
+      node.dispatchEvent(
+        new CompositionEvent("compositionstart", { bubbles: true }),
+      );
+    });
+    await page.waitForFunction(
+      (node) => !node.parentElement.querySelector(".skill-text-overlay"),
+      await input.elementHandle(),
+    );
+    await input.evaluate((node) => {
+      node.dispatchEvent(
+        new CompositionEvent("compositionend", { bubbles: true }),
+      );
+    });
+    await selected.waitFor();
+    await input.press("End");
+    await input.pressSequentially("!");
+    await input.press("ControlOrMeta+z");
+    assert.equal(await input.inputValue(), draft);
+    assert.equal(await selected.textContent(), "$add-issue");
+    assert.equal(
+      await page.locator("output").getAttribute("data-fixture-creates"),
+      "0",
+    );
+    selectedOverlayCases++;
+  };
   const checkOverlay = async (root, input) => {
+    await checkSelectedOverlay(root, input);
     const draft =
       "한글 Native selection $add-issue $removed-skill\n" +
       "wrap words $removed-skill ".repeat(30);
@@ -495,6 +634,7 @@ try {
       ...source,
       cases,
       overlayCases,
+      selectedOverlayCases,
       screenshots,
       effectiveZoom: "half-viewport reflow",
       nativeAcceptance: "not-performed",

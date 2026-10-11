@@ -23,6 +23,7 @@ import {
   skillRanges,
   editedBindings,
   useSkillCompletion,
+  type SkillTokenBinding,
 } from "./skill-completion";
 import { MutationIntents, useRetainedMutation } from "./mutation";
 import { SupportedLanguage, i18n } from "./localization";
@@ -266,6 +267,9 @@ it("keeps exact draft and accepted bindings through pending or uncertain compose
   });
   await screen.findByRole("option", { name: /add-note/ });
   view.rerender(f.view(machine, true));
+  expect(
+    view.container.querySelector(".skill-token-selected")?.textContent,
+  ).toBe("$add-issue");
   expect(screen.queryByRole("listbox")).toBeNull();
   fireEvent.keyDown(input, { key: "Enter" });
   fireEvent.change(input, { target: { value: "changed", selectionStart: 7 } });
@@ -300,15 +304,17 @@ function AcceptedComposer() {
   });
   return (
     <>
-      <textarea
-        aria-label="Accepted message"
-        disabled={mutation.busy || mutation.uncertain}
-        ref={textarea}
-        value={value}
-        onChange={(e) =>
-          skills.onChange(e.target.value, e.target.selectionStart)
-        }
-      />
+      {skills.wrap(
+        <textarea
+          aria-label="Accepted message"
+          disabled={mutation.busy || mutation.uncertain}
+          ref={textarea}
+          value={value}
+          onChange={(e) =>
+            skills.onChange(e.target.value, e.target.selectionStart)
+          }
+        />,
+      )}
       {skills.list}
       <output data-selected>{skills.selections.length}</output>
       <button
@@ -356,12 +362,19 @@ it("clears accepted bindings in the real retained-mutation callback before the p
   expect(view.container.querySelector("[data-selected]")!.textContent).toBe(
     "1",
   );
+  expect(
+    view.container.querySelector(".skill-token-selected")?.textContent,
+  ).toBe("$add-issue");
   fireEvent.click(screen.getByRole("button", { name: "Enqueue fixture" }));
   await waitFor(() =>
     expect((input as HTMLTextAreaElement).disabled).toBe(true),
   );
+  expect(
+    view.container.querySelector(".skill-token-selected")?.textContent,
+  ).toBe("$add-issue");
   resolve();
   await waitFor(() => expect((input as HTMLTextAreaElement).value).toBe(""));
+  expect(view.container.querySelector(".skill-token-selected")).toBeNull();
   fireEvent.change(input, {
     target: { value: "$add-issue", selectionStart: 10 },
   });
@@ -1231,4 +1244,249 @@ it("defers confirmed count publication during composition and suppresses locked 
   expect(f.read).toHaveBeenCalledOnce();
   expect((input as HTMLTextAreaElement).value).toBe("$missing ");
   expect(f.send).not.toHaveBeenCalled();
+});
+
+it.each(["mouse", "Enter", "Tab"])(
+  "paints only the explicit %s binding while retaining Korean bytes, focus and sole textarea ownership",
+  async (method) => {
+    const f = fixture();
+    const view = render(f.view());
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    input.focus();
+    fireEvent.change(input, {
+      target: { value: "한글\n$add-iss", selectionStart: 11 },
+    });
+    const option = await screen.findByRole("option");
+    if (method === "mouse") {
+      fireEvent.mouseDown(option);
+      fireEvent.click(option);
+    } else fireEvent.keyDown(input, { key: method });
+    await waitFor(() => expect(input.selectionStart).toBe(13));
+    const painted = view.container.querySelector(".skill-token-selected")!;
+    expect(painted.textContent).toBe("$add-issue");
+    expect(painted.getAttribute("data-skill-start")).toBe("3");
+    expect(input.value).toBe("한글\n$add-issue");
+    expect(document.activeElement).toBe(input);
+    expect(view.container.querySelectorAll(".skill-text-overlay")).toHaveLength(
+      1,
+    );
+    expect(painted.closest("[aria-hidden=true]")).toBeTruthy();
+    expect(painted.closest("a,[role=link],[tabindex]")).toBeNull();
+    expect(input.getAttribute("aria-describedby")).toBeNull();
+    expect(f.send).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("Send"));
+    expect(f.send).toHaveBeenLastCalledWith({
+      value: "한글\n$add-issue",
+      skills: [entries[0]!.selection],
+    });
+    fireEvent.change(input, {
+      target: { value: "Before 한글\n$add-issue", selectionStart: 20 },
+    });
+    expect(
+      view.container
+        .querySelector(".skill-token-selected")
+        ?.getAttribute("data-skill-start"),
+    ).toBe("10");
+    fireEvent.change(input, {
+      target: { value: "Before 한글\n$add-note", selectionStart: 19 },
+    });
+    expect(view.container.querySelector(".skill-token-selected")).toBeNull();
+  },
+);
+
+it("keeps manually typed matching tokens plain and removes selected decoration on unresolved or changed scope", async () => {
+  const f = fixture();
+  const view = render(f.view());
+  const input = screen.getByRole("textbox");
+  fireEvent.change(input, {
+    target: { value: "$add-issue", selectionStart: 10 },
+  });
+  await screen.findByRole("option");
+  expect(view.container.querySelector(".skill-token-selected")).toBeNull();
+  fireEvent.keyDown(input, { key: "Tab" });
+  expect(view.container.querySelectorAll(".skill-token-selected")).toHaveLength(
+    1,
+  );
+  view.rerender(f.view(""));
+  expect(view.container.querySelector(".skill-token-selected")).toBeNull();
+  expect(screen.getByText("Send")).toHaveProperty("disabled", true);
+  view.rerender(f.view(newRequestId()));
+  await screen.findByText(
+    "The selected skills need reselection before sending.",
+  );
+  expect(view.container.querySelector(".skill-token-selected")).toBeNull();
+  expect(input).toHaveProperty("value", "$add-issue");
+});
+
+it("retains selected decoration through locks and unknown inventory, but confirmed absence wins and IME suppresses it", async () => {
+  const f = fixture();
+  const view = render(f.view());
+  const input = screen.getByRole("textbox");
+  fireEvent.change(input, { target: { value: "$add-iss", selectionStart: 8 } });
+  await screen.findByRole("option");
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(view.container.querySelectorAll(".skill-token-selected")).toHaveLength(
+    1,
+  );
+  fireEvent.compositionStart(input);
+  expect(view.container.querySelector(".skill-text-overlay")).toBeNull();
+  fireEvent.compositionEnd(input);
+  expect(view.container.querySelectorAll(".skill-token-selected")).toHaveLength(
+    1,
+  );
+  view.rerender(f.view(machine, true));
+  expect(view.container.querySelectorAll(".skill-token-selected")).toHaveLength(
+    1,
+  );
+  fireEvent.change(input, {
+    target: { value: "locked replacement", selectionStart: 18 },
+  });
+  expect(input).toHaveProperty("value", "$add-issue");
+  expect(screen.queryByRole("option")).toBeNull();
+  view.rerender(f.view());
+  await waitFor(() => expect(f.client.isFetching()).toBe(0));
+  let release!: () => void;
+  f.read.mockImplementationOnce(async () => {
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return { skills: entries };
+  });
+  const pending = f.client.invalidateQueries();
+  await waitFor(() => expect(release).toBeDefined());
+  expect(view.container.querySelectorAll(".skill-token-selected")).toHaveLength(
+    1,
+  );
+  expect(view.container.querySelector(".skill-token-unavailable")).toBeNull();
+  release();
+  await pending;
+  f.read.mockRejectedValueOnce(new Error("Synthetic inventory failure"));
+  await f.client.invalidateQueries();
+  expect(view.container.querySelectorAll(".skill-token-selected")).toHaveLength(
+    1,
+  );
+  expect(view.container.querySelector(".skill-token-unavailable")).toBeNull();
+  f.read.mockResolvedValueOnce({ skills: [] });
+  await f.client.invalidateQueries();
+  await waitFor(() =>
+    expect(
+      view.container.querySelectorAll(".skill-token-unavailable"),
+    ).toHaveLength(1),
+  );
+  expect(view.container.querySelector(".skill-token-selected")).toBeNull();
+  fireEvent.compositionStart(input);
+  expect(view.container.querySelector(".skill-text-overlay")).toBeNull();
+  fireEvent.compositionEnd(input);
+  await waitFor(() =>
+    expect(view.container.querySelector(".skill-text-overlay")).not.toBeNull(),
+  );
+  expect(input).toHaveProperty("value", "$add-issue");
+  expect(f.send).not.toHaveBeenCalled();
+});
+
+function BoundDecorationComposer({
+  prompt,
+  initialBindings,
+}: {
+  prompt: string;
+  initialBindings: SkillTokenBinding[];
+}) {
+  const [value, change] = useState(prompt);
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  const skills = useSkillCompletion({
+    value,
+    change,
+    textarea,
+    machineId: machine,
+    agentId: agent,
+    enabled: false,
+    initialBindings,
+  });
+  return skills.wrap(
+    <textarea
+      aria-label="Retained selected draft"
+      ref={textarea}
+      value={value}
+      readOnly
+    />,
+  );
+}
+it("keeps the first 16 selected decorations when more distinct skills are bound", () => {
+  const tokens = Array.from({ length: 17 }, (_, index) => `$skill-${index}`),
+    prompt = tokens.join(" "),
+    bindings = skillRanges(prompt).map((range) => ({
+      start: range.start,
+      end: range.end,
+      token: `$${range.prefix}`,
+      selection: { ...entries[0]!.selection, skillId: newRequestId() },
+      stale: false,
+      context: `${machine}:${agent}::`,
+    }));
+  const f = fixture();
+  const view = render(
+    <TransportProvider
+      transport={createRouterTransport((router) =>
+        router.service(SkillService, { listSkills: f.read }),
+      )}
+    >
+      <QueryClientProvider client={f.client}>
+        <BoundDecorationComposer prompt={prompt} initialBindings={bindings} />
+      </QueryClientProvider>
+    </TransportProvider>,
+  );
+
+  const selected = view.container.querySelectorAll(".skill-token-selected");
+  expect([...selected].map((span) => span.textContent)).toEqual(
+    tokens.slice(0, 16),
+  );
+  expect(f.read).not.toHaveBeenCalled();
+});
+it("bounds painted explicit spans and leaves duplicate, stale or ambiguous binding claims plain", () => {
+  const prompt = Array.from({ length: 2048 }, () => "$add-issue").join(" ");
+  const bindings = skillRanges(prompt).map((range) => ({
+    start: range.start,
+    end: range.end,
+    token: "$add-issue",
+    selection: entries[0]!.selection,
+    stale: false,
+    context: `${machine}:${agent}::`,
+  }));
+  const f = fixture();
+  const tree = (initialBindings: SkillTokenBinding[]) => (
+    <TransportProvider
+      transport={createRouterTransport((router) =>
+        router.service(SkillService, { listSkills: f.read }),
+      )}
+    >
+      <QueryClientProvider client={f.client}>
+        <BoundDecorationComposer
+          prompt={prompt}
+          initialBindings={initialBindings}
+        />
+      </QueryClientProvider>
+    </TransportProvider>
+  );
+  const view = render(tree(bindings));
+  expect(view.container.querySelectorAll(".skill-token-selected")).toHaveLength(
+    16,
+  );
+  // A new authenticated connection is a scope fence, even with reads disabled.
+  view.rerender(tree(bindings));
+  expect(view.container.querySelector(".skill-token-selected")).toBeNull();
+  view.unmount();
+  const duplicate = { ...bindings[0]! };
+  const invalid = render(
+    tree([
+      bindings[0]!,
+      duplicate,
+      { ...bindings[1]!, stale: true },
+      { ...bindings[2]!, ambiguous: true },
+      {
+        ...bindings[3]!,
+        selection: { ...entries[0]!.selection, contentRevision: "invalid" },
+      },
+    ]),
+  );
+  expect(invalid.container.querySelector(".skill-token-selected")).toBeNull();
+  expect(f.read).not.toHaveBeenCalled();
 });

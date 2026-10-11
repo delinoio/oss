@@ -22,7 +22,7 @@ import {
 } from "@delinoio/delidev-api-client";
 import { QueuedInput, type QueuedInputDraft } from "./queue";
 import { MutationIntents } from "./mutation";
-import { encode } from "./documents";
+import { encode, document as readDocument } from "./documents";
 
 function fixture(prompt = "Original queued input") {
   const id = newRequestId(),
@@ -406,6 +406,11 @@ it("edits skill-bound input with explicit retained selections and clears them de
     skillId = newRequestId(),
     inventoryId = newRequestId(),
     workerDeviceId = newRequestId();
+  f.session.documentJson = encode({
+    ...readDocument(f.session),
+    machine_id: newRequestId(),
+    agent_id: newRequestId(),
+  });
   const bound = create(ResourceSchema, {
     ...f.resource,
     documentJson: encode({
@@ -425,7 +430,7 @@ it("edits skill-bound input with explicit retained selections and clears them de
       skill_names: { [skillId]: "add-issue" },
     }),
   });
-  render(f.view(bound));
+  const view = render(f.view(bound));
   expect(
     (
       screen.getByRole("button", {
@@ -434,9 +439,17 @@ it("edits skill-bound input with explicit retained selections and clears them de
     ).disabled,
   ).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Edit input" }));
+  expect(
+    view.container.querySelector(".skill-token-selected")?.textContent,
+  ).toBe("$add-issue");
   fireEvent.change(screen.getByRole("textbox", { name: "Edited input" }), {
     target: { value: "New Before $add-issue after", selectionStart: 0 },
   });
+  expect(
+    view.container
+      .querySelector(".skill-token-selected")
+      ?.getAttribute("data-skill-start"),
+  ).toBe("11");
   fireEvent.click(screen.getByRole("button", { name: "Save input" }));
   await waitFor(() => expect(f.edit).toHaveBeenCalledTimes(1));
   expect(f.edit.mock.calls[0]![0]).toMatchObject({
@@ -455,6 +468,11 @@ it("edits skill-bound input with explicit retained selections and clears them de
 it("explicitly clears selected bindings without altering visible text", async () => {
   const f = fixture(),
     skillId = newRequestId();
+  f.session.documentJson = encode({
+    ...readDocument(f.session),
+    machine_id: newRequestId(),
+    agent_id: newRequestId(),
+  });
   const bound = create(ResourceSchema, {
     ...f.resource,
     documentJson: encode({
@@ -474,11 +492,15 @@ it("explicitly clears selected bindings without altering visible text", async ()
       skill_names: { [skillId]: "add-issue" },
     }),
   });
-  render(f.view(bound));
+  const view = render(f.view(bound));
   fireEvent.click(screen.getByRole("button", { name: "Edit input" }));
+  expect(
+    view.container.querySelector(".skill-token-selected")?.textContent,
+  ).toBe("$add-issue");
   fireEvent.click(
     screen.getByRole("button", { name: "Clear selected skills" }),
   );
+  expect(view.container.querySelector(".skill-token-selected")).toBeNull();
   expect(screen.getByRole("textbox", { name: "Edited input" })).toHaveProperty(
     "value",
     "$add-issue remains plain",
@@ -566,6 +588,11 @@ it.each(["two packages", "earlier literal"])(
         kind === "two packages"
           ? [newRequestId(), newRequestId()]
           : [newRequestId()];
+    f.session.documentJson = encode({
+      ...readDocument(f.session),
+      machine_id: newRequestId(),
+      agent_id: newRequestId(),
+    });
     const resource = create(ResourceSchema, {
       ...f.resource,
       documentJson: encode({
@@ -583,9 +610,10 @@ it.each(["two packages", "earlier literal"])(
         skill_names: Object.fromEntries(ids.map((id) => [id, "same"])),
       }),
     });
-    render(f.view(resource));
+    const view = render(f.view(resource));
     fireEvent.click(screen.getByRole("button", { name: "Edit input" }));
     const input = screen.getByRole("textbox", { name: "Edited input" });
+    expect(view.container.querySelector(".skill-token-selected")).toBeNull();
     for (const value of ["$other $same", "$same $other", "plain text"]) {
       fireEvent.change(input, { target: { value, selectionStart: 0 } });
       expect(
@@ -595,6 +623,7 @@ it.each(["two packages", "earlier literal"])(
           }) as HTMLButtonElement
         ).disabled,
       ).toBe(true);
+      expect(view.container.querySelector(".skill-token-selected")).toBeNull();
       fireEvent.submit(input.closest("form")!);
       expect(f.edit).not.toHaveBeenCalled();
     }

@@ -464,6 +464,43 @@ export function useSkillCompletion({
           value.slice(binding.start, binding.end) !== binding.token),
     ) ||
     distinct.size > 16;
+  // Selection styling describes retained explicit authority, not inventory
+  // availability. Unknown reads and pending locks must not invent or erase it.
+  const selectedRanges: SkillToken[] = [];
+  if (
+    !composition &&
+    !contextChanged &&
+    isEntityId(machineId) &&
+    isEntityId(agentId)
+  ) {
+    const bindingsByRange = new Map<string, SkillTokenBinding[]>();
+    for (const binding of bindings) {
+      const key = `${binding.start}:${binding.end}:${binding.token}`,
+        matches = bindingsByRange.get(key);
+      if (matches) matches.push(binding);
+      else bindingsByRange.set(key, [binding]);
+    }
+    for (const range of ranges) {
+      const matches = bindingsByRange.get(
+          `${range.start}:${range.end}:$${range.prefix}`,
+        ),
+        binding = matches?.[0];
+      if (
+        matches?.length !== 1 ||
+        !binding ||
+        binding.stale ||
+        binding.ambiguous ||
+        (binding.context && binding.context !== scope) ||
+        !isEntityId(binding.selection.skillId) ||
+        !isEntityId(binding.selection.inventoryId) ||
+        !isEntityId(binding.selection.workerDeviceId) ||
+        !/^[a-f0-9]{64}$/.test(binding.selection.contentRevision)
+      )
+        continue;
+      selectedRanges.push(range);
+      if (selectedRanges.length === 16) break;
+    }
+  }
   useLayoutEffect(() => {
     if (!keyboardNavigation.current) return;
     keyboardNavigation.current = false;
@@ -604,6 +641,7 @@ export function useSkillCompletion({
         textarea={textarea}
         value={value}
         ranges={unavailable}
+        selected={selectedRanges}
         descriptionId={`${id}-unavailable`}
         announcedCount={announcedCount}
       >
@@ -619,6 +657,7 @@ function SkillText({
   textarea,
   value,
   ranges,
+  selected,
   descriptionId,
   announcedCount,
   children,
@@ -626,12 +665,23 @@ function SkillText({
   textarea: RefObject<HTMLTextAreaElement | null>;
   value: string;
   ranges: SkillToken[];
+  selected: SkillToken[];
   descriptionId: string;
   announcedCount?: number;
   children: ReactNode;
 }) {
   const frame = useRef<HTMLDivElement>(null),
     content = useRef<HTMLDivElement>(null);
+  // Reuse the one mirror, with confirmed absence taking precedence over an
+  // explicit selection. Both sets come from the same nonoverlapping token scan.
+  const painted = [
+    ...ranges.map((range) => ({ ...range, selected: false })),
+    ...selected
+      .filter(
+        (range) => !ranges.some((missing) => missing.start === range.start),
+      )
+      .map((range) => ({ ...range, selected: true })),
+  ].sort((a, b) => a.start - b.start);
   useLayoutEffect(() => {
     const input = textarea.current,
       viewport = frame.current,
@@ -685,16 +735,18 @@ function SkillText({
       input.removeEventListener("scroll", align);
       window.removeEventListener("resize", align);
     };
-  }, [textarea, value, ranges.length]);
+  }, [textarea, value, painted.length]);
   let end = 0;
-  const segments = ranges.map((range) => {
+  const segments = painted.map((range) => {
     const preceding = value.slice(end, range.start);
     end = range.end;
     return (
       <span key={range.start}>
         {preceding}
         <span
-          className="skill-token-unavailable"
+          className={
+            range.selected ? "skill-token-selected" : "skill-token-unavailable"
+          }
           data-skill-start={range.start}
         >
           {value.slice(range.start, range.end)}
@@ -705,7 +757,7 @@ function SkillText({
   return (
     <div
       className="skill-textarea"
-      data-skill-overlay={ranges.length > 0 || undefined}
+      data-skill-overlay={painted.length > 0 || undefined}
     >
       {children}
       <span
@@ -720,7 +772,7 @@ function SkillText({
             ? copy("skills.tokensUnavailable", { count: announcedCount })
             : copy("skills.tokensAvailable")}
       </span>
-      {ranges.length ? (
+      {painted.length ? (
         <>
           <div ref={frame} className="skill-text-overlay" aria-hidden="true">
             <div ref={content}>
@@ -729,13 +781,15 @@ function SkillText({
               {"\u200b"}
             </div>
           </div>
-          <span
-            id={descriptionId}
-            className="sidebar-sr-only"
-            aria-hidden="true"
-          >
-            {copy("skills.tokensUnavailable", { count: ranges.length })}
-          </span>
+          {ranges.length ? (
+            <span
+              id={descriptionId}
+              className="sidebar-sr-only"
+              aria-hidden="true"
+            >
+              {copy("skills.tokensUnavailable", { count: ranges.length })}
+            </span>
+          ) : null}
         </>
       ) : null}
     </div>
