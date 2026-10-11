@@ -78,7 +78,7 @@ it("places an original choice only in an empty unsent live composer", async () =
     });
     router.service(ResourceService, {
       getSnapshot: () => ({
-        resources: [session, message],
+        resources: [session],
         cursor: "original-snapshot",
       }),
       listResources: (request) => ({

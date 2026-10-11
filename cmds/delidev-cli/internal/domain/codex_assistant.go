@@ -41,6 +41,20 @@ func (q *CodexEmbeddedQuestion) UnmarshalJSON(raw []byte) error {
 	if Decode(raw, &value) != nil || Decode(raw, &fields) != nil || len(fields["title"]) == 0 || bytes.Equal(bytes.TrimSpace(fields["title"]), []byte("null")) || len(fields["options"]) == 0 {
 		return invalidAssistantMetadata()
 	}
+	// encoding/json otherwise coerces a null string-array entry to "".
+	// Native options are strings; preserve that strict distinction.
+	if !bytes.Equal(bytes.TrimSpace(fields["options"]), []byte("null")) {
+		var options []json.RawMessage
+		if Decode(fields["options"], &options) != nil {
+			return invalidAssistantMetadata()
+		}
+		for _, option := range options {
+			var original string
+			if bytes.Equal(bytes.TrimSpace(option), []byte("null")) || json.Unmarshal(option, &original) != nil {
+				return invalidAssistantMetadata()
+			}
+		}
+	}
 	*q = CodexEmbeddedQuestion(value)
 	return q.Validate()
 }
