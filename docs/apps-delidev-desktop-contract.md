@@ -375,6 +375,31 @@ and follow the [heartbeat projection contract](protos-delidev-v1-contract.md#mac
 
 The feature adds an explicit Diagnostics panel beside the retained session conversation. It uses generated owner/client Connect Query after `REQUEST_DIAGNOSTICS_V1` capability validation, with an optional exact execution UUID filter, explicit refresh and 50-record pages. Validate the entire page's original session/execution, closed source/operation/state/error/settings, identity spelling, timestamps and precise counters before rendering. Keep native input selection/effective settings separate from proxy request/provider observations, and unavailable fields separate from zero/false. A send claim cannot prove provider acceptance; native terminal metadata cannot confirm native cleanup. Historical absence cannot be reconstructed. Escape/Close returns focus to Diagnostics and preserves the composer; inactive diagnostic queries are canceled/disposed. No mutation intent, automatic retry, payload display, usage reconstruction or public opener is introduced. See the [diagnostics contract](cmds-delidev-diagnostics-contract.md) and validation records in the integration PR.
 
+## Session Diagnostics spacing
+
+Session Diagnostics shares one 32px outer inset and left-aligned 1040px maximum
+content width across the original technical portal and request diagnostics.
+Top-level sections use normal semantic-theme dividers and 32px spacing. Headings
+use 16px text with 16px below; body text uses 14px and 1.5 line height. Fact rows
+use a 200px label column, a flexible value column, a 24px column gap and a 12px
+row gap without default definition-value indentation. Complete references wrap;
+ordered accounts keep their original numbering and order.
+
+Below 640px of available Diagnostics panel width, the inset is 16px and facts
+stack with 4px between each label and value and 12px between pairs. Request
+diagnostics has no second inset. Controls remain at least 40px high with visible
+keyboard focus. Use existing system fonts and semantic light/dark theme tokens.
+Preserve English/Korean text, notices, original section order, filters, pagination,
+disclosures, close controls, confirmations and recovery gates. Keep the original
+portal, query/mutation owners, tab lifecycle, scrolling and focus behavior. Other
+tool tabs, Session information, Settings Connections and standalone Doctor retain
+their layouts. This presentation adds no RPC, native change, logging or persistence.
+
+The synthetic browser regression in
+`apps/delidev/scripts/test-session-diagnostics-layout.mjs` checks wide/narrow
+geometry, long references, ordered accounts, themes, both languages and effective
+200% reflow independently of component behavior and installed-native acceptance.
+
 ## Scope
 
 `apps/delidev` owns the React desktop presentation and native Tauri host for DeliDev. The full desktop requirements in the feature remain normative; record implemented surfaces and remaining native/product work in pull requests, issues and CI logs/artifacts.
@@ -2497,7 +2522,7 @@ All three backup list adapters reject an entire page with duplicate nonempty IDs
 
 - The feature owner scope defers only Windows/Linux numeric tab shortcuts while external browser content has focus. Keep those native paths denied and disclose the exception in localized Help; tab-bar selection and ordinary app/input/terminal shortcuts remain available. Safe macOS forwarding and every other session-tab requirement remain in scope.
 
-- The feature simplify only the Session header and persistent Info hierarchy. Keep retained harness/title/live connection and original action predicates in the header; project independent labelled ID/workspace/result/dispatch/archive/preparation/recovery and applicable complete safe automatic-title evidence into Status and recovery. The feature supersede the primary disclosure presentation: flat expanded sections preserve mutation/editors, SessionTools portal host, budget/context owners and saved/native execution observations. Session activity still owns eligible reader/cache disposal; pending original link/unlink recovery retains exact uncertain bytes. Subagent payload continuation follows the original active session and primary visibility; meaningful record details remain. Preserve resource tabs, child Info identity, Show details/budget/recovery focus, native Browser/terminal lifetimes and original360px/upper-band geometry. No protocol, storage, native or account authority changes.
+- The feature simplify only the Session header and persistent Info hierarchy. Keep retained harness/title/live connection and original action predicates in the header; project independent labelled ID/workspace/result/dispatch/archive/preparation/recovery and applicable complete safe automatic-title evidence into Diagnostics. The feature supersede the primary disclosure presentation: flat expanded sections preserve mutation/editors, SessionTools portal host, budget/context owners and saved/native execution observations. Session activity still owns eligible reader/cache disposal; pending original link/unlink recovery retains exact uncertain bytes. Subagent payload continuation follows the original active session and primary visibility; meaningful record details remain. Preserve resource tabs, child Info identity, Show details/budget/recovery focus, native Browser/terminal lifetimes and original360px/upper-band geometry. No protocol, storage, native or account authority changes.
 
 - Home navigation may retain only the validated closed conversation kind, original direct parent ID relationship hint and child display name from its authenticated session row. Pass that hint to the connection-owned tab store on deliberate activation; retain no fork snapshot, account/native configuration or resource body. Ordinary sessions and independent Forks keep their existing activation callback. The active Sidechat keeps its own sidebar selection while the workspace routes through its original parent. This hint grants no mutation or native authority.
 
@@ -3647,7 +3672,7 @@ Session details expose revision-bound rename, retry of confirmed failed/canceled
 ### Session workspace presentation
 
 Existing session detail uses a compact conversation-first workspace. Keep the
-shared sidebar and native title bar. The header retains the original name and live connection observation. Independent workspace, outcome, dispatch, Archive and automatic-title evidence belongs in Status and recovery . Stop and Resume retain their existing revision, uncertainty, budget and
+shared sidebar and native title bar. The header retains the original name and live connection observation. Independent workspace, outcome, dispatch, Archive and automatic-title evidence belongs in Diagnostics. Stop and Resume retain their existing revision, uncertainty, budget and
 startup-rejection guards. Independent Fork and Archive/Restore use a keyboard-operable
 Session actions popup; opening or closing it never creates or replaces authority.
 
@@ -3661,7 +3686,7 @@ infer branding from current execution, today's Agent/account/model or native
 inventory. Preserve the supplied mark colors, proportions, transparency, notices
 and OpenCode/Grok theme variants; branding adds no focus target or authority.
 
-Keep the header limited to retained harness identity, session title, live connection and original actions. Status and recovery displays labelled Session ID, Workspace, Result, Dispatch, Archive, Preparation, Recovery, then applicable Automatic title with its complete safe reason, in that order. Reuse independent original observations without a combined health/readiness inference; manual-title omission and loaded sidebar evidence remain unchanged. Right-align existing 40px Stop,
+Keep the header limited to retained harness identity, session title, live connection and original actions. Diagnostics displays labelled Session ID, Workspace, Result, Dispatch, Archive, Preparation, Recovery, then applicable Automatic title with its complete safe reason. Reuse independent original observations without a combined health/readiness inference; manual-title omission and loaded sidebar evidence remain unchanged. Right-align existing 40px Stop,
 Resume/startup Retry and Session actions controls with 8px corners. Use semantic
 tokens, a thin divider and 20px horizontal/12px vertical padding. At 520px available
 session width or less use 12px padding and wrap controls below identity; retain
@@ -3689,13 +3714,27 @@ cancel publication and discard bytes through their original read owners. Accepte
 or uncertain mutations retain original connection-owned request/controller identity;
 selection, closure and reopening never create a resource or retry a mutation.
 
-Info remains persistent beside the active pane, with the original section focus,
+Info remains persistent beside the active pane except during validated initial
+Conversation startup as defined under [Detailed session startup](#detailed-session-startup).
+Keep the original section focus,
 recovery and budget controls. At 900px available session width reserve its 360px
 right rail; below 900px reflow the same Info DOM into the bounded scrolling band
 above content. Each active resource occupies the remaining full-width region,
 without a Browser split, compact tool overlay or independent terminal dock.
 Conversation retains its own transcript, request/queue tray and pinned composer.
 Tool labels and tabs remain reachable by scrolling at narrow/effective 200% layouts.
+
+### Session Info summaries
+
+The Session information header shows compact, noninteractive saved model and reasoning-effort chips from the immutable initial execution configuration. Their accessible names identify saved selections. Omit unspecified effort; missing, incomplete or unsupported snapshots show unavailable model evidence and retain detailed guidance in Diagnostics. Current Agent edits, resumed executions and native observations cannot replace these saved chips.
+
+Keep the principal Info groups ordered Pull requests, Subagents, Context, then Usage and budget. Hide only successfully empty PR and Subagent sections. The routine Status and recovery heading and Workspace/Result/Archive summary do not appear in Info. The original SessionTools portal and recovery controllers remain mounted, with applicable failures, correction guidance, confirmations, accepted/uncertain/failed jobs and exact retries in Info. Healthy empty hosts reserve no section padding or divider. Native read-only settings and usage observations, source references and safe technical snapshot details appear in Diagnostics. Original interactive native prompts, terminal/stop controls, applied instruction disclosures and storage actions remain below the principal groups, with unchanged source ownership and guards.
+
+Usage and budget starts with a full-width input/output row: only In and Out labels are chips; exact locale-formatted integers remain plain text at opposite ends. Read the original session's response-only lifetime summary through the existing authenticated GetUsageSummary RPC. Validate creation metadata, returned bounds, profile, coverage and measures; pin the first server-default upper bound, then read older disjoint half-open ranges of at most 366 days sequentially through session creation. Add only input/output known subtotals and their measured/unavailable counts with BigInt. Missing evidence stays unavailable and measured zero remains zero. Publish only complete collections; retain the last complete result as stale after a failed refresh with read-only Retry. Keep the incomplete root-response coverage notice in Info and independent per-range evidence in Diagnostics. No native, child, cache or reasoning counts are added. Missing execution/compaction coverage counts remain per range, and separate reads do not establish an atomic ledger snapshot. Refresh on active entry, original usage invalidation and authenticated reconnect; cancellation and original-owner disposal fence delayed results.
+
+Each visible original PR row shows the standard PR icon with a lower-right dot: green for open, purple for merged and red for closed without merge. There is no textual state badge. A localized accessible name and tooltip identify state; Diagnostics retains the current observation timestamp and read-only Retry. Existing titles, Open, unlink and original failure/recovery controls remain independent. Read only active visible associations, with at most four concurrent detail reads and no polling or inventory scan. Validate the original configured repository, authenticated detail envelope and exact remote repository/PR IDs and node IDs before coloring. Merged requires a closed observation; contradictory, unavailable, failed, stale or mismatched evidence is neutral gray. Association invalidation and authenticated reconnect refresh these observations without mutation or expanded authority.
+
+Keep the existing 360px rail, compact upper band/drawer, bounded scrolling and semantic light/dark tokens. Narrow and effective 200% layouts wrap long values without replacing controllers, drafts or Info focus targets. English and Korean changes affect presentation only and start no new reads or actions.
 
 Browser keeps its mounted original account/profile controller and releases its
 native child through exact Hide cleanup when a page becomes inactive. Failed or
@@ -5571,7 +5610,29 @@ precedence and suppress animation. Failure includes inert original observed-stag
 context alongside independent cleanup guidance. Reconnection performs reads only.
 
 Keep the polite status node, composer, drafts, tools, Info and all original
-controllers mounted. English/Korean labels and semantic tokens wrap within narrow
+controllers mounted. During a validated initial startup projection in the active
+ordinary Session or General Chat Conversation, hide Info with `hidden` and `inert`.
+Require original first-input ownership in addition to the accepted progress,
+revision, transcript and Worker-presence predicates. Preparing workspace, Waiting
+to start, Starting agent and Waiting for response all hide Info, including the
+compact row after initial input publication. A later follow-up, replacement
+execution, unsupported workspace or unknown first-input evidence retains Info.
+Before hiding focused Info, move focus to its original connected, enabled and
+visible composer, or to the Session heading when the composer is unavailable.
+Restoration does not move focus. Retain Info controller and query activity while
+hidden; visibility alone must not recreate requests, mutations, editors or drafts.
+
+Remove the hidden Info rail's 360px column and 24px gap at wide widths and the
+bounded band below 900px. The conversation occupies the full remaining width;
+the detailed unboxed startup list retains its centered 380px maximum width.
+Actual assistant/tool/progress response evidence restores Info, including when
+the response payload later leaves the transcript or an older revision arrives.
+Failure, Stop/pause, archive, recovery, budget, approval, user-input, uncertainty,
+stale or incomplete observations and connection problems restore normal Info
+whenever they suppress the startup projection. Tool tabs retain normal Info
+visibility; Sidechat retains its independent behavior and child controller.
+
+English/Korean labels and semantic tokens wrap within narrow
 or 200% layouts, reduced motion disables animation, and disclosure changes never
 move focus. Old peers retain the existing coarse presentation without fabricated
 details or execution rejection. The independently owned initial-readiness warning

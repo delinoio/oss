@@ -2545,7 +2545,7 @@ it("retries the exact accepted message identity after uncertainty instead of sen
   expect(calls[0][0]).toEqual(calls[1][0]);
 });
 
-it("shows expanded execution configuration without changing the unsent session draft or dispatching work", async () => {
+it("shows unavailable execution evidence in Diagnostics without changing the draft", async () => {
   const value = fixture();
   render(<App transport={value.transport} />);
   fireEvent.click(
@@ -2557,12 +2557,11 @@ it("shows expanded execution configuration without changing the unsent session d
   fireEvent.change(composer, {
     target: { value: "Keep the original unsent draft" },
   });
-  const executionHeading = screen.getByRole("heading", {
-    name: "Execution settings",
-  });
-  expect(executionHeading.closest("details")).toBeNull();
-  expect(executionHeading.closest("[hidden]")).toBeNull();
-  expect(screen.getByText(/No accepted execution configuration/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Diagnostics" }));
+  expect(
+    screen.getByText(/No accepted execution configuration is available/),
+  ).toBeTruthy();
   expect((composer as HTMLTextAreaElement).value).toBe(
     "Keep the original unsent draft",
   );
@@ -3845,8 +3844,10 @@ it(
           ?.hidden,
       ).toBe(true),
     );
-    expect(main.getAttribute("aria-keyshortcuts")).toMatch(
-      /^(Meta|Control)\+B$/,
+    await waitFor(() =>
+      expect(main.getAttribute("aria-keyshortcuts")).toMatch(
+        /^(Meta|Control)\+B$/,
+      ),
     );
   },
   fullShellTimeoutMs,
