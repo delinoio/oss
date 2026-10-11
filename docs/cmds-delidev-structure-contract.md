@@ -1,5 +1,10 @@
 # DeliDev source ownership and compatibility
 
+## Named checkout allocation
+
+Worker 53 `NAMED_WORKSPACE_DIRECTORIES_V1` owns frozen named managed directories under the allocation workflow. Preserve every existing capability, including Worker 19 remote cloning. The owning feature includes its enum reservation, declaration, generated bindings and complete implementation; no new RPC, System capability or migration is required. Follow the [workspace contract](cmds-delidev-workspace-contract.md#frozen-named-managed-directories).
+
+
 ## Allocation workflow
 
 A complete DeliDev feature PR may update protocol-number and database-version

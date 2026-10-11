@@ -13293,6 +13293,13 @@
       "member": "replayed",
       "number": 2,
       "newDeclaration": true
+    },
+    {
+      "issue": 2560,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1",
+      "number": 53
     }
   ],
   "rpcReservations": [

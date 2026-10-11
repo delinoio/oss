@@ -1,5 +1,10 @@
 # DeliDev storage operations
 
+## Frozen managed checkout layout
+
+Managed storage preserves the original optional `directory_name` through immutable preparation/manifest digests, snapshot payloads, restore identity commitments and deletion inventories. Omission retains historical UUID paths; named payloads restore their exact live basename without consulting registrations. Worker 53 is required for named restoration and assignment. UUID snapshot/resource identity, no-replace publication, original-root confinement, joined cleanup and replacement rejection remain unchanged. Follow the [workspace contract](cmds-delidev-workspace-contract.md#frozen-named-managed-directories).
+
+
 ## API format generation storage
 
 Capability 9 keeps bounded server-owned generations in account JSON, with no

@@ -34,8 +34,9 @@ func (kind RepositorySourceKind) managed() bool {
 }
 
 type RepositorySpec struct {
-	SourceKind RepositorySourceKind `json:"source_kind,omitempty"`
-	RemoteURL  string               `json:"remote_url,omitempty"`
+	DirectoryName string               `json:"directory_name,omitempty"`
+	SourceKind    RepositorySourceKind `json:"source_kind,omitempty"`
+	RemoteURL     string               `json:"remote_url,omitempty"`
 	// ForkRegistrationSource preserves the original common-directory authority
 	// after the parent managed workspace is deleted. Copying still uses Checkout.
 	ForkRegistrationSource string              `json:"fork_registration_source,omitempty"`
@@ -72,6 +73,7 @@ const (
 )
 
 type PreparedRepository struct {
+	DirectoryName       string               `json:"directory_name,omitempty"`
 	SourceKind          RepositorySourceKind `json:"source_kind,omitempty"`
 	RemoteURL           string               `json:"remote_url,omitempty"`
 	CloneRootDigest     string               `json:"clone_root_digest,omitempty"`
@@ -208,6 +210,9 @@ func (r PrepareRequest) validateStructure() error {
 	if len(r.Repositories) == 0 || len(r.Repositories) > 100 {
 		return domain.Fail(domain.InvalidArgument, "Invalid project repository count.", "Configure 1 through 100 repositories.")
 	}
+	if err := validateDirectoryNames(r); err != nil {
+		return err
+	}
 	ids := []domain.ID{}
 	primary := false
 	prTargets := 0
@@ -317,6 +322,9 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 	root := filepath.Join(m.Root, "workspaces", string(request.SessionID))
 	manifestPath := filepath.Join(root, "manifest.json")
 	if _, err := os.Lstat(root); err == nil {
+		if _, manifestErr := os.Lstat(manifestPath); errors.Is(manifestErr, os.ErrNotExist) {
+			return Manifest{}, domain.Fail(domain.Conflict, "The workspace destination is already occupied.", "Preserve existing content and choose another session.")
+		}
 		old, err := m.Read(request.SessionID)
 		if err != nil {
 			return uncertain(err)
@@ -345,6 +353,9 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 		return old, domain.Fail(domain.RecoveryRequired, "An earlier workspace preparation requires cleanup.", "Inspect and retry cleanup before preparing this session again.")
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return uncertain(err)
+	}
+	if err := ensureRepositoryDestinationsAbsent(root, request); err != nil {
+		return Manifest{}, err
 	}
 	if err := security.PrivateDir(root); err != nil {
 		return uncertain(err)
@@ -440,7 +451,7 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 				}
 			}
 			startupProgress(repositoryCtx, domain.StartupWorkspaceInspect, domain.StartupProgressCompleted)
-			prepared := PreparedRepository{ID: spec.ID, SourceKind: spec.SourceKind, RemoteURL: spec.RemoteURL, Source: inspection.Root, Base: spec.Base, Starting: spec.Starting, Owned: request.Type == domain.Worktree}
+			prepared := PreparedRepository{DirectoryName: spec.DirectoryName, ID: spec.ID, SourceKind: spec.SourceKind, RemoteURL: spec.RemoteURL, Source: inspection.Root, Base: spec.Base, Starting: spec.Starting, Owned: request.Type == domain.Worktree}
 			if spec.ForkRegistrationSource != "" {
 				// Both authorities must still identify one common Git directory before
 				// recording the stable registration source used for recovery and deletion.
@@ -505,7 +516,7 @@ func (m *Manager) prepare(ctx context.Context, request PrepareRequest, forkSnaps
 				}
 				startupProgress(repositoryCtx, domain.StartupWorkspaceReference, domain.StartupProgressCompleted)
 				startupProgress(repositoryCtx, domain.StartupWorkspaceCheckout, domain.StartupProgressRunning)
-				prepared.Path = filepath.Join(root, string(spec.ID))
+				prepared.Path = ownedRepositoryPath(root, spec.ID, spec.DirectoryName)
 				// Journal ownership before starting Git so a crash or partial worktree-add
 				// can be reconciled without touching any original checkout.
 				manifest.Repositories = append(manifest.Repositories, prepared)
@@ -614,7 +625,7 @@ func (m *Manager) Read(session domain.ID) (Manifest, error) {
 	if err := domain.Decode(raw, &manifest); err != nil {
 		return manifest, err
 	}
-	if manifest.Version != 1 || manifest.SessionID != session {
+	if manifest.Version != 1 || manifest.SessionID != session || validateManifestDirectoryNames(manifest) != nil {
 		return Manifest{}, domain.Fail(domain.RecoveryRequired, "The workspace manifest identity is invalid.", "Preserve the workspace and restore its matching metadata.")
 	}
 	return manifest, nil
@@ -636,6 +647,9 @@ func (m *Manager) verify(manifest Manifest) error {
 	return nil
 }
 func (m *Manager) cleanup(ctx context.Context, root string, manifest Manifest) error {
+	if validateManifestDirectoryNames(manifest) != nil {
+		return ResultUncertain()
+	}
 	var claim *cleanupClaim
 	if _, err := os.Lstat(root); err == nil {
 		identity, identityErr := directoryIdentityDigest(root)
@@ -693,7 +707,7 @@ func (m *Manager) cleanupWithClaim(ctx context.Context, root string, manifest Ma
 		}
 		// Paths are recomputed from typed identities, never trusted from a mutable
 		// manifest when removing resources. Local source checkouts are never removed.
-		expected := filepath.Join(root, string(repo.ID))
+		expected := ownedRepositoryPath(root, repo.ID, repo.DirectoryName)
 		if repo.ID.Validate() != nil || repo.Path != expected {
 			return domain.Fail(domain.RecoveryRequired, "Workspace cleanup ownership could not be verified.", "Inspect the exact repository and session association.")
 		}
@@ -737,7 +751,7 @@ func (m *Manager) cleanupWithClaim(ctx context.Context, root string, manifest Ma
 		allowed := map[string]bool{"manifest.json": true}
 		for _, repo := range manifest.Repositories {
 			if repo.Owned {
-				allowed[string(repo.ID)] = true
+				allowed[repositoryDirectoryComponent(repo.ID, repo.DirectoryName)] = true
 			}
 		}
 		entries, err := os.ReadDir(root)

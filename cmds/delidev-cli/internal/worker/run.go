@@ -30,23 +30,24 @@ import (
 )
 
 type Config struct {
-	startupProgress          bool
-	progress                 *sessionStartupReporter
-	paidCredits              bool
-	imageClient              delidevv1connect.AttachmentServiceClient
-	branchReportClient       delidevv1connect.WorkerServiceClient
-	startup                  *executionStartupAttempt
-	nativeClaudeInstallation *domain.Installation
-	network                  *workerNetworkRuntime
-	observations             *managedObservationRegistry
-	quotaBlockSupported      bool
-	inspectionMetadata       bool
-	remoteWorkspaceClone     bool
-	repositoryClone          bool
-	updatesEnabled           bool
-	terminals                *terminalManager
-	Root                     string
-	StartupID                domain.ID
+	startupProgress           bool
+	progress                  *sessionStartupReporter
+	paidCredits               bool
+	imageClient               delidevv1connect.AttachmentServiceClient
+	branchReportClient        delidevv1connect.WorkerServiceClient
+	startup                   *executionStartupAttempt
+	nativeClaudeInstallation  *domain.Installation
+	network                   *workerNetworkRuntime
+	observations              *managedObservationRegistry
+	quotaBlockSupported       bool
+	inspectionMetadata        bool
+	remoteWorkspaceClone      bool
+	namedWorkspaceDirectories bool
+	repositoryClone           bool
+	updatesEnabled            bool
+	terminals                 *terminalManager
+	Root                      string
+	StartupID                 domain.ID
 	// DesktopClientID enables proof only for authenticated ordinary desktop admission.
 	DesktopClientID domain.ID
 	Logger          *slog.Logger
@@ -287,6 +288,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 		claudeCapabilityExpected := false
 		metadataExpected := false
 		remoteCloneExpected := false
+		namedDirectoriesExpected := false
 		cloneExpected := false
 		if err == nil && attached.Msg.ServerId != string(credential.ServerID) {
 			return domain.Fail(domain.RecoveryRequired, "The configured server identity changed.", "Inspect the paired endpoint before reconnecting.")
@@ -304,6 +306,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				return domain.Fail(domain.Unsupported, "The selected server lacks encrypted Worker routing and native proxy support.", "Update the original server; no direct fallback is permitted.")
 			}
 			remoteCloneExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1)
+			namedDirectoriesExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1)
 			cloneExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_CLONE_V1)
 			metadataExpected = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1)
 			// Capabilities describe implemented adapters, never inventory readiness.
@@ -384,6 +387,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 				profile += "\x00verified"
 			} else {
 				profile += "\x00unsupported"
+			}
+			if namedDirectoriesExpected {
+				profile += "\x00named-workspace-directories-v1"
 			}
 			if remoteCloneExpected {
 				profile += "\x00remote-workspace-clone-v1"
@@ -499,6 +505,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if metadataExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_INSPECTION_METADATA_V1)
 			}
+			if namedDirectoriesExpected {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NAMED_WORKSPACE_DIRECTORIES_V1)
+			}
 			if remoteCloneExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_REMOTE_WORKSPACE_CLONE_V1)
 			}
@@ -558,6 +567,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			config.updatesEnabled = machineCapability(attached.Msg.Machine, domain.SignedWorkerUpdatesV1)
 			config.startupProgress = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1) && machineCapability(attached.Msg.Machine, domain.SessionStartupProgressV1)
 			config.remoteWorkspaceClone = remoteCloneExpected && machineCapability(attached.Msg.Machine, domain.RemoteWorkspaceCloneV1)
+			config.namedWorkspaceDirectories = namedDirectoriesExpected && machineCapability(attached.Msg.Machine, domain.NamedWorkspaceDirectoriesV1)
 			config.repositoryClone = cloneExpected && machineCapability(attached.Msg.Machine, domain.RepositoryCloneV1)
 			config.inspectionMetadata = metadataExpected && machineCapability(attached.Msg.Machine, domain.RepositoryInspectionMetadataV1)
 			err = watchAttached(ctx, config, client, credential, instance, auxiliary, (managedCapabilityExpected || claudeCapabilityExpected) && managedSubscriptionCapability(attached.Msg.Machine))
@@ -1133,6 +1143,13 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 }
 func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job) (json.RawMessage, error) {
 	root := config.Root
+	named, err := workspace.JobRequiresNamedDirectories(job)
+	if err != nil {
+		return nil, err
+	}
+	if named && !config.namedWorkspaceDirectories {
+		return nil, workspace.NamedDirectoriesUnsupported()
+	}
 	switch job.Type {
 	case domain.CompactSessionJob:
 		return executeSessionCompaction(ctx, config, owner, job)

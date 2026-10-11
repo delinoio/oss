@@ -1,5 +1,43 @@
 # DeliDev Worker workspace contract
 
+## Frozen named managed directories
+
+New Worktree preparation freezes each registered repository name in the optional
+`directory_name` of both RepositorySpec and PreparedRepository. The session UUID
+parent and repository UUID identity remain unchanged. For a registration named
+`oss`, the actual checkout and primary terminal/agent cwd use the `oss` child
+component. Session creation and scheduled occurrence preparation share the same
+acceptance transaction; independent Fork inherits the original frozen component.
+Later registration renames affect only newly accepted preparation. Version 1 and
+historical omitted fields retain the original UUID-derived layout without migration.
+Local paths, General Chat and Sidechat reference ownership remain unchanged.
+
+Go trims surrounding whitespace, normalizes NFC, replaces controls and
+`< > : " / \ | ? *` with `_`, strips trailing dots/whitespace, truncates at a
+UTF-8 boundary to 255 bytes and strips newly exposed trailing dots/whitespace.
+An empty component becomes `repository`; reserved portable device names gain `_`.
+Ordinary spelling/casing is preserved and the existing portable folder validator
+checks the final result. The complete accepted set rejects NFC/default-fold
+collisions, `manifest.json` and occupied destinations before Git or checkout
+creation. It never appends UUID suffixes, overwrites or adopts foreign content.
+
+One owned-path helper derives creation, result, recovery, execution, cleanup,
+permanent deletion, snapshot payload and restoration paths from the original
+immutable field. Snapshot/resource metadata retains UUID identity; the snapshot
+workspace payload preserves the exact live layout and Git store placement.
+Original request/manifest digests, native directory commitments, anchored root
+confinement, no-replace publication, joined cleanup and uncertainty checks remain
+independent requirements. Tampered spelling/path or replacement links grant no
+execution, replay or deletion authority.
+
+Worker `NAMED_WORKSPACE_DIRECTORIES_V1 = 53` separately negotiates this layout;
+Worker 19 retains remote-clone meaning. Acceptance, current assignment, execution,
+restoration, Fork and terminal creation require the original named profile. Missing
+support returns typed Unsupported without named dispatch or UUID substitution.
+Historical omitted-field workspaces retain their previous gates. No System
+capability, public RPC, SQLite migration, prompt rewrite or feature flag is added.
+Logs retain bounded IDs/outcome codes without names, paths, remote URLs or content.
+
 ## Direct startup retry claims
 
 [Direct startup](cmds-delidev-execution-startup-contract.md) adds an explicit no-send retry claim under the original session lock. A retry with an existing predecessor requires its exact closed execution claim, original process reconciliation and unchanged canonical workspace/Git identities. If startup failed before a claim existed, absence is usable only after server-confirmed no-send/cleanup proof and a complete no-execution-history check. It grants no foreign-claim adoption, filesystem deletion, automatic replay or new Local authority.

@@ -1,5 +1,10 @@
 # DeliDev v1 Connect contract
 
+## Named managed checkout capability
+
+Worker `NAMED_WORKSPACE_DIRECTORIES_V1 = 53` is independently allocated with complete declarations and generated bindings in the owning feature change. Worker 19 keeps its remote-clone meaning. The private version-1 workspace JSON adds optional immutable `directory_name`; omission preserves historical bytes and UUID-derived paths. Server acceptance/current assignment and Worker execution/restore/Fork reject missing support instead of substituting paths. No public RPC, System allocation or database migration is added. Follow the [workspace contract](cmds-delidev-workspace-contract.md#frozen-named-managed-directories).
+
+
 ## Machine heartbeat read projection
 
 Machine Get, List and Snapshot Resources project the exact Machine's current

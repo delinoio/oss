@@ -100,6 +100,9 @@ func workspaceReadScope(tx *store.Tx, id domain.ID) (workspace.PrepareRequest, w
 	if err != nil || row.SessionID != id || job.Type != domain.PrepareWorkspaceJob || job.State != domain.JobSucceeded || job.MachineID != session.MachineID || domain.Decode(job.Input, &input) != nil || domain.Decode(job.Output, &manifest) != nil || input.SessionID != id || input.MachineID != session.MachineID || input.Type != session.Workspace || workspace.ValidateResult(input, manifest, machine.OS) != nil {
 		return input, manifest, workspace.ResultUncertain()
 	}
+	if err := requireNamedWorkspaceCapability(machine, input); err != nil {
+		return input, manifest, err
+	}
 	return input, manifest, nil
 }
 

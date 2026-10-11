@@ -227,6 +227,9 @@ func (m *Manager) ForkPreparation(ctx context.Context, source Manifest, child do
 			return request, forkUnsupported()
 		}
 		spec := RepositorySpec{ID: repo.ID, Checkout: repo.Path}
+		if kind == domain.Worktree {
+			spec.DirectoryName = repo.DirectoryName
+		}
 		if kind == domain.Local && repo.SourceKind == LocalCheckoutSource {
 			spec.SourceKind, spec.RemoteURL = LocalCheckoutSource, repo.RemoteURL
 		}

@@ -1,5 +1,10 @@
 # Project: DeliDev
 
+## Frozen managed checkout layout
+
+New Worktree preparation uses frozen portable registered repository names beneath the original session UUID parent. Independent Fork and storage restore preserve that layout; historical omitted-field UUID workspaces and original Local paths remain unchanged. Worker 53 negotiates names independently of remote cloning. See the [workspace contract](cmds-delidev-workspace-contract.md#frozen-named-managed-directories).
+
+
 The desktop owns shared scroll-continuation state and presentation with domain
 adapters retaining response-validation, initial-read, payload-disposal and
 mutation authority. See the [shared desktop pagination contract](apps-delidev-desktop-contract.md#shared-scroll-continuation).

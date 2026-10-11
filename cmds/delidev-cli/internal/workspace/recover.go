@@ -255,7 +255,7 @@ func (m *Manager) validateCleanupClaim(input RecoveryRequest, root string, proof
 	return nil
 }
 func (m *Manager) validatePartial(input PrepareRequest, manifest Manifest) error {
-	if manifest.Version != 1 || manifest.SessionID != input.SessionID || manifest.MachineID != input.MachineID || manifest.Type != input.Type || manifest.InputDigest != preparationDigest(input) || (manifest.State != Preparing && manifest.State != CleanupPending) || len(manifest.Repositories) > len(input.Repositories) {
+	if validateManifestDirectoryNames(manifest) != nil || manifest.Version != 1 || manifest.SessionID != input.SessionID || manifest.MachineID != input.MachineID || manifest.Type != input.Type || manifest.InputDigest != preparationDigest(input) || (manifest.State != Preparing && manifest.State != CleanupPending) || len(manifest.Repositories) > len(input.Repositories) {
 		return ResultUncertain()
 	}
 	root := filepath.Join(m.Root, "workspaces", string(input.SessionID))
@@ -282,7 +282,7 @@ func (m *Manager) validatePartial(input PrepareRequest, manifest Manifest) error
 				return ResultUncertain()
 			}
 		}
-		if repo.ID != expected.ID || repo.Source != registration {
+		if repo.ID != expected.ID || repo.DirectoryName != expected.DirectoryName || repo.Source != registration {
 			return ResultUncertain()
 		}
 		if input.Type == domain.Local {
@@ -291,7 +291,7 @@ func (m *Manager) validatePartial(input PrepareRequest, manifest Manifest) error
 			if !validLocalRepository(repo) || repo.Base != expected.Base {
 				return ResultUncertain()
 			}
-		} else if repo.Path != filepath.Join(root, string(repo.ID)) || !repo.Owned || repo.SourceKind == CheckoutSource && repo.Source == repo.Path || repo.LocalIdentityDigest != "" || repo.LocalHEAD != LocalHEADCommitted || repo.SourceKind == CheckoutSource && (!canonicalCommit(repo.StartingCommit) || !canonicalCommit(repo.BaseCommit)) {
+		} else if repo.Path != ownedRepositoryPath(root, repo.ID, repo.DirectoryName) || !repo.Owned || repo.SourceKind == CheckoutSource && repo.Source == repo.Path || repo.LocalIdentityDigest != "" || repo.LocalHEAD != LocalHEADCommitted || repo.SourceKind == CheckoutSource && (!canonicalCommit(repo.StartingCommit) || !canonicalCommit(repo.BaseCommit)) {
 			return ResultUncertain()
 		}
 		if repo.ID == input.PrimaryRepository && manifest.PrimaryPath == repo.Path {
