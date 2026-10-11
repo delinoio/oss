@@ -207,7 +207,7 @@ it("keeps draft bindings inactive until Save and updates dispatch and ARIA witho
     screen
       .getByRole("button", { name: "Capture shortcut for New session" })
       .getAttribute("data-settings-action-presentation"),
-  ).toBe("label");
+  ).toBe("icon");
   const action = screen.getByRole("button", { name: "Ordinary action" });
   await capture();
   expect(action.getAttribute("aria-keyshortcuts")).toBe("Control+Shift+N");
