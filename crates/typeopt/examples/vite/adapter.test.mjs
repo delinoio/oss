@@ -16,6 +16,8 @@ test("keeps original module identity, bypasses query/JS/asset requests and rejec
     const original = "export const value = 1;";
     await mkdir(path.dirname(source));
     await writeFile(source, original);
+    await writeFile(path.join(root, "preserved.ts"), "export {};");
+    await writeFile(path.join(root, "unchanged.js"), "export {};");
     await writeFile(
       path.join(root, "modules.json"),
       JSON.stringify({
@@ -30,11 +32,13 @@ test("keeps original module identity, bypasses query/JS/asset requests and rejec
           },
           {
             source: path.join(root, "preserved.ts"),
+            source_sha256: sha256("export {};"),
             output: "1.js",
             kind: "preserved",
           },
           {
             source: path.join(root, "unchanged.js"),
+            source_sha256: sha256("export {};"),
             output: "unchanged.js",
             kind: "passthrough",
           },
@@ -230,6 +234,170 @@ test("optimizer output composes through a real TSX workspace build", async () =>
         plugins: [typeopt(output)],
         resolve: { alias: { "@value": path.join(root, "value.js") } },
         build: { write: false, sourcemap: true, modulePreload: false },
+        logLevel: "silent",
+      }),
+      /stale/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects stale transitive modules, configuration, declarations and unknown schemas", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "typeopt-vite-snapshot-"));
+  try {
+    const files = {
+      "main.ts": "import { f } from './dep';",
+      "dep.ts": "export const f = 1;",
+      "tsconfig.json": "{}",
+      "globals.d.ts": "declare const g: number;",
+    };
+    for (const [name, text] of Object.entries(files))
+      await writeFile(path.join(root, name), text);
+    const manifest = {
+      schema_version: 0,
+      modules: ["main.ts", "dep.ts"].map((name, index) => ({
+        source: path.join(root, name),
+        source_sha256: sha256(files[name]),
+        output: `${index}.js`,
+        source_map: `${index}.js.map`,
+        kind: index === 0 ? "optimized" : "preserved",
+      })),
+      inputs: [
+        {
+          path: path.join(root, "tsconfig.json"),
+          sha256: sha256(files["tsconfig.json"]),
+          kind: "configuration",
+        },
+        {
+          path: path.join(root, "globals.d.ts"),
+          sha256: sha256(files["globals.d.ts"]),
+          kind: "dependency",
+        },
+      ],
+    };
+    const out = path.join(root, "out");
+    await mkdir(out);
+    await writeFile(path.join(out, "modules.json"), JSON.stringify(manifest));
+    await typeopt(out).buildStart();
+    for (const [name, changed] of [
+      ["dep.ts", "export const f = 2;"],
+      ["tsconfig.json", '{"compilerOptions":{}}'],
+      ["globals.d.ts", "declare const g: string;"],
+    ]) {
+      await writeFile(path.join(root, name), changed);
+      await assert.rejects(typeopt(out).buildStart(), /stale/, name);
+      await writeFile(path.join(root, name), files[name]);
+    }
+    await rm(path.join(root, "globals.d.ts"));
+    await assert.rejects(typeopt(out).buildStart(), /stale/);
+    await writeFile(path.join(root, "globals.d.ts"), files["globals.d.ts"]);
+    await writeFile(
+      path.join(out, "modules.json"),
+      JSON.stringify({ ...manifest, schema_version: 1 }),
+    );
+    await assert.rejects(typeopt(out).buildStart(), /Unsupported/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("loads a structurally transformed module without property renaming", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
+  const { readFile } = await import("node:fs/promises");
+  const { build } = await import("vite");
+  const root = await realpath(
+    await mkdtemp(path.join(tmpdir(), "typeopt-vite-structural-")),
+  );
+  try {
+    const source = path.join(root, "main.ts");
+    const output = path.join(root, "optimized");
+    await writeFile(
+      path.join(root, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: {
+          module: "ESNext",
+          target: "ES2022",
+          moduleResolution: "bundler",
+          strict: true,
+        },
+      }),
+    );
+    await writeFile(
+      path.join(root, "events.ts"),
+      'export enum EventName { PointerDown = "pointerdown", PointerUp = "pointerup" }',
+    );
+    await writeFile(
+      source,
+      'import { EventName } from "./events"; console.log(EventName.PointerDown, EventName.PointerUp);',
+    );
+    await writeFile(
+      path.join(root, "index.html"),
+      '<script type="module" src="/main.ts"></script>',
+    );
+    const binary =
+      process.env.TYPEOPT_BIN ||
+      fileURLToPath(
+        new URL("../../../../target/debug/typeopt", import.meta.url),
+      );
+    execFileSync(
+      binary,
+      [
+        "--project",
+        path.join(root, "tsconfig.json"),
+        "--entry",
+        source,
+        "--out-dir",
+        output,
+        "--disable-pass",
+        "property-shortening",
+      ],
+      { stdio: "pipe" },
+    );
+    const report = JSON.parse(
+      await readFile(path.join(output, "report.json"), "utf8"),
+    );
+    assert.equal(report.renamed_properties, 0);
+    assert.ok(
+      report.transformations.some((t) => t.pass === "enum-runtime-reduction"),
+    );
+    const manifest = JSON.parse(
+      await readFile(path.join(output, "modules.json"), "utf8"),
+    );
+    assert.ok(
+      manifest.modules.some(
+        (m) => m.kind === "optimized" && m.source === source,
+      ),
+    );
+    const result = await build({
+      root,
+      configFile: false,
+      plugins: [typeopt(output)],
+      build: { write: false, sourcemap: true, modulePreload: false },
+      logLevel: "silent",
+    });
+    const chunk = result.output.find((file) => file.type === "chunk");
+    const values = [];
+    runInNewContext(chunk.code, {
+      console: { log: (...args) => values.push(...args) },
+    });
+    assert.deepEqual(values, ["pointerdown", "pointerup"]);
+    const sourceIndex = chunk.map.sources.findIndex((file) =>
+      file.endsWith("main.ts"),
+    );
+    assert.ok(sourceIndex >= 0);
+    assert.match(chunk.map.sourcesContent[sourceIndex], /EventName.PointerDown/);
+    await writeFile(
+      path.join(root, "events.ts"),
+      'export enum EventName { PointerDown = "down", PointerUp = "pointerup" }',
+    );
+    await assert.rejects(
+      build({
+        root,
+        configFile: false,
+        plugins: [typeopt(output)],
+        build: { write: false, modulePreload: false },
         logLevel: "silent",
       }),
       /stale/,

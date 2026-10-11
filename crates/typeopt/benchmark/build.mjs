@@ -154,11 +154,25 @@ await build({
   },
 });
 
+// Record which optimizer produced the substituted modules so measurements
+// can tell the existing and extended optimizer builds apart.
+let optimizer = null;
+if (optimized) {
+  const report = JSON.parse(
+    await readFile(path.join(optimized, "report.json"), "utf8"),
+  );
+  optimizer = {
+    report_schema_version: report.schema_version,
+    tool_version: report.tool_version,
+    compiler_revision: report.compiler_revision,
+    disabled_passes: report.passes?.disabled ?? null,
+  };
+}
 await writeFile(
   path.join(destination, "typeopt-build.json"),
   JSON.stringify(
     {
-      schema_version: 0,
+      schema_version: 1,
       revision,
       source_tree: sourceTree,
       yarn_lock_sha256: yarnLockSha256,
@@ -168,6 +182,7 @@ await writeFile(
       sourcemap: true,
       environment,
       optimized: Boolean(optimized),
+      optimizer,
       elapsed_ms: performance.now() - started,
       peak_rss_bytes: process.resourceUsage().maxRSS * 1024,
     },
