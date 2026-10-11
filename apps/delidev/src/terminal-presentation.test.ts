@@ -27,3 +27,12 @@ it.each([{ sessionId: "other" }, { schemaVersion: 2 }, { revision: 0n }, { kind:
 it("selects the nearest left neighbor, then the first remaining terminal", () => {
  expect(terminalFallback(["one", "two", "three"], "two")).toBe("one"); expect(terminalFallback(["one", "two", "three"], "one")).toBe("two"); expect(terminalFallback(["one"], "one")).toBe("");
 });
+
+it("retains monotonically allocated numbers through reorder, dismissal and reopening", () => {
+ const view = new TerminalPresentation();
+ view.observe("parent", resource(4n, { state: "running" }));
+ expect(view.number("original")).toBe(1); expect(view.number("second")).toBe(2);
+ view.observe("parent", resource(5n, { state: "exited", cleanup_verified: true }));
+ expect(view.number("second")).toBe(2); expect(view.number("original")).toBe(1);
+ expect(view.number("third")).toBe(3); expect(new TerminalPresentation().number("third")).toBe(1);
+});

@@ -66,3 +66,12 @@ it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])("captures physical chord
   expect(captureShortcut(altGraph, platform)).toBeUndefined();
   expect(captureShortcut(new KeyboardEvent("keydown", { key: "ㅏ", code: "KeyK", ...modifiers }), platform)).toBeUndefined();
 });
+
+it.each(editableShortcutCatalog.map(action => action.id))("preserves editable T overrides independently of TerminalCreate: %s", id => {
+ const overrides = {[id]: {state: ShortcutOverrideState.Binding, chord: {key: "t", shift: false}}} as const;
+ expect(parseShortcutOverrides(overrides)).toEqual(overrides);
+ expect(shortcutConflicts(overrides)).toEqual([]);
+ const action = readOnlyShortcutCatalog.find(item => item.id === ShortcutId.TerminalCreate)!;
+ expect(action.priority).toBe(2);
+ expect(effectiveShortcutDefinitions([{id: action.id, scope: Surface.Sessions, label: action.label, bindings: action.defaults}], overrides)[0]!.bindings).toEqual([{key: "t", primary: true}]);
+});

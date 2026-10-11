@@ -40,11 +40,12 @@
   "session-terminals.unsentDiscarded": "Unsent terminal input was discarded. Accepted operations retain their original recovery.",
   "session-terminals.outputGap": "Terminal output is incomplete. The screen was reset before retained output; missing bytes cannot recover a complete application screen.",
   "session-terminals.inputOverflow": "Input was not queued: the unsent 64 KiB limit would be exceeded. Wait before pasting again.",
-  "session-terminals.rendererUnavailable": "Terminal display is unavailable. Reattach the original terminal or close it explicitly.",
+  "session-terminals.rendererUnavailable": "Terminal display is unavailable. Reattach the original terminal.",
   "session-terminals.uncertainInput": "Delivery is uncertain. Explicitly retry only the original terminal operation.",
   "session-terminals.connecting": "Connecting",
   "session-terminals.attached": "Attached",
   "session-terminals.detached": "Detached",
   "session-terminals.exited": "Exited",
-  "session-terminals.emptyInventory": "No session terminals. Create one explicitly with +."
+  "session-terminals.emptyInventory": "No session terminals. Create one explicitly with +.",
+  "session-terminals.numberedTerminal": "Terminal {{number}}"
 }

@@ -11,13 +11,14 @@ import { encode } from "./documents";
 import { MutationIntents, useRetainedMutation } from "./mutation";
 import { SessionTabsProvider, useSessionTabsStore } from "./session-tabs";
 import { SessionTerminals } from "./session-terminals";
+import { ShortcutProvider } from "./shortcut-provider";
 
 // Component tests use a text fixture; real parser/WebGL/CSP acceptance runs in
 // the external Chrome fixture. This adapter exercises input ownership only.
-vi.mock("./terminal-emulator", () => ({ openTerminalScreen: (host: HTMLElement, input: (bytes: Uint8Array) => void) => {
+vi.mock("./terminal-emulator", () => ({ openTerminalScreen: (host: HTMLElement, input: (bytes: Uint8Array) => void, _resize: unknown, _unavailable: unknown, shortcut?: (event: KeyboardEvent) => boolean) => {
   const output = document.createElement("pre"), field = document.createElement("textarea");
   field.setAttribute("aria-label", "Terminal input"); field.disabled = true;
-  field.addEventListener("keydown", event => { if (!field.disabled && event.key === "Enter") input(new TextEncoder().encode(field.value + "\r")); });
+  field.addEventListener("keydown", event => { if (shortcut?.(event)) return; if (!field.disabled && event.key === "Enter") input(new TextEncoder().encode(field.value + "\r")); if (!field.disabled && event.key === "t" && (event.metaKey || event.ctrlKey)) input(new Uint8Array([20])); });
   host.append(output, field); let decoder = new TextDecoder();
   return { write: async (bytes: Uint8Array, gap: boolean) => { if (gap) { decoder = new TextDecoder(); output.textContent = ""; } output.textContent += decoder.decode(bytes, { stream: true }); }, enabled: (value: boolean) => { field.disabled = !value; }, focus: () => field.focus(), dispose: () => host.replaceChildren() };
 } }));
@@ -137,7 +138,7 @@ it("attaches to the accepted creation beyond the first full history page", async
   }
 });
 
-it("gates initial reads, polling and manual refresh on advertised terminal support", async () => {
+it("gates initial reads and polling on advertised terminal support", async () => {
   const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ archive: "active" }) });
   let capabilities: SystemCapability[] = [];
   let statusPending = true;
@@ -154,8 +155,7 @@ it("gates initial reads, polling and manual refresh on advertised terminal suppo
   const waitForPoll = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 1100)); });
   try {
     await waitFor(() => expect(getStatus).toHaveBeenCalledTimes(1));
-    fireEvent.click(screen.getByRole("button", { name: "Details" }));
-    const refresh = screen.getByRole("button", { name: "Refresh terminals" }) as HTMLButtonElement;
+    const refresh = screen.getByRole("button", { name: "Create terminal" }) as HTMLButtonElement;
     expect(refresh.disabled).toBe(true);
     fireEvent.click(refresh);
     await waitForPoll();
@@ -171,7 +171,7 @@ it("gates initial reads, polling and manual refresh on advertised terminal suppo
     await act(async () => { await client.invalidateQueries(); });
     await waitFor(() => expect(listResources).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(refresh.disabled).toBe(false));
-    fireEvent.click(refresh);
+    await act(async () => { await client.invalidateQueries(); });
     await waitFor(() => expect(listResources).toHaveBeenCalledTimes(2));
     capabilities = [];
     // Refresh only status to avoid requesting one more supported history page.
@@ -213,7 +213,7 @@ it("keeps terminal input enabled while one control is pending and never steals f
     await waitFor(() => expect(controlTerminal).toHaveBeenCalledTimes(1));
     expect(input.disabled).toBe(false);
     // jsdom retains disabled focus; model the browser's focus loss explicitly.
-    const columns = screen.getByRole("button", { name: "Details" });
+    const columns = screen.getByRole("button", { name: "Create terminal" });
     columns.focus();
     expect(document.activeElement).not.toBe(input);
     await act(async () => acknowledge());
@@ -261,22 +261,20 @@ it("preserves the explicitly attached terminal and its draft after its history p
   expect(watch).toHaveBeenCalledTimes(1);
 });
 
-it("keeps failed terminal capability reads distinct from missing support and preserves the shell draft", async () => {
+it("keeps failed terminal capability reads distinct from missing support without management controls", async () => {
  const session = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.SESSION, schemaVersion: 1, revision: 7n, documentJson: encode({ archive: "active" }) });
  const status = vi.fn().mockRejectedValueOnce(new ConnectError("private-native-status", Code.PermissionDenied)).mockResolvedValue({ capabilities: [] });
  const createTerminal = vi.fn();
  const transport = createRouterTransport(router => { router.service(SystemService, { getStatus: status }); router.service(TerminalService, { createTerminal }); });
  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
  render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><SessionTerminals session={session} close={() => {}} /></MutationIntents></TransportProvider></QueryClientProvider>);
- fireEvent.click(screen.getByRole("button", { name: "Details" }));
- const shell = screen.getByRole("textbox");
- fireEvent.change(shell, { target: { value: "/original/shell" } });
+ expect(screen.queryByRole("textbox")).toBeNull();
  const retry = await screen.findByRole("button", { name: "Retry terminal capability read" });
  expect(screen.queryByText(/Waiting for a server that supports/)).toBeNull();
  expect(createTerminal).not.toHaveBeenCalled();
  fireEvent.click(retry);
  await waitFor(() => expect(status).toHaveBeenCalledTimes(2));
- expect(shell).toHaveProperty("value", "/original/shell"); expect(createTerminal).not.toHaveBeenCalled();
+ expect(createTerminal).not.toHaveBeenCalled();
 });
 
 it("retains exact uncertain input across dock hiding and never closes or creates a shell", async () => {
@@ -306,12 +304,13 @@ it("retains exact uncertain input across dock hiding and never closes or creates
   view.unmount();client.clear();
 });
 
-it("keeps every existing terminal picker keyboard reachable in the single-pane workspace", async () => {
+it("renders no inventory management controls in the direct terminal pane", async () => {
  const session=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.SESSION,schemaVersion:1,revision:1n,documentJson:encode({archive:"active"})});
- const terminals=[1,2].map(()=>create(ResourceSchema,{id:newRequestId(),kind:EntityKind.TERMINAL,sessionId:session.id,schemaVersion:1,revision:1n,documentJson:encode({state:"running"})}));
- const open=vi.fn(),transport=createRouterTransport(router=>{router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.SESSION_TERMINALS_V1]})});router.service(ResourceService,{listResources:()=>({resources:terminals})});});
- const client=new QueryClient({defaultOptions:{queries:{retry:false}}});const view=render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><SessionTerminals session={session} tabbed close={()=>{}} openTerminal={open}/></MutationIntents></TransportProvider></QueryClientProvider>);
- const first=await screen.findByRole("button",{name:/Terminal 1/}),second=screen.getByRole("button",{name:/Terminal 2/});expect(first.tabIndex).toBe(0);expect(second.tabIndex).toBe(0);first.focus();expect(fireEvent.keyDown(first,{key:"ArrowRight"})).toBe(true);expect(open).not.toHaveBeenCalled();second.focus();expect(document.activeElement).toBe(second);view.unmount();client.clear();
+ const transport=createRouterTransport(router=>{router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.SESSION_TERMINALS_V1]})});});
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}});const view=render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><SessionTerminals session={session} selectedId={newRequestId()} tabbed close={()=>{}}/></MutationIntents></TransportProvider></QueryClientProvider>);
+ expect(screen.getByRole("button",{name:"Create terminal"})).toBeTruthy();
+ for(const name of ["Details","Hide terminals","Refresh terminals","Close terminal"])expect(screen.queryByRole("button",{name})).toBeNull();
+ expect(screen.queryByRole("group",{name:"Terminals"})).toBeNull();expect(screen.queryByRole("textbox")).toBeNull();view.unmount();client.clear();
 });
 
 
@@ -338,7 +337,7 @@ it.each(["empty", "later-page", "uncertain", "read-error"])("resolves explicit o
   }
   const view = render(<StrictMode><QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><View /></MutationIntents></TransportProvider></QueryClientProvider></StrictMode>);
   try {
-    await screen.findByRole("button", { name: "Create terminal" });
+    await waitFor(() => expect(view.container.querySelector("[aria-label=\"Create terminal\"]")).toHaveProperty("disabled", false));
     expect(createTerminal).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Open fixture" })); fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
     if (scenario === "empty") {
@@ -351,7 +350,9 @@ it.each(["empty", "later-page", "uncertain", "read-error"])("resolves explicit o
     } else {
       await screen.findByRole("button", { name: "Retry terminal inventory read" });
       expect(createTerminal).not.toHaveBeenCalled();
+      const readCount = pages.length;
       fireEvent.click(screen.getByRole("button", { name: "Retry terminal inventory read" }));
+      await waitFor(() => expect(pages.length).toBeGreaterThan(readCount));
       expect(createTerminal).not.toHaveBeenCalled(); expect(opened).not.toHaveBeenCalled();
     }
   } finally { view.unmount(); client.clear(); }
@@ -373,7 +374,7 @@ it.each([{}, [], 12, true, "invalid-id"])("rejects malformed close-request metad
   }
   const view = render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><View /></MutationIntents></TransportProvider></QueryClientProvider>);
   try {
-    await screen.findByRole("button", { name: "Create terminal" });
+    await waitFor(() => expect(view.container.querySelector("[aria-label=\"Create terminal\"]")).toHaveProperty("disabled", false));
     fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
     await screen.findByRole("button", { name: "Retry terminal inventory read" });
     expect(opened).not.toHaveBeenCalled(); expect(createTerminal).not.toHaveBeenCalled();
@@ -397,7 +398,7 @@ it("reopens the last content-tab selection instead of the first inventory termin
   }
   const view = render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><View /></MutationIntents></TransportProvider></QueryClientProvider>);
   try {
-    await screen.findByRole("button", { name: /Terminal 2/ });
+    await waitFor(() => expect(view.container.querySelector("[aria-label=\"Create terminal\"]")).toHaveProperty("disabled", false));
     fireEvent.click(screen.getByRole("button", { name: "Select second content tab" }));
     fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
     await waitFor(() => expect(opened).toHaveBeenCalledWith(terminals[1]!.id));
@@ -448,11 +449,11 @@ it("rejects empty nonterminal inventory pages before another gesture-owned reque
   }
   const view = render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><View /></MutationIntents></TransportProvider></QueryClientProvider>);
   try {
-    await screen.findByRole("button", { name: "Create terminal" });
-    await waitFor(() => expect(reads).toHaveBeenCalledOnce());
+    await waitFor(() => expect(view.container.querySelector("[aria-label=\"Create terminal\"]")).toHaveProperty("disabled", false));
+    expect(reads).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
     await screen.findByRole("button", { name: "Retry terminal inventory read" });
-    expect(reads).toHaveBeenCalledTimes(2); expect(opened).not.toHaveBeenCalled(); expect(createTerminal).not.toHaveBeenCalled();
+    expect(reads).toHaveBeenCalledOnce(); expect(opened).not.toHaveBeenCalled(); expect(createTerminal).not.toHaveBeenCalled();
   } finally { view.unmount(); client.clear(); }
 });
 
@@ -476,7 +477,7 @@ it.each([false, true])("does not revive a hidden terminal from stale running inv
   }
   const view = render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><SessionTabsProvider><View /></SessionTabsProvider></MutationIntents></TransportProvider></QueryClientProvider>);
   try {
-    await screen.findByRole("button", { name: "Create terminal" });
+    await waitFor(() => expect(view.container.querySelector("[aria-label=\"Create terminal\"]")).toHaveProperty("disabled", false));
     fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
     await waitFor(() => expect(opened).toHaveBeenCalledWith(replacement.id));
     expect(opened).not.toHaveBeenCalledWith(stale.id);
@@ -503,11 +504,38 @@ it("selects only the atomically admitted replacement after a listed terminal ret
   }
   const view = render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><View /></MutationIntents></TransportProvider></QueryClientProvider>);
   try {
-    await screen.findByRole("button", { name: /Terminal 1/ });
+    await waitFor(() => expect(view.container.querySelector("[aria-label=\"Create terminal\"]")).toHaveProperty("disabled", false));
     fireEvent.click(screen.getByRole("button", { name: "Open fixture" }));
     await waitFor(() => expect(opened).toHaveBeenCalledWith(replacement.id));
     expect(opened).not.toHaveBeenCalledWith(stale.id);
     expect(createTerminal).toHaveBeenCalledOnce();
     expect(createTerminal.mock.calls[0]?.[0]).toMatchObject({ creationMode: TerminalCreationMode.REUSE_OR_CREATE, preferredTerminalId: stale.id });
   } finally { view.unmount(); client.clear(); }
+});
+
+it("routes focused creation through the renderer hook before PTY input and retains the same request", async () => {
+ const session=create(ResourceSchema,{id:newRequestId(),kind:EntityKind.SESSION,schemaVersion:1,revision:7n,documentJson:encode({archive:"active"})});
+ const original=create(ResourceSchema,{id:newRequestId(),sessionId:session.id,kind:EntityKind.TERMINAL,schemaVersion:1,revision:2n,documentJson:encode({state:"running"})});
+ const admitted=create(ResourceSchema,{...original,id:newRequestId()});
+ let resolve=()=>{};const pending=new Promise<void>(done=>{resolve=done;});
+ const createTerminal=vi.fn(async (_request:unknown)=>{await pending;return {terminal:admitted};}), controlTerminal=vi.fn();
+ const transport=createRouterTransport(router=>{
+  router.service(SystemService,{getStatus:()=>({capabilities:[SystemCapability.SESSION_TERMINALS_V1]})});
+  router.service(ResourceService,{listResources:()=>({resources:[original]})});
+  router.service(TerminalService,{createTerminal,controlTerminal,watchTerminalOutput:async function* (request,context){yield {epoch:newRequestId(),sequence:0n,heartbeat:true,terminal:request.terminalId===original.id?original:admitted};await new Promise<void>(done=>context.signal.addEventListener("abort",()=>done(),{once:true}));}});
+ });
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ const view=render(<QueryClientProvider client={client}><TransportProvider transport={transport}><MutationIntents><ShortcutProvider><SessionTerminals session={session} close={()=>{}}/></ShortcutProvider></MutationIntents></TransportProvider></QueryClientProvider>);
+ try {
+  fireEvent.click(await screen.findByRole("tab",{name:/Terminal 1/}));
+  const input=await screen.findByRole("textbox",{name:"Terminal input"});await waitFor(()=>expect(input).toHaveProperty("disabled",false));
+  fireEvent.keyDown(input,{key:"t",code:"KeyT",ctrlKey:true});
+  await waitFor(()=>expect(createTerminal).toHaveBeenCalledOnce());
+  fireEvent.keyDown(input,{key:"t",code:"KeyT",ctrlKey:true});
+  expect(createTerminal).toHaveBeenCalledOnce();expect(controlTerminal).not.toHaveBeenCalled();
+  expect(createTerminal.mock.calls[0]![0]).toMatchObject({mutation:{id:session.id,expectedRevision:7n},shellOverride:"",rows:24,columns:80});
+  await act(async()=>resolve());
+  await waitFor(()=>expect(screen.getByRole("tab",{name:/Terminal 2/}).getAttribute("aria-selected")).toBe("true"));
+  expect(controlTerminal).not.toHaveBeenCalled();
+ } finally {resolve();view.unmount();client.clear();}
 });
