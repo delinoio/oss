@@ -1160,7 +1160,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - PR CI validation uses package-owned Turbo leaves and the private `scripts/ci` workspace under `repository-workflow-contract.md`. Preserve complete assertions and native/clean/freshness gates; cache-only OIDC access does not grant release authority. Keep affected selection, development environment allowlists and final generated-dist cleanup intact.
 
-- CI fixture executable reuse follows `repository-workflow-contract.md`: accept only the runner-owned absolute `DELIDEV_TEST_BINARY` test input, preserve local source-build fallback and keep every server/process/credential/data lifetime private to its fixture. Client/Vitest integration is uncached; desktop CI retains the complete checks/two-shard inventory.
+- CI fixture executable reuse follows `repository-workflow-contract.md`: accept only the runner-owned absolute `DELIDEV_TEST_BINARY` test input, preserve local source-build fallback and keep every server/process/credential/data lifetime private to its fixture. Client/Vitest integration is uncached; desktop CI retains the complete checks plus four-shard Vitest inventory.
 
 - Claude subscription onboarding follows the shared 720px wizard task dialog under System 38 / Worker 20: explicit Runner selection, once-only Start, conditional masked code, original browser URL, success-bound name and Later retention. Preserve hidden task lifetime, explicit cancellation, focus/scroll/responsive rules, both themes and 200% zoom. Record fixtures/builds separately from actual account and packaged macOS/Windows/Linux acceptance; do not commit the generated design preview.
 
