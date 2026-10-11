@@ -1904,6 +1904,29 @@ jobs:
           FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['delidev-frontend'] }}
         run: node scripts/ci/run-affected.mjs delidev-desktop ci:${{ matrix.phase }}
 
+      - name: Check sidebar collapse and reclaimed shell geometry
+        if: ${{ matrix.phase == 'checks' }}
+        env:
+          DELIDEV_LAYOUT_PLAYWRIGHT_MODULE: ${{ runner.temp }}/delidev-sidebar-browser/node_modules/playwright/index.mjs
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/delidev-sidebar-browsers
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/delidev-sidebar-browser" --ignore-scripts --no-fund --no-audit playwright@1.64.0
+          npm audit --prefix "$RUNNER_TEMP/delidev-sidebar-browser" --omit=dev --audit-level=moderate
+          node "$RUNNER_TEMP/delidev-sidebar-browser/node_modules/playwright/cli.js" install --with-deps chromium
+          pnpm --dir apps/delidev exec node scripts/test-sidebar-collapse-layout.mjs 2>&1 | tee "$RUNNER_TEMP/delidev-sidebar-collapse-layout.jsonl"
+          pnpm --dir apps/delidev exec node scripts/test-inbox-presentation-layout.mjs 2>&1 | tee "$RUNNER_TEMP/delidev-sidebar-inbox-layout.jsonl"
+
+      - name: Preserve sidebar shell geometry evidence
+        if: ${{ always() && matrix.phase == 'checks' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: delidev-sidebar-shell-layout-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/delidev-sidebar-collapse-layout.jsonl
+            ${{ runner.temp }}/delidev-sidebar-inbox-layout.jsonl
+          if-no-files-found: warn
+
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5

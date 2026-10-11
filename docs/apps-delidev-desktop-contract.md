@@ -4982,6 +4982,15 @@ any modal drawer and use the same current/first visible rail fallback for focus.
 Search initial focus cannot target a hidden pane; explicit Search focus may request the original
 pane opening and waits for visible committed presentation.
 
+The desktop CI checks phase invokes both `scripts/test-sidebar-collapse-layout.mjs`
+and `scripts/test-inbox-presentation-layout.mjs` with audited Playwright 1.64.0
+and Chromium under runner temporary storage. Their synthetic browser evidence
+records the exact source revision and is retained as an artifact. Cover both
+committed startup preferences, reclaimed 64px geometry on active Session and
+empty/populated Inbox, shortcut/focus/compact behavior, mounted portal drafts,
+English/Korean, semantic themes and effective 200% reflow. This evidence does
+not establish installed native, account or platform acceptance.
+
 `sidebar_preference.json` is an independent computer-local, bounded 4096-byte
 version-1 document containing only the Expanded/Collapsed enum and its document
 version. Missing storage defaults to Expanded. Keep this file outside server

@@ -6,6 +6,8 @@
 
 ## Owning contracts
 
+- [DeliDev sidebar shell presentation validation](../docs/apps-delidev-desktop-contract.md#persistent-context-pane-collapse)
+
 - [DeliDev native package verification](../docs/apps-delidev-packaging-contract.md)
 - [DeliDev provider and model catalog](../docs/cmds-delidev-catalog-contract.md)
 - [pnport](../docs/project-pnport.md)
