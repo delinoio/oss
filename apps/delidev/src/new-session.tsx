@@ -51,15 +51,7 @@ import {
 import { BudgetFields, budgetInput, emptyBudget } from "./session-budget";
 import { useProjectSessionPlacement } from "./project-session-placement";
 import { useGeneralChatPlacement } from "./general-chat-placement";
-import {
-  document,
-  encode,
-  items,
-  Mode,
-  object,
-  text,
-  Workspace,
-} from "./documents";
+import { document, encode, items, Mode, object, text, Workspace } from "./documents";
 import { ResourceChoice } from "./configuration-fields";
 import { StartingBranches } from "./starting-branches";
 import { StartingReferences } from "./schedules";
@@ -82,8 +74,7 @@ function eligibilityReadSettled(fetching: boolean, error: unknown) {
   );
 }
 
-const UUID_V7 =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 export enum NewSessionKind {
   Session = "session",
@@ -131,14 +122,8 @@ export function NewSession({
 }) {
   const language = useLocale();
   const generalChat = kind === NewSessionKind.GeneralChat;
-  const generalPlacement = useGeneralChatPlacement(
-    generalChat && active,
-    language,
-  );
-  const projectPlacement = useProjectSessionPlacement(
-    !generalChat && active,
-    language,
-  );
+  const generalPlacement = useGeneralChatPlacement(generalChat && active, language);
+  const projectPlacement = useProjectSessionPlacement(!generalChat && active, language);
   const placement = generalChat ? generalPlacement : projectPlacement;
   const idPrefix = generalChat ? "new-general-chat" : "new-session";
   const images = useImageDraft(idPrefix);
@@ -149,12 +134,7 @@ export function NewSession({
   const submittingRef = useRef(false);
   const [defaultRefreshFailed, setDefaultRefreshFailed] = useState(false);
   const localIdentity = useRef<Promise<string>>(undefined);
-  const preferences = useCreationPreferences(
-    kind,
-    active,
-    preferenceBridge,
-    preferenceScope,
-  );
+  const preferences = useCreationPreferences(kind, active, preferenceBridge, preferenceScope);
   const touched = useRef(false);
   const restoration = useRef({ agent: false, machine: false });
   const [workspace, setWorkspace] = useState(Workspace.GeneralChat);
@@ -220,14 +200,9 @@ export function NewSession({
     lastEntry.current = { active, activation };
   }, [active, activation]);
 
-  const status = useQuery(
-    SystemQuery.getStatus,
-    {},
-    { refetchInterval: 30000 },
-  );
+  const status = useQuery(SystemQuery.getStatus, {}, { refetchInterval: 30000 });
   const automaticTitles =
-    status.data?.capabilities.includes(SystemCapability.AUTOMATIC_TITLES_V1) ??
-    false;
+    status.data?.capabilities.includes(SystemCapability.AUTOMATIC_TITLES_V1) ?? false;
   const selectedProject = useQuery(
     ResourceQuery.getResource,
     { kind: EntityKind.PROJECT, id: generalChat ? "" : project },
@@ -248,13 +223,8 @@ export function NewSession({
         return;
       }
       // The original retained request, including receipt retries, owns history.
-      const submitted = JSON.parse(
-        new TextDecoder().decode(request.documentJson),
-      );
-      if (
-        UUID_V7.test(submitted.agent_id) &&
-        UUID_V7.test(submitted.machine_id)
-      )
+      const submitted = JSON.parse(new TextDecoder().decode(request.documentJson));
+      if (UUID_V7.test(submitted.agent_id) && UUID_V7.test(submitted.machine_id))
         preferences.remember({
           agent_id: submitted.agent_id,
           machine_id: submitted.machine_id,
@@ -316,8 +286,7 @@ export function NewSession({
     if (!active || consumedProjectActivation.current === activation) return;
     // Consume blocked entries too: settlement must never apply an old navigation intent.
     consumedProjectActivation.current = activation;
-    if (entryProjectId && !blocked && entryProjectId !== project)
-      projectChanged(entryProjectId);
+    if (entryProjectId && !blocked && entryProjectId !== project) projectChanged(entryProjectId);
   }, [active, activation, entryProjectId, blocked, project, projectChanged]);
 
   const rememberedAgent = useQuery(
@@ -352,11 +321,8 @@ export function NewSession({
     document(agentChoice).disabled !== true &&
     document(agentChoice).enabled !== false &&
     document(agentChoice).reconfiguration_required !== true &&
-    (restrictions.configured !== true ||
-      items(restrictions.ids).includes(agentChoice.id));
-  const machineCapabilities = items(
-    document(machineChoice).worker_capabilities,
-  );
+    (restrictions.configured !== true || items(restrictions.ids).includes(agentChoice.id));
+  const machineCapabilities = items(document(machineChoice).worker_capabilities);
   const machineEligible =
     projectEligible &&
     !rememberedMachine.isFetching &&
@@ -369,8 +335,7 @@ export function NewSession({
     document(machineChoice).enabled !== false &&
     (!project ||
       workspace !== Workspace.Worktree ||
-      items(document(selectedProject.data?.resource).repositories).length ===
-        0 ||
+      items(document(selectedProject.data?.resource).repositories).length === 0 ||
       machineCapabilities.includes("remote-workspace-clone-v1") ||
       machineCapabilities.includes(WorkerCapability.REMOTE_WORKSPACE_CLONE_V1));
   useEffect(() => {
@@ -379,45 +344,25 @@ export function NewSession({
     // but only a manual choice releases that field from eligibility revalidation.
     if (
       restoration.current.agent &&
-      eligibilityReadSettled(
-        rememberedAgent.isFetching,
-        rememberedAgent.error,
-      ) &&
-      (!project ||
-        eligibilityReadSettled(
-          selectedProject.isFetching,
-          selectedProject.error,
-        )) &&
+      eligibilityReadSettled(rememberedAgent.isFetching, rememberedAgent.error) &&
+      (!project || eligibilityReadSettled(selectedProject.isFetching, selectedProject.error)) &&
       !agentEligible
     )
       setAgent((value) => (value === preferences.pair?.agent_id ? "" : value));
     if (
       restoration.current.machine &&
       workspace !== Workspace.Local &&
-      eligibilityReadSettled(
-        rememberedMachine.isFetching,
-        rememberedMachine.error,
-      ) &&
-      (!project ||
-        eligibilityReadSettled(
-          selectedProject.isFetching,
-          selectedProject.error,
-        )) &&
+      eligibilityReadSettled(rememberedMachine.isFetching, rememberedMachine.error) &&
+      (!project || eligibilityReadSettled(selectedProject.isFetching, selectedProject.error)) &&
       !machineEligible
     )
-      setMachine((value) =>
-        value === preferences.pair?.machine_id ? "" : value,
-      );
+      setMachine((value) => (value === preferences.pair?.machine_id ? "" : value));
     if (touched.current || !projectEligible) return;
     if (!restoration.current.agent && agentEligible) {
       restoration.current.agent = true;
       setAgent(agentChoice!.id);
     }
-    if (
-      !restoration.current.machine &&
-      workspace !== Workspace.Local &&
-      machineEligible
-    ) {
+    if (!restoration.current.machine && workspace !== Workspace.Local && machineEligible) {
       restoration.current.machine = true;
       setMachine(machineChoice!.id);
     }
@@ -462,26 +407,21 @@ export function NewSession({
       preferences.reading ||
       !readLocalWorker ||
       (preferences.pair &&
-        (!eligibilityReadSettled(
-          rememberedMachine.isFetching,
-          rememberedMachine.error,
-        ) ||
+        (!eligibilityReadSettled(rememberedMachine.isFetching, rememberedMachine.error) ||
           machineEligible))
     )
       return;
     let disposed = false;
     const originalProject = project;
-    localIdentity.current ??= readLocalWorker().then(
-      (proof) => proof.machineId,
-    );
+    localIdentity.current ??= readLocalWorker().then((proof) => proof.machineId);
     void localIdentity.current
       .then(async (machineId) => {
         if (disposed || touched.current || restorationBlocked.current) return;
         // This metadata default does not adopt the native proof or change modes.
-        const result = await createClient(
-          ResourceService,
-          transport,
-        ).getResource({ kind: EntityKind.MACHINE, id: machineId });
+        const result = await createClient(ResourceService, transport).getResource({
+          kind: EntityKind.MACHINE,
+          id: machineId,
+        });
         if (disposed || touched.current || restorationBlocked.current) return;
         const row = result.resource,
           data = document(row),
@@ -495,8 +435,7 @@ export function NewSession({
           data.enabled !== false &&
           (!originalProject ||
             workspace !== Workspace.Worktree ||
-            !items(document(selectedProject.data?.resource).repositories)
-              .length ||
+            !items(document(selectedProject.data?.resource).repositories).length ||
             capabilities.includes("remote-workspace-clone-v1") ||
             capabilities.includes(WorkerCapability.REMOTE_WORKSPACE_CLONE_V1))
         ) {
@@ -550,9 +489,7 @@ export function NewSession({
       workspace !== Workspace.Worktree ||
       !items(document(selectedProject.data?.resource).repositories).length ||
       localDefaultCapabilities.includes("remote-workspace-clone-v1") ||
-      localDefaultCapabilities.includes(
-        WorkerCapability.REMOTE_WORKSPACE_CLONE_V1,
-      ));
+      localDefaultCapabilities.includes(WorkerCapability.REMOTE_WORKSPACE_CLONE_V1));
   useEffect(() => {
     if (
       !blocked &&
@@ -581,9 +518,7 @@ export function NewSession({
       machine !== localDefaultID ||
       workspace === Workspace.Local ||
       localDefaultEligible) &&
-    (!restoration.current.agent ||
-      agent !== preferences.pair?.agent_id ||
-      agentEligible) &&
+    (!restoration.current.agent || agent !== preferences.pair?.agent_id || agentEligible) &&
     (!restoration.current.machine ||
       workspace === Workspace.Local ||
       machine !== preferences.pair?.machine_id ||
@@ -610,16 +545,12 @@ export function NewSession({
     projectId: project,
     active,
     disabled: blocked,
-    enabled:
-      status.data?.capabilities.includes(SystemCapability.NATIVE_SKILLS_V1) ??
-      false,
+    enabled: status.data?.capabilities.includes(SystemCapability.NATIVE_SKILLS_V1) ?? false,
   });
   const promptHistory = useProjectPromptHistory({
     projectId: generalChat ? "" : project,
     enabled:
-      status.data?.capabilities.includes(
-        SystemCapability.PROJECT_PROMPT_HISTORY_V1,
-      ) ?? false,
+      status.data?.capabilities.includes(SystemCapability.PROJECT_PROMPT_HISTORY_V1) ?? false,
     active,
     blocked,
     textarea: firstMessage,
@@ -633,15 +564,9 @@ export function NewSession({
     },
   });
   endHistoryCycle.current = promptHistory.onEdit;
-  const imageRoute = useImageRoute(
-    machine,
-    agent,
-    active,
-    images.images.length > 0,
-  );
+  const imageRoute = useImageRoute(machine, agent, active, images.images.length > 0);
   const supportsDefaults =
-    status.data?.capabilities.includes(SystemCapability.SESSION_DEFAULTS_V1) ??
-    false;
+    status.data?.capabilities.includes(SystemCapability.SESSION_DEFAULTS_V1) ?? false;
   const defaultSettings = useQuery(
     ResourceQuery.listResources,
     { filter: { kind: EntityKind.SETTINGS, pageSize: 2 } },
@@ -680,12 +605,7 @@ export function NewSession({
     next: T | undefined,
   ) => {
     if (!next) return previous;
-    if (
-      !previous ||
-      previous.id !== next.id ||
-      next.revision > previous.revision
-    )
-      return next;
+    if (!previous || previous.id !== next.id || next.revision > previous.revision) return next;
     return previous;
   };
   observedDefaults.current.settings = rememberObservation(
@@ -721,10 +641,8 @@ export function NewSession({
   const overrideMode =
     generalChat || !project
       ? "inherit"
-      : text(
-          object(document(selectedProject.data?.resource).settings)
-            .plan_mode_default,
-        ) || "inherit";
+      : text(object(document(selectedProject.data?.resource).settings).plan_mode_default) ||
+        "inherit";
   const modeReady =
     manualMode ||
     !supportsDefaults ||
@@ -736,8 +654,7 @@ export function NewSession({
       ? mode
       : supportsDefaults && globalDefaultValid && selectedForMode
         ? overrideMode === "enabled" ||
-          (overrideMode === "inherit" &&
-            document(defaultRow).plan_mode_default === true)
+          (overrideMode === "inherit" && document(defaultRow).plan_mode_default === true)
           ? Mode.Plan
           : Mode.Execute
         : mode;
@@ -746,10 +663,7 @@ export function NewSession({
   }, [blocked, manualMode, modeReady, effectiveMode]);
   const [branchValid, setBranchValid] = useState(true);
   const canCreate =
-    (generalChat ||
-      !project ||
-      workspace !== Workspace.Worktree ||
-      branchValid) &&
+    (generalChat || !project || workspace !== Workspace.Worktree || branchValid) &&
     modeReady &&
     active &&
     automaticTitles &&
@@ -804,9 +718,7 @@ export function NewSession({
                 (document(row).plan_mode_default === undefined ||
                   typeof document(row).plan_mode_default === "boolean"))) &&
             [initialObserved.settings, observed.settings].every(
-              (cached) =>
-                !cached ||
-                (row?.id === cached.id && row.revision >= cached.revision),
+              (cached) => !cached || (row?.id === cached.id && row.revision >= cached.revision),
             );
           const selectedRow = selected?.resource;
           const validProject =
@@ -818,14 +730,11 @@ export function NewSession({
               supportsResourceSchema(selectedRow) &&
               [initialObserved.project, observed.project].every(
                 (cached) =>
-                  !cached ||
-                  (cached.id === project &&
-                    selectedRow.revision >= cached.revision),
+                  !cached || (cached.id === project && selectedRow.revision >= cached.revision),
               ));
           const override =
             project && !generalChat
-              ? (object(document(selectedRow).settings).plan_mode_default ??
-                "inherit")
+              ? (object(document(selectedRow).settings).plan_mode_default ?? "inherit")
               : "inherit";
           if (
             !validSettings ||
@@ -847,9 +756,7 @@ export function NewSession({
         }
       }
       const selectedProjectId = generalChat ? "" : project;
-      const workspaceType = selectedProjectId
-        ? workspace
-        : Workspace.GeneralChat;
+      const workspaceType = selectedProjectId ? workspace : Workspace.GeneralChat;
       const selection = {
         name_mode: "automatic",
         estimated_cost_budget: estimatedBudget,
@@ -858,19 +765,12 @@ export function NewSession({
         machine_id: machine,
         project_id: selectedProjectId || undefined,
         workspace: workspaceType,
-        starting:
-          selectedProjectId && workspaceType === Workspace.Worktree
-            ? starting
-            : undefined,
+        starting: selectedProjectId && workspaceType === Workspace.Worktree ? starting : undefined,
         mode: submittedMode,
         source: "MANUAL",
       };
-      const proof =
-        workspaceType === Workspace.Local
-          ? await local.load(machine)
-          : undefined;
-      if (!scopeIsCurrent() || (workspaceType === Workspace.Local && !proof))
-        return;
+      const proof = workspaceType === Workspace.Local ? await local.load(machine) : undefined;
+      if (!scopeIsCurrent() || (workspaceType === Workspace.Local && !proof)) return;
       touched.current = true;
       setMode(submittedMode);
       submittedActivation.current = navigation.current.activation;
@@ -892,19 +792,13 @@ export function NewSession({
           requestId,
           documentJson: encode(selection),
           localWorkerToken: proof?.token,
-          skills: skills.selections.length
-            ? { selections: skills.selections }
-            : undefined,
+          skills: skills.selections.length ? { selections: skills.selections } : undefined,
           attachments,
         },
         attachments.length
           ? (result, request) =>
-              acknowledgeImages(
-                result.change,
-                request.requestId,
-                request.attachments,
-              )
-            : undefined,
+              acknowledgeImages(result.change, request.requestId, request.attachments)
+          : undefined,
       );
     } finally {
       submittingRef.current = false;
@@ -912,9 +806,7 @@ export function NewSession({
     }
   };
 
-  const shortcutScope = generalChat
-    ? Surface.NewGeneralChat
-    : Surface.NewSession;
+  const shortcutScope = generalChat ? Surface.NewGeneralChat : Surface.NewSession;
   const shortcuts = useShortcuts([
     {
       id: ShortcutId.NewSessionFocus,
@@ -962,8 +854,7 @@ export function NewSession({
     void submit();
   };
   const title = createdElsewhere
-    ? text(document(createdElsewhere).name) ||
-      copy("new-session.extra.cffdba22adf2")
+    ? text(document(createdElsewhere).name) || copy("new-session.extra.cffdba22adf2")
     : copy("new-session.extra.cffdba22adf2");
   const submitLabel = generalChat
     ? copy("new-session.startGeneralChat")
@@ -1005,16 +896,11 @@ export function NewSession({
         ) : null}
         {!generalChat && !project ? (
           <p className="new-session-project-note">
-            {copy(
-              "new-session.generalChatIsolatedProjectlessDirectoryOn_aac210",
-            )}
+            {copy("new-session.generalChatIsolatedProjectlessDirectoryOn_aac210")}
           </p>
         ) : null}
         <form
-          {...imageEntryHandlers(
-            images,
-            blocked || !imageRoute.systemSupported,
-          )}
+          {...imageEntryHandlers(images, blocked || !imageRoute.systemSupported)}
           onSubmit={submitForm}
         >
           <fieldset className="new-session-fieldset" disabled={blocked}>
@@ -1056,8 +942,7 @@ export function NewSession({
                     {copy("new-session.localMode")}
                   </label>
                 </fieldset>
-                {workspace === Workspace.Worktree &&
-                selectedProject.data?.resource ? (
+                {workspace === Workspace.Worktree && selectedProject.data?.resource ? (
                   <StartingBranches
                     validity={setBranchValid}
                     key={project}
@@ -1079,10 +964,7 @@ export function NewSession({
               </div>
             ) : null}
             <div className="new-session-composer" ref={placement.composer}>
-              <label
-                className="new-session-message-label"
-                htmlFor={`${idPrefix}-message`}
-              >
+              <label className="new-session-message-label" htmlFor={`${idPrefix}-message`}>
                 {copy("new-session.firstMessage_ecffa2")}
               </label>
               {skills.wrap(
@@ -1098,10 +980,7 @@ export function NewSession({
                   }
                   value={prompt}
                   onChange={(event) =>
-                    skills.onChange(
-                      event.target.value,
-                      event.target.selectionStart,
-                    )
+                    skills.onChange(event.target.value, event.target.selectionStart)
                   }
                   onSelect={skills.onSelect}
                   onCompositionStart={() => {
@@ -1154,9 +1033,7 @@ export function NewSession({
                         showStatus
                         required
                         allowed={
-                          restrictions.configured === true
-                            ? items(restrictions.ids)
-                            : undefined
+                          restrictions.configured === true ? items(restrictions.ids) : undefined
                         }
                         resolvedChoice={agentChoice}
                         change={editAgent}
@@ -1168,9 +1045,7 @@ export function NewSession({
                         value={machine}
                         active={active}
                         showStatus
-                        disabled={
-                          Boolean(project) && workspace === Workspace.Local
-                        }
+                        disabled={Boolean(project) && workspace === Workspace.Local}
                         required
                         resolvedChoice={machineChoice}
                         change={editMachine}
@@ -1182,30 +1057,23 @@ export function NewSession({
                           onChange={(event) => {
                             touched.current = true;
                             setManualMode(true);
-                            setMode(
-                              event.target.checked ? Mode.Plan : Mode.Execute,
-                            );
+                            setMode(event.target.checked ? Mode.Plan : Mode.Execute);
                           }}
                         />
                         {copy("new-session.planMode")}
                       </label>
                       {!modeReady || (!manualMode && defaultRefreshFailed) ? (
                         <div>
-                          <p role="status">
-                            {copy("new-session.planDefaultUnavailable")}
-                          </p>
+                          <p role="status">{copy("new-session.planDefaultUnavailable")}</p>
                           <button
                             type="button"
                             disabled={
-                              blocked ||
-                              defaultSettings.isFetching ||
-                              selectedProject.isFetching
+                              blocked || defaultSettings.isFetching || selectedProject.isFetching
                             }
                             onClick={() => {
                               setDefaultRefreshFailed(false);
                               void defaultSettings.refetch();
-                              if (project && !generalChat)
-                                void selectedProject.refetch();
+                              if (project && !generalChat) void selectedProject.refetch();
                             }}
                           >
                             {copy("new-session.retryPlanDefaults")}
@@ -1227,9 +1095,7 @@ export function NewSession({
                       <button
                         className="new-session-submit"
                         type="submit"
-                        aria-keyshortcuts={shortcuts.aria(
-                          ShortcutId.NewSessionSend,
-                        )}
+                        aria-keyshortcuts={shortcuts.aria(ShortcutId.NewSessionSend)}
                         aria-label={submitLabel}
                         title={submitLabel}
                         disabled={!canCreate}
@@ -1259,15 +1125,9 @@ export function NewSession({
               >
                 {!generalChat && project ? (
                   <>
-                    <p>
-                      {copy(
-                        "new-session.aSeparateDetachedWorktreeIsPrepared_8c300d",
-                      )}
-                    </p>
+                    <p>{copy("new-session.aSeparateDetachedWorktreeIsPrepared_8c300d")}</p>
                     {workspace === Workspace.Local ? (
-                      <p>
-                        {copy("new-session.localUsesThePairedWorkerAnd_ea38f6")}
-                      </p>
+                      <p>{copy("new-session.localUsesThePairedWorkerAnd_ea38f6")}</p>
                     ) : (
                       <StartingReferences
                         key={project}
@@ -1282,17 +1142,11 @@ export function NewSession({
                     )}
                   </>
                 ) : !generalChat ? (
-                  <p>
-                    {copy(
-                      "new-session.generalChatUsesAPrivateProjectless_64e0ee",
-                    )}
-                  </p>
+                  <p>{copy("new-session.generalChatUsesAPrivateProjectless_64e0ee")}</p>
                 ) : null}
                 {generalChat ? (
                   <>
-                    <h3>
-                      {copy("new-session.optionalEstimatedCostBudget_e9d798")}
-                    </h3>
+                    <h3>{copy("new-session.optionalEstimatedCostBudget_e9d798")}</h3>
                     <BudgetFields
                       draft={budget}
                       change={(value) => {
@@ -1300,9 +1154,7 @@ export function NewSession({
                         setBudget(value);
                       }}
                     />
-                    <p>
-                      {copy("new-session.thisIsACeilingAgainstKnown_0260b5")}
-                    </p>
+                    <p>{copy("new-session.thisIsACeilingAgainstKnown_0260b5")}</p>
                   </>
                 ) : (
                   <Disclosure density={DisclosureDensity.Settings}>
@@ -1316,26 +1168,19 @@ export function NewSession({
                         setBudget(value);
                       }}
                     />
-                    <p>
-                      {copy("new-session.thisIsACeilingAgainstKnown_0260b5")}
-                    </p>
+                    <p>{copy("new-session.thisIsACeilingAgainstKnown_0260b5")}</p>
                   </Disclosure>
                 )}
               </section>
             ) : null}
           </fieldset>
         </form>
-        {restrictions.configured === true &&
-        items(restrictions.ids).length === 0 ? (
-          <p role="alert">
-            {copy("new-session.thisProjectExplicitlyAllowsNoAgent_7e04ae")}
-          </p>
+        {restrictions.configured === true && items(restrictions.ids).length === 0 ? (
+          <p role="alert">{copy("new-session.thisProjectExplicitlyAllowsNoAgent_7e04ae")}</p>
         ) : null}
         {!automaticTitles ? (
           <div className="notice" role="status">
-            <strong>
-              {copy("new-session.automaticSessionTitlesAreUnavailable_807e33")}
-            </strong>
+            <strong>{copy("new-session.automaticSessionTitlesAreUnavailable_807e33")}</strong>
             <p>{copy("new-session.updateTheDelidevServerAndConnect_039a1d")}</p>
             <button type="button" onClick={openSettings}>
               {copy("new-session.openSettings_3f9401")}
@@ -1343,13 +1188,10 @@ export function NewSession({
             <Problem error={status.error} />
           </div>
         ) : null}
-        {preferences.pair &&
-        (rememberedAgent.isFetching || rememberedMachine.isFetching) ? (
+        {preferences.pair && (rememberedAgent.isFetching || rememberedMachine.isFetching) ? (
           <p role="status">{copy("new-session.preferencesResolving")}</p>
         ) : null}
-        {preferences.reading ? (
-          <p role="status">{copy("new-session.preferencesReading")}</p>
-        ) : null}
+        {preferences.reading ? <p role="status">{copy("new-session.preferencesReading")}</p> : null}
         {preferences.problem ? (
           <div role="alert">
             <p>
@@ -1375,28 +1217,18 @@ export function NewSession({
         <Problem error={rememberedAgent.error || rememberedMachine.error} />
         {budgetProblem ? <p role="alert">{budgetProblem}</p> : null}
         {promptLimit ? (
-          <p role="alert">
-            {copy("new-session.theFirstMessageExceeds256Kib_9ced04")}
-          </p>
+          <p role="alert">{copy("new-session.theFirstMessageExceeds256Kib_9ced04")}</p>
         ) : null}
         {local.problem ? <p role="alert">{local.problem}</p> : null}
         <Problem error={selectedProject.error || mutation.error} />
         {mutation.uncertain ? (
-          <button
-            type="button"
-            disabled={mutation.busy}
-            onClick={mutation.retry}
-          >
+          <button type="button" disabled={mutation.busy} onClick={mutation.retry}>
             {copy("new-session.retryTheSameSessionCreation_c70ddb")}
           </button>
         ) : null}
         {invalidAcknowledgment ? (
           <div className="problem" role="alert">
-            <strong>
-              {copy(
-                "new-session.creationWasAcknowledgedWithoutAReadable_4432e2",
-              )}
-            </strong>
+            <strong>{copy("new-session.creationWasAcknowledgedWithoutAReadable_4432e2")}</strong>
             <p>{copy("new-session.yourMessageIsRetainedRefreshThe_295fd7")}</p>
             <button type="button" onClick={back}>
               {copy("new-session.inspectSessions_aa8dcc")}
