@@ -1140,8 +1140,8 @@ it.each(["inventory", "creation", "deletion"])(
     const original = f.backup.id;
     const result =
       kind === "inventory"
-        ? screen
-        : within(screen.getByRole("tabpanel", { name: label }));
+        ? document.body
+        : screen.getByRole("tabpanel", { name: label });
     const labels = () =>
       [
         ...result.querySelectorAll(
