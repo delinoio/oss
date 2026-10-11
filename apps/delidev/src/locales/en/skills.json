@@ -10,5 +10,6 @@
   "skills.reselect": "The selected skills need reselection before sending.",
   "skills.clear": "Clear selected skills",
   "skills.entryUnavailable": "Unavailable",
+  "skills.tokensAvailable": "No skill tokens are unavailable in this scope.",
   "skills.tokensUnavailable": "{{count}} skill tokens are unavailable in this scope."
 }
