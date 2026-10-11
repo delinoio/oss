@@ -174,7 +174,7 @@ NewSessionFocus, NewSessionSend and SearchFocus support one primary chord,
 optional Shift and an ASCII letter/digit or Enter, or an explicit disabled
 override. An absent override selects the original default. SessionSend retains fixed unmodified Enter when its primary chord is changed or disabled; show this fixed binding alongside its editable Settings row. SessionNewline is read-only native Shift+Enter. Skill completion accepts a selectable suggestion before send dispatch. The original form/enqueue admission, IME/229/repeat/handled/target/modal/native fences and pending/uncertain request locks remain authoritative. Native newline,
 Search Enter, panel Escape, generic modal Escape, Tab and editing retain their
-original behavior; NewSessionSend always retains guarded plain Enter. Primary+K,
+original behavior; NewSessionSend always retains guarded plain Enter. Primary+comma is a fixed, read-only Common shortcut (`OpenSettings`) that calls the existing Settings navigation without a category, so an active Settings visit keeps its category and drafts; Help and the Settings rail button's aria-keyshortcuts derive from the same declaration. Primary+K,
 primary+N (native New Window), primary+W,
 primary+Q/H/M (native Quit/Hide/Minimize) and primary+1–9 remain fixed reservations. Native editing
 chords cannot be assigned. The former New Window primary+T chord is editable; no T alias remains. No palette, window action or tab action is added.

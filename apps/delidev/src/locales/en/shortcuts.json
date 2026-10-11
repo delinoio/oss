@@ -5,6 +5,7 @@
   "shortcuts.global": "Common",
   "shortcuts.help": "Open shortcut help",
   "shortcuts.newSession": "New session",
+  "shortcuts.openSettings": "Open Settings",
   "shortcuts.focusMessage": "Focus message input",
   "shortcuts.queueMessage": "Add message to queue",
   "shortcuts.newline": "New line",

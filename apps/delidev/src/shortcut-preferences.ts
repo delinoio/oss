@@ -21,6 +21,7 @@ export const editableShortcutCatalog: readonly CatalogAction[] = [
 ];
 export const readOnlyShortcutCatalog: readonly CatalogAction[] = [
   { id: ShortcutId.ToggleSidebar, label: "sidebar-preference.toggle", group: ShortcutGroup.Common, scopes: [ShortcutScope.Global], priority: 0, input: ShortcutInput.Allow, defaults: globalShortcutBindings[ShortcutId.ToggleSidebar] },
+  { id: ShortcutId.OpenSettings, label: "shortcuts.openSettings", group: ShortcutGroup.Common, scopes: [ShortcutScope.Global], priority: 0, input: ShortcutInput.Allow, defaults: globalShortcutBindings[ShortcutId.OpenSettings] },
   { id: ShortcutId.CommandMenu, label: "command-menu.title", group: ShortcutGroup.Common, scopes: [ShortcutScope.Global], priority: 0, input: ShortcutInput.Allow, defaults: globalShortcutBindings[ShortcutId.CommandMenu] },
   { target: ShortcutTargetContext.SessionMessage, id: ShortcutId.SessionNewline, label: "shortcuts.newline", group: ShortcutGroup.Session, scopes: [Surface.Sessions], priority: 2, input: ShortcutInput.Target, defaults: [{ key: "Enter", shift: true }] },
   { target: ShortcutTargetContext.CreationMessage, id: ShortcutId.NewSessionNewline, label: "shortcuts.newline", group: ShortcutGroup.Creation, scopes: [Surface.NewSession, Surface.NewGeneralChat], priority: 2, input: ShortcutInput.Target, defaults: [{ key: "Enter", shift: true }] },

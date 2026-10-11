@@ -177,6 +177,7 @@ function Shell({ localServer, serverPresentation, connectionReady, connectionSet
   const sidebarShortcuts = useShortcuts([
     { id: ShortcutId.ToggleSidebar, scope: ShortcutScope.Global, label: "sidebar-preference.toggle", bindings: globalShortcutBindings[ShortcutId.ToggleSidebar], input: ShortcutInput.Allow, active: wideSidebar, enabled: !sidebarPreference.operation && !sidebarPreference.snapshot.problem, run: toggleSidebar },
     { id: ShortcutId.CommandMenu, scope: ShortcutScope.Global, label: "command-menu.title", bindings: globalShortcutBindings[ShortcutId.CommandMenu], input: ShortcutInput.Allow, run: toggleCommandMenu },
+    { id: ShortcutId.OpenSettings, scope: ShortcutScope.Global, label: "shortcuts.openSettings", bindings: globalShortcutBindings[ShortcutId.OpenSettings], input: ShortcutInput.Allow, run: () => openSettings() },
     { id: ShortcutId.Help, scope: ShortcutScope.Global, label: "shortcuts.help", bindings: globalShortcutBindings[ShortcutId.Help], helpKeydown: holdHelp },
     { id: ShortcutId.NewSession, scope: ShortcutScope.Global, label: "shortcuts.newSession", bindings: globalShortcutBindings[ShortcutId.NewSession], input: ShortcutInput.Allow, run: startNewSession },
   ]);
