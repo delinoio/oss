@@ -192,7 +192,7 @@ function useRowVisible(
       return;
     }
     const hidden = () =>
-      document.visibilityState === "hidden" ||
+      globalThis.document.visibilityState === "hidden" ||
       Boolean(element.closest("[hidden], [inert], [aria-hidden='true']")) ||
       (() => {
         for (
@@ -234,14 +234,14 @@ function useRowVisible(
       window.addEventListener("resize", boundsCheck);
       boundsCheck();
     }
-    document.addEventListener("visibilitychange", update);
+    globalThis.document.addEventListener("visibilitychange", update);
     return () => {
       observer?.disconnect();
       if (!observer) {
         container.removeEventListener("scroll", boundsCheck);
         window.removeEventListener("resize", boundsCheck);
       }
-      document.removeEventListener("visibilitychange", update);
+      globalThis.document.removeEventListener("visibilitychange", update);
     };
   }, [active, root, row]);
   return visible;
