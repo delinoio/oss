@@ -1198,6 +1198,9 @@
   padding: 0 12px;
   border-bottom: 1px solid var(--border);
 }
+.queue-compact-list .queue-compact-item:last-child {
+  border-bottom: 0;
+}
 .queue-compact-list .queue-drop-row-last .queue-compact-item {
   border-bottom: 0;
 }
