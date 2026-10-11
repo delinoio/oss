@@ -12,6 +12,7 @@ import {
   ShortcutTargetContext,
   ShortcutGroup,
   validShortcutChord,
+  type ShortcutOverrides,
 } from "./shortcut-preferences";
 import {
   ShortcutId,
@@ -327,4 +328,64 @@ it("keeps logical grave opening read-only and preserves the editable preference 
     ),
   ).toBe(false);
   expect(validShortcutChord({ key: "`", shift: false })).toBe(false);
+});
+
+it("preserves every existing T override while suppressing only the new default across all scopes", () => {
+  const definitions = [
+    {
+      id: ShortcutId.OpenTool,
+      scope: Surface.Sessions,
+      label: "session.openTool" as const,
+      bindings: [{ key: "t", primary: true }],
+      input: ShortcutInput.Allow,
+    },
+    {
+      id: ShortcutId.TerminalCreate,
+      scope: Surface.Sessions,
+      label: "shortcuts.createTerminal" as const,
+      bindings: [{ key: "t", primary: true }],
+    },
+  ];
+  for (const action of editableShortcutCatalog) {
+    const overrides: ShortcutOverrides = {
+      [action.id]: {
+        state: ShortcutOverrideState.Binding,
+        chord: { key: "t", shift: false },
+      },
+    };
+    expect(parseShortcutOverrides(overrides)).toEqual(overrides);
+    expect(shortcutConflicts(overrides)).toEqual([]);
+    const effective = effectiveShortcutDefinitions(definitions, overrides);
+    expect(effective[0]).toMatchObject({
+      bindings: [],
+      enabled: false,
+      unavailableReason: "shortcut-settings.customBindingPriority",
+    });
+    expect(effective[1]!.bindings).toEqual([{ key: "t", primary: true }]);
+    expect(effectiveShortcutDefinitions(definitions, {})[0]!.bindings).toEqual([
+      { key: "t", primary: true },
+    ]);
+    for (const retained of [
+      { [action.id]: { state: ShortcutOverrideState.Disabled } },
+      {
+        [action.id]: {
+          state: ShortcutOverrideState.Binding,
+          chord: { key: "t", shift: true },
+        },
+      },
+    ]) {
+      expect(
+        effectiveShortcutDefinitions(
+          definitions,
+          parseShortcutOverrides(retained),
+        )[0]!.bindings,
+      ).toEqual([{ key: "t", primary: true }]);
+    }
+  }
+  expect(editableShortcutCatalog).toHaveLength(7);
+  expect(() =>
+    parseShortcutOverrides({
+      [ShortcutId.OpenTool]: { state: ShortcutOverrideState.Disabled },
+    }),
+  ).toThrow();
 });

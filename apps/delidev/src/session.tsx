@@ -1851,7 +1851,7 @@ export function SessionView({
                 newPage={() => setBrowserDialog(true)}
                 closeAria={shortcuts.aria(ShortcutId.SessionCloseTab)}
               />
-              <SessionToolMenu active={active}>
+              <SessionToolMenu key={id} active={active && Boolean(id)}>
                 {tools.map((tool) => (
                   <button
                     role="menuitem"

@@ -120,6 +120,15 @@ export const editableShortcutCatalog: readonly CatalogAction[] = [
 ];
 export const readOnlyShortcutCatalog: readonly CatalogAction[] = [
   {
+    id: ShortcutId.OpenTool,
+    label: "session.openTool",
+    group: ShortcutGroup.Session,
+    scopes: [Surface.Sessions],
+    priority: 1,
+    input: ShortcutInput.Allow,
+    defaults: [{ key: "t", primary: true }],
+  },
+  {
     id: ShortcutId.OpenTerminals,
     label: "shortcuts.openTerminals",
     group: ShortcutGroup.Session,
@@ -281,10 +290,30 @@ export function validShortcutChord(chord: unknown): chord is ShortcutChord {
     ? !/^[vz]$/.test(value.key)
     : !nativeReservedKeys.has(value.key) && !/^[bkn1-9acvxyz]$/.test(value.key);
 }
+// The new session default must not invalidate any of the seven existing
+// editable actions, including an override committed on another screen.
+export function suppressedShortcutReason(
+  id: ShortcutId,
+  overrides: ShortcutOverrides,
+): MessageKey | undefined {
+  if (id !== ShortcutId.OpenTool) return;
+  return editableShortcutCatalog.some((action) => {
+    const override = overrides[action.id];
+    return (
+      override?.state === ShortcutOverrideState.Binding &&
+      override.chord.key === "t" &&
+      !override.chord.shift
+    );
+  })
+    ? "shortcut-settings.customBindingPriority"
+    : undefined;
+}
+
 export function customizationBindings(
   id: ShortcutId,
   overrides: ShortcutOverrides,
 ): readonly ShortcutBinding[] {
+  if (suppressedShortcutReason(id, overrides)) return [];
   const override = overrides[id];
   return override?.state === ShortcutOverrideState.Disabled
     ? []
@@ -297,17 +326,24 @@ export function effectiveShortcutDefinitions(
   overrides: ShortcutOverrides,
 ): ShortcutDefinition[] {
   return definitions.map((action) =>
-    !editableIds.has(action.id)
-      ? action
-      : {
+    suppressedShortcutReason(action.id, overrides)
+      ? {
           ...action,
-          bindings: [
-            ...action.bindings.filter(
-              (binding) => !binding.primary && binding.key !== "?",
-            ),
-            ...customizationBindings(action.id, overrides),
-          ],
-        },
+          bindings: [],
+          enabled: false,
+          unavailableReason: suppressedShortcutReason(action.id, overrides),
+        }
+      : !editableIds.has(action.id)
+        ? action
+        : {
+            ...action,
+            bindings: [
+              ...action.bindings.filter(
+                (binding) => !binding.primary && binding.key !== "?",
+              ),
+              ...customizationBindings(action.id, overrides),
+            ],
+          },
   );
 }
 export function shortcutConflicts(

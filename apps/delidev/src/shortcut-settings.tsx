@@ -12,6 +12,7 @@ import {
   captureShortcut,
   fixedNativeShortcutCatalog,
   customizationBindings,
+  suppressedShortcutReason,
   ShortcutGroup,
   ShortcutOverrideState,
   shortcutCatalog,
@@ -284,8 +285,24 @@ export function ShortcutSettings() {
               .filter((action) => action.group === group)
               .map((action) => (
                 <div key={action.id}>
-                  <dt>{copy(action.label)}</dt>
-                  <dd>{bindingLabel(action.defaults)}</dd>
+                  <dt>
+                    {copy(action.label)}
+                    {suppressedShortcutReason(action.id, snapshot.overrides) ? (
+                      <small>
+                        {copy(
+                          suppressedShortcutReason(
+                            action.id,
+                            snapshot.overrides,
+                          )!,
+                        )}
+                      </small>
+                    ) : null}
+                  </dt>
+                  <dd>
+                    {bindingLabel(
+                      customizationBindings(action.id, snapshot.overrides),
+                    )}
+                  </dd>
                 </div>
               ))}
           </dl>
