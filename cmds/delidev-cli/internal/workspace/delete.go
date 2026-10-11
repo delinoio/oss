@@ -335,7 +335,7 @@ func (m *Manager) DeleteOwnedWorkspaceAdmitted(ctx context.Context, w domain.Ses
 			if err := admission.Check(ctx, m.Root, true); err != nil {
 				return err
 			}
-			removeErr = m.removeSidechatMetadata(ctx, root, *proof.Manifest)
+			removeErr = m.removeSidechatMetadataAdmitted(ctx, root, *proof.Manifest, admission)
 		} else {
 			removeErr = security.RemoveAdmittedTree(ctx, m.Root, root, admission)
 		}

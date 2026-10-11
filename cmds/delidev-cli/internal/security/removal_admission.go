@@ -158,7 +158,7 @@ func (a *RemovalAdmission) Validate() error {
 		return domain.SessionDeletionPending()
 	}
 	for _, id := range a.Ancestors {
-		if id.Kind != uint32(os.ModeDir) {
+		if id.Kind != uint32(os.ModeDir) || id.File == 0 {
 			return domain.SessionDeletionPending()
 		}
 	}
@@ -168,6 +168,9 @@ func (a *RemovalAdmission) Validate() error {
 			return domain.SessionDeletionPending()
 		}
 		if filepath.IsAbs(entry.Path) || filepath.Clean(entry.Path) != entry.Path || entry.Path == ".." || strings.HasPrefix(entry.Path, ".."+string(filepath.Separator)) || entries[entry.Path] {
+			return domain.SessionDeletionPending()
+		}
+		if entry.Identity != nil && entry.Identity.File == 0 {
 			return domain.SessionDeletionPending()
 		}
 		entries[entry.Path] = true

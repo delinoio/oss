@@ -32,7 +32,7 @@ func CaptureNativeIdentity(path string) (NativeIdentity, error) {
 		}
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
+	if !ok || stat.Ino == 0 {
 		return NativeIdentity{}, domain.SessionDeletionPending()
 	}
 	return NativeIdentity{Device: uint64(stat.Dev), File: uint64(stat.Ino), Kind: uint32(info.Mode().Type())}, nil

@@ -5,6 +5,7 @@ package security
 
 import (
 	"errors"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"os"
 
 	"golang.org/x/sys/windows"
@@ -26,6 +27,9 @@ func CaptureNativeIdentity(path string) (NativeIdentity, error) {
 	err = errors.Join(err, windows.CloseHandle(h))
 	if err != nil {
 		return NativeIdentity{}, err
+	}
+	if info.FileIndexHigh == 0 && info.FileIndexLow == 0 {
+		return NativeIdentity{}, domain.SessionDeletionPending()
 	}
 	kind := os.FileMode(0)
 	if info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
