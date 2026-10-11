@@ -1349,7 +1349,9 @@ Managed backups capture history. Open and backup validation check closed documen
 ## Typed Job history during backup restore
 
 The private restore candidate uses the owning storage Job decoder for retained
-history. Supported compaction and workspace recovery Jobs retain their closed
+history. Before changing historical state, compact-session Jobs pass the strict
+compaction Job decoder, including Job invariants, the 3 MiB input limit and
+complete immutable compaction assignment validation. Supported compaction and workspace recovery Jobs retain their closed
 type-specific document bounds; ordinary Jobs retain the generic 1 MiB bound.
 This does not enlarge other documents or the aggregate transformation bounds of
 100,000 documents and 256 MiB. Preserve original input, output and attribution,

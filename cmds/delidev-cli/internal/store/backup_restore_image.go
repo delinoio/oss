@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 )
 
 // validateRestoreImage admits only the current immutable layout. The original
@@ -204,7 +205,7 @@ func prepareRestoreImage(ctx context.Context, path, safety string, receipt Backu
 		case domain.JobKind:
 			// Restore supported history with the same closed type-aware limits
 			// as ordinary storage reads, without enlarging generic documents.
-			v, err := Decode[domain.Job](Record{ID: id, Kind: kind, Data: raw})
+			v, err := decodeRestoreJob(raw)
 			if err != nil {
 				rows.Close()
 				return err
@@ -396,4 +397,21 @@ func redactRestoredDeletedSessions(ctx context.Context, tx *sql.Tx, now time.Tim
 		}
 	}
 	return nil
+}
+
+// Decode the original document before quarantine can replace invalid state or
+// hide a malformed input behind a canceled historical Job. Generic storage
+// decoding chooses outer limits; each exceptional profile owns its validation.
+func decodeRestoreJob(raw []byte) (domain.Job, error) {
+	job, err := Decode[domain.Job](Record{Kind: domain.JobKind, Data: raw})
+	if err != nil {
+		return job, err
+	}
+	switch job.Type {
+	case domain.CompactSessionJob:
+		err = domain.DecodeCompactionJob(raw, &job)
+	case domain.WorkspaceStorageJob:
+		err = workspace.DecodeStorageJob(raw, &job)
+	}
+	return job, err
 }
