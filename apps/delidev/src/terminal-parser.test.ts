@@ -336,3 +336,9 @@ it("disables automatic focus while preserving the public explicit focus call", a
   terminal.reset();
   expect(document.activeElement).toBe(input);
 });
+
+it("requires the explicitly emitted WASM URL instead of creating an unused default asset path", async () => {
+  await expect(GhosttyCore.load()).rejects.toThrow(
+    "An explicit emitted Ghostty WASM URL is required",
+  );
+});

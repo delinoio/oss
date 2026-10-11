@@ -36,7 +36,7 @@ patchedDependencies:
     hash: 60ac07b2ec6bc30ab2b7b8ee57fe2f192b9a90915f8fdae74700b872b2f9a406
     path: patches/@wterm__dom@0.5.4.patch
   '@wterm/ghostty@0.5.4':
-    hash: f67bc17af5fa8d21dcab43c139d5eb714c5d10f0184b1364e36f60814ee31bbc
+    hash: 9f95393b76bf7d41af9c17f37752bd409d96e0486cd01737a190bd88e643a7ba
     path: patches/@wterm__ghostty@0.5.4.patch
 
 importers:
@@ -151,7 +151,7 @@ importers:
         version: 0.5.4(patch_hash=60ac07b2ec6bc30ab2b7b8ee57fe2f192b9a90915f8fdae74700b872b2f9a406)
       '@wterm/ghostty':
         specifier: 0.5.4
-        version: 0.5.4(patch_hash=f67bc17af5fa8d21dcab43c139d5eb714c5d10f0184b1364e36f60814ee31bbc)
+        version: 0.5.4(patch_hash=9f95393b76bf7d41af9c17f37752bd409d96e0486cd01737a190bd88e643a7ba)
       cmdk:
         specifier: 1.1.1
         version: 1.1.1(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -5250,7 +5250,7 @@ snapshots:
     dependencies:
       '@wterm/core': 0.5.4
 
-  '@wterm/ghostty@0.5.4(patch_hash=f67bc17af5fa8d21dcab43c139d5eb714c5d10f0184b1364e36f60814ee31bbc)':
+  '@wterm/ghostty@0.5.4(patch_hash=9f95393b76bf7d41af9c17f37752bd409d96e0486cd01737a190bd88e643a7ba)':
     dependencies:
       '@wterm/core': 0.5.4
 

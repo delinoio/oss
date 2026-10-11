@@ -6,6 +6,7 @@ import {
   cp,
   mkdtemp,
   readFile,
+  readdir,
   rm,
   symlink,
   writeFile,
@@ -113,6 +114,12 @@ try {
       },
     });
     await build.build();
+    assert.equal(
+      (await readdir(join(dist, "static/wasm"))).filter((name) =>
+        name.endsWith(".wasm"),
+      ).length,
+      1,
+    );
     for (const name of ["LICENSE-wterm", "LICENSE-ghostty", "NOTICE.md"])
       assert.deepEqual(
         await readFile(join(dist, "terminal-notices", name)),

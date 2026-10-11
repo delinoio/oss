@@ -113,6 +113,15 @@
      trackPosition(position) {
 --- a/dist/wasm-bindings.js
 +++ b/dist/wasm-bindings.js
+@@ -27,7 +27,7 @@
+  * pointing at the build machine's copy of this file.
+  */
+ function defaultWasmUrl() {
+-    return new URL("../wasm/ghostty-vt.wasm", import.meta.url).href;
++    throw new Error("An explicit emitted Ghostty WASM URL is required");
+ }
+ /** `\0asm`. A 404 HTML page otherwise dies as "expected magic word". */
+ function hasWasmMagic(bytes) {
 @@ -110,9 +110,8 @@
      let wasmMemory;
      const instance = await WebAssembly.instantiate(module, {
