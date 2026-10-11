@@ -1305,7 +1305,9 @@ export function ResourceChoice({
         <p role="status">
           {copy(
             result.nextPageToken
-              ? "configuration-fields.sentence.244a41434b15"
+              ? emptyInventoryAction
+                ? "configuration-fields.choices.continuing"
+                : "configuration-fields.sentence.244a41434b15"
               : emptyInventoryAction
                 ? "configuration-fields.choices.projectRestricted"
                 : "configuration-fields.sentence.9117e85a4bce",

@@ -50,7 +50,7 @@ function fixture(
   const transport = createRouterTransport((router) =>
     router.service(ResourceService, {
       listResources: (request) => reads(request.filter?.pageToken ?? ""),
-      getResource: () => ({ resource: selected }),
+      getResource: (request) => ({ resource: { ...selected, id: request.id } }),
     }),
   );
   const client = new QueryClient({
@@ -185,7 +185,9 @@ it("keeps empty continuation and later final pages as ordinary pagination", asyn
     nextPageToken: token ? "" : "next",
   }));
   render(<f.View />);
-  expect(await screen.findByText(/More choices are available/)).toBeTruthy();
+  expect(
+    await screen.findByText(/More Agent Worker choices are available/),
+  ).toBeTruthy();
   expect(
     screen.queryByRole("button", { name: "Create agent worker" }),
   ).toBeNull();
@@ -194,7 +196,9 @@ it("keeps empty continuation and later final pages as ordinary pagination", asyn
   fireEvent.click(continuation);
   await waitFor(() => expect(f.reads).toHaveBeenCalledWith("next"));
   await waitFor(() =>
-    expect(screen.queryByText(/More choices are available/)).toBeNull(),
+    expect(
+      screen.queryByText(/More Agent Worker choices are available/),
+    ).toBeNull(),
   );
   expect(screen.getByRole("combobox", { name: "Agent Worker" })).toBeTruthy();
   expect(

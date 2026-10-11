@@ -1610,15 +1610,32 @@ it.each(["New session", "New Chat"])(
     });
     render(<App transport={value.transport} />);
     for (const entry of ["New session", "New Chat"]) {
-      fireEvent.click(await screen.findByRole("button", { name: entry }));
+      fireEvent.click(
+        (await screen.findAllByRole("button", { name: entry }))[0],
+      );
       fireEvent.change(
         await screen.findByRole("textbox", { name: "First message" }),
         { target: { value: `${entry} independent draft` } },
       );
     }
-    fireEvent.click(screen.getByRole("button", { name: surface }));
+    fireEvent.click(screen.getAllByRole("button", { name: surface })[0]);
+    await chooseScrollOption(
+      screen.getByRole("combobox", { name: "Runs on" }),
+      value.machine.id,
+    );
     fireEvent.click(screen.getByRole("checkbox", { name: "Plan Mode" }));
     fireEvent.click(screen.getByRole("button", { name: "Options" }));
+    if (surface === "New session")
+      fireEvent.click(screen.getByText("Optional estimated-cost budget"));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Enable estimated-cost budget" }),
+    );
+    fireEvent.change(screen.getByLabelText("Budget currency"), {
+      target: { value: "USD" },
+    });
+    fireEvent.change(screen.getByLabelText("Estimated-cost threshold"), {
+      target: { value: "3.25" },
+    });
     const action = await screen.findByRole("button", {
       name: "Create agent worker",
     });
@@ -1637,11 +1654,31 @@ it.each(["New session", "New Chat"])(
     ).toBeTruthy();
     expect(value.saveConfiguration).not.toHaveBeenCalled();
     expect(value.creates).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(
+      within(wizard).getByRole("heading", { name: "Harness" }),
+    );
     fireEvent.click(within(wizard).getByRole("button", { name: "Cancel" }));
-    fireEvent.click(screen.getByRole("button", { name: surface }));
+    fireEvent.click(screen.getAllByRole("button", { name: surface })[0]);
     expect(
       screen.getByRole("textbox", { name: "First message" }),
     ).toHaveProperty("value", `${surface} independent draft`);
+    expect(
+      scrollChoiceValue(screen.getByRole("combobox", { name: "Runs on" })),
+    ).toBe(value.machine.id);
+    expect(screen.getByLabelText("Estimated-cost threshold")).toHaveProperty(
+      "value",
+      "3.25",
+    );
+    expect(screen.getByLabelText("Budget currency")).toHaveProperty(
+      "value",
+      "USD",
+    );
+    expect(
+      screen.getByRole("button", {
+        name:
+          surface === "New session" ? "Create session" : "Start general chat",
+      }),
+    ).toHaveProperty("disabled", true);
     expect(screen.getByRole("checkbox", { name: "Plan Mode" })).toHaveProperty(
       "checked",
       true,
@@ -1652,9 +1689,9 @@ it.each(["New session", "New Chat"])(
         .getAttribute("aria-expanded"),
     ).toBe("true");
     fireEvent.click(
-      screen.getByRole("button", {
+      screen.getAllByRole("button", {
         name: surface === "New session" ? "New Chat" : "New session",
-      }),
+      })[0],
     );
     expect(
       screen.getByRole("textbox", { name: "First message" }),
