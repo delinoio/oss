@@ -520,6 +520,39 @@ export function useRetainedMutation<
     if (registry.entries.get(key)?.job?.id === jobId) registry.put(key, empty);
   };
   return {
+    // Recover through an independent read of the original receipt. The same
+    // retained verifier fences foreign or late observations without replaying it.
+    observe: (result: unknown) => {
+      const current = registry.entries.get(key) ?? empty;
+      if (
+        !registry.alive ||
+        opening?.disposed ||
+        current.busy ||
+        !current.input ||
+        !current.acknowledge
+      )
+        return false;
+      try {
+        if (!current.acknowledge(result)) return false;
+      } catch (error) {
+        setLocalError({ key, error, rejected: false });
+        return false;
+      }
+      registry.notifyAcceptedResult(key, current.input, result);
+      registry.put(key, empty);
+      registry.notifyAccepted(key);
+      if (mounted.current) {
+        try {
+          accepted?.(
+            result as MessageShape<O>,
+            current.input as MessageShape<I>,
+          );
+        } catch (error) {
+          setLocalError({ key, error, rejected: false });
+        }
+      }
+      return true;
+    },
     resolveJob,
     send,
     retry: () => send(),

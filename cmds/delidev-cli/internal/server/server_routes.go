@@ -11,6 +11,7 @@ import (
 
 func (s *Service) rpcMux() *http.ServeMux {
 	mux := http.NewServeMux()
+	mux.Handle(delidevv1connect.NewMCPServiceHandler(s, connect.WithReadMaxBytes(96<<10), connect.WithSendMaxBytes(2<<20)))
 	options := []connect.HandlerOption{connect.WithReadMaxBytes(2 << 20), connect.WithSendMaxBytes(5 << 20)}
 	mux.Handle(delidevv1connect.NewSkillServiceHandler(s, options...))
 	mux.Handle(delidevv1connect.NewAttachmentServiceHandler(s, connect.WithReadMaxBytes(512<<10), connect.WithSendMaxBytes(512<<10)))

@@ -1,0 +1,66 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.mcp-settings {
+  display: grid;
+  gap: 1rem;
+}
+.mcp-settings label,
+.mcp-settings fieldset {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+}
+.mcp-toolbar,
+.mcp-row,
+.mcp-actions,
+.mcp-secret {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.mcp-toolbar {
+  justify-content: space-between;
+}
+.mcp-row {
+  justify-content: space-between;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.mcp-row p {
+  margin: 0.3rem 0;
+  overflow-wrap: anywhere;
+}
+.mcp-row[data-disabled="true"] {
+  opacity: 0.72;
+}
+.mcp-actions {
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.mcp-settings input,
+.mcp-settings textarea,
+.mcp-settings select {
+  max-width: 100%;
+  min-width: 0;
+}
+@media (max-width: 700px) {
+  .mcp-row,
+  .mcp-toolbar,
+  .mcp-secret {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+.mcp-form,
+.mcp-form fieldset,
+.mcp-form label {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.mcp-form input,
+.mcp-form select,
+.mcp-form textarea {
+  min-width: 0;
+  max-width: 100%;
+}

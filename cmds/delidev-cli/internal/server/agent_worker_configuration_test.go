@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 	"sync"
 	"testing"
@@ -129,4 +130,42 @@ func TestWizardSourceFiltersPrecedePaginationAndBindCursors(t *testing.T) {
 	request.SubscriptionService = pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_CLAUDE
 	_, err = f.resources.ListResources(ctx, ownerRequest(f.identity, request))
 	wantAccountCode(t, err, domain.CursorExpired)
+}
+
+func TestMCPSelectionsPreserveLegacyOmissionAndPortableRebinding(t *testing.T) {
+	s, _ := newDoctorFixture(t)
+	id, definition, worker := domain.NewID(), domain.NewID(), domain.NewID()
+	agent := domain.Agent{Name: "Portable MCP Agent", Harness: domain.Codex, Routes: []domain.AgentSourceRoute{{Model: &domain.InlineModel{ModelIdentity: domain.ModelIdentity{ProviderID: domain.NewID(), NativeID: "fixture"}, MetadataSource: domain.UserDeclared}, Accounts: []domain.WeightedAccount{{ID: domain.NewID(), Weight: 1}}}}, Options: domain.AgentOptions{Permission: domain.PermissionDefault}, MCP: &domain.MCPSelectionList{Selections: []domain.MCPSelection{{DefinitionID: definition, WorkerDeviceID: worker, Unresolved: true, Name: "Original safe name"}}}}
+	doctorPut(t, s, domain.AgentKind, id, 0, agent)
+	err := s.Store.Read(context.Background(), func(tx *store.Tx) error {
+		legacy := agent
+		legacy.MCP = nil
+		if err := preserveMCPSelections(tx, id, 1, &legacy); err != nil {
+			return err
+		}
+		if legacy.MCP == nil || len(legacy.MCP.Selections) != 1 {
+			t.Fatal("legacy omission erased MCP")
+		}
+		clear := agent
+		clear.MCP = &domain.MCPSelectionList{Selections: []domain.MCPSelection{}}
+		if err := preserveMCPSelections(tx, id, 1, &clear); err != nil {
+			return err
+		}
+		if len(clear.MCP.Selections) != 0 {
+			t.Fatal("explicit clear was replaced")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(agent)
+	portable, err := portableValue(domain.AgentKind, raw, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected := portable.(*domain.Agent).MCP.Selections[0]
+	if selected.WorkerDeviceID != "" || !selected.Unresolved || selected.DefinitionID != definition || selected.Name != "Original safe name" {
+		t.Fatal("portable selection retained Worker authority or lost safe metadata")
+	}
 }

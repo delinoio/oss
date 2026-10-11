@@ -1427,3 +1427,20 @@ retirement does not change independent backup deletion or restore obligations.
 `session-queue-order:<session-id>` is version-1 private metadata, bounded to 1,000 unique original input IDs and 64 KiB. Missing metadata means acceptance order and generation zero. Generation-only records preserve that order until the first genuine move captures IDs. Captured IDs must match the entire currently waiting set; duplicates, foreign/missing IDs, malformed versions or overflow require RecoveryRequired before dispatch. All membership writers update this metadata atomically with their queue records; content-only edits retain it. No public Queue document rank and no SQLite migration is added.
 
 New Fork jobs retain a bounded version-1 `fork-image-snapshot:<job-id>` with exact original source, child, execution, native turn, job-input digest and ordered image references. Empty references are explicit. The private cutover marker distinguishes legacy jobs from newly admitted jobs; uncertain missing snapshots fail closed. The existing protected image records remain the byte/Worker authority. Durable session purge removes its order metadata and retires Fork snapshots only after both original job and dependent child are gone. Backup images preserve their own private order and Fork snapshots. Restore excludes these owners from the current safety-metadata overlay, validates the restored membership and advances order generation beyond both timelines to expire old waiting cursors. It does not synthesize rank, membership or image authority. Do not copy raw image bytes or native transcript into this metadata.
+
+## Managed MCP retention
+
+Safe catalog projections and original MCP intent digests use existing metadata;
+no SQLite migration or entity allocation is added. The Worker keeps the private
+catalog, original receipts, immutable revision copies and OS-protected references
+in a device/server-bound private journal. Confirmed catalog deletion removes only
+the current entry. It cannot remove original generations, credentials, host
+configuration or unrelated processes. Independent adapter cleanup remains the
+only authority to retire retained execution ownership.
+
+Receipt observation uses the exact original request. A current Worker can fence
+a proved absent delivery by reserving that identity as failed; it cannot replay it.
+Unfinished synchronized intent remains recovery-required. Recovered receipt status
+returns current safe catalog metadata, so an old acknowledgement cannot roll a
+newer catalog projection back. Pending Server intents fence fresh generation
+resolution until an explicit observation confirms their outcome.

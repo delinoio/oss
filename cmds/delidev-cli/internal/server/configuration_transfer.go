@@ -70,6 +70,12 @@ func portableValue(kind domain.Kind, raw []byte, incoming bool) (validatable, er
 	}
 	switch v := value.(type) {
 	case *domain.Agent:
+		if v.MCP != nil {
+			for i := range v.MCP.Selections {
+				v.MCP.Selections[i].WorkerDeviceID = ""
+				v.MCP.Selections[i].Unresolved = true
+			}
+		}
 		if v.ReconfigurationRequired {
 			return nil, domain.AgentReconfigurationRequired()
 		}

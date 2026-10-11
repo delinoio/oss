@@ -722,3 +722,34 @@ Configure exposes a separate localized User / AI auto-review picker for Codex. A
 ## OpenCode Go subscriptions
 
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.
+
+## Worker-owned managed MCP definitions
+
+MCP management belongs to one authenticated Runner Device. The Worker owns
+stdio executable/argument/directory definitions or explicit credential-free HTTPS
+Streamable HTTP endpoints, enablement, OAuth configuration and protected secret
+references. Catalog reads, edits and Settings visits never start an MCP process,
+sign in or run inference. Management capability is independent of native runtime
+capabilities; user input cannot declare verified harness support. Initial Worker
+attach omits management until the authenticated Server explicitly advertises its
+support; a subsequent attach includes it without breaking older enum admission.
+
+Closed version-1 documents use a 64 KiB request bound, at most 256 definitions
+and a bounded safe inventory projection. Worker private retention keeps up to
+4,096 original receipts and 8,192 immutable definition generations within 32 MiB.
+Bounds fail closed without eviction, truncation or adopting host configuration.
+Server metadata contains only safe definitions/references and digest-bound intent.
+
+Agent Workers store an optional presence-bearing MCP selection list. Omission
+preserves selections on both save APIs; an explicit empty list clears them.
+Deletion checks all current Agent references and identifies their names. A pending
+edit/deletion fences new selections and generations until the original outcome is
+confirmed. Explicit unselection permits catalog deletion while original revisions
+and protected references remain retained for independent native cleanup.
+
+A first execution captures complete immutable selected definitions, revisions and
+credential references from one transaction. Selection must bind the owning live
+paired Worker, an enabled definition, authentication eligibility and separately
+verified harness support. Catalog edits cannot rewrite accepted execution or
+history. Native adapters own final launch/configuration verification and original
+cleanup; saved metadata alone cannot provide those proofs.

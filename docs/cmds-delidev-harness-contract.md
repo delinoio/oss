@@ -2463,3 +2463,16 @@ value grants readiness, native support, credential release or input acceptance.
 The original root may observe official `sleep` ThreadItems through the existing tool lifecycle. The shared closed decoder requires exactly `type`, bounded nonempty `id` and nonnegative uint64 `durationMs`, rejects duplicate/unknown fields and preserves the original item, thread and known turn. Lifecycle status comes only from original `item/started` and `item/completed`; duration is immutable across completion. Worker and server independently fence scope and changed duration. Public `sleep.duration_ms` is an exact decimal JSON string to preserve every native uint64 value through browser parsing. The existing tool disclosure displays the duration and original lifecycle status without a timer or controls.
 
 Complete continuation, context/compaction and permitted ordinary/managed Fork history share the same decoder and retain the original normalized native item JSON, sequence and history digest. Both Fork admission checks explicitly allow only this closed inert family; async/structured tool families and other restricted profiles remain separate. The synchronized outbox and server exact-request receipt replay preserve one observation after publication loss; uncertainty permits only replay of that original publication, never native sleep/input replay. Sleep completion settles only the tool. Original turn outcome, accepted input, native failure/interruption, cleanup and recovery remain independent. No protocol allocation, database migration or numeric native version gate is added.
+
+## Managed MCP generation boundary
+
+MCP management negotiates independently from each native adapter. Its Worker
+catalog always clears user-supplied support claims, credential IDs and public
+Agent-reference claims. Separate Codex, Claude Code, OpenCode and Grok adapters
+must verify their actual native configuration and inventory before projecting
+runtime eligibility. They consume the immutable execution configuration's
+`mcp_definitions`, resolve only the original Worker-owned protected references and
+retain native request/process ownership through independent cleanup. Disabled,
+unresolved, unauthenticated or unsupported selections fail before execution;
+configuration-only management does not advertise native acceptance. Built-in
+session MCP must compose without name/identity collisions with selected entries.

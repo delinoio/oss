@@ -110,6 +110,8 @@ type Manifest struct {
 	CreatedAt         time.Time            `json:"created_at"`
 }
 type Manager struct {
+	mcpOpenVault                  func(string, domain.ID) (mcpSecretVault, error)
+	mcpExchange                   func(context.Context, domain.MCPOAuthConfiguration, string, string) (domain.MCPSecrets, error)
 	mu                            sync.Mutex
 	initialized                   bool
 	storageCopyFault              func(string) error

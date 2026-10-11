@@ -5286,3 +5286,25 @@ and mounted drafts retain their original owners. English/Korean, light/dark,
 compact drawer and effective 200% browser checks are synthetic evidence only.
 
 Queue refresh footer stability: both queue presenters (legacy history-based and negotiated waiting queue) keep a retained complete empty presentation hidden during healthy automatic Refresh/Reload rereads of the same queue identity. Refresh status is announced through a screen-reader-only live region that adds no normal-flow height, so repeated rereads cannot shift the tray, Agent requests, transcript boundary or composer. Initial loading, failures with Retry, incomplete pagination, payload restoration and explicit boundary recovery stay visible. Retained emptiness is cached presentation, not fresh authoritative zero or mutation permission. Populated rows are retained during rereads. No API, protocol, migration or native change.
+
+## MCP Settings and Agent selections
+
+MCP follows Instructions in the AI Settings group. The page preserves the existing
+connection and Settings visit scopes and provides Runner selection, search, flat
+rows, transport/authentication status, per-harness verified support and referencing
+Agent Worker names. Add/edit, enable/disable, manual authentication, OAuth and
+confirmed deletion remain distinct actions. Secret inputs are password-protected,
+write-only and empty on edit; leaving them empty retains protected references.
+Disabled rows use neutral styling. Definition changes apply to new generations.
+
+Uncertain actions retain their original request and offer independent receipt
+inspection without automatic mutation replay. Runner changes isolate queries and
+retained intents; connection changes dispose the existing scope. Loading, empty,
+offline/permission/unsupported, authentication and revision-conflict outcomes stay
+visible. Native support remains unsupported until separately verified.
+
+The Agent configuration step offers explicit selections, per-entry unselection,
+clear-all and imported-reference rebinding. Internal IDs remain hidden. Dialogs
+preserve Esc/focus return; narrow layouts stack rows/actions, and all product text
+has English and Korean catalog entries with existing theme tokens. Synthetic
+fixtures do not establish actual native/account/platform or layout acceptance.
