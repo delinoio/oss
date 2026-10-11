@@ -179,7 +179,7 @@ function snapshot(value: unknown): ShellSnapshot | undefined {
   };
 }
 
-function retained(
+export function retainedShell(
   tool: Record<string, unknown>,
   state: string,
 ): ShellSnapshot[] | undefined {
@@ -298,7 +298,7 @@ export function NativeShell({
   state: string;
 }) {
   useLocale();
-  const snapshots = retained(tool, state),
+  const snapshots = retainedShell(tool, state),
     latest = snapshots?.at(-1);
   if (!snapshots || !latest)
     return (

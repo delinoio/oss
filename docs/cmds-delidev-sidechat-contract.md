@@ -375,6 +375,14 @@ Independent Forks and parent files retain their separate ownership. Preserve the
 4 MiB outer deletion envelope and 4,096-copy bounds; never evict history or expand
 an envelope to admit another retry.
 
+A terminal authority rejection before the first Fork claim fails the original
+job and releases only its exactly matched active retry in the same transaction.
+Require the untouched queued job, absence of a retained Worker assignment and
+matching child, question, generation, runtime and source boundary. Preserve the
+selected answer, generation history and admission receipt. Missing or conflicting
+proof, a prior claim, or native publication retains the original cleanup fence;
+restored authority permits only a fresh explicit retry after verified release.
+
 The question action uses the issue's exact English/Korean explanation. Its
 noninteractive popover opens after 300 ms hover or immediately on focus, shares
 `aria-describedby`, stays open across its button and popover, and closes on

@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/typeopt",
     "crates/forge-tree-doc",
     "crates/forge-pptx",
     "crates/forge-package",

@@ -21,6 +21,28 @@ type repositorySaveOutput struct {
 	Revision uint64    `json:"revision"`
 }
 
+func repositorySourceProofUnavailable() *domain.Error {
+	return domain.Fail(domain.RecoveryRequired, "The original repository source proof is missing or changed.", "Preserve the accepted validation jobs and inspect their original source before creating new work.")
+}
+
+// A successful output cannot upgrade an old, omitted or differently scoped
+// inspection input into authority for the accepted source. This check performs
+// no native inspection and never rewrites the original child proof.
+func validateRepositoryInspectionSource(source string, child domain.Job) error {
+	if source == "" {
+		return nil
+	}
+	var input domain.RepositoryInspectionInput
+	if child.Type != domain.InspectRepositoryJob || domain.Decode(child.Input, &input) != nil {
+		return repositorySourceProofUnavailable()
+	}
+	expected, err := domain.RepositoryCloneSourceIdentity(source)
+	if err != nil || input.ExpectedRemoteIdentity == "" || input.ExpectedRemoteIdentity != expected {
+		return repositorySourceProofUnavailable()
+	}
+	return nil
+}
+
 func repositoryRevision(tx *store.Tx, id domain.ID, expected uint64) error {
 	record, err := tx.Get(domain.RepositoryKind, id)
 	if expected == 0 && domain.SafeError(err).Code == domain.NotFound {
@@ -140,15 +162,21 @@ func finishRepositorySave(tx *store.Tx, parentID domain.ID) error {
 			}
 			switch child.State {
 			case domain.JobSucceeded:
+				if err := validateRepositoryInspectionSource(input.Repository.RemoteURL, child); err != nil {
+					problem = domain.SafeError(err)
+					break
+				}
 				var result workspace.Inspection
 				if err := domain.Decode(child.Output, &result); err != nil {
 					return err
 				}
 				inspections[child.MachineID] = result
 			case domain.JobFailed, domain.JobCanceled, domain.JobUncertain:
-				problem = child.Problem
 				if problem == nil {
-					problem = domain.Fail(domain.Unavailable, "A Worker did not complete repository validation.", "Inspect the accepted operation before retrying.")
+					problem = child.Problem
+					if problem == nil {
+						problem = domain.Fail(domain.Unavailable, "A Worker did not complete repository validation.", "Inspect the accepted operation before retrying.")
+					}
 				}
 			default:
 				pending = true

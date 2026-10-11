@@ -20,6 +20,15 @@ Codex `0.151.0` API and Claude `2.1.236` API now publish the bounded original ch
 
 ### Codex private thread lifecycle and metadata
 
+Thread binding and later native state observations share closed history-mode
+admission. Only the selected, initialized Revert profile admits paginated history;
+legacy profiles retain legacy-only admission. Omitted history mode means legacy.
+Every later observation must retain the originally bound mode, including returned
+Revert metadata, replacement continuation and explicit recovery. Unknown modes or
+changed original metadata cannot authorize input, a checkpoint or another native
+mutation. Complete retained-history proof and independent cleanup remain required
+under the [compaction contract](cmds-delidev-compaction-contract.md).
+
 The original execution process consumes the pinned closed notification envelopes for thread name, attachment created/deleted, queue, project created/updated/deleted, nullable thread project, environment connection/disconnection, prediction and read-state revisions. Validate bounds, duplicate/unknown fields, required nullable fields and each exact union before discarding descriptors. Prediction completed text may be absent, null or a bounded string; failed has no text field. Read state permits absent/null first-unread, thread-start or an exact native turn position and requires the opaque revision. Prediction source turns must belong to the original root execution. Foreign threads retain their unsupported boundary; already owned child notifications retain the existing child observation and content-free supplement routing.
 
 These private process/root observations never rewrite product names, project bindings, input queues, search, unread state, environment selection or attachment byte ownership. Do not fetch an external project/environment, import attachments or submit prediction text. The Worker accepts only content-free closed metadata kinds and publishes no product event for them. Existing recovery fences remain active.
@@ -131,6 +140,33 @@ selected-workspace root; notification arrival grants no such ownership. Original
 turn/settings/account, terminal results, receipts and independent recovery and
 cleanup remain unchanged. The [official notification schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/FsChangedNotification.json)
 defines this passive envelope separately from explicit filesystem operations.
+
+### Passive Codex gateway OAuth status
+
+The original execution process accepts notification-only
+`account/gatewayOAuth/changed` using the closed
+`notReady`/`started`/`succeeded`/`failed` status set. Require a nonempty
+`providerId` of at most 1024 UTF-8 bytes. Optional `authUrl` and `error` values
+retain omitted, null and bounded-string states privately during validation.
+The complete envelope and each optional string use the existing 1 MiB native
+frame bound; reject invalid UTF-8, NUL, duplicate/unknown keys and malformed
+required or optional fields through the closed `account-gateway` diagnostic.
+The [pinned native schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/GatewayOAuthChangedNotification.json)
+defines this passive envelope independently of gateway login operations.
+
+No gateway operation owner exists in this adapter. Discard provider identity,
+URL and error text before returning a normalized event. Logs retain only the
+closed status, discard policy and original process owner. All URL strings stay
+inert, including unsafe schemes and callback-like data. Ordinary execution and
+isolated title generation consume the content-free metadata without a product
+receipt. It cannot open a browser, fetch a URL, exchange tokens, acknowledge a
+login, change account health, adopt provider configuration, replay input or
+supply turn completion or cleanup evidence. Same-name server requests retain
+their unsupported boundary. Existing API configuration still accepts only
+absent or exact-null `gateway_oauth`; populated values remain refused before
+input. A future gateway consumer needs its own independently admitted original
+operation and may not infer ownership from a provider ID or status. No public
+protocol allocation or database migration is added.
 
 ### Codex native error and authentication recovery observations
 

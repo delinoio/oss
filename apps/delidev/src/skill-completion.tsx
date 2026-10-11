@@ -5,6 +5,7 @@ import {
   useId,
   useRef,
   useState,
+  useCallback,
   type KeyboardEvent,
   type ReactNode,
   type RefObject,
@@ -18,6 +19,10 @@ import {
   type SkillSelection,
 } from "@delinoio/delidev-api-client";
 import { copy, useLocale } from "./localization";
+import {
+  skillCompletionAnchorUsable,
+  useSkillCompletionOverlay,
+} from "./skill-completion-overlay";
 
 export interface SkillToken {
   start: number;
@@ -157,7 +162,7 @@ export function useSkillCompletion({
   bindingsChanged?: (bindings: SkillTokenBinding[]) => void;
   retainTransportContext?: boolean;
 }) {
-  useLocale();
+  const locale = useLocale();
   const transport = useTransport(),
     id = useId();
   const scope = `${machineId}:${agentId}:${sessionId}:${projectId}`;
@@ -175,15 +180,13 @@ export function useSkillCompletion({
   }, [bindings, bindingsChanged]);
   const composing = useRef(false),
     editable = useRef(false);
-  const [, setComposition] = useState(false);
+  const [composition, setComposition] = useState(false);
   const completion = useRef<HTMLDivElement>(null),
     keyboardNavigation = useRef(false);
+  const dismissCompletion = useCallback(() => setDismissed(true), []);
   editable.current = active && !disabled;
   const canEdit = () =>
-    editable.current &&
-    Boolean(textarea.current?.isConnected) &&
-    !textarea.current?.matches(":disabled") &&
-    !textarea.current?.closest("[inert], [hidden]");
+    editable.current && skillCompletionAnchorUsable(textarea.current);
   const token =
     !dismissed && !composing.current ? skillToken(value, caret) : undefined;
   const contextChanged =
@@ -230,6 +233,7 @@ export function useSkillCompletion({
     completeInventory(query.data.skills);
   const inventory = inventoryKnown ? query.data!.skills : [];
   const visible = active && !disabled && Boolean(token);
+  useSkillCompletionOverlay(completion, textarea, visible, dismissCompletion);
   const retained = useRef<{
     scope: string;
     transport: typeof transport;
@@ -293,6 +297,64 @@ export function useSkillCompletion({
             ),
         )
       : [];
+  const confirmedCount = useRef<{
+    scope: string;
+    transport: typeof transport;
+    count?: number;
+  }>({ scope, transport });
+  const announcementLocale = useRef(locale);
+  const [announcement, setAnnouncement] = useState<{
+    scope: string;
+    transport: typeof transport;
+    locale: typeof locale;
+    count: number;
+  }>();
+  useEffect(() => {
+    if (announcementLocale.current !== locale) {
+      announcementLocale.current = locale;
+      // Retire the historical live message instead of translating it in place.
+      setAnnouncement(undefined);
+    }
+    if (
+      confirmedCount.current.scope !== scope ||
+      confirmedCount.current.transport !== transport
+    ) {
+      confirmedCount.current = { scope, transport };
+      setAnnouncement(undefined);
+    }
+    if (!inventoryKnown || composition) {
+      // Unknown is not zero. Retain the last confirmed count only for deduping,
+      // so refetching or IME cannot replay an unchanged absence announcement.
+      setAnnouncement(undefined);
+      return;
+    }
+    const count = unavailable.length,
+      previous = confirmedCount.current.count;
+    if (previous === count) return;
+    confirmedCount.current.count = count;
+    // Do not announce an initial zero; a confirmed recovery from absence does
+    // need a localized update even when the completion panel is dismissed.
+    if (count > 0 || (previous !== undefined && previous > 0))
+      setAnnouncement({ scope, transport, locale, count });
+  }, [
+    scope,
+    transport,
+    locale,
+    inventoryKnown,
+    composition,
+    unavailable.length,
+  ]);
+  const announcedCount =
+    inventoryKnown &&
+    !composition &&
+    announcementLocale.current === locale &&
+    confirmedCount.current.scope === scope &&
+    confirmedCount.current.transport === transport &&
+    announcement?.scope === scope &&
+    announcement.transport === transport &&
+    announcement.locale === locale
+      ? announcement.count
+      : undefined;
   const accept = (entry: SkillEntry) => {
     if (
       !canEdit() ||
@@ -327,7 +389,7 @@ export function useSkillCompletion({
     setDismissed(true);
     queueMicrotask(() => {
       if (!canEdit()) return;
-      textarea.current?.focus();
+      textarea.current?.focus({ preventScroll: true });
       textarea.current?.setSelectionRange(end, end);
     });
   };
@@ -406,6 +468,43 @@ export function useSkillCompletion({
           value.slice(binding.start, binding.end) !== binding.token),
     ) ||
     distinct.size > 16;
+  // Selection styling describes retained explicit authority, not inventory
+  // availability. Unknown reads and pending locks must not invent or erase it.
+  const selectedRanges: SkillToken[] = [];
+  if (
+    !composition &&
+    !contextChanged &&
+    isEntityId(machineId) &&
+    isEntityId(agentId)
+  ) {
+    const bindingsByRange = new Map<string, SkillTokenBinding[]>();
+    for (const binding of bindings) {
+      const key = `${binding.start}:${binding.end}:${binding.token}`,
+        matches = bindingsByRange.get(key);
+      if (matches) matches.push(binding);
+      else bindingsByRange.set(key, [binding]);
+    }
+    for (const range of ranges) {
+      const matches = bindingsByRange.get(
+          `${range.start}:${range.end}:$${range.prefix}`,
+        ),
+        binding = matches?.[0];
+      if (
+        matches?.length !== 1 ||
+        !binding ||
+        binding.stale ||
+        binding.ambiguous ||
+        (binding.context && binding.context !== scope) ||
+        !isEntityId(binding.selection.skillId) ||
+        !isEntityId(binding.selection.inventoryId) ||
+        !isEntityId(binding.selection.workerDeviceId) ||
+        !/^[a-f0-9]{64}$/.test(binding.selection.contentRevision)
+      )
+        continue;
+      selectedRanges.push(range);
+      if (selectedRanges.length === 16) break;
+    }
+  }
   useLayoutEffect(() => {
     if (!keyboardNavigation.current) return;
     keyboardNavigation.current = false;
@@ -426,7 +525,18 @@ export function useSkillCompletion({
       container.scrollTop += (row.bottom - bottom) / scale;
   }, [validIndex, visible, query.isFetching]);
   const list = visible ? (
-    <div ref={completion} className="skill-completion">
+    <div
+      ref={completion}
+      className="skill-completion"
+      popover="manual"
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
+        event.preventDefault();
+        event.stopPropagation();
+        dismissCompletion();
+        if (canEdit()) textarea.current?.focus({ preventScroll: true });
+      }}
+    >
       {enabled ? (
         query.isFetching ? (
           <p role="status">{copy("skills.loading")}</p>
@@ -435,6 +545,7 @@ export function useSkillCompletion({
             <p role="status">{copy("skills.unavailable")}</p>
             <button
               type="button"
+              onMouseDown={(event) => event.preventDefault()}
               onClick={() => {
                 if (
                   canEdit() &&
@@ -546,7 +657,9 @@ export function useSkillCompletion({
         textarea={textarea}
         value={value}
         ranges={unavailable}
+        selected={selectedRanges}
         descriptionId={`${id}-unavailable`}
+        announcedCount={announcedCount}
       >
         {child}
       </SkillText>
@@ -560,17 +673,31 @@ function SkillText({
   textarea,
   value,
   ranges,
+  selected,
   descriptionId,
+  announcedCount,
   children,
 }: {
   textarea: RefObject<HTMLTextAreaElement | null>;
   value: string;
   ranges: SkillToken[];
+  selected: SkillToken[];
   descriptionId: string;
+  announcedCount?: number;
   children: ReactNode;
 }) {
   const frame = useRef<HTMLDivElement>(null),
     content = useRef<HTMLDivElement>(null);
+  // Reuse the one mirror, with confirmed absence taking precedence over an
+  // explicit selection. Both sets come from the same nonoverlapping token scan.
+  const painted = [
+    ...ranges.map((range) => ({ ...range, selected: false })),
+    ...selected
+      .filter(
+        (range) => !ranges.some((missing) => missing.start === range.start),
+      )
+      .map((range) => ({ ...range, selected: true })),
+  ].sort((a, b) => a.start - b.start);
   useLayoutEffect(() => {
     const input = textarea.current,
       viewport = frame.current,
@@ -624,16 +751,18 @@ function SkillText({
       input.removeEventListener("scroll", align);
       window.removeEventListener("resize", align);
     };
-  }, [textarea, value, ranges.length]);
+  }, [textarea, value, painted.length]);
   let end = 0;
-  const segments = ranges.map((range) => {
+  const segments = painted.map((range) => {
     const preceding = value.slice(end, range.start);
     end = range.end;
     return (
       <span key={range.start}>
         {preceding}
         <span
-          className="skill-token-unavailable"
+          className={
+            range.selected ? "skill-token-selected" : "skill-token-unavailable"
+          }
           data-skill-start={range.start}
         >
           {value.slice(range.start, range.end)}
@@ -644,10 +773,22 @@ function SkillText({
   return (
     <div
       className="skill-textarea"
-      data-skill-overlay={ranges.length > 0 || undefined}
+      data-skill-overlay={painted.length > 0 || undefined}
     >
       {children}
-      {ranges.length ? (
+      <span
+        className="sidebar-sr-only"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {announcedCount === undefined
+          ? null
+          : announcedCount > 0
+            ? copy("skills.tokensUnavailable", { count: announcedCount })
+            : copy("skills.tokensAvailable")}
+      </span>
+      {painted.length ? (
         <>
           <div ref={frame} className="skill-text-overlay" aria-hidden="true">
             <div ref={content}>
@@ -656,13 +797,15 @@ function SkillText({
               {"\u200b"}
             </div>
           </div>
-          <span
-            id={descriptionId}
-            className="sidebar-sr-only"
-            aria-hidden="true"
-          >
-            {copy("skills.tokensUnavailable", { count: ranges.length })}
-          </span>
+          {ranges.length ? (
+            <span
+              id={descriptionId}
+              className="sidebar-sr-only"
+              aria-hidden="true"
+            >
+              {copy("skills.tokensUnavailable", { count: ranges.length })}
+            </span>
+          ) : null}
         </>
       ) : null}
     </div>

@@ -53,7 +53,7 @@ func (c *Client) RevertThread(ctx context.Context, action domain.ID, source Cont
 	if err := c.noForkWorkLocked(ctx, c.thread); err != nil {
 		return result, err
 	}
-	history, err := c.contextTurnsLocked(ctx, "asc", nil, false)
+	history, err := c.revertHistoryLocked(ctx, "asc", nil, nil, false)
 	if err != nil {
 		return result, err
 	}
@@ -102,19 +102,19 @@ func (c *Client) RevertThread(ctx context.Context, action domain.ID, source Cont
 		return fail()
 	}
 	observed, e := decodeThread(wire.Thread, c.version)
-	if e != nil || observed.ID != c.thread || observed.SessionID != source.SessionID || observed.Status.Type != ThreadIdle || observed.ParentThreadID != nil || observed.ForkedFromID != nil || observed.Cwd != source.Effective.Cwd || observed.ModelProvider != source.Effective.Provider {
+	if e != nil || observed.ID != c.thread || observed.SessionID != source.SessionID || !c.matchesBoundHistoryMode(observed.HistoryMode) || observed.CanAcceptDirectInput == nil || !*observed.CanAcceptDirectInput || observed.Status.Type != ThreadIdle || observed.ParentThreadID != nil || observed.ForkedFromID != nil || observed.Cwd != source.Effective.Cwd || observed.ModelProvider != source.Effective.Provider {
 		return fail()
 	}
 	var cursor, items *string
-	if json.Unmarshal(wire.Turns, &cursor) != nil || json.Unmarshal(wire.Items, &items) != nil || cursor != nil && domain.Text(*cursor, "native revert cursor", 4096, true) != nil || items != nil && domain.Text(*items, "native item cursor", 4096, true) != nil || (index == 0) != (cursor == nil) {
+	if json.Unmarshal(wire.Turns, &cursor) != nil || json.Unmarshal(wire.Items, &items) != nil || cursor != nil && domain.Text(*cursor, "native revert cursor", 4096, true) != nil || items != nil && domain.Text(*items, "native item cursor", 4096, true) != nil || (index == 0) != (cursor == nil) || index > 0 && c.execution.thread.History == PaginatedHistory && items == nil {
 		return fail()
 	}
-	after, e := c.contextTurnsLocked(ctx, "desc", cursor, true)
+	after, e := c.revertHistoryLocked(ctx, "desc", cursor, items, true)
 	if e != nil || !slices.EqualFunc(after, history[:index], equivalentForkJSON) {
 		return fail()
 	}
 	// Re-read without the response cursor as an independent current-context check.
-	current, e := c.contextTurnsLocked(ctx, "asc", nil, true)
+	current, e := c.revertHistoryLocked(ctx, "asc", nil, nil, true)
 	if e != nil || !slices.EqualFunc(after, current, equivalentForkJSON) || c.checkNativeStateLocked(ctx, true) != nil {
 		return fail()
 	}
@@ -156,10 +156,13 @@ func (c *Client) verifyRevertedContinuation(ctx context.Context, request domain.
 		return Turn{}, compactionUncertain()
 	}
 	fail := func() (Turn, error) { c.problem = compactionUncertain(); s.paused = true; return Turn{}, c.problem }
+	if !c.matchesCheckpointHistoryMode(p.Source.PaginatedHistory) {
+		return fail()
+	}
 	if c.checkNativeStateLocked(ctx, true) != nil || c.noForkWorkLocked(ctx, c.thread) != nil {
 		return fail()
 	}
-	turns, err := c.contextTurnsLocked(ctx, "asc", nil, true)
+	turns, err := c.revertHistoryLocked(ctx, "asc", nil, nil, true)
 	if err != nil || uint32(len(turns)) != p.TurnsCount || historyDigest(turns) != p.HistoryDigest {
 		return fail()
 	}
@@ -209,11 +212,19 @@ func (c *Client) ReconcileRevert(ctx context.Context, intent RevertIntent) (Comp
 		return CompactedCheckpoint{}, err
 	}
 	defer func() { <-c.control }()
+	fail := func() (CompactedCheckpoint, error) {
+		c.problem = compactionUncertain()
+		c.execution.paused = true
+		return CompactedCheckpoint{}, c.problem
+	}
+	if !c.matchesCheckpointHistoryMode(intent.Source.PaginatedHistory) {
+		return fail()
+	}
 	if c.problem != nil || c.execution.active != "" || len(c.execution.pending) != 0 || c.execution.interactions.blocksInput() || len(c.subagents) != 0 || c.checkNativeStateLocked(ctx, true) != nil || c.noForkWorkLocked(ctx, c.thread) != nil {
 		return CompactedCheckpoint{}, compactionUncertain()
 	}
 	c.execution.revertAction = intent.ActionID
-	history, err := c.contextTurnsLocked(ctx, "asc", nil, true)
+	history, err := c.revertHistoryLocked(ctx, "asc", nil, nil, true)
 	if err != nil || !slices.EqualFunc(history, intent.ExpectedHistory, equivalentForkJSON) {
 		return CompactedCheckpoint{}, compactionUncertain()
 	}
@@ -228,7 +239,7 @@ func (c *Client) ReconcileRevert(ctx context.Context, intent RevertIntent) (Comp
 		return CompactedCheckpoint{}, compactionUncertain()
 	}
 	thread, err := decodeThread(envelope.Thread, c.version)
-	if err != nil || thread.ID != c.thread || thread.SessionID != intent.Source.SessionID || thread.Status.Type != ThreadIdle || thread.ParentThreadID != nil || thread.ForkedFromID != nil || thread.Cwd != intent.Source.Effective.Cwd || thread.ModelProvider != intent.Source.Effective.Provider {
+	if err != nil || thread.ID != c.thread || thread.SessionID != intent.Source.SessionID || !c.matchesBoundHistoryMode(thread.HistoryMode) || thread.Status.Type != ThreadIdle || thread.ParentThreadID != nil || thread.ForkedFromID != nil || thread.Cwd != intent.Source.Effective.Cwd || thread.ModelProvider != intent.Source.Effective.Provider {
 		return CompactedCheckpoint{}, compactionUncertain()
 	}
 	var path string

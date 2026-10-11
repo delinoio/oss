@@ -459,7 +459,7 @@ generation and inventory identity. The CLI requires `--confirm`, with either the
 returned credit ID or explicit native next-credit selection when only the count
 is available. Configuration saves cannot manufacture observations.
 
-Codex quota reflection validation checks exact original bucket IDs after removing only the adapter-owned final `primary`, `secondary` or `spend` suffix, and exact reset-credit IDs, against every nonempty protected identity/token and its complete standard/URL Base64 forms at any length. Existing long substring checks remain; incidental short substrings stay valid. Worker explicit reads, rolling updates and server-owned quota reads share this guard before publication. Rejection preserves the last good quota and exhaustion state independently of native cleanup.
+Codex quota reflection validation checks exact original bucket IDs after removing only the adapter-owned final `primary`, `secondary` or `spend` suffix, and exact reset-credit IDs, against every nonempty protected identity/token and its complete standard/URL Base64 forms at any length. Both managed Worker and server-owned reads include the display name parsed from the original ID-token name or profile claim. The external access-token-only adapter has no parsed display-name source and retains its existing inputs. Existing long substring checks remain; incidental short substrings stay valid. Worker explicit reads, rolling updates and server-owned quota reads share this guard before publication. Rejection preserves the last good quota and exhaustion state independently of native cleanup.
 
 The accepted UUID-v7 operation is the official `idempotencyKey` for
 `account/rateLimitResetCredit/consume`. Uncertain consumption never automatically

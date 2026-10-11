@@ -84,7 +84,10 @@ func Retire(t Target) error {
 	if current.Generation != t.Generation {
 		return nil
 	}
-	return os.Remove(filepath.Join(t.Root, recordName))
+	if err := os.Remove(filepath.Join(t.Root, recordName)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 func Load(root string, serverID domain.ID) (Target, error) {
 	raw, err := security.ReadPrivate(filepath.Join(root, recordName), 4096)

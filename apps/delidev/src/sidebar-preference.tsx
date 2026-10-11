@@ -109,7 +109,7 @@ export function parseSidebar(value: unknown): SidebarSnapshot {
 interface SidebarController {
   snapshot: SidebarSnapshot;
   operation?: SidebarOperation;
-  select: (sidebar_preference: SidebarPreference) => void;
+  select: (sidebar_preference: SidebarPreference) => boolean;
   reload: () => void;
 }
 const SidebarContext = createContext<SidebarController | undefined>(undefined);
@@ -260,7 +260,9 @@ export function SidebarProvider({
         snapshot,
         operation,
         select: (sidebar_preference) => {
+          if (running.current || current.current.problem) return false;
           void run(sidebar_preference);
+          return true;
         },
         reload: () => {
           void run();

@@ -152,28 +152,32 @@ func ParseRepositoryCloneURL(value string) (RepositoryCloneURL, error) {
 // RepositoryCloneSourceIdentity returns an opaque identity for the repository
 // named by a credential-free clone URL. GitHub's HTTPS and SSH forms have one
 // established repository namespace. Other hosts retain transport, SSH user,
-// and absolute-vs-relative SSH path namespace because those values can select
-// different repositories on a generic Git server. The digest lets a Worker
+// and exact path bytes, including suffixes and trailing separators, because
+// those values can select different repositories on a generic Git server.
+// The digest lets a Worker
 // compare a checkout without returning its raw remote URL.
 func RepositoryCloneSourceIdentity(value string) (string, error) {
 	parsed, err := ParseRepositoryCloneURL(value)
 	if err != nil {
 		return "", err
 	}
-	repositoryPath := strings.TrimSuffix(parsed.Path, "/")
-	repositoryPath = strings.TrimSuffix(repositoryPath, ".git")
-	if repositoryPath == "" {
-		return "", cloneInvalidURL()
-	}
+	repositoryPath := parsed.Path
 	identity := []string{strings.ToLower(parsed.Host)}
 	if strings.EqualFold(parsed.Host, "github.com") {
 		// GitHub documents HTTPS, ssh://git@github.com and SCP-style SSH as
 		// equivalent access forms for one owner/repository namespace.
 		// GitHub repository names are case-insensitive. Normalize only this
 		// established provider namespace; generic hosts retain their exact path.
+		repositoryPath = strings.TrimSuffix(strings.TrimSuffix(repositoryPath, "/"), ".git")
+		if repositoryPath == "" {
+			return "", cloneInvalidURL()
+		}
 		repositoryPath = strings.ToLower(strings.TrimPrefix(repositoryPath, "/"))
 	} else {
-		identity = append(identity, string(parsed.Transport), parsed.SSHUser, repositoryPath)
+		// Historical generic digests collapsed .git and trailing separators.
+		// A new private namespace prevents those ambiguous retained proofs from
+		// becoming authority for a corrected source. Never rehash old job input.
+		identity = []string{"delidev.repository.generic-source.v2", strings.ToLower(parsed.Host), string(parsed.Transport), parsed.SSHUser, repositoryPath}
 	}
 	if len(identity) == 1 {
 		identity = append(identity, repositoryPath)

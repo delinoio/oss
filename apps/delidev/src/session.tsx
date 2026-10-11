@@ -103,6 +103,7 @@ import { NativeContextCompaction } from "./native-context-compaction";
 import { NativeClaudeProgress } from "./native-claude-progress";
 import { NativeClaudeTool } from "./native-claude-tool";
 import { NativeReasoning } from "./native-reasoning";
+import { CodexReasoning, codexReasoning } from "./codex-reasoning";
 import { SessionContext } from "./session-context";
 import { SessionBudget } from "./session-budget";
 import {
@@ -425,11 +426,13 @@ export const TranscriptItem = memo(function TranscriptItem({
   resource,
   active = true,
   actions,
+  revertAction,
   contextRevision = 0,
 }: {
   resource: Resource;
   active?: boolean;
   actions?: ReactNode;
+  revertAction?: ReactNode;
   contextRevision?: number;
 }) {
   useLocale();
@@ -510,6 +513,38 @@ export const TranscriptItem = memo(function TranscriptItem({
   const artifact = object(data.artifact);
   const completed = object(artifact.completed);
   const started = object(artifact.started);
+  const reasoning =
+    data.role === "artifact" &&
+    data.tool == null &&
+    data.progress == null &&
+    !text(data.text) &&
+    [
+      "grok_text",
+      "claude",
+      "claude_tool",
+      "claude_progress",
+      "claude_interruption",
+    ].every((key) => !Object.hasOwn(data, key))
+      ? codexReasoning(data.artifact, text(data.state))
+      : undefined;
+  if (reasoning)
+    return (
+      <article
+        className="message message-codex-reasoning"
+        aria-label={copy("native-reasoning.codexReasoning")}
+      >
+        <ConversationStatus state={text(data.state)} />
+        {Number(data.context_revision ?? 0) < contextRevision ? (
+          <small>{copy("session.previousContext")}</small>
+        ) : null}
+        <RetainedImages
+          value={data.attachments}
+          sessionId={resource.sessionId}
+          active={active}
+        />
+        <CodexReasoning data={reasoning} />
+      </article>
+    );
   const progress = object(data.progress);
   const plan = object(progress.plan);
   const textRole =
@@ -529,7 +564,7 @@ export const TranscriptItem = memo(function TranscriptItem({
       : textRole && data.role === "assistant"
         ? " message-assistant"
         : "";
-  return (
+  const message = (
     <article
       className={`message${roleClass}`}
       aria-label={
@@ -736,6 +771,19 @@ export const TranscriptItem = memo(function TranscriptItem({
       ) : null}
     </article>
   );
+  if (!textRole || data.role !== "user") return message;
+  return (
+    <div
+      className="user-transcript-item"
+      role="group"
+      aria-label={copy("session.userTurn")}
+    >
+      {message}
+      {revertAction ? (
+        <div className="user-transcript-actions">{revertAction}</div>
+      ) : null}
+    </div>
+  );
 });
 
 const submissionLabels = {
@@ -787,6 +835,7 @@ export function SessionView({
   id,
   draft,
   setDraft,
+  draftGeneration,
   initialSkills,
   changeSkills,
   active = true,
@@ -794,7 +843,12 @@ export function SessionView({
 }: {
   id: string;
   draft: string;
-  setDraft: (value: string, bindings?: SkillTokenBinding[]) => boolean | void;
+  setDraft: (
+    value: string,
+    bindings?: SkillTokenBinding[],
+    userEdit?: boolean,
+  ) => boolean | void;
+  draftGeneration?: () => bigint;
   initialSkills?: SkillTokenBinding[];
   changeSkills?: (bindings: SkillTokenBinding[]) => void;
   active?: boolean;
@@ -1171,6 +1225,7 @@ export function SessionView({
       window.removeEventListener("resize", fit);
     };
   }, [session?.id]);
+  const localDraftGeneration = useRef(0n);
   const skills = useSkillCompletion({
     value: draft,
     change: (value, bindings) => {
@@ -1179,7 +1234,9 @@ export function SessionView({
         return false;
       }
       setImageTextLimit(false);
-      return setDraft(value, bindings);
+      const accepted = setDraft(value, bindings, true);
+      if (accepted !== false) localDraftGeneration.current += 1n;
+      return accepted;
     },
     textarea: composer,
     machineId: text(data.machine_id),
@@ -1195,6 +1252,7 @@ export function SessionView({
     session,
     active: conversationActive,
     draft,
+    draftGeneration: draftGeneration ?? (() => localDraftGeneration.current),
     composer,
     blocked: locked || images.images.length > 0,
     changed: setAcknowledged,
@@ -2092,14 +2150,12 @@ export function SessionView({
                             resource={row}
                             active={conversationActive}
                             contextRevision={Number(data.context_revision ?? 0)}
+                            revertAction={revert.action(row)}
                             actions={
-                              <>
-                                {revert.action(row)}
-                                <SidechatRetryAction
-                                  controller={retryQuestion}
-                                  inputId={text(readDocument(row).input_id)}
-                                />
-                              </>
+                              <SidechatRetryAction
+                                controller={retryQuestion}
+                                inputId={text(readDocument(row).input_id)}
+                              />
                             }
                           />
                         )}

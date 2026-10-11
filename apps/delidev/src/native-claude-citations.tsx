@@ -1,3 +1,4 @@
+import { claudeRetainedJSONBytes } from "./native-claude-json";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { copy, useLocale } from "./localization";
 import { object, type Document } from "./documents";
@@ -102,15 +103,7 @@ function citationKey(v: Document) {
     v.web == null ? null : object(v.web).url,
   ]);
 }
-export function claudeCitationHistoryBytes(value: unknown) {
-  // Match Go's escaped JSON retention bound, including HTML-significant text.
-  return new TextEncoder().encode(
-    JSON.stringify(value).replace(
-      /[<>&\u2028\u2029]/g,
-      (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
-    ),
-  ).length;
-}
+export const claudeCitationHistoryBytes = claudeRetainedJSONBytes;
 export function validClaudeCitationHistory(
   value: unknown,
   state: string,
