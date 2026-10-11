@@ -32,6 +32,7 @@ interface RemediationOwner {
   release: (presenter: string) => void;
   controller?: MachineSettingsController;
   active: boolean;
+  connectionReady: boolean;
   authority?: PairingAuthority;
 }
 const Context = createContext<RemediationOwner | undefined>(undefined);
@@ -53,10 +54,12 @@ function ControllerOwner({
 export function RunnerRemediationProvider({
   children,
   active,
+  connectionReady = true,
   authority,
 }: {
   children: ReactNode;
   active: boolean;
+  connectionReady?: boolean;
   authority?: PairingAuthority;
 }) {
   const [presenter, setPresenter] = useState<string>();
@@ -68,7 +71,8 @@ export function RunnerRemediationProvider({
   selectedRef.current = selected;
   const request = useCallback(
     (resource: Resource, source: string) => {
-      if (!active || !validRunnerObservation(resource)) return false;
+      if (!active || !connectionReady || !validRunnerObservation(resource))
+        return false;
       const previous = selectedRef.current;
       if (previous?.id === resource.id) {
         setPresenter(source);
@@ -83,7 +87,7 @@ export function RunnerRemediationProvider({
       setPresenter(source);
       return true;
     },
-    [active],
+    [active, connectionReady],
   );
   const release = useCallback(
     (source: string) =>
@@ -96,8 +100,16 @@ export function RunnerRemediationProvider({
     }
   }, [active]);
   const value = useMemo(
-    () => ({ request, release, presenter, controller, active, authority }),
-    [request, release, presenter, controller, active, authority],
+    () => ({
+      request,
+      release,
+      presenter,
+      controller,
+      active,
+      connectionReady,
+      authority,
+    }),
+    [request, release, presenter, controller, active, connectionReady, authority],
   );
   return (
     <Context.Provider value={value}>
@@ -108,7 +120,7 @@ export function RunnerRemediationProvider({
             <MutationIntents>
               <ControllerOwner
                 initial={selected}
-                active={active && Boolean(presenter)}
+                active={active && connectionReady && Boolean(presenter)}
                 publish={setController}
               />
             </MutationIntents>
@@ -177,7 +189,7 @@ export function useRunnerRemediation({
       >
         <MachineSettingsView
           controller={controller}
-          active={owner.active}
+          active={owner.active && owner.connectionReady}
           authority={authority ?? owner.authority}
           close={close}
           compact={compact}
