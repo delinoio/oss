@@ -54,11 +54,11 @@ struct Member {
 
 pub(in crate::compiler) fn plan(ctx: &mut Ctx, _enabled: &PassSet, out: &mut Plan) -> Result<()> {
     let mut enums = Vec::new();
-    for file in 0..ctx.files.len() {
-        if ctx.files[file].js {
+    for (file, info) in ctx.files.iter().enumerate() {
+        if info.js {
             continue;
         }
-        let statements: Vec<Node> = ctx.files[file].node.statements().iter().collect();
+        let statements: Vec<Node> = info.node.statements().iter().collect();
         enums.extend(
             statements
                 .into_iter()
@@ -121,10 +121,14 @@ fn plan_enum(
         return None;
     }
     let flags = ctx.checker.sym(symbol).flags;
-    if ctx.checker.sym(symbol).declarations.len() != 1
+    let declarations = ctx.checker.sym(symbol).declarations.to_vec();
+    if declarations.len() != 1
         || flags.intersects(SymbolFlags::VALUE_MODULE | SymbolFlags::NAMESPACE_MODULE)
     {
-        out.skips.push(skip(ctx, Reason::DeclarationMerging));
+        // One record per merged symbol.
+        if declarations.first() == Some(&declaration) {
+            out.skips.push(skip(ctx, Reason::DeclarationMerging));
+        }
         return None;
     }
     if !ctx.is_internal(symbol) {

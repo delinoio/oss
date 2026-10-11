@@ -41,9 +41,9 @@ use super::{
     super::analysis::{Ctx, skip_outer},
     constants_support::{
         Access, Declared, ModuleGraph, Uses, asi_hazard, canonical_index, class_inert, classify,
-        condition_hazard, escaped_exports, inert_prefix, init_safe, is_function_boundary,
-        member_type, object_builtins_intact, print_type, pure_value, render, replaceable,
-        unnarrowed,
+        condition_hazard, contains_this, erased_computed_name, escaped_exports, inert_prefix,
+        init_safe, is_function_boundary, member_type, object_builtins_intact, print_type,
+        pure_value, render, replaceable, unnarrowed,
     },
 };
 use crate::{
@@ -83,11 +83,11 @@ struct Definition {
 pub(in crate::compiler) fn plan(ctx: &mut Ctx, _enabled: &PassSet, out: &mut Plan) -> Result<()> {
     let mut objects = Vec::new();
     let mut classes = Vec::new();
-    for file in 0..ctx.files.len() {
-        if ctx.files[file].js {
+    for (file, info) in ctx.files.iter().enumerate() {
+        if info.js {
             continue;
         }
-        for &node in &ctx.files[file].nodes {
+        for &node in &info.nodes {
             match node.kind() {
                 SyntaxKind::VariableDeclaration
                     if node.name().kind() == SyntaxKind::Identifier
@@ -212,8 +212,8 @@ fn plan_object(ctx: &mut Ctx, shared: &Shared, file: usize, declaration: Node, o
             Some(_) => None,
         });
         if let Some(reason) = reason {
-            shape = Some(reason);
-            break;
+            shape.get_or_insert(reason);
+            continue;
         }
         if property.kind() == SyntaxKind::PropertyAssignment
             && let Some(value) = literal_value(ctx, file, property.initializer())
@@ -351,7 +351,10 @@ fn binding_uses(
         return None;
     }
     let mut uses = classify(ctx, symbol, shared.object_builtins);
-    uses.calls.retain(|(name, _)| !allowed_calls.contains(name));
+    // A reassigned method may be any function; calling it passes the object.
+    let writes = uses.writes.clone();
+    uses.calls
+        .retain(|(name, _)| !allowed_calls.contains(name) || writes.contains(name));
     if let Some(reason) = uses.first_blocker() {
         out.skips.push(skip(ctx, reason));
         return None;
@@ -400,7 +403,7 @@ fn plan_property(
     let mut retained: Option<Reason> = None;
     let mut typed_by_member = false;
     for access in reads {
-        if !access.direct || !replaceable(access.node) {
+        if !access.direct || !replaceable(access.node) || erased_computed_name(access.node) {
             retained.get_or_insert(Reason::UnsupportedSyntax);
             continue;
         }
@@ -433,7 +436,7 @@ fn plan_property(
     if let Some(reason) = retained {
         out.skips.push(skip(ctx, reason));
     }
-    tracing::debug!(
+    tracing::trace!(
         pass = %PASS,
         sites = edits.len(),
         retained = ?retained,
@@ -640,16 +643,4 @@ fn plan_class(ctx: &mut Ctx, shared: &Shared, file: usize, class: Node, out: &mu
             out,
         );
     }
-}
-
-fn contains_this(node: Node) -> bool {
-    let mut found = false;
-    node.for_each_child(|child| {
-        found = matches!(
-            child.kind(),
-            SyntaxKind::ThisKeyword | SyntaxKind::SuperKeyword
-        ) || contains_this(child);
-        found
-    });
-    found
 }

@@ -626,6 +626,18 @@ pub(super) fn classify(ctx: &mut Ctx, symbol: SymbolId, object_builtins: bool) -
     let mut uses = Uses::default();
     let refs = ctx.refs(symbol).to_vec();
     for r in refs {
+        let parent = r.node.parent();
+        if parent.kind() == SyntaxKind::ExportSpecifier
+            && matches!(r.kind, RefKind::Declaration | RefKind::Alias)
+        {
+            // `export { X }` and `export { X } from`: TypeScript keeps the
+            // runtime binding unless the specifier is type-only.
+            if !parent.is_type_only() && !parent.parent().parent().is_type_only() {
+                uses.reexported = true;
+                uses.binding_observed = true;
+            }
+            continue;
+        }
         match r.kind {
             RefKind::Declaration => {}
             RefKind::Type => {
@@ -639,25 +651,12 @@ pub(super) fn classify(ctx: &mut Ctx, symbol: SymbolId, object_builtins: bool) -
                     }
                 }
             }
-            RefKind::Alias => {
-                let parent = r.node.parent();
-                if parent.kind() == SyntaxKind::ExportSpecifier
-                    && !parent.is_type_only()
-                    && !parent.parent().parent().is_type_only()
-                {
-                    uses.reexported = true;
-                    uses.binding_observed = true;
-                }
-            }
+            RefKind::Alias => {}
             RefKind::Read | RefKind::Call | RefKind::New | RefKind::Write
-                if r.node.parent().kind() == SyntaxKind::QualifiedName =>
+                if qualified_type_name(r.node).is_some() =>
             {
                 // The left side of a qualified type name (`E.A` as a type).
-                let mut name = r.node.parent();
-                while name.parent().kind() == SyntaxKind::QualifiedName {
-                    name = name.parent();
-                }
-                if name.parent().kind() == SyntaxKind::ImportEqualsDeclaration {
+                if qualified_type_name(r.node) == Some(false) {
                     uses.escape.get_or_insert((r.file, r.node));
                 } else {
                     uses.type_refs = true;
@@ -728,6 +727,20 @@ fn queried_member(identifier: Node) -> Option<String> {
         .then(|| index.literal().text().to_owned())
 }
 
+/// For the left identifier of a qualified name: `Some(true)` in a type
+/// position, `Some(false)` in an `import x = A.B` alias (a runtime read);
+/// `None` for other identifiers.
+fn qualified_type_name(identifier: Node) -> Option<bool> {
+    let mut name = identifier.parent();
+    if name.kind() != SyntaxKind::QualifiedName || name.left() != identifier {
+        return None;
+    }
+    while name.parent().kind() == SyntaxKind::QualifiedName {
+        name = name.parent();
+    }
+    Some(name.parent().kind() != SyntaxKind::ImportEqualsDeclaration)
+}
+
 fn in_type_query(mut node: Node) -> bool {
     while node.is_some() {
         if node.kind() == SyntaxKind::TypeQuery {
@@ -768,7 +781,7 @@ fn classify_receiver(uses: &mut Uses, file: usize, receiver: Node, object_builti
             {
                 match key {
                     Some(name) => {
-                        tracing::debug!("member call through object");
+                        tracing::trace!("member call through object");
                         uses.calls.push((name, access))
                     }
                     None => {
@@ -826,7 +839,7 @@ fn classify_receiver(uses: &mut Uses, file: usize, receiver: Node, object_builti
             uses.shape_observed = true;
         }
         _ => {
-            tracing::debug!(context = ?parent.kind(), "object reference escapes");
+            tracing::trace!(context = ?parent.kind(), "object reference escapes");
             uses.escape.get_or_insert((file, receiver));
         }
     }
@@ -912,6 +925,8 @@ pub(super) fn escaped_exports(ctx: &mut Ctx) -> HashSet<SymbolId> {
                     r.kind,
                     RefKind::Read | RefKind::Call | RefKind::New | RefKind::Write
                 ) && !namespace_member_read(r.node)
+                    && !namespace_function_call(ctx, r.node)
+                    && qualified_type_name(r.node) != Some(true)
             });
         if !escapes {
             continue;
@@ -968,6 +983,45 @@ fn relative_prefix(importer: &str, head: &str) -> String {
         }
     }
     format!("{}/{tail}", segments.join("/"))
+}
+
+/// `ns.f(...)` where `f` is an application function declaration that never
+/// uses `this`, so the namespace object passed as `this` is unobservable.
+fn namespace_function_call(ctx: &mut Ctx, node: Node) -> bool {
+    let outer = walk_up_outer(node);
+    let access = outer.parent();
+    if access.kind() != SyntaxKind::PropertyAccessExpression || access.expression() != outer {
+        return false;
+    }
+    let wrapped = walk_up_outer(access);
+    let call = wrapped.parent();
+    if call.kind() != SyntaxKind::CallExpression || call.expression() != wrapped {
+        return false;
+    }
+    let symbol = ctx.resolve(access.name());
+    if symbol.is_nil() {
+        return false;
+    }
+    let declarations = ctx.checker.sym(symbol).declarations.to_vec();
+    !declarations.is_empty()
+        && declarations.iter().all(|&d| {
+            d.kind() == SyntaxKind::FunctionDeclaration
+                && ctx.file_of_node(d).is_some_and(|f| !ctx.files[f].js)
+                && !contains_this(d)
+        })
+}
+
+/// Whether `this` or `super` occurs anywhere below `node`.
+pub(super) fn contains_this(node: Node) -> bool {
+    let mut found = false;
+    node.for_each_child(|child| {
+        found = matches!(
+            child.kind(),
+            SyntaxKind::ThisKeyword | SyntaxKind::SuperKeyword
+        ) || contains_this(child);
+        found
+    });
+    found
 }
 
 /// `ns.name` read that neither writes, deletes nor calls through the
@@ -1123,6 +1177,8 @@ pub(super) fn condition_hazard(site: Node, value: &str) -> bool {
                 let operator = parent.operator_token().kind();
                 let left = parent.left() == node;
                 match operator {
+                    // A side-effect-free left comma operand is reported.
+                    SyntaxKind::CommaToken if left => return true,
                     SyntaxKind::QuestionQuestionToken | SyntaxKind::QuestionQuestionEqualsToken
                         if left =>
                     {
