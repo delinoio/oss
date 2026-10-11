@@ -34,6 +34,7 @@ type ExecutionJobInput struct {
 	Remediation         *PRFixExecution            `json:"remediation,omitempty"`
 	Continuation        *ExecutionContinuation     `json:"continuation,omitempty"`
 	// Frozen admission owns all output intents, including unpublished native calls.
+	NativeAsyncMessages   bool `json:"native_async_messages,omitempty"`
 	NativeImageGeneration bool `json:"native_image_generation,omitempty"`
 }
 
@@ -93,6 +94,9 @@ func (c ExecutionCompletion) ValidateForHarness(harness Harness) error {
 func (i ExecutionJobInput) Validate() error {
 	if i.SidechatRetry != nil && i.SidechatRetry.Validate(i) != nil {
 		return SidechatUnavailable()
+	}
+	if i.NativeAsyncMessages && i.Configuration.Harness != Codex {
+		return Fail(Unsupported, "This assignment cannot observe Codex assistant metadata.", "Keep original native message ownership.")
 	}
 	if i.NativeImageGeneration && (i.Configuration.Harness != Codex || !i.Configuration.Subscription || i.Configuration.SidechatPolicy != "") {
 		return Fail(Unsupported, "This assignment cannot generate native images.", "Preserve the original managed OpenAI execution profile.")

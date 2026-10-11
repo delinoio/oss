@@ -1,0 +1,28 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.native-assistant-metadata {
+  min-width: 0;
+  max-width: 100%;
+  margin-top: 16px;
+}
+.embedded-question p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.embedded-question ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 16px;
+  padding: 0;
+  list-style: none;
+}
+.embedded-question li {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.embedded-question button {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}

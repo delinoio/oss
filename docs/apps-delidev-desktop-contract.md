@@ -5678,3 +5678,9 @@ dependency or native operation. Semantic themes, English/Korean, narrow widths
 and 200% reflow keep expanded text readable without horizontal overflow. Component
 and browser fixtures establish presentation only; installed CEF/native acceptance
 remains separate.
+
+## Assistant suggestions in the existing transcript
+
+Original typed Codex assistant messages can show a localized asynchronous label only when native delivery is `async`. Keep the original text, then question titles and exact option strings in native order. Null and empty options show titles only. Read-only and inactive history presents inert options; malformed metadata fails closed. This content is plain escaped text, with no inferred links, native request IDs, interaction form or automatic reply.
+
+On a complete root message, a supporting live session may offer compact choice buttons. An explicit selection places only the original option in an empty unsent composer and focuses it. Recheck the original session, transport, live generation, session revision and draft generation at click time. Refuse occupied text, images, selected skills, composition, pending submission, context locks, archived sessions, lost capability or stale connection. Preserve an intervening draft even if it returns to the same value. Show localized draft guidance and disable choices for occupied drafts. Sending remains the existing independent composer action.

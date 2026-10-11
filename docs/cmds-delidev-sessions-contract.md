@@ -1016,3 +1016,7 @@ jobs and remains available at the retention bound. These checks grant no native
 replay or new execution authority; original ownership and settled no-send proof
 remain required. See the [Sidechat contract](cmds-delidev-sidechat-contract.md#same-question-retry)
 for the five-job admission reservation.
+
+## Original assistant metadata retention
+
+Optional `codex_assistant` content retains distinct typed started/completed observations in the current Message envelope. Omission preserves old records. Preserve original absent/null/empty delivery and question fields, title/option order and original identity/text/phase. Streaming text updates must carry unchanged started metadata; completion can only extend original evidence without replacing observed populated facts. Validate root assistant ownership and the original supporting Worker assignment before atomic publication. The synchronized outbox retries only its identical original receipt and bytes after uncertain acknowledgment. Neither embedded questions nor asynchronous delivery grants Interaction, input acceptance, completion or replay authority. Historical views, Archive and inherited Fork Message copies retain these immutable observations.

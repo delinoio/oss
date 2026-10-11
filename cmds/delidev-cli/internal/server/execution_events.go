@@ -619,6 +619,16 @@ func publishExecutionMessage(tx *store.Tx, input domain.ExecutionJobInput, sessi
 	if update == nil {
 		return executionEventConflict()
 	}
+	if update.CodexAssistant != nil {
+		mr, err := tx.Get(domain.MachineKind, input.MachineID)
+		if err != nil {
+			return err
+		}
+		machine, err := store.Decode[domain.Machine](mr)
+		if err != nil || !input.NativeAsyncMessages || input.Configuration.Harness != domain.Codex || update.NativeParentID != "" || !slices.Contains(machine.WorkerCapabilities, domain.CodexAsyncMessagesV1) {
+			return executionEventConflict()
+		}
+	}
 	if update.Role == domain.UserMessage {
 		primary := domain.BindSessionInput(input.InputID, input.Input)
 		bindings, err := domain.CheckedExecutionInputs(primary.InputID, primary.PromptDigest, progress.AcceptedInputs)
@@ -641,6 +651,9 @@ func publishExecutionMessage(tx *store.Tx, input domain.ExecutionJobInput, sessi
 	var revision uint64
 	if event.Kind == domain.ExecutionMessageStarted {
 		value = domain.ExecutionMessage{ContextRevision: input.ContextRevision, Attachments: append([]domain.ImageAttachment(nil), update.Attachments...), ExecutionID: input.ExecutionID, NativeThreadID: event.NativeThreadID, NativeTurnID: event.NativeTurnID, NativeID: update.NativeID, NativeParentID: update.NativeParentID, Role: update.Role, Phase: update.Phase, InputID: update.InputID, Text: update.Text, State: domain.MessageStreaming, FirstSequence: event.Sequence}
+		if update.CodexAssistant != nil {
+			value.CodexAssistant = &domain.CodexAssistantContent{Started: update.CodexAssistant.Clone()}
+		}
 	} else {
 		r, err := tx.Get(domain.MessageKind, update.ID)
 		if err != nil {
@@ -653,6 +666,25 @@ func publishExecutionMessage(tx *store.Tx, input domain.ExecutionJobInput, sessi
 		phaseMatches := value.Phase == nil || (update.Phase != nil && *value.Phase == *update.Phase)
 		if r.SessionID != session.ID || value.ExecutionID != input.ExecutionID || value.NativeThreadID != event.NativeThreadID || value.NativeTurnID != event.NativeTurnID || value.NativeID != update.NativeID || value.NativeParentID != update.NativeParentID || value.Role != update.Role || !slices.Equal(value.Attachments, update.Attachments) || value.InputID != update.InputID || !phaseMatches || value.State != domain.MessageStreaming {
 			return executionEventConflict()
+		}
+		var started *domain.CodexAssistantMetadata
+		if value.CodexAssistant != nil {
+			started = value.CodexAssistant.Started
+		}
+		if event.Kind == domain.ExecutionTextAppended {
+			if !domain.SameCodexAssistantMetadata(started, update.CodexAssistant) {
+				return executionEventConflict()
+			}
+		} else {
+			if !domain.CodexAssistantMetadataExtends(started, update.CodexAssistant) {
+				return executionEventConflict()
+			}
+			if update.CodexAssistant != nil {
+				if value.CodexAssistant == nil {
+					value.CodexAssistant = &domain.CodexAssistantContent{}
+				}
+				value.CodexAssistant.Completed = update.CodexAssistant.Clone()
+			}
 		}
 		revision = r.Revision
 		value.Phase = update.Phase
