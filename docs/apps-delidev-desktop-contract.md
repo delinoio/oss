@@ -3721,8 +3721,8 @@ and 12px/16px padding, with left-aligned content and readable headers, details
 and keyboard focus. Generic assistant roots, validated Grok text roots and the
 validated Claude assistant wrapper are left-aligned without an outer background,
 border, rounded container or card padding. Invalid native records, unknown roles,
-tools, progress, artifacts and interruption presentations retain their existing
-treatment. Native details keep their own borders and disclosures. Recognized
+tools, progress, other artifacts and interruption presentations retain their existing
+treatment. Validated Codex indexed reasoning uses the dedicated presentation below. Native details keep their own borders and disclosures. Recognized
 conversation roots omit visible User/Assistant labels and routine complete or
 completed badges, including Grok response-text completion. Omit empty header
 rows. Projected user submissions omit the visible role label while retaining
@@ -5645,3 +5645,36 @@ and mounted drafts retain their original owners. English/Korean, light/dark,
 compact drawer and effective 200% browser checks are synthetic evidence only.
 
 Queue refresh footer stability: both queue presenters (legacy history-based and negotiated waiting queue) keep a retained complete empty presentation hidden during healthy automatic Refresh/Reload rereads of the same queue identity. Refresh status is announced through a screen-reader-only live region that adds no normal-flow height, so repeated rereads cannot shift the tray, Agent requests, transcript boundary or composer. Initial loading, failures with Retry, incomplete pagination, payload restoration and explicit boundary recovery stay visible. Retained emptiness is cached presentation, not fresh authoritative zero or mutation permission. Populated rows are retained during rereads. No API, protocol, migration or native change.
+
+### Codex reasoning summary disclosure
+
+Ordinary Session and General Chat retain Codex reasoning in its original resource and
+transcript position. Validated indexed `reasoning` records use a text-only disclosure:
+a gray left chevron and the first non-whitespace completed summary part, falling
+back to the first such initial summary part, then **Thinking** / **생각 과정**.
+Preserve the selected string; CSS alone applies single-line ellipsis while its full
+accessible text and expanded source remain available. Keep the 36px target, shared
+native keyboard behavior and visible focus. The resting row has no background,
+border, rounded box, shadow, Artifact label, raw kind or routine completion badge.
+
+Expanded content retains the same summary row and plain inert source text beside
+one subtle vertical rule with approximately 20px indentation. Show Initial
+observation, Streamed observations and Final observation only when they contain
+supplied text. Keep summary/content families, original part indices, delta kinds,
+order and exact Unicode/whitespace separate. Never merge, deduplicate, generate
+summaries, split sentences or reconstruct content from deltas. Empty records keep
+the disclosure and show **No reasoning content was supplied.** / **제공된 생각
+과정이 없습니다.** when expanded. No hidden reasoning recovery is implied.
+
+The original default is collapsed; the existing `reasoning_disclosure` Expanded
+and Collapsed preferences govern initial mount. Explicit user choices and focus
+survive revisions, completion and locale changes. Preserve actual streaming,
+interrupted, failed, recovery and unavailable states. Malformed, mixed and unknown
+records retain the original fallback; OpenCode reasoning-text, Claude thinking
+and other artifacts retain their source-specific rules. Preserve reader gates,
+mounting, measured history wrappers, pagination, scroll anchors and live/history
+ordering. Disclosure adds no reads, execution authority, RPC, schema, migration,
+dependency or native operation. Semantic themes, English/Korean, narrow widths
+and 200% reflow keep expanded text readable without horizontal overflow. Component
+and browser fixtures establish presentation only; installed CEF/native acceptance
+remains separate.
