@@ -95,3 +95,27 @@ func TestDeletionLegacyAbsentWorkspaceCannotAdoptRestoredContent(t *testing.T) {
 		t.Fatal("restored content was removed", err)
 	}
 }
+
+func TestDeletionLegacyWorkspaceProofCannotImportForeignManifestScope(t *testing.T) {
+	root := t.TempDir()
+	work := deletionProofWork()
+	if err := security.PrivateDir(filepath.Join(root, "session-deletions")); err != nil {
+		t.Fatal(err)
+	}
+	legacy := deletionWorkspaceProof{Version: 1, Digest: work.Digest(), Manifest: &Manifest{SessionID: domain.NewID(), MachineID: work.MachineID, Type: domain.GeneralChat, InputDigest: strings.Repeat("a", 64)}}
+	path := legacyDeletionWorkspacePath(root, work)
+	if err := writeDeletionWorkspaceProof(path, legacy); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := security.ReadPrivate(path, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ImportLegacyDeletionWorkspaceProof(root, work) == nil {
+		t.Fatal("foreign original manifest acquired keyed authority")
+	}
+	after, err := security.ReadPrivate(path, 1<<20)
+	if err != nil || string(after) != string(raw) {
+		t.Fatal("foreign legacy proof changed", err)
+	}
+}

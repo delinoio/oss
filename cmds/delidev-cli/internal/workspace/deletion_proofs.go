@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
@@ -54,6 +55,9 @@ func ImportLegacyDeletionWorkspaceProof(root string, w domain.SessionDeletionWor
 	}
 	legacy.Version = 2
 	legacy.Identity = w.Identity()
+	if !validDeletionWorkspaceProof(legacy, w) {
+		return domain.SessionDeletionPending()
+	}
 	expected, _ := json.Marshal(legacy)
 	current, err := security.ReadPrivate(paths.Workspace, 1<<20)
 	if err == nil {
@@ -122,4 +126,11 @@ func RequireNoLegacyDeletionWorkspaceProof(root string, w domain.SessionDeletion
 		return domain.SessionDeletionPending()
 	}
 	return nil
+}
+
+func validDeletionWorkspaceProof(proof deletionWorkspaceProof, w domain.SessionDeletionWork) bool {
+	if proof.Version != 2 || proof.Identity != w.Identity() || proof.Digest != w.Digest() {
+		return false
+	}
+	return proof.Manifest == nil || proof.Manifest.SessionID == w.SessionID && proof.Manifest.MachineID == w.MachineID && proof.Manifest.Type.Valid() && slices.Contains(w.PreparationDigests, proof.Manifest.InputDigest)
 }

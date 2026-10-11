@@ -165,3 +165,89 @@ func TestSessionDeletionCompletedProofRejectsRestoredWorkspaceProof(t *testing.T
 		t.Fatal("restored proof was removed", err)
 	}
 }
+
+func TestSessionDeletionOriginalLocksAndChangedWorkCannotBorrowProof(t *testing.T) {
+	config, works := failedDeletionObligations(t)
+	work := works[0]
+	proof, path, lock, err := loadSessionDeletionProof(config.Root, work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, other, err := loadSessionDeletionProof(config.Root, work); err == nil || other != nil {
+		t.Fatal("active original obligation lock was bypassed")
+	}
+	lock.Close()
+	changed := work
+	changed.Copies = append([]domain.SessionDeletionCopy(nil), work.Copies...)
+	changed.Copies[0].InstanceID = domain.NewID()
+	before, err := security.ReadPrivate(path, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, other, err := loadSessionDeletionProof(config.Root, changed); err == nil || other != nil {
+		t.Fatal("changed immutable work borrowed progress")
+	}
+	after, err := security.ReadPrivate(path, 4096)
+	if err != nil || string(before) != string(after) {
+		t.Fatal("original proof changed", err)
+	}
+	again, _, other, err := loadSessionDeletionProof(config.Root, work)
+	if err != nil || again.ReportID != proof.ReportID {
+		t.Fatal("released original obligation failed", err)
+	}
+	if other != nil {
+		other.Close()
+	}
+	fence, err := security.TryLock(filepath.Join(config.Root, "session-deletions", string(work.SessionID)+".lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, other, err := loadSessionDeletionProof(config.Root, work); err == nil || other != nil {
+		t.Fatal("original legacy fence lock bypassed")
+	}
+	fence.Close()
+}
+
+func TestSessionDeletionLegacyCompletedReceiptAndInterruptedRetirement(t *testing.T) {
+	for _, stage := range []string{"legacy-complete", "retirement-present", "retirement-absent"} {
+		t.Run(stage, func(t *testing.T) {
+			config, works := failedDeletionObligations(t)
+			work := works[0]
+			original, err := deleteSessionCopies(context.Background(), config, work)
+			if err != nil {
+				t.Fatal(err)
+			}
+			paths, _ := workspace.SessionDeletionProofPaths(config.Root, work)
+			if stage == "legacy-complete" {
+				legacy := original
+				legacy.Version = 1
+				legacy.Identity = domain.SessionDeletionIdentity{}
+				legacy.WorkspaceRetired = false
+				if err := writeJSON(sessionDeletionPath(config.Root, work.SessionID), legacy); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Remove(paths.Worker); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				pending := original
+				pending.WorkspaceRetired = false
+				if err := writeJSON(paths.Worker, pending); err != nil {
+					t.Fatal(err)
+				}
+				if stage == "retirement-present" {
+					if err := writeJSON(paths.Workspace, map[string]any{"version": 2, "identity": work.Identity(), "digest": work.Digest(), "removed": true}); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			proof, err := deleteSessionCopies(context.Background(), config, work)
+			if err != nil || !proof.Complete || !proof.WorkspaceRetired || proof.ReportID != original.ReportID {
+				t.Fatal("original receipt/retirement recovery failed", err)
+			}
+			if _, err := os.Lstat(paths.Workspace); !os.IsNotExist(err) {
+				t.Fatal("workspace proof not retired", err)
+			}
+		})
+	}
+}

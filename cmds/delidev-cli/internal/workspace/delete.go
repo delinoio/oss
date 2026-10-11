@@ -91,7 +91,7 @@ func (m *Manager) DeleteOwnedWorkspace(ctx context.Context, w domain.SessionDele
 	proof := deletionWorkspaceProof{Version: 2, Identity: w.Identity(), Digest: w.Digest()}
 	b, e := security.ReadPrivate(proofPath, 1<<20)
 	if e == nil {
-		if domain.Decode(b, &proof) != nil || proof.Version != 2 || proof.Identity != w.Identity() || proof.Digest != w.Digest() {
+		if domain.Decode(b, &proof) != nil || !validDeletionWorkspaceProof(proof, w) {
 			return domain.SessionDeletionPending()
 		}
 	} else if !errors.Is(e, os.ErrNotExist) {
