@@ -11,8 +11,8 @@ import { MutationIntents, useRetainedMutation } from "./mutation";
 import { SupportedLanguage, i18n } from "./localization";
 const machine = newRequestId(), agent = newRequestId(), inventory = newRequestId(), worker = newRequestId();
 const entries = ["add-issue", "add-note"].map(name => ({ name, description: `${name} fixture`, provenance: SkillProvenance.USER, selection: { $typeName: "delidev.v1.SkillSelection" as const, inventoryId: inventory, workerDeviceId: worker, skillId: newRequestId(), contentRevision: "a".repeat(64) } }));
-function Composer({ runner = machine, locked = false, enabled = true, retainTransportContext = false, send }: { runner?: string; locked?: boolean; enabled?: boolean; retainTransportContext?: boolean; send: (value: unknown) => void }) {
- const [value,change]=useState("");const textarea=useRef<HTMLTextAreaElement>(null);const skills=useSkillCompletion({value,change,textarea,machineId:runner,agentId:agent,disabled:locked,enabled,retainTransportContext});
+function Composer({ runner = machine, locked = false, active = true, enabled = true, retainTransportContext = false, send }: { runner?: string; locked?: boolean; active?: boolean; enabled?: boolean; retainTransportContext?: boolean; send: (value: unknown) => void }) {
+ const [value,change]=useState("");const textarea=useRef<HTMLTextAreaElement>(null);const skills=useSkillCompletion({value,change,textarea,machineId:runner,agentId:agent,active,disabled:locked,enabled,retainTransportContext});
  return <><fieldset disabled={locked}>{skills.wrap(<textarea aria-label="Message" ref={textarea} value={value} onChange={e=>skills.onChange(e.target.value,e.target.selectionStart)} onSelect={skills.onSelect} onKeyDown={skills.onKeyDown} onCompositionStart={skills.onCompositionStart} onCompositionEnd={skills.onCompositionEnd} {...skills.attributes}/>)}{skills.list}{skills.warning}</fieldset><button disabled={skills.blocked} onClick={()=>send({value,skills:skills.selections})}>Send</button></>;
 }
 function fixture() {const send=vi.fn(),read=vi.fn(async()=>({skills:entries}));const transport=createRouterTransport(router=>router.service(SkillService,{listSkills:read}));const client=new QueryClient();const view=(runner=machine,locked=false)=><TransportProvider transport={transport}><QueryClientProvider client={client}><Composer runner={runner} locked={locked} send={send}/></QueryClientProvider></TransportProvider>;return{send,read,view};}
@@ -179,4 +179,69 @@ it("prioritizes a complete live inventory at the retention bound instead of carr
  const input=screen.getByRole("textbox");fireEvent.change(input,{target:{value:"$",selectionStart:1}});await screen.findAllByRole("option");
  current=Array.from({length:256},(_,index)=>({...entries[0]!,name:`live-${index}`,selection:{...entries[0]!.selection,skillId:newRequestId()}})); await client.invalidateQueries();
  await waitFor(()=>expect(screen.getAllByRole("option")).toHaveLength(256));expect(screen.queryByText("add-issue",{selector:"strong"})).toBeNull();expect(screen.queryByRole("option",{name:/Unavailable/})).toBeNull();
+});
+it.each([
+ [SupportedLanguage.English, "1 skill tokens are unavailable in this scope."],
+ [SupportedLanguage.Korean, "현재 범위에서 스킬 토큰 1개를 사용할 수 없습니다."],
+])("announces a deferred unavailable count in %s with the panel dismissed and focus retained", async (language, message) => {
+ await i18n.changeLanguage(language);
+ try {
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const transport = createRouterTransport(router => router.service(SkillService, { listSkills: async () => { await pending; return { skills: entries }; } }));
+  const view = render(<TransportProvider transport={transport}><QueryClientProvider client={new QueryClient()}><Composer send={vi.fn()}/></QueryClientProvider></TransportProvider>);
+  const input = screen.getByRole("textbox"); input.focus();
+  const status = view.container.querySelector<HTMLElement>("[data-skill-availability-status]")!;
+  expect(status.getAttribute("role")).toBe("status"); expect(status.getAttribute("aria-live")).toBe("polite"); expect(status.getAttribute("aria-atomic")).toBe("true"); expect(status.getAttribute("aria-hidden")).toBeNull();
+  fireEvent.change(input, { target: { value: "$missing", selectionStart: 8 } }); fireEvent.keyDown(input, { key: "Escape" });
+  expect(status.textContent).toBe(""); release();
+  await waitFor(() => expect(status.textContent).toBe(message));
+  expect(view.container.querySelector("[data-skill-availability-status]")).toBe(status); expect(screen.queryByRole("listbox")).toBeNull(); expect(document.activeElement).toBe(input);
+  expect(screen.getByRole("textbox", { description: message })).toBe(input); expect(input).toHaveProperty("value", "$missing");
+ } finally { await i18n.changeLanguage(SupportedLanguage.English); }
+});
+
+it("does not repeat unchanged unavailable results or ordinary edits and retires unknown status", async () => {
+ let current = entries; let fail = false;
+ const client = new QueryClient(); const read = vi.fn(async () => { if (fail) throw new Error("Private unavailable fixture"); return { skills: current }; });
+ const transport = createRouterTransport(router => router.service(SkillService, { listSkills: read }));
+ const tree = (enabled = true, locked = false, active = true) => <TransportProvider transport={transport}><QueryClientProvider client={client}><Composer enabled={enabled} locked={locked} active={active} send={vi.fn()}/></QueryClientProvider></TransportProvider>;
+ const view = render(tree()); const input = screen.getByRole("textbox"); input.focus();
+ const status = view.container.querySelector<HTMLElement>("[data-skill-availability-status]")!;
+ fireEvent.change(input, { target: { value: "$missing", selectionStart: 8 } }); fireEvent.keyDown(input, { key: "Escape" });
+ await waitFor(() => expect(status.textContent).toBe("1 skill tokens are unavailable in this scope."));
+ const updates: string[] = [];
+ const observer = new MutationObserver(() => { if (status.textContent) updates.push(status.textContent); }); observer.observe(status, { childList: true, characterData: true, subtree: true });
+ try {
+  for (const [locked, active] of [[false, false], [true, false], [true, true], [false, true]] as const) {
+   view.rerender(tree(true, locked, active)); expect(status.textContent).toBe("1 skill tokens are unavailable in this scope.");
+  }
+  fireEvent.change(input, { target: { value: "ordinary $missing", selectionStart: 17 } }); fireEvent.keyDown(input, { key: "Escape" });
+  await client.invalidateQueries(); await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+  expect(updates).toEqual([]);
+  current = [...entries, { ...entries[0]!, name: "missing", selection: { ...entries[0]!.selection, skillId: newRequestId() } }];
+  await client.invalidateQueries(); await waitFor(() => expect(view.container.querySelector(".skill-text-overlay")).toBeNull()); expect(status.textContent).toBe("");
+  current = entries; await client.invalidateQueries(); await waitFor(() => expect(status.textContent).toBe("1 skill tokens are unavailable in this scope."));
+  fireEvent.compositionStart(input); expect(status.textContent).toBe(""); fireEvent.compositionEnd(input); expect(status.textContent).toBe("");
+  fail = true; await client.invalidateQueries(); expect(status.textContent).toBe("");
+  fail = false; current = [entries[0]!, { ...entries[1]!, selection: { ...entries[1]!.selection, inventoryId: newRequestId() } }];
+  await client.invalidateQueries(); expect(status.textContent).toBe("");
+  view.rerender(tree(false)); expect(status.textContent).toBe(""); expect(document.activeElement).toBe(input);
+ } finally { observer.disconnect(); }
+});
+
+it("retires a proven status immediately on scope or transport replacement", async () => {
+ let release!: () => void; const pending = new Promise<void>(resolve => { release = resolve; }); const nextRunner = newRequestId();
+ const transport = createRouterTransport(router => router.service(SkillService, { listSkills: async request => { if (request.machineId === nextRunner) await pending; return { skills: entries }; } }));
+ const replacement = createRouterTransport(router => router.service(SkillService, { listSkills: async () => { await pending; return { skills: entries }; } }));
+ const client = new QueryClient();
+ const tree = (runner: string, currentTransport = transport) => <TransportProvider transport={currentTransport}><QueryClientProvider client={client}><Composer runner={runner} retainTransportContext send={vi.fn()}/></QueryClientProvider></TransportProvider>;
+ const view = render(tree(machine)); const input = screen.getByRole("textbox"); input.focus();
+ const status = view.container.querySelector<HTMLElement>("[data-skill-availability-status]")!;
+ fireEvent.change(input, { target: { value: "$missing", selectionStart: 8 } }); fireEvent.keyDown(input, { key: "Escape" });
+ await waitFor(() => expect(status.textContent).toBe("1 skill tokens are unavailable in this scope."));
+ view.rerender(tree(nextRunner)); expect(status.textContent).toBe("");
+ view.rerender(tree(nextRunner, replacement)); expect(status.textContent).toBe(""); expect(document.activeElement).toBe(input);
+ release(); await waitFor(() => expect(status.textContent).toBe("1 skill tokens are unavailable in this scope."));
+ expect(input).toHaveProperty("value", "$missing");
 });

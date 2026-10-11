@@ -4510,6 +4510,14 @@ Confirmed absent token ranges use semantic muted text in a noninteractive aligne
 overlay. Keep the native textarea, exact draft, wrapping, scrolling, selection,
 caret, undo and IME; suppress the overlay during composition. Localized accessible
 status describes affected tokens without exposing prompt content in logs.
+One always-mounted polite atomic live region announces complete current-scope
+unavailable-count changes, independently of the hidden mirror and textarea
+description. Deduplicate unchanged counts and ordinary text edits. Retire status
+on unknown, failed, malformed, incomplete, unsupported, composing or replaced
+scope/transport observations; none proves recovery. Temporary same-owner inactive
+or locked composers retain their confirmed status without enabling reads or
+selection authority. Queued editor status remains outside its textarea label.
+Component status semantics do not establish installed screen-reader acceptance.
 An open panel can retain previously displayed disappeared rows until dismissal or
 scope change. Bound retention to 256 entries with live entries taking priority.
 Unavailable rows retain original names, descriptions and provenance, show localized
