@@ -91,6 +91,17 @@ test("keeps missing lifecycle evidence unknown", () => {
   expect(screen.getByText("unknown")).toBeTruthy();
   expect(container.textContent).not.toContain("Running");
 });
+test("shows the fixed unavailable reply even when delivery was not sent", () => {
+  const requestOnly = {
+    ...tool,
+    reply: { ...tool.reply, delivery: "not-sent" as const },
+  };
+  render(<NativeDynamicTool content={requestOnly} />);
+  expect(
+    screen.getByText("This dynamic tool is unavailable in DeliDev."),
+  ).toBeTruthy();
+  expect(screen.getByText("Reply delivery: Not sent")).toBeTruthy();
+});
 test("rejects raw arguments, media locators, mixed unions and invalid identity", () => {
   for (const content of [
     { ...tool, arguments: { private: "hidden" } },

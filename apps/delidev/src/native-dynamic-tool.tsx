@@ -181,9 +181,7 @@ export function NativeDynamicTool({ content }: { content: unknown }) {
       </header>
       {tool.reply ? (
         <>
-          {tool.reply.delivery !== "not-sent" ? (
-            <p>{"This dynamic tool is unavailable in DeliDev."}</p>
-          ) : null}
+          <p>{"This dynamic tool is unavailable in DeliDev."}</p>
           <p>
             {copy("session.dynamicReplyDelivery")}:{" "}
             {copy(
