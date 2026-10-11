@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { usePresentationLabels } from "./product-presentation";
 import { useLayoutEffect, useRef } from "react";
-import { copy } from "./localization";
+import { copy, useLocale } from "./localization";
 import { Comparison } from "./session-diff-model";
 import { SessionTabKind, sessionTabKey, type SessionTab } from "./session-tabs";
 import { bindingAria, shortcutPlatform } from "./shortcuts";
@@ -51,6 +51,7 @@ export function SessionTabBar({
   id: string;
 }) {
   const presentationLabels = usePresentationLabels();
+  useLocale();
   const root = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     root.current
@@ -66,12 +67,16 @@ export function SessionTabBar({
     >
       {tabs.map((tab, index) => {
         const key = sessionTabKey(tab),
-          name = tabName(
-            tab,
-            tab.kind === SessionTabKind.Terminal
-              ? presentationLabels.identity(tab.id, "terminal")
-              : undefined,
-          );
+          name =
+            (tab.kind === SessionTabKind.Sidechat && !tab.name
+              ? presentationLabels.identity(tab.id, "session")
+              : undefined) ??
+            tabName(
+              tab,
+              tab.kind === SessionTabKind.Terminal
+                ? presentationLabels.identity(tab.id, "terminal")
+                : undefined,
+            );
         return (
           <div
             className={`session-tab${selected === key ? " is-selected" : ""}`}

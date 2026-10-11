@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useState } from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { SessionTabBar } from "./session-tab-bar";
 import { SessionTabKind } from "./session-tabs";
+import { i18n } from "./localization";
 it("roves focus and selection without an absent-position alias and leaves pinned Conversation noncloseable", () => {
   const close = vi.fn();
   function View() {
@@ -37,4 +38,28 @@ it("roves focus and selection without an absent-position alias and leaves pinned
   fireEvent.click(screen.getAllByRole("button")[0]);
   expect(close).toHaveBeenCalledWith("files");
   expect(tabs[0].getAttribute("aria-keyshortcuts")).toMatch(/1$/);
+});
+
+it("recomputes an unnamed sidechat fallback when the locale changes", async () => {
+  await act(() => i18n.changeLanguage("en"));
+  const sidechat = {
+    kind: SessionTabKind.Sidechat,
+    id: "sidechat-id",
+    name: "",
+  } as const;
+  const mounted = render(
+    <SessionTabBar
+      id="original"
+      tabs={[sidechat]}
+      selected={JSON.stringify([SessionTabKind.Sidechat, sidechat.id])}
+      select={vi.fn()}
+      close={vi.fn()}
+    />,
+  );
+  const tab = screen.getByRole("tab");
+  expect(tab.getAttribute("aria-label")).toBe("Session 1");
+  await act(() => i18n.changeLanguage("ko"));
+  expect(screen.getByRole("tab").getAttribute("aria-label")).toBe("세션 1");
+  expect(mounted.container.querySelectorAll('[role="tab"]')).toHaveLength(1);
+  await act(() => i18n.changeLanguage("en"));
 });

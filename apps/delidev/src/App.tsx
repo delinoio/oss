@@ -302,7 +302,7 @@ function Shell({
         tabs.sidechats(parent).find((tab) => tab.id === id) ?? {
           kind: SessionTabKind.Sidechat,
           id,
-          name: name || presentationLabels.identity(id, "session"),
+          name: name ?? "",
         },
       );
       id = parent;
