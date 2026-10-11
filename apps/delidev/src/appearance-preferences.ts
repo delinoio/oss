@@ -50,10 +50,12 @@ export function appearanceIdentity(value: unknown): string {
  return JSON.stringify(canonical(value));
 }
 
-/** Only application-owned selectors and previously validated colors reach CSSOM. */
-export function applyAppearanceColors(colors:ColorMap,selector=":root"):()=>void {
+/** Only the fixed application selector and previously validated colors reach CSSOM. */
+export function applyAppearanceColors(colors:ColorMap):()=>void {
  if(typeof CSSStyleSheet.prototype.replaceSync!=="function")return ()=>{};
- const sheet=new CSSStyleSheet();sheet.replaceSync(`${selector} {}`);const rule=sheet.cssRules[0] as CSSStyleRule;
+ // Match the default dark rule's specificity. Adopted sheets follow document
+ // stylesheets, so the selected map wins in both modes without !important.
+ const sheet=new CSSStyleSheet();sheet.replaceSync(':root[data-theme] {}');const rule=sheet.cssRules[0] as CSSStyleRule;
  for(const [token,value] of Object.entries(colors))rule.style.setProperty(`--${token}`,value);
  rule.style.setProperty("--focus-on-selected",visibleFocusColor(colors.focus,colors["surface-selected"]));
  document.adoptedStyleSheets=[...document.adoptedStyleSheets,sheet];

@@ -1,0 +1,2 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+#appearance-probe { background: var(--background); color: var(--text); border: 1px solid var(--accent); }

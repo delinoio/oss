@@ -2900,7 +2900,16 @@ with name and complete light/dark token maps, and always creates a new identity.
 Unknown fields/tokens, non-#RRGGBB colors and failing text/control contrast reject
 adoption. Terminal colors, backdrop, shadows and native OS surfaces are excluded.
 Validated tokens use an application-owned constructed CSS stylesheet without raw
-CSS injection or a CSP exception. Export captures one committed custom theme.
+CSS injection or a CSP exception. The fixed `:root[data-theme]` selector matches
+the default dark rule's specificity. The adopted sheet follows document styles,
+so the validated selected map controls both Light and Dark semantic colors,
+including dark System mode and the retained tray projection. Replacement and
+disposal remove only the sheet owned by that presentation; unrelated adopted
+sheets remain intact. The `pnpm test:appearance-colors` browser regression uses
+the production provider and stylesheet to check computed colors, System changes,
+retained drafts and sheet cleanup. It supplies only a synthetic appearance bridge
+and does not establish installed CEF or native storage acceptance. Export
+captures one committed custom theme.
 Deletion requires confirmation and atomically returns all selected references to
 Default. Cancel discards only the editor/import draft. Concurrent revisions keep
 dirty drafts visible and block save until explicit discard/reload.
