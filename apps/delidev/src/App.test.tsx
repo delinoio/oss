@@ -3782,3 +3782,85 @@ it(
   },
   fullShellTimeoutMs,
 );
+
+it.each([
+  ["MacIntel", false],
+  ["Win32", false],
+  ["Linux x86_64", false],
+  ["MacIntel", true],
+] as const)(
+  "opens Settings with its fixed local shortcut from an ordinary input on %s (compact %s)",
+  async (platform, compact) => {
+    viewport(compact);
+    vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
+    const value = fixture();
+    render(<App transport={value.transport} />);
+    if (compact)
+      fireEvent.click(
+        screen.getByRole("button", { name: "Open session navigation" }),
+      );
+    fireEvent.click(await screen.findByRole("button", { name: "New session" }));
+    const input = await screen.findByRole("textbox", { name: "First message" });
+    input.focus();
+    const chord = {
+      key: ",",
+      metaKey: platform === "MacIntel",
+      ctrlKey: platform !== "MacIntel",
+    };
+    expect(fireEvent.keyDown(input, chord)).toBe(false);
+    expect(
+      screen.getByRole("region", { name: "Settings content" }),
+    ).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", { name: "Settings" })
+        .getAttribute("aria-keyshortcuts"),
+    ).toBe(platform === "MacIntel" ? "Meta+," : "Control+,");
+    expect(
+      screen.getByRole("heading", { name: "AI Subscription" }),
+    ).toBeTruthy();
+    expect(document.activeElement).toBe(
+      compact
+        ? screen.getByRole("button", { name: "Open settings categories" })
+        : screen.getByRole("main"),
+    );
+    expectNoNavigationWrites(value);
+  },
+  fullShellTimeoutMs,
+);
+
+it(
+  "retains the active Settings editor and focus on comma, then starts a fresh visit after leaving",
+  async () => {
+    viewport(false);
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+    const value = fixture();
+    render(<App transport={value.transport} />);
+    await screen.findByRole("button", { name: "Settings" });
+    fireEvent.keyDown(document.body, { key: ",", ctrlKey: true });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Instructions" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "New Instructions" }),
+    );
+    const name = screen.getByRole("textbox", { name: "Name" });
+    fireEvent.change(name, { target: { value: "Retained shortcut draft" } });
+    name.focus();
+    fireEvent.keyDown(name, { key: ",", ctrlKey: true });
+    expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
+    expect(name).toHaveProperty("value", "Retained shortcut draft");
+    expect(document.activeElement).toBe(name);
+    expect(value.saveConfiguration).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+    fireEvent.keyDown(document.body, { key: ",", ctrlKey: true });
+    expect(
+      screen
+        .getByRole("button", { name: "AI Subscription" })
+        .getAttribute("aria-current"),
+    ).toBe("page");
+    expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+    expectNoNavigationWrites(value);
+  },
+  fullShellTimeoutMs,
+);

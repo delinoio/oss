@@ -56,6 +56,14 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	if remaining[0] == "version" || remaining[0] == "--version" {
 		return emit(map[string]any{"version": rpc.Version, "protocol_version": rpc.ProtocolVersion}, nil)
 	}
+	// Retired Model catalogs retain their compatibility result without selecting
+	// credentials. All other commands must pass pure admission before dispatch.
+	if remaining[0] == "model" && (len(remaining) == 1 || !slices.Contains(commandPaths["model"], remaining[1])) {
+		return emit(nil, retiredModelCatalog())
+	}
+	if err := validateCommandShape(remaining); err != nil {
+		return emit(nil, err)
+	}
 	if remaining[0] == "presentation" {
 		if o.tokenStdin {
 			return emit(nil, domain.Fail(domain.InvalidArgument, "Local presentation does not accept server authentication input.", "Omit --token-stdin; no server connection is needed."))
@@ -138,19 +146,6 @@ func Run(ctx context.Context, args []string, streams IO) int {
 	}
 	if command == "integration" && len(rest) > 0 && rest[0] == "replace-token" && o.tokenStdin {
 		return emit(nil, domain.Fail(domain.InvalidArgument, "Server authentication and a PAT cannot share stdin.", "Use a paired client or local owner connection before supplying --pat-stdin."))
-	}
-	// Retired Model catalogs must not load a server scope or consume credentials.
-	if command == "model" && (len(rest) == 0 || rest[0] != "native-discover" && rest[0] != "native-observation" && rest[0] != "native-list" && rest[0] != "native-cancel") {
-		return emit(nil, retiredModelCatalog())
-	}
-	// Unknown commands, including retired commands, cannot select a server or consume authentication input.
-	switch command {
-	case "project", "snapshot", "update", "storage", "service-control", "usage", "search", "schedule", "notification", "inbox", "interaction", "session", "queue", "provider", "model", "github", "network", "integration", "browser-profile", "account", "machine", "device", "repository", "server", "doctor", "configuration", "backup", "events":
-	default:
-		kind := domain.Kind(command)
-		if !kind.Valid() || rpc.WireKind(kind) == pb.EntityKind_ENTITY_KIND_UNSPECIFIED {
-			return emit(nil, usage())
-		}
 	}
 	c, err := connectClient(o, streams.In)
 	if err != nil {

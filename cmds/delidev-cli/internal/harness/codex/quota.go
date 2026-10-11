@@ -240,7 +240,10 @@ func (c *Client) validateQuotaReflection(value domain.SubscriptionQuotaObservati
 	if err != nil {
 		return err
 	}
-	return ValidateQuotaSecrets(value, bundle.Tokens.Access, bundle.Tokens.Refresh, bundle.Tokens.ID, identity.Email, identity.Account, identity.User)
+	if err := ValidateQuotaSecrets(value, bundle.Tokens.Access, bundle.Tokens.Refresh, bundle.Tokens.ID, identity.Email, identity.Account, identity.User); err != nil {
+		return err
+	}
+	return ValidateQuotaDisplayName(value, identity.DisplayName)
 }
 
 // ValidateQuotaSecrets keeps protected credentials and original account identity
@@ -272,6 +275,59 @@ func ValidateQuotaSecrets(value domain.SubscriptionQuotaObservation, secrets ...
 		}
 	}
 	return nil
+}
+
+// ValidateQuotaDisplayName prevents a parsed identity name from being exposed
+// as a quota identifier without scanning fixed quota metadata for substrings.
+func ValidateQuotaDisplayName(value domain.SubscriptionQuotaObservation, name string) error {
+	if name == "" {
+		return nil
+	}
+	needle := []byte(name)
+	defer clear(needle)
+	if quotaDisplayNameReflects(value, string(needle)) {
+		return subscription.Invalid()
+	}
+	for _, encoding := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
+		encoded := []byte(encoding.EncodeToString(needle))
+		found := quotaDisplayNameReflects(value, string(encoded))
+		clear(encoded)
+		if found {
+			return subscription.Invalid()
+		}
+	}
+	return nil
+}
+
+// Display names are checked only against original identifiers. Projected
+// window IDs append a fixed suffix, and paid-credit balances are values rather
+// than identifiers; credential reflection keeps the broader matcher below.
+func quotaDisplayNameReflects(value domain.SubscriptionQuotaObservation, name string) bool {
+	for _, window := range value.Windows {
+		id := window.ID
+		for _, suffix := range []string{":primary", ":secondary", ":spend"} {
+			if strings.HasSuffix(id, suffix) {
+				id = strings.TrimSuffix(id, suffix)
+				break
+			}
+		}
+		if id == name {
+			return true
+		}
+	}
+	for _, bucket := range value.PaidCredits {
+		if bucket.ID == name {
+			return true
+		}
+	}
+	if value.Credits != nil && value.Credits.Credits != nil {
+		for _, credit := range *value.Credits.Credits {
+			if credit.ID == name {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Only the adapter-owned final window suffix is removed. Exact matching keeps

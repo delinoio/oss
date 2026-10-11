@@ -8,7 +8,7 @@ import { statusLabel } from "./product-status";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { SettingsTaskActions } from "./settings-task";
 import { useCloseSettingsTask } from "./settings-task-context";
-import { useState, useId, useMemo, useRef } from "react";
+import { useState, useId, useMemo, useRef, useEffect } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import {
   installationObservation,
@@ -31,7 +31,7 @@ import {
   text,
 } from "./documents";
 import { Harness, TextField } from "./configuration-fields";
-import { JobState, TrackedJob } from "./jobs";
+import { ObservedJob, useJobObservation } from "./jobs";
 import { useRetainedMutation } from "./mutation";
 import { InlineRemediation, Problem } from "./ui";
 import { Updates } from "./updates";
@@ -62,25 +62,70 @@ export function useMachineSettingsController(
     paths: Record<string, string>;
   }>();
   const [verify, setVerifyValue] = useState(false);
-  const [verifyEdited, setVerifyEdited] = useState(false);
+  const verifyGeneration = useRef(0);
+  const [job, setJob] = useState<Resource | "unknown">();
+  const submitted = useRef<
+    | {
+        edit: typeof edit;
+        verify: boolean;
+        verifyGeneration: number;
+      }
+    | undefined
+  >(undefined);
+  const [accepted, setAccepted] = useState<{
+    jobId: string;
+    edit: typeof edit;
+    verify: boolean;
+    verifyGeneration: number;
+  }>();
+  const verifyEdited = accepted ? verify !== accepted.verify : verify;
   const setVerify = useMemo(
     () => (next: boolean) => {
       setVerifyValue(next);
-      setVerifyEdited(next);
+      verifyGeneration.current += 1;
     },
     [],
   );
-  const [job, setJob] = useState<Resource | "unknown">();
+  const draft = useRef({
+    edit,
+    verify,
+    verifyGeneration: verifyGeneration.current,
+  });
+  draft.current = { edit, verify, verifyGeneration: verifyGeneration.current };
   const discovery = useRetainedMutation(
     `machine-discovery:${initial.id}`,
     WorkerQuery.discoverHarnesses,
     (response) => {
       if (exact(response.machine)) setAcknowledged(response.machine);
       setJob(response.job ?? "unknown");
-      setVerifyEdited(false);
+      setAccepted(
+        response.job && submitted.current
+          ? { jobId: response.job.id, ...submitted.current }
+          : undefined,
+      );
     },
   );
-  const pending = discovery.busy || discovery.uncertain || Boolean(job);
+  const jobObservation = useJobObservation(
+    job && job !== "unknown" ? job : undefined,
+    active,
+    "harness-discovery",
+    initial.id,
+  );
+  const pending =
+    discovery.busy ||
+    discovery.uncertain ||
+    Boolean(job && !jobObservation.terminal);
+  useEffect(() => {
+    if (
+      !accepted ||
+      !jobObservation.terminal ||
+      jobObservation.current?.id !== accepted.jobId
+    )
+      return;
+    setEdit((currentEdit) =>
+      currentEdit === accepted.edit ? undefined : currentEdit,
+    );
+  }, [accepted, jobObservation.terminal, jobObservation.current?.id]);
   const stale = Boolean(edit && edit.revision !== current?.revision);
   const readError = useMemo(
     () =>
@@ -94,8 +139,11 @@ export function useMachineSettingsController(
   mutation.current = discovery;
   const actions = useMemo(
     () => ({
-      send: (...args: Parameters<typeof discovery.send>) =>
-        mutation.current.send(...args),
+      send: (...args: Parameters<typeof discovery.send>) => {
+        if (mutation.current.busy || mutation.current.uncertain) return;
+        submitted.current = draft.current;
+        return mutation.current.send(...args);
+      },
       retry: () => mutation.current.retry(),
     }),
     [],
@@ -120,6 +168,7 @@ export function useMachineSettingsController(
       setVerify,
       job,
       setJob,
+      jobObservation,
       discovery: retainedDiscovery,
       pending,
       stale,
@@ -137,6 +186,7 @@ export function useMachineSettingsController(
       verifyEdited,
       setVerify,
       job,
+      jobObservation,
       retainedDiscovery,
       pending,
       stale,
@@ -197,6 +247,7 @@ export function MachineSettingsView({
     setVerify,
     job,
     setJob,
+    jobObservation,
     discovery,
     pending,
     stale,
@@ -358,17 +409,15 @@ export function MachineSettingsView({
             )}
           </p>
         ) : (
-          <TrackedJob initial={job} active={active}>
-            {(state) =>
-              [JobState.Succeeded, JobState.Failed, JobState.Canceled].includes(
-                state as JobState,
-              ) ? (
+          <ObservedJob observation={jobObservation}>
+            {() =>
+              jobObservation.terminal ? (
                 <SettingsTaskActions>
                   <SettingsActionButton
                     icon={SettingsActionIcon.Cancel}
+                    disabled={!active}
                     onClick={() => {
                       setJob(undefined);
-                      setEdit(undefined);
                       void refetch();
                     }}
                   >
@@ -377,7 +426,7 @@ export function MachineSettingsView({
                 </SettingsTaskActions>
               ) : null
             }
-          </TrackedJob>
+          </ObservedJob>
         )
       ) : (
         <form

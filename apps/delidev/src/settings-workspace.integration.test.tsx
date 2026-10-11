@@ -442,8 +442,11 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
   );
   await screen.findByText(/Known lifetime subtotal: Unavailable/);
   const editCurrentBudget = async () => {
-    await scheduleClient.invalidateQueries();
     await waitFor(async () => {
+      // The owned Worker may advance the session while this integration flow is
+      // running. Refresh active queries on every poll so an old cache snapshot
+      // cannot satisfy the edit gate after a single invalidation.
+      await scheduleClient.refetchQueries({ type: "active" });
       const current = (
         await budgetClient.getSessionBudget({ sessionId: budgetSession.id })
       ).view!;
@@ -473,10 +476,70 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
       screen.getByRole("button", { name: "Edit session budget" }),
     );
   };
+  const saveBudgetAndRecoverRevision = async (
+    resultText: string | RegExp,
+    retainedDraft: string | undefined,
+  ) => {
+    const maxRevisionRecoveries = 3;
+    for (let attempt = 0; attempt <= maxRevisionRecoveries; attempt++) {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Save session budget" }),
+      );
+      const outcome = await waitFor(async () => {
+        if (screen.queryByText(resultText)) return "saved";
+        await scheduleClient.refetchQueries({ type: "active" });
+        if (
+          screen.queryByRole("button", {
+            name: "Use latest revision with this draft",
+          })
+        ) {
+          return "stale";
+        }
+        throw new Error("Budget save or current session revision is pending");
+      });
+      if (outcome === "saved") return;
+      if (retainedDraft !== undefined) {
+        expect(
+          (
+            screen.getByLabelText(
+              "Estimated-cost threshold",
+            ) as HTMLInputElement
+          ).value,
+        ).toBe(retainedDraft);
+      } else {
+        expect(
+          (
+            screen.getByRole("checkbox", {
+              name: "Enable estimated-cost budget",
+            }) as HTMLInputElement
+          ).checked,
+        ).toBe(false);
+      }
+      if (attempt === maxRevisionRecoveries) {
+        throw new Error("Budget session revision kept changing after retries");
+      }
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: "Use latest revision with this draft",
+        }),
+      );
+      await waitFor(() =>
+        expect(
+          (
+            screen.getByRole("button", {
+              name: "Save session budget",
+            }) as HTMLButtonElement
+          ).disabled,
+        ).toBe(false),
+      );
+    }
+  };
   await editCurrentBudget();
   change("Estimated-cost threshold", "12.345678901234567");
-  fireEvent.click(screen.getByRole("button", { name: "Save session budget" }));
-  await screen.findByText(/Threshold: USD 12.345678901234567/);
+  await saveBudgetAndRecoverRevision(
+    /Threshold: USD 12.345678901234567/,
+    "12.345678901234567",
+  );
   expect(
     (await budgetClient.getSessionBudget({ sessionId: budgetSession.id })).view
       ?.budget?.threshold,
@@ -501,8 +564,10 @@ it("inspects and saves a real owned Git checkout through a separate Go Worker be
     await waitFor(() => expect(saveBudget.disabled).toBe(false));
     expect(enableBudget.checked).toBe(false);
   }
-  fireEvent.click(saveBudget);
-  await screen.findByText("No estimated-cost budget is configured.");
+  await saveBudgetAndRecoverRevision(
+    "No estimated-cost budget is configured.",
+    undefined,
+  );
   expect(
     (await budgetClient.getSessionBudget({ sessionId: budgetSession.id })).view
       ?.state,

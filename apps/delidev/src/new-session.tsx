@@ -174,6 +174,48 @@ export function NewSession({
   const lastEntry = useRef({ active: false, activation: -1 });
   const navigation = useRef({ ownsActivation: false, activation });
   navigation.current = { ownsActivation, activation };
+  const submissionScope = useRef({
+    transport,
+    active,
+    ownsActivation,
+    activation,
+    project,
+    serverId: preferenceScope?.server_id,
+    deviceId: preferenceScope?.device_id,
+  });
+  const previousScope = submissionScope.current;
+  if (
+    previousScope.transport !== transport ||
+    previousScope.active !== active ||
+    previousScope.ownsActivation !== ownsActivation ||
+    previousScope.activation !== activation ||
+    previousScope.project !== project ||
+    previousScope.serverId !== preferenceScope?.server_id ||
+    previousScope.deviceId !== preferenceScope?.device_id
+  )
+    submissionScope.current = {
+      transport,
+      active,
+      ownsActivation,
+      activation,
+      project,
+      serverId: preferenceScope?.server_id,
+      deviceId: preferenceScope?.device_id,
+    };
+  const [submittingScope, setSubmittingScope] = useState<object>();
+  const submissionAttempt = useRef<{ scope: object } | undefined>(undefined);
+  const submitting = submittingScope === submissionScope.current;
+  const [defaultRefreshFailureScope, setDefaultRefreshFailureScope] =
+    useState<object>();
+  const defaultRefreshFailed =
+    defaultRefreshFailureScope === submissionScope.current;
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const previous = lastEntry.current;
@@ -228,6 +270,7 @@ export function NewSession({
       endHistoryCycle.current();
       setPrompt("");
       setManualMode(false);
+      setDefaultRefreshFailureScope(undefined);
       skills.clearAccepted();
       setCreatedElsewhere(undefined);
       created(session);
@@ -254,6 +297,7 @@ export function NewSession({
   }, [mutation.error, mutation.uncertain, mutation.busy, images.controller]);
   const restrictions = object(document(selectedProject.data?.resource).agents);
   const blocked =
+    submitting ||
     mutation.busy ||
     mutation.uncertain ||
     local.busy ||
@@ -441,7 +485,10 @@ export function NewSession({
         const result = await createClient(
           ResourceService,
           transport,
-        ).getResource({ kind: EntityKind.MACHINE, id: machineId });
+        ).getResource({
+          kind: EntityKind.MACHINE,
+          id: machineId,
+        });
         if (disposed || touched.current || restorationBlocked.current) return;
         const row = result.resource,
           data = document(row),
@@ -607,6 +654,58 @@ export function NewSession({
     { filter: { kind: EntityKind.SETTINGS, pageSize: 2 } },
     { enabled: active && supportsDefaults, retry: false },
   );
+  const observedDefaults = useRef({
+    scope: {
+      transport,
+      project,
+      serverId: preferenceScope?.server_id,
+      deviceId: preferenceScope?.device_id,
+    },
+    settings: new Map<string, Resource>(),
+    project: selectedProject.data?.resource,
+  });
+  const observation = observedDefaults.current;
+  if (
+    observation.scope.transport !== transport ||
+    observation.scope.project !== project ||
+    observation.scope.serverId !== preferenceScope?.server_id ||
+    observation.scope.deviceId !== preferenceScope?.device_id
+  ) {
+    observedDefaults.current = {
+      scope: {
+        transport,
+        project,
+        serverId: preferenceScope?.server_id,
+        deviceId: preferenceScope?.device_id,
+      },
+      settings: new Map<string, Resource>(),
+      project: undefined,
+    };
+  }
+  // Keep each identity observed in this scope so a later singleton cannot
+  // hide a server-side identity change from the direct submit preflight.
+  for (const nextSettings of defaultSettings.data?.resources ?? []) {
+    const previous = observedDefaults.current.settings.get(nextSettings.id);
+    if (!previous || nextSettings.revision > previous.revision)
+      observedDefaults.current.settings.set(nextSettings.id, nextSettings);
+  }
+  const rememberObservation = <T extends Resource>(
+    previous: T | undefined,
+    next: T | undefined,
+  ) => {
+    if (!next) return previous;
+    if (
+      !previous ||
+      next.id !== previous.id ||
+      next.revision > previous.revision
+    )
+      return next;
+    return previous;
+  };
+  observedDefaults.current.project = rememberObservation(
+    observedDefaults.current.project,
+    selectedProject.data?.resource,
+  );
   const defaultRows = defaultSettings.data?.resources;
   const defaultRow = defaultRows?.[0];
   const globalDefaultValid =
@@ -671,7 +770,11 @@ export function NewSession({
     automaticChoicesEligible;
 
   const submit = async () => {
-    if (!canCreate) return;
+    if (
+      !canCreate ||
+      submissionAttempt.current?.scope === submissionScope.current
+    )
+      return;
     let estimatedBudget;
     try {
       estimatedBudget = budgetInput(budget);
@@ -680,60 +783,154 @@ export function NewSession({
       setBudgetProblem(productError(error, "new-session.extra.08fb485eeaf6"));
       return;
     }
-    const selectedProjectId = generalChat ? "" : project;
-    const workspaceType = selectedProjectId ? workspace : Workspace.GeneralChat;
-    const selection = {
-      name_mode: "automatic",
-      estimated_cost_budget: estimatedBudget,
-      prompt,
-      agent_id: agent,
-      machine_id: machine,
-      project_id: selectedProjectId || undefined,
-      workspace: workspaceType,
-      starting:
-        selectedProjectId && workspaceType === Workspace.Worktree
-          ? starting
-          : undefined,
-      mode: effectiveMode,
-      source: "MANUAL",
-    };
-    const proof =
-      workspaceType === Workspace.Local ? await local.load(machine) : undefined;
-    if (workspaceType === Workspace.Local && !proof) return;
-    touched.current = true;
-    setMode(effectiveMode);
-    submittedActivation.current = navigation.current.activation;
-    const requestId = images.images.length
-      ? (images.controller.operationId ?? newRequestId())
-      : newRequestId();
-    let attachments;
+    const scope = submissionScope.current;
+    const attempt = { scope };
+    // Lock synchronously per scope before React disables the form on a second submit.
+    submissionAttempt.current = attempt;
+    setSubmittingScope(scope);
+    const scopeIsCurrent = () =>
+      mounted.current && submissionScope.current === scope && scope.active;
     try {
-      attachments =
-        images.images.length && imageRoute.machine
-          ? await images.controller.prepare(imageRoute.machine, requestId)
-          : [];
-    } catch {
-      return;
-    }
-    void mutation.send(
-      {
-        requestId,
-        documentJson: encode(selection),
-        localWorkerToken: proof?.token,
-        skills: skills.selections.length
-          ? { selections: skills.selections }
+      let submittedMode = effectiveMode;
+      if (!manualMode && supportsDefaults) {
+        try {
+          // Direct reads cannot reuse the mounted queries' cached defaults.
+          const initialObserved = {
+            settings: new Map(observedDefaults.current.settings),
+            project: observedDefaults.current.project,
+          };
+          const client = createClient(ResourceService, transport);
+          const [settings, selected] = await Promise.all([
+            client.listResources({
+              filter: { kind: EntityKind.SETTINGS, pageSize: 2 },
+            }),
+            project && !generalChat
+              ? client.getResource({ kind: EntityKind.PROJECT, id: project })
+              : undefined,
+          ]);
+          if (!scopeIsCurrent()) return;
+          const row = settings.resources[0];
+          const observed = observedDefaults.current;
+          const validSettings =
+            settings.resources.length <= 1 &&
+            !settings.nextPageToken &&
+            (!row ||
+              (row.kind === EntityKind.SETTINGS &&
+                UUID_V7.test(row.id) &&
+                row.revision > 0n &&
+                supportsResourceSchema(row) &&
+                (document(row).plan_mode_default === undefined ||
+                  typeof document(row).plan_mode_default === "boolean"))) &&
+            [initialObserved.settings, observed.settings].every((cached) =>
+              [...cached].every(
+                ([id, resource]) =>
+                  row?.id === id && row.revision >= resource.revision,
+              ),
+            );
+          const selectedRow = selected?.resource;
+          const validProject =
+            !project ||
+            generalChat ||
+            (selectedRow?.id === project &&
+              selectedRow.kind === EntityKind.PROJECT &&
+              selectedRow.revision > 0n &&
+              supportsResourceSchema(selectedRow) &&
+              [initialObserved.project, observed.project].every(
+                (cached) =>
+                  !cached ||
+                  (cached.id === project &&
+                    selectedRow.revision >= cached.revision),
+              ));
+          const override =
+            project && !generalChat
+              ? (object(document(selectedRow).settings).plan_mode_default ??
+                "inherit")
+              : "inherit";
+          if (
+            !validSettings ||
+            !validProject ||
+            !["inherit", "enabled", "disabled"].includes(override as string)
+          ) {
+            setDefaultRefreshFailureScope(scope);
+            return;
+          }
+          submittedMode =
+            override === "enabled" ||
+            (override === "inherit" && document(row).plan_mode_default === true)
+              ? Mode.Plan
+              : Mode.Execute;
+          setDefaultRefreshFailureScope(undefined);
+        } catch {
+          if (scopeIsCurrent()) setDefaultRefreshFailureScope(scope);
+          return;
+        }
+      }
+      const selectedProjectId = generalChat ? "" : project;
+      const workspaceType = selectedProjectId
+        ? workspace
+        : Workspace.GeneralChat;
+      const selection = {
+        name_mode: "automatic",
+        estimated_cost_budget: estimatedBudget,
+        prompt,
+        agent_id: agent,
+        machine_id: machine,
+        project_id: selectedProjectId || undefined,
+        workspace: workspaceType,
+        starting:
+          selectedProjectId && workspaceType === Workspace.Worktree
+            ? starting
+            : undefined,
+        mode: submittedMode,
+        source: "MANUAL",
+      };
+      const proof =
+        workspaceType === Workspace.Local
+          ? await local.load(machine)
+          : undefined;
+      if (!scopeIsCurrent() || (workspaceType === Workspace.Local && !proof))
+        return;
+      touched.current = true;
+      setMode(submittedMode);
+      submittedActivation.current = navigation.current.activation;
+      const requestId = images.images.length
+        ? (images.controller.operationId ?? newRequestId())
+        : newRequestId();
+      let attachments;
+      try {
+        attachments =
+          images.images.length && imageRoute.machine
+            ? await images.controller.prepare(imageRoute.machine, requestId)
+            : [];
+      } catch {
+        return;
+      }
+      if (!scopeIsCurrent()) return;
+      await mutation.send(
+        {
+          requestId,
+          documentJson: encode(selection),
+          localWorkerToken: proof?.token,
+          skills: skills.selections.length
+            ? { selections: skills.selections }
+            : undefined,
+          attachments,
+        },
+        attachments.length
+          ? (result, request) =>
+              acknowledgeImages(
+                result.change,
+                request.requestId,
+                request.attachments,
+              )
           : undefined,
-        attachments,
-      },
-      attachments.length
-        ? (result, request) =>
-            acknowledgeImages(
-              result.change,
-              request.requestId,
-              request.attachments,
-            )
-        : undefined,
-    );
+      );
+    } finally {
+      if (submissionAttempt.current === attempt) {
+        submissionAttempt.current = undefined;
+        setSubmittingScope(undefined);
+      }
+    }
   };
 
   const shortcutScope = generalChat
@@ -1013,7 +1210,7 @@ export function NewSession({
                         />
                         {copy("new-session.planMode")}
                       </label>
-                      {!modeReady ? (
+                      {!modeReady || (!manualMode && defaultRefreshFailed) ? (
                         <div>
                           <p role="status">
                             {copy("new-session.planDefaultUnavailable")}
@@ -1026,6 +1223,7 @@ export function NewSession({
                               selectedProject.isFetching
                             }
                             onClick={() => {
+                              setDefaultRefreshFailureScope(undefined);
                               void defaultSettings.refetch();
                               if (project && !generalChat)
                                 void selectedProject.refetch();

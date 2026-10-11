@@ -531,3 +531,56 @@ it.each([
     await act(() => i18n.changeLanguage("en"));
   },
 );
+
+function OpenSettingsProbe({ run }: { run: () => void }) {
+  useShortcuts([
+    {
+      id: ShortcutId.OpenSettings,
+      scope: ShortcutScope.Global,
+      label: "shortcuts.openSettings",
+      bindings: globalShortcutBindings[ShortcutId.OpenSettings],
+      input: ShortcutInput.Allow,
+      run,
+    },
+  ]);
+  return null;
+}
+
+it("shows localized read-only Open Settings and rejects its chord during capture", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  const f = fixture();
+  const run = vi.fn();
+  render(
+    <ShortcutPreferenceProvider bridge={f.bridge}>
+      <ShortcutProvider>
+        <OpenSettingsProbe run={run} />
+        <ShortcutSettings />
+      </ShortcutProvider>
+    </ShortcutPreferenceProvider>,
+  );
+  await screen.findByText("Current saved shortcuts");
+  const entry = screen.getByText("Open Settings").closest("div")!;
+  expect(within(entry).getByText("Ctrl + ,")).toBeTruthy();
+  expect(within(entry).queryByRole("button")).toBeNull();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Capture shortcut for New session" }),
+  );
+  await screen.findByText(
+    "Press Command on macOS or Control on Windows/Linux, optionally Shift, with an ASCII letter, digit or Enter. Escape cancels capture.",
+  );
+  fireEvent.keyDown(document.activeElement!, { key: ",", ctrlKey: true });
+  expect(run).not.toHaveBeenCalled();
+  expect(screen.getByRole("alert").textContent).toContain("Reserved");
+  expect(f.state().overrides).toEqual({});
+  expect(f.bridge.update).not.toHaveBeenCalled();
+  fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Cancel capture" })).toBeNull(),
+  );
+  await act(async () => {
+    await i18n.changeLanguage(SupportedLanguage.Korean);
+  });
+  expect(screen.getByText("설정 열기").closest("div")).toBe(entry);
+  expect(within(entry).queryByRole("button")).toBeNull();
+  expect(within(entry).getByText("Ctrl + ,")).toBeTruthy();
+});

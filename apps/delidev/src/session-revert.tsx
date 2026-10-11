@@ -285,6 +285,7 @@ export function useSessionRevert({
   const action = (row: Resource) =>
     revertEligible(session, row, supported) ? (
       <button
+        className="session-revert-action"
         type="button"
         disabled={
           blocked || mutation.busy || mutation.uncertain || Boolean(pending)

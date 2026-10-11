@@ -30,6 +30,7 @@ import {
 import { encode } from "./documents";
 import { MutationIntents } from "./mutation";
 import { useSessionRevert } from "./session-revert";
+import { TranscriptItem } from "./session";
 
 it.each([
   { changed: false, mode: "plan", historical: "execute" },
@@ -180,7 +181,14 @@ it.each([
           >
             Send restored prompt
           </button>
-          {state.action(target)}
+          <div className="session-workspace">
+            <div className="transcript">
+              <TranscriptItem
+                resource={target}
+                revertAction={state.action(target)}
+              />
+            </div>
+          </div>
           {state.content}
         </>
       );
@@ -206,7 +214,12 @@ it.each([
         screen.getByRole("button", { name: "Revert and edit" }),
       ).toHaveProperty("disabled", false),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Revert and edit" }));
+    const action = screen.getByRole("button", { name: "Revert and edit" });
+    expect(action.closest(".message-user")).toBeNull();
+    expect(action.closest(".user-transcript-item")).toBeTruthy();
+    expect(revert).not.toHaveBeenCalled();
+    fireEvent.click(action);
+    expect(revert).not.toHaveBeenCalled();
     const dialog = screen.getByRole("dialog");
     expect(
       within(dialog).getByText(/Your current draft will be replaced/),

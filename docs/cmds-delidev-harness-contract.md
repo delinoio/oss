@@ -20,6 +20,15 @@ Codex `0.151.0` API and Claude `2.1.236` API now publish the bounded original ch
 
 ### Codex private thread lifecycle and metadata
 
+Thread binding and later native state observations share closed history-mode
+admission. Only the selected, initialized Revert profile admits paginated history;
+legacy profiles retain legacy-only admission. Omitted history mode means legacy.
+Every later observation must retain the originally bound mode, including returned
+Revert metadata, replacement continuation and explicit recovery. Unknown modes or
+changed original metadata cannot authorize input, a checkpoint or another native
+mutation. Complete retained-history proof and independent cleanup remain required
+under the [compaction contract](cmds-delidev-compaction-contract.md).
+
 The original execution process consumes the pinned closed notification envelopes for thread name, attachment created/deleted, queue, project created/updated/deleted, nullable thread project, environment connection/disconnection, prediction and read-state revisions. Validate bounds, duplicate/unknown fields, required nullable fields and each exact union before discarding descriptors. Prediction completed text may be absent, null or a bounded string; failed has no text field. Read state permits absent/null first-unread, thread-start or an exact native turn position and requires the opaque revision. Prediction source turns must belong to the original root execution. Foreign threads retain their unsupported boundary; already owned child notifications retain the existing child observation and content-free supplement routing.
 
 These private process/root observations never rewrite product names, project bindings, input queues, search, unread state, environment selection or attachment byte ownership. Do not fetch an external project/environment, import attachments or submit prediction text. The Worker accepts only content-free closed metadata kinds and publishes no product event for them. Existing recovery fences remain active.
@@ -27,6 +36,33 @@ These private process/root observations never rewrite product names, project bin
 Unexpected original-root archived, deleted or closed notifications retain the original turn, pause sends and require reconciliation. Unarchived does not clear recovery or authorize reopening. This adapter has no thread archive/delete/close mutation owner; process closure and cleanup remain independently reconciled through the original process owner. Native lifecycle loss is neither turn success nor product deletion evidence.
 
 Deprecated thread-compacted requires the exact original turn's manual compaction owner or canonical ContextCompaction/history record. Thread-reverted requires the existing durable Revert send claim or independently verified Revert continuation while no input/compaction is active or pending. A subsequent original input or compaction ends that supplement scope without changing the durable history proof. Discard these content-free supplements without adding transcript entries, acknowledging a mutation, completing an item/turn, changing history, creating a successor checkpoint or proving cleanup. Unowned supplements retain recovery. Original compaction and Revert responses, canonical items, complete history and private rollout verification remain authoritative under the [compaction contract](cmds-delidev-compaction-contract.md). No goal or Revert mutation authority is added.
+
+### Passive Codex fuzzy-search notifications
+
+The original execution process accepts `fuzzyFileSearch/sessionUpdated` and
+`fuzzyFileSearch/sessionCompleted` only as notifications. Updated payloads retain
+`sessionId`, `query` and ordered `files` during private validation; each result
+uses the exact native `root`, `path`, `match_type`, `file_name`, unsigned 32-bit
+`score` and optional nullable unsigned 32-bit `indices` fields. Match types are
+`file` and `directory`. Preserve absent, null and empty indices distinctly.
+The [pinned updated schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/FuzzyFileSearchSessionUpdatedNotification.json)
+and [completed schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/FuzzyFileSearchSessionCompletedNotification.json)
+own these spellings; camel-case result aliases are unsupported.
+
+Bound each envelope to 1 MiB, the nonempty session ID to 1024 UTF-8 bytes,
+query/root/path/file name to 4096 UTF-8 bytes each, results to 1000, and indices
+per result to 4096. Reject missing/null required fields, unknown/duplicate keys,
+invalid match types, NUL text and invalid/overflowing numbers with the closed
+`fuzzy-search` diagnostic classification. Empty queries and result lists are
+valid. No native query, path or result content enters logs or product events.
+
+There is no admitted search-session/query-generation owner in this adapter.
+Validate and discard every such observation, including unknown sessions, stale
+queries, replays and completion before update. The ordinary Worker and isolated
+title profile consume only the content-free discarded classification. Do not
+start a search, read a path, build a conversation index, replace input, acknowledge
+completion or grant cleanup/recovery authority from this metadata. Server
+requests with these names retain the unsupported request boundary.
 
 ### Direct startup and native attribution
 
@@ -104,6 +140,33 @@ selected-workspace root; notification arrival grants no such ownership. Original
 turn/settings/account, terminal results, receipts and independent recovery and
 cleanup remain unchanged. The [official notification schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/FsChangedNotification.json)
 defines this passive envelope separately from explicit filesystem operations.
+
+### Passive Codex gateway OAuth status
+
+The original execution process accepts notification-only
+`account/gatewayOAuth/changed` using the closed
+`notReady`/`started`/`succeeded`/`failed` status set. Require a nonempty
+`providerId` of at most 1024 UTF-8 bytes. Optional `authUrl` and `error` values
+retain omitted, null and bounded-string states privately during validation.
+The complete envelope and each optional string use the existing 1 MiB native
+frame bound; reject invalid UTF-8, NUL, duplicate/unknown keys and malformed
+required or optional fields through the closed `account-gateway` diagnostic.
+The [pinned native schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/v2/GatewayOAuthChangedNotification.json)
+defines this passive envelope independently of gateway login operations.
+
+No gateway operation owner exists in this adapter. Discard provider identity,
+URL and error text before returning a normalized event. Logs retain only the
+closed status, discard policy and original process owner. All URL strings stay
+inert, including unsafe schemes and callback-like data. Ordinary execution and
+isolated title generation consume the content-free metadata without a product
+receipt. It cannot open a browser, fetch a URL, exchange tokens, acknowledge a
+login, change account health, adopt provider configuration, replay input or
+supply turn completion or cleanup evidence. Same-name server requests retain
+their unsupported boundary. Existing API configuration still accepts only
+absent or exact-null `gateway_oauth`; populated values remain refused before
+input. A future gateway consumer needs its own independently admitted original
+operation and may not infer ownership from a provider ID or status. No public
+protocol allocation or database migration is added.
 
 ### Codex native error and authentication recovery observations
 

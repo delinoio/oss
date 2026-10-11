@@ -1,5 +1,93 @@
 # DeliDev desktop client
 
+## Known subscription model autocomplete
+
+The Agent Worker wizard retains the Model step, 720px maximum column, controls
+at least 40px high, theme, footer and narrow-width wrapping. The current inline
+model flow uses a `Model for {source}` form label and the helper
+`Choose a source suggestion or enter its exact native model ID.` This replaces
+the earlier shared `Choose a model` heading, `Model` label and saved-model search
+helper with one model choice per source. Follow the
+[inline Worker model contract](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation).
+
+System capability `KNOWN_SUBSCRIPTION_MODELS_V1 = 35` independently enables the
+known-model read for supported subscription services. Missing catalog support
+shows server-update guidance while retaining exact-ID entry. The inline Worker
+flow requires protocol 2 and `INLINE_WORKER_MODELS_V1 = 42`; otherwise the current
+client shows server-update guidance instead of opening the editor. This replaces
+the earlier saved/direct fallback for older servers. Known suggestions remain
+advisory, bounded read-only metadata, not native discovery, credential validation
+or proof of account entitlement.
+Reject invalid service echoes, catalog versions, dates, provenance categories,
+duplicate IDs and incomplete or oversized inventories before displaying them.
+
+Focus opens a keyboard-operated listbox with display names, exact native IDs and
+Known labels. Name/ID search filters the complete validated list of at most 200
+known candidates. Arrow keys, Home/End and Enter select through accessible active
+descendants; Escape dismisses the list and returns focus from the results region
+to the input. Keep the typed exact-ID option available when no suggestion matches.
+Loading or failure preserves typed input, and a failed known-catalog refresh may
+retain the last valid same-source candidates. Source/harness changes clear
+incompatible selections and prevent stale responses from becoming candidates.
+
+The independent saved Model registry and its autocomplete search, pagination,
+Saved labels and Saved-over-Known precedence are superseded by inline Worker
+models. API suggestions come only from the selected Provider endpoint and use
+Endpoint suggestion labels. There are no saved-list page controls or separate
+Model UUID/revision selections. Selecting a known or endpoint suggestion retains
+its exact native ID and applicable non-secret metadata until the atomic Worker
+save. Queries never register models. Preserve the original Worker revision
+checks, source/account validation and immutable execution attribution. Endpoint
+requests pin Account and Provider revisions and reject mismatched response
+identity; source, Account, connection-generation or editor-lifetime changes clear
+endpoint choices. Endpoint failure clears choices while permitting exact-ID entry.
+
+Show `Known models · Catalog updated {date}`, with `Built-in catalog` or
+`Cached catalog` when applicable, and
+`Availability depends on your plan and installed harness.` Do not show the
+unsupported subscription-discovery warning. The single current refresh control,
+`Refresh models from endpoint`, replaces `Reload models`: for subscriptions it
+rereads server catalog state without forcing an external download; for API
+sources it requests a fresh selected endpoint list. Do not merge saved records,
+persist endpoint catalogs or add background endpoint discovery. Recommendation
+removal cannot delete Worker configurations or immutable execution history;
+pricing and native-account lifecycle remain independently owned. These browser
+interactions do not establish installed native/account/platform acceptance.
+
+## Desktop validation ownership
+
+PR validation is owned by the desktop Turbo task graph. Cache type checks, pure
+UI/client assertions and deterministic frontend output using their declared
+inputs. Execute real Go-server integration, QA, widget and native packaging
+fixtures through uncached tasks. Client pure tests precede client Go integration;
+each desktop shard runs its cached pure UI assertions before its uncached Go
+integration assertions. The combined desktop integration task also follows
+client integration, and combined QA follows type checks, desktop unit/integration
+tests and the release check. The independent checks phase runs QA after its type
+checks and release check; the release check owns its frontend build dependency.
+Sharing a runner-built Go executable never shares fixture processes, credentials
+or data lifetimes.
+
+The current matrix has one checks phase and four complete Vitest shards, each
+with at most two jsdom workers on the shared two-core host. The desktop-owned
+Vitest sequencer assigns unit and integration inventories independently. It
+sorts files by descending committed duration weight, then assigns each file to
+the shard with the smallest accumulated weight. File paths and shard indexes
+break ties deterministically; new or renamed files receive a one-second weight,
+and obsolete weight entries never add files to the inventory. Each selected
+file runs exactly once across the four shards. Sharded execution starts longer
+files first; unsharded local execution retains Vitest sorting. The weight table
+and sequencer are inputs of every cached unit shard and uncached integration
+shard. Weights are scheduling estimates from successful hosted executions, not
+validation results or native acceptance evidence. This supersedes the
+earlier four-worker ceiling without relaxing individual test or product
+deadlines. Local `pnpm test` retains the complete validation sequence, including
+client build, type checks, unit/integration tests, bundle/launch/widget/QA fixtures,
+frontend build and release check. Follow the
+[repository workflow contract](repository-workflow-contract.md) for exact task
+dependencies, affected selection, cache authentication and evidence limits.
+Fixtures and packaging do not establish native/account/platform acceptance.
+
 ## Startup Keychain access
 
 Each fresh macOS app launch shows the Keychain access notice and starts checking
@@ -149,7 +237,7 @@ The connection-owned `ShortcutProvider` and `useShortcuts` register stable enum 
 
 Dispatch and the read-only help use the same declarations. Match input-target registrations before screen and global registrations. Conflicts at the winning priority execute nothing and log only the stable event classification, scope and action IDs. A disabled matching action cannot fall through. Preserve original button/form guards and original RPC/request authority; a shortcut is not a new execution capability. Never log key events, input, aliases or native/browser content.
 
-Common shortcuts are logical `?` for help and primary+Shift+N for New session. Primary means Command on the local macOS renderer and Control on Windows/Linux, independently of the selected server or Worker. Session and New session use primary+I to focus their message input and primary+Enter to submit only from that input. Session submission queues a message; New session submission creates through the original guarded form. The feature gives Session and General Chat follow-up composers fixed Enter submission and native Shift+Enter newline. Preserve New session's guarded Enter submission and native Shift+Enter newline. Search uses primary+I to focus the existing query and retains native Enter form submission. Search has no global entry shortcut. Primary+K opens the fixed command menu described below; it never submits a Search query. The sidebar Search button remains available without shortcut guidance. Ordinary Search entry retains its existing once-only autofocus; Search primary+I focuses the retained query and opens the existing compact drawer when needed. Files, Diff and Diagnostics register their existing focus-local Escape closure and original opener restoration. Other screens initially expose common shortcuts only. Control aria-keyshortcuts derives from the same platform-resolved bindings. The logical help binding carries a physical Shift+/ ARIA annotation for English/Korean slash-key layouts; it never changes logical character matching.
+Common shortcuts are logical `?` for help, primary+Shift+N for New session and fixed primary+comma for Open Settings. Open Settings uses the existing category-free navigation callback and is available from ordinary text fields. A fresh Settings visit opens AI Subscription through the existing focus handoff; invoking it during an active visit retains the current category, draft, pending requests and focus. The read-only Common catalog, Help and Settings button accessibility annotation share the same binding declaration. This shortcut performs no configuration save or execution action and retains the existing event, modal, terminal and capture guards. Primary means Command on the local macOS renderer and Control on Windows/Linux, independently of the selected server or Worker. Session and New session use primary+I to focus their message input and primary+Enter to submit only from that input. Session submission queues a message; New session submission creates through the original guarded form. The feature gives Session and General Chat follow-up composers fixed Enter submission and native Shift+Enter newline. Preserve New session's guarded Enter submission and native Shift+Enter newline. Search uses primary+I to focus the existing query and retains native Enter form submission. Search has no global entry shortcut. Primary+K opens the fixed command menu described below; it never submits a Search query. The sidebar Search button remains available without shortcut guidance. Ordinary Search entry retains its existing once-only autofocus; Search primary+I focuses the retained query and opens the existing compact drawer when needed. Files, Diff and Diagnostics register their existing focus-local Escape closure and original opener restoration. Other screens initially expose common shortcuts only. Control aria-keyshortcuts derives from the same platform-resolved bindings. The logical help binding carries a physical Shift+/ ARIA annotation for English/Korean slash-key layouts; it never changes logical character matching.
 
 Primary letter/digit matching and capture share one canonical resolver. Physical `KeyA`–`KeyZ` and `Digit0`–`Digit9` codes resolve to lowercase ASCII letters and digits before translated logical keys. Recognized codes take precedence over inconsistent `event.key`; unavailable or unrecognized codes retain the existing logical fallback, including Numpad behavior. Named Enter/Escape and default logical Help retain their existing rules and held-key release ownership. Stored `{key, shift}` chords, editable IDs, reservations and preference bytes remain unchanged. Input-layout selection alone does not block dispatch or capture; active composition remains excluded.
 
@@ -255,7 +343,7 @@ Show the first three arrivals and retain later arrivals in FIFO order. Countdown
 
 Success, information and warning content use polite status announcements; errors use assertive alerts. Include a non-color kind label for assistive technology and keep icons decorative. Creation never takes focus. Close supports pointer, Tab/Enter/Space and Escape within the toast, preserving global dialog Escape behavior. Explicit focused dismissal returns to the last connected, available external focus target or the main content fallback.
 
-Notification preferences and general configuration editors publish fixed safe success copy only from their existing acknowledged-save callbacks. A configuration response with a job takes precedence over any resource and remains an accepted operation, not an immediate save completion. Unknown acknowledgments, jobs, failed/uncertain requests, cancellation and late results from disposed Settings visits do not publish success. Original request IDs identify the toasts. Preserve existing mutation receipts/retry rules, query invalidation, focus handoffs, detailed errors and job inspection.
+Notification preferences and general configuration editors publish fixed safe success copy only from their existing acknowledged-save callbacks. A configuration response with a job takes precedence over any resource and remains an accepted operation, not an immediate save completion. Unknown acknowledgments, queued/unverified jobs, failed/uncertain requests, cancellation and late results from disposed Settings visits do not publish success. Existing repository edits complete only after the original successful job is verified and its output confirms the original repository with a revision newer than the submitted expected revision. Publish one localized repository success toast under that stable job ID, then invoke the existing saved callback to close, refresh and restore the opener. Other immediate saves retain their original request IDs. Preserve existing mutation receipts/retry rules, query invalidation, focus handoffs, detailed errors and job inspection.
 
 These toasts neither request OS permission nor claim/report native delivery, modify Inbox read state or enable session actions. OS notifications, durable Inbox reservations, synchronized preferences and native activation retain their existing owners and contracts. No Connect API, migration, storage, native permission or package dependency is added. Component and browser layout checks remain separate from packaged CEF/platform acceptance; record validation in pull requests, issues and CI artifacts rather than repository evidence files.
 
@@ -1243,7 +1331,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Codex AI approval review follows `cmds-delidev-harness-contract.md#codex-ai-approval-reviewer--issue-1980`, the catalog, proxy and usage contracts. Preserve optional legacy User defaults, immutable actual reviewer proof, original review lifecycle and independent manual approval/tool/cleanup evidence. System 55 and Worker 30 belong to this complete feature; retain bounded same-account canonical reviewer relay, unknown attribution when unproved, and User/read-only/never Sidechat overlays. Add no SQLite migration or fallback model authority.
 
-- Appearance v2 follows the feature and the desktop/localization contracts. The original native controller owns the complete computer-local mode/preferences/custom-theme snapshot with a 256 KiB document bound and explicit v1 upgrade on change. Ordinary choices autosave; custom edits/import/deletion require explicit confirmation. Preserve exact revisions, invalid/newer/linked files, atomic writes, uncertain recovery and authorized-window publication. Constructed CSSOM may set only validated opaque semantic application tokens and the derived opaque `--focus-on-selected` value; terminal/backdrop/shadow/native surfaces remain excluded. Accent-off user-message focus uses the semantic focus token at 3:1 contrast with `surface-selected`, or a render-only higher-contrast black/white fallback without changing stored theme colors. Synthetic custom previews contain no conversation content. Presentation changes preserve mounted drafts/focus/request identities, original observations and authenticated Worker image bytes/cleanup; renderer toggles stay unavailable until independently implemented support exists.
+- Appearance v2 follows the feature and the desktop/localization contracts. The original native controller owns the complete computer-local mode/preferences/custom-theme snapshot with a 256 KiB document bound and explicit v1 upgrade on change. Ordinary choices autosave; custom edits/import/deletion require explicit confirmation. Preserve exact revisions, invalid/newer/linked files, atomic writes, uncertain recovery and authorized-window publication. Constructed CSSOM may set only validated opaque semantic application tokens and the derived opaque `--focus-on-selected`, `--focus-on-surface`, and `--revert-hover-surface` values; terminal/backdrop/shadow/native surfaces remain excluded. Derive `--revert-hover-surface` from the validated `text-secondary`, `surface-hover`, and `surface` tokens. Use `surface-hover` when it gives `text-secondary` at least 4.5:1 contrast; otherwise use `surface`. This render-only fallback applies only to the Revert action and does not change stored theme colors. Derive `--focus-on-surface` from the validated focus/surface pair with a render-only higher-contrast black/white fallback. Accent-off user-message focus uses the semantic focus token at 3:1 contrast with `surface-selected`, or its own render-only higher-contrast black/white fallback. Synthetic custom previews contain no conversation content. Presentation changes preserve mounted drafts/focus/request identities, original observations and authenticated Worker image bytes/cleanup; renderer toggles stay unavailable until independently implemented support exists.
 
 - The feature OpenCode Go/Go Plus follows `cmds-delidev-opencode-go-subscription-contract.md`. Preserve identity 4, System 54 and Worker 28 with System 52 Project behavior ownership. Only the exact OpenCode key-backed service may use the fixed Go Chat Completions profile and original accepted native-session header. Reuse protected AccountAPI receipts, joined revocation and confirmed independent cleanup; no native login, quota authority, paid connection validation or migration. Retain category-owned exact uncertain requests and immutable continuation/Fork attribution.
 
@@ -3699,6 +3787,28 @@ Frontend changes require package-local `pnpm test`, typechecking and production 
 
 The macOS development-only config removes `devUrl`, enables local `custom-protocol`, and uses the embedded frontend without a dev server or watcher. The containing app, CEF and widget code retain ad-hoc signatures. Only the copied Go server uses the explicitly registered local development certificate and fixed signing identifier `io.delino.delidev.development.server`. Re-seal only the containing app, preserving its original entitlements, flags and runtime metadata; deep verification must succeed before publication. Both preparation and execution receive the native dry-run system/tool environment plus optional `CARGO_TARGET_DIR`, using the pinned distribution in the standard `Library/Caches/tauri-cef` cache; caller CEF overrides and release-signing/notarization credentials are not inherited. The original distribution's Chromium notices are included alongside existing repository/CEF notices. No runtime pin, default data directory, production configuration or release-signing policy changes. Application arguments, including spaces and Unicode, reach only the published desktop as argv, never the Cargo/Tauri build. Preparation/signing/verification children use joined termination forwarding; execution signals only the original desktop, preserving abnormal-exit server and independent Worker lifetimes. Failures stop the sequence, and wrapper diagnostics contain only stable stages and outcomes, not application arguments or private data paths. Node launcher tests run separately from jsdom through `pnpm test:desktop-launch` and are included in `pnpm test`.
 
+Preparation, bundle and application output use separate captured stdout/stderr
+streams. When the parent stdout or stderr is a terminal, set child color modes
+before piping output so Cargo and Node tools retain ANSI diagnostics. `NO_COLOR`,
+`CLICOLOR=0`, `CARGO_TERM_COLOR=never` and `FORCE_COLOR=0` disable this forcing.
+Pause each captured stream when its destination applies backpressure and resume
+it after `drain`, keeping diagnostic output buffering bounded. Suppress Cargo
+command echoes and redact original application arguments,
+including option values, JSON and shell spellings and multiline fragments, before
+publishing safe diagnostic text. Normalize ANSI color sequences for matching so
+that they cannot split a private argument; retain ordinary colored diagnostics
+when no redaction is required. Incremental UTF-8 decoding preserves split
+characters; each line is bounded to 64 KiB and an oversized line is omitted.
+After the original child exits, drain for at most 100 ms. If a descendant retains
+an inherited pipe, close only the reader, discard its partial line and report
+`diagnostics-incomplete` with `output-drain-timeout`. Read failures report the
+separate `output-read-failed` classification. Neither outcome changes the original
+child exit code or signal. Signing retains its private output capture. Final
+build-lock cleanup failure reports `cleanup-uncertain` with
+`build-lock-release-failed`, without logging exception paths or replacing an
+already observed child result. These observations establish neither native
+process termination nor cleanup of independent server/Worker processes.
+
 ### Local development signing and recovery
 
 Create a dedicated certificate in Keychain Access > Certificate Assistant > Create a Certificate, named **DeliDev Local Development**, with **Self Signed Root** identity type and **Code Signing** certificate type, following [Apple’s self-signed development certificate procedure](https://developer.apple.com/library/archive/documentation/Security/Conceptual/CodeSigningGuide/Procedures/Procedures.html). Keep its private key in the user’s keychain. Use its 40-character SHA-1 fingerprint with `pnpm --dir apps/delidev dev:signing --identity <fingerprint>`. Registration checks the exact named certificate, self-signature, Code Signing extended usage and validity interval, then signs/verifies a temporary probe. Only the schema version and public fingerprint are atomically stored in owner-private `Library/Application Support/delidev-development/signing.json`, outside the checkout. No system-wide trust or release identity is selected. Missing/expired certificates and signing failures prevent launch. Replacing an identity requires explicit registration and original-item authorization.
@@ -4434,6 +4544,8 @@ Always show connected checkouts, resolving Runner Device display names while ret
 
 Use existing semantic theme tokens, system fonts, 16px shell corners, 20px title, 16px section headings, 14px body, 12px hints, 40px controls and 8px control corners. Preserve narrow/200% reflow, fixed actions, modal focus containment, X/Escape dismissal and opener restoration. The top-level editor footer has Save Repository and any original exact retry controls; header dismissal owns closing. Page editors retain their ordinary cancellation. Preserve current schema/capability/revision gates, original request bytes, accepted server/native work, required checkout removal protection and protected credentials. This presentation adds no protocol, migration or native behavior.
 
+Existing repository saves retain their form, pending/error/cancel behavior, exact request recovery and retained drafts. A job acknowledgment alone never completes the edit. Completion requires the verified original succeeded job, no pending or failed status read, and output containing the original repository ID plus a canonical revision greater than the submitted expected revision. Unreadable, foreign or older job observations and succeeded output with missing, foreign or nonadvanced repository identity remain open with localized guidance and the original status-read retry; retry never resubmits Save. The completion effect is once per original job and Settings opening, requires its active visible undisposed task, and records its guard before publishing the localized success toast and invoking the existing saved callback. Remove the success paragraph and Done step only from this existing-repository path. Dismissal or Settings departure rejects late toast, completion, focus and navigation effects; a successor task retains its own authority. Immediate-resource saves, registration and generic configuration job completion retain their existing behavior.
+
 An inert Settings Resource, API account, subscription or API provider inventory beneath its original edit/delete task suspends pagination readers and continuation while retaining at most its three resident payload pages and mounted row/disclosure owners. Dismissal restores the same opener and controllers. Settings visit or category departure disposes that owner; this retention grants no refresh, mutation or recovery replay.
 
 Local API account Add/Manage and subscription sign-in/Manage dialogs also pause their background inventory readers while retaining the same bounded row owners. Original login/native/status operations remain independently active; closing a local dialog does not replay them.
@@ -4528,7 +4640,7 @@ The original local-server controller stays mounted in its authenticated mutation
 
 Exact Runner inspection, executable editing and protocol verification reuse the original machine controller. Remediation cannot discard the originating task's draft or selection, replace an owned pending controller, or weaken original revisions, cleanup, account ownership or startup no-send proof. Unsupported external installation, OS authorization and remote administration show manual steps plus a supported local recheck. No global Doctor reads, new RPC, protocol allocation, migration, native command, dependency or repair authority are added. English/Korean catalogs use the owning generator; evidence distinguishes fixtures/builds from packaged CEF, OS authorization and real-account acceptance.
 
-The shared Runner owner retains its exact machine controller across presentation close and same-identity connection readiness changes. Explicit Runner Devices diagnostics and original session failure recovery present that controller through their original slots; ordinary Settings inspection keeps Updates and Runner network tools, while original session recovery can use the compact view. Shared Runner selectors and Claude onboarding expose no Inspect this Runner shortcut, replacement action or shortcut-owned dialog. Exclusion guidance directs explicit installation/protocol diagnosis through Runner Devices. Exact-machine pending inspection, protocol changes and uncertain jobs continue to gate new consuming workflow effects. Bounded inventory explanations never alter the original eligibility predicate or grant authority from malformed, stale or partial evidence.
+The shared Runner owner retains its exact machine controller across presentation close and same-identity connection readiness changes. Explicit Runner Devices diagnostics and original session failure recovery present that controller through their original slots; ordinary Settings inspection keeps Updates and Runner network tools, while original session recovery can use the compact view. Shared Runner selectors and Claude onboarding expose no Inspect this Runner shortcut, replacement action or shortcut-owned dialog. Exclusion guidance directs explicit installation/protocol diagnosis through Runner Devices. Exact-machine pending inspection, protocol changes and uncertain jobs continue to gate new consuming workflow effects. The retained machine controller owns one exact-job observation shared with result presentation. Only readable original JOB/schema/type observations at a non-regressive revision settle succeeded, failed or canceled inspection work; uncertainty, foreign/missing/malformed results and failed reads keep its gate. Settlement clears only the executable-path and Verify snapshot submitted with that job, preserving later unsent changes. Settled results and Finish inspection remain available across presentation close without blocking an unchanged schedule draft or granting execution readiness. Same-identity connection readiness pauses reads without discarding the original controller or uncertain request; connection identity replacement still disposes its owner. Bounded inventory explanations never alter the original eligibility predicate or grant authority from malformed, stale or partial evidence.
 
 Session startup and preparation failures expose a supported recovery action beside the safe cause in the owning conversation. Its one SessionTools controller presents the original confirmation in the same session, including its Info drawer when space is constrained, preserving request and draft ownership. Account reads older than the original resource or retained successful acknowledgment cannot enable a fresh lifecycle action; original uncertain retries and durable cleanup remain independently available.
 
@@ -4960,6 +5072,8 @@ The existing Configure permissions section adds a separate localized User / AI a
 
 ### Claude native web-tool transcript
 
+The combined web metadata and text retention limit remains 256 KiB. Count each web metadata block with Go-compatible JSON escaping, including `<`, `>`, `&`, U+2028 and U+2029, before adding it to the aggregate. Citation metadata uses the same byte-counting helper under its separate unchanged bound. Reject an overbound message before rendering; never truncate native content to fit.
+
 The existing native Claude message renderer displays original server-side web-search and web-fetch calls/results in provider block order through the shared collapsed disclosure family. Retain the native name, block lifecycle state, exact query/URL JSON, ordered search sources and available original fetched text/metadata. Native errors display their closed original code; private document bodies show a localized unavailable-content explanation. URLs, titles and document text remain inert text, with no fetch action, HTML execution or local extraction. Complete strict validation rejects foreign/mixed/duplicated calls, unknown families/private fields, malformed results and unclosed complete histories before rendering. Existing source citations and usage remain independent; no citation-display redesign, cost estimate, completion inference or additional request is introduced. English and Korean use the existing catalog and disclosure/focus ownership.
 
 ## Same-question Sidechat retry
@@ -4979,6 +5093,23 @@ Follow the situation notification source, cache, deduplication and joined observ
 ## Conversation Revert and edit
 
 Show one **Revert and edit** action on eligible original complete user turns.
+Place it in a separate right-aligned row 6px below the bubble, within one
+stable, labelled transcript item. Only this action leaves the bubble; other
+user-turn actions, retained images, status and previous-context cues keep their
+existing placement. Preserve measured page wrappers, resource keys, scroll
+anchors and the content-sized bubble's 12px/16px padding and width caps.
+
+The native button uses 13px medium text, a 32px minimum height, 8px horizontal
+padding and 6px corners. Its resting background is transparent with no border;
+use `--text-secondary` and `--surface-hover` for enabled text and hover. Both
+resting and hover text have at least 4.5:1 contrast in built-in themes. Retain
+previously admitted custom themes; when their hover pair does not meet that
+contrast, render the action over `surface` without changing stored theme colors.
+Use the focus token with a contrasting surface fallback for custom themes. Keep
+the eligible action visible without hover, preserve native disabled behavior
+and allow labels and action rows to wrap at narrow widths and 200% zoom. This
+presentation adds no mutation or eligibility authority.
+
 Require server and original Runner capability plus a settled original root,
 current target membership and cleanup. The confirmation explains exclusion of
 this and later turns from working context, unchanged files, preserved prior
@@ -5065,7 +5196,9 @@ native account acceptance.
 
 Ordinary Session and General Chat show one compact muted timing line before the first original primary-input user Message, or from matching accepted progress before that Message arrives. Multiple native user parts and accepted Steer share that original line. Before the primary user record arrives, anchor the progress-derived line before the first reached native record with matching original session/execution/thread/turn and positive sequence ownership; foreign executions, turns and inherited history cannot take that anchor. Relocate the same timing observation before the original primary user once it arrives. `In progress · 1m 23s` / `진행 중 · 1분 23초` uses a client estimate from retained server acceptance; completed `Elapsed` presentation freezes the retained terminal-minus-acceptance interval. A genuine zero displays zero. Missing, malformed or inverted observations display `Time unavailable` / `시간 정보 없음`; resource IDs, diagnostics and native/provider latency cannot fill gaps.
 
-One mounted active timer updates only the timing line once per second. Disposal or inactive navigation cancels it; returning to confirmed observations recalculates from the retained clock. Disconnected, failed-read or uncertain active observations show unconfirmed state and freeze the last displayed value until authoritative reads return; they never invent a terminal end. Completed history remains fixed. Inherited Fork timing stays labelled and attributed to its original source; a child turn has its own independent interval.
+One mounted active timer updates only the timing line once per second. Initialize the active estimate from the original Session's server `updated_at` minus retained acceptance, validating both UTC instants at their original precision before reducing to display milliseconds. Retain exact session/owner/input/acceptance identity and resource revision with that anchor. Desktop wall-clock offset or adjustment cannot affect this estimate; advance it only with local monotonic time. Missing or inconsistent server anchors remain unavailable. This is a last-observed estimate, not proof of exact elapsed time: transport delay and stale server updates do not establish the current server instant.
+
+Repeated and older revisions cannot reset the retained estimate or transfer it to a different turn. Reconcile a newer consistent original observation without decreasing already measured time; reject same-revision timestamp conflicts, regressive server timestamps and changed acceptance. Disposal, inactive navigation and document hiding cancel the timer. Preserve the measured value, including its subsecond remainder, and resume the same confirmed observation without adding hidden time. Disconnected, failed-read or uncertain active observations show unconfirmed state and freeze the last displayed value until authoritative reads return; they never invent a terminal end. A newly confirmed valid server observation can advance the retained anchor. Completed history remains the immutable server terminal-minus-acceptance interval even if an active anchor is absent. Inherited Fork timing stays labelled and attributed to its original source; a child turn has its own independent interval.
 
 Bounded reached-record timing projections retain only original owner/input identity, timestamps and inherited provenance. Preserve the three-page payload window, exact restore tokens, historical anchors, live bounds, scroll owner, composer draft and focus. Timing wraps semantically at narrow widths and zoom, uses `aria-live="off"`, and never announces every tick. It cannot change execution controls or native/mutation authority.
 
@@ -5252,6 +5385,14 @@ change. Durable reordering requires its separately negotiated feature.
 ## Waiting input movement
 
 Only negotiated System 75 exposes six-dot drag handles, a bounded insertion line and More > Move up/Move down in the approved compact composer-adjacent queue. Keyboard/touch menu actions and drag drops share one move-before operation with the original input/anchor revisions and bigint generation. First/last actions are disabled at the actual boundary; a reached-page boundary can load the next bounded page before an explicit downward movement, retaining the original selection and generation. Never reorder optimistically. Keep the authoritative list until acknowledgment, then refresh dispatch order, restore the original row focus when resident and announce the accepted move.
+
+The settled compact list has balanced spacing around its 40px rows. Its empty
+continuation anchor adds no height; loading, error and retry content retains its
+normal layout. During an admitted drag, the end-of-list target overlays the
+bottom of the final resident row only when the final page is known. It adds no
+resting strip or row height and retains the original move-to-end request.
+Normal unwrapped handles, prompts and actions share a vertical center within
+one CSS pixel; editors, attachments and wrapped narrow layouts may grow rows.
 
 A session-scoped retained mutation owner survives row eviction/removal, menu closure and temporary invisibility. Pending/uncertain movement blocks new movements; uncertain transport retries only the exact original request. Conflict refreshes current order and never silently resubmits. Signed-cursor expiration reloads from the first page rather than mixing generations. Private payload retention uses the existing three-page pagination window and metadata-only projections. Empty authoritative waiting queues retain the existing no-card presentation. Existing Edit/Remove/Steer originals, full drafts, image rejection and claimed/native history remain independently owned.
 

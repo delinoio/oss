@@ -53,8 +53,15 @@ func watchAuxiliary(ctx context.Context, config Config, client delidevv1connect.
 			}
 		}
 		err := stream.Err()
-		if err == nil {
+		cleanEOF := err == nil
+		if cleanEOF {
 			err = domain.Fail(domain.Unavailable, "The auxiliary Worker stream ended.", "Reconnect and reconcile the accepted title operation.")
+		}
+		// The consumer joins the active job before reading another message.
+		// Cancel at the receive boundary so that join cannot delay authority loss.
+		cancel(err)
+		if config.Logger != nil {
+			config.Logger.WarnContext(ctx, "auxiliary title stream ended", "machine_id", credential.MachineID, "instance_id", instance, "clean_eof", cleanEOF)
 		}
 		select {
 		case messages <- received{err: err}:

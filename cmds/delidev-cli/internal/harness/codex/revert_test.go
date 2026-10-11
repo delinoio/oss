@@ -54,6 +54,22 @@ func (f *threadFixture) handleRevert(id json.RawMessage, method string, raw json
 		if json.Unmarshal(f.history, &page) != nil {
 			os.Exit(72)
 		}
+		// The item fixture deliberately omits settled tool items from the turn
+		// projection, while retaining them in the separate item pages.
+		if strings.Contains(f.mode, "paginated-items-") {
+			for n, raw := range page.Data {
+				var turn map[string]json.RawMessage
+				var items []json.RawMessage
+				json.Unmarshal(raw, &turn)
+				json.Unmarshal(turn["items"], &items)
+				if strings.HasSuffix(f.mode, "-empty-projection") && p.Limit == 50 {
+					turn["items"], _ = json.Marshal([]any{})
+				} else {
+					turn["items"], _ = json.Marshal(items[:1])
+				}
+				page.Data[n], _ = json.Marshal(turn)
+			}
+		}
 		capture()
 		if p.Direction == "desc" {
 			slices.Reverse(page.Data)
@@ -81,8 +97,25 @@ func (f *threadFixture) handleRevert(id json.RawMessage, method string, raw json
 		if f.mode == "thread-revert-cycle" && p.Limit == 50 {
 			next = "page-" + strconv.Itoa(offset+1)
 		}
+		if f.mode == "thread-revert-image-bounds" && p.Limit == 50 {
+			// Expand only the response page to test aggregate history limits
+			// without requiring an oversized fixture-control request.
+			for n, raw := range data {
+				var turn map[string]any
+				json.Unmarshal(raw, &turn)
+				for _, value := range turn["items"].([]any) {
+					item := value.(map[string]any)
+					if item["type"] == "imageGeneration" {
+						item["revisedPrompt"] = strings.Repeat("x", domain.MaxPromptBytes)
+					}
+				}
+				data[n], _ = json.Marshal(turn)
+			}
+		}
 		write(id, map[string]any{"data": data, "nextCursor": next, "backwardsCursor": nil})
 		return true
+	case "thread/items/list":
+		return f.handleRevertItems(id, raw, write, capture)
 	case "thread/revert":
 		capture()
 		var p struct {
@@ -109,7 +142,8 @@ func (f *threadFixture) handleRevert(id json.RawMessage, method string, raw json
 		}
 		page.Data = page.Data[:index]
 		f.history, _ = json.Marshal(page)
-		if f.mode == "thread-revert-lost" {
+		f.reverted = true
+		if f.mode == "thread-revert-lost" || f.mode == "thread-revert-paginated-lost" || f.mode == "thread-revert-paginated-items-lost" {
 			json.NewEncoder(os.Stdout).Encode(map[string]any{"id": id, "error": map[string]any{"code": -32603, "message": "lost acknowledgment"}})
 			return true
 		}
@@ -117,7 +151,33 @@ func (f *threadFixture) handleRevert(id json.RawMessage, method string, raw json
 		if index > 0 {
 			cursor = "revert-anchor"
 		}
-		write(id, map[string]any{"thread": f.thread, "turnsBackwardsCursor": cursor, "itemsBackwardsCursor": nil})
+		observed := f.thread
+		if f.mode == "thread-revert-paginated-result-mode-change" {
+			observed = map[string]any{}
+			for key, value := range f.thread {
+				observed[key] = value
+			}
+			observed["historyMode"] = "legacy"
+		}
+		if strings.HasSuffix(f.mode, "result-direct-input-false") || strings.HasSuffix(f.mode, "result-direct-input-omitted") {
+			observed = map[string]any{}
+			for key, value := range f.thread {
+				observed[key] = value
+			}
+			if strings.HasSuffix(f.mode, "result-direct-input-false") {
+				observed["canAcceptDirectInput"] = false
+			} else {
+				delete(observed, "canAcceptDirectInput")
+			}
+		}
+		var itemCursor any
+		if index > 0 && f.thread["historyMode"] == string(PaginatedHistory) && !strings.HasSuffix(f.mode, "-null") && !strings.HasSuffix(f.mode, "-missing-anchor") {
+			itemCursor = "items-anchor"
+		}
+		write(id, map[string]any{"thread": observed, "turnsBackwardsCursor": cursor, "itemsBackwardsCursor": itemCursor})
+		if f.mode == "thread-revert-paginated-current-mode-change" {
+			f.thread["historyMode"] = "legacy"
+		}
 		return true
 	}
 	return false
@@ -137,10 +197,16 @@ func revertFixture(t *testing.T, mode string) (*Client, string, ContinuationChec
 		turn := fixtureTurn(id, TurnCompleted)
 		turn["itemsView"] = "full"
 		turn["items"] = []any{map[string]any{"type": "userMessage", "id": string(domain.NewID()), "clientId": input.ID, "content": []any{map[string]any{"type": "text", "text": text, "text_elements": []any{}}}}}
+		if len(turns) == 0 && strings.Contains(mode, "paginated-items-") {
+			command := commandFixture()
+			command["status"], command["aggregatedOutput"], command["exitCode"] = "completed", "original output", 0
+			patch := map[string]any{"type": "fileChange", "id": "retained-file", "status": "completed", "changes": []any{map[string]any{"path": "file.txt", "diff": "@@\n-before\n+after\n", "kind": map[string]any{"type": "update", "move_path": nil}}}}
+			turn["items"] = append(turn["items"].([]any), command, patch)
+		}
 		turns = append(turns, turn)
 	}
 	fixtureSignal(t, c, "history", map[string]any{"page": map[string]any{"data": turns, "nextCursor": nil, "backwardsCursor": nil}})
-	source := ContinuationCheckpoint{ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: ids[2], Status: TurnCompleted, Mode: domain.ExecuteMode, Effective: *bound.Effective, Inputs: []HistoricalInput{inputs[2]}}
+	source := ContinuationCheckpoint{PaginatedHistory: bound.Thread.History == PaginatedHistory, ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: ids[2], Status: TurnCompleted, Mode: domain.ExecuteMode, Effective: *bound.Effective, Inputs: []HistoricalInput{inputs[2]}}
 	path := filepath.Join(c.home, "sessions", "fixture.jsonl")
 	security.PrivateDir(filepath.Dir(path))
 	os.WriteFile(path, []byte("retained native history"), 0600)
@@ -190,6 +256,21 @@ func TestRevertLostAcknowledgmentOnlyReconcilesOriginalPrefix(t *testing.T) {
 		t.Fatal("changed retained prefix accepted")
 	}
 }
+
+func TestRevertRejectsMutationResponseWithoutDirectInput(t *testing.T) {
+	for _, mode := range []string{"paginated-result-direct-input-false", "paginated-result-direct-input-omitted"} {
+		t.Run(mode, func(t *testing.T) {
+			c, capture, source, ids, inputs := revertFixture(t, mode)
+			if _, err := c.RevertThread(context.Background(), domain.NewID(), source, inputs[1], ids[1], func(RevertIntent) error { return nil }); err == nil || c.problem == nil || !c.execution.paused {
+				t.Fatal("Revert response without direct-input authority released a checkpoint")
+			}
+			if len(requestsOf(t, capture, "thread/revert")) != 1 {
+				t.Fatal("Revert response was retried after ambiguous direct-input metadata")
+			}
+		})
+	}
+}
+
 func TestRevertRefusesStalePromptActiveTurnAndPaginationCycle(t *testing.T) {
 	for _, mode := range []string{"stale", "active", "cycle"} {
 		t.Run(mode, func(t *testing.T) {

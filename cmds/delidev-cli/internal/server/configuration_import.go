@@ -145,8 +145,8 @@ func (s *Service) ApplyConfigurationImport(ctx context.Context, req *connect.Req
 					pending.Inspections = append(pending.Inspections, configurationImportInspection{ID: childID, RepositoryID: change.ID, MachineID: checkout.MachineID, Path: checkout.Path})
 					identity := ""
 					// Preserve the legacy inspection input for older Workers. The
-					// source identity is advisory only when the Worker negotiated
-					// support for the post-capability field.
+					// source-bound publication separately requires the original proof
+					// after a Worker negotiated support for this field.
 					if repository.RemoteURL != "" && slices.Contains(machine.WorkerCapabilities, domain.RepositoryInspectionMetadataV1) {
 						identity, err = domain.RepositoryCloneSourceIdentity(repository.RemoteURL)
 						if err != nil {
@@ -255,6 +255,7 @@ func finishConfigurationImport(tx *store.Tx, record store.Record, parent domain.
 		return err
 	}
 	var problem *domain.Error
+	sourceProofLost := false
 	waiting := false
 	for _, expected := range pending.Inspections {
 		row, err := tx.Get(domain.JobKind, expected.ID)
@@ -270,18 +271,37 @@ func finishConfigurationImport(tx *store.Tx, record store.Record, parent domain.
 		}
 		switch child.State {
 		case domain.JobSucceeded:
+			var source string
+			found := false
+			for _, change := range pending.Plan.Changes {
+				if change.ID != expected.RepositoryID || change.Kind != domain.RepositoryKind || change.Action == domain.ConfigurationReuse {
+					continue
+				}
+				var repository domain.Repository
+				if domain.Decode(change.After, &repository) == nil {
+					source, found = repository.RemoteURL, true
+				}
+				break
+			}
+			if !found || validateRepositoryInspectionSource(source, child) != nil {
+				problem = repositorySourceProofUnavailable()
+				sourceProofLost = true
+				break
+			}
 			var inspection workspace.Inspection
 			if err := domain.Decode(child.Output, &inspection); err != nil {
 				return err
 			}
-			if inspection.Root != expected.Path {
+			if problem == nil && inspection.Root != expected.Path {
 				problem = domain.Fail(domain.Conflict, "A checkout resolved to a different canonical path than the preview.", "Inspect the target checkout and explicitly use its canonical path in a new preview.")
 			}
-			if _, _, err := activeMachine(tx, expected.MachineID); err != nil {
+			if _, _, err := activeMachine(tx, expected.MachineID); err != nil && problem == nil {
 				problem = domain.SafeError(err)
 			}
 		case domain.JobFailed, domain.JobCanceled, domain.JobUncertain:
-			problem = domain.Fail(domain.Conflict, "A Worker did not verify every imported repository.", "Existing configuration is unchanged. Inspect the read-only validation jobs before generating another preview.")
+			if problem == nil {
+				problem = domain.Fail(domain.Conflict, "A Worker did not verify every imported repository.", "Existing configuration is unchanged. Inspect the read-only validation jobs before generating another preview.")
+			}
 		default:
 			waiting = true
 		}
@@ -313,13 +333,20 @@ func finishConfigurationImport(tx *store.Tx, record store.Record, parent domain.
 	}
 	// Once terminal, the job needs only reference outcomes. Drop the staged
 	// instruction/configuration copies; retries use the original receipt digest.
-	parent.Input = []byte(`{"version":1}`)
+	if !sourceProofLost {
+		parent.Input = []byte(`{"version":1}`)
+	}
 	now := time.Now().UTC()
 	parent.FinishedAt = &now
 	if problem == nil {
 		parent.State = domain.JobSucceeded
 	} else {
 		parent.State, parent.Problem = domain.JobFailed, problem
+		if sourceProofLost {
+			// Keep the original staged source and proof ownership for inspection;
+			// this uncertainty cannot publish or start another validation attempt.
+			parent.State = domain.JobUncertain
+		}
 	}
 	_, err := tx.PutJob(record.ID, record.Revision, "", "", parent)
 	return err

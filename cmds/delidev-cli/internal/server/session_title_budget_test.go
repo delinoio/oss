@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -85,6 +86,10 @@ func TestAutomaticTitleBudgetPreservesOriginalRecoverySettlement(t *testing.T) {
 }
 
 func TestQueuedAutomaticTitleBudgetRetiresWithoutClaim(t *testing.T) {
+	// Overlap isolated fixture waits on Linux; retain native Windows scheduling.
+	if runtime.GOOS == "linux" {
+		t.Parallel()
+	}
 	f := recoveredAutomaticTitleFixture(t)
 	_, change := acceptRecovery(t, f)
 	completeRecovery(t, f, change.ExecutionRecoveryJob)

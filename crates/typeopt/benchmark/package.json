@@ -1,0 +1,9 @@
+{
+  "name": "typeopt-browser-benchmark",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "playwright": "1.64.0"
+  }
+}
