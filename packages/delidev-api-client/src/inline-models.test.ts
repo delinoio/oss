@@ -10,3 +10,20 @@ describe("current inline source schema",()=>{
  it("rejects Model resources, older Agent layouts and mixed UUID routes",()=>{expect(decodeResourceDocument(resource(3))).toBeUndefined();expect(decodeResourceDocument(resource(1,{model_id:"legacy"}))).toBeUndefined();expect(decodeResourceDocument(resource(4,{...document,model_id:"legacy"}))).toBeUndefined();expect(decodeResourceDocument(resource(1,{},EntityKind.MODEL))).toBeUndefined()});
  it("rejects ambiguous sources and unknown service identities",()=>{expect(decodeResourceDocument(resource(4,{...document,routes:[{model:{...document.routes[0].model,provider_id:"provider"},accounts:[{}]}]}))).toBeUndefined();expect(decodeResourceDocument(resource(4,{...document,routes:[{model:{native_id:"exact",subscription_service:"other"},accounts:[{}]}]}))).toBeUndefined()})
 });
+
+it("reads inherited source identities without inventing a native model and rejects legacy destructive schemas",()=>{
+ const inherited={...document,harness_settings:{effort:{mode:"inherit"},options:{mode:"override",value:{permission:"default",max_concurrency:0}}},routes:[{...document.routes[0],model_mode:"inherit",model:{...document.routes[0].model,native_id:""}}]};
+ expect(decodeResourceDocument(resource(5,inherited))).toEqual(inherited);
+ expect(configurationSchemaVersion(EntityKind.AGENT,inherited)).toBe(5);
+ expect(decodeResourceDocument(resource(4,inherited))).toBeUndefined();
+ expect(decodeResourceDocument(resource(5,{...inherited,routes:[{...inherited.routes[0],model_mode:"override"}]}))).toBeUndefined();
+ expect(decodeResourceDocument(resource(5,{...inherited,harness_settings:{effort:{mode:"inherit",value:""},options:{mode:"inherit"}}}))).toBeUndefined();
+});
+
+it("keeps default-bearing configuration schemas within their owning families",()=>{
+ const value={harness_defaults:[],plan_mode_default:false,branch_prefix:"delidev/",automatic_plan_approval:false};
+ expect(decodeResourceDocument(resource(4,value,EntityKind.SETTINGS))).toEqual(value);
+ expect(configurationSchemaVersion(EntityKind.SETTINGS,value)).toBe(4);
+ expect(decodeResourceDocument(resource(3,value,EntityKind.SETTINGS))).toBeUndefined();
+ expect(decodeResourceDocument(resource(4,value,EntityKind.ACCOUNT))).toBeUndefined();
+});

@@ -21,7 +21,8 @@ type AppliedTemplate struct {
 // Native defaults remain unspecified here; observed effective settings belong
 // to the native execution record and cannot rewrite this accepted selection.
 type ExecutionConfiguration struct {
-	BranchPrefix *BranchPrefixSelection `json:"branch_prefix,omitempty"`
+	HarnessDefaults *HarnessDefaultProvenance `json:"harness_defaults,omitempty"`
+	BranchPrefix    *BranchPrefixSelection    `json:"branch_prefix,omitempty"`
 
 	ReviewerNativeModel string                  `json:"reviewer_native_model,omitempty"`
 	ImageInputDeclared  bool                    `json:"image_input_declared,omitempty"`

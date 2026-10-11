@@ -977,3 +977,19 @@ jobs and remains available at the retention bound. These checks grant no native
 replay or new execution authority; original ownership and settled no-send proof
 remain required. See the [Sidechat contract](cmds-delidev-sidechat-contract.md#same-question-retry)
 for the five-job admission reservation.
+
+## Inherited harness snapshot
+
+First-dispatch routing selects the original account before resolving inherited
+model, effort or options. Resolve the account's actual API profile, including
+legacy omitted profiles, then use the catalog-owned precedence. Do not start a
+separate execution probe or substitute a sibling account/profile. A missing
+required default leaves input unclaimed and routing state unchanged.
+
+The accepted configuration freezes exact effective values and optional
+`harness_defaults` provenance: original Settings, Project, Account and Provider
+IDs/revisions, selected API protocol and each value's owner. Its ordinary digest
+includes that provenance. Native applied-setting verification before input
+remains mandatory. Configuration upgrades and later edits never rewrite original
+execution configurations or digests; retained legacy snapshots omit the new
+provenance and retain their exact historical digest.

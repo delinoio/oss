@@ -95,6 +95,7 @@ it("configures a real Go server through the settings forms and explicitly valida
   await waitFor(() => expect(window.document.querySelector("[data-source-group] .worker-routing ol strong")?.textContent).toBe("Owned keyless account"));
   // The source reports its independent account proof after the row renders.
   await next();
+  fireEvent.change(await screen.findByRole("combobox", { name: "Model selection" }), { target: { value: "override" } });
   const model = await screen.findByRole("combobox", { name: /^Model for / });
   expect(fixture.providerModelReads).toBe(beforeModelHints);
   fireEvent.click(screen.getByRole("button", { name: "Refresh models from endpoint" }));
@@ -108,7 +109,7 @@ it("configures a real Go server through the settings forms and explicitly valida
   await screen.findByRole("heading", { name: "Configured agent" });
   const agents = await createClient(ResourceService, transport).listResources({ filter: { kind: EntityKind.AGENT } });
   expect(agents.resources).toHaveLength(1);
-  expect(agents.resources[0].schemaVersion).toBe(4);
+  expect(agents.resources[0].schemaVersion).toBe(5);
   expect(document(agents.resources[0])).toMatchObject({ name: "Configured agent", harness: "codex", routes: [{ model: { provider_id: document(accounts.resources[0]).provider_id, native_id: "fixture-model" }, accounts: [{ id: accounts.resources[0].id, weight: 1 }] }], options: { permission: "default" } });
   expect(document(agents.resources[0]).model_id).toBeUndefined();
   expect(document(agents.resources[0]).accounts).toBeUndefined();

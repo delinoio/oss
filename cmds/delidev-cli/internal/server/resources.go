@@ -326,7 +326,7 @@ func (s *Service) WatchEvents(ctx context.Context, req *connect.Request[pb.Watch
 }
 func (s *Service) SaveConfiguration(ctx context.Context, req *connect.Request[pb.SaveConfigurationRequest]) (*connect.Response[pb.SaveConfigurationResponse], error) {
 	correlation := req.Header().Get(rpc.CorrelationHeader)
-	if req.Msg.Mutation == nil || req.Msg.SchemaVersion != 1 && req.Msg.SchemaVersion != 2 && req.Msg.SchemaVersion != 3 && req.Msg.SchemaVersion != 4 {
+	if req.Msg.Mutation == nil || req.Msg.SchemaVersion != 1 && req.Msg.SchemaVersion != 2 && req.Msg.SchemaVersion != 3 && req.Msg.SchemaVersion != 4 && req.Msg.SchemaVersion != 5 {
 		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "A supported configuration schema and mutation identity are required.", "Use the current resource schema, a UUID-v7 request ID and the original expected revision."), correlation)
 	}
 	kind, err := rpc.Kind(req.Msg.Kind)
@@ -629,7 +629,7 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 			return domain.Fail(domain.Conflict, "Connected accounts require credential and device cleanup before deletion.", "Disconnect the account and complete its protected-resource cleanup first.")
 		}
 	}
-	for _, ownerKind := range []domain.Kind{domain.ProjectKind, domain.AgentKind, domain.ModelKind, domain.AccountKind} {
+	for _, ownerKind := range []domain.Kind{domain.ProjectKind, domain.AgentKind, domain.ModelKind, domain.AccountKind, domain.SettingsKind} {
 		records, err := all(tx, ownerKind)
 		if err != nil {
 			return err
@@ -639,10 +639,25 @@ func validateDeletion(tx *store.Tx, kind domain.Kind, id domain.ID) error {
 				continue
 			}
 			switch ownerKind {
+			case domain.SettingsKind:
+				settings, err := store.Decode[domain.Settings](record)
+				if err != nil {
+					return err
+				}
+				for _, entry := range settings.HarnessDefaults {
+					if kind == domain.ProviderKind && entry.ProviderID == id {
+						return conflict()
+					}
+				}
 			case domain.ProjectKind:
 				project, err := store.Decode[domain.Project](record)
 				if err != nil {
 					return err
+				}
+				for _, entry := range project.HarnessDefaults {
+					if kind == domain.ProviderKind && entry.ProviderID == id {
+						return conflict()
+					}
 				}
 				if kind == domain.AccountKind && slices.Contains(project.Accounts.IDs, id) {
 					return conflict()

@@ -2339,3 +2339,14 @@ value grants readiness, native support, credential release or input acceptance.
 The original root may observe official `sleep` ThreadItems through the existing tool lifecycle. The shared closed decoder requires exactly `type`, bounded nonempty `id` and nonnegative uint64 `durationMs`, rejects duplicate/unknown fields and preserves the original item, thread and known turn. Lifecycle status comes only from original `item/started` and `item/completed`; duration is immutable across completion. Worker and server independently fence scope and changed duration. Public `sleep.duration_ms` is an exact decimal JSON string to preserve every native uint64 value through browser parsing. The existing tool disclosure displays the duration and original lifecycle status without a timer or controls.
 
 Complete continuation, context/compaction and permitted ordinary/managed Fork history share the same decoder and retain the original normalized native item JSON, sequence and history digest. Both Fork admission checks explicitly allow only this closed inert family; async/structured tool families and other restricted profiles remain separate. The synchronized outbox and server exact-request receipt replay preserve one observation after publication loss; uncertainty permits only replay of that original publication, never native sleep/input replay. Sleep completion settles only the tool. Original turn outcome, accepted input, native failure/interruption, cleanup and recovery remain independent. No protocol allocation, database migration or numeric native version gate is added.
+
+## Inherited effective configuration
+
+Server inheritance resolves against the exact selected source/account/API
+profile under the catalog and session contracts. Missing independent native
+default evidence is a named configuration failure; never infer it from a
+subscription inventory, another API profile or a synthetic installation probe.
+Freeze effective requests before input without a separate execution probe.
+Actual owned native initialization and applied-setting verification retain their
+existing independent authority. This feature adds no native fallback process,
+account switch, credential authority or historical configuration rewrite.

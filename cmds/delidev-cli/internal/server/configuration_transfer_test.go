@@ -800,3 +800,55 @@ func assertRejectedPortableVersion(t *testing.T, s *Service, selection domain.Co
 	default:
 	}
 }
+
+func TestHarnessDefaultsPortableProviderRemapping(t *testing.T) {
+	s, _ := newDoctorFixture(t)
+	selection := transferSelection()
+	var providerID domain.ID
+	for _, entry := range selection.Bundle.Entries {
+		if entry.Kind == domain.ProviderKind {
+			providerID = entry.ID
+		}
+	}
+	effort := ""
+	options := domain.AgentOptions{Permission: domain.PermissionDefault}
+	defaults := []domain.HarnessDefault{{Harness: domain.Codex, ProviderID: providerID, APIProtocol: domain.OpenAIChat, Model: &domain.InlineModel{ModelIdentity: domain.ModelIdentity{ProviderID: providerID, NativeID: "default-native"}, MetadataSource: domain.Unknown}, Effort: &effort, Options: &options}}
+	settings := domain.DefaultSettings()
+	settings.HarnessDefaults = defaults
+	selection.Bundle.Entries = append(selection.Bundle.Entries, transferEntry(domain.SettingsKind, settings))
+	raw := transferPreview(t, s, selection)
+	var preview domain.ConfigurationImportPreview
+	if err := domain.Decode(raw, &preview); err != nil {
+		t.Fatal(err)
+	}
+	if preview.Plan.Version != 5 {
+		t.Fatal("preview format not upgraded")
+	}
+	var remappedProvider domain.ID
+	for _, change := range preview.Plan.Changes {
+		if change.Kind == domain.ProviderKind {
+			remappedProvider = change.ID
+		}
+	}
+	for _, change := range preview.Plan.Changes {
+		switch change.Kind {
+		case domain.AgentKind:
+			var a domain.Agent
+			if err := domain.Decode(change.After, &a); err != nil {
+				t.Fatal(err)
+			}
+			if a.HarnessSettings == nil || a.Routes[0].ModelMode != domain.SettingInherit || a.Routes[0].Model.ProviderID != remappedProvider {
+				t.Fatal("legacy bundle inheritance/source changed")
+			}
+		case domain.SettingsKind:
+			var settings domain.Settings
+			if err := domain.Decode(change.After, &settings); err != nil {
+				t.Fatal(err)
+			}
+			d := settings.HarnessDefaults[0]
+			if d.ProviderID != remappedProvider || d.Model.ProviderID != remappedProvider || d.Effort == nil || *d.Effort != "" || d.Options == nil || d.Options.MaxConcurrency != 0 {
+				t.Fatal("default source or explicit empty values changed")
+			}
+		}
+	}
+}

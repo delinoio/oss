@@ -23,8 +23,10 @@ func wizardRequest(accounts []*pb.Resource, native string) *pb.SaveAgentWorkerRe
 		}
 	}
 	model := domain.InlineModel{ModelIdentity: domain.ModelIdentity{ProviderID: source.ProviderID, SubscriptionService: source.SubscriptionService, NativeID: native}, MetadataSource: domain.Unknown}
-	raw, _ := json.Marshal(domain.Agent{Name: "Wizard Worker", Harness: domain.Codex, Routes: []domain.AgentSourceRoute{{Model: &model, Accounts: links}}, Options: domain.AgentOptions{Permission: domain.PermissionDefault}})
-	return &pb.SaveAgentWorkerRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID())}, DocumentJson: raw, SchemaVersion: 4, RouteModels: []*pb.AgentWorkerModelSelection{{Selection: &pb.AgentWorkerModelSelection_NativeId{NativeId: native}}}}
+	agent := domain.Agent{Name: "Wizard Worker", Harness: domain.Codex, Routes: []domain.AgentSourceRoute{{Model: &model, Accounts: links}}, Options: domain.AgentOptions{Permission: domain.PermissionDefault}}
+	agent.PreserveExplicitHarnessSelection()
+	raw, _ := json.Marshal(agent)
+	return &pb.SaveAgentWorkerRequest{Mutation: &pb.Mutation{RequestId: string(domain.NewID())}, DocumentJson: raw, SchemaVersion: 5, RouteModels: []*pb.AgentWorkerModelSelection{{Selection: &pb.AgentWorkerModelSelection_NativeId{NativeId: native}}}}
 }
 func TestAgentWorkerInlineSaveReplayAndConcurrentIsolation(t *testing.T) {
 	f := newAccountFixture(t)
@@ -40,7 +42,7 @@ func TestAgentWorkerInlineSaveReplayAndConcurrentIsolation(t *testing.T) {
 	if err = domain.Decode(saved.Msg.Resource.DocumentJson, &agent); err != nil {
 		t.Fatal(err)
 	}
-	if saved.Msg.Resource.SchemaVersion != 4 || len(agent.Routes) != 1 || len(agent.Routes[0].Accounts) != 2 || agent.Routes[0].Accounts[1].Weight != 2 || agent.Routes[0].Model.NativeID != "exact-native" || agent.Routes[0].Model.ProviderID != domain.ID(provider.Id) {
+	if saved.Msg.Resource.SchemaVersion != 5 || len(agent.Routes) != 1 || len(agent.Routes[0].Accounts) != 2 || agent.Routes[0].Accounts[1].Weight != 2 || agent.Routes[0].Model.NativeID != "exact-native" || agent.Routes[0].Model.ProviderID != domain.ID(provider.Id) {
 		t.Fatal("original route changed", agent)
 	}
 	if agent.ModelID != "" || agent.Routes[0].ModelID != "" {
@@ -129,4 +131,41 @@ func TestWizardSourceFiltersPrecedePaginationAndBindCursors(t *testing.T) {
 	request.SubscriptionService = pb.SubscriptionServiceIdentity_SUBSCRIPTION_SERVICE_IDENTITY_CLAUDE
 	_, err = f.resources.ListResources(ctx, ownerRequest(f.identity, request))
 	wantAccountCode(t, err, domain.CursorExpired)
+}
+
+func TestInheritedWorkerNeedsNoNativeSelectionAndRejectsDestructiveLegacySave(t *testing.T) {
+	f := newAccountFixture(t)
+	provider := f.save(pb.EntityKind_ENTITY_KIND_PROVIDER, domain.Provider{Name: "Inheritance API", Endpoint: "http://127.0.0.1:12345/v1", Protocol: domain.OpenAIResponses, Authentication: domain.KeylessAuth})
+	account := wizardAccount(f, provider, "Original source")
+	request := wizardRequest([]*pb.Resource{account}, "")
+	var agent domain.Agent
+	if err := domain.Decode(request.DocumentJson, &agent); err != nil {
+		t.Fatal(err)
+	}
+	agent.HarnessSettings = domain.InheritHarnessSelection()
+	agent.Routes[0].ModelMode = domain.SettingInherit
+	request.DocumentJson, _ = json.Marshal(agent)
+	saved, err := f.config.SaveAgentWorker(context.Background(), ownerRequest(f.identity, request))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Msg.Resource.SchemaVersion != 5 {
+		t.Fatal("inheritance schema not retained")
+	}
+	legacy := wizardRequest([]*pb.Resource{account}, "other")
+	if err := domain.Decode(legacy.DocumentJson, &agent); err != nil {
+		t.Fatal(err)
+	}
+	agent.HarnessSettings = nil
+	agent.Routes[0].ModelMode = ""
+	legacy.DocumentJson, _ = json.Marshal(agent)
+	legacy.SchemaVersion = 4
+	legacy.Mutation.Id = saved.Msg.Resource.Id
+	legacy.Mutation.ExpectedRevision = saved.Msg.Resource.Revision
+	_, err = f.config.SaveAgentWorker(context.Background(), ownerRequest(f.identity, legacy))
+	wantAccountCode(t, err, domain.Unsupported)
+	current, err := f.resources.GetResource(context.Background(), ownerRequest(f.identity, &pb.GetResourceRequest{Kind: pb.EntityKind_ENTITY_KIND_AGENT, Id: saved.Msg.Resource.Id}))
+	if err != nil || current.Msg.Resource.Revision != saved.Msg.Resource.Revision || string(current.Msg.Resource.DocumentJson) != string(saved.Msg.Resource.DocumentJson) {
+		t.Fatal("legacy write destroyed inheritance", err)
+	}
 }

@@ -33,6 +33,7 @@ import { ProviderAPIFormatFields, AccountAPIFormatField } from "./api-format-fie
 import { useProjectRepositoryNames } from "./project-repositories";
 import { RepositoryEditSections, RepositoryCheckoutIdentity } from "./repository-editor";
 
+export enum HarnessSettingMode { Inherit = "inherit", Override = "override" }
 export enum Harness { Codex = "codex", Claude = "claude-code", OpenCode = "opencode", Grok = "grok-build" }
 export enum Protocol { Responses = "openai-responses", Chat = "openai-chat", Anthropic = "anthropic-messages", Subscription = "native-subscription" }
 export enum Authentication { Bearer = "bearer", Key = "api-key", Keyless = "keyless", Subscription = "subscription" }
@@ -251,13 +252,17 @@ function ProviderFields({ data, change, subscriptionOnly = false, ...props }: Fi
   </>;
 }
 export enum ServerPreferenceSection { All = "all", AccountRouting = "account-routing", GitWorkflow = "git-workflow", ProjectDefaults = "project-defaults" }
-interface FieldsProps { disabled?: boolean; supportsProjectBehavior?: boolean; supportsSessionDefaults?: boolean; movementActive?: boolean; initial?: Resource; keepsFormatKey?: (ready: boolean) => void; saveBlocked?: (blocked: boolean) => void; data: Document; change: (value: Document) => void; active: boolean; existing: boolean; pendingOperation?: (pending: boolean) => void; subscriptionOnly?: boolean; serverPreferenceSection?: ServerPreferenceSection; workerWizard?: boolean }
+interface FieldsProps { supportsHarnessDefaults?: boolean; disabled?: boolean; supportsProjectBehavior?: boolean; supportsSessionDefaults?: boolean; movementActive?: boolean; initial?: Resource; keepsFormatKey?: (ready: boolean) => void; saveBlocked?: (blocked: boolean) => void; data: Document; change: (value: Document) => void; active: boolean; existing: boolean; pendingOperation?: (pending: boolean) => void; subscriptionOnly?: boolean; serverPreferenceSection?: ServerPreferenceSection; workerWizard?: boolean }
 export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: EntityKind }) {
   useLocale();
   const { data, change, active, existing, serverPreferenceSection = ServerPreferenceSection.All, supportsProjectBehavior = false, supportsSessionDefaults = false } = props;
-  const reviewerStatus = useQuery(SystemQuery.getStatus, {}, { enabled: active && kind === EntityKind.AGENT });
-  const field = (key: string) => (value: unknown) => change({ ...data, [key]: value });
+  const reviewerStatus = useQuery(SystemQuery.getStatus, {}, { enabled: active });
+  const field = (key: string) => (value: unknown) => {
+    const selection = object(data.harness_settings), inherited = object(selection[key]);
+    change({ ...data, [key]: value, ...(Object.keys(selection).length && inherited.mode === HarnessSettingMode.Override ? { harness_settings: { ...selection, [key]: { mode: HarnessSettingMode.Override, value } } } : {}) });
+  };
   if (kind === EntityKind.SETTINGS) return <>
+ {reviewerStatus.data?.capabilities.includes(SystemCapability.HARNESS_DEFAULTS_V1) ? <HarnessDefaultsFields value={data.harness_defaults} change={field("harness_defaults")} active={active} /> : null}
  {serverPreferenceSection === ServerPreferenceSection.ProjectDefaults && (supportsProjectBehavior || supportsSessionDefaults) ? <h3>{copy("configuration-fields.planApprovalHeading")}</h3> : null}
  {supportsSessionDefaults && serverPreferenceSection === ServerPreferenceSection.ProjectDefaults ? <section data-settings-search-target="plan-mode-default"><Check label={copy("configuration-fields.planModeDefault")} value={data.plan_mode_default} change={field("plan_mode_default")} /></section> : null}
 
@@ -266,7 +271,7 @@ export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: En
       <section data-settings-search-target="worktree" className="server-preference-section"><h4>{copy("configuration-fields.worktreePreparation_24002c")}</h4>{supportsSessionDefaults && serverPreferenceSection === ServerPreferenceSection.ProjectDefaults ? <section data-settings-search-target="branch-prefix"><BranchPrefixField value={typeof data.branch_prefix === "string" ? data.branch_prefix : defaultBranchPrefix} change={field("branch_prefix")} /></section> : null}<div data-settings-search-target="automatic-fetch"><Check label={copy("configuration-fields.allowAutomaticFetchBeforeWorktreePreparation_6c9a8c")} value={data.automatic_fetch} change={field("automatic_fetch")} /></div><p>{copy("configuration-fields.fetchingRequiresBothThisServerPreference_10697f")}</p></section>
       <section className="server-preference-section"><RemediationFields workflow={RunnerWorkflow.ServerRemediation} value={object(data.remediation)} change={field("remediation")} active={active} presentation={RemediationDetailPresentation.Collapsible} /></section>
   </>;
-  if (kind === EntityKind.PROJECT) return <ProjectFields {...props} />;
+  if (kind === EntityKind.PROJECT) return <ProjectFields {...props} supportsHarnessDefaults={reviewerStatus.data?.capabilities.includes(SystemCapability.HARNESS_DEFAULTS_V1)} />;
   if (kind === EntityKind.REPOSITORY) return <RepositoryFields {...props} />;
   if (kind === EntityKind.PROVIDER) return <ProviderFields {...props} />;
   if (kind === EntityKind.TEMPLATE) return <><TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} change={field("name")} required /><label>{copy("configuration-fields.instructions_934652")}<textarea rows={12} required maxLength={131072} value={text(data.contents)} onChange={(event) => field("contents")(event.target.value)} /></label><p>{copy("configuration-fields.appendedToTheSelectedHarnessS_14ecc2")}</p></>;
@@ -277,15 +282,15 @@ export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: En
   if (kind === EntityKind.MODEL) return <ModelFields {...props} />;
   if (kind === EntityKind.AGENT) {
     const options = object(data.options);
-    const option = (name: string) => (value: unknown) => change({ ...data, options: { ...options, [name]: value } });
+    const option = (name: string) => (value: unknown) => field("options")({ ...options, [name]: value });
     return <AgentConfiguration data={data} routingProblem={data.routing !== undefined && data.routing !== "" && !Object.values(Routing).includes(data.routing as Routing)}
-      core={<><TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} change={field("name")} required markRequired placeholder={copy("configuration-fields.eGCodeReviewer_5f269c")} />{!props.workerWizard ? <div className="agent-core-columns"><Choice label={copy("configuration-fields.harness_e3b5b4")} value={data.harness} choices={Object.values(Harness)} change={field("harness")} /></div> : null}</>}
-      permissions={<AgentPermissions reviewSupported={reviewerStatus.data?.capabilities.includes(SystemCapability.CODEX_APPROVAL_REVIEW_V1) === true} active={props.movementActive ?? active} disabled={props.disabled ?? false} harness={data.harness} options={options} change={field("options")} />}
-      reasoning={<><ReasoningEffortField label={copy("configuration-fields.reasoningEffort_3236ae")} value={data.effort} change={field("effort")} disabled={data.harness === Harness.Grok} suggestions={data.harness === Harness.Codex ? codexEffortSuggestions : data.harness === Harness.Claude ? claudeEffortSuggestions : undefined} />{data.harness === Harness.Grok ? <NativeOptionExplanation label={copy("configuration-fields.reasoningEffort_3236ae")} value={data.effort} clear={() => field("effort")("")} /> : null}</>}
+      core={<><HarnessInheritanceFields data={data} change={change} /><TextField label={copy("configuration-fields.name_dcd1d5")} value={data.name} change={field("name")} required markRequired placeholder={copy("configuration-fields.eGCodeReviewer_5f269c")} />{!props.workerWizard ? <div className="agent-core-columns"><Choice label={copy("configuration-fields.harness_e3b5b4")} value={data.harness} choices={Object.values(Harness)} change={field("harness")} /></div> : null}</>}
+      permissions={<fieldset hidden={object(object(data.harness_settings).options).mode === HarnessSettingMode.Inherit} disabled={object(object(data.harness_settings).options).mode === HarnessSettingMode.Inherit}><AgentPermissions reviewSupported={reviewerStatus.data?.capabilities.includes(SystemCapability.CODEX_APPROVAL_REVIEW_V1) === true} active={props.movementActive ?? active} disabled={props.disabled ?? false} harness={data.harness} options={options} change={field("options")} /></fieldset>}
+      reasoning={<fieldset hidden={object(object(data.harness_settings).effort).mode === HarnessSettingMode.Inherit} disabled={object(object(data.harness_settings).effort).mode === HarnessSettingMode.Inherit}><ReasoningEffortField label={copy("configuration-fields.reasoningEffort_3236ae")} value={data.effort} change={field("effort")} disabled={data.harness === Harness.Grok} suggestions={data.harness === Harness.Codex ? codexEffortSuggestions : data.harness === Harness.Claude ? claudeEffortSuggestions : undefined} />{data.harness === Harness.Grok ? <NativeOptionExplanation label={copy("configuration-fields.reasoningEffort_3236ae")} value={data.effort} clear={() => field("effort")("")} /> : null}</fieldset>}
       accounts={props.workerWizard ? undefined : <><Choice label={copy("configuration-fields.accountRouting_0c3707")} value={data.routing} choices={Object.values(Routing)} change={(routing) => { const next = { ...data }; if (routing) next.routing = routing; else delete next.routing; change(next); }} inherited /><OrderedLinks label={copy("configuration-fields.accounts_8a7c8b")} kind={EntityKind.ACCOUNT} links={items(data.accounts)} change={field("accounts")} active={active} weighted /></>}
       instructions={<OrderedLinks label={copy("configuration-fields.instructionTemplates_6b009f")} kind={EntityKind.TEMPLATE} links={items(data.templates)} change={field("templates")} active={active} />}
-      native={<>
-        {data.harness === Harness.Codex ? <CodexSubagentConfiguration options={options} active={active} change={(key, value) => option(key)(value)} /> : <>
+      native={<fieldset hidden={object(object(data.harness_settings).options).mode === HarnessSettingMode.Inherit} disabled={object(object(data.harness_settings).options).mode === HarnessSettingMode.Inherit}>
+        {data.harness === Harness.Codex ? <CodexSubagentConfiguration options={options} active={active && object(object(data.harness_settings).options).mode !== HarnessSettingMode.Inherit} change={(key, value) => option(key)(value)} /> : <>
           <TextField label={copy("configuration-fields.subagentModel_28463c")} value={options.subagent_model} change={option("subagent_model")} unavailable />
           <ReasoningEffortField label={copy("configuration-fields.subagentEffort_eea2b1")} value={options.subagent_effort} change={option("subagent_effort")} disabled />
           <NativeOptionExplanation label={copy("configuration-fields.subagentEffort_eea2b1")} value={options.subagent_effort} clear={() => option("subagent_effort")("")} />
@@ -296,7 +301,7 @@ export function ConfigurationFields({ kind, ...props }: FieldsProps & { kind: En
         <TextField label={copy("configuration-fields.approvalReviewModel_ef091f")} value={options.approval_review_model} change={option("approval_review_model")} unavailable />
         <ServiceTierField value={options.service_tier} change={option("service_tier")} unavailable={data.harness !== Harness.Codex} clear={() => { const next = { ...options }; delete next.service_tier; field("options")(next); }} />
         <p>{copy("configuration-fields.unsupportedNativeOptionsProduceAServer_af4e7d")}</p>
-      </>}
+      </fieldset>}
     />;
   }
   return null;
@@ -314,7 +319,7 @@ export function projectRepositoryOption(id: string, index: number, names: Readon
   const name = names.get(id) ?? copy("project-creation.nameUnavailable");
   return [...names.values()].filter(value => value === name).length > 1 || !names.has(id) ? copy("project-creation.distinctRepository", { name, position: index + 1 }) : name;
 }
-function ProjectFields({ data, change, active, disabled = false, movementActive = active, supportsProjectBehavior = false, supportsSessionDefaults = false }: FieldsProps) {
+function ProjectFields({ supportsHarnessDefaults = false, data, change, active, disabled = false, movementActive = active, supportsProjectBehavior = false, supportsSessionDefaults = false }: FieldsProps) {
   const [selected, setSelected] = useState("");
   useLocale();
   const repositories = items(data.repositories).map(text);
@@ -333,7 +338,7 @@ function ProjectFields({ data, change, active, disabled = false, movementActive 
       <label>{copy("configuration-fields.primaryRepository_b2bbc5")}<select required value={text(data.primary_repository)} onChange={(event) => change({ ...data, primary_repository: event.target.value })}><option value="">{copy("configuration-fields.selectThePrimaryRepository_bd9082")}</option>{repositories.map((id, index) => <option key={id} value={id}>{projectRepositoryOption(id, index, names)}</option>)}</select></label>
       <p>{copy("configuration-fields.theHarnessStartsInThisRepository_8c3af5")}</p>
     </fieldset></>,
-    [ProjectEditTab.Execution]: supportsProjectBehavior ? <ProjectBehaviorFields data={data} change={change} active={active} supportsSessionDefaults={supportsSessionDefaults} /> : <p>{copy("configuration-fields.behaviorUnsupported")}</p>,
+    [ProjectEditTab.Execution]: <>{supportsHarnessDefaults ? <HarnessDefaultsFields value={data.harness_defaults} change={harness_defaults=>change({...data,harness_defaults})} active={active} /> : null}{supportsProjectBehavior ? <ProjectBehaviorFields data={data} change={change} active={active} supportsSessionDefaults={supportsSessionDefaults} /> : <p>{copy("configuration-fields.behaviorUnsupported")}</p>}</>,
     [ProjectEditTab.Access]: <>    <RestrictionFields label={copy("configuration-fields.agentWorkers_e60c23")} kind={EntityKind.AGENT} value={data.agents} active={active} change={(agents) => change({ ...data, agents })} />
     <RestrictionFields label={copy("configuration-fields.aiAccounts_050a21")} kind={EntityKind.ACCOUNT} value={data.accounts} active={active} change={(accounts) => change({ ...data, accounts })} /></>,
   }} />;
@@ -462,4 +467,36 @@ function BranchPrefixField({ value, change }: { value: string; change: (value: s
  const input = useRef<HTMLInputElement>(null);
  useEffect(() => { input.current?.setCustomValidity(validBranchPrefix(value) ? "" : copy("configuration-fields.branchPrefixInvalid")); }, [value]);
  return <div><label>{copy("configuration-fields.branchPrefixLiteral")}<input ref={input} value={value} onChange={event => change(event.target.value)} aria-invalid={!validBranchPrefix(value) || undefined} /></label><p>{copy("configuration-fields.branchPrefixHelp")}</p>{!validBranchPrefix(value) ? <p role="alert">{copy("configuration-fields.branchPrefixInvalid")}</p> : null}</div>;
+}
+
+export function HarnessInheritanceFields({ data, change }: { data: Document; change: (value: Document) => void }) {
+  const selection = object(data.harness_settings);
+  if (!Object.keys(selection).length) return null;
+  return <fieldset><legend>{copy("configuration-fields.harnessDefaults.harnessDefaults")}</legend><p>{copy("configuration-fields.harnessDefaults.inheritHelp")}</p>{(["effort", "options"] as const).map(key => <label key={key}>{copy(key === "effort" ? "configuration-fields.harnessDefaults.effortInheritance" : "configuration-fields.harnessDefaults.optionsInheritance")}<select value={text(object(selection[key]).mode)} onChange={event => {
+    const mode = event.target.value as HarnessSettingMode;
+    change({ ...data, harness_settings: { ...selection, [key]: { mode, ...(mode === HarnessSettingMode.Override ? { value: key === "effort" ? text(data.effort) : object(data.options) } : {}) } } });
+  }}><option value={HarnessSettingMode.Inherit}>{copy("configuration-fields.harnessDefaults.inherit")}</option><option value={HarnessSettingMode.Override}>{copy("configuration-fields.harnessDefaults.override")}</option></select></label>)}</fieldset>;
+}
+
+enum DefaultSource { Harness = "harness", API = "api", Subscription = "subscription" }
+function HarnessDefaultsFields({ value, change, active }: { value: unknown; change: (value: Document[]) => void; active: boolean }) {
+  const entries = items(value).map(object);
+  const update = (index: number, next: Document) => change(entries.map((entry, i) => i === index ? next : entry));
+  const setPresent = (entry: Document, key: string, present: boolean, initial: unknown): Document => { const next = { ...entry }; if (present) next[key] = initial; else delete next[key]; return next; };
+  return <fieldset className="project-field-group"><legend>{copy("configuration-fields.harnessDefaults.harnessDefaults")}</legend><p>{copy("configuration-fields.harnessDefaults.inheritHelp")}</p>{entries.map((entry, index) => {
+    const source = Object.hasOwn(entry,"provider_id") ? DefaultSource.API : entry.subscription_service ? DefaultSource.Subscription : DefaultSource.Harness;
+    const model = object(entry.model), options = object(entry.options);
+    const identity = entry.provider_id ? { provider_id: entry.provider_id } : { subscription_service: entry.subscription_service };
+    const option = (key: string, next: unknown) => update(index, { ...entry, options: { ...options, [key]: next } });
+    return <Disclosure key={index} density={DisclosureDensity.Settings}><DisclosureSummary>{copy("configuration-fields.harnessDefaults.harnessDefaults")} {index + 1}</DisclosureSummary>
+      <Choice label={copy("configuration-fields.harness_e3b5b4")} value={entry.harness} choices={Object.values(Harness)} change={harness => update(index, { ...entry, harness })} />
+      <label>{copy("configuration-fields.harnessDefaults.source")}<select value={source} onChange={event => { const next = { ...entry }; delete next.provider_id; delete next.subscription_service; delete next.api_protocol; delete next.model; if (event.target.value === DefaultSource.API) next.provider_id = ""; if (event.target.value === DefaultSource.Subscription) next.subscription_service = Object.keys(subscriptionServiceHarnesses).find(service => subscriptionServiceHarnesses[service as SubscriptionServiceId] === entry.harness); update(index, next); }}><option value={DefaultSource.Harness}>{copy("configuration-fields.harnessDefaults.harnessWide")}</option><option value={DefaultSource.API}>{copy("configuration-fields.harnessDefaults.apiSource")}</option><option value={DefaultSource.Subscription}>{copy("configuration-fields.harnessDefaults.subscriptionSource")}</option></select></label>
+      {Object.hasOwn(entry, "provider_id") ? <><ResourceChoice label={copy("configuration-fields.provider_472590")} kind={EntityKind.PROVIDER} value={text(entry.provider_id)} active={active} required change={provider_id => { const next: Document = { ...entry, provider_id }; delete next.model; update(index, next); }} /><Choice label={copy("configuration-fields.harnessDefaults.profile")} value={entry.api_protocol} choices={[Protocol.Responses, Protocol.Chat, Protocol.Anthropic]} inherited change={api_protocol => { const next = { ...entry }; if (api_protocol) next.api_protocol = api_protocol; else delete next.api_protocol; update(index, next); }} /></> : null}
+      {entry.subscription_service ? <Choice label={copy("configuration-fields.subscriptionService_78d697")} value={entry.subscription_service} choices={Object.keys(subscriptionServiceHarnesses).filter(service => subscriptionServiceHarnesses[service as SubscriptionServiceId] === entry.harness)} change={subscription_service => { const next: Document = { ...entry, subscription_service }; delete next.model; update(index, next); }} /> : null}
+      {entry.provider_id || entry.subscription_service ? <><Check label={copy("configuration-fields.harnessDefaults.modelDefault")} value={Object.hasOwn(entry, "model")} change={present => update(index, setPresent(entry, "model", present, { ...identity, native_id: "", metadata_source: "unknown" }))} />{entry.model ? <TextField label={copy("configuration-fields.model_5e2c61")} value={model.native_id} required change={native_id => update(index, { ...entry, model: { ...model, ...identity, native_id } })} /> : null}</> : null}
+      <Check label={copy("configuration-fields.harnessDefaults.effortDefault")} value={Object.hasOwn(entry, "effort")} change={present => update(index, setPresent(entry, "effort", present, ""))} />{Object.hasOwn(entry, "effort") ? <TextField label={copy("configuration-fields.reasoningEffort_3236ae")} value={entry.effort} change={effort => update(index, { ...entry, effort })} /> : null}
+      <Check label={copy("configuration-fields.harnessDefaults.optionsDefault")} value={Object.hasOwn(entry, "options")} change={present => update(index, setPresent(entry, "options", present, { permission: Permission.Default }))} />{entry.options ? <><AgentPermissions harness={entry.harness} options={options} change={options => update(index, { ...entry, options })} active={active} disabled={false} reviewSupported />{(["subagent_model", "subagent_effort", "approval_review_model", "service_tier"] as const).map(key => <TextField key={key} label={key === "service_tier" ? copy("configuration-fields.serviceTier_e9cf60") : copy(key === "subagent_model" ? "configuration-fields.subagentModel_28463c" : key === "subagent_effort" ? "configuration-fields.subagentEffort_eea2b1" : "configuration-fields.approvalReviewModel_ef091f")} value={options[key]} change={next => option(key, next)} />)}<label>{copy("configuration-fields.harnessDefaults.optionsInheritance")}<input type="number" min={0} max={4294967295} value={Number(options.max_concurrency ?? 0)} onChange={event => option("max_concurrency", Number(event.target.value))} /></label></> : null}
+      <SettingsActionButton icon={SettingsActionIcon.Delete} type="button" onClick={() => change(entries.filter((_, i) => i !== index))}>{copy("configuration-fields.harnessDefaults.removeDefault")}</SettingsActionButton>
+    </Disclosure>;
+  })}<SettingsActionButton icon={SettingsActionIcon.Add} type="button" disabled={entries.length >= 256} onClick={() => change([...entries, { harness: Harness.Codex }])}>{copy("configuration-fields.harnessDefaults.addDefault")}</SettingsActionButton></fieldset>;
 }

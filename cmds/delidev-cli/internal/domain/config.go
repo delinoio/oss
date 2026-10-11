@@ -79,6 +79,7 @@ func UniqueIDs(ids []ID) error {
 }
 
 type Project struct {
+	HarnessDefaults   []HarnessDefault `json:"harness_defaults,omitempty"`
 	Settings          *ProjectBehavior `json:"settings,omitempty"`
 	Name              string           `json:"name"`
 	Repositories      []ID             `json:"repositories"`
@@ -88,6 +89,9 @@ type Project struct {
 }
 
 func (p Project) Validate() error {
+	if err := ValidateHarnessDefaults(p.HarnessDefaults); err != nil {
+		return err
+	}
 	if p.Settings != nil {
 		if err := p.Settings.Validate(); err != nil {
 			return err
@@ -275,13 +279,15 @@ type WeightedAccount struct {
 	Weight uint32 `json:"weight"`
 }
 type AgentSourceRoute struct {
-	ModelID  ID                `json:"-"`
-	Model    *InlineModel      `json:"model"`
-	Accounts []WeightedAccount `json:"accounts,omitempty"`
-	Routing  *RoutingPolicy    `json:"routing,omitempty"`
+	ModelMode SettingMode       `json:"model_mode,omitempty"`
+	ModelID   ID                `json:"-"`
+	Model     *InlineModel      `json:"model"`
+	Accounts  []WeightedAccount `json:"accounts,omitempty"`
+	Routing   *RoutingPolicy    `json:"routing,omitempty"`
 }
 
 type Agent struct {
+	HarnessSettings         *HarnessSelection  `json:"harness_settings,omitempty"`
 	ReconfigurationRequired bool               `json:"reconfiguration_required,omitempty"`
 	Name                    string             `json:"name"`
 	Harness                 Harness            `json:"harness"`
@@ -296,6 +302,16 @@ type Agent struct {
 }
 
 func (a Agent) Validate() error {
+	if a.HarnessSettings != nil {
+		if err := a.HarnessSettings.Validate(); err != nil {
+			return err
+		}
+		if a.HarnessSettings.Options.Value != nil {
+			if err := validateHarnessOptions(a.Harness, *a.HarnessSettings.Options.Value); err != nil {
+				return err
+			}
+		}
+	}
 	if err := Text(a.Name, "Agent Worker name", 256, true); err != nil {
 		return err
 	}
@@ -307,10 +323,17 @@ func (a Agent) Validate() error {
 	}
 	ids := []ID{}
 	for _, route := range a.SourceRoutes() {
+		if a.HarnessSettings != nil && route.ModelMode != SettingInherit && route.ModelMode != SettingOverride {
+			return Fail(InvalidArgument, "An explicit model inheritance mode is required.", "Choose inherit or override for every source.")
+		}
 		if route.Model == nil {
 			return Fail(MissingInput, "An inline model is required.", "Select an exact native ID for every account source.")
 		}
-		if err := route.Model.Validate(a.Harness); err != nil {
+		validateModel := route.Model.Validate
+		if a.HarnessSettings != nil && route.ModelMode == SettingInherit {
+			validateModel = route.Model.ValidateSource
+		}
+		if err := validateModel(a.Harness); err != nil {
 			return err
 		}
 		if route.Routing != nil && !route.Routing.Valid() {
@@ -839,6 +862,7 @@ func (m Machine) Validate() error {
 }
 
 type Settings struct {
+	HarnessDefaults       []HarnessDefault  `json:"harness_defaults,omitempty"`
 	PlanModeDefault       bool              `json:"plan_mode_default"`
 	BranchPrefix          *string           `json:"branch_prefix,omitempty"`
 	AutomaticPlanApproval bool              `json:"automatic_plan_approval"`
@@ -853,6 +877,9 @@ func DefaultSettings() Settings {
 	return Settings{BranchPrefix: &prefix, DefaultRouting: SequentialExhaustion, Notifications: true, AutomaticFetch: true, Remediation: DefaultRemediationPolicy()}
 }
 func (s Settings) Validate() error {
+	if err := ValidateHarnessDefaults(s.HarnessDefaults); err != nil {
+		return err
+	}
 	if s.BranchPrefix != nil {
 		if err := ValidateBranchPrefix(*s.BranchPrefix); err != nil {
 			return err

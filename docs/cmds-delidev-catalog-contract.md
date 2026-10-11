@@ -204,7 +204,7 @@ and accounts cannot repeat. Across all routes the existing 1,000-account bound
 applies. Legacy schema 1, retired schema 2 and accountless CLI/RPC writes remain
 compatible. Adding another source upgrades a Worker to schema 3; removing sources
 keeps schema 3, including when one remains. Legacy writes cannot replace an
-existing schema-3 Worker. Historical documents and sessions are never migrated.
+existing schema-3 Worker. Historical execution documents and sessions are never migrated. Current configuration documents follow the inherited harness configuration amendment.
 
 `SaveAgentWorker.route_models` aligns typed selections exactly with the route
 order and is exclusive with `model`. Go derives every source from current account
@@ -607,7 +607,7 @@ acceptance. Record validation in PRs and CI, never repository evidence documents
 
 ## Native execution option selection
 
-Saved Agent options retain bounded exact values, including selections that lack a native execution adapter. Saving or changing harnesses never deletes or converts those values. Execution validates adapter availability before admission and reports the exact unavailable option name. The editor disables unavailable controls, explains why below the field and offers explicit clearing of a retained value.
+Saved Agent options retain bounded exact values, including selections that lack a native execution adapter. Ordinary saving or changing harnesses never deletes or converts those values. The explicit inherited harness configuration upgrade changes selection modes while retaining inactive legacy values. Execution validates adapter availability before admission and reports the exact unavailable option name. The editor disables unavailable controls, explains why below the field and offers explicit clearing of a retained value.
 
 | Harness | Forwarded native settings | Unavailable settings |
 | --- | --- | --- |
@@ -722,3 +722,32 @@ Configure exposes a separate localized User / AI auto-review picker for Codex. A
 
 ## OpenCode Go subscriptions
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.
+
+## Inherited harness configuration
+
+System capability 81 owns server harness defaults, project defaults and typed Agent
+Worker selections. Agent schema 5 retains each original route's inline source
+identity and `model_mode` (`inherit` or `override`), plus `harness_settings.effort`
+and `harness_settings.options`. Each typed selection uses `mode`; only override
+contains a non-null `value`. Explicit empty effort and zero option values remain
+overrides. Options inherit or override as one complete native option document.
+
+Project and server `harness_defaults` entries select harness, optional provider or
+subscription service, and optional provider API profile. Default-bearing Project
+and Settings documents use schema 4 independently of project behavior settings.
+Within one owner, exact source/profile precedes source-wide and harness-wide
+entries. Each value resolves Agent, project, then server specificity. Model defaults
+retain the original selected account's provider/service; another source's model
+cannot become a fallback. Missing independently verified native evidence produces
+a named missing-default error before input; advertised inventories and synthetic
+probe observations do not establish account/profile defaults.
+
+Opening current DB baseline 32 atomically upgrades all current Agent documents to
+inherit model, effort and options. Retain original route order, accounts, source
+identities, instructions and inactive legacy selections. The typed selection marks
+completion, so restart never upgrades a document twice. The transaction increments
+only changed configuration revisions and events; it cannot modify historical
+executions, assignments, receipts or digests. Earlier unsupported databases remain
+unsupported. No SQLite schema migration is added. Legacy full-document saves
+cannot erase newer inheritance or defaults. Provider deletion checks retained
+project and server default references.

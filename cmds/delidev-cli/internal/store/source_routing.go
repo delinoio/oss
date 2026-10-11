@@ -8,13 +8,14 @@ import (
 )
 
 type SourceRoutingPreview struct {
-	Route         domain.Route
-	Agent         domain.Agent
-	Model         domain.Model
-	ModelRevision uint64
-	Accounts      map[domain.ID]domain.Account
-	routingRecord Record
-	nextRouting   domain.RoutingState
+	HarnessDefaults *domain.HarnessDefaultProvenance
+	Route           domain.Route
+	Agent           domain.Agent
+	Model           domain.Model
+	ModelRevision   uint64
+	Accounts        map[domain.ID]domain.Account
+	routingRecord   Record
+	nextRouting     domain.RoutingState
 }
 
 // PreviewSourceRouting is shared by read-only preview and atomic first dispatch.
@@ -35,11 +36,15 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 	for _, route := range agent.SourceRoutes() {
 		model := route.Model.AsModel(agent.Harness)
 		mr := Record{Revision: 1}
-		err := route.Model.Validate(agent.Harness)
+		validateModel := route.Model.Validate
+		if agent.HarnessSettings != nil && route.ModelMode == domain.SettingInherit {
+			validateModel = route.Model.ValidateSource
+		}
+		err := validateModel(agent.Harness)
 		if err != nil {
 			return result, err
 		}
-		if err := model.Validate(); err != nil {
+		if err := model.Validate(); err != nil && !(agent.HarnessSettings != nil && route.ModelMode == domain.SettingInherit) {
 			return result, err
 		}
 		source := domain.SourceRouteInput{Model: model, ModelRevision: mr.Revision, Accounts: map[domain.ID]domain.Account{}, Blocked: map[domain.ID]domain.Eligibility{}}
@@ -107,8 +112,49 @@ func (t *Tx) PreviewSourceRouting(agentID domain.ID, agent domain.Agent, project
 	if route.SourceIndex != nil {
 		index = int(*route.SourceIndex)
 	}
-	result.Agent = agent.WithSource(agent.SourceRoutes()[index])
+	settingsRecord, settings, err := t.SessionDefaultSettings()
+	if err != nil {
+		return result, err
+	}
+	var projectDefaults []domain.HarnessDefault
+	if project != nil {
+		projectDefaults = project.HarnessDefaults
+	}
+	selectedRecord, selectedAccount, err := decodeEntity[domain.Account](t, domain.AccountKind, route.Selected)
+	if err != nil {
+		return result, err
+	}
+	// Resolve the selected profile before defaults, including legacy omitted profiles.
+	var selectedProvider Record
+	if selectedAccount.Type == domain.APIAccount {
+		providerRecord, provider, err := decodeEntity[domain.Provider](t, domain.ProviderKind, selectedAccount.ProviderID)
+		if err != nil {
+			return result, err
+		}
+		profile, err := providers.ResolveAccountProfile(provider, selectedAccount)
+		if err != nil {
+			return result, err
+		}
+		selectedProvider = providerRecord
+		selectedAccount.APIProtocol = profile.Protocol
+	}
+	resolved, provenance, err := domain.ResolveHarnessDefaults(agent, agent.SourceRoutes()[index], selectedAccount, projectDefaults, settings.HarnessDefaults)
+	if err != nil {
+		return result, err
+	}
+	if provenance != nil {
+		provenance.SettingsID, provenance.SettingsRevision = settingsRecord.ID, settingsRecord.Revision
+		provenance.ProviderID, provenance.ProviderRevision = selectedProvider.ID, selectedProvider.Revision
+		provenance.AccountID, provenance.AccountRevision = selectedRecord.ID, selectedRecord.Revision
+		result.HarnessDefaults = provenance
+	}
+	result.Agent = resolved
 	result.Model, result.ModelRevision, result.Accounts = sources[index].Model, sources[index].ModelRevision, sources[index].Accounts
+	if provenance != nil {
+		result.Model = resolved.Model.AsModel(resolved.Harness)
+		result.Route.Sources[index].ModelID = resolved.ModelID
+		result.Route.Sources[index].NativeModel = resolved.Model.NativeID
+	}
 	if sources[index].Problem != nil {
 		return result, sources[index].Problem
 	}

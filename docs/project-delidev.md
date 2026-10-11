@@ -429,3 +429,14 @@ workspace/process/native adapters own actual operation observations; desktop own
 the grouped conversation and compact disclosure. Follow the startup, workspace,
 process, protocol and desktop contracts. No telemetry observation grants input,
 credentials, retry, cleanup or execution authority, and no migration is added.
+
+## Inherited harness configuration ownership
+
+Server-owned harness defaults, project overrides and typed Agent Worker
+inheritance compose System 81, Agent schema 5, default-bearing Project/Settings
+schema 4 and portable bundle 5. The [catalog](cmds-delidev-catalog-contract.md#inherited-harness-configuration),
+[session](cmds-delidev-sessions-contract.md#inherited-harness-snapshot),
+[transfer](cmds-delidev-configuration-transfer-contract.md#harness-inheritance-transfer)
+and [desktop](apps-delidev-desktop-contract.md#harness-defaults-and-inheritance)
+contracts own configuration upgrade, selected-account resolution and presentation.
+No SQLite migration or historical execution rewrite is added.

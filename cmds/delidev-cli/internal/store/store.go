@@ -218,6 +218,9 @@ func Open(ctx context.Context, root string) (_ *Store, returned error) {
 			return fail(err)
 		}
 	}
+	if err := upgradeHarnessDefaults(ctx, db); err != nil {
+		return fail(err)
+	}
 	// Persisted lease timestamps cannot prove availability in this server
 	// process. Preserve instance ownership for recovery, but require a fresh
 	// observation before any schedule can use its availability interval.

@@ -5220,3 +5220,20 @@ Native local startup, supervision and saved-connection verification require the 
 A current supported repository with saved GitHub owner/name and no profile presents one inline GitHub profile choice. It never selects the only profile automatically. The existing bounded selector verifies an explicit exact resource and allows supported disconnected profiles. Association grants no credential or repository-access authority. Profile creation and credential connection stay in GitHub profiles Settings. Missing owner/name opens resource-targeted Repository Settings only after a matching supported exact-resource read; inline setup has no owner, name, URL or token fields.
 
 Save retains the complete original document with only `integration_id` changed, the original repository ID/revision and one request ID. Existing repository configuration writes share a connection-owned mutation identity across Settings and Pull requests. Admission retains the original job and blocks competing saves through navigation. Uncertain acknowledgment permits only the original bytes/request retry. Pending PR actions owns recovery, sanitized failures and status reads. Verified job success with matching output identity/revision must precede a fresh original repository read before automatic PR loading can resume. Failed jobs require a fresh read and explicit review before releasing the save. Rejected saves require read/review before another draft. Unsent choices and selection reads are discarded on repository change or departure; late work cannot change another form or start its PR query. Remote repository capability, backend authorization/revision/checkout validation and normal configured queries remain authoritative. English/Korean semantic forms keep visible focus, 40px controls and wrapping actions.
+
+## Harness defaults and inheritance
+
+Fresh System capability 81 enables harness defaults in Server preferences and
+Project execution settings, using existing Settings rows and disclosures. Choose
+harness, provider/service and optional API profile; independently include model,
+effort or native options. Empty effort and zero native option values are explicit
+choices rather than a request to inherit. Project behavior settings remain separate.
+
+Agent Worker creation defaults model, effort and native options to inheritance.
+Each source has a model inherit/override control; inherited models need no native
+ID or model-list read. Reasoning and options use typed inherit/override controls;
+only explicit overrides expose their editable fields. Retain inactive legacy
+selections without applying them. Missing source/profile default evidence blocks
+execution visibly rather than starting a probe. Existing older servers preserve
+the legacy explicit editor; schema-5 Workers cannot be saved through that path.
+All controls retain English/Korean localization and normal draft/save lifetime.

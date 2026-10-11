@@ -77,3 +77,15 @@ func (m InlineModel) Validate(h Harness) error {
 }
 
 const InlineModelExecutionV1 WorkerCapability = "inline-model-execution-v1"
+
+// ValidateSource checks immutable routing identity without requiring an inherited
+// model choice. Native selection is validated after account/profile resolution.
+func (m InlineModel) ValidateSource(h Harness) error {
+	if (m.ProviderID == "") == (m.SubscriptionService == "") || m.ProviderID != "" && m.ProviderID.Validate() != nil || m.SubscriptionService != "" && (!m.SubscriptionService.Valid() || m.SubscriptionService.Harness() != h) || Text(m.NativeID, "retained native model", 256, false) != nil {
+		return Fail(InvalidArgument, "Invalid inherited model source.", "Retain one provider or subscription identity for this route.")
+	}
+	if m.NativeID != "" {
+		return m.Validate(h)
+	}
+	return nil
+}

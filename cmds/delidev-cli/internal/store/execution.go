@@ -190,6 +190,10 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 	if err != nil {
 		return empty, err
 	}
+	configuration.HarnessDefaults = preview.HarnessDefaults
+	if configuration.HarnessDefaults != nil {
+		configuration.HarnessDefaults.ProjectID, configuration.HarnessDefaults.ProjectRevision = projectRecord.ID, projectRecord.Revision
+	}
 	configuration.BranchPrefix = &domain.BranchPrefixSelection{Version: 1, Prefix: project.EffectiveBranchPrefix(settings.EffectiveBranchPrefix()), SettingsID: settingsRecord.ID, SettingsRevision: settingsRecord.Revision, ProjectID: projectRecord.ID, ProjectRevision: projectRecord.Revision}
 	if err := configuration.Validate(); err != nil {
 		return empty, err
