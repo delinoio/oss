@@ -143,6 +143,21 @@ profiles and pending-creation guards. Failed unmapping never permits directory p
 Removal unmaps and close requests run outside native state. Close requests after
 tab replacement also run outside native state; pending old creation callbacks
 remain generation-guarded.
+The raw client's lifecycle handler owns child-only closure. On macOS and Windows,
+it intercepts CEF's default parent-window close and queues destruction of only the
+original child on the CEF UI thread. The client shares one lifecycle receipt across
+all handler interfaces, retaining the original browser ID, child handle, parent
+handle and generation. Destruction rechecks that identity and the native parent;
+it never looks up the currently selected replacement or invokes product-window
+close, hide or minimize. macOS removes only the original child NSView; Windows
+destroys only its original child HWND. Linux preserves CEF's default X11 child close.
+Duplicate or late callbacks cannot destroy a replacement or sibling. Failed dispatch,
+invalid native evidence or failed destruction preserves pending child accounting
+and emits content-free structured diagnostics. Destruction alone does not release
+accounting: only the original `on_before_close` callback acknowledges closure once,
+including native reentrancy during destruction. Explicit product close-to-tray,
+joined Quit, synchronous unmap-before-release, protected profiles and independent
+durable removal proofs retain their separate owners.
 Only successful native geometry updates become the panel's last applied bounds;
 a failed resize clears that cache so later callbacks retry identical geometry
 for the current presentation.
@@ -369,6 +384,12 @@ Run the complete DeliDev Go race suite and vet from the root, `pnpm proto:check`
 and hydrate consumed LFS assets before validation; remove generated `dist` output
 before finalizing. Compile the desktop host against the unchanged pinned CEF.
 Regression fixtures use temporary state and controlled native adapters only.
+Platform-independent child lifecycle fixtures cover exact identity, duplicate and
+late callbacks, failed dispatch/destruction and reentrant acknowledgment. Native
+host fixtures cover replacement/sibling retention and original Quit counts. Actual
+macOS/Windows/Linux product visibility and completed native-child destruction
+require separate installed-platform acceptance; fixtures and compilation cannot
+establish those results.
 Record the source revision, commands, exact results and unresolved platform/native
 limits in pull requests, issues and CI logs/artifacts. Do not add repository evidence
 documents. Distinguish implementation verification from real-account, real-renderer

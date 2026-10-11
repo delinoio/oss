@@ -98,6 +98,7 @@ fn sidecar_lookup_path(inherited: Option<&std::ffi::OsStr>) -> OsString {
 }
 
 pub mod browser;
+pub mod browser_child_lifetime;
 pub mod browser_storage;
 mod connections;
 pub use connections::{
