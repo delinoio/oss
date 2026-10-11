@@ -158,6 +158,7 @@ function fixture(
         : {}),
     }),
   }));
+  const setBudget = vi.fn(() => budget());
   const list = vi.fn(
     async (_request: { filter?: { kind: EntityKind; pageToken: string } }) => ({
       resources: [] as ReturnType<typeof create<typeof ResourceSchema>>[],
@@ -234,6 +235,7 @@ function fixture(
       },
       listQueue,
       getSessionBudget: budget,
+      setSessionBudget: setBudget,
       enqueueInput: enqueue,
       renameSession: rename,
       controlSession: control,
@@ -298,6 +300,7 @@ function fixture(
     control,
     recover,
     budget,
+    setBudget,
     draft,
     list,
     publish,
@@ -469,6 +472,49 @@ it("keeps original technical evidence in persistent Info and reveals it from the
     evidence.closest(".session-information-evidence"),
   );
   expect(f.control).not.toHaveBeenCalled();
+});
+
+it("orders principal Info summaries and keeps technical snapshots out of healthy Info", async () => {
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {
+    initial_execution: {
+      id: newRequestId(),
+      configuration: {
+        agent_id: newRequestId(),
+        native_model: "saved-model",
+        effort: "high",
+        harness: "codex",
+        instructions: "Original applied instructions",
+      },
+    },
+  });
+  render(f.view());
+  await screen.findByRole("heading", { name: "Original session" });
+  const info = screen.getByRole("complementary", {
+    name: "Session information",
+  });
+  expect(
+    [
+      ...info.querySelectorAll(
+        ".session-information-body > .session-information-section > h3",
+      ),
+    ].map((heading) => heading.textContent),
+  ).toEqual(["PR associations", "Subagents", "Context", "Usage and budget"]);
+  expect(
+    within(info).getByRole("group", { name: "Saved model: saved-model" }),
+  ).toBeTruthy();
+  expect(
+    within(info).getByRole("group", { name: "Saved reasoning effort: high" }),
+  ).toBeTruthy();
+  expect(within(info).queryByText("Saved configuration")).toBeNull();
+  expect(within(info).queryByText("Native observations")).toBeNull();
+  expect(info.querySelector(".session-status-values")).toBeNull();
+  expect(within(info).getByText("Original applied instructions")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Diagnostics" }));
+  await screen.findByText("Saved configuration");
+  expect(within(info).queryByText("Saved configuration")).toBeNull();
+  expect(f.control).not.toHaveBeenCalled();
+  expect(f.recover).not.toHaveBeenCalled();
 });
 
 it("retries the exact queued input after supporting panels were opened and closed", async () => {
@@ -849,15 +895,10 @@ it("keeps a compact header and all independent status/title evidence in the expa
   expect(header.querySelector(".session-title-status")).toBeNull();
   expect(header.textContent).not.toContain("Succeeded");
   expect(header.textContent).not.toContain("Title generation unsupported");
-  const values = info.querySelector(".session-status-values")!;
+  expect(info.querySelector(".session-status-values")).toBeNull();
   expect(
-    [...values.querySelectorAll("dt")].map((node) => node.textContent),
-  ).toEqual(["Workspace", "Result", "Archive"]);
-  expect(
-    [...values.querySelectorAll("dd")]
-      .slice(0, 7)
-      .map((node) => node.textContent),
-  ).toEqual(["Worktree", "succeeded", "active"]);
+    within(info).queryByRole("heading", { name: "Status and recovery" }),
+  ).toBeNull();
   expect(info.textContent).not.toContain(
     "The original Worker did not prove the required title capability.",
   );
@@ -872,7 +913,7 @@ it("keeps a compact header and all independent status/title evidence in the expa
   expect(info.querySelector(".session-information-section details")).toBeNull();
   expect(
     info.querySelectorAll(".session-information-section").length,
-  ).toBeGreaterThanOrEqual(5);
+  ).toBeGreaterThanOrEqual(4);
   expect(
     screen.queryByRole("button", { name: "Show PR associations" }),
   ).toBeNull();
@@ -883,31 +924,27 @@ it("keeps a compact header and all independent status/title evidence in the expa
   expect(f.enqueue).not.toHaveBeenCalled();
 });
 
-it("retains primary section choices and editor/input identities across tools and locale changes", async () => {
+it("retains Info sections and editor/input identities across tools and locale changes", async () => {
   const f = fixture();
   render(f.view());
   const composer = await screen.findByRole("textbox", { name: "Message" });
   const info = screen.getByRole("complementary", {
     name: "Session information",
   });
-  const execution = [
-    ...info.querySelectorAll<HTMLDetailsElement>(
-      ".session-information-section",
-    ),
-  ].find((node) => node.querySelector(".execution-configuration"))!;
+  const sections = [...info.querySelectorAll(".session-information-section")];
   const projection = info.querySelector(".execution-configuration");
-  await act(async () => {
-    execution.open = false;
-    fireEvent(execution, new Event("toggle"));
-  });
   fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
   fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
-  expect(execution.open).toBe(false);
+  expect([...info.querySelectorAll(".session-information-section")]).toEqual(
+    sections,
+  );
   expect(info.querySelector(".execution-configuration")).toBe(projection);
   await act(async () => {
     await i18n.changeLanguage("ko");
   });
-  expect(execution.open).toBe(false);
+  expect([...info.querySelectorAll(".session-information-section")]).toEqual(
+    sections,
+  );
   expect(info.querySelector(".execution-configuration")).toBe(projection);
   await act(async () => {
     await i18n.changeLanguage("en");
@@ -1010,6 +1047,16 @@ it("retains compact response waiting after the original native user message appe
   await screen.findByText("Waiting for response");
   expect(screen.getByText("Original native prompt")).toBeTruthy();
   expect(container.querySelector(".session-progress.is-compact")).toBeTruthy();
+  expect(container.querySelector(".session-information")).toHaveProperty(
+    "hidden",
+    true,
+  );
+  expect(
+    container.querySelector(".session-information")?.hasAttribute("inert"),
+  ).toBe(true);
+  expect(
+    screen.queryByRole("complementary", { name: "Session information" }),
+  ).toBeNull();
   expect(screen.getByRole("textbox", { name: "Message" })).toHaveProperty(
     "value",
     "Retained draft",
@@ -1057,6 +1104,23 @@ it("projects accepted live preparation, claim and response transitions without r
   const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, initial, queuedFor);
   const { container, rerender } = render(f.view("Original ongoing draft"));
   await screen.findByText("Preparing workspace");
+  const info = container.querySelector<HTMLElement>(".session-information")!;
+  const expectHiddenInfo = () => {
+    expect(info).toHaveProperty("hidden", true);
+    expect(info.hasAttribute("inert")).toBe(true);
+    expect(
+      screen.queryByRole("complementary", { name: "Session information" }),
+    ).toBeNull();
+    expect(container.querySelector(".session-information")).toBe(info);
+  };
+  const expectVisibleInfo = () => {
+    expect(
+      screen.getByRole("complementary", { name: "Session information" }),
+    ).toBe(info);
+    expect(info).toHaveProperty("hidden", false);
+    expect(info.hasAttribute("inert")).toBe(false);
+  };
+  expectHiddenInfo();
   expect(
     container.querySelector(".session-notices")?.textContent,
   ).not.toContain("Execution is blocked");
@@ -1064,7 +1128,7 @@ it("projects accepted live preparation, claim and response transitions without r
     screen
       .getByText(/The first execution is waiting for its workspace/)
       .closest("aside"),
-  ).toHaveProperty("hidden", false);
+  ).toHaveProperty("hidden", true);
   const composer = screen.getByRole("textbox", { name: "Message" });
   const update = (revision: bigint, data: object) =>
     f.publish({
@@ -1091,6 +1155,14 @@ it("projects accepted live preparation, claim and response transitions without r
     update(8n, { preparation: { job_id: preparation, state: "ready" } });
   });
   await screen.findByText("Waiting to start");
+  expectHiddenInfo();
+  fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Files" }));
+  expectVisibleInfo();
+  expect(composer.isConnected).toBe(true);
+  fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
+  await screen.findByText("Waiting to start");
+  expectHiddenInfo();
   act(() =>
     update(9n, {
       preparation: { job_id: preparation, state: "ready" },
@@ -1104,16 +1176,37 @@ it("projects accepted live preparation, claim and response transitions without r
   );
   await screen.findByText("Execution is blocked");
   expect(container.querySelector(".session-progress")).toBeNull();
+  expectVisibleInfo();
   expect(
     screen.getByText(/The selected Worker is not currently connected/)
       .textContent,
   ).toContain(
     "Reconnect the original execution machine; the accepted input remains queued.",
   );
+  const editBudget = within(info).getByRole("button", {
+    name: "Edit session budget",
+  });
+  await waitFor(() => expect(editBudget).toHaveProperty("disabled", false));
+  fireEvent.click(editBudget);
+  fireEvent.click(
+    within(info).getByRole("checkbox", {
+      name: "Enable estimated-cost budget",
+    }),
+  );
+  const threshold = within(info).getByRole("textbox", {
+    name: "Estimated-cost threshold",
+  });
+  fireEvent.change(threshold, { target: { value: "12.345" } });
+  threshold.focus();
+  expect(document.activeElement).toBe(threshold);
   act(() =>
     update(10n, { preparation: { job_id: preparation, state: "ready" } }),
   );
   await screen.findByText("Waiting to start");
+  expectHiddenInfo();
+  expect(document.activeElement).toBe(composer);
+  expect(threshold.isConnected).toBe(true);
+  expect(threshold).toHaveProperty("value", "12.345");
   const selection = {
     active_execution_id: execution,
     initial_execution: { id: execution, input_id: input },
@@ -1123,6 +1216,7 @@ it("projects accepted live preparation, claim and response transitions without r
   };
   act(() => update(11n, selection));
   await screen.findByText("Starting agent");
+  expectHiddenInfo();
   const native = {
     job_id: job,
     execution_id: execution,
@@ -1144,15 +1238,22 @@ it("projects accepted live preparation, claim and response transitions without r
     f.publish({
       ...queued,
       revision: 2n,
-      documentJson: encode({ delivery: "accepted", execution_id: execution }),
+      documentJson: encode({
+        ...readDocument(queued),
+        delivery: "accepted",
+        execution_id: execution,
+      }),
     });
     update(12n, accepted);
   });
   await screen.findByText("Waiting for response");
+  expectHiddenInfo();
   rerender(f.view("Original ongoing draft", false));
   expect(container.querySelector(".session-progress")).toBeNull();
+  expectVisibleInfo();
   rerender(f.view("Original ongoing draft"));
   await screen.findByText("Waiting for response");
+  expectVisibleInfo();
   const user = create(ResourceSchema, {
     id: newRequestId(),
     sessionId: f.session.id,
@@ -1179,6 +1280,8 @@ it("projects accepted live preparation, claim and response transitions without r
   await screen.findByText("Published initial input");
   await screen.findByText("Waiting for response");
   expect(container.querySelector(".session-progress.is-compact")).toBeTruthy();
+  expectHiddenInfo();
+  composer.focus();
   const assistant = {
     ...user,
     id: newRequestId(),
@@ -1202,6 +1305,12 @@ it("projects accepted live preparation, claim and response transitions without r
   await waitFor(() =>
     expect(container.querySelector(".session-progress")).toBeNull(),
   );
+  expectVisibleInfo();
+  expect(document.activeElement).toBe(composer);
+  expect(
+    within(info).getByRole("textbox", { name: "Estimated-cost threshold" }),
+  ).toBe(threshold);
+  expect(threshold).toHaveProperty("value", "12.345");
   act(() => {
     f.publish({
       ...assistant,
@@ -1221,15 +1330,172 @@ it("projects accepted live preparation, claim and response transitions without r
     update(15n, { ...accepted, execution: { ...native, last_sequence: 4 } });
   });
   expect(container.querySelector(".session-progress")).toBeNull();
+  expectVisibleInfo();
   act(() =>
     update(8n, { preparation: { job_id: preparation, state: "pending" } }),
   );
   expect(container.querySelector(".session-progress")).toBeNull();
+  expectVisibleInfo();
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
   expect(composer).toHaveProperty("value", "Original ongoing draft");
+  expect(f.setBudget).not.toHaveBeenCalled();
   expect(f.enqueue).not.toHaveBeenCalled();
   expect(f.control).not.toHaveBeenCalled();
   expect(f.recover).not.toHaveBeenCalled();
+});
+
+function initialResponseWaiting() {
+  const execution = newRequestId(),
+    input = newRequestId();
+  return {
+    outcome: "running",
+    dispatch: "claimed",
+    pending_inputs: 0,
+    last_input_sequence: 1,
+    preparation: { job_id: newRequestId(), state: "ready" },
+    active_execution_id: execution,
+    initial_execution: { id: execution, input_id: input },
+    execution: {
+      job_id: newRequestId(),
+      execution_id: execution,
+      input_id: input,
+      native_thread_id: "thread",
+      native_turn_id: "turn",
+      last_sequence: 1,
+      outcome: "running",
+      waiting: { approval: false, user_input: false },
+      accepted_inputs: [{ input_id: input, prompt_digest: "a".repeat(64) }],
+    },
+  };
+}
+it.each([
+  { dispatch: "paused" },
+  { archive: "archived" },
+  { recovery: "required" },
+  { outcome: "failed" },
+  { startup: { failure: {} } },
+  {
+    problem: {
+      code: "unavailable",
+      message: "Original connection unavailable",
+    },
+  },
+  { last_input_sequence: 2 },
+])(
+  "restores the original Info without moving focus when startup changes to %j",
+  async (change) => {
+    const startup = initialResponseWaiting();
+    const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, startup);
+    const { container } = render(f.view("Retained startup draft"));
+    await screen.findByText("Waiting for response");
+    const info = container.querySelector(".session-information")!;
+    expect(info).toHaveProperty("hidden", true);
+    const composer = screen.getByRole("textbox", { name: "Message" });
+    composer.focus();
+    act(() =>
+      f.publish({
+        ...f.session,
+        revision: 8n,
+        documentJson: encode({ ...readDocument(f.session), ...change }),
+      }),
+    );
+    await waitFor(() => expect(info).toHaveProperty("hidden", false));
+    expect(
+      screen.getByRole("complementary", { name: "Session information" }),
+    ).toBe(info);
+    expect(info.hasAttribute("inert")).toBe(false);
+    expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+    expect(composer).toHaveProperty("value", "Retained startup draft");
+    expect(document.activeElement).toBe(composer);
+    expect(f.enqueue).not.toHaveBeenCalled();
+    expect(f.control).not.toHaveBeenCalled();
+    expect(f.recover).not.toHaveBeenCalled();
+  },
+);
+it.each(["approval", "user_input", "unconfirmed_responses"])(
+  "restores Info for original execution attention %s",
+  async (attention) => {
+    const startup = initialResponseWaiting();
+    const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, startup);
+    const { container } = render(f.view());
+    await screen.findByText("Waiting for response");
+    const info = container.querySelector(".session-information")!;
+    expect(info).toHaveProperty("hidden", true);
+    act(() =>
+      f.publish({
+        ...f.session,
+        revision: 8n,
+        documentJson: encode({
+          ...readDocument(f.session),
+          execution: {
+            ...startup.execution,
+            ...(attention === "unconfirmed_responses"
+              ? { unconfirmed_responses: 1 }
+              : {
+                  waiting: { ...startup.execution.waiting, [attention]: true },
+                }),
+          },
+        }),
+      }),
+    );
+    await waitFor(() => expect(info).toHaveProperty("hidden", false));
+    expect(container.querySelector(".session-progress")).toBeNull();
+    expect(f.control).not.toHaveBeenCalled();
+    expect(f.recover).not.toHaveBeenCalled();
+  },
+);
+it("keeps initial startup Info available for a reached original budget", async () => {
+  const f = fixture(
+    BudgetState.THRESHOLD_REACHED,
+    false,
+    initialResponseWaiting(),
+  );
+  const { container } = render(f.view());
+  const info = container.querySelector<HTMLElement>(".session-information")!;
+  await screen.findByRole("complementary", { name: "Session information" });
+  expect(within(info).getByRole("alert").textContent).toContain(
+    "Budget threshold reached. New turns and Resume are blocked; pending input and accepted work are retained.",
+  );
+  await waitFor(() => expect(info).toHaveProperty("hidden", false));
+  expect(
+    screen.getByRole("complementary", { name: "Session information" }),
+  ).toBe(info);
+  expect(info.hasAttribute("inert")).toBe(false);
+  expect(f.control).not.toHaveBeenCalled();
+  expect(f.enqueue).not.toHaveBeenCalled();
+});
+it("hands focus to the session heading when the original composer is unavailable before hiding", async () => {
+  const f = fixture(BudgetState.ALLOW_INCOMPLETE, false, {
+    ...initialResponseWaiting(),
+    problem: {
+      code: "unavailable",
+      message: "Original unavailable observation",
+    },
+  });
+  render(f.view());
+  const info = await screen.findByRole("complementary", {
+    name: "Session information",
+  });
+  const composer = screen.getByRole("textbox", {
+    name: "Message",
+  }) as HTMLTextAreaElement;
+  // Simulate an unavailable original focus target at the visibility boundary.
+  composer.disabled = true;
+  within(info).getByRole("heading", { name: "Session information" }).focus();
+  act(() =>
+    f.publish({
+      ...f.session,
+      revision: 8n,
+      documentJson: encode({ ...readDocument(f.session), problem: undefined }),
+    }),
+  );
+  await screen.findByText("Waiting for response");
+  expect(info).toHaveProperty("hidden", true);
+  expect(document.activeElement).toBe(
+    screen.getByRole("heading", { name: "Original session" }),
+  );
+  expect(f.control).not.toHaveBeenCalled();
+  expect(f.enqueue).not.toHaveBeenCalled();
 });
 
 it("last verified terminal exit restores the actual Session conversation, focus and mounted authoring", async () => {

@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { WaitingQueue } from "./waiting-queue";
 
 import { FlatDisclosureScope } from "./disclosure";
@@ -11,6 +12,7 @@ import { SessionTabBar } from "./session-tab-bar";
 import { useSessionTabs, SessionTabKind, sessionTabKey } from "./session-tabs";
 import {
   initialExecutionPending,
+  initialSessionStartup,
   SessionProgressPhase,
   sessionProgress,
   progressMessages,
@@ -102,9 +104,13 @@ import { NativeContextCompaction } from "./native-context-compaction";
 import { NativeClaudeProgress } from "./native-claude-progress";
 import { NativeClaudeTool } from "./native-claude-tool";
 import { NativeReasoning } from "./native-reasoning";
+import { CodexReasoning, codexReasoning } from "./codex-reasoning";
 import { SessionContext } from "./session-context";
 import { SessionBudget } from "./session-budget";
-import { ExecutionConfiguration } from "./execution-configuration";
+import {
+  ExecutionConfiguration,
+  SavedExecutionChips,
+} from "./execution-configuration";
 import {
   memo,
   useEffect,
@@ -146,6 +152,7 @@ import {
 import {
   useRetainedMutation,
   useRetainedMutationNotifications,
+  useRetainedMutationIntents,
 } from "./mutation";
 import { ServiceProblem, Failure, Problem, failureSummary } from "./ui";
 import {
@@ -155,7 +162,13 @@ import {
   SessionNotice,
 } from "./session-presentation";
 import "./session.css";
-import { Interaction } from "./interactions";
+import { Interaction, PendingInteractionReceipt } from "./interactions";
+import {
+  InteractionPresentationStore,
+  InteractionPresentation,
+  displayedInteraction,
+  completeEmptyInteractionTray,
+} from "./interaction-presentation";
 import { SessionTerminals } from "./session-terminals";
 import {
   PendingSidechatPane,
@@ -171,6 +184,7 @@ import {
 } from "./sidechat-retry";
 import { SessionTools } from "./session-tools";
 import { SessionStorageAction } from "./session-storage";
+import { SessionLifetimeUsage } from "./session-lifetime-usage";
 import { SessionPullRequests } from "./session-pull-requests";
 import {
   PendingQueueInputs,
@@ -507,6 +521,38 @@ export const TranscriptItem = memo(function TranscriptItem({
   const artifact = object(data.artifact);
   const completed = object(artifact.completed);
   const started = object(artifact.started);
+  const reasoning =
+    data.role === "artifact" &&
+    data.tool == null &&
+    data.progress == null &&
+    !text(data.text) &&
+    [
+      "grok_text",
+      "claude",
+      "claude_tool",
+      "claude_progress",
+      "claude_interruption",
+    ].every((key) => !Object.hasOwn(data, key))
+      ? codexReasoning(data.artifact, text(data.state))
+      : undefined;
+  if (reasoning)
+    return (
+      <article
+        className="message message-codex-reasoning"
+        aria-label={copy("native-reasoning.codexReasoning")}
+      >
+        <ConversationStatus state={text(data.state)} />
+        {Number(data.context_revision ?? 0) < contextRevision ? (
+          <small>{copy("session.previousContext")}</small>
+        ) : null}
+        <RetainedImages
+          value={data.attachments}
+          sessionId={resource.sessionId}
+          active={active}
+        />
+        <CodexReasoning data={reasoning} />
+      </article>
+    );
   const progress = object(data.progress);
   const plan = object(progress.plan);
   const textRole =
@@ -797,6 +843,7 @@ export function SessionView({
   id,
   draft,
   setDraft,
+  draftGeneration,
   initialSkills,
   changeSkills,
   active = true,
@@ -804,7 +851,12 @@ export function SessionView({
 }: {
   id: string;
   draft: string;
-  setDraft: (value: string, bindings?: SkillTokenBinding[]) => boolean | void;
+  setDraft: (
+    value: string,
+    bindings?: SkillTokenBinding[],
+    userEdit?: boolean,
+  ) => boolean | void;
+  draftGeneration?: () => bigint;
   initialSkills?: SkillTokenBinding[];
   changeSkills?: (bindings: SkillTokenBinding[]) => void;
   active?: boolean;
@@ -909,6 +961,8 @@ export function SessionView({
   const infoEvidence = useRef<HTMLDivElement>(null);
   const budgetDetails = useRef<HTMLElement>(null);
   const information = useRef<HTMLElement>(null);
+  const sessionHeading = useRef<HTMLHeadingElement>(null);
+  const [startupInfoHidden, setStartupInfoHidden] = useState(false);
   const [prEmpty, setPREmpty] = useState(false),
     [subagentsEmpty, setSubagentsEmpty] = useState(false);
   const [diagnosticsTarget, setDiagnosticsTarget] =
@@ -946,13 +1000,48 @@ export function SessionView({
     useState(false);
   const queueDrafts = useConversationDrafts<QueuedInputDraft>();
   const requestDrafts = useConversationDrafts<InboxInteractionDraft>();
+  const [interactionPresentation] = useState(
+    () => new InteractionPresentationStore(),
+  );
+  const [responseResources, setResponseResources] = useState<
+    ReadonlyMap<string, Resource>
+  >(new Map());
+  const responseIntents = useRetainedMutationIntents("");
+  const observeResponse = (result: Resource) => {
+    if (
+      result.sessionId !== id ||
+      result.kind !== EntityKind.INTERACTION ||
+      !supportsResourceSchema(result)
+    )
+      return;
+    interactionPresentation.observe(result);
+    setResponseResources((current) => {
+      const prior = current.get(result.id);
+      if (prior && prior.revision >= result.revision) return current;
+      return new Map(current).set(result.id, result);
+    });
+  };
+  const latestInteractions = new Map(live.resources);
+  for (const [responseId, result] of responseResources) {
+    const observed = latestInteractions.get(responseId);
+    if (!observed || result.revision > observed.revision)
+      latestInteractions.set(responseId, result);
+  }
+  for (const row of latestInteractions.values())
+    if (row.kind === EntityKind.INTERACTION && row.sessionId === id)
+      interactionPresentation.observe(row);
   const interactionRow = (row: Resource) => {
+    const projection = interactionPresentation.observe(row);
+    if (!displayedInteraction(projection, pendingQuestionKeys)) return null;
     const draft =
       requestDrafts.values.get(row.id) ?? initialInteractionDraft(row);
     return (
       <Interaction
         key={row.id}
         resource={row}
+        activeTray
+        projection={projection}
+        observe={observeResponse}
         refresh={interactions.refresh}
         draft={draft}
         saveDraft={(editable) => {
@@ -998,6 +1087,23 @@ export function SessionView({
   );
   const [acknowledged, setAcknowledged] = useState<Resource>();
   useRetainedMutationNotifications((key, _request, result) => {
+    if (
+      ["answer:", "opencode-answer:", "claude-answer:", "grok-answer:"].some(
+        (prefix) => key.startsWith(prefix),
+      )
+    ) {
+      const response = (result as { interaction?: Resource }).interaction;
+      const mutation = (
+        _request as { mutation?: { id?: string; expectedRevision?: bigint } }
+      ).mutation;
+      if (
+        response &&
+        response.id === mutation?.id &&
+        response.revision > (mutation.expectedRevision ?? 0n)
+      )
+        observeResponse(response);
+      return;
+    }
     if (key !== `session-name:${id}`) return;
     const renamed = (result as { change?: { session?: Resource } }).change
       ?.session;
@@ -1181,6 +1287,7 @@ export function SessionView({
       window.removeEventListener("resize", fit);
     };
   }, [session?.id]);
+  const localDraftGeneration = useRef(0n);
   const skills = useSkillCompletion({
     value: draft,
     change: (value, bindings) => {
@@ -1189,7 +1296,9 @@ export function SessionView({
         return false;
       }
       setImageTextLimit(false);
-      return setDraft(value, bindings);
+      const accepted = setDraft(value, bindings, true);
+      if (accepted !== false) localDraftGeneration.current += 1n;
+      return accepted;
     },
     textarea: composer,
     machineId: text(data.machine_id),
@@ -1205,6 +1314,7 @@ export function SessionView({
     session,
     active: conversationActive,
     draft,
+    draftGeneration: draftGeneration ?? (() => localDraftGeneration.current),
     composer,
     blocked: locked || images.images.length > 0,
     changed: setAcknowledged,
@@ -1380,12 +1490,106 @@ export function SessionView({
   }, [revealSubmission, active]);
   const requests = interactionRows(
     interactions.data?.resources ?? [],
-    live.resources,
+    latestInteractions,
     live.removed,
     live.newInteractionIds,
     id,
     !!interactions.data && !interactions.data.nextPageToken,
   );
+  for (const row of requests) interactionPresentation.observe(row);
+  const pendingQuestionKeys = new Set(
+    responseIntents
+      .filter((intent) =>
+        [...interactionPresentation.entries()].some(
+          ([, projection]) =>
+            projection.question && projection.mutationKey === intent.key,
+        ),
+      )
+      .map((intent) => intent.key),
+  );
+  const displayedRequests = requests.filter((row) =>
+    displayedInteraction(
+      interactionPresentation.observe(row),
+      pendingQuestionKeys,
+    ),
+  );
+  const missingQuestionReceipts = [...interactionPresentation.entries()].filter(
+    ([requestId, projection]) =>
+      pendingQuestionKeys.has(projection.mutationKey) &&
+      !requests.some((row) => row.id === requestId),
+  );
+  const requestsExpanded =
+    requests.some((row) => {
+      const projection = interactionPresentation.observe(row);
+      return (
+        displayedInteraction(projection, pendingQuestionKeys) &&
+        projection.presentation === InteractionPresentation.Form &&
+        readDocument(row).closure === "open"
+      );
+    }) || requestsOpen;
+  const confirmedEmptyRequests = completeEmptyInteractionTray({
+    loaded: Boolean(interactions.data),
+    loading: Boolean(
+      interactions.loading &&
+      interactions.loading !== ReadStage.Refresh &&
+      interactions.loading !== ReadStage.Reload,
+    ),
+    failed:
+      Boolean(interactions.error || live.error) ||
+      live.state !== ConnectionState.Live,
+    continuation: Boolean(interactions.nextPageToken),
+    resident: interactions.pages.every((page) =>
+      interactions.payloadPages.some((payload) => payload.token === page.token),
+    ),
+    displayed: displayedRequests.length,
+    pending: pendingQuestionKeys.size,
+  });
+  // Drop RPC payloads after their resident page expires or a list/live revision
+  // catches up. Monotonic metadata survives without retaining answer documents.
+  useEffect(() => {
+    setResponseResources((current) => {
+      const resident = new Map(
+        (interactions.data?.resources ?? []).map((row) => [row.id, row]),
+      );
+      const next = new Map(
+        [...current].filter(([key, value]) => {
+          const row = resident.get(key),
+            observed = live.resources.get(key);
+          return (
+            row &&
+            row.revision < value.revision &&
+            (!observed || observed.revision < value.revision)
+          );
+        }),
+      );
+      return next.size === current.size ? current : next;
+    });
+  }, [interactions.data, live.resources]);
+  const requestFocus =
+    typeof window === "undefined" ? null : window.document.activeElement;
+  const retiringFocus =
+    requestFocus instanceof HTMLElement &&
+    Boolean(requestFocus.closest(".requests"))
+      ? requestFocus
+      : null;
+  useLayoutEffect(() => {
+    if (!retiringFocus || retiringFocus.isConnected) return;
+    const focused = window.document.activeElement;
+    if (
+      focused &&
+      focused !== window.document.body &&
+      focused !== retiringFocus &&
+      focused.isConnected
+    )
+      return;
+    const next = requestsRoot.current?.querySelector<HTMLElement>(
+      "input:not(:disabled), textarea:not(:disabled), select:not(:disabled), button:not(:disabled)",
+    );
+    (next ?? composer.current)?.focus({ preventScroll: true });
+  });
+  useEffect(() => {
+    if (confirmedEmptyRequests) setRequestsOpen(false);
+  }, [confirmedEmptyRequests]);
   const queued = pending.filter(isQueuedInput);
   const imageRejected = pending.filter((row) =>
     isImageStartupRejectedInput(row, session),
@@ -1691,6 +1895,42 @@ export function SessionView({
         : NaN,
     );
   const progress = startupOwnerCurrent ? observedProgress : undefined;
+  const hideStartupInfo =
+    active &&
+    conversationActive &&
+    !budgetBlocked &&
+    initialSessionStartup(
+      session,
+      progress,
+      Boolean(queue.data) &&
+        !queue.error &&
+        !queue.isPending &&
+        !queue.nextPageToken,
+      pending,
+    );
+  useLayoutEffect(() => {
+    // Commit visibility only after moving focus out of the still-visible Info.
+    // Keep the original controllers active; presentation must not recreate reads.
+    if (
+      hideStartupInfo &&
+      information.current?.contains(document.activeElement)
+    ) {
+      const input = composer.current;
+      if (
+        input?.isConnected &&
+        !input.disabled &&
+        !input.closest("[hidden], [inert]")
+      )
+        input.focus({ preventScroll: true });
+      else sessionHeading.current?.focus({ preventScroll: true });
+    }
+    setStartupInfoHidden(hideStartupInfo);
+  }, [hideStartupInfo]);
+  const infoHidden =
+    [SessionTabKind.Sidechat, SessionTabKind.PendingSidechat].includes(
+      tabs.tab.kind,
+    ) ||
+    (hideStartupInfo && startupInfoHidden);
   return (
     <SessionActivityProvider
       active={
@@ -1734,6 +1974,7 @@ export function SessionView({
             <SessionHarness resource={session}>
               <div className="session-heading-line">
                 <h2
+                  ref={sessionHeading}
                   tabIndex={-1}
                   onDoubleClick={(event) => {
                     if (session) editName?.(session.id, event.currentTarget);
@@ -2227,65 +2468,85 @@ export function SessionView({
                     ))}
                   </div>
                   <div className="session-input-tray">
-                    <Disclosure
-                      className="requests"
-                      open={
-                        requests.some(
-                          (r) => readDocument(r).closure === "open",
-                        ) || requestsOpen
-                      }
-                      onToggle={(event) =>
-                        setRequestsOpen(event.currentTarget.open)
-                      }
-                    >
-                      <DisclosureSummary>
-                        {interactions.isPending ? (
-                          copy("session.loadingRequests")
-                        ) : (
-                          <LocalizedText
-                            id="session.agentRequestsOnThisPage_5e8644"
-                            components={{ s0: <>{requests.length}</> }}
-                          />
-                        )}
-                      </DisclosureSummary>
-                      <div ref={requestsRoot} className="session-tray-content">
-                        <Failure failure={interactions.error?.failure} />
-                        <ScrollPayloadWindow
-                          identity={paginationIdentity}
-                          revision={paginationRevision}
-                          query={interactions}
-                          root={requestsRoot}
-                          active={conversationActive && requestsOpen}
+                    {!confirmedEmptyRequests ? (
+                      <Disclosure
+                        className="requests"
+                        open={requestsExpanded}
+                        onToggle={(event) =>
+                          setRequestsOpen(event.currentTarget.open)
+                        }
+                      >
+                        <DisclosureSummary>
+                          {interactions.isPending ? (
+                            copy("session.loadingRequests")
+                          ) : (
+                            <LocalizedText
+                              id="session.agentRequestsOnThisPage_5e8644"
+                              components={{
+                                s0: (
+                                  <>
+                                    {displayedRequests.length +
+                                      missingQuestionReceipts.length}
+                                  </>
+                                ),
+                              }}
+                            />
+                          )}
+                        </DisclosureSummary>
+                        <div
+                          ref={requestsRoot}
+                          className="session-tray-content"
                         >
-                          {(payload) =>
-                            interactionRows(
-                              payload,
-                              live.resources,
-                              live.removed,
-                              [],
-                              id,
-                              false,
-                            ).map(interactionRow)
-                          }
-                        </ScrollPayloadWindow>
-                        {!interactions.nextPageToken
-                          ? requests
-                              .filter(
-                                (row) =>
-                                  !interactions.rows.some(
-                                    (known) => known.id === row.id,
-                                  ),
-                              )
-                              .map(interactionRow)
-                          : null}
-                        <ScrollContinuation
-                          query={interactions}
-                          root={requestsRoot}
-                          active={conversationActive && requestsOpen}
-                          label={copy("session.requestPages_d06a30")}
-                        />
-                      </div>
-                    </Disclosure>
+                          <Failure failure={interactions.error?.failure} />
+                          <ScrollPayloadWindow
+                            identity={paginationIdentity}
+                            revision={paginationRevision}
+                            query={interactions}
+                            root={requestsRoot}
+                            active={conversationActive && requestsExpanded}
+                          >
+                            {(payload) =>
+                              interactionRows(
+                                payload,
+                                latestInteractions,
+                                live.removed,
+                                [],
+                                id,
+                                false,
+                              ).map(interactionRow)
+                            }
+                          </ScrollPayloadWindow>
+                          {!interactions.nextPageToken
+                            ? requests
+                                .filter(
+                                  (row) =>
+                                    !interactions.rows.some(
+                                      (known) => known.id === row.id,
+                                    ),
+                                )
+                                .map(interactionRow)
+                            : null}
+                          {missingQuestionReceipts.map(
+                            ([requestId, projection]) => (
+                              <PendingInteractionReceipt
+                                key={requestId}
+                                projection={projection}
+                                accepted={(result) => {
+                                  if (result) observeResponse(result);
+                                  void interactions.refresh();
+                                }}
+                              />
+                            ),
+                          )}
+                          <ScrollContinuation
+                            query={interactions}
+                            root={requestsRoot}
+                            active={conversationActive && requestsExpanded}
+                            label={copy("session.requestPages_d06a30")}
+                          />
+                        </div>
+                      </Disclosure>
+                    ) : null}
                     <PendingQueueInputs
                       sessionId={id}
                       presentInputIds={presentedQueueIds}
@@ -2600,7 +2861,7 @@ export function SessionView({
                 </div>
               ) : null}
               {active && panel === SessionPanel.Diagnostics ? (
-                <div className="session-app-panel">
+                <div className="session-app-panel session-diagnostics-panel">
                   <div className="session-diagnostics">
                     <div ref={setDiagnosticsTarget} />
                     <FlatDisclosureScope>
@@ -2733,10 +2994,8 @@ export function SessionView({
             </div>
           </div>
           <aside
-            hidden={[
-              SessionTabKind.Sidechat,
-              SessionTabKind.PendingSidechat,
-            ].includes(tabs.tab.kind)}
+            hidden={infoHidden}
+            inert={infoHidden}
             ref={information}
             id={`info-${id}`}
             className="session-information"
@@ -2746,69 +3005,86 @@ export function SessionView({
               <h2 ref={infoHeading} tabIndex={-1} id={`info-title-${id}`}>
                 {copy("session.sessionInformation")}
               </h2>
+              {session ? <SavedExecutionChips resource={session} /> : null}
             </header>
-            <FlatDisclosureScope>
-              <div className="session-information-body">
-                <div ref={setInfoToolsTarget} tabIndex={-1} />
-                {session ? (
-                  <>
-                    <section
-                      hidden={prEmpty}
-                      className="session-information-section"
-                    >
-                      <h3>{copy("session.pullRequests")}</h3>
-                      <SessionPullRequests
-                        key={id}
-                        session={session}
-                        emptyChanged={setPREmpty}
-                        diagnosticsTarget={diagnosticsTarget}
-                      />
-                    </section>
-                    <section className="session-information-section">
-                      <h3>{copy("session.executionSettings")}</h3>
+            <SessionActivityProvider
+              active={
+                active &&
+                ![
+                  SessionTabKind.Sidechat,
+                  SessionTabKind.PendingSidechat,
+                ].includes(tabs.tab.kind)
+              }
+            >
+              <FlatDisclosureScope>
+                <div className="session-information-body">
+                  <div ref={setInfoToolsTarget} tabIndex={-1} />
+                  {session ? (
+                    <>
+                      <section
+                        hidden={prEmpty}
+                        className="session-information-section"
+                      >
+                        <h3>{copy("session.pullRequests")}</h3>
+                        <SessionPullRequests
+                          key={id}
+                          session={session}
+                          emptyChanged={setPREmpty}
+                          diagnosticsTarget={diagnosticsTarget}
+                        />
+                      </section>
+                      <section
+                        hidden={subagentsEmpty}
+                        className="session-information-section"
+                      >
+                        <h3>{copy("session.subagents")}</h3>
+                        <Subagents
+                          key={id}
+                          sessionId={id}
+                          revision={session.revision.toString()}
+                          emptyChanged={setSubagentsEmpty}
+                          diagnosticsTarget={diagnosticsTarget}
+                        />
+                      </section>
+                      <section className="session-information-section">
+                        <h3>{copy("session.context")}</h3>
+                        <SessionContext key={id} session={session} />
+                      </section>
+                      <section
+                        ref={budgetDetails}
+                        className="session-information-section"
+                        tabIndex={-1}
+                      >
+                        <h3>{copy("session.usageAndBudget")}</h3>
+                        <SessionLifetimeUsage
+                          session={session}
+                          diagnosticsTarget={diagnosticsTarget}
+                        />
+                        {diagnosticsTarget
+                          ? createPortal(
+                              <NativeUsage
+                                session={session}
+                                diagnosticsTarget={diagnosticsTarget}
+                              />,
+                              diagnosticsTarget,
+                            )
+                          : null}
+                        <SessionBudget
+                          resource={session}
+                          changed={setAcknowledged}
+                          blocked={setBudgetBlocked}
+                        />
+                      </section>
                       <ExecutionConfiguration
                         resource={session}
                         diagnosticsTarget={diagnosticsTarget}
                       />
-                    </section>
-                    <section className="session-information-section">
-                      <h3>{copy("session.context")}</h3>
-                      <SessionContext key={id} session={session} />
-                    </section>
-                    <section
-                      hidden={subagentsEmpty}
-                      className="session-information-section"
-                    >
-                      <h3>{copy("session.subagents")}</h3>
-                      <Subagents
-                        key={id}
-                        sessionId={id}
-                        revision={session.revision.toString()}
-                        emptyChanged={setSubagentsEmpty}
-                        diagnosticsTarget={diagnosticsTarget}
-                      />
-                    </section>
-                    <section
-                      ref={budgetDetails}
-                      className="session-information-section"
-                      tabIndex={-1}
-                    >
-                      <h3>{copy("session.usageAndBudget")}</h3>
-                      <NativeUsage
-                        session={session}
-                        diagnosticsTarget={diagnosticsTarget}
-                      />
-                      <SessionBudget
-                        resource={session}
-                        changed={setAcknowledged}
-                        blocked={setBudgetBlocked}
-                      />
-                    </section>
-                    <SessionStorageAction source={session} />
-                  </>
-                ) : null}
-              </div>
-            </FlatDisclosureScope>
+                      <SessionStorageAction source={session} />
+                    </>
+                  ) : null}
+                </div>
+              </FlatDisclosureScope>
+            </SessionActivityProvider>
           </aside>
         </div>
       </section>

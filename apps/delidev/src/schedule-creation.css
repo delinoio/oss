@@ -132,7 +132,7 @@ main:has(> .schedule-page:not([hidden]) > .schedule-creation)
 .schedule-creation-radio-cards label:has(:checked) {
   color: var(--selected-text);
   background: var(--selected-background);
-  border-color: var(--accent);
+  border-color: var(--selected-border);
 }
 .schedule-creation-radio-cards input[type="radio"] {
   width: 16px;
@@ -240,7 +240,7 @@ main:has(> .schedule-page:not([hidden]) > .schedule-creation)
   color: var(--muted);
 }
 .schedule-creation-progress li[aria-current="step"] {
-  color: var(--accent);
+  color: var(--link);
   font-weight: 600;
 }
 .schedule-creation-step-title {
@@ -362,4 +362,51 @@ main:has(> .schedule-page:not([hidden]) > .schedule-creation)
   .schedule-creation-review .schedule-review-prompt {
     padding: 12px;
   }
+}
+
+.schedule-calendar-summary {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--background);
+  overflow-wrap: anywhere;
+}
+.schedule-calendar-summary dl,
+.schedule-creation-review .schedule-calendar-summary dl {
+  display: block;
+  margin: 0;
+}
+.schedule-calendar-summary dl > div + div {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.schedule-calendar-summary dt,
+.schedule-calendar-summary dd,
+.schedule-creation-review .schedule-calendar-summary dt,
+.schedule-creation-review .schedule-calendar-summary dd {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  line-height: 1.5;
+}
+.schedule-calendar-summary dt {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.schedule-calendar-summary small {
+  display: block;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.schedule-calendar-summary > p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.schedule-calendar-summary code {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

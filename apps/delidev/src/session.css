@@ -965,9 +965,9 @@
 }
 .session-tab.is-selected {
   background: var(--surface);
-  color: var(--accent);
+  color: var(--link);
   border-radius: 4px 4px 0 0;
-  border-bottom-color: var(--accent);
+  border-bottom-color: var(--selected-border);
 }
 .session-workspace .session-tab [role="tab"] {
   height: 38px;
@@ -1001,7 +1001,7 @@
   background: var(--surface-hover);
 }
 .session-tab button:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: -3px;
 }
 .session-tool-popup {
@@ -1111,12 +1111,13 @@
     grid-area: 1 / 1;
   }
 }
-.session-tabbed:has(> .session-content .session-sidechat-pane:not([hidden]))
+.session-tabbed:has(> .session-content > .session-information[hidden])
   > .session-content {
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
+  column-gap: 0;
 }
-.session-tabbed:has(> .session-content .session-sidechat-pane:not([hidden]))
+.session-tabbed:has(> .session-content > .session-information[hidden])
   > .session-content
   > .session-upper-content {
   grid-area: 1 / 1;
@@ -1338,7 +1339,7 @@
   cursor: default;
 }
 .queue-insertion {
-  border-top: 2px solid var(--accent);
+  border-top: 2px solid var(--selected-border);
 }
 /* End-of-list dragging overlays the last row instead of adding resting space. */
 .queue-drop-row {
@@ -1359,8 +1360,6 @@
   border-bottom: 1px solid var(--border-subtle);
 }
 .session-information-section > h3,
-.session-diagnostics h3,
-.session-diagnostics h4,
 .session-information-section h3,
 .session-information-section h4 {
   margin: 0 0 8px;
@@ -1371,6 +1370,124 @@
 .session-information-section[hidden] {
   display: none;
 }
+
+/* Keep the existing panel as scroll owner. Available panel width determines
+   Diagnostics reflow beside Session information, independent of window width. */
+.session-diagnostics-panel {
+  container: session-diagnostics / inline-size;
+}
+.session-diagnostics {
+  padding: 32px;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.session-diagnostics > * {
+  width: 100%;
+  max-width: 1040px;
+  min-width: 0;
+}
+.session-diagnostics > div > section {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.session-diagnostics > div > :not(:first-child),
+.session-diagnostics > .session-files {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+.session-diagnostics h3,
+.session-diagnostics h4,
+.session-workspace .session-diagnostics h2 {
+  margin: 0 0 16px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+.session-diagnostics p {
+  margin: 0 0 12px;
+}
+.session-diagnostics section > :last-child {
+  margin-bottom: 0;
+}
+.session-diagnostics dl {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  column-gap: 24px;
+  row-gap: 12px;
+  margin: 0;
+}
+.session-diagnostics dl > div {
+  display: contents;
+}
+.session-diagnostics dt {
+  color: var(--muted);
+}
+.session-diagnostics dt,
+.session-diagnostics dd {
+  min-width: 0;
+  margin: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.session-diagnostics dd > :last-child {
+  margin-bottom: 0;
+}
+.session-diagnostics ol {
+  margin: 12px 0 0 200px;
+  padding-left: 24px;
+}
+.session-diagnostics li + li {
+  margin-top: 12px;
+}
+.session-diagnostics > .session-files {
+  height: auto;
+  padding-inline: 0;
+  padding-bottom: 0;
+  gap: 16px;
+}
+.session-diagnostics .session-files header,
+.session-diagnostics .session-files form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+}
+.session-diagnostics .session-files header h2 {
+  margin-bottom: 0;
+}
+.session-diagnostics .session-files form > label {
+  flex: 1;
+  min-width: 0;
+}
+.session-diagnostics :is(button, input, select, summary) {
+  min-height: 40px;
+  max-width: 100%;
+}
+.session-diagnostics .disclosure[data-disclosure-density] > .disclosure-header {
+  min-height: 40px;
+}
+.session-diagnostics :focus-visible:not(:where(input, textarea, select)) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+@container session-diagnostics (width < 640px) {
+  .session-diagnostics {
+    padding: 16px;
+  }
+  .session-diagnostics dl {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 4px;
+  }
+  .session-diagnostics dl > div:not(:last-child) > dd {
+    margin-bottom: 8px;
+  }
+  .session-diagnostics ol {
+    margin-left: 0;
+  }
+}
 .context-capacity {
   height: 6px;
   background: var(--surface-muted);
@@ -1379,7 +1496,7 @@
 }
 .context-capacity > div {
   height: 100%;
-  background: var(--accent);
+  background: var(--selected-border);
 }
 .session-name-dialog {
   width: 480px;
@@ -1424,4 +1541,87 @@
   min-width: 0;
   min-height: 0;
   overflow: auto;
+}
+
+/* Info remains compact in both the desktop rail and the compact upper band. */
+.session-saved-selection {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.session-info-chip {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.session-lifetime-tokens {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+.session-lifetime-tokens > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.session-workspace
+  .session-information
+  .session-tools.session-tools-exceptions {
+  padding: 0;
+  border: 0;
+}
+.session-pr-icon {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.session-pr-dot {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--surface);
+  border-radius: 50%;
+  background: var(--text-secondary);
+}
+.session-pr-dot-open {
+  background: var(--success-text);
+}
+.session-pr-dot-merged {
+  background: var(--accent);
+}
+.session-pr-dot-closed {
+  background: var(--danger-text);
+}
+
+.session-tools-exceptions > .actions:empty,
+.session-tools-exceptions > div:empty {
+  display: none;
+}
+.session-information .execution-configuration > section {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.session-information .execution-configuration {
+  max-height: none;
+  overflow: visible;
+}
+
+.session-lifetime-tokens > span:last-child {
+  margin-left: auto;
+  text-align: right;
 }

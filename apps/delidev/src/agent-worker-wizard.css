@@ -156,7 +156,7 @@
 .settings-task-body
   .agent-configuration.worker-wizard
   .worker-harness-card[aria-checked="true"] {
-  border-color: var(--accent);
+  border-color: var(--selected-border);
   background: var(--selected-background);
 }
 .worker-harness-name {
@@ -182,7 +182,7 @@
   color: var(--on-accent);
 }
 .worker-harness-card[aria-checked="true"] .worker-harness-indicator {
-  border-color: var(--accent);
+  border-color: var(--selected-border);
   background: var(--accent);
 }
 .worker-harness-indicator svg {
@@ -424,7 +424,7 @@
 .worker-source-list button[aria-pressed="true"] {
   background: var(--selected-background);
   color: var(--selected-text);
-  border-color: var(--accent);
+  border-color: var(--selected-border);
 }
 .worker-source-details {
   min-width: 0;
@@ -508,6 +508,6 @@
   display: inline-block;
   min-height: 40px;
   padding-block: 10px;
-  color: var(--accent);
+  color: var(--link);
   text-decoration: underline;
 }

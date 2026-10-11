@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+import {
+  nativeCommandPresentation,
+  commandPreview,
+  NativeCommandBody,
+} from "./native-command-presentation";
 import { useAppearancePreferences } from "./appearance";
 import { DisclosureDefault } from "./appearance-preferences";
 import { TurnTime, TurnTimingProvider, type CurrentTurn } from "./turn-timing";
@@ -56,15 +61,18 @@ function ToolEntry({
   const node = useRef<HTMLDivElement>(null),
     open = choices.entries.get(row.id) ?? false;
   const hasPayload = Boolean(payload);
+  const command = payload ? nativeCommandPresentation(payload) : undefined;
+  const compactCommand = Boolean(command);
+  const detailKey = compactCommand ? `${row.id}:command` : row.id;
   useLayoutEffect(() => {
     const details = [
       ...(node.current?.querySelectorAll<HTMLDetailsElement>("details") ?? []),
     ];
-    // The compact entry replaces only the original primary presentation toggle.
-    // Its validated renderer and all nested output/argument disclosures survive.
+    // Commands have their own collapsed Details row. Other validated renderers
+    // retain their original body while the compact entry replaces its first toggle.
     const remember = () =>
       choices.details.set(
-        row.id,
+        detailKey,
         [
           ...(node.current?.querySelectorAll<HTMLDetailsElement>("details") ??
             []),
@@ -73,13 +81,13 @@ function ToolEntry({
     const element = node.current;
     element?.addEventListener("toggle", remember, true);
     details.forEach((detail, index) => {
-      if (index === 0) {
+      if (index === 0 && !compactCommand) {
         detail.dataset.toolPrimary = "true";
         detail.open = true;
-      } else detail.open = choices.details.get(row.id)?.[index] ?? false;
+      } else detail.open = choices.details.get(detailKey)?.[index] ?? false;
     });
     return () => element?.removeEventListener("toggle", remember, true);
-  }, [hasPayload, choices, row.id]);
+  }, [hasPayload, choices, row.id, compactCommand, detailKey]);
   return (
     <li
       onFocusCapture={(event) => {
@@ -100,12 +108,24 @@ function ToolEntry({
         }}
       >
         <DisclosureSummary>
-          <span>{row.tool?.name || copy("session.tool_7c9bbe")}</span>
-          <small>{statusLabel(row.tool?.state ?? "")}</small>
+          {command ? (
+            <span
+              className="tool-command-preview"
+              title={"> " + commandPreview(command)}
+            >
+              {"> "}
+              {commandPreview(command)}
+            </span>
+          ) : (
+            <span>{row.tool?.name || copy("session.tool_7c9bbe")}</span>
+          )}
+          {!["complete", "completed"].includes(row.tool?.state ?? "") ? (
+            <small>{statusLabel(row.tool?.state ?? "")}</small>
+          ) : null}
         </DisclosureSummary>
         {payload ? (
           <div className="tool-entry-payload" ref={node}>
-            {render(payload)}
+            {command ? <NativeCommandBody value={command} /> : render(payload)}
           </div>
         ) : (
           <button

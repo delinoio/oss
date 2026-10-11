@@ -171,6 +171,22 @@ function tool(value: unknown, state: string): Tool | undefined {
   return v as Tool;
 }
 
+export function retainedClaudeTool(
+  content: unknown,
+  state: string,
+  id: string,
+  native: string,
+  parent: string,
+) {
+  const retained = tool(content, state);
+  return retained &&
+    retained.reference.id === id &&
+    retained.reference.native_id === native &&
+    retained.native_message_id === parent
+    ? retained
+    : undefined;
+}
+
 export function NativeClaudeTool({
   content,
   state,
@@ -185,13 +201,8 @@ export function NativeClaudeTool({
   parent: string;
 }) {
   useLocale();
-  const retained = tool(content, state);
-  if (
-    !retained ||
-    retained.reference.id !== id ||
-    retained.reference.native_id !== native ||
-    retained.native_message_id !== parent
-  )
+  const retained = retainedClaudeTool(content, state, id, native, parent);
+  if (!retained)
     return (
       <section
         aria-label={copy("native-claude-tool.claudeToolUnavailable_fade0a")}
