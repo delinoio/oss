@@ -35,14 +35,31 @@ func generatedHistoryTurns(t *testing.T, ids []domain.ID, inputs []HistoricalInp
 		turn := fixtureTurn(ids[n], TurnCompleted)
 		turn["itemsView"] = "full"
 		turn["items"] = []any{
-			map[string]any{"type": "userMessage", "id": "original-user", "clientId": inputs[n].ID, "content": []any{map[string]any{"type": "text", "text": text, "text_elements": []any{}}}},
-			map[string]any{"type": "sleep", "id": "original-sleep", "durationMs": uint64(7)},
-			item,
-			map[string]any{"type": "agentMessage", "id": "original-assistant", "text": "original response"},
+			map[string]any{"type": "userMessage", "id": fmt.Sprintf("original-user-%d", n), "clientId": inputs[n].ID, "content": []any{map[string]any{"type": "text", "text": text, "text_elements": []any{}}}},
+			map[string]any{"type": "sleep", "id": fmt.Sprintf("original-sleep-%d", n), "durationMs": uint64(7)},
+			uniqueHistoryItem(t, item, fmt.Sprintf("original-image-%d", n)),
+			map[string]any{"type": "agentMessage", "id": fmt.Sprintf("original-assistant-%d", n), "text": "original response"},
 		}
 		turns[n] = turn
 	}
 	return turns
+}
+
+func uniqueHistoryItem(t *testing.T, item any, id string) map[string]any {
+	t.Helper()
+
+	source, ok := item.(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected history item type %T", item)
+	}
+	cloned := make(map[string]any, len(source))
+	for key, value := range source {
+		cloned[key] = value
+	}
+	if sourceID, ok := source["id"].(string); ok && domain.Text(sourceID, "native image identity", 1024, true) == nil {
+		cloned["id"] = id
+	}
+	return cloned
 }
 
 func setGeneratedHistory(t *testing.T, c *Client, turns []any) []json.RawMessage {
@@ -135,7 +152,8 @@ func assertImageHistoryRefusesRevert(t *testing.T, item any, duplicate bool) {
 	turns := generatedHistoryTurns(t, ids, inputs, item)
 	if duplicate {
 		first := turns[0].(map[string]any)
-		first["items"] = append(first["items"].([]any), item)
+		items := first["items"].([]any)
+		first["items"] = append(items, items[2])
 	}
 	setGeneratedHistory(t, c, turns)
 	claims := 0

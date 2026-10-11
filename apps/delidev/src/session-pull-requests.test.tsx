@@ -138,6 +138,26 @@ function fixture() {
           : rows,
     }),
   );
+  const getResource = vi.fn(
+    async (request: { id: string; kind: EntityKind }) => ({
+      resource: create(ResourceSchema, {
+        id: request.id,
+        kind: request.kind,
+        revision: 1n,
+        schemaVersion: 1,
+        documentJson: encode(
+          request.kind === EntityKind.PROJECT
+            ? { repositories: [repositoryId] }
+            : {
+                name: "Fixture repository",
+                github_owner: "fixture-owner",
+                github_name: "repo",
+                integration_id: newRequestId(),
+              },
+        ),
+      }),
+    }),
+  );
   const link = vi.fn(
     async (r: {
       requestId: string;
@@ -177,24 +197,7 @@ function fixture() {
   const transport = createRouterTransport((router) => {
     router.service(ResourceService, {
       listResources: list,
-      getResource: (r) => ({
-        resource: create(ResourceSchema, {
-          id: r.id,
-          kind: r.kind,
-          revision: 1n,
-          schemaVersion: 1,
-          documentJson: encode(
-            r.kind === EntityKind.PROJECT
-              ? { repositories: [repositoryId] }
-              : {
-                  name: "Fixture repository",
-                  github_owner: "fixture-owner",
-                  github_name: "repo",
-                  integration_id: newRequestId(),
-                },
-          ),
-        }),
-      }),
+      getResource,
     });
     router.service(SessionService, {
       linkSessionPullRequest: link,
@@ -218,6 +221,7 @@ function fixture() {
     view: viewFor(),
     viewFor,
     list,
+    getResource,
     link,
     unlink,
     unlinkEffects,
@@ -251,6 +255,90 @@ it("retains archived associations, shows exact identities and unlinks without ex
   expect(
     screen.queryByRole("region", { name: "Pending PR unlinks" }),
   ).toBeNull();
+});
+
+it("starts PR detail reads only after the association row enters the viewport", async () => {
+  const f = fixture();
+  const additional = create(ResourceSchema, {
+    ...f.rows[0],
+    id: newRequestId(),
+    revision: 2n,
+    documentJson: encode({
+      ...f.value,
+      number: "18",
+      pull_request_id: "18",
+      pull_request_node_id: "PR_18",
+    }),
+  });
+  f.replace([f.rows[0]!, additional]);
+  const observers: {
+    callback: IntersectionObserverCallback;
+    targets: Set<Element>;
+    observe: (target: Element) => void;
+    disconnect: () => void;
+    unobserve: (target: Element) => void;
+    takeRecords: () => IntersectionObserverEntry[];
+    enter: (target: Element) => void;
+  }[] = [];
+  class TestIntersectionObserver {
+    readonly root = null;
+    readonly rootMargin = "0px";
+    readonly thresholds = [0];
+    readonly targets = new Set<Element>();
+    constructor(readonly callback: IntersectionObserverCallback) {
+      observers.push(this as (typeof observers)[number]);
+    }
+    observe = (target: Element) => this.targets.add(target);
+    disconnect = () => this.targets.clear();
+    unobserve = (target: Element) => this.targets.delete(target);
+    takeRecords = () => [];
+    enter(target: Element) {
+      this.callback(
+        [
+          {
+            target,
+            isIntersecting: true,
+            intersectionRatio: 1,
+          } as IntersectionObserverEntry,
+        ],
+        this as unknown as IntersectionObserver,
+      );
+    }
+  }
+  vi.stubGlobal("IntersectionObserver", TestIntersectionObserver);
+  try {
+    render(f.view);
+    openAssociations();
+    const firstRow = (
+      await screen.findByRole("button", { name: "Unlink #17" })
+    ).closest("article")!;
+    const secondRow = (
+      await screen.findByRole("button", { name: "Unlink #18" })
+    ).closest("article")!;
+    await waitFor(() =>
+      expect(observers.some((observer) => observer.targets.has(firstRow))).toBe(
+        true,
+      ),
+    );
+    const repositoryReads = () =>
+      f.getResource.mock.calls.filter(
+        ([request]) =>
+          request.kind === EntityKind.REPOSITORY &&
+          request.id === f.repositoryId,
+      );
+    expect(repositoryReads()).toHaveLength(0);
+    const firstObserver = observers.find((observer) =>
+      observer.targets.has(firstRow),
+    )!;
+    await act(async () => firstObserver.enter(firstRow));
+    await waitFor(() => expect(repositoryReads()).toHaveLength(1));
+    expect(
+      observers.find((observer) => observer.targets.has(secondRow)),
+    ).toBeTruthy();
+    expect(repositoryReads()).toHaveLength(1);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
 
 it("keeps a committed unlink recoverable after refresh, reopen and session navigation", async () => {

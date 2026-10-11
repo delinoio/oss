@@ -16,6 +16,7 @@ type EventKind string
 type eventValidationStage string
 
 const (
+	validationWindowsSandbox eventValidationStage = "windows-sandbox"
 	validationOther          eventValidationStage = "other"
 	validationNativeError    eventValidationStage = "native-error"
 	validationSettings       eventValidationStage = "thread-settings"
@@ -45,6 +46,8 @@ const (
 // Log a closed classification instead of untrusted native method or content.
 func validationStage(method string) eventValidationStage {
 	switch method {
+	case "windows/worldWritableWarning", "windowsSandbox/setupCompleted":
+		return validationWindowsSandbox
 	case "error":
 		return validationNativeError
 	case "thread/settings/updated":
@@ -197,6 +200,7 @@ type Event struct {
 	Native         *nativewire.Event    `json:"-"`
 	ExtensionStage eventValidationStage `json:"-"`
 	gatewayStatus  gatewayOAuthStatus
+	windowsWarning *windowsWarningObservation
 }
 
 // NextEvent preserves wire order even with concurrent consumers. If cancellation
@@ -284,6 +288,12 @@ func (c *Client) NextEvent(ctx context.Context) (diagnosticResult Event, returne
 	}
 	if c.logger != nil && event.Metadata == GatewayOAuthStatusDiscarded {
 		c.logger.InfoContext(ctx, "Codex passive gateway OAuth status observed", "owner_id", c.ownerID, "status", event.gatewayStatus, "policy", GatewayOAuthStatusDiscarded)
+	}
+	if c.logger != nil && event.windowsWarning != nil {
+		c.logger.InfoContext(ctx, "Codex Windows sandbox warning observed", "owner_id", c.ownerID, "classification", event.windowsWarning.class.String(), "sample_count", event.windowsWarning.samples, "extra_count", event.windowsWarning.extra, "event_kind", event.Kind)
+	}
+	if c.logger != nil && event.Metadata == WindowsSandboxSetupDiscarded {
+		c.logger.InfoContext(ctx, "Codex unsolicited Windows sandbox setup discarded", "owner_id", c.ownerID, "policy", WindowsSandboxSetupDiscarded)
 	}
 	event.EmittedAtMS = native.EmittedAtMS
 	return event, nil
