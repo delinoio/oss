@@ -63,3 +63,11 @@ it("filters authoritative queue revisions without changing retained history or f
   expect(queueRows([stale], live, new Set(), [arrival.id], sessionId, true).filter(isQueuedInput)).toEqual([restored]);
   expect(queueRows([stale], live, new Set([restored.id]), [arrival.id], sessionId, true).filter(isQueuedInput)).toEqual([]);
 });
+
+it("hides the request tray only after a complete idle error-free resident read with no requests", () => {
+  const idle = { loaded: true, loading: false, failed: false, continues: false, evicted: false };
+  expect(requestTrayVisible(0, idle)).toBe(false);
+  expect(requestTrayVisible(1, idle)).toBe(true);
+  for (const key of ["loading", "failed", "continues", "evicted"] as const) expect(requestTrayVisible(0, { ...idle, [key]: true })).toBe(true);
+  expect(requestTrayVisible(0, { ...idle, loaded: false })).toBe(true);
+});

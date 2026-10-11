@@ -183,6 +183,10 @@ export function queueRows(base: readonly Resource[], live: ReadonlyMap<string, R
   return appendedRows(base, live, removed, arrivals, sessionId, lastPage, EntityKind.QUEUE);
 }
 
+/** The tray may disappear only after a complete, idle, error-free, fully resident read shows no request. */
+export function requestTrayVisible(count: number, read: { loaded: boolean; loading: boolean; failed: boolean; continues: boolean; evicted: boolean }): boolean {
+  return count > 0 || !read.loaded || read.loading || read.failed || read.continues || read.evicted;
+}
 export function interactionRows(base: readonly Resource[], live: ReadonlyMap<string, Resource>, removed: ReadonlySet<string>, arrivals: readonly string[], sessionId: string, lastPage: boolean): Resource[] {
   return appendedRows(base, live, removed, arrivals, sessionId, lastPage, EntityKind.INTERACTION);
 }
@@ -479,8 +483,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   }, [revealSubmission, active]);
   const requests = interactionRows(interactions.data?.resources ?? [], live.resources, live.removed, live.newInteractionIds, id, !!interactions.data && !interactions.data.nextPageToken).filter(row => !questionRetired(row));
   // Hide the tray only after a complete, error-free resident read leaves no request to show.
-  const requestsComplete = !!interactions.data && !interactions.isPending && !interactions.error && !interactions.nextPageToken && interactions.pages.length === interactions.payloadPages.length;
-  const showRequests = !(requestsComplete && requests.length === 0);
+  const showRequests = requestTrayVisible(requests.length, { loaded: !!interactions.data, loading: interactions.isPending || interactions.isFetching, failed: !!interactions.error, continues: !!interactions.nextPageToken, evicted: interactions.pages.length !== interactions.payloadPages.length });
   // Hand focus off when a retired request removes the control that held it.
   const focusedInRequests = useRef<boolean>(false);
   const requestsSignature = requests.map(row => `${row.id}:${row.revision}`).join(",");
