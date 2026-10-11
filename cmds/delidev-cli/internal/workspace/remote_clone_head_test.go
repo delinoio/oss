@@ -76,7 +76,7 @@ func TestManagedCloneRemoteHeadObservation(t *testing.T) {
 			}
 			problem := domain.SafeError(err)
 			if err == nil || problem.Code != test.code || problem.Cause != test.cause || strings.Contains(problem.Error(), "private-content") {
-				t.Fatalf("unexpected observation outcome: %v", err)
+				t.Fatalf("%s: unexpected observation outcome: %v", test.name, err)
 			}
 		})
 	}
