@@ -166,5 +166,6 @@ it("does not offer editing authority when inherited settings capability is absen
     name: "Native permissions: Selection",
   });
   expect(field.closest("fieldset")?.disabled).toBe(true);
+  fireEvent.change(field, { target: { value: "override" } });
   expect(change).not.toHaveBeenCalled();
 });

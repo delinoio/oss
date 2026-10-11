@@ -412,7 +412,17 @@ export function HarnessSettingsEditor({
               : field.key === "permission" && controlValue === ""
                 ? "default"
                 : controlValue,
-          ) => update(setHarnessSelector(settings, field.key, mode, nextValue));
+          ) => {
+            if (
+              !active ||
+              !supported ||
+              malformed ||
+              routeModel ||
+              (mode === HarnessSettingMode.Override && !available)
+            )
+              return;
+            update(setHarnessSelector(settings, field.key, mode, nextValue));
+          };
           return (
             <section
               key={field.key}
