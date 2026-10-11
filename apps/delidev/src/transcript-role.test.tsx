@@ -18,26 +18,34 @@ it("preserves inert text, accessible roles and native detail controls on recogni
   const { container } = render(
     <>
       {Object.values(data).map((value, index) => (
-        <TranscriptItem key={index} resource={transcriptResource(value, index + 2)} />
+        <TranscriptItem
+          key={index}
+          resource={transcriptResource(value, index + 2)}
+        />
       ))}
     </>,
   );
   expect(container.querySelectorAll(".message-user")).toHaveLength(2);
   expect(container.querySelectorAll(".message-assistant")).toHaveLength(2);
   expect(
-    container.querySelector(".message-claude-assistant > .native-claude-message-content"),
+    container.querySelector(
+      ".message-claude-assistant > .native-claude-message-content",
+    ),
   ).not.toBeNull();
-  expect(screen.getByLabelText("User message").querySelector("pre")?.textContent).toBe(
-    data.user.text,
-  );
-  expect(screen.getAllByLabelText("Assistant message")[0]!.querySelector("pre")?.textContent).toBe(
-    data.assistant.text,
-  );
-  expect(screen.getByLabelText("Grok user input").querySelector("pre")?.textContent).toBe(
-    data.grokUser.text,
-  );
+  expect(
+    screen.getByLabelText("User message").querySelector("pre")?.textContent,
+  ).toBe(data.user.text);
+  expect(
+    screen.getAllByLabelText("Assistant message")[0]!.querySelector("pre")
+      ?.textContent,
+  ).toBe(data.assistant.text);
+  expect(
+    screen.getByLabelText("Grok user input").querySelector("pre")?.textContent,
+  ).toBe(data.grokUser.text);
   expect(screen.getByText("Verified from closed native history")).toBeTruthy();
-  expect(screen.getByText("Grok input details").closest("details")).toBeTruthy();
+  expect(
+    screen.getByText("Grok input details").closest("details"),
+  ).toBeTruthy();
   expect(screen.getByText("Grok text details").closest("details")).toBeTruthy();
   expect(screen.getByText(/Reasoning ·/).closest("details")).toBeTruthy();
   expect(container.querySelector("script")).toBeNull();
@@ -72,29 +80,40 @@ it("keeps unknown roles, non-text records and invalid native roots outside role 
     { ...data.grokText, role: "user" },
     { ...data.claude, claude: { invalid: true } },
     { ...data.claude, role: "tool" },
-    ...["grok_text", "claude", "claude_tool", "claude_progress", "claude_interruption"].map(
-      (key) => ({
-        role: "assistant",
-        state: "complete",
-        text: `Retained null ${key}`,
-        [key]: null,
-      }),
-    ),
+    ...[
+      "grok_text",
+      "claude",
+      "claude_tool",
+      "claude_progress",
+      "claude_interruption",
+    ].map((key) => ({
+      role: "assistant",
+      state: "complete",
+      text: `Retained null ${key}`,
+      [key]: null,
+    })),
   ];
   const { container } = render(
     <>
       {rows.map((value, index) => (
-        <TranscriptItem key={index} resource={transcriptResource(value, index + 2)} />
+        <TranscriptItem
+          key={index}
+          resource={transcriptResource(value, index + 2)}
+        />
       ))}
     </>,
   );
   expect(
-    container.querySelectorAll(".message-user, .message-assistant, .native-claude-message-content"),
+    container.querySelectorAll(
+      ".message-user, .message-assistant, .native-claude-message-content",
+    ),
   ).toHaveLength(0);
   expect(screen.getByText("Unknown retained text")).toBeTruthy();
   expect(screen.getByLabelText("Grok user input unavailable")).toBeTruthy();
   expect(screen.getByLabelText("Grok text unavailable")).toBeTruthy();
-  expect(screen.getAllByLabelText("Claude message unavailable")).toHaveLength(2);
+  expect(screen.getAllByLabelText("Claude message unavailable")).toHaveLength(
+    2,
+  );
   expect(screen.getByText("Retained null grok_text")).toBeTruthy();
   expect(screen.getByText("Retained null claude")).toBeTruthy();
 });
@@ -105,7 +124,11 @@ it("replaces a live revision in its original ordering slot without changing role
     { ...data.assistant, state: "streaming", text: "Partial original text" },
     3,
   );
-  const complete = transcriptResource({ ...data.assistant, text: "Complete original text" }, 3, 2n);
+  const complete = transcriptResource(
+    { ...data.assistant, text: "Complete original text" },
+    3,
+    2n,
+  );
   const { container, rerender } = render(
     <>
       <div data-payload-page="">
@@ -134,7 +157,11 @@ it("replaces a live revision in its original ordering slot without changing role
   expect(container.querySelectorAll(".message-assistant")).toHaveLength(1);
   expect(screen.queryByText("Partial original text")).toBeNull();
   expect(screen.getByText("Complete original text")).toBeTruthy();
-  expect(container.querySelectorAll("article")[0]?.classList.contains("message-user")).toBe(true);
+  expect(
+    container
+      .querySelectorAll("article")[0]
+      ?.classList.contains("message-user"),
+  ).toBe(true);
 });
 
 it.each(["en", "ko"])(
@@ -145,12 +172,22 @@ it.each(["en", "ko"])(
     const { container } = render(
       <>
         {Object.values(data).map((value, index) => (
-          <TranscriptItem key={index} resource={transcriptResource(value, index + 2)} />
+          <TranscriptItem
+            key={index}
+            resource={transcriptResource(value, index + 2)}
+          />
         ))}
-        <TranscriptItem resource={transcriptResource({ ...data.user, state: "completed" }, 20)} />
+        <TranscriptItem
+          resource={transcriptResource(
+            { ...data.user, state: "completed" },
+            20,
+          )}
+        />
       </>,
     );
-    expect(screen.getAllByRole("article", { name: copy("session.userMessage") })).toHaveLength(2);
+    expect(
+      screen.getAllByRole("article", { name: copy("session.userMessage") }),
+    ).toHaveLength(2);
     expect(
       screen.getAllByRole("article", {
         name: copy("session.assistantMessage_8352f5"),
@@ -158,8 +195,12 @@ it.each(["en", "ko"])(
     ).toHaveLength(2);
     for (const article of container.querySelectorAll("article")) {
       expect(article.querySelector("header strong")).toBeNull();
-      expect(within(article).queryByText(statusLabel("complete"), { exact: true })).toBeNull();
-      expect(within(article).queryByText(statusLabel("completed"), { exact: true })).toBeNull();
+      expect(
+        within(article).queryByText(statusLabel("complete"), { exact: true }),
+      ).toBeNull();
+      expect(
+        within(article).queryByText(statusLabel("completed"), { exact: true }),
+      ).toBeNull();
     }
     expect(container.querySelectorAll("article > header")).toHaveLength(1);
     expect(
@@ -190,7 +231,9 @@ it.each(["streaming", "interrupted", "failed", "recovery-required"])(
         })}
       />,
     );
-    expect(container.querySelector("header")?.textContent).toBe(statusLabel(state));
+    expect(container.querySelector("header")?.textContent).toBe(
+      statusLabel(state),
+    );
     expect(container.querySelector("header strong")).toBeNull();
   },
 );
@@ -210,8 +253,12 @@ it("keeps validated Grok partial-response and native details while suppressing s
       })}
     />,
   );
-  expect(container.querySelector("header")?.textContent).toBe("Partial response stopped");
-  expect(screen.getByText("Grok text details").closest("details")).not.toBeNull();
+  expect(container.querySelector("header")?.textContent).toBe(
+    "Partial response stopped",
+  );
+  expect(
+    screen.getByText("Grok text details").closest("details"),
+  ).not.toBeNull();
 });
 it.each(["en", "ko"])(
   "keeps every projected delivery status without a visible role in %s",
@@ -221,7 +268,10 @@ it.each(["en", "ko"])(
     const { container } = render(
       <>
         {phases.map((phase) => (
-          <article key={phase} aria-label={copy("session.submittedUserMessage")}>
+          <article
+            key={phase}
+            aria-label={copy("session.submittedUserMessage")}
+          >
             <SubmissionStatus phase={phase} />
           </article>
         ))}
@@ -276,13 +326,23 @@ it.each(["en", "ko"])(
     expect(item.contains(action)).toBe(true);
     expect(bubble.contains(action)).toBe(false);
     expect(action).toHaveProperty("disabled", true);
-    expect(bubble.contains(screen.getByText("Original other action"))).toBe(true);
-    expect(bubble.querySelector("pre")?.textContent).toBe("Short prompt\n두 번째 줄");
-    expect(within(bubble).getByText(copy("session.previousContext"))).toBeTruthy();
+    expect(bubble.contains(screen.getByText("Original other action"))).toBe(
+      true,
+    );
+    expect(bubble.querySelector("pre")?.textContent).toBe(
+      "Short prompt\n두 번째 줄",
+    );
+    expect(
+      within(bubble).getByText(copy("session.previousContext")),
+    ).toBeTruthy();
     const page = container.querySelector("[data-payload-page]");
     rerender(view(false));
-    expect(screen.getByRole("group", { name: copy("session.userTurn") })).toBe(item);
-    expect(screen.getByRole("article", { name: copy("session.userMessage") })).toBe(bubble);
+    expect(screen.getByRole("group", { name: copy("session.userTurn") })).toBe(
+      item,
+    );
+    expect(
+      screen.getByRole("article", { name: copy("session.userMessage") }),
+    ).toBe(bubble);
     expect(container.querySelector("[data-payload-page]")).toBe(page);
     expect(container.querySelector(".user-transcript-actions")).toBeNull();
   },

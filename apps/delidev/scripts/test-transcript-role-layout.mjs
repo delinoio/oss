@@ -53,8 +53,12 @@ try {
   server = createServer(async (request, response) => {
     try {
       const pathname = new URL(request.url, "http://127.0.0.1").pathname;
-      const file = resolve(directory, `.${pathname === "/" ? "/index.html" : pathname}`);
-      if (!file.startsWith(`${directory}${sep}`)) throw new Error("Invalid fixture path");
+      const file = resolve(
+        directory,
+        `.${pathname === "/" ? "/index.html" : pathname}`,
+      );
+      if (!file.startsWith(`${directory}${sep}`))
+        throw new Error("Invalid fixture path");
       response.setHeader(
         "Content-Security-Policy",
         "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'",
@@ -119,7 +123,9 @@ try {
               style = getComputedStyle(root);
             const scale = parseFloat(getComputedStyle(document.body).zoom) || 1;
             const left = rect.left + parseFloat(style.paddingLeft) * scale,
-              right = rect.left + (root.clientWidth - parseFloat(style.paddingRight)) * scale,
+              right =
+                rect.left +
+                (root.clientWidth - parseFloat(style.paddingRight)) * scale,
               width = right - left;
             const rows = [...root.querySelectorAll("article.message")];
             return {
@@ -131,7 +137,9 @@ try {
               rows: rows.map((node) => {
                 const rect = node.getBoundingClientRect(),
                   style = getComputedStyle(node);
-                const item = node.parentElement.classList.contains("user-transcript-item")
+                const item = node.parentElement.classList.contains(
+                  "user-transcript-item",
+                )
                   ? node.parentElement
                   : node;
                 return {
@@ -140,7 +148,9 @@ try {
                   width: rect.width,
                   top: rect.top,
                   bottom: rect.bottom,
-                  timingInset: item.previousElementSibling?.classList.contains("turn-time")
+                  timingInset: item.previousElementSibling?.classList.contains(
+                    "turn-time",
+                  )
                     ? rect.top - item.parentElement.getBoundingClientRect().top
                     : 0,
                   role: node.className,
@@ -158,10 +168,17 @@ try {
           await row.scrollIntoViewIfNeeded();
         const assertGeometry = async () => {
           const m = await measure();
-          assert.equal(m.overflow, false, "Transcript content wraps within its scroll owner");
+          assert.equal(
+            m.overflow,
+            false,
+            "Transcript content wraps within its scroll owner",
+          );
           for (const row of m.rows) {
             if (row.role.includes("message-user")) {
-              assert(Math.abs(row.right - m.right) <= 1, "User is right-aligned");
+              assert(
+                Math.abs(row.right - m.right) <= 1,
+                "User is right-aligned",
+              );
               assert(
                 row.width <=
                   (m.width / m.scale < 600
@@ -179,13 +196,20 @@ try {
               (row.role.includes("message-claude-assistant") &&
                 row.background === "rgba(0, 0, 0, 0)")
             ) {
-              assert(Math.abs(row.left - m.left) <= 1, "Assistant is left-aligned");
+              assert(
+                Math.abs(row.left - m.left) <= 1,
+                "Assistant is left-aligned",
+              );
               assert.equal(row.border, "0px");
               assert.equal(row.padding, "0px");
               assert.equal(row.radius, "0px");
               assert.equal(row.background, "rgba(0, 0, 0, 0)");
             } else {
-              assert.equal(row.border, "1px", "Other roots retain card treatment");
+              assert.equal(
+                row.border,
+                "1px",
+                "Other roots retain card treatment",
+              );
             }
           }
           for (let index = 1; index < m.rows.length; index++)
@@ -199,7 +223,9 @@ try {
               "Historical and live item spacing is 16px",
             );
           assert(
-            await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+            await page.evaluate(
+              () => document.documentElement.scrollWidth <= innerWidth + 1,
+            ),
             "No horizontal page overflow",
           );
         };
@@ -209,7 +235,9 @@ try {
         const cardGeometry = () =>
           page.evaluate(() => {
             const box = (selector) => {
-              const r = document.querySelector(selector).getBoundingClientRect();
+              const r = document
+                .querySelector(selector)
+                .getBoundingClientRect();
               return {
                 left: r.left,
                 top: r.top,
@@ -229,8 +257,9 @@ try {
               tray: box(".session-input-tray"),
               composer: box(".composer"),
               region: box(".session-conversation-region"),
-              borderRadius: getComputedStyle(document.querySelector(".session-information"))
-                .borderRadius,
+              borderRadius: getComputedStyle(
+                document.querySelector(".session-information"),
+              ).borderRadius,
             };
           });
         const assertCard = async () => {
@@ -242,33 +271,49 @@ try {
             a.bottom > b.top + 1;
           assert.equal(m.borderRadius, "20px");
           for (const name of ["transcript", "tray", "composer"])
-            assert.equal(intersects(m.info, m[name]), false, `Info excludes ${name}`);
+            assert.equal(
+              intersects(m.info, m[name]),
+              false,
+              `Info excludes ${name}`,
+            );
           assert(
             m.composer.bottom <= m.workspace.bottom + 1,
             `Composer stays within the workspace ${JSON.stringify(m)}`,
           );
           if (m.available >= 900) {
-            assert(Math.abs(m.info.width / m.scale - 320) <= 1, "Wide card is 320 CSS px");
+            assert(
+              Math.abs(m.info.width / m.scale - 320) <= 1,
+              "Wide card is 320 CSS px",
+            );
             assert(
               Math.abs((m.info.left - m.region.right) / m.scale - 44) <= 1,
               "Rail starts after 24px gap plus 20px padding",
             );
           } else {
-            assert(m.info.bottom <= m.region.top + 1, "Compact Info is an in-flow top band");
             assert(
-              m.info.height <= Math.min(240 * m.scale, m.workspace.height * 0.25) + 1,
+              m.info.bottom <= m.region.top + 1,
+              "Compact Info is an in-flow top band",
+            );
+            assert(
+              m.info.height <=
+                Math.min(240 * m.scale, m.workspace.height * 0.25) + 1,
               "Compact card height is bounded",
             );
           }
           assert(
-            await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+            await page.evaluate(
+              () => document.documentElement.scrollWidth <= innerWidth + 1,
+            ),
             "No page overflow",
           );
         };
         await assertCard();
         const retained = await page.evaluate(() => {
-          globalThis.fixtureInfo = document.querySelector(".session-information");
-          globalThis.fixtureComposer = document.querySelector(".composer textarea");
+          globalThis.fixtureInfo = document.querySelector(
+            ".session-information",
+          );
+          globalThis.fixtureComposer =
+            document.querySelector(".composer textarea");
           return true;
         });
         assert(retained);
@@ -297,14 +342,18 @@ try {
           ),
           "Same Info and composer DOM after disclosure scroll",
         );
-        for (const section of await info.locator(".session-information-section").all())
+        for (const section of await info
+          .locator(".session-information-section")
+          .all())
           await section.evaluate((node) => {
             node.open = false;
           });
         await info.evaluate((node) => {
           node.scrollTop = 0;
         });
-        const summary = transcript.locator(".message-user details > summary").first();
+        const summary = transcript
+          .locator(".message-user details > summary")
+          .first();
         await summary.focus();
         await page.keyboard.press("Enter");
         assert.equal(
@@ -336,9 +385,16 @@ try {
         await page
           .getByText("Synthetic complete text", { exact: true })
           .waitFor({ state: "attached" });
-        assert.equal(await page.getByText("Synthetic streaming text", { exact: true }).count(), 0);
         assert.equal(
-          await transcript.locator(":scope > .turn-transcript-item > .message-assistant").count(),
+          await page
+            .getByText("Synthetic streaming text", { exact: true })
+            .count(),
+          0,
+        );
+        assert.equal(
+          await transcript
+            .locator(":scope > .turn-transcript-item > .message-assistant")
+            .count(),
           1,
           "Streaming revision replaces one direct tail root",
         );
@@ -359,7 +415,10 @@ try {
           assert.equal(await panel.count(), 1);
           const card = await panel.boundingBox(),
             m = await cardGeometry();
-          assert(card.x + card.width <= m.region.right + 1 && card.x >= m.region.left - 1);
+          assert(
+            card.x + card.width <= m.region.right + 1 &&
+              card.x >= m.region.left - 1,
+          );
           for (const r of [m.info, m.tray, m.composer])
             assert(
               !(
@@ -374,7 +433,10 @@ try {
             node.focus();
           });
           await page.keyboard.press("Escape");
-          assert.equal(await page.locator(".session-app-panel:visible").count(), 0);
+          assert.equal(
+            await page.locator(".session-app-panel:visible").count(),
+            0,
+          );
           await page.waitForFunction(
             () =>
               document.activeElement?.getAttribute("role") === "tab" &&
@@ -383,13 +445,18 @@ try {
           assert(
             await page.evaluate(
               () =>
-                fixtureInfo === document.querySelector(".session-information") &&
-                fixtureComposer === document.querySelector(".composer textarea"),
+                fixtureInfo ===
+                  document.querySelector(".session-information") &&
+                fixtureComposer ===
+                  document.querySelector(".composer textarea"),
             ),
           );
         }
         await composer.scrollIntoViewIfNeeded();
-        assert(await composer.isVisible(), "Composer remains reachable with tool panel open");
+        assert(
+          await composer.isVisible(),
+          "Composer remains reachable with tool panel open",
+        );
         assert.equal(await composer.inputValue(), "Retained synthetic draft");
         const previous = await cardGeometry();
         await page.setViewportSize({
@@ -415,7 +482,9 @@ try {
           // Allow content-visibility to paint the restored top range before capture.
           await page.evaluate(
             () =>
-              new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+              new Promise((resolve) =>
+                requestAnimationFrame(() => requestAnimationFrame(resolve)),
+              ),
           );
           await page.screenshot({
             path: join(screenshots, `${language}-${theme}-${size.width}.png`),
@@ -461,18 +530,30 @@ try {
             ),
             "pre-user timing precedes original native output",
           );
-          assert.equal(await composer.evaluate((node) => node === document.activeElement), true);
+          assert.equal(
+            await composer.evaluate((node) => node === document.activeElement),
+            true,
+          );
           await page.evaluate(() => window.__turnTimingFixture.parts());
-          await page.waitForFunction(() => document.querySelectorAll(".message-user").length === 3);
+          await page.waitForFunction(
+            () => document.querySelectorAll(".message-user").length === 3,
+          );
           assert.equal(await line.count(), 1);
           assert(
             await line.evaluate((node) =>
-              node.nextElementSibling?.classList.contains("user-transcript-item"),
+              node.nextElementSibling?.classList.contains(
+                "user-transcript-item",
+              ),
             ),
           );
-          assert.equal(await composer.evaluate((node) => node === document.activeElement), true);
+          assert.equal(
+            await composer.evaluate((node) => node === document.activeElement),
+            true,
+          );
           assert.equal(await composer.inputValue(), draft);
-          const reads = await page.evaluate(() => window.__turnTimingFixture.reads);
+          const reads = await page.evaluate(
+            () => window.__turnTimingFixture.reads,
+          );
           await page.evaluate(() => {
             Date.now = () => Date.parse("2026-10-09T10:01:24.123Z");
           });
@@ -518,24 +599,38 @@ try {
                 ?.textContent.includes(ko ? "3분 24초" : "3m 24s"),
             language === "ko",
           );
-          await page.evaluate(() => window.__turnTimingFixture.terminal("failed"));
+          await page.evaluate(() =>
+            window.__turnTimingFixture.terminal("failed"),
+          );
           await page.waitForFunction(
             (ko) =>
               document
                 .querySelector(".turn-time")
-                ?.textContent.includes(ko ? "소요 시간 · 12초" : "Elapsed · 12s"),
+                ?.textContent.includes(
+                  ko ? "소요 시간 · 12초" : "Elapsed · 12s",
+                ),
             language === "ko",
           );
           await page.evaluate(() => {
             Date.now = () => Date.parse("2026-10-09T12:03:24.123Z");
           });
           await page.waitForTimeout(1100);
-          assert((await line.textContent()).includes(language === "ko" ? "12초" : "12s"));
+          assert(
+            (await line.textContent()).includes(
+              language === "ko" ? "12초" : "12s",
+            ),
+          );
           assert.equal(await line.getAttribute("aria-live"), "off");
           assert.equal(await line.getAttribute("role"), null);
-          assert(await line.evaluate((node) => node.scrollWidth <= node.clientWidth + 1));
+          assert(
+            await line.evaluate(
+              (node) => node.scrollWidth <= node.clientWidth + 1,
+            ),
+          );
           assert.equal(
-            await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1),
+            await page.evaluate(
+              () => document.documentElement.scrollWidth > innerWidth + 1,
+            ),
             false,
           );
           cases++;
@@ -573,7 +668,8 @@ try {
               const group = button.closest(".user-transcript-item");
               const bubble = group.querySelector("article");
               const row = button.parentElement;
-              const scale = parseFloat(getComputedStyle(document.body).zoom) || 1;
+              const scale =
+                parseFloat(getComputedStyle(document.body).zoom) || 1;
               const style = getComputedStyle(button);
               const b = bubble.getBoundingClientRect(),
                 r = row.getBoundingClientRect();
@@ -589,8 +685,9 @@ try {
                 radius: style.borderRadius,
                 color: style.color,
                 background: style.backgroundColor,
-                surface: getComputedStyle(document.querySelector(".session-workspace"))
-                  .backgroundColor,
+                surface: getComputedStyle(
+                  document.querySelector(".session-workspace"),
+                ).backgroundColor,
                 focus: style.outlineStyle,
                 width: b.width,
                 overflow: document.documentElement.scrollWidth > innerWidth + 1,
@@ -604,7 +701,9 @@ try {
                 .map(Number)
                 .map((n) => {
                   const c = n / 255;
-                  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+                  return c <= 0.04045
+                    ? c / 12.92
+                    : ((c + 0.055) / 1.055) ** 2.4;
                 });
               return r * 0.2126 + g * 0.7152 + b * 0.0722;
             };
@@ -633,13 +732,17 @@ try {
           await action.evaluate((button) => {
             button.dataset.activations = "0";
             button.addEventListener("click", () => {
-              button.dataset.activations = String(Number(button.dataset.activations) + 1);
+              button.dataset.activations = String(
+                Number(button.dataset.activations) + 1,
+              );
             });
           });
           await page.keyboard.press("Enter");
           await page.keyboard.press("Space");
           assert.equal(await action.getAttribute("data-activations"), "2");
-          assert(await page.locator(".session-revert-action").last().isDisabled());
+          assert(
+            await page.locator(".session-revert-action").last().isDisabled(),
+          );
           assert.equal(await page.locator(".message-user > button").count(), 1);
           // A long translated action label cannot widen the content-sized bubble.
           await action.evaluate((button) => {
@@ -648,7 +751,11 @@ try {
           const wrapped = await inspect();
           assert.equal(wrapped.width, rest.width);
           assert.equal(wrapped.overflow, false);
-          assert(await action.evaluate((button) => button.scrollWidth <= button.clientWidth + 1));
+          assert(
+            await action.evaluate(
+              (button) => button.scrollWidth <= button.clientWidth + 1,
+            ),
+          );
           cases++;
         }
   for (const language of ["en", "ko"])
@@ -658,14 +765,25 @@ try {
       await page.locator(".turn-time").first().waitFor();
       const text = await page.locator(".transcript").textContent();
       if (mode === "zero")
-        assert(text.includes(language === "ko" ? "소요 시간 · 0초" : "Elapsed · 0s"));
+        assert(
+          text.includes(language === "ko" ? "소요 시간 · 0초" : "Elapsed · 0s"),
+        );
       else if (mode === "inherited") {
         assert.equal(await page.locator(".turn-time").count(), 2);
-        assert(text.includes(language === "ko" ? "상속된 턴" : "Inherited turn"));
+        assert(
+          text.includes(language === "ko" ? "상속된 턴" : "Inherited turn"),
+        );
         assert(text.includes(language === "ko" ? "1일 1시간" : "1d 1h"));
-      } else assert(text.includes(language === "ko" ? "시간 정보 없음" : "Time unavailable"));
+      } else
+        assert(
+          text.includes(
+            language === "ko" ? "시간 정보 없음" : "Time unavailable",
+          ),
+        );
       assert.equal(
-        await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1),
+        await page.evaluate(
+          () => document.documentElement.scrollWidth > innerWidth + 1,
+        ),
         false,
       );
       cases++;

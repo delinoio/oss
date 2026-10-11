@@ -34,7 +34,8 @@ await i18n.changeLanguage(args.get("language") ?? "en");
 if (args.get("theme") !== "system")
   document.documentElement.dataset.theme = args.get("theme") ?? "light";
 if (args.get("zoom") === "2") document.body.style.zoom = "2";
-if (args.get("accent") === "false") document.documentElement.dataset.sessionAccent = "false";
+if (args.get("accent") === "false")
+  document.documentElement.dataset.sessionAccent = "false";
 let session = create(ResourceSchema, {
   id: transcriptSessionId,
   sessionId: transcriptSessionId,
@@ -94,7 +95,9 @@ if (timingMode) {
         native_turn_id: "timing-turn",
         last_sequence: 2,
         outcome: timingMode === "zero" ? "succeeded" : "running",
-        accepted_inputs: [{ input_id: timingIds.input, prompt_digest: "a".repeat(64) }],
+        accepted_inputs: [
+          { input_id: timingIds.input, prompt_digest: "a".repeat(64) },
+        ],
         turn_timing: timing,
       },
     }),
@@ -140,7 +143,10 @@ function publish() {
     {
       role: "assistant",
       state: revision === 1n ? "streaming" : "complete",
-      text: revision === 1n ? "Synthetic streaming text" : "Synthetic complete text",
+      text:
+        revision === 1n
+          ? "Synthetic streaming text"
+          : "Synthetic complete text",
     },
     90,
     revision,
@@ -182,7 +188,9 @@ Object.assign(window, {
       return timingReads;
     },
     early() {
-      const original = JSON.parse(new TextDecoder().decode(session.documentJson));
+      const original = JSON.parse(
+        new TextDecoder().decode(session.documentJson),
+      );
       original.execution.last_sequence = 3;
       session = create(ResourceSchema, {
         ...session,
@@ -209,7 +217,9 @@ Object.assign(window, {
       wake?.();
     },
     parts() {
-      const original = JSON.parse(new TextDecoder().decode(session.documentJson));
+      const original = JSON.parse(
+        new TextDecoder().decode(session.documentJson),
+      );
       original.execution.accepted_inputs.push({
         input_id: timingIds.steer,
         prompt_digest: "b".repeat(64),
@@ -221,20 +231,28 @@ Object.assign(window, {
         documentJson: encode(original),
       });
       timingSessionEvent();
-      for (const [index, input] of [timingIds.input, timingIds.input, timingIds.steer].entries()) {
+      for (const [index, input] of [
+        timingIds.input,
+        timingIds.input,
+        timingIds.steer,
+      ].entries()) {
         const row = transcriptResource(
           {
             role: "user",
             state: "complete",
             text:
-              index === 2 ? "Same-turn original accepted Steer" : "Original accepted primary part",
+              index === 2
+                ? "Same-turn original accepted Steer"
+                : "Original accepted primary part",
             execution_id: timingIds.execution,
             input_id: input,
             native_thread_id: "timing-thread",
             native_turn_id: "timing-turn",
             first_sequence: 4 + index,
             last_sequence: 4 + index,
-            ...(index === 2 ? {} : { turn_timing: { accepted_at: timingStart } }),
+            ...(index === 2
+              ? {}
+              : { turn_timing: { accepted_at: timingStart } }),
           },
           50 + index,
         );
@@ -252,7 +270,9 @@ Object.assign(window, {
       timingFailed = false;
     },
     terminal(outcome: string) {
-      const original = JSON.parse(new TextDecoder().decode(session.documentJson));
+      const original = JSON.parse(
+        new TextDecoder().decode(session.documentJson),
+      );
       original.execution.outcome = outcome;
       original.outcome = outcome;
       original.execution.last_sequence = 9;
@@ -301,19 +321,24 @@ const transport = createRouterTransport((router) => {
     getResource: (request) => {
       timingReads++;
       return {
-        resource: request.id === session.id ? session : resources.get(request.id),
+        resource:
+          request.id === session.id ? session : resources.get(request.id),
       };
     },
     listResources: (request) => {
       timingReads++;
       return {
-        resources: request.filter?.kind === EntityKind.MESSAGE ? historical : [],
+        resources:
+          request.filter?.kind === EntityKind.MESSAGE ? historical : [],
       };
     },
     async *watchEvents(_request, context) {
       while (!context.signal.aborted) {
         if (timingFailed)
-          throw new ConnectError("Synthetic timing stream unavailable", Code.Unavailable);
+          throw new ConnectError(
+            "Synthetic timing stream unavailable",
+            Code.Unavailable,
+          );
         if (events.length) {
           yield events.shift()!;
           continue;
@@ -338,23 +363,36 @@ function Fixture() {
     return (
       <div className="session-workspace revert-layout-fixture">
         <div className="transcript">
-          {["Hi", "여러 줄의 원래 질문\n" + "긴내용".repeat(60)].map((text, index) => (
-            <TranscriptItem
-              key={index}
-              resource={transcriptResource({ role: "user", state: "complete", text }, index + 100)}
-              actions={index === 1 ? <button>Other original action</button> : null}
-              revertAction={
-                <button className="session-revert-action" disabled={index === 1}>
-                  {copy("session.revertAndEdit")}
-                </button>
-              }
-            />
-          ))}
+          {["Hi", "여러 줄의 원래 질문\n" + "긴내용".repeat(60)].map(
+            (text, index) => (
+              <TranscriptItem
+                key={index}
+                resource={transcriptResource(
+                  { role: "user", state: "complete", text },
+                  index + 100,
+                )}
+                actions={
+                  index === 1 ? <button>Other original action</button> : null
+                }
+                revertAction={
+                  <button
+                    className="session-revert-action"
+                    disabled={index === 1}
+                  >
+                    {copy("session.revertAndEdit")}
+                  </button>
+                }
+              />
+            ),
+          )}
         </div>
       </div>
     );
   return (
-    <div className="app transcript-role-fixture" data-fixture="__transcriptRoleFixture">
+    <div
+      className="app transcript-role-fixture"
+      data-fixture="__transcriptRoleFixture"
+    >
       <aside>
         <h1>DeliDev</h1>
         <button onClick={publish}>Fixture stream revision</button>
@@ -370,7 +408,9 @@ function Fixture() {
 createRoot(document.getElementById("root")!).render(
   <TransportProvider transport={transport}>
     <QueryClientProvider
-      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
     >
       <MutationIntents>
         <Fixture />
