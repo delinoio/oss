@@ -439,7 +439,7 @@ pub(super) fn class_inert(ctx: &mut Ctx, class: Node, until: Option<Node>) -> bo
             return true;
         }
         if !member.decorators().is_empty()
-            || member.name().kind() == SyntaxKind::ComputedPropertyName
+            || (member.name().is_some() && member.name().kind() == SyntaxKind::ComputedPropertyName)
             || member.kind() == SyntaxKind::ClassStaticBlockDeclaration
         {
             return false;
@@ -528,9 +528,9 @@ const OBJECT_READERS: [&str; 7] = [
 ];
 
 /// Whether the global `Object` is the built-in everywhere in the
-/// application: every `Object` identifier is a plain non-written member
-/// receiver, so `Object.keys` and friends cannot be replaced by application
-/// code.
+/// application: every use of the global binding reads a member, calls or
+/// constructs it, or compares it, so application code never replaces
+/// `Object.keys` and friends or hands `Object` to code that could.
 pub(super) fn object_builtins_intact(ctx: &mut Ctx) -> bool {
     for file in 0..ctx.files.len() {
         let nodes: Vec<Node> = ctx.files[file]
@@ -540,30 +540,58 @@ pub(super) fn object_builtins_intact(ctx: &mut Ctx) -> bool {
             .filter(|n| n.kind() == SyntaxKind::Identifier && n.text() == "Object")
             .collect();
         for node in nodes {
-            if is_part_of_type_node(node) {
+            if is_part_of_type_node(node) || in_type_query(node) {
                 continue;
             }
-            let parent = node.parent();
-            let receiver = parent.kind() == SyntaxKind::PropertyAccessExpression
-                && parent.expression() == node
-                && !is_write_access(parent)
-                && walk_up_outer(parent).parent().kind() != SyntaxKind::DeleteExpression;
-            if !receiver {
-                return false;
-            }
             let symbol = ctx.resolve(node);
-            if symbol.is_nil() {
-                return false;
+            if symbol.is_some() {
+                let declarations = ctx.checker.sym(symbol).declarations.to_vec();
+                if declarations.iter().any(|&d| ctx.file_of_node(d).is_some()) {
+                    // An application binding named `Object`, not the global.
+                    continue;
+                }
             }
-            let declarations = ctx.checker.sym(symbol).declarations.to_vec();
-            if declarations.is_empty()
-                || declarations.iter().any(|&d| ctx.file_of_node(d).is_some())
-            {
+            let parent = node.parent();
+            let expression =
+                if parent.kind() == SyntaxKind::PropertyAccessExpression && parent.name() == node {
+                    parent
+                } else if is_declaration_name(node) {
+                    continue;
+                } else {
+                    node
+                };
+            if !builtin_use(expression) {
+                tracing::debug!(context = ?walk_up_outer(expression).parent().kind(), "global Object may be replaced");
                 return false;
             }
         }
     }
     true
+}
+
+fn builtin_use(expression: Node) -> bool {
+    let outer = walk_up_outer(expression);
+    let parent = outer.parent();
+    match parent.kind() {
+        SyntaxKind::PropertyAccessExpression | SyntaxKind::ElementAccessExpression
+            if parent.expression() == outer =>
+        {
+            !is_write_access(parent)
+                && walk_up_outer(parent).parent().kind() != SyntaxKind::DeleteExpression
+        }
+        SyntaxKind::CallExpression | SyntaxKind::NewExpression => parent.expression() == outer,
+        SyntaxKind::BinaryExpression => {
+            matches!(
+                parent.operator_token().kind(),
+                SyntaxKind::EqualsEqualsEqualsToken
+                    | SyntaxKind::ExclamationEqualsEqualsToken
+                    | SyntaxKind::EqualsEqualsToken
+                    | SyntaxKind::ExclamationEqualsToken
+            ) || (parent.operator_token().kind() == SyntaxKind::InstanceOfKeyword
+                && parent.right() == outer)
+        }
+        _ => false,
+    }
 }
 
 /// Key text of a static member access, or `None` for a computed key.
@@ -619,6 +647,28 @@ pub(super) fn classify(ctx: &mut Ctx, symbol: SymbolId, object_builtins: bool) -
                 {
                     uses.reexported = true;
                     uses.binding_observed = true;
+                }
+            }
+            RefKind::Read | RefKind::Call | RefKind::New | RefKind::Write
+                if r.node.parent().kind() == SyntaxKind::QualifiedName =>
+            {
+                // The left side of a qualified type name (`E.A` as a type).
+                let mut name = r.node.parent();
+                while name.parent().kind() == SyntaxKind::QualifiedName {
+                    name = name.parent();
+                }
+                if name.parent().kind() == SyntaxKind::ImportEqualsDeclaration {
+                    uses.escape.get_or_insert((r.file, r.node));
+                } else {
+                    uses.type_refs = true;
+                    if in_type_query(r.node) {
+                        match queried_member(r.node) {
+                            Some(name) => {
+                                uses.type_members.insert(name);
+                            }
+                            None => uses.type_queries = true,
+                        }
+                    }
                 }
             }
             RefKind::Read | RefKind::Call | RefKind::New | RefKind::Write => {
@@ -717,7 +767,10 @@ fn classify_receiver(uses: &mut Uses, file: usize, receiver: Node, object_builti
                     && holder.tag() == wrapped)
             {
                 match key {
-                    Some(name) => uses.calls.push((name, access)),
+                    Some(name) => {
+                        tracing::debug!("member call through object");
+                        uses.calls.push((name, access))
+                    }
                     None => {
                         uses.escape.get_or_insert((file, parent));
                     }
@@ -773,6 +826,7 @@ fn classify_receiver(uses: &mut Uses, file: usize, receiver: Node, object_builti
             uses.shape_observed = true;
         }
         _ => {
+            tracing::debug!(context = ?parent.kind(), "object reference escapes");
             uses.escape.get_or_insert((file, receiver));
         }
     }
@@ -805,10 +859,7 @@ pub(super) fn escaped_exports(ctx: &mut Ctx) -> HashSet<SymbolId> {
             .nodes
             .iter()
             .copied()
-            .filter(|n| {
-                n.kind() == SyntaxKind::CallExpression
-                    && n.expression().kind() == SyntaxKind::ImportKeyword
-            })
+            .filter(|n| n.kind() == SyntaxKind::CallExpression && module_loader(n.expression()))
             .collect();
         for call in calls {
             let argument = call.arguments().first().map(skip_outer);
@@ -823,11 +874,26 @@ pub(super) fn escaped_exports(ctx: &mut Ctx) -> HashSet<SymbolId> {
                         escaped_modules.insert(target);
                     }
                 }
+                Some(arg)
+                    if arg.kind() == SyntaxKind::TemplateExpression
+                        && (arg.head().text().starts_with("./")
+                            || arg.head().text().starts_with("../")) =>
+                {
+                    // Only modules under the static relative prefix can be
+                    // loaded by this template.
+                    let prefix = relative_prefix(&ctx.files[file].name, arg.head().text());
+                    for (index, info) in ctx.files.iter().enumerate() {
+                        if info.name.starts_with(&prefix) {
+                            escaped_modules.insert(index);
+                        }
+                    }
+                }
                 _ => all = true,
             }
         }
     }
     let mut escaped = HashSet::new();
+    let mut escaped_namespaces = 0usize;
     for file in 0..ctx.files.len() {
         if ctx.files[file].js {
             continue;
@@ -850,13 +916,58 @@ pub(super) fn escaped_exports(ctx: &mut Ctx) -> HashSet<SymbolId> {
         if !escapes {
             continue;
         }
+        escaped_namespaces += 1;
         for export in ctx.checker.get_exports_of_module_exported(module) {
             escaped.insert(export);
             let target = ctx.skip_alias(export);
             escaped.insert(target);
         }
     }
+    tracing::debug!(
+        dynamic_imports = escaped_modules.len(),
+        unresolved_dynamic_import = all,
+        escaped_namespaces,
+        escaped_exports = escaped.len(),
+        "module namespace escapes analyzed"
+    );
     escaped
+}
+
+/// Callees that load an ESM module and hand out its namespace object:
+/// `import()` and bundler globs (`import.meta.glob`). Application modules are
+/// ESM, which a host `require` cannot load.
+fn module_loader(callee: Node) -> bool {
+    match callee.kind() {
+        SyntaxKind::ImportKeyword => true,
+        SyntaxKind::PropertyAccessExpression => {
+            callee.expression().kind() == SyntaxKind::MetaProperty
+                && callee.name().text().starts_with("glob")
+        }
+        _ => false,
+    }
+}
+
+/// Absolute path prefix that a relative template head selects, with `.` and
+/// `..` segments resolved; the trailing partial segment stays a prefix.
+fn relative_prefix(importer: &str, head: &str) -> String {
+    let mut segments: Vec<&str> = importer.split('/').collect();
+    segments.pop();
+    let mut parts = head.split('/').peekable();
+    let mut tail = "";
+    while let Some(part) = parts.next() {
+        if parts.peek().is_none() {
+            tail = part;
+            break;
+        }
+        match part {
+            "." | "" => {}
+            ".." => {
+                segments.pop();
+            }
+            other => segments.push(other),
+        }
+    }
+    format!("{}/{tail}", segments.join("/"))
 }
 
 /// `ns.name` read that neither writes, deletes nor calls through the
@@ -951,8 +1062,25 @@ pub(super) fn member_type(receiver: &str, name: &str) -> String {
 }
 
 /// Type text that denotes exactly `ty` without referring to any binding:
-/// primitive keywords and non-enum literal types, possibly in a union.
+/// primitive keywords and non-enum literal types, possibly in a union, each
+/// printed on its own so no type alias name appears.
 pub(super) fn print_type(ctx: &mut Ctx, ty: TypeId) -> Option<String> {
+    let flags = ctx.checker.ty(ty).flags;
+    if flags.intersects(TypeFlags::UNION) {
+        let members = ctx.checker.ty(ty).types_list();
+        if members.len() > 64 {
+            return None;
+        }
+        let mut parts = Vec::new();
+        for &member in members.iter() {
+            parts.push(print_single(ctx, member)?);
+        }
+        return Some(parts.join(" | "));
+    }
+    print_single(ctx, ty)
+}
+
+fn print_single(ctx: &mut Ctx, ty: TypeId) -> Option<String> {
     let printable = TypeFlags::STRING
         | TypeFlags::NUMBER
         | TypeFlags::BOOLEAN
@@ -965,18 +1093,76 @@ pub(super) fn print_type(ctx: &mut Ctx, ty: TypeId) -> Option<String> {
         | TypeFlags::UNDEFINED
         | TypeFlags::ANY;
     let flags = ctx.checker.ty(ty).flags;
-    let simple =
-        |flags: TypeFlags| flags.intersects(printable) && !flags.intersects(TypeFlags::ENUM_LIKE);
-    if flags.intersects(TypeFlags::UNION) {
-        let members = ctx.checker.ty(ty).types_list();
-        if !members.iter().all(|&m| simple(ctx.checker.ty(m).flags)) {
-            return None;
-        }
-    } else if !simple(flags) {
+    if !flags.intersects(printable)
+        || flags.intersects(TypeFlags::ENUM_LIKE | TypeFlags::UNION)
+        || ctx.checker.ty(ty).alias.is_some()
+    {
         return None;
     }
     let text = ctx.checker.type_to_string(ty);
     (!text.contains("...") && !text.is_empty()).then_some(text)
+}
+
+/// Whether a literal at `site` would be rejected by the compiler's syntactic
+/// checks for conditions that are always truthy, always falsy or never
+/// nullish, which look through the replacement's assertion.
+pub(super) fn condition_hazard(site: Node, value: &str) -> bool {
+    let fixed_truthiness =
+        !(matches!(value, "0" | "1" | "true" | "false") || value.starts_with('-'));
+    let mut node = walk_up_outer(site);
+    loop {
+        let parent = node.parent();
+        match parent.kind() {
+            SyntaxKind::ConditionalExpression => {
+                if parent.condition() == node {
+                    return fixed_truthiness;
+                }
+                node = walk_up_outer(parent);
+            }
+            SyntaxKind::BinaryExpression => {
+                let operator = parent.operator_token().kind();
+                let left = parent.left() == node;
+                match operator {
+                    SyntaxKind::QuestionQuestionToken | SyntaxKind::QuestionQuestionEqualsToken
+                        if left =>
+                    {
+                        return true;
+                    }
+                    SyntaxKind::AmpersandAmpersandToken
+                    | SyntaxKind::BarBarToken
+                    | SyntaxKind::AmpersandAmpersandEqualsToken
+                    | SyntaxKind::BarBarEqualsToken
+                        if left =>
+                    {
+                        return fixed_truthiness;
+                    }
+                    SyntaxKind::QuestionQuestionToken
+                    | SyntaxKind::QuestionQuestionEqualsToken
+                    | SyntaxKind::AmpersandAmpersandToken
+                    | SyntaxKind::BarBarToken
+                    | SyntaxKind::CommaToken
+                    | SyntaxKind::EqualsToken
+                        if !left =>
+                    {
+                        node = walk_up_outer(parent);
+                    }
+                    _ => return false,
+                }
+            }
+            SyntaxKind::IfStatement | SyntaxKind::WhileStatement | SyntaxKind::DoStatement
+                if parent.expression() == node =>
+            {
+                return fixed_truthiness;
+            }
+            SyntaxKind::ForStatement if parent.condition() == node => return fixed_truthiness,
+            SyntaxKind::PrefixUnaryExpression
+                if parent.operator() == SyntaxKind::ExclamationToken =>
+            {
+                return fixed_truthiness;
+            }
+            _ => return false,
+        }
+    }
 }
 
 /// Whether replacing `site` with text that starts with `(` could join it to

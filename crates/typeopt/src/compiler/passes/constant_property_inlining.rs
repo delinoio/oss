@@ -41,8 +41,9 @@ use super::{
     super::analysis::{Ctx, skip_outer},
     constants_support::{
         Access, Declared, ModuleGraph, Uses, asi_hazard, canonical_index, class_inert, classify,
-        escaped_exports, inert_prefix, init_safe, is_function_boundary, member_type,
-        object_builtins_intact, print_type, pure_value, render, replaceable, unnarrowed,
+        condition_hazard, escaped_exports, inert_prefix, init_safe, is_function_boundary,
+        member_type, object_builtins_intact, print_type, pure_value, render, replaceable,
+        unnarrowed,
     },
 };
 use crate::{
@@ -188,10 +189,14 @@ fn plan_object(ctx: &mut Ctx, shared: &Shared, file: usize, declaration: Node, o
     let mut shape: Option<Reason> = None;
     for property in literal.properties().iter() {
         let key = property.name();
-        let key_text = match key.kind() {
-            SyntaxKind::Identifier | SyntaxKind::StringLiteral => Some(key.text().to_owned()),
-            SyntaxKind::NumericLiteral => canonical_index(key.text()),
-            _ => None,
+        let key_text = if key.is_nil() {
+            None
+        } else {
+            match key.kind() {
+                SyntaxKind::Identifier | SyntaxKind::StringLiteral => Some(key.text().to_owned()),
+                SyntaxKind::NumericLiteral => canonical_index(key.text()),
+                _ => None,
+            }
         };
         let reason = match property.kind() {
             SyntaxKind::PropertyAssignment
@@ -405,6 +410,7 @@ fn plan_property(
         }
         if !unnarrowed(ctx, access.node, declared_type)
             || asi_hazard(&ctx.files[access.file].text, access.node)
+            || condition_hazard(access.node, &definition.value)
         {
             retained.get_or_insert(Reason::UnsupportedSyntax);
             continue;
@@ -566,6 +572,7 @@ fn plan_class(ctx: &mut Ctx, shared: &Shared, file: usize, class: Node, out: &mu
             is_static(*m)
                 && (m.kind() == SyntaxKind::MethodDeclaration
                     || (m.kind() == SyntaxKind::PropertyDeclaration
+                        && m.initializer().is_some()
                         && matches!(
                             skip_outer(m.initializer()).kind(),
                             SyntaxKind::ArrowFunction | SyntaxKind::FunctionExpression

@@ -31,9 +31,9 @@ use ts_goport::prelude::*;
 use super::{
     super::analysis::Ctx,
     constants_support::{
-        Declared, ModuleGraph, asi_hazard, classify, erased_computed_name, escaped_exports,
-        init_safe, member_type, number_text, object_builtins_intact, render, replaceable,
-        string_text, unnarrowed,
+        Declared, ModuleGraph, asi_hazard, classify, condition_hazard, erased_computed_name,
+        escaped_exports, init_safe, member_type, number_text, object_builtins_intact, render,
+        replaceable, string_text, unnarrowed,
     },
 };
 use crate::{
@@ -205,6 +205,7 @@ fn plan_enum(
         let declared_type = ctx.checker.get_type_of_symbol(member.symbol);
         if !unnarrowed(ctx, access.node, declared_type)
             || asi_hazard(&ctx.files[access.file].text, access.node)
+            || condition_hazard(access.node, value)
         {
             retained.get_or_insert(Reason::UnsupportedSyntax);
             continue;
