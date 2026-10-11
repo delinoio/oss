@@ -1904,6 +1904,10 @@ jobs:
           FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['delidev-frontend'] }}
         run: node scripts/ci/run-affected.mjs delidev-desktop ci:${{ matrix.phase }}
 
+      - name: Check command transcript localization
+        if: ${{ matrix.phase == 'checks' }}
+        run: pnpm --dir apps/delidev test:localization
+
       - name: Check tool command transcript presentation
         if: ${{ matrix.phase == 'checks' }}
         env:
