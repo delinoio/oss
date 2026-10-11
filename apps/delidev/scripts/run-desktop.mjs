@@ -49,11 +49,7 @@ export function desktopEnvironment(platform, source, home = homedir()) {
 
 export function desktopColorEnvironment(
   source,
-  {
-    base = source,
-    stdoutIsTTY = false,
-    stderrIsTTY = false,
-  } = {},
+  { base = source, stdoutIsTTY = false, stderrIsTTY = false } = {},
 ) {
   const env = { ...base };
   const optedOut =

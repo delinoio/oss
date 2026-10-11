@@ -14,7 +14,10 @@ function argumentSpellings(arguments_) {
     const raw = [argument, argument.replace(ansi, "")];
     if (argument.startsWith("-") && argument.includes("="))
       raw.push(argument.slice(argument.indexOf("=") + 1));
-    for (const value of raw.flatMap((value) => [value, ...value.split(/[\r\n]+/)])) {
+    for (const value of raw.flatMap((value) => [
+      value,
+      ...value.split(/[\r\n]+/),
+    ])) {
       if (!value) continue;
       values.add(value);
       values.add(JSON.stringify(value).slice(1, -1));
@@ -28,9 +31,16 @@ function argumentSpellings(arguments_) {
 }
 
 export function desktopDiagnosticFilter(arguments_) {
-  const values = argumentSpellings(arguments_).filter((value) => value.length <= lineLimit);
+  const values = argumentSpellings(arguments_).filter(
+    (value) => value.length <= lineLimit,
+  );
   const matcher = values.length
-    ? new RegExp(values.map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "g")
+    ? new RegExp(
+        values
+          .map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+          .join("|"),
+        "g",
+      )
     : undefined;
   return (line) => {
     // Color escape bytes must not split a private value and bypass matching.
@@ -40,7 +50,9 @@ export function desktopDiagnosticFilter(arguments_) {
       /^\s*(?:error:\s*)?process didn't exit successfully:/.test(plain)
     )
       return omitted;
-    const redacted = matcher ? plain.replace(matcher, () => "[private argument]") : plain;
+    const redacted = matcher
+      ? plain.replace(matcher, () => "[private argument]")
+      : plain;
     // Keep ordinary color diagnostics intact. If matching required a normalized
     // line, emit that redacted line so no split escape can restore private text.
     return redacted === plain ? line : redacted;
@@ -50,7 +62,9 @@ export function desktopDiagnosticFilter(arguments_) {
 function captureStream(stream, destination, filter) {
   if (!stream) return { done: Promise.resolve(true), stop() {} };
   const write =
-    typeof destination === "function" ? destination : (value) => destination.write(value);
+    typeof destination === "function"
+      ? destination
+      : (value) => destination.write(value);
   const writable = typeof destination === "function" ? undefined : destination;
   const decoder = new StringDecoder("utf8");
   let pending = "";
@@ -155,7 +169,10 @@ function captureStream(stream, destination, filter) {
   };
 }
 
-export function captureDesktopDiagnostics(arguments_, { stdout, stderr, incomplete }) {
+export function captureDesktopDiagnostics(
+  arguments_,
+  { stdout, stderr, incomplete },
+) {
   const filter = desktopDiagnosticFilter(arguments_);
   return (child) => {
     const streams = [
@@ -176,7 +193,11 @@ export function captureDesktopDiagnostics(arguments_, { stdout, stderr, incomple
         clearTimeout(timer);
         if (!complete) {
           for (const stream of streams) stream.stop();
-          incomplete(complete === undefined ? "output-drain-timeout" : "output-read-failed");
+          incomplete(
+            complete === undefined
+              ? "output-drain-timeout"
+              : "output-read-failed",
+          );
         }
       })());
   };
