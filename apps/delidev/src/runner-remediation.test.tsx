@@ -125,3 +125,48 @@ it("retains consuming gates for an original diagnostic after selector shortcuts 
   await waitFor(() => expect(discover).toHaveBeenCalledTimes(2)); expect(discover.mock.calls[1][0]).toEqual(original);
   client.clear();
 });
+
+it.each(["succeeded", "failed", "canceled"])("releases unchanged consuming fields after exact %s inspection and retains its result", async state => {
+  const row = machine("Settled Runner");
+  const original = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.JOB, schemaVersion: 1, revision: 8n, documentJson: encode({ state: "queued" }) });
+  const terminal = create(ResourceSchema, { ...original, revision: 9n, documentJson: encode({ state, output: { result: "retained" } }) });
+  const discover = vi.fn(() => ({ machine: row, job: original }));
+  const save = vi.fn();
+  const transport = createRouterTransport(router => { router.service(ResourceService, { getResource: request => ({ resource: request.kind === EntityKind.JOB ? terminal : row }) }); router.service(WorkerService, { discoverHarnesses: discover }); });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function Surface() {
+    const open = useRunnerRemediation();
+    return <><button onClick={() => open?.(row)}>Inspect preferred Runner</button><fieldset disabled={open?.pendingFor(row.id)}><label>Schedule name<input defaultValue="Retained draft" /></label><label>Project<select defaultValue="original"><option value="original">Original project</option></select></label><label>Scheduled prompt<textarea defaultValue="Retained prompt" /></label><button>Cancel</button><button onClick={save}>Next</button></fieldset>{open?.body}</>;
+  }
+  render(<TransportProvider transport={transport}><QueryClientProvider client={client}><RunnerRemediationProvider active><Surface /></RunnerRemediationProvider></QueryClientProvider></TransportProvider>);
+  fireEvent.click(screen.getByText("Inspect preferred Runner"));
+  fireEvent.click(await screen.findByRole("button", { name: "Edit executable paths" }));
+  fireEvent.change(screen.getByLabelText("claude-code executable path"), { target: { value: "/submitted/claude" } });
+  fireEvent.click(screen.getByRole("button", { name: "Run optional diagnostics" }));
+  await screen.findByRole("button", { name: "Finish inspection" });
+  fireEvent.click(screen.getByRole("button", { name: "Close Inspect installed harnesses" }));
+  for (const label of ["Schedule name", "Project", "Scheduled prompt"]) expect(screen.getByLabelText(label).closest("fieldset")).toHaveProperty("disabled", false);
+  expect(screen.getByLabelText("Schedule name")).toHaveProperty("value", "Retained draft"); expect(screen.getByLabelText("Scheduled prompt")).toHaveProperty("value", "Retained prompt");
+  expect(screen.getByRole("button", { name: "Cancel" }).closest("fieldset")).toHaveProperty("disabled", false);
+  expect(screen.getByRole("button", { name: "Next" }).closest("fieldset")).toHaveProperty("disabled", false);
+  fireEvent.click(screen.getByText("Inspect preferred Runner")); await screen.findByRole("button", { name: "Finish inspection" });
+  expect(discover).toHaveBeenCalledTimes(1); expect(save).not.toHaveBeenCalled(); client.clear();
+});
+
+it("observes an accepted original job after its presenter closes without new discovery", async () => {
+ const row = machine("Background Runner");
+ const job = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.JOB, schemaVersion: 1, revision: 1n, documentJson: encode({ state: "queued" }) });
+ let observed = job;
+ const discover = vi.fn(() => ({ machine: row, job }));
+ const transport = createRouterTransport(router => { router.service(ResourceService, { getResource: request => ({ resource: request.kind === EntityKind.JOB ? observed : row }) }); router.service(WorkerService, { discoverHarnesses: discover }); });
+ const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+ function Surface() { const open = useRunnerRemediation(); return <><button onClick={() => open?.(row)}>Inspect background Runner</button><button disabled={open?.pendingFor(row.id)}>Consume Runner</button>{open?.body}</>; }
+ render(<TransportProvider transport={transport}><QueryClientProvider client={client}><RunnerRemediationProvider active><Surface /></RunnerRemediationProvider></QueryClientProvider></TransportProvider>);
+ fireEvent.click(screen.getByText("Inspect background Runner")); fireEvent.click(await screen.findByRole("button", { name: "Run optional diagnostics" }));
+ await waitFor(() => expect(screen.getByRole("button", { name: "Consume Runner" })).toHaveProperty("disabled", true));
+ fireEvent.click(screen.getByRole("button", { name: "Close Inspect installed harnesses" }));
+ observed = create(ResourceSchema, { ...job, revision: 2n, documentJson: encode({ state: "succeeded" }) });
+ await act(() => client.invalidateQueries());
+ await waitFor(() => expect(screen.getByRole("button", { name: "Consume Runner" })).toHaveProperty("disabled", false));
+ expect(screen.queryByRole("dialog")).toBeNull(); expect(discover).toHaveBeenCalledTimes(1); client.clear();
+});

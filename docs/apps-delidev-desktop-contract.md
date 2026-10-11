@@ -5220,3 +5220,21 @@ Native local startup, supervision and saved-connection verification require the 
 A current supported repository with saved GitHub owner/name and no profile presents one inline GitHub profile choice. It never selects the only profile automatically. The existing bounded selector verifies an explicit exact resource and allows supported disconnected profiles. Association grants no credential or repository-access authority. Profile creation and credential connection stay in GitHub profiles Settings. Missing owner/name opens resource-targeted Repository Settings only after a matching supported exact-resource read; inline setup has no owner, name, URL or token fields.
 
 Save retains the complete original document with only `integration_id` changed, the original repository ID/revision and one request ID. Existing repository configuration writes share a connection-owned mutation identity across Settings and Pull requests. Admission retains the original job and blocks competing saves through navigation. Uncertain acknowledgment permits only the original bytes/request retry. Pending PR actions owns recovery, sanitized failures and status reads. Verified job success with matching output identity/revision must precede a fresh original repository read before automatic PR loading can resume. Failed jobs require a fresh read and explicit review before releasing the save. Rejected saves require read/review before another draft. Unsent choices and selection reads are discarded on repository change or departure; late work cannot change another form or start its PR query. Remote repository capability, backend authorization/revision/checkout validation and normal configured queries remain authoritative. English/Korean semantic forms keep visible focus, 40px controls and wrapping actions.
+
+### Settled Runner inspection results
+
+The shared machine controller owns one exact original job read/cache/poller. Its
+result view consumes that observation and adds no second poller. While the
+connection is active, an accepted unsettled inspection may finish observation
+after its presenter closes. Only a successful read of the original supported Job,
+a non-regressive revision and a closed terminal state (succeeded, failed or
+canceled) settles inspection ownership. Missing, foreign, malformed, failed-read
+and uncertain evidence retains the gate; an old job cannot settle a replacement.
+
+Terminal results remain available until explicit Finish inspection. A settled
+result alone does not block the unchanged Schedule Task or other consuming flow.
+Settlement clears only the exact executable-path and Verify snapshot submitted
+with that original request; newer unsent edits remain locked. Uncertain retries
+retain their original snapshot and request. This grants no execution readiness,
+account authority, Local proof, automatic discovery or schedule-save permission.
+Independent selection/save locks and Schedules sidebar replacement remain intact.

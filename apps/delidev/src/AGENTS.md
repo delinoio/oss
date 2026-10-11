@@ -47,3 +47,11 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - [DeliDev Worker workspace contract](../../../docs/cmds-delidev-workspace-contract.md)
 - [Project: DeliDev](../../../docs/project-delidev.md)
 - [DeliDev v1 Connect contract](../../../docs/protos-delidev-v1-contract.md)
+
+## Shared Runner inspection ownership
+
+A retained inspection result is presentation history, not pending work. Shared
+consuming gates must use the machine controller's validated original job
+observation and submitted snapshot under the
+[desktop contract](../../../docs/apps-delidev-desktop-contract.md#settled-runner-inspection-results).
+Do not add a second result poller or use terminal inspection as execution authority.
