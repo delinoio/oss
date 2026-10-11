@@ -151,9 +151,11 @@ export function useRunnerRemediation({
   compact = true,
   authority,
   active = true,
-}: { compact?: boolean; authority?: PairingAuthority; active?: boolean } = {}):
-  | RunnerRemediationOpener
-  | undefined {
+}: {
+  compact?: boolean;
+  authority?: PairingAuthority;
+  active?: boolean;
+} = {}): RunnerRemediationOpener | undefined {
   useLocale();
   const owner = useContext(Context),
     presenter = useId();
