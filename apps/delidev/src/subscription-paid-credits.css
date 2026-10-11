@@ -1,6 +1,17 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-.subscription-paid-credits { padding: 16px; border: 1px solid var(--border); border-radius: 8px; margin-block: 16px; min-width: 0; }
+.subscription-paid-credits { padding: 12px 16px; border: 1px solid var(--border); border-radius: 8px; margin-block: 16px; min-width: 0; max-width: 100%; box-sizing: border-box; background: var(--surface-subtle); color: var(--text); }
+.subscription-paid-credits h3 { margin: 0 0 8px; font-size: 12px; line-height: 18px; color: var(--muted); font-weight: 500; }
 .subscription-paid-credits ul { list-style: none; padding: 0; margin: 0; }
-.subscription-paid-credits li { display: flex; flex-wrap: wrap; gap: 8px 16px; padding-block: 8px; min-width: 0; overflow-wrap: anywhere; }
-.subscription-paid-credits li small { flex-basis: 100%; }
-.subscription-paid-summary { grid-column: 1 / -1; overflow-wrap: anywhere; }
+.subscription-paid-credits li { display: flex; flex-direction: column; gap: 4px; padding-block: 4px; min-width: 0; overflow-wrap: anywhere; }
+.subscription-paid-credits small { display: block; font-size: 12px; line-height: 18px; color: var(--muted); }
+.subscription-paid-credits p { margin: 4px 0 0; font-size: 12px; line-height: 18px; color: var(--muted); }
+.subscription-paid-summary { grid-column: 1 / -1; margin-block: 0 8px; overflow-wrap: anywhere; }
+.subscription-paid-balance { position: relative; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; min-width: 0; }
+.subscription-paid-amount { min-width: 0; font-size: 24px; line-height: 32px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.subscription-paid-unit { font-size: 14px; line-height: 20px; color: var(--muted); }
+.subscription-paid-state { display: block; font-size: 16px; line-height: 24px; overflow-wrap: anywhere; }
+.subscription-paid-bucket { font-size: 14px; line-height: 20px; }
+.subscription-paid-info { display: grid; place-items: center; width: 40px; min-width: 40px; min-height: 40px; padding: 0; border: 1px solid var(--control-border); border-radius: 8px; background: var(--surface); color: var(--text-secondary); }
+.subscription-paid-info:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.subscription-paid-tooltip { position: absolute; z-index: 2; inset-inline: 0; top: 100%; padding: 8px; border: 1px solid var(--control-border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+.subscription-paid-tooltip > span { font-variant-numeric: tabular-nums; }
