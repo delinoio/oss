@@ -111,18 +111,21 @@ func (c *CodexEventPublisher) deliverDynamicUnavailable(ctx, publicationCtx cont
 		return publicationUncertain()
 	}
 	requestAttempt := filepath.Join(byRequest, dynamicJournalKey(string(original.IDKind)+":"+original.IDValue))
-	if security.CreatePrivateDirExclusive(requestAttempt) != nil || security.SyncParent(requestAttempt) != nil {
+	attempt := filepath.Join(byCall, dynamicJournalKey(event.ItemID))
+	path := filepath.Join(attempt, "reply.json")
+	journal := dynamicReplyJournal{Version: 1, ServerID: config.Credential.ServerID, DeviceID: config.Credential.DeviceID, MachineID: config.Credential.MachineID, InstanceID: config.Instance, JobID: c.publisher.job, Revision: c.publisher.state.Revision, AssignmentDigest: c.publisher.state.AssignmentDigest, SessionID: c.publisher.input.SessionID, ExecutionID: c.publisher.execution, ThreadID: c.thread, TurnID: c.turn, CallID: event.ItemID, Request: original, ClaimID: domain.NewID(), State: responsePrepared}
+	if err := security.CreatePrivateDirExclusive(requestAttempt); err != nil {
+		return c.recoverDynamicReply(publicationCtx, event, retained, journal, requestAttempt, attempt, path)
+	}
+	if security.SyncParent(requestAttempt) != nil {
 		return publicationUncertain()
 	}
-	attempt := filepath.Join(byCall, dynamicJournalKey(event.ItemID))
-	if security.CreatePrivateDirExclusive(attempt) != nil {
-		return publicationUncertain()
+	if err := security.CreatePrivateDirExclusive(attempt); err != nil {
+		return c.recoverDynamicReply(publicationCtx, event, retained, journal, requestAttempt, attempt, path)
 	}
 	if security.SyncParent(attempt) != nil {
 		return publicationUncertain()
 	}
-	path := filepath.Join(attempt, "reply.json")
-	journal := dynamicReplyJournal{Version: 1, ServerID: config.Credential.ServerID, DeviceID: config.Credential.DeviceID, MachineID: config.Credential.MachineID, InstanceID: config.Instance, JobID: c.publisher.job, Revision: c.publisher.state.Revision, AssignmentDigest: c.publisher.state.AssignmentDigest, SessionID: c.publisher.input.SessionID, ExecutionID: c.publisher.execution, ThreadID: c.thread, TurnID: c.turn, CallID: event.ItemID, Request: original, ClaimID: domain.NewID(), State: responsePrepared}
 	if writeJSON(path, journal) != nil {
 		return publicationUncertain()
 	}
@@ -143,6 +146,32 @@ func (c *CodexEventPublisher) deliverDynamicUnavailable(ctx, publicationCtx cont
 	if _, err := inspectDynamicReplyJournal(path, journal); err != nil {
 		return err
 	}
+	return c.publishDynamicReply(publicationCtx, event, retained, journal, reply, sendErr)
+}
+
+// Reconcile only a fully observed journal entry. Prepared or send-intent
+// entries retain uncertainty and never authorize another native send.
+func (c *CodexEventPublisher) recoverDynamicReply(publicationCtx context.Context, event codex.Event, retained dynamicToolPublication, expected dynamicReplyJournal, requestAttempt, attempt, path string) error {
+	if security.CheckPrivateDir(requestAttempt) != nil || security.CheckPrivateDir(attempt) != nil {
+		return publicationUncertain()
+	}
+	raw, err := security.ReadPrivate(path, 32<<10)
+	if err != nil {
+		return publicationUncertain()
+	}
+	var saved dynamicReplyJournal
+	if domain.Decode(raw, &saved) != nil {
+		return publicationUncertain()
+	}
+	expected.ClaimID, expected.State, expected.Delivery = saved.ClaimID, saved.State, saved.Delivery
+	verified, err := inspectDynamicReplyJournal(path, expected)
+	if err != nil || verified.State != responseObserved {
+		return publicationUncertain()
+	}
+	return c.publishDynamicReply(publicationCtx, event, retained, verified, domain.DynamicToolReply{Token: verified.Request.Token, ClaimID: verified.ClaimID, Delivery: verified.Delivery, Unavailable: true}, nil)
+}
+
+func (c *CodexEventPublisher) publishDynamicReply(publicationCtx context.Context, event codex.Event, retained dynamicToolPublication, journal dynamicReplyJournal, reply domain.DynamicToolReply, sendErr error) error {
 	update := domain.DynamicToolUpdate{ID: retained.ID, NativeID: event.ItemID, Stage: domain.DynamicReplied, Reply: &reply}
 	next, err := domain.ApplyDynamicTool(&retained.Tool, update)
 	if err != nil {

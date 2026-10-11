@@ -5,6 +5,7 @@ import (
 	"context"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"os"
 	"path/filepath"
 	"strings"
@@ -84,6 +85,40 @@ func TestDynamicDurableOwnerBeforeWireAndRestartNeverResends(t *testing.T) {
 				t.Fatal("foreign journal acquired authority")
 			}
 		})
+	}
+}
+func TestDynamicObservedJournalRecoversPublicationWithoutResending(t *testing.T) {
+	c, rpc := codexTerminalStatusFixture(t)
+	event := codex.Event{Kind: codex.DynamicToolEvent, ThreadID: c.thread, TurnID: c.turn, ItemID: "dynamic-call", Correlated: true}
+	identity := domain.DynamicToolIdentity{Tool: "fixture_tool", ArgumentsDigest: strings.Repeat("a", 64)}
+	request := domain.DynamicToolRequest{Token: domain.NewID(), IDKind: domain.InteractionNumberID, IDValue: "7", Identity: identity}
+	if _, err := c.PublishCore(context.Background(), codex.Event{Kind: codex.DynamicToolEvent, ThreadID: c.thread, TurnID: c.turn, ItemID: event.ItemID, Correlated: true, DynamicTool: &domain.DynamicToolUpdate{NativeID: event.ItemID, Stage: domain.DynamicRequested, Request: &request}}); err != nil {
+		t.Fatal(err)
+	}
+	event.DynamicTool = &domain.DynamicToolUpdate{NativeID: event.ItemID, Stage: domain.DynamicRequested, Request: &request}
+	config := c.publisher.config
+	directory := filepath.Join(config.Root, "jobs", string(c.publisher.job), "dynamic-replies")
+	byCall, byRequest := filepath.Join(directory, "by-call"), filepath.Join(directory, "by-request")
+	if security.PrivateDir(directory) != nil || security.PrivateDir(byCall) != nil || security.PrivateDir(byRequest) != nil {
+		t.Fatal("could not prepare private journal fixture")
+	}
+	requestAttempt := filepath.Join(byRequest, dynamicJournalKey(string(request.IDKind)+":"+request.IDValue))
+	attempt := filepath.Join(byCall, dynamicJournalKey(event.ItemID))
+	if security.CreatePrivateDirExclusive(requestAttempt) != nil || security.CreatePrivateDirExclusive(attempt) != nil {
+		t.Fatal("could not prepare exclusive journal ownership")
+	}
+	journal := dynamicReplyJournal{Version: 1, ServerID: config.Credential.ServerID, DeviceID: config.Credential.DeviceID, MachineID: config.Credential.MachineID, InstanceID: config.Instance, JobID: c.publisher.job, Revision: c.publisher.state.Revision, AssignmentDigest: c.publisher.state.AssignmentDigest, SessionID: c.publisher.input.SessionID, ExecutionID: c.publisher.execution, ThreadID: c.thread, TurnID: c.turn, CallID: event.ItemID, Request: request, ClaimID: domain.NewID(), State: responseObserved, Delivery: domain.DynamicTransmitted}
+	path := filepath.Join(attempt, "reply.json")
+	if err := writeJSON(path, journal); err != nil {
+		t.Fatal(err)
+	}
+	before := len(rpc.events)
+	client := &fixtureDynamicResponder{t: t, root: attempt}
+	if err := c.deliverDynamicUnavailable(context.Background(), context.Background(), event, client); err != nil || client.calls != 0 || len(rpc.events) != before+1 {
+		t.Fatal("observed reply was not reconciled without another send", err)
+	}
+	if got := c.dynamicTools[event.ItemID].Tool.Reply; got == nil || got.ClaimID != journal.ClaimID || got.Delivery != domain.DynamicTransmitted {
+		t.Fatal("recovered publication did not retain the observed reply")
 	}
 }
 func TestDynamicNativeCompletionAndFailedTurnDoNotSettleRequest(t *testing.T) {
