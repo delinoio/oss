@@ -1,3 +1,4 @@
+import { DraftEditGenerations } from "./draft-edit-generations";
 import { InboxBadgePresentation } from "./inbox-badge";
 import { SessionNameEditorProvider } from "./session-name-editor";
 import {
@@ -204,12 +205,14 @@ function Shell({
     error?: string;
   }>({ drafts: new Map() });
   const draftOwner = useRef(draftState);
+  const [draftEdits] = useState(() => new DraftEditGenerations());
   const { drafts } = draftState;
   // Keep text and typed invocation ownership atomic, including before unmount.
   const saveDraft = (
     id: string,
     prompt?: string,
     bindings?: SkillTokenBinding[],
+    userEdit = false,
   ) => {
     const current = draftOwner.current,
       previous = current.drafts.get(id);
@@ -218,9 +221,10 @@ function Shell({
       bindings: bindings ?? previous?.bindings ?? [],
     };
     if (
-      (previous?.prompt === next.prompt &&
+      !userEdit &&
+      ((previous?.prompt === next.prompt &&
         previous.bindings === next.bindings) ||
-      (!previous && !next.prompt && !next.bindings.length)
+        (!previous && !next.prompt && !next.bindings.length))
     )
       return true;
     const size = new TextEncoder().encode(next.prompt).byteLength;
@@ -237,7 +241,8 @@ function Shell({
       total > 4 << 20 ||
       ((next.prompt || next.bindings.length) &&
         !previous &&
-        current.drafts.size >= 1000)
+        current.drafts.size >= 1000) ||
+      (userEdit && !draftEdits.advance(id))
     ) {
       draftOwner.current = {
         ...current,
@@ -643,8 +648,9 @@ function Shell({
                               id={id}
                               draft={drafts.get(id)?.prompt ?? ""}
                               initialSkills={drafts.get(id)?.bindings}
-                              setDraft={(value, bindings) =>
-                                saveDraft(id, value, bindings)
+                              draftGeneration={() => draftEdits.read(id)}
+                              setDraft={(value, bindings, userEdit) =>
+                                saveDraft(id, value, bindings, userEdit)
                               }
                               changeSkills={(bindings) => {
                                 saveDraft(id, undefined, bindings);

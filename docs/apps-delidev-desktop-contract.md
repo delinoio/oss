@@ -4982,6 +4982,26 @@ history/usage/Fork/Sidechat snapshots, and replacement of the current draft.
 Preserve the exact source revision, context revision and retained mutation
 request; stale sources and uncertain outcomes cannot submit new input.
 
+The exact connection-owned Revert busy intent also fences the composer, even
+when its presenter is reused or remounted and the session row predates job
+admission. Retain action/message/context, draft guard, replacement and restored
+action identity with that original mutation owner. Acknowledgment alone does
+not prove native completion; definitive rejection releases only the matching
+original guard. Retain uncertain bytes for explicit original-request replay.
+Other sessions and connections remain independent, and disposal grants no
+completion or fresh-input authority.
+
+Accepted user text edits synchronously advance a per-session monotonic unsigned
+64-bit generation before React rendering, including same-value events, undo and
+accepted edits from another retained view. Empty draft payload deletion does
+not erase that history. Capture the original generation at confirmation and
+require it, original ownership and text equality for automatic restoration.
+Keep edited drafts and offer the existing explicit restore action. Bound edit
+history to 1000 session owners; reject an edit rather than wrap or discard its
+guard. Mutation-owned presentation is limited to 1000 entries and 4 MiB, with a
+pending guard reserving the 1 MiB document bound for verified replacement text.
+Never evict a busy/uncertain guard or retain it across connection disposal.
+
 Verified completion restores the original prompt text as an unsent draft and
 focuses the active composer. Automatic and explicit restoration preserve the
 current composer Plan/Execute choice; historical input mode remains validated

@@ -12,7 +12,10 @@ import {
 } from "@delinoio/delidev-api-client";
 import { document, object, text, type Document } from "./documents";
 import { copy, useLocale } from "./localization";
-import { useRetainedMutation } from "./mutation";
+import {
+  useRetainedMutation,
+  useRetainedMutationPresentation,
+} from "./mutation";
 import { Modal, Problem } from "./ui";
 
 const revision = (value: unknown) =>
@@ -94,10 +97,23 @@ export function verifiedRevertDraft(
     return;
   return prompt;
 }
+interface RevertPresentation {
+  pending?: {
+    action: string;
+    message: string;
+    context: bigint;
+    draft: string;
+    generation: bigint;
+  };
+  replacement?: { action: string; prompt: string };
+  restoredAction?: string;
+}
+
 export function useSessionRevert({
   session,
   active,
   draft,
+  draftGeneration,
   restore,
   composer,
   blocked,
@@ -106,6 +122,7 @@ export function useSessionRevert({
   session?: Resource;
   active: boolean;
   draft: string;
+  draftGeneration: () => bigint;
   restore: (prompt: string) => boolean | void;
   composer: RefObject<HTMLTextAreaElement | null>;
   blocked: boolean;
@@ -133,22 +150,30 @@ export function useSessionRevert({
     row: Resource;
     source: Resource;
   }>();
-  const [pending, setPending] = useState<{
-    action: string;
-    message: string;
-    context: bigint;
-    draft: string;
-  }>();
-  const [replacement, setReplacement] = useState<Document>();
-  const restoredAction = useRef<string | undefined>(undefined);
+  const key = `revert:${session?.id ?? ""}`;
+  const retained = useRetainedMutationPresentation<RevertPresentation>(key);
+  const { pending, replacement, restoredAction } = retained.value ?? {};
+  const [retentionError, setRetentionError] = useState<unknown>();
+  const savePresentation = (value: RevertPresentation) =>
+    retained.save(
+      value,
+      Math.max(
+        // A pending operation reserves the bounded retained document size so
+        // its later verified prompt does not require evicting another guard.
+        value.pending ? 1 << 20 : 0,
+        new TextEncoder().encode(
+          JSON.stringify(value, (_key, item) =>
+            typeof item === "bigint" ? item.toString() : item,
+          ),
+        ).byteLength,
+      ),
+    );
   const originalSession = useRef(session?.id);
   useEffect(() => {
     if (originalSession.current !== session?.id) {
       originalSession.current = session?.id;
       setSelected(undefined);
-      setPending(undefined);
-      setReplacement(undefined);
-      restoredAction.current = undefined;
+      setRetentionError(undefined);
     }
   }, [session?.id]);
   const latestDraft = useRef(draft);
@@ -167,7 +192,7 @@ export function useSessionRevert({
       changed(row);
   }, [current.data?.resource, session, changed]);
   const mutation = useRetainedMutation(
-    `revert:${session?.id ?? ""}`,
+    key,
     SessionQuery.revertSession,
     () => {},
     (reply, request) => {
@@ -183,6 +208,12 @@ export function useSessionRevert({
         target.native_turn_id === request.beforeTurnId &&
         revision(target.context_revision) === request.expectedContextRevision
       );
+    },
+    false,
+    (request) => {
+      const value = retained.read();
+      if (value?.pending?.action === request.mutation?.requestId)
+        savePresentation({ ...value, pending: undefined });
     },
   );
   const original =
@@ -203,29 +234,28 @@ export function useSessionRevert({
     // Native completion cannot overwrite a draft edited while the original job
     // was pending, or restore text into an inactive conversation.
     if (
+      draftGeneration() === pending.generation &&
       latestDraft.current === pending.draft &&
       restore(text(prompt.prompt)) !== false
     ) {
       composer.current?.focus();
-      restoredAction.current = pending.action;
-      setReplacement(undefined);
-    } else setReplacement(prompt);
-    setPending(undefined);
+      savePresentation({ restoredAction: pending.action });
+    } else
+      savePresentation({
+        replacement: { action: pending.action, prompt: text(prompt.prompt) },
+        restoredAction,
+      });
     setSelected(undefined);
   }, [original, pending, active]);
   useEffect(() => {
-    if (mutation.error && !mutation.uncertain && !mutation.busy)
-      setPending(undefined);
-  }, [mutation.error, mutation.uncertain, mutation.busy]);
-  useEffect(() => {
-    if (pending || replacement) return;
+    if (!active || pending || replacement) return;
     const retained = object(document(original).revert),
       result = object(retained.result),
       target = object(result.target),
       context = revision(target.context_revision);
     if (
       text(retained.action_id) &&
-      restoredAction.current !== retained.action_id &&
+      restoredAction !== retained.action_id &&
       context !== undefined
     ) {
       const prompt = verifiedRevertDraft(
@@ -234,16 +264,24 @@ export function useSessionRevert({
         text(target.message_id),
         context,
       );
-      if (prompt) setReplacement(prompt);
+      if (prompt)
+        savePresentation({
+          restoredAction,
+          replacement: {
+            action: text(retained.action_id),
+            prompt: text(prompt.prompt),
+          },
+        });
     }
-  }, [original, pending, replacement]);
+  }, [original, pending, replacement, restoredAction, active]);
   const open = (row: Resource) => {
     if (
       session &&
       !blocked &&
       !mutation.busy &&
       !mutation.uncertain &&
-      !pending &&
+      !retained.read()?.pending &&
+      active &&
       revertEligible(session, row, supported)
     )
       setSelected({ row, source: session });
@@ -257,19 +295,29 @@ export function useSessionRevert({
       blocked ||
       mutation.busy ||
       mutation.uncertain ||
-      pending ||
+      retained.read()?.pending ||
+      !active ||
       !revertEligible(session, selected.row, supported)
     )
       return;
     const action = newRequestId(),
       target = document(selected.row),
       context = revision(document(session).context_revision)!;
-    setPending({
-      action,
-      message: selected.row.id,
-      context,
-      draft: latestDraft.current,
-    });
+    try {
+      savePresentation({
+        pending: {
+          action,
+          message: selected.row.id,
+          context,
+          draft: latestDraft.current,
+          generation: draftGeneration(),
+        },
+      });
+      setRetentionError(undefined);
+    } catch (error) {
+      setRetentionError(error);
+      return;
+    }
     setSelected(undefined);
     void mutation.send({
       mutation: {
@@ -330,11 +378,8 @@ export function useSessionRevert({
           <button
             type="button"
             onClick={() => {
-              if (restore(text(replacement.prompt)) !== false) {
-                restoredAction.current = text(
-                  object(document(original).revert).action_id,
-                );
-                setReplacement(undefined);
+              if (active && restore(replacement.prompt) !== false) {
+                savePresentation({ restoredAction: replacement.action });
                 composer.current?.focus();
               }
             }}
@@ -346,7 +391,7 @@ export function useSessionRevert({
       {object(object(document(original).revert).result).target ? (
         <p>{copy("session.revertHistoricalAttachments")}</p>
       ) : null}
-      <Problem error={mutation.error || current.error} />
+      <Problem error={retentionError || mutation.error || current.error} />
       {mutation.uncertain ? (
         <button type="button" disabled={mutation.busy} onClick={mutation.retry}>
           {copy("session.retrySameRevert")}
@@ -357,7 +402,7 @@ export function useSessionRevert({
   return {
     action,
     content,
-    pending: Boolean(pending),
+    pending: Boolean(pending) || mutation.busy,
     uncertain: mutation.uncertain,
   };
 }
