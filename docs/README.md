@@ -52,6 +52,11 @@ Record new implementation status, validation results and unresolved limits in pu
 
 ## Project Catalog
 
+### typeopt
+
+- [Project index](project-typeopt.md)
+- [Rust CLI foundation](crates-typeopt-foundation.md)
+
 ### delidev
 
 - [Mobile HTTPS client](apps-delidev-mobile-contract.md)
