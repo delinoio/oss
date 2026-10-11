@@ -1,3 +1,4 @@
+import { revealSharedTab, useSharedTabReveal } from "./shared-tabs";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { Timestamp, TimestampMode, TimestampText } from "./timestamp-display";
 import type { ReactNode } from "react";
@@ -8,7 +9,7 @@ import {
   displayLocale,
   useLocale,
 } from "./localization";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import type { UsageEntry } from "./usage-entry";
 import { useQuery } from "@connectrpc/connect-query";
 import {
@@ -261,6 +262,8 @@ export function Usage({
 
   const [tab, setTab] = useState(UsageTab.Overview);
   const tabId = useId();
+  const tabRoot = useRef<HTMLDivElement>(null);
+  useSharedTabReveal(tabRoot, tab);
   const [expanded, setExpanded] = useState<AccountingDisclosures["expanded"]>(
     {},
   );
@@ -517,13 +520,19 @@ export function Usage({
         aria-busy={result.isFetching}
       >
         <div
-          className="usage-tabs"
+          className="usage-tabs shared-tab-strip"
+          ref={tabRoot}
           role="tablist"
           aria-label={copy("usage.analysisTabs")}
         >
           {tabs.map((value, index) => (
             <button
               key={value}
+              className="shared-tab-item shared-tab-control shared-tab-label"
+              onFocus={(event) => revealSharedTab(event.currentTarget)}
+              ref={(node) => {
+                if (tab === value) revealSharedTab(node);
+              }}
               type="button"
               role="tab"
               id={`${tabId}-${value}-tab`}

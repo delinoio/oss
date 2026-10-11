@@ -255,25 +255,7 @@
   margin-top: 32px;
 }
 .backups-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
   margin: 16px 0;
-  border-bottom: 1px solid var(--border);
-}
-.backups-tabs button {
-  margin-bottom: -1px;
-  padding-inline: 8px;
-  border: 0;
-  border-bottom: 3px solid transparent;
-  border-radius: 0;
-  color: var(--muted);
-  background: transparent;
-}
-.backups-tabs button[aria-selected="true"] {
-  border-bottom-color: var(--link);
-  color: var(--link);
-  font-weight: 600;
 }
 .backups-history-heading {
   display: flex;

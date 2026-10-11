@@ -116,7 +116,7 @@ dialog.settings-task-dialog {
 }
 .settings-task-body
   :is(
-    button,
+    button:not(.shared-tab-control),
     input:not([type="checkbox"]):not([type="radio"]),
     textarea,
     select,
@@ -222,7 +222,7 @@ dialog.settings-task-dialog {
     input:not([type="checkbox"]):not([type="radio"]),
     select,
     textarea,
-    button
+    button:not(.shared-tab-control)
   ),
 .settings-task-footer button {
   border-color: var(--control-border);

@@ -10,6 +10,7 @@ import {
 import { flushSync } from "react-dom";
 import { copy, useLocale } from "./localization";
 import "./project-edit-tabs.css";
+import { revealSharedTab, useSharedTabReveal } from "./shared-tabs";
 export enum ProjectEditTab {
   General = "general",
   Repositories = "repositories",
@@ -77,21 +78,26 @@ export function ProjectEditTabs({
     node?.addEventListener("project-reveal-invalid", reveal);
     return () => node?.removeEventListener("project-reveal-invalid", reveal);
   }, []);
+  useSharedTabReveal(root, selected);
   return (
     <div className="project-edit-tabs" ref={root}>
       <div
         role="tablist"
         aria-label={copy("configuration-fields.projectEdit.tabs")}
-        className="project-edit-tablist"
+        className="project-edit-tablist shared-tab-strip"
       >
         {order.map((tab) => (
           <button
             key={tab}
             ref={(node) => {
-              if (node) tabs.current.set(tab, node);
-              else tabs.current.delete(tab);
+              if (node) {
+                tabs.current.set(tab, node);
+                if (selected === tab) revealSharedTab(node);
+              } else tabs.current.delete(tab);
             }}
             type="button"
+            className="shared-tab-item shared-tab-control shared-tab-label"
+            onFocus={(event) => revealSharedTab(event.currentTarget)}
             role="tab"
             id={`${id}-${tab}-tab`}
             aria-controls={`${id}-${tab}-panel`}

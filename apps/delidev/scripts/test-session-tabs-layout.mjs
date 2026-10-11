@@ -292,6 +292,40 @@ try {
           ),
           JSON.stringify(closeGeometry),
         );
+        const shared = await page.locator(".session-tabs").evaluate((strip) => {
+          const selected = strip.querySelector(".is-selected"),
+            label = selected.querySelector("[role=tab]"),
+            close = selected.querySelector(".session-tab-close");
+          return {
+            baseline: getComputedStyle(strip).borderBottomWidth,
+            gap: getComputedStyle(strip).gap,
+            radius: getComputedStyle(selected).borderRadius,
+            background: getComputedStyle(selected).backgroundColor,
+            separator: getComputedStyle(selected).borderRightWidth,
+            underline: getComputedStyle(selected, "::after").borderBottomWidth,
+            color: getComputedStyle(selected, "::after").borderBottomColor,
+            expected: getComputedStyle(document.documentElement)
+              .getPropertyValue("--selected-border")
+              .trim(),
+            font: getComputedStyle(label).fontSize,
+            line: getComputedStyle(label).lineHeight,
+            padding: getComputedStyle(label).paddingInlineStart,
+            overlap: close
+              ? label.getBoundingClientRect().right >
+                close.getBoundingClientRect().left + 1
+              : false,
+          };
+        });
+        assert.equal(shared.baseline, "1px");
+        assert.equal(shared.gap, "0px");
+        assert.equal(shared.radius, "0px");
+        assert.equal(shared.separator, "0px");
+        assert.equal(shared.background, "rgba(0, 0, 0, 0)");
+        assert.equal(shared.underline, "2px");
+        assert.equal(shared.font, "14px");
+        assert.equal(shared.line, "20px");
+        assert.equal(shared.padding, "16px");
+        assert.equal(shared.overlap, false);
         assert(
           matrix.tabs.bottom <= matrix.pane.top + 1,
           JSON.stringify(matrix),

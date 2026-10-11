@@ -1012,6 +1012,10 @@ it("defaults to Overview, keeps three topmost semantic tabs and retains state wi
   const view = render(f.view());
   await screen.findByText("Incomplete coverage");
   const tabs = screen.getAllByRole("tab");
+  expect(tabs[0].closest(".shared-tab-strip")).toBeTruthy();
+  expect(
+    tabs.every((node) => node.classList.contains("shared-tab-control")),
+  ).toBe(true);
   expect(document.querySelector(".usage-page")!.firstElementChild).toBe(
     tabs[0].parentElement,
   );

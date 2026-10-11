@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useLayoutEffect, useRef } from "react";
+import { useRef } from "react";
 import { copy, useLocale } from "./localization";
 import { Comparison } from "./session-diff-model";
 import { SessionTabKind, sessionTabKey, type SessionTab } from "./session-tabs";
+import { revealSharedTab, useSharedTabReveal } from "./shared-tabs";
 import { bindingAria, shortcutPlatform } from "./shortcuts";
 export function tabName(tab: SessionTab): string {
   switch (tab.kind) {
@@ -44,16 +45,12 @@ export function SessionTabBar({
   close: (key: string) => void;
   id: string;
 }) {
-  useLocale();
+  const locale = useLocale();
   const root = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    root.current
-      ?.querySelector<HTMLElement>('[aria-selected="true"]')
-      ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
-  }, [selected, tabs.length]);
+  useSharedTabReveal(root, `${selected}:${tabs.length}:${locale}`);
   return (
     <div
-      className="session-tabs"
+      className="session-tabs shared-tab-strip"
       ref={root}
       role="tablist"
       aria-label={copy("session-tabs.tabs")}
@@ -63,12 +60,14 @@ export function SessionTabBar({
           name = tabName(tab);
         return (
           <div
-            className={`session-tab${selected === key ? " is-selected" : ""}`}
+            className={`session-tab shared-tab-item shared-tab-item--closable${selected === key ? " is-selected" : ""}`}
             key={key}
             role="presentation"
           >
             <button
               type="button"
+              className="shared-tab-control shared-tab-label shared-tab-label--truncate"
+              onFocus={(event) => revealSharedTab(event.currentTarget)}
               id={`session-tab-${id}-${index}`}
               role="tab"
               aria-label={
@@ -119,12 +118,13 @@ export function SessionTabBar({
             </button>
             {index > 0 ? (
               <button
-                className="session-tab-close"
+                className="session-tab-close shared-tab-control shared-tab-close"
                 type="button"
                 aria-label={copy("session-tabs.close", { name })}
                 aria-keyshortcuts={
                   selected === key ? closeAria || undefined : undefined
                 }
+                onFocus={(event) => revealSharedTab(event.currentTarget)}
                 onClick={() => close(key)}
               >
                 ×

@@ -53,6 +53,10 @@ function fixture(disabled = false) {
 it("keeps four ordered panels mounted and preserves drafts and per-panel scroll", () => {
   render(fixture());
   const tabs = screen.getAllByRole("tab");
+  expect(tabs[0].closest(".shared-tab-strip")).toBeTruthy();
+  expect(
+    tabs.every((tab) => tab.classList.contains("shared-tab-control")),
+  ).toBe(true);
   expect(tabs.map((tab) => tab.textContent)).toEqual([
     "General",
     "Repositories",

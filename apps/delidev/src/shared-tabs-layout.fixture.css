@@ -1,0 +1,19 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.fixture-workspace {
+  height: auto;
+  margin: 16px;
+}
+.fixture-panel {
+  min-width: 0;
+  padding: 16px;
+}
+.fixture-panel input {
+  max-width: 100%;
+}
+.fixture-secondary {
+  min-width: 0;
+  margin: 16px;
+}
+.fixture-tall {
+  height: 800px;
+}

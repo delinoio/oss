@@ -639,6 +639,8 @@ it("manually activates stable history tabs and excludes hidden controls from key
   await screen.findByText("Backup creation pending");
   const creation = screen.getByRole("tab", { name: "Creation jobs" });
   const deletion = screen.getByRole("tab", { name: "Deletion jobs" });
+  expect(creation.closest(".shared-tab-strip")).toBe(deletion.parentElement);
+  expect(creation.classList.contains("shared-tab-control")).toBe(true);
   creation.focus();
   fireEvent.keyDown(creation, { key: "ArrowRight" });
   expect(document.activeElement).toBe(deletion);

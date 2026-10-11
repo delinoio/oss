@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { revealSharedTab, useSharedTabReveal } from "./shared-tabs";
 import {
   SettingsActionButton,
   SettingsActionIcon,
@@ -114,6 +115,8 @@ export function Backups({ active }: { active: boolean }) {
   useLocale();
   const panelId = useId();
   const [historyTab, setHistoryTab] = useState(HistoryTab.Creation);
+  const tabRoot = useRef<HTMLDivElement>(null);
+  useSharedTabReveal(tabRoot, historyTab);
   const [focusedTab, setFocusedTab] = useState(HistoryTab.Creation);
   const tabButtons = useRef(new Map<HistoryTab, HTMLButtonElement>());
   const inspectButtons = useRef(new Map<string, HTMLButtonElement>());
@@ -609,23 +612,30 @@ export function Backups({ active }: { active: boolean }) {
           </SettingsActionButton>
         </header>
         <div
-          className="backups-tabs"
+          className="backups-tabs shared-tab-strip"
+          ref={tabRoot}
           role="tablist"
           aria-label={copy("backups.backupOperationHistory_8f9f32")}
         >
           {historyTabs.map((tab) => (
             <button
               key={tab}
+              className="shared-tab-item shared-tab-control shared-tab-label"
               ref={(node) => {
-                if (node) tabButtons.current.set(tab, node);
-                else tabButtons.current.delete(tab);
+                if (node) {
+                  tabButtons.current.set(tab, node);
+                  if (historyTab === tab) revealSharedTab(node);
+                } else tabButtons.current.delete(tab);
               }}
               role="tab"
               id={`${panelId}-tab-${tab}`}
               aria-controls={`${panelId}-panel-${tab}`}
               aria-selected={historyTab === tab}
               tabIndex={focusedTab === tab ? 0 : -1}
-              onFocus={() => setFocusedTab(tab)}
+              onFocus={(event) => {
+                setFocusedTab(tab);
+                revealSharedTab(event.currentTarget);
+              }}
               onKeyDown={(event) => moveTabFocus(event, tab)}
               onClick={() => {
                 setFocusedTab(tab);

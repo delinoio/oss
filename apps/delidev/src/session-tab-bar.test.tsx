@@ -89,3 +89,45 @@ it("keeps New browser page as an ordinary reachable button after the numeric tab
   fireEvent.click(plus);
   expect(open).toHaveBeenCalledTimes(1);
 });
+
+// Keep original callbacks and selection independent of the enclosing visual item.
+it("closes an inactive tab without selecting it and retains full dynamic labels", () => {
+  const select = vi.fn(),
+    close = vi.fn();
+  const path = "a/".repeat(180) + "original.ts";
+  render(
+    <SessionTabBar
+      id="flat"
+      tabs={[
+        { kind: SessionTabKind.Conversation },
+        { kind: SessionTabKind.File, path, repository: "original-repository" },
+        {
+          kind: SessionTabKind.Page,
+          profile: "original",
+          id: "page",
+          title: "fixture.test",
+        },
+      ]}
+      selected={JSON.stringify(["page", "original", "page"])}
+      select={select}
+      close={close}
+    />,
+  );
+  const label = screen.getByRole("tab", {
+    name: `${path} · original-repository`,
+  });
+  expect(label.title).toBe(path);
+  expect(label.classList.contains("shared-tab-label--truncate")).toBe(true);
+  const item = label.closest(".shared-tab-item")!;
+  const button = item.querySelector<HTMLButtonElement>(".shared-tab-close")!;
+  expect(button.parentElement).toBe(label.parentElement);
+  expect(button.textContent).toBe("×");
+  fireEvent.click(button);
+  expect(select).not.toHaveBeenCalled();
+  expect(close).toHaveBeenCalledTimes(1);
+  expect(
+    screen
+      .getByRole("tab", { name: "fixture.test" })
+      .getAttribute("aria-selected"),
+  ).toBe("true");
+});

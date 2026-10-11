@@ -3532,7 +3532,37 @@ The compact tool dialog has a 360px maximum width, viewport minus 32px bound, 20
 
 OpenTool stays outside the seven editable preference IDs. Any committed unshifted primary+T editable override suppresses only the new session T default in memory across all scopes. Disabled and Shift+T overrides do not suppress it. Preserve saved preference bytes and native validation/storage. Effective dispatch, conflict validation, Help, read-only Settings and trigger ARIA use the same resolver. Inactive default presentation includes the localized custom-binding-priority explanation; clearing or changing the committed conflicting override immediately restores the default. Ordinary typing is allowed, while handled/repeated/composing/capture, hidden/inert, unrelated modal, terminal passthrough and focused native Browser fences remain authoritative. The target-bound terminal-create T binding keeps its separate priority and authority. No RPC, allocation, migration, dependency or key/content logging is added.
 
-Tabs form a continuous gapless neutral editor strip attached to the active pane. Each tab is 40px high and at most 320px wide. Selected tabs use the surface background, 4px top corners, square bottom corners and a 2px accent underline; inactive tabs have transparent backgrounds and subtle separators. Every closeable tab encloses an always-visible 40px close target beside its truncated label, using sibling controls with independent focus treatment. This supersedes 's earlier rounded-shell appearance while preserving its enclosed close-control principle. Exactly one content region is active. Conversation is
+### Shared desktop tab presentation
+
+Project editing, Usage, Backups history, session workspace tabs and terminal
+selectors use one static shared stylesheet. Native Browser pages use the same
+session tab owner in both presentation paths; do not recreate independent page
+selectors. Keep each original component, activation mode and operation owner.
+
+Use one horizontally scrolling row with a neutral 1px baseline, gapless hit areas,
+flat square transparent items and no item separators. Every control has a minimum
+40px height, 14px/20px typography and 16px inline label padding. Inactive text is
+muted; selected text and the 2px underline use semantic selection tokens in light,
+dark and custom themes. Keep a separate visible keyboard focus indicator inside
+the control so overflow does not clip it. Exclude shared tab controls from broad
+form-button radius and border rules; ordinary fields and Save/Cancel keep their
+existing appearance and task geometry.
+
+Closeable session items retain the 320px width limit and truncate dynamic labels
+before a separate always-visible 40×40px sibling close target. Keep complete
+accessible names and title hints. The selected underline spans the label and close
+area. Closing an inactive item never activates it. Selection, keyboard focus and
+strip resizing reveal the item using only the original strip's horizontal scroll;
+retain panel/document scroll positions and avoid document-level horizontal overflow
+at narrow widths and effective 200% reflow. Fixed labels remain on one line.
+
+Project and Backups preserve manual keyboard activation; Usage and session tabs
+preserve automatic activation. Terminal selector group/tablist roles, keys,
+callbacks, permission gates and selected metadata remain unchanged. Styling adds
+no resource create/close/delete/retry/recovery operation and cannot replace query,
+mutation, draft, filter, cursor or mounted controller ownership.
+
+Exactly one content region is active. Conversation is
 pinned first, initially selected and cannot be closed or moved. Files and Diff
 open typed content tabs keyed by session/repository/path and, for comparisons,
 comparison kind. Terminals use the original terminal ID; Browser pages use the

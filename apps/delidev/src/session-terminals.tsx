@@ -1,5 +1,6 @@
 import { useShortcuts, useTerminalTabShortcuts } from "./shortcut-provider";
 // SPDX-License-Identifier: Apache-2.0
+import { revealSharedTab, useSharedTabReveal } from "./shared-tabs";
 import "./terminal-dock.css";
 import { createPortal } from "react-dom";
 import { ShortcutId, ShortcutInput } from "./shortcuts";
@@ -452,6 +453,7 @@ export function SessionTerminals({
     }
   }, [reachedSelection, selectedTerminal]);
   const tabs = list.rows.filter((row) => !presentationRecords.hidden(row.id));
+  useSharedTabReveal(listRoot, `${selected}:${tabs.length}`);
   if (
     createdTerminal &&
     !presentationRecords.hidden(createdTerminal.id) &&
@@ -653,11 +655,17 @@ export function SessionTerminals({
           ref={listRoot}
           role={tabbed ? "group" : "tablist"}
           aria-label={copy("session-terminals.terminals_7482c4")}
-          className="terminal-tabs"
+          className="terminal-tabs shared-tab-strip"
         >
           {tabs.map((row, index) => (
             <button
               key={row.id}
+              className="shared-tab-item shared-tab-control shared-tab-label"
+              data-selected={selected === row.id}
+              onFocus={(event) => revealSharedTab(event.currentTarget)}
+              ref={(node) => {
+                if (selected === row.id) revealSharedTab(node);
+              }}
               id={`terminal-tab-${row.id}`}
               role={tabbed ? undefined : "tab"}
               aria-selected={tabbed ? undefined : selected === row.id}
