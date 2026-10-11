@@ -79,6 +79,12 @@ async function provenance(root) {
     );
   }
 }
+// gzip and Brotli ship with Node, so the pinned Node fixes the compressors.
+const pin = JSON.parse(
+  await readFile(new URL("./pin.json", import.meta.url), "utf8"),
+);
+if (process.versions.node !== pin.node)
+  throw new Error(`Measure with pinned Node ${pin.node}`);
 const baselineBuild = await provenance(process.argv[2]);
 const optimizedBuild = await provenance(process.argv[3]);
 const provenanceMismatches = PROVENANCE.filter(
