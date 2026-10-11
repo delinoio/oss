@@ -60,6 +60,7 @@ func TestManagedCloneRemoteHeadObservation(t *testing.T) {
 		{name: "empty branch", observation: "printf 'refs/remotes/origin/\\n'", code: domain.RecoveryRequired},
 		{name: "self", observation: "printf 'refs/remotes/origin/HEAD\\n'", code: domain.RecoveryRequired},
 		{name: "multiple", observation: "printf 'refs/remotes/origin/main\\nrefs/remotes/origin/other\\n'", code: domain.RecoveryRequired},
+		{name: "embedded carriage return", observation: "printf 'refs/remotes/origin/main\\rrefs/remotes/origin/other\\n'", code: domain.RecoveryRequired},
 		{name: "malformed", observation: "printf 'refs/remotes/origin/bad..name\\n'", code: domain.Unavailable, cause: "git_exit"},
 	} {
 		t.Run(test.name, func(t *testing.T) {

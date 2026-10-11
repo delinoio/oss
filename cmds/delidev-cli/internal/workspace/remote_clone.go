@@ -223,7 +223,7 @@ func provisionManagedCloneRemotes(ctx context.Context, git Git, path, url string
 		return err
 	}
 	target := strings.TrimSuffix(strings.TrimSuffix(string(symbolic), "\n"), "\r")
-	if domain.Text(target, "remote symbolic reference", 4096, true) != nil || !strings.HasPrefix(target, primaryPrefix) || target == primaryPrefix || target == primaryPrefix+"HEAD" {
+	if strings.ContainsAny(target, "\r\n") || domain.Text(target, "remote symbolic reference", 4096, true) != nil || !strings.HasPrefix(target, primaryPrefix) || target == primaryPrefix || target == primaryPrefix+"HEAD" {
 		return ResultUncertain()
 	}
 	if _, err := git.run(ctx, path, "check-ref-format", target); err != nil {
