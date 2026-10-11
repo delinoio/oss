@@ -201,6 +201,41 @@ it.each([
  } finally { await i18n.changeLanguage(SupportedLanguage.English); }
 });
 
+it.each([
+ [SupportedLanguage.English, "1 skill tokens are unavailable in this scope.", "All skill tokens are available in this scope."],
+ [SupportedLanguage.Korean, "현재 범위에서 스킬 토큰 1개를 사용할 수 없습니다.", "현재 범위의 모든 스킬 토큰을 사용할 수 있습니다."],
+])("announces localized recovery once after a complete inventory refresh in %s", async (language, unavailableMessage, recoveryMessage) => {
+ await i18n.changeLanguage(language);
+ try {
+  let current = entries;
+  const client = new QueryClient(); const read = vi.fn(async () => ({ skills: current }));
+  const transport = createRouterTransport(router => router.service(SkillService, { listSkills: read }));
+  const view = render(<TransportProvider transport={transport}><QueryClientProvider client={client}><Composer send={vi.fn()}/></QueryClientProvider></TransportProvider>);
+  const input = screen.getByRole("textbox");
+  const status = view.container.querySelector<HTMLElement>("[data-skill-availability-status]")!;
+  fireEvent.change(input, { target: { value: "$add-issue", selectionStart: 10 } });
+  await screen.findByRole("listbox");
+  expect(status.textContent).toBe("");
+  fireEvent.change(input, { target: { value: "$missing", selectionStart: 8 } });
+  await waitFor(() => expect(status.textContent).toBe(unavailableMessage));
+
+  const announcements: string[] = [];
+  const observer = new MutationObserver(() => { if (status.textContent) announcements.push(status.textContent); });
+  observer.observe(status, { childList: true, characterData: true, subtree: true });
+  try {
+   current = [...entries, { ...entries[0]!, name: "missing", selection: { ...entries[0]!.selection, skillId: newRequestId() } }];
+   await client.invalidateQueries();
+   await waitFor(() => expect(status.textContent).toBe(recoveryMessage));
+   await waitFor(() => expect(announcements).toEqual([recoveryMessage]));
+
+   await client.invalidateQueries();
+   await waitFor(() => expect(read).toHaveBeenCalledTimes(3));
+   expect(status.textContent).toBe("");
+   expect(announcements).toEqual([recoveryMessage]);
+  } finally { observer.disconnect(); }
+ } finally { await i18n.changeLanguage(SupportedLanguage.English); }
+});
+
 it("does not repeat unchanged unavailable results or ordinary edits and retires unknown status", async () => {
  let current = entries; let fail = false;
  const client = new QueryClient(); const read = vi.fn(async () => { if (fail) throw new Error("Private unavailable fixture"); return { skills: current }; });
@@ -221,7 +256,7 @@ it("does not repeat unchanged unavailable results or ordinary edits and retires 
   await client.invalidateQueries(); await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
   expect(updates).toEqual([]);
   current = [...entries, { ...entries[0]!, name: "missing", selection: { ...entries[0]!.selection, skillId: newRequestId() } }];
-  await client.invalidateQueries(); await waitFor(() => expect(view.container.querySelector(".skill-text-overlay")).toBeNull()); expect(status.textContent).toBe("");
+  await client.invalidateQueries(); await waitFor(() => expect(view.container.querySelector(".skill-text-overlay")).toBeNull()); expect(status.textContent).toBe("All skill tokens are available in this scope.");
   current = entries; await client.invalidateQueries(); await waitFor(() => expect(status.textContent).toBe("1 skill tokens are unavailable in this scope."));
   fireEvent.compositionStart(input); expect(status.textContent).toBe(""); fireEvent.compositionEnd(input); expect(status.textContent).toBe("");
   fail = true; await client.invalidateQueries(); expect(status.textContent).toBe("");

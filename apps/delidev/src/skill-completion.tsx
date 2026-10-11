@@ -88,11 +88,18 @@ export function useSkillCompletion({ value, change, textarea, machineId, agentId
       setStatus(previous => previous.count !== undefined ? { scope, transport } : previous);
       return;
     }
-    if (statusOwner.current.count === unavailableCount) return;
+    const previousCount = statusOwner.current.count;
+    if (previousCount === unavailableCount) return;
     statusOwner.current.count = unavailableCount;
-    setStatus({ scope, transport, count: unavailableCount || undefined });
+    setStatus(unavailableCount > 0
+      ? { scope, transport, count: unavailableCount }
+      : previousCount !== undefined && previousCount > 0
+        ? { scope, transport, count: 0 }
+        : { scope, transport });
   }, [scope, transport, statusKnown, statusPaused, unavailableCount]);
-  const announcement = (statusKnown || statusPaused) && status.scope === scope && status.transport === transport && (statusPaused || status.count === unavailableCount) && status.count !== undefined && status.count > 0 ? copy("skills.tokensUnavailable", { count: status.count }) : "";
+  const announcement = (statusKnown || statusPaused) && status.scope === scope && status.transport === transport && (statusPaused || status.count === unavailableCount) && status.count !== undefined
+    ? status.count > 0 ? copy("skills.tokensUnavailable", { count: status.count }) : copy("skills.tokensAvailable")
+    : "";
   const accept = (entry: SkillEntry) => {
     if (!canEdit() || !enabled || !token || !entry.selection || composing.current || contextChanged || !inventoryKnown || !inventory.some(current => current.selection === entry.selection)) return;
     const replacement = `$${entry.name}`, next = value.slice(0, token.start) + replacement + value.slice(token.end), end = token.start + replacement.length;
