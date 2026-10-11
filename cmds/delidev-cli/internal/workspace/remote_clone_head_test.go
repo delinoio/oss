@@ -18,7 +18,7 @@ func remoteHeadQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
-func remoteHeadFixture(t *testing.T, observation, beforeObservation string) (Git, string, RepositorySpec) {
+func remoteHeadFixture(t *testing.T, observation, afterAliases string) (Git, string, RepositorySpec) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix executable fixture; native Windows acceptance is separate")
@@ -34,8 +34,11 @@ func remoteHeadFixture(t *testing.T, observation, beforeObservation string) (Git
 	wrapper := filepath.Join(t.TempDir(), "git")
 	body := "#!/bin/sh\ncase \" $* \" in\n" +
 		"*' symbolic-ref --quiet refs/remotes/origin/HEAD '*) " + observation + " ;;\n"
-	if beforeObservation != "" {
-		body += "*' for-each-ref '*) " + remoteHeadQuote(binary) + " \"$@\"\nstatus=$?\n" + beforeObservation + "\nexit \"$status\" ;;\n"
+	if afterAliases != "" {
+		// The starting remote is the last alias. Removing the wrapper after its
+		// final update-ref makes the following symbolic-ref command itself fail
+		// to launch, rather than an earlier alias update.
+		body += "*' update-ref --no-deref refs/remotes/backup/main '*) " + remoteHeadQuote(binary) + " \"$@\"\nstatus=$?\n" + afterAliases + "\nexit \"$status\" ;;\n"
 	}
 	body += "*' fetch '*|*' clone '*) exit 77 ;;\n*) exec " + remoteHeadQuote(binary) + " \"$@\" ;;\nesac\n"
 	if err := os.WriteFile(wrapper, []byte(body), 0700); err != nil {
@@ -54,7 +57,6 @@ func TestManagedCloneRemoteHeadObservation(t *testing.T) {
 		{name: "absent", observation: "exit 1"},
 		{name: "fatal", observation: "exit 128", code: domain.Unavailable, cause: "git_exit"},
 		{name: "authentication status one", observation: "printf 'fatal: Authentication failed for private-content\\n' >&2; exit 1", code: domain.PermissionDenied, cause: "clone_authentication"},
-		{name: "launch", observation: "exit 1", before: "rm -- \"$0\"", code: domain.Unavailable, cause: "git_launch"},
 		{name: "empty", observation: "exit 0", code: domain.RecoveryRequired},
 		{name: "foreign", observation: "printf 'refs/heads/main\\n'", code: domain.RecoveryRequired},
 		{name: "empty branch", observation: "printf 'refs/remotes/origin/\\n'", code: domain.RecoveryRequired},
@@ -78,6 +80,18 @@ func TestManagedCloneRemoteHeadObservation(t *testing.T) {
 			}
 		})
 	}
+	t.Run("symbolic-ref launch", func(t *testing.T) {
+		marker := filepath.Join(t.TempDir(), "last-alias-updated")
+		git, root, spec := remoteHeadFixture(t, "exit 1", "printf reached > "+remoteHeadQuote(marker)+"; rm -- \"$0\"")
+		err := provisionManagedCloneRemotes(context.Background(), git, root, "https://github.com/fixture/repo.git", spec, "origin")
+		problem := domain.SafeError(err)
+		if err == nil || problem.Code != domain.Unavailable || problem.Cause != "git_launch" {
+			t.Fatalf("symbolic-ref launch failure was not preserved: %v", err)
+		}
+		if _, err := os.Stat(marker); err != nil {
+			t.Fatal("fixture did not remove the wrapper after the final alias update", err)
+		}
+	})
 	t.Run("nested target and every alias", func(t *testing.T) {
 		git, root, spec := remoteHeadFixture(t, "printf 'refs/remotes/origin/feature/nested\\n'", "")
 		gitTest(t, root, "update-ref", "refs/remotes/origin/feature/nested", "HEAD")
