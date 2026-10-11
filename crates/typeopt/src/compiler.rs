@@ -19,7 +19,6 @@ use ts_goport::{
 };
 
 use crate::{
-    optimizer::Occurrence,
     passes::PassSet,
     plan::{Phase, Plan},
 };
@@ -620,18 +619,4 @@ fn collect(node: Node, nodes: &mut Vec<Node>) {
 fn token_start(node: Node) -> usize {
     ts_goport::scanner_util::get_token_pos_of_node(node, get_source_file_of_node(node), false)
         as usize
-}
-
-fn span(node: Node, source: &str, shorthand: bool, quoted: bool) -> Occurrence {
-    // Compiler positions are UTF-8 byte offsets including leading trivia.
-    let end = node.end() as usize;
-    let start = token_start(node);
-    assert!(source.is_char_boundary(start) && source.is_char_boundary(end));
-    Occurrence {
-        start,
-        end,
-        shorthand,
-        quoted,
-        erased: false,
-    }
 }
