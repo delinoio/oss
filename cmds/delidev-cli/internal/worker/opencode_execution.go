@@ -19,6 +19,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
@@ -156,7 +157,11 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	defer cancelNative()
 	cancelBeforeAcceptance := context.AfterFunc(ctx, cancelNative)
 	defer cancelBeforeAcceptance()
-	nativeConfig := opencode.APIExecutionConfig{OrdinaryTools: ordinaryTools,
+	skillSources, err := (skills.Manager{Root: config.Root}).OpenCodeSources(ctx, connection.Credential.ServerID, connection.Credential.DeviceID, input.Configuration.ManagedSkills, input.Input.Skills)
+	if err != nil {
+		return nil, err
+	}
+	nativeConfig := opencode.APIExecutionConfig{SkillSources: skillSources, OrdinaryTools: ordinaryTools,
 		Probe:     opencode.ProbeConfig{Process: process.Config{StartupObserver: config.progress.native, Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: home, Env: env, Logger: logger}, Version: input.Installation.Version, Home: filepath.Join(home, "opencode")},
 		Workspace: lease.WorkingDirectory(), Root: nativeRoot, ServerOrigin: connection.Credential.Endpoint, Token: token,
 		References: openCodeWorkspaceReferences(manifest),
@@ -275,7 +280,11 @@ func executeOpenCodeSession(ctx context.Context, config Config, owner domain.ID,
 	input.Installation.Version = api.Version()
 	publisher.nativeVersion = api.Version()
 	config.startup.claimInput()
-	if _, err := api.StartText(nativeCtx, input.TurnRequestID, input.Input.Prompt); err != nil {
+	if len(input.Input.Skills) > 0 {
+		if _, err := api.StartSkillCommand(nativeCtx, input.TurnRequestID, input.Input); err != nil {
+			return nil, err
+		}
+	} else if _, err := api.StartText(nativeCtx, input.TurnRequestID, input.Input.Prompt); err != nil {
 		return nil, err
 	}
 	phase = "first-input"

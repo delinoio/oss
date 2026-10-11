@@ -16,6 +16,7 @@ import (
 // binding can create it. Manually typed tokens cannot enter this boundary.
 type SkillCommand struct {
 	Name            string
+	Location        string
 	Arguments       string `json:"-"`
 	ContentRevision string
 	Text            string `json:"-"`
@@ -108,7 +109,7 @@ func nativeSkillCommand(selection skills.OpenCodeSelection, arguments string) (*
 	if domain.Text(text, "native skill input", 256<<10, true) != nil {
 		return nil, sessionInvalid()
 	}
-	return &SkillCommand{Name: selection.Name, Arguments: arguments, ContentRevision: selection.ContentRevision, Text: text}, nil
+	return &SkillCommand{Name: selection.Name, Location: selection.Path, Arguments: arguments, ContentRevision: selection.ContentRevision, Text: text}, nil
 }
 
 func encodeSkillCommand(settings SessionSettings, message string, command SkillCommand) ([]byte, error) {

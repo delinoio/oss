@@ -205,3 +205,23 @@ func VerifyOpenCodeRuntime(ctx context.Context, home string, selected []OpenCode
 	}
 	return nil
 }
+
+// OpenCodeResources supplies comparison-only paths after complete byte/mode
+// verification. It never executes or reads a model-selected external path.
+func OpenCodeResources(ctx context.Context, selected OpenCodeSelection) ([]string, error) {
+	actual, err := OpenCodePackage(ctx, selected.NativeSelection)
+	if err != nil || actual.Description != selected.Description || actual.Content != selected.Content || actual.ExplicitOnly != selected.ExplicitOnly {
+		return nil, unavailable()
+	}
+	files, digest, err := packageFiles(ctx, filepath.Dir(selected.Path))
+	if err != nil || digest != selected.ContentRevision {
+		return nil, unavailable()
+	}
+	out := []string{}
+	for path := range files {
+		if path != "SKILL.md" {
+			out = append(out, filepath.Join(filepath.Dir(selected.Path), path))
+		}
+	}
+	return out, nil
+}

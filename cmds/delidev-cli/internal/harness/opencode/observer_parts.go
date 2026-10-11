@@ -136,6 +136,9 @@ func (o *inputObserver) part(raw []byte) (result *NativePart, repeated bool, pro
 }
 
 func (o *inputObserver) tool(value NativePart, old *observedPart) error {
+	if err := o.verifySkillTool(value.Tool); err != nil {
+		return err
+	}
 	tool := value.Tool
 	if tool.State == ToolError && tool.Title != nil {
 		if tool.Name != "task" || old == nil || old.value.Tool.State != ToolRunning || o.stop == nil || !o.stop.sent || !interruptedTool(tool) || !reflect.DeepEqual(old.value.Tool.Title, tool.Title) {

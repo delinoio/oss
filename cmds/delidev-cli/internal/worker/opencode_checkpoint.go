@@ -153,7 +153,7 @@ func (c *OpenCodeEventPublisher) RetainCheckpoint(ctx context.Context) (string, 
 		return fail(err)
 	}
 	value := openCodeExecutionCheckpoint{Version: 2, Reference: ref, NativeReference: nativeRef, Native: native}
-	if !value.matches(ref) || nativeRef.PartID != b.inputClaim.PartID {
+	if !value.matches(ref) || nativeRef.PartID != openCodeClaimPart(claims) {
 		return fail(executionCheckpointUncertain())
 	}
 	root := b.publisher.config.Root

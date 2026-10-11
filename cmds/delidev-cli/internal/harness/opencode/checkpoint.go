@@ -325,6 +325,9 @@ func checkpointPath(path string) bool {
 }
 
 func validCheckpointHistory(h HistoryObservation) bool {
+	if !validSkillCommandHistory(h) {
+		return false
+	}
 	if h.Todo != nil && (!nativeID(h.Todo.EventID, "evt") || !checkpointDigest(h.Todo.Digest)) {
 		return false
 	}

@@ -14,6 +14,9 @@ import (
 type skillCommandHTTP struct {
 	digest string
 	done   chan skillCommandHTTPResult
+	cancel context.CancelFunc
+	joined bool
+	result skillCommandHTTPResult
 }
 type skillCommandHTTPResult struct {
 	raw []byte
@@ -70,17 +73,20 @@ func (a *OwnedAPI) StartSkillCommand(ctx context.Context, request domain.ID, inp
 		s.leave()
 		return s.input.receipt, sessionUncertain()
 	}
-	attempt := &skillCommandHTTP{digest: claim.BodyDigest, done: make(chan skillCommandHTTPResult, 1)}
+	operation, cancel := context.WithCancel(ctx)
+	attempt := &skillCommandHTTP{cancel: cancel, digest: claim.BodyDigest, done: make(chan skillCommandHTTPResult, 1)}
 	s.commandHTTP = attempt
 	receipt := s.input.receipt
 	s.leave()
 	if _, err := s.observeInput(ctx, s.runtimeRoot); err != nil {
+		cancel()
+		attempt.done <- skillCommandHTTPResult{err: err}
 		return receipt, err
 	}
 	// Exactly one goroutine sends exactly one consumed original body. Its buffered
 	// result remains owned until native lifetime cleanup joins this operation.
 	go func() {
-		raw, _, err := s.request(ctx, http.MethodPost, "/session/"+id+"/command", body, http.StatusOK)
+		raw, _, err := s.request(operation, http.MethodPost, "/session/"+id+"/command", body, http.StatusOK)
 		attempt.done <- skillCommandHTTPResult{raw: raw, err: err}
 	}()
 	return receipt, nil
@@ -120,4 +126,30 @@ func (s *sessionAPI) validateStoredSkillInput(ctx context.Context, raw []byte) (
 		input.observedPart = true
 	}
 	return true, nil
+}
+
+func (s *sessionAPI) joinSkillCommandHTTP(ctx context.Context, cancel bool) error {
+	attempt := s.commandHTTP
+	if attempt == nil {
+		return nil
+	}
+	if cancel && attempt.cancel != nil {
+		attempt.cancel()
+	}
+	if !attempt.joined {
+		select {
+		case attempt.result = <-attempt.done:
+			attempt.joined = true
+		case <-ctx.Done():
+			return unavailable()
+		}
+	}
+	// Native event and exact stored-history evidence own completion independently
+	// of HTTP response loss. The response remains private and is never replayed.
+	clear(attempt.result.raw)
+	attempt.result.raw = nil
+	if !cancel && (s.observer == nil || s.observer.skillCommand == nil) {
+		return sessionUncertain()
+	}
+	return nil
 }

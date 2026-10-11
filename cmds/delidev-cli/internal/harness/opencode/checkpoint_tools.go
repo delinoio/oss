@@ -12,6 +12,7 @@ type checkpointToolName string
 
 const (
 	checkpointReadTool     checkpointToolName = "read"
+	checkpointSkillTool    checkpointToolName = "skill"
 	checkpointShellTool    checkpointToolName = "bash"
 	checkpointQuestionTool checkpointToolName = "question"
 )
@@ -92,6 +93,10 @@ func validCheckpointTools(value nativeCheckpoint) bool {
 					instructionsLoaded = true
 				}
 				switch tool.Name {
+				case checkpointSkillTool:
+					if proof.Version < 14 {
+						return false
+					}
 				case checkpointReadTool, checkpointShellTool:
 				case checkpointQuestionTool:
 					if proof.Version < 5 {
@@ -301,6 +306,11 @@ func (s *sessionAPI) checkpointToolHistory(value nativeCheckpoint) *checkpointTo
 	if checkpointHasExternalAllowance(proof) {
 		proof.Version = 13
 	}
+	for _, part := range proof.Parts {
+		if part.Name == checkpointSkillTool {
+			proof.Version = 14
+		}
+	}
 	if !validCheckpointTools(value) {
 		return nil
 	}
@@ -330,6 +340,8 @@ func checkpointInlineTool(tool *NativeToolPart) bool {
 		return false
 	}
 	switch checkpointToolName(tool.Name) {
+	case checkpointSkillTool:
+		return checkpointInlineSkill(tool)
 	case checkpointReadTool:
 		_, valid := checkpointReadMetadata(tool.Metadata)
 		return valid
