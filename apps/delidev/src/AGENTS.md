@@ -6,7 +6,7 @@
 
 ## Development and validation
 
-Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
+Follow the parent instructions and the owning contracts in `docs/`. Settings completion owners must distinguish operation acknowledgment from verified original-job completion under the [desktop save and toast contract](../../../docs/apps-delidev-desktop-contract.md#in-app-toast-notifications); preserve opening disposal, exact read-only recovery and once-only notification fences. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
 ## Owning contracts
 

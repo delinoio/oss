@@ -7,7 +7,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { expect, it, vi } from "vitest";
 import { EntityKind, ResourceSchema, ResourceService, newRequestId } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
-import { TrackedJob } from "./jobs";
+import { TrackedJob, type JobObservation } from "./jobs";
 import { i18n } from "./localization";
 
 function fixture(state = "queued") {
@@ -69,4 +69,24 @@ it("retains the original identity when a status response is foreign", async () =
   await waitFor(() => expect(screen.queryByRole("button", { name: "Retry original status read" })).toBeNull());
   expect(f.read).toHaveBeenCalledTimes(2);
   for (const [request] of f.read.mock.calls as unknown as [{ id: string }][]) expect(request.id).toBe(f.initial.id);
+});
+
+
+it("reports pending reads and visible problems separately from verified original status", async () => {
+  const f = fixture("succeeded");
+  let resolve!: (result: { resource: typeof f.initial }) => void;
+  f.read.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  const rendered = render(f.view);
+  const observation = () => (f.children.mock.calls.at(-1) as unknown as [string, unknown, JobObservation])[2];
+  await waitFor(() => expect(observation().pending).toBe(true));
+  expect(observation().verified).toBe(false);
+  await act(async () => { resolve({ resource: create(ResourceSchema, { ...f.initial, documentJson: encode({ state: "succeeded", problem: { message: "Original operation problem" } }) }) }); });
+  await waitFor(() => expect(observation().pending).toBe(false));
+  expect(observation().verified).toBe(false);
+  expect(screen.getByText(/Original operation problem/)).toBeTruthy();
+  f.state("succeeded");
+  await act(async () => { observation().retry(); });
+  await waitFor(() => expect(observation().verified).toBe(true));
+  expect(f.read).toHaveBeenCalledTimes(2);
+  rendered.unmount();
 });

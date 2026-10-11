@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport, type Transport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -14,6 +15,7 @@ import { ConfigurationDeletion, RoutingPreview } from "./configuration-actions";
 import { MutationIntents } from "./mutation";
 import { encode, type Document } from "./documents";
 import { chooseScrollOption, scrollChoiceValue } from "./test-scroll-picker";
+import { SettingsLifetime } from "./settings-lifetime";
 import { NotificationProvider } from "./toast-notifications";
 
 function resource(kind: EntityKind, value: Document, revision = 1n) { if (kind === EntityKind.AGENT && !Object.hasOwn(value, "model_id") && !Object.hasOwn(value, "routes")) value = { ...value, routes: [{ model: { subscription_service: "chatgpt", native_id: "fixture-native" }, accounts: [{ id: newRequestId(), weight: 1 }] }] }; return create(ResourceSchema, { id: newRequestId(), kind, schemaVersion: configurationSchemaVersion(kind, value), revision, documentJson: encode(value) }); }
@@ -511,12 +513,12 @@ it("preserves explicit empty restrictions and requires a primary repository afte
   expect(JSON.parse(new TextDecoder().decode(input(value.save.mock.calls[0][0]).documentJson))).toMatchObject({ repositories: [second.id], primary_repository: second.id, accounts: { configured: true, ids: [] }, agents: { configured: false, ids: [] } });
 });
 
-it("keeps repository save acknowledgment separate from completed Worker validation", async () => {
+it("closes repository editing once only after verified Worker validation", async () => {
   const repository = resource(EntityKind.REPOSITORY, { name: "Repository", remote_url: "https://github.com/fixture/repo.git", checkouts: [{ machine_id: newRequestId(), path: "/owned/checkout" }], base: {}, starting: {}, auto_fetch: true });
   const job = resource(EntityKind.JOB, { type: "save-repository", state: "queued" });
   const value = fixture([repository, job]), saved = vi.fn();
   value.save.mockImplementation(async request => ({ job, requestId: input(request).mutation.requestId }));
-  render(value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={saved} cancel={() => {}} />));
+  render(<StrictMode><NotificationProvider>{value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={saved} cancel={() => {}} />)}</NotificationProvider></StrictMode>);
   await waitFor(() => expect((screen.getByRole("button", { name: "Save Repository" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Save Repository" }));
   await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
@@ -529,8 +531,67 @@ it("keeps repository save acknowledgment separate from completed Worker validati
   expect(screen.queryByRole("button", { name: "Return to retained draft" })).toBeNull();
   value.resources[1] = create(ResourceSchema, { ...job, revision: 3n, documentJson: encode({ type: "save-repository", state: "succeeded", output: { id: repository.id, revision: 2 } }) });
   await act(async () => { await value.client.invalidateQueries(); });
-  fireEvent.click(await screen.findByRole("button", { name: "Done" }));
+  await waitFor(() => expect(saved).toHaveBeenCalledTimes(1));
+  expect(screen.getAllByText("Repository saved.")).toHaveLength(1);
+  expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
+  expect(screen.queryByText("Configuration saved after Worker validation.")).toBeNull();
+  await act(async () => { await value.client.invalidateQueries(); });
   expect(saved).toHaveBeenCalledTimes(1);
+  expect(value.save).toHaveBeenCalledTimes(1);
+});
+
+it.each(["missing", "foreign", "unchanged", "problem", "read-error", "foreign-job", "older-job", "unreadable"])("retains %s repository completion and retries only the original status", async scenario => {
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository" }, 5n);
+  const job = resource(EntityKind.JOB, { type: "save-repository", state: "succeeded", output: { id: repository.id, revision: 6 } }, 3n);
+  let valid = false;
+  const reads: string[] = [];
+  const value = fixture([repository, job], { readResource: id => {
+    reads.push(id);
+    if (id !== job.id || valid) return { resource: id === job.id ? job : repository };
+    if (scenario === "read-error") throw new ConnectError("Read failed", Code.Unavailable);
+    if (scenario === "foreign-job") return { resource: create(ResourceSchema, { ...job, id: newRequestId() }) };
+    if (scenario === "older-job") return { resource: create(ResourceSchema, { ...job, revision: 2n }) };
+    if (scenario === "unreadable") return { resource: create(ResourceSchema, { ...job, schemaVersion: 999 }) };
+    const output = scenario === "missing" ? {} : { id: scenario === "foreign" ? newRequestId() : repository.id, revision: scenario === "unchanged" ? 5 : 6 };
+    return { resource: create(ResourceSchema, { ...job, documentJson: encode({ type: "save-repository", state: "succeeded", output, ...(scenario === "problem" ? { problem: { message: "Original job problem" } } : {}) }) }) };
+  } });
+  const saved = vi.fn();
+  value.save.mockImplementation(async request => ({ job, requestId: input(request).mutation.requestId }));
+  render(<NotificationProvider>{value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={saved} cancel={() => {}} />)}</NotificationProvider>);
+  const save = await screen.findByRole("button", { name: "Save Repository" });
+  await waitFor(() => expect((save as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(save);
+  const retries = await screen.findAllByRole("button", { name: "Retry original status read" });
+  await waitFor(() => expect((retries[retries.length - 1] as HTMLButtonElement).disabled).toBe(false));
+  expect(saved).not.toHaveBeenCalled();
+  expect(screen.queryByText("Repository saved.")).toBeNull();
+  valid = true;
+  fireEvent.click(retries[retries.length - 1]);
+  await waitFor(() => expect(saved).toHaveBeenCalledTimes(1));
+  expect(value.save).toHaveBeenCalledTimes(1);
+  expect(reads.filter(id => id === job.id)).toHaveLength(2);
+});
+
+it.each(["inactive", "unmounted"])("fences a pending successful repository read after becoming %s", async departure => {
+  const repository = resource(EntityKind.REPOSITORY, { name: "Repository" });
+  const job = resource(EntityKind.JOB, { type: "save-repository", state: "succeeded", output: { id: repository.id, revision: 2 } });
+  let resolve!: (result: { resource: Resource }) => void;
+  const pending = new Promise<{ resource: Resource }>(done => { resolve = done; });
+  const value = fixture([repository, job], { readResource: id => id === job.id ? pending : { resource: repository } });
+  const saved = vi.fn();
+  value.save.mockImplementation(async request => ({ job, requestId: input(request).mutation.requestId }));
+  const editor = (active: boolean) => <NotificationProvider>{value.view(<SettingsLifetime>{() => <ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active={active} saved={saved} cancel={() => {}} />}</SettingsLifetime>)}</NotificationProvider>;
+  const rendered = render(editor(true));
+  const save = await screen.findByRole("button", { name: "Save Repository" });
+  await waitFor(() => expect((save as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(save);
+  const retry = await screen.findByRole("button", { name: "Retry original status read" });
+  expect((retry as HTMLButtonElement).disabled).toBe(true);
+  expect(saved).not.toHaveBeenCalled();
+  if (departure === "unmounted") rendered.unmount(); else rendered.rerender(editor(false));
+  await act(async () => { resolve({ resource: job }); await pending; });
+  expect(saved).not.toHaveBeenCalled();
+  expect(screen.queryByText("Repository saved.")).toBeNull();
 });
 
 it.each(["failed", "canceled"] as const)("freshly reviews a %s repository save before returning to its retained draft", async state => {
