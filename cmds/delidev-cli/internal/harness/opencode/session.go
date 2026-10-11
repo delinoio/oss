@@ -51,6 +51,7 @@ type SessionMutation string
 const (
 	ForkSessionMutation           SessionMutation = "fork-session"
 	MoveForkMutation              SessionMutation = "move-fork"
+	RelocateForkSkillMutation     SessionMutation = "relocate-fork-skill"
 	MarkForkMutation              SessionMutation = "mark-fork"
 	DeleteForkSourceMutation      SessionMutation = "delete-fork-source"
 	CompactSessionMutation        SessionMutation = "compact-session"

@@ -60,8 +60,30 @@ func checkForkCheckpointCapacity(source nativeCheckpoint) error {
 	ref.SHA256, ref.SessionID, ref.InputID, ref.PartID, ref.HistorySHA256 = "", sessionID, messageID, partID, digest
 	sourceReference := source.Reference
 	sourceReference.SHA256 = digest
-	proof := &nativeCheckpointFork{Version: 1, RequestID: domain.NewID(), SourceReference: sourceReference, SourceWorkspace: source.Workspace, SourceHistories: histories, ClonedHistories: cloned, Identities: identities, SelectionPending: true}
-	value := nativeCheckpoint{Version: 1, NativeVersion: strings.Repeat("v", 64), Reference: ref, RuntimeHome: path, Workspace: path, NativeRoot: "/", Project: "global", Slug: strings.Repeat("\x01", 256), Created: 9007199254740991, SettingsSHA256: digest, CredentialSHA256: digest, History: cloned[len(cloned)-1], Files: files, Fork: proof}
+	relocations := []forkSkillRelocation{}
+	for _, history := range histories {
+		for _, message := range history.Messages {
+			for _, part := range message.Parts {
+				if part.Kind == ToolPartKind || history.SkillCommand != nil && part.ID == history.SkillCommand.PartID {
+					relocations = append(relocations, forkSkillRelocation{RequestID: domain.NewID(), MessageID: messageID, PartID: partID, Name: strings.Repeat("n", 128), ContentRevision: digest, SourceLocation: path, TargetLocation: path, OriginalSHA256: digest, BeforeSHA256: digest, AfterSHA256: digest, BodySHA256: digest, TextSHA256: digest})
+				}
+			}
+		}
+	}
+	proof := &nativeCheckpointFork{Version: 1, RequestID: domain.NewID(), SourceReference: sourceReference, SourceWorkspace: source.Workspace, SourceHistories: histories, ClonedHistories: cloned, Identities: identities, SelectionPending: true, SkillRelocations: relocations}
+	if len(relocations) != 0 {
+		proof.OriginalClonedHistories = copyForkHistories(cloned)
+	}
+	selected := slices.Clone(source.Skills)
+	for index := range selected {
+		selected[index].Location = path
+	}
+	for index := range cloned {
+		if cloned[index].SkillCommand != nil {
+			cloned[index].SkillCommand.Location = path
+		}
+	}
+	value := nativeCheckpoint{Version: 1, NativeVersion: strings.Repeat("v", 64), Reference: ref, RuntimeHome: path, Workspace: path, NativeRoot: "/", Project: "global", Slug: strings.Repeat("\x01", 256), Created: 9007199254740991, SettingsSHA256: digest, CredentialSHA256: digest, History: cloned[len(cloned)-1], Files: files, Fork: proof, Skills: selected, Tools: forkClonedTools(cloned)}
 	if len(cloned) > 1 {
 		value.Previous, value.PredecessorSHA256 = cloned[:len(cloned)-1], digest
 	}

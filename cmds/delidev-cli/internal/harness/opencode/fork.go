@@ -122,7 +122,11 @@ func prepareOwnedForkAPI(ctx context.Context, config APIExecutionConfig, api *Ow
 	s.forkAttempt = &nativeForkAttempt{source: sourceRef.SessionID, attempted: map[SessionMutation]bool{}, claimed: map[SessionMutation]bool{}}
 	phase = "operations"
 	doc, err := s.forkRead(ctx, "/doc", http.StatusOK)
-	if err != nil || validateSchemaOperations(doc, []operationProfile{{"/session/{sessionID}/fork", "post", "session.fork", "200", "application/json"}, {"/session/{sessionID}", "patch", "session.update", "200", "application/json"}, {"/session/{sessionID}", "delete", "session.delete", "200", "application/json"}, {"/experimental/control-plane/move-session", "post", "experimental.controlPlane.moveSession", "204", ""}}) != nil {
+	operations := []operationProfile{{"/session/{sessionID}/fork", "post", "session.fork", "200", "application/json"}, {"/session/{sessionID}", "patch", "session.update", "200", "application/json"}, {"/session/{sessionID}", "delete", "session.delete", "200", "application/json"}, {"/experimental/control-plane/move-session", "post", "experimental.controlPlane.moveSession", "204", ""}}
+	if forkHasSkillHistory(source) {
+		operations = append(operations, operationProfile{"/session/{sessionID}/message/{messageID}/part/{partID}", "patch", "part.update", "200", "application/json"})
+	}
+	if err != nil || validateSchemaOperations(doc, operations) != nil {
 		return nil, ref, incompatible()
 	}
 	if err := s.forkIdle(ctx); err != nil {
@@ -130,6 +134,9 @@ func prepareOwnedForkAPI(ctx context.Context, config APIExecutionConfig, api *Ow
 	}
 	original, err := s.forkHistory(ctx, sourceRef.SessionID, checkpointInventory(source))
 	if err != nil {
+		return nil, ref, err
+	}
+	if _, err := prepareForkSkillPatches(ctx, source, original, original, s.apiProfile.Skills); err != nil {
 		return nil, ref, err
 	}
 	list, err := s.forkSessions(ctx)
@@ -236,6 +243,22 @@ func prepareOwnedForkAPI(ctx context.Context, config APIExecutionConfig, api *Ow
 	if actual, err := s.forkHistory(ctx, identity.id, messages); err != nil || !sameForkRawHistory(actual, childHistory) {
 		return nil, ref, sessionUncertain()
 	}
+	originalClonedHistories := copyForkHistories(histories)
+	phase = "skill-relocation"
+	skillRelocations, relocatedHistory, err := s.relocateForkSkills(ctx, source, original, childHistory, messages)
+	if err != nil {
+		return nil, ref, err
+	}
+	childHistory = relocatedHistory
+	histories, err = applyForkSkillProofs(histories, skillRelocations)
+	if err != nil {
+		return nil, ref, err
+	}
+	messages = nil
+	for _, history := range histories {
+		messages = append(messages, history.Messages...)
+	}
+	last = histories[len(histories)-1]
 	// Reinspect the copied source independently after every child mutation. A
 	// changed source cannot be deleted or promoted into a completed child proof.
 	if actual, err := s.forkHistory(ctx, sourceRef.SessionID, checkpointInventory(source)); err != nil || !sameForkRawHistory(actual, original) {
@@ -288,9 +311,12 @@ func prepareOwnedForkAPI(ctx context.Context, config APIExecutionConfig, api *Ow
 	if !validForkRuntimeInventory(files) {
 		return nil, ref, sessionUncertain()
 	}
-	proof := &nativeCheckpointFork{Version: 1, RequestID: requests.Fork, SourceReference: sourceRef, SourceWorkspace: source.Workspace, SourceHistories: checkpointHistories(source), ClonedHistories: histories, Identities: identities, SelectionPending: true}
-	ref = CheckpointReference{OwnerID: s.owner, CreationRequestID: requests.Fork, InputRequestID: last.RequestID, SessionID: identity.id, InputID: last.InputID, PartID: last.Messages[0].Parts[0].ID, InputSHA256: sourceRef.InputSHA256, HistorySHA256: last.Digest}
-	value := nativeCheckpoint{Version: 1, NativeVersion: s.nativeVersion, Reference: ref, RuntimeHome: s.runtimeHome, Workspace: target, NativeRoot: "/", Project: "global", Slug: identity.slug, Created: identity.created, SettingsSHA256: settings, CredentialSHA256: mutationDigest([]byte(config.Token)), History: last, Files: files, Fork: proof}
+	proof := &nativeCheckpointFork{Version: 1, RequestID: requests.Fork, SourceReference: sourceRef, SourceWorkspace: source.Workspace, SourceHistories: checkpointHistories(source), ClonedHistories: histories, Identities: identities, SelectionPending: true, SkillRelocations: skillRelocations}
+	if len(skillRelocations) != 0 {
+		proof.OriginalClonedHistories = originalClonedHistories
+	}
+	ref = CheckpointReference{OwnerID: s.owner, CreationRequestID: requests.Fork, InputRequestID: last.RequestID, SessionID: identity.id, InputID: last.InputID, PartID: last.Messages[0].Parts[0].ID, InputSHA256: forkLastInputDigest(proof), HistorySHA256: last.Digest}
+	value := nativeCheckpoint{Version: 1, NativeVersion: s.nativeVersion, Reference: ref, RuntimeHome: s.runtimeHome, Workspace: target, NativeRoot: "/", Project: "global", Slug: identity.slug, Created: identity.created, SettingsSHA256: settings, CredentialSHA256: mutationDigest([]byte(config.Token)), History: last, Files: files, Fork: proof, Skills: retainedCheckpointSkills(s.apiProfile.Skills), Tools: forkClonedTools(histories)}
 	if len(histories) > 1 {
 		value.Previous = slices.Clone(histories[:len(histories)-1])
 		value.PredecessorSHA256 = sourceRef.SHA256
@@ -304,7 +330,7 @@ func prepareOwnedForkAPI(ctx context.Context, config APIExecutionConfig, api *Ow
 		return nil, ref, sessionUncertain()
 	}
 	if s.logger != nil {
-		s.logger.InfoContext(ctx, "opencode_fork_native_verified", "owner_id", s.owner, "request_id", requests.Fork, "messages", len(messages), "cleanup_confirmed", true, "selection_pending", true)
+		s.logger.InfoContext(ctx, "opencode_fork_native_verified", "owner_id", s.owner, "request_id", requests.Fork, "messages", len(messages), "cleanup_confirmed", true, "selection_pending", true, "skills", len(s.apiProfile.Skills), "skill_relocations", len(skillRelocations))
 	}
 	return raw, ref, nil
 }
@@ -533,7 +559,7 @@ func InspectForkCheckpoint(ctx context.Context, home string, raw []byte, ref Che
 // It neither restores a session nor exposes native history or a credential.
 func InspectForkClaims(raw []byte, ref CheckpointReference, home string, requests ForkRequests, claims []SessionClaim) error {
 	c, err := decodeCheckpoint(raw, ref, home)
-	if err != nil || c.Fork == nil || !c.Fork.SelectionPending || requests.Validate() != nil || len(claims) != 5 || requests.Fork != c.Reference.CreationRequestID {
+	if err != nil || c.Fork == nil || !c.Fork.SelectionPending || requests.Validate() != nil || len(claims) != 5+len(c.Fork.SkillRelocations) || requests.Fork != c.Reference.CreationRequestID {
 		return sessionUncertain()
 	}
 	source := c.Fork.SourceReference
@@ -556,16 +582,23 @@ func InspectForkClaims(raw []byte, ref CheckpointReference, home string, request
 		Metadata   sessionMetadata  `json:"metadata"`
 		Permission []PermissionRule `json:"permission"`
 	}{sessionMetadata{sessionMarker{requests.Fork}}, []PermissionRule{}})
-	kinds := []SessionMutation{ResumeSessionMutation, ForkSessionMutation, MoveForkMutation, MarkForkMutation, DeleteForkSourceMutation}
-	ids := []domain.ID{requests.Restore, requests.Fork, requests.Move, requests.Mark, requests.DeleteSource}
-	bodies := [][]byte{intent, []byte("{}"), move, marker, nil}
-	for n, actual := range claims {
+	expectedClaims := []SessionClaim{}
+	kinds := []SessionMutation{ResumeSessionMutation, ForkSessionMutation, MoveForkMutation, MarkForkMutation}
+	ids := []domain.ID{requests.Restore, requests.Fork, requests.Move, requests.Mark}
+	bodies := [][]byte{intent, []byte("{}"), move, marker}
+	for n := range kinds {
 		scope := source
 		if n == 2 || n == 3 {
 			scope.SessionID, scope.InputID, scope.PartID = ref.SessionID, ref.InputID, ref.PartID
 		}
-		expected := SessionClaim{RequestID: ids[n], Kind: kinds[n], SessionID: scope.SessionID, MessageID: scope.InputID, PartID: scope.PartID, InputRequestID: source.InputRequestID, BodyDigest: mutationDigest(bodies[n])}
-		if expected.Validate() != nil || actual != expected {
+		expectedClaims = append(expectedClaims, SessionClaim{RequestID: ids[n], Kind: kinds[n], SessionID: scope.SessionID, MessageID: scope.InputID, PartID: scope.PartID, InputRequestID: source.InputRequestID, BodyDigest: mutationDigest(bodies[n])})
+	}
+	for _, proof := range c.Fork.SkillRelocations {
+		expectedClaims = append(expectedClaims, SessionClaim{RequestID: proof.RequestID, Kind: RelocateForkSkillMutation, SessionID: ref.SessionID, MessageID: proof.MessageID, PartID: proof.PartID, InputRequestID: source.InputRequestID, BodyDigest: proof.BodySHA256})
+	}
+	expectedClaims = append(expectedClaims, SessionClaim{RequestID: requests.DeleteSource, Kind: DeleteForkSourceMutation, SessionID: source.SessionID, MessageID: source.InputID, PartID: source.PartID, InputRequestID: source.InputRequestID, BodyDigest: mutationDigest(nil)})
+	for n, actual := range claims {
+		if expectedClaims[n].Validate() != nil || actual != expectedClaims[n] {
 			return sessionUncertain()
 		}
 	}

@@ -76,7 +76,7 @@ func readOpenCodeForkSource(ctx context.Context, root string, credential Credent
 	}
 	claims, err := readOpenCodeClaims(root, ref)
 	claimBytes, encodeErr := json.Marshal(claims)
-	if err != nil || encodeErr != nil || executionInputDigest(claimBytes) != r.ClaimsSHA256 || len(claims) < 2 || claims[1].SessionID != checkpoint.NativeReference.SessionID || claims[1].MessageID != checkpoint.NativeReference.InputID || claims[1].PartID != checkpoint.NativeReference.PartID || claims[1].RequestID != checkpoint.NativeReference.InputRequestID || verifyOpenCodeContinuationJournals(root, ref, i.Completion) != nil {
+	if err != nil || encodeErr != nil || executionInputDigest(claimBytes) != r.ClaimsSHA256 || len(claims) < 2 || claims[1].SessionID != checkpoint.NativeReference.SessionID || claims[1].MessageID != checkpoint.NativeReference.InputID || openCodeClaimPart(claims) != checkpoint.NativeReference.PartID || claims[1].RequestID != checkpoint.NativeReference.InputRequestID || verifyOpenCodeContinuationJournals(root, ref, i.Completion) != nil {
 		return empty, executionCheckpointUncertain()
 	}
 	home := filepath.Join(root, "runtimes", string(a.ExecutionID))
@@ -205,6 +205,10 @@ func forkOpenCodeSession(ctx context.Context, config Config, owner domain.ID, jo
 		nativeConfig.ContextLimit = int64(a.Configuration.OpenCodeContext.Tokens)
 		nativeConfig.Prune = a.Configuration.OpenCodeContext.Policy == domain.OpenCodeNativeContextV1
 	}
+	nativeConfig.SkillSources, err = opencode.CheckpointSkillSources(ctx, filepath.Join(runtimeRoot, string(a.ExecutionID)), source.Native, source.NativeReference)
+	if err != nil {
+		return nil, err
+	}
 	requests := opencode.ForkRequests{Restore: i.OpenCode.Restore, Fork: i.OpenCode.Fork, Move: i.OpenCode.Move, Mark: i.OpenCode.Mark, DeleteSource: i.OpenCode.DeleteSource}
 	resume, err := opencode.CheckpointResumeClaim(nativeConfig, source.NativeReference, requests.Restore)
 	if err != nil {
@@ -212,19 +216,33 @@ func forkOpenCodeSession(ctx context.Context, config Config, owner domain.ID, jo
 	}
 	claims := []opencode.SessionClaim{}
 	nativeConfig.Claim = func(ctx context.Context, claim opencode.SessionClaim) error {
-		if ctx.Err() != nil || claim.Validate() != nil || len(claims) >= 5 {
+		if ctx.Err() != nil || claim.Validate() != nil || len(claims) >= 5+16384 {
 			return executionCheckpointUncertain()
 		}
 		kinds := []opencode.SessionMutation{opencode.ResumeSessionMutation, opencode.ForkSessionMutation, opencode.MoveForkMutation, opencode.MarkForkMutation, opencode.DeleteForkSourceMutation}
 		ids := []domain.ID{requests.Restore, requests.Fork, requests.Move, requests.Mark, requests.DeleteSource}
 		index := len(claims)
-		if claim.Kind != kinds[index] || claim.RequestID != ids[index] || claim.InputRequestID != source.NativeReference.InputRequestID {
+		expectedKind, expectedID := opencode.RelocateForkSkillMutation, claim.RequestID
+		if index < 4 {
+			expectedKind, expectedID = kinds[index], ids[index]
+		} else if claim.Kind == opencode.DeleteForkSourceMutation {
+			expectedKind, expectedID = kinds[4], ids[4]
+		}
+		if index > 4 && claims[index-1].Kind == opencode.DeleteForkSourceMutation {
+			return executionCheckpointUncertain()
+		}
+		for _, previous := range claims {
+			if previous.RequestID == claim.RequestID {
+				return executionCheckpointUncertain()
+			}
+		}
+		if claim.Kind != expectedKind || claim.RequestID != expectedID || claim.InputRequestID != source.NativeReference.InputRequestID {
 			return executionCheckpointUncertain()
 		}
 		if index == 0 && claim != resume {
 			return executionCheckpointUncertain()
 		}
-		if index == 1 || index == 4 {
+		if index == 1 || claim.Kind == opencode.DeleteForkSourceMutation {
 			if claim.SessionID != source.NativeReference.SessionID || claim.MessageID != source.NativeReference.InputID || claim.PartID != source.NativeReference.PartID {
 				return executionCheckpointUncertain()
 			}
@@ -257,7 +275,7 @@ func forkOpenCodeSession(ctx context.Context, config Config, owner domain.ID, jo
 	if err != nil {
 		return nil, executionCheckpointUncertain()
 	}
-	if len(claims) != 5 || snapshot.Verify(ctx, childManifest) != nil || opencode.InspectForkSourceCheckpoint(ctx, filepath.Join(runtimeRoot, string(a.ExecutionID)), source.Native, source.NativeReference) != nil {
+	if len(claims) < 5 || claims[len(claims)-1].Kind != opencode.DeleteForkSourceMutation || opencode.InspectForkClaims(raw, ref, nativeHome, requests, claims) != nil || snapshot.Verify(ctx, childManifest) != nil || opencode.InspectForkSourceCheckpoint(ctx, filepath.Join(runtimeRoot, string(a.ExecutionID)), source.Native, source.NativeReference) != nil {
 		return nil, executionCheckpointUncertain()
 	}
 	ids, err := opencode.InspectForkCheckpoint(ctx, nativeHome, raw, ref)
@@ -303,7 +321,7 @@ func readOpenCodeForkCheckpoint(ctx context.Context, root string, credential Cre
 	}
 	home := filepath.Join(root, "runtimes", string(f.RuntimeID))
 	raw, err := security.ReadPrivate(filepath.Join(home, "fork-completion.json"), maxOpenCodeExecutionCheckpointBytes)
-	if err != nil || executionInputDigest(raw) != f.CheckpointDigest || domain.DecodeWithLimit(raw, &value, maxOpenCodeExecutionCheckpointBytes) != nil || value.Version != 2 || !bytes.Equal(mustForkJSON(value), raw) || value.JobID != f.JobID || value.ServerID != credential.ServerID || value.DeviceID != credential.DeviceID || value.SessionID != i.SessionID || value.MachineID != i.MachineID || credential.MachineID != i.MachineID || value.RuntimeID != f.RuntimeID || value.ConfigurationDigest != i.ConfigurationDigest || value.AccountID != i.AccountID || value.ConnectionID != i.ConnectionID || value.ManifestDigest != executionInputDigest(i.Manifest) || value.NativeReference.SessionID != string(f.NativeThreadID) || value.NativeReference.InputID != string(f.NativeTurnID) || value.NativeReference.CreationRequestID != value.Requests.Fork || value.Requests.Validate() != nil || value.InstanceID.Validate() != nil || value.Revision == 0 || !canonicalDigest(value.AssignmentDigest) || !canonicalDigest(value.JobInputDigest) || len(value.Claims) != 5 {
+	if err != nil || executionInputDigest(raw) != f.CheckpointDigest || domain.DecodeWithLimit(raw, &value, maxOpenCodeExecutionCheckpointBytes) != nil || value.Version != 2 || !bytes.Equal(mustForkJSON(value), raw) || value.JobID != f.JobID || value.ServerID != credential.ServerID || value.DeviceID != credential.DeviceID || value.SessionID != i.SessionID || value.MachineID != i.MachineID || credential.MachineID != i.MachineID || value.RuntimeID != f.RuntimeID || value.ConfigurationDigest != i.ConfigurationDigest || value.AccountID != i.AccountID || value.ConnectionID != i.ConnectionID || value.ManifestDigest != executionInputDigest(i.Manifest) || value.NativeReference.SessionID != string(f.NativeThreadID) || value.NativeReference.InputID != string(f.NativeTurnID) || value.NativeReference.CreationRequestID != value.Requests.Fork || value.Requests.Validate() != nil || value.InstanceID.Validate() != nil || value.Revision == 0 || !canonicalDigest(value.AssignmentDigest) || !canonicalDigest(value.JobInputDigest) || len(value.Claims) < 5 || len(value.Claims) > 5+16384 {
 		return openCodeForkCheckpoint{}, executionCheckpointUncertain()
 	}
 	ids, err := opencode.InspectForkCheckpoint(ctx, filepath.Join(home, "native"), value.Native, value.NativeReference)
@@ -318,7 +336,7 @@ func readOpenCodeForkCheckpoint(ctx context.Context, root string, credential Cre
 	requests := []domain.ID{value.Requests.Restore, value.Requests.Fork, value.Requests.Move, value.Requests.Mark, value.Requests.DeleteSource}
 	for index, claim := range value.Claims {
 		record, err := security.ReadPrivate(filepath.Join(home, "fork-claim-"+strconv.Itoa(index)+".json"), maxOpenCodeClaimBytes)
-		if err != nil || !bytes.Equal(record, mustForkJSON(claim)) || claim.Validate() != nil || claim.Kind != kinds[index] || claim.RequestID != requests[index] {
+		if err != nil || !bytes.Equal(record, mustForkJSON(claim)) || claim.Validate() != nil || index < 4 && (claim.Kind != kinds[index] || claim.RequestID != requests[index]) || index == len(value.Claims)-1 && (claim.Kind != kinds[4] || claim.RequestID != requests[4]) || index >= 4 && index < len(value.Claims)-1 && claim.Kind != opencode.RelocateForkSkillMutation {
 			return openCodeForkCheckpoint{}, executionCheckpointUncertain()
 		}
 	}

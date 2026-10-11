@@ -527,3 +527,33 @@ account/native assignment retain their existing invariants. Copied history
 remains inspectable when the original common/admin directories are unavailable.
 Sidechat remains metadata-only, and original Local folder lifetimes remain
 unchanged. Follow the [workspace inventory contract](cmds-delidev-workspace-contract.md#complete-independent-fork-inventory).
+
+## Selected OpenCode skill package relocation
+
+The Unix General Chat Fork profile also accepts original authenticated native
+skill command text and interaction-free completed native `skill` tools. Other
+native tool families and retained permission, question, rejection, compaction and
+snapshot state keep their existing exclusion. Source checkpoint package metadata,
+complete bytes and modes must match the original owned runtime before preparation.
+Copy complete packages into the independent child runtime from these roots;
+never refresh a package from the live catalog or inherit a parent-owned directory.
+
+The native ID clone preserves every supported field before relocation. Only the
+original command proof can authorize changing its generated base-directory text.
+Only an exact completed skill tool, matched to its selected package, native name,
+metadata, content and bounded sampled resource list can authorize changing its
+output base directory, sampled file paths and metadata directory. Preserve command
+arguments, native command event identity, unrelated text, tool input, call identity,
+timing, usage, model and historical assistant paths. Ambiguous command markers,
+foreign resources and unsupported tool metadata fail before mutation.
+
+Claim each authenticated native part PATCH once in the original Worker journal.
+Retain original source histories, the complete unmodified native clone, ordered
+relocation request identities, package revision and source/target locations, and
+original/clone/relocated part digests in the child checkpoint. Re-read the complete
+child history and copied source after each PATCH. A lost response can reconcile
+only the exact claimed child result; it cannot authorize resending a PATCH.
+Retain the relocated native command text digest for child restoration while keeping
+the source digest in its immutable source reference. Verify complete original and
+child package/file inventories and joined native cleanup before publication.
+Independent parent deletion cannot remove child packages or their relocation proof.

@@ -22,18 +22,23 @@ type ForkMessageIdentity struct {
 // The inherited map is comparison-only. Original paths/counters remain native
 // provenance; neither ID cloning nor this private descriptor grants execution.
 type nativeCheckpointFork struct {
-	Version          uint32                `json:"version"`
-	RequestID        domain.ID             `json:"request_id"`
-	SourceReference  CheckpointReference   `json:"source_reference"`
-	SourceWorkspace  string                `json:"source_workspace"`
-	SourceHistories  []HistoryObservation  `json:"source_histories"`
-	ClonedHistories  []HistoryObservation  `json:"cloned_histories"`
-	Identities       []ForkMessageIdentity `json:"identities"`
-	SelectionPending bool                  `json:"selection_pending"`
+	Version                 uint32                `json:"version"`
+	RequestID               domain.ID             `json:"request_id"`
+	SourceReference         CheckpointReference   `json:"source_reference"`
+	SourceWorkspace         string                `json:"source_workspace"`
+	SourceHistories         []HistoryObservation  `json:"source_histories"`
+	ClonedHistories         []HistoryObservation  `json:"cloned_histories"`
+	Identities              []ForkMessageIdentity `json:"identities"`
+	SelectionPending        bool                  `json:"selection_pending"`
+	SkillRelocations        []forkSkillRelocation `json:"skill_relocations,omitempty"`
+	OriginalClonedHistories []HistoryObservation  `json:"original_cloned_histories,omitempty"`
 }
 
 func forkSourceProfile(c nativeCheckpoint) error {
-	if c.Version != 1 || c.Fork != nil || !checkpointGlobalRoot(c) || c.Project != "global" || c.Reference.RequiresResume || c.Stop != nil || c.Context != nil || c.Tools != nil || c.Snapshot != nil || c.ProjectAdoption != nil || len(c.References) != 0 || !validCheckpointLineage(c) {
+	if c.Version != 1 || c.Fork != nil || !checkpointGlobalRoot(c) || c.Project != "global" || c.Reference.RequiresResume || c.Stop != nil || c.Context != nil || c.Snapshot != nil || c.ProjectAdoption != nil || len(c.References) != 0 || !validCheckpointLineage(c) {
+		return incompatible()
+	}
+	if !forkSkillToolProfile(c.Tools) {
 		return incompatible()
 	}
 	for _, h := range checkpointHistories(c) {
@@ -44,6 +49,10 @@ func forkSourceProfile(c nativeCheckpoint) error {
 			for _, p := range m.Parts {
 				switch p.Kind {
 				case TextPartKind, StepStartPartKind, StepFinishPartKind:
+				case ToolPartKind:
+					if c.Tools == nil {
+						return incompatible()
+					}
 				default:
 					return incompatible()
 				}
@@ -117,7 +126,7 @@ func compareForkHistory(source, child []json.RawMessage, sourceID, childID strin
 				return nil, nil, incompatible()
 			}
 		} else {
-			if a.Assistant == nil || a.Assistant.Completed == nil || a.Assistant.Error != nil || a.Assistant.Finish == nil || *a.Assistant.Finish != FinishStop || a.Assistant.Summary != nil || a.Assistant.Structured != nil || a.Assistant.Variant != nil || a.Assistant.Agent != string(BuildAgent) || a.Assistant.Mode != string(BuildAgent) || mapping[a.Assistant.ParentID] == "" {
+			if a.Assistant == nil || a.Assistant.Completed == nil || a.Assistant.Error != nil || a.Assistant.Finish == nil || (*a.Assistant.Finish != FinishStop && *a.Assistant.Finish != FinishToolCalls) || a.Assistant.Summary != nil || a.Assistant.Structured != nil || a.Assistant.Variant != nil || a.Assistant.Agent != string(BuildAgent) || a.Assistant.Mode != string(BuildAgent) || mapping[a.Assistant.ParentID] == "" {
 				return nil, nil, incompatible()
 			}
 			old["parentID"], _ = json.Marshal(mapping[a.Assistant.ParentID])
@@ -151,6 +160,10 @@ func compareForkHistory(source, child []json.RawMessage, sourceID, childID strin
 			switch a.Kind {
 			case TextPartKind:
 				if a.Text == nil || a.Text.Synthetic != nil || a.Text.Ignored != nil || a.Text.Metadata != nil {
+					return nil, nil, incompatible()
+				}
+			case ToolPartKind:
+				if !checkpointInlineSkill(a.Tool) || a.Tool.PartMetadata != nil || a.Tool.Timing == nil || a.Tool.Timing.Compacted != nil || len(a.Tool.Attachments) != 0 {
 					return nil, nil, incompatible()
 				}
 			case StepStartPartKind:
@@ -203,6 +216,15 @@ func cloneForkHistories(source nativeCheckpoint, identities []ForkMessageIdentit
 			}
 			position++
 		}
+		if copy.SkillCommand != nil {
+			proof := copy.SkillCommand
+			proof.InputID, proof.AssistantID = copy.InputID, copy.AssistantID
+			for _, message := range copy.Messages {
+				if message.ID == copy.InputID {
+					proof.PartID, proof.PartSHA256 = message.Parts[0].ID, message.Parts[0].Digest
+				}
+			}
+		}
 		copy.Digest = ""
 		raw, _ := json.Marshal(copy)
 		copy.Digest = mutationDigest(raw)
@@ -225,6 +247,8 @@ func cloneForkProof(p *nativeCheckpointFork) *nativeCheckpointFork {
 	copy.SourceHistories = slices.Clone(p.SourceHistories)
 	copy.ClonedHistories = slices.Clone(p.ClonedHistories)
 	copy.Identities = slices.Clone(p.Identities)
+	copy.SkillRelocations = slices.Clone(p.SkillRelocations)
+	copy.OriginalClonedHistories = copyForkHistories(p.OriginalClonedHistories)
 	for i := range copy.SourceHistories {
 		copy.SourceHistories[i] = copyHistoryObservation(copy.SourceHistories[i])
 	}
@@ -282,7 +306,7 @@ func validCheckpointFork(c nativeCheckpoint) bool {
 				all[pair.Source], all[pair.Child] = true, true
 				parts++
 				switch a.Kind {
-				case TextPartKind, StepStartPartKind, StepFinishPartKind:
+				case TextPartKind, StepStartPartKind, StepFinishPartKind, ToolPartKind:
 				default:
 					return false
 				}
@@ -290,6 +314,9 @@ func validCheckpointFork(c nativeCheckpoint) bool {
 			position++
 		}
 	}
+	if !validForkSkillRelocations(c) {
+		return false
+	}
 	last := p.SourceHistories[len(p.SourceHistories)-1]
-	return position == len(p.Identities) && parts <= maxObservedParts && last.RequestID == source.InputRequestID && last.InputID == source.InputID && last.Digest == source.HistorySHA256 && len(last.Messages) > 0 && len(last.Messages[0].Parts) > 0 && last.Messages[0].Parts[0].ID == source.PartID && (!p.SelectionPending || c.Reference.InputRequestID == source.InputRequestID && c.Reference.InputSHA256 == source.InputSHA256)
+	return position == len(p.Identities) && parts <= maxObservedParts && last.RequestID == source.InputRequestID && last.InputID == source.InputID && last.Digest == source.HistorySHA256 && len(last.Messages) > 0 && len(last.Messages[0].Parts) > 0 && last.Messages[0].Parts[0].ID == source.PartID && (!p.SelectionPending || c.Reference.InputRequestID == source.InputRequestID && c.Reference.InputSHA256 == forkLastInputDigest(p))
 }
