@@ -7,7 +7,10 @@ import {
   newRequestId,
 } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
-import { ExecutionConfiguration as OriginalExecutionConfiguration } from "./execution-configuration";
+import {
+  ExecutionConfiguration as OriginalExecutionConfiguration,
+  SavedExecutionChips,
+} from "./execution-configuration";
 import { useState, type ComponentProps } from "react";
 function ExecutionConfiguration(
   props: ComponentProps<typeof OriginalExecutionConfiguration>,
@@ -95,6 +98,44 @@ function detail(region: HTMLElement, label: string): string | null | undefined {
   return within(region).getByText(label, { selector: "dt" }).nextElementSibling
     ?.textContent;
 }
+
+it("labels only immutable saved selections and omits unspecified effort", () => {
+  const value = fixture();
+  const mounted = render(<SavedExecutionChips resource={value.resource} />);
+  expect(
+    screen.getByRole("group", { name: "Saved model: original-model" }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("group", { name: "Saved reasoning effort: high" }),
+  ).toBeTruthy();
+  const data = {
+    ...value.data,
+    current_execution: {
+      configuration: { native_model: "later-model", effort: "low" },
+    },
+  };
+  mounted.rerender(
+    <SavedExecutionChips
+      resource={{ ...value.resource, documentJson: encode(data) }}
+    />,
+  );
+  expect(screen.queryByText("later-model")).toBeNull();
+  value.configuration.effort = "";
+  mounted.rerender(
+    <SavedExecutionChips
+      resource={{ ...value.resource, documentJson: encode(data) }}
+    />,
+  );
+  expect(
+    screen.queryByRole("group", { name: /Saved reasoning effort/ }),
+  ).toBeNull();
+  mounted.rerender(
+    <SavedExecutionChips resource={{ ...value.resource, schemaVersion: 2 }} />,
+  );
+  expect(
+    screen.getByRole("group", { name: "Saved model: Unavailable" }),
+  ).toBeTruthy();
+});
 
 it("keeps selected Grok context provenance separate from native context observation", () => {
   const value = fixture("grok-build");

@@ -1425,3 +1425,86 @@
   min-height: 0;
   overflow: auto;
 }
+
+/* Info remains compact in both the desktop rail and the compact upper band. */
+.session-saved-selection {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.session-info-chip {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.session-lifetime-tokens {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+.session-lifetime-tokens > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.session-workspace
+  .session-information
+  .session-tools.session-tools-exceptions {
+  padding: 0;
+  border: 0;
+}
+.session-pr-icon {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.session-pr-dot {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--surface);
+  border-radius: 50%;
+  background: var(--text-secondary);
+}
+.session-pr-dot-open {
+  background: var(--success-text);
+}
+.session-pr-dot-merged {
+  background: var(--accent);
+}
+.session-pr-dot-closed {
+  background: var(--danger-text);
+}
+
+.session-tools-exceptions > .actions:empty,
+.session-tools-exceptions > div:empty {
+  display: none;
+}
+.session-information .execution-configuration > section {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.session-information .execution-configuration {
+  max-height: none;
+  overflow: visible;
+}
+
+.session-lifetime-tokens > span:last-child {
+  margin-left: auto;
+  text-align: right;
+}
