@@ -2,6 +2,7 @@
 package server
 
 import (
+	"bytes"
 	"connectrpc.com/connect"
 	"context"
 	"encoding/json"
@@ -231,7 +232,7 @@ func (s *Service) currentNativeShellWorker(tx *store.Tx, action, machine, instan
 	}
 	j, err := store.Decode[domain.Job](jr)
 	var i domain.SessionCompactionInput
-	if err != nil || j.Type != domain.CompactSessionJob || j.State != domain.JobClaimed || j.MachineID != machine || j.InstanceID != instance || j.AssignedDeviceID != device || domain.DecodeCompactionInput(j.Input, &i) != nil || i.Validate() != nil || i.NativeShell == nil || i.ActionID != action {
+	if err != nil || j.Type != domain.CompactSessionJob || j.State != domain.JobClaimed || j.MachineID != machine || j.InstanceID != instance || j.AssignedDeviceID != device || domain.DecodeCompactionInput(j.Input, &i) != nil || i.Validate() != nil || i.NativeShell == nil || i.ActionID != action || a.ExecutionID != i.Assignment.ExecutionID || a.SessionID != i.Assignment.SessionID || !sameNativeShellCommand(a.Command, *i.NativeShell) {
 		return ar, a, i, domain.NativeShellRecovery()
 	}
 	if err := currentInstance(tx, machine, instance); err != nil {
@@ -442,4 +443,10 @@ func settleLostNativeShell(tx *store.Tx, r store.Record, j domain.Job) error {
 	}
 	_, err = tx.Put(domain.NativeActionKind, ar.ID, ar.Revision, ar.SessionID, ar.ProjectID, action)
 	return err
+}
+
+func sameNativeShellCommand(a, b domain.NativeShellCommand) bool {
+	left, le := json.Marshal(a)
+	right, re := json.Marshal(b)
+	return le == nil && re == nil && bytes.Equal(left, right)
 }

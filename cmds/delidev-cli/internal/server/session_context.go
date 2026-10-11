@@ -127,19 +127,23 @@ func (s *Service) GetSessionContext(ctx context.Context, req *connect.Request[pb
 			if domain.DecodeCompactionInput(j.Input, &input) != nil || input.Validate() != nil {
 				return domain.CompactionUncertain()
 			}
-			document, err := json.Marshal(struct {
-				ActionID    domain.ID       `json:"action_id"`
-				ExecutionID domain.ID       `json:"execution_id"`
-				State       domain.JobState `json:"state"`
-				Problem     *domain.Error   `json:"problem"`
-				Result      json.RawMessage `json:"result"`
-				AcceptedAt  time.Time       `json:"accepted_at"`
-				FinishedAt  *time.Time      `json:"finished_at"`
-			}{input.ActionID, input.Assignment.ExecutionID, j.State, j.Problem, j.Output, j.AcceptedAt, j.FinishedAt})
-			if err != nil {
-				return err
+			// The shared pending gate also carries shell actions. They are not
+			// manual compaction/context observations.
+			if input.NativeShell == nil {
+				document, err := json.Marshal(struct {
+					ActionID    domain.ID       `json:"action_id"`
+					ExecutionID domain.ID       `json:"execution_id"`
+					State       domain.JobState `json:"state"`
+					Problem     *domain.Error   `json:"problem"`
+					Result      json.RawMessage `json:"result"`
+					AcceptedAt  time.Time       `json:"accepted_at"`
+					FinishedAt  *time.Time      `json:"finished_at"`
+				}{input.ActionID, input.Assignment.ExecutionID, j.State, j.Problem, j.Output, j.AcceptedAt, j.FinishedAt})
+				if err != nil {
+					return err
+				}
+				view.ManualAction = contextResource(r, document)
 			}
-			view.ManualAction = contextResource(r, document)
 		}
 		if h == domain.Codex {
 			if err := projectNativeContext(tx, session, &view); err != nil {

@@ -60,6 +60,11 @@ func TestNativeShellHumanReceiptExactReplayAndQueuedCancellation(t *testing.T) {
 	if _, err := client.RunNativeShell(ctx, ownerRequest(f.workerIdentity, req)); err == nil {
 		t.Fatal("Worker authenticated agent flow authorized native shell")
 	}
+	contextReply, contextErr := client.GetSessionContext(ctx, ownerRequest(f.identity, &pb.GetSessionContextRequest{SessionId: string(action.SessionID)}))
+	var contextView sessionContextView
+	if contextErr != nil || domain.Decode(contextReply.Msg.DocumentJson, &contextView) != nil || contextView.ManualAction != nil || contextView.AutomaticBoundary != nil {
+		t.Fatal("native shell fabricated a compaction/context observation", contextErr)
+	}
 	pending, _ := store.Decode[domain.Session](f.refresh(t))
 	if !reflect.DeepEqual(prior.Execution, pending.Execution) || !reflect.DeepEqual(prior.Compaction, pending.Compaction) || pending.ContextRevision != prior.ContextRevision || pending.LastCompactionJobID != prior.LastCompactionJobID {
 		t.Fatal("acceptance changed ordinary execution/context")

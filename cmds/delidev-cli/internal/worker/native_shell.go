@@ -50,9 +50,13 @@ func readNativeShellCheckpoint(ctx context.Context, root string, credential Cred
 	if err != nil || ref.Validate() != nil || input.Continuation == nil || ref.ExecutionID != input.Continuation.Previous.ExecutionID {
 		return codex.NativeShellCheckpoint{}, domain.NativeShellRecovery()
 	}
+	account, connection := input.AccountID, input.ConnectionID
+	if input.Continuation.PreviousAccountID != "" {
+		account, connection = input.Continuation.PreviousAccountID, input.Continuation.PreviousConnectionID
+	}
 	raw, err := security.ReadPrivate(path, maxCompactionCheckpoint)
 	var p nativeShellCheckpoint
-	if err != nil || executionInputDigest(raw) != ref.CheckpointDigest || domain.DecodeWithLimit(raw, &p, maxCompactionCheckpoint) != nil || p.Version != 1 || p.ServerID != credential.ServerID || p.DeviceID != credential.DeviceID || p.InstanceID.Validate() != nil || p.AssignmentRevision == 0 || p.JobID != ref.JobID || p.Input.Validate() != nil || p.Input.NativeShell == nil || p.Input.ActionID != ref.ActionID || p.Input.Assignment.ExecutionID != ref.ExecutionID || p.Input.Assignment.SessionID != input.SessionID || p.Input.Assignment.MachineID != input.MachineID || p.Input.Assignment.AccountID != input.AccountID || p.Input.Assignment.ConnectionID != input.ConnectionID || p.Input.Assignment.ConfigurationDigest != input.ConfigurationDigest {
+	if err != nil || executionInputDigest(raw) != ref.CheckpointDigest || domain.DecodeWithLimit(raw, &p, maxCompactionCheckpoint) != nil || p.Version != 1 || p.ServerID != credential.ServerID || p.DeviceID != credential.DeviceID || p.InstanceID.Validate() != nil || p.AssignmentRevision == 0 || p.JobID != ref.JobID || p.Input.Validate() != nil || p.Input.NativeShell == nil || p.Input.ActionID != ref.ActionID || p.Input.Assignment.ExecutionID != ref.ExecutionID || p.Input.SourceJobID != input.Continuation.Previous.JobID || p.Native.Source.ThreadID != domain.ID(p.Input.Completion.NativeThreadID) || p.Native.Source.TurnID != domain.ID(p.Input.Completion.NativeTurnID) || p.Input.Assignment.SessionID != input.SessionID || p.Input.Assignment.MachineID != input.MachineID || p.Input.Assignment.AccountID != account || p.Input.Assignment.ConnectionID != connection || p.Input.Assignment.ConfigurationDigest != input.ConfigurationDigest {
 		return codex.NativeShellCheckpoint{}, domain.NativeShellRecovery()
 	}
 	nativeRaw, _ := json.Marshal(p.Native)
@@ -95,7 +99,7 @@ func runNativeShellAction(ctx context.Context, config Config, owner domain.ID, j
 		return empty, history, send, domain.NativeShellRecovery()
 	}
 	var action domain.NativeShellAction
-	if domain.Decode(reply.Msg.Action.DocumentJson, &action) != nil || action.Validate() != nil || action.Claim == nil || action.Claim.RequestID != claimID || action.JobID != owner || action.ActionID != i.ActionID || action.Observation == nil {
+	if domain.Decode(reply.Msg.Action.DocumentJson, &action) != nil || action.Validate() != nil || action.Claim == nil || action.Claim.RequestID != claimID || action.JobID != owner || action.ActionID != i.ActionID || action.SessionID != i.Assignment.SessionID || action.ExecutionID != i.Assignment.ExecutionID || action.State != domain.NativeShellClaimed || action.Claim.MachineID != i.Assignment.MachineID || action.Claim.InstanceID != c.Instance || action.Claim.DeviceID != c.Credential.DeviceID || !bytes.Equal(mustNativeShellCommand(action.Command), mustNativeShellCommand(*i.NativeShell)) || action.Observation == nil || action.Observation.NativeThreadID != i.Completion.NativeThreadID {
 		return empty, history, send, domain.NativeShellRecovery()
 	}
 	send = nativeShellSend{Version: 1, JobID: owner, ActionID: i.ActionID, SessionID: i.Assignment.SessionID, ExecutionID: i.Assignment.ExecutionID, NativeThreadID: i.Completion.NativeThreadID, Command: *i.NativeShell, ClaimRequestID: claimID, InputDigest: executionInputDigest(job.Input)}

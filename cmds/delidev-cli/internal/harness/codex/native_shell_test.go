@@ -15,7 +15,7 @@ import (
 // This fixture records the native request before losing or corrupting its
 // acknowledgment. It does not execute a real shell or prove platform cleanup.
 func (f *threadFixture) handleNativeShell(id json.RawMessage, method string, raw json.RawMessage, write func(json.RawMessage, any)) bool {
-	if !strings.HasPrefix(f.mode, "thread-revert-native-shell-") || method != "thread/shellCommand" {
+	if !strings.HasPrefix(f.mode, "thread-revert-native-shell-") || method != "thread/shellCommand" && method != "turn/interrupt" {
 		return false
 	}
 	out, err := os.OpenFile(os.Getenv("DELIDEV_CODEX_CAPTURE"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
@@ -24,11 +24,67 @@ func (f *threadFixture) handleNativeShell(id json.RawMessage, method string, raw
 	}
 	json.NewEncoder(out).Encode(map[string]any{"method": method, "params": raw})
 	out.Close()
+	if method == "turn/interrupt" {
+		var params struct {
+			Thread domain.ID `json:"threadId"`
+			Turn   domain.ID `json:"turnId"`
+		}
+		if domain.Decode(raw, &params) != nil || params.Thread != f.thread["id"] || params.Turn != f.turn {
+			os.Exit(91)
+		}
+		write(id, map[string]any{})
+		f.finishNativeShellFixture(true)
+		return true
+	}
 	if strings.HasSuffix(f.mode, "lost") {
 		os.Exit(0)
 	}
-	write(id, map[string]any{"unexpected": true})
+	if strings.HasSuffix(f.mode, "malformed") {
+		write(id, map[string]any{"unexpected": true})
+		return true
+	}
+	write(id, map[string]any{})
+	f.turn = domain.NewID()
+	f.notify("turn/started", map[string]any{"threadId": f.thread["id"], "turn": fixtureTurn(f.turn, TurnRunning)})
+	item := f.nativeShellItemFixture(false, false)
+	f.notify("item/started", map[string]any{"threadId": f.thread["id"], "turnId": f.turn, "item": item, "startedAtMs": 1})
+	if strings.HasSuffix(f.mode, "ready") {
+		f.finishNativeShellFixture(false)
+	}
 	return true
+}
+func (f *threadFixture) nativeShellItemFixture(completed, canceled bool) map[string]any {
+	item := commandFixture()
+	item["source"], item["cwd"], item["command"] = "userShell", f.thread["cwd"], "/bin/sh -lc fixture-script"
+	if completed {
+		item["status"], item["exitCode"], item["durationMs"], item["aggregatedOutput"] = "failed", 17, 8, "native aggregate"
+		if canceled {
+			item["exitCode"] = -1
+		}
+	}
+	return item
+}
+func (f *threadFixture) finishNativeShellFixture(canceled bool) {
+	f.notify("item/commandExecution/outputDelta", map[string]any{"threadId": f.thread["id"], "turnId": f.turn, "itemId": "native-command", "delta": "original output\n"})
+	item := f.nativeShellItemFixture(true, canceled)
+	f.notify("item/completed", map[string]any{"threadId": f.thread["id"], "turnId": f.turn, "item": item, "completedAtMs": 9})
+	status := TurnCompleted
+	if canceled {
+		status = TurnInterrupted
+	}
+	turn := fixtureTurn(f.turn, status)
+	turn["itemsView"], turn["items"] = "full", []any{item}
+	var page struct {
+		Data []json.RawMessage `json:"data"`
+	}
+	if json.Unmarshal(f.history, &page) != nil {
+		os.Exit(92)
+	}
+	last, _ := json.Marshal(turn)
+	page.Data = append(page.Data, last)
+	f.history, _ = json.Marshal(map[string]any{"data": page.Data, "nextCursor": nil, "backwardsCursor": nil})
+	f.thread["status"] = map[string]any{"type": "idle"}
+	f.notify("turn/completed", map[string]any{"threadId": f.thread["id"], "turn": fixtureTurn(f.turn, status)})
 }
 
 func TestNativeShellLostOrMalformedAcknowledgmentCannotResend(t *testing.T) {
@@ -134,6 +190,58 @@ func TestNativeShellRejectsAgentForeignDuplicateAndOversizedEvents(t *testing.T)
 			}
 			if err == nil {
 				t.Fatal("unowned or incompatible native observation accepted")
+			}
+		})
+	}
+}
+
+func TestNativeShellScriptedRunAndOriginalTurnCancellation(t *testing.T) {
+	for _, mode := range []string{"ready", "cancel"} {
+		t.Run(mode, func(t *testing.T) {
+			c, capture, source, _, _ := revertFixture(t, "native-shell-"+mode)
+			original, _ := json.Marshal(source)
+			action := domain.NewID()
+			if err := c.StartNativeShell(context.Background(), action, domain.NativeShellCommand{Command: "exact original script", FullAccess: true, Actor: domain.Principal{Type: domain.OwnerDevice}}, source); err != nil {
+				t.Fatal(err)
+			}
+			nextKind(t, c, MetadataEvent)
+			started := nextKind(t, c, NativeShellEvent)
+			if started.NativeShell.State != domain.NativeShellRunning {
+				t.Fatal("scripted native process did not start")
+			}
+			if mode == "cancel" {
+				if err := c.CancelNativeShell(context.Background(), domain.NewID()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var terminal Event
+			for {
+				terminal = nextKind(t, c, NativeShellEvent)
+				if c.NativeShellTerminal() {
+					break
+				}
+			}
+			expected, exit := domain.NativeShellExited, int32(17)
+			if mode == "cancel" {
+				expected, exit = domain.NativeShellCanceled, -1
+			}
+			if terminal.NativeShell.State != expected || terminal.NativeShell.ExitCode == nil || *terminal.NativeShell.ExitCode != exit || terminal.NativeShell.Output != "original output\n" || terminal.NativeShell.CleanupVerified {
+				t.Fatal("original native outcome changed")
+			}
+			retained, err := c.RetainNativeShellCheckpoint(context.Background())
+			if err != nil || retained.ActionID != action || retained.BeforeCount != 3 || retained.TurnsCount != 4 || retained.NativeTurnID != domain.ID(started.NativeShell.NativeTurnID) {
+				t.Fatal("separate original shell history not retained", err)
+			}
+			after, _ := json.Marshal(source)
+			if !reflect.DeepEqual(original, after) || len(requestsOf(t, capture, "thread/shellCommand")) != 1 || len(requestsOf(t, capture, "thread/compact/start")) != 0 {
+				t.Fatal("scripted action rewrote or resent ordinary history")
+			}
+			interrupts := requestsOf(t, capture, "turn/interrupt")
+			if mode == "cancel" && (len(interrupts) != 1 || interrupts[0]["turnId"] != string(started.NativeShell.NativeTurnID)) || mode == "ready" && len(interrupts) != 0 {
+				t.Fatal("cancellation lost original native owner")
+			}
+			if err := c.CancelNativeShell(context.Background(), domain.NewID()); err == nil {
+				t.Fatal("terminal native action admitted another interruption")
 			}
 		})
 	}
