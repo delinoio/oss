@@ -1918,6 +1918,9 @@ it("preserves the generic configuration job Done step", async () => {
       )}
     </NotificationProvider>,
   );
+  fireEvent.change(screen.getByLabelText("Instructions"), {
+    target: { value: "Updated" },
+  });
   fireEvent.click(screen.getByRole("button", { name: "Save Instructions" }));
   const done = await screen.findByRole("button", { name: "Done" });
   expect(saved).not.toHaveBeenCalled();
