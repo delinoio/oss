@@ -1,4 +1,5 @@
 import { defineConfig } from "vitest/config";
+import CISequencer from "./scripts/ci-test-sequencer.mjs";
 // Hosted CI shares two CPU cores with concurrent Go/native preparation. Four
 // jsdom workers caused full-shell wizard tests to exhaust their existing 5s
 // deadlines through CPU contention; cap the pool to the available CPU budget.
@@ -11,6 +12,7 @@ export default defineConfig({
     environment: "jsdom",
     environmentOptions: { jsdom: { url: "http://localhost/" } },
     maxWorkers: 2,
+    sequence: { sequencer: CISequencer },
     restoreMocks: true,
     setupFiles: ["./src/test-setup.ts"],
   },

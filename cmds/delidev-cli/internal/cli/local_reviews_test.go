@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,10 @@ import (
 )
 
 func TestCLIReviewWaitsForBoundedServerAcceptance(t *testing.T) {
+	// Overlap isolated fixture waits on Linux; retain native Windows scheduling.
+	if runtime.GOOS == "linux" {
+		t.Parallel()
+	}
 	// A real delayed HTTP response exercises the CLI's header deadline as well
 	// as its overall command context. Ordinary immediate mocks missed this gap.
 	requestID := domain.NewID()
