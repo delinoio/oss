@@ -120,9 +120,9 @@ export function WaitingQueue({
   let lastResidentPageToken: string | undefined;
   for (const page of query.pages)
     if (residentPageTokens.has(page.token)) lastResidentPageToken = page.token;
-  const lastDisplayedRowId = query.pages.find(
-    (page) => page.token === lastResidentPageToken,
-  )?.rows.at(-1)?.id;
+  const lastDisplayedRowId = query.pages
+    .find((page) => page.token === lastResidentPageToken)
+    ?.rows.at(-1)?.id;
   const pendingFocus = useRef<string | undefined>(undefined);
   const pendingDown = useRef<
     { id: string; revision: bigint; generation: bigint } | undefined
