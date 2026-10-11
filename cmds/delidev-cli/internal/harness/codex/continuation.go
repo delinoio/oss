@@ -134,6 +134,9 @@ func (c *Client) VerifyContinuation(ctx context.Context, requestID domain.ID, ch
 	if checkpoint.ThreadID != c.thread || checkpoint.SessionID != state.thread.SessionID || !sameEffectiveSettings(checkpoint.Effective, state.settings) {
 		return mismatch()
 	}
+	if !c.matchesCheckpointHistoryMode(checkpoint.PaginatedHistory) {
+		return mismatch()
+	}
 	if err := c.checkNativeStateLocked(ctx, true); err != nil {
 		return result, err
 	}

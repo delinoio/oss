@@ -124,7 +124,7 @@ func (f *threadFixture) handleRevert(id json.RawMessage, method string, raw json
 		}
 		page.Data = page.Data[:index]
 		f.history, _ = json.Marshal(page)
-		if f.mode == "thread-revert-lost" {
+		if f.mode == "thread-revert-lost" || f.mode == "thread-revert-paginated-lost" {
 			json.NewEncoder(os.Stdout).Encode(map[string]any{"id": id, "error": map[string]any{"code": -32603, "message": "lost acknowledgment"}})
 			return true
 		}
@@ -132,7 +132,29 @@ func (f *threadFixture) handleRevert(id json.RawMessage, method string, raw json
 		if index > 0 {
 			cursor = "revert-anchor"
 		}
-		write(id, map[string]any{"thread": f.thread, "turnsBackwardsCursor": cursor, "itemsBackwardsCursor": nil})
+		observed := f.thread
+		if f.mode == "thread-revert-paginated-result-mode-change" {
+			observed = map[string]any{}
+			for key, value := range f.thread {
+				observed[key] = value
+			}
+			observed["historyMode"] = "legacy"
+		}
+		if strings.HasSuffix(f.mode, "result-direct-input-false") || strings.HasSuffix(f.mode, "result-direct-input-omitted") {
+			observed = map[string]any{}
+			for key, value := range f.thread {
+				observed[key] = value
+			}
+			if strings.HasSuffix(f.mode, "result-direct-input-false") {
+				observed["canAcceptDirectInput"] = false
+			} else {
+				delete(observed, "canAcceptDirectInput")
+			}
+		}
+		write(id, map[string]any{"thread": observed, "turnsBackwardsCursor": cursor, "itemsBackwardsCursor": nil})
+		if f.mode == "thread-revert-paginated-current-mode-change" {
+			f.thread["historyMode"] = "legacy"
+		}
 		return true
 	}
 	return false
@@ -155,7 +177,7 @@ func revertFixture(t *testing.T, mode string) (*Client, string, ContinuationChec
 		turns = append(turns, turn)
 	}
 	fixtureSignal(t, c, "history", map[string]any{"page": map[string]any{"data": turns, "nextCursor": nil, "backwardsCursor": nil}})
-	source := ContinuationCheckpoint{ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: ids[2], Status: TurnCompleted, Mode: domain.ExecuteMode, Effective: *bound.Effective, Inputs: []HistoricalInput{inputs[2]}}
+	source := ContinuationCheckpoint{PaginatedHistory: bound.Thread.History == PaginatedHistory, ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: ids[2], Status: TurnCompleted, Mode: domain.ExecuteMode, Effective: *bound.Effective, Inputs: []HistoricalInput{inputs[2]}}
 	path := filepath.Join(c.home, "sessions", "fixture.jsonl")
 	security.PrivateDir(filepath.Dir(path))
 	os.WriteFile(path, []byte("retained native history"), 0600)
@@ -205,6 +227,21 @@ func TestRevertLostAcknowledgmentOnlyReconcilesOriginalPrefix(t *testing.T) {
 		t.Fatal("changed retained prefix accepted")
 	}
 }
+
+func TestRevertRejectsMutationResponseWithoutDirectInput(t *testing.T) {
+	for _, mode := range []string{"paginated-result-direct-input-false", "paginated-result-direct-input-omitted"} {
+		t.Run(mode, func(t *testing.T) {
+			c, capture, source, ids, inputs := revertFixture(t, mode)
+			if _, err := c.RevertThread(context.Background(), domain.NewID(), source, inputs[1], ids[1], func(RevertIntent) error { return nil }); err == nil || c.problem == nil || !c.execution.paused {
+				t.Fatal("Revert response without direct-input authority released a checkpoint")
+			}
+			if len(requestsOf(t, capture, "thread/revert")) != 1 {
+				t.Fatal("Revert response was retried after ambiguous direct-input metadata")
+			}
+		})
+	}
+}
+
 func TestRevertRefusesStalePromptActiveTurnAndPaginationCycle(t *testing.T) {
 	for _, mode := range []string{"stale", "active", "cycle"} {
 		t.Run(mode, func(t *testing.T) {

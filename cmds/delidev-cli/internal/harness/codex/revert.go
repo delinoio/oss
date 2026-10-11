@@ -102,7 +102,7 @@ func (c *Client) RevertThread(ctx context.Context, action domain.ID, source Cont
 		return fail()
 	}
 	observed, e := decodeThread(wire.Thread, c.version)
-	if e != nil || observed.ID != c.thread || observed.SessionID != source.SessionID || observed.Status.Type != ThreadIdle || observed.ParentThreadID != nil || observed.ForkedFromID != nil || observed.Cwd != source.Effective.Cwd || observed.ModelProvider != source.Effective.Provider {
+	if e != nil || observed.ID != c.thread || observed.SessionID != source.SessionID || !c.matchesBoundHistoryMode(observed.HistoryMode) || observed.CanAcceptDirectInput == nil || !*observed.CanAcceptDirectInput || observed.Status.Type != ThreadIdle || observed.ParentThreadID != nil || observed.ForkedFromID != nil || observed.Cwd != source.Effective.Cwd || observed.ModelProvider != source.Effective.Provider {
 		return fail()
 	}
 	var cursor, items *string
@@ -156,6 +156,9 @@ func (c *Client) verifyRevertedContinuation(ctx context.Context, request domain.
 		return Turn{}, compactionUncertain()
 	}
 	fail := func() (Turn, error) { c.problem = compactionUncertain(); s.paused = true; return Turn{}, c.problem }
+	if !c.matchesCheckpointHistoryMode(p.Source.PaginatedHistory) {
+		return fail()
+	}
 	if c.checkNativeStateLocked(ctx, true) != nil || c.noForkWorkLocked(ctx, c.thread) != nil {
 		return fail()
 	}
@@ -209,6 +212,14 @@ func (c *Client) ReconcileRevert(ctx context.Context, intent RevertIntent) (Comp
 		return CompactedCheckpoint{}, err
 	}
 	defer func() { <-c.control }()
+	fail := func() (CompactedCheckpoint, error) {
+		c.problem = compactionUncertain()
+		c.execution.paused = true
+		return CompactedCheckpoint{}, c.problem
+	}
+	if !c.matchesCheckpointHistoryMode(intent.Source.PaginatedHistory) {
+		return fail()
+	}
 	if c.problem != nil || c.execution.active != "" || len(c.execution.pending) != 0 || c.execution.interactions.blocksInput() || len(c.subagents) != 0 || c.checkNativeStateLocked(ctx, true) != nil || c.noForkWorkLocked(ctx, c.thread) != nil {
 		return CompactedCheckpoint{}, compactionUncertain()
 	}
@@ -228,7 +239,7 @@ func (c *Client) ReconcileRevert(ctx context.Context, intent RevertIntent) (Comp
 		return CompactedCheckpoint{}, compactionUncertain()
 	}
 	thread, err := decodeThread(envelope.Thread, c.version)
-	if err != nil || thread.ID != c.thread || thread.SessionID != intent.Source.SessionID || thread.Status.Type != ThreadIdle || thread.ParentThreadID != nil || thread.ForkedFromID != nil || thread.Cwd != intent.Source.Effective.Cwd || thread.ModelProvider != intent.Source.Effective.Provider {
+	if err != nil || thread.ID != c.thread || thread.SessionID != intent.Source.SessionID || !c.matchesBoundHistoryMode(thread.HistoryMode) || thread.Status.Type != ThreadIdle || thread.ParentThreadID != nil || thread.ForkedFromID != nil || thread.Cwd != intent.Source.Effective.Cwd || thread.ModelProvider != intent.Source.Effective.Provider {
 		return CompactedCheckpoint{}, compactionUncertain()
 	}
 	var path string

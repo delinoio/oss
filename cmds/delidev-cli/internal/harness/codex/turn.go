@@ -157,13 +157,24 @@ func (c *Client) eligibleTurnLocked(allowRecovery bool) error {
 	}
 	return nil
 }
+func (c *Client) matchesBoundHistoryMode(history HistoryMode) bool {
+	return c.execution != nil && supportsHistoryMode(history, c.revertHistory) && normalizedHistoryMode(history) == normalizedHistoryMode(c.execution.thread.History)
+}
+
+func (c *Client) matchesCheckpointHistoryMode(paginated bool) bool {
+	if c.execution == nil || !supportsHistoryMode(c.execution.thread.History, c.revertHistory) {
+		return false
+	}
+	return paginated == (normalizedHistoryMode(c.execution.thread.History) == PaginatedHistory)
+}
+
 func (c *Client) checkNativeStateLocked(ctx context.Context, requireIdle bool) error {
 	native, err := c.readThreadLocked(ctx, domain.NewID(), c.thread)
 	if err != nil {
 		return err
 	}
 	s := c.execution.settings
-	if native.Cwd != s.Cwd && !nativePathEqual(native.Cwd, s.Cwd) || native.ModelProvider != s.Provider || native.SessionID != c.execution.thread.SessionID || native.HistoryMode != LegacyHistory || native.CanAcceptDirectInput == nil || !*native.CanAcceptDirectInput {
+	if native.Cwd != s.Cwd && !nativePathEqual(native.Cwd, s.Cwd) || native.ModelProvider != s.Provider || native.SessionID != c.execution.thread.SessionID || !c.matchesBoundHistoryMode(native.HistoryMode) || native.CanAcceptDirectInput == nil || !*native.CanAcceptDirectInput {
 		c.problem = turnUncertain()
 		return c.problem
 	}

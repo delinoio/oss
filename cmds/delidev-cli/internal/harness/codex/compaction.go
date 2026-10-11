@@ -298,6 +298,11 @@ func (c *Client) VerifyCompactedContinuation(ctx context.Context, request domain
 	if s == nil || !s.continuationPending || s.paused || s.active != "" || len(s.turns) != 0 || len(s.inputs) != 0 || len(s.pending) != 0 || s.interactions.blocksInput() || c.problem != nil {
 		return Turn{}, compactionUncertain()
 	}
+	if !c.matchesCheckpointHistoryMode(p.Source.PaginatedHistory) {
+		c.problem = compactionUncertain()
+		s.paused = true
+		return Turn{}, c.problem
+	}
 	if err := c.checkNativeStateLocked(ctx, true); err != nil {
 		return Turn{}, err
 	}
