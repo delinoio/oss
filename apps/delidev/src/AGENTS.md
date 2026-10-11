@@ -18,6 +18,7 @@ Changes to shared renderer shortcuts must update dispatch, Help, the Settings ca
 - [DeliDev Diagnostics Presentation](../../../docs/apps-delidev-diagnostics-contract.md)
 - [DeliDev parallel browser QA](../../../docs/apps-delidev-qa-contract.md)
 - [DeliDev AI Subscription Settings](../../../docs/apps-delidev-subscription-settings-contract.md)
+- [Paid-credit presentation and exact-value disclosure](../../../docs/apps-delidev-subscription-settings-contract.md#paid-credit-observations)
 - [API account browser OAuth](../../../docs/cmds-delidev-account-oauth-contract.md)
 - [DeliDev account lifecycle](../../../docs/cmds-delidev-accounts-contract.md)
 - [DeliDev protected account browser](../../../docs/cmds-delidev-browser-contract.md)
