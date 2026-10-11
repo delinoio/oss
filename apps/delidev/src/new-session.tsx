@@ -130,8 +130,6 @@ export function NewSession({
   const local = useLocalWorkerProof(readLocalWorker);
   const transport = useTransport();
   const [defaultProblem, setDefaultProblem] = useState<unknown>();
-  const [submitting, setSubmitting] = useState(false);
-  const submittingRef = useRef(false);
   const localIdentity = useRef<Promise<string>>(undefined);
   const preferences = useCreationPreferences(kind, active, preferenceBridge, preferenceScope);
   const touched = useRef(false);
@@ -184,6 +182,9 @@ export function NewSession({
       serverId: preferenceScope?.server_id,
       deviceId: preferenceScope?.device_id,
     };
+  const [submittingScope, setSubmittingScope] = useState<object>();
+  const submissionAttempt = useRef<{ scope: object } | undefined>(undefined);
+  const submitting = submittingScope === submissionScope.current;
   const [defaultRefreshFailureScope, setDefaultRefreshFailureScope] = useState<object>();
   const defaultRefreshFailed = defaultRefreshFailureScope === submissionScope.current;
   const mounted = useRef(false);
@@ -675,7 +676,7 @@ export function NewSession({
     automaticChoicesEligible;
 
   const submit = async () => {
-    if (!canCreate || submittingRef.current) return;
+    if (!canCreate || submissionAttempt.current?.scope === submissionScope.current) return;
     let estimatedBudget;
     try {
       estimatedBudget = budgetInput(budget);
@@ -684,10 +685,11 @@ export function NewSession({
       setBudgetProblem(productError(error, "new-session.extra.08fb485eeaf6"));
       return;
     }
-    // Lock synchronously before React disables the form on a second submit.
-    submittingRef.current = true;
-    setSubmitting(true);
     const scope = submissionScope.current;
+    const attempt = { scope };
+    // Lock synchronously per scope before React disables the form on a second submit.
+    submissionAttempt.current = attempt;
+    setSubmittingScope(scope);
     const scopeIsCurrent = () =>
       mounted.current && submissionScope.current === scope && scope.active;
     try {
@@ -802,8 +804,10 @@ export function NewSession({
           : undefined,
       );
     } finally {
-      submittingRef.current = false;
-      setSubmitting(false);
+      if (submissionAttempt.current === attempt) {
+        submissionAttempt.current = undefined;
+        setSubmittingScope(undefined);
+      }
     }
   };
 

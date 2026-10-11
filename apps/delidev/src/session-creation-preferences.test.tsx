@@ -1321,6 +1321,63 @@ it.each(["current", "departure", "connection"])(
   },
 );
 
+it("keeps a replacement submission locked when the old scope settles", async () => {
+  const f = fixture(true, false, { global: false });
+  const view = render(f.view());
+  const button = await readyAutomaticCreation(f);
+  let releaseFirst!: () => void;
+  let releaseSecond!: () => void;
+  const first = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  const second = new Promise<void>((resolve) => {
+    releaseSecond = resolve;
+  });
+  let settingsReads = 0;
+  const original = f.list.getMockImplementation()!;
+  f.list.mockImplementation(async (request) => {
+    if (request.filter?.kind !== EntityKind.SETTINGS) return original(request);
+    const currentRead = settingsReads++;
+    await (currentRead === 0 ? first : second);
+    return { resources: [freshPlanSettings(f)] };
+  });
+
+  fireEvent.submit(button.closest("form")!);
+  await waitFor(() => expect(settingsReads).toBe(1));
+  view.rerender(
+    f.view(NewSessionKind.Session, undefined, true, {
+      ...f.scope,
+      server_id: newRequestId(),
+    }),
+  );
+  expect(screen.getByRole("textbox", { name: "First message" }).closest("fieldset")).toHaveProperty(
+    "disabled",
+    false,
+  );
+
+  fireEvent.submit(screen.getByRole("button", { name: "Create session" }).closest("form")!);
+  await waitFor(() => expect(settingsReads).toBe(2));
+  expect(screen.getByRole("textbox", { name: "First message" }).closest("fieldset")).toHaveProperty(
+    "disabled",
+    true,
+  );
+
+  await act(async () => {
+    releaseFirst();
+    await first;
+  });
+  expect(screen.getByRole("textbox", { name: "First message" }).closest("fieldset")).toHaveProperty(
+    "disabled",
+    true,
+  );
+
+  await act(async () => {
+    releaseSecond();
+    await second;
+  });
+  await waitFor(() => expect(f.createSession).toHaveBeenCalledOnce());
+});
+
 it("retries the exact frozen automatic request without another default read", async () => {
   const f = fixture(true, false, { global: false });
   f.createSession.mockRejectedValueOnce(new ConnectError("Lost acknowledgment", Code.Unavailable));
