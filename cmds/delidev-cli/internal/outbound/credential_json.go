@@ -3,7 +3,8 @@ package outbound
 
 import (
 	"bytes"
-	"encoding/json"
+	"unicode/utf16"
+	"unicode/utf8"
 )
 
 // Decode only one JSON escape and a bounded matching suffix at a time. Offsets
@@ -13,6 +14,7 @@ type credentialJSONGuard struct {
 	patterns, short [][]byte
 	inside          bool
 	position        int64
+	escapeBuffer    [12]byte
 	escape          []byte
 	escapeStart     int64
 	decoded         []byte
@@ -57,17 +59,15 @@ func (g *credentialJSONGuard) feed(b byte, offset int64) {
 			return
 		}
 		if len(g.escape) == 6 {
-			// A high surrogate may combine with the next \uXXXX. Delay only this
-			// fixed-size escape until that choice is known, including split reads.
-			var value string
-			if json.Unmarshal(append(append([]byte{'"'}, g.escape...), '"'), &value) != nil {
+			unit, valid := credentialJSONCodeUnit(g.escape)
+			if !valid {
 				g.invalidEscape()
 				return
 			}
-			if g.escape[1] == 'u' && g.escape[2] == 'D' || g.escape[1] == 'u' && g.escape[2] == 'd' {
-				if g.escape[3] == '8' || g.escape[3] == '9' || g.escape[3] == 'a' || g.escape[3] == 'A' || g.escape[3] == 'b' || g.escape[3] == 'B' {
-					return
-				}
+			// A high surrogate may combine with the next \uXXXX. Delay only this
+			// fixed-size escape until that choice is known, including split reads.
+			if unit >= 0xd800 && unit <= 0xdbff {
+				return
 			}
 			g.completeEscape(6)
 			return
@@ -91,7 +91,8 @@ func (g *credentialJSONGuard) feed(b byte, offset int64) {
 	}
 	switch b {
 	case '\\':
-		g.escape = []byte{'\\'}
+		g.escape = g.escapeBuffer[:1]
+		g.escape[0] = '\\'
 		g.escapeStart = offset
 	case '"':
 		g.failed = containsCredentialForms(g.decoded, true, g.previous, g.hasPrevious, g.patterns, g.short)
@@ -107,24 +108,84 @@ func (g *credentialJSONGuard) invalidEscape() {
 	g.escape = nil
 	g.resetString()
 }
-func (g *credentialJSONGuard) completeEscape(count int) {
-	encoded := append(append([]byte{'"'}, g.escape[:count]...), '"')
-	var value string
-	if json.Unmarshal(encoded, &value) != nil {
-		clear(encoded)
-		g.invalidEscape()
-		return
+
+// credentialJSONCodeUnit accepts exactly the JSON \uXXXX spelling. It reads
+// the reusable escape buffer without allocating a temporary JSON string.
+func credentialJSONCodeUnit(escape []byte) (rune, bool) {
+	if len(escape) != 6 || escape[0] != '\\' || escape[1] != 'u' {
+		return 0, false
 	}
-	clear(encoded)
-	tail := append([]byte(nil), g.escape[count:]...)
+	var unit rune
+	for _, b := range escape[2:] {
+		unit <<= 4
+		switch {
+		case b >= '0' && b <= '9':
+			unit |= rune(b - '0')
+		case b >= 'a' && b <= 'f':
+			unit |= rune(b - 'a' + 10)
+		case b >= 'A' && b <= 'F':
+			unit |= rune(b - 'A' + 10)
+		default:
+			return 0, false
+		}
+	}
+	return unit, true
+}
+func (g *credentialJSONGuard) completeEscape(count int) {
+	var value rune
+	if count == 2 {
+		switch g.escape[1] {
+		case '"', '\\', '/':
+			value = rune(g.escape[1])
+		case 'b':
+			value = '\b'
+		case 'f':
+			value = '\f'
+		case 'n':
+			value = '\n'
+		case 'r':
+			value = '\r'
+		case 't':
+			value = '\t'
+		default:
+			g.invalidEscape()
+			return
+		}
+	} else {
+		var valid bool
+		value, valid = credentialJSONCodeUnit(g.escape[:6])
+		if !valid {
+			g.invalidEscape()
+			return
+		}
+		if count == 12 {
+			next, valid := credentialJSONCodeUnit(g.escape[6:12])
+			if !valid {
+				g.invalidEscape()
+				return
+			}
+			if paired := utf16.DecodeRune(value, next); paired != utf8.RuneError {
+				value = paired
+			} else {
+				// An unmatched high surrogate consumes only its own escape.
+				// Replay the next one so a later low surrogate can still pair.
+				count = 6
+			}
+		}
+	}
+	var decoded [utf8.UTFMax]byte
+	n := utf8.EncodeRune(decoded[:], value)
+	var tail [6]byte
+	tailLen := copy(tail[:], g.escape[count:])
 	start := g.escapeStart
 	clear(g.escape)
 	g.escape = nil
-	g.appendDecoded([]byte(value), start)
-	for i, b := range tail {
-		g.feed(b, start+int64(count+i))
+	g.appendDecoded(decoded[:n], start)
+	clear(decoded[:])
+	for i := 0; i < tailLen && !g.failed; i++ {
+		g.feed(tail[i], start+int64(count+i))
 	}
-	clear(tail)
+	clear(tail[:])
 }
 func (g *credentialJSONGuard) appendDecoded(value []byte, offset int64) {
 	for _, b := range value {
