@@ -421,6 +421,7 @@ it("submits Execute, Plan and Execute again only through the explicit composer a
 });
 
 it("locks the checked mode while its original enqueue request is pending", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
   const f = fixture();
   let finish!: (result: ReturnType<typeof sessionInputReceipt>) => void;
   f.enqueue.mockImplementationOnce(
@@ -429,7 +430,7 @@ it("locks the checked mode while its original enqueue request is pending", async
         finish = resolve;
       }),
   );
-  render(f.view());
+  render(<ShortcutProvider>{f.view()}</ShortcutProvider>);
   await screen.findByRole("heading", { name: "Original session" });
   const mode = screen.getByRole("checkbox", { name: "Plan Mode" });
   fireEvent.click(mode);
@@ -443,6 +444,20 @@ it("locks the checked mode while its original enqueue request is pending", async
       new TextDecoder().decode(f.enqueue.mock.calls[0][0].documentJson),
     ).mode,
   ).toBe(Mode.Plan);
+  const original = f.enqueue.mock.calls[0][0];
+  fireEvent.keyDown(screen.getByRole("heading", { name: "Original session" }), {
+    key: "e",
+    ctrlKey: true,
+  });
+  expect(await screen.findByRole("tab", { name: "Files" })).toHaveProperty(
+    "tabIndex",
+    0,
+  );
+  expect(f.enqueue).toHaveBeenCalledOnce();
+  expect(f.enqueue.mock.calls[0][0]).toBe(original);
+  expect(f.control).not.toHaveBeenCalled();
+  expect(mode).toHaveProperty("checked", true);
+  expect(mode).toHaveProperty("disabled", true);
   await act(async () =>
     finish(sessionInputReceipt(f.session, f.enqueue.mock.calls[0][0])),
   );

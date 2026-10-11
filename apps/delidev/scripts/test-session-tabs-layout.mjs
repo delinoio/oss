@@ -93,8 +93,20 @@ try {
     { width: 320, height: 480 },
     { width: 1120, height: 960, zoom: 2 },
   ];
+  const themes = process.env.DELIDEV_LAYOUT_THEMES?.split(",") ?? [
+    "light",
+    "dark",
+    "system",
+    "custom",
+  ];
+  assert(
+    themes.length &&
+      themes.every((theme) =>
+        ["light", "dark", "system", "custom"].includes(theme),
+      ),
+  );
   for (const language of ["en", "ko"])
-    for (const theme of ["light", "dark", "system"])
+    for (const theme of themes)
       for (const size of sizes) {
         // Model effective browser zoom with CSS viewport reflow, rather than
         // scaling top-layer viewport units through body CSS zoom.
@@ -192,7 +204,14 @@ try {
             box = node.getBoundingClientRect(),
             hint = badge.getBoundingClientRect(),
             icon = node.querySelector("svg").getBoundingClientRect();
+          const probe = document.createElement("span");
+          probe.style.color = "var(--muted)";
+          document.body.append(probe);
+          const expectedColor = getComputedStyle(probe).color;
+          probe.remove();
           return {
+            color: getComputedStyle(badge).color,
+            expectedColor,
             text: badge.textContent,
             aria: node.getAttribute("aria-keyshortcuts"),
             expected: /mac/i.test(navigator.platform) ? "Meta+E" : "Control+E",
@@ -212,6 +231,7 @@ try {
           filesShortcut.text,
           filesShortcut.expected === "Meta+E" ? "⌘ E" : "Ctrl E",
         );
+        assert.equal(filesShortcut.color, filesShortcut.expectedColor);
         assert.equal(filesShortcut.nowrap, "nowrap");
         assert.equal(filesShortcut.inside, true);
         assert.equal(filesShortcut.noOverlap, true);

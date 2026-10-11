@@ -32,6 +32,14 @@ const args = new URLSearchParams(location.search);
 await i18n.changeLanguage(args.get("language") ?? "en");
 if (args.get("theme") !== "system")
   document.documentElement.dataset.theme = args.get("theme") ?? "light";
+if (args.get("theme") === "custom") {
+  for (const [name, value] of Object.entries({
+    muted: "#54535e",
+    border: "#bab3c2",
+    accent: "#74298a",
+  }))
+    document.documentElement.style.setProperty(`--${name}`, value);
+}
 if (args.get("zoom") === "2") {
   document.body.style.zoom = "2";
   document.documentElement.style.setProperty("--fixture-scale", "2");
