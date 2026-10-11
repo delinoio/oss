@@ -435,7 +435,6 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1)
 			}
-			}
 			// Older peers reject unknown enums before returning their support list.
 			// Advertise generation only after the original server opts into it.
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_IMAGE_GENERATION_V1) {

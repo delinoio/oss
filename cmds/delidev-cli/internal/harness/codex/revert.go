@@ -223,8 +223,6 @@ func (c *Client) ReconcileRevert(ctx context.Context, intent RevertIntent) (Comp
 	if c.problem != nil || c.execution.active != "" || len(c.execution.pending) != 0 || (c.execution.interactions.blocksInput() || c.dynamicRequestsBlockInput()) || len(c.subagents) != 0 || c.checkNativeStateLocked(ctx, true) != nil || c.noForkWorkLocked(ctx, c.thread) != nil {
 		return fail()
 	}
-		return CompactedCheckpoint{}, compactionUncertain()
-	}
 	c.execution.revertAction = intent.ActionID
 	history, err := c.revertHistoryLocked(ctx, "asc", nil, nil, true)
 	if err != nil || !slices.EqualFunc(history, intent.ExpectedHistory, equivalentForkJSON) {
