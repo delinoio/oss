@@ -14,7 +14,7 @@ import { encode } from "./documents";
 import { ProjectEditTab, ProjectEditTabs } from "./project-edit-tabs";
 import { readFileSync } from "node:fs";
 const projectTabStyles = readFileSync("src/project-edit-tabs.css", "utf8");
-const sharedTabStyles = readFileSync("src/desktop-tabs.css", "utf8") + readFileSync("src/settings-task.css", "utf8");
+
 
 function renderTask(children: ReactNode) {
   const transport = createRouterTransport(() => {});
@@ -232,7 +232,7 @@ it("retains page cancellation and distinct nested return, while omitting empty t
 
 it("constrains the saved Project tab body through the mounted task wrapper", () => {
   renderTask(<SettingsTaskDialog title="Edit project" size={SettingsDialogSize.Form} close={() => {}}>
-    <style>{projectTabStyles + sharedTabStyles}</style>
+    <style>{projectTabStyles}</style>
     <form className="project-editor"><ProjectEditTabs disabled={false} panels={{
       [ProjectEditTab.General]: <label>Name<input defaultValue="Saved project" /></label>,
       [ProjectEditTab.Repositories]: <p>Repositories</p>,
@@ -257,9 +257,15 @@ it("constrains the saved Project tab body through the mounted task wrapper", () 
   fireEvent.click(screen.getByRole("tab", { name: "Execution" }));
   expect(screen.getByRole("tabpanel")).toBe(panels[2]);
   const execution = screen.getByRole("tab", { name: "Execution" });
-  expect(getComputedStyle(execution).borderRadius).toBe("0");
-  expect(getComputedStyle(execution).minHeight).toBe("40px");
-  expect(getComputedStyle(screen.getByRole("button", { name: "Save Project" })).borderRadius).toBe("8px");
+  const access = screen.getByRole("tab", { name: "Access" }), strip = execution.closest<HTMLElement>(".desktop-tab-strip")!;
+  strip.scrollTop = 37;
+  vi.spyOn(strip, "getBoundingClientRect").mockReturnValue({ left: 0, right: 100, width: 100 } as DOMRect);
+  vi.spyOn(access, "getBoundingClientRect").mockImplementation(() => ({ left: 90 - strip.scrollLeft, right: 180 - strip.scrollLeft } as DOMRect));
+  fireEvent.keyDown(execution, { key: "End" });
+  expect(document.activeElement).toBe(access);
+  expect(execution.getAttribute("aria-selected")).toBe("true");
+  expect(strip.scrollLeft).toBe(80);
+  expect(strip.scrollTop).toBe(37);
   // Internal task steps hide this retained wrapper; the flex rule must not undo it.
   wrapper.hidden = true;
   expect(getComputedStyle(wrapper).display).toBe("none");
