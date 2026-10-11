@@ -4108,7 +4108,7 @@ dependencies = [
 [[package]]
 name = "goport_lsproto"
 version = "7.0.0-dev"
-source = "git+https://github.com/kdy1/ts-rust?rev=398b09f45dcf06cd67f8e9e18c8c22f95f81430f#398b09f45dcf06cd67f8e9e18c8c22f95f81430f"
+source = "git+https://github.com/kdy1/ts-rust?rev=b4144b4769d13bbfe9e648840fe6297893981427#b4144b4769d13bbfe9e648840fe6297893981427"
 dependencies = [
  "goport_util",
  "indexmap 2.14.0",
@@ -4118,7 +4118,7 @@ dependencies = [
 [[package]]
 name = "goport_util"
 version = "7.0.0-dev"
-source = "git+https://github.com/kdy1/ts-rust?rev=398b09f45dcf06cd67f8e9e18c8c22f95f81430f#398b09f45dcf06cd67f8e9e18c8c22f95f81430f"
+source = "git+https://github.com/kdy1/ts-rust?rev=b4144b4769d13bbfe9e648840fe6297893981427#b4144b4769d13bbfe9e648840fe6297893981427"
 dependencies = [
  "indexmap 2.14.0",
  "lzma-rust2",
@@ -10584,7 +10584,7 @@ dependencies = [
 [[package]]
 name = "ts_goport"
 version = "7.0.0-dev"
-source = "git+https://github.com/kdy1/ts-rust?rev=398b09f45dcf06cd67f8e9e18c8c22f95f81430f#398b09f45dcf06cd67f8e9e18c8c22f95f81430f"
+source = "git+https://github.com/kdy1/ts-rust?rev=b4144b4769d13bbfe9e648840fe6297893981427#b4144b4769d13bbfe9e648840fe6297893981427"
 dependencies = [
  "bumpalo",
  "flate2",
