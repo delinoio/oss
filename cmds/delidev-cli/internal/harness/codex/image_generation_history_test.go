@@ -56,7 +56,9 @@ func uniqueHistoryItem(t *testing.T, item any, id string) map[string]any {
 	for key, value := range source {
 		cloned[key] = value
 	}
-	cloned["id"] = id
+	if sourceID, ok := source["id"].(string); ok && domain.Text(sourceID, "native image identity", 1024, true) == nil {
+		cloned["id"] = id
+	}
 	return cloned
 }
 
