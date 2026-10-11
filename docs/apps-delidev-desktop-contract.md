@@ -2908,7 +2908,10 @@ disposal remove only the sheet owned by that presentation; unrelated adopted
 sheets remain intact. The `pnpm test:appearance-colors` browser regression uses
 the production provider and stylesheet to check computed colors, System changes,
 retained drafts and sheet cleanup. It supplies only a synthetic appearance bridge
-and does not establish installed CEF or native storage acceptance. Export
+and does not establish installed CEF or native storage acceptance. The desktop
+frontend CI checks phase runs this regression with an audited, pinned Playwright
+installation and Chromium under runner temporary storage; the module path and
+browser location are supplied through the existing layout-test environment. Export
 captures one committed custom theme.
 Deletion requires confirmation and atomically returns all selected references to
 Default. Cancel discards only the editor/import draft. Concurrent revisions keep

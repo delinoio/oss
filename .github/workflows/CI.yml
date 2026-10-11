@@ -1904,6 +1904,17 @@ jobs:
           FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['delidev-frontend'] }}
         run: node scripts/ci/run-affected.mjs delidev-desktop ci:${{ matrix.phase }}
 
+      - name: Check selected appearance color cascade
+        if: ${{ matrix.phase == 'checks' }}
+        env:
+          DELIDEV_LAYOUT_PLAYWRIGHT_MODULE: ${{ runner.temp }}/delidev-appearance-browser/node_modules/playwright/index.mjs
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/delidev-appearance-browsers
+        run: |
+          npm install --prefix "$RUNNER_TEMP/delidev-appearance-browser" --ignore-scripts --no-fund --no-audit playwright@1.64.0
+          npm audit --prefix "$RUNNER_TEMP/delidev-appearance-browser" --omit=dev --audit-level=moderate
+          node "$RUNNER_TEMP/delidev-appearance-browser/node_modules/playwright/cli.js" install --with-deps chromium
+          pnpm --dir apps/delidev test:appearance-colors
+
       - name: Save pnpm cache after successful main validation
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v5
