@@ -109,7 +109,15 @@ export function RunnerRemediationProvider({
       connectionReady,
       authority,
     }),
-    [request, release, presenter, controller, active, connectionReady, authority],
+    [
+      request,
+      release,
+      presenter,
+      controller,
+      active,
+      connectionReady,
+      authority,
+    ],
   );
   return (
     <Context.Provider value={value}>
@@ -144,7 +152,8 @@ export function useRunnerRemediation({
   authority,
   active = true,
 }: { compact?: boolean; authority?: PairingAuthority; active?: boolean } = {}):
-  RunnerRemediationOpener | undefined {
+  | RunnerRemediationOpener
+  | undefined {
   useLocale();
   const owner = useContext(Context),
     presenter = useId();

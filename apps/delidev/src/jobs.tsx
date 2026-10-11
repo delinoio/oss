@@ -38,14 +38,17 @@ function exactJob(
     row.kind !== EntityKind.JOB ||
     row.revision < revision ||
     !supportsResourceSchema(row)
-  ) return false;
-  const original = document(initial), value = document(row);
+  )
+    return false;
+  const original = document(initial),
+    value = document(row);
   return (
     Object.values(JobState).includes(value.state as JobState) &&
     (!text(original.type) || value.type === original.type) &&
-    (!expectedType || original.type === expectedType && value.type === expectedType) &&
+    (!expectedType ||
+      (original.type === expectedType && value.type === expectedType)) &&
     (!machineId ||
-      original.machine_id === machineId && value.machine_id === machineId)
+      (original.machine_id === machineId && value.machine_id === machineId))
   );
 }
 
@@ -75,9 +78,12 @@ export function useJobObservation(
       enabled: active && Boolean(initial),
       refetchInterval: (query) => {
         const row = query.state.data?.resource;
-        return active && initial &&
-          !(exactJob(row, initial, floor, expectedType, machineId) &&
-            terminalStates.includes(document(row).state as JobState))
+        return active &&
+          initial &&
+          !(
+            exactJob(row, initial, floor, expectedType, machineId) &&
+            terminalStates.includes(document(row).state as JobState)
+          )
           ? 2000
           : false;
       },
@@ -89,32 +95,51 @@ export function useJobObservation(
   );
   if (initial && latest && exact && !result.error && !result.isFetching)
     retained.current = { id: initial.id, current: latest };
-  const current = exact ? latest : retained.current?.current ?? initial;
+  const current = exact ? latest : (retained.current?.current ?? initial);
   const value = useMemo(() => document(current), [current]);
   const state = text(value.state);
   const problem = useMemo(() => object(value.problem), [value]);
   const output = useMemo(() => object(value.output), [value]);
   const unreadable = Boolean(
     result.data &&
-      (!exact || state === JobState.Succeeded && value.problem != null),
+    (!exact || (state === JobState.Succeeded && value.problem != null)),
   );
   // Failed/canceled outcomes can carry their original problem and still prove
   // settlement. A succeeded result carrying a problem cannot prove success.
   const verified = Boolean(
-    initial && exact && !result.error && !result.isFetching &&
-      (state !== JobState.Succeeded || value.problem == null),
+    initial &&
+    exact &&
+    !result.error &&
+    !result.isFetching &&
+    (state !== JobState.Succeeded || value.problem == null),
   );
   return useMemo(
     () => ({
-      current, state, output, problem, unreadable, verified,
+      current,
+      state,
+      output,
+      problem,
+      unreadable,
+      verified,
       terminal: verified && terminalStates.includes(state as JobState),
       active: active && Boolean(initial),
       pending: result.isFetching,
       error: result.error,
       retry: result.refetch,
     }),
-    [current, state, output, problem, unreadable, verified,
-      result.isFetching, result.error, result.refetch, active, initial],
+    [
+      current,
+      state,
+      output,
+      problem,
+      unreadable,
+      verified,
+      result.isFetching,
+      result.error,
+      result.refetch,
+      active,
+      initial,
+    ],
   );
 }
 export type JobObservation = ReturnType<typeof useJobObservation>;

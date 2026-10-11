@@ -64,10 +64,13 @@ export function useMachineSettingsController(
   const [verify, setVerifyValue] = useState(false);
   const verifyGeneration = useRef(0);
   const [job, setJob] = useState<Resource | "unknown">();
-  const submitted = useRef<{
-    edit: typeof edit;
-    verifyGeneration: number;
-  } | undefined>(undefined);
+  const submitted = useRef<
+    | {
+        edit: typeof edit;
+        verifyGeneration: number;
+      }
+    | undefined
+  >(undefined);
   const [accepted, setAccepted] = useState<{
     jobId: string;
     edit: typeof edit;
@@ -104,13 +107,17 @@ export function useMachineSettingsController(
     "harness-discovery",
     initial.id,
   );
-  const pending = discovery.busy || discovery.uncertain ||
+  const pending =
+    discovery.busy ||
+    discovery.uncertain ||
     Boolean(job && !jobObservation.terminal);
   useEffect(() => {
     if (
-      !accepted || !jobObservation.terminal ||
+      !accepted ||
+      !jobObservation.terminal ||
       jobObservation.current?.id !== accepted.jobId
-    ) return;
+    )
+      return;
     setEdit((currentEdit) =>
       currentEdit === accepted.edit ? undefined : currentEdit,
     );

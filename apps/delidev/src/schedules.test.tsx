@@ -31,7 +31,10 @@ import {
 } from "./schedules";
 import { i18n } from "./localization";
 import { MachineSettings } from "./machine-settings";
-import { RunnerRemediationProvider, useRunnerRemediation } from "./runner-remediation";
+import {
+  RunnerRemediationProvider,
+  useRunnerRemediation,
+} from "./runner-remediation";
 
 function fixture() {
   const definition = {
@@ -1983,39 +1986,136 @@ it.each([
   },
 );
 
-it.each(["succeeded", "failed", "canceled"])("keeps Schedule Task usable after closing a verified %s inspection without Finish", async (state) => {
-  const value = fixture();
-  const initial = create(ResourceSchema, { id: newRequestId(), kind: EntityKind.JOB, schemaVersion: 1, revision: 1n, documentJson: encode({ type: "harness-discovery", machine_id: value.machine.id, state: "queued" }) });
-  const settled = create(ResourceSchema, { ...initial, revision: 2n, documentJson: encode({ type: "harness-discovery", machine_id: value.machine.id, state, ...(state === "failed" ? { problem: { message: "Original inspection failed", code: "unsupported" } } : {}) }) });
-  value.discovery.mockResolvedValue({ machine: value.machine, job: initial });
-  value.get.mockImplementation(async (request) => ({ resource: request.kind === EntityKind.JOB ? settled : value.resources.find((row) => row.id === request.id) }));
-  const { RunnerPreferenceProvider } = await import("./runner-device-preferences");
-  const scope = { server_id: newRequestId(), device_id: newRequestId() };
-  const bridge = { read: vi.fn(async () => ({ revision: 1, scope, machine_id: value.machine.id, problem: null })), update: vi.fn() };
-  function Surface() {
-    const inspect = useRunnerRemediation();
-    return <><button onClick={() => inspect?.(value.machine)}>Inspect preferred Runner</button><ScheduleEditor active saved={() => {}} cancel={() => {}} />{inspect?.body}</>;
-  }
-  render(value.view(<RunnerPreferenceProvider bridge={bridge}><RunnerRemediationProvider active><Surface /></RunnerRemediationProvider></RunnerPreferenceProvider>));
-  await waitFor(() => expect(screen.getByLabelText("Runner Device").getAttribute("data-value")).toBe(value.machine.id));
-  const prompt = screen.getByLabelText("Scheduled prompt");
-  fireEvent.change(screen.getByLabelText("Schedule name"), { target: { value: "Retained Task name" } });
-  fireEvent.change(prompt, { target: { value: "Unchanged retained schedule draft" } });
-  fireEvent.click(screen.getByRole("button", { name: "Inspect preferred Runner" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Run optional diagnostics" }));
-  await screen.findByRole("button", { name: "Finish inspection" });
-  fireEvent.click(screen.getByRole("button", { name: "Close Inspect installed harnesses" }));
-  await waitFor(() => expect(screen.getByLabelText("Scheduled prompt").matches(":disabled")).toBe(false));
-  expect(screen.getByLabelText("Scheduled prompt")).toHaveProperty("value", "Unchanged retained schedule draft");
-  expect(screen.getByLabelText("Schedule name").matches(":disabled")).toBe(false);
-  expect(screen.getByRole("combobox", { name: "Project" }).matches(":disabled")).toBe(false);
-  expect(screen.getByRole("button", { name: "Cancel" })).toHaveProperty("disabled", false);
-  expect(screen.getByRole("button", { name: "Next" })).toHaveProperty("disabled", false);
-  expect(screen.getByLabelText("Schedule name")).toHaveProperty("value", "Retained Task name");
-  expect(value.save).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Inspect preferred Runner" }));
-  expect(await screen.findByRole("button", { name: "Finish inspection" })).toBeTruthy();
-  expect(value.discovery).toHaveBeenCalledOnce();
-  expect(value.save).not.toHaveBeenCalled();
-  value.client.clear();
-});
+it.each(["succeeded", "failed", "canceled"])(
+  "keeps Schedule Task usable after closing a verified %s inspection without Finish",
+  async (state) => {
+    const value = fixture();
+    const initial = create(ResourceSchema, {
+      id: newRequestId(),
+      kind: EntityKind.JOB,
+      schemaVersion: 1,
+      revision: 1n,
+      documentJson: encode({
+        type: "harness-discovery",
+        machine_id: value.machine.id,
+        state: "queued",
+      }),
+    });
+    const settled = create(ResourceSchema, {
+      ...initial,
+      revision: 2n,
+      documentJson: encode({
+        type: "harness-discovery",
+        machine_id: value.machine.id,
+        state,
+        ...(state === "failed"
+          ? {
+              problem: {
+                message: "Original inspection failed",
+                code: "unsupported",
+              },
+            }
+          : {}),
+      }),
+    });
+    value.discovery.mockResolvedValue({ machine: value.machine, job: initial });
+    value.get.mockImplementation(async (request) => ({
+      resource:
+        request.kind === EntityKind.JOB
+          ? settled
+          : value.resources.find((row) => row.id === request.id),
+    }));
+    const { RunnerPreferenceProvider } =
+      await import("./runner-device-preferences");
+    const scope = { server_id: newRequestId(), device_id: newRequestId() };
+    const bridge = {
+      read: vi.fn(async () => ({
+        revision: 1,
+        scope,
+        machine_id: value.machine.id,
+        problem: null,
+      })),
+      update: vi.fn(),
+    };
+    function Surface() {
+      const inspect = useRunnerRemediation();
+      return (
+        <>
+          <button onClick={() => inspect?.(value.machine)}>
+            Inspect preferred Runner
+          </button>
+          <ScheduleEditor active saved={() => {}} cancel={() => {}} />
+          {inspect?.body}
+        </>
+      );
+    }
+    render(
+      value.view(
+        <RunnerPreferenceProvider bridge={bridge}>
+          <RunnerRemediationProvider active>
+            <Surface />
+          </RunnerRemediationProvider>
+        </RunnerPreferenceProvider>,
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText("Runner Device").getAttribute("data-value"),
+      ).toBe(value.machine.id),
+    );
+    const prompt = screen.getByLabelText("Scheduled prompt");
+    fireEvent.change(screen.getByLabelText("Schedule name"), {
+      target: { value: "Retained Task name" },
+    });
+    fireEvent.change(prompt, {
+      target: { value: "Unchanged retained schedule draft" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Inspect preferred Runner" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Run optional diagnostics" }),
+    );
+    await screen.findByRole("button", { name: "Finish inspection" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close Inspect installed harnesses" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText("Scheduled prompt").matches(":disabled"),
+      ).toBe(false),
+    );
+    expect(screen.getByLabelText("Scheduled prompt")).toHaveProperty(
+      "value",
+      "Unchanged retained schedule draft",
+    );
+    expect(screen.getByLabelText("Schedule name").matches(":disabled")).toBe(
+      false,
+    );
+    expect(
+      screen.getByRole("combobox", { name: "Project" }).matches(":disabled"),
+    ).toBe(false);
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveProperty(
+      "disabled",
+      false,
+    );
+    expect(screen.getByRole("button", { name: "Next" })).toHaveProperty(
+      "disabled",
+      false,
+    );
+    expect(screen.getByLabelText("Schedule name")).toHaveProperty(
+      "value",
+      "Retained Task name",
+    );
+    expect(value.save).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Inspect preferred Runner" }),
+    );
+    expect(
+      await screen.findByRole("button", { name: "Finish inspection" }),
+    ).toBeTruthy();
+    expect(value.discovery).toHaveBeenCalledOnce();
+    expect(value.save).not.toHaveBeenCalled();
+    value.client.clear();
+  },
+);
