@@ -13,6 +13,8 @@ use crate::{
 
 mod aggregate_elimination;
 mod call_inlining;
+mod calls_init;
+mod calls_support;
 mod constant_property_inlining;
 mod discriminant_compaction;
 mod enum_runtime_reduction;

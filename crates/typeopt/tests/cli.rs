@@ -26,6 +26,14 @@ fn run(root: &Path, destination: &str) -> Output {
             destination,
             "--verbose",
         ])
+        // These fixtures exercise the property passes through tiny helper
+        // functions that the call passes would otherwise inline first.
+        .args([
+            "--disable-pass",
+            "call-inlining",
+            "--disable-pass",
+            "method-devirtualization",
+        ])
         .output()
         .unwrap()
 }
