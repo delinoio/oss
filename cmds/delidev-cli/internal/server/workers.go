@@ -344,10 +344,13 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 	// assignment restores this bounded retry boundary without preclaiming work.
 	var dependencyAfter domain.ID
 	var dependencyBlocked bool
-	rememberDependency := func() {
+	skipDependency := func(id domain.ID) {
 		if !dependencyBlocked {
 			dependencyAfter, dependencyBlocked = after, true
 		}
+		// Advance even when a whole page is blocked, so later work and the
+		// heartbeat wait remain reachable. Retry from the saved predecessor.
+		after = id
 	}
 	retryDependencies := func() {
 		if dependencyBlocked {
@@ -482,7 +485,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					return rpc.Error(err, correlation)
 				}
 				if pending && (storageInput.Action == workspace.StorageCleanup || storageInput.Action == workspace.StorageRecover) {
-					rememberDependency()
+					skipDependency(record.ID)
 					continue
 				}
 			}
@@ -614,7 +617,7 @@ func (s *Service) WatchWork(ctx context.Context, req *connect.Request[pb.WatchWo
 					return rpc.Error(err, correlation)
 				}
 				if claimDependencyBlocked {
-					rememberDependency()
+					skipDependency(record.ID)
 					continue
 				}
 			}
