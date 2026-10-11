@@ -444,6 +444,14 @@ function Shell({
       run: toggleCommandMenu,
     },
     {
+      id: ShortcutId.OpenSettings,
+      scope: ShortcutScope.Global,
+      label: "shortcuts.openSettings",
+      bindings: globalShortcutBindings[ShortcutId.OpenSettings],
+      input: ShortcutInput.Allow,
+      run: () => openSettings(),
+    },
+    {
       id: ShortcutId.Help,
       scope: ShortcutScope.Global,
       label: "shortcuts.help",

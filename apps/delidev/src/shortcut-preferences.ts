@@ -119,6 +119,15 @@ export const editableShortcutCatalog: readonly CatalogAction[] = [
 ];
 export const readOnlyShortcutCatalog: readonly CatalogAction[] = [
   {
+    id: ShortcutId.OpenSettings,
+    label: "shortcuts.openSettings",
+    group: ShortcutGroup.Common,
+    scopes: [ShortcutScope.Global],
+    priority: 0,
+    input: ShortcutInput.Allow,
+    defaults: globalShortcutBindings[ShortcutId.OpenSettings],
+  },
+  {
     id: ShortcutId.ToggleSidebar,
     label: "sidebar-preference.toggle",
     group: ShortcutGroup.Common,
