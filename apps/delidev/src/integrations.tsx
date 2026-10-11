@@ -600,9 +600,7 @@ function IntegrationConnection({
             id="integrations.authenticatedAsGithubId_5a4d87"
             components={{
               s0: <>{text(identity.login)}</>,
-              s1: (
-                <>{text(presentationLabels.identity(identity.id, "record"))}</>
-              ),
+              s1: <>{text(identity.id)}</>,
             }}
           />
         </p>
