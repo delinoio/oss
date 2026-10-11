@@ -57,12 +57,14 @@ function UpdateCandidate({
   worker,
   controls,
   recoveryTarget,
+  onRecoveryStateChange,
 }: {
   recoveryTarget?: HTMLElement;
   current: Resource;
   active: boolean;
   worker?: boolean;
   controls?: DesktopUpdateControls;
+  onRecoveryStateChange?: (id: string, required: boolean) => void;
 }) {
   useLocale();
   const [local, setLocal] = useState<NativeUpdateResult>(),
@@ -101,6 +103,23 @@ function UpdateCandidate({
       void read.refetch();
     },
   );
+  const recoveryRequired = Boolean(
+    busy ||
+    uncertain ||
+    request.busy ||
+    request.uncertain ||
+    cancel.busy ||
+    cancel.uncertain ||
+    (!worker &&
+      (local?.phase === NativeUpdatePhase.Prepared ||
+        local?.phase === NativeUpdatePhase.Installing ||
+        local?.phase === NativeUpdatePhase.Failed ||
+        local?.phase === NativeUpdatePhase.Uncertain)),
+  );
+  useEffect(() => {
+    onRecoveryStateChange?.(current.id, recoveryRequired);
+    return () => onRecoveryStateChange?.(current.id, false);
+  }, [current.id, onRecoveryStateChange, recoveryRequired]);
   const native = async (action: NativeUpdateAction) => {
     if (
       !active ||
@@ -420,6 +439,7 @@ export function Updates({
     [checked, setChecked] = useState(false),
     [recoveryTarget, setRecoveryTarget] = useState<HTMLElement>(),
     [candidate, setCandidate] = useState<Resource>(),
+    [recoveryCandidateId, setRecoveryCandidateId] = useState(""),
     [id, setId] = useState(""),
     [nativeContext, setNativeContext] = useState<{
       current_version: string;
@@ -432,6 +452,14 @@ export function Updates({
   );
   const desktopRoot = useRef<HTMLDivElement>(null);
   const recovery = useRef<HTMLDetailsElement>(null);
+  const reportCandidateRecovery = useCallback(
+    (candidateId: string, required: boolean) => {
+      setRecoveryCandidateId((current) =>
+        required ? candidateId : current === candidateId ? "" : current,
+      );
+    },
+    [],
+  );
   useEffect(() => {
     if (machine || !desktopRoot.current) return;
     const root = desktopRoot.current;
@@ -556,7 +584,8 @@ export function Updates({
                 !targets[target] ||
                 !version ||
                 check.busy ||
-                check.uncertain
+                check.uncertain ||
+                (Boolean(recoveryCandidateId) && recoveryCandidateId === id)
               }
               onClick={() =>
                 void check.send({
@@ -632,6 +661,7 @@ export function Updates({
               worker={Boolean(machine)}
               controls={controls}
               recoveryTarget={recoveryTarget}
+              onRecoveryStateChange={reportCandidateRecovery}
             />
           ) : null}
           <Problem error={check.error || read.error || error} />
