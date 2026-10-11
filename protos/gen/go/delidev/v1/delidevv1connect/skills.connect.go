@@ -37,11 +37,27 @@ const (
 const (
 	// SkillServiceListSkillsProcedure is the fully-qualified name of the SkillService's ListSkills RPC.
 	SkillServiceListSkillsProcedure = "/delidev.v1.SkillService/ListSkills"
+	// SkillServiceListManagedSkillsProcedure is the fully-qualified name of the SkillService's
+	// ListManagedSkills RPC.
+	SkillServiceListManagedSkillsProcedure = "/delidev.v1.SkillService/ListManagedSkills"
+	// SkillServiceMutateManagedSkillProcedure is the fully-qualified name of the SkillService's
+	// MutateManagedSkill RPC.
+	SkillServiceMutateManagedSkillProcedure = "/delidev.v1.SkillService/MutateManagedSkill"
+	// SkillServiceGetManagedSkillMutationProcedure is the fully-qualified name of the SkillService's
+	// GetManagedSkillMutation RPC.
+	SkillServiceGetManagedSkillMutationProcedure = "/delidev.v1.SkillService/GetManagedSkillMutation"
+	// SkillServiceViewManagedSkillProcedure is the fully-qualified name of the SkillService's
+	// ViewManagedSkill RPC.
+	SkillServiceViewManagedSkillProcedure = "/delidev.v1.SkillService/ViewManagedSkill"
 )
 
 // SkillServiceClient is a client for the delidev.v1.SkillService service.
 type SkillServiceClient interface {
 	ListSkills(context.Context, *connect.Request[v1.ListSkillsRequest]) (*connect.Response[v1.ListSkillsResponse], error)
+	ListManagedSkills(context.Context, *connect.Request[v1.ListManagedSkillsRequest]) (*connect.Response[v1.ListManagedSkillsResponse], error)
+	MutateManagedSkill(context.Context, *connect.Request[v1.MutateManagedSkillRequest]) (*connect.Response[v1.MutateManagedSkillResponse], error)
+	GetManagedSkillMutation(context.Context, *connect.Request[v1.GetManagedSkillMutationRequest]) (*connect.Response[v1.GetManagedSkillMutationResponse], error)
+	ViewManagedSkill(context.Context, *connect.Request[v1.ViewManagedSkillRequest]) (*connect.Response[v1.ViewManagedSkillResponse], error)
 }
 
 // NewSkillServiceClient constructs a client for the delidev.v1.SkillService service. By default, it
@@ -61,12 +77,40 @@ func NewSkillServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(skillServiceMethods.ByName("ListSkills")),
 			connect.WithClientOptions(opts...),
 		),
+		listManagedSkills: connect.NewClient[v1.ListManagedSkillsRequest, v1.ListManagedSkillsResponse](
+			httpClient,
+			baseURL+SkillServiceListManagedSkillsProcedure,
+			connect.WithSchema(skillServiceMethods.ByName("ListManagedSkills")),
+			connect.WithClientOptions(opts...),
+		),
+		mutateManagedSkill: connect.NewClient[v1.MutateManagedSkillRequest, v1.MutateManagedSkillResponse](
+			httpClient,
+			baseURL+SkillServiceMutateManagedSkillProcedure,
+			connect.WithSchema(skillServiceMethods.ByName("MutateManagedSkill")),
+			connect.WithClientOptions(opts...),
+		),
+		getManagedSkillMutation: connect.NewClient[v1.GetManagedSkillMutationRequest, v1.GetManagedSkillMutationResponse](
+			httpClient,
+			baseURL+SkillServiceGetManagedSkillMutationProcedure,
+			connect.WithSchema(skillServiceMethods.ByName("GetManagedSkillMutation")),
+			connect.WithClientOptions(opts...),
+		),
+		viewManagedSkill: connect.NewClient[v1.ViewManagedSkillRequest, v1.ViewManagedSkillResponse](
+			httpClient,
+			baseURL+SkillServiceViewManagedSkillProcedure,
+			connect.WithSchema(skillServiceMethods.ByName("ViewManagedSkill")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // skillServiceClient implements SkillServiceClient.
 type skillServiceClient struct {
-	listSkills *connect.Client[v1.ListSkillsRequest, v1.ListSkillsResponse]
+	listSkills              *connect.Client[v1.ListSkillsRequest, v1.ListSkillsResponse]
+	listManagedSkills       *connect.Client[v1.ListManagedSkillsRequest, v1.ListManagedSkillsResponse]
+	mutateManagedSkill      *connect.Client[v1.MutateManagedSkillRequest, v1.MutateManagedSkillResponse]
+	getManagedSkillMutation *connect.Client[v1.GetManagedSkillMutationRequest, v1.GetManagedSkillMutationResponse]
+	viewManagedSkill        *connect.Client[v1.ViewManagedSkillRequest, v1.ViewManagedSkillResponse]
 }
 
 // ListSkills calls delidev.v1.SkillService.ListSkills.
@@ -74,9 +118,33 @@ func (c *skillServiceClient) ListSkills(ctx context.Context, req *connect.Reques
 	return c.listSkills.CallUnary(ctx, req)
 }
 
+// ListManagedSkills calls delidev.v1.SkillService.ListManagedSkills.
+func (c *skillServiceClient) ListManagedSkills(ctx context.Context, req *connect.Request[v1.ListManagedSkillsRequest]) (*connect.Response[v1.ListManagedSkillsResponse], error) {
+	return c.listManagedSkills.CallUnary(ctx, req)
+}
+
+// MutateManagedSkill calls delidev.v1.SkillService.MutateManagedSkill.
+func (c *skillServiceClient) MutateManagedSkill(ctx context.Context, req *connect.Request[v1.MutateManagedSkillRequest]) (*connect.Response[v1.MutateManagedSkillResponse], error) {
+	return c.mutateManagedSkill.CallUnary(ctx, req)
+}
+
+// GetManagedSkillMutation calls delidev.v1.SkillService.GetManagedSkillMutation.
+func (c *skillServiceClient) GetManagedSkillMutation(ctx context.Context, req *connect.Request[v1.GetManagedSkillMutationRequest]) (*connect.Response[v1.GetManagedSkillMutationResponse], error) {
+	return c.getManagedSkillMutation.CallUnary(ctx, req)
+}
+
+// ViewManagedSkill calls delidev.v1.SkillService.ViewManagedSkill.
+func (c *skillServiceClient) ViewManagedSkill(ctx context.Context, req *connect.Request[v1.ViewManagedSkillRequest]) (*connect.Response[v1.ViewManagedSkillResponse], error) {
+	return c.viewManagedSkill.CallUnary(ctx, req)
+}
+
 // SkillServiceHandler is an implementation of the delidev.v1.SkillService service.
 type SkillServiceHandler interface {
 	ListSkills(context.Context, *connect.Request[v1.ListSkillsRequest]) (*connect.Response[v1.ListSkillsResponse], error)
+	ListManagedSkills(context.Context, *connect.Request[v1.ListManagedSkillsRequest]) (*connect.Response[v1.ListManagedSkillsResponse], error)
+	MutateManagedSkill(context.Context, *connect.Request[v1.MutateManagedSkillRequest]) (*connect.Response[v1.MutateManagedSkillResponse], error)
+	GetManagedSkillMutation(context.Context, *connect.Request[v1.GetManagedSkillMutationRequest]) (*connect.Response[v1.GetManagedSkillMutationResponse], error)
+	ViewManagedSkill(context.Context, *connect.Request[v1.ViewManagedSkillRequest]) (*connect.Response[v1.ViewManagedSkillResponse], error)
 }
 
 // NewSkillServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -92,10 +160,42 @@ func NewSkillServiceHandler(svc SkillServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(skillServiceMethods.ByName("ListSkills")),
 		connect.WithHandlerOptions(opts...),
 	)
+	skillServiceListManagedSkillsHandler := connect.NewUnaryHandler(
+		SkillServiceListManagedSkillsProcedure,
+		svc.ListManagedSkills,
+		connect.WithSchema(skillServiceMethods.ByName("ListManagedSkills")),
+		connect.WithHandlerOptions(opts...),
+	)
+	skillServiceMutateManagedSkillHandler := connect.NewUnaryHandler(
+		SkillServiceMutateManagedSkillProcedure,
+		svc.MutateManagedSkill,
+		connect.WithSchema(skillServiceMethods.ByName("MutateManagedSkill")),
+		connect.WithHandlerOptions(opts...),
+	)
+	skillServiceGetManagedSkillMutationHandler := connect.NewUnaryHandler(
+		SkillServiceGetManagedSkillMutationProcedure,
+		svc.GetManagedSkillMutation,
+		connect.WithSchema(skillServiceMethods.ByName("GetManagedSkillMutation")),
+		connect.WithHandlerOptions(opts...),
+	)
+	skillServiceViewManagedSkillHandler := connect.NewUnaryHandler(
+		SkillServiceViewManagedSkillProcedure,
+		svc.ViewManagedSkill,
+		connect.WithSchema(skillServiceMethods.ByName("ViewManagedSkill")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/delidev.v1.SkillService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case SkillServiceListSkillsProcedure:
 			skillServiceListSkillsHandler.ServeHTTP(w, r)
+		case SkillServiceListManagedSkillsProcedure:
+			skillServiceListManagedSkillsHandler.ServeHTTP(w, r)
+		case SkillServiceMutateManagedSkillProcedure:
+			skillServiceMutateManagedSkillHandler.ServeHTTP(w, r)
+		case SkillServiceGetManagedSkillMutationProcedure:
+			skillServiceGetManagedSkillMutationHandler.ServeHTTP(w, r)
+		case SkillServiceViewManagedSkillProcedure:
+			skillServiceViewManagedSkillHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -107,4 +207,20 @@ type UnimplementedSkillServiceHandler struct{}
 
 func (UnimplementedSkillServiceHandler) ListSkills(context.Context, *connect.Request[v1.ListSkillsRequest]) (*connect.Response[v1.ListSkillsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SkillService.ListSkills is not implemented"))
+}
+
+func (UnimplementedSkillServiceHandler) ListManagedSkills(context.Context, *connect.Request[v1.ListManagedSkillsRequest]) (*connect.Response[v1.ListManagedSkillsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SkillService.ListManagedSkills is not implemented"))
+}
+
+func (UnimplementedSkillServiceHandler) MutateManagedSkill(context.Context, *connect.Request[v1.MutateManagedSkillRequest]) (*connect.Response[v1.MutateManagedSkillResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SkillService.MutateManagedSkill is not implemented"))
+}
+
+func (UnimplementedSkillServiceHandler) GetManagedSkillMutation(context.Context, *connect.Request[v1.GetManagedSkillMutationRequest]) (*connect.Response[v1.GetManagedSkillMutationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SkillService.GetManagedSkillMutation is not implemented"))
+}
+
+func (UnimplementedSkillServiceHandler) ViewManagedSkill(context.Context, *connect.Request[v1.ViewManagedSkillRequest]) (*connect.Response[v1.ViewManagedSkillResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("delidev.v1.SkillService.ViewManagedSkill is not implemented"))
 }

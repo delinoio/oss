@@ -1455,3 +1455,17 @@ fields. Mutation state distinguishes pending, succeeded, canceled, recovery
 required and failed outcomes. Secret inputs are transient write-only data and
 never enter receipt payloads. Management support does not advertise native MCP
 execution support or change accepted session configuration.
+
+## Managed skill packages
+
+System capability 87 and Worker capability 59 negotiate managed skill package
+operations independently from native discovery. System capability 88 and Worker
+capability 60 negotiate the managed native skill adapter. Management support
+alone does not establish native execution support. `SkillService` adds bounded
+package inventory, explicit mutation, original-request receipt and revision-bound
+package inspection. Package content remains Worker-owned; resource documents
+carry references and presence-aware selections rather than package bytes.
+Mutation receipts distinguish pending, succeeded, recovery required and failed
+outcomes without granting authority to retry a new request or change an accepted
+session's configuration. Existing explicit skill selection keeps its wire
+identities and omission semantics.

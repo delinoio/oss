@@ -72,6 +72,62 @@ func (SkillProvenance) EnumDescriptor() ([]byte, []int) {
 	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{0}
 }
 
+// Management receipts preserve the original mutation and Worker ownership.
+type SkillMutationState int32
+
+const (
+	SkillMutationState_SKILL_MUTATION_STATE_UNSPECIFIED       SkillMutationState = 0
+	SkillMutationState_SKILL_MUTATION_STATE_PENDING           SkillMutationState = 1
+	SkillMutationState_SKILL_MUTATION_STATE_SUCCEEDED         SkillMutationState = 2
+	SkillMutationState_SKILL_MUTATION_STATE_RECOVERY_REQUIRED SkillMutationState = 3
+	SkillMutationState_SKILL_MUTATION_STATE_FAILED            SkillMutationState = 4
+)
+
+// Enum value maps for SkillMutationState.
+var (
+	SkillMutationState_name = map[int32]string{
+		0: "SKILL_MUTATION_STATE_UNSPECIFIED",
+		1: "SKILL_MUTATION_STATE_PENDING",
+		2: "SKILL_MUTATION_STATE_SUCCEEDED",
+		3: "SKILL_MUTATION_STATE_RECOVERY_REQUIRED",
+		4: "SKILL_MUTATION_STATE_FAILED",
+	}
+	SkillMutationState_value = map[string]int32{
+		"SKILL_MUTATION_STATE_UNSPECIFIED":       0,
+		"SKILL_MUTATION_STATE_PENDING":           1,
+		"SKILL_MUTATION_STATE_SUCCEEDED":         2,
+		"SKILL_MUTATION_STATE_RECOVERY_REQUIRED": 3,
+		"SKILL_MUTATION_STATE_FAILED":            4,
+	}
+)
+
+func (x SkillMutationState) Enum() *SkillMutationState {
+	p := new(SkillMutationState)
+	*p = x
+	return p
+}
+
+func (x SkillMutationState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SkillMutationState) Descriptor() protoreflect.EnumDescriptor {
+	return file_delidev_v1_skills_proto_enumTypes[1].Descriptor()
+}
+
+func (SkillMutationState) Type() protoreflect.EnumType {
+	return &file_delidev_v1_skills_proto_enumTypes[1]
+}
+
+func (x SkillMutationState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SkillMutationState.Descriptor instead.
+func (SkillMutationState) EnumDescriptor() ([]byte, []int) {
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{1}
+}
+
 type SkillSelection struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	InventoryId     string                 `protobuf:"bytes,1,opt,name=inventory_id,json=inventoryId,proto3" json:"inventory_id,omitempty"`
@@ -365,6 +421,462 @@ func (x *ListSkillsResponse) GetSkills() []*SkillEntry {
 	return nil
 }
 
+type ListManagedSkillsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MachineId     string                 `protobuf:"bytes,1,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListManagedSkillsRequest) Reset() {
+	*x = ListManagedSkillsRequest{}
+	mi := &file_delidev_v1_skills_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListManagedSkillsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListManagedSkillsRequest) ProtoMessage() {}
+
+func (x *ListManagedSkillsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_skills_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListManagedSkillsRequest.ProtoReflect.Descriptor instead.
+func (*ListManagedSkillsRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ListManagedSkillsRequest) GetMachineId() string {
+	if x != nil {
+		return x.MachineId
+	}
+	return ""
+}
+
+type ListManagedSkillsResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	WorkerDeviceId string                 `protobuf:"bytes,1,opt,name=worker_device_id,json=workerDeviceId,proto3" json:"worker_device_id,omitempty"`
+	PackagesJson   []byte                 `protobuf:"bytes,2,opt,name=packages_json,json=packagesJson,proto3" json:"packages_json,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ListManagedSkillsResponse) Reset() {
+	*x = ListManagedSkillsResponse{}
+	mi := &file_delidev_v1_skills_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListManagedSkillsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListManagedSkillsResponse) ProtoMessage() {}
+
+func (x *ListManagedSkillsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_skills_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListManagedSkillsResponse.ProtoReflect.Descriptor instead.
+func (*ListManagedSkillsResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ListManagedSkillsResponse) GetWorkerDeviceId() string {
+	if x != nil {
+		return x.WorkerDeviceId
+	}
+	return ""
+}
+
+func (x *ListManagedSkillsResponse) GetPackagesJson() []byte {
+	if x != nil {
+		return x.PackagesJson
+	}
+	return nil
+}
+
+type MutateManagedSkillRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MachineId     string                 `protobuf:"bytes,1,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
+	RequestId     string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	DocumentJson  []byte                 `protobuf:"bytes,3,opt,name=document_json,json=documentJson,proto3" json:"document_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MutateManagedSkillRequest) Reset() {
+	*x = MutateManagedSkillRequest{}
+	mi := &file_delidev_v1_skills_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MutateManagedSkillRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MutateManagedSkillRequest) ProtoMessage() {}
+
+func (x *MutateManagedSkillRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_skills_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MutateManagedSkillRequest.ProtoReflect.Descriptor instead.
+func (*MutateManagedSkillRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *MutateManagedSkillRequest) GetMachineId() string {
+	if x != nil {
+		return x.MachineId
+	}
+	return ""
+}
+
+func (x *MutateManagedSkillRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *MutateManagedSkillRequest) GetDocumentJson() []byte {
+	if x != nil {
+		return x.DocumentJson
+	}
+	return nil
+}
+
+type MutateManagedSkillResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	State         SkillMutationState     `protobuf:"varint,2,opt,name=state,proto3,enum=delidev.v1.SkillMutationState" json:"state,omitempty"`
+	ResultJson    []byte                 `protobuf:"bytes,3,opt,name=result_json,json=resultJson,proto3" json:"result_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MutateManagedSkillResponse) Reset() {
+	*x = MutateManagedSkillResponse{}
+	mi := &file_delidev_v1_skills_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MutateManagedSkillResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MutateManagedSkillResponse) ProtoMessage() {}
+
+func (x *MutateManagedSkillResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_skills_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MutateManagedSkillResponse.ProtoReflect.Descriptor instead.
+func (*MutateManagedSkillResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *MutateManagedSkillResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *MutateManagedSkillResponse) GetState() SkillMutationState {
+	if x != nil {
+		return x.State
+	}
+	return SkillMutationState_SKILL_MUTATION_STATE_UNSPECIFIED
+}
+
+func (x *MutateManagedSkillResponse) GetResultJson() []byte {
+	if x != nil {
+		return x.ResultJson
+	}
+	return nil
+}
+
+type GetManagedSkillMutationRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MachineId     string                 `protobuf:"bytes,1,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
+	RequestId     string                 `protobuf:"bytes,2,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetManagedSkillMutationRequest) Reset() {
+	*x = GetManagedSkillMutationRequest{}
+	mi := &file_delidev_v1_skills_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetManagedSkillMutationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetManagedSkillMutationRequest) ProtoMessage() {}
+
+func (x *GetManagedSkillMutationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_skills_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetManagedSkillMutationRequest.ProtoReflect.Descriptor instead.
+func (*GetManagedSkillMutationRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *GetManagedSkillMutationRequest) GetMachineId() string {
+	if x != nil {
+		return x.MachineId
+	}
+	return ""
+}
+
+func (x *GetManagedSkillMutationRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+type GetManagedSkillMutationResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	State         SkillMutationState     `protobuf:"varint,2,opt,name=state,proto3,enum=delidev.v1.SkillMutationState" json:"state,omitempty"`
+	ResultJson    []byte                 `protobuf:"bytes,3,opt,name=result_json,json=resultJson,proto3" json:"result_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetManagedSkillMutationResponse) Reset() {
+	*x = GetManagedSkillMutationResponse{}
+	mi := &file_delidev_v1_skills_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetManagedSkillMutationResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetManagedSkillMutationResponse) ProtoMessage() {}
+
+func (x *GetManagedSkillMutationResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_skills_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetManagedSkillMutationResponse.ProtoReflect.Descriptor instead.
+func (*GetManagedSkillMutationResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *GetManagedSkillMutationResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *GetManagedSkillMutationResponse) GetState() SkillMutationState {
+	if x != nil {
+		return x.State
+	}
+	return SkillMutationState_SKILL_MUTATION_STATE_UNSPECIFIED
+}
+
+func (x *GetManagedSkillMutationResponse) GetResultJson() []byte {
+	if x != nil {
+		return x.ResultJson
+	}
+	return nil
+}
+
+type ViewManagedSkillRequest struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	MachineId        string                 `protobuf:"bytes,1,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
+	PackageId        string                 `protobuf:"bytes,2,opt,name=package_id,json=packageId,proto3" json:"package_id,omitempty"`
+	ExpectedRevision uint64                 `protobuf:"varint,3,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ViewManagedSkillRequest) Reset() {
+	*x = ViewManagedSkillRequest{}
+	mi := &file_delidev_v1_skills_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ViewManagedSkillRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ViewManagedSkillRequest) ProtoMessage() {}
+
+func (x *ViewManagedSkillRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_skills_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ViewManagedSkillRequest.ProtoReflect.Descriptor instead.
+func (*ViewManagedSkillRequest) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ViewManagedSkillRequest) GetMachineId() string {
+	if x != nil {
+		return x.MachineId
+	}
+	return ""
+}
+
+func (x *ViewManagedSkillRequest) GetPackageId() string {
+	if x != nil {
+		return x.PackageId
+	}
+	return ""
+}
+
+func (x *ViewManagedSkillRequest) GetExpectedRevision() uint64 {
+	if x != nil {
+		return x.ExpectedRevision
+	}
+	return 0
+}
+
+type ViewManagedSkillResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	WorkerDeviceId string                 `protobuf:"bytes,1,opt,name=worker_device_id,json=workerDeviceId,proto3" json:"worker_device_id,omitempty"`
+	PackageJson    []byte                 `protobuf:"bytes,2,opt,name=package_json,json=packageJson,proto3" json:"package_json,omitempty"`
+	SkillMarkdown  []byte                 `protobuf:"bytes,3,opt,name=skill_markdown,json=skillMarkdown,proto3" json:"skill_markdown,omitempty"`
+	ManifestJson   []byte                 `protobuf:"bytes,4,opt,name=manifest_json,json=manifestJson,proto3" json:"manifest_json,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ViewManagedSkillResponse) Reset() {
+	*x = ViewManagedSkillResponse{}
+	mi := &file_delidev_v1_skills_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ViewManagedSkillResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ViewManagedSkillResponse) ProtoMessage() {}
+
+func (x *ViewManagedSkillResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_delidev_v1_skills_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ViewManagedSkillResponse.ProtoReflect.Descriptor instead.
+func (*ViewManagedSkillResponse) Descriptor() ([]byte, []int) {
+	return file_delidev_v1_skills_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ViewManagedSkillResponse) GetWorkerDeviceId() string {
+	if x != nil {
+		return x.WorkerDeviceId
+	}
+	return ""
+}
+
+func (x *ViewManagedSkillResponse) GetPackageJson() []byte {
+	if x != nil {
+		return x.PackageJson
+	}
+	return nil
+}
+
+func (x *ViewManagedSkillResponse) GetSkillMarkdown() []byte {
+	if x != nil {
+		return x.SkillMarkdown
+	}
+	return nil
+}
+
+func (x *ViewManagedSkillResponse) GetManifestJson() []byte {
+	if x != nil {
+		return x.ManifestJson
+	}
+	return nil
+}
+
 var File_delidev_v1_skills_proto protoreflect.FileDescriptor
 
 const file_delidev_v1_skills_proto_rawDesc = "" +
@@ -397,14 +909,64 @@ const file_delidev_v1_skills_proto_rawDesc = "" +
 	"\n" +
 	"project_id\x18\x04 \x01(\tR\tprojectId\"D\n" +
 	"\x12ListSkillsResponse\x12.\n" +
-	"\x06skills\x18\x01 \x03(\v2\x16.delidev.v1.SkillEntryR\x06skills*l\n" +
+	"\x06skills\x18\x01 \x03(\v2\x16.delidev.v1.SkillEntryR\x06skills\"9\n" +
+	"\x18ListManagedSkillsRequest\x12\x1d\n" +
+	"\n" +
+	"machine_id\x18\x01 \x01(\tR\tmachineId\"j\n" +
+	"\x19ListManagedSkillsResponse\x12(\n" +
+	"\x10worker_device_id\x18\x01 \x01(\tR\x0eworkerDeviceId\x12#\n" +
+	"\rpackages_json\x18\x02 \x01(\fR\fpackagesJson\"~\n" +
+	"\x19MutateManagedSkillRequest\x12\x1d\n" +
+	"\n" +
+	"machine_id\x18\x01 \x01(\tR\tmachineId\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\x12#\n" +
+	"\rdocument_json\x18\x03 \x01(\fR\fdocumentJson\"\x92\x01\n" +
+	"\x1aMutateManagedSkillResponse\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x124\n" +
+	"\x05state\x18\x02 \x01(\x0e2\x1e.delidev.v1.SkillMutationStateR\x05state\x12\x1f\n" +
+	"\vresult_json\x18\x03 \x01(\fR\n" +
+	"resultJson\"^\n" +
+	"\x1eGetManagedSkillMutationRequest\x12\x1d\n" +
+	"\n" +
+	"machine_id\x18\x01 \x01(\tR\tmachineId\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x02 \x01(\tR\trequestId\"\x97\x01\n" +
+	"\x1fGetManagedSkillMutationResponse\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x124\n" +
+	"\x05state\x18\x02 \x01(\x0e2\x1e.delidev.v1.SkillMutationStateR\x05state\x12\x1f\n" +
+	"\vresult_json\x18\x03 \x01(\fR\n" +
+	"resultJson\"\x84\x01\n" +
+	"\x17ViewManagedSkillRequest\x12\x1d\n" +
+	"\n" +
+	"machine_id\x18\x01 \x01(\tR\tmachineId\x12\x1d\n" +
+	"\n" +
+	"package_id\x18\x02 \x01(\tR\tpackageId\x12+\n" +
+	"\x11expected_revision\x18\x03 \x01(\x04R\x10expectedRevision\"\xb3\x01\n" +
+	"\x18ViewManagedSkillResponse\x12(\n" +
+	"\x10worker_device_id\x18\x01 \x01(\tR\x0eworkerDeviceId\x12!\n" +
+	"\fpackage_json\x18\x02 \x01(\fR\vpackageJson\x12%\n" +
+	"\x0eskill_markdown\x18\x03 \x01(\fR\rskillMarkdown\x12#\n" +
+	"\rmanifest_json\x18\x04 \x01(\fR\fmanifestJson*l\n" +
 	"\x0fSkillProvenance\x12 \n" +
 	"\x1cSKILL_PROVENANCE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15SKILL_PROVENANCE_USER\x10\x01\x12\x1c\n" +
-	"\x18SKILL_PROVENANCE_PROJECT\x10\x022[\n" +
+	"\x18SKILL_PROVENANCE_PROJECT\x10\x02*\xcd\x01\n" +
+	"\x12SkillMutationState\x12$\n" +
+	" SKILL_MUTATION_STATE_UNSPECIFIED\x10\x00\x12 \n" +
+	"\x1cSKILL_MUTATION_STATE_PENDING\x10\x01\x12\"\n" +
+	"\x1eSKILL_MUTATION_STATE_SUCCEEDED\x10\x02\x12*\n" +
+	"&SKILL_MUTATION_STATE_RECOVERY_REQUIRED\x10\x03\x12\x1f\n" +
+	"\x1bSKILL_MUTATION_STATE_FAILED\x10\x042\xf5\x03\n" +
 	"\fSkillService\x12K\n" +
 	"\n" +
-	"ListSkills\x12\x1d.delidev.v1.ListSkillsRequest\x1a\x1e.delidev.v1.ListSkillsResponseB<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
+	"ListSkills\x12\x1d.delidev.v1.ListSkillsRequest\x1a\x1e.delidev.v1.ListSkillsResponse\x12`\n" +
+	"\x11ListManagedSkills\x12$.delidev.v1.ListManagedSkillsRequest\x1a%.delidev.v1.ListManagedSkillsResponse\x12c\n" +
+	"\x12MutateManagedSkill\x12%.delidev.v1.MutateManagedSkillRequest\x1a&.delidev.v1.MutateManagedSkillResponse\x12r\n" +
+	"\x17GetManagedSkillMutation\x12*.delidev.v1.GetManagedSkillMutationRequest\x1a+.delidev.v1.GetManagedSkillMutationResponse\x12]\n" +
+	"\x10ViewManagedSkill\x12#.delidev.v1.ViewManagedSkillRequest\x1a$.delidev.v1.ViewManagedSkillResponseB<Z:github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1b\x06proto3"
 
 var (
 	file_delidev_v1_skills_proto_rawDescOnce sync.Once
@@ -418,28 +980,47 @@ func file_delidev_v1_skills_proto_rawDescGZIP() []byte {
 	return file_delidev_v1_skills_proto_rawDescData
 }
 
-var file_delidev_v1_skills_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_delidev_v1_skills_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_delidev_v1_skills_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_delidev_v1_skills_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_delidev_v1_skills_proto_goTypes = []any{
-	(SkillProvenance)(0),       // 0: delidev.v1.SkillProvenance
-	(*SkillSelection)(nil),     // 1: delidev.v1.SkillSelection
-	(*SkillSelectionList)(nil), // 2: delidev.v1.SkillSelectionList
-	(*SkillEntry)(nil),         // 3: delidev.v1.SkillEntry
-	(*ListSkillsRequest)(nil),  // 4: delidev.v1.ListSkillsRequest
-	(*ListSkillsResponse)(nil), // 5: delidev.v1.ListSkillsResponse
+	(SkillProvenance)(0),                    // 0: delidev.v1.SkillProvenance
+	(SkillMutationState)(0),                 // 1: delidev.v1.SkillMutationState
+	(*SkillSelection)(nil),                  // 2: delidev.v1.SkillSelection
+	(*SkillSelectionList)(nil),              // 3: delidev.v1.SkillSelectionList
+	(*SkillEntry)(nil),                      // 4: delidev.v1.SkillEntry
+	(*ListSkillsRequest)(nil),               // 5: delidev.v1.ListSkillsRequest
+	(*ListSkillsResponse)(nil),              // 6: delidev.v1.ListSkillsResponse
+	(*ListManagedSkillsRequest)(nil),        // 7: delidev.v1.ListManagedSkillsRequest
+	(*ListManagedSkillsResponse)(nil),       // 8: delidev.v1.ListManagedSkillsResponse
+	(*MutateManagedSkillRequest)(nil),       // 9: delidev.v1.MutateManagedSkillRequest
+	(*MutateManagedSkillResponse)(nil),      // 10: delidev.v1.MutateManagedSkillResponse
+	(*GetManagedSkillMutationRequest)(nil),  // 11: delidev.v1.GetManagedSkillMutationRequest
+	(*GetManagedSkillMutationResponse)(nil), // 12: delidev.v1.GetManagedSkillMutationResponse
+	(*ViewManagedSkillRequest)(nil),         // 13: delidev.v1.ViewManagedSkillRequest
+	(*ViewManagedSkillResponse)(nil),        // 14: delidev.v1.ViewManagedSkillResponse
 }
 var file_delidev_v1_skills_proto_depIdxs = []int32{
-	1, // 0: delidev.v1.SkillSelectionList.selections:type_name -> delidev.v1.SkillSelection
-	1, // 1: delidev.v1.SkillEntry.selection:type_name -> delidev.v1.SkillSelection
-	0, // 2: delidev.v1.SkillEntry.provenance:type_name -> delidev.v1.SkillProvenance
-	3, // 3: delidev.v1.ListSkillsResponse.skills:type_name -> delidev.v1.SkillEntry
-	4, // 4: delidev.v1.SkillService.ListSkills:input_type -> delidev.v1.ListSkillsRequest
-	5, // 5: delidev.v1.SkillService.ListSkills:output_type -> delidev.v1.ListSkillsResponse
-	5, // [5:6] is the sub-list for method output_type
-	4, // [4:5] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	2,  // 0: delidev.v1.SkillSelectionList.selections:type_name -> delidev.v1.SkillSelection
+	2,  // 1: delidev.v1.SkillEntry.selection:type_name -> delidev.v1.SkillSelection
+	0,  // 2: delidev.v1.SkillEntry.provenance:type_name -> delidev.v1.SkillProvenance
+	4,  // 3: delidev.v1.ListSkillsResponse.skills:type_name -> delidev.v1.SkillEntry
+	1,  // 4: delidev.v1.MutateManagedSkillResponse.state:type_name -> delidev.v1.SkillMutationState
+	1,  // 5: delidev.v1.GetManagedSkillMutationResponse.state:type_name -> delidev.v1.SkillMutationState
+	5,  // 6: delidev.v1.SkillService.ListSkills:input_type -> delidev.v1.ListSkillsRequest
+	7,  // 7: delidev.v1.SkillService.ListManagedSkills:input_type -> delidev.v1.ListManagedSkillsRequest
+	9,  // 8: delidev.v1.SkillService.MutateManagedSkill:input_type -> delidev.v1.MutateManagedSkillRequest
+	11, // 9: delidev.v1.SkillService.GetManagedSkillMutation:input_type -> delidev.v1.GetManagedSkillMutationRequest
+	13, // 10: delidev.v1.SkillService.ViewManagedSkill:input_type -> delidev.v1.ViewManagedSkillRequest
+	6,  // 11: delidev.v1.SkillService.ListSkills:output_type -> delidev.v1.ListSkillsResponse
+	8,  // 12: delidev.v1.SkillService.ListManagedSkills:output_type -> delidev.v1.ListManagedSkillsResponse
+	10, // 13: delidev.v1.SkillService.MutateManagedSkill:output_type -> delidev.v1.MutateManagedSkillResponse
+	12, // 14: delidev.v1.SkillService.GetManagedSkillMutation:output_type -> delidev.v1.GetManagedSkillMutationResponse
+	14, // 15: delidev.v1.SkillService.ViewManagedSkill:output_type -> delidev.v1.ViewManagedSkillResponse
+	11, // [11:16] is the sub-list for method output_type
+	6,  // [6:11] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_delidev_v1_skills_proto_init() }
@@ -452,8 +1033,8 @@ func file_delidev_v1_skills_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_delidev_v1_skills_proto_rawDesc), len(file_delidev_v1_skills_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   5,
+			NumEnums:      2,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
