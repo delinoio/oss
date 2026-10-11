@@ -1,5 +1,14 @@
 # DeliDev v1 Connect contract
 
+## Native Codex web search capability
+
+System capability `CODEX_WEB_SEARCH_V1 = 90` and Worker capability
+`CODEX_WEB_SEARCH_V1 = 61` separately negotiate native Codex web-search
+settings and typed search observations. Harness-defaults support alone does not
+prove this support. Runtime admission must also verify the original installed
+native profile and negotiated peer capabilities; these declarations alone grant
+no execution authority. Existing RPC and document ownership remains unchanged.
+
 ## Machine heartbeat read projection
 
 Machine Get, List and Snapshot Resources project the exact Machine's current

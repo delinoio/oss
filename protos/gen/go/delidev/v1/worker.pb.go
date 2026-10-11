@@ -24,7 +24,8 @@ const (
 type WorkerCapability int32
 
 const (
-	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED WorkerCapability = 0
+	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED         WorkerCapability = 0
+	WorkerCapability_WORKER_CAPABILITY_CODEX_WEB_SEARCH_V1 WorkerCapability = 61
 	// Explicit Worker-local native configuration preview and atomic import.
 	WorkerCapability_WORKER_CAPABILITY_NATIVE_CONFIGURATION_IMPORT_V1 WorkerCapability = 57
 	WorkerCapability_WORKER_CAPABILITY_HARNESS_DEFAULTS_V1            WorkerCapability = 53
@@ -71,6 +72,7 @@ const (
 var (
 	WorkerCapability_name = map[int32]string{
 		0:  "WORKER_CAPABILITY_UNSPECIFIED",
+		61: "WORKER_CAPABILITY_CODEX_WEB_SEARCH_V1",
 		57: "WORKER_CAPABILITY_NATIVE_CONFIGURATION_IMPORT_V1",
 		53: "WORKER_CAPABILITY_HARNESS_DEFAULTS_V1",
 		52: "WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1",
@@ -112,6 +114,7 @@ var (
 	}
 	WorkerCapability_value = map[string]int32{
 		"WORKER_CAPABILITY_UNSPECIFIED":                       0,
+		"WORKER_CAPABILITY_CODEX_WEB_SEARCH_V1":               61,
 		"WORKER_CAPABILITY_NATIVE_CONFIGURATION_IMPORT_V1":    57,
 		"WORKER_CAPABILITY_HARNESS_DEFAULTS_V1":               53,
 		"WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1":              52,
@@ -4380,9 +4383,10 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x12repository_ordinal\x18\v \x01(\rR\x11repositoryOrdinal\x12)\n" +
 	"\x10repository_count\x18\f \x01(\rR\x0frepositoryCount\"B\n" +
 	"$ReportSessionStartupProgressResponse\x12\x1a\n" +
-	"\breplayed\x18\x01 \x01(\bR\breplayed*\x85\x0f\n" +
+	"\breplayed\x18\x01 \x01(\bR\breplayed*\xb0\x0f\n" +
 	"\x10WorkerCapability\x12!\n" +
-	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x124\n" +
+	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12)\n" +
+	"%WORKER_CAPABILITY_CODEX_WEB_SEARCH_V1\x10=\x124\n" +
 	"0WORKER_CAPABILITY_NATIVE_CONFIGURATION_IMPORT_V1\x109\x12)\n" +
 	"%WORKER_CAPABILITY_HARNESS_DEFAULTS_V1\x105\x12*\n" +
 	"&WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1\x104\x12/\n" +

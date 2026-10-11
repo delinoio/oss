@@ -51,6 +51,7 @@ message GetStatusResponse {
 
 enum SystemCapability {
   SYSTEM_CAPABILITY_UNSPECIFIED = 0;
+  SYSTEM_CAPABILITY_CODEX_WEB_SEARCH_V1 = 90;
   // Explicit Worker-local native configuration preview and atomic import.
   SYSTEM_CAPABILITY_NATIVE_CONFIGURATION_IMPORT_V1 = 85;
   // Source-aware Harness defaults and frozen effective execution settings.
