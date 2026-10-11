@@ -1448,6 +1448,9 @@ The reconciled `CreateTerminalRequest` baseline retains original fields 1–4. T
 ## Original native shell actions
 
 System capability 92 and Worker capability 63 reserve `CODEX_NATIVE_SHELL_V1`.
+`EntityKind` 36 identifies the closed native-action resource returned by the
+action RPCs. It preserves the original action owner and grants no generic write
+authority or database migration.
 `SessionService.RunNativeShell`, `GetNativeShell` and `CancelNativeShell` expose
 a closed native shell action independently of product terminals and ordinary
 execution input. Run requires an exact original mutation, command, explicit
