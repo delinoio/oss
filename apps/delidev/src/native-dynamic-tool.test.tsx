@@ -81,6 +81,16 @@ test("renders ordered inert dynamic content and preserves native false outcome",
     "last",
   ]);
 });
+test("keeps missing lifecycle evidence unknown", () => {
+  const requestOnly = {
+    request: tool.request,
+    reply: { ...tool.reply, delivery: "not-sent" as const },
+    resolved: false,
+  };
+  const { container } = render(<NativeDynamicTool content={requestOnly} />);
+  expect(screen.getByText("unknown")).toBeTruthy();
+  expect(container.textContent).not.toContain("Running");
+});
 test("rejects raw arguments, media locators, mixed unions and invalid identity", () => {
   for (const content of [
     { ...tool, arguments: { private: "hidden" } },

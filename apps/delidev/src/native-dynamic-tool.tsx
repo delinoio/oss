@@ -175,7 +175,7 @@ export function NativeDynamicTool({ content }: { content: unknown }) {
           {statusLabel(
             tool.snapshot?.status === "inProgress"
               ? "running"
-              : (tool.snapshot?.status ?? "running"),
+              : (tool.snapshot?.status ?? "unknown"),
           )}
         </small>
       </header>
