@@ -5,6 +5,16 @@
 import { ConfigurationService } from "./configuration_pb.js";
 
 /**
+ * @generated from rpc delidev.v1.ConfigurationService.PreviewNativeConfigurationImport
+ */
+export const previewNativeConfigurationImport = ConfigurationService.method.previewNativeConfigurationImport;
+
+/**
+ * @generated from rpc delidev.v1.ConfigurationService.ApplyNativeConfigurationImport
+ */
+export const applyNativeConfigurationImport = ConfigurationService.method.applyNativeConfigurationImport;
+
+/**
  * @generated from rpc delidev.v1.ConfigurationService.ListProjectPromptHistory
  */
 export const listProjectPromptHistory = ConfigurationService.method.listProjectPromptHistory;

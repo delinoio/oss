@@ -462,3 +462,12 @@ native ID with unknown advisory metadata; an override binds one exact native ID.
 Null/future selectors and mismatched schema versions stay unsupported. Current
 portable bundles and reviewed plans use version 7, with no old-format activation.
 Expose the named `harness_default_unverified` error without manufacturing a default.
+
+## Native configuration import bindings
+
+The generated ConfigurationService exposes native preview and apply operations
+under System capability 85 and Worker capability 57. Retain exact selection bytes,
+original request identities and preview job identities; a transport retry must
+not create a new import. Read the returned job through the existing authenticated
+resource interface. These bindings grant no filesystem or extension execution
+authority. Follow the [protocol contract](protos-delidev-v1-contract.md#explicit-native-configuration-imports).

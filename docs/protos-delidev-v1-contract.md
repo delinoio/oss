@@ -1460,3 +1460,22 @@ Harness settings and their source provenance in execution assignments.
 Admission requires this Worker capability only when an assignment carries that
 provenance, so older Workers never receive a configuration shape they reject.
 The capability does not imply support for every native Harness option.
+
+## Explicit native configuration imports
+
+System capability `NATIVE_CONFIGURATION_IMPORT_V1 = 85` and Worker capability
+`NATIVE_CONFIGURATION_IMPORT_V1 = 57` gate the native import workflow.
+`ConfigurationService.PreviewNativeConfigurationImport` accepts `request_id`
+field 1 and `selection_json` field 2. `ApplyNativeConfigurationImport` accepts
+`request_id` field 1, `preview_job_id` field 2 and `selection_json` field 3.
+Both responses return `request_id` field 1, `replayed` field 2 and the original
+`Resource job` field 3. Selection descriptors are limited to 64 KiB and contain
+explicit source scopes and a selected destination, never credentials or raw
+native configuration bytes.
+
+The original Worker reads only selected sources. Application revalidates source
+bytes, destination revisions and original actor/Worker authority before atomic
+publication. Original request replay observes its retained job. Server defaults,
+Project and Agent Worker destinations remain explicit; active session snapshots
+and source files remain unchanged. Imported extensions remain inert. Follow the
+[configuration transfer contract](cmds-delidev-configuration-transfer-contract.md).
