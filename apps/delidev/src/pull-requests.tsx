@@ -21,7 +21,7 @@ import {
   type Resource,
   newRequestId,
 } from "@delinoio/delidev-api-client";
-import { document, resourceName, text } from "./documents";
+import { document as resourceDocument, resourceName, text } from "./documents";
 import {
   ItemKind,
   ItemState,
@@ -232,7 +232,7 @@ function RepositoryNavigationRow({
     };
   }, [visible]);
   const name = resourceName(row);
-  const config = document(row);
+  const config = resourceDocument(row);
   const owner = text(config.github_owner),
     repository = text(config.github_name);
   const detailsLabel = copy("pull-requests.repositoryDetails", {
@@ -616,7 +616,7 @@ export function PullRequests({
   }, [active, repositoryId, metadataGeneration, selectedQuery.refetch]);
   const metadataConfirmed = confirmedMetadataGeneration === metadataGeneration;
   const selected = selectedQuery.data?.resource;
-  const config = document(selected);
+  const config = resourceDocument(selected);
   const configured = Boolean(
     selected &&
     selected.id === repositoryId &&
