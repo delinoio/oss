@@ -69,7 +69,17 @@ Sharing a runner-built Go executable never shares fixture processes, credentials
 or data lifetimes.
 
 The current matrix has one checks phase and four complete Vitest shards, each
-with at most two jsdom workers on the shared two-core host. This supersedes the
+with at most two jsdom workers on the shared two-core host. The desktop-owned
+Vitest sequencer assigns unit and integration inventories independently. It
+sorts files by descending committed duration weight, then assigns each file to
+the shard with the smallest accumulated weight. File paths and shard indexes
+break ties deterministically; new or renamed files receive a one-second weight,
+and obsolete weight entries never add files to the inventory. Each selected
+file runs exactly once across the four shards. Sharded execution starts longer
+files first; unsharded local execution retains Vitest sorting. The weight table
+and sequencer are inputs of every cached unit shard and uncached integration
+shard. Weights are scheduling estimates from successful hosted executions, not
+validation results or native acceptance evidence. This supersedes the
 earlier four-worker ceiling without relaxing individual test or product
 deadlines. Local `pnpm test` retains the complete validation sequence, including
 client build, type checks, unit/integration tests, bundle/launch/widget/QA fixtures,

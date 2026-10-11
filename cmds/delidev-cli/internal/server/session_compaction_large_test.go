@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"net/http"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +24,10 @@ import (
 )
 
 func TestNativeCompactionLargeOriginalAssignmentSettlesWithoutTruncation(t *testing.T) {
+	// Overlap isolated fixture waits on Linux; retain native Windows scheduling.
+	if runtime.GOOS == "linux" {
+		t.Parallel()
+	}
 	for _, profile := range []struct {
 		harness    domain.Harness
 		managed    bool

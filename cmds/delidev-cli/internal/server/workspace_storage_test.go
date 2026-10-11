@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -467,6 +468,10 @@ func TestWorkspaceStorageAdmissionReservesPermanentDeletionJobCapacity(t *testin
 }
 
 func TestWorkspaceCleanupPreservesRestoreAdmissionAtCapacity(t *testing.T) {
+	// Overlap isolated fixture waits on Linux; retain native Windows scheduling.
+	if runtime.GOOS == "linux" {
+		t.Parallel()
+	}
 	for _, variant := range []struct {
 		existing int
 		failure  string

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -20,6 +21,10 @@ import (
 )
 
 func TestSidechatWaitKeepsOriginalObservationPastOrdinaryCommandDeadline(t *testing.T) {
+	// Overlap isolated fixture waits on Linux; retain native Windows scheduling.
+	if runtime.GOOS == "linux" {
+		t.Parallel()
+	}
 	id := domain.NewID()
 	child := domain.NewID()
 	started := time.Now()

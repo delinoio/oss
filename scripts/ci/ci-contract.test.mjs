@@ -1822,6 +1822,15 @@ test("DeliDev desktop phases partition all tests and preserve uncached executabl
   for (const shard of [1, 2, 3, 4]) {
     assert.equal(desktop.tasks[`test:unit:${shard}`].cache, true);
     assert.equal(desktop.tasks[`test:integration:${shard}`].cache, false);
+    for (const name of [`test:unit:${shard}`, `test:integration:${shard}`])
+      for (const input of [
+        "scripts/ci-test-sequencer.mjs",
+        "scripts/ci-test-weights.json",
+      ])
+        assert.ok(
+          desktop.tasks[name].inputs.includes(input),
+          `${name}: ${input}`,
+        );
     assert.ok(
       desktop.tasks[`test:integration:${shard}`].dependsOn.includes(
         `test:unit:${shard}`,
@@ -1841,6 +1850,11 @@ test("DeliDev desktop phases partition all tests and preserve uncached executabl
       `vitest run .integration.test. --shard=${shard}/4`,
     );
   }
+  assert.ok(
+    manifest.scripts["test:desktop-launch"].includes(
+      "scripts/ci-test-sequencer.test.mjs",
+    ),
+  );
   const client = JSON.parse(
     readFileSync(`${root}/packages/delidev-api-client/turbo.json`, "utf8"),
   );
