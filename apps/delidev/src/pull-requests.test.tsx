@@ -53,7 +53,6 @@ function fixture(
 ) {
   let failure: Code | undefined;
   let gate: Promise<void> | undefined;
-  let emptyFirstPageWithContinuation = false;
   const list = vi.fn(
     async (request: { filter?: { kind: EntityKind; pageToken: string } }) => {
       if (request.filter?.kind === EntityKind.INTEGRATION && setup)
@@ -62,8 +61,6 @@ function fixture(
         return { resources: [] };
       if (gate) await gate;
       if (failure) throw new ConnectError("Catalog request failed", failure);
-      if (emptyFirstPageWithContinuation && !request.filter.pageToken)
-        return { resources: [], nextPageToken: "repository-next" };
       return request.filter.pageToken
         ? { resources: [] }
         : {
@@ -167,10 +164,6 @@ function fixture(
     },
     defer: (promise?: Promise<void>) => {
       gate = promise;
-    },
-    removeRowsWithStableContinuation: () => {
-      rows.splice(0);
-      emptyFirstPageWithContinuation = true;
     },
   };
 }
@@ -440,8 +433,9 @@ it("retires the popup when its original opener is hidden or removed", async () =
   ).toBeNull();
   trigger.hidden = false;
   fireEvent.click(trigger);
-  value.removeRowsWithStableContinuation();
+  rows.splice(0);
   fireEvent.click(pane.getByRole("button", { name: /^Refresh$/ }));
+  fireEvent.click(await pane.findByRole("button", { name: "Reload list" }));
   await pane.findByText("No repositories on this page.");
   expect(trigger.isConnected).toBe(false);
   expect(
