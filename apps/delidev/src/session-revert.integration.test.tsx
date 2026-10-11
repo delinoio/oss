@@ -233,8 +233,11 @@ it.each([
     if (changed)
       act(() => {
         const composer = screen.getByRole("textbox", { name: "Unsent prompt" });
-        fireEvent.change(composer, { target: { value: "edited during Revert" } });
-        if (undo) fireEvent.change(composer, { target: { value: "unsent draft" } });
+        fireEvent.change(composer, {
+          target: { value: "edited during Revert" },
+        });
+        if (undo)
+          fireEvent.change(composer, { target: { value: "unsent draft" } });
       });
     const completed = create(ResourceSchema, {
       ...original,

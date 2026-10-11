@@ -6,12 +6,16 @@ import { MutationIntents, useRetainedMutationPresentation } from "./mutation";
 it("isolates reconstructed metadata by original connection and fences late writers", () => {
   let write!: (action: string, bytes: number) => void;
   function Presenter() {
-    const owner = useRetainedMutationPresentation<{ action: string }>("revert:same-id");
+    const owner = useRetainedMutationPresentation<{ action: string }>(
+      "revert:same-id",
+    );
     write = (action, bytes) => owner.save({ action }, bytes);
     return <output>{owner.value?.action ?? "No original operation"}</output>;
   }
   const view = (connection: string, mounted = true) => (
-    <MutationIntents key={connection}>{mounted ? <Presenter /> : null}</MutationIntents>
+    <MutationIntents key={connection}>
+      {mounted ? <Presenter /> : null}
+    </MutationIntents>
   );
   const rendered = render(view("original"));
   // Metadata is bounded separately from immutable mutation request bytes.
