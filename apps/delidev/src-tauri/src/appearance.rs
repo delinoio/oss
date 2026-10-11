@@ -242,7 +242,6 @@ fn valid_colors(value: &std::collections::BTreeMap<String, String>) -> bool {
     [
         ("text", "surface"),
         ("text-secondary", "surface"),
-        ("text-secondary", "surface-hover"),
         ("muted", "surface"),
         ("text-subtle", "surface"),
         ("on-accent", "accent"),
@@ -627,10 +626,40 @@ mod tests {
             };
             let text = colors["text-secondary"].clone();
             colors.insert("surface-hover".into(), text);
-            assert!(!preferences.valid());
+            assert!(preferences.valid());
         }
         preferences.custom_themes = vec![theme.clone(); 33];
         assert!(!preferences.valid());
+    }
+
+    #[test]
+    fn previously_valid_custom_theme_remains_readable_with_low_contrast_hover_surface() {
+        let directory = tempfile::tempdir().unwrap();
+        let source: serde_json::Value =
+            serde_json::from_str(include_str!("../../src/appearance-palettes.json")).unwrap();
+        let mut theme = CustomTheme {
+            version: 1,
+            id: uuid::Uuid::now_v7().to_string(),
+            name: "Legacy hover contrast".into(),
+            light: serde_json::from_value(source["default"]["light"].clone()).unwrap(),
+            dark: serde_json::from_value(source["default"]["dark"].clone()).unwrap(),
+        };
+        for colors in [&mut theme.light, &mut theme.dark] {
+            let text = colors["text-secondary"].clone();
+            colors.insert("surface-hover".into(), text);
+        }
+        let mut preferences = Preferences::default();
+        preferences.light_palette = theme.id.clone();
+        preferences.dark_palette = theme.id.clone();
+        preferences.custom_themes.push(theme);
+        assert!(preferences.valid());
+
+        let path = directory.path().join("appearance.json");
+        persist(&path, Theme::Dark, &preferences).unwrap();
+        let observed = AppearanceStore::new(Some(directory.path().into())).read();
+        assert_eq!(observed.theme, Theme::Dark);
+        assert_eq!(observed.preferences, preferences);
+        assert_eq!(observed.problem, None);
     }
 
     #[test]

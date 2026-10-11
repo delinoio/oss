@@ -4984,11 +4984,13 @@ anchors and the content-sized bubble's 12px/16px padding and width caps.
 The native button uses 13px medium text, a 32px minimum height, 8px horizontal
 padding and 6px corners. Its resting background is transparent with no border;
 use `--text-secondary` and `--surface-hover` for enabled text and hover. Both
-resting and hover text have at least 4.5:1 contrast in built-in and admitted
-custom themes. Use the focus token with a contrasting surface fallback for
-custom themes. Keep the eligible action visible without hover, preserve native
-disabled behavior and allow labels and action rows to wrap at narrow widths and
-200% zoom. This presentation adds no mutation or eligibility authority.
+resting and hover text have at least 4.5:1 contrast in built-in themes. Retain
+previously admitted custom themes; when their hover pair does not meet that
+contrast, render the action over `surface` without changing stored theme colors.
+Use the focus token with a contrasting surface fallback for custom themes. Keep
+the eligible action visible without hover, preserve native disabled behavior
+and allow labels and action rows to wrap at narrow widths and 200% zoom. This
+presentation adds no mutation or eligibility authority.
 
 Require server and original Runner capability plus a settled original root,
 current target membership and cleanup. The confirmation explains exclusion of

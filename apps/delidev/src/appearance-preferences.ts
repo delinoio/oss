@@ -109,6 +109,12 @@ export function visibleFocusColor(focus: string, surface: string) {
     white = "#FFFFFF";
   return contrast(black, surface) >= contrast(white, surface) ? black : white;
 }
+export function visibleHoverSurface(colors: ColorMap) {
+  const hover = colors["surface-hover"];
+  return contrast(colors["text-secondary"], hover) >= 4.5
+    ? hover
+    : colors.surface;
+}
 export function validColors(value: unknown): value is ColorMap {
   if (
     !object(value) ||
@@ -124,7 +130,6 @@ export function validColors(value: unknown): value is ColorMap {
       [
         ["text", "surface"],
         ["text-secondary", "surface"],
-        ["text-secondary", "surface-hover"],
         ["muted", "surface"],
         ["text-subtle", "surface"],
         ["on-accent", "accent"],
@@ -252,7 +257,10 @@ export function applyAppearanceColors(
   sheet.replaceSync(`${selector} {}`);
   const rule = sheet.cssRules[0] as CSSStyleRule;
   for (const [token, value] of Object.entries(colors))
-    rule.style.setProperty(`--${token}`, value);
+    rule.style.setProperty(
+      `--${token}`,
+      token === "surface-hover" ? visibleHoverSurface(colors) : value,
+    );
   rule.style.setProperty(
     "--focus-on-selected",
     visibleFocusColor(colors.focus, colors["surface-selected"]),

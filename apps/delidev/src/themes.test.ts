@@ -3,7 +3,11 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import appearancePalettes from "./appearance-palettes.json";
-import { validColors, visibleFocusColor } from "./appearance-preferences";
+import {
+  validColors,
+  visibleFocusColor,
+  visibleHoverSurface,
+} from "./appearance-preferences";
 
 const directory = join(process.cwd(), "src");
 const source = readFileSync(join(directory, "themes.css"), "utf8");
@@ -171,9 +175,19 @@ test("Revert text is readable at rest and on hover in every admitted palette", (
           `${name} ${mode}: Revert / ${surface}`,
         ).toBeGreaterThanOrEqual(4.5);
       expect(validColors(colors)).toBe(true);
+      const legacyColors = {
+        ...colors,
+        "surface-hover": colors["text-secondary"],
+      };
+      expect(validColors(legacyColors)).toBe(true);
+      expect(visibleHoverSurface(legacyColors)).toBe(colors.surface);
       expect(
-        validColors({ ...colors, "surface-hover": colors["text-secondary"] }),
-      ).toBe(false);
+        contrast(
+          legacyColors["text-secondary"],
+          visibleHoverSurface(legacyColors),
+        ),
+      ).toBeGreaterThanOrEqual(4.5);
+      expect(visibleHoverSurface(colors)).toBe(colors["surface-hover"]);
       expect(
         contrast(
           visibleFocusColor(colors.surface, colors.surface),
