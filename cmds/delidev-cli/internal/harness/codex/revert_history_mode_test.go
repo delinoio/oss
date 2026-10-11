@@ -63,6 +63,43 @@ func TestRevertSelectedPaginatedHistoryExplicitRecovery(t *testing.T) {
 	}
 }
 
+func TestContinuationRejectsCheckpointHistoryModeDriftBeforeNativeReads(t *testing.T) {
+	c, capture, checkpoint, _ := continuationFixture(t, "ready")
+	checkpoint.PaginatedHistory = true
+	if _, err := c.VerifyContinuation(context.Background(), domain.NewID(), checkpoint, ContinueAfterSuccess); err == nil || c.problem == nil || !c.execution.paused {
+		t.Fatal("checkpoint history-mode drift released a continuation")
+	}
+	if len(requestsOf(t, capture, "thread/read")) != 1 || len(requestsOf(t, capture, "thread/turns/list")) != 0 {
+		t.Fatal("checkpoint history-mode mismatch read native history")
+	}
+}
+
+func TestRevertedReplacementRejectsCheckpointHistoryModeDriftBeforeNativeReads(t *testing.T) {
+	for _, mode := range []string{"ready", "paginated-ready"} {
+		t.Run(mode, func(t *testing.T) {
+			c, _, source, ids, inputs := revertFixture(t, mode)
+			proof, err := c.RevertThread(context.Background(), domain.NewID(), source, inputs[1], ids[1], func(RevertIntent) error { return nil })
+			if err != nil {
+				t.Fatal("fixture Revert failed", err)
+			}
+			proof.Source.PaginatedHistory = !proof.Source.PaginatedHistory
+
+			replacement, capture := openThreadFixture(t, "thread-revert-"+mode)
+			settings := threadSettings(t)
+			settings.Cwd = source.Effective.Cwd
+			if _, err := replacement.ResumeThread(context.Background(), domain.NewID(), source.ThreadID, settings); err != nil {
+				t.Fatal("replacement original binding rejected", err)
+			}
+			if _, err := replacement.VerifyCompactedContinuation(context.Background(), domain.NewID(), proof); err == nil || replacement.problem == nil || !replacement.execution.paused {
+				t.Fatal("replacement accepted mismatched checkpoint history mode")
+			}
+			if len(requestsOf(t, capture, "thread/read")) != 1 || len(requestsOf(t, capture, "thread/turns/list")) != 0 {
+				t.Fatal("replacement checkpoint mismatch read native history")
+			}
+		})
+	}
+}
+
 func TestRevertHistoryModeDriftAfterSendRetainsQuarantine(t *testing.T) {
 	for _, mode := range []string{"paginated-result-mode-change", "paginated-current-mode-change"} {
 		t.Run(mode, func(t *testing.T) {

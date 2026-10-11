@@ -151,7 +151,7 @@ func revertFixture(t *testing.T, mode string) (*Client, string, ContinuationChec
 		turns = append(turns, turn)
 	}
 	fixtureSignal(t, c, "history", map[string]any{"page": map[string]any{"data": turns, "nextCursor": nil, "backwardsCursor": nil}})
-	source := ContinuationCheckpoint{ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: ids[2], Status: TurnCompleted, Mode: domain.ExecuteMode, Effective: *bound.Effective, Inputs: []HistoricalInput{inputs[2]}}
+	source := ContinuationCheckpoint{PaginatedHistory: bound.Thread.History == PaginatedHistory, ThreadID: bound.Thread.ID, SessionID: bound.Thread.SessionID, TurnID: ids[2], Status: TurnCompleted, Mode: domain.ExecuteMode, Effective: *bound.Effective, Inputs: []HistoricalInput{inputs[2]}}
 	path := filepath.Join(c.home, "sessions", "fixture.jsonl")
 	security.PrivateDir(filepath.Dir(path))
 	os.WriteFile(path, []byte("retained native history"), 0600)

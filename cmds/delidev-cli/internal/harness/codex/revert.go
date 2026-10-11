@@ -156,6 +156,9 @@ func (c *Client) verifyRevertedContinuation(ctx context.Context, request domain.
 		return Turn{}, compactionUncertain()
 	}
 	fail := func() (Turn, error) { c.problem = compactionUncertain(); s.paused = true; return Turn{}, c.problem }
+	if !c.matchesCheckpointHistoryMode(p.Source.PaginatedHistory) {
+		return fail()
+	}
 	if c.checkNativeStateLocked(ctx, true) != nil || c.noForkWorkLocked(ctx, c.thread) != nil {
 		return fail()
 	}
