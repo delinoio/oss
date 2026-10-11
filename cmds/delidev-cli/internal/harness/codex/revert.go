@@ -106,7 +106,7 @@ func (c *Client) RevertThread(ctx context.Context, action domain.ID, source Cont
 		return fail()
 	}
 	var cursor, items *string
-	if json.Unmarshal(wire.Turns, &cursor) != nil || json.Unmarshal(wire.Items, &items) != nil || cursor != nil && domain.Text(*cursor, "native revert cursor", 4096, true) != nil || items != nil && domain.Text(*items, "native item cursor", 4096, true) != nil || (index == 0) != (cursor == nil) || index > 0 && items == nil {
+	if json.Unmarshal(wire.Turns, &cursor) != nil || json.Unmarshal(wire.Items, &items) != nil || cursor != nil && domain.Text(*cursor, "native revert cursor", 4096, true) != nil || items != nil && domain.Text(*items, "native item cursor", 4096, true) != nil || (index == 0) != (cursor == nil) || index > 0 && c.execution.thread.History == PaginatedHistory && items == nil {
 		return fail()
 	}
 	after, e := c.revertHistoryLocked(ctx, "desc", cursor, items, true)

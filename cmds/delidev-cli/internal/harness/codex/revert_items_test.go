@@ -139,6 +139,24 @@ func TestRevertJoinsOriginalToolItemsAndBothCursorDirections(t *testing.T) {
 	}
 }
 
+func TestRevertLegacyNonemptyPrefixAllowsNullItemCursor(t *testing.T) {
+	c, capture, source, ids, inputs := revertFixture(t, "ready")
+	if source.PaginatedHistory {
+		t.Fatal("fixture did not bind the legacy history mode")
+	}
+	var intent RevertIntent
+	proof, err := c.RevertThread(context.Background(), domain.NewID(), source, inputs[2], ids[2], func(value RevertIntent) error {
+		intent = value
+		return nil
+	})
+	if err != nil || proof.TurnsCount != 2 || len(intent.ExpectedHistory) != 2 || VerifyRevertIntent(intent, proof) != nil {
+		t.Fatal("legacy full-turn proof rejected a null item cursor", err)
+	}
+	if len(requestsOf(t, capture, "thread/items/list")) != 0 || len(requestsOf(t, capture, "thread/revert")) != 1 {
+		t.Fatal("legacy full-turn proof hydrated items or repeated Revert")
+	}
+}
+
 func TestRevertItemEvidenceFaultsQuarantineOriginalSend(t *testing.T) {
 	for _, fault := range []string{"changed-anchor", "changed-current", "duplicate", "foreign", "missing", "missing-page", "cycle", "unsupported", "running", "oversized"} {
 		t.Run(fault, func(t *testing.T) {
