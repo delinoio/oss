@@ -819,6 +819,7 @@ it("shows the complete grouped navigation once and keeps its selected category i
     "Notifications",
     "Import / Export",
     "Backups",
+    "App information",
   ];
   const values = [
     "subscription-accounts",
@@ -839,6 +840,7 @@ it("shows the complete grouped navigation once and keeps its selected category i
     "notifications",
     "transfer",
     "backups",
+    "app-information",
   ];
   expect(
     Array.from(

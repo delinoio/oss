@@ -1,0 +1,133 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.settings-app-information .settings-content-column {
+  max-width: 1040px;
+}
+.app-information {
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+}
+.app-information-card {
+  min-width: 0;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+.settings-content[aria-label] .app-information .app-information-card h2 {
+  margin: 0 0 16px;
+  font-size: 16px;
+}
+.app-information-card dl {
+  display: grid;
+  grid-template-columns: minmax(0, 180px) minmax(0, 1fr);
+  gap: 12px 24px;
+  margin: 0;
+}
+.app-information-card dt {
+  color: var(--muted);
+}
+.app-information-card dd {
+  margin: 0;
+}
+.app-information-help {
+  color: var(--muted);
+  font-size: 12px;
+}
+.app-information-links {
+  display: grid;
+  min-width: 0;
+}
+.app-information-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 40px;
+  width: 100%;
+  padding: 12px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: start;
+  color: var(--text);
+}
+.app-information-link + .app-information-link {
+  border-top: 1px solid var(--border);
+}
+.app-information-link svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+}
+.app-information-card button,
+.app-information-card input,
+.app-information-card summary {
+  min-height: 40px;
+}
+.app-information-card input {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+}
+.app-information-card form,
+.app-information-card label {
+  min-width: 0;
+}
+.app-information-card button {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.app-information-card button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.app-update-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.app-update-status p {
+  flex: 1 1 200px;
+}
+.app-update-recovery {
+  margin-top: 16px;
+}
+.app-update-recovery form {
+  display: grid;
+  gap: 12px;
+}
+@media (max-width: 759px) {
+  .app-information-card {
+    padding: 16px;
+  }
+  .app-information-card dl {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .app-information-card dd {
+    margin-bottom: 8px;
+  }
+  .app-update-status button {
+    width: 100%;
+  }
+}
+
+.app-update-status {
+  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+}
+.app-update-status p {
+  margin: 0;
+}
+.worker-update-check {
+  display: contents;
+}

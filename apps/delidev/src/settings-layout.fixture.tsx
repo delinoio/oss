@@ -37,6 +37,12 @@ import {
 } from "@delinoio/delidev-api-client";
 import { App } from "./App";
 import {
+  AppInformation,
+  AppInformationLink,
+  retainedDesktopContext,
+} from "./app-information";
+import { Updates, NativeUpdatePhase } from "./updates";
+import {
   NotificationLayoutFixture,
   notificationFixtureCounts,
   prepareNotificationLayoutFixture,
@@ -77,6 +83,26 @@ import "./themes.css";
 import "./styles.css";
 import "./settings-presentation.css";
 
+const appInformationCounts = {
+  context: 0,
+  controls: 0,
+  opened: [] as AppInformationLink[],
+};
+Object.assign(window, { appInformationCounts });
+const appInformationControls = {
+  readContext: retainedDesktopContext(async () => {
+    appInformationCounts.context++;
+    return { current_version: "0.1.0", target: "darwin-arm64" };
+  }),
+  control: async (_action: unknown, id: string) => {
+    appInformationCounts.controls++;
+    return {
+      operation_id: id,
+      release_version: "0.2.0",
+      phase: NativeUpdatePhase.Uncertain,
+    };
+  },
+};
 const args = new URLSearchParams(location.search);
 const hiddenWorkerChoices = args.get("hiddenWorkerChoices") === "true";
 function WizardFixtureControls() {
@@ -1340,6 +1366,16 @@ createRoot(document.getElementById("root")!).render(
           <App
             localServer={<WizardFixtureControls />}
             transport={transport}
+            appInformationSettings={
+              <AppInformation
+                controls={appInformationControls}
+                openLink={async (action) => {
+                  appInformationCounts.opened.push(action);
+                }}
+              >
+                <Updates active controls={appInformationControls} />
+              </AppInformation>
+            }
             pairingAuthority={
               networkFixture
                 ? { endpoint: "https://fixture.example", serverId }
