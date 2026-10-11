@@ -1278,10 +1278,9 @@ it("last verified terminal exit restores the actual Session conversation, focus 
     fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
     fireEvent.click(
-      await within(screen.getByRole("group", { name: "Terminals" })).findByRole(
-        "button",
-        { name: /^Terminal 1/ },
-      ),
+      await within(
+        await screen.findByRole("group", { name: "Terminals" }),
+      ).findByRole("button", { name: /^Terminal 1/ }),
     );
     await waitFor(() =>
       expect(document.querySelector(".terminal-view")).not.toBeNull(),
@@ -1340,10 +1339,9 @@ it("verified terminal removal skips intervening Files and selects the original l
     fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
     fireEvent.click(
-      await within(screen.getByRole("group", { name: "Terminals" })).findByRole(
-        "button",
-        { name: /^Terminal 1/ },
-      ),
+      await within(
+        await screen.findByRole("group", { name: "Terminals" }),
+      ).findByRole("button", { name: /^Terminal 1/ }),
     );
     await waitFor(() =>
       expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[0]!.id),
@@ -1353,19 +1351,17 @@ it("verified terminal removal skips intervening Files and selects the original l
     fireEvent.click(screen.getByRole("button", { name: "Open tool" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Terminals" }));
     fireEvent.click(
-      await within(screen.getByRole("group", { name: "Terminals" })).findByRole(
-        "button",
-        { name: /^Terminal 2/ },
-      ),
+      await within(
+        await screen.findByRole("group", { name: "Terminals" }),
+      ).findByRole("button", { name: /^Terminal 2/ }),
     );
     await waitFor(() =>
       expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[1]!.id),
     );
     fireEvent.click(
-      await within(screen.getByRole("group", { name: "Terminals" })).findByRole(
-        "button",
-        { name: /^Terminal 3/ },
-      ),
+      await within(
+        await screen.findByRole("group", { name: "Terminals" }),
+      ).findByRole("button", { name: /^Terminal 3/ }),
     );
     await waitFor(() =>
       expect(f.terminalWatches).toHaveBeenLastCalledWith(f.terminals[2]!.id),
