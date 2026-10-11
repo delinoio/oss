@@ -9,6 +9,7 @@ export enum ShortcutScope {
 export enum ShortcutId {
   ToggleSidebar = "toggle-sidebar",
   CommandMenu = "command-menu",
+  OpenSettings = "open-settings",
   SessionTab1 = "session-tab-1",
   SessionTab2 = "session-tab-2",
   SessionTab3 = "session-tab-3",
@@ -49,6 +50,7 @@ export enum ShortcutPlatform {
 export const globalShortcutBindings = {
   [ShortcutId.ToggleSidebar]: [{ key: "b", primary: true }],
   [ShortcutId.CommandMenu]: [{ key: "k", primary: true }],
+  [ShortcutId.OpenSettings]: [{ key: ",", primary: true }],
   [ShortcutId.Help]: [{ key: "?", ariaKey: "/", ariaShift: true }],
   [ShortcutId.NewSession]: [{ key: "n", primary: true, shift: true }],
 } as const;

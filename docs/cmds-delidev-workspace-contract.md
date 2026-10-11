@@ -8,6 +8,10 @@
 
 `cmds/delidev-cli/internal/workspace` owns Worker-local Git inspection, reference resolution, and all-repository preparation. It is independent of server SQLite and never receives a server GitHub PAT. Preparation is dispatched by authenticated outbound Worker jobs and published atomically into session metadata. The Worker first Codex runner now uses the execution lease below; public first dispatch uses that lease; the bounded same-account Codex profile follows [the fork contract](cmds-delidev-forks-contract.md), while additional fork profiles remain separate pending boundaries; managed whole-workspace snapshots follow the storage contract. Record implementation status and validation in pull requests, issues and CI logs/artifacts under the repository validation policy.
 
+Windows directory identity checks accept Git's forward-slash spelling of the
+same canonical native path. Separator normalization does not permit a symlink,
+a replacement directory, or a different directory identity.
+
 ## Runtime and Language
 
 Go and the execution machine's installed Git. No harness or Git installation is performed automatically.

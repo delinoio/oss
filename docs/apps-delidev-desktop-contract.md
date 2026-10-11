@@ -1,5 +1,83 @@
 # DeliDev desktop client
 
+## Known subscription model autocomplete
+
+The Agent Worker wizard retains the Model step, 720px maximum column, controls
+at least 40px high, theme, footer and narrow-width wrapping. The current inline
+model flow uses a `Model for {source}` form label and the helper
+`Choose a source suggestion or enter its exact native model ID.` This replaces
+the earlier shared `Choose a model` heading, `Model` label and saved-model search
+helper with one model choice per source. Follow the
+[inline Worker model contract](cmds-delidev-catalog-contract.md#inline-worker-models-and-endpoint-only-completion-reservation).
+
+System capability `KNOWN_SUBSCRIPTION_MODELS_V1 = 35` independently enables the
+known-model read for supported subscription services. Missing catalog support
+shows server-update guidance while retaining exact-ID entry. The inline Worker
+flow requires protocol 2 and `INLINE_WORKER_MODELS_V1 = 42`; otherwise the current
+client shows server-update guidance instead of opening the editor. This replaces
+the earlier saved/direct fallback for older servers. Known suggestions remain
+advisory, bounded read-only metadata, not native discovery, credential validation
+or proof of account entitlement.
+Reject invalid service echoes, catalog versions, dates, provenance categories,
+duplicate IDs and incomplete or oversized inventories before displaying them.
+
+Focus opens a keyboard-operated listbox with display names, exact native IDs and
+Known labels. Name/ID search filters the complete validated list of at most 200
+known candidates. Arrow keys, Home/End and Enter select through accessible active
+descendants; Escape dismisses the list and returns focus from the results region
+to the input. Keep the typed exact-ID option available when no suggestion matches.
+Loading or failure preserves typed input, and a failed known-catalog refresh may
+retain the last valid same-source candidates. Source/harness changes clear
+incompatible selections and prevent stale responses from becoming candidates.
+
+The independent saved Model registry and its autocomplete search, pagination,
+Saved labels and Saved-over-Known precedence are superseded by inline Worker
+models. API suggestions come only from the selected Provider endpoint and use
+Endpoint suggestion labels. There are no saved-list page controls or separate
+Model UUID/revision selections. Selecting a known or endpoint suggestion retains
+its exact native ID and applicable non-secret metadata until the atomic Worker
+save. Queries never register models. Preserve the original Worker revision
+checks, source/account validation and immutable execution attribution. Endpoint
+requests pin Account and Provider revisions and reject mismatched response
+identity; source, Account, connection-generation or editor-lifetime changes clear
+endpoint choices. Endpoint failure clears choices while permitting exact-ID entry.
+
+Show `Known models · Catalog updated {date}`, with `Built-in catalog` or
+`Cached catalog` when applicable, and
+`Availability depends on your plan and installed harness.` Do not show the
+unsupported subscription-discovery warning. The single current refresh control,
+`Refresh models from endpoint`, replaces `Reload models`: for subscriptions it
+rereads server catalog state without forcing an external download; for API
+sources it requests a fresh selected endpoint list. Do not merge saved records,
+persist endpoint catalogs or add background endpoint discovery. Recommendation
+removal cannot delete Worker configurations or immutable execution history;
+pricing and native-account lifecycle remain independently owned. These browser
+interactions do not establish installed native/account/platform acceptance.
+
+## Desktop validation ownership
+
+PR validation is owned by the desktop Turbo task graph. Cache type checks, pure
+UI/client assertions and deterministic frontend output using their declared
+inputs. Execute real Go-server integration, QA, widget and native packaging
+fixtures through uncached tasks. Client pure tests precede client Go integration;
+each desktop shard runs its cached pure UI assertions before its uncached Go
+integration assertions. The combined desktop integration task also follows
+client integration, and combined QA follows type checks, desktop unit/integration
+tests and the release check. The independent checks phase runs QA after its type
+checks and release check; the release check owns its frontend build dependency.
+Sharing a runner-built Go executable never shares fixture processes, credentials
+or data lifetimes.
+
+The current matrix has one checks phase and four complete Vitest shards, each
+with at most two jsdom workers on the shared two-core host. This supersedes the
+earlier four-worker ceiling without relaxing individual test or product
+deadlines. Local `pnpm test` retains the complete validation sequence, including
+client build, type checks, unit/integration tests, bundle/launch/widget/QA fixtures,
+frontend build and release check. Follow the
+[repository workflow contract](repository-workflow-contract.md) for exact task
+dependencies, affected selection, cache authentication and evidence limits.
+Fixtures and packaging do not establish native/account/platform acceptance.
+
 ## Startup Keychain access
 
 Each fresh macOS app launch shows the Keychain access notice and starts checking
@@ -149,7 +227,7 @@ The connection-owned `ShortcutProvider` and `useShortcuts` register stable enum 
 
 Dispatch and the read-only help use the same declarations. Match input-target registrations before screen and global registrations. Conflicts at the winning priority execute nothing and log only the stable event classification, scope and action IDs. A disabled matching action cannot fall through. Preserve original button/form guards and original RPC/request authority; a shortcut is not a new execution capability. Never log key events, input, aliases or native/browser content.
 
-Common shortcuts are logical `?` for help and primary+Shift+N for New session. Primary means Command on the local macOS renderer and Control on Windows/Linux, independently of the selected server or Worker. Session and New session use primary+I to focus their message input and primary+Enter to submit only from that input. Session submission queues a message; New session submission creates through the original guarded form. The feature gives Session and General Chat follow-up composers fixed Enter submission and native Shift+Enter newline. Preserve New session's guarded Enter submission and native Shift+Enter newline. Search uses primary+I to focus the existing query and retains native Enter form submission. Search has no global entry shortcut. Primary+K opens the fixed command menu described below; it never submits a Search query. The sidebar Search button remains available without shortcut guidance. Ordinary Search entry retains its existing once-only autofocus; Search primary+I focuses the retained query and opens the existing compact drawer when needed. Files, Diff and Diagnostics register their existing focus-local Escape closure and original opener restoration. Other screens initially expose common shortcuts only. Control aria-keyshortcuts derives from the same platform-resolved bindings. The logical help binding carries a physical Shift+/ ARIA annotation for English/Korean slash-key layouts; it never changes logical character matching.
+Common shortcuts are logical `?` for help, primary+Shift+N for New session and fixed primary+comma for Open Settings. Open Settings uses the existing category-free navigation callback and is available from ordinary text fields. A fresh Settings visit opens AI Subscription through the existing focus handoff; invoking it during an active visit retains the current category, draft, pending requests and focus. The read-only Common catalog, Help and Settings button accessibility annotation share the same binding declaration. This shortcut performs no configuration save or execution action and retains the existing event, modal, terminal and capture guards. Primary means Command on the local macOS renderer and Control on Windows/Linux, independently of the selected server or Worker. Session and New session use primary+I to focus their message input and primary+Enter to submit only from that input. Session submission queues a message; New session submission creates through the original guarded form. The feature gives Session and General Chat follow-up composers fixed Enter submission and native Shift+Enter newline. Preserve New session's guarded Enter submission and native Shift+Enter newline. Search uses primary+I to focus the existing query and retains native Enter form submission. Search has no global entry shortcut. Primary+K opens the fixed command menu described below; it never submits a Search query. The sidebar Search button remains available without shortcut guidance. Ordinary Search entry retains its existing once-only autofocus; Search primary+I focuses the retained query and opens the existing compact drawer when needed. Files, Diff and Diagnostics register their existing focus-local Escape closure and original opener restoration. Other screens initially expose common shortcuts only. Control aria-keyshortcuts derives from the same platform-resolved bindings. The logical help binding carries a physical Shift+/ ARIA annotation for English/Korean slash-key layouts; it never changes logical character matching.
 
 Primary letter/digit matching and capture share one canonical resolver. Physical `KeyA`–`KeyZ` and `Digit0`–`Digit9` codes resolve to lowercase ASCII letters and digits before translated logical keys. Recognized codes take precedence over inconsistent `event.key`; unavailable or unrecognized codes retain the existing logical fallback, including Numpad behavior. Named Enter/Escape and default logical Help retain their existing rules and held-key release ownership. Stored `{key, shift}` chords, editable IDs, reservations and preference bytes remain unchanged. Input-layout selection alone does not block dispatch or capture; active composition remains excluded.
 
@@ -3694,6 +3772,28 @@ Frontend changes require package-local `pnpm test`, typechecking and production 
 `pnpm build:native` generates the typed client, frontend and target-specific Go sidecar before building the native host. `pnpm dev:desktop --data-dir /absolute/private/scope` prepares those inputs and runs the embedded frontend through the package-owned launch wrapper. On macOS the wrapper invokes the pinned Tauri CLI with `build --debug --bundles app` to prepare `DeliDev.app`, CEF Frameworks and helper applications without executing mutable build output. It signs and verifies a private copy, atomically publishes it below the user's private `Library/Application Support/delidev-development/bundles/run-*`, and executes that copy. Publication stays outside Cargo's target directory and the checkout so ordinary build-cache cleanup cannot remove a surviving server's files. A bare `cargo run` lacks this macOS layout and is not the desktop development entry point. The app-owned `desktop-host` feature explicitly includes the `tauri-runtime-cef` dependency for CLI bundle selection. Windows/Linux retain direct Cargo execution with their adjacent runtime files and sidecar.
 
 The macOS development-only config removes `devUrl`, enables local `custom-protocol`, and uses the embedded frontend without a dev server or watcher. The containing app, CEF and widget code retain ad-hoc signatures. Only the copied Go server uses the explicitly registered local development certificate and fixed signing identifier `io.delino.delidev.development.server`. Re-seal only the containing app, preserving its original entitlements, flags and runtime metadata; deep verification must succeed before publication. Both preparation and execution receive the native dry-run system/tool environment plus optional `CARGO_TARGET_DIR`, using the pinned distribution in the standard `Library/Caches/tauri-cef` cache; caller CEF overrides and release-signing/notarization credentials are not inherited. The original distribution's Chromium notices are included alongside existing repository/CEF notices. No runtime pin, default data directory, production configuration or release-signing policy changes. Application arguments, including spaces and Unicode, reach only the published desktop as argv, never the Cargo/Tauri build. Preparation/signing/verification children use joined termination forwarding; execution signals only the original desktop, preserving abnormal-exit server and independent Worker lifetimes. Failures stop the sequence, and wrapper diagnostics contain only stable stages and outcomes, not application arguments or private data paths. Node launcher tests run separately from jsdom through `pnpm test:desktop-launch` and are included in `pnpm test`.
+
+Preparation, bundle and application output use separate captured stdout/stderr
+streams. When the parent stdout or stderr is a terminal, set child color modes
+before piping output so Cargo and Node tools retain ANSI diagnostics. `NO_COLOR`,
+`CLICOLOR=0`, `CARGO_TERM_COLOR=never` and `FORCE_COLOR=0` disable this forcing.
+Pause each captured stream when its destination applies backpressure and resume
+it after `drain`, keeping diagnostic output buffering bounded. Suppress Cargo
+command echoes and redact original application arguments,
+including option values, JSON and shell spellings and multiline fragments, before
+publishing safe diagnostic text. Normalize ANSI color sequences for matching so
+that they cannot split a private argument; retain ordinary colored diagnostics
+when no redaction is required. Incremental UTF-8 decoding preserves split
+characters; each line is bounded to 64 KiB and an oversized line is omitted.
+After the original child exits, drain for at most 100 ms. If a descendant retains
+an inherited pipe, close only the reader, discard its partial line and report
+`diagnostics-incomplete` with `output-drain-timeout`. Read failures report the
+separate `output-read-failed` classification. Neither outcome changes the original
+child exit code or signal. Signing retains its private output capture. Final
+build-lock cleanup failure reports `cleanup-uncertain` with
+`build-lock-release-failed`, without logging exception paths or replacing an
+already observed child result. These observations establish neither native
+process termination nor cleanup of independent server/Worker processes.
 
 ### Local development signing and recovery
 

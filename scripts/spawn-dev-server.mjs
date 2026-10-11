@@ -200,7 +200,7 @@ export async function spawnDevServer(
   command,
   args,
   options,
-  { terminateProcessTree = false } = {},
+  { terminateProcessTree = false, captureOutput } = {},
 ) {
   const managePosixProcessGroup =
     process.platform !== "win32" && terminateProcessTree;
@@ -254,12 +254,21 @@ export async function spawnDevServer(
     });
   });
 
+  // The optional owner installs pipe listeners before the child can emit data.
+  // Its completion runs after the original exit and must bound retained pipes.
+  let finishOutput;
   try {
+    finishOutput = captureOutput?.(child);
     const result = await childResult;
+    await finishOutput?.();
     await Promise.all(terminationPromises);
     return forwardedSignal ? { code: null, signal: forwardedSignal } : result;
   } finally {
-    removeSignalHandlers();
+    try {
+      await finishOutput?.();
+    } finally {
+      removeSignalHandlers();
+    }
   }
 }
 

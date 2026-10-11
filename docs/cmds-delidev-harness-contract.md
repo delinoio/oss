@@ -28,6 +28,33 @@ Unexpected original-root archived, deleted or closed notifications retain the or
 
 Deprecated thread-compacted requires the exact original turn's manual compaction owner or canonical ContextCompaction/history record. Thread-reverted requires the existing durable Revert send claim or independently verified Revert continuation while no input/compaction is active or pending. A subsequent original input or compaction ends that supplement scope without changing the durable history proof. Discard these content-free supplements without adding transcript entries, acknowledging a mutation, completing an item/turn, changing history, creating a successor checkpoint or proving cleanup. Unowned supplements retain recovery. Original compaction and Revert responses, canonical items, complete history and private rollout verification remain authoritative under the [compaction contract](cmds-delidev-compaction-contract.md). No goal or Revert mutation authority is added.
 
+### Passive Codex fuzzy-search notifications
+
+The original execution process accepts `fuzzyFileSearch/sessionUpdated` and
+`fuzzyFileSearch/sessionCompleted` only as notifications. Updated payloads retain
+`sessionId`, `query` and ordered `files` during private validation; each result
+uses the exact native `root`, `path`, `match_type`, `file_name`, unsigned 32-bit
+`score` and optional nullable unsigned 32-bit `indices` fields. Match types are
+`file` and `directory`. Preserve absent, null and empty indices distinctly.
+The [pinned updated schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/FuzzyFileSearchSessionUpdatedNotification.json)
+and [completed schema](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/schema/json/FuzzyFileSearchSessionCompletedNotification.json)
+own these spellings; camel-case result aliases are unsupported.
+
+Bound each envelope to 1 MiB, the nonempty session ID to 1024 UTF-8 bytes,
+query/root/path/file name to 4096 UTF-8 bytes each, results to 1000, and indices
+per result to 4096. Reject missing/null required fields, unknown/duplicate keys,
+invalid match types, NUL text and invalid/overflowing numbers with the closed
+`fuzzy-search` diagnostic classification. Empty queries and result lists are
+valid. No native query, path or result content enters logs or product events.
+
+There is no admitted search-session/query-generation owner in this adapter.
+Validate and discard every such observation, including unknown sessions, stale
+queries, replays and completion before update. The ordinary Worker and isolated
+title profile consume only the content-free discarded classification. Do not
+start a search, read a path, build a conversation index, replace input, acknowledge
+completion or grant cleanup/recovery authority from this metadata. Server
+requests with these names retain the unsupported request boundary.
+
 ### Direct startup and native attribution
 
 [Direct startup](cmds-delidev-execution-startup-contract.md) supersedes numeric

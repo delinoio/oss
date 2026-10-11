@@ -642,7 +642,7 @@ export function PullRequests({
               }
             />
           ))}
-          {!repositories.error && repositories.data?.resources.length === 0 ? (
+          {repositories.data?.resources.length === 0 ? (
             <div className="sidebar-repository-empty">
               <svg
                 className="sidebar-icon"
