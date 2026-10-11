@@ -24,6 +24,7 @@ import { Doctor } from "./doctor";
 import { Settings } from "./settings";
 import { MutationIntents } from "./mutation";
 import { encode, type Document } from "./documents";
+import { safePresentation } from "./product-presentation-test-support";
 
 function report(): Document {
   return {
@@ -193,7 +194,7 @@ it("owns the standalone Diagnostics heading, three independent observations and 
   allClosed(view.container);
   expect(
     within(server)
-      .getByText(value.state.report.server_id as string)
+      .getByText(safePresentation(value.state.report.server_id))
       .closest("details")?.open,
   ).toBe(false);
   expect(

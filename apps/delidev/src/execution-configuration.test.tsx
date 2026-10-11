@@ -11,6 +11,7 @@ import {
   ExecutionConfiguration as OriginalExecutionConfiguration,
   SavedExecutionChips,
 } from "./execution-configuration";
+import { safePresentation } from "./product-presentation-test-support";
 import { useState, type ComponentProps } from "react";
 function ExecutionConfiguration(
   props: ComponentProps<typeof OriginalExecutionConfiguration>,
@@ -300,11 +301,11 @@ it("preserves first-execution choices while separately identifying retained prio
   const saved = screen.getByRole("region", {
     name: "Saved execution configuration",
   });
-  expect(detail(document.body, "First account")).toBe(
-    value.data.initial_execution.initial_account_id,
+  expect(detail(document.body, "First account")).toMatch(
+    safePresentation(value.data.initial_execution.initial_account_id),
   );
-  expect(detail(document.body, "Selected execution account")).toBe(
-    next.current_execution.account_id,
+  expect(detail(document.body, "Selected execution account")).toMatch(
+    safePresentation(next.current_execution.account_id),
   );
   const bound = {
     ...next,
@@ -410,7 +411,9 @@ it("keeps unavailable snapshots, unknown options and imprecise revisions explici
   ).toBeTruthy();
   expect(screen.queryByText("unbound-model")).toBeNull();
   expect(
-    screen.getByText(`${value.configuration.agent_id} · revision Unavailable`),
+    screen.getByText(
+      `${safePresentation(value.configuration.agent_id)} · revision Unavailable`,
+    ),
   ).toBeTruthy();
   view.rerender(
     <ExecutionConfiguration
