@@ -98,7 +98,10 @@ impl<'c> Ctx<'c> {
                 SourceInfo {
                     node,
                     entry: entries.contains(&name),
-                    js: is_js(node),
+                    // `@ts-nocheck` suppresses the semantic recheck that
+                    // backs every transformation, so such a module is an
+                    // unchecked boundary exactly like JavaScript.
+                    js: is_js(node) || is_unchecked(node),
                     text: source_file_text(node).to_string(),
                     name,
                     nodes,
@@ -659,6 +662,18 @@ impl<'c> Ctx<'c> {
     }
 }
 
+/// Whether a TypeScript module disables semantic checking with a leading
+/// `@ts-nocheck` comment.
+pub(crate) fn is_unchecked(file: Node) -> bool {
+    let text = source_file_text(file);
+    let header_end = file
+        .statements()
+        .iter()
+        .next()
+        .map_or(text.len(), token_start);
+    text[..header_end].contains("@ts-nocheck")
+}
+
 /// Removes parentheses, type assertions, `satisfies` and non-null wrappers,
 /// none of which have runtime effects.
 pub(crate) fn skip_outer(mut node: Node) -> Node {
@@ -709,6 +724,18 @@ fn same_function(a: Node, b: Node) -> bool {
 
 fn ref_kind(node: Node) -> RefKind {
     let parent = node.parent();
+    // A shorthand property `{ f }` declares a property but reads the value
+    // of the binding `f`; the indexed symbol is that binding.
+    if parent.kind() == SyntaxKind::ShorthandPropertyAssignment && parent.name() == node {
+        return RefKind::Read;
+    }
+    // `export { f }` names the local binding without observing its value.
+    if matches!(
+        parent.kind(),
+        SyntaxKind::ExportSpecifier | SyntaxKind::ImportSpecifier
+    ) {
+        return RefKind::Alias;
+    }
     if is_declaration_name(node) {
         return match parent.kind() {
             SyntaxKind::ImportSpecifier

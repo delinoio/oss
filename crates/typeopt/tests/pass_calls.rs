@@ -777,3 +777,88 @@ console.log(
         "reflectedMethod",
     );
 }
+
+/// Regression: a shorthand property `{ heapSize }` reads the function value.
+/// Inlining its direct call must not delete the declaration (an Emscripten
+/// import table in Excalidraw has exactly this shape).
+#[test]
+fn shorthand_property_reads_keep_inlined_functions() {
+    const CODE: &str =
+        "const Module = (function () {\n  const heap = [1, 2, 3];\n  function heapSize() { return \
+         heap.length; }\n  function grow(n: number) { const old = heapSize(); return old + n; }\n  \
+         var imports = { heapSize, grow };\n  return imports;\n})();\nconsole.log(Module.grow(1), \
+         Module.heapSize(), Object.keys(Module).join(','));\nexport default Module;\n";
+    for keep in [vec![INLINE, RESIDUAL], vec![]] {
+        let temp = project(&[("main.ts", CODE)]);
+        let report = if keep.is_empty() {
+            optimize(temp.path(), &[])
+        } else {
+            optimize(temp.path(), &args(&only(&keep)))
+        };
+        let main = emitted(temp.path(), "main.ts");
+        assert!(main.contains("function heapSize"), "{main}");
+        assert!(
+            skipped_reasons(&report, INLINE)
+                .iter()
+                .chain(skipped_reasons(&report, RESIDUAL).iter())
+                .all(|r| r != "recheck_failed"),
+            "{report:#}"
+        );
+        same_behavior(temp.path());
+    }
+}
+
+/// `@ts-nocheck` disables the semantic recheck behind every transformation,
+/// so such a module is an unchecked boundary and stays untouched.
+#[test]
+fn ts_nocheck_modules_are_not_transformed() {
+    let code = format!(
+        "// @ts-nocheck\nfunction size() {{ return 2; }}\nconst table = {{ size }};\nexport \
+         default function read() {{ return size() + table.size(); }}\n"
+    );
+    let temp = project(&[
+        (
+            "main.ts",
+            "import read from './dep.ts';\nconsole.log(read());\n",
+        ),
+        ("dep.ts", &code),
+    ]);
+    let report = optimize(temp.path(), &[]);
+    let dep = modules(temp.path())["modules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["source"].as_str().unwrap().ends_with("dep.ts"))
+        .unwrap()
+        .clone();
+    assert_ne!(dep["kind"], "optimized", "{report:#}");
+    same_behavior(temp.path());
+}
+
+/// Regression: an `export { f }` specifier is an alias, not a use; a
+/// function only exported that way and called once can still be inlined
+/// without breaking the export.
+#[test]
+fn export_specifiers_are_aliases_not_declarations() {
+    let temp = project(&[
+        (
+            "main.ts",
+            "import { twice } from './dep.ts';\nconsole.log(twice(21));\n",
+        ),
+        (
+            "dep.ts",
+            "function twice(n: number) { return n * 2; }\nexport { twice };\n",
+        ),
+    ]);
+    let report = optimize(temp.path(), &[]);
+    assert_eq!(
+        report["skipped"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|s| s["reason"] == "recheck_failed")
+            .count(),
+        0
+    );
+    same_behavior(temp.path());
+}

@@ -553,6 +553,33 @@ fn scalar(
         declarators.push(format!("{binding} = {value}"));
     }
     let path = ctx.files[file].name.clone();
+    let length = fields.len().to_string();
+    if declarators.is_empty() {
+        // Every field is unused and pure (for example only `t.length` is
+        // read): the whole declaration goes. An empty declaration list is
+        // not valid syntax, so only a standalone statement qualifies.
+        let statement = list.parent();
+        if statement.kind() != SyntaxKind::VariableStatement {
+            return Err(Reason::UnsupportedSyntax);
+        }
+        let mut edits = vec![FileEdit::delete(
+            &path,
+            Ctx::start(statement),
+            statement.end() as usize,
+        )];
+        for (access, usage) in accesses {
+            let Use::Length = usage else {
+                return Err(Reason::UnsupportedSyntax);
+            };
+            edits.push(FileEdit::replace(
+                &path,
+                Ctx::start(access),
+                access.end() as usize,
+                length.clone(),
+            ));
+        }
+        return Ok(edits);
+    }
     let mut edits = vec![FileEdit::replace(
         &path,
         Ctx::start(site.declaration),
@@ -568,7 +595,6 @@ fn scalar(
         }
         edits.push(FileEdit::replace(&path, start, start + 5, "let"));
     }
-    let length = fields.len().to_string();
     for (access, usage) in accesses {
         let replacement = match usage {
             Use::Field(index) => fields[index].binding.clone(),
