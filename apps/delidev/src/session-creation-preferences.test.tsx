@@ -1421,6 +1421,26 @@ it.each(["missing", "foreign", "older", "malformed"])(
   },
 );
 
+it("keeps the highest mounted defaults revision after a lower refresh", async () => {
+  const f = fixture(true, false, { global: false });
+  f.defaultSettings.revision = 5n;
+  render(f.view());
+  await readyAutomaticCreation(f);
+  const original = f.list.getMockImplementation()!;
+  f.list.mockImplementation(async (request) =>
+    request.filter?.kind === EntityKind.SETTINGS
+      ? { resources: [{ ...f.defaultSettings, revision: 4n }] }
+      : original(request),
+  );
+  await act(async () => {
+    await f.client.invalidateQueries();
+  });
+
+  fireEvent.click(await readyAutomaticCreation(f));
+  await screen.findByRole("button", { name: "Retry Plan Mode defaults" });
+  expect(f.createSession).not.toHaveBeenCalled();
+});
+
 it("keeps manual Execute without rereading defaults", async () => {
   const f = fixture(true, false, { global: false });
   render(f.view());

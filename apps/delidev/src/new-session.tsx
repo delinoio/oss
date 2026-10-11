@@ -647,13 +647,50 @@ export function NewSession({
     { enabled: active && supportsDefaults, retry: false },
   );
   const observedDefaults = useRef({
+    scope: {
+      transport,
+      project,
+      serverId: preferenceScope?.server_id,
+      deviceId: preferenceScope?.device_id,
+    },
     settings: defaultSettings.data?.resources[0],
     project: selectedProject.data?.resource,
   });
-  observedDefaults.current = {
-    settings: defaultSettings.data?.resources[0],
-    project: selectedProject.data?.resource,
+  const observation = observedDefaults.current;
+  if (
+    observation.scope.transport !== transport ||
+    observation.scope.project !== project ||
+    observation.scope.serverId !== preferenceScope?.server_id ||
+    observation.scope.deviceId !== preferenceScope?.device_id
+  ) {
+    observedDefaults.current = {
+      scope: {
+        transport,
+        project,
+        serverId: preferenceScope?.server_id,
+        deviceId: preferenceScope?.device_id,
+      },
+      settings: undefined,
+      project: undefined,
+    };
+  }
+  const rememberObservation = <T extends Resource>(
+    previous: T | undefined,
+    next: T | undefined,
+  ) => {
+    if (!next) return previous;
+    if (!previous || previous.id !== next.id || next.revision > previous.revision)
+      return next;
+    return previous;
   };
+  observedDefaults.current.settings = rememberObservation(
+    observedDefaults.current.settings,
+    defaultSettings.data?.resources[0],
+  );
+  observedDefaults.current.project = rememberObservation(
+    observedDefaults.current.project,
+    selectedProject.data?.resource,
+  );
   const defaultRows = defaultSettings.data?.resources;
   const defaultRow = defaultRows?.[0];
   const globalDefaultValid =
