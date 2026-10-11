@@ -61,14 +61,16 @@ function fixture(
     allowed,
     value = "",
     locked = false,
+    source = transport,
   }: {
     active?: boolean;
     allowed?: string[];
     value?: string;
     locked?: boolean;
+    source?: typeof transport;
   }) {
     return (
-      <TransportProvider transport={transport}>
+      <TransportProvider transport={source}>
         <QueryClientProvider client={client}>
           <fieldset disabled={locked}>
             <ResourceChoice
@@ -285,4 +287,57 @@ it("revalidates empty evidence after navigation instead of trusting retained row
   expect(
     await screen.findByRole("button", { name: "Create agent worker" }),
   ).toBeTruthy();
+});
+
+it("does not reuse an empty success after its current refresh fails", async () => {
+  const f = fixture(() => ({ resources: [] }));
+  render(<f.View />);
+  await screen.findByRole("button", { name: "Create agent worker" });
+  f.reads.mockImplementationOnce(() => {
+    throw new ConnectError("Empty refresh denied", Code.PermissionDenied);
+  });
+  const options = createQueryOptions(
+    ResourceQuery.listResources,
+    {
+      filter: { kind: EntityKind.AGENT, pageSize: 50, pageToken: "" },
+    },
+    { transport: f.transport },
+  );
+  await act(async () => {
+    await f.client.invalidateQueries({ queryKey: options.queryKey });
+  });
+  await screen.findByText(/Showing cached Agent Worker choices/);
+  expect(screen.getByRole("combobox", { name: "Agent Worker" })).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Create agent worker" }),
+  ).toBeNull();
+});
+
+it("requires a new complete read when the authenticated transport changes", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const f = fixture(() => ({ resources: [] }));
+  const view = render(<f.View />);
+  await screen.findByRole("button", { name: "Create agent worker" });
+  const source = createRouterTransport((router) =>
+    router.service(ResourceService, {
+      listResources: async () => {
+        await gate;
+        return { resources: [worker()] };
+      },
+    }),
+  );
+  view.rerender(<f.View source={source} />);
+  expect(await screen.findByText("Loading Agent Worker choices…")).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Create agent worker" }),
+  ).toBeNull();
+  await act(async () => release());
+  await waitFor(() =>
+    expect(screen.queryByText("Loading Agent Worker choices…")).toBeNull(),
+  );
+  expect(screen.getByRole("combobox", { name: "Agent Worker" })).toBeTruthy();
+  expect(f.change).not.toHaveBeenCalled();
 });
