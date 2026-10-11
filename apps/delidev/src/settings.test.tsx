@@ -580,11 +580,11 @@ it("retries only an unreadable original repository status after a succeeded ackn
   render(<NotificationProvider>{value.view(<ConfigurationEditor kind={EntityKind.REPOSITORY} initial={repository} active saved={saved} cancel={() => {}} />)}</NotificationProvider>);
   const save = await screen.findByRole("button", { name: "Save Repository" }) as HTMLButtonElement;
   await waitFor(() => expect(save.disabled).toBe(false)); fireEvent.click(save);
-  const retry = await screen.findByRole("button", { name: "Retry original status read" });
+  await screen.findByRole("button", { name: "Retry original status read" });
   expect(saved).not.toHaveBeenCalled(); expect(screen.queryByText("Repository saved.")).toBeNull();
   expect(screen.getAllByRole("button", { name: "Retry original status read" })).toHaveLength(1);
-  await waitFor(() => expect((retry as HTMLButtonElement).disabled).toBe(false));
-  readable = true; fireEvent.click(retry);
+  await waitFor(() => expect((screen.getByRole("button", { name: "Retry original status read" }) as HTMLButtonElement).disabled).toBe(false));
+  readable = true; fireEvent.click(screen.getByRole("button", { name: "Retry original status read" }));
   await waitFor(() => expect(saved).toHaveBeenCalledTimes(1));
   expect(value.save).toHaveBeenCalledTimes(1);
   expect(read.mock.calls.filter(([id]) => id === job.id)).toHaveLength(2);
