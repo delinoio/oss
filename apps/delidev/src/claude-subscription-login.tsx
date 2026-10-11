@@ -693,8 +693,7 @@ export function useClaudeSubscriptionLogin(
     const p = pending.current;
     if (!p?.operation || p.terminal) return;
     let request:
-      | Parameters<typeof clients.subscription.cancelSubscription>[0]
-      | undefined;
+      Parameters<typeof clients.subscription.cancelSubscription>[0] | undefined;
     void run(
       p,
       async () => {
@@ -796,8 +795,7 @@ export function useClaudeSubscriptionLogin(
       return;
     const name = view.name;
     let request:
-      | Parameters<typeof clients.configuration.saveConfiguration>[0]
-      | undefined;
+      Parameters<typeof clients.configuration.saveConfiguration>[0] | undefined;
     void run(
       p,
       async () => {

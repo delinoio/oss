@@ -503,8 +503,7 @@ it("clears a selected comment after recovery acknowledges its deletion", async (
 it("clears selection when the original deletion acknowledgement arrives after its row unmounts", async () => {
   const f = fixture();
   let acknowledge:
-    | ((response: { id: string; requestId: string }) => void)
-    | undefined;
+    ((response: { id: string; requestId: string }) => void) | undefined;
   f.remove.mockImplementationOnce(async () => {
     f.eraseComment();
     return new Promise((resolve) => {

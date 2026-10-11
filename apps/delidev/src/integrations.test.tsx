@@ -141,8 +141,7 @@ it("clears PAT input and mutation cache after uncertain transmission and reuses 
   f.client.getMutationCache().subscribe((event) => {
     if ("mutation" in event && event.mutation) {
       const variables = event.mutation.state.variables as
-        | { token?: Uint8Array }
-        | undefined;
+        { token?: Uint8Array } | undefined;
       if (variables?.token && !buffers.includes(variables.token))
         buffers.push(variables.token);
     }

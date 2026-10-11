@@ -505,8 +505,7 @@ function AccountCreationWizard({
     ConfigurationQuery.saveConfiguration,
     (result, request) => {
       let expected:
-        | { providerId: string; alias: string; protocol: string }
-        | undefined;
+        { providerId: string; alias: string; protocol: string } | undefined;
       try {
         const body = JSON.parse(
           new TextDecoder("utf-8", { fatal: true }).decode(
