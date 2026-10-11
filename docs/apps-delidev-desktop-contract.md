@@ -2903,6 +2903,20 @@ Default preserves the original colors. Custom libraries hold at most 32 UUID-v7
 identities, with names of at most 80 Unicode scalar values. Bundled themes are
 immutable; duplication creates a separate editable identity.
 
+Titanium, Nord, Dracula and Solarized each provide complete light/dark semantic
+maps in the shared bundled JSON. Their surfaces, text, borders, links, focus,
+selected states, inverse surfaces and conversation colors follow each family.
+The stored values use the approved encoded-sRGB channel blends with rounded
+opaque uppercase hex output; no runtime palette generator is used. Corresponding
+Default warning, danger and success values retain their meaning. Dark running
+status retains Default teal; light running status uses the darker teal variant.
+Default maps remain unchanged. Saved bundled references adopt updated bundled
+values; existing custom maps and earlier duplicates retain their stored values.
+Frontend distributions and the native host must rebuild from the shared JSON;
+tray projections use that same embedded source. Geometry, independent mode
+selection, mounted drafts and excluded terminal/backdrop/shadow/native surfaces
+retain their existing ownership.
+
 A custom editor owns its name and complete light/dark opaque semantic color maps.
 Its synthetic preview contains no conversation content. Save and import require
 explicit confirmation. Import accepts one version-1 JSON theme of at most 32 KiB,
