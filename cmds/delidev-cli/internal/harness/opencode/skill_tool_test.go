@@ -15,6 +15,9 @@ import (
 )
 
 func nativeSkillToolFixture(t *testing.T) (*inputObserver, *NativeToolPart) {
+	return nativeSkillToolResourceFixture(t, false)
+}
+func nativeSkillToolResourceFixture(t *testing.T, withResource bool) (*inputObserver, *NativeToolPart) {
 	t.Helper()
 	source := t.TempDir()
 	content := "Original native skill instructions.\n"
@@ -24,14 +27,31 @@ func nativeSkillToolFixture(t *testing.T) (*inputObserver, *NativeToolPart) {
 	}
 	file := sha256.Sum256(markdown)
 	record, _ := json.Marshal([]any{"SKILL.md", hex.EncodeToString(file[:]), false})
-	revision := sha256.Sum256(record)
-	selected, err := skills.CopyOpenCodeRuntime(context.Background(), []skills.NativeSelection{{Name: "selected", Path: filepath.Join(source, "SKILL.md"), ContentRevision: hex.EncodeToString(revision[:])}}, t.TempDir())
+	hasher := sha256.New()
+	hasher.Write(record)
+	if withResource {
+		if err := os.Mkdir(filepath.Join(source, "scripts"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		resource := []byte("#!/bin/sh\necho fixture\n")
+		if err := os.WriteFile(filepath.Join(source, "scripts", "fixture.sh"), resource, 0700); err != nil {
+			t.Fatal(err)
+		}
+		digest := sha256.Sum256(resource)
+		record, _ := json.Marshal([]any{"scripts/fixture.sh", hex.EncodeToString(digest[:]), true})
+		hasher.Write(record)
+	}
+	revision := hasher.Sum(nil)
+	selected, err := skills.CopyOpenCodeRuntime(context.Background(), []skills.NativeSelection{{Name: "selected", Path: filepath.Join(source, "SKILL.md"), ContentRevision: hex.EncodeToString(revision)}}, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	directory := filepath.Dir(selected[0].Path)
 	title := "Loaded skill: selected"
 	output := "<skill_content name=\"selected\">\n# Skill: selected\n\nOriginal native skill instructions.\n\nBase directory for this skill: " + directory + "\nRelative paths in this skill (e.g., scripts/, reference/) are relative to this base directory.\nNote: file list is sampled.\n\n<skill_files>\n\n</skill_files>\n</skill_content>"
+	if withResource {
+		output = strings.Replace(output, "<skill_files>\n\n", "<skill_files>\n<file>"+filepath.Join(directory, "scripts", "fixture.sh")+"</file>\n", 1)
+	}
 	metadata, _ := json.Marshal(map[string]string{"name": "selected", "dir": directory})
 	return &inputObserver{skillPackages: selected}, &NativeToolPart{Name: "skill", State: ToolCompleted, Input: json.RawMessage(`{"name":"selected"}`), Metadata: metadata, Title: &title, Output: &output}
 }
@@ -75,10 +95,10 @@ func TestNativeSkillPendingCannotGrantPackageAuthority(t *testing.T) {
 }
 
 func TestForkSkillToolAuthenticatesCurrentCopyAtRetainedDirectory(t *testing.T) {
-	observer, tool := nativeSkillToolFixture(t)
+	observer, tool := nativeSkillToolResourceFixture(t, true)
 	currentDirectory := filepath.Dir(observer.skillPackages[0].Path)
 	retiredDirectory := filepath.Join(t.TempDir(), "retired", "opencode", "skills", "selected")
-	output := strings.Replace(*tool.Output, currentDirectory, retiredDirectory, 1)
+	output := strings.ReplaceAll(*tool.Output, currentDirectory, retiredDirectory)
 	tool.Output = &output
 	tool.Metadata, _ = json.Marshal(map[string]string{"name": "selected", "dir": retiredDirectory})
 	if observer.verifySkillTool(tool) == nil {
@@ -87,6 +107,12 @@ func TestForkSkillToolAuthenticatesCurrentCopyAtRetainedDirectory(t *testing.T) 
 	if err := observer.verifySkillToolAtDirectory(tool, retiredDirectory); err != nil {
 		t.Fatal("owned current copy could not authenticate retained output", err)
 	}
+	foreign := strings.Replace(output, filepath.Join(retiredDirectory, "scripts", "fixture.sh"), filepath.Join(retiredDirectory, "foreign.sh"), 1)
+	tool.Output = &foreign
+	if observer.verifySkillToolAtDirectory(tool, retiredDirectory) == nil {
+		t.Fatal("foreign historical resource acquired authority")
+	}
+	tool.Output = &output
 	if err := os.WriteFile(filepath.Join(currentDirectory, "foreign"), []byte("changed"), 0600); err != nil {
 		t.Fatal(err)
 	}
