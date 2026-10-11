@@ -31,7 +31,7 @@ func (c *Client) replyCurrentTimeLocked(ctx context.Context, native nativewire.E
 	if _, err := decodeNativeRequestID(native.ID); err != nil {
 		return Event{}, err
 	}
-	if params.ThreadID != c.thread {
+	if params.ThreadID != c.thread && !c.ownsSubagentThread(params.ThreadID) {
 		return privateNative(native), nil
 	}
 	if c.wire == nil || c.problem != nil || c.execution.paused || c.execution.thread.ID != c.thread {
@@ -58,4 +58,25 @@ func (c *Client) replyCurrentTimeLocked(ctx context.Context, native nativewire.E
 	}
 	// Transmission grants no human interaction, native acceptance or completion.
 	return c.metadata(CurrentTimeReplySent), nil
+}
+
+func (c *Client) ownsSubagentThread(threadID domain.ID) bool {
+	current := string(threadID)
+	root := string(c.thread)
+	if threadID.Validate() != nil || current == root {
+		return false
+	}
+	visited := map[string]struct{}{}
+	for current != root {
+		if _, exists := visited[current]; exists {
+			return false
+		}
+		visited[current] = struct{}{}
+		child, exists := c.subagents[current]
+		if !exists || child.NativeID != current {
+			return false
+		}
+		current = child.ParentID
+	}
+	return true
 }

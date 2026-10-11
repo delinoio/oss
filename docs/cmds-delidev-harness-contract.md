@@ -238,10 +238,12 @@ Server requests carry a per-arrival token in addition to their native numeric/st
 ### Codex current-time technical service
 
 An emitted `currentTime/read` server request may receive one private response
-from the original bound root execution. Require exactly one bounded `threadId`
-field matching that root, a valid original numeric/string request ID and the
-retained connection arrival token. Foreign, unbound, paused or recovery-required
-execution and wrong envelope kinds cannot obtain a successful response. The
+from the original bound root execution when its `threadId` matches the root, or
+from that execution for an exact known child descendant whose retained parent
+chain reaches the root. Require exactly one bounded `threadId` field, a valid
+original numeric/string request ID and the retained connection arrival token.
+Unknown or foreign threads, unbound, paused or recovery-required execution and
+wrong envelope kinds cannot obtain a successful response. The
 [experimental native Rust protocol](https://github.com/openai/codex/blob/a06545b311fe01e51ce855c7aa5d8da21e9e7aaf/codex-rs/app-server-protocol/src/protocol/v2/current_time.rs)
 defines `{currentTimeAt: i64}` as whole Unix seconds. Its observed request shape,
 not a numeric native-version gate, admits this service.

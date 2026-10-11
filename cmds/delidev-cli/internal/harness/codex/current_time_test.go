@@ -30,8 +30,12 @@ func (f *threadFixture) currentTimeReply(id, raw json.RawMessage) bool {
 }
 
 func currentTimeRequest(t *testing.T, c *Client) nativewire.Event {
+	return currentTimeRequestFor(t, c, c.thread)
+}
+
+func currentTimeRequestFor(t *testing.T, c *Client, threadID domain.ID) nativewire.Event {
 	t.Helper()
-	fixtureSignal(t, c, "current-time", map[string]any{"requestId": 17, "params": map[string]any{"threadId": c.thread}})
+	fixtureSignal(t, c, "current-time", map[string]any{"requestId": 17, "params": map[string]any{"threadId": threadID}})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	for {
@@ -45,6 +49,32 @@ func currentTimeRequest(t *testing.T, c *Client) nativewire.Event {
 		if event.Kind != nativewire.Notification {
 			t.Fatalf("unexpected native event before original time request: kind %s", event.Kind)
 		}
+	}
+}
+
+func TestCurrentTimeOwnedDescendantUsesOriginalArrival(t *testing.T) {
+	c, capture, _, _ := boundTurnFixture(t, "current-time")
+	parent, child := domain.NewID(), domain.NewID()
+	c.subagents = map[string]domain.SubagentObservation{
+		string(parent): {ID: domain.NewID(), NativeID: string(parent), ParentID: string(c.thread), Status: domain.SubagentRunning},
+		string(child):  {ID: domain.NewID(), NativeID: string(child), ParentID: string(parent), Status: domain.SubagentRunning},
+	}
+	samples := 0
+	c.currentTimeClock = func() time.Time { samples++; return time.Unix(1700000000, 999999999) }
+	request := currentTimeRequestFor(t, c, child)
+	event, err := c.replyCurrentTimeLocked(context.Background(), request)
+	if err != nil || event.Metadata != CurrentTimeReplySent || event.ThreadID != c.thread || event.Native != nil || !event.Correlated || samples != 1 {
+		t.Fatal("owned descendant clock request was not answered as a private technical service", err)
+	}
+	fixtureSignal(t, c, "metadata", map[string]any{})
+	responses := []map[string]any{}
+	for _, row := range capturedThreads(t, capture) {
+		if row["method"] == "current-time-response" {
+			responses = append(responses, row)
+		}
+	}
+	if len(responses) != 1 || responses[0]["id"] != float64(17) || !reflect.DeepEqual(responses[0]["result"], map[string]any{"currentTimeAt": float64(1700000000)}) {
+		t.Fatal("owned descendant did not receive the exact original whole-second reply")
 	}
 }
 
@@ -135,6 +165,16 @@ func TestCurrentTimeRejectsMalformedForeignAndWrongEnvelope(t *testing.T) {
 	event, err := c.replyCurrentTimeLocked(context.Background(), nativewire.Event{Kind: nativewire.ServerRequest, Method: "currentTime/read", ID: json.RawMessage(`17`), Token: domain.NewID(), Params: params})
 	if err != nil || event.Kind != NativeExtensionEvent || samples != 0 {
 		t.Fatal("foreign thread received a clock response")
+	}
+	unownedChild := domain.NewID()
+	missingParent := domain.NewID()
+	c.subagents = map[string]domain.SubagentObservation{
+		string(unownedChild): {ID: domain.NewID(), NativeID: string(unownedChild), ParentID: string(missingParent), Status: domain.SubagentRunning},
+	}
+	params, _ = json.Marshal(map[string]any{"threadId": unownedChild})
+	event, err = c.replyCurrentTimeLocked(context.Background(), nativewire.Event{Kind: nativewire.ServerRequest, Method: "currentTime/read", ID: json.RawMessage(`18`), Token: domain.NewID(), Params: params})
+	if err != nil || event.Kind != NativeExtensionEvent || samples != 0 {
+		t.Fatal("child with no ownership path to the root received a clock response")
 	}
 	params, _ = json.Marshal(map[string]any{"threadId": c.thread})
 	request := nativewire.Event{Kind: nativewire.Notification, Method: "currentTime/read", Params: params}
