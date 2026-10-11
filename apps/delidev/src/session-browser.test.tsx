@@ -9,6 +9,7 @@ import { BrowserService, BrowserCapability, BrowserProfileSchema, BrowserProfile
 import { MutationIntents } from "./mutation";
 import { SessionBrowser, browserProfile } from "./session-browser";
 import { BrowserHostProvider } from "./host-capabilities";
+import { SessionTabsProvider, SessionTabKind, sessionTabKey, useSessionTabs, type SessionTabsStore } from "./session-tabs";
 const native = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke: native }));
 beforeEach(() => {
@@ -32,7 +33,7 @@ function fixture() {
   native.mockResolvedValue(local);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   function View() { return <TransportProvider transport={transport}><QueryClientProvider client={client}><MutationIntents><SessionBrowser session={session} accountId={accountId} close={() => {}} /></MutationIntents></QueryClientProvider></TransportProvider>; }
-  return { accountId, profileId, tabId, profile, session, register, local, View };
+  return { accountId, profileId, tabId, profile, session, register, local, client, transport, View };
 }
 async function open() {
   const button = screen.getByRole("button", { name: "Open account browser" });
@@ -256,4 +257,94 @@ it("fences a retained Browser under the maximized upper inert region through exa
     expect(f.register).toHaveBeenCalledTimes(1);
     expect(native.mock.calls.filter(([operation]) => operation === "open_browser")[1][1].profileId).toBe(original.profileId);
   } finally { view.unmount(); }
+});
+
+function sharedPages() {
+  const f = fixture(), second = newRequestId(), foreign = newRequestId();
+  f.local.tabs.tabs.push({ id: second, url: "https://fixture.test/second" });
+  let store!: SessionTabsStore;
+  function Pages() {
+    const current = useSessionTabs(f.session.id); store = current.store;
+    return <SessionBrowser session={f.session} accountId={f.accountId} close={() => {}}
+      selectedPage={current.tab.kind === SessionTabKind.Page ? current.tab : undefined}
+      openPage={page => store.open(f.session.id, { kind: SessionTabKind.Page, ...page })} />;
+  }
+  const view = render(<TransportProvider transport={f.transport}><QueryClientProvider client={f.client}><MutationIntents><SessionTabsProvider><Pages /></SessionTabsProvider></MutationIntents></QueryClientProvider></TransportProvider>);
+  const page = (profile: string, id: string) => ({ kind: SessionTabKind.Page as const, profile, id, title: "Fixture" });
+  act(() => {
+    store.open(f.session.id, page(f.profileId, second));
+    store.open(f.session.id, page(foreign, f.tabId));
+    store.open("another-session", page(f.profileId, f.tabId));
+    store.open(f.session.id, { kind: SessionTabKind.Browser });
+  });
+  const remaining = { tabs: { tabs: [f.local.tabs.tabs[1]!], selected: second }, removal_pending: false };
+  return { ...f, second, foreign, store, view, page, remaining };
+}
+
+it("removes only the acknowledged original shared page and selects a surviving page", async () => {
+  const f = sharedPages(); let finish!: (value: typeof f.remaining) => void;
+  native.mockImplementation(async (_operation, args) => args.action === "close-tab" ? new Promise(resolve => { finish = resolve; }) : f.local);
+  try {
+    await open(); await screen.findByRole("button", { name: "Close tab https://fixture.test/page" });
+    const original = sessionTabKey(f.page(f.profileId, f.tabId));
+    expect(f.store.snapshot(f.session.id).selected).toBe(original);
+    fireEvent.click(screen.getByRole("button", { name: "Close tab https://fixture.test/page" }));
+    await waitFor(() => expect(finish).toBeTypeOf("function"));
+    expect(f.store.snapshot(f.session.id).tabs.some(tab => sessionTabKey(tab) === original)).toBe(true);
+    await act(async () => finish(f.remaining));
+    await waitFor(() => expect(f.store.snapshot(f.session.id).tabs.some(tab => sessionTabKey(tab) === original)).toBe(false));
+    expect(f.store.snapshot(f.session.id).selected).toBe(sessionTabKey(f.page(f.profileId, f.second)));
+    expect(f.store.snapshot(f.session.id).tabs.some(tab => sessionTabKey(tab) === sessionTabKey(f.page(f.foreign, f.tabId)))).toBe(true);
+    expect(f.store.snapshot("another-session").tabs.some(tab => sessionTabKey(tab) === original)).toBe(true);
+  } finally { f.view.unmount(); f.client.clear(); }
+});
+
+it.each(["failed", "malformed", "still-present"])("retains a shared page when native close is %s", async outcome => {
+  const f = sharedPages();
+  native.mockImplementation(async (_operation, args) => {
+    if (args.action === "close-tab") {
+      if (outcome === "failed") throw new Error("unavailable");
+      if (outcome === "malformed") return { tabs: { tabs: [], selected: "invalid" }, removal_pending: false };
+    }
+    return f.local;
+  });
+  try {
+    await open(); await screen.findByRole("button", { name: "Close tab https://fixture.test/page" });
+    const original = sessionTabKey(f.page(f.profileId, f.tabId));
+    fireEvent.click(screen.getByRole("button", { name: "Close tab https://fixture.test/page" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Go" })).toHaveProperty("disabled", false));
+    expect(f.store.snapshot(f.session.id).tabs.some(tab => sessionTabKey(tab) === original)).toBe(true);
+    expect(f.store.snapshot(f.session.id).selected).toBe(original);
+  } finally { f.view.unmount(); f.client.clear(); }
+});
+
+it("removes a shared page after a deferred picker close restores original presentation", async () => {
+  const f = sharedPages();
+  native.mockImplementation(async (_operation, args) => args.action === "close-tab" ? f.remaining : f.local);
+  try {
+    await open(); await screen.findByRole("button", { name: "Close tab https://fixture.test/page" });
+    const original = native.mock.calls.find(([operation]) => operation === "open_browser")![1];
+    act(() => f.store.select(f.session.id, SessionTabKind.Browser));
+    await waitFor(() => expect(native).toHaveBeenCalledWith("control_browser", expect.objectContaining({ action: "hide", viewId: original.viewId })));
+    fireEvent.click(screen.getByRole("button", { name: "Close tab https://fixture.test/page" }));
+    await waitFor(() => expect(f.store.snapshot(f.session.id).tabs.some(tab => tab.kind === SessionTabKind.Page && tab.profile === f.profileId && tab.id === f.tabId)).toBe(false));
+    expect(f.store.snapshot(f.session.id).selected).toBe(SessionTabKind.Browser);
+    const closes = native.mock.calls.filter(([, args]) => args.action === "close-tab");
+    expect(closes).toHaveLength(1); expect(closes[0][1]).toMatchObject({ profileId: f.profileId, tabId: f.tabId });
+    expect(closes[0][1].viewId).not.toBe(original.viewId);
+  } finally { f.view.unmount(); f.client.clear(); }
+});
+
+it("retains the page when close acknowledgment arrives after presentation replacement", async () => {
+  const f = sharedPages(); let finish!: (value: typeof f.remaining) => void;
+  native.mockImplementation(async (_operation, args) => args.action === "close-tab" ? new Promise(resolve => { finish = resolve; }) : f.local);
+  try {
+    await open(); await screen.findByRole("button", { name: "Close tab https://fixture.test/page" });
+    fireEvent.click(screen.getByRole("button", { name: "Close tab https://fixture.test/page" }));
+    await waitFor(() => expect(finish).toBeTypeOf("function"));
+    retryView();
+    await waitFor(() => expect(native.mock.calls.filter(([operation]) => operation === "open_browser")).toHaveLength(2));
+    await act(async () => finish(f.remaining));
+    expect(f.store.snapshot(f.session.id).tabs.some(tab => tab.kind === SessionTabKind.Page && tab.profile === f.profileId && tab.id === f.tabId)).toBe(true);
+  } finally { f.view.unmount(); f.client.clear(); }
 });

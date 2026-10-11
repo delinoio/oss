@@ -43,3 +43,23 @@ it("late original creation receipts cannot reopen a dismissed content tab", () =
  store.open("session", { kind: SessionTabKind.Terminal, id: "original" });
  expect(store.snapshot("session").tabs).toHaveLength(1); expect(store.snapshot("session").selected).toBe(SessionTabKind.Conversation);
 });
+
+it("native final-page closure selects Browser without removing foreign profile descriptors", () => {
+ const store = new SessionTabsStore();
+ const page = { kind: SessionTabKind.Page as const, profile: "original", id: "page", title: "Original" };
+ const foreign = { ...page, profile: "foreign" };
+ store.open("session", foreign); store.open("session", page);
+ store.closePage("session", "original", "page");
+ expect(store.snapshot("session").selected).toBe(SessionTabKind.Browser);
+ expect(store.snapshot("session").tabs).toEqual([{ kind: SessionTabKind.Conversation }, foreign, { kind: SessionTabKind.Browser }]);
+ store.closePage("session", "missing", "page");
+ expect(store.snapshot("session").tabs).toHaveLength(3);
+});
+it("native background-page closure preserves the current content selection", () => {
+ const store = new SessionTabsStore();
+ store.open("session", { kind: SessionTabKind.Page, profile: "profile", id: "page", title: "Page" });
+ store.open("session", { kind: SessionTabKind.Files });
+ store.closePage("session", "profile", "page");
+ expect(store.snapshot("session").selected).toBe(SessionTabKind.Files);
+ expect(store.snapshot("session").tabs).toEqual([{ kind: SessionTabKind.Conversation }, { kind: SessionTabKind.Files }]);
+});

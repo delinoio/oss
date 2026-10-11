@@ -85,6 +85,23 @@ export class SessionTabsStore {
       selected: previous.selected === key ? sessionTabKey(previous.tabs[index - 1]!) : previous.selected,
     });
   }
+  // Native resource closure is separate from presentation-only tab dismissal.
+  closePage(id: string, profile: string, pageId: string) {
+    const key = sessionTabKey({ kind: SessionTabKind.Page, profile, id: pageId, title: "" });
+    const previous = this.snapshot(id);
+    if (!previous.tabs.some(tab => sessionTabKey(tab) === key)) return;
+    const tabs = previous.tabs.filter(tab => sessionTabKey(tab) !== key);
+    let selected = previous.selected;
+    if (selected === key) {
+      const survivor = tabs.find(tab => tab.kind === SessionTabKind.Page && tab.profile === profile);
+      if (survivor) selected = sessionTabKey(survivor);
+      else {
+        if (!tabs.some(tab => tab.kind === SessionTabKind.Browser)) tabs.push({ kind: SessionTabKind.Browser });
+        selected = SessionTabKind.Browser;
+      }
+    }
+    this.publish(id, { tabs, selected });
+  }
   dismissTerminal(id: string, terminalId: string, inventoryFallback = "") {
     const key = sessionTabKey({ kind: SessionTabKind.Terminal, id: terminalId });
     const previous = this.snapshot(id);

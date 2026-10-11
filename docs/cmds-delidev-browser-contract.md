@@ -89,7 +89,12 @@ native visibility boundary. Initial explicit registration retains the local-summ
 address card and no empty viewport. Page labels derive only from retained URLs;
 no title/favicon discovery, URL logging, page scripts or generalized key bridge.
 The original 16-page gate and explicit resource Close remain separate from shared
-presentation Close. Numeric selection has only typed, original-owner fenced
+presentation Close. An accepted native CloseTab response removes only its original
+session/profile/page descriptor after validated state confirms that page absent.
+A selected removed page falls back to a surviving same-profile page or the Browser
+picker; another current selection remains unchanged. Failed, malformed, still-present
+or superseded-presentation responses retain the descriptor without claiming closure.
+Numeric selection has only typed, original-owner fenced
 local presentation authority under the desktop shortcut contract. The owner
 approved deferring only Windows/Linux numeric forwarding while external browser
 content has focus; use the tab bar there. macOS forwarding requires original

@@ -138,6 +138,11 @@ function NativeSessionBrowser({ session, accountId, close, layout, active=true, 
               const changed = browserState(await invoke<BrowserState>("control_browser", {profileId,viewId,action:pending.action,url:address,tabId:pending.tabId}));
               if (!disposed && presentation.current === viewId) {
                 setState(changed);
+                // A successful response must prove this original page absent;
+                // failed or still-present closes retain its shared descriptor.
+                if (pending.action === BrowserAction.CloseTab && pending.tabId && !changed.tabs.tabs.some(tab => tab.id === pending.tabId)) {
+                  tabsStore.closePage(session.id, profileId, pending.tabId);
+                }
                 if (openPage && [BrowserAction.NewTab,BrowserAction.SelectTab].includes(pending.action)) {
                   const tab=changed.tabs.tabs.find(value=>value.id===changed.tabs.selected);
                   if(tab)openPage({profile:profileId,id:tab.id,title:browserTabTitle(tab.url),label:tab.url});
@@ -173,7 +178,20 @@ function NativeSessionBrowser({ session, accountId, close, layout, active=true, 
     if (!profileId || busy || state?.removal_pending) return;
     setBusy(true); setFailure(undefined);
     if (openPage && !presentation.current) { pendingAction.current={action,tabId};setPresenting(true);return; }
-    try { const result = browserState(await invoke<BrowserState>("control_browser", { profileId, viewId: presentation.current, action, url: address, tabId })); if (alive.current) { setState(result);if(openPage && [BrowserAction.NewTab,BrowserAction.SelectTab,BrowserAction.Navigate].includes(action)){const tab=result.tabs.tabs.find(value=>value.id===result.tabs.selected);if(tab)openPage({profile:profileId,id:tab.id,title:browserTabTitle(tab.url),label:tab.url});} } }
+    const viewId = presentation.current;
+    try {
+      const result = browserState(await invoke<BrowserState>("control_browser", { profileId, viewId, action, url: address, tabId }));
+      if (alive.current && presentation.current === viewId) {
+        setState(result);
+        if (action === BrowserAction.CloseTab && tabId && !result.tabs.tabs.some(tab => tab.id === tabId)) {
+          tabsStore.closePage(session.id, profileId, tabId);
+        }
+        if (openPage && [BrowserAction.NewTab, BrowserAction.SelectTab, BrowserAction.Navigate].includes(action)) {
+          const tab = result.tabs.tabs.find(value => value.id === result.tabs.selected);
+          if (tab) openPage({ profile: profileId, id: tab.id, title: browserTabTitle(tab.url), label: tab.url });
+        }
+      }
+    }
     catch { if (alive.current) setFailure(ownedMessage("session-browser.extra.51fee7071e2b")); }
     finally { if (alive.current) setBusy(false); }
   };
