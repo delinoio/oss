@@ -463,8 +463,11 @@ fn constant_properties_inline_across_modules_and_definitions_go() {
             assert!(!main.contains(gone), "{gone} in {main}");
         }
         let dep = emitted(temp.path(), "dep.ts");
-        assert!(dep.contains("THEME = {}"), "{dep}");
-        assert!(dep.contains("ENV = {}"), "{dep}");
+        // Alone, the pass leaves empty objects behind; with every pass,
+        // residual-dependency-removal deletes them as well.
+        for object in ["THEME = {}", "ENV = {}"] {
+            assert_eq!(dep.contains(object), !all, "{object} in {dep}");
+        }
         assert!(!dep.contains("static min"), "{dep}");
         // A fresh `readonly` literal keeps its member type, so the field stays.
         assert!(dep.contains("static MAX = 10"), "{dep}");
