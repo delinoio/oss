@@ -69,7 +69,7 @@ try {
   };
   const layoutSnapshot = pane => pane.evaluate(node => ({
     scrolling: [node, node.closest(".sidebar-list")].filter(Boolean).map(item => ({ scrollHeight: item.scrollHeight, clientHeight: item.clientHeight, scrollTop: item.scrollTop })),
-    siblings: [...node.querySelectorAll(".pr-repository-heading, .sidebar-query-options, .pr-state-options, .pr-sidebar-title")].map(item => {
+    siblings: [...node.querySelectorAll(".pr-repository-heading, .sidebar-query-options, .pr-state-options, .pr-search-input, .sidebar-form select, .pr-repository-settings, .pr-sidebar-title")].map(item => {
       const { x, y, width, height } = item.getBoundingClientRect(); return { x, y, width, height };
     }),
   }));

@@ -68,7 +68,7 @@ export function presentationMetadata(value:unknown):unknown {
   const result:Record<string,unknown>={};
   const identities=new Set(["id","server_id","device_id","machine_id","project_id","repository_id","session_id","execution_id","input_id","account_id","provider_id","connection_id","request_id","correlation_id","runtime_generation"]);
   for(const [key,item] of Object.entries(value)) {
-    if(identities.has(key)&&typeof item==="string"&&/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(item))continue;
+    if((identities.has(key) || key.endsWith("_id"))&&!key.startsWith("native_")&&typeof item==="string"&&/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(item))continue;
     // Original artifact subtrees remain byte-for-byte data projections.
     result[key]=["text","content","prompt","name","alias","native","metadata","output"].includes(key)||key.startsWith("native_")?item:presentationMetadata(item);
   }
