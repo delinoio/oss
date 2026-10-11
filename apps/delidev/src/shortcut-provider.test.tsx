@@ -10,7 +10,12 @@ import {
   useShortcutSurface,
   useShortcuts,
 } from "./shortcut-provider";
-import { ShortcutId, ShortcutInput, ShortcutScope } from "./shortcuts";
+import {
+  globalShortcutBindings,
+  ShortcutId,
+  ShortcutInput,
+  ShortcutScope,
+} from "./shortcuts";
 import {
   ShortcutPreferenceProvider,
   type ShortcutPreferenceBridge,
@@ -281,6 +286,17 @@ function HelpActions({
       label: "shortcuts.help",
       bindings: [{ key: "?" }],
       helpKeydown: holdHelp,
+    },
+    {
+      id: ShortcutId.OpenSettings,
+      scope: ShortcutScope.Global,
+      label: "shortcuts.openSettings",
+      bindings: globalShortcutBindings[ShortcutId.OpenSettings],
+      input: ShortcutInput.Allow,
+      run: () => {
+        run();
+        input.current?.focus();
+      },
     },
     {
       id: ShortcutId.NewSession,
@@ -699,3 +715,32 @@ it("discloses the exact external browser numeric exception without disabling ord
   ).toBeTruthy();
   expect(screen.getByText("Select tab 1")).toBeTruthy();
 });
+
+it.each(["MacIntel", "Win32", "Linux x86_64"])(
+  "closes Help before Open Settings and preserves its destination focus on %s",
+  async (platform) => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
+    const run = vi.fn(() =>
+      expect(document.querySelector(".shortcut-help")).toBeNull(),
+    );
+    render(
+      <ShortcutProvider>
+        <HelpActions run={run} />
+      </ShortcutProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Help opener" }));
+    const dialog = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
+    expect(within(dialog).getByText("Open Settings")).toBeTruthy();
+    fireEvent.keyDown(within(dialog).getByRole("button"), {
+      key: ",",
+      metaKey: platform === "MacIntel",
+      ctrlKey: platform !== "MacIntel",
+    });
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await act(async () => {});
+    expect(document.activeElement).toBe(
+      screen.getByRole("textbox", { name: "Destination" }),
+    );
+  },
+);

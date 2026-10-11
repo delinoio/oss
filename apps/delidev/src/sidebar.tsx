@@ -249,18 +249,21 @@ function SidebarButton({
   current,
   onClick,
   className = "",
+  shortcut,
 }: {
   label: string;
   icon: string;
   current?: boolean;
   onClick: (event: MouseEvent<HTMLButtonElement>) => void;
   className?: string;
+  shortcut?: string;
 }) {
   useLocale();
   return (
     <button
       type="button"
       aria-label={label}
+      aria-keyshortcuts={shortcut}
       aria-current={current ? "page" : undefined}
       className={`sidebar-rail-button ${className}`}
       onClick={onClick}
@@ -1332,6 +1335,7 @@ export function Sidebar({
 
   const openShortcutHelp = useShortcutHelp();
   const commandAria = useGlobalShortcutAria(ShortcutId.CommandMenu);
+  const settingsAria = useGlobalShortcutAria(ShortcutId.OpenSettings);
   const helpAria = useGlobalShortcutAria(ShortcutId.Help);
   const newSessionAria = useGlobalShortcutAria(ShortcutId.NewSession);
   const chooseSession = (id: string, parent?: string, name?: string) => {
@@ -1419,6 +1423,7 @@ export function Sidebar({
             <SidebarButton
               label={copy("sidebar.settings_74a883")}
               icon="settings"
+              shortcut={settingsAria}
               current={surface === Surface.Settings}
               onClick={(event) => {
                 event.currentTarget.focus();

@@ -8,6 +8,8 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
+Changes to shared renderer shortcuts must update dispatch, Help, the Settings catalog and control accessibility annotations together through the same typed declarations. Keep fixed actions outside the editable preference catalog, following the [shortcut contract](../../../docs/apps-delidev-desktop-contract.md#screen-shortcuts-and-help).
+
 ## Owning contracts
 
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)

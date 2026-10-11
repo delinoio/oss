@@ -11,7 +11,13 @@ import {
   ShortcutOverrideState,
   validShortcutChord,
 } from "./shortcut-preferences";
-import { ShortcutId, ShortcutPlatform, ShortcutScope } from "./shortcuts";
+import {
+  globalShortcutBindings,
+  ShortcutId,
+  ShortcutInput,
+  ShortcutPlatform,
+  ShortcutScope,
+} from "./shortcuts";
 import { Surface } from "./surface";
 const chord = {
   state: ShortcutOverrideState.Binding,
@@ -275,3 +281,35 @@ it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])(
     ).toBeUndefined();
   },
 );
+
+it("keeps Open Settings fixed and rejects comma capture without changing editable IDs", () => {
+  const action = readOnlyShortcutCatalog.find(
+    (entry) => entry.id === ShortcutId.OpenSettings,
+  )!;
+  expect(action.defaults).toBe(globalShortcutBindings[ShortcutId.OpenSettings]);
+  expect(action.input).toBe(ShortcutInput.Allow);
+  expect(action.scopes).toEqual([ShortcutScope.Global]);
+  expect(editableShortcutCatalog.map((entry) => entry.id)).toEqual([
+    ShortcutId.Help,
+    ShortcutId.NewSession,
+    ShortcutId.SessionFocus,
+    ShortcutId.SessionSend,
+    ShortcutId.NewSessionFocus,
+    ShortcutId.NewSessionSend,
+    ShortcutId.SearchFocus,
+  ]);
+  expect(() =>
+    parseShortcutOverrides({ [ShortcutId.OpenSettings]: { state: "disabled" } }),
+  ).toThrow();
+  for (const platform of [ShortcutPlatform.Mac, ShortcutPlatform.Other])
+    expect(
+      captureShortcut(
+        new KeyboardEvent("keydown", {
+          key: ",",
+          metaKey: platform === ShortcutPlatform.Mac,
+          ctrlKey: platform === ShortcutPlatform.Other,
+        }),
+        platform,
+      ),
+    ).toBeUndefined();
+});

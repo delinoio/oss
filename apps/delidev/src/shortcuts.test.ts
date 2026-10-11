@@ -470,3 +470,57 @@ it("runs the close-tab chord from terminal input once and consumes it when disab
   expect(disabled.run).not.toHaveBeenCalled();
   input.remove();
 });
+
+it.each([ShortcutPlatform.Mac, ShortcutPlatform.Other])(
+  "opens Settings once from ordinary inputs with the exact local comma chord on %s",
+  (localPlatform) => {
+    const input = document.createElement("input");
+    document.body.append(input);
+    const run = vi.fn();
+    const action = definition({
+      id: ShortcutId.OpenSettings,
+      label: "shortcuts.openSettings",
+      bindings: globalShortcutBindings[ShortcutId.OpenSettings],
+      input: ShortcutInput.Allow,
+      run,
+    });
+    const primary = {
+      metaKey: localPlatform === ShortcutPlatform.Mac,
+      ctrlKey: localPlatform === ShortcutPlatform.Other,
+    };
+    const send = (options: KeyboardEventInit = {}, handled = false) => {
+      const event = new KeyboardEvent("keydown", {
+        key: ",",
+        bubbles: true,
+        cancelable: true,
+        ...primary,
+        ...options,
+      });
+      if (handled) event.preventDefault();
+      input.addEventListener(
+        "keydown",
+        () => dispatchShortcut(event, [action], Surface.Sessions, localPlatform),
+        { once: true },
+      );
+      input.dispatchEvent(event);
+      return event;
+    };
+    expect(send().defaultPrevented).toBe(true);
+    expect(run).toHaveBeenCalledTimes(1);
+    for (const options of [
+      { ctrlKey: false, metaKey: false },
+      { ctrlKey: !primary.ctrlKey, metaKey: !primary.metaKey },
+      { shiftKey: true },
+      { altKey: true },
+      { repeat: true },
+      { isComposing: true },
+      { keyCode: 229 },
+    ]) send(options);
+    send({}, true);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(bindingAria(action.bindings[0]!, localPlatform)).toBe(
+      localPlatform === ShortcutPlatform.Mac ? "Meta+," : "Control+,",
+    );
+    input.remove();
+  },
+);
