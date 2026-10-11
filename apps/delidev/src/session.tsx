@@ -683,8 +683,7 @@ export const TranscriptItem = memo(function TranscriptItem({
                     {text(delta.kind)}
                     {typeof delta.index === "number"
                       ? ` ${delta.index}`
-                      : ""}:{" "}
-                    {text(delta.text)}
+                      : ""}: {text(delta.text)}
                   </pre>
                 );
               })}
