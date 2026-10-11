@@ -397,3 +397,35 @@ it("retains consuming gates for an original diagnostic after selector shortcuts 
   expect(discover.mock.calls[1][0]).toEqual(original);
   client.clear();
 });
+
+it("pauses a retained original inspection across same-connection readiness without discarding its uncertain request", async () => {
+  const row = machine("Readiness Runner");
+  const discover = vi.fn((_request: unknown) => { throw new ConnectError("Original receipt uncertain", Code.Unavailable); });
+  const transport = createRouterTransport((router) => {
+    router.service(ResourceService, { getResource: () => ({ resource: row }) });
+    router.service(WorkerService, { discoverHarnesses: discover });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function Surface() {
+    const open = useRunnerRemediation();
+    return <><button onClick={() => open?.(row)}>Inspect readiness Runner</button><button disabled={open?.pendingFor(row.id)}>Consume Runner</button>{open?.body}</>;
+  }
+  const view = (active: boolean) => <TransportProvider transport={transport}><QueryClientProvider client={client}><RunnerRemediationProvider active={active}><Surface /></RunnerRemediationProvider></QueryClientProvider></TransportProvider>;
+  const rendered = render(view(true));
+  fireEvent.click(screen.getByRole("button", { name: "Inspect readiness Runner" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Edit executable paths" }));
+  fireEvent.change(screen.getByLabelText("claude-code executable path"), { target: { value: "/original/readiness-path" } });
+  fireEvent.click(screen.getByRole("button", { name: "Run optional diagnostics" }));
+  await screen.findByRole("button", { name: "Retry the same harness check" });
+  const original = discover.mock.calls[0][0];
+  rendered.rerender(view(false));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  rendered.rerender(view(true));
+  expect(screen.getByRole("button", { name: "Consume Runner" })).toHaveProperty("disabled", true);
+  fireEvent.click(screen.getByRole("button", { name: "Inspect readiness Runner" }));
+  expect(await screen.findByLabelText("claude-code executable path")).toHaveProperty("value", "/original/readiness-path");
+  fireEvent.click(screen.getByRole("button", { name: "Retry the same harness check" }));
+  await waitFor(() => expect(discover).toHaveBeenCalledTimes(2));
+  expect(discover.mock.calls[1][0]).toEqual(original);
+  rendered.unmount(); client.clear();
+});

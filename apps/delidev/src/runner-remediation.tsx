@@ -93,8 +93,6 @@ export function RunnerRemediationProvider({
   useLayoutEffect(() => {
     if (!active) {
       setPresenter(undefined);
-      setSelected(undefined);
-      setController(undefined);
     }
   }, [active]);
   const value = useMemo(
