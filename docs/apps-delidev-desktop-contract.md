@@ -4975,6 +4975,21 @@ Follow the situation notification source, cache, deduplication and joined observ
 ## Conversation Revert and edit
 
 Show one **Revert and edit** action on eligible original complete user turns.
+Place it in a separate right-aligned row 6px below the bubble, within one
+stable, labelled transcript item. Only this action leaves the bubble; other
+user-turn actions, retained images, status and previous-context cues keep their
+existing placement. Preserve measured page wrappers, resource keys, scroll
+anchors and the content-sized bubble's 12px/16px padding and width caps.
+
+The native button uses 13px medium text, a 32px minimum height, 8px horizontal
+padding and 6px corners. Its resting background is transparent with no border;
+use `--text-secondary` and `--surface-hover` for enabled text and hover. Both
+resting and hover text have at least 4.5:1 contrast in built-in and admitted
+custom themes. Use the focus token with a contrasting surface fallback for
+custom themes. Keep the eligible action visible without hover, preserve native
+disabled behavior and allow labels and action rows to wrap at narrow widths and
+200% zoom. This presentation adds no mutation or eligibility authority.
+
 Require server and original Runner capability plus a settled original root,
 current target membership and cleanup. The confirmation explains exclusion of
 this and later turns from working context, unchanged files, preserved prior

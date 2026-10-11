@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import appearancePalettes from "./appearance-palettes.json";
-import { visibleFocusColor } from "./appearance-preferences";
+import { validColors, visibleFocusColor } from "./appearance-preferences";
 
 const directory = join(process.cwd(), "src");
 const source = readFileSync(join(directory, "themes.css"), "utf8");
@@ -160,4 +160,26 @@ test("custom theme focus stays visible against the selected user-message surface
 
   const focus = "#2563d8";
   expect(visibleFocusColor(focus, "#FFFFFF")).toBe(focus);
+});
+
+test("Revert text is readable at rest and on hover in every admitted palette", () => {
+  for (const [name, modes] of Object.entries(appearancePalettes)) {
+    for (const [mode, colors] of Object.entries(modes)) {
+      for (const surface of ["surface", "surface-hover"] as const)
+        expect(
+          contrast(colors["text-secondary"], colors[surface]),
+          `${name} ${mode}: Revert / ${surface}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      expect(validColors(colors)).toBe(true);
+      expect(
+        validColors({ ...colors, "surface-hover": colors["text-secondary"] }),
+      ).toBe(false);
+      expect(
+        contrast(
+          visibleFocusColor(colors.surface, colors.surface),
+          colors.surface,
+        ),
+      ).toBeGreaterThanOrEqual(3);
+    }
+  }
 });

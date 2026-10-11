@@ -242,6 +242,7 @@ fn valid_colors(value: &std::collections::BTreeMap<String, String>) -> bool {
     [
         ("text", "surface"),
         ("text-secondary", "surface"),
+        ("text-secondary", "surface-hover"),
         ("muted", "surface"),
         ("text-subtle", "surface"),
         ("on-accent", "accent"),
@@ -617,6 +618,17 @@ mod tests {
             .dark
             .insert("backdrop".into(), "#000000".into());
         assert!(!preferences.valid());
+        for dark in [false, true] {
+            preferences.custom_themes[0] = theme.clone();
+            let colors = if dark {
+                &mut preferences.custom_themes[0].dark
+            } else {
+                &mut preferences.custom_themes[0].light
+            };
+            let text = colors["text-secondary"].clone();
+            colors.insert("surface-hover".into(), text);
+            assert!(!preferences.valid());
+        }
         preferences.custom_themes = vec![theme.clone(); 33];
         assert!(!preferences.valid());
     }

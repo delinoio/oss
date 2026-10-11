@@ -137,16 +137,19 @@ try {
               rows: rows.map((node) => {
                 const rect = node.getBoundingClientRect(),
                   style = getComputedStyle(node);
+                const item = node.parentElement.classList.contains("user-transcript-item")
+                  ? node.parentElement
+                  : node;
                 return {
                   left: rect.left,
                   right: rect.right,
                   width: rect.width,
                   top: rect.top,
                   bottom: rect.bottom,
-                  timingInset: node.previousElementSibling?.classList.contains(
+                  timingInset: item.previousElementSibling?.classList.contains(
                     "turn-time",
                   )
-                    ? rect.top - node.parentElement.getBoundingClientRect().top
+                    ? rect.top - item.parentElement.getBoundingClientRect().top
                     : 0,
                   role: node.className,
                   background: style.backgroundColor,
@@ -536,7 +539,7 @@ try {
           assert.equal(await line.count(), 1);
           assert(
             await line.evaluate((node) =>
-              node.nextElementSibling?.classList.contains("message-user"),
+              node.nextElementSibling?.classList.contains("user-transcript-item"),
             ),
           );
           assert.equal(
@@ -639,6 +642,114 @@ try {
               result: "passed",
             }),
           );
+        }
+  // The production renderer and styles, with synthetic actions only. Native
+  // eligibility, confirmation and exact-request retry belong to integration tests.
+  for (const language of ["en", "ko"])
+    for (const theme of ["light", "dark", "system"])
+      for (const accent of ["true", "false"])
+        for (const size of [
+          { width: 390, height: 844 },
+          { width: 780, height: 844, zoom: 2 },
+        ]) {
+          await page.setViewportSize(size);
+          await page.goto(
+            `${origin}/?revert=1&language=${language}&theme=${theme}&accent=${accent}&zoom=${size.zoom ?? 1}`,
+          );
+          await page.mouse.move(0, 0);
+          const action = page.locator(".session-revert-action").first();
+          await action.waitFor();
+          const inspect = () =>
+            action.evaluate((button) => {
+            const group = button.closest(".user-transcript-item");
+            const bubble = group.querySelector("article");
+            const row = button.parentElement;
+            const scale = parseFloat(getComputedStyle(document.body).zoom) || 1;
+            const style = getComputedStyle(button);
+            const b = bubble.getBoundingClientRect(),
+              r = row.getBoundingClientRect();
+            return {
+              outside: !bubble.contains(button),
+              gap: (r.top - b.bottom) / scale,
+              aligned: Math.abs(r.right - b.right) < 1,
+              padding: getComputedStyle(bubble).padding,
+              font: style.fontSize,
+              weight: style.fontWeight,
+              height: style.minHeight,
+              border: style.borderTopWidth,
+              radius: style.borderRadius,
+              color: style.color,
+              background: style.backgroundColor,
+              surface: getComputedStyle(
+                document.querySelector(".session-workspace"),
+              ).backgroundColor,
+              focus: style.outlineStyle,
+              width: b.width,
+              overflow: document.documentElement.scrollWidth > innerWidth + 1,
+            };
+          });
+          const contrast = (a, b) => {
+            const luminance = (color) => {
+              const [r, g, b] = color
+                .match(/[\d.]+/g)
+                .slice(0, 3)
+                .map(Number)
+                .map((n) => {
+                  const c = n / 255;
+                  return c <= 0.04045
+                    ? c / 12.92
+                    : ((c + 0.055) / 1.055) ** 2.4;
+                });
+              return r * 0.2126 + g * 0.7152 + b * 0.0722;
+            };
+            const x = luminance(a),
+              y = luminance(b);
+            return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+          };
+          const rest = await inspect();
+          assert(rest.outside && rest.aligned);
+          assert(Math.abs(rest.gap - 6) < 0.1);
+          assert.equal(rest.padding, "12px 16px");
+          assert.equal(rest.font, "13px");
+          assert.equal(rest.weight, "500");
+          assert.equal(rest.height, "32px");
+          assert.equal(rest.border, "0px");
+          assert.equal(rest.radius, "6px");
+          assert.equal(rest.background, "rgba(0, 0, 0, 0)");
+          assert(contrast(rest.color, rest.surface) >= 4.5);
+          assert.equal(rest.overflow, false);
+          await action.hover();
+          const hover = await inspect();
+          assert(contrast(hover.color, hover.background) >= 4.5);
+          await page.keyboard.press("Tab");
+          await action.focus();
+          assert.equal((await inspect()).focus, "solid");
+          await action.evaluate((button) => {
+            button.dataset.activations = "0";
+            button.addEventListener("click", () => {
+              button.dataset.activations = String(
+                Number(button.dataset.activations) + 1,
+              );
+            });
+          });
+          await page.keyboard.press("Enter");
+          await page.keyboard.press("Space");
+          assert.equal(await action.getAttribute("data-activations"), "2");
+          assert(await page.locator(".session-revert-action").last().isDisabled());
+          assert.equal(await page.locator(".message-user > button").count(), 1);
+          // A long translated action label cannot widen the content-sized bubble.
+          await action.evaluate((button) => {
+            button.textContent = "긴동작레이블".repeat(40);
+          });
+          const wrapped = await inspect();
+          assert.equal(wrapped.width, rest.width);
+          assert.equal(wrapped.overflow, false);
+          assert(
+            await action.evaluate(
+              (button) => button.scrollWidth <= button.clientWidth + 1,
+            ),
+          );
+          cases++;
         }
   for (const language of ["en", "ko"])
     for (const mode of ["legacy", "invalid", "zero", "inherited"]) {

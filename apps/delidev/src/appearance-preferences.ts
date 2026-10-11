@@ -124,6 +124,7 @@ export function validColors(value: unknown): value is ColorMap {
       [
         ["text", "surface"],
         ["text-secondary", "surface"],
+        ["text-secondary", "surface-hover"],
         ["muted", "surface"],
         ["text-subtle", "surface"],
         ["on-accent", "accent"],
@@ -255,6 +256,10 @@ export function applyAppearanceColors(
   rule.style.setProperty(
     "--focus-on-selected",
     visibleFocusColor(colors.focus, colors["surface-selected"]),
+  );
+  rule.style.setProperty(
+    "--focus-on-surface",
+    visibleFocusColor(colors.focus, colors.surface),
   );
   document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
   return () => {

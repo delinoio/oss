@@ -420,11 +420,13 @@ export const TranscriptItem = memo(function TranscriptItem({
   resource,
   active = true,
   actions,
+  revertAction,
   contextRevision = 0,
 }: {
   resource: Resource;
   active?: boolean;
   actions?: ReactNode;
+  revertAction?: ReactNode;
   contextRevision?: number;
 }) {
   useLocale();
@@ -524,7 +526,7 @@ export const TranscriptItem = memo(function TranscriptItem({
       : textRole && data.role === "assistant"
         ? " message-assistant"
         : "";
-  return (
+  const message = (
     <article
       className={`message${roleClass}`}
       aria-label={
@@ -730,6 +732,19 @@ export const TranscriptItem = memo(function TranscriptItem({
         </Disclosure>
       ) : null}
     </article>
+  );
+  if (data.role !== "user") return message;
+  return (
+    <div
+      className="user-transcript-item"
+      role="group"
+      aria-label={copy("session.userTurn")}
+    >
+      {message}
+      {revertAction ? (
+        <div className="user-transcript-actions">{revertAction}</div>
+      ) : null}
+    </div>
   );
 });
 
@@ -2087,14 +2102,12 @@ export function SessionView({
                             resource={row}
                             active={conversationActive}
                             contextRevision={Number(data.context_revision ?? 0)}
+                            revertAction={revert.action(row)}
                             actions={
-                              <>
-                                {revert.action(row)}
-                                <SidechatRetryAction
-                                  controller={retryQuestion}
-                                  inputId={text(readDocument(row).input_id)}
-                                />
-                              </>
+                              <SidechatRetryAction
+                                controller={retryQuestion}
+                                inputId={text(readDocument(row).input_id)}
+                              />
                             }
                           />
                         )}
