@@ -6,6 +6,7 @@ import { document } from "./documents";
 import { copy, useLocale } from "./localization";
 import { useConnectPaginationReader, usePaginationChain } from "./scroll-pagination-query";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
+import { ReadStage } from "./scroll-pagination";
 import { ScrollContinuation } from "./scroll-continuation";
 import { QueuedInput, type QueuedInputDraft } from "./queue";
 import { useRetainedMutation } from "./mutation";
@@ -33,6 +34,8 @@ export function WaitingQueue({ sessionId, session, active, revision, drafts, sav
  const pendingDown=useRef<{id:string;revision:bigint;generation:bigint} | undefined>(undefined);
  const accepted=useCallback(()=>{setAnnouncement(copy("queue.moved"));query.reload();refreshHistory();},[query.reload,refreshHistory]);
  // Session scope owns the original request even after row eviction or removal.
+ // Clear the one-shot announcement so later rereads cannot replay stale text.
+ useEffect(()=>{if(!announcement)return;const timer=setTimeout(()=>setAnnouncement(""),4000);return()=>clearTimeout(timer);},[announcement]);
  const move=useRetainedMutation(`move-waiting:${sessionId}`,SessionQuery.moveQueuedInput,accepted,(result,request)=>Boolean(result.change && request.mutation && result.change.requestId===request.mutation.requestId && result.change.session?.id===request.sessionId) && typeof result.currentQueueGeneration==="bigint");
  const locked=readOnly || !active || move.busy || move.uncertain || !query.loaded || Boolean(query.loading || query.error);
  const previousRevision=useRef(revision);
@@ -60,8 +63,11 @@ export function WaitingQueue({ sessionId, session, active, revision, drafts, sav
   if(!query.error && !locked && selected?.revision===intent.revision && selected.generation===intent.generation && next && (after || !query.nextPageToken))send(intent.id,after?.id??"");
  },[query.loading,query.rows,query.error,locked]);
  const drop=(before:string)=>{if(dragged)send(dragged,before);};
- const completeEmpty=query.loaded && !query.loading && !query.error && !query.nextPageToken && !query.rows.length;
- return <><p className="visually-hidden" role="status" aria-live="polite">{announcement}</p><Problem error={move.error}/>{move.uncertain?<button disabled={move.busy} onClick={move.retry}>{copy("queue.retryMove")}</button>:null}
+ // A failure makes later Retry/recovery reads explicit: they stay visible until one settles.
+ const failed=useRef(false);
+ if(query.error)failed.current=true;else if(query.loaded && !query.loading)failed.current=false;
+ const completeEmpty=query.loaded && !failed.current && (!query.loading || query.loading===ReadStage.Refresh || query.loading===ReadStage.Reload) && !query.error && !query.nextPageToken && !query.rows.length;
+ return <><p className="sidebar-sr-only" role="status" aria-live="polite">{completeEmpty && query.loading ? copy("session.loadingQueue") : announcement}</p><Problem error={move.error}/>{move.uncertain?<button disabled={move.busy} onClick={move.retry}>{copy("queue.retryMove")}</button>:null}
   <div ref={root} className="session-tray-content queue-compact-list" hidden={completeEmpty} aria-label={copy("queue.waitingInputs")}>
    {!query.loaded && !query.error?<p role="status">{copy("session.loadingQueue")}</p>:null}<Failure failure={query.error?.failure}/>
    <ScrollPayloadWindow<WaitingRow, Resource> identity={(row:Resource)=>row.id} revision={(row:Resource)=>row.revision} query={query} root={root} active={active}>{payload=>payload.map(row=><div key={row.id} className={insertion===row.id?"queue-insertion":undefined} onDragOver={event=>{if(dragged && !locked && dragged!==row.id){event.preventDefault();setInsertion(row.id);}}} onDrop={event=>{event.preventDefault();drop(row.id);}}><QueuedInput compact resource={row} session={session} active={active} refresh={()=>{query.reload();refreshHistory();}} draft={drafts.get(row.id)} changeDraft={value=>saveDraft(row.id,value)} readOnly={locked} movement={movement(row)}/></div>)}</ScrollPayloadWindow>
