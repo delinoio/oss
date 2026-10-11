@@ -45,6 +45,7 @@ func TestFuzzySearchRetainsPrivateSchemaDistinctions(t *testing.T) {
 func TestFuzzySearchNotificationsDiscardWithoutOwnership(t *testing.T) {
 	c, turn := observationClient()
 	settings := c.execution.settings
+	paused := c.execution.paused
 	updates := []string{
 		fuzzyUpdateFixture(fuzzyResultFixture),
 		fuzzyUpdateFixture(strings.Replace(fuzzyResultFixture, ":12", ":4294967295", 1)),
@@ -66,7 +67,7 @@ func TestFuzzySearchNotificationsDiscardWithoutOwnership(t *testing.T) {
 			if strings.Contains(string(encoded), "private-") || strings.Contains(string(encoded), "foreign-search") || strings.Contains(string(encoded), "unknown-before-update") {
 				t.Fatal("private search payload escaped")
 			}
-			if c.execution.active != turn || c.execution.paused || c.problem != nil || !reflect.DeepEqual(settings, c.execution.settings) {
+			if c.execution.active != turn || c.execution.paused != paused || c.problem != nil || !reflect.DeepEqual(settings, c.execution.settings) {
 				t.Fatal("search notification changed original input or settings")
 			}
 		}
@@ -141,10 +142,11 @@ func TestFuzzySearchRejectsMalformedNativePayloads(t *testing.T) {
 	}
 	for i, raw := range payloads {
 		c, turn := observationClient()
+		paused := c.execution.paused
 		if _, err := c.observeEventLocked(nativewire.Event{Kind: nativewire.Notification, Method: "fuzzyFileSearch/sessionUpdated", Params: json.RawMessage(raw)}); err == nil {
 			t.Fatalf("invalid update %d accepted", i)
 		}
-		if c.execution.active != turn || c.execution.paused || c.problem != nil {
+		if c.execution.active != turn || c.execution.paused != paused || c.problem != nil {
 			t.Fatal("decoder rejection changed input ownership")
 		}
 	}
