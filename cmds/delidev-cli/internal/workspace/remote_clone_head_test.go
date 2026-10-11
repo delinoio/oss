@@ -38,7 +38,7 @@ func remoteHeadFixture(t *testing.T, observation, afterAliases string) (Git, str
 		// The starting remote is the last alias. Removing the wrapper after its
 		// final update-ref makes the following symbolic-ref command itself fail
 		// to launch, rather than an earlier alias update.
-		body += "*' update-ref --no-deref refs/remotes/backup/main '*) " + remoteHeadQuote(binary) + " \"$@\"\nstatus=$?\n" + afterAliases + "\nexit \"$status\" ;;\n"
+		body += "*update-ref*refs/remotes/backup/main*) " + remoteHeadQuote(binary) + " \"$@\"\nstatus=$?\n" + afterAliases + "\nexit \"$status\" ;;\n"
 	}
 	body += "*' fetch '*|*' clone '*) exit 77 ;;\n*) exec " + remoteHeadQuote(binary) + " \"$@\" ;;\nesac\n"
 	if err := os.WriteFile(wrapper, []byte(body), 0700); err != nil {
@@ -82,14 +82,21 @@ func TestManagedCloneRemoteHeadObservation(t *testing.T) {
 	}
 	t.Run("symbolic-ref launch", func(t *testing.T) {
 		marker := filepath.Join(t.TempDir(), "last-alias-updated")
-		git, root, spec := remoteHeadFixture(t, "exit 1", "printf reached > "+remoteHeadQuote(marker)+"; rm -- \"$0\"")
+		observation := filepath.Join(t.TempDir(), "symbolic-ref-observed")
+		git, root, spec := remoteHeadFixture(t, "printf reached > "+remoteHeadQuote(observation)+"; exit 1", "printf reached > "+remoteHeadQuote(marker)+"; rm -- \"$0\"")
 		err := provisionManagedCloneRemotes(context.Background(), git, root, "https://github.com/fixture/repo.git", spec, "origin")
+		if _, err := os.Stat(marker); err != nil {
+			t.Fatal("fixture did not reach the final alias update before removing Git", err)
+		}
+		if _, err := os.Stat(git.Executable); !os.IsNotExist(err) {
+			t.Fatalf("fixture left the Git wrapper launchable after alias preparation: %v", err)
+		}
+		if _, err := os.Stat(observation); !os.IsNotExist(err) {
+			t.Fatalf("symbolic-ref observation ran despite the missing executable: %v", err)
+		}
 		problem := domain.SafeError(err)
 		if err == nil || problem.Code != domain.Unavailable || problem.Cause != "git_launch" {
-			t.Fatalf("symbolic-ref launch failure was not preserved: %v", err)
-		}
-		if _, err := os.Stat(marker); err != nil {
-			t.Fatal("fixture did not remove the wrapper after the final alias update", err)
+			t.Fatalf("symbolic-ref launch failure was not preserved: code=%q cause=%q error=%v", problem.Code, problem.Cause, err)
 		}
 	})
 	t.Run("nested target and every alias", func(t *testing.T) {
