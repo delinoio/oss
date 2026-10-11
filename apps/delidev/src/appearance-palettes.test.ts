@@ -92,14 +92,15 @@ function derived(core: readonly string[], mode: "light" | "dark"): ColorMap {
 test("Default retains its complete original maps and five stable palette IDs", () => {
   expect(Object.keys(palettes)).toEqual(["default", ...Object.keys(cores)]);
   expect(
-    createHash("sha256")
-      .update(JSON.stringify(palettes.default))
-      .digest("hex"),
+    createHash("sha256").update(JSON.stringify(palettes.default)).digest("hex"),
   ).toBe("08952cf9a976148b4192c87a19273f717e06686aa104a81936c62c2082e064ab");
 });
 
 test("ordinary controls use accent and control contrast tokens", async () => {
-  const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
+  const styles = await readFile(
+    new URL("./styles.css", import.meta.url),
+    "utf8",
+  );
   const rules = [...styles.matchAll(/([^{}]+)\{([^{}]*)\}/gu)];
   const declaration = (selector: string, property: string, value: string) => {
     const rule = rules.find(([, selectors]) =>
@@ -110,9 +111,17 @@ test("ordinary controls use accent and control contrast tokens", async () => {
 
   declaration(".new-session-submit", "color", "on-accent");
   declaration(".sidebar-new-session", "border-color", "control-border");
-  declaration(".usage-row-measures .usage-metric", "border-color", "control-border");
+  declaration(
+    ".usage-row-measures .usage-metric",
+    "border-color",
+    "control-border",
+  );
   declaration(".inbox-row[aria-current]", "border-color", "control-border");
-  declaration(".github-integrations button.primary[disabled]", "border-color", "control-border");
+  declaration(
+    ".github-integrations button.primary[disabled]",
+    "border-color",
+    "control-border",
+  );
 });
 
 for (const [name, modes] of Object.entries(cores)) {
@@ -148,16 +157,28 @@ for (const [name, modes] of Object.entries(cores)) {
       ];
       for (const bg of surfaces) {
         for (const fg of [
-          "text", "text-secondary", "muted", "success-text", "execution-running",
-        ] as const) check(fg, bg);
+          "text",
+          "text-secondary",
+          "muted",
+          "success-text",
+          "execution-running",
+        ] as const)
+          check(fg, bg);
         for (const fg of [
-          "focus", "control-border", "selected-border", "conversation-border",
-        ] as const) check(fg, bg, 3);
+          "focus",
+          "control-border",
+          "selected-border",
+          "conversation-border",
+        ] as const)
+          check(fg, bg, 3);
       }
       // Subtle text and links use ordinary surfaces. Their selected-row uses
       // are 14px decorative/status glyphs, rather than normal body text.
       for (const bg of [
-        "background", "surface", "surface-subtle", "surface-muted",
+        "background",
+        "surface",
+        "surface-subtle",
+        "surface-muted",
       ] as const) {
         check("text-subtle", bg);
         check("link", bg);
@@ -176,7 +197,8 @@ for (const [name, modes] of Object.entries(cores)) {
         ["on-inverse", "inverse-surface"],
         ["on-inverse", "inverse-hover"],
         ["on-inverse-muted", "inverse-surface"],
-      ] as [keyof ColorMap, keyof ColorMap][]) check(fg, bg);
+      ] as [keyof ColorMap, keyof ColorMap][])
+        check(fg, bg);
       check("inverse-border", "inverse-surface", 3);
     });
   }
