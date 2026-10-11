@@ -2077,7 +2077,7 @@ dialog nav {
   background: var(--selected-background);
   color: var(--text);
   border-color: var(--control-border);
-  border-left-color: var(--accent);
+  border-left-color: var(--selected-border);
 }
 .inbox-row[aria-current]:hover {
   background: var(--selected-background);
@@ -3784,7 +3784,7 @@ dialog nav {
   background: var(--accent);
 }
 .settings-runner-column:focus-visible {
-  outline-color: var(--accent);
+  outline-color: var(--focus);
 }
 .settings-runner-column .actions {
   min-width: 0;
@@ -3834,7 +3834,7 @@ dialog nav {
   color: var(--text);
 }
 .settings-runner-worker-details > summary:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
   border-radius: 8px;
 }
@@ -4812,7 +4812,7 @@ dialog nav {
   width: 52px;
   height: 52px;
   margin-bottom: 16px;
-  color: var(--accent);
+  color: var(--selected-border);
   background: var(--selected-background);
 }
 .integration-empty h3 {
@@ -5389,7 +5389,7 @@ dialog nav {
   font-size: 12px;
 }
 .inbox-execution-metadata > summary:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 4px;
   border-radius: 8px;
 }
@@ -5666,7 +5666,7 @@ dialog nav {
   color: var(--text-subtle);
 }
 .sidebar-conversation-disclosure:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 /* Project centering uses the collapsed primary range; expanded bodies stay in flow. */
@@ -5747,7 +5747,7 @@ dialog nav {
   background: var(--surface);
 }
 .sidebar-wide-toggle:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 .sidebar-preference-notice {
@@ -5815,7 +5815,7 @@ dialog nav {
   background: var(--surface-hover);
 }
 .sidebar-project-more:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 
@@ -5841,6 +5841,6 @@ dialog nav {
   white-space: normal;
 }
 .repository-profile-association button:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }

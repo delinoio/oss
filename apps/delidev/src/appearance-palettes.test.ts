@@ -97,32 +97,76 @@ test("Default retains its complete original maps and five stable palette IDs", (
   ).toBe("08952cf9a976148b4192c87a19273f717e06686aa104a81936c62c2082e064ab");
 });
 
-test("ordinary controls use accent and control contrast tokens", async () => {
-  const styles = await readFile(
-    resolve(process.cwd(), "src/styles.css"),
-    "utf8",
-  );
-  const rules = [...styles.matchAll(/([^{}]+)\{([^{}]*)\}/gu)];
-  const declaration = (selector: string, property: string, value: string) => {
-    const rule = rules.find(([, selectors]) =>
-      selectors.split(",").some((candidate) => candidate.trim() === selector),
-    );
-    expect(rule?.[2]).toContain(`${property}: var(--${value});`);
+test("ordinary controls use semantic accent and contrast tokens", async () => {
+  const stylesheet = async (name: string) =>
+    readFile(resolve(process.cwd(), `src/${name}`), "utf8");
+  const declarations = async (
+    name: string,
+    checks: [selector: string, property: string, value: string][],
+  ) => {
+    const styles = await stylesheet(name);
+    const rules = [...styles.matchAll(/([^{}]+)\{([^{}]*)\}/gu)];
+    for (const [selector, property, value] of checks) {
+      const rule = rules.find(([, selectors]) =>
+        selectors.split(",").some((candidate) => candidate.trim() === selector),
+      );
+      expect(rule?.[2], `${name} ${selector} ${property}`).toContain(
+        `${property}: var(--${value});`,
+      );
+    }
   };
 
-  declaration(".new-session-submit", "color", "on-accent");
-  declaration(".sidebar-new-session", "border-color", "control-border");
-  declaration(
-    ".usage-row-measures .usage-metric",
-    "border-color",
-    "control-border",
-  );
-  declaration(".inbox-row[aria-current]", "border-color", "control-border");
-  declaration(
-    ".github-integrations button.primary[disabled]",
-    "border-color",
-    "control-border",
-  );
+  await declarations("styles.css", [
+    [".new-session-submit", "color", "on-accent"],
+    [".sidebar-new-session", "border-color", "control-border"],
+    [".usage-row-measures .usage-metric", "border-color", "control-border"],
+    [".inbox-row[aria-current]", "border-color", "control-border"],
+    [".inbox-row[aria-current]", "border-left-color", "selected-border"],
+    [".integration-empty-mark", "color", "selected-border"],
+    [".settings-runner-column:focus-visible", "outline-color", "focus"],
+  ]);
+  await declarations("session.css", [
+    [".session-tab.is-selected", "color", "link"],
+    [".session-tab.is-selected", "border-bottom-color", "selected-border"],
+    [".session-tab button:focus-visible", "outline", "focus"],
+  ]);
+  await declarations("schedule-creation.css", [
+    ['.schedule-creation-progress li[aria-current="step"]', "color", "link"],
+    [
+      ".schedule-creation-radio-cards label:has(:checked)",
+      "border-color",
+      "selected-border",
+    ],
+  ]);
+  await declarations("api-account.css", [
+    [".account-oauth-card .account-oauth-fallback", "color", "link"],
+  ]);
+  await declarations("agent-configuration.css", [
+    [".agent-configuration .agent-required", "color", "link"],
+    [
+      ".agent-configuration:is(button, summary):focus-visible",
+      "outline",
+      "focus",
+    ],
+  ]);
+  await declarations("agent-worker-wizard.css", [
+    [".worker-account-add", "color", "link"],
+    [
+      '.worker-source-list button[aria-pressed="true"]',
+      "border-color",
+      "selected-border",
+    ],
+  ]);
+  await declarations("credential-access.css", [
+    [".credential-access-brand", "color", "link"],
+  ]);
+  await declarations("project-edit-tabs.css", [
+    [
+      '.project-edit-tablist button[aria-selected="true"]',
+      "border-bottom-color",
+      "selected-border",
+    ],
+  ]);
 });
 
 for (const [name, modes] of Object.entries(cores)) {

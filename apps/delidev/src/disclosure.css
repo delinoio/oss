@@ -35,7 +35,7 @@ button.disclosure-header.disclosure-header:hover:not(:disabled) {
 }
 .disclosure.disclosure > .disclosure-header:focus-visible,
 button.disclosure-header.disclosure-header:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 .disclosure[data-disclosure-density="settings"] > .disclosure-header,

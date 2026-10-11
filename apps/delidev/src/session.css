@@ -918,9 +918,9 @@
 }
 .session-tab.is-selected {
   background: var(--surface);
-  color: var(--accent);
+  color: var(--link);
   border-radius: 4px 4px 0 0;
-  border-bottom-color: var(--accent);
+  border-bottom-color: var(--selected-border);
 }
 .session-workspace .session-tab [role="tab"] {
   height: 38px;
@@ -954,7 +954,7 @@
   background: var(--surface-hover);
 }
 .session-tab button:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: -3px;
 }
 .session-tool-popup {
