@@ -643,6 +643,29 @@ impl<B: Backend> Pipeline<'_, B> {
     }
 }
 
+/// The emitted spelling of a relative TypeScript-extension specifier under
+/// `rewriteRelativeImportExtensions`, which the emitted import list uses.
+fn rewritten_specifier(specifier: &str) -> Option<String> {
+    if !specifier.starts_with("./") && !specifier.starts_with("../") {
+        return None;
+    }
+    if specifier.ends_with(".d.ts") {
+        return None;
+    }
+    [
+        (".tsx", ".js"),
+        (".ts", ".js"),
+        (".mts", ".mjs"),
+        (".cts", ".cjs"),
+    ]
+    .iter()
+    .find_map(|(from, to)| {
+        specifier
+            .strip_suffix(from)
+            .map(|stem| format!("{stem}{to}"))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1002,27 +1025,4 @@ mod tests {
 /// Double-quoted JavaScript string literal.
 fn quote(value: &str) -> String {
     serde_json::to_string(value).expect("strings serialize")
-}
-
-/// The emitted spelling of a relative TypeScript-extension specifier under
-/// `rewriteRelativeImportExtensions`, which the emitted import list uses.
-fn rewritten_specifier(specifier: &str) -> Option<String> {
-    if !specifier.starts_with("./") && !specifier.starts_with("../") {
-        return None;
-    }
-    if specifier.ends_with(".d.ts") {
-        return None;
-    }
-    [
-        (".tsx", ".js"),
-        (".ts", ".js"),
-        (".mts", ".mjs"),
-        (".cts", ".cjs"),
-    ]
-    .iter()
-    .find_map(|(from, to)| {
-        specifier
-            .strip_suffix(from)
-            .map(|stem| format!("{stem}{to}"))
-    })
 }

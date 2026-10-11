@@ -619,12 +619,6 @@ impl<'c> Ctx<'c> {
     pub fn name_mentions(&self, name: &str) -> usize {
         self.mentioned_names.get(name).copied().unwrap_or(0)
     }
-
-    /// Whether evaluating one module-level statement runs no code and has no
-    /// observable effect (imports count by their target's initialization).
-    pub fn statement_initialization_pure(&mut self, statement: Node) -> bool {
-        self.statement_pure(statement)
-    }
 }
 
 /// Removes parentheses, type assertions, `satisfies` and non-null wrappers,

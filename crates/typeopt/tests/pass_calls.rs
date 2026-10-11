@@ -398,3 +398,325 @@ export function double(value: number) {
     assert!(main.contains("import \"./effects.js\""), "{main}");
     same_behavior(temp.path());
 }
+
+// ---------------------------------------------------------------------------
+// method-devirtualization: positive fixtures
+// ---------------------------------------------------------------------------
+
+const ACCUMULATOR: &[(&str, &str)] = &[
+    (
+        "main.ts",
+        r#"import { Accumulator } from "./accumulator.ts";
+function log(label: string, value: number): number {
+  console.log("eval", label);
+  return value;
+}
+const accumulator = new Accumulator(log("scale", 2));
+accumulator.addMeasurement(log("first", 3));
+accumulator.addMeasurement(log("second", 4));
+console.log(
+  accumulator.describeTotalValue("total"),
+  new Accumulator(log("fresh", 5)).describeTotalValue(String(log("label", 6))),
+);
+"#,
+    ),
+    (
+        "accumulator.ts",
+        r#"export class Accumulator {
+  total = 0;
+  values: number[] = [];
+  scale: number;
+  constructor(scale: number) {
+    this.scale = scale;
+  }
+  addMeasurement(value: number) {
+    this.values.push(value);
+    this.total += this.scaledMeasurement(value);
+  }
+  scaledMeasurement(value: number) {
+    return value * this.scale;
+  }
+  describeTotalValue(label: string) {
+    return `${label}: ${this.total} from ${this.values.length} values`;
+  }
+}
+"#,
+    ),
+];
+
+#[test]
+fn devirtualizes_methods_across_modules() {
+    let temp = project(ACCUMULATOR);
+    let report = optimize(temp.path(), &args(&only(&[DEVIRT])));
+    assert!(applied_count(&report, DEVIRT) >= 3, "{report:#}");
+    assert!(saved(&report) > 0);
+    let module = emitted(temp.path(), "accumulator.ts");
+    assert!(!module.contains("describeTotalValue"), "{module}");
+    assert!(module.contains("export function"), "{module}");
+    let main = emitted(temp.path(), "main.ts");
+    assert!(!main.contains(".addMeasurement("), "{main}");
+    same_behavior(temp.path());
+}
+
+#[test]
+fn devirtualized_methods_feed_call_inlining() {
+    let temp = project(ACCUMULATOR);
+    let report = optimize(temp.path(), &args(&only(&[DEVIRT, INLINE, RESIDUAL])));
+    assert!(applied_count(&report, DEVIRT) >= 3, "{report:#}");
+    assert!(applied_count(&report, INLINE) >= 1, "{report:#}");
+    let module = emitted(temp.path(), "accumulator.ts");
+    assert!(module.contains("value * "), "{module}");
+    same_behavior(temp.path());
+    let temp = project(ACCUMULATOR);
+    let report = optimize(temp.path(), &[]);
+    assert!(applied_count(&report, DEVIRT) >= 3, "{report:#}");
+    same_behavior(temp.path());
+}
+
+#[test]
+fn devirtualizes_generic_classes_with_this_and_const_receivers() {
+    let temp = project(&[(
+        "main.ts",
+        r#"class Stack<T> {
+  items: T[] = [];
+  pushAll(values: T[]) {
+    for (const value of values) {
+      this.pushOne(value);
+    }
+    return this.items.length;
+  }
+  pushOne(value: T) {
+    this.items.push(value);
+  }
+  peekTop(): T | undefined {
+    return this.items[this.items.length - 1];
+  }
+}
+const numbers = new Stack<number>();
+console.log(numbers.pushAll([1, 2, 3]), numbers.peekTop());
+const words = new Stack<string>();
+words.pushOne("a");
+console.log(words.peekTop()?.toUpperCase());
+"#,
+    )]);
+    let report = optimize(temp.path(), &args(&only(&[DEVIRT])));
+    assert!(applied_count(&report, DEVIRT) >= 3, "{report:#}");
+    let main = emitted(temp.path(), "main.ts");
+    assert!(!main.contains(".peekTop("), "{main}");
+    same_behavior(temp.path());
+}
+
+#[test]
+fn method_devirtualization_never_runs_when_disabled() {
+    let temp = project(ACCUMULATOR);
+    let report = optimize(temp.path(), &["--disable-pass", DEVIRT]);
+    assert_eq!(applied_count(&report, DEVIRT), 0);
+    let module = emitted(temp.path(), "accumulator.ts");
+    assert!(module.contains("describeTotalValue("), "{module}");
+    same_behavior(temp.path());
+}
+
+// ---------------------------------------------------------------------------
+// method-devirtualization: safety boundaries
+// ---------------------------------------------------------------------------
+
+/// Runs a fixture with devirtualization only and asserts that the method
+/// stays a class member.
+fn assert_not_devirtualized(files: &[(&str, &str)], member: &str) -> serde_json::Value {
+    let temp = project(files);
+    let report = optimize(temp.path(), &args(&only(&[DEVIRT])));
+    let main = emitted(temp.path(), "main.ts");
+    assert!(
+        main.contains(&format!("    {member}(")),
+        "{member} was devirtualized:\n{main}\n{report:#}"
+    );
+    same_behavior(temp.path());
+    report
+}
+
+#[test]
+fn preserves_extracted_and_bound_methods() {
+    assert_not_devirtualized(
+        &[(
+            "main.ts",
+            r#"class Greeter {
+  name = "greeter";
+  greetLoudly() {
+    return this === undefined ? "detached" : this.name.toUpperCase();
+  }
+}
+const greeter = new Greeter();
+const bound = greeter.greetLoudly.bind(greeter);
+console.log(greeter.greetLoudly(), bound(), greeter.greetLoudly.name);
+"#,
+        )],
+        "greetLoudly",
+    );
+}
+
+#[test]
+fn preserves_overrides_and_super_calls() {
+    assert_not_devirtualized(
+        &[(
+            "main.ts",
+            r#"class Shape {
+  describeShape() {
+    return "shape";
+  }
+}
+class Circle extends Shape {
+  describeShape() {
+    return "circle of " + super.describeShape();
+  }
+}
+const items = [new Shape(), new Circle()];
+console.log(items.map((s) => s.describeShape()).join(","), new Circle().describeShape());
+"#,
+        )],
+        "describeShape",
+    );
+}
+
+#[test]
+fn preserves_dynamic_keys_and_string_names() {
+    assert_not_devirtualized(
+        &[(
+            "main.ts",
+            r#"class Lookup {
+  value = 3;
+  computeTwice() {
+    return this.value * 2;
+  }
+}
+const lookup = new Lookup();
+const key: string = ["compute", "Twice"].join("");
+const method = (lookup as unknown as Record<string, () => number>)[key];
+console.log(lookup.computeTwice(), typeof method, "computeTwice" in lookup);
+"#,
+        )],
+        "computeTwice",
+    );
+}
+
+#[test]
+fn preserves_dynamic_keys_on_generic_values() {
+    assert_not_devirtualized(
+        &[(
+            "main.ts",
+            r#"class Probe {
+  probeMethod() {
+    return "probe";
+  }
+}
+function has<T extends object>(value: T, key: string) {
+  return key in value;
+}
+const probe = new Probe();
+console.log(probe.probeMethod(), has(probe, ["probe", "Method"].join("")));
+"#,
+        )],
+        "probeMethod",
+    );
+}
+
+#[test]
+fn preserves_unproven_and_nullish_receivers() {
+    let report = assert_not_devirtualized(
+        &[(
+            "main.ts",
+            r#"class Counter {
+  count = 1;
+  incrementCount() {
+    return ++this.count;
+  }
+}
+function bump(counter: Counter) {
+  return counter.incrementCount();
+}
+const maybe: Counter | undefined = Math.random() > 2 ? new Counter() : undefined;
+console.log(bump(new Counter()), maybe?.incrementCount());
+try {
+  bump(null as unknown as Counter);
+} catch (error) {
+  console.log((error as Error).name);
+}
+"#,
+        )],
+        "incrementCount",
+    );
+    assert!(!skipped_reasons(&report, DEVIRT).is_empty());
+}
+
+#[test]
+fn preserves_this_escape_arguments_and_private_members() {
+    let temp = project(&[(
+        "main.ts",
+        r#"class Builder {
+  private secret = 1;
+  parts: string[] = [];
+  appendPart(part: string) {
+    this.parts.push(part);
+    return this;
+  }
+  countArguments(first: number) {
+    return arguments.length + first;
+  }
+  revealSecret() {
+    return this.secret;
+  }
+}
+const builder = new Builder();
+console.log(builder.appendPart("a").parts.length, builder.countArguments(1), builder.revealSecret());
+"#,
+    )]);
+    let report = optimize(temp.path(), &args(&only(&[DEVIRT])));
+    assert_eq!(applied_count(&report, DEVIRT), 0, "{report:#}");
+    same_behavior(temp.path());
+}
+
+#[test]
+fn preserves_external_names_and_public_classes() {
+    let temp = project(&[(
+        "main.ts",
+        r#"export class Exposed {
+  describeExposed() {
+    return "exposed";
+  }
+}
+class Local {
+  toString() {
+    return "local";
+  }
+}
+const local = new Local();
+console.log(new Exposed().describeExposed(), local.toString(), `${local}`);
+"#,
+    )]);
+    let report = optimize(temp.path(), &args(&only(&[DEVIRT])));
+    assert_eq!(applied_count(&report, DEVIRT), 0, "{report:#}");
+    let main = emitted(temp.path(), "main.ts");
+    assert!(main.contains("    describeExposed("), "{main}");
+    assert!(main.contains("    toString("), "{main}");
+    same_behavior(temp.path());
+}
+
+#[test]
+fn preserves_prototype_reflection() {
+    assert_not_devirtualized(
+        &[(
+            "main.ts",
+            r#"class Reflected {
+  reflectedMethod() {
+    return 1;
+  }
+}
+const instance = new Reflected();
+console.log(
+  instance.reflectedMethod(),
+  Object.getOwnPropertyNames(Object.getPrototypeOf(instance)).join(","),
+);
+"#,
+        )],
+        "reflectedMethod",
+    );
+}

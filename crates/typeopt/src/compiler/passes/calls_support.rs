@@ -529,7 +529,7 @@ const RESERVED: &[&str] = &[
 /// Whether reading `this` at `node` cannot throw: not in a derived class
 /// constructor, where `this` is uninitialized before `super()`.
 pub(super) fn this_is_initialized(node: Node) -> bool {
-    let container = get_this_container(node, true, false);
+    let container = get_this_container(node, false, false);
     if container.kind() != SyntaxKind::Constructor {
         return true;
     }
