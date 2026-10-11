@@ -189,9 +189,10 @@ The reader rejects links, nonregular files, noncanonical directory selections,
 malformed TOML, invalid UTF-8, changing file identity/size/time, and exceeded
 bounds. Each source file is at most 128 KiB; complete selected sources are at
 most 384 KiB. Observations contain at most 128 entries and 512 KiB. RPC
-selection descriptors are at most 64 KiB. Each fixed candidate has its original
-SHA-256 and presence marker, including missing override candidates. Creating an
-override after preview changes the proof. No source write, native launch,
+selection descriptors are at most 64 KiB. Each inspected candidate has its original
+SHA-256 and presence marker, including missing override candidates. A default
+instruction file masked by a nonempty override is not read and retains an explicit
+shadowed marker. Creating an override after preview changes the proof. No source write, native launch,
 provider request, install, login, trust operation or automatic scope discovery
 occurs.
 

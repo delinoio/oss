@@ -471,3 +471,12 @@ original request identities and preview job identities; a transport retry must
 not create a new import. Read the returned job through the existing authenticated
 resource interface. These bindings grant no filesystem or extension execution
 authority. Follow the [protocol contract](protos-delidev-v1-contract.md#explicit-native-configuration-imports).
+
+Imported native Templates use schema 2 with closed immutable `native_import`
+metadata; ordinary mutable Templates retain schema 1. Client decoding preserves
+the exact harness, package kind, source digest, native order and contents.
+Malformed/null metadata, execution/trust extensions and incorrect schema claims
+remain unavailable. An inert package contains only its closed no-authority
+category descriptor. Client decoding grants no package mutation, execution,
+credential or filesystem authority; source and destination proof remain owned by
+the server/Worker under the configuration transfer contract.

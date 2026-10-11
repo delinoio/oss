@@ -105,6 +105,9 @@ func SaveConfiguration(ctx context.Context, s *store.Store, input ConfigurationM
 	if err != nil {
 		return store.Result{}, err
 	}
+	if template, ok := value.(*domain.Template); ok && template.NativeImport != nil {
+		return store.Result{}, domain.Fail(domain.PermissionDenied, "Native import provenance cannot be created or edited by an ordinary save.", "Use native preview/apply or a reviewed portable import; imported packages remain immutable.")
+	}
 	if input.ID == "" && input.ExpectedRevision != 0 {
 		return store.Result{}, domain.Fail(domain.InvalidArgument, "A new entity has no expected revision.", "Use revision zero when creating configuration.")
 	}

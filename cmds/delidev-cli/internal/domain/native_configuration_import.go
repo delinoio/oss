@@ -151,6 +151,7 @@ const (
 )
 
 type NativeConfigurationSource struct {
+	Shadowed   bool   `json:"shadowed,omitempty"`
 	ScopeIndex uint32 `json:"scope_index"`
 	File       string `json:"file"`
 	Present    bool   `json:"present"`
@@ -181,15 +182,28 @@ func NativeConfigurationInvalid() *Error {
 func NativeConfigurationChanged() *Error {
 	return Fail(Conflict, "The reviewed native configuration or destination changed.", "Create a new preview; no configuration was imported.")
 }
+
+var nativeConfigurationSecretAssignment = regexp.MustCompile(`(?i)(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|client[_ -]?secret|password|authorization|credential|token|secret)\s*[:=]\s*[^\s]+`)
+
 func NativeConfigurationSecret(text string) bool {
 	lower := strings.ToLower(text)
-	for _, marker := range []string{"sk-", "bearer ", "-----begin ", "api_key", "apikey", "api-key", "access_token", "refresh_token", "client_secret", "password", "authorization:", "token=", "token =", "secret=", "secret =", "credential"} {
+	for _, marker := range []string{"sk-", "bearer ", "-----begin private key", "-----begin rsa private key", "-----begin ec private key", "-----begin openssh private key"} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return nativeConfigurationSecretAssignment.MatchString(text)
+}
+func NativeConfigurationSensitiveKey(key string) bool {
+	lower := strings.ToLower(key)
+	for _, marker := range []string{"auth", "api_key", "apikey", "api-key", "token", "secret", "password", "credential", "memory", "memories", "managed", "requirements"} {
 		if strings.Contains(lower, marker) {
 			return true
 		}
 	}
 	return false
 }
+
 func NativeConfigurationFiles(kind NativeConfigurationScopeKind) []string {
 	if kind == NativeConfigurationHome {
 		return []string{"config.toml", "AGENTS.override.md", "AGENTS.md"}
@@ -206,6 +220,9 @@ func (o NativeConfigurationObservation) Validate(s NativeConfigurationPreviewSel
 		scope := n / 3
 		file := NativeConfigurationFiles(s.Scopes[scope].Kind)[n%3]
 		if source.ScopeIndex != uint32(scope) || source.File != file || !nativeExecutableDigest.MatchString(source.Digest) || !source.Present && source.Digest != HarnessEvidenceDigest(nil) {
+			return NativeConfigurationInvalid()
+		}
+		if source.Shadowed && (n%3 != 2 || source.Present || !o.Sources[n-1].Present || o.Sources[n-1].Digest == HarnessEvidenceDigest(nil)) {
 			return NativeConfigurationInvalid()
 		}
 		sources[string(rune(scope))+file] = source

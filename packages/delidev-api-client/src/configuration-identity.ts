@@ -96,6 +96,11 @@ function supportsDocumentSchema(
   resource: Resource,
   value: ResourceDocument,
 ): boolean {
+  if (resource.kind === EntityKind.TEMPLATE) {
+    if (Object.hasOwn(value, "native_import"))
+      return resource.schemaVersion === 2 && nativeImportedTemplate(value);
+    return resource.schemaVersion === 1;
+  }
   if (resource.kind === EntityKind.MODEL) return false;
   const harnessShape = configurationSchemaVersion(resource.kind, value);
   if (resource.kind === EntityKind.AGENT && resource.schemaVersion === 5) {
@@ -252,6 +257,8 @@ export function configurationSchemaVersion(
   kind: EntityKind,
   value: Record<string, unknown>,
 ): number {
+  if (kind === EntityKind.TEMPLATE && Object.hasOwn(value, "native_import"))
+    return 2;
   if (kind === EntityKind.AGENT && Object.hasOwn(value, "harness_settings"))
     return 5;
   if (
@@ -290,6 +297,42 @@ export function configurationSchemaVersion(
       value.source_kind === NativeModelSourceKind.Subscription)
     ? 2
     : 1;
+}
+
+// Imported metadata is read-only provenance, never execution or credential
+// authority. The server validates the source digest and package immutability.
+function nativeImportedTemplate(value: ResourceDocument): boolean {
+  const imported = value.native_import;
+  if (
+    !object(imported) ||
+    Object.keys(value).some(
+      (key) => !["name", "contents", "native_import"].includes(key),
+    ) ||
+    Object.keys(imported).some(
+      (key) =>
+        !["version", "harness", "kind", "source_digest", "order"].includes(key),
+    ) ||
+    imported.version !== 1 ||
+    imported.harness !== "codex" ||
+    !["instruction", "inert-extension"].includes(imported.kind as string) ||
+    typeof imported.source_digest !== "string" ||
+    !/^[0-9a-f]{64}$/.test(imported.source_digest) ||
+    !Number.isInteger(imported.order) ||
+    Number(imported.order) < 0 ||
+    Number(imported.order) >= 128 ||
+    typeof value.name !== "string" ||
+    new TextEncoder().encode(value.name).length < 1 ||
+    new TextEncoder().encode(value.name).length > 256 ||
+    typeof value.contents !== "string" ||
+    new TextEncoder().encode(value.contents).length < 1 ||
+    new TextEncoder().encode(value.contents).length > (128 << 10)
+  )
+    return false;
+  return (
+    imported.kind !== "inert-extension" ||
+    value.contents ===
+      '{"execution_authority":false,"credential_authority":false,"trust":false}'
+  );
 }
 
 const harnessSettingFields = [

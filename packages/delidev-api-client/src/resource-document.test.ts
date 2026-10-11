@@ -102,3 +102,61 @@ it("rejects unsupported schemas/kinds, invalid UTF-8 and malformed typed documen
     decodeResourceDocument({ ...resource, documentJson: Uint8Array.of(255) }),
   ).toBeUndefined();
 });
+
+it("preserves immutable imported Template provenance and refuses destructive schema claims", () => {
+  const value = {
+    name: "Imported instructions",
+    contents: "Original instructions.\n",
+    native_import: {
+      version: 1,
+      harness: "codex",
+      kind: "instruction",
+      source_digest: "a".repeat(64),
+      order: 0,
+    },
+  };
+  const resource = create(ResourceSchema, {
+    id: newRequestId(),
+    kind: EntityKind.TEMPLATE,
+    revision: 1n,
+    schemaVersion: 2,
+    documentJson: new TextEncoder().encode(JSON.stringify(value)),
+  });
+  expect(decodeResourceDocument(resource)).toEqual(value);
+  expect(
+    decodeResourceDocument({ ...resource, schemaVersion: 1 }),
+  ).toBeUndefined();
+  for (const imported of [
+    null,
+    {},
+    { ...value.native_import, trust: true },
+    { ...value.native_import, kind: "executable" },
+    { ...value.native_import, order: 128 },
+  ])
+    expect(
+      decodeResourceDocument({
+        ...resource,
+        documentJson: new TextEncoder().encode(
+          JSON.stringify({ ...value, native_import: imported }),
+        ),
+      }),
+    ).toBeUndefined();
+  const inert = {
+    ...value,
+    native_import: { ...value.native_import, kind: "inert-extension" },
+  };
+  expect(
+    decodeResourceDocument({
+      ...resource,
+      documentJson: new TextEncoder().encode(JSON.stringify(inert)),
+    }),
+  ).toBeUndefined();
+  inert.contents =
+    '{"execution_authority":false,"credential_authority":false,"trust":false}';
+  expect(
+    decodeResourceDocument({
+      ...resource,
+      documentJson: new TextEncoder().encode(JSON.stringify(inert)),
+    }),
+  ).toEqual(inert);
+});

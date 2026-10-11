@@ -783,3 +783,16 @@ Configure exposes a separate localized User / AI auto-review picker for Codex. A
 ## OpenCode Go subscriptions
 
 The [OpenCode Go contract](cmds-delidev-opencode-go-subscription-contract.md) owns the exact key-backed `opencode_go` exception, fixed server relay profile, original native session header and independently confirmed cleanup. Identity 4, System 54 and Worker 28 retain separate ownership; System 52 remains Project behavior. Native login and quota authority remain unavailable. No migration is added.
+
+## Immutable selected native instruction packages
+
+Follow [explicit Worker-local Codex imports](cmds-delidev-configuration-transfer-contract.md#explicit-worker-local-codex-imports)
+for source preview, all three explicit settings destinations, independently selected
+settings/instructions, Worker revalidation and atomic publication. Imported
+Templates use schema 2 with closed version-1 provenance and immutable contents;
+ordinary Templates retain schema 1. Ordinary saves cannot create or alter native
+import provenance. Portable version 7 preserves complete package metadata and
+contents. Inert extension packages cannot become Agent instructions through saves,
+portable imports or execution. Selected Agent instructions retain native order;
+model import changes only its explicit selected route. Existing account links,
+weights, behavior selectors and accepted execution generations remain unchanged.

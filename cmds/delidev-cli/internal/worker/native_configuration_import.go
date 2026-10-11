@@ -52,6 +52,10 @@ func inspectNativeConfiguration(ctx context.Context, selection domain.NativeConf
 		files := domain.NativeConfigurationFiles(scope.Kind)
 		values := make([][]byte, len(files))
 		for n, name := range files {
+			if n == 2 && len(strings.TrimSpace(string(values[1]))) > 0 {
+				result.Sources = append(result.Sources, domain.NativeConfigurationSource{ScopeIndex: uint32(index), File: name, Digest: domain.HarnessEvidenceDigest(nil), Shadowed: true})
+				continue
+			}
 			raw, present, err := readNativeConfigurationFile(root, name)
 			if err != nil {
 				root.Close()
@@ -71,7 +75,9 @@ func inspectNativeConfiguration(ctx context.Context, selection domain.NativeConf
 			if !utf8.Valid(values[0]) || toml.Unmarshal(values[0], &config) != nil {
 				return result, nativeConfigurationReadFailure()
 			}
-			appendNativeConfigurationTable(&result, uint32(index), files[0], domain.HarnessEvidenceDigest(values[0]), config)
+			if err := appendNativeConfigurationTable(&result, uint32(index), files[0], domain.HarnessEvidenceDigest(values[0]), config); err != nil {
+				return result, err
+			}
 			if scope.Profile != "" {
 				profiles, ok := config["profiles"].(map[string]any)
 				if !ok {
@@ -81,13 +87,16 @@ func inspectNativeConfiguration(ctx context.Context, selection domain.NativeConf
 				if !ok {
 					return result, domain.NativeConfigurationInvalid()
 				}
-				appendNativeConfigurationTable(&result, uint32(index), files[0], domain.HarnessEvidenceDigest(values[0]), profile)
+				if err := appendNativeConfigurationTable(&result, uint32(index), files[0], domain.HarnessEvidenceDigest(values[0]), profile); err != nil {
+					return result, err
+				}
 			}
 		} else if scope.Profile != "" {
 			return result, domain.NativeConfigurationInvalid()
 		}
 		// Native precedence chooses the first nonempty override/default file. Keep
-		// every candidate digest so newly added or edited overrides invalidate apply.
+		// override evidence so newly added or edited overrides invalidate apply. A
+		// masked default file is never read and carries an explicit shadowed marker.
 		for n := 1; n < len(files); n++ {
 			if len(strings.TrimSpace(string(values[n]))) == 0 {
 				continue
@@ -156,13 +165,16 @@ func appendNativeConfigurationEntry(result *domain.NativeConfigurationObservatio
 	entry.ID = domain.HarnessEvidenceDigest(proof)
 	result.Entries = append(result.Entries, entry)
 }
-func appendNativeConfigurationTable(result *domain.NativeConfigurationObservation, index uint32, file, digest string, table map[string]any) {
+func appendNativeConfigurationTable(result *domain.NativeConfigurationObservation, index uint32, file, digest string, table map[string]any) error {
 	keys := make([]string, 0, len(table))
 	for key := range table {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
+		if len(result.Entries) >= 128 {
+			return nativeConfigurationReadFailure()
+		}
 		entry := domain.NativeConfigurationEntry{ScopeIndex: index, File: file, SourceDigest: digest, Kind: domain.NativeConfigurationUnsupported, Name: "unsupported"}
 		name := map[string]string{"model": "model", "model_reasoning_effort": "effort", "sandbox_mode": "permission", "approval_policy": "approval_policy", "service_tier": "service_tier"}[key]
 		if name != "" {
@@ -187,12 +199,13 @@ func appendNativeConfigurationTable(result *domain.NativeConfigurationObservatio
 			entry.Kind = domain.NativeConfigurationInertExtension
 			entry.Name = key
 			entry.Contents = `{"execution_authority":false,"credential_authority":false,"trust":false}`
-		} else if domain.NativeConfigurationSecret(key) || slices.Contains([]string{"auth", "authentication", "managed_requirements", "requirements", "memories", "memory", "forced_login_method", "forced_chatgpt_workspace_id"}, key) {
+		} else if domain.NativeConfigurationSensitiveKey(key) || slices.Contains([]string{"auth", "authentication", "managed_requirements", "requirements", "memories", "memory", "forced_login_method", "forced_chatgpt_workspace_id"}, key) {
 			entry.Kind = domain.NativeConfigurationExcluded
 			entry.Name = "excluded"
 		}
 		appendNativeConfigurationEntry(result, entry)
 	}
+	return nil
 }
 func executeNativeConfigurationImport(ctx context.Context, config Config, job domain.Job) (json.RawMessage, error) {
 	var input domain.NativeConfigurationJobInput
