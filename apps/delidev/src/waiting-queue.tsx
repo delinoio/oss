@@ -305,11 +305,13 @@ export function WaitingQueue({
             payload.map((row) => (
               <div
                 key={row.id}
-                className={`queue-drop-row${
-                  insertion === row.id ? " queue-insertion" : ""
-                }${
-                  row.id === lastDisplayedRowId ? " queue-drop-row-last" : ""
-                }`}
+                className={[
+                  "queue-drop-row",
+                  insertion === row.id && "queue-insertion",
+                  row.id === lastDisplayedRowId && "queue-drop-row-last",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
                 onDragOver={(event) => {
                   if (dragged && !locked && dragged !== row.id) {
                     event.preventDefault();
