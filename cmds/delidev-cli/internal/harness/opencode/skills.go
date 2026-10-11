@@ -118,6 +118,7 @@ func validatePrimaryAgentSkills(raw []byte, selected PrimaryAgent, home, worktre
 	for _, selection := range ordered {
 		additional = append(additional, PermissionRule{"external_directory", filepath.Join(filepath.Dir(selection.Path), "*"), PermissionAllow})
 	}
+	skillDirectories := slices.Clone(additional)
 	rules = append(append(append([]PermissionRule{}, rules[:5]...), additional...), rules[5:]...)
 	// The pinned native agent merges user permission rules before its final tool
 	// output allowance. Native JSON key order is preserved from the exact config.
@@ -146,6 +147,22 @@ func validatePrimaryAgentSkills(raw []byte, selected PrimaryAgent, home, worktre
 		}
 		seen[name] = true
 		if name == string(selected) {
+			// The native scanner retains Glob encounter order in a Set. These
+			// disjoint selected-directory rules all allow the same permission;
+			// authenticate the exact set within its original policy position.
+			var actual []PermissionRule
+			if domain.Decode(fields["permission"], &actual) != nil || len(actual) != len(rules) {
+				return sessionProblem()
+			}
+			remaining := slices.Clone(skillDirectories)
+			for _, rule := range actual[5 : 5+len(skillDirectories)] {
+				index := slices.Index(remaining, rule)
+				if index < 0 {
+					return sessionProblem()
+				}
+				remaining = slices.Delete(remaining, index, index+1)
+			}
+			copy(rules[5:5+len(skillDirectories)], actual[5:5+len(skillDirectories)])
 			if err := exactPrivateJSON(agent, expected); err != nil {
 				return err
 			}
