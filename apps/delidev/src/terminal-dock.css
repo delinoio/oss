@@ -24,15 +24,16 @@
 .terminal-dock-details input { background: var(--terminal-background); color: var(--terminal-foreground); }
 .terminal-view { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
 .terminal-view > :not(.terminal-screen) { flex: none; margin: 0; padding: 4px 8px; font-size: 12px; overflow-wrap: anywhere; }
-.terminal-screen { flex: 1; min-height: 80px; min-width: 0; padding: 8px; overflow: hidden; }
-.terminal-screen.wterm { --term-font-family: ui-monospace, SFMono-Regular, Consolas, monospace; --term-font-size: 14px; --term-bg: var(--terminal-background); --term-fg: var(--terminal-foreground); --term-cursor: var(--terminal-foreground); }
-.terminal-screen.wterm ::selection { background: var(--terminal-selection); }
-.terminal-screen.wterm { scrollbar-color: var(--terminal-scrollbar) var(--terminal-background); }
-.terminal-screen.wterm::-webkit-scrollbar { width: 12px; }
-.terminal-screen.wterm::-webkit-scrollbar-track { background: var(--terminal-background); }
-.terminal-screen.wterm::-webkit-scrollbar-thumb { background: var(--terminal-scrollbar); }
-.terminal-screen.wterm::-webkit-scrollbar-thumb:hover { background: var(--terminal-scrollbar-hover); }
-.terminal-screen.wterm::-webkit-scrollbar-thumb:active { background: var(--terminal-scrollbar-active); }
+.terminal-screen { display: flex; flex: 1; min-height: 80px; min-width: 0; padding: 8px; overflow: hidden; }
+.terminal-screen-host { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
+.terminal-screen-host.wterm { --term-font-family: ui-monospace, SFMono-Regular, Consolas, monospace; --term-font-size: 14px; --term-bg: var(--terminal-background); --term-fg: var(--terminal-foreground); --term-cursor: var(--terminal-foreground); }
+.terminal-screen-host.wterm ::selection { background: var(--terminal-selection); }
+.terminal-screen-host.wterm { scrollbar-color: var(--terminal-scrollbar) var(--terminal-background); }
+.terminal-screen-host.wterm::-webkit-scrollbar { width: 12px; }
+.terminal-screen-host.wterm::-webkit-scrollbar-track { background: var(--terminal-background); }
+.terminal-screen-host.wterm::-webkit-scrollbar-thumb { background: var(--terminal-scrollbar); }
+.terminal-screen-host.wterm::-webkit-scrollbar-thumb:hover { background: var(--terminal-scrollbar-hover); }
+.terminal-screen-host.wterm::-webkit-scrollbar-thumb:active { background: var(--terminal-scrollbar-active); }
 .terminal-view footer { color: var(--terminal-muted); }
 /* Shared problem components inherit the dock's fixed dark palette rather than
    mixing light warning backgrounds with terminal foreground text. */

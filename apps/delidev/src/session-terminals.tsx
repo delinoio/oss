@@ -252,7 +252,9 @@ function TerminalView({ resource, details, discarded, refresh, observe }: { reso
     {gap ? <p role="status">{copy("session-terminals.outputGap")}</p> : null}
     {overflow ? <p role="alert">{copy("session-terminals.inputOverflow")}</p> : null}
     {rendererUnavailable ? <p role="alert">{copy("session-terminals.rendererUnavailable")}</p> : null}
-    <div ref={host} className="terminal-screen" data-shortcuts="passthrough" aria-label={copy("session-terminals.attribute.34ad7d49708a")} onKeyDown={event => event.stopPropagation()} />
+    <section className="terminal-screen" role="region" aria-label={copy("session-terminals.attribute.34ad7d49708a")}>
+      <div ref={host} className="terminal-screen-host" data-shortcuts="passthrough" onKeyDown={event => event.stopPropagation()} />
+    </section>
     <footer role="status">{copy(`session-terminals.${state}`)} · {statusLabel(text(data.state))}</footer>
     <div className="terminal-resource-details" hidden={!details}>
       <p><LocalizedText id="session-terminals.worker_5a5ff9" components={{ s0: <>{text(data.machine_id)}</>, s1: <br />, s2: <>{text(data.shell)}</>, s3: <br />, s4: <>{text(data.cwd)}</> }} /></p>

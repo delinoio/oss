@@ -12,11 +12,12 @@ async function setup() {
   const bytes = await readFile(createRequire(import.meta.url).resolve("@wterm/ghostty/ghostty-vt.wasm"));
   vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array(bytes), { headers: { "Content-Type": "application/wasm" } })));
   const core = await GhosttyCore.load({ wasmPath: "https://fixture.test/renderer-ghostty.wasm", scrollbackLimit: 5000, imageStorageLimit: 0 });
-  const host = document.createElement("div"); document.body.append(host);
+  const region = document.createElement("section"); region.setAttribute("role", "region"); region.setAttribute("aria-label", "Terminal output");
+  const host = document.createElement("div"); region.append(host); document.body.append(region);
   const onData = vi.fn(), onBinary = vi.fn(), clipboard = vi.fn();
   const terminal = new WTerm(host, { core, autoFocus: false, autoResize: false, inputEnabled: false, announceOutput: true, onData, onBinary, onClipboardWrite: clipboard });
   await terminal.init();
-  return { terminal, core, host, onData, onBinary, clipboard, dispose() { terminal.destroy(); core.dispose(); } };
+  return { terminal, core, host, region, onData, onBinary, clipboard, dispose() { terminal.destroy(); core.dispose(); } };
 }
 afterEach(() => { vi.unstubAllGlobals(); document.body.replaceChildren(); });
 const write = (terminal: WTerm, value: string) => terminal.write(new TextEncoder().encode(value));
@@ -46,7 +47,9 @@ it("suppresses all disabled deliveries and normalizes bracketed paste exactly on
 it("creates inert OSC 8 text, consumes OSC 52, and resets selection and partial parser state", async () => {
   const value = await setup();
   try {
-    const { terminal, host, onData, clipboard } = value; terminal.setInputEnabled(true);
+    const { terminal, host, region, onData, clipboard } = value; terminal.setInputEnabled(true);
+    expect(region.getAttribute("aria-label")).toBe("Terminal output");
+    expect(host.hasAttribute("aria-label")).toBe(false);
     // Host clipboard authority remains disconnected in the production adapter.
     terminal.onClipboardWrite = null;
     write(terminal, "\x1b]8;;https://fixture.test/link\x07inert\x1b]8;;\x07\x1b]52;c;c2VjcmV0\x07\x1b]52;c;?\x07");
