@@ -16,6 +16,32 @@ import (
 	"github.com/delinoio/oss/protos/gen/go/delidev/v1/delidevv1connect"
 )
 
+// The native fixture and synthetic checks use the same exact comparison.
+func claudeRecoveryClaimVersionMatches(input domain.ExecutionJobInput, claimVersion uint32) bool {
+	return claimVersion == nativeRecoveryClaimVersion(input)
+}
+
+func TestClaudeRecoveryClaimVersionUsesOriginalOperationShape(t *testing.T) {
+	// These shapes exercise the claim expectation, not full assignment admission.
+	for _, scenario := range []struct {
+		name  string
+		input domain.ExecutionJobInput
+		want  uint32
+	}{
+		{name: "first", input: domain.ExecutionJobInput{Version: 4}, want: 1},
+		{name: "continuation", input: domain.ExecutionJobInput{Version: 4, Continuation: &domain.ExecutionContinuation{}}, want: 2},
+		{name: "fork", input: domain.ExecutionJobInput{Version: 4, Fork: &domain.ForkExecution{}}, want: 2},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			for claimVersion := uint32(0); claimVersion <= 5; claimVersion++ {
+				if got := claudeRecoveryClaimVersionMatches(scenario.input, claimVersion); got != (claimVersion == scenario.want) {
+					t.Errorf("assignment version %d: claim %d matched=%t; expected only operation claim %d", scenario.input.Version, claimVersion, got, scenario.want)
+				}
+			}
+		})
+	}
+}
+
 func recoveryFixture(t *testing.T, outcome domain.ExecutionOutcome) *publicationFixture {
 	t.Helper()
 	f := newPublicationFixture(t)
