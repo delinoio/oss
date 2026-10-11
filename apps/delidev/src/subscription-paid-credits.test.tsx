@@ -197,6 +197,10 @@ describe("paid-credit decimal display", () => {
     expect(screen.getByRole("tooltip").textContent).toBe(
       "Exact balance: 60961.1135370000",
     );
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(document.activeElement).not.toBe(trigger);
+    fireEvent.mouseEnter(screen.getByText("60,961.11"));
     fireEvent.mouseLeave(trigger.parentElement!);
     expect(screen.queryByRole("tooltip")).toBeNull();
     act(() => trigger.focus());

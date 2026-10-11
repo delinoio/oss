@@ -65,8 +65,26 @@ export function PaidCreditValue({ bucket }: { bucket: PaidCreditBucket }) {
   const pinned = useRef(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const id = useId();
+  const container = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open || formatted === null) return;
+    // A hovered value can be open while focus remains outside the card. Capture
+    // Escape before the parent Settings dismissal, and preserve outside focus.
+    const close = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      pinned.current = false;
+      if (container.current?.contains(document.activeElement))
+        trigger.current?.focus({ preventScroll: true });
+      setOpen(false);
+    };
+    document.addEventListener("keydown", close, true);
+    return () => document.removeEventListener("keydown", close, true);
+  }, [open, formatted]);
   return (
     <div
+      ref={container}
       className="subscription-paid-value"
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={(event) => {
@@ -79,16 +97,6 @@ export function PaidCreditValue({ bucket }: { bucket: PaidCreditBucket }) {
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) {
           pinned.current = false;
-          setOpen(false);
-        }
-      }}
-      onKeyDown={(event) => {
-        if (event.key === "Escape" && open && formatted !== null) {
-          event.preventDefault();
-          event.stopPropagation();
-          pinned.current = false;
-          if (event.currentTarget.contains(document.activeElement))
-            trigger.current?.focus({ preventScroll: true });
           setOpen(false);
         }
       }}
