@@ -1461,3 +1461,12 @@ Each native bucket owns its exact bounded ID, required hasCredits/unlimited flag
 Account rows show one exact balance or a localized multi-bucket count. Manage subscription shows the read-only Paid credits card above Quota, with separate bucket labels and retained stale/error timestamps. Keep loading, unavailable/update, unknown, zero, positive and unlimited states distinct. Use existing theme tokens, wrapping rows, parent scrolling, keyboard/dismissal ownership and EN/KO strings. Presentation grants no account, execution, native or platform acceptance.
 
 The reconciled `CreateTerminalRequest` baseline retains original fields 1–4. The feature records their unchanged reset provenance as existing declarations; its records do not reclassify this original message as new. The feature owns creation intent field 5, original candidate field 6 and the closed creation-mode values. Preserve all member numbers and ownership.
+
+## Codex native function outputs
+
+System capability 84 and Worker capability 56 negotiate preservation of typed
+Codex function output in the existing execution event and resource documents.
+They do not add an RPC or grant tool execution, reply or retry authority.
+Original session, execution, request and native item identities retain their
+existing ownership. Unsupported output variants remain explicit failures;
+clients must not flatten rich content into invented text.
