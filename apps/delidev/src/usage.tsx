@@ -971,33 +971,35 @@ export function Usage({
                                 </DisclosureSummary>
                                 <div>
                                   <dl className="usage-original-identities">
-                                    {[
+                                    {(
                                       [
-                                        copy("usage.session_6959b4"),
-                                        group.sessionId,
-                                        "session",
-                                      ],
-                                      [
-                                        copy("usage.project_985959"),
-                                        group.projectId,
-                                        "project",
-                                      ],
-                                      [
-                                        copy("usage.account_7e1b0d"),
-                                        group.accountId,
-                                        "account",
-                                      ],
-                                      [
-                                        copy("usage.provider_472590"),
-                                        group.providerId,
-                                        "provider",
-                                      ],
-                                      [
-                                        copy("usage.model_5e2c61"),
-                                        group.model?.nativeId ?? "",
-                                        "model",
-                                      ],
-                                    ].map(([label, id, kind]) => (
+                                        [
+                                          copy("usage.session_6959b4"),
+                                          group.sessionId,
+                                          "session",
+                                        ],
+                                        [
+                                          copy("usage.project_985959"),
+                                          group.projectId,
+                                          "project",
+                                        ],
+                                        [
+                                          copy("usage.account_7e1b0d"),
+                                          group.accountId,
+                                          "account",
+                                        ],
+                                        [
+                                          copy("usage.provider_472590"),
+                                          group.providerId,
+                                          "provider",
+                                        ],
+                                        [
+                                          copy("usage.model_5e2c61"),
+                                          group.model?.nativeId ?? "",
+                                          "model",
+                                        ],
+                                      ] as const
+                                    ).map(([label, id, kind]) => (
                                       <div key={label}>
                                         <dt>{label}</dt>
                                         <dd>
