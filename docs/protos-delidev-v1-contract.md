@@ -1470,3 +1470,14 @@ They do not add an RPC or grant tool execution, reply or retry authority.
 Original session, execution, request and native item identities retain their
 existing ownership. Unsupported output variants remain explicit failures;
 clients must not flatten rich content into invented text.
+
+## Codex dynamic tool observations
+
+System capability `CODEX_DYNAMIC_TOOLS_V1 = 86` and Worker capability
+`CODEX_DYNAMIC_TOOLS_V1 = 58` gate typed native dynamic tool observations and
+original-request unavailable replies. They do not enable a tool backend.
+The Worker advertises the new capability only after the server reports support;
+the initial compatibility attach omits it. Request identity, durable reply claims,
+original-session ownership and typed output preservation follow the
+[harness contract](cmds-delidev-harness-contract.md). An observation grants no
+permission to reconstruct or resend a native request.

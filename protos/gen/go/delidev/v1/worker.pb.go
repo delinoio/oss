@@ -24,7 +24,9 @@ const (
 type WorkerCapability int32
 
 const (
-	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED                    WorkerCapability = 0
+	WorkerCapability_WORKER_CAPABILITY_UNSPECIFIED WorkerCapability = 0
+	// Native dynamic tool observations and original-request unavailable replies.
+	WorkerCapability_WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1         WorkerCapability = 58
 	WorkerCapability_WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1      WorkerCapability = 56
 	WorkerCapability_WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1           WorkerCapability = 52
 	WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1      WorkerCapability = 22
@@ -69,6 +71,7 @@ const (
 var (
 	WorkerCapability_name = map[int32]string{
 		0:  "WORKER_CAPABILITY_UNSPECIFIED",
+		58: "WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1",
 		56: "WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1",
 		52: "WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1",
 		22: "WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1",
@@ -109,6 +112,7 @@ var (
 	}
 	WorkerCapability_value = map[string]int32{
 		"WORKER_CAPABILITY_UNSPECIFIED":                       0,
+		"WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1":            58,
 		"WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1":         56,
 		"WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1":              52,
 		"WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1":         22,
@@ -4376,9 +4380,10 @@ const file_delidev_v1_worker_proto_rawDesc = "" +
 	"\x12repository_ordinal\x18\v \x01(\rR\x11repositoryOrdinal\x12)\n" +
 	"\x10repository_count\x18\f \x01(\rR\x0frepositoryCount\"B\n" +
 	"$ReportSessionStartupProgressResponse\x12\x1a\n" +
-	"\breplayed\x18\x01 \x01(\bR\breplayed*\xd5\x0e\n" +
+	"\breplayed\x18\x01 \x01(\bR\breplayed*\x83\x0f\n" +
 	"\x10WorkerCapability\x12!\n" +
-	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12/\n" +
+	"\x1dWORKER_CAPABILITY_UNSPECIFIED\x10\x00\x12,\n" +
+	"(WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1\x10:\x12/\n" +
 	"+WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1\x108\x12*\n" +
 	"&WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1\x104\x12/\n" +
 	"+WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1\x10\x16\x121\n" +

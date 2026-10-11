@@ -51,6 +51,8 @@ message GetStatusResponse {
 
 enum SystemCapability {
   SYSTEM_CAPABILITY_UNSPECIFIED = 0;
+  // Native dynamic tool observations and original-request unavailable replies.
+  SYSTEM_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1 = 86;
   SYSTEM_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1 = 84;
   SYSTEM_CAPABILITY_AUTOMATIC_RESET_CREDIT_CONSENT_V1 = 77;
 

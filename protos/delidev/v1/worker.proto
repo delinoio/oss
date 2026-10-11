@@ -130,6 +130,8 @@ message AttachWorkerRequest {
 
 enum WorkerCapability {
   WORKER_CAPABILITY_UNSPECIFIED = 0;
+  // Native dynamic tool observations and original-request unavailable replies.
+  WORKER_CAPABILITY_CODEX_DYNAMIC_TOOLS_V1 = 58;
   WORKER_CAPABILITY_CODEX_FUNCTION_OUTPUTS_V1 = 56;
   WORKER_CAPABILITY_CODEX_QUOTA_BLOCK_V1 = 52;
 
