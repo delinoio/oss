@@ -213,9 +213,10 @@ it("does not repeat unchanged unavailable results or ordinary edits and retires 
  const updates: string[] = [];
  const observer = new MutationObserver(() => { if (status.textContent) updates.push(status.textContent); }); observer.observe(status, { childList: true, characterData: true, subtree: true });
  try {
-  for (const [locked, active] of [[false, false], [true, false], [true, true], [false, true]] as const) {
+  for (const [locked, active] of [[false, false], [true, false], [true, true]] as const) {
    view.rerender(tree(true, locked, active)); expect(status.textContent).toBe("1 skill tokens are unavailable in this scope.");
   }
+  view.rerender(tree(true, false, true)); await waitFor(() => expect(status.textContent).toBe(""));
   fireEvent.change(input, { target: { value: "ordinary $missing", selectionStart: 17 } }); fireEvent.keyDown(input, { key: "Escape" });
   await client.invalidateQueries(); await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
   expect(updates).toEqual([]);
