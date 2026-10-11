@@ -4705,6 +4705,27 @@ renderer-local skill directories are never discovery authority. Codex alone is
 supported. Follow the sessions contract's Explicit native skills section for
 snapshot, native input, recovery, protocol and cleanup ownership.
 
+Valid explicit selected spans use semantic `--link` color and a thin underline
+in the same noninteractive mirror. Retain exact literal `$name` prompt bytes,
+opaque selections, font, baseline, wrapping and dimensions; add no Markdown,
+chip, navigation target, click action, link role or extra focus stop. Derive
+styling only from one exact nonstale, unambiguous binding in the original resolved
+Runner/Agent/project/session and retained connection scope. Unselected matching
+text remains ordinary. Outside edits move the existing bound span; token edits
+and explicit clearing remove its selected decoration. Bound selected painted
+spans to 16 and never add another mirror.
+
+Confirmed unavailable styling takes precedence. Loading, failed or disabled
+inventory reads remain unknown and may retain a valid selected decoration;
+selection styling never proves availability or enables acceptance. Changed or
+unresolved scope removes selected decoration while preserving reselection
+warnings and send guards. Suppress both decorations during IME. Preserve native
+textarea identity, focus, caret, selection, undo, scroll, existing localized
+status ownership and pending/uncertain draft and binding locks. Apply the same
+rules to project creation, General Chat creation, follow-up and queued editing,
+including semantic themes, typography changes and 200% zoom. Fixture or browser
+geometry coverage does not establish installed-native or assistive acceptance.
+
 Typed queued edits restore selected token bindings from immutable accepted metadata.
 They support explicit selection clearing and reselection, preserve bindings and
 drafts across payload eviction, and keep skill-bound Steer unavailable.
