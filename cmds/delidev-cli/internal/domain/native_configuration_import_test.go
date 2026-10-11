@@ -7,6 +7,10 @@ import (
 )
 
 func TestNativeImportSelectorsRemainClosedAndDoNotGrantNativeAuthority(t *testing.T) {
+	if NativeConfigurationSecret("Protect credentials and do not expose passwords.") {
+		t.Fatal("ordinary safety instructions were treated as credentials")
+	}
+
 	for _, raw := range []string{`"secret=hidden"`, `"sk-hidden"`, `"unknown"`, `null`, `{}`} {
 		if _, err := NativeConfigurationSettingValue("approval_policy", []byte(raw)); err == nil {
 			t.Fatal("unsupported selector accepted", raw)

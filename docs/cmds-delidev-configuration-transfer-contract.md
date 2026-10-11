@@ -172,7 +172,8 @@ existing destination with its revision. The destination is `server-defaults`,
 harness source scope. Agent choices include the exact source scope and route
 index. No route, ancestor, host home, native-selected profile, account or target
 is inferred. One optional explicitly named profile is read after the base values
-of each selected file. Project scopes must form an explicitly selected ancestor
+of each selected file. Each entry distinguishes the base layer from that explicit
+profile in its provenance. Project scopes must form an explicitly selected ancestor
 to descendant chain. A home scope, when selected, precedes project scopes.
 
 The Worker reads only `config.toml` for a home or `.codex/config.toml` for a

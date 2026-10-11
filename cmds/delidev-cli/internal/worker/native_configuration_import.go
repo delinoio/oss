@@ -75,7 +75,7 @@ func inspectNativeConfiguration(ctx context.Context, selection domain.NativeConf
 			if !utf8.Valid(values[0]) || toml.Unmarshal(values[0], &config) != nil {
 				return result, nativeConfigurationReadFailure()
 			}
-			if err := appendNativeConfigurationTable(&result, uint32(index), files[0], domain.HarnessEvidenceDigest(values[0]), config); err != nil {
+			if err := appendNativeConfigurationTable(&result, uint32(index), files[0], domain.HarnessEvidenceDigest(values[0]), "", config); err != nil {
 				return result, err
 			}
 			if scope.Profile != "" {
@@ -87,7 +87,7 @@ func inspectNativeConfiguration(ctx context.Context, selection domain.NativeConf
 				if !ok {
 					return result, domain.NativeConfigurationInvalid()
 				}
-				if err := appendNativeConfigurationTable(&result, uint32(index), files[0], domain.HarnessEvidenceDigest(values[0]), profile); err != nil {
+				if err := appendNativeConfigurationTable(&result, uint32(index), files[0], domain.HarnessEvidenceDigest(values[0]), scope.Profile, profile); err != nil {
 					return result, err
 				}
 			}
@@ -157,15 +157,16 @@ func appendNativeConfigurationEntry(result *domain.NativeConfigurationObservatio
 	proof, _ := json.Marshal(struct {
 		Scope   uint32
 		File    string
+		Profile string
 		Kind    domain.NativeConfigurationEntryKind
 		Name    string
 		Ordinal int
 		Digest  string
-	}{entry.ScopeIndex, entry.File, entry.Kind, entry.Name, len(result.Entries), entry.SourceDigest})
+	}{entry.ScopeIndex, entry.File, entry.Profile, entry.Kind, entry.Name, len(result.Entries), entry.SourceDigest})
 	entry.ID = domain.HarnessEvidenceDigest(proof)
 	result.Entries = append(result.Entries, entry)
 }
-func appendNativeConfigurationTable(result *domain.NativeConfigurationObservation, index uint32, file, digest string, table map[string]any) error {
+func appendNativeConfigurationTable(result *domain.NativeConfigurationObservation, index uint32, file, digest, profile string, table map[string]any) error {
 	keys := make([]string, 0, len(table))
 	for key := range table {
 		keys = append(keys, key)
@@ -175,7 +176,7 @@ func appendNativeConfigurationTable(result *domain.NativeConfigurationObservatio
 		if len(result.Entries) >= 128 {
 			return nativeConfigurationReadFailure()
 		}
-		entry := domain.NativeConfigurationEntry{ScopeIndex: index, File: file, SourceDigest: digest, Kind: domain.NativeConfigurationUnsupported, Name: "unsupported"}
+		entry := domain.NativeConfigurationEntry{Profile: profile, ScopeIndex: index, File: file, SourceDigest: digest, Kind: domain.NativeConfigurationUnsupported, Name: "unsupported"}
 		name := map[string]string{"model": "model", "model_reasoning_effort": "effort", "sandbox_mode": "permission", "approval_policy": "approval_policy", "service_tier": "service_tier"}[key]
 		if name != "" {
 			value, ok := table[key].(string)

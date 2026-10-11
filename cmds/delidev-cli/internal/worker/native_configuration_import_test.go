@@ -64,6 +64,12 @@ func TestNativeImportReadsOnlySelectedLayersAndPreservesOverride(t *testing.T) {
 	values := []string{}
 	instructions := []string{}
 	for _, entry := range observation.Entries {
+		if entry.Name == "effort" && entry.Profile != "reviewed" {
+			t.Fatal("selected profile provenance missing", entry)
+		}
+		if entry.Name == "model" && entry.Profile != "" {
+			t.Fatal("base value falsely labeled as selected profile", entry)
+		}
 		if entry.Name == "model" {
 			values = append(values, string(entry.Value))
 		}

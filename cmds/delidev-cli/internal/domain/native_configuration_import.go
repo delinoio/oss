@@ -158,6 +158,7 @@ type NativeConfigurationSource struct {
 	Digest     string `json:"digest"`
 }
 type NativeConfigurationEntry struct {
+	Profile    string                       `json:"profile,omitempty"`
 	ID         string                       `json:"id"`
 	ScopeIndex uint32                       `json:"scope_index"`
 	File       string                       `json:"file"`
@@ -236,6 +237,9 @@ func (o NativeConfigurationObservation) Validate(s NativeConfigurationPreviewSel
 		seen[entry.ID] = true
 		lastScope = entry.ScopeIndex
 		source, ok := sources[string(rune(entry.ScopeIndex))+entry.File]
+		if entry.Profile != "" && entry.Profile != s.Scopes[entry.ScopeIndex].Profile {
+			return NativeConfigurationInvalid()
+		}
 		if !ok || !source.Present || source.Digest != entry.SourceDigest {
 			return NativeConfigurationInvalid()
 		}
@@ -245,7 +249,7 @@ func (o NativeConfigurationObservation) Validate(s NativeConfigurationPreviewSel
 				return NativeConfigurationInvalid()
 			}
 		case NativeConfigurationInstruction:
-			if entry.Name != "instructions" || (entry.File != "AGENTS.md" && entry.File != "AGENTS.override.md") || len(entry.Value) != 0 || Text(entry.Contents, "imported instructions", MaxNativeConfigurationFileBytes, true) != nil || NativeConfigurationSecret(entry.Contents) {
+			if entry.Profile != "" || entry.Name != "instructions" || (entry.File != "AGENTS.md" && entry.File != "AGENTS.override.md") || len(entry.Value) != 0 || Text(entry.Contents, "imported instructions", MaxNativeConfigurationFileBytes, true) != nil || NativeConfigurationSecret(entry.Contents) || HarnessEvidenceDigest([]byte(entry.Contents)) != entry.SourceDigest {
 				return NativeConfigurationInvalid()
 			}
 		case NativeConfigurationInertExtension:
