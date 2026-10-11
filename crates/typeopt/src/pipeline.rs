@@ -490,7 +490,18 @@ impl<B: Backend> Pipeline<'_, B> {
                 continue;
             }
             let mut candidate = candidate;
-            match gate.try_accept(&mut candidate)? {
+            let started = std::time::Instant::now();
+            let decision = gate.try_accept(&mut candidate)?;
+            let elapsed = started.elapsed();
+            if elapsed.as_secs() >= 1 {
+                tracing::debug!(
+                    pass = %candidate.pass,
+                    files = candidate.edits.len(),
+                    elapsed_ms = elapsed.as_millis() as u64,
+                    "slow size evaluation"
+                );
+            }
+            match decision {
                 Decision::Accept { before, after } => accepted.push((candidate, before, after)),
                 Decision::Reject(reason) => {
                     skips.push(Skip {
@@ -524,7 +535,14 @@ impl<B: Backend> Pipeline<'_, B> {
         // whose prefix fails, roll it back and retry with the remainder.
         loop {
             let texts = Self::applied(&outcome.texts, &accepted)?;
+            let started = std::time::Instant::now();
             let failing = self.backend.check(&texts)?;
+            tracing::debug!(
+                bundles = accepted.len(),
+                failing = failing.len(),
+                elapsed_ms = started.elapsed().as_millis() as u64,
+                "transformed program rechecked"
+            );
             if failing.is_empty() {
                 break;
             }
