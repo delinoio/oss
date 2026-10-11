@@ -85,6 +85,30 @@ test("unit and integration inventories are partitioned independently", () => {
   }
 });
 
+test("Git path characters retain deterministic file identities", () => {
+  const files = specs([
+    "한글.test.ts",
+    "space name.test.ts",
+    "nested/name.test.ts",
+    "line\nbreak.test.ts",
+  ]);
+  assert.deepEqual(
+    paths(partitionTests(files, root, 4)),
+    paths(partitionTests(files.toReversed(), root, 4)),
+  );
+  if (process.platform !== "win32") {
+    const literal = specs(["nested\\name.test.ts", "nested/name.test.ts"]);
+    const shards = partitionTests(literal, root, 2, {
+      "nested\\name.test.ts": 10,
+      "nested/name.test.ts": 2,
+    });
+    assert.deepEqual(
+      shards.map((shard) => shard.seconds),
+      [10, 2],
+    );
+  }
+});
+
 test("unsharded local sorting delegates to Vitest, while shards use the same weights", async () => {
   const files = specs(["short.test.ts", "long.test.ts"]);
   for (const file of files)

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-import { relative } from "node:path";
+import { relative, sep } from "node:path";
 import { BaseSequencer } from "vitest/node";
 import weights from "./ci-test-weights.json" with { type: "json" };
 
 const compare = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 const pathFor = (file, root) =>
-  relative(root, file.moduleId).replaceAll("\\", "/");
+  relative(root, file.moduleId).split(sep).join("/");
 const weightFor = (path, timings) => timings[path] ?? 1;
 
 export function sortByWeight(files, root, timings = weights) {
