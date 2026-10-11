@@ -481,6 +481,16 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
   // Hide the tray only after a complete, error-free resident read leaves no request to show.
   const requestsComplete = !!interactions.data && !interactions.isPending && !interactions.error && !interactions.nextPageToken && interactions.pages.length === interactions.payloadPages.length;
   const showRequests = !(requestsComplete && requests.length === 0);
+  // Hand focus off when a retired request removes the control that held it.
+  const focusedInRequests = useRef<boolean>(false);
+  const requestsSignature = requests.map(row => `${row.id}:${row.revision}`).join(",");
+  useLayoutEffect(() => {
+    const lost = focusedInRequests.current && (!document.activeElement || document.activeElement === document.body);
+    focusedInRequests.current = false;
+    if (!lost) return;
+    const next = requestsRoot.current?.querySelector<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled)");
+    (next ?? composer.current)?.focus({ preventScroll: true });
+  }, [requestsSignature, showRequests]);
   const queued = pending.filter(isQueuedInput);
   const imageRejected = pending.filter(row => isImageStartupRejectedInput(row, session));
   // Evicted payloads can contain waiting inputs. Keep their exact restoration
@@ -646,7 +656,7 @@ export function SessionView({ id, draft, setDraft, initialSkills, changeSkills, 
       </div>
       <div className="session-input-tray">
         {showRequests ? <Disclosure className="requests" open={requests.some(r => readDocument(r).closure === "open") || requestsOpen} onToggle={event => setRequestsOpen(event.currentTarget.open)}><DisclosureSummary>{interactions.isPending ? copy("session.loadingRequests") : <LocalizedText id="session.agentRequestsOnThisPage_5e8644" components={{ s0: <>{requests.length}</> }} />}</DisclosureSummary>
-          <div ref={requestsRoot} className="session-tray-content"><Failure failure={interactions.error?.failure} />
+          <div ref={requestsRoot} className="session-tray-content" onFocusCapture={() => { focusedInRequests.current = true; }} onBlurCapture={event => { focusedInRequests.current = event.relatedTarget instanceof Node && !!requestsRoot.current?.contains(event.relatedTarget) ? true : (event.relatedTarget === null && event.currentTarget.contains(event.target as Node) ? focusedInRequests.current : false); }}><Failure failure={interactions.error?.failure} />
             <ScrollPayloadWindow identity={paginationIdentity} revision={paginationRevision} query={interactions} root={requestsRoot} active={conversationActive && requestsOpen}>{payload => interactionRows(payload, live.resources, live.removed, [], id, false).filter(row => !questionRetired(row)).map(interactionRow)}</ScrollPayloadWindow>{!interactions.nextPageToken ? requests.filter(row => !interactions.rows.some(known => known.id === row.id)).map(interactionRow) : null}
             <ScrollContinuation query={interactions} root={requestsRoot} active={conversationActive && requestsOpen} label={copy("session.requestPages_d06a30")} />
           </div>
