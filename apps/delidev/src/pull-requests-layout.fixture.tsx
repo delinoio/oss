@@ -14,6 +14,12 @@ import {
   SystemService,
 } from "@delinoio/delidev-api-client";
 import { App } from "./App";
+import {
+  memorySidebarBridge,
+  SidebarPreference,
+  SidebarProvider,
+  useSidebarPreference,
+} from "./sidebar-preference";
 import { AppearanceProvider, Theme } from "./appearance";
 import { encode } from "./documents";
 import { i18n, SupportedLanguage } from "./localization";
@@ -27,6 +33,13 @@ void i18n.changeLanguage(
     ? SupportedLanguage.Korean
     : SupportedLanguage.English,
 );
+const sidebarBridge = memorySidebarBridge();
+if (args.get("collapsed") === "true")
+  void sidebarBridge.update(SidebarPreference.Collapsed, 1);
+function SidebarReady() {
+  const { operation } = useSidebarPreference();
+  return <span hidden data-sidebar-ready={!operation} />;
+}
 const requests = { github: 0, repository: 0 };
 let catalogReads = 0;
 Object.defineProperty(window, "__prSidebarCatalogReads", {
@@ -99,6 +112,9 @@ createRoot(document.getElementById("root")!).render(
       subscribe: async () => () => {},
     }}
   >
-    <App transport={transport} />
+    <SidebarProvider bridge={sidebarBridge}>
+      <SidebarReady />
+      <App transport={transport} />
+    </SidebarProvider>
   </AppearanceProvider>,
 );

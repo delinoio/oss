@@ -99,23 +99,37 @@ try {
         const primary = await page.evaluate(() =>
           /mac/i.test(navigator.platform) ? "Meta" : "Control",
         );
-        const toggle = page.locator(".sidebar-wide-toggle"),
-          pane = page.locator(".sidebar-pane-dialog"),
+        const pane = page.locator(".sidebar-pane-dialog"),
           rail = page.locator(".sidebar-rail");
-        await toggle.waitFor();
-        await page.waitForFunction(
-          () =>
-            document
-              .querySelector(".sidebar-wide-toggle")
-              ?.getAttribute("aria-disabled") === "false",
-        );
+        await page
+          .locator('[data-sidebar-ready="true"]')
+          .waitFor({ state: "attached" });
+        assert.equal(await page.locator(".sidebar-wide-toggle").count(), 0);
+        // Both committed startup choices have no replacement row. The retained
+        // full-height Session surface starts at the main region's top edge.
+        for (const collapsed of [true, false]) {
+          await page.goto(
+            `${origin}/?language=${language}&theme=${theme}&collapsed=${collapsed}`,
+          );
+          await page
+            .locator('[data-sidebar-ready="true"]')
+            .waitFor({ state: "attached" });
+          assert.equal(await pane.evaluate((node) => node.hidden), collapsed);
+          assert.equal(await page.locator(".sidebar-wide-toggle").count(), 0);
+          const mainBounds = await page.locator("#main").boundingBox();
+          const sessionBounds = await page
+            .locator(".session-container")
+            .boundingBox();
+          assert.equal(sessionBounds.y, mainBounds.y);
+          assert.equal(sessionBounds.height, mainBounds.height);
+        }
         const originalWidth = width > 1100 ? 288 : 256;
         assert.equal(
           Math.round((await pane.boundingBox()).width),
           originalWidth,
         );
         const paneHandle = await pane.elementHandle();
-        await toggle.click();
+        await page.keyboard.press(`${primary}+b`);
         await page.waitForFunction(
           () => document.querySelector(".sidebar-pane-dialog").hidden,
         );
@@ -140,7 +154,7 @@ try {
           ),
           true,
         );
-        // A focused pane control must return to the persistent toggle before hiding.
+        // A focused pane control must return to the current rail item before hiding.
         const control = pane.locator("button").first();
         await control.focus();
         await page.keyboard.press(`${primary}+b`);
@@ -148,12 +162,14 @@ try {
           () => document.querySelector(".sidebar-pane-dialog").hidden,
         );
         assert.equal(
-          await toggle.evaluate((node) => node === document.activeElement),
+          await rail
+            .locator("[aria-current='page']")
+            .evaluate((node) => node === document.activeElement),
           true,
         );
         // Compact opening is independent of the committed wide choice.
         await page.setViewportSize({ width: 759, height: 640 });
-        assert.equal(await toggle.isVisible(), false);
+        assert.equal(await page.locator(".sidebar-wide-toggle").count(), 0);
         await page.locator(".sidebar-context-trigger").click();
         assert.equal(
           await pane.evaluate((node) => node.matches(":modal")),
@@ -169,13 +185,35 @@ try {
         await page.waitForFunction(
           () => document.querySelector(".sidebar-pane-dialog").hidden,
         );
-        assert.equal(await toggle.getAttribute("aria-expanded"), "false");
+        assert.equal(await pane.evaluate((node) => node.inert), true);
+        await page.setViewportSize({ width: 759, height: 640 });
+        await page.locator(".sidebar-context-trigger").click();
+        await page.setViewportSize({ width, height: 640 });
+        await page.waitForFunction(() => {
+          const pane = document.querySelector(".sidebar-pane-dialog");
+          return (
+            pane.hidden &&
+            !pane.matches(":modal") &&
+            document.activeElement ===
+              document.querySelector(".sidebar-rail [aria-current='page']")
+          );
+        });
         assert.equal(
           await page.evaluate(
             () => document.documentElement.scrollWidth <= innerWidth,
           ),
           true,
         );
+        // Inbox owns its full-height scroll region without a toggle spacer.
+        await page.keyboard.press(`${primary}+b`);
+        await pane.locator(".sidebar-header-actions button").first().click();
+        for (const collapsed of [false, true]) {
+          if (collapsed) await page.keyboard.press(`${primary}+b`);
+          const mainBounds = await page.locator("#main").boundingBox();
+          const inboxBounds = await page.locator(".inbox-container").boundingBox();
+          assert.equal(inboxBounds.y, mainBounds.y);
+          assert.equal(inboxBounds.height, mainBounds.height);
+        }
         // Supporting-surface portals retain selected resources and authoring state.
         await page
           .getByRole("button", {
@@ -184,7 +222,7 @@ try {
           })
           .click();
         assert.equal(await pane.evaluate((node) => node.hidden), true);
-        await toggle.click();
+        await page.keyboard.press(`${primary}+b`);
         await page.waitForFunction(
           () => !document.querySelector(".sidebar-pane-dialog").hidden,
         );
@@ -194,7 +232,7 @@ try {
         await draft.fill("Retained query draft");
         const draftHandle = await draft.elementHandle();
         await draft.evaluate((node) => node.setSelectionRange(2, 8));
-        await toggle.focus();
+        await draft.focus();
         const scroller = page.locator(".sidebar-list");
         await scroller.evaluate((node) => {
           node.style.maxHeight = "140px";
@@ -212,7 +250,9 @@ try {
           () => document.querySelector(".sidebar-pane-dialog").hidden,
         );
         assert.equal(
-          await toggle.evaluate((node) => node === document.activeElement),
+          await rail
+            .locator("[aria-current='page']")
+            .evaluate((node) => node === document.activeElement),
           true,
         );
         await page
@@ -227,7 +267,7 @@ try {
             exact: true,
           })
           .click();
-        await toggle.click();
+        await page.keyboard.press(`${primary}+b`);
         await page.waitForFunction(
           () => !document.querySelector(".sidebar-pane-dialog").hidden,
         );
@@ -257,8 +297,8 @@ try {
       await page.setViewportSize({ width, height: 450 });
       await page.goto(`${origin}/?language=${language}`);
       assert.equal(
-        await page.locator(".sidebar-wide-toggle").isVisible(),
-        false,
+        await page.locator(".sidebar-wide-toggle").count(),
+        0,
       );
       await page.locator(".sidebar-context-trigger").click();
       assert.equal(

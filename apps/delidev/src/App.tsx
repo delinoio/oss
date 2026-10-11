@@ -28,7 +28,6 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
-  useId,
   useMemo,
   useRef,
   useState,
@@ -69,7 +68,7 @@ import { TrayDestination } from "./tray";
 import { NotificationPresentation } from "./notification-presentation";
 import { NotificationProvider } from "./toast-notifications";
 import { refreshCreatedSessionNavigation } from "./home-navigation-query";
-import { Sidebar, Icon } from "./sidebar";
+import { Sidebar } from "./sidebar";
 import type { ChooseRepositoryFolder } from "./repository-registration";
 import {
   SettingsEntryDestination,
@@ -155,8 +154,6 @@ function Shell({
     sidebarPreference.snapshot.sidebar_preference ===
     SidebarPreference.Collapsed;
   const sidebarPaneVisible = wideSidebar ? !sidebarCollapsed : drawerOpen;
-  const sidebarToggle = useRef<HTMLButtonElement>(null);
-  const sidebarPaneId = useId();
   const toggleSidebar = () =>
     sidebarPreference.select(
       sidebarCollapsed
@@ -423,7 +420,7 @@ function Shell({
     navigate(destination);
     pendingFocusDestination.current = destination;
   };
-  const sidebarShortcuts = useShortcuts([
+  useShortcuts([
     {
       id: ShortcutId.ToggleSidebar,
       scope: ShortcutScope.Global,
@@ -519,8 +516,6 @@ function Shell({
                     </a>
                     <Sidebar
                       collapsed={sidebarCollapsed}
-                      paneId={sidebarPaneId}
-                      toggleRef={sidebarToggle}
                       compactFocusRef={contextOpener}
                       openCommandMenu={toggleCommandMenu}
                       connectionReady={connectionReady}
@@ -556,33 +551,6 @@ function Shell({
                       />
                     ) : null}
                     <main ref={main} id="main" tabIndex={-1}>
-                      <button
-                        ref={sidebarToggle}
-                        type="button"
-                        className="sidebar-wide-toggle"
-                        aria-label={copy(
-                          sidebarCollapsed
-                            ? "sidebar-preference.expand"
-                            : "sidebar-preference.collapse",
-                        )}
-                        title={copy(
-                          sidebarCollapsed
-                            ? "sidebar-preference.expand"
-                            : "sidebar-preference.collapse",
-                        )}
-                        aria-expanded={!sidebarCollapsed}
-                        aria-controls={sidebarPaneId}
-                        aria-keyshortcuts={sidebarShortcuts.aria(
-                          ShortcutId.ToggleSidebar,
-                        )}
-                        aria-disabled={Boolean(
-                          sidebarPreference.operation ||
-                          sidebarPreference.snapshot.problem,
-                        )}
-                        onClick={toggleSidebar}
-                      >
-                        <Icon name="sidebar-toggle" />
-                      </button>
                       <SidebarPreferenceNotice />
                       <button
                         ref={contextOpener}
