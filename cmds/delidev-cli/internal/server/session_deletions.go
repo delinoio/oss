@@ -3,6 +3,8 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"time"
 
@@ -26,6 +28,47 @@ func sessionDeletionMessage(v store.SessionDeletion) *pb.SessionDeletionJob {
 	}
 	return r
 }
+
+func sessionDeletionCopiesSupported(tx *store.Tx, work domain.SessionDeletionWork, machine domain.Machine) (bool, error) {
+	for _, copy := range work.Copies {
+		if copy.Type != domain.PrepareWorkspaceJob {
+			continue
+		}
+		assignment, err := tx.JobAssignment(copy.JobID)
+		if err != nil {
+			return false, domain.SessionDeletionPending()
+		}
+		original, err := store.Decode[domain.Job](assignment)
+		digest := sha256.Sum256(assignment.Data)
+		if err != nil || original.Validate() != nil || assignment.SessionID != work.SessionID || assignment.Revision != copy.Revision || hex.EncodeToString(digest[:]) != copy.Digest || original.Type != copy.Type || original.InstanceID != copy.InstanceID || original.AssignedDeviceID != work.DeviceID || original.MachineID != work.MachineID {
+			return false, domain.SessionDeletionPending()
+		}
+		if err := requireNamedJobCapability(machine, original); err != nil {
+			if domain.SafeError(err).Code == domain.Unsupported {
+				return false, nil
+			}
+			return false, domain.SessionDeletionPending()
+		}
+	}
+	return true, nil
+}
+
+func (s *Service) sessionDeletionWorkSupported(ctx context.Context, check func(*store.Tx) error, work domain.SessionDeletionWork) (bool, error) {
+	supported := false
+	err := s.Store.Read(ctx, func(tx *store.Tx) error {
+		if err := check(tx); err != nil {
+			return err
+		}
+		_, machine, err := activeMachine(tx, work.MachineID)
+		if err != nil {
+			return err
+		}
+		supported, err = sessionDeletionCopiesSupported(tx, work, machine)
+		return err
+	})
+	return supported, err
+}
+
 func (s *Service) DeleteSession(ctx context.Context, req *connect.Request[pb.DeleteSessionRequest]) (*connect.Response[pb.DeleteSessionResponse], error) {
 	c := req.Header().Get(rpc.CorrelationHeader)
 	if e := s.authorizeBackups(ctx); e != nil {
@@ -90,6 +133,14 @@ func (s *Service) ListSessionDeletionWork(ctx context.Context, req *connect.Requ
 			}
 			for _, copy := range w.Work.Copies {
 				if string(copy.JobID) == req.Msg.OriginalJobId {
+					supported, err := s.sessionDeletionWorkSupported(ctx, check, w.Work)
+					if err != nil {
+						return nil, rpc.Error(err, c)
+					}
+					if !supported {
+						s.logger.DebugContext(ctx, "named_session_deletion_withheld", "session_id", w.Work.SessionID, "machine_id", w.Work.MachineID, "code", domain.Unsupported)
+						break
+					}
 					raw, err := json.Marshal(w.Work)
 					if err != nil || len(raw) > domain.MaxSessionDeletionBytes {
 						return nil, rpc.Error(domain.SessionDeletionPending(), c)
@@ -146,6 +197,14 @@ func (s *Service) ListSessionDeletionWork(ctx context.Context, req *connect.Requ
 		}
 		for _, w := range v.Workers {
 			if w.Work.DeviceID == actor.DeviceID && w.Work.MachineID == actor.MachineID && !w.Acknowledged {
+				supported, err := s.sessionDeletionWorkSupported(ctx, check, w.Work)
+				if err != nil {
+					return nil, rpc.Error(err, c)
+				}
+				if !supported {
+					s.logger.DebugContext(ctx, "named_session_deletion_withheld", "session_id", w.Work.SessionID, "machine_id", w.Work.MachineID, "code", domain.Unsupported)
+					continue
+				}
 				b, _ := json.Marshal(w.Work)
 				if len(out.WorkJson) == 20 || size+len(b) > domain.MaxSessionDeletionBytes {
 					if len(out.WorkJson) == 0 {
