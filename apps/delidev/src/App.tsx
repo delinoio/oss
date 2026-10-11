@@ -478,7 +478,11 @@ function Shell({
       inline={!connectionReady}
       onRequest={onConnectionHelp}
     >
-      <RunnerRemediationProvider active authority={pairingAuthority}>
+      <RunnerRemediationProvider
+        active
+        connectionReady={connectionReady}
+        authority={pairingAuthority}
+      >
         <RunnerPreferenceProvider
           readLocalWorker={readLocalWorker}
           scope={
