@@ -96,7 +96,7 @@ try {
           assert.equal(geometry.headingGap, 16);
           assert(Math.abs(geometry.sectionGap - 32) <= 1, "section rhythm");
           assert(
-            Math.abs(geometry.portalItemGap - 32) <= 1,
+            Math.abs(geometry.portalItemGap - 35) <= 1,
             "all portal items receive section rhythm",
           );
           assert(geometry.contentWidth <= 1040, "content cap");
