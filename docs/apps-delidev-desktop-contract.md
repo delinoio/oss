@@ -1181,7 +1181,7 @@ If the saved provider changes after OAuth Start admission, replay returns the or
 
 - Server preferences Network settings is an initially collapsed inline workspace under the desktop contract. Mount a fresh plain SettingsLifetime and MutationIntents per opening, without the task-scope marker; child profile dialogs own independent scopes. Keep independently owned Network active on expansion, authoritative route/decimal generation reads, explicit native profile selection and current bounded scrolling. Outer collapse disposes children, secrets and exact retries without canceling accepted effects; inner Worker transfer stays mounted and reveals hidden invalid controls before focus. Runner Device network retains its modal ownership. Preserve English/Korean, semantic themes, reflow and separate browser/native evidence.
 
-- Conversation role presentation follows the desktop session-workspace contract. Recognized generic/Grok users use right-aligned accent bubbles; recognized assistants and the validated Claude wrapper are borderless and left-aligned. Preserve unknown/invalid/tool/progress/artifact/interruption roots, exact inert content and native details. Transcript-scoped CSS owns 16px spacing across measured historical payload wrappers and live rows, 75%/720px user caps and 90% below 600px available width. Omit visible role labels and routine complete/completed badges only on recognized conversation roots, including projected users; omit empty headers. Keep localized accessible roles, operational and delivery states, Grok native-history provenance, native details and focus. Preserve original paging/revisions and the pinned composer; fixtures grant no native acceptance.
+- Conversation role presentation follows the desktop session-workspace contract. Recognized generic/Grok users use right-aligned accent bubbles; recognized assistants and the validated Claude wrapper are borderless and left-aligned. Preserve unknown/invalid/tool/progress/artifact/interruption roots, exact inert content and native details, with the narrow validated [Codex indexed reasoning exception](#codex-indexed-reasoning-disclosure). Transcript-scoped CSS owns 16px spacing across measured historical payload wrappers and live rows, 75%/720px user caps and 90% below 600px available width. Omit visible role labels and routine complete/completed badges only on recognized conversation roots, including projected users; omit empty headers. Keep localized accessible roles, operational and delivery states, Grok native-history provenance, native details and focus. Preserve original paging/revisions and the pinned composer; fixtures grant no native acceptance.
 
 - Session follow-up drafts retain text and typed skill bindings together in the authenticated connection owner across view unmount/remount and same-identity reconnect. Bound combined metadata, block unresolved or changed original context, reject draft growth atomically, and clear only the original accepted receipt scope even when hidden. Plain unselected tokens remain text.
 
@@ -5220,3 +5220,32 @@ Native local startup, supervision and saved-connection verification require the 
 A current supported repository with saved GitHub owner/name and no profile presents one inline GitHub profile choice. It never selects the only profile automatically. The existing bounded selector verifies an explicit exact resource and allows supported disconnected profiles. Association grants no credential or repository-access authority. Profile creation and credential connection stay in GitHub profiles Settings. Missing owner/name opens resource-targeted Repository Settings only after a matching supported exact-resource read; inline setup has no owner, name, URL or token fields.
 
 Save retains the complete original document with only `integration_id` changed, the original repository ID/revision and one request ID. Existing repository configuration writes share a connection-owned mutation identity across Settings and Pull requests. Admission retains the original job and blocks competing saves through navigation. Uncertain acknowledgment permits only the original bytes/request retry. Pending PR actions owns recovery, sanitized failures and status reads. Verified job success with matching output identity/revision must precede a fresh original repository read before automatic PR loading can resume. Failed jobs require a fresh read and explicit review before releasing the save. Rejected saves require read/review before another draft. Unsent choices and selection reads are discarded on repository change or departure; late work cannot change another form or start its PR query. Remote repository capability, backend authorization/revision/checkout validation and normal configured queries remain authoritative. English/Korean semantic forms keep visible focus, 40px controls and wrapping actions.
+
+### Codex indexed reasoning disclosure
+
+Recognized Codex reasoning artifacts in ordinary sessions and General Chat use
+`codex-reasoning.tsx` and its stylesheet. The collapsed default shows a gray
+chevron and the first non-whitespace completed summary part, falling back to the
+first started summary part and then localized Thinking. Preserve the selected
+string exactly; truncate only the row through single-line CSS ellipsis. The
+native summary retains its full accessible text. The 36px trigger and expanded
+body have no card, background, rounded box or shadow. One subtle vertical rule
+and 20px content indentation separate the original supplied observations.
+
+Keep Initial, Streamed and Final observations separate, including summary/content
+families, original zero-based indices, sequence order, delta kinds and exact
+Unicode/whitespace. Show sections only when they contain supplied text; do not
+merge, deduplicate, generate or reconstruct reasoning. Empty reasoning retains
+the disclosure and a localized supplied-content-empty explanation. Hide routine
+Artifact/complete/Completed artifact decoration only for this validated path.
+Preserve actual streaming, interrupted, failed and unavailable status. Malformed
+or unknown payloads retain the existing fallback. OpenCode reasoning-text,
+Claude blocks and all other artifact paths remain independent.
+
+Respect the reasoning disclosure preference on initial mount. Original uses the
+collapsed default. Later explicit toggles retain expansion and native focus
+through revisions and locale changes. Keep mounted content, reader gates,
+measured transcript wrappers, pagination, scroll anchors and historical/live
+ordering unchanged. Expanded observations are inert text and grant no reads,
+native operations or execution authority. Native/platform acceptance is separate
+from component, localization and layout fixtures.

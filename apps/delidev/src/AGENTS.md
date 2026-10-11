@@ -47,3 +47,7 @@ Follow the parent instructions and the owning contracts in `docs/`. These rules 
 - [DeliDev Worker workspace contract](../../../docs/cmds-delidev-workspace-contract.md)
 - [Project: DeliDev](../../../docs/project-delidev.md)
 - [DeliDev v1 Connect contract](../../../docs/protos-delidev-v1-contract.md)
+
+## Reasoning presentation ownership
+
+- Follow the [Codex indexed reasoning disclosure contract](../../../docs/apps-delidev-desktop-contract.md#codex-indexed-reasoning-disclosure) for its narrow borderless presentation exception. Preserve separate initial, streamed and final observations, original summary/content families and indices. Other artifacts and source-specific OpenCode/Claude reasoning keep their existing ownership and validation.

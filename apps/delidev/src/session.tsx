@@ -1,3 +1,4 @@
+import { CodexReasoning, codexReasoningObservation } from "./codex-reasoning";
 import { WaitingQueue } from "./waiting-queue";
 
 import { FlatDisclosureScope } from "./disclosure";
@@ -230,9 +231,10 @@ export const TranscriptItem = memo(function TranscriptItem({ resource, active = 
   const plan = object(progress.plan);
   const textRole = data.tool == null && data.artifact == null && data.progress == null &&
     ["grok_text", "claude", "claude_tool", "claude_progress", "claude_interruption"].every(key => !Object.hasOwn(data, key));
+  const reasoning = data.role === "artifact" && data.text === "" && data.tool == null && data.progress == null && ["streaming", "complete", "interrupted", "failed", "unavailable"].includes(text(data.state)) ? codexReasoningObservation(data.artifact) : undefined;
   const roleClass = textRole && data.role === "user" ? " message-user" : textRole && data.role === "assistant" ? " message-assistant" : "";
-  return <article className={`message${roleClass}`} aria-label={roleClass ? copy(data.role === "user" ? "session.userMessage" : "session.assistantMessage_8352f5") : copy("session.message_e9ca2b", { v0: text(data.role) || "Agent" })}>
-    {roleClass ? <ConversationStatus state={text(data.state)} /> : <header><strong>{text(data.role) || copy("session.extra.11b39c93777e")}</strong><small>{statusLabel(text(data.state))}</small></header>}
+  return <article className={`message${roleClass}${reasoning ? " message-codex-reasoning" : ""}`} aria-label={roleClass ? copy(data.role === "user" ? "session.userMessage" : "session.assistantMessage_8352f5") : copy("session.message_e9ca2b", { v0: text(data.role) || "Agent" })}>
+    {roleClass || reasoning ? <ConversationStatus state={text(data.state)} /> : <header><strong>{text(data.role) || copy("session.extra.11b39c93777e")}</strong><small>{statusLabel(text(data.state))}</small></header>}
     {text(data.text) ? <pre>{text(data.text)}</pre> : null}
     {Number(data.context_revision ?? 0) < contextRevision ? <small>{copy("session.previousContext")}</small> : null}
     {data.role==="user"?actions:null}
@@ -247,7 +249,7 @@ export const TranscriptItem = memo(function TranscriptItem({ resource, active = 
       {items(tool.patches).map((patch, index) => <Disclosure key={index}><DisclosureSummary><LocalizedText id="session.patchObservation_8b886e" components={{ s0: <>{index + 1}</> }} /></DisclosureSummary>{items(object(patch).changes).map((item, part) => <pre key={part}>{text(object(item).path)}{"\n"}{text(object(item).diff)}</pre>)}</Disclosure>)}
       {items(tool.inputs).map((input, index) => <pre key={index}>Tool input: {text(object(object(input).input).text)}</pre>)}
     </Disclosure> : null}
-    {started.kind === "image-generation" ? <NativeImageGeneration artifact={artifact} sessionId={resource.sessionId} active={active} state={text(data.state)} /> : started.kind === "opencode-revision" ? <NativeRevision artifact={artifact} state={text(data.state)} /> : started.kind === "reasoning-text" ? <NativeReasoning artifact={artifact} state={text(data.state)} /> : Object.keys(artifact).length ? <Disclosure open><DisclosureSummary>{text(started.kind) || copy("session.extra.a3e40dda2eb1")}</DisclosureSummary>
+    {reasoning ? <CodexReasoning observation={reasoning} /> : started.kind === "image-generation" ? <NativeImageGeneration artifact={artifact} sessionId={resource.sessionId} active={active} state={text(data.state)} /> : started.kind === "opencode-revision" ? <NativeRevision artifact={artifact} state={text(data.state)} /> : started.kind === "reasoning-text" ? <NativeReasoning artifact={artifact} state={text(data.state)} /> : Object.keys(artifact).length ? <Disclosure open><DisclosureSummary>{text(started.kind) || copy("session.extra.a3e40dda2eb1")}</DisclosureSummary>
       {text(started.text) ? <pre>{text(started.text)}</pre> : null}
       {[...items(started.summary), ...items(started.content)].map((part, index) => <pre key={index}>{text(part)}</pre>)}
       {items(artifact.deltas).length ? <Disclosure><DisclosureSummary>{copy("session.streamedObservations_589dae")}</DisclosureSummary>{items(artifact.deltas).map((item, index) => { const delta = object(object(item).delta); return <pre key={index}>{text(delta.kind)}{typeof delta.index === "number" ? ` ${delta.index}` : ""}: {text(delta.text)}</pre>; })}</Disclosure> : null}
