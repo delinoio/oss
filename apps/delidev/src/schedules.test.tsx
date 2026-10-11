@@ -114,7 +114,7 @@ it("retains exact executable selections and protocol intent after uncertain Work
   fireEvent.click(await screen.findByRole("button", { name: "Retry the same harness check" }));
   await screen.findByText("Accepted by the server. Waiting for the selected Worker to finish.");
   expect(value.discovery.mock.calls[0][0]).toEqual(value.discovery.mock.calls[1][0]);
-  const request = value.discovery.mock.calls[0][0] as { selectionsJson: Uint8Array; verifyProtocol: boolean; mutation: { expectedRevision: bigint } };
+  const request = value.discovery.mock.calls[0][0] as unknown as { selectionsJson: Uint8Array; verifyProtocol: boolean; mutation: { expectedRevision: bigint } };
   expect(request.verifyProtocol).toBe(true); expect(request.mutation.expectedRevision).toBe(5n);
   expect(JSON.parse(new TextDecoder().decode(request.selectionsJson))).toEqual({ executables: [{ harness: "codex", path: "/selected/codex" }, { harness: "claude-code", path: "" }, { harness: "opencode", path: "" }, { harness: "grok-build", path: "" }] });
   expect(screen.getByText("Native protocol: Not checked")).toBeTruthy();
