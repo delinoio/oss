@@ -13261,6 +13261,228 @@
       "member": "replayed",
       "number": 2,
       "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_MANAGED_MCP_V1",
+      "number": 83
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_MCP_MANAGEMENT_V1",
+      "number": 55
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "MCPMutationState",
+      "member": "MCP_MUTATION_STATE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "MCPMutationState",
+      "member": "MCP_MUTATION_STATE_PENDING",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "MCPMutationState",
+      "member": "MCP_MUTATION_STATE_SUCCEEDED",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "MCPMutationState",
+      "member": "MCP_MUTATION_STATE_CANCELED",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "MCPMutationState",
+      "member": "MCP_MUTATION_STATE_RECOVERY_REQUIRED",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "MCPMutationState",
+      "member": "MCP_MUTATION_STATE_FAILED",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ListMCPDefinitionsRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ListMCPDefinitionsResponse",
+      "member": "worker_device_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ListMCPDefinitionsResponse",
+      "member": "definitions_json",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "MutateMCPDefinitionRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "MutateMCPDefinitionRequest",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "MutateMCPDefinitionRequest",
+      "member": "document_json",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "MutateMCPDefinitionResponse",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "MutateMCPDefinitionResponse",
+      "member": "state",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "MutateMCPDefinitionResponse",
+      "member": "result_json",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateMCPRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateMCPRequest",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateMCPRequest",
+      "member": "document_json",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateMCPResponse",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateMCPResponse",
+      "member": "state",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateMCPResponse",
+      "member": "result_json",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "GetMCPMutationRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "GetMCPMutationRequest",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "GetMCPMutationResponse",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "GetMCPMutationResponse",
+      "member": "state",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "GetMCPMutationResponse",
+      "member": "result_json",
+      "number": 3,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [
@@ -13495,6 +13717,42 @@
       "method": "SetAutomaticResetCreditConsent",
       "input": "SetAutomaticResetCreditConsentRequest",
       "output": "SetAutomaticResetCreditConsentResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2129,
+      "service": "MCPService",
+      "method": "ListMCPDefinitions",
+      "input": "ListMCPDefinitionsRequest",
+      "output": "ListMCPDefinitionsResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2129,
+      "service": "MCPService",
+      "method": "MutateMCPDefinition",
+      "input": "MutateMCPDefinitionRequest",
+      "output": "MutateMCPDefinitionResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2129,
+      "service": "MCPService",
+      "method": "AuthenticateMCP",
+      "input": "AuthenticateMCPRequest",
+      "output": "AuthenticateMCPResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2129,
+      "service": "MCPService",
+      "method": "GetMCPMutation",
+      "input": "GetMCPMutationRequest",
+      "output": "GetMCPMutationResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }
