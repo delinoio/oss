@@ -5,7 +5,9 @@
 .pr-workspace-list, .pr-workspace-selected { min-width: 0; height: 100%; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 8px; }
 .pr-workspace[data-wide=true] .pr-workspace-selected { border-inline-start: 1px solid var(--border); padding-inline-start: 24px; }
 .pr-workspace [hidden] { display: none !important; }
-.pr-workspace-row { border-inline-start: 1px solid var(--border); }
+.pr-workspace-row { position: relative; border-inline-start: 1px solid var(--border); }
+.pr-workspace-row[data-stack=true] { border-inline-start-color: light-dark(#8b5cf6, #a78bfa); }
+.pr-workspace-row[data-child=true]::before { content: ""; position: absolute; inset-inline-start: -12px; top: 24px; width: 11px; height: 12px; border-inline-start: 1px solid light-dark(#8b5cf6, #a78bfa); border-block-end: 1px solid light-dark(#8b5cf6, #a78bfa); pointer-events: none; }
 .pr-workspace-row button { display: flex; flex-direction: column; align-items: stretch; text-align: start; width: 100%; padding: 14px; min-height: 40px; border: 0; border-block-end: 1px solid var(--border); border-radius: 0; gap: 8px; background: var(--surface); overflow-wrap: anywhere; }
 .pr-workspace-row[data-selected=true] button { background: var(--surface-muted); box-shadow: inset 3px 0 var(--focus); }
 .pr-workspace-row button:focus-visible, .pr-workspace-tabs button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
