@@ -14,9 +14,10 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 	// The unexported owner supplies the same fixed-authority HTTP transport as
 	// discovery. Its route set is separate: no arbitrary URL/query, config write,
 	// login, provider switch, fork, deletion or prompt retry is available here.
-	valid := method == http.MethodPost && path == "/session" && s.creation != nil
-	valid = valid || s.runtimeRead && s.creation == nil && method == http.MethodGet && (path == "/config" || path == "/provider" || path == "/path" || path == "/agent") && len(body) == 0
-	valid = valid || s.reconciliationRead && method == http.MethodGet && len(body) == 0 && (path == "/config" || path == "/provider" || path == "/path" || path == "/agent")
+	valid := s.skillInventoryRead && s.apiProfile != nil && len(s.apiProfile.Skills) > 0 && method == http.MethodGet && len(body) == 0 && (path == "/skill" || path == "/command")
+	valid = valid || method == http.MethodPost && path == "/session" && s.creation != nil
+	valid = valid || s.runtimeRead && s.creation == nil && method == http.MethodGet && (path == "/config" || path == "/provider" || path == "/path" || path == "/agent" || path == "/skill" || path == "/command") && len(body) == 0
+	valid = valid || s.reconciliationRead && method == http.MethodGet && len(body) == 0 && (path == "/config" || path == "/provider" || path == "/path" || path == "/agent" || path == "/skill" || path == "/command")
 	valid = valid || s.projectRead && method == http.MethodGet && len(body) == 0 && (path == "/project/current" || path == "/session?limit=2")
 	valid = valid || method == http.MethodGet && s.historyRead != nil && path == s.historyRead.path && len(body) == 0
 	valid = valid || s.checkpointRead && method == http.MethodGet && len(body) == 0 && (path == "/session?limit=2" || path == "/permission" || path == "/question" || path == "/session/status")
@@ -49,6 +50,7 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 		valid = valid || method == http.MethodGet && path == base
 		valid = valid || s.todoRead && method == http.MethodGet && path == base+"/todo" && len(body) == 0
 		if s.input != nil {
+			valid = valid || s.input.skill != nil && method == http.MethodPost && path == base+"/command" && s.commandHTTP != nil && mutationDigest(body) == s.commandHTTP.digest
 			valid = valid || method == http.MethodPost && path == base+"/prompt_async" || method == http.MethodGet && path == base+"/message/"+s.input.receipt.MessageID
 		}
 	}
@@ -59,6 +61,9 @@ func (s *sessionAPI) request(ctx context.Context, method, path string, body []by
 		return nil, 0, launchError(err)
 	}
 	duration := 10 * time.Second
+	if s.input != nil && s.input.skill != nil && method == http.MethodPost && path == "/session/"+s.input.receipt.SessionID+"/command" {
+		duration = 15 * time.Minute
+	}
 	if s.compactionAttempt != nil && method == http.MethodPost && path == s.compactionAttempt.path {
 		duration = 15 * time.Minute
 	}

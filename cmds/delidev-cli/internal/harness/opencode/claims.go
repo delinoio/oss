@@ -21,6 +21,12 @@ func (c SessionClaim) Validate() error {
 		}
 		return nil
 	}
+	if c.Kind == SubmitSkillCommandMutation {
+		if !nativeID(c.SessionID, "ses") || !nativeID(c.MessageID, "msg") || c.PartID != "" || c.InputRequestID != "" || c.StopRequestID != "" || c.InteractionID != "" || c.ArrivalID != "" || c.CallID != "" {
+			return sessionInvalid()
+		}
+		return nil
+	}
 	if !nativeID(c.SessionID, "ses") || !nativeID(c.MessageID, "msg") || !nativeID(c.PartID, "prt") {
 		return sessionInvalid()
 	}
@@ -34,7 +40,7 @@ func (c SessionClaim) Validate() error {
 		return sessionInvalid()
 	}
 	switch c.Kind {
-	case ResumeSessionMutation, CompactSessionMutation, ForkSessionMutation, MoveForkMutation, MarkForkMutation, DeleteForkSourceMutation:
+	case ObserveSkillInputMutation, ResumeSessionMutation, CompactSessionMutation, ForkSessionMutation, MoveForkMutation, MarkForkMutation, DeleteForkSourceMutation:
 		if c.StopRequestID != "" || c.InteractionID != "" || c.ArrivalID != "" || c.CallID != "" {
 			return sessionInvalid()
 		}

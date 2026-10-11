@@ -57,6 +57,8 @@ const (
 	CreateSessionMutation         SessionMutation = "create-session"
 	ResumeSessionMutation         SessionMutation = "resume-session"
 	SubmitInputMutation           SessionMutation = "submit-input"
+	SubmitSkillCommandMutation    SessionMutation = "submit-skill-command"
+	ObserveSkillInputMutation     SessionMutation = "observe-skill-input"
 	ReplyPermissionMutation       SessionMutation = "reply-permission"
 	ReplyQuestionMutation         SessionMutation = "reply-question"
 	RejectQuestionMutation        SessionMutation = "reject-question"
@@ -137,6 +139,7 @@ type sessionAPI struct {
 	apiProfile             *nativeAPIProfile
 	apiVerified            bool
 	runtimeRead            bool
+	skillInventoryRead     bool
 	runtimeRoot            string
 	runtimeHome            string
 	checkpointProcess      process.Config
@@ -155,6 +158,7 @@ type sessionAPI struct {
 	resumeRequest          domain.ID
 	sessionAgent           PrimaryAgent
 	sessionPermissions     []PermissionRule
+	commandHTTP            *skillCommandHTTP
 	restoredAlways         uint32
 	permissionRestore      *interactionHTTPAttempt
 	todoRead               bool
@@ -187,8 +191,10 @@ type sessionIdentity struct {
 }
 
 type sessionInput struct {
-	receipt InputReceipt
-	digest  [sha256.Size]byte
+	skill        *SkillCommand
+	observedPart bool
+	receipt      InputReceipt
+	digest       [sha256.Size]byte
 }
 
 func sessionProblem() *domain.Error {
@@ -499,6 +505,9 @@ func (s *sessionAPI) readStoredInput(ctx context.Context) (InputReceipt, error) 
 		return receipt, nil
 	}
 	recorded, err := validateStoredInput(raw, s.creation.settings, *s.input)
+	if s.input.skill != nil {
+		recorded, err = s.validateStoredSkillInput(ctx, raw)
+	}
 	if err != nil {
 		return receipt, err
 	}

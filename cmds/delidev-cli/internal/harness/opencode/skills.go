@@ -1,0 +1,155 @@
+// SPDX-License-Identifier: Apache-2.0
+package opencode
+
+import (
+	"context"
+	"encoding/json"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/skills"
+	"net/http"
+	"path/filepath"
+	"slices"
+	"strings"
+
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
+)
+
+func (s *sessionAPI) verifyNativeSkills(ctx context.Context) error {
+	p := s.apiProfile
+	if p == nil || len(p.Skills) == 0 {
+		return nil
+	}
+	s.skillInventoryRead = true
+	defer func() { s.skillInventoryRead = false }()
+	raw, _, err := s.request(ctx, http.MethodGet, "/skill", nil, http.StatusOK)
+	if err != nil {
+		return err
+	}
+	var inventory []json.RawMessage
+	if domain.Decode(raw, &inventory) != nil || len(inventory) != len(p.Skills)+1 {
+		return sessionProblem()
+	}
+	seen := map[string]bool{}
+	for _, raw := range inventory {
+		fields, err := shape(raw, []string{"name", "location", "content"}, []string{"description"})
+		if err != nil {
+			return err
+		}
+		name, valid := boundedString(fields["name"], 128, true)
+		if !valid || seen[name] {
+			return sessionProblem()
+		}
+		seen[name] = true
+		if name == "customize-opencode" {
+			if !scalar(fields["location"], "<built-in>") {
+				return sessionProblem()
+			}
+			continue // Its native tool policy is denied independently.
+		}
+		found := false
+		for _, selection := range p.Skills {
+			if name == selection.Name {
+				found = true
+				if !scalar(fields["location"], selection.Path) || !scalar(fields["description"], selection.Description) || !scalar(fields["content"], selection.Content) {
+					return sessionProblem()
+				}
+			}
+		}
+		if !found {
+			return sessionProblem()
+		}
+	}
+	raw, _, err = s.request(ctx, http.MethodGet, "/command", nil, http.StatusOK)
+	if err != nil {
+		return err
+	}
+	var commands []json.RawMessage
+	if domain.Decode(raw, &commands) != nil || len(commands) != len(p.Skills)+3 {
+		return sessionProblem()
+	}
+	seen = map[string]bool{}
+	for _, raw := range commands {
+		fields, err := shape(raw, []string{"name", "template", "hints"}, []string{"description", "agent", "model", "source", "subtask"})
+		if err != nil {
+			return err
+		}
+		name, valid := boundedString(fields["name"], 128, true)
+		if !valid || seen[name] {
+			return sessionProblem()
+		}
+		seen[name] = true
+		if slices.Contains([]string{"init", "review", "customize-opencode"}, name) {
+			continue
+		}
+		found := false
+		for _, selection := range p.Skills {
+			if name != selection.Name {
+				continue
+			}
+			found = true
+			expected := selection.Content + "\n\nBase directory for this skill: " + filepath.Dir(selection.Path) + "\nRelative paths in this skill (e.g., scripts/, references/) are relative to this base directory."
+			if !scalar(fields["source"], "skill") || !scalar(fields["template"], expected) || !scalar(fields["description"], selection.Description) || string(fields["hints"]) != "[]" || len(fields["agent"]) != 0 || len(fields["model"]) != 0 || len(fields["subtask"]) != 0 {
+				return sessionProblem()
+			}
+		}
+		if !found {
+			return sessionProblem()
+		}
+	}
+	if s.logger != nil {
+		s.logger.InfoContext(ctx, "opencode_native_skill_inventory_verified", "owner_id", s.owner, "selected_packages", len(p.Skills))
+	}
+	return nil
+}
+
+// Compare complete original primary-agent policy. Skill directories add only
+// native external-directory allowances; they do not grant edits or commands.
+func validatePrimaryAgentSkills(raw []byte, selected PrimaryAgent, home, worktree string, profile *nativeAPIProfile) error {
+	if len(profile.Skills) == 0 {
+		return validatePrimaryAgent(raw, selected, home, worktree, profile.References...)
+	}
+	expected, err := expectedPrimaryAgent(selected, home, worktree, profile.References...)
+	if err != nil {
+		return err
+	}
+	rules := expected["permission"].([]PermissionRule)
+	ordered := slices.Clone(profile.Skills)
+	slices.SortFunc(ordered, func(a, b skills.OpenCodeSelection) int { return strings.Compare(a.Path, b.Path) })
+	additional := []PermissionRule{}
+	for _, selection := range ordered {
+		additional = append(additional, PermissionRule{"external_directory", filepath.Join(filepath.Dir(selection.Path), "*"), PermissionAllow})
+	}
+	rules = append(append(append([]PermissionRule{}, rules[:5]...), additional...), rules[5:]...)
+	// The pinned native agent merges user permission rules before its final tool
+	// output allowance. Native JSON key order is preserved from the exact config.
+	additional = []PermissionRule{{"skill", "*", PermissionDeny}}
+	slices.SortFunc(ordered, func(a, b skills.OpenCodeSelection) int { return strings.Compare(a.Name, b.Name) })
+	for _, selection := range ordered {
+		if !selection.ExplicitOnly {
+			additional = append(additional, PermissionRule{"skill", selection.Name, PermissionAllow})
+		}
+	}
+	rules = append(append(append([]PermissionRule{}, rules[:len(rules)-1]...), additional...), rules[len(rules)-1:]...)
+	expected["permission"] = rules
+	var agents []json.RawMessage
+	if domain.Decode(raw, &agents) != nil || len(agents) != 7 {
+		return sessionProblem()
+	}
+	seen := map[string]bool{}
+	for _, agent := range agents {
+		fields, err := shape(agent, []string{"name", "mode", "native", "permission", "options"}, []string{"description", "hidden", "prompt", "temperature"})
+		if err != nil {
+			return err
+		}
+		name, valid := boundedString(fields["name"], 128, true)
+		if !valid || seen[name] || !slices.Contains([]string{"build", "plan", "general", "explore", "compaction", "title", "summary"}, name) || string(fields["native"]) != "true" {
+			return sessionProblem()
+		}
+		seen[name] = true
+		if name == string(selected) {
+			if err := exactPrivateJSON(agent, expected); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
