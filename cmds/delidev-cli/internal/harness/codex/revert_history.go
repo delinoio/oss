@@ -103,6 +103,10 @@ func verifyRevertHistoryItem(raw json.RawMessage) (string, error) {
 	}
 	switch item.Type {
 	case "userMessage", "agentMessage", "reasoning", "plan", "contextCompaction":
+	case "imageGeneration":
+		if _, err := decodeImageGeneration(raw, true); err != nil {
+			return "", compactionUncertain()
+		}
 	case "commandExecution", "fileChange", "imageView", "sleep":
 		if _, err := decodeTool(raw, item.Type, true); err != nil {
 			return "", compactionUncertain()
