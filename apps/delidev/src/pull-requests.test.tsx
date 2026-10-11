@@ -256,6 +256,40 @@ it.each([Code.PermissionDenied, Code.Unavailable])("distinguishes catalog failur
   expect(value.query).toHaveBeenCalledTimes(1);
 });
 
+it.each([Code.PermissionDenied, Code.Unavailable])("preserves cached empty repository guidance after refresh failure %s and retries the original cursor", async (code) => {
+  const value = fixture([]);
+  render(<App transport={value.transport} />);
+  const pane = await open();
+  await pane.findByText("No repositories on this page.");
+  const reads = () => value.list.mock.calls.filter(([request]) => request.filter?.kind === EntityKind.REPOSITORY);
+  expect(reads().at(-1)?.[0].filter?.pageToken).toBe("");
+
+  value.fail(code);
+  fireEvent.click(pane.getByRole("button", { name: "Refresh" }));
+  await pane.findByText("Refresh failed. Showing the previous repository page.");
+  expect(pane.getByRole("alert")).toBeTruthy();
+  const empty = pane.getByText("No repositories on this page.");
+  expect(empty.closest(".sidebar-repository-empty")?.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
+  expect(reads().at(-1)?.[0].filter?.pageToken).toBe("");
+  expect(pane.queryByRole("button", { name: "Load more Repositories" })).toBeNull();
+
+  value.fail();
+  value.rows.push(repository());
+  fireEvent.click(pane.getByRole("button", { name: "Retry" }));
+  await pane.findByRole("button", { name: `Example repository. Repository ID: ${repositoryId}` });
+  expect(reads().at(-1)?.[0].filter?.pageToken).toBe("");
+  expect(pane.queryByText("No repositories on this page.")).toBeNull();
+  expect(pane.queryByText("Refresh failed. Showing the previous repository page.")).toBeNull();
+  expect(pane.queryByRole("alert")).toBeNull();
+
+  fireEvent.click(pane.getByRole("button", { name: "Load more Repositories" }));
+  await waitFor(() => expect(reads().at(-1)?.[0].filter?.pageToken).toBe("repository-next"));
+  await waitFor(() => expect(pane.queryByRole("button", { name: "Load more Repositories" })).toBeNull());
+  expect(pane.getByRole("button", { name: `Example repository. Repository ID: ${repositoryId}` })).toBeTruthy();
+  expect(value.query).not.toHaveBeenCalled();
+  expect(value.mutation).not.toHaveBeenCalled();
+});
+
 it.each(["schema", "integration_id", "github_owner", "github_name"])("keeps unconfigured %s guidance and existing plain-search validation", async (missing) => {
   const row = repository();
   if (missing === "schema") row.schemaVersion = 2;
