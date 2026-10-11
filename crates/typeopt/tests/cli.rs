@@ -590,3 +590,16 @@ fn filesystem_failures_fail_without_publishing_or_leaking_staging() {
     assert!(no_staging(temp.path()));
     assert_eq!(fs::read_to_string(&entry).unwrap(), code);
 }
+
+#[test]
+fn verbose_diagnostics_redact_source_derived_arguments() {
+    let temp = fixture("export {}; const token: 'expected' = 'secret-literal-value';");
+    let output = run(temp.path(), "out");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("TS2322"), "{stderr}");
+    assert!(stderr.contains("main.ts:1:"), "{stderr}");
+    assert!(stderr.contains("<redacted>"), "{stderr}");
+    assert!(!stderr.contains("secret-literal-value"), "{stderr}");
+    assert!(!temp.path().join("out").exists());
+}

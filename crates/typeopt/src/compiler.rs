@@ -314,26 +314,42 @@ fn check_diagnostics(diagnostics: &[Diagnostic]) -> Result<()> {
         .iter()
         .take(20)
         .map(|d| {
-            if crate::app::VERBOSE.load(std::sync::atomic::Ordering::Relaxed) {
-                format!("TS{}: {}", d.code, d.localize(&ts_goport::locale::DEFAULT))
+            let location = if d.file.is_some() {
+                let (line, column) =
+                    get_ecma_line_and_utf16_character_of_position(d.file, d.loc().pos());
+                format!(
+                    "{}:{}:{}: ",
+                    source_file_info(d.file).file_name,
+                    line + 1,
+                    column + 1
+                )
             } else {
-                let location = if d.file.is_some() {
-                    let (line, column) =
-                        get_ecma_line_and_utf16_character_of_position(d.file, d.loc().pos());
-                    format!(
-                        "{}:{}:{}: ",
-                        source_file_info(d.file).file_name,
-                        line + 1,
-                        column + 1
-                    )
-                } else {
-                    String::new()
-                };
+                String::new()
+            };
+            if crate::app::VERBOSE.load(std::sync::atomic::Ordering::Relaxed) {
+                format!("{location}TS{}: {}", d.code, redacted_message(d))
+            } else {
                 format!("{location}TS{} (use --verbose for details)", d.code)
             }
         })
         .collect();
     bail!("TypeScript diagnostics: {}", messages.join("; "))
+}
+
+/// Placeholder for diagnostic arguments, which can interpolate source literals,
+/// identifiers and types.
+const REDACTED_ARGUMENT: &str = "<redacted>";
+
+/// Renders the diagnostic template without source-derived arguments, so verbose
+/// output never copies literals or other source text into logs.
+fn redacted_message(d: &Diagnostic) -> String {
+    if !d.message_text.is_empty() {
+        // Pre-rendered external text has no template to keep.
+        return REDACTED_ARGUMENT.to_owned();
+    }
+    let mut template = d.clone();
+    template.message_args = vec![REDACTED_ARGUMENT.to_owned(); d.message_args.len()];
+    template.localize(&ts_goport::locale::DEFAULT)
 }
 fn is_js(file: Node) -> bool {
     let n = &source_file_info(file).file_name;
