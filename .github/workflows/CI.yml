@@ -297,6 +297,12 @@ jobs:
           CI_GO_BASE: ${{ needs.changes.outputs.base }}
           CI_GO_HEAD: ${{ needs.changes.outputs.head }}
 
+      - name: Run managed clone HEAD regression tests
+        if: ${{ github.event_name == 'workflow_dispatch' && matrix.os == 'ubuntu-latest' && matrix.shard == 'all' }}
+        run: |
+          go test -mod=readonly ./cmds/delidev-cli/internal/workspace -run '^TestManagedCloneRemoteHead(Observation|FailureBlocksReady)$' -count=1 -v
+          go test -mod=readonly ./cmds/delidev-cli/internal/workspace -run '^TestManagedCloneProvisionsConfiguredRemoteAliases$' -count=1 -v
+
       # Manual dispatch race validation supplements the ordinary full Go suite.
       # Retain this path until ordinary CI guarantees equivalent race coverage.
       - name: Run DeliDev Go race tests
