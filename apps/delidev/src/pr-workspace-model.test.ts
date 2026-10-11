@@ -2,8 +2,15 @@
 import { expect, it } from "vitest";
 import { create } from "@bufbuild/protobuf";
 import { EntityKind, ResourceSchema, newRequestId } from "@delinoio/delidev-api-client";
-import { changeCounts, commitResult, orderWorkspace } from "./pr-workspace-model";
+import { changeCounts, commitResult, observationsConflict, orderWorkspace } from "./pr-workspace-model";
 import { encode } from "./documents";
+
+it("does not combine incompatible snapshots across retained list pages", () => {
+ const scope = { generation_id: "generation", repository: { id: "37" }, nodes: [{ item: { number: "17", id: "817", base_sha: "a", head_sha: "b" } }] };
+ expect(observationsConflict([scope, scope])).toBe(false);
+ expect(observationsConflict([scope, {...scope, generation_id:"changed"}])).toBe(true);
+ expect(observationsConflict([scope, {...scope, nodes:[{item:{...scope.nodes[0].item,head_sha:"changed"}}]}])).toBe(true);
+});
 
 it("renders each exact branch component once in seed order without summing counts", () => {
  const nodes = [101,102,103,104].map(number => ({ item: { number: String(number) }, counts: { additions: "24", deletions: "8" } }));

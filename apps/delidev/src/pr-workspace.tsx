@@ -12,7 +12,7 @@ import { Timestamp, TimestampMode } from "./timestamp-display";
 import { OpenGitHub } from "./github-opening";
 import { PRFeedback } from "./github-feedback";
 import { Problem } from "./ui";
-import { changeCounts, commitResult, orderWorkspace, workspaceResult } from "./pr-workspace-model";
+import { changeCounts, commitResult, observationsConflict, orderWorkspace, workspaceResult } from "./pr-workspace-model";
 import { useConnectPaginationReader, usePaginationChain } from "./scroll-pagination-query";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
 import { ScrollContinuation } from "./scroll-continuation";
@@ -53,13 +53,15 @@ export function PRWorkspaceRows({ pages, selected, enabled, chosen, choose, obse
   useLocale();
   const seeds = pages.flatMap(page => items(page.data.items).map(raw => text(object(raw).number))), matching = new Set(allSeeds), nodes = new Map<string, Document>(), scopes = new Map<string, Document>();
   for (const page of pages) for (const raw of items(page.data.items)) { const item = object(raw); nodes.set(text(item.number), { item }); }
-  const edges: Document[] = []; let ambiguous = false;
+  const conflict = observationsConflict(observations.values());
+  const edges: Document[] = []; let ambiguous = conflict;
   for (const scope of observations.values()) { if (scope.state === "ambiguous") ambiguous = true; for (const raw of items(scope.nodes)) { const node = object(raw), n = text(object(node.item).number); if (nodes.has(n) || nodes.size < 100) { nodes.set(n, node); scopes.set(n, scope); } } edges.push(...items(scope.edges).map(object)); }
   const ordered = orderWorkspace([...nodes.values()], edges, allSeeds, ambiguous).filter(row => seeds.includes(row.owner));
   return <section className="pr-workspace-rows" aria-label={copy("github-items.pullRequests_d9e3f2")}>
     {pages.map(page => <div className="pr-list-applied" key={`metadata:${page.query.page}`}><p>{copy("pr-cards.applied", { state: copy(page.query.state === "closed" ? "pull-requests.closed_c21ead" : page.query.state === "all" ? "pull-requests.all_a52ace" : "pull-requests.open_ed077f"), page: page.query.page, pageSize: page.query.page_size })}</p><p>{copy(previous ? "github-items.previousObservation_1bd8a6" : "github-items.observed_64fa8a")}: <Timestamp value={text(page.data.observed_at)} mode={TimestampMode.Exact} /></p>{page.data.total_count != null ? <p>{copy("pr-workspace.matches", { count: text(page.data.total_count) })}</p> : null}{page.data.incomplete ? <p role="status">{copy("github-items.githubReturnedIncompleteSearchResultsMissing_29a156")}</p> : null}{page.data.search_limit_reached ? <p role="status">{copy("github-items.githubSSearchLimitHasBeen_c17e40")}</p> : null}</div>)}
     {pages.map(page => <Enrichment key={`${page.query.page}:${text(page.data.observed_at)}`} page={page} selected={selected} enabled={enabled} observe={observe} />)}
     {!enabled ? <p role="status">{copy("pr-workspace.unsupportedStack")}</p> : null}
+    {conflict ? <p role="status">{copy("pr-workspace.ambiguous")}</p> : null}
     {ordered.map(({ node, depth, stack }) => { const item = object(node.item), author = object(item.author), number = text(item.number); return <article key={number} className="pr-workspace-row" data-selected={chosen === number} style={{ marginInlineStart: `${depth * 12}px` }}>
       <button type="button" data-pr-number={number} aria-pressed={chosen === number} onClick={event => choose({ number, node, scope: scopes.get(number) }, event.currentTarget)}>
         <span className="pr-row-labels"><span className="pr-list-state" data-state={text(item.state)}>{copy(item.state === "closed" ? "pull-requests.closed_c21ead" : "pull-requests.open_ed077f")}</span>{item.draft ? <span>{copy("pr-cards.draft")}</span> : null}{stack ? <span className="pr-stack-badge">{copy("pr-workspace.stack")}</span> : null}{!matching.has(number) ? <span>{copy("pr-workspace.context")}</span> : null}</span>

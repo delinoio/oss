@@ -31,6 +31,22 @@ export function commitResult(raw: Uint8Array, selected: Resource, item: Document
 }
 // Ambiguous graphs remain flat. Complete components preserve accepted seed order
 // and numeric sibling ties; no title/author/number proximity invents an edge.
+export function observationsConflict(observations: Iterable<Document>): boolean {
+  let generation: string | undefined;
+  const identities = new Map<string, string>();
+  for (const scope of observations) {
+    const current = JSON.stringify([scope.generation_id, object(scope.repository).id]);
+    if (generation !== undefined && generation !== current) return true;
+    generation = current;
+    for (const raw of Array.isArray(scope.nodes) ? scope.nodes : []) {
+      const item = object(object(raw).item), number = text(item.number);
+      const identity = JSON.stringify([item.id, item.node_id, item.base_ref, item.head_ref, item.base_sha, item.head_sha]);
+      if (identities.has(number) && identities.get(number) !== identity) return true;
+      identities.set(number, identity);
+    }
+  }
+  return false;
+}
 export function orderWorkspace(nodes: Document[], edges: Document[], seeds: string[], ambiguous: boolean): { node: Document; depth: number; stack: boolean; owner: string }[] {
   const byNumber = new Map(nodes.map(n => [text(object(n.item).number), n])), adjacent = new Map<string, Set<string>>(), children = new Map<string, string[]>(), parent = new Map<string, string>();
   let invalid = ambiguous;
