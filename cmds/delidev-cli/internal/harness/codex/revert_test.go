@@ -261,3 +261,77 @@ func TestRevertPreClaimHistoryAndBoundsFailuresNeverReachClaimOrWire(t *testing.
 		})
 	}
 }
+
+func TestRevertPaginatedNativeStateAtMutationAndReplacementBoundaries(t *testing.T) {
+	c, capture, source, ids, inputs := revertFixture(t, "ready")
+	fixtureSignal(t, c, "metadata", map[string]any{"historyMode": PaginatedHistory})
+	claims := 0
+	proof, err := c.RevertThread(context.Background(), domain.NewID(), source, inputs[1], ids[1], func(RevertIntent) error { claims++; return nil })
+	if err != nil || claims != 1 || proof.TurnsCount != 1 || len(requestsOf(t, capture, "thread/revert")) != 1 {
+		t.Fatal("paginated original/post-result state rejected", err, claims)
+	}
+	// Model the clean execution tracking of an explicitly resumed replacement.
+	// Retain the original native wire/history and the exact returned checkpoint;
+	// this is a fixture boundary, not evidence of installed native acceptance.
+	c.execution.continuationPending, c.execution.paused = true, false
+	c.execution.turns = map[domain.ID]trackedTurn{}
+	c.execution.inputs = map[domain.ID]inputAttempt{}
+	last, err := c.VerifyCompactedContinuation(context.Background(), domain.NewID(), proof)
+	if err != nil || last.ID != ids[0] || c.execution.continuationPending || c.problem != nil || len(requestsOf(t, capture, "thread/revert")) != 1 {
+		t.Fatal("paginated replacement lost exact history or resent", err)
+	}
+}
+
+func TestRevertPaginatedExplicitObservationNeverResends(t *testing.T) {
+	c, capture, source, ids, inputs := revertFixture(t, "lost")
+	fixtureSignal(t, c, "metadata", map[string]any{"historyMode": PaginatedHistory})
+	var intent RevertIntent
+	if _, err := c.RevertThread(context.Background(), domain.NewID(), source, inputs[1], ids[1], func(v RevertIntent) error { intent = v; return nil }); err == nil {
+		t.Fatal("lost acknowledgment accepted")
+	}
+	c.problem, c.execution.paused = nil, false
+	proof, err := c.ReconcileRevert(context.Background(), intent)
+	if err != nil || proof.TurnsCount != 1 || len(requestsOf(t, capture, "thread/revert")) != 1 {
+		t.Fatal("paginated original observation rejected or resent", err)
+	}
+}
+
+func TestNativeStateHistoryAdmissionRetainsProfileAndOriginalMetadata(t *testing.T) {
+	for _, scenario := range []string{"legacy-paginated", "legacy-unknown", "unknown", "cwd", "provider", "session", "thread", "child", "direct-input", "active"} {
+		t.Run(scenario, func(t *testing.T) {
+			c, capture, source, ids, inputs := revertFixture(t, "ready")
+			metadata := map[string]any{"historyMode": PaginatedHistory}
+			switch scenario {
+			case "legacy-paginated":
+				c.revertHistory = false
+			case "legacy-unknown":
+				c.revertHistory = false
+				metadata["historyMode"] = "foreign"
+			case "unknown":
+				metadata["historyMode"] = "foreign"
+			case "cwd":
+				metadata["cwd"] = t.TempDir()
+			case "provider":
+				metadata["modelProvider"] = "foreign-provider"
+			case "session":
+				metadata["sessionId"] = domain.NewID()
+			case "thread":
+				metadata["id"] = domain.NewID()
+			case "child":
+				metadata["parentThreadId"] = domain.NewID()
+			case "direct-input":
+				metadata["canAcceptDirectInput"] = false
+			case "active":
+				metadata["status"] = map[string]any{"type": ThreadActive, "activeFlags": []string{}}
+			}
+			fixtureSignal(t, c, "metadata", metadata)
+			if err := c.checkNativeStateLocked(context.Background(), true); err == nil {
+				t.Fatal("foreign or unsupported original state admitted")
+			}
+			claims := 0
+			if _, err := c.RevertThread(context.Background(), domain.NewID(), source, inputs[1], ids[1], func(RevertIntent) error { claims++; return nil }); err == nil || claims != 0 || len(requestsOf(t, capture, "thread/revert")) != 0 {
+				t.Fatal("unproved state reached native mutation", claims, err)
+			}
+		})
+	}
+}

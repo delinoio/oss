@@ -51,6 +51,19 @@ type threadWire struct {
 	ReasoningEffort *string           `json:"reasoningEffort,omitempty"`
 }
 
+// acceptsHistoryMode uses the selected, independently validated profile. A
+// native version string alone never enables paginated history admission.
+func acceptsHistoryMode(history HistoryMode, revertProfile bool) bool {
+	switch history {
+	case LegacyHistory:
+		return true
+	case PaginatedHistory:
+		return revertProfile
+	default:
+		return false
+	}
+}
+
 func (t threadWire) summary() Thread {
 	history := t.HistoryMode
 	if history == "" {
@@ -114,7 +127,7 @@ func decodeBoundThreadProfile(raw json.RawMessage, settings ThreadSettings, expe
 		return nil, nil, err
 	}
 	thread := wire.summary()
-	if thread.History != LegacyHistory && !revert {
+	if !acceptsHistoryMode(thread.History, revert) {
 		return &thread, nil, incompatible()
 	}
 	if expectedID != "" && wire.ID != expectedID {

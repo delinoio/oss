@@ -2308,7 +2308,14 @@ configuration. Require the initialized original process to positively report
 0.162.0 before activating this selected closed profile; configured versions and
 general startup eligibility do not prove Revert support. Permit paginated metadata only through the selected Revert
 profile or retained private checkpoint; legacy profiles retain their closed
-metadata/history checks. Native method or schema rejection does not permit
+metadata/history checks. Bound-thread decoding and the common native-state
+check use the same closed profile-aware history predicate: legacy is admitted,
+paginated requires the selected Revert profile, and unknown modes are rejected.
+Initial mutation admission, post-result verification, replacement continuation
+and explicit original-intent observation retain original cwd, provider, session,
+direct-input permission and idle-state proof. These checks do not relax the
+once-only mutation claim or complete retained-prefix and independent cleanup
+requirements. Native method or schema rejection does not permit
 rollback, fallback, omission, resend or a fresh target. A retained empty prefix
 is separately proved and never manufactures an old turn or input.
 
