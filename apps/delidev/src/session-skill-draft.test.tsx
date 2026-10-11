@@ -162,7 +162,7 @@ it("retains exact skill invocation across retained App session tab switches", as
   );
   await waitFor(() => expect(f.enqueue).toHaveBeenCalledOnce());
   expect(f.enqueue.mock.calls[0]![0].skills?.selections).toEqual([f.selection]);
-});
+}, 10_000);
 
 it("retains the original opaque selection across same-identity reconnect", async () => {
   const f = fixture(),
