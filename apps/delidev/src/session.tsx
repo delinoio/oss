@@ -1,4 +1,5 @@
 import { createPortal } from "react-dom";
+import { useSessionInboxRead } from "./session-inbox-read";
 import { WaitingQueue } from "./waiting-queue";
 
 import { FlatDisclosureScope } from "./disclosure";
@@ -208,6 +209,8 @@ function useSessionStream(id: string, active: boolean) {
   const [error, setError] = useState<ClientFailure>();
   const [generation, setGeneration] = useState(0);
   const [restart, setRestart] = useState(0);
+  const readOwner = useMemo(() => ({}), [id, transport, restart, active]);
+  const [snapshotOwner, setSnapshotOwner] = useState<object>();
   useEffect(() => {
     if (!active) return;
     const controller = new AbortController();
@@ -231,6 +234,7 @@ function useSessionStream(id: string, active: boolean) {
       )) {
         if (controller.signal.aborted) return;
         if (change.kind === SyncKind.Snapshot) {
+          setSnapshotOwner(readOwner);
           known.clear();
           for (const row of change.resources) known.add(row.id);
           setResources(new Map(change.resources.map((r) => [r.id, r])));
@@ -302,8 +306,9 @@ function useSessionStream(id: string, active: boolean) {
       }
     });
     return () => controller.abort();
-  }, [id, transport, restart, active]);
+  }, [id, transport, restart, active, readOwner]);
   return {
+    currentSnapshot: snapshotOwner === readOwner,
     resources,
     removed,
     newMessageIds,
@@ -1128,6 +1133,23 @@ export function SessionView({
       ![SessionTabKind.Sidechat, SessionTabKind.PendingSidechat].includes(
         tabs.tab.kind,
       ),
+  );
+  useSessionInboxRead(
+    id,
+    conversationActive && !embedded,
+    Boolean(
+      live.currentSnapshot &&
+      live.state === ConnectionState.Live &&
+      !live.error &&
+      observed?.id === id &&
+      observed.kind === EntityKind.SESSION &&
+      observed.revision > 0n &&
+      supportsResourceSchema(observed) &&
+      messages.loaded &&
+      !messages.error &&
+      !messages.isFetching &&
+      messages.payloadPages.some((page) => page.token === ""),
+    ),
   );
   // A toolbar gesture can precede the initial session snapshot. Capture its
   // revision only after authenticated metadata arrives, while the same tool

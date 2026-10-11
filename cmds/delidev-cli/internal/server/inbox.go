@@ -295,3 +295,38 @@ func (s *Service) GetUnreadInboxCount(ctx context.Context, req *connect.Request[
 	rpc.CopyCorrelation(response, req.Header())
 	return response, nil
 }
+
+func (s *Service) MarkSessionInboxRead(ctx context.Context, req *connect.Request[pb.MarkSessionInboxReadRequest]) (*connect.Response[pb.MarkSessionInboxReadResponse], error) {
+	correlation := req.Header().Get(rpc.CorrelationHeader)
+	actor, err := inboxActor(ctx)
+	if err != nil {
+		return nil, rpc.Error(err, correlation)
+	}
+	session, request := domain.ID(req.Msg.SessionId), domain.ID(req.Msg.RequestId)
+	if session.Validate() != nil || request.Validate() != nil {
+		return nil, rpc.Error(domain.Fail(domain.InvalidArgument, "Invalid session inbox acknowledgment identity.", "Use UUID-v7 request and session identities."), correlation)
+	}
+	identity := struct {
+		Actor     domain.Principal
+		SessionID domain.ID
+	}{actor, session}
+	s.logger.InfoContext(ctx, "inbox_session_read_admitted", "correlation_id", correlation, "request_id", request, "session_id", session)
+	result, err := s.Store.Mutate(ctx, request, "inbox.session-read", identity, func(tx *store.Tx) (any, error) {
+		return tx.MarkSessionInboxRead(session, func(tx *store.Tx, record store.Record) error {
+			_, err := currentInboxView(tx, record)
+			return err
+		})
+	})
+	if err != nil {
+		s.logger.WarnContext(ctx, "inbox_session_read_failed", "correlation_id", correlation, "request_id", request, "code", domain.SafeError(err).Code)
+		return nil, rpc.Error(err, correlation)
+	}
+	var receipt store.SessionInboxReadReceipt
+	if domain.Decode(result.Data, &receipt) != nil || receipt.SessionID != session || receipt.ObservedAt.IsZero() {
+		return nil, rpc.Error(domain.Fail(domain.RecoveryRequired, "The original acknowledgment receipt is inconsistent.", "Preserve the original request for reconciliation."), correlation)
+	}
+	s.logger.InfoContext(ctx, "inbox_session_read_recorded", "correlation_id", correlation, "request_id", request, "marked_count", receipt.MarkedCount, "replayed", result.Replayed)
+	response := connect.NewResponse(&pb.MarkSessionInboxReadResponse{RequestId: string(request), SessionId: string(session), MarkedCount: receipt.MarkedCount, ObservedAt: receipt.ObservedAt.UTC().Format(time.RFC3339Nano), Replayed: result.Replayed})
+	rpc.CopyCorrelation(response, req.Header())
+	return response, nil
+}

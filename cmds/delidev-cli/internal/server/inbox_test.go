@@ -291,3 +291,51 @@ func TestInboxRPCMissingSourceCannotPartiallyCommitReadState(t *testing.T) {
 		t.Fatal("failed joined-source validation partially committed mark-read")
 	}
 }
+
+func TestMarkSessionInboxReadAuthorityAndReceipt(t *testing.T) {
+	f, id := questionResponseFixture(t)
+	client, ctx := inboxClient(f), context.Background()
+	inbox, _ := readExecutionInbox(t, f, domain.InteractionInbox, id)
+	request := &pb.MarkSessionInboxReadRequest{RequestId: string(domain.NewID()), SessionId: string(f.input.SessionID)}
+	first, err := client.MarkSessionInboxRead(ctx, ownerRequest(f.service.Identity, request))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Msg.MarkedCount != 1 || first.Msg.SessionId != request.SessionId || first.Msg.ObservedAt == "" || first.Msg.Replayed {
+		t.Fatal("invalid original receipt")
+	}
+	other, device := pairedQuestionClient(t, f)
+	if _, err := client.MarkSessionInboxRead(ctx, ownerRequest(other, request)); connect.CodeOf(err) != connect.CodeAborted {
+		t.Fatal("another actor adopted the receipt")
+	}
+	unread := &pb.SetInboxReadStateRequest{Mutation: &pb.Mutation{Id: string(inbox.ID), RequestId: string(domain.NewID()), ExpectedRevision: 2}, ReadState: pb.InboxReadState_INBOX_READ_STATE_UNREAD}
+	if _, err := client.SetInboxReadState(ctx, ownerRequest(f.service.Identity, unread)); err != nil {
+		t.Fatal(err)
+	}
+	replay, err := client.MarkSessionInboxRead(ctx, ownerRequest(f.service.Identity, request))
+	if err != nil || !replay.Msg.Replayed || replay.Msg.MarkedCount != first.Msg.MarkedCount || replay.Msg.ObservedAt != first.Msg.ObservedAt {
+		t.Fatal("replay lost original result")
+	}
+	current, err := client.GetInboxEntry(ctx, ownerRequest(f.service.Identity, &pb.GetInboxEntryRequest{Id: string(inbox.ID)}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entry domain.InboxEntry
+	if domain.Decode(current.Msg.View.Entry.DocumentJson, &entry) != nil || entry.ReadState != domain.InboxUnread {
+		t.Fatal("replay reversed manual unread")
+	}
+	devices := delidevv1connect.NewDeviceServiceClient(f.http.Client(), f.http.URL)
+	if _, err := devices.RevokeDevice(ctx, ownerRequest(f.service.Identity, &pb.RevokeDeviceRequest{Mutation: &pb.Mutation{Id: device.Id, ExpectedRevision: device.Revision, RequestId: string(domain.NewID())}})); err != nil {
+		t.Fatal(err)
+	}
+	stale := domain.WithPrincipal(ctx, domain.Principal{Type: domain.ClientDevice, DeviceID: domain.ID(device.Id)})
+	if _, err := f.service.MarkSessionInboxRead(stale, connect.NewRequest(&pb.MarkSessionInboxReadRequest{RequestId: string(domain.NewID()), SessionId: request.SessionId})); err == nil {
+		t.Fatal("revoked client bypassed transactional authority")
+	}
+	if _, err := client.MarkSessionInboxRead(ctx, connect.NewRequest(&pb.MarkSessionInboxReadRequest{RequestId: string(domain.NewID()), SessionId: request.SessionId})); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		t.Fatal("unauthenticated visit admitted")
+	}
+	if _, err := client.MarkSessionInboxRead(ctx, ownerRequest(f.service.Identity, &pb.MarkSessionInboxReadRequest{RequestId: string(domain.NewID()), SessionId: string(domain.NewID())})); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatal("missing original session admitted")
+	}
+}

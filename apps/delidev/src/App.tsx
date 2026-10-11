@@ -1,4 +1,5 @@
 import { DraftEditGenerations } from "./draft-edit-generations";
+import { SessionInboxReadBoundary } from "./session-inbox-read";
 import { InboxBadgePresentation } from "./inbox-badge";
 import { SessionNameEditorProvider } from "./session-name-editor";
 import {
@@ -886,20 +887,22 @@ export function App({
                     <PRWorkflowProvider>
                       <ShortcutProvider>
                         <SessionNameEditorProvider>
-                          <Shell
-                            connectionReady={connectionReady}
-                            pairingAuthority={pairingAuthority}
-                            currentDeviceId={currentDeviceId}
-                            controlLocalWorker={controlLocalWorker}
-                            chooseRepositoryFolder={chooseRepositoryFolder}
-                            connectionSettings={connectionSettings}
-                            appInformationSettings={appInformationSettings}
-                            connectionTarget={connectionTarget}
-                            onConnectionHelp={onConnectionHelp}
-                            localServer={localServer}
-                            serverPresentation={serverPresentation}
-                            readLocalWorker={readLocalWorker}
-                          />
+                          <SessionInboxReadBoundary ready={connectionReady}>
+                            <Shell
+                              connectionReady={connectionReady}
+                              pairingAuthority={pairingAuthority}
+                              currentDeviceId={currentDeviceId}
+                              controlLocalWorker={controlLocalWorker}
+                              chooseRepositoryFolder={chooseRepositoryFolder}
+                              connectionSettings={connectionSettings}
+                              appInformationSettings={appInformationSettings}
+                              connectionTarget={connectionTarget}
+                              onConnectionHelp={onConnectionHelp}
+                              localServer={localServer}
+                              serverPresentation={serverPresentation}
+                              readLocalWorker={readLocalWorker}
+                            />
+                          </SessionInboxReadBoundary>
                         </SessionNameEditorProvider>
                       </ShortcutProvider>
                     </PRWorkflowProvider>
