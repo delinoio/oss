@@ -20,7 +20,7 @@ import (
 
 func shortQuotaBundle(t *testing.T) []byte {
 	t.Helper()
-	claims, _ := json.Marshal(map[string]any{"email": "fixture@example.invalid", "https://api.openai.com/auth": map[string]string{"chatgpt_account_id": "acct", "chatgpt_user_id": "user", "chatgpt_plan_type": "plus"}})
+	claims, _ := json.Marshal(map[string]any{"name": "Al", "email": "fixture@example.invalid", "https://api.openai.com/auth": map[string]string{"chatgpt_account_id": "acct", "chatgpt_user_id": "user", "chatgpt_plan_type": "plus"}})
 	token := "header." + base64.RawURLEncoding.EncodeToString(claims) + ".synthetic"
 	raw, _ := json.Marshal(map[string]any{"auth_mode": "chatgpt", "OPENAI_API_KEY": nil, "tokens": map[string]string{"id_token": token, "access_token": token, "refresh_token": "tok", "account_id": "acct"}, "last_refresh": time.Now().UTC()})
 	if _, _, err := subscription.Parse(raw); err != nil {
@@ -69,7 +69,7 @@ func TestQuotaReflectionRejectsExactShortOriginalAndEncodedIDs(t *testing.T) {
 }
 
 func TestNativeQuotaShortReflectionRejectsReadsAndRollingUpdates(t *testing.T) {
-	for _, key := range []string{"acct", "YWNjdA", "user", "dXNlcg", "tok", "dG9r"} {
+	for _, key := range []string{"acct", "YWNjdA", "user", "dXNlcg", "tok", "dG9r", "Al", "QWw=", "QWw"} {
 		t.Run(key, func(t *testing.T) {
 			config := fixtureConfig(t, "managed-ready")
 			config.Mode, config.ManagedAuthentication = SubscriptionProtocol, true
