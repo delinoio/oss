@@ -169,16 +169,18 @@ function fixture(
 }
 async function open() {
   fireEvent.click(await screen.findByRole("button", { name: "Pull requests" }));
-  return within(
+  const pane = within(
     screen.getByRole("region", {
       name: "Pull requests navigation and filters",
     }),
   );
+  await pane.findByRole("button", { name: /^Refresh$/ });
+  return pane;
 }
 async function choose(row: Resource) {
   fireEvent.click(
     await screen.findByRole("button", {
-      name: `${resourceName(row)}`,
+      name: resourceName(row).trim().replace(/\s+/gu, " "),
     }),
   );
   await waitFor(() =>
