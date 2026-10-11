@@ -89,10 +89,8 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 			if keyErr == nil && !bytes.Equal(keyedRaw, expected) {
 				return pending()
 			}
-			if keyErr != nil {
-				if writeJSON(paths.Worker, legacy) != nil {
-					return pending()
-				}
+			if writeJSON(paths.Worker, legacy) != nil {
+				return pending()
 			}
 			proof = legacy
 			if workspace.ImportLegacyDeletionWorkspaceProof(root, w) != nil {
@@ -115,7 +113,7 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 			} else if writeJSON(paths.Worker, proof) != nil {
 				return pending()
 			}
-			if workspace.ImportLegacyDeletionWorkspaceProof(root, w) != nil {
+			if workspace.RequireNoLegacyDeletionWorkspaceProof(root, w) != nil {
 				return pending()
 			}
 		default:
@@ -133,6 +131,9 @@ func loadSessionDeletionProof(root string, w domain.SessionDeletionWork) (sessio
 		if writeJSON(markerPath, deletionMarker(w)) != nil || writeJSON(paths.Worker, proof) != nil {
 			return pending()
 		}
+	}
+	if security.SyncParent(paths.Worker) != nil {
+		return pending()
 	}
 	success = true
 	return proof, paths.Worker, lock, nil

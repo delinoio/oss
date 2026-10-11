@@ -202,13 +202,7 @@ func TestLegacyForkDeletionProofCannotRebuildRemovedEvidence(t *testing.T) {
 				t.Fatal(err)
 			}
 			w.Copies[1].UnpublishedChildProcessID = child
-			proof, err := deleteSessionCopies(context.Background(), c, w)
-			if scenario == "untouched" {
-				if err != nil || !proof.Complete || proof.ReportID != originalProof.ReportID {
-					t.Fatal("original proof did not rebind", err)
-				}
-				return
-			}
+			_, err = deleteSessionCopies(context.Background(), c, w)
 			if domain.SafeError(err).Code != domain.RecoveryRequired {
 				t.Fatal("missing original proof accepted", err)
 			}

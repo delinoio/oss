@@ -63,7 +63,8 @@ func ImportLegacyDeletionWorkspaceProof(root string, w domain.SessionDeletionWor
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return domain.SessionDeletionPending()
-	} else if err := writeDeletionWorkspaceProof(paths.Workspace, legacy); err != nil {
+	}
+	if err := writeDeletionWorkspaceProof(paths.Workspace, legacy); err != nil {
 		return err
 	}
 	// Recheck the original bytes before retiring only that admitted legacy name.
@@ -112,4 +113,13 @@ func SessionDeletionWorkspaceProofRemnants(root string, w domain.SessionDeletion
 		return nil, err
 	}
 	return []string{paths.Workspace, legacyDeletionWorkspacePath(root, w)}, nil
+}
+
+// A current fence has already completed legacy import. Reappearing legacy
+// evidence is protected on retry, including before final proof retirement.
+func RequireNoLegacyDeletionWorkspaceProof(root string, w domain.SessionDeletionWork) error {
+	if _, err := os.Lstat(legacyDeletionWorkspacePath(root, w)); !errors.Is(err, os.ErrNotExist) {
+		return domain.SessionDeletionPending()
+	}
+	return nil
 }
