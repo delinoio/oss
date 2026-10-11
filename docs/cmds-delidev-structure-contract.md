@@ -571,3 +571,14 @@ Instruction-file updates in this requirement apply only to changes in developmen
 - pnport cache conformance separates network preparation from offline runs. Pin Yarn/Vitest/Vite; use default Vitest cache settings and verify readiness plus native dependency reads/cache writes in inline/split forms twice. Fresh temporary fixture installs must create their lockfiles under `CI=true`; confine the immutable-install override to those preparation calls. Run the prepared Vitest bin through the supplied packaged CLI's `run --` path so its workers share the matching native view. Each native host validates its packaged CLI with its matching companion. Source-only cache support must not be attributed to immutable published versions.
 
 Record implementation status and validation results in pull requests, issues and CI logs/artifacts under the root DeliDev validation policy. Do not add repository evidence documents. Update instructions only when their rules or ownership change, not merely to record another validation run.
+
+## Named managed directory allocation closure
+
+Worker 69 `NAMED_MANAGED_DIRECTORIES_V1` owns frozen portable names for newly
+accepted managed Worktree checkout directories. Preserve Worker 19 remote clone
+ownership and all previous allocations. The complete feature includes the
+allocation record, generated Go/TypeScript bindings, optional version-1 private
+JSON fields and independently negotiated acceptance/assignment/execution gates.
+Record the allocation and validation closure in the owning feature PR. No System
+capability, public RPC or SQLite migration is added. Follow the [workspace naming
+contract](cmds-delidev-workspace-contract.md#frozen-managed-repository-directory-names).

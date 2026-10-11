@@ -63,6 +63,10 @@ func sessionWorkspaceRequest(tx *store.Tx, id domain.ID, session domain.Session)
 		spec := workspace.RepositorySpec{ID: r.ID, PreferredRemote: repo.PreferredRemote, Base: repo.Base, Starting: repo.Starting, AutoFetch: settings.AutomaticFetch && project.EffectiveFetch(settings.AutomaticFetch) && repo.AutoFetch}
 		if session.Workspace == domain.Worktree {
 			spec.SourceKind, spec.RemoteURL = workspace.RemoteCloneSource, repo.RemoteURL
+			spec.DirectoryName, err = workspace.RepositoryDirectoryName(repo.Name)
+			if err != nil {
+				return input, err
+			}
 		}
 		for _, checkout := range repo.Checkouts {
 			if session.Workspace == domain.Local && checkout.MachineID == session.MachineID {
@@ -85,7 +89,7 @@ func sessionWorkspaceRequest(tx *store.Tx, id domain.ID, session domain.Session)
 		}
 		input.Repositories = append(input.Repositories, spec)
 	}
-	return input, nil
+	return input, input.ValidateDirectoryNames()
 }
 
 func queueSessionWorkspace(tx *store.Tx, id domain.ID, session *domain.Session, input workspace.PrepareRequest) error {
@@ -97,6 +101,12 @@ func queueSessionWorkspace(tx *store.Tx, id domain.ID, session *domain.Session, 
 		if (repo.SourceKind == workspace.RemoteCloneSource || repo.SourceKind == workspace.IndependentForkSource) && !slices.Contains(machine.WorkerCapabilities, domain.RemoteWorkspaceCloneV1) {
 			return domain.Fail(domain.Unsupported, "The selected Runner Device cannot clone remote workspaces.", "Update and reconnect that Worker before preparing this session.")
 		}
+	}
+	if err := input.ValidateDirectoryNames(); err != nil {
+		return err
+	}
+	if input.UsesNamedManagedDirectories() && !slices.Contains(machine.WorkerCapabilities, domain.NamedManagedDirectoriesV1) {
+		return workspace.NamedManagedDirectoriesUnsupported()
 	}
 	raw, err := json.Marshal(input)
 	if err != nil {

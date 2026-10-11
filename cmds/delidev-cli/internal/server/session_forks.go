@@ -205,6 +205,19 @@ func (s *Service) ForkSession(ctx context.Context, req *connect.Request[pb.ForkS
 		if err := validateForkSharing(input); err != nil {
 			return nil, err
 		}
+		named, err := workspace.ExecutionUsesNamedManagedDirectories(input.SourceAssignment)
+		if err != nil {
+			return nil, err
+		}
+		if named {
+			_, machine, err := activeMachine(tx, input.SourceAssignment.MachineID)
+			if err != nil {
+				return nil, err
+			}
+			if !slices.Contains(machine.WorkerCapabilities, domain.NamedManagedDirectoriesV1) {
+				return nil, workspace.NamedManagedDirectoriesUnsupported()
+			}
+		}
 		clones, err := workspace.ForkRequiresManagedClone(input)
 		if err != nil {
 			return nil, err
@@ -319,6 +332,19 @@ func (s *Service) GetSessionFork(ctx context.Context, req *connect.Request[pb.Ge
 func validateForkAuthority(tx *store.Tx, input domain.ForkJobInput) error {
 	if input.Retry != nil {
 		return validateSidechatRetryForkAuthority(tx, input)
+	}
+	named, err := workspace.ExecutionUsesNamedManagedDirectories(input.SourceAssignment)
+	if err != nil {
+		return err
+	}
+	if named {
+		_, machine, err := activeMachine(tx, input.SourceAssignment.MachineID)
+		if err != nil {
+			return err
+		}
+		if !slices.Contains(machine.WorkerCapabilities, domain.NamedManagedDirectoriesV1) {
+			return workspace.NamedManagedDirectoriesUnsupported()
+		}
 	}
 	clones, err := workspace.ForkRequiresManagedClone(input)
 	if err != nil {
@@ -512,7 +538,7 @@ func validateForkWorkspace(input domain.ForkJobInput, preparation workspace.Prep
 	}
 	for i, repo := range source.Repositories {
 		spec := preparation.Repositories[i]
-		if spec.ID != repo.ID || spec.Checkout != repo.Path || spec.AutoFetch || spec.PRTarget != nil || spec.PreferredRemote != "" || spec.Base.Type != domain.CommitReference || spec.Base.Name != manifest.Repositories[i].BaseCommit {
+		if spec.ID != repo.ID || spec.DirectoryName != repo.DirectoryName || spec.Checkout != repo.Path || spec.AutoFetch || spec.PRTarget != nil || spec.PreferredRemote != "" || spec.Base.Type != domain.CommitReference || spec.Base.Name != manifest.Repositories[i].BaseCommit {
 			return forkConflict()
 		}
 		if input.Workspace == domain.Worktree {

@@ -47,6 +47,10 @@ func TestTerminalDirectoryUsesOriginalPrimaryAndDoesNotTakeAgentLease(t *testing
 				second := domain.NewID()
 				input.Repositories = append(input.Repositories, RepositorySpec{ID: second, Checkout: repository(t), Starting: domain.Reference{Type: domain.LocalBranch, Name: "main"}})
 				input.PrimaryRepository = second
+				if kind == domain.Worktree {
+					input.Repositories[0].DirectoryName = "oss"
+					input.Repositories[1].DirectoryName = "tools"
+				}
 			}
 			for i := range input.Repositories {
 				resolved, err := filepath.EvalSymlinks(input.Repositories[i].Checkout)

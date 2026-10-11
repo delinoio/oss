@@ -1436,3 +1436,16 @@ retirement does not change independent backup deletion or restore obligations.
 `session-queue-order:<session-id>` is version-1 private metadata, bounded to 1,000 unique original input IDs and 64 KiB. Missing metadata means acceptance order and generation zero. Generation-only records preserve that order until the first genuine move captures IDs. Captured IDs must match the entire currently waiting set; duplicates, foreign/missing IDs, malformed versions or overflow require RecoveryRequired before dispatch. All membership writers update this metadata atomically with their queue records; content-only edits retain it. No public Queue document rank and no SQLite migration is added.
 
 New Fork jobs retain a bounded version-1 `fork-image-snapshot:<job-id>` with exact original source, child, execution, native turn, job-input digest and ordered image references. Empty references are explicit. The private cutover marker distinguishes legacy jobs from newly admitted jobs; uncertain missing snapshots fail closed. The existing protected image records remain the byte/Worker authority. Durable session purge removes its order metadata and retires Fork snapshots only after both original job and dependent child are gone. Backup images preserve their own private order and Fork snapshots. Restore excludes these owners from the current safety-metadata overlay, validates the restored membership and advances order generation beyond both timelines to expire old waiting cursors. It does not synthesize rank, membership or image authority. Do not copy raw image bytes or native transcript into this metadata.
+
+## Frozen managed checkout layout
+
+Optional version-1 `directory_name` fields belong to the immutable original
+preparation and prepared repository. Follow the [workspace naming contract](cmds-delidev-workspace-contract.md#frozen-managed-repository-directory-names).
+Snapshot workspace data, internal Git placement, source/restore native identity
+checks and cleanup allowlists use the accepted component. Restore publishes the
+exact frozen live layout through the original synchronized no-replace proof.
+Repository UUIDs remain logical indexes; omission preserves historical UUID
+layouts and JSON bytes. Registration changes do not relocate accepted storage.
+Named restoration and storage dispatch require the independent Worker capability.
+Changed names, replacement links and foreign directories retain uncertainty and
+cannot grant execution or removal authority. No SQLite migration is added.

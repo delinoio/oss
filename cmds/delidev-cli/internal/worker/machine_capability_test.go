@@ -15,7 +15,7 @@ func TestNativeImageGenerationPreservesOriginalNegotiatedMachineCapabilities(t *
 		capabilities []domain.WorkerCapability
 		accepted     bool
 	}{
-		{"mixed known capabilities", []domain.WorkerCapability{domain.RemoteWorkspaceCloneV1, domain.BranchPrefixInstructionsV1, domain.NativeImageGenerationV1}, true},
+		{"mixed known capabilities", []domain.WorkerCapability{domain.RemoteWorkspaceCloneV1, domain.NamedManagedDirectoriesV1, domain.BranchPrefixInstructionsV1, domain.NativeImageGenerationV1}, true},
 		{"unknown alongside known", []domain.WorkerCapability{domain.RemoteWorkspaceCloneV1, domain.NativeImageGenerationV1, domain.WorkerCapability("unknown-fixture-capability")}, false},
 		{"duplicate image capability", []domain.WorkerCapability{domain.RemoteWorkspaceCloneV1, domain.NativeImageGenerationV1, domain.NativeImageGenerationV1}, false},
 		{"duplicate original capability", []domain.WorkerCapability{domain.RemoteWorkspaceCloneV1, domain.NativeImageGenerationV1, domain.RemoteWorkspaceCloneV1}, false},
@@ -29,7 +29,7 @@ func TestNativeImageGenerationPreservesOriginalNegotiatedMachineCapabilities(t *
 			resource := &pb.Resource{Kind: pb.EntityKind_ENTITY_KIND_MACHINE, SchemaVersion: 1, DocumentJson: raw}
 			// A supported additive capability cannot hide an independently
 			// negotiated capability. Unknown or duplicate documents remain closed.
-			for _, capability := range []domain.WorkerCapability{domain.RemoteWorkspaceCloneV1, domain.NativeImageGenerationV1, domain.BranchPrefixInstructionsV1} {
+			for _, capability := range []domain.WorkerCapability{domain.RemoteWorkspaceCloneV1, domain.NamedManagedDirectoriesV1, domain.NativeImageGenerationV1, domain.BranchPrefixInstructionsV1} {
 				if got := machineCapability(resource, capability); got != test.accepted {
 					t.Fatalf("capability %s accepted=%t, expected valid document=%t", capability, got, test.accepted)
 				}

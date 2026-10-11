@@ -54,6 +54,47 @@ a terminal result. Legacy Workers still receive their original inspection input
 without the optional identity field; that omitted proof cannot authorize a
 source-bound publication. Raw URLs and credentials remain private.
 
+### Frozen managed repository directory names
+
+New Worktree acceptance derives each repository directory from its registered
+name and retains the optional immutable `directory_name` in the version-1
+RepositorySpec and PreparedRepository JSON. The session UUID remains the parent:
+`worker/workspaces/<session UUID>/oss` is the real checkout for the accepted name
+`oss`. The designated primary repository controls initial terminal and Agent cwd.
+Session and Schedule acceptance share this rule. Registration renames affect
+later acceptance only; retries, recovery and independent Fork retain the original
+component and preparation digest. Historical omitted fields retain UUID-derived
+paths and serialized omission without migration or automatic rename. Local,
+General Chat and Sidechat ownership remain unchanged.
+
+The Go-owned conversion trims surrounding whitespace, normalizes to NFC,
+replaces controls and `< > : " / \ | ? *` with `_`, removes trailing dots and
+whitespace and truncates at a UTF-8 boundary to 255 bytes. Empty output becomes
+`repository`; reserved portable device names receive an `_` prefix with the same
+byte bound. Ordinary valid names and casing remain intact. Validate the final
+component with the existing portable folder validator. Before Git or checkout
+creation, reject NFC/default-case-fold collisions, including converted names,
+historical UUID components and `manifest.json`, and reject occupied destinations.
+Invalid components return InvalidArgument; collisions return Conflict. Never add
+UUID suffixes, overwrite files, adopt foreign roots or publish partial readiness.
+
+One shared owned-path resolver uses the retained component across preparation,
+result validation, restart recovery, execution claims, cleanup, permanent
+removal, snapshots, restore and Fork. Compare each original request/manifest
+field and path before use. Preserve native root/Git commitments, immutable
+digests, process joining, root confinement, no-replace publication and uncertainty
+handling. Snapshot workspace payloads retain the exact accepted live layout;
+repository UUIDs remain the logical identity and metadata index.
+
+Worker 69 `NAMED_MANAGED_DIRECTORIES_V1` independently negotiates this behavior.
+Capability 19 keeps its remote clone meaning. Require named support at new
+acceptance, assignment, Worker execution and named storage restoration/Fork.
+Recheck current support before redispatching a retained claim. Unsupported peers
+receive no named request and cannot substitute UUID paths. Historical omitted
+requests remain compatible. No System capability, RPC or SQLite migration is
+introduced. Structured outcome logs contain only ownership IDs and stable codes,
+never repository names, paths, URLs, credentials or native content.
+
 ### Negotiated repository metadata
 
 The feature adds optional `Inspection.github_repositories`, mapping an inspected remote name to only validated `{owner, name}`. The normal `Inspect` result stays unchanged. `RepositoryInspectionInput` can carry an internal opaque expected source identity for a repository save/import; it never carries the raw URL into Worker output. The Worker enriches results only after observing server support and the second attachment's accepted Machine capability. Legacy combinations omit the map and identity; the server also omits the identity input for an active Worker that has not negotiated `RepositoryInspectionMetadataV1`, preserving strict decoders and the original inspection flow. Missing GitHub metadata never blocks otherwise valid registration or invents a default branch. The CLI's legacy inspection raw output remains decodable. This does not promise compatibility for unrelated legacy consumers that reject newly advertised Machine capability identifiers.
@@ -289,7 +330,7 @@ Follow the root and parent instructions and cmds-delidev-workspace-contract.md.
 
 ## Storage
 
-The Worker owns private `workspaces`, `locks`, `execution-claims`, `execution-history`, and empty hook directories under its explicit data scope. UUID-v7 session/repository IDs derive managed paths. Manifests record original checkouts separately from deletion-owned paths. Cleanup recomputes owned paths from identities, reconciles Git registration even when a directory is absent, and never removes original Local checkouts. These local resources intentionally override the repository R2 default.
+The Worker owns private `workspaces`, `locks`, `execution-claims`, `execution-history`, and empty hook directories under its explicit data scope. UUID-v7 session IDs derive the managed parent. Each repository uses its frozen optional directory component; historical omission keeps its UUID basename. Manifests record original checkouts separately from deletion-owned paths. Cleanup recomputes owned paths from original identities and components, reconciles Git registration even when a directory is absent, and never removes original Local checkouts. These local resources intentionally override the repository R2 default.
 
 Canonicalize the private Worker root before creating ownership paths. Git's registration namespace can resolve parent aliases (including macOS `/var` to `/private/var`); comparing it to an unresolved path can leave an orphaned Git registration after rollback. Parent-alias regression tests must verify both filesystem removal and Git registration removal.
 

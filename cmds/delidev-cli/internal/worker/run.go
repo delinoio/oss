@@ -42,6 +42,7 @@ type Config struct {
 	quotaBlockSupported      bool
 	inspectionMetadata       bool
 	remoteWorkspaceClone     bool
+	namedManagedDirectories  bool
 	repositoryClone          bool
 	updatesEnabled           bool
 	terminals                *terminalManager
@@ -385,6 +386,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			} else {
 				profile += "\x00unsupported"
 			}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NAMED_MANAGED_DIRECTORIES_V1) {
+				profile += "\x00named-managed-directories-v1"
+			}
 			if remoteCloneExpected {
 				profile += "\x00remote-workspace-clone-v1"
 			}
@@ -512,6 +516,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1) && openCodeChildExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_OPENCODE_GO_SUBSCRIPTIONS_V1)
 			}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NAMED_MANAGED_DIRECTORIES_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_NAMED_MANAGED_DIRECTORIES_V1)
+			}
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1) {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_REPOSITORY_BRANCH_DISCOVERY_V1)
 			}
@@ -557,6 +564,7 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			}
 			config.updatesEnabled = machineCapability(attached.Msg.Machine, domain.SignedWorkerUpdatesV1)
 			config.startupProgress = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_STARTUP_PROGRESS_V1) && machineCapability(attached.Msg.Machine, domain.SessionStartupProgressV1)
+			config.namedManagedDirectories = slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_NAMED_MANAGED_DIRECTORIES_V1) && machineCapability(attached.Msg.Machine, domain.NamedManagedDirectoriesV1)
 			config.remoteWorkspaceClone = remoteCloneExpected && machineCapability(attached.Msg.Machine, domain.RemoteWorkspaceCloneV1)
 			config.repositoryClone = cloneExpected && machineCapability(attached.Msg.Machine, domain.RepositoryCloneV1)
 			config.inspectionMetadata = metadataExpected && machineCapability(attached.Msg.Machine, domain.RepositoryInspectionMetadataV1)
@@ -1132,6 +1140,13 @@ func runJob(ctx context.Context, config Config, instance domain.ID, resource *pb
 	return result, nil
 }
 func execute(ctx context.Context, config Config, owner domain.ID, job domain.Job) (json.RawMessage, error) {
+	named, err := workspace.JobUsesNamedManagedDirectories(job)
+	if err != nil {
+		return nil, err
+	}
+	if named && !config.namedManagedDirectories {
+		return nil, workspace.NamedManagedDirectoriesUnsupported()
+	}
 	root := config.Root
 	switch job.Type {
 	case domain.CompactSessionJob:

@@ -295,6 +295,10 @@ func (m *terminalManager) execute(a terminal.Assignment) terminal.Result {
 			result.State, result.Problem = domain.TerminalUncertain, workspace.ResultUncertain()
 			return result
 		}
+		if a.Preparation.UsesNamedManagedDirectories() && !m.config.namedManagedDirectories {
+			result.State, result.CleanupVerified, result.Problem = domain.TerminalExited, true, workspace.NamedManagedDirectoriesUnsupported()
+			return result
+		}
 		ctx, cancel := context.WithTimeout(m.ctx, 15*time.Second)
 		shell, err := terminal.ResolveShell(ctx, m.config.Root, a.ID, a.Terminal.ShellOverride, m.config.Logger)
 		cancel()

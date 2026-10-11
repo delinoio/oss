@@ -386,6 +386,9 @@ func checkedExecutionWorkspace(tx *store.Tx, sr store.Record, session domain.Ses
 	if domain.Decode(job.Input, &request) != nil || domain.Decode(job.Output, &manifest) != nil || request.SessionID != sr.ID || request.MachineID != session.MachineID || request.Type != session.Workspace || workspace.ValidateResult(request, manifest, machine.OS) != nil {
 		return empty, workspace.ResultUncertain()
 	}
+	if request.UsesNamedManagedDirectories() && !slices.Contains(machine.WorkerCapabilities, domain.NamedManagedDirectoriesV1) {
+		return empty, workspace.NamedManagedDirectoriesUnsupported()
+	}
 	if err := validateLocalOrigin(tx, session); err != nil {
 		return empty, err
 	}

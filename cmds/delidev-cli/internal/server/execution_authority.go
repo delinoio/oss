@@ -14,6 +14,7 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/rpc"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/store"
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 	pb "github.com/delinoio/oss/protos/gen/go/delidev/v1"
 )
 
@@ -91,6 +92,10 @@ func (a *executionAuthority) scope(tx *store.Tx, grant store.ExecutionGrant) (ap
 	}
 	_, machine, machineErr := activeMachine(tx, grant.MachineID)
 	if machineErr != nil || input.Configuration.Options.ApprovalsReviewer != "" && !slices.Contains(machine.WorkerCapabilities, domain.CodexApprovalReviewV1) || input.Fork != nil && input.Configuration.Harness == domain.OpenCode && !slices.Contains(machine.WorkerCapabilities, domain.OpenCodeGeneralChatForkV1) {
+		return empty, executionDenied()
+	}
+	named, namingErr := workspace.ExecutionUsesNamedManagedDirectories(input)
+	if namingErr != nil || named && !slices.Contains(machine.WorkerCapabilities, domain.NamedManagedDirectoriesV1) {
 		return empty, executionDenied()
 	}
 	_, session, err := sessionRecord(tx, input.SessionID)

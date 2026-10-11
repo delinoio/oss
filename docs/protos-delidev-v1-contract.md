@@ -1469,3 +1469,14 @@ a validated optional managed checkout directory name. The frozen original
 workspace declaration and independent cleanup proof retain their ownership.
 The name grants no authority to adopt an existing path or a foreign checkout.
 This declaration adds no public RPC, entity kind or database migration.
+
+Worker 69 `NAMED_MANAGED_DIRECTORIES_V1` negotiates frozen managed checkout
+names independently of remote clone capability 19. Optional immutable
+`directory_name` fields extend the private version-1 RepositorySpec and
+PreparedRepository JSON without changing public RPCs or System capability
+allocation. Require support at named acceptance, assignment and execution,
+including restoration and independent Fork. Strict original request/manifest
+comparison retains the directory component and digest; omitted historical fields
+keep UUID paths and serialized omission. See the [workspace contract](cmds-delidev-workspace-contract.md#frozen-managed-repository-directory-names)
+and the recorded [allocation owner](cmds-delidev-structure-contract.md#allocation-workflow).
+No migration or native acceptance is implied by declaration or advertisement.

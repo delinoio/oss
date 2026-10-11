@@ -40,7 +40,8 @@ func (s *Service) RecoverSessionWorkspace(ctx context.Context, req *connect.Requ
 		if session.Preparation == nil || session.Preparation.State != domain.PreparationUncertain || session.Outcome != domain.ExecutionNotStarted || session.ActiveExecutionID != "" || session.Archive == domain.Archived {
 			return nil, domain.Fail(domain.Conflict, "This session has no uncertain preparation to recover.", "Inspect its current native ownership and workspace state.")
 		}
-		if _, _, err := activeMachine(tx, session.MachineID); err != nil {
+		_, machine, err := activeMachine(tx, session.MachineID)
+		if err != nil {
 			return nil, err
 		}
 		if err := validateLocalOrigin(tx, session); err != nil {
@@ -95,6 +96,9 @@ func (s *Service) RecoverSessionWorkspace(ctx context.Context, req *connect.Requ
 		var preparation workspace.PrepareRequest
 		if err := domain.Decode(claim.Input, &preparation); err != nil {
 			return nil, err
+		}
+		if preparation.UsesNamedManagedDirectories() && !machineCapabilityContains(machine.WorkerCapabilities, domain.NamedManagedDirectoriesV1) {
+			return nil, workspace.NamedManagedDirectoriesUnsupported()
 		}
 		if err := validateRecoveryPreparation(tx, r.ID, session, preparation); err != nil {
 			return nil, err

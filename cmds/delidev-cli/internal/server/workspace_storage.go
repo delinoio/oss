@@ -211,7 +211,8 @@ func (s *Service) RequestWorkspaceStorage(ctx context.Context, req *connect.Requ
 		if err := storageIdle(tx, sr.ID, session, domain.ID(req.Msg.RecoveryJobId), reserve); err != nil {
 			return nil, err
 		}
-		if _, _, err := activeMachine(tx, session.MachineID); err != nil {
+		_, machine, err := activeMachine(tx, session.MachineID)
+		if err != nil {
 			return nil, err
 		}
 		preparation, err := tx.Get(domain.JobKind, session.Preparation.JobID)
@@ -225,6 +226,9 @@ func (s *Service) RequestWorkspaceStorage(ctx context.Context, req *connect.Requ
 		input := workspace.StorageRequest{PreviousState: domain.WorkspacePresent, Version: 1, OperationID: domain.NewID(), Action: action}
 		if domain.Decode(job.Input, &input.Preparation) != nil || domain.Decode(job.Output, &input.Manifest) != nil {
 			return nil, workspace.ResultUncertain()
+		}
+		if input.Preparation.UsesNamedManagedDirectories() && !machineCapabilityContains(machine.WorkerCapabilities, domain.NamedManagedDirectoriesV1) {
+			return nil, workspace.NamedManagedDirectoriesUnsupported()
 		}
 		wasStored := session.Storage != nil && session.Storage.State == domain.WorkspaceStored
 		if wasStored {
