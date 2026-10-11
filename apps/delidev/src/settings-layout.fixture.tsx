@@ -47,7 +47,12 @@ import {
   type DateFormatBridge,
   type DateFormatSnapshot,
 } from "./date-format";
-import { AppearanceProvider, Theme } from "./appearance";
+import { AppearanceProvider, Theme, AppearanceProblem } from "./appearance";
+import {
+  defaultPreferences,
+  Palette,
+  palettes,
+} from "./appearance-preferences";
 import {
   LanguagePreference,
   LanguageProblem,
@@ -1290,12 +1295,38 @@ if (args.get("commandPalette") === "true") {
   };
   Object.assign(window, { __commandMenuFixture: counts });
 }
+// Complete synthetic preference snapshots exercise the original autosave API.
+let appearanceSnapshot = {
+  revision: 1,
+  theme,
+  preferences: defaultPreferences(),
+  problem: null as AppearanceProblem | null,
+};
+if (args.get("customTheme") === "true")
+  appearanceSnapshot.preferences.custom_themes = [
+    {
+      version: 1,
+      id: "0195c9c0-7b13-7000-8000-000000000099",
+      name: "Synthetic custom theme",
+      ...structuredClone(palettes[Palette.Nord]),
+    },
+  ];
 createRoot(document.getElementById("root")!).render(
   <LanguageProvider bridge={languageBridge}>
     <AppearanceProvider
       bridge={{
-        read: async () => ({ revision: 1, theme, problem: null }),
-        update: async (next) => ({ revision: 2, theme: next, problem: null }),
+        read: async () => appearanceSnapshot,
+        update: async (next, revision, preferences) => {
+          if (revision !== appearanceSnapshot.revision)
+            return { ...appearanceSnapshot, problem: AppearanceProblem.Changed };
+          appearanceSnapshot = {
+            revision: revision + 1,
+            theme: next,
+            preferences: preferences ?? appearanceSnapshot.preferences,
+            problem: null,
+          };
+          return appearanceSnapshot;
+        },
         subscribe: async () => () => {},
       }}
     >

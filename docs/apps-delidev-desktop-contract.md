@@ -2895,7 +2895,20 @@ and 200% zoom acceptance in PRs/issues/CI, retaining unavailable targets explici
 
 #### Device styling and custom themes
 
-Appearance uses five flat sections: Theme, Composer, Status, Display and Images.
+Appearance uses five flat sections: Theme, Composer, Session status, Display and
+Images, followed by Language and Date format under their independent controllers.
+Its left-aligned body alone is capped at 880px; other forms retain their existing
+widths and the shared desktop/medium/compact padding. Separate flat sections with
+thin semantic rules and 24px gaps. Keep 26px/32px category titles, 16px/24px section
+headings, 14px/20px labels and 12px/18px explanations. Show the computer-local scope
+and automatic-save explanation while retaining actual Reading/Saving/Saved and
+failure states. Ordinary rows have a 64px minimum, 16px gap and 220px control
+column, with associated descriptions and native controls. Three independent
+Tool/Reasoning/Compaction selectors share one wider grouped row without merging
+values or accessible names. At body widths below 640px, the Appearance-scoped
+container stacks row labels/controls, radio tiles and grouped selectors; actions
+wrap and content scrolls vertically. Retain every labelled disabled renderer,
+longer behavior/recovery explanation and custom-theme management action.
 Language and Date format retain their existing ownership. Ordinary selections
 save automatically. Theme mode retains System/Light/Dark, with independent light
 and dark palette references for Default, Titanium, Nord, Dracula and Solarized.

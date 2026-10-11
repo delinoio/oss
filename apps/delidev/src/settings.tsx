@@ -2459,7 +2459,7 @@ function SettingsWorkspace({
                   <ShortcutSettings />
                 ) : null}
                 {area === SettingsArea.Appearance ? (
-                  <div>
+                  <div className="appearance-content">
                     <AppearanceSettings />
                     <LanguageSettings />
                     <DateFormatSettings />

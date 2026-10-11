@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import {
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -194,6 +195,13 @@ export function AppearanceControls({
   const { snapshot, operation, update } = useAppearance();
   const p = snapshot.preferences ?? defaultPreferences();
   const blocked = !!operation || !!snapshot.problem;
+  const rowId = useId();
+  const text = (key: string) => (
+    <span className="appearance-row-text">
+      <span id={`${rowId}-${key}-label`}>{label(key)}</span>
+      <small id={`${rowId}-${key}-help`}>{label(`help.${key}`)}</small>
+    </span>
+  );
   const [editor, setEditor] = useState<{
       theme: CustomTheme;
       revision: number;
@@ -209,8 +217,10 @@ export function AppearanceControls({
   ) => update({ ...p, [key]: value }, snapshot.revision);
   const checkbox = (key: keyof AppearancePreferences) => (
     <label className="appearance-row">
-      <span>{label(key)}</span>
+      {text(key)}
       <input
+        aria-labelledby={`${rowId}-${key}-label`}
+        aria-describedby={`${rowId}-${key}-help`}
         type="checkbox"
         checked={p[key] === true}
         onChange={(e) => change(key, e.target.checked as never)}
@@ -220,10 +230,13 @@ export function AppearanceControls({
   const select = <K extends keyof AppearancePreferences>(
     key: K,
     values: readonly (string | number)[],
+    grouped = false,
   ) => (
-    <label className="appearance-row">
-      <span>{label(key)}</span>
+    <label className={grouped ? "appearance-disclosure-option" : "appearance-row"}>
+      {text(key)}
       <select
+        aria-labelledby={`${rowId}-${key}-label`}
+        aria-describedby={`${rowId}-${key}-help`}
         value={String(p[key])}
         onChange={(e) =>
           change(
@@ -253,9 +266,13 @@ export function AppearanceControls({
   const section = (name: string, children: ReactNode) => (
     <fieldset
       data-settings-search-target={name.toLowerCase()}
+      aria-describedby={`${rowId}-${name}-section-help`}
       disabled={blocked}
     >
       <legend>{label(name)}</legend>
+      <p id={`${rowId}-${name}-section-help`} className="appearance-section-help">
+        {label(`help.${name}Section`)}
+      </p>
       {children}
     </fieldset>
   );
@@ -285,15 +302,20 @@ export function AppearanceControls({
       <fieldset
         disabled={blocked}
         data-settings-search-target="theme"
-        aria-describedby="appearance-scope"
+        aria-describedby={`appearance-scope ${rowId}-theme-section-help`}
       >
         <legend>{copy("appearance.theme_efb52e")}</legend>
+        <p id={`${rowId}-theme-section-help`} className="appearance-section-help">
+          {label("help.themeSection")}
+        </p>
         {modeControls}
         <div data-settings-search-target="palettes">
           {(["light_palette", "dark_palette"] as const).map((key) => (
             <label className="appearance-row" key={key}>
-              <span>{label(key)}</span>
+              {text(key)}
               <select
+                aria-labelledby={`${rowId}-${key}-label`}
+                aria-describedby={`${rowId}-${key}-help`}
                 value={p[key]}
                 onChange={(e) => change(key, e.target.value)}
               >
@@ -410,9 +432,25 @@ export function AppearanceControls({
           {select("density", Object.values(Layout))}
           {select("conversation_size", [0, 12, 14, 16, 18])}
           {checkbox("animation")}
-          {select("tool_disclosure", Object.values(DisclosureDefault))}
-          {select("reasoning_disclosure", Object.values(DisclosureDefault))}
-          {select("compaction_disclosure", Object.values(DisclosureDefault))}
+          <div className="appearance-row appearance-disclosure-row">
+            <span className="appearance-row-text">
+              <span>{label("disclosureDefaults")}</span>
+              <small>{label("help.disclosureDefaults")}</small>
+            </span>
+            <div className="appearance-disclosure-controls">
+              {select("tool_disclosure", Object.values(DisclosureDefault), true)}
+              {select(
+                "reasoning_disclosure",
+                Object.values(DisclosureDefault),
+                true,
+              )}
+              {select(
+                "compaction_disclosure",
+                Object.values(DisclosureDefault),
+                true,
+              )}
+            </div>
+          </div>
           <fieldset disabled>
             {checkbox("markdown")}
             {checkbox("mermaid")}
