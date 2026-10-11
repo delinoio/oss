@@ -41,7 +41,8 @@ test("CI evidence distinguishes PR validation from full native packaging", () =>
     assert.match(text, /manual/u);
     assert.match(text, /CI Result/u);
   }
-  for (const id of ["devhud-desktop", "devhud-ios-simulator", "devhud-android-emulator"]) assert.equal(ciPaths[id].native, true);
+  for (const id of ["devhud-desktop", "devhud-android-emulator"]) assert.equal(ciPaths[id].native, true);
+  assert.equal(ciPaths["devhud-ios-simulator"], undefined);
   assert.equal(ciPaths["devhud-mobile-contracts"].native, undefined);
   assert.match(ciWorkflow, /node scripts\/ci\/run-affected\.mjs devhud ci:check/u);
   assert.match(workflowContract, /counterfactual estimate, not a measured post-change improvement/u);
@@ -223,7 +224,7 @@ test("CI validates release fixtures without publication authority", () => {
   assert.doesNotMatch(ciWorkflow, /\$\{\{\s*secrets\./u);
   for (const job of [
     "ci-contracts", "devhud-frontend", "devhud-extension", "devhud-rust-conformance",
-    "devhud-security", "devhud-desktop", "devhud-mobile-contracts", "devhud-ios-simulator",
+    "devhud-security", "devhud-desktop", "devhud-mobile-contracts",
     "devhud-android-emulator", "delidev-protocol", "delidev-client", "delidev-frontend", "devhud-admin", "devhud-api", "devhud-oci",
     "devhud-supply-chain", "devhud-release-contracts", "ci-result",
   ]) assert.match(ciWorkflow, new RegExp(`\\n  ${job}:`, "u"), job);
