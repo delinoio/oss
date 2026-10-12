@@ -193,13 +193,13 @@ func TestInitialDeletionWorkspaceRecoveryRequiresExactKeyedProof(t *testing.T) {
 	if err := writeDeletionWorkspaceProof(paths.Workspace, deletionWorkspaceProof{Version: 2, Identity: work.Identity(), Digest: work.Digest(), Removed: true}); err != nil {
 		t.Fatal(err)
 	}
-	if err := RecoverInitialDeletionWorkspaceProof(root, work); err != nil {
+	if err := RecoverInitialDeletionWorkspaceProof(root, work, false); err != nil {
 		t.Fatalf("exact keyed proof did not recover an admitted import: %v", err)
 	}
 	if err := os.Remove(paths.Workspace); err != nil {
 		t.Fatal(err)
 	}
-	if err := RecoverInitialDeletionWorkspaceProof(root, work); err == nil {
+	if err := RecoverInitialDeletionWorkspaceProof(root, work, false); err == nil {
 		t.Fatal("initial import recovered after all original evidence disappeared")
 	}
 }

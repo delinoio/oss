@@ -1494,10 +1494,13 @@ fails closed because its device publication state cannot be established.
 When both the session fence and Worker receipt are absent, fresh admission also
 requires the identity-keyed workspace-proof path to be absent unless it has an
 exact historical workspace proof to import. An orphaned keyed workspace proof
-cannot be adopted into a new report receipt. For an exact legacy import, persist
-an initial marker phase and the matching keyed Worker receipt before writing or
-retiring workspace evidence. That phase may recover an exact keyed copy after
-the legacy name was retired, but missing or mismatched proof remains pending.
+cannot be adopted into a new report receipt. When an exact historical workspace
+proof exists, fresh admission and version-1 Worker receipt migration persist a
+marker phase and matching keyed Worker receipt before writing or retiring that
+evidence. Version-1 migration synchronizes its exact Worker receipt and original
+stages before publishing a distinct legacy-import phase. That phase may recover
+an exact keyed copy after the legacy name was retired, but missing or mismatched
+proof remains pending.
 Once Worker removal has started, an incomplete receipt requires its matching
 keyed workspace proof; missing evidence keeps cleanup pending instead of
 recreating a workspace proof.

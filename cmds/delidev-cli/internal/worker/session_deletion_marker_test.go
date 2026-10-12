@@ -3,6 +3,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +14,129 @@ import (
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/security"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/workspace"
 )
+
+func TestLegacyV1WorkspaceProofMigrationIsRecoverable(t *testing.T) {
+	t.Run("migration publishes the original receipt and phase", func(t *testing.T) {
+		config, works := failedDeletionObligations(t)
+		work := works[0]
+		if err := security.PrivateDir(filepath.Join(config.Root, "session-deletions")); err != nil {
+			t.Fatal(err)
+		}
+		reportID := domain.NewID()
+		legacy := sessionDeletionProof{Version: 1, Digest: work.Digest(), ReportID: reportID, RemovalStarted: true}
+		if err := writeJSON(sessionDeletionPath(config.Root, work.SessionID), legacy); err != nil {
+			t.Fatal(err)
+		}
+		legacyWorkspacePath := filepath.Join(config.Root, "session-deletions", string(work.SessionID)+"-workspace.json")
+		if err := writeJSON(legacyWorkspacePath, map[string]any{"version": 1, "digest": work.Digest(), "removed": true}); err != nil {
+			t.Fatal(err)
+		}
+
+		proof, _, lock, err := loadSessionDeletionProof(config.Root, work)
+		if err != nil {
+			t.Fatal("legacy receipt migration failed", err)
+		}
+		lock.Close()
+		if proof.ReportID != reportID || !proof.RemovalStarted || proof.Identity != work.Identity() {
+			t.Fatal("legacy Worker identity or progress changed", proof)
+		}
+		paths, err := workspace.SessionDeletionProofPaths(config.Root, work)
+		if err != nil {
+			t.Fatal(err)
+		}
+		keyedWorkspace, err := security.ReadPrivate(paths.Workspace, 4096)
+		var imported struct {
+			Version  uint32                         `json:"version"`
+			Identity domain.SessionDeletionIdentity `json:"identity"`
+			Digest   string                         `json:"digest"`
+			Removed  bool                           `json:"removed"`
+		}
+		if err != nil || json.Unmarshal(keyedWorkspace, &imported) != nil || imported.Version != 2 || imported.Identity != work.Identity() || imported.Digest != work.Digest() || !imported.Removed {
+			t.Fatal("exact historical workspace proof was not imported", err)
+		}
+		if _, err := os.Lstat(legacyWorkspacePath); !os.IsNotExist(err) {
+			t.Fatal("legacy workspace proof was not retired after import", err)
+		}
+		markerRaw, err := security.ReadPrivate(sessionDeletionPath(config.Root, work.SessionID), domain.MaxSessionDeletionBytes)
+		var marker sessionDeletionMarker
+		if err != nil || domain.Decode(markerRaw, &marker) != nil || !validDeletionMarker(marker, work) {
+			t.Fatal("version-3 admission marker was not published", err)
+		}
+		obligation, ok := markerObligation(&marker, work)
+		if !ok || obligation.ReportID != reportID || obligation.Phase != sessionDeletionMarkerPublished {
+			t.Fatal("legacy workspace import did not reach its published phase")
+		}
+	})
+
+	t.Run("retired legacy name recovers from the keyed pair", func(t *testing.T) {
+		config, works := failedDeletionObligations(t)
+		work := works[0]
+		if err := security.PrivateDir(filepath.Join(config.Root, "session-deletions")); err != nil {
+			t.Fatal(err)
+		}
+		paths, err := workspace.SessionDeletionProofPaths(config.Root, work)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reportID := domain.NewID()
+		started := sessionDeletionProof{Version: 2, Identity: work.Identity(), Digest: work.Digest(), ReportID: reportID, RemovalStarted: true}
+		if err := writeJSON(paths.Worker, started); err != nil {
+			t.Fatal(err)
+		}
+		if err := writeJSON(paths.Workspace, map[string]any{"version": 2, "identity": work.Identity(), "digest": work.Digest(), "removed": true}); err != nil {
+			t.Fatal(err)
+		}
+		marker := deletionMarker(work)
+		marker.Obligations = []sessionDeletionMarkerObligation{{Identity: work.Identity(), Digest: work.Digest(), ReportID: reportID, Phase: sessionDeletionMarkerLegacyWorkspaceImport}}
+		if err := writeDeletionMarker(sessionDeletionPath(config.Root, work.SessionID), marker); err != nil {
+			t.Fatal(err)
+		}
+
+		proof, _, lock, err := loadSessionDeletionProof(config.Root, work)
+		if err != nil {
+			t.Fatal("interrupted legacy workspace import was not recovered", err)
+		}
+		lock.Close()
+		if proof.ReportID != reportID || !proof.RemovalStarted {
+			t.Fatal("recovery changed original legacy progress", proof)
+		}
+		markerRaw, err := security.ReadPrivate(sessionDeletionPath(config.Root, work.SessionID), domain.MaxSessionDeletionBytes)
+		if err != nil || domain.Decode(markerRaw, &marker) != nil {
+			t.Fatal("recovered marker could not be read", err)
+		}
+		obligation, ok := markerObligation(&marker, work)
+		if !ok || obligation.Phase != sessionDeletionMarkerPublished {
+			t.Fatal("recovered import did not publish its marker phase")
+		}
+	})
+
+	t.Run("missing Worker proof is not reconstructed", func(t *testing.T) {
+		config, works := failedDeletionObligations(t)
+		work := works[0]
+		if err := security.PrivateDir(filepath.Join(config.Root, "session-deletions")); err != nil {
+			t.Fatal(err)
+		}
+		paths, err := workspace.SessionDeletionProofPaths(config.Root, work)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reportID := domain.NewID()
+		marker := deletionMarker(work)
+		marker.Obligations = []sessionDeletionMarkerObligation{{Identity: work.Identity(), Digest: work.Digest(), ReportID: reportID, Phase: sessionDeletionMarkerLegacyWorkspaceImport}}
+		if err := writeDeletionMarker(sessionDeletionPath(config.Root, work.SessionID), marker); err != nil {
+			t.Fatal(err)
+		}
+		if err := writeJSON(paths.Workspace, map[string]any{"version": 2, "identity": work.Identity(), "digest": work.Digest(), "removed": true}); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, _, err := loadSessionDeletionProof(config.Root, work); domain.SafeError(err).Code != domain.RecoveryRequired {
+			t.Fatal("missing legacy Worker progress was recreated", err)
+		}
+		if _, err := os.Lstat(paths.Worker); !os.IsNotExist(err) {
+			t.Fatal("missing Worker receipt was rewritten", err)
+		}
+	})
+}
 
 func TestSessionDeletionPublishedFenceDoesNotRecreateMissingWorkerProof(t *testing.T) {
 	config, works := failedDeletionObligations(t)

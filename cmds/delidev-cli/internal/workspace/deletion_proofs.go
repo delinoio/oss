@@ -73,16 +73,15 @@ func ValidateFreshDeletionWorkspaceProof(root string, w domain.SessionDeletionWo
 }
 
 // RecoverInitialDeletionWorkspaceProof may be called only after the caller has
-// synchronized the exact initial marker and matching Worker receipt. That
-// durable admission pair authorizes finishing the exact legacy import if its
-// keyed copy survived retirement of the legacy name.
-func RecoverInitialDeletionWorkspaceProof(root string, w domain.SessionDeletionWork) error {
+// synchronized the exact import marker and matching Worker receipt. A started
+// historical receipt requires the imported proof to retain its removed stage.
+func RecoverInitialDeletionWorkspaceProof(root string, w domain.SessionDeletionWork, requireExisting bool) error {
 	if w.Validate() != nil {
 		return domain.SessionDeletionPending()
 	}
 	legacyPath := legacyDeletionWorkspacePath(root, w)
 	if _, err := os.Lstat(legacyPath); err == nil {
-		return ImportLegacyDeletionWorkspaceProof(root, w, false)
+		return ImportLegacyDeletionWorkspaceProof(root, w, requireExisting)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return domain.SessionDeletionPending()
 	}
@@ -92,7 +91,7 @@ func RecoverInitialDeletionWorkspaceProof(root string, w domain.SessionDeletionW
 	}
 	raw, err := security.ReadPrivate(paths.Workspace, 1<<20)
 	var proof deletionWorkspaceProof
-	if err != nil || domain.Decode(raw, &proof) != nil || !validDeletionWorkspaceProof(proof, w) {
+	if err != nil || domain.Decode(raw, &proof) != nil || !validDeletionWorkspaceProof(proof, w) || requireExisting && !proof.Removed {
 		return domain.SessionDeletionPending()
 	}
 	return nil
