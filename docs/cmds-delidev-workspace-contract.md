@@ -632,6 +632,13 @@ workspace evidence is synchronized into its keyed path before its old name is
 retired; equal interrupted pairs preserve original removal stages and manifests.
 Mismatched obligations never borrow a removed workspace or foreign proof.
 
+Only an original preparation copy can claim a present workspace manifest, and it
+must carry that manifest's preparation digest. Execution, title and other device
+obligations may acknowledge workspace absence after the preparation owner removes
+the root; they remain pending while a workspace is present without a matching
+manifest proof. This lets independent devices sharing one machine finish their
+own copy cleanup without transferring workspace-removal authority.
+
 The Worker retires this non-content proof only after original complete progress
 commits. Both bounded proof names enter completed absence checks. Reappearance
 keeps acknowledgement pending; original Local directories, independent child

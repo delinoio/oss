@@ -159,6 +159,35 @@ func TestSessionDeletionWorkerRemovesOnlySelectedWorktreeAndResumesAfterRemoval(
 	}
 }
 
+func TestSessionDeletionNonPreparationDeviceCanFinishAfterOwnerRemovesWorkspace(t *testing.T) {
+	config, preparation, _, _ := deletionWorkerFixture(t, domain.GeneralChat)
+	job := domain.NewID()
+	instance := domain.NewID()
+	digest := strings.Repeat("b", 64)
+	if err := writeJSON(filepath.Join(config.Root, "jobs", string(job)+".json"), journal{Version: 1, JobID: job, InstanceID: instance, Revision: 1, Digest: digest, State: journalReported, ReportID: domain.NewID()}); err != nil {
+		t.Fatal(err)
+	}
+	otherDevice := preparation
+	otherDevice.DeviceID = domain.NewID()
+	otherDevice.Copies = []domain.SessionDeletionCopy{{JobID: job, Type: domain.ExecuteSessionJob, Revision: 1, Digest: digest, InstanceID: instance}}
+	otherDevice.PreparationDigests = nil
+	if _, err := deleteSessionCopies(context.Background(), config, otherDevice); domain.SafeError(err).Code != domain.RecoveryRequired {
+		t.Fatal("non-preparation owner adopted the present workspace", err)
+	}
+	workspaceRoot := filepath.Join(config.Root, "workspaces", string(preparation.SessionID))
+	if _, err := os.Lstat(workspaceRoot); err != nil {
+		t.Fatal("non-preparation owner changed the present workspace", err)
+	}
+	proof, err := deleteSessionCopies(context.Background(), config, preparation)
+	if err != nil || !proof.Complete {
+		t.Fatal("preparation owner did not remove its workspace", err)
+	}
+	proof, err = deleteSessionCopies(context.Background(), config, otherDevice)
+	if err != nil || !proof.Complete || !proof.WorkspaceRetired {
+		t.Fatal("non-preparation owner could not acknowledge the already removed workspace", err)
+	}
+}
+
 func TestSessionDeletionWorkerKeepsUncertainOrForeignOwnershipPending(t *testing.T) {
 	c, w, manifest, _ := deletionWorkerFixture(t, domain.GeneralChat)
 	path := filepath.Join(c.Root, "jobs", string(w.Copies[0].JobID)+".json")

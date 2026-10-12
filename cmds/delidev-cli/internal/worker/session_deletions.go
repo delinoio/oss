@@ -210,7 +210,7 @@ func deleteSessionCopies(ctx context.Context, config Config, w domain.SessionDel
 			if copy.UnpublishedChildProcessID != "" && len(j.Output) != 0 {
 				return proof, domain.SessionDeletionPending()
 			}
-			if copy.Type != domain.PrepareWorkspaceJob || j.Problem == nil || len(j.Output) != 0 {
+			if copy.Type == domain.PrepareWorkspaceJob && (j.Problem == nil || len(j.Output) != 0) {
 				allowAbsentWorkspace = false
 			}
 			ownerRoot := filepath.Join(root, "processes", string(copy.JobID))
