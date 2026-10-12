@@ -1272,6 +1272,12 @@ export function ResourceChoice({
   const firstInventory = resources.payloadPages.find(
     (page) => page.token === "",
   )?.payload[0];
+  // Project restriction guidance may use raw counts from every page reached in
+  // the current validated chain. Creation stays first-page-only evidence.
+  const rawInventoryCount = resources.payloadPages.reduce(
+    (total, page) => total + (page.payload[0]?.count ?? 0),
+    0,
+  );
   const createFromEmptyInventory = Boolean(
     emptyInventoryAction &&
     kind === EntityKind.AGENT &&
@@ -1343,7 +1349,7 @@ export function ResourceChoice({
       !result.loading &&
       (!emptyInventoryAction ||
         Boolean(result.nextPageToken) ||
-        (allowed !== undefined && (firstInventory?.count ?? 0) > 0)) ? (
+        (allowed !== undefined && rawInventoryCount > 0)) ? (
         <p role="status">
           {copy(
             result.nextPageToken
