@@ -3,7 +3,12 @@ import { describe, expect, it } from "vitest";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { create } from "@bufbuild/protobuf";
 import { ErrorDetailSchema } from "./gen/delidev/v1/worker_pb.js";
-import { clientFailure, FailureCode, FailureCause, failureCause } from "./errors.js";
+import {
+  clientFailure,
+  FailureCode,
+  FailureCause,
+  failureCause,
+} from "./errors.js";
 
 describe("canonical protocol error details", () => {
   it("retains the original typed guidance without a compatibility descriptor", () => {
@@ -55,7 +60,6 @@ it("projects only confirmed configuration name conflict causes", () => {
   ).toBeUndefined();
 });
 
-
 it("projects only the exact quota code/cause pair, including retained documents", () => {
   for (const [code, cause, expected] of [
     ["missing_input", "quota_exhausted", FailureCause.QuotaExhausted],
@@ -66,12 +70,22 @@ it("projects only the exact quota code/cause pair, including retained documents"
     ["unrecognized", "quota_exhausted", undefined],
   ] as const) {
     expect(failureCause(code, cause)).toBe(expected);
-    const failure = clientFailure(new ConnectError("Safe cause.", Code.InvalidArgument, undefined, [{
-      desc: ErrorDetailSchema, value: create(ErrorDetailSchema, {code, cause}),
-    }]));
+    const failure = clientFailure(
+      new ConnectError("Safe cause.", Code.InvalidArgument, undefined, [
+        {
+          desc: ErrorDetailSchema,
+          value: create(ErrorDetailSchema, { code, cause }),
+        },
+      ]),
+    );
     expect(failure.cause).toBe(expected);
   }
-  expect(failureCause("missing_input", {cause: "quota_exhausted"})).toBeUndefined();
+  expect(
+    failureCause("missing_input", { cause: "quota_exhausted" }),
+  ).toBeUndefined();
   expect(failureCause("missing_input", undefined)).toBeUndefined();
-  expect(clientFailure(new ConnectError("quota_exhausted", Code.InvalidArgument)).cause).toBeUndefined();
+  expect(
+    clientFailure(new ConnectError("quota_exhausted", Code.InvalidArgument))
+      .cause,
+  ).toBeUndefined();
 });

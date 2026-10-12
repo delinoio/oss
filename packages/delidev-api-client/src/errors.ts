@@ -28,10 +28,19 @@ export enum FailureCause {
 }
 
 /** Closed code/cause projection shared by RPC and retained Session problems. */
-export function failureCause(code: unknown, cause: unknown): FailureCause | undefined {
-  if (code === FailureCode.MissingInput && cause === FailureCause.QuotaExhausted)
+export function failureCause(
+  code: unknown,
+  cause: unknown,
+): FailureCause | undefined {
+  if (
+    code === FailureCode.MissingInput &&
+    cause === FailureCause.QuotaExhausted
+  )
     return FailureCause.QuotaExhausted;
-  if (code === FailureCode.Conflict && cause === FailureCause.ConfigurationNameConflict)
+  if (
+    code === FailureCode.Conflict &&
+    cause === FailureCause.ConfigurationNameConflict
+  )
     return FailureCause.ConfigurationNameConflict;
   return undefined;
 }

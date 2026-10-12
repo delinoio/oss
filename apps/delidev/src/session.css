@@ -224,7 +224,10 @@
 .session-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(32px, 1fr) minmax(0, auto) minmax(0, auto) minmax(0, auto);
+  grid-template-rows: minmax(32px, 1fr) minmax(0, auto) minmax(0, auto) minmax(
+      0,
+      auto
+    );
   height: 100%;
   min-width: 0;
   min-height: 0;
@@ -1629,14 +1632,37 @@
   color: var(--danger-text);
   background: var(--danger-background);
 }
-.session-notice .session-icon { flex-shrink: 0; margin-top: 2px; }
-.session-notice p { margin: 6px 0; }
-.session-notice .session-notice-title { font-size: 14px; }
-.session-notices button, .session-notices summary { min-height: 40px; white-space: normal; overflow-wrap: anywhere; }
-.session-notice dl { margin: 8px 0; }
-.session-notice dd { margin-left: 0; overflow-wrap: anywhere; }
+.session-notice .session-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.session-notice p {
+  margin: 6px 0;
+}
+.session-notice .session-notice-title {
+  font-size: 14px;
+}
+.session-notices button,
+.session-notices summary {
+  min-height: 40px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.session-notice dl {
+  margin: 8px 0;
+}
+.session-notice dd {
+  margin-left: 0;
+  overflow-wrap: anywhere;
+}
 @container conversation (max-width: 520px) {
-  .session-notice { flex-wrap: wrap; }
-  .session-notice > div { flex-basis: calc(100% - 32px); }
-  .session-notice > button { width: 100%; }
+  .session-notice {
+    flex-wrap: wrap;
+  }
+  .session-notice > div {
+    flex-basis: calc(100% - 32px);
+  }
+  .session-notice > button {
+    width: 100%;
+  }
 }

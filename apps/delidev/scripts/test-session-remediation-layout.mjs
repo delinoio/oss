@@ -92,105 +92,143 @@ try {
   const origin = `http://127.0.0.1:${server.address().port}`;
   for (const language of ["en", "ko"])
     for (const theme of ["light", "dark"])
-      for (const state of ["quota", "authentication", "connection", "startup", "budget", "recovery"])
-      for (const [width, height] of [
-        [1440, 900],
-        [960, 640],
-        [640, 480],
-        [320, 240],
-      ]) {
-        await page.setViewportSize({ width, height });
-        await page.goto(`${origin}/?language=${language}&theme=${theme}&state=${state}`);
-        assert.deepEqual(
+      for (const state of [
+        "quota",
+        "authentication",
+        "connection",
+        "startup",
+        "budget",
+        "recovery",
+      ])
+        for (const [width, height] of [
+          [1440, 900],
+          [960, 640],
+          [640, 480],
+          [320, 240],
+        ]) {
+          await page.setViewportSize({ width, height });
+          await page.goto(
+            `${origin}/?language=${language}&theme=${theme}&state=${state}`,
+          );
+          assert.deepEqual(
+            await page
+              .locator(".session-tool-menu [role=menuitem]")
+              .allTextContents(),
+            language === "en"
+              ? ["Diff", "Files", "Terminals", "Browser", "Diagnostics"]
+              : ["변경 사항", "파일", "터미널", "브라우저", "진단"],
+          );
+          assert.equal(
+            await page.locator(".session-information").count(),
+            1,
+            "Persistent inspector remains mounted without an Info action",
+          );
+          // The localization is sourced from the current catalog, not fixed English.
           await page
-            .locator(".session-tool-menu [role=menuitem]")
-            .allTextContents(),
-          language === "en"
-            ? ["Diff", "Files", "Terminals", "Browser", "Diagnostics"]
-            : ["변경 사항", "파일", "터미널", "브라우저", "진단"],
-        );
-        assert.equal(
-          await page.locator(".session-information").count(),
-          1,
-          "Persistent inspector remains mounted without an Info action",
-        );
-        // The localization is sourced from the current catalog, not fixed English.
-        await page.locator(".session-notices .session-notice").first().waitFor();
-        assert(await page.locator(".session-notices").evaluate((node) =>
-          node.previousElementSibling?.classList.contains("session-input-tray") &&
-          node.nextElementSibling?.classList.contains("composer") &&
-          !node.closest(".transcript")), "Recovery region stays immediately above the composer");
-        for (const button of await page.locator(".session-notices button:visible").all()) {
-          assert(await button.evaluate((node) => node.getBoundingClientRect().height >= 40), "Recovery actions retain 40px targets");
+            .locator(".session-notices .session-notice")
+            .first()
+            .waitFor();
+          assert(
+            await page
+              .locator(".session-notices")
+              .evaluate(
+                (node) =>
+                  node.previousElementSibling?.classList.contains(
+                    "session-input-tray",
+                  ) &&
+                  node.nextElementSibling?.classList.contains("composer") &&
+                  !node.closest(".transcript"),
+              ),
+            "Recovery region stays immediately above the composer",
+          );
+          for (const button of await page
+            .locator(".session-notices button:visible")
+            .all()) {
+            assert(
+              await button.evaluate(
+                (node) => node.getBoundingClientRect().height >= 40,
+              ),
+              "Recovery actions retain 40px targets",
+            );
+          }
+          assert.equal(
+            await page.getByRole("textbox").first().inputValue(),
+            "Retained draft",
+          );
+          assert.equal(await page.locator(".session-tools").count(), 1);
+          assert.equal(
+            await page
+              .locator(".session-controls > button")
+              .nth(1)
+              .isDisabled(),
+            true,
+          );
+          assert.equal(
+            await page.evaluate(
+              () => document.documentElement.dataset.fixtureWrites ?? "0",
+            ),
+            "0",
+          );
+          // Short Session layouts own bounded conversation scrolling. Verify that
+          // workspace and input access rather than requiring all content before scrolling.
+          assert(
+            await page
+              .locator(".session-workspace")
+              .evaluate(
+                (node) =>
+                  node.getBoundingClientRect().height <= innerHeight + 1,
+              ),
+            "Original Session workspace stays bounded",
+          );
+          const composer = page.locator(".composer textarea");
+          await composer.focus();
+          assert(
+            await composer.evaluate((node) => {
+              const bounds = node.getBoundingClientRect();
+              return bounds.top >= 0 && bounds.bottom <= innerHeight + 1;
+            }),
+            "Original composer remains reachable through its scroll owner",
+          );
+          if (state !== "recovery") {
+            checks++;
+            continue;
+          }
+          const controls = page.locator(".session-notices .actions button");
+          await controls.last().focus();
+          await page.keyboard.press("Enter");
+          const confirm = page.locator(".session-tools .notice button").first();
+          await confirm.waitFor();
+          assert.equal(
+            await page.evaluate(
+              () => document.documentElement.dataset.fixtureWrites ?? "0",
+            ),
+            "0",
+          );
+          const overflow = await page.evaluate(
+            () => document.documentElement.scrollWidth > innerWidth + 1,
+          );
+          assert.equal(
+            overflow,
+            false,
+            "Failure and confirmation stay within the viewport",
+          );
+          assert.equal(await page.locator(".session-tools .notice").count(), 1);
+          if (process.env.DELIDEV_LAYOUT_SCREENSHOT_DIR && width === 480)
+            await page.screenshot({
+              path: join(
+                process.env.DELIDEV_LAYOUT_SCREENSHOT_DIR,
+                `session-remediation-${language}-${theme}-${width}.png`,
+              ),
+            });
+          // Recovery remains owned by the retained Info section, not a second disclosure.
+          await page.locator(".session-tools .notice button").last().click();
+          assert.equal(
+            await page.getByRole("textbox").first().inputValue(),
+            "Retained draft",
+          );
+          assert.equal(await page.locator(".session-tools").count(), 1);
+          checks++;
         }
-        assert.equal(
-          await page.getByRole("textbox").first().inputValue(),
-          "Retained draft",
-        );
-        assert.equal(await page.locator(".session-tools").count(), 1);
-        assert.equal(
-          await page.locator(".session-controls > button").nth(1).isDisabled(),
-          true,
-        );
-        assert.equal(
-          await page.evaluate(
-            () => document.documentElement.dataset.fixtureWrites ?? "0",
-          ),
-          "0",
-        );
-        // Short Session layouts own bounded conversation scrolling. Verify that
-        // workspace and input access rather than requiring all content before scrolling.
-        assert(
-          await page
-            .locator(".session-workspace")
-            .evaluate(
-              (node) => node.getBoundingClientRect().height <= innerHeight + 1,
-            ),
-          "Original Session workspace stays bounded",
-        );
-        const composer = page.locator(".composer textarea");
-        await composer.focus();
-        assert(
-          await composer.evaluate((node) => {
-            const bounds = node.getBoundingClientRect();
-            return bounds.top >= 0 && bounds.bottom <= innerHeight + 1;
-          }),
-          "Original composer remains reachable through its scroll owner",
-        );
-        if (state !== "recovery") { checks++; continue; }
-        const controls = page.locator(".session-notices .actions button");
-        await controls.last().focus();
-        await page.keyboard.press("Enter");
-        const confirm = page.locator(".session-tools .notice button").first();
-        await confirm.waitFor();
-        assert.equal(
-          await page.evaluate(
-            () => document.documentElement.dataset.fixtureWrites ?? "0",
-          ),
-          "0",
-        );
-        const overflow = await page.evaluate(
-          () => document.documentElement.scrollWidth > innerWidth + 1,
-        );
-        assert.equal(
-          overflow,
-          false,
-          "Failure and confirmation stay within the viewport",
-        );
-        assert.equal(await page.locator(".session-tools .notice").count(), 1);
-        if (process.env.DELIDEV_LAYOUT_SCREENSHOT_DIR && width === 480)
-          await page.screenshot({
-            path: join(
-              process.env.DELIDEV_LAYOUT_SCREENSHOT_DIR,
-              `session-remediation-${language}-${theme}-${width}.png`,
-            ),
-          });
-        // Recovery remains owned by the retained Info section, not a second disclosure.
-        await page.locator(".session-tools .notice button").last().click();
-        assert.equal(await page.getByRole("textbox").first().inputValue(), "Retained draft");
-        assert.equal(await page.locator(".session-tools").count(), 1);
-        checks++;
-      }
   assert.deepEqual(failures, []);
   console.log(
     JSON.stringify({
