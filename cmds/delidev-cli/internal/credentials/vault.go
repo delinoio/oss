@@ -1,4 +1,5 @@
-// Package credentials owns protected server secrets. SQLite and product reads
+// Package credentials owns protected Go secrets for servers and explicitly
+// scoped Workers. SQLite and product reads
 // contain only references; ciphertext is private, and each immutable reference's
 // wrapping key exists only in the operating system credential store.
 package credentials
@@ -36,11 +37,12 @@ const (
 	WorkerSSH           Purpose = "worker-ssh"
 	WorkerNetworkKey    Purpose = "worker-network-key"
 	WorkerNetworkConfig Purpose = "worker-network-config"
+	WorkerMCP           Purpose = "worker-mcp"
 )
 
 func (p Purpose) valid() bool {
 	switch p {
-	case AccountAPI, AccountLogin, NetworkProxy, WorkerSSH, WorkerNetworkKey, WorkerNetworkConfig:
+	case AccountAPI, AccountLogin, NetworkProxy, WorkerSSH, WorkerNetworkKey, WorkerNetworkConfig, WorkerMCP:
 		return true
 	default:
 		return false

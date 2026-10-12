@@ -1550,3 +1550,14 @@ bounded closed native-shell observation document. The action resource preserves
 original request receipts and independent delivery, native completion and
 cleanup evidence. These declarations grant no shell dispatch, continuation,
 account or cleanup authority by themselves and add no database migration.
+
+## Worker-owned MCP management
+
+System capability 94 and Worker capability 56 independently negotiate MCP
+management. `MCPService` exposes definition reads, explicit mutations, explicit
+authentication and original-request receipt reads. Closed domain JSON documents
+are bounded to 64 KiB; machine, request and Worker identities remain typed
+fields. Mutation state distinguishes pending, succeeded, canceled, recovery
+required and failed outcomes. Secret inputs are transient write-only data and
+never enter receipt payloads. Management support does not advertise native MCP
+execution support or change accepted session configuration.

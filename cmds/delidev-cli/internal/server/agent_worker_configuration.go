@@ -137,6 +137,9 @@ func saveAgentWorker(ctx context.Context, state *store.Store, input agentWorkerM
 		if id == "" {
 			id = domain.NewID()
 		}
+		if e := preserveMCPSelections(tx, id, input.ExpectedRevision, &agent); e != nil {
+			return nil, e
+		}
 		if e := validateNewProviderSelections(tx, input.ConfigurationMutation, id, &agent); e != nil {
 			return nil, e
 		}

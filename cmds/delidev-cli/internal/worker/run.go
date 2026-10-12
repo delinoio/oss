@@ -321,6 +321,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_HARNESS_DEFAULTS_V1) {
 				profile += "\x00harness-defaults-v1"
 			}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MCP_MANAGEMENT_V1) {
+				profile += "\x00mcp-management-v1"
+			}
 			if config.quotaBlockSupported {
 				profile += "\x00codex-quota-block-v1"
 			}
@@ -442,6 +445,9 @@ func runConnected(ctx context.Context, config Config, credential Credential) err
 			capabilities := []pb.WorkerCapability{pb.WorkerCapability_WORKER_CAPABILITY_INLINE_MODEL_EXECUTION_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_SKILLS_V1, pb.WorkerCapability_WORKER_CAPABILITY_IMAGE_INPUTS_V1, pb.WorkerCapability_WORKER_CAPABILITY_EXECUTION_STARTUP_V1, pb.WorkerCapability_WORKER_CAPABILITY_NATIVE_CODEX_MODEL_DISCOVERY_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_FORWARDING_V1, pb.WorkerCapability_WORKER_CAPABILITY_SESSION_TERMINALS_V1}
 			if shellExpected {
 				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_CODEX_NATIVE_SHELL_V1)
+			}
+			if slices.Contains(attached.Msg.SupportedWorkerCapabilities, pb.WorkerCapability_WORKER_CAPABILITY_MCP_MANAGEMENT_V1) {
+				capabilities = append(capabilities, pb.WorkerCapability_WORKER_CAPABILITY_MCP_MANAGEMENT_V1)
 			}
 			// Older peers reject unknown enums before returning their support list.
 			// Harness defaults must join this negotiated attach, never the first.

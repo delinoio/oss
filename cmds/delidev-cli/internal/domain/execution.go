@@ -23,6 +23,7 @@ type AppliedTemplate struct {
 type ExecutionConfiguration struct {
 	HarnessProvenance *HarnessSettingsProvenance `json:"harness_provenance,omitempty"`
 	BranchPrefix      *BranchPrefixSelection     `json:"branch_prefix,omitempty"`
+	MCPDefinitions    []MCPDefinition            `json:"mcp_definitions,omitempty"`
 
 	ReviewerNativeModel string                  `json:"reviewer_native_model,omitempty"`
 	ImageInputDeclared  bool                    `json:"image_input_declared,omitempty"`
@@ -128,6 +129,16 @@ func (c ExecutionConfiguration) Validate() error {
 		if err := c.HarnessProvenance.Validate(c); err != nil {
 			return err
 		}
+	}
+	if len(c.MCPDefinitions) > MaxMCPDefinitions {
+		return MCPUnavailable()
+	}
+	seenMCP := map[ID]bool{}
+	for _, d := range c.MCPDefinitions {
+		if d.Validate() != nil || seenMCP[d.ID] {
+			return MCPUnavailable()
+		}
+		seenMCP[d.ID] = true
 	}
 	if (ModelIdentity{ProviderID: c.ProviderID, SubscriptionService: c.SubscriptionService, NativeID: c.NativeModel}).Key() != c.ModelID {
 		return Fail(RecoveryRequired, "The original source model identity changed.", "Preserve the frozen exact source and native ID.")

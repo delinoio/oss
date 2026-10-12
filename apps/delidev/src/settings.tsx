@@ -8,6 +8,7 @@ import {
   ConfigurationNameJobFailure,
   isConfigurationNameConflict,
 } from "./configuration-name-conflict";
+import { MCPSettings } from "./mcp-settings";
 import { revealProjectInvalidControl } from "./project-edit-tabs";
 import { defaultBranchPrefix, validBranchPrefix } from "./session-defaults";
 import {
@@ -1587,6 +1588,7 @@ export enum SettingsEntryDestination {
   GitProfiles = "git-profiles",
 }
 enum SettingsArea {
+  MCP,
   Network,
   Configuration,
   Diagnostics,
@@ -1696,6 +1698,15 @@ export const settingsCategories: Record<
     },
     kind: EntityKind.AGENT,
     area: SettingsArea.Configuration,
+  },
+  [SettingsCategory.MCP]: {
+    get label() {
+      return copy("mcp.title");
+    },
+    get description() {
+      return copy("mcp.scope");
+    },
+    area: SettingsArea.MCP,
   },
   [SettingsCategory.Instructions]: {
     get label() {
@@ -1827,6 +1838,7 @@ export const settingsGroups: {
       SettingsCategory.Providers,
       SettingsCategory.AgentWorkers,
       SettingsCategory.Instructions,
+      SettingsCategory.MCP,
     ],
   },
   {
@@ -1878,6 +1890,7 @@ const settingsIcons: Record<SettingsCategory, string> = {
     "M16 20v-1a4 4 0 0 0-4-4h-1a4 4 0 0 0-4 4v1m4-9a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7",
   [SettingsCategory.AgentWorkers]:
     "M4 8h16v12H4zM8 8V5h8v3m-8 5h.01M16 13h.01M9 16h6",
+  [SettingsCategory.MCP]: "M4 7h16M4 12h16M4 17h16",
   [SettingsCategory.Instructions]: "M6 3h8l4 4v14H6zM14 3v5h5M9 12h6m-6 4h6",
   [SettingsCategory.Projects]: "M3 7h7l2 2h9v11H3zM3 7V5h7l2 2",
   [SettingsCategory.Repositories]:
@@ -2828,6 +2841,9 @@ function SettingsWorkspace({
                 </div>
               ) : null}
               <div className="settings-panels">
+                {area === SettingsArea.MCP ? (
+                  <MCPSettings active={visible} />
+                ) : null}
                 {area === SettingsArea.Network ? (
                   <NetworkSettings
                     active={visible && isServerPreferences}

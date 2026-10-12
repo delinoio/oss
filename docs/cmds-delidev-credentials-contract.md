@@ -19,7 +19,7 @@ OAuth seals only `Ref{Owner:reservedAccountID, ID:originalConnectID, Purpose:acc
 
 The feature and [the CLI contract](cmds-delidev-contract.md) require authoritative credentials on the server, outside SQLite, transcripts, snapshots, ordinary RPC responses, logs, Worker environments and harness configuration. `cmds/delidev-cli/internal/credentials` implements the protected storage primitive. API connect/disconnect and cleanup now use this primitive through the [account lifecycle contract](cmds-delidev-accounts-contract.md). Subscription login, provider validation, execution revocation, proxy use and full deletion/restore coordination remain separate work; this primitive alone does not grant execution readiness. No CLI/RPC secret read operation is exposed.
 
-Only an authenticated server lifecycle operation may use the primitive. Callers own account revision checks, request receipt coordination and authorization revalidation. They must retain staged references after an uncertain database commit, compare them with authoritative state during reconciliation, and never speculate that a failed response means no credential was saved. A SQLite backup or non-secret configuration export is not a credential backup.
+Only an authenticated Go lifecycle operation may use the primitive: server account/network lifecycle or the explicitly Worker-owned MCP boundary below. Callers own account revision checks, request receipt coordination and authorization revalidation. They must retain staged references after an uncertain database commit, compare them with authoritative state during reconciliation, and never speculate that a failed response means no credential was saved. A SQLite backup or non-secret configuration export is not a credential backup.
 
 Network profile writes additionally retain one server-bound private publication
 intent before calling this primitive, under the [network contract](cmds-delidev-network-contract.md).
@@ -302,3 +302,34 @@ independent cleanup and joined shutdown keep their existing ownership.
 ## cmds/delidev-cli/internal/workspace constraints
 
 - Repository Clone owns a separate original-job-bound private staging claim and has a ten-minute execution deadline. Capture the empty staging checkout's native identity before Git so completion cannot adopt its replacement. Use credential-free HTTPS/SSH URLs and the computer's existing Git credentials, with an explicit `origin` remote and no PAT, hooks or recursive submodules. Publish the validated checkout without replacing any destination. Cleanup requires the original claim, parent/staging native identities and joined process termination; uncertainty retains files for recovery. Published checkouts become user-owned Local folders and remain intact after registration failure or configuration deletion. This exception to snapshot-only scratch creation grants no snapshot/session deletion ownership.
+
+## Worker-owned MCP credentials
+
+Managed MCP is an explicit Worker-owned exception to server account credential
+ownership. The selected authenticated Worker uses the same OS-wrapped protected
+primitive in its own device/server scope, with immutable `worker-mcp` references
+owned by the original definition and request. It never borrows an account vault,
+provider key, host MCP configuration or another Worker's credential namespace.
+Write-only environment/header values and OAuth tokens travel only through the
+explicit authenticated management action; Server receipts, metadata, exports,
+logs and ordinary list/status responses contain no secret values.
+
+Manual authentication is separate from saving safe configuration. OAuth uses
+explicit configured authorization/token endpoints, PKCE S256, an original actor,
+request, Worker, definition/revision, redirect URI, state and ten-minute expiry.
+Opening the authorization page is explicit; the complete callback is submitted
+explicitly. A synchronized consumed claim precedes the one token exchange.
+Wrong ownership, callback path/state/query, expiry, cancellation and response loss
+cannot authorize another exchange. Tokens and private PKCE evidence remain sealed
+on the Worker; callback codes are absent from receipts. Redirects and ambient HTTP
+proxies are excluded from the token request. Uncertainty retains original receipts
+and references without automatic replay or speculative deletion. Safe expiry metadata
+prevents a fresh generation from treating an expired token as authenticated.
+Private native adapters resolve secrets only for an exact retained definition copy
+through `Manager.MCPGenerationSecrets`; catalog edits cannot redirect that copy.
+
+An OAuth callback must match the exact definition revision that started the
+original request. A later edit cannot substitute the token endpoint. Explicit
+cancellation uses the original actor, Worker and request proof, including after
+the current definition is edited or deleted; cancellation does not authenticate
+or remove retained credentials.

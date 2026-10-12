@@ -13470,163 +13470,18 @@
       "newDeclaration": true
     },
     {
-      "issue": 2678,
+      "issue": 1986,
       "kind": "enum",
       "declaration": "SystemCapability",
-      "member": "SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1",
-      "number": 90
+      "member": "SYSTEM_CAPABILITY_HARNESS_DEFAULTS_V1",
+      "number": 91
     },
     {
-      "issue": 2678,
-      "kind": "message",
-      "declaration": "GetPullRequestWorkspaceRequest",
-      "member": "repository_id",
-      "number": 1,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2678,
-      "kind": "message",
-      "declaration": "GetPullRequestWorkspaceRequest",
-      "member": "expected_revision",
-      "number": 2,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2678,
-      "kind": "message",
-      "declaration": "GetPullRequestWorkspaceRequest",
-      "member": "seed_numbers",
-      "number": 3,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2678,
-      "kind": "message",
-      "declaration": "GetPullRequestWorkspaceResponse",
-      "member": "schema_version",
-      "number": 1,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2678,
-      "kind": "message",
-      "declaration": "GetPullRequestWorkspaceResponse",
-      "member": "document_json",
-      "number": 2,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2678,
-      "kind": "message",
-      "declaration": "ListPullRequestCommitsRequest",
-      "member": "repository_id",
-      "number": 1,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2678,
-      "kind": "message",
-      "declaration": "ListPullRequestCommitsRequest",
-      "member": "expected_revision",
-      "number": 2,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2678,
-      "kind": "message",
-      "declaration": "ListPullRequestCommitsRequest",
-      "member": "number",
-      "number": 3,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2678,
-      "kind": "message",
-      "declaration": "ListPullRequestCommitsRequest",
-      "member": "pull_request_id",
-      "number": 4,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2678,
-      "kind": "message",
-      "declaration": "ListPullRequestCommitsRequest",
-      "member": "remote_repository_id",
-      "number": 5,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2678,
-      "kind": "message",
-      "declaration": "ListPullRequestCommitsRequest",
-      "member": "base_sha",
-      "number": 6,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2678,
-      "kind": "message",
-      "declaration": "ListPullRequestCommitsRequest",
-      "member": "head_sha",
-      "number": 7,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2678,
-      "kind": "message",
-      "declaration": "ListPullRequestCommitsRequest",
-      "member": "page_token",
-      "number": 8,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2678,
-      "kind": "message",
-      "declaration": "ListPullRequestCommitsResponse",
-      "member": "schema_version",
-      "number": 1,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2678,
-      "kind": "message",
-      "declaration": "ListPullRequestCommitsResponse",
-      "member": "document_json",
-      "number": 2,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2678,
-      "kind": "message",
-      "declaration": "ReadPullRequestAvatarRequest",
-      "member": "repository_id",
-      "number": 1,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2678,
-      "kind": "message",
-      "declaration": "ReadPullRequestAvatarRequest",
-      "member": "expected_revision",
-      "number": 2,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2678,
-      "kind": "message",
-      "declaration": "ReadPullRequestAvatarRequest",
-      "member": "reference",
-      "number": 3,
-      "newDeclaration": true
-    },
-    {
-      "issue": 2678,
-      "kind": "message",
-      "declaration": "ReadPullRequestAvatarResponse",
-      "member": "png",
-      "number": 1,
-      "newDeclaration": true
+      "issue": 1986,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_HARNESS_DEFAULTS_V1",
+      "number": 55
     },
     {
       "issue": 2136,
@@ -14026,18 +13881,385 @@
       "newDeclaration": true
     },
     {
-      "issue": 1986,
+      "issue": 2129,
       "kind": "enum",
       "declaration": "SystemCapability",
-      "member": "SYSTEM_CAPABILITY_HARNESS_DEFAULTS_V1",
-      "number": 91
+      "member": "SYSTEM_CAPABILITY_MANAGED_MCP_V1",
+      "number": 94
     },
     {
-      "issue": 1986,
+      "issue": 2129,
       "kind": "enum",
       "declaration": "WorkerCapability",
-      "member": "WORKER_CAPABILITY_HARNESS_DEFAULTS_V1",
-      "number": 55
+      "member": "WORKER_CAPABILITY_MCP_MANAGEMENT_V1",
+      "number": 56
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "MCPMutationState",
+      "member": "MCP_MUTATION_STATE_UNSPECIFIED",
+      "number": 0,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "MCPMutationState",
+      "member": "MCP_MUTATION_STATE_PENDING",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "MCPMutationState",
+      "member": "MCP_MUTATION_STATE_SUCCEEDED",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "MCPMutationState",
+      "member": "MCP_MUTATION_STATE_CANCELED",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "MCPMutationState",
+      "member": "MCP_MUTATION_STATE_RECOVERY_REQUIRED",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "enum",
+      "declaration": "MCPMutationState",
+      "member": "MCP_MUTATION_STATE_FAILED",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ListMCPDefinitionsRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ListMCPDefinitionsResponse",
+      "member": "worker_device_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "ListMCPDefinitionsResponse",
+      "member": "definitions_json",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "MutateMCPDefinitionRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "MutateMCPDefinitionRequest",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "MutateMCPDefinitionRequest",
+      "member": "document_json",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "MutateMCPDefinitionResponse",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "MutateMCPDefinitionResponse",
+      "member": "state",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "MutateMCPDefinitionResponse",
+      "member": "result_json",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateMCPRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateMCPRequest",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateMCPRequest",
+      "member": "document_json",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateMCPResponse",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateMCPResponse",
+      "member": "state",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "AuthenticateMCPResponse",
+      "member": "result_json",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "GetMCPMutationRequest",
+      "member": "machine_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "GetMCPMutationRequest",
+      "member": "request_id",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "GetMCPMutationResponse",
+      "member": "request_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "GetMCPMutationResponse",
+      "member": "state",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2129,
+      "kind": "message",
+      "declaration": "GetMCPMutationResponse",
+      "member": "result_json",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_PULL_REQUEST_WORKSPACE_V1",
+      "number": 90
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "GetPullRequestWorkspaceRequest",
+      "member": "repository_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "GetPullRequestWorkspaceRequest",
+      "member": "expected_revision",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "GetPullRequestWorkspaceRequest",
+      "member": "seed_numbers",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "GetPullRequestWorkspaceResponse",
+      "member": "schema_version",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "GetPullRequestWorkspaceResponse",
+      "member": "document_json",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "repository_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "expected_revision",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "number",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "pull_request_id",
+      "number": 4,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "remote_repository_id",
+      "number": 5,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "base_sha",
+      "number": 6,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "head_sha",
+      "number": 7,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsRequest",
+      "member": "page_token",
+      "number": 8,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsResponse",
+      "member": "schema_version",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ListPullRequestCommitsResponse",
+      "member": "document_json",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ReadPullRequestAvatarRequest",
+      "member": "repository_id",
+      "number": 1,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ReadPullRequestAvatarRequest",
+      "member": "expected_revision",
+      "number": 2,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ReadPullRequestAvatarRequest",
+      "member": "reference",
+      "number": 3,
+      "newDeclaration": true
+    },
+    {
+      "issue": 2678,
+      "kind": "message",
+      "declaration": "ReadPullRequestAvatarResponse",
+      "member": "png",
+      "number": 1,
+      "newDeclaration": true
     }
   ],
   "rpcReservations": [
@@ -14294,33 +14516,6 @@
       "serverStreaming": false
     },
     {
-      "issue": 2678,
-      "service": "IntegrationService",
-      "method": "GetPullRequestWorkspace",
-      "input": "GetPullRequestWorkspaceRequest",
-      "output": "GetPullRequestWorkspaceResponse",
-      "clientStreaming": false,
-      "serverStreaming": false
-    },
-    {
-      "issue": 2678,
-      "service": "IntegrationService",
-      "method": "ListPullRequestCommits",
-      "input": "ListPullRequestCommitsRequest",
-      "output": "ListPullRequestCommitsResponse",
-      "clientStreaming": false,
-      "serverStreaming": false
-    },
-    {
-      "issue": 2678,
-      "service": "IntegrationService",
-      "method": "ReadPullRequestAvatar",
-      "input": "ReadPullRequestAvatarRequest",
-      "output": "ReadPullRequestAvatarResponse",
-      "clientStreaming": false,
-      "serverStreaming": false
-    },
-    {
       "issue": 2136,
       "service": "TailscaleService",
       "method": "CancelTailscaleConnection",
@@ -14443,6 +14638,69 @@
       "method": "DecideTailscaleApproval",
       "input": "DecideTailscaleApprovalRequest",
       "output": "DecideTailscaleApprovalResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2129,
+      "service": "MCPService",
+      "method": "ListMCPDefinitions",
+      "input": "ListMCPDefinitionsRequest",
+      "output": "ListMCPDefinitionsResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2129,
+      "service": "MCPService",
+      "method": "MutateMCPDefinition",
+      "input": "MutateMCPDefinitionRequest",
+      "output": "MutateMCPDefinitionResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2129,
+      "service": "MCPService",
+      "method": "AuthenticateMCP",
+      "input": "AuthenticateMCPRequest",
+      "output": "AuthenticateMCPResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2129,
+      "service": "MCPService",
+      "method": "GetMCPMutation",
+      "input": "GetMCPMutationRequest",
+      "output": "GetMCPMutationResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2678,
+      "service": "IntegrationService",
+      "method": "GetPullRequestWorkspace",
+      "input": "GetPullRequestWorkspaceRequest",
+      "output": "GetPullRequestWorkspaceResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2678,
+      "service": "IntegrationService",
+      "method": "ListPullRequestCommits",
+      "input": "ListPullRequestCommitsRequest",
+      "output": "ListPullRequestCommitsResponse",
+      "clientStreaming": false,
+      "serverStreaming": false
+    },
+    {
+      "issue": 2678,
+      "service": "IntegrationService",
+      "method": "ReadPullRequestAvatar",
+      "input": "ReadPullRequestAvatarRequest",
+      "output": "ReadPullRequestAvatarResponse",
       "clientStreaming": false,
       "serverStreaming": false
     }

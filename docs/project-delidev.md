@@ -469,3 +469,10 @@ own exact source previews, per-field inheritance/reset, revision-conflict drafts
 unsupported-value preservation and EN/KO search. System 91/Worker 55 retain the
 foundation's independent dispatch and immutable-history boundaries; the menu
 adds no native capability, configuration store or migration.
+
+Worker-owned MCP management provides explicit definition, credential and Agent
+selection flows. The [catalog contract](cmds-delidev-catalog-contract.md#worker-owned-managed-mcp-definitions)
+owns catalog and selection behavior. The [credential contract](cmds-delidev-credentials-contract.md)
+owns protected references, and the [protocol contract](protos-delidev-v1-contract.md#worker-owned-managed-mcp-definitions)
+owns management negotiation. Native execution eligibility remains separate and
+requires independently verified adapter support.

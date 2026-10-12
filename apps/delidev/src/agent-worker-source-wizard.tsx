@@ -1,4 +1,6 @@
 import { HarnessScopeSource } from "./harness-settings-model";
+
+import { MCPAgentSelections } from "./mcp-settings";
 import "./wizard-presentation.css";
 import {
   captureHarnessEditorChanges,
@@ -1680,6 +1682,12 @@ export function AgentWorkerSourceWizard({
           hidden={step !== Step.Configure}
           disabled={blocked || step !== Step.Configure}
         >
+          <MCPAgentSelections
+            value={data.mcp}
+            onChange={(mcp) => setData((previous) => ({ ...previous, mcp }))}
+            disabled={blocked}
+            active={active && step === Step.Configure}
+          />
           <ConfigurationFields
             disabled={blocked}
             kind={EntityKind.AGENT}

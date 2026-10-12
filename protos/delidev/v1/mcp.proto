@@ -1,0 +1,63 @@
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+package delidev.v1;
+
+option go_package = "github.com/delinoio/oss/protos/gen/go/delidev/v1;delidevv1";
+
+// Worker-owned management; this capability never implies native execution support.
+service MCPService {
+  rpc ListMCPDefinitions(ListMCPDefinitionsRequest) returns (ListMCPDefinitionsResponse);
+  rpc MutateMCPDefinition(MutateMCPDefinitionRequest) returns (MutateMCPDefinitionResponse);
+  rpc AuthenticateMCP(AuthenticateMCPRequest) returns (AuthenticateMCPResponse);
+  rpc GetMCPMutation(GetMCPMutationRequest) returns (GetMCPMutationResponse);
+}
+enum MCPMutationState {
+  MCP_MUTATION_STATE_UNSPECIFIED = 0;
+  MCP_MUTATION_STATE_PENDING = 1;
+  MCP_MUTATION_STATE_SUCCEEDED = 2;
+  MCP_MUTATION_STATE_CANCELED = 3;
+  MCP_MUTATION_STATE_RECOVERY_REQUIRED = 4;
+  MCP_MUTATION_STATE_FAILED = 5;
+}
+message ListMCPDefinitionsRequest {
+  string machine_id = 1;
+}
+message ListMCPDefinitionsResponse {
+  string worker_device_id = 1;
+  bytes definitions_json = 2;
+}
+
+// Closed versioned MCPMutation domain document, at most 64 KiB. Secret inputs
+// are transient write-only fields; persisted receipts contain only their digest.
+message MutateMCPDefinitionRequest {
+  string machine_id = 1;
+  string request_id = 2;
+  bytes document_json = 3;
+}
+message MutateMCPDefinitionResponse {
+  string request_id = 1;
+  MCPMutationState state = 2;
+  bytes result_json = 3;
+}
+
+// Closed explicit MCPAuthentication domain document, at most 64 KiB. OAuth
+// start/callback/cancel remain distinct actions tied to the original request.
+message AuthenticateMCPRequest {
+  string machine_id = 1;
+  string request_id = 2;
+  bytes document_json = 3;
+}
+message AuthenticateMCPResponse {
+  string request_id = 1;
+  MCPMutationState state = 2;
+  bytes result_json = 3;
+}
+message GetMCPMutationRequest {
+  string machine_id = 1;
+  string request_id = 2;
+}
+message GetMCPMutationResponse {
+  string request_id = 1;
+  MCPMutationState state = 2;
+  bytes result_json = 3;
+}

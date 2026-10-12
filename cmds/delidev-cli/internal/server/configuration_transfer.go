@@ -73,6 +73,12 @@ func portableValue(kind domain.Kind, raw []byte, incoming bool) (validatable, er
 		if v.HarnessSettings == nil {
 			return nil, domain.Fail(domain.Unsupported, "Portable Agents require current typed harness selectors.", "Export current live configuration using the version-7 bundle shape.")
 		}
+		if v.MCP != nil {
+			for i := range v.MCP.Selections {
+				v.MCP.Selections[i].WorkerDeviceID = ""
+				v.MCP.Selections[i].Unresolved = true
+			}
+		}
 		if v.ReconfigurationRequired {
 			return nil, domain.AgentReconfigurationRequired()
 		}

@@ -163,3 +163,13 @@ Earlier version-5/6 behavior and prefix paragraphs describe their original
 amendments. Versions 5 and 6 were documented amendments, but the source-native implementation
 emitted version 4. Current exports use version 7; version 4 remains readable through
 explicit in-memory conversion. Retired versions 1–3 remain unavailable. Existing source portable files are never rewritten.
+
+## Portable MCP selections
+
+Agent MCP selections export only safe names and definition references. Worker
+bindings are cleared and marked unresolved during portable transformation.
+Protected environment/header values, token material, credential references and
+private catalog generations are excluded. Imported references cannot authorize
+execution until the user explicitly binds each to a current selected Runner
+catalog. Existing bundle versions remain unchanged; the optional presence-bearing
+Agent field does not reinterpret omitted legacy fields or erase live selections.

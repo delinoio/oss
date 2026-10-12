@@ -820,3 +820,38 @@ independent spend-control and freshness rules. Failures preserve routing state,
 code, message, guidance, exit code and transport semantics. Per-source metadata
 never turns a later selected outer result into an exhaustion failure.
 This cause grants no fallback, quota recovery, account or execution authority.
+
+## Worker-owned managed MCP definitions
+
+MCP management belongs to one authenticated Runner Device. The Worker owns
+stdio executable/argument/directory definitions or explicit credential-free HTTPS
+Streamable HTTP endpoints, enablement, OAuth configuration and protected secret
+references. Catalog reads, edits and Settings visits never start an MCP process,
+sign in or run inference. Management capability is independent of native runtime
+capabilities; user input cannot declare verified harness support. Initial Worker
+attach omits management until the authenticated Server explicitly advertises its
+support; a subsequent attach includes it without breaking older enum admission.
+
+Closed version-1 documents use a 64 KiB request bound, at most 256 definitions
+and a bounded safe inventory projection. Worker private retention keeps up to
+4,096 original receipts and 8,192 immutable definition generations within 32 MiB.
+Bounds fail closed without eviction, truncation or adopting host configuration.
+Server metadata contains only safe definitions/references and digest-bound intent.
+
+Agent Workers store an optional presence-bearing MCP selection list. Omission
+preserves selections on both save APIs; an explicit empty list clears them.
+Deletion checks all current Agent references and identifies their names. A pending
+edit/deletion fences new selections and generations until the original outcome is
+confirmed. Explicit unselection permits catalog deletion while original revisions
+and protected references remain retained for independent native cleanup.
+
+A first execution captures complete immutable selected definitions, revisions and
+credential references from one transaction. Selection must bind the owning live
+paired Worker, an enabled definition, authentication eligibility and separately
+verified harness support. Catalog edits cannot rewrite accepted execution or
+history. Native adapters own final launch/configuration verification and original
+cleanup; saved metadata alone cannot provide those proofs.
+
+Saving a managed definition cannot write credentials or authenticate it. Protected
+environment/header values and manual tokens use the separate explicit
+authentication action. OAuth configuration can be saved without starting login.

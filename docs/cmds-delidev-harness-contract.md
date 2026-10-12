@@ -2672,3 +2672,16 @@ compaction, emits compaction/context events, rewrites the ordinary checkpoint or
 changes runtime permissions/mode. The [sessions contract](cmds-delidev-sessions-contract.md#explicit-native-shell-commands)
 owns human authorization and public typed receipts. Fixture tests and source
 inspection do not establish real native, account or platform acceptance.
+
+## Managed MCP generation boundary
+
+MCP management negotiates independently from each native adapter. Its Worker
+catalog always clears user-supplied support claims, credential IDs and public
+Agent-reference claims. Separate Codex, Claude Code, OpenCode and Grok adapters
+must verify their actual native configuration and inventory before projecting
+runtime eligibility. They consume the immutable execution configuration's
+`mcp_definitions`, resolve only the original Worker-owned protected references and
+retain native request/process ownership through independent cleanup. Disabled,
+unresolved, unauthenticated or unsupported selections fail before execution;
+configuration-only management does not advertise native acceptance. Built-in
+session MCP must compose without name/identity collisions with selected entries.

@@ -67,4 +67,8 @@ export * as SkillQuery from "./gen/delidev/v1/skills-SkillService_connectquery.j
 export * as AttachmentQuery from "./gen/delidev/v1/attachments-AttachmentService_connectquery.js";
 
 export * from "./gen/delidev/v1/tailscale_pb.js";
+export * from "./gen/delidev/v1/mcp_pb.js";
 export * as TailscaleQuery from "./gen/delidev/v1/tailscale-TailscaleService_connectquery.js";
+export * as MCPQuery from "./gen/delidev/v1/mcp-MCPService_connectquery.js";
+export * from "./gen/delidev/v1/mcp_pb.js";
+export * as MCPQuery from "./gen/delidev/v1/mcp-MCPService_connectquery.js";

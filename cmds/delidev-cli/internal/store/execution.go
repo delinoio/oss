@@ -198,6 +198,10 @@ func (t *Tx) PreviewInitialExecution(session domain.Session) (InitialExecutionPr
 	if preview.Route.SourceIndex != nil && int(*preview.Route.SourceIndex) < len(preview.Route.Sources) {
 		preview.Route.Sources[*preview.Route.SourceIndex].NativeModel = configuration.NativeModel
 	}
+	configuration.MCPDefinitions, err = t.ResolveMCPGeneration(agent.MCP, session.MachineID, agent.Harness)
+	if err != nil {
+		return empty, err
+	}
 	configuration.BranchPrefix = &domain.BranchPrefixSelection{Version: 1, Prefix: project.EffectiveBranchPrefix(settings.EffectiveBranchPrefix()), SettingsID: settingsRecord.ID, SettingsRevision: settingsRecord.Revision, ProjectID: projectRecord.ID, ProjectRevision: projectRecord.Revision}
 	if err := configuration.Validate(); err != nil {
 		return empty, err

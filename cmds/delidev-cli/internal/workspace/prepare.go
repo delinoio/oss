@@ -113,6 +113,10 @@ type Manifest struct {
 }
 type Manager struct {
 	NamedDirectories              bool
+	mcpOpenVault                  func(string, domain.ID) (mcpSecretVault, error)
+	mcpExchange                   func(context.Context, domain.MCPOAuthConfiguration, string, string) (domain.MCPSecrets, error)
+	mcpOpenVault                  func(string, domain.ID) (mcpSecretVault, error)
+	mcpExchange                   func(context.Context, domain.MCPOAuthConfiguration, string, string) (domain.MCPSecrets, error)
 	mu                            sync.Mutex
 	initialized                   bool
 	storageCopyFault              func(string) error
